@@ -1733,20 +1733,6 @@ bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, 
     return cam.worldToScreen({o.pos.x, top, o.pos.z}, w, h, sp);
 }
 
-mat4 authoredPoseFrame(const SceneObject& o, float facingYaw, float3 p) {
-    if (!o.posed) return mat4{};
-    const bool tilt = o.poseRotX != 0.0f || o.poseRotZ != 0.0f;
-    const bool scaled = o.poseScale.x != 1.0f || o.poseScale.y != 1.0f || o.poseScale.z != 1.0f;
-    if (!tilt && !scaled) return mat4{};
-    // Studio order R = Ry(yaw) * Rx * Rz with yaw the authored Y rotation; the
-    // RTS draw already applies Ry(facingYaw) = Ry(yaw + 90 deg), so tilt/scale
-    // are expressed in the authored frame and conjugated by the authored yaw.
-    constexpr float kDeg = 0.017453292f;
-    const float yaw = facingYaw - 1.5707963f;
-    return mat4::translate(p) * mat4::rotateY(yaw) * mat4::rotateX(o.poseRotX * kDeg) *
-           mat4::rotateZ(o.poseRotZ * kDeg) * mat4::scale(o.poseScale) * mat4::rotateY(-yaw) * mat4::translate(-p);
-}
-
 void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
     World& w = sim.world();
     auto* m = dynamic_cast<RtsModule*>(&sim.module());

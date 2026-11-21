@@ -251,6 +251,77 @@ void Editor::registerFxPreviewOps() {
             response.set("next",Json::string(playing()?"view_screenshot {\"window\":\"game\"}":"view_screenshot {\"window\":\"scene\"}"));
             return response;
         },true});
+    // PHYSIS «Живая природа» in the Scene view (PhysisNaturePreview.h).
+    ws_.registerOp({"physis_nature_preview",
+        "Show PHYSIS wildfire/wind as real scene presentation without a play-test: TerraWeave grass that burns to charred "
+        "stubble, SpectraFX flames/embers/smoke bent by the wind, fire light and fire/wind sound. Uses the map's authored "
+        "physis block in a PRIVATE preview World (never the game, never saved); a running game's PHYSIS is shown read-only. "
+        "Fields are optional: enabled, playing, speed, windSpeed (m/s), windDirection (degrees the wind blows towards, 0=+X), "
+        "humidity 0..1, cellMeters (0 = map grid, else detailed preview cell), grass, flames, sound, volume, "
+        "shoreSand (m of bare sand along authored NEREID water: no grass, no fuel; default 7), "
+        "ignite {x,z} (scene metres; preview only), advanceTicks (0..600, preview only), reset. Then view_screenshot {window:'scene'}.",
+        Json::parse(R"({"properties":{"enabled":{"type":"boolean"},"playing":{"type":"boolean"},"speed":{"type":"number"},
+            "windSpeed":{"type":"number"},"windDirection":{"type":"number"},"humidity":{"type":"number"},
+            "cellMeters":{"type":"integer","minimum":0,"maximum":64},"grass":{"type":"boolean"},"flames":{"type":"boolean"},
+            "sound":{"type":"boolean"},"volume":{"type":"number"},"shoreSand":{"type":"number"},
+            "ignite":{"type":"object","properties":{"x":{"type":"number"},"z":{"type":"number"}},"required":["x","z"]},
+            "advanceTicks":{"type":"integer","minimum":0,"maximum":600},"reset":{"type":"boolean"}},"additionalProperties":false})"),
+        [this](const Json& p) -> Json {
+            auto& nature = physisNaturePreview_;
+            auto& st = nature.settings;
+            const auto num = [&](const char* key, float lo, float hi, float& out) {
+                if (!p.has(key)) return false;
+                const double v = p[key].toDouble(out);
+                if (!std::isfinite(v)) throw std::invalid_argument(std::string(key) + " must be finite");
+                out = std::clamp(float(v), lo, hi);
+                return true;
+            };
+            if (p.has("enabled")) { const bool was = st.enabled; st.enabled = p.getBool("enabled"); if (st.enabled && !was) nature.requestReset(); }
+            if (p.has("playing")) st.playing = p.getBool("playing");
+            if (p.has("grass")) st.grass = p.getBool("grass");
+            if (p.has("flames")) st.flames = p.getBool("flames");
+            if (p.has("sound")) st.sound = p.getBool("sound");
+            num("speed", 0.f, 8.f, st.speed);
+            num("volume", 0.f, 1.f, st.volume);
+            bool wind = num("windSpeed", 0.f, 60.f, st.windSpeed);
+            wind = num("windDirection", -360.f, 360.f, st.windDirectionDeg) || wind;
+            if (num("humidity", 0.f, 1.f, st.humidity)) nature.requestReset();
+            if (num("shoreSand", 0.f, 40.f, st.shoreSandMeters)) nature.requestReset();
+            if (p.has("cellMeters")) { st.previewCellMeters = int(std::clamp<int64_t>(p.getInt("cellMeters"), 0, 64)); nature.requestReset(); }
+            if (wind) nature.applyWindSettings();
+            if (p.getBool("reset")) nature.requestReset();
+            Json r = Json::object();
+            const bool needsWorld = p.has("ignite") || p.getInt("advanceTicks", 0) > 0;
+            if (needsWorld) {
+                if (!st.enabled) throw std::runtime_error("enable the nature preview first (enabled: true)");
+                // Build the preview World now so agents can act in one call.
+                nature.setWater(authoredWater());
+                nature.prepareSource(gameFx_, doc(), sim_ ? &sim_->world() : nullptr,
+                    [this](float x, float z) { return surfaceHeightAt(x, z); });
+                if (nature.usingLive()) throw std::runtime_error("the running game's PHYSIS is read-only");
+            }
+            if (p.has("ignite")) {
+                const auto& at = p["ignite"];
+                std::string why;
+                const bool ok = nature.ignite(float(at["x"].toDouble()), float(at["z"].toDouble()), &why);
+                r.set("ignited", Json::fromBool(ok));
+                if (!ok) r.set("igniteError", Json::string(why));
+            }
+            const int64_t ticks = std::clamp<int64_t>(p.getInt("advanceTicks", 0), 0, 600);
+            if (ticks > 0) r.set("advanced", Json::number(int64_t(nature.advance(int(ticks)))));
+            r.set("ok", Json::fromBool(true));
+            r.set("enabled", Json::fromBool(st.enabled));
+            r.set("source", Json::string(nature.usingLive() ? "live (read-only)" : "preview"));
+            r.set("tick", Json::number(int64_t(nature.tick())));
+            r.set("flames", Json::number(int64_t(nature.flames())));
+            r.set("smoke", Json::number(int64_t(nature.smoke())));
+            r.set("voices", Json::number(int64_t(nature.voices())));
+            r.set("grassPatches", Json::number(int64_t(nature.grassPatches())));
+            r.set("burningAreaM2", Json::number(double(nature.burningArea()), 1));
+            if (!nature.status().empty()) r.set("status", Json::string(nature.status()));
+            r.set("next", Json::string("view_screenshot {\"window\":\"scene\"}"));
+            return r;
+        }, true});
 }
 
 } // namespace aiverse::editor

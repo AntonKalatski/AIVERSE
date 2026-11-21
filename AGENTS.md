@@ -84,6 +84,16 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 - Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
 
 
+## Hierarchical wind masks (2026-11-21)
+
+Object sway = shared mask library + per-class profiles + per-prototype part
+hierarchy: `engine/render/WindRig{,Shader,Model}.h`, Arbor glue
+`engine/render/TerraWeaveArborWind.h`, `<model>.wind.json` sidecars applied by
+`render::loadModel`. Reuse `windRigGraph()`; do not add per-object wind
+shaders or new sway-weight vertex conventions. Skill
+`skills/visuals/aiverse-wind-masks/SKILL.md`; handoff
+`docs/agent-handoffs/wind-masks-2026-11-21.md` (Metal NOT verified).
+
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
 **Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
@@ -1949,6 +1959,19 @@ This overrides earlier local/worktree build examples and release paths in this f
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
 
+Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
+
+**Never create builds in the shared engine checkout's `build/` folder** (the user's main
+checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
+integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+
+- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
+  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
+- Game / project work (packaging, native modules, test runs of a game): the project's own
+  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
+  and `aiversebuild` already use this layout).
+- Logs, bundles, patches and scratch archives belong with the build that produced them,
+
 ## 5. Working in parallel
 
 **Per-stage continuation rule (multi-stage tasks):** after each stage, update the task's agent handoff document with APIs, files, tests/results, remaining risks and the next-agent entry point. For Enhanced Input use `docs/enhanced-input-agent-handoff.md`. Do this BEFORE starting the next stage; do not claim a stage verified without real build/test results.
@@ -3223,6 +3246,7 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - **System ordering:** one of `advance`, `advanceClimate`, `advanceEnvironment` or `advanceEnvironmentWithDisasters` per authoritative tick; do not advance all of them. `physis::install` registers a single system. Preserve world persistence schemas when changing components.
 - **Docs/hand-off on EVERY stage:** `docs/agent-handoffs/physis-{core,climate,environment,disasters,integration}-2026-11-18.md` and `engine/physis/AGENTS.md`. Every follow-on implementation stage must commit code, then a separate handoff with exact branch/SHA, public API, changed files, actual test results, limits and specific next action.
 - **Tests:** baseline CTests `physis_core`, `physis_climate`, `physis_environment`, `physis_disasters`, `physis_integration`, plus `physis_wind`, `physis_gravity`, `physis_storm`, `physis_forces`, `physis_presentation`, and opt-in `physis_box3d` (`AIVERSE_ENABLE_PHYSICS=ON`); run `./run-tests.sh --filter '^physis_'` as required by the unified test-runner policy above. These targets have been written and registered but **NOT RUN** in the connector-only development session; do not claim validation or merge before tests and review.
+- **Nature presentation host (2026-11-21):** `engine/world/PhysisNature{Presentation,Cues,FxHost,AudioHost,Grass}.h` drive TerraWeave grass burn/wind, SpectraFX fire/smoke/light and audio from read-only PHYSIS; editor «Живая природа» (`apps/editor/PhysisNaturePreview.h`, MCP `physis_nature_preview`) shows it without a play-test. Reuse these; do not write a second fire/grass/VFX bridge. Game client hookup and macOS visual QA pending: `docs/agent-handoffs/physis-nature-host-2026-11-21.md`.
 - **Remaining work:** PHYSIS-owned climate/wind/gravity/storm/force fields and host-facing presentation APIs and host-owned opt-in Terra/NEREID/VFX/Foliage/Physics/editor adapters (other agents own canonical water and terrain), spatial indexing, sparse hazards, streaming/LOD, deterministic partitions, network deltas, platform validation and physical-unit calibration. Follow the cross-agent ownership matrix below and `docs/physis-nereid-terraweave-integration.md`; do not duplicate Water or Terra systems.
 
 ## Cross-agent ownership: PHYSIS / NEREID / TerraWeave (2026-11-18)
@@ -5550,6 +5574,17 @@ fixtures, and record actual platform coverage in the handoff. Build/cache/log
 paths for this integration are on KINGSTON, per the user's instruction.
 
 
+## LENS P2: physical lens, rails/shake, HDR EXR (2026-11-21)
+
+`CameraLensComponent::driveExposure/driveDepthOfField` feed per-camera PRISMA
+manual EV and `Prisma::setViewDepthOfField` through `CameraPostFxPool` (only on
+change; never add PRISMA effects implicitly). Rails/shake live in
+`engine/render/CameraRailPath.h` (pure functions of presentation seconds; linear
+rail and sine shake keep the old formulas). `CameraExr.h` +
+`CameraHdrFrameRecorder` write linear EXR from RGBA16F readback and must reject,
+not down-convert, 8-bit results. Do not reintroduce multi-line raw strings inside
+`#define` (GCC rejects them). Handoff: `docs/agent-handoffs/lens-p2-2026-11-21.md`.
+
 ## LENS authoring tools and engine skills
 
 Use `skills/visuals/aiverse-lens/SKILL.md` for project camera authoring and
@@ -5666,11 +5701,21 @@ Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping
   проверки и ограничения в отдельный handoff каждого этапа.
 
 - Системы симуляции, которые включаются блоком `rules` и без него не
-  регистрируются (как `traffic`), выносите так же: опция CMake для
-  `aiverse_game` с заглушкой того же интерфейса, запрет опции при сборке
-  редактора/тестов/headless/сервера, `auto` по составленным `rules`, ошибка
-  при старте матча, если правила включают выключенную систему. Без блока
-  состояние, `hash` и сохранение должны совпадать с полной сборкой.
+  регистрируются (как `traffic`), выносите через `aiverse_game_module` в
+  CMake: заглушка того же интерфейса в `modules/rts/disabled/`, строка в
+  таблице `kSimModules` в `aiversebuild` (как найти использование в rules и
+  картах), ошибка при старте матча, если данные требуют выключенную систему.
+  Без блока состояние, `hash` и сохранение должны совпадать с полной сборкой.
+  Не создавайте объект системы и не регистрируйте её Lua-таблицу так, чтобы
+  линкер не мог её выбросить.
+- Проект без игрового модуля — `"module": "scene"` (минимальный клиент
+  `apps/client/SceneMain.cpp`, около 150 КБ brotli в Web). Не подключайте к
+  `aiverse_client_runtime` ничего, что `SceneMain.cpp` потянет через
+  платформу; новые части GameClient добавляйте в циклы по
+  `AIVERSE_GAME_CLIENT_TARGETS`, а не к `aiverse_client` напрямую.
+- Web Release собирается с `-Oz` и LTO (`AIVERSE_WEB_OPTIMIZE_SIZE`, ON по
+  умолчанию). Сравнивайте размеры только между сборками с одинаковым
+  значением этой опции.
 - Проверено с Emscripten 3.1.50 (LLVM 18, binaryen 116): `wasm-opt -O3`
   падал по переполнению стека в рабочих потоках binaryen; линковка проходит
   с `BINARYEN_CORES=1` и `ulimit -s 8000000`. С emsdk-сборкой binaryen не
@@ -5715,3 +5760,22 @@ Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping
 - The new `view::AnimatedSceneAttachmentSources` owns dedicated independent MotionWeave presentation ECS `World` and `MotionWeaveSourceBridge`. Call `sync` exactly ONCE on the presentation owner thread with full child source input span BEFORE any rendering, while parent/child models are cache-read-leased. Every child has monotonic source ID and current ECS Entity.packed() logical generation; reimport restarts the correct source. `prepare` verifies model epochs, named parent socket, current parent-child ECS identity and child's sole evaluated Pose; returns move-only parent/child ModelReadLease and a GRAPHLESS `View::Object`. NEVER call View::update on those prepared child objects or run the same child Graph a second time; use an isolated child render-only View to avoid shared visual-ID cache collision with parent.
 - Studio now publishes real animated child Model+Graph snapshots using `AppearanceAssetRegistry::Request.animationGraph`/graphReader; its `EditorWindow::update` steps all child players exactly once before ImGui draw, while 3D viewport only consumes graphless prepared child packets and the existing parent pose. Clear the child source bridge BEFORE replacing old Model/Graph provider generations. Missing/bad Graph fails staged publication and preserves last-good session.
 - ModelView only saves/loads new child fields and deliberately rejects enabled animated children rather than incorrectly drawing them static; it needs its own child source host in Stage 162. SceneLoadCoordinator direct binding on other branches, fully GPU-fenced provider shutdown, advanced morph/skeleton retarget and native validation remain incomplete. Keep shared animation genre-independent, one writer per animation source, independent stage handoff and user-visible readiness table after every stage.
+
+## VIVID universal digital humans (2026-11-19)
+
+**Feature branch:** `feature/vivid-digital-humans`. **Canonical contract:** `docs/vivid.md`.
+**Mandatory stage-by-stage handoff:** `docs/agent-handoffs/vivid.md`.
+**Local ownership:** `engine/character/vivid/AGENTS.md`, `engine/character/vivid/*`, `tests/vivid/*`.
+
+VIVID is genre-independent and presentation-only. It provides a pure C++20 facial
+controller (`AIVERSE::vivid`), `AIVERSE::vivid_render` legacy morph binding
+and `AIVERSE::vivid_gpu` extended sparse morph compute.
+MotionWeave owns the final presentation skeleton pose and final graph/retarget output.
+VIVID applies optional facial channels afterwards. Do not duplicate MotionWeave
+workers, IK, animation graphs or LOD policies. Never alter the legacy eight-target
+renderer ABI without a staged GPU parity test. Every completed stage MUST have
+a separate committed handoff with SHA, executed tests, risks, and next step.
+
+## MotionWeave + VIVID combined Studio checkpoint (2026-11-20)
+
+Integration branch `integration/motionweave-studio-facial-stage184`; durable status: `docs/agent-handoffs/motionweave-vivid-integration-2026-11-20.md`. Code `4a719af8c1c5a97b381c768155e28fd858877903` closes Studio facial preview shared-owner adoption: ModelAssetProvider takePrepared/publishPrepared allows pre-GPU rig validation; one Animator, async CPU import, frame ModelReadLease, renderer cache invalidation and fenced retirement. Keep project texture caches isolated and stale CPU revisions unpublished. Do not regress to direct per-bind upload/release or claim all backend/visual parity from scoped Metal tests. User requires all builds/logs/artifacts on `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/`. See Studio handoff 84 and actual passing commands in the joint log.

@@ -33,7 +33,7 @@ public:
     void shutdown(gfx::Device& dev);
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
-    void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
+    bool collectRetired(gfx::Device& dev) { return retirement_.collect(dev); }
     size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     uint64_t stateRevision() const noexcept {return stateRevision_;}
     // the map (its "roadNetwork"); rebuilt on the next draw. Errors go to warnings().

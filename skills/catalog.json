@@ -5117,6 +5117,34 @@
       ]
     },
     {
+      "id": "aiverse-wind-masks",
+      "package": null,
+      "path": "skills/visuals/aiverse-wind-masks/SKILL.md",
+      "domain": "workflow",
+      "summary": "Hierarchical wind masks: shared mask library, per-class profiles, model sidecars, Arbor tree rigs, one GPU graph",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/wind-masks.md",
+      "keywords": [
+        "wind",
+        "sway",
+        "foliage",
+        "tree",
+        "branch",
+        "mask",
+        "vegetation",
+        "ветер",
+        "маска",
+        "колыхание",
+        "дерево",
+        "ветка",
+        "листва"
+      ]
+    },
+    {
       "id": "aiverse-work-budget",
       "package": "work-budget",
       "path": "skills/core/aiverse-work-budget/SKILL.md",

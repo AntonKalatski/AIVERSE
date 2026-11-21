@@ -3,7 +3,7 @@ export type FieldValue=string|number|boolean;
 export type MaterialData=Record<string,unknown>;
 export interface MaterialLibrary {library:Record<string,MaterialData>}
 export const MATERIAL_EDIT_KEYS=[
-  'metallic','roughness','thinTransmission','shadowDiffusion','sssStrength','sssScale','sssColor','cutoff','teamStrength','occlusionStrength',
+  'metallic','roughness','thinTransmission','shadowDiffusion','sssStrength','sssScale','sssThickness','sssColor','cutoff','teamStrength','occlusionStrength',
   'emissiveStrength','normalScale','doubleSided','unlit','castShadow',
   'receiveShadow','vertexColors','alpha','team','description',
   'texture','normalMap','emissiveMap','teamMask','metallicRoughnessMap','occlusionMap'
@@ -30,6 +30,8 @@ const fields:Array<Omit<MaterialField,'value'|'editable'>>=[
   description:'Artistic subsurface glow. 0 disables it.'},
  {key:'sssScale',label:'SSS spread',type:'number',min:0,max:1,step:.01,
   description:'Wider edge lighting and stronger backlight at higher values.'},
+ {key:'sssThickness',label:'SSS transmission depth (world units)',type:'number',min:0,max:1,step:.005,
+  description:'Maximum depth that passes sunlight. 0 keeps artistic backlight; try 0.03–0.08 for fingers.'},
  {key:'sssColor',label:'SSS color (linear RGB)',type:'text',
   description:'Three values from 0 to 1, separated by commas.'},
  {key:'cutoff',label:'Alpha cutoff',type:'number',min:0,max:1,step:.01},
@@ -53,7 +55,7 @@ const fields:Array<Omit<MaterialField,'value'|'editable'>>=[
  {key:'occlusionMap',label:'Occlusion map',type:'asset',assetKinds:['image']}
 ];
 const defaults:Record<MaterialKey,FieldValue>={
- metallic:0,roughness:1,thinTransmission:0,shadowDiffusion:0,sssStrength:0,sssScale:.5,sssColor:'1,1,1',cutoff:.5,teamStrength:1,occlusionStrength:1,
+ metallic:0,roughness:1,thinTransmission:0,shadowDiffusion:0,sssStrength:0,sssScale:.5,sssThickness:0,sssColor:'1,1,1',cutoff:.5,teamStrength:1,occlusionStrength:1,
  emissiveStrength:0,normalScale:1,doubleSided:false,unlit:false,castShadow:true,
  receiveShadow:true,vertexColors:false,alpha:'opaque',team:'none',description:'',
  texture:'',normalMap:'',emissiveMap:'',teamMask:'',metallicRoughnessMap:'',occlusionMap:''

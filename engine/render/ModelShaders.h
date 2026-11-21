@@ -26,7 +26,7 @@
 //                 vec4 pbr (metallic, roughness, normalScale, occlusionStrength);
 //                 vec4 misc (alphaCutoff, teamMode, teamStrength, flags: bit0 vertex RGB/alpha, bit1 alpha is local AO);
 //                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, SSS strength/scale for PBR or fixed shade ambient/diffuse for unlit);
-//                 vec4 light (PBR: SSS color.rgb, thin transmission.w; unlit: fixed light direction.xyz and enabled.w);
+//                 vec4 light (PBR: SSS color.rgb, w = floor: thin transmission*255, fract: SSS max transmitted world depth; unlit: fixed light direction.xyz and enabled.w);
 //   U3 skin:      SKINNED vec4 joints[240] (3 rows of a 3x4 matrix per joint);
 //                 BAKED   vec4 palette[20] (palette slot -> skin joint, 4 per vec4)
 //   U4 morph:     vec4 w[16] (up to 64 active weights), vec4 channel[16] (source IDs);
@@ -48,7 +48,7 @@ namespace aiverse::render::shaders {
     "struct Inst { mat4 model; vec4 tint; vec4 team; vec4 draw; vec4 anim; vec4 lod; };\n" \
     "layout(std140) uniform U0 { Inst u_inst[AIVERSE_INST]; };\n" \
     AIVERSE_GLSL_FRAME \
-    "layout(std140) uniform U2 { vec4 m_base; vec4 m_emissive; vec4 m_pbr; vec4 m_misc; vec4 m_uv0; vec4 m_uv1; vec4 m_light; vec4 m_reveal; vec4 m_revealAxis; };\n" \
+    "layout(std140) uniform U2 { vec4 m_base; vec4 m_emissive; vec4 m_pbr; vec4 m_misc; vec4 m_uv0; vec4 m_uv1; vec4 m_light; vec4 m_reveal; vec4 m_revealAxis; vec4 m_eyeOptics; };\n" \
     "#if defined(SKINNED)\n" \
     "layout(std140) uniform U3 { vec4 u_joints[240]; };\n" \
     "#elif defined(BAKED)\n" \
@@ -306,7 +306,20 @@ void main() {
         if (nz < v_draw.y) discard;
         edge = 1.0 - smoothstep(0.0, 0.06, nz - v_draw.y);
     }
-    vec4 tb = texture(tex1, v_uv);
+    vec2 opticalUv = v_uv;
+#if AIVERSE_Q >= 1
+    if (m_uv1.y > 2.5 && m_uv1.y < 3.5 && m_eyeOptics.z > 0.0) {
+        vec3 on = normalize(v_nrm);
+        vec3 ot = normalize(v_tan.xyz - on * dot(on, v_tan.xyz));
+        vec3 ob = cross(on, ot) * v_tan.w;
+        vec3 ov = normalize(u_camPos.xyz - v_wpos);
+        vec3 ray = refract(-ov, on, 1.0 / clamp(m_uv1.z, 1.0, 2.0));
+        float mask = 1.0 - smoothstep(m_eyeOptics.z * 0.8, m_eyeOptics.z, length(v_uv - m_eyeOptics.xy));
+        opticalUv += vec2(dot(ray,ot),dot(ray,ob)) *
+                     (mask * m_eyeOptics.w / max(0.35, -dot(ray,on)));
+    }
+#endif
+    vec4 tb = texture(tex1, opticalUv);
 #if defined(VIRTUAL_ALPHA_MASK)
     tb.a = texture(tex15, v_uv).r;
 #endif
@@ -364,7 +377,7 @@ void main() {
     // Opt-in linear signed world normal from the SAME PBR shading path,
     // including tangent normal map and Shader Graph perturbations. W is
     // roughness; an independent depth pass rejects mismatched occluders.
-    if(m_uv1.y > 0.5) discard;
+    if(m_uv1.y > 0.5 && m_uv1.y < 1.5) discard; // unlit only; VIVID skin/eye/hair (2..4) stay
     o_color=vec4(normalize(n),clamp(rough,0.045,1.0));
     return;
 #endif
@@ -372,7 +385,7 @@ void main() {
     // HDR side-channel: exact material diffuse base + metallic, not the
     // already-illuminated scene color. Respect alpha mask, tint, PBR textures
     // and Shader Graph overrides applied above. No legacy direct or GI term.
-    if(m_uv1.y > 0.5) discard;
+    if(m_uv1.y > 0.5 && m_uv1.y < 1.5) discard; // unlit only; VIVID skin/eye/hair (2..4) stay
     o_color=vec4(clamp(base.rgb,vec3(0.0),vec3(1.0)),clamp(metallic,0.0,1.0));
     return;
 #endif
@@ -386,7 +399,8 @@ void main() {
     float ndv = max(dot(n, V), 1e-4);
     // Optional thin diffuse sheet: split incident diffuse energy between
     // reflection and opposite-hemisphere transmission. No emissive shortcut.
-    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(m_light.w,0.0,1.0)*(1.0-metallic);
+    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(floor(m_light.w)/255.0,0.0,1.0)*(1.0-metallic);
+    float sssDepth = fract(m_light.w);
     float backNdl = max(-dot(n,L),0.0);
     if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
     float sh = ((ndl > 0.0 || thin*backNdl>0.0) && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
@@ -453,7 +467,25 @@ void main() {
         float wrap = clamp(m_uv1.w, 0.0, 1.0);
         float wrapped = max((dot(n, L) + wrap) / (1.0 + wrap), 0.0);
         float back = pow(max(dot(-n, L), 0.0), mix(8.0, 2.0, wrap));
-        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5) * m_uv1.z;
+        float transmission = 1.0;
+        if (sssDepth > 0.0) {
+            transmission = 0.0;
+            if (back > 0.0 && v_draw.x > 0.5 && u_quality.y > 0.5) {
+                vec4 lp = u_lightViewProj * vec4(v_wpos, 1.0);
+                vec3 p = lp.xyz / lp.w;
+                vec2 uv = p.xy * 0.5 + 0.5;
+                if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;
+                float d = p.z * u_shadow.y + u_shadow.z;
+                if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && d > 0.0 && d < 1.0) {
+                    float entry = sunDepth(uv);
+                    float depthPerWorld = length(vec3(u_lightViewProj[0].z, u_lightViewProj[1].z, u_lightViewProj[2].z)) * u_shadow.y;
+                    float path = (d - entry) / max(depthPerWorld, 1e-6);
+                    if (entry < 0.9999 && path > 0.0001 && path < sssDepth)
+                        transmission = exp(-3.0 * path / sssDepth);
+                }
+            }
+        }
+        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5 * transmission) * m_uv1.z;
         col += diff * m_light.rgb * sun * scatter * ao;
     }
 #if AIVERSE_HDR && AIVERSE_Q > 0
@@ -465,7 +497,69 @@ void main() {
 #endif
     col += amb * ao * base.rgb * pow(1.0 - ndv, 3.0) * 0.25;   // rim, keeps silhouettes readable from the RTS camera
     { col += diff * dd + (F0 + 0.15 * (1.0 - rough) * (1.0 - metallic)) * ds; }   // point lights + light reflections (Lights.h)
-    if (m_uv1.y > 0.5) col = m_light.w > 0.5 ? base.rgb * (m_uv1.z + m_uv1.w * clamp(dot(normalize(v_nrm), m_light.xyz), 0.0, 1.0)) : base.rgb;
+    // VIVID: opt-in multi-lobe approximation, shared by all model passes.
+    // PBR/unlit materials retain exactly their former paths (0 / 1).
+    if (m_uv1.y > 1.5 && m_uv1.y < 2.5) { // human skin
+        float scatter = clamp(m_uv1.z, 0.0, 1.0);
+        float wrapN = clamp((dot(n, L) + 0.45 * scatter) / (1.0 + 0.45 * scatter), 0.0, 1.0);
+        float transmitted = pow(max(dot(-n, L), 0.0), 3.0);
+        col += sun * sh * (base.rgb * max(wrapN - ndl, 0.0) * scatter * 0.65
+                         + base.rgb * vec3(0.65, 0.19, 0.12) * transmitted * scatter * 0.12);
+        col += sun * spec * sh * clamp(m_uv1.w, 0.0, 1.0) * 0.12;
+    } else if (m_uv1.y > 2.5 && m_uv1.y < 3.5) { // iris/cornea wet film
+        float tear = clamp(m_uv1.w, 0.0, 1.0);
+        float cornealIor = clamp(m_uv1.z, 1.0, 2.0);
+        float iorF0 = pow((cornealIor - 1.0) / (cornealIor + 1.0), 2.0);
+        // Schlick grazing response for the wet dielectric coat. Keep the
+        // existing analytic highlight as the finite-cost mobile fallback.
+        float coatFresnel = iorF0 + (1.0 - iorF0) * pow(1.0 - clamp(ndv, 0.0, 1.0), 5.0);
+        float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
+        col += sun * sh * vec3(cornealGlint) *
+               (0.15 + 0.68 * tear) * (0.25 + 4.0 * coatFresnel);
+        if (m_eyeOptics.z > 0.0) {
+            // A smooth wet dielectric coat over a diffuse iris, not a broad
+            // specular lobe added to the existing PBR lobe twice.
+            float exponent = mix(90.0, 220.0, tear) * mix(1.3, 0.8, rough);
+            float footprint = max(length(dFdx(n)), length(dFdy(n)));
+            exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
+            float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
+            vec3 coatDs = vec3(0.0);
+#if AIVERSE_Q >= 1
+            // Reflect actual finite lights. dynLight's ds also contains broad
+            // grid/environment energy and must not be promoted to a corneal glint.
+            for (int i=0;i<8;++i) {
+                if(i>=int(l_info.x))break;
+                vec3 delta=l_pos[i].xyz-v_wpos;
+                float distance2=dot(delta,delta);
+                vec3 eyeL=delta*inversesqrt(max(distance2,1e-6));
+                float attenuation=clamp(1.0-distance2/max(l_pos[i].w*l_pos[i].w,1e-6),0.0,1.0);
+                attenuation*=attenuation;
+                if(l_spot[i].w>-1.5) {
+                    float cone=smoothstep(l_spot[i].w,l_col[i].w,dot(-eyeL,l_spot[i].xyz));
+                    attenuation*=cone*cone;
+                }
+                float lobe=pow(max(dot(n,normalize(eyeL+V)),0.0),exponent);
+                coatDs+=l_col[i].rgb*(attenuation*lobe*(exponent+8.0)*0.125*max(dot(n,eyeL),0.0));
+            }
+#endif
+            vec3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
+            col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
+                + (sun * sh * glint + coatDs) * (coatFresnel * 0.55)
+                + coatEnv * coatFresnel * ao;
+        }
+    } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
+        vec3 strandT = normalize(v_tan.xyz);
+        float alignment = dot(strandT, H);
+        float ring = max(1.0 - alignment * alignment, 0.0);
+        float width = clamp(m_uv1.w, 0.0, 1.0);
+        // Dual longitudinal highlights approximate primary reflection and
+        // a broader secondary fiber lobe without additional hair geometry.
+        float primaryLobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
+        float secondaryLobe = pow(ring, mix(5.0, 22.0, 1.0 - width));
+        float lobe = primaryLobe * 0.72 + secondaryLobe * 0.18;
+        col += sun * sh * base.rgb * lobe * clamp(m_uv1.z, 0.0, 1.0);
+    }
+    if (m_uv1.y > 0.5 && m_uv1.y < 1.5) col = m_light.w > 0.5 ? base.rgb * (m_uv1.z + m_uv1.w * clamp(dot(normalize(v_nrm), m_light.xyz), 0.0, 1.0)) : base.rgb;
     col += emis * (1.0 + nightGlow()) + v_team.a * vec3(1.0, 0.85, 0.7) + edge * vec3(1.0, 0.45, 0.12) * 3.0 + v_team.rgb * (v_draw.w * teamW);
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
@@ -531,7 +625,7 @@ void main() {
     "struct Inst { float4x4 model; float4 tint; float4 team; float4 draw; float4 anim; float4 lod; };\n" \
     "struct MU0 { Inst inst[AIVERSE_INST]; };\n" \
     AIVERSE_MSL_FRAME \
-    "struct MU2 { float4 base; float4 emissive; float4 pbr; float4 misc; float4 uv0; float4 uv1; float4 light; float4 reveal; float4 revealAxis; };\n" \
+    "struct MU2 { float4 base; float4 emissive; float4 pbr; float4 misc; float4 uv0; float4 uv1; float4 light; float4 reveal; float4 revealAxis; float4 eyeOptics; };\n" \
     "struct MU3 { float4 v[240]; };\n" \
     "struct MU4 { float4 w[16]; float4 channel[16]; float4 info; float4 info2; };\n" \
     AIVERSE_MSL_GI_BLOCK
@@ -895,7 +989,20 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         if (nz < in.draw.y) discard_fragment();
         edge = 1.0 - smoothstep(0.0, 0.06, nz - in.draw.y);
     }
-    float4 tb = tex1.sample(s1, in.uv);
+    float2 opticalUv = in.uv;
+#if AIVERSE_Q >= 1
+    if (m.uv1.y > 2.5 && m.uv1.y < 3.5 && m.eyeOptics.z > 0.0) {
+        float3 on = normalize(in.nrm);
+        float3 ot = normalize(in.tan.xyz - on * dot(on, in.tan.xyz));
+        float3 ob = cross(on, ot) * in.tan.w;
+        float3 ov = normalize(f.camPos.xyz - in.wpos);
+        float3 ray = refract(-ov, on, 1.0 / clamp(m.uv1.z, 1.0, 2.0));
+        float mask = 1.0 - smoothstep(m.eyeOptics.z * 0.8, m.eyeOptics.z, length(in.uv - m.eyeOptics.xy));
+        opticalUv += float2(dot(ray,ot),dot(ray,ob)) *
+                     (mask * m.eyeOptics.w / max(0.35, -dot(ray,on)));
+    }
+#endif
+    float4 tb = tex1.sample(s1, opticalUv);
 #if defined(VIRTUAL_ALPHA_MASK)
     tb.a = tex15.sample(s15, in.uv).r;
 #endif
@@ -951,13 +1058,13 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     // World-space signed normal.xyz and physically bounded roughness.w.
     // Input has passed the same AlphaMask, normal map and PBR processing
     // as the visible model, without applying any existing direct/indirect GI.
-    if(m.uv1.y > 0.5) discard_fragment();
+    if(m.uv1.y > 0.5 && m.uv1.y < 1.5) discard_fragment(); // unlit only; VIVID skin/eye/hair stay
     return float4(normalize(n),clamp(rough,0.045f,1.0f));
 #endif
 #if defined(LUMAWEAVE_MATERIAL)
     // Real linear material receiver for external direct lighting. The
     // compute result is multiplied by the physically correct diffuse color.
-    if(m.uv1.y > 0.5) discard_fragment();
+    if(m.uv1.y > 0.5 && m.uv1.y < 1.5) discard_fragment(); // unlit only; VIVID skin/eye/hair stay
     return float4(clamp(base.rgb,float3(0.0),float3(1.0)),clamp(metallic,0.0f,1.0f));
 #endif
     ao *= m.misc.w > 1.5 ? (m.misc.w > 3.5 && !frontFacing ? in.col.r : in.col.a) : 1.0;   // +4: back-face AO in red
@@ -970,7 +1077,8 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float ndv = max(dot(n, V), 1e-4);
     // Optional thin diffuse sheet: split incident diffuse energy between
     // reflection and opposite-hemisphere transmission. No emissive shortcut.
-    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(m.light.w,0.0,1.0)*(1.0-metallic);
+    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(floor(m.light.w)/255.0f,0.0f,1.0f)*(1.0f-metallic);
+    float sssDepth = fract(m.light.w);
     float backNdl = max(-dot(n,L),0.0);
     if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
     float sh = ((ndl > 0.0 || thin*backNdl>0.0) && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
@@ -1036,7 +1144,25 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         float wrap = clamp(m.uv1.w, 0.0f, 1.0f);
         float wrapped = max((dot(n, L) + wrap) / (1.0f + wrap), 0.0f);
         float back = pow(max(dot(-n, L), 0.0f), mix(8.0f, 2.0f, wrap));
-        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f) * m.uv1.z;
+        float transmission = 1.0f;
+        if (sssDepth > 0.0f) {
+            transmission = 0.0f;
+            if (back > 0.0f && in.draw.x > 0.5f && f.quality.y > 0.5f) {
+                float4 lp = f.lightViewProj * float4(in.wpos, 1.0f);
+                float3 p = lp.xyz / lp.w;
+                float2 uv = p.xy * 0.5f + 0.5f;
+                if (f.shadow.x > 0.5f) uv.y = 1.0f - uv.y;
+                float d = p.z * f.shadow.y + f.shadow.z;
+                if (uv.x > 0.0f && uv.x < 1.0f && uv.y > 0.0f && uv.y < 1.0f && d > 0.0f && d < 1.0f) {
+                    float entry = sunDepth(tex0, uv);
+                    float depthPerWorld = length(float3(f.lightViewProj[0].z, f.lightViewProj[1].z, f.lightViewProj[2].z)) * f.shadow.y;
+                    float path = (d - entry) / max(depthPerWorld, 1e-6f);
+                    if (entry < 0.9999f && path > 0.0001f && path < sssDepth)
+                        transmission = exp(-3.0f * path / sssDepth);
+                }
+            }
+        }
+        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f * transmission) * m.uv1.z;
         col += diff * m.light.rgb * sun * scatter * ao;
     }
 #if AIVERSE_HDR && AIVERSE_Q > 0
@@ -1048,7 +1174,66 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
     col += amb * ao * base.rgb * pow(1.0 - ndv, 3.0) * 0.25;
     { col += diff * dd + (F0 + 0.15 * (1.0 - rough) * (1.0 - metallic)) * ds; }
-    if (m.uv1.y > 0.5) col = m.light.w > 0.5 ? base.rgb * (m.uv1.z + m.uv1.w * clamp(dot(normalize(in.nrm), m.light.xyz), 0.0, 1.0)) : base.rgb;
+    // VIVID opt-in human BRDF lobes, matched to GLSL numerically.
+    if (m.uv1.y > 1.5 && m.uv1.y < 2.5) {
+        float scatter = clamp(m.uv1.z, 0.0, 1.0);
+        float wrapN = clamp((dot(n, L) + 0.45 * scatter) / (1.0 + 0.45 * scatter), 0.0, 1.0);
+        float transmitted = pow(max(dot(-n, L), 0.0), 3.0);
+        col += sun * sh * (base.rgb * max(wrapN - ndl, 0.0) * scatter * 0.65
+                         + base.rgb * float3(0.65, 0.19, 0.12) * transmitted * scatter * 0.12);
+        col += sun * spec * sh * clamp(m.uv1.w, 0.0, 1.0) * 0.12;
+    } else if (m.uv1.y > 2.5 && m.uv1.y < 3.5) {
+        float tear = clamp(m.uv1.w, 0.0, 1.0);
+        float cornealIor = clamp(m.uv1.z, 1.0, 2.0);
+        float iorF0 = pow((cornealIor - 1.0) / (cornealIor + 1.0), 2.0);
+        // Matched GLSL dielectric Fresnel; no platform-specific extra lobe.
+        float coatFresnel = iorF0 + (1.0 - iorF0) * pow(1.0 - clamp(ndv, 0.0, 1.0), 5.0);
+        float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
+        col += sun * sh * float3(cornealGlint) *
+               (0.15 + 0.68 * tear) * (0.25 + 4.0 * coatFresnel);
+        if (m.eyeOptics.z > 0.0) {
+            // A smooth wet dielectric coat over a diffuse iris, not a broad
+            // specular lobe added to the existing PBR lobe twice.
+            float exponent = mix(90.0, 220.0, tear) * mix(1.3, 0.8, rough);
+            float footprint = max(length(dfdx(n)), length(dfdy(n)));
+            exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
+            float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
+            float3 coatDs = float3(0.0);
+#if AIVERSE_Q >= 1
+            // Reflect actual finite lights. dynLight's ds also contains broad
+            // grid/environment energy and must not be promoted to a corneal glint.
+            for (int i=0;i<8;++i) {
+                if(i>=int(lu.info.x))break;
+                float3 delta=lu.pos[i].xyz-in.wpos;
+                float distance2=dot(delta,delta);
+                float3 eyeL=delta*rsqrt(max(distance2,1e-6));
+                float attenuation=clamp(1.0-distance2/max(lu.pos[i].w*lu.pos[i].w,1e-6),0.0,1.0);
+                attenuation*=attenuation;
+                if(lu.spot[i].w>-1.5) {
+                    float cone=smoothstep(lu.spot[i].w,lu.col[i].w,dot(-eyeL,lu.spot[i].xyz));
+                    attenuation*=cone*cone;
+                }
+                float lobe=pow(max(dot(n,normalize(eyeL+V)),0.0),exponent);
+                coatDs+=lu.col[i].rgb*(attenuation*lobe*(exponent+8.0)*0.125*max(dot(n,eyeL),0.0));
+            }
+#endif
+            float3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
+            col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
+                + (sun * sh * glint + coatDs) * (coatFresnel * 0.55)
+                + coatEnv * coatFresnel * ao;
+        }
+    } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {
+        float3 strandT = normalize(in.tan.xyz);
+        float alignment = dot(strandT, H);
+        float ring = max(1.0 - alignment * alignment, 0.0);
+        float width = clamp(m.uv1.w, 0.0, 1.0);
+        // Same two-lobe approximation and coefficients as GLSL.
+        float primaryLobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
+        float secondaryLobe = pow(ring, mix(5.0, 22.0, 1.0 - width));
+        float lobe = primaryLobe * 0.72 + secondaryLobe * 0.18;
+        col += sun * sh * base.rgb * lobe * clamp(m.uv1.z, 0.0, 1.0);
+    }
+    if (m.uv1.y > 0.5 && m.uv1.y < 1.5) col = m.light.w > 0.5 ? base.rgb * (m.uv1.z + m.uv1.w * clamp(dot(normalize(in.nrm), m.light.xyz), 0.0, 1.0)) : base.rgb;
     col += emis * (1.0 + lu.info.w) + in.team.a * float3(1.0, 0.85, 0.7) + edge * float3(1.0, 0.45, 0.12) * 3.0 + in.team.rgb * (in.draw.w * teamW);
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));

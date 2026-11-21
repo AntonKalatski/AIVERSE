@@ -47,6 +47,22 @@ public:
         return resources_.find(source);
     }
 
+    // Publish a CPU-prepared, host-validated asset under a fresh cache key.
+    // Authoring hosts may compile rigs before this GPU transaction, keeping
+    // their previous generation resident until publication succeeds.
+    Model* publishPrepared(gfx::Device& device,const std::string& key,
+                           std::unique_ptr<Model> model) {
+        bindDevice(device);
+        if(resources_.activeModelReaders()!=0)
+            throw std::logic_error("Model publication attempted during a render read lease");
+        if(resources_.publicationBackpressured())
+            throw std::runtime_error("Model publication paused by retirement pressure");
+        ModelStagingTransaction staging(device,resources_,imageRollback_,gpuLease_);
+        staging.stage(key,std::move(model));
+        staging.commit();
+        return resources_.find(key);
+    }
+
     // Returns a BORROWED pointer stable until invalidation/shutdown.
     // A failed import is cached as a null entry and can be recovered by
     // invalidating that source. Do not call while renderer submissions
@@ -79,6 +95,12 @@ public:
 
 #ifndef __EMSCRIPTEN__
     using CpuStats=AsyncModelCpuQueue::Stats;
+    using Prepared=AsyncModelCpuQueue::Prepared;
+    // Split CPU completion from publication for hosts requiring asset/rig
+    // validation. A returned Model has never been uploaded to the GPU.
+    bool takePrepared(Prepared& prepared) {return cpuQueue_.pollReady(prepared);}
+    void cancelAsync(const std::string& source) {cpuQueue_.invalidate(source);}
+    void stopAsync() {cpuQueue_.shutdown();}
     CpuStats cpuStats() const noexcept {return cpuQueue_.stats();}
     void setCpuWorkerCount(size_t count) {cpuQueue_.setWorkerCount(count);}
     size_t cpuWorkerCount() const noexcept {return cpuQueue_.workerCount();}

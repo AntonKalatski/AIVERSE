@@ -1,10 +1,37 @@
 export interface NereidFlowSurface {id:number;kind?:string;shape?:string;flow?:number[];grade?:{automaticCurrent?:boolean;slopeDegrees?:number;downhillHeadingDegrees?:number;responseSeconds?:number;maxSpeed?:number;origin?:number[]}}
+export type WindDebugView = 'off'|'parts'|'depth'|'weight'|'skeleton';
+export interface WindSettings {enabled:boolean;speed:number;direction:number;gust:number;scale:number;debug:WindDebugView}
+export interface WindMask {name:string;index:number;samples:number[]}
+export interface WindProfileLevel {mask:string;stiffness:number;flex:number}
+export interface WindState {settings:WindSettings;library:{masks:WindMask[];profiles:Array<{name:string;levels:WindProfileLevel[]}>;uniqueMasks:number;warnings:string[]};scene:{riggedInstances?:number;riggedParts?:number;models?:number}}
 export interface NereidFlowState {surfaces:NereidFlowSurface[];computed?:Array<{id:number;flow:number[]}>}
 export interface NereidFlowInput {id:number;mode:'automatic'|'manual';slopeDegrees:number;downhillHeadingDegrees:number;responseSeconds:number;maxSpeed:number;flow:number[]}
 export type { PropertyType } from './propertyLogic';
 export type { FacialRigDocument, FacialRigList, FacialRigResult, FacialRigValidation } from './panels/facialRigSchema';
+
+// Native asset GUID and staged facial inputs; NOT a GPU preview result.
+export interface StudioFacialPreviewBinding {
+  bound: boolean;
+  guid: string;
+  path: string; // content-relative path, resolved by native AssetCatalog
+  revision: number; // binding epoch, must match control updates
+  values: Record<string,number>;
+  vectors: Record<string,[number,number,number]>;
+  runtimeReady: boolean; // set only after an actual native Metal Renderer3D frame
+  runtimeVerified: false; // GPU pixels/backends have not passed native QA
+  rendererChannelCapacity: number;
+  reason: string;
+}
+
 export type StudioProperty = import('./propertyLogic').FieldDescriptor;
-export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
+export interface StudioInspectorComponent { id: string; title: string; note?: string; properties: StudioProperty[] }
+/** Entity header + its document components (Transform, Mesh Renderer, Light…). */
+/** Add Component entry: `native` adds via studio.componentAdd; `light`/`water` run an editor action. */
+export interface StudioComponentCatalogItem { id: string; title: string; group: string; hint: string; action: 'native' | 'light' | 'water'; available: boolean; reason?: string }
+/** Unit types of rules.json: as written (`types`) and with "extends" applied (`resolved`). */
+export interface StudioRules { types: Record<string, unknown>; resolved: Record<string, unknown>; resources: string[]; summary: unknown[]; dirty: boolean }
+export interface StudioInspector { id: string; name: string; kind: string; nameEditable?: boolean; components: StudioInspectorComponent[] }
+export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean; locked?: boolean; owner?: number }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
 export interface StudioAsset {
   path: string;
@@ -52,9 +79,12 @@ export interface StudioSnapshot {
   project: { name: string; path: string; dirty: boolean };
   scene: { name: string; entities: StudioEntity[] };
   selectedId: string | null;
+  /** Whole selection, primary (selectedId) last. */
+  selectedIds?: string[];
   properties: StudioProperty[];
   entityProperties?: StudioProperty[];
   components?: Array<{ id: string; title: string; properties: StudioProperty[] }>;
+  inspector?: StudioInspector;
   logs: StudioLog[];
   mode: 'edit' | 'play';
   previewMaterial?: string | null;
@@ -66,12 +96,21 @@ export interface StudioProjectState { maps: Array<{file: string; title: string}>
 export interface StudioRuntimeRow {ref:string; name:string; kind:string; owner:number; parent:string; health:number; components:string[]}
 export interface StudioRuntimePage {active:boolean; epoch:string; tick:number; rows:StudioRuntimeRow[]; total:number}
 export interface StudioRuntimeEntity {ref:string; epoch:string; tick:number; components:Record<string,unknown>; stats?:Record<string,unknown>}
-export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boolean; width:number; height:number; touch:boolean }
+export interface StudioGameDeviceChrome { corner:number; cutout?:{x:number;y:number;width:number;height:number;radius:number}; insets:{left:number;top:number;right:number;bottom:number} }
+export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boolean; width:number; height:number; touch:boolean; chrome?:StudioGameDeviceChrome }
 export interface StudioGameDeviceOption { id:string; name:string; group:string }
 export interface StudioGameState { device:StudioGameDevice; paused: boolean; canControl: boolean; canStep: boolean; active: boolean; loading: boolean; progress: number; inMatch: boolean; tick: number; error: string }
-export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
-  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
+export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.inspect' | 'studio.componentCatalog' | 'studio.componentAdd' | 'studio.componentRemove' | 'studio.setProperties' | 'studio.entitiesDelete' | 'studio.entitiesDuplicate' | 'studio.entityFlags' | 'studio.assetPlace' | 'studio.rules' | 'studio.rulesSet' | 'studio.windowOpen' | 'studio.windowClose' | 'studio.windowBroadcast' | 'studio.windowTitle' | 'studio.buildInfo' | 'studio.buildToolchain' | 'studio.buildStart' | 'studio.buildLog' | 'studio.buildEstimate' | 'studio.buildReveal' | 'studio.entityMove' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' | 'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanPreviewAnimation' | 'studio.humanStudioLighting' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus' | 'studio.wind' | 'studio.windSet';
+export interface HumanLook { version: 1; values: Record<string,number>; materials: Record<string,string> }
+export interface HumanLookField { key:string; label:string; min:number; max:number; initial:number }
+export interface HumanPreviewAnimationSettings {pose:string;playing:boolean;faceIdle:boolean;speed:number;automaticLod?:boolean}
+export interface HumanStudioLightingSettings {preset:string;rotation:number;gain:number;backdrop:boolean}
+export interface HumanStudioLightingInfo {settings:HumanStudioLightingSettings;presets:{id:string;label:string;sources:number}[]}
+export interface HumanFaceShape {version:1;meshes:string[];values:Record<string,number>;landmarks:{from:[number,number,number];to:[number,number,number];radius:number;weight:number}[]}
+export interface HumanLookInfo {face:HumanFaceShape|null;faceSchema:{key:string;label:string;min:number;max:number}[];schema:HumanLookField[];look:HumanLook;preview:StudioFacialPreviewBinding}
 export interface StudioParams {
+  'studio.wind':Record<string,never>;
+  'studio.windSet':Partial<WindSettings>;
   'studio.nereidFlow':Record<string,never>;
   'studio.nereidFlowSet':NereidFlowInput;
   'studio.gameStart': {entry: 'map' | 'menu'};
@@ -90,8 +129,48 @@ export interface StudioParams {
   'studio.entityCreate': {type: string; x: number; z: number; owner: number};
   'studio.entityDelete': {entityId: string};
   'studio.entityDuplicate': {entityId: string};
+  'studio.humanWardrobeFromAsset': {guid:string};
+  'studio.humanPreviewAnimation': {settings?:HumanPreviewAnimationSettings};
+  'studio.humanStudioLighting': {settings?:HumanStudioLightingSettings};
+  'studio.humanFaceFitScan': {guid:string;scanGuid:string;face:HumanFaceShape;distance:number;strength:number};
+  'studio.humanHeadBodyImport': {guid:string;headGuid:string;bone:string;hiddenMeshes:string[];name:string};
+  'studio.humanWardrobeInfo': {guid:string};
+  'studio.humanCharacterBuild': {guid:string;look:HumanLook;wardrobe:HumanWardrobe;name:string;textureSize:number;face?:HumanFaceShape|null};
+  'studio.humanCharacterBuildStatus': Record<string,never>;
+  'studio.humanAppearanceInfo': Record<string,never>;
+  'studio.humanAppearanceApply': {guid:string;revision:number;look:HumanLook;face?:HumanFaceShape|null};
+  'studio.humanAppearanceSave': {name:string;look:HumanLook};
+  'studio.humanAppearanceLoad': {name:string};
+  'studio.humanAppearanceList': Record<string,never>;
+  'studio.humanAppearanceFromAsset': {guid:string};
   'studio.snapshot': Record<string, never>;
   'studio.propertiesFor': { entityId: string };
+  'studio.inspect': { entityId: string };
+  'studio.entityMove': { entityId: string; targetId?: string | null; placement?: 'before' | 'after' };
+  'studio.componentCatalog': { entityId: string };
+  'studio.componentAdd': { entityId: string; componentId: string };
+  'studio.componentRemove': { entityId: string; componentId: string };
+  'studio.setProperties': { entityId?: string; entityIds?: string[]; componentId?: string; values: Record<string, string | number | boolean> };
+  'studio.entitiesDelete': { entityIds: string[] };
+  'studio.entitiesDuplicate': { entityIds: string[] };
+  'studio.entityFlags': { entityIds: string[]; hidden?: boolean; locked?: boolean };
+  'studio.assetPlace': { asset: string; x: number; z: number };
+  'studio.rules': Record<string, never>;
+  'studio.rulesSet': { path: string; value: unknown };
+  /** Open (or focus) floating window `window` holding `panels`; ifOutside opens only when the mouse is outside every Studio window. */
+  'studio.windowOpen': { window: string; panels?: string[]; title?: string; ifOutside?: boolean; x?: number; y?: number; width?: number; height?: number };
+  'studio.windowClose': { window: string };
+  /** A floating window names itself (its active tab). */
+  'studio.windowTitle': { title: string };
+  'studio.buildInfo': Record<string,never>;
+  'studio.buildToolchain': { target: string };
+  'studio.buildStart': { target: string; config: 'Release' | 'Debug'; installMissing?: boolean; estimate?: boolean };
+  'studio.buildLog': { from: number };
+  'studio.buildEstimate': { target: string };
+  /** Show a build folder (or the last build log) in Finder. */
+  'studio.buildReveal': { target?: string; log?: boolean };
+  /** UI-only event (name starts with "ui.") delivered to every Studio window. */
+  'studio.windowBroadcast': { event: string; payload: unknown };
   'studio.save': Record<string, never>;
   'studio.undo': Record<string, never>;
   'studio.redo': Record<string, never>;
@@ -115,21 +194,26 @@ export interface StudioParams {
   'studio.facialRigGet': { name: string };
   'studio.facialRigValidate': { rig: import('./panels/facialRigSchema').FacialRigDocument };
   'studio.facialRigSave': { name: string; rig: import('./panels/facialRigSchema').FacialRigDocument };
+  'studio.facialPreviewBind': { guid: string; rig: import('./panels/facialRigSchema').FacialRigDocument } | { guid: '' };
+  'studio.facialPreviewControls': { revision: number; values: Record<string,number>; vectors?: Record<string,[number,number,number]> };
+  'studio.facialPreviewInfo': Record<string,never>;
   'studio.shaderGraphValidate': { graph: StudioShaderGraphDocument['graph'] };
   'studio.shaderGraphSave': { name: string; graph: StudioShaderGraphDocument['graph'] };
   'studio.renderLighting': Record<string, never>;
   'studio.renderLightingSet': { patch: Partial<RenderLightingSettings> };
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
-  'studio.lightAdd': Record<string, never>;
+  'studio.lightAdd': { x?: number; z?: number };
   'studio.lightUpdate': { index: number; entityId?: string; key: import('./panels/lightingSchema').LightEditableKey; value: string | number | boolean };
   'studio.lightDelete': { index: number; entityId?: string };
-  'studio.select': { id: string | null };
+  'studio.select': { id?: string | null; ids?: string[]; mode?: 'replace' | 'add' | 'toggle' };
   'studio.setProperty': { entityId: string; componentId?: string; key: string; value: string | number | boolean };
   'studio.viewportRect': { id: 'scene' | 'game'; x: number; y: number; width: number; height: number; dpr: number; visible: boolean };
-  'studio.viewportInput': { kind: 'orbit' | 'pan' | 'look'; dx: number; dy: number } | { kind: 'move'; right: number; up: number; forward: number } | { kind: 'focus' | 'reset' } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
+  'studio.viewportInput': { kind: 'orbit' | 'pan' | 'look'; dx: number; dy: number } | { kind: 'move'; right: number; up: number; forward: number } | { kind: 'focus' | 'reset' } | { kind: 'zoom'; amount: number } | { kind: 'view'; yaw: number; pitch: number } | { kind: 'projection'; ortho: boolean } | { kind: 'hover'; id: string } | { kind: 'tool'; tool?: 'view' | 'move' | 'rotate' | 'scale'; local?: boolean; snap?: boolean; snapMove?: number; snapRotate?: number; snapScale?: number; gizmos?: boolean } | { kind: 'handle'; phase: 'down' | 'drag' | 'up'; x: number; y: number; width: number; height: number; invertSnap?: boolean } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }
 export interface StudioResult {
+  'studio.wind':WindState;
+  'studio.windSet':WindState;
   'studio.nereidFlow':NereidFlowState;
   'studio.nereidFlowSet':NereidFlowState;
   'studio.gameStart': StudioGameState;
@@ -148,8 +232,44 @@ export interface StudioResult {
   'studio.entityCreate': StudioSnapshot;
   'studio.entityDelete': StudioSnapshot;
   'studio.entityDuplicate': StudioSnapshot;
+  'studio.humanWardrobeFromAsset': HumanWardrobe;
+  'studio.humanWardrobeInfo': {meshes:string[];bones:string[];materials:string[]};
+  'studio.humanPreviewAnimation': HumanPreviewAnimationSettings;
+  'studio.humanStudioLighting': HumanStudioLightingInfo;
+  'studio.humanFaceFitScan': HumanBuildStatus;
+  'studio.humanHeadBodyImport': HumanBuildStatus;
+  'studio.humanCharacterBuild': HumanBuildStatus;
+  'studio.humanCharacterBuildStatus': HumanBuildStatus;
+  'studio.humanAppearanceInfo': HumanLookInfo;
+  'studio.humanAppearanceApply': HumanLookInfo;
+  'studio.humanAppearanceSave': {name:string;look:HumanLook};
+  'studio.humanAppearanceLoad': {name:string;look:HumanLook};
+  'studio.humanAppearanceList': {looks:string[]};
+  'studio.humanAppearanceFromAsset': {name:string;look:HumanLook};
   'studio.snapshot': StudioSnapshot;
   'studio.propertiesFor': StudioProperty[];
+  'studio.inspect': StudioInspector;
+  'studio.entityMove': StudioSnapshot;
+  'studio.componentCatalog': StudioComponentCatalogItem[];
+  'studio.componentAdd': StudioSnapshot;
+  'studio.componentRemove': StudioSnapshot;
+  'studio.setProperties': StudioSnapshot;
+  'studio.entitiesDelete': StudioSnapshot;
+  'studio.entitiesDuplicate': StudioSnapshot;
+  'studio.entityFlags': StudioSnapshot;
+  'studio.assetPlace': StudioSnapshot;
+  'studio.rules': StudioRules;
+  'studio.rulesSet': StudioRules;
+  'studio.windowOpen': { opened: boolean };
+  'studio.windowClose': { closed: boolean };
+  'studio.windowBroadcast': { ok: boolean };
+  'studio.windowTitle': { ok: boolean };
+  'studio.buildInfo': StudioBuildInfo;
+  'studio.buildToolchain': StudioToolchain;
+  'studio.buildStart': { started: boolean };
+  'studio.buildLog': StudioBuildLog;
+  'studio.buildEstimate': StudioBuildEstimate;
+  'studio.buildReveal': { ok: boolean };
   'studio.save': StudioSnapshot;
   'studio.undo': StudioSnapshot;
   'studio.redo': StudioSnapshot;
@@ -173,6 +293,9 @@ export interface StudioResult {
   'studio.facialRigGet': import('./panels/facialRigSchema').FacialRigResult;
   'studio.facialRigValidate': import('./panels/facialRigSchema').FacialRigValidation;
   'studio.facialRigSave': import('./panels/facialRigSchema').FacialRigResult;
+  'studio.facialPreviewBind': StudioFacialPreviewBinding;
+  'studio.facialPreviewControls': StudioFacialPreviewBinding;
+  'studio.facialPreviewInfo': StudioFacialPreviewBinding;
   'studio.shaderGraphValidate': StudioShaderGraphDocument;
   'studio.shaderGraphSave': StudioShaderGraphDocument;
   'studio.renderLighting': RenderLightingSettings;
@@ -185,5 +308,24 @@ export interface StudioResult {
   'studio.select': StudioSnapshot;
   'studio.setProperty': StudioSnapshot;
   'studio.viewportRect': { ok: boolean };
-  'studio.viewportInput': { ok: boolean };
+  'studio.viewportInput': { ok?: boolean; hit?: boolean };
 }
+
+export interface HumanSocket {name:string;bone:string;translation:number[];rotation:number[];scale:number[]}
+export interface HumanWardrobeItem {independentRig?:boolean;attachmentRule?:'keep_world'|'snap';socket?:string;id:string;asset:string;slot:string;enabled:boolean;bone:string;translation:number[];rotation:number[];scale:number[];finish:'cloth'|'source';hideMeshes:string[];masks:{material:string;texture:string}[]}
+export interface HumanWardrobe {sockets?:HumanSocket[];version:1;hiddenMeshes:string[];items:HumanWardrobeItem[]}
+export interface HumanBuildStatus {face?:HumanFaceShape;running:boolean;error?:string;path?:string;guid?:string;vertices?:number;meshes?:number;materials?:number;bytes?:number}
+
+/** Publish / Build panel (aiversebuild through the Workspace build runner). */
+export interface StudioBuildTarget { id: string; name: string; built: boolean }
+export interface StudioBuildInfo {
+  targets: StudioBuildTarget[]; toolFound: boolean; outDir: string; running: boolean; label: string; exitCode: number; runs: number;
+  dirty: boolean; identity: { name: string; id: string; version: string; build: number; orientation: string };
+}
+export interface StudioToolchainRequirement { id: string; name: string; required: boolean; found: boolean; autoInstall: boolean;
+  path?: string; version?: string; detail?: string; install?: string; size?: string; manual?: string }
+export interface StudioToolchain { target: string; host: string; hostSupported: boolean; hostNote?: string; ok: boolean; missing: string[];
+  requirements: StudioToolchainRequirement[] }
+export interface StudioBuildLog { from: number; next: number; text: string; size: number; running: boolean; label: string; exitCode: number; runs: number; logFile: string }
+export interface StudioBuildEstimate { target: string; pack: Record<string, unknown>; atlas: Record<string, unknown>; split?: Record<string, unknown>;
+  heaviest: Array<{ path?: string; file?: string; bytes?: number; storedBytes?: number }> }

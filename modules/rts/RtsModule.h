@@ -340,8 +340,12 @@ struct AuthoredPose {
     Fixed y{};
     Fixed rotX{}, rotZ{};
     Vec3 scale{Fixed::fromInt(1), Fixed::fromInt(1), Fixed::fromInt(1)};
+    // Hidden friend: found by ADL only, so it never hides aiverse::io for other types in this namespace.
+    friend void io(Archive& a, AuthoredPose& x) {
+        using aiverse::io;
+        io(a, x.hasY); io(a, x.y); io(a, x.rotX); io(a, x.rotZ); io(a, x.scale);
+    }
 };
-inline void io(Archive& a, AuthoredPose& x) { io(a, x.hasY); io(a, x.y); io(a, x.rotX); io(a, x.rotZ); io(a, x.scale); }
 
 struct Garrison {
     int count = 0;

@@ -2,17 +2,16 @@
 // For a new editor panel, register a typed panel ID in nestedDock.ts,
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
-import { StudioSection } from '../ui';
 import {
-  Activity, Box, ChevronDown, FolderOpen,
-  SlidersHorizontal, Focus, RotateCcw, Lock, LockOpen
+  Activity, Box, FolderOpen,
+  Focus, RotateCcw
 } from 'lucide-react';
-import type { StudioEntity, StudioProperty, StudioSnapshot } from '../types';
+import type { StudioEntity, StudioInspector, StudioSnapshot } from '../types';
 import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
-import PanelTitle from '../components/PanelTitle';
-import PropertyField from '../components/PropertyField';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
+import SceneToolbar from '../components/SceneToolbar';
+import RulesPanel from './RulesPanel';
 import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
@@ -20,13 +19,18 @@ import ShaderGraphPanel from './ShaderGraphPanel';
 import FacialRigPanel from './FacialRigPanel';
 import { studioSceneMode } from './sceneState';
 import HierarchyPanel from './HierarchyPanel';
+import InspectorPanel from './InspectorPanel';
 import GamePanel from './GamePanel';
 
 import ProjectPanel from './generated/ProjectPanel';
 
 import RuntimePanel from './generated/RuntimePanel';
+import BuildPanel from './BuildPanel';
 
 import NereidFlowPanel from './generated/NereidFlowPanel';
+
+import WindPanel from './generated/WindPanel';
+import HumanAppearancePanel from './generated/HumanAppearancePanel';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
@@ -39,15 +43,22 @@ export interface StudioPanelContext {
   setSearch: (value: string) => void;
   rows: Array<{node: StudioEntity; depth: number}>;
   selected: StudioEntity | undefined;
-  inspectorProperties: StudioProperty[];
+  inspector: StudioInspector | null;
   inspectorPinned: boolean;
   toggleInspectorPin: () => void;
-  select: (id: string | null) => Promise<void>;
+  select: (id: string | null, mode?: 'replace' | 'add' | 'toggle') => Promise<void>;
+  selectIds: (ids: string[], mode?: 'replace' | 'add' | 'toggle') => Promise<void>;
+  /** Scene object under the cursor (Scene or Hierarchy hover). */
+  hoverId: string;
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
+  /** Apply a snapshot from an Inspector action without dropping the Inspector pin. */
+  commitSnapshot: (value: StudioSnapshot) => void;
+  showPanel: (panel: StudioPanel) => void;
+  reportError: (message: string) => void;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,selected,inspectorProperties,inspectorPinned,toggleInspectorPin,changeProperty,select}=ctx;
+  const {snapshot,busy,connected,openProject,selected,select}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
@@ -55,50 +66,17 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'assets':
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
-        return <>
-          <PanelTitle title="INSPECTOR" right={
-            <button className="icon-button" onClick={toggleInspectorPin}
-              disabled={!selected} aria-pressed={inspectorPinned}
-              title={inspectorPinned ? 'Unpin Inspector from selected object' : 'Lock Inspector to current object'}
-              aria-label={inspectorPinned ? 'Unlock Inspector' : 'Lock Inspector'}>
-              {inspectorPinned ? <Lock size={16}/> : <LockOpen size={16}/>}
-            </button>}/>
-          {selected ? <>
-            <div className="selected-object compact-object-header">
-              <input type="checkbox" className="au-checkbox__input" aria-label="Object active"
-                checked={selected.visible !== false} disabled
-                title="Object activation is not yet exposed by the native document API"/>
-              <input className="au-input" aria-label="Object name" value={selected.name} readOnly
-                title="Object naming is not yet exposed by the native document API"/>
-            </div>
-            {(!inspectorPinned ? snapshot?.entityProperties : [])?.map(property =>
-              <PropertyField key={'entity:' + selected.id + ':' + property.key} property={property}
-                disabled={busy || property.editable === false}
-                onChange={value => void changeProperty(property.key, value, 'Entity')}/>)}
-            {(!inspectorPinned ? snapshot?.components : [])?.map(component =>
-              <StudioSection key={selected.id + ':' + component.id} title={component.title}>
-                {component.properties.map(property =>
-                  <PropertyField key={component.id + ':' + property.key} property={property}
-                    disabled={busy || property.editable === false}
-                    onChange={value => void changeProperty(property.key, value, component.id)}/>)}
-              </StudioSection>)}
-            {!!inspectorProperties.length && <div className="inspector-section">
-              <div className="section-heading"><ChevronDown size={13}/> Properties</div>
-              {inspectorProperties.map(property =>
-                <PropertyField key={selected.id + ':' + property.key}
-                  property={property} disabled={busy || property.editable === false}
-                  onChange={value => void changeProperty(property.key, value)}/>)}
-            </div>}
-          </> : <div className="empty-panel">Select an entity to inspect its properties.</div>}
-        </>;
+        return <InspectorPanel {...ctx}/>;
+      case 'build':
+        return <BuildPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'rules':
+        return <RulesPanel projectPath={snapshot?.project.path ?? ''} onChanged={() => void invoke('studio.snapshot', {}).then(ctx.commitSnapshot).catch(() => {})}/>;
       case 'scene':
         return <>
           <div className="viewport-toolbar">
             <div className="viewport-tools">
-              <button className="viewport-control selected" title="Select tool">
-                <SlidersHorizontal size={15}/></button>
+              <SceneToolbar enabled={connected && sceneMode !== 'welcome'}/>
               <span className="toolbar-divider"/>
-              <span className="viewport-label">Perspective</span>
               <button type="button" className="viewport-control" title="Focus selected object (F)"
                 aria-label="Focus selected Scene object" disabled={!connected || !selected}
                 onClick={()=>void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn)}>
@@ -143,6 +121,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'runtime': return <RuntimePanel snapshot={snapshot}/>;
       case 'nereid_flow': return <NereidFlowPanel snapshot={snapshot}/>;
+      case 'wind': return <WindPanel snapshot={snapshot}/>;
+      case 'human_appearance': return <HumanAppearancePanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
       case 'animation':

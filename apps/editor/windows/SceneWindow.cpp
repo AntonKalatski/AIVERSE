@@ -17,6 +17,7 @@
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
 #include "../PhysisSceneOverlay.h"
+#include "../NatureGizmos.h"
 #include "../PhysisFieldEditor.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/GpuIcbPolicy.h"
@@ -254,7 +255,26 @@ public:
         if(cleanCapture)return;
         // PHYSIS authored markers capture only explicit marker clicks/drags.
         // Ordinary FPS/RTS/other selection paths remain untouched otherwise.
-        const bool physisMarkerInput = processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
+        // «Живая природа»: in ignite mode a LMB click on the ground starts a
+        // fire in the PRIVATE preview World (never the live game).
+        bool natureIgnite = false;
+        {
+            auto& nature = ed.physisNaturePreview();
+            ImGuiIO& io = ImGui::GetIO();
+            if (nature.settings.enabled && nature.settings.igniteOnClick && !ed.playing() &&
+                vp_.hovered && !io.KeyAlt) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    natureIgnite = true;   // only the click; RMB/MMB navigation stays
+                    float gx = 0, gz = 0;
+                    std::string why;
+                    if (ed.groundAt(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y, gx, gz))
+                        ed.status = nature.ignite(gx, gz, &why)
+                            ? "PHYSIS: подожжено" : "PHYSIS: " + why;
+                }
+            }
+        }
+        const bool physisMarkerInput = natureIgnite || processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
         if(ed.ws().project.worldSpaceMaps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
@@ -443,6 +463,8 @@ public:
         // Authored markers are separate from live simulation: visible even
         // without PHYSIS installed in the current GameModule.
         drawPhysisFieldMarkers(ed, vp_, ed.sceneCam);
+        // PHYSIS wind/fire, NEREID flow and TERRA slope/tree-wind directions.
+        drawNatureGizmos(ed, vp_, ed.sceneCam);
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
         StudioLuaExtensions::get().drawScene(ed, vp_);
@@ -1295,6 +1317,19 @@ private:
             ImGui::Checkbox("Уровни и рампы", &ed.showLevels);
             ImGui::Checkbox("Регионы", &ed.showRegions);
             ImGui::Checkbox("Триггерные зоны", &ed.showAreas);
+            ImGui::Separator();
+            ImGui::TextDisabled("Природа: направления");
+            auto& nature = natureGizmoSettings();
+            ImGui::Checkbox("PHYSIS: ветер", &nature.physisWind);
+            ImGui::Checkbox("PHYSIS: распространение огня", &nature.physisFire);
+            ImGui::Checkbox("NEREID: течение выделенной воды", &nature.nereidFlow);
+            ImGui::Checkbox("NEREID: течение всей воды", &nature.nereidAllWater);
+            ImGui::Checkbox("TERRA: уклон выделенного рельефа", &nature.terraSlope);
+            ImGui::Checkbox("TERRA: уклон вокруг камеры", &nature.terraSlopeAtTarget);
+            ImGui::Checkbox("TERRA: ветер у выделенного дерева", &nature.terraTreeWind);
+            ImGui::Checkbox("Зоны размыва (коэффициент)", &nature.erosionZones);
+            ImGui::SliderFloat("Радиус, м", &nature.radiusMeters, 8.f, 200.f, "%.0f");
+            ImGui::SliderFloat("Шаг, м", &nature.spacingMeters, 2.f, 32.f, "%.0f");
             ImGui::EndPopup();
         }
         ImGui::SameLine();

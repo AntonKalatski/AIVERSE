@@ -1,3 +1,4 @@
+#include "engine/render/WindRigModel.h"
 #include "ModelTextureCache.h"
 #include "AlphaCoverageMips.h"
 #include <filesystem>
@@ -317,6 +318,7 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
             auto m = loadGltf(path + ".glb", bytes, read, warnings);
             m->path = path;
             applyModelBatchingSidecar(*m, path, read);
+            wind::applyWindSidecar(*m, path, read, warnings);   // "<model>.wind.json" (WindRigModel.h)
             return m;
         }
 #if defined(AIVERSE_NO_FBX)
@@ -344,6 +346,7 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
     }
     applyClipSidecar(*m, path, read, warnings);   // "<model>.clips.json": splits, external clips (ModelClips.h)
     applyModelBatchingSidecar(*m, path, read);
+    wind::applyWindSidecar(*m, path, read, warnings);   // "<model>.wind.json": hierarchical wind masks (WindRigModel.h)
     return m;
 }
 
@@ -422,6 +425,11 @@ std::unique_ptr<Model> modelFromParts(const std::string& name, const std::vector
         if (mat.name.empty()) mat.name = part.name;
         m->materials.push_back(mat);
         const uint32_t base = uint32_t(m->vertices.size());
+        // ModelVertex stream overrides and renderer LOD/geometry policies
+        // require the full model-relative vertex interval for each primitive.
+        // modelFromParts previously left these counts at their zero defaults.
+        p.firstVertex = base;
+        p.vertexCount = static_cast<uint32_t>(sv.size());
         for (const auto& v : sv) {
             ModelVertex mv;
             mv.pos = v.pos; mv.nrm = v.nrm;

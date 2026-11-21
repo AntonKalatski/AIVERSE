@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "GeometryScene.h"
 #include "Renderer3D.h"
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
@@ -26,7 +27,7 @@ bool sameUntextured(const Material& a,const Material& b){
         m.metallic,m.roughness,m.normalScale,m.occlusionStrength,m.emissive.x,m.emissive.y,m.emissive.z,m.emissiveStrength,
         m.alpha,m.alphaCutoff,m.doubleSided,m.vertexColors,m.castShadow,m.receiveShadow,m.transparent,m.team,m.teamStrength,
         m.uvOffset.x,m.uvOffset.y,m.uvScale.x,m.uvScale.y,m.uvRotation,m.fixedLight.x,m.fixedLight.y,m.fixedLight.z,m.fixedLight.w,m.thinTransmission,m.shadowDiffusion, m.fixedShade.x,m.fixedShade.y,
-        m.sssStrength,m.sssColor.x,m.sssColor.y,m.sssColor.z,m.sssScale);};
+        m.sssStrength,m.sssColor.x,m.sssColor.y,m.sssColor.z,m.sssScale,m.sssThickness, m.humanProfile.x, m.humanProfile.y, m.eyeOptics.x, m.eyeOptics.y, m.eyeOptics.z, m.eyeOptics.w);};
     auto plain=[](const Material& m){return !m.shaderGraph&&m.baseTex<0&&m.mrTex<0&&m.normalTex<0&&m.occlusionTex<0&&m.emissiveTex<0&&m.teamTex<0;};
     return plain(a)&&plain(b)&&key(a)==key(b);
 }
@@ -362,6 +363,10 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataStreamingFrameSerial_=staged->strataStreamingFrameSerial_;
     strataStreamingFrameBudgetLeft_=staged->strataStreamingFrameBudgetLeft_;
     strataStreamingSourceCursor_=staged->strataStreamingSourceCursor_;
+    // The staged scene started from the live config; a scene-authored
+    // "strata" block may have switched portable rendering / hysteresis.
+    strataPortableRenderingEnabled_=staged->strataPortableRenderingEnabled_;
+    strataLodHysteresisFraction_=staged->strataLodHysteresisFraction_;
     staged->strataStaging_.reset();
     staged->strataGpuMetadata_.reset();
     staged->strataGpuCulling_.reset();
@@ -412,6 +417,15 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
     retireResident(dev);
     strataPortableDevice_=&dev;
     models_=std::move(models);geometryEnabled_=surfacesEnabled_=cacheEnabled_=true;
+    // Scene-authored STRATA opt-in (default OFF). AIVERSE_STRATA=off keeps
+    // the legacy path for A/B. Applied before staging below.
+    if(json.has("strata")) {
+        const char* env=std::getenv("AIVERSE_STRATA");
+        const bool off=env&&(std::string(env)=="off"||std::string(env)=="0");
+        strataPortableRenderingEnabled_=!off&&json["strata"].getBool("enabled");
+        if(json["strata"].has("hysteresis"))
+            (void)setStrataLodHysteresisFraction(float(json["strata"]["hysteresis"].toDouble()));
+    }
     hlod_=json["hlod"].getBool("enabled");errorPixels_=float(json["hlod"]["errorPixels"].toDouble(2));maxPixels_=float(json["hlod"]["maxPixels"].toDouble(256));
     try{
         size_t vertices=0;

@@ -392,6 +392,62 @@ not create a distinct `render::Model` for each tree. Tree silhouette
 geometry still uses the existing opaque leaf material if no project
 alpha-cutout texture is assigned.
 
+## Merged whole-tree LOD (draw-call merging)
+
+`makeArborTreeLodModel(profile, seed, TreeLodSettings)` builds the same
+branch geometry as BranchLOD, but merges every branch of a detail tier
+into ONE mesh: one node, three `MeshDef`s (Full -> Reduced -> Minimal via
+`MeshDef::lods`), each with exactly two primitives (bark, foliage). All
+trees of one species share these primitives, so `Renderer3D` instancing
+draws a whole species tier with one draw per material (per instance-limit
+chunk) instead of one draw per branch node. `vertexOwners` keep the
+structural branch per vertex, so GPU hierarchical wind masks
+(docs/wind-masks.md) still bend each branch.
+
+The tier comes from Terra's own `FloraView` distance ranges:
+`ArborForestAdapter` sets `ModelDraw::lodLevel` (High=Full, Medium=Reduced,
+Low=Minimal; Impostor stays the atlas card). `ModelDraw::lodLevel` is a
+general renderer feature: a host-chosen level of every node's LOD chain,
+skipping projected-size selection. The renderer's projected-size metric is
+conservative (nearest box corner, divided by w*(w-size)) and kept whole 20 m
+trees at Full inside the near range.
+
+`ArborForestAdapter::setTreeGeometry(ArborTreeGeometry, TreeLodSettings)`
+(before the first `addPrototype`): `PerBranch` = classic BranchLOD (needed
+for CPU per-branch wind poses), `Merged`, or `Auto` (default): `Merged`
+when `enableHierarchicalWind()` is on, else `PerBranch`.
+`ForestSceneSettings::treeGeometry` / manifest
+`world.terraweaveForest.treeGeometry: "auto" | "merged" | "perBranch"`.
+
+Renderer fixes found on the way (`Renderer3DModels.cpp`):
+- LOD selection no longer adds the vertex-offset (wind) culling margin to
+  the projected size. With wind on, a 2 m branch plus a multi-metre margin
+  pinned every node at LOD0, so BranchLOD never switched.
+- Rigged trees in calm air declare a 1 cm `maxVertexOffsetMetres`. Zero
+  means "unbounded displacement" and turned off culling and LOD.
+
+Measured in the editor (Mac Release, 192x192 TerraWeave map, 5 botanical
+species, wind 12 m/s, `tools/editor/terra_forest_perf.py`, 4 cameras):
+
+| | scene draw calls | camera triangles | GPU frame |
+|---|---:|---:|---:|
+| PerBranch (with the LOD fix) | 6006-6496 | 366k-504k | 2.4-3.3 ms |
+| Merged + FloraView tiers | 110-177 | 348k-473k | 1.2-2.4 ms |
+
+PerBranch before the LOD fix: ~3400 draws, every node at LOD0.
+
+## Far impostors baked from the near tree
+
+`bakeArborImpostorFromModel(atlas, nearModel)` re-bakes the azimuth atlas
+by CPU rasterization of the near tree itself (every node's base mesh, with
+the material base-colour textures and alpha cutout), 2x2 supersampled, simple
+wrap lighting, colour bled into transparent texels against mip halos. Bark
+and foliage keep separate pages (winter bark-only still works). The card is
+resized to the mesh's real extent. `ArborForestAdapter` does this by default
+right after the prototype decorator (textures) and before GPU upload;
+`setImpostorFromNearModel(false)` keeps the legacy skeleton disk/line
+silhouette. Deterministic: the same model gives the same bytes.
+
 ## Whole-tree final billboard (Stage 2h)
 
 `engine/render/TerraWeaveArborBillboard.h` provides

@@ -624,6 +624,10 @@ int main() {
     CHECK(&gpuA.materials[0] != &gpuB.materials[0]);
     CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) == gpuMaterialStateHash(gpuB, gpuB.materials[0]));
+    gpuB.materials[0].eyeOptics={.5f,.5f,.14f,.01f};
+    CHECK(!equivalentGpuMaterial(gpuA,gpuA.materials[0],gpuB,gpuB.materials[0]));
+    CHECK(gpuMaterialStateHash(gpuA,gpuA.materials[0])!=gpuMaterialStateHash(gpuB,gpuB.materials[0]));
+    gpuB.materials[0].eyeOptics={};
     gpuB.materials[0].roughness = .25f;
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) != gpuMaterialStateHash(gpuB, gpuB.materials[0]));
@@ -645,6 +649,9 @@ int main() {
     gpuB.materials[0].sssColor.y = .3f;
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     gpuB.materials[0].sssColor.y = 1;
+    gpuB.materials[0].sssThickness = .06f;
+    CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.materials[0].sssThickness = 0;
     gpuA.images.resize(1); gpuB.images.resize(1);
     gpuA.images[0].tex.id = 101;
     gpuB.images[0].tex.id = 101;
@@ -945,6 +952,15 @@ int main() {
         CHECK(!staticModelCacheCandidate(draw, false));
         model.finalize();
         CHECK(model.bindWorld.size() == model.nodes.size());
+        CHECK(staticModelCacheCandidate(draw, false));
+        draw.vertexOverride = aiverse::gfx::BufferHandle{17};
+        draw.vertexOverrideCount = 3;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        draw.staticPacketRevision = 1;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.vertexOverride = {};
+        draw.vertexOverrideCount = 0;
+        draw.staticPacketRevision = 0;
         CHECK(staticModelCacheCandidate(draw, false));
         draw.materials = &model.materials;
         std::vector<int> nodeOverrides(1, -1);

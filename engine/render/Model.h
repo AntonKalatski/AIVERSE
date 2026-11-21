@@ -27,7 +27,7 @@ struct GeometryData;
 struct GeometryPoolPage;
 
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
-enum class ShadingModel : uint8_t { Pbr, Unlit };
+enum class ShadingModel : uint8_t { Pbr, Unlit, Skin, Eye, Hair };
 // Where the team (player) colour goes:
 //   Tint        whole material multiplied by the team colour (procedural shapes, simple models)
 //   Mask        team mask texture, red channel 1 = team colour
@@ -69,6 +69,14 @@ struct Material {
     float sssStrength = 0;                 // artistic diffuse wrap/backlight, 0 disables
     float3 sssColor{1, 1, 1};             // linear scattering tint
     float sssScale = 0.5f;                // wrap width and backlight falloff, [0,1]
+    float sssThickness = 0;               // max transmitted path in world units; 0 keeps artistic backlight
+    // Opt-in human BRDF parameters. Pbr/Unlit ignore these fields.
+    // Skin: scattering/wetness; Eye: corneal IOR/tear film;
+    // Hair: anisotropy/specular width.
+    float2 humanProfile{0, 0};
+    // Optional layered eye: UV centre, iris radius, refractive depth in UV units.
+    // z == 0 preserves legacy Eye shading. Only the colour pass uses parallax.
+    float4 eyeOptics{0, 0, 0, 0};
 };
 
 struct Image {
