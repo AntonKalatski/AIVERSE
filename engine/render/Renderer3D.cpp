@@ -72,6 +72,19 @@ bool Renderer3D::init(gfx::Device& dev) {
     try {
         initialized = [&]() -> bool {
             gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
+            // Explicit read-only water inspection; no scene/material mutation.
+            const char* diagnostic=std::getenv("AIVERSE_NEREID_DIAGNOSTIC");
+            const int diagnosticMode=diagnostic && std::string(diagnostic)=="depth"?1:
+                diagnostic && std::string(diagnostic)=="coefficients"?2:
+                diagnostic && std::string(diagnostic)=="basecolor"?3:
+                diagnostic && std::string(diagnostic)=="transmission"?4:
+                diagnostic && std::string(diagnostic)=="coverage"?5:0;
+            std::string diagnosticGlsl,diagnosticMsl;
+            if(diagnosticMode){
+                const auto prefix="#define AIVERSE_NEREID_DIAGNOSTIC "+std::to_string(diagnosticMode)+"\n";
+                diagnosticGlsl=prefix+ls.glslFragment;diagnosticMsl=prefix+ls.msl;
+                ls.glslFragment=diagnosticGlsl.c_str();ls.msl=diagnosticMsl.c_str();
+            }
             ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
             litShader_ = dev.createShader(ls);
             gfx::ShaderDesc ss; ss.glslVertex = shaders::kShadowVS; ss.glslFragment = shaders::kShadowFS; ss.msl = shaders::kShadowMSL;

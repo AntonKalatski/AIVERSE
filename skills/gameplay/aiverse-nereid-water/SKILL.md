@@ -745,3 +745,11 @@ optics-only capture flag and independent SSR guard. Diagnose foam with a real
 foreground obstacle and both flow directions; do not accept repeated sine
 ellipses or detached copies as a wake. --freeze-time in renderbench fixes the
 shader clock as well as sky/animation; current velocity remains authored data.
+
+Resolved refraction includes background already: never apply ordinary
+background alpha blending a second time. Keep optical density controlled by
+authored opacity and final alpha controlled by contact coverage. Recheck
+minimum valid opacity against the same scene without water. Use the opt-in
+AIVERSE_NEREID_DIAGNOSTIC modes from docs/water.md in an owned review process
+when depth/coefficients/background dominance disagree; never publish their
+false-colour images as final scene screenshots.

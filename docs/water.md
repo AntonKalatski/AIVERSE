@@ -136,3 +136,24 @@ beginScene; negative resumes steady time and nonfinite input is rejected. It is
 read-only presentation, not a simulation clock or flow control. Renderbench
 --freeze-time now also controls that shader clock. Reports distinguish
 opaqueSceneCapture from ssr ray marching.
+
+
+### Single optical composite and inspection
+
+Resolved NEREID refraction already contains the captured background. Its colour
+now composites once with Fresnel-weighted surface lighting; framebuffer alpha
+uses contact coverage only. Applying ordinary opacity again added unattenuated
+riverbed a second time and made the river look dry. Authored opacity still
+controls optical density, Fresnel and refraction distortion inside this result.
+The existing valid range .001.. .98 is preserved. Unresolved depth and legacy
+untagged water retain ordinary alpha fallback. Foam fades with authored opacity;
+contact coverage reaches full water at3.5cm depth, independently of the chosen
+shoreFoamDepth band. This intentionally changes NEREID appearance; recheck old
+art presets, HDR/LDR, underwater transitions and TAA on target platforms.
+
+Set AIVERSE_NEREID_DIAGNOSTIC only for a separate inspection process: depth
+(red=positive depth/4m, green=negative, blue=unavailable), coefficients
+(absorption/4,shoreFoamDepth,depthTint), basecolor, transmission or coverage.
+These opt-in shader variants draw opaque diagnostic colour for NEREID only;
+postprocessing may transform the display values. Unset the environment variable
+for normal rendering. They do not change scene/component/save state.

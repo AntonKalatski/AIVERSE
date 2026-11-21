@@ -491,12 +491,12 @@ int main() {
       "style":{"shoreFoamDepth":21}
     }]}})"),"reject invalid depth foam width");
     check(std::string(render::shaders::kLitFS).find(
-          "float transmission = exp(-thickness * u_color.r)")!=std::string::npos &&
+          "float transmission = exp(-thickness * u_color.r * clamp(albedo.a,0.0,1.0))")!=std::string::npos &&
           std::string(render::shaders::kLitFS).find(
           "contactFoam=1.0-smoothstep(0.0,u_color.g,depth)")!=std::string::npos,
           "GLSL Beer-Lambert approximation or shore foam missing");
     check(std::string(render::shaders::kLitMSL).find(
-          "float transmission = exp(-thickness * u.color.r)")!=std::string::npos &&
+          "float transmission = exp(-thickness * u.color.r * clamp(albedo.a,0.0,1.0))")!=std::string::npos &&
           std::string(render::shaders::kLitMSL).find(
           "contactFoam=1.0-smoothstep(0.0,u.color.g,depth)")!=std::string::npos,
           "Metal Beer-Lambert approximation or shore foam missing");

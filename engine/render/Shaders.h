@@ -495,6 +495,7 @@ void main() {
 )";
 
 inline const char* kLitFS =
+    "#ifndef AIVERSE_NEREID_DIAGNOSTIC\n#define AIVERSE_NEREID_DIAGNOSTIC 0\n#endif\n"
     AIVERSE_GLSL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS AIVERSE_GLSL_WATER_REFLECT("tex2") AIVERSE_GLSL_TRACE_AT("tex3") AIVERSE_GLSL_SSR_AT("tex4", "tex5")
     R"(
 in vec3 v_nrm;
@@ -525,7 +526,13 @@ void main() {
     // non-water draws preserve their tint without changing uniform layouts.
     vec4 albedo = vec4(v_col.rgb * (u_params.x < -0.5 ? vec3(1.0) : u_color.rgb),
                        v_col.a * u_color.a);
+#if AIVERSE_NEREID_DIAGNOSTIC == 2
+    if(u_params.x < -0.5){ vec3 diagnostic=vec3(u_color.r*0.25,u_color.g,u_color.b); o_color=vec4(diagnostic,1.0); return; }
+#endif
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
+#if AIVERSE_NEREID_DIAGNOSTIC == 3
+    if(u_params.x < -0.5){ vec3 diagnostic=base; o_color=vec4(diagnostic,1.0); return; }
+#endif
     vec3 n = normalize(v_nrm);
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
@@ -671,6 +678,13 @@ void main() {
     }
     float shoreCoverage=1.0;
     float contactFoam=0.0;
+    bool opticsResolved=false;
+#if AIVERSE_NEREID_DIAGNOSTIC == 4
+    float diagnosticTransmission=-1.0;
+#endif
+#if AIVERSE_NEREID_DIAGNOSTIC == 1
+    float diagnosticDepth=-100000.0;
+#endif
     // NEREID optics: sample the existing opaque colour/depth capture only.
     // u_color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     // Captured background depth must be below the water plane.
@@ -687,7 +701,10 @@ void main() {
                 float shoreDepth=texture(tex5,shoreUV).r;
                 if(shoreDepth<0.9999){
                     float depth=v_wpos.y-ssrUnproject(screen,shoreDepth).y;
-                    shoreCoverage=smoothstep(0.0,0.18,depth);
+#if AIVERSE_NEREID_DIAGNOSTIC == 1
+                    diagnosticDepth=depth;
+#endif
+                    shoreCoverage=smoothstep(0.0,0.035,depth);
                     if(u_color.g>0.001 && depth>0.0 && depth<1000.0){
                         contactFoam=1.0-smoothstep(0.0,u_color.g,depth);
                         // Bounded overlapping upstream depth probes create a tapered downstream
@@ -722,7 +739,7 @@ void main() {
                     }
                 }
             }
-            vec2 distorted = screen + n.xz * (0.009 * u_params.w);
+            vec2 distorted = screen + n.xz * (0.009 * u_params.w * clamp(albedo.a,0.0,1.0));
             if (all(greaterThan(distorted, vec2(0.005))) &&
                 all(lessThan(distorted, vec2(0.995)))) {
                 vec2 sampleUV = u_shadow.x > 0.5 ?
@@ -733,12 +750,18 @@ void main() {
                     float thickness = v_wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         vec3 background = texture(tex4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u_color.r);
+                        float transmission = exp(-thickness * u_color.r * clamp(albedo.a,0.0,1.0));
+#if AIVERSE_NEREID_DIAGNOSTIC == 4
+                        diagnosticTransmission=transmission;
+#endif
                         vec3 absorbed = background * transmission +
                             rtsEncodeScene(base) * (1.0 - transmission) * u_color.b;
-                        float blendAmount = clamp(u_params.w * 0.85 +
-                            u_color.b * (1.0-transmission), 0.0, 0.85);
-                        outc = mix(outc, absorbed, blendAmount);
+                        // Absorbed colour already contains the refracted background.
+                        // Adding it again through ordinary alpha makes deep water look dry.
+                        float fresnel=(0.02+0.98*pow(1.0-max(dot(n,V),0.0),5.0))*
+                            clamp(u_params.y,0.0,1.0)*clamp(albedo.a,0.0,1.0);
+                        outc = mix(absorbed,outc,fresnel);
+                        opticsResolved=true;
                     }
                 }
             }
@@ -747,13 +770,27 @@ void main() {
     if(contactFoam>0.0){
         vec2 foamPoint=v_wpos.xz-u_waterHydraulics.xy*u_camPos.w;
         float breakup=0.65+0.35*sin(dot(foamPoint,vec2(2.7,4.1))+sin(dot(foamPoint,vec2(-3.3,1.9))));
-        outc=mix(outc,vec3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72,0.0,0.72));
+        outc=mix(outc,vec3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72*clamp(albedo.a,0.0,1.0),0.0,0.72));
     }
-    o_color = vec4(outc, albedo.a*shoreCoverage);
+#if AIVERSE_NEREID_DIAGNOSTIC == 1
+    if(u_params.x < -0.5){
+        vec3 diagnostic=diagnosticDepth < -99999.0 ? vec3(0,0,1) :
+            vec3(clamp(diagnosticDepth*0.25,0.0,1.0),diagnosticDepth<0.0?1.0:0.0,0);
+        o_color=vec4(diagnostic,1.0); return;
+    }
+#endif
+#if AIVERSE_NEREID_DIAGNOSTIC == 4
+    if(u_params.x < -0.5){ vec3 diagnostic=diagnosticTransmission<0.0?vec3(0,0,1):vec3(diagnosticTransmission); o_color=vec4(diagnostic,1.0); return; }
+#endif
+#if AIVERSE_NEREID_DIAGNOSTIC == 5
+    if(u_params.x < -0.5){ vec3 diagnostic=vec3((opticsResolved?1.0:albedo.a)*shoreCoverage); o_color=vec4(diagnostic,1.0); return; }
+#endif
+    o_color = vec4(outc, (opticsResolved?1.0:albedo.a)*shoreCoverage);
 }
 )";
 
 inline const char* kLitMSL =
+    "#ifndef AIVERSE_NEREID_DIAGNOSTIC\n#define AIVERSE_NEREID_DIAGNOSTIC 0\n#endif\n"
     "#include <metal_stdlib>\nusing namespace metal;\n" AIVERSE_MSL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_WATER_REFLECT AIVERSE_MSL_TRACE AIVERSE_MSL_SSR
     R"(
 struct VIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; };
@@ -795,7 +832,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     if (u.params.x > 1.5 && u.params.x < 9.5) return float4(rtsEncodeScene(u.color.rgb), 1.0);
     float4 albedo = float4(in.col.rgb * (u.params.x < -0.5 ? float3(1.0) : u.color.rgb),
                            in.col.a * u.color.a);
+#if AIVERSE_NEREID_DIAGNOSTIC == 2
+    if(u.params.x < -0.5){ float3 diagnostic=float3(u.color.r*0.25,u.color.g,u.color.b); return float4(diagnostic,1.0); }
+#endif
     float3 base = rtsDecodeScene(albedo.rgb);
+#if AIVERSE_NEREID_DIAGNOSTIC == 3
+    if(u.params.x < -0.5){ float3 diagnostic=base; return float4(diagnostic,1.0); }
+#endif
     float3 n = normalize(in.nrm);
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
@@ -933,6 +976,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     // u.color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     float shoreCoverage=1.0;
     float contactFoam=0.0;
+    bool opticsResolved=false;
+#if AIVERSE_NEREID_DIAGNOSTIC == 4
+    float diagnosticTransmission=-1.0;
+#endif
+#if AIVERSE_NEREID_DIAGNOSTIC == 1
+    float diagnosticDepth=-100000.0;
+#endif
     if (u.params.x < -0.5 && f.trace2.w > 0.0 &&
         (u.params.w > 0.001 || u.color.r > 0.001 ||
          u.color.g > 0.001 || u.color.b > 0.001)) {
@@ -944,7 +994,10 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                 float shoreDepth=tex5.sample(s5,shoreUV);
                 if(shoreDepth<0.9999){
                     float depth=in.wpos.y-ssrUnproject(f,screen,shoreDepth).y;
-                    shoreCoverage=smoothstep(0.0,0.18,depth);
+#if AIVERSE_NEREID_DIAGNOSTIC == 1
+                    diagnosticDepth=depth;
+#endif
+                    shoreCoverage=smoothstep(0.0,0.035,depth);
                     if(u.color.g>0.001 && depth>0.0 && depth<1000.0){
                         contactFoam=1.0-smoothstep(0.0,u.color.g,depth);
                         // Bounded overlapping upstream depth probes create a tapered downstream
@@ -979,7 +1032,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                     }
                 }
             }
-            float2 distorted = screen + n.xz * (0.009 * u.params.w);
+            float2 distorted = screen + n.xz * (0.009 * u.params.w * clamp(albedo.a,0.0,1.0));
             if (all(distorted > float2(0.005)) &&
                 all(distorted < float2(0.995))) {
                 float2 sampleUV = f.shadow.x > 0.5 ?
@@ -990,12 +1043,18 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                     float thickness = in.wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         float3 background = tex4.sample(s4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u.color.r);
+                        float transmission = exp(-thickness * u.color.r * clamp(albedo.a,0.0,1.0));
+#if AIVERSE_NEREID_DIAGNOSTIC == 4
+                        diagnosticTransmission=transmission;
+#endif
                         float3 absorbed = background * transmission +
                             rtsEncodeScene(base) * (1.0 - transmission) * u.color.b;
-                        float blendAmount = clamp(u.params.w * 0.85 +
-                            u.color.b * (1.0-transmission), 0.0, 0.85);
-                        outc = mix(outc, absorbed, blendAmount);
+                        // Absorbed colour already contains the refracted background.
+                        // Adding it again through ordinary alpha makes deep water look dry.
+                        float fresnel=(0.02+0.98*pow(1.0-max(dot(n,V),0.0),5.0))*
+                            clamp(u.params.y,0.0,1.0)*clamp(albedo.a,0.0,1.0);
+                        outc = mix(absorbed,outc,fresnel);
+                        opticsResolved=true;
 
                     }
                 }
@@ -1005,9 +1064,22 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     if(contactFoam>0.0){
         float2 foamPoint=in.wpos.xz-u.waterHydraulics.xy*f.camPos.w;
         float breakup=0.65+0.35*sin(dot(foamPoint,float2(2.7,4.1))+sin(dot(foamPoint,float2(-3.3,1.9))));
-        outc=mix(outc,float3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72,0.0,0.72));
+        outc=mix(outc,float3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72*clamp(albedo.a,0.0,1.0),0.0,0.72));
     }
-    return float4(outc, albedo.a*shoreCoverage);
+#if AIVERSE_NEREID_DIAGNOSTIC == 1
+    if(u.params.x < -0.5){
+        float3 diagnostic=diagnosticDepth < -99999.0 ? float3(0,0,1) :
+            float3(clamp(diagnosticDepth*0.25,0.0,1.0),diagnosticDepth<0.0?1.0:0.0,0);
+        return float4(diagnostic,1.0);
+    }
+#endif
+#if AIVERSE_NEREID_DIAGNOSTIC == 4
+    if(u.params.x < -0.5){ float3 diagnostic=diagnosticTransmission<0.0?float3(0,0,1):float3(diagnosticTransmission); return float4(diagnostic,1.0); }
+#endif
+#if AIVERSE_NEREID_DIAGNOSTIC == 5
+    if(u.params.x < -0.5){ float3 diagnostic=float3((opticsResolved?1.0:albedo.a)*shoreCoverage); return float4(diagnostic,1.0); }
+#endif
+    return float4(outc, (opticsResolved?1.0:albedo.a)*shoreCoverage);
 }
 )";
 
