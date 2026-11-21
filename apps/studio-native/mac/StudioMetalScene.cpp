@@ -216,7 +216,99 @@ const render::Model* StudioMetalScene::rtsShapeModel(const Json& type) {
     if (found==shapeModels_.end()) found=shapeModels_.find(structure ? "structure" : "generic");
     return found==shapeModels_.end() ? nullptr : found->second.get();
 }
+void StudioMetalScene::requestThumbnail(const std::string& projectPath,const std::string& asset,const std::string& file) {
+    for(const auto& j:thumbJobs_)if(j.asset==asset && j.project==projectPath)return;
+    if(thumbJobs_.size()>=256)return;
+    thumbJobs_.push_back({projectPath,asset,file});
+}
+std::vector<std::string> StudioMetalScene::takeFinishedThumbnails() {
+    std::lock_guard<std::mutex> lock(thumbShared_->mutex);
+    return std::exchange(thumbShared_->done,{});
+}
+std::unique_ptr<render::Model> StudioMetalScene::loadContentModel(const std::string& projectPath,const std::string& asset) {
+    namespace fs=std::filesystem;
+    if(asset.rfind("content/",0)!=0 || asset.size()>512 || projectPath.empty())return nullptr;
+    const fs::path root=fs::path(projectPath)/"content";
+    // Same containment as the Scene's model loader: no "..", no symlinks, content/ only.
+    auto read=[root](const std::string& name,std::string& out)->bool {
+        if(name.rfind("content/",0)!=0 || name.size()>512)return false;
+        const fs::path rel(name.substr(8));
+        if(rel.empty()||rel.is_absolute())return false;
+        fs::path file=root;
+        for(const auto& part:rel){ if(part.empty()||part=="."||part=="..")return false; file/=part;
+            std::error_code ec;const auto st=fs::symlink_status(file,ec);if(ec||fs::is_symlink(st))return false; }
+        std::error_code ec;
+        if(!fs::is_regular_file(file,ec))return false;
+        const auto bytes=fs::file_size(file,ec);
+        if(ec||bytes>256ull*1024ull*1024ull)return false;
+        std::ifstream input(file,std::ios::binary);if(!input)return false;
+        out.assign(std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>());
+        return bool(input)||input.eof();
+    };
+    try {
+        auto model=render::loadModel(asset,read);
+        if(!model||model->vertices.empty()||model->indices.empty()||model->vertices.size()>2000000)return nullptr;
+        model->batching.autoLod=false;model->batching.mergeRigid=false;model->batching.allowGeometryPool=false;
+        render::prepareModelUpload(*model);
+        if(!render::uploadModel(*device_,*model,false)){releasePreviewModel(*model);return nullptr;}
+        return model;
+    } catch(const std::exception&) { return nullptr; }
+}
+void StudioMetalScene::renderThumbnail() {
+    if(thumbJobs_.empty())return;
+    const ThumbJob job=thumbJobs_.front();thumbJobs_.pop_front();
+    auto shared=thumbShared_;
+    auto finish=[shared](const std::string& asset){std::lock_guard<std::mutex> lock(shared->mutex);shared->done.push_back(asset);};
+    constexpr int kSide=160;
+    if(!thumbColor_.valid()) {
+        gfx::TextureDesc color;color.width=color.height=kSide;color.format=gfx::PixelFormat::RGBA8;color.renderTarget=true;color.label="Studio thumbnail";
+        thumbColor_=device_->createTexture(color);
+        gfx::TextureDesc depth=color;depth.format=gfx::PixelFormat::Depth;depth.label="Studio thumbnail depth";
+        thumbDepth_=device_->createTexture(depth);
+    }
+    const render::Model* model=nullptr;
+    if(auto it=documentModels_.find(job.asset);it!=documentModels_.end())model=it->second.get();
+    else if(auto it2=thumbModels_.find(job.asset);it2!=thumbModels_.end())model=it2->second.get();
+    else {
+        if(thumbModels_.size()>=32){releasePreviewModel(*thumbModels_.begin()->second);thumbModels_.erase(thumbModels_.begin());}
+        auto loaded=loadContentModel(job.project,job.asset);
+        if(loaded)model=thumbModels_.emplace(job.asset,std::move(loaded)).first->second.get();
+    }
+    if(!model||!thumbColor_.valid()||!thumbDepth_.valid()){finish(job.asset);return;}
+    const float3 lo=model->boundsMin,hi=model->boundsMax,size=hi-lo;
+    const float radius=std::max(0.05f,0.5f*std::sqrt(dot(size,size)));
+    render::RTSCamera cam;
+    cam.target=(lo+hi)*0.5f;cam.yaw=0.65f;cam.pitch=0.42f;cam.ortho=false;
+    cam.distance=radius/std::sin(cam.fovY*0.5f)*1.05f;
+    cam.minDistance=0.01f;cam.maxDistance=1e6f;
+    cam.zNear=std::max(0.01f,cam.distance-radius*2.0f);cam.zFar=cam.distance+radius*4.0f;
+    renderer_.beginScene(cam,kSide,kSide);
+    renderer_.clearDynamicGiOverlay();
+    renderer_.lighting=render::Lighting{};
+    renderer_.lighting.sunIntensity=1.25f;
+    renderer_.lighting.skyColor={.46f,.54f,.68f};
+    renderer_.lighting.groundColor={.3f,.29f,.32f};
+    renderer_.lighting.fogDensity=0;
+    render::ModelDraw draw;draw.model=model;
+    renderer_.drawModel(draw);
+    gfx::PassDesc pass;pass.colorTarget=thumbColor_;pass.depthTarget=thumbDepth_;
+    pass.clearColor[0]=.105f;pass.clearColor[1]=.125f;pass.clearColor[2]=.16f;pass.clearColor[3]=1.f;
+    renderer_.render(pass);
+    device_->endPass();
+    const std::string file=job.file,asset=job.asset;
+    const bool queued=device_->captureTexture(thumbColor_,[file,asset,finish](int w,int h,std::vector<uint8_t> rgba) {
+        if(w>0&&h>0&&rgba.size()>=size_t(w)*size_t(h)*4) {
+            std::error_code ec;std::filesystem::create_directories(std::filesystem::path(file).parent_path(),ec);
+            for(size_t i=3;i<rgba.size();i+=4)rgba[i]=255;
+            if(render::cameraWritePngRgba8(file+".pending.png",w,h,rgba))std::filesystem::rename(file+".pending.png",file,ec);
+        }
+        finish(asset);
+    });
+    if(!queued)finish(asset);
+}
 void StudioMetalScene::clearDocumentModels() {
+    if (device_) for (auto& [name,model]:thumbModels_) if (model) releasePreviewModel(*model);
+    thumbModels_.clear();
     if (device_) for (auto& [path,model]:documentModels_)
         if (model) releasePreviewModel(*model);
     if (device_) for (auto& [name,model]:shapeModels_)
@@ -487,6 +579,8 @@ StudioMetalScene::~StudioMetalScene() {
             if (*primitive) { releasePreviewModel(**primitive); primitive->reset(); }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
+        if (thumbColor_.valid()) device_->destroyTexture(thumbColor_);
+        if (thumbDepth_.valid()) device_->destroyTexture(thumbDepth_);
         nereid_.shutdown(*device_);
         antialiasing_.shutdown();
         renderer_.shutdown();
@@ -551,6 +645,15 @@ bool StudioMetalScene::groundPoint(float x,float y,float width,float height,floa
     const float t=-o.y/d.y; if(!(t>0)||!std::isfinite(t))return false;
     out=o+d*t; return true;
 }
+void StudioMetalScene::frameAll(const editor::MapDoc& map,bool fpsProject) {
+    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    float3 lo{1e30f,1e30f,1e30f},hi{-1e30f,-1e30f,-1e30f};
+    for(const auto& p:proxies){lo={std::min(lo.x,p.boundsMin.x),std::min(lo.y,p.boundsMin.y),std::min(lo.z,p.boundsMin.z)};
+                               hi={std::max(hi.x,p.boundsMax.x),std::max(hi.y,p.boundsMax.y),std::max(hi.z,p.boundsMax.z)};}
+    if(proxies.empty()){lo={0,0,0};hi={float(map.data.w),1.0f,float(map.data.h)};}
+    const float3 size=hi-lo;
+    startTween((lo+hi)*.5f,std::clamp(std::max({size.x,size.y,size.z,1.0f})*1.2f,2.0f,100000.0f),camera_.yaw,camera_.pitch);
+}
 render::RTSCamera StudioMetalScene::viewCamera() const {
     render::RTSCamera view=camera_;
     view.zNear=std::clamp(camera_.distance*0.002f,0.05f,0.5f);
@@ -601,6 +704,60 @@ void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int heig
     const float w=std::max(1.5f,std::min(W,H)*0.0025f);
     constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
     for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
+}
+Json StudioMetalScene::textureResources() const {
+    static const char* formats[]={"RGBA8","R8","Depth","RGBA32F","ETC2_RGB8","ETC2_RGBA8","BC1","BC3","BC7","ASTC_4x4","ASTC_6x6",
+        "RGBA8_sRGB","RGBA16F","BC4","BC5","EAC_R11","RG8","R16F","RG16F","R32F","RG32F","BC6H_UFloat","BC6H_SFloat",
+        "BC1_sRGB","BC3_sRGB","BC7_sRGB","ETC2_RGB8_sRGB","ETC2_RGBA8_sRGB","ASTC_4x4_sRGB","ASTC_6x6_sRGB"};
+    Json list=Json::array();
+    size_t total=0;
+    for(const auto& t:device_->textureResources()){
+        Json o=Json::object();
+        const size_t f=size_t(t.format);
+        o.set("id",Json::number(int64_t(t.handle.id)));
+        o.set("format",Json::string(f<sizeof(formats)/sizeof(formats[0])?formats[f]:"?"));
+        o.set("width",Json::number(int64_t(t.width)));o.set("height",Json::number(int64_t(t.height)));
+        o.set("depth",Json::number(int64_t(t.depth)));o.set("layers",Json::number(int64_t(t.arrayLayers)));
+        o.set("mips",Json::number(int64_t(t.mipLevels)));o.set("samples",Json::number(int64_t(t.sampleCount)));
+        o.set("renderTarget",Json::fromBool(t.renderTarget));o.set("bytes",Json::number(int64_t(t.estimatedBytes)));
+        total+=t.estimatedBytes;
+        list.push(std::move(o));
+    }
+    Json out=Json::object();
+    out.set("textures",list);out.set("totalBytes",Json::number(int64_t(total)));
+    return out;
+}
+void StudioMetalScene::drawBrushCursor(const RTSCamera& view,int width,int height) {
+    const float W=float(width),H=float(height);
+    Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.6f};
+    const float px=std::max(1.0f,std::min(W,H)/800.0f);   // points → framebuffer pixels (approx.)
+    for(const auto& s:overlayShapes_){
+        const uint32_t color=rgba(s.r,s.g,s.bl,235);
+        float2 a,b;
+        if(!view.worldToScreen(s.a,W,H,a))continue;
+        const float t=s.thickness*px;
+        if(s.kind==1&&view.worldToScreen(s.b,W,H,b))o.segment(a.x,a.y,b.x,b.y,t,color);
+        else if(s.kind==2||s.kind==3){
+            const float r=(s.kind==2?s.radius:std::max(1.f,s.radius))*px;constexpr int N=32;
+            for(int i=0;i<N;++i){
+                const float a0=float(i)/N*6.2831853f,a1=float(i+1)/N*6.2831853f;
+                o.segment(a.x+std::cos(a0)*r,a.y+std::sin(a0)*r,a.x+std::cos(a1)*r,a.y+std::sin(a1)*r,s.kind==3?r:t,color);
+            }
+        }
+    }
+    if(!brushVisible_||brushRadius_<=0)return;
+    const float w=std::max(1.5f,std::min(W,H)*0.002f);
+    constexpr int N=48;
+    float2 prev{};bool prevOk=false;
+    for(int i=0;i<=N;++i){
+        const float a=float(i)/N*6.2831853f;
+        const float3 p{brushCenter_.x+std::cos(a)*brushRadius_,brushCenter_.y+0.05f,brushCenter_.z+std::sin(a)*brushRadius_};
+        float2 s;const bool ok=view.worldToScreen(p,W,H,s);
+        if(ok&&prevOk)o.segment(prev.x,prev.y,s.x,s.y,w,rgba(120,200,255,220));
+        prev=s;prevOk=ok;
+    }
+    float2 c;
+    if(brushVisible_&&view.worldToScreen(brushCenter_,W,H,c)){o.segment(c.x-4,c.y,c.x+4,c.y,w,rgba(120,200,255,220));o.segment(c.x,c.y-4,c.x,c.y+4,w,rgba(120,200,255,220));}
 }
 void StudioMetalScene::setSnap(bool enabled,float move,float rotate,float scale) {
     snapEnabled_=enabled;
@@ -717,6 +874,21 @@ void StudioMetalScene::updateTransformDrag(float x,float y,float width,float hei
         drag_.moveOffset=l>100000.0f?delta*(100000.0f/l):delta;
         drag_.value=l;
         return;
+    }
+    if(drag_.tool==TransformTool::Move && pivotSnap_) {
+        // V held: jump to the nearest other object's pivot within 28 px of the cursor.
+        const auto view=viewCamera();float best=28.0f*28.0f;const float3* target=nullptr;
+        for(const auto& [id,p]:snapPivots_) {
+            if(id==drag_.id)continue;
+            float2 s;if(!view.worldToScreen(p,width,height,s))continue;
+            const float dd=(s.x-x)*(s.x-x)+(s.y-y)*(s.y-y);
+            if(dd<best){best=dd;target=&p;}
+        }
+        if(target) {
+            drag_.moveOffset=*target-drag_.pivot;
+            drag_.value=std::sqrt(dot(drag_.moveOffset,drag_.moveOffset));
+            return;
+        }
     }
     float t=0;if(!axisParameter(drag_.pivot,drag_.dir,o,d,t))return;
     float delta=std::clamp(t-drag_.startT,-100000.0f,100000.0f);
@@ -1316,6 +1488,10 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const auto& map = doc.data;
     const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    snapPivots_.clear();
+    // Same pivot as the Move gizmo: bottom centre (lights: centre).
+    for (const auto& proxy:proxies) if (!hidden_.count(proxy.id))
+        snapPivots_.push_back({proxy.id,proxy.light?proxy.center:float3{proxy.center.x,proxy.boundsMin.y,proxy.center.z}});
     syncDocumentModels(doc,projectPath,rules,proxies);
 
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {
@@ -1408,6 +1584,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const double opticalNow=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
     underwaterFrameTime_=opticalNow;
+    renderThumbnail(); // at most one Assets thumbnail, offscreen, before the scene pass
     renderer_.beginScene(view, framebufferWidth, framebufferHeight);
     renderer_.setSceneSelectionOutline(true); // editor-only depth-tested silhouette
     {
@@ -1577,6 +1754,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
     if(gizmosVisible_)drawSelectionBox(view,framebufferWidth,framebufferHeight);
+    drawBrushCursor(view,framebufferWidth,framebufferHeight);
     drawTransformGizmo(view,framebufferWidth,framebufferHeight);
     if(orientationGizmo_&&gizmosVisible_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
     if(marquee_.on) {

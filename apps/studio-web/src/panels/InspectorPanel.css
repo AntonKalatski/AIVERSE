@@ -64,3 +64,5 @@
 .insp-add__empty{padding:10px 12px;color:var(--au-text-muted)}
 .insp-missing{grid-column:2;color:var(--studio-danger);font-size:var(--au-font-xs);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .insp-missing button{border:0;background:none;color:var(--au-accent);padding:0;cursor:pointer;font:inherit;text-decoration:underline}
+.insp-link{display:block;margin:2px 0 6px;padding:0;border:0;background:none;color:var(--au-accent);font-size:var(--au-font-xs);cursor:pointer;text-align:left}
+.insp-link:hover{text-decoration:underline}

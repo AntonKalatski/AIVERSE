@@ -1,6 +1,7 @@
 // Renderer3D: models (PBR materials, GPU skinning, alpha modes) — shader permutations, culling,
 // sorting and the per-draw uniform blocks. See ModelShaders.h for the uniform layouts.
 #include "Renderer3D.h"
+#include "../gfx/GpuTier.h"
 #include "ModelMerge.h"
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
@@ -297,8 +298,7 @@ MaterialQuality Renderer3D::defaultMaterialQualityFor(const gfx::Device& dev, bo
     }
     const std::string& n = dev.info().name;
     if (mobile) {
-        for (const char* weak : {"Mali-4", "Mali-T", "Adreno (TM) 3", "Adreno (TM) 4", "Adreno (TM) 50", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return MaterialQuality::Low;
+        if (gfx::isWeakMobileGpu(n)) return MaterialQuality::Low;   // GpuTier.h
         return MaterialQuality::Medium;
     }
     return MaterialQuality::High;

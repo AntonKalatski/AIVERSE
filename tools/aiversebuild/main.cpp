@@ -117,6 +117,7 @@ struct Options {
     std::string plugins;      // --plugins a,b: native plugins instead of game.json "plugins" (tools/aiversebuild/Plugins.h)
     unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
     bool installMissing = false;   // --install-missing: install what the target needs, then build
+    bool precompileMetal = false;  // --precompile-metal: macOS ships offline .metallib + pipeline archive
 };
 
 // game.json "module": "scene": the project has no game module. It ships the minimal scene client
@@ -977,7 +978,18 @@ void buildMac(const Game& g, Options& o) {
 
     step("macOS: конфигурация CMake");
     std::string gen_ = findTool("ninja").empty() ? "" : " -G Ninja";
-    mustRun("cmake -S " + quote(o.engine) + " -B " + quote(bdir) + gen_ + cmakeVars(g, o, gameContent(o), gen) + packVar(o) + pluginsVar(o, "macos", gen) + " -DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0");
+    // --precompile-metal: tools/metal/precompile.py runs the linked client on loose bundled
+    // content (captures the startup shader variants, compiles them offline, records the
+    // pipeline archive), so the first launch does not compile Metal shaders from source.
+    // It needs the Xcode Metal Toolchain and a GUI session, and loose content (no content.rpak).
+    std::string metalVars = " -DAIVERSE_PRECOMPILE_METAL=OFF";
+    std::string pack = packVar(o);
+    if (o.precompileMetal) {
+        if (o.pack) info("macOS: --precompile-metal собирает с распакованным контентом (без content.rpak)");
+        pack = " -DAIVERSE_CONTENT_PACK=";
+        metalVars = " -DAIVERSE_PRECOMPILE_METAL=ON";
+    }
+    mustRun("cmake -S " + quote(o.engine) + " -B " + quote(bdir) + gen_ + cmakeVars(g, o, gameContent(o), gen) + pack + metalVars + pluginsVar(o, "macos", gen) + " -DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0");
     step("macOS: сборка");
     mustRun("cmake --build " + quote(bdir) + " --target aiverse_client --config " + o.config + " -j " + std::to_string(o.jobs));
     fs::path app = bdir / (g.exe + ".app");
@@ -1291,6 +1303,7 @@ void usage() {
                  "                [--estimate]  (content pack + size-report.json per target only, for the editor)\n"
                  "                [--check-engine-modules]  (show selected optional client modules without building)\n"
                  "                [--install-missing]  (install missing toolchains into ~/.aiverse/toolchains first)\n"
+                 "                [--precompile-metal]  (macOS: offline Metal libraries + pipeline archive; Metal Toolchain, GUI)\n"
                  "       aiversebuild --check-toolchain <target> [--json]\n"
                  "       aiversebuild --install-toolchain <target|emsdk|cmake|jdk|android-sdk|android-ndk|android-cmake|gradle|xcode-clt>\n";
 }
@@ -1354,6 +1367,7 @@ int main(int argc, char** argv) {
         else if (a == "--fill-base") o.fillBase = 1;
         else if (a == "--audio") o.audio = next();
         else if (a == "--install-missing") o.installMissing = true;
+        else if (a == "--precompile-metal") o.precompileMetal = true;
         else if (a == "--check-toolchain") checkTarget = next();
         else if (a == "--install-toolchain") installWhat = next();
         else if (a == "--json") json = true;

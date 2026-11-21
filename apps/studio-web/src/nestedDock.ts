@@ -1,5 +1,5 @@
 /** Persistable nested docking geometry; no React, renderer or genre dependencies. */
-export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules','human_appearance','build','human_creator','wind'] as const;
+export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules','human_appearance','build','human_creator','wind','history','terrain','water','roads','tiles','fog','generate','postfx','effects','lightbake','models','scripts','input','overlays','branding','asset_audit','agent','fields','physis','fps','raid','balance','fx_graph','fx_functions','modeling','anim_assets','anim_graph','anim_rig','model_anim','project_import','stats','snapshot_diff','frame_capture','texture_resources','extensions','attachments'] as const;
 export type StudioPanel = typeof STUDIO_PANELS[number];
 /** Single metadata source for the UI shell and AI-authored panel integrations. */
 export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
@@ -11,6 +11,42 @@ export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   human_appearance: "VIVID Appearance",
   build: "Build",
   wind: "Ветер",
+  history: "History",
+  terrain: "Terrain",
+  water: "Water",
+  roads: "Roads",
+  tiles: "Tiles",
+  fog: "Fog of War",
+  generate: "Generate",
+  postfx: "Post FX",
+  effects: "Effects",
+  lightbake: "Light Bake",
+  models: "Models",
+  scripts: "Scripts",
+  input: "Input",
+  overlays: "Overlays",
+  branding: "Branding",
+  asset_audit: "Asset Audit",
+  agent: "Agent",
+  stats: "Statistics",
+  snapshot_diff: "Snapshot Diff",
+  frame_capture: "Frame Capture",
+  texture_resources: "Texture Resources",
+  extensions: "Extensions",
+  attachments: "Attachments",
+  fields: "Fields",
+  physis: "PHYSIS",
+  fps: "FPS & Cameras",
+  raid: "Raid",
+  balance: "Balance",
+  fx_graph: "SpectraFX Graph",
+  fx_functions: "SpectraFX Functions",
+  modeling: "Modeling",
+  anim_assets: "Animation Clips",
+  anim_graph: "Animation Graph",
+  anim_rig: "Rig",
+  model_anim: "Model Animation",
+  project_import: "Import Project",
   human_creator: "Character Creator"
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
@@ -22,6 +58,42 @@ export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   human_appearance: "dock-right",
   build: "dock-center",
   wind: "dock-right",
+  history: "dock-right",
+  terrain: "dock-right",
+  water: "dock-right",
+  roads: "dock-right",
+  tiles: "dock-right",
+  fog: "dock-right",
+  generate: "dock-right",
+  postfx: "dock-right",
+  effects: "dock-right",
+  lightbake: "dock-right",
+  models: "dock-right",
+  scripts: "dock-center",
+  input: "dock-right",
+  overlays: "dock-right",
+  branding: "dock-right",
+  asset_audit: "dock-right",
+  agent: "dock-bottom",
+  stats: "dock-right",
+  snapshot_diff: "dock-center",
+  frame_capture: "dock-bottom",
+  texture_resources: "dock-bottom",
+  extensions: "dock-right",
+  attachments: "dock-right",
+  fields: "dock-right",
+  physis: "dock-right",
+  fps: "dock-right",
+  raid: "dock-right",
+  balance: "dock-right",
+  fx_graph: "dock-right",
+  fx_functions: "dock-right",
+  modeling: "dock-right",
+  anim_assets: "dock-right",
+  anim_graph: "dock-right",
+  anim_rig: "dock-right",
+  model_anim: "dock-right",
+  project_import: "dock-right",
   human_creator: "dock-right"
 };
 
@@ -55,9 +127,9 @@ export function defaultDockTree(): DockTree {
     split('split-body-left','horizontal',.19,
       stack('dock-left',['hierarchy','project'],'hierarchy'),
       split('split-body-right','horizontal',.72,
-        stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph','rules','build'],'scene'),
-        stack('dock-right',['inspector','human_creator','lighting','runtime','nereid_flow','human_appearance','wind'],'inspector'))),
-    stack('dock-bottom',['assets','console'],'assets')) };
+        stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph','rules','build','scripts','snapshot_diff'],'scene'),
+        stack('dock-right',['inspector','human_creator','lighting','runtime','nereid_flow','human_appearance','wind','history','terrain','water','roads','tiles','fog','generate','postfx','effects','lightbake','models','input','overlays','branding','asset_audit','fields','physis','fps','raid','balance','fx_graph','fx_functions','modeling','anim_assets','anim_graph','anim_rig','model_anim','project_import','stats','extensions','attachments'],'inspector'))),
+    stack('dock-bottom',['assets','console','agent','frame_capture','texture_resources'],'assets')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {
   visitor(node);

@@ -64,7 +64,13 @@ option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot c
 # Register Objective-C++ in the ROOT directory before creating any targets.
 # CMake does not propagate a language enabled only in a child directory back
 # to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
-option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+# The HTML5 Studio is the main editor on macOS: built by default once its web bundle exists
+# (studio_mac.command builds the bundle first; -DAIVERSE_BUILD_STUDIO_HTML5=OFF skips it).
+set(_aiverse_studio_default OFF)
+if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/studio-web/dist/index.html")
+    set(_aiverse_studio_default ON)
+endif()
+option(AIVERSE_BUILD_STUDIO_HTML5 "Build the macOS HTML5 Studio (main editor)" ${_aiverse_studio_default})
 if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
     enable_language(OBJCXX)
 endif()
@@ -1259,6 +1265,20 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux")
     add_test(NAME vivid_gles_sculpt_id
         COMMAND aiverse_vivid_gles_sculpt_id_tests)
     set_tests_properties(vivid_gles_sculpt_id PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
+# GL backend redundant-state filter and native base-vertex draws on a real
+# EGL/GLES3 context (Mesa llvmpipe is enough); skips without EGL/GLES3.
+# AIVERSE_GL_BENCH=<draws> [AIVERSE_GL_BENCH_VARY=1] also times CPU submission.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux")
+    add_executable(aiverse_gl_state_cache_gpu_tests
+        tests/render/gl_state_cache_gpu.cpp
+        engine/gfx/gl/GfxGL.cpp)
+    target_include_directories(aiverse_gl_state_cache_gpu_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_gl_state_cache_gpu_tests PRIVATE EGL GLESv2)
+    target_compile_features(aiverse_gl_state_cache_gpu_tests PRIVATE cxx_std_20)
+    add_test(NAME gl_state_cache_gpu COMMAND aiverse_gl_state_cache_gpu_tests)
+    set_tests_properties(gl_state_cache_gpu PROPERTIES SKIP_RETURN_CODE 77 LABELS "GLES;GPU")
 endif()
 
 # The platform files define main(); they are compiled into each executable through an OBJECT

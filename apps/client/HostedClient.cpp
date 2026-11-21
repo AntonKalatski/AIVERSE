@@ -48,6 +48,10 @@ void HostedClient::start(gfx::Device& dev, const std::string& projectDir, const 
     captured_ = finger_ = focused_ = false;
 }
 
+void HostedClient::setStartCamera(float x, float z, float distance, float pitchDeg, float yawDeg) {
+    if (client_) client_->setStartCamera(x, z, distance, pitchDeg, yawDeg);
+}
+
 void HostedClient::stop() {
     if (!client_) return;
     // Client may have submitted draws into the editor's current frame even

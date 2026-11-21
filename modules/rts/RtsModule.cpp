@@ -461,6 +461,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         gs.roads.adj[size_t(ib)].push_back(uint16_t(ia));
     }
     gs.colliders.build(gs.grid.w, gs.grid.h);
+    mapPlaced_ = placed;
     setupRoutes(sim, map, placed);   // map "routes" / "screen" (RtsRoutes.cpp)
 
     // starting regions: explicit list, else regions containing the player's structures/start

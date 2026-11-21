@@ -11,6 +11,8 @@
 #include <set>
 #include <vector>
 #include <filesystem>
+#include <deque>
+#include <mutex>
 #include <chrono>
 #include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
@@ -59,6 +61,10 @@ public:
     // Next shown character frame → square PNG around the head (preset cards).
     // crop=false: whole viewport (agent snapshots), at most 1280 px wide.
     void captureFacialThumbnail(std::string path,bool crop=true){thumbnailPath_=std::move(path);thumbnailCrop_=crop;}
+    // Assets panel thumbnails: a content model rendered offscreen (one per frame) and written as a PNG.
+    // Finished assets (written or failed) are reported once by takeFinishedThumbnails().
+    void requestThumbnail(const std::string& projectPath, const std::string& asset, const std::string& file);
+    std::vector<std::string> takeFinishedThumbnails();
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -72,8 +78,8 @@ public:
     // Persp/Iso toggle. Orientation/projection are editor camera state only.
     void setOrientation(float yaw, float pitch);
     void setOrthographic(bool ortho);
-    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; };
-    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho}; }
+    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; render::float3 target{}; };
+    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho, camera_.target}; }
     // Corner orientation gizmo rendered by Renderer3D, for the default host where
     // the Metal view covers the WebView (the HTML gizmo is used in composite mode).
     void setOrientationGizmo(bool enabled) { orientationGizmo_ = enabled; }
@@ -91,6 +97,11 @@ public:
     bool localSpace() const { return localSpace_; }
     void setSnap(bool enabled, float move, float rotate, float scale);
     void setGizmosVisible(bool visible) { gizmosVisible_ = visible; }
+    // Hold V while moving: the object's pivot snaps to the nearest other object's pivot on screen.
+    void setPivotSnap(bool on) { pivotSnap_ = on; }
+    // ⇧F: fit every document object into the view.
+    void frameAll(const editor::MapDoc& map, bool fpsProject);
+    void tweenCamera(render::float3 target, float distance, float yaw, float pitch) { startTween(target, distance, yaw, pitch); }
     // -1 none, 0..2 axis, 3 centre (uniform scale), 4..6 Move plane (normal X, Y, Z: YZ, XZ, XY).
     int transformGizmoHit(float x, float y, float width, float height) const;
     bool beginTransformDrag(float x, float y, float width, float height);
@@ -121,6 +132,14 @@ public:
     bool groundPoint(float x, float y, float width, float height, render::float3& out) const;
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
+    // Scene brush ring under the cursor (radius in world units); hidden when visible=false.
+    // Texture Resources / Frame Capture panels: live GPU textures (format-based size estimate) and draw calls.
+    Json textureResources() const;
+    uint32_t drawCalls() const { return renderer_.drawCalls(); }
+    // Project extension gizmos (editor/extensions.lua scene_gizmos): world-space lines, circles (screen px), points.
+    struct OverlayShape { int kind = 0; render::float3 a{}, b{}; float radius = 8, thickness = 2; uint8_t r = 90, g = 180, bl = 255; };
+    void setOverlayShapes(std::vector<OverlayShape> shapes) { overlayShapes_ = std::move(shapes); }
+    void setBrushCursor(bool visible, render::float3 center, float radius) { brushVisible_=visible; brushCenter_=center; brushRadius_=radius; }
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
     // Automation (AIVERSE_STUDIO_WIND_SHOTS): frame a point of interest.
     void setShotCamera(float tx, float ty, float tz, float distance, float yaw, float pitch) {
@@ -163,6 +182,16 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    bool pivotSnap_ = false;
+    struct ThumbJob { std::string project, asset, file; };
+    std::deque<ThumbJob> thumbJobs_;
+    struct ThumbShared { std::mutex mutex; std::vector<std::string> done; };
+    std::shared_ptr<ThumbShared> thumbShared_ = std::make_shared<ThumbShared>();
+    gfx::TextureHandle thumbColor_, thumbDepth_;
+    std::map<std::string,std::unique_ptr<render::Model>> thumbModels_; // models not placed in the map
+    void renderThumbnail();
+    std::unique_ptr<render::Model> loadContentModel(const std::string& projectPath, const std::string& asset);
+    std::vector<std::pair<std::string,render::float3>> snapPivots_; // proxy centres of the last frame
     // RTS built-in procedural shapes ("view": {"shape": …}) for types without a model file,
     // built once and shared; team-coloured parts take the owner colour.
     std::map<std::string,std::unique_ptr<render::Model>> shapeModels_;
@@ -228,6 +257,9 @@ private:
     render::float3 selectedBox_[8]{};          // world corners of the selected object's box
     void captureSelectedBox(const render::mat4& world, render::float3 lo, render::float3 hi);
     void drawSelectionBox(const render::RTSCamera& view, int width, int height);
+    std::vector<OverlayShape> overlayShapes_;
+    bool brushVisible_ = false; render::float3 brushCenter_{}; float brushRadius_ = 0;
+    void drawBrushCursor(const render::RTSCamera& view, int width, int height);
     void drawTransformGizmo(const render::RTSCamera& view, int width, int height);
     bool autoIso_ = false; // Iso entered by an axis snap; orbit/look returns to Persp
     void drawOrientationGizmo(const render::RTSCamera& view, int width, int height);
