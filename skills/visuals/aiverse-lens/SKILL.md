@@ -56,7 +56,7 @@ the old behaviour; invalid values reject the whole write before any entity):
   `exposureCompensation`), `driveDepthOfField` (thin-lens sharp interval) and
   `circleOfConfusionMm` (0 = sensor height / 800). Exposure needs an authored
   PRISMA `autoExposure` effect and HDR; defocus needs a `depthOfField` effect
-  and `AIVERSE_PRISMA_DOF=1`. The lens never adds PRISMA effects by itself.
+  (no opt-in flag since 2026-11-21). The lens never adds PRISMA effects by itself.
 - `rail`: `points` (up to 8 `[x,y,z]`), `duration` (> 0 s), `loop`,
   `interpolation` (`linear` | `catmullRom`), `constantSpeed`, `ease`
   (`none` | `inOut`). Use with `rig.mode` 4 (Rail).

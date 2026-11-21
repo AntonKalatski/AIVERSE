@@ -21,6 +21,7 @@ void drawLumaScene(HdrScene&,gfx::Device&,int,int);
 void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
 void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
+void drawPrismaEffects(HdrScene&,gfx::Device&,int,int,const char*);
 
 void initFogLandscape(HdrScene&,gfx::Device&,const std::string&);
 void drawFogLandscape(HdrScene&);
@@ -223,6 +224,7 @@ struct HdrScene {
         if (failed) return;
         if (lumaVerify) { drawLumaScene(*this,d,w,h); return; }
         if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
+        if (const char* effect=std::getenv("AIVERSE_PRISMA_EFFECT_TEST")) { drawPrismaEffects(*this,d,w,h,effect); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
@@ -490,5 +492,6 @@ struct HdrScene {
 #include "DynamicGiScene.h"
 
 #include "LumaScene.h"
+#include "PrismaEffectsScene.h"
 
 #include "FogLandscape.h"
