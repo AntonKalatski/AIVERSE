@@ -57,15 +57,26 @@ public:
     int orientationGizmoHit(float x, float y, float width, float height) const;
     // Applies a hit: snaps to the axis view (auto Iso) or toggles the projection.
     void activateOrientationGizmo(int hit);
-    // Move tool (translate handles on the selected object). Coordinates in the
+    // Transform tools on the selected object (Unity Q/W/E/R). Coordinates in the
     // caller's view units (points) with the view size; same as pick().
-    int moveGizmoHit(float x, float y, float width, float height) const;
-    bool beginMoveDrag(float x, float y, float width, float height);
-    void updateMoveDrag(float x, float y, float width, float height);
-    struct MoveCommit { std::string id; int axis = -1; float delta = 0; };
-    std::optional<MoveCommit> endMoveDrag();
-    bool moveDragActive() const { return moveDrag_.axis >= 0; }
-    void clearMovePreview() { moveDrag_ = {}; }
+    enum class TransformTool { View = 0, Move = 1, Rotate = 2, Scale = 3 };
+    void setTransformTool(TransformTool tool) { tool_ = tool; drag_ = {}; }
+    TransformTool transformTool() const { return tool_; }
+    void setLocalSpace(bool local) { localSpace_ = local; }
+    bool localSpace() const { return localSpace_; }
+    void setSnap(bool enabled, float move, float rotate, float scale);
+    void setGizmosVisible(bool visible) { gizmosVisible_ = visible; }
+    // -1 none, 0..2 axis, 3 centre (uniform scale).
+    int transformGizmoHit(float x, float y, float width, float height) const;
+    bool beginTransformDrag(float x, float y, float width, float height);
+    // invertSnap: Ctrl/Cmd held flips the snap setting for this drag step.
+    void updateTransformDrag(float x, float y, float width, float height, bool invertSnap);
+    struct TransformCommit { std::string id; TransformTool tool = TransformTool::Move; int axis = -1;
+        render::float3 move{}; float degrees = 0; float factor = 1; };
+    std::optional<TransformCommit> endTransformDrag();
+    bool transformDragActive() const { return drag_.axis >= 0; }
+    void clearTransformPreview() { drag_ = {}; }
+    std::string transformCaption() const; // "Move X +1.25" while dragging, else empty
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
@@ -121,7 +132,19 @@ private:
     // its framing from `distance` while the eye stays inside the depth range.
     render::RTSCamera viewCamera() const;
     bool orientationGizmo_ = false;
-    struct MoveDrag { int axis = -1; std::string id; render::float3 pivot{}; float startT = 0; render::float3 offset{}; } moveDrag_;
+    TransformTool tool_ = TransformTool::Move;
+    bool localSpace_ = false, gizmosVisible_ = true, snapEnabled_ = false;
+    float snapMove_ = 1.0f, snapRotate_ = 15.0f, snapScale_ = 0.1f;
+    struct TransformDrag {
+        int axis = -1; TransformTool tool = TransformTool::Move; std::string id;
+        render::float3 pivot{}, dir{}; render::float3 axes[3]{};
+        float startT = 0, startX = 0, lengthPx = 1, worldLength = 1, value = 0;
+        float startAngle = 0, lastAngle = 0, accumulated = 0; bool facing = false; render::float2 screenPivot{};
+    } drag_;
+    bool selectedIsLight_ = false, selectedAxesValid_ = false;
+    render::float3 selectedAxes_[3]{{1,0,0},{0,1,0},{0,0,1}};
+    void handleAxes(render::float3 out[3]) const;
+    render::mat4 dragPreview() const;
     std::string selectedId_;
     bool selectedPivotValid_ = false;
     render::float3 selectedPivot_{};
@@ -129,7 +152,7 @@ private:
     render::float3 selectedBox_[8]{};          // world corners of the selected object's box
     void captureSelectedBox(const render::mat4& world, render::float3 lo, render::float3 hi);
     void drawSelectionBox(const render::RTSCamera& view, int width, int height);
-    void drawMoveGizmo(const render::RTSCamera& view, int width, int height);
+    void drawTransformGizmo(const render::RTSCamera& view, int width, int height);
     bool autoIso_ = false; // Iso entered by an axis snap; orbit/look returns to Persp
     void drawOrientationGizmo(const render::RTSCamera& view, int width, int height);
     bool lodDiagnostics_ = false;

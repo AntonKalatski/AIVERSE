@@ -48,3 +48,4 @@
 .studio-statusbar__host.is-on {color:var(--studio-success)}
 @media(max-width:1250px) {.command-search-button {width:auto}.command-search-button span {display:none}}
 @media(max-width:1100px) {.workspace-tabs__tab {padding:0 6px}}
+.studio-statusbar__action {color:#ffd640;font-family:ui-monospace,Menlo,monospace;font-size:10px}

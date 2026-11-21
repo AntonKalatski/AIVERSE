@@ -2,8 +2,8 @@ import { AlertTriangle, CircleX, Dot } from 'lucide-react';
 import type { StudioGameState, StudioSnapshot } from '../types';
 
 /** Status bar: problems (opens Console), unsaved map, selection, simulation state, host. */
-export default function StudioStatusBar({ snapshot, connected, game, onOpenConsole }: {
-  snapshot: StudioSnapshot | null; connected: boolean; game: StudioGameState | null; onOpenConsole: () => void;
+export default function StudioStatusBar({ snapshot, connected, game, action = '', onOpenConsole }: {
+  snapshot: StudioSnapshot | null; connected: boolean; game: StudioGameState | null; action?: string; onOpenConsole: () => void;
 }) {
   const logs = snapshot?.logs ?? [];
   const errors = logs.filter(l => l.level === 'error').length;
@@ -17,6 +17,7 @@ export default function StudioStatusBar({ snapshot, connected, game, onOpenConso
     </button>
     {map && <span className="studio-statusbar__map">{map}{snapshot?.project.dirty
       ? <b className="studio-statusbar__dirty"><Dot size={16}/>unsaved</b> : <span className="studio-statusbar__saved"> · saved</span>}</span>}
+    {action && <span className="studio-statusbar__action" aria-live="polite">{action}</span>}
     <span className="studio-statusbar__spacer"/>
     {snapshot?.selectedId && <span>Selected: {snapshot.scene.entities.find(e => e.id === snapshot.selectedId)?.name ?? snapshot.selectedId}</span>}
     {game?.active

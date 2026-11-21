@@ -38,6 +38,7 @@ export default function App() {
   const [palette, setPalette] = useState<string | null>(null); // null = closed, else initial query
   const [paletteAssets, setPaletteAssets] = useState<StudioAsset[]>([]);
   const [game, setGame] = useState<StudioGameState | null>(null);
+  const [sceneAction, setSceneAction] = useState('');
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {
@@ -85,6 +86,8 @@ export default function App() {
           setDock(current => reopenTab(current,'scene','dock-center'));
         }
         void refresh();
+      } else if (event === 'viewport.action') {
+        setSceneAction(payload && typeof payload === 'object' && 'message' in payload ? String(payload.message) : '');
       } else if (event === 'workspace.changed' || event === 'selection.changed' ||
                  event === 'document.changed') void refresh();
     });
@@ -330,7 +333,7 @@ export default function App() {
     {error && <div role="alert" className="error-banner">{error}
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
     <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}/>
-    <StudioStatusBar snapshot={snapshot} connected={connected} game={game}
+    <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction}
       onOpenConsole={() => setDock(current => reopenTab(current, 'console', 'dock-bottom'))}/>
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { shortcutKey } from '../keyboard';
 import { Box } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
+import { SCENE_TOOL_KEYS } from './SceneToolbar';
 import SceneAxisGizmo from './SceneAxisGizmo';
 import { overlayBlocks, watchOverlays } from '../nativeOverlay';
 import {
@@ -129,7 +130,10 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       const key=shortcutKey(event);
       boost=event.shiftKey;
       if (event.altKey) return;
-      if (key==='f' && !event.repeat && !flying.current) {
+      if (!flying.current && !event.repeat && !event.shiftKey && SCENE_TOOL_KEYS[key]) {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent('studio:scene-tool', { detail: SCENE_TOOL_KEYS[key] }));
+      } else if (key==='f' && !event.repeat && !flying.current) {
         event.preventDefault(); void send({kind:'focus'});
       } else if (key==='home' && !event.repeat) {
         event.preventDefault(); autoIso.current=false; void send({kind:'reset'});
@@ -240,7 +244,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
         const bounds=event.currentTarget.getBoundingClientRect();
         handleInFlight.current=true;
         void invoke('studio.viewportInput',{kind:'handle',phase:'drag',x:event.clientX-bounds.left,
-          y:event.clientY-bounds.top,width:bounds.width,height:bounds.height})
+          y:event.clientY-bounds.top,width:bounds.width,height:bounds.height,invertSnap:event.ctrlKey||event.metaKey})
           .catch(console.warn).finally(()=>{handleInFlight.current=false;});
       } else if (state.moved && state.mode!=='select') sendDelta(dx,dy,state.mode);
     }}

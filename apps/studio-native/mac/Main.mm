@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <exception>
 #include <memory>
+#include <map>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -76,6 +77,7 @@
     // Last Scene camera state pushed to the HTML orientation gizmo.
     double lastCameraYaw_, lastCameraPitch_, lastCameraDistance_;
     BOOL lastCameraOrtho_, cameraSent_;
+    std::string lastActionCaption_; // last "viewport.action" caption sent to the web UI
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -89,8 +91,10 @@
 - (std::vector<std::string>)materialSlotsFor:(const std::string&)asset;
 - (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
-- (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap;
 - (void)sceneMoveEnd;
+- (void)setSceneTool:(int)tool;
+- (int)sceneTool;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
@@ -154,7 +158,7 @@ static NSEvent* gStudioLastWebMouseDown=nil;
     press_=[self convertPoint:event.locationInWindow fromView:nil];
     dragged_=NO;
     [self.window makeFirstResponder:self];
-    // Plain LMB on a move handle starts an axis drag (Unity Move tool).
+    // Plain LMB on a handle starts a Move / Rotate / Scale drag (Unity W/E/R tools).
     moveDrag_=!(event.modifierFlags & NSEventModifierFlagOption) &&
         [self.host sceneMoveBeginAtX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height];
 }
@@ -165,10 +169,14 @@ static NSEvent* gStudioLastWebMouseDown=nil;
     if (moveDrag_) {
         const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
         dragged_=YES;
-        [self.host sceneMoveUpdateAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+        // Ctrl/Cmd held while dragging inverts the snap setting (Unity: Ctrl snaps).
+        const BOOL invert=(event.modifierFlags & (NSEventModifierFlagControl|NSEventModifierFlagCommand))!=0;
+        [self.host sceneMoveUpdateAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height invertSnap:invert];
         return;
     }
     const NSEventModifierFlags flags=event.modifierFlags;
+    // Hand tool (Q): plain LMB drag pans the view.
+    if (!(flags & NSEventModifierFlagOption) && [self.host sceneTool]==0) { dragged_=YES; [self.host panX:event.deltaX y:event.deltaY]; return; }
     if (!(flags & NSEventModifierFlagOption)) return; // plain LMB drag: reserved for selection
     dragged_=YES;
     if (flags & NSEventModifierFlagCommand) [self.host panX:event.deltaX y:event.deltaY];
@@ -190,7 +198,7 @@ static NSEvent* gStudioLastWebMouseDown=nil;
 - (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
 - (void)keyDown:(NSEvent*)event {
     // Physical key codes (ANSI positions): shortcuts work with any keyboard layout.
-    enum : unsigned short { kA=0,kS=1,kD=2,kF=3,kQ=12,kW=13,kE=14,kLeft=123,kRight=124,kDown=125,kUp=126,kHome=115 };
+    enum : unsigned short { kA=0,kS=1,kD=2,kF=3,kQ=12,kW=13,kE=14,kR=15,kLeft=123,kRight=124,kDown=125,kUp=126,kHome=115 };
     const unsigned short code=event.keyCode;
     const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
     if (event.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) {
@@ -207,7 +215,503 @@ static NSEvent* gStudioLastWebMouseDown=nil;
         case kF: if (!flying) { [self.host focusSceneSelection]; return; } break;
         default: break;
     }
-    if (!flying) { [super keyDown:event]; return; }
+    if (!flying) {
+        // Q/W/E/R pick the Hand / Move / Rotate / Scale tool (physical keys).
+        switch(code) {
+            case kQ: [self.host setSceneTool:0]; return;
+            case kW: [self.host setSceneTool:1]; return;
+            case kE: [self.host setSceneTool:2]; return;
+            case kR: [self.host setSceneTool:3]; return;
+            default: break;
+        }
+        [super keyDown:event]; return;
+    }
+    switch(code) {
+        case kW: [self.host moveRight:0 up:0 forward:scale]; break;
+        case kS: [self.host moveRight:0 up:0 forward:-scale]; break;
+        case kA: [self.host moveRight:-scale up:0 forward:0]; break;
+        case kD: [self.host moveRight:scale up:0 forward:0]; break;
+        case kQ: [self.host moveRight:0 up:-scale forward:0]; break;
+        case kE: [self.host moveRight:0 up:scale forward:0]; break;
+        default: [super keyDown:event]; break;
+    }
+}
+
+- (void)scrollWheel:(NSEvent*)event {
+    const CGFloat wheel = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.12 : 1.0);
+    [self.host zoom:wheel];
+}
+@end
+
+@implementation StudioGameView
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if(tracking_)[self removeTrackingArea:tracking_];
+    tracking_=[[NSTrackingArea alloc] initWithRect:NSZeroRect options:
+        NSTrackingMouseMoved|NSTrackingActiveInKeyWindow|NSTrackingInVisibleRect
+        owner:self userInfo:nil];
+    [self addTrackingArea:tracking_];
+}
+- (void)sendMouse:(NSEvent*)event type:(aiverse::platform::EventType)type {
+    if(type==aiverse::platform::EventType::MouseDown)[self.window makeFirstResponder:self];
+    const auto p=[self convertPoint:event.locationInWindow fromView:nil];
+    aiverse::platform::Event e;e.type=type;e.x=p.x;e.y=p.y;e.button=int(event.buttonNumber);
+    e.deltaX=event.deltaX;e.deltaY=event.deltaY;
+    // Cocoa's scrolling accessors are only valid for scroll-wheel events.
+    if(type==aiverse::platform::EventType::MouseWheel) {
+        e.wheelX=event.scrollingDeltaX;e.wheelY=event.scrollingDeltaY;
+    }
+    e.mods=((event.modifierFlags & NSEventModifierFlagShift)?aiverse::platform::kModShift:0)|
+        ((event.modifierFlags & NSEventModifierFlagControl)?aiverse::platform::kModCtrl:0)|
+        ((event.modifierFlags & NSEventModifierFlagOption)?aiverse::platform::kModAlt:0)|
+        ((event.modifierFlags & NSEventModifierFlagCommand)?aiverse::platform::kModSuper:0);
+    [self.host gameEvent:e];
+}
+- (void)mouseDown:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseDown]; }
+- (void)rightMouseDown:(NSEvent*)e { [self mouseDown:e]; }
+- (void)otherMouseDown:(NSEvent*)e { [self mouseDown:e]; }
+- (void)mouseUp:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseUp]; }
+- (void)rightMouseUp:(NSEvent*)e { [self mouseUp:e]; }
+- (void)otherMouseUp:(NSEvent*)e { [self mouseUp:e]; }
+- (void)mouseMoved:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseMove]; }
+- (void)mouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)rightMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)otherMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)scrollWheel:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseWheel]; }
+- (void)sendKey:(NSEvent*)event down:(BOOL)down {
+    using namespace aiverse::platform;
+    Event e;e.type=down?EventType::KeyDown:EventType::KeyUp;e.repeat=event.isARepeat;
+    NSString* text=event.charactersIgnoringModifiers;
+    e.key=aiverse::studio::studioGameKey(text.UTF8String?text.UTF8String:"");
+    switch(event.keyCode) {
+        case 53:e.key=Key::Escape;break;case 36:e.key=Key::Enter;break;case 48:e.key=Key::Tab;break;
+        case 51:e.key=Key::Backspace;break;case 117:e.key=Key::Delete;break;
+        case 123:e.key=Key::Left;break;case 124:e.key=Key::Right;break;
+        case 125:e.key=Key::Down;break;case 126:e.key=Key::Up;break;
+        case 115:e.key=Key::Home;break;case 119:e.key=Key::End;break;
+        case 116:e.key=Key::PageUp;break;case 121:e.key=Key::PageDown;break;
+        case 122:e.key=Key::F1;break;case 120:e.key=Key::F2;break;
+        case 99:e.key=Key::F3;break;case 118:e.key=Key::F4;break;
+        case 96:e.key=Key::F5;break;case 97:e.key=Key::F6;break;
+        case 98:e.key=Key::F7;break;case 100:e.key=Key::F8;break;
+        case 101:e.key=Key::F9;break;case 109:e.key=Key::F10;break;
+        case 103:e.key=Key::F11;break;case 111:e.key=Key::F12;break;
+    }
+    e.mods=((event.modifierFlags & NSEventModifierFlagShift)?kModShift:0)|
+        ((event.modifierFlags & NSEventModifierFlagControl)?kModCtrl:0)|
+        ((event.modifierFlags & NSEventModifierFlagOption)?kModAlt:0)|
+        ((event.modifierFlags & NSEventModifierFlagCommand)?kModSuper:0);
+    [self.host gameEvent:e];
+    if(down && !(e.mods&(kModCtrl|kModSuper))) {
+        NSString* chars=event.characters;
+        for(NSUInteger i=0;i<chars.length;++i) {
+            uint32_t c=[chars characterAtIndex:i];
+            if(c>=0xd800 && c<=0xdbff && i+1<chars.length) {
+                uint32_t low=[chars characterAtIndex:i+1];
+                if(low>=0xdc00 && low<=0xdfff){c=0x10000+((c-0xd800)<<10)+(low-0xdc00);++i;}
+            }
+            if(c>=32 && !(c>=0xd800 && c<=0xdfff) && !(c>=0xf700 && c<=0xf8ff)) {
+                Event input;input.type=EventType::Char;input.codepoint=c;[self.host gameEvent:input];
+            }
+        }
+    }
+}
+- (void)keyDown:(NSEvent*)e { [self sendKey:e down:YES]; }
+- (void)keyUp:(NSEvent*)e { [self sendKey:e down:NO]; }
+- (BOOL)resignFirstResponder {
+    aiverse::platform::Event e;e.type=aiverse::platform::EventType::FocusLost;[self.host gameEvent:e];
+    return [super resignFirstResponder];
+}
+@end
+
+@implementation StudioHost
+- (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite {
+    if ((self=[super init])) {
+        htmlComposite_=composite;
+        std::string root=AIVERSE_STUDIO_SOURCE_DIR;
+        session_=std::make_unique<aiverse::studio::StudioSession>(root,project);
+        __unsafe_unretained StudioHost* host=self;
+        session_->setMaterialSlotProvider([host](const std::string& asset) {
+            return [host materialSlotsFor:asset];
+        });
+        NSURL* bundled=[[NSBundle mainBundle] URLForResource:@"index" withExtension:@"html" subdirectory:@"studio-web"];
+        dist_=bundled ? [[[bundled URLByDeletingLastPathComponent] path] stringByStandardizingPath]
+                      : [[NSString stringWithUTF8String:(root+"/apps/studio-web/dist").c_str()] stringByStandardizingPath];
+        if (dev) devURL_=[NSURL URLWithString:@"http://127.0.0.1:4173/"];
+    }
+    return self;
+}
+- (BOOL)trusted:(NSURL*)url {
+    if (!url) return NO;
+    // file:// navigation is deliberately disallowed. All production assets
+    // must resolve through the read-only, same-origin app bundle scheme.
+    if ([url.scheme isEqualToString:@"aiverse-studio"] &&
+        [url.host isEqualToString:@"shell"])
+        return [url.path isEqualToString:@"/index.html"] || [url.path isEqualToString:@"/"];
+    return devURL_ && [url.scheme isEqualToString:@"http"] &&
+           [url.host isEqualToString:@"127.0.0.1"] && url.port.integerValue==4173;
+}
+- (void)applicationDidFinishLaunching:(NSNotification*)note {
+    (void)note;
+    window_=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1440,900)
+        styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable|NSWindowStyleMaskFullSizeContentView)
+        backing:NSBackingStoreBuffered defer:NO];
+    window_.title=@"AIVERSE";
+    window_.titleVisibility=NSWindowTitleHidden;
+    window_.titlebarAppearsTransparent=YES;
+    window_.delegate=self;
+    [window_ center];
+
+    WKWebViewConfiguration* cfg=[[WKWebViewConfiguration alloc] init];
+    [cfg.userContentController addScriptMessageHandler:self name:@"aiverse"];
+    // Built React/Vite uses ES modules. file:// has an opaque origin on WebKit,
+    // so load it through a local WKURLSchemeHandler instead of loadFileURL.
+    // The handler reads ONLY the immutable bundled studio-web folder.
+    if (!devURL_) {
+        assets_=[[StudioAssetSchemeHandler alloc] initWithRoot:dist_];
+        [cfg setURLSchemeHandler:assets_ forURLScheme:@"aiverse-studio"];
+    }
+    if (htmlComposite_) {
+        web_=[[StudioTransparentWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+        if (@available(macOS 12.0, *)) web_.underPageBackgroundColor=[NSColor clearColor];
+    } else web_=[[StudioFileDropWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    ((StudioFileDropWebView*)web_).studioHost=self;
+    [web_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
+    web_.navigationDelegate=self;
+    web_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    [window_.contentView addSubview:web_];
+
+    viewport_=[[StudioMetalView alloc] initWithFrame:NSZeroRect];
+    viewport_.host=self;
+    viewport_.hidden=YES;
+    [window_.contentView addSubview:viewport_
+        positioned:(htmlComposite_ ? NSWindowBelow : NSWindowAbove) relativeTo:web_];
+    gameViewport_=[[StudioGameView alloc] initWithFrame:NSZeroRect];
+    gameViewport_.host=self;gameViewport_.hidden=YES;
+    [window_.contentView addSubview:gameViewport_ positioned:NSWindowAbove relativeTo:web_];
+    StudioWindowChrome* chrome=[[StudioWindowChrome alloc]
+        initWithFrame:NSMakeRect(0,window_.contentView.bounds.size.height-44,80,44)];
+    chrome.autoresizingMask=NSViewMinYMargin;
+    NSInteger buttonIndex=0;
+    for(NSNumber* kind in @[@(NSWindowCloseButton),@(NSWindowMiniaturizeButton),@(NSWindowZoomButton)]) {
+        NSWindowButton buttonKind=(NSWindowButton)kind.integerValue;
+        [window_ standardWindowButton:buttonKind].hidden=YES;
+        NSButton* button=[NSWindow standardWindowButton:buttonKind forStyleMask:window_.styleMask];
+        button.target=window_;
+        button.action=buttonKind==NSWindowCloseButton ? @selector(performClose:) :
+            (buttonKind==NSWindowMiniaturizeButton ? @selector(performMiniaturize:) : @selector(performZoom:));
+        button.frame=NSMakeRect(14+20*buttonIndex++,15,14,14);
+        [chrome addSubview:button];
+    }
+    [window_.contentView addSubview:chrome positioned:NSWindowAbove relativeTo:nil];
+    window_.acceptsMouseMovedEvents=YES;
+    [window_ makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    if (devURL_) [web_ loadRequest:[NSURLRequest requestWithURL:devURL_]];
+    else {
+        NSString* entry=[dist_ stringByAppendingPathComponent:@"index.html"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:entry]) {
+            NSLog(@"[studio-web] FATAL: expected bundled HTML5 entry at %@",entry);
+        } else {
+            NSLog(@"[studio-web] loading from bundled scheme, root=%@",dist_);
+        }
+        NSURL* url=[NSURL URLWithString:@"aiverse-studio://shell/index.html"];
+        [web_ loadRequest:[NSURLRequest requestWithURL:url]];
+    }
+    timer_=[NSTimer timerWithTimeInterval:1.0/60 target:self selector:@selector(tick) userInfo:nil repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:timer_ forMode:NSRunLoopCommonModes];
+}
+- (aiverse::Json)gameState {
+    if(game_)return game_->state();
+    auto out=aiverse::Json::parse(R"({"paused":false,"canControl":false,"canStep":false,"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
+    out.set("device",aiverse::studio::StudioGameDevice{}.json());return out;
+}
+- (void)gameEvent:(const aiverse::platform::Event&)event {
+    if(game_ && !gameViewport_.hidden)game_->event(event);
+}
+- (void)windowDidResignKey:(NSNotification*)note { (void)note;if(game_)game_->suspend(); }
+- (void)tickGame {
+    const double now=CACurrentMediaTime(),dt=gameFrameTime_>0?now-gameFrameTime_:0;
+    gameFrameTime_=now;
+    if(!game_)return;
+    if(!gamePlacement_.visible || gameViewport_.hidden || window_.isMiniaturized || !window_.visible) {
+        game_->suspend();return;
+    }
+    game_->frame(gamePlacement_.pixelsW,gamePlacement_.pixelsH,
+        float(gamePlacement_.width),float(gamePlacement_.height),dt,
+        window_.isKeyWindow && window_.firstResponder==gameViewport_);
+}
+- (void)tick {
+    [self tickGame];
+    // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
+    // Never render that provisional map as if it belonged to the user.
+    if (session_->workspace().project.dir.empty()) return;
+    if (!placement_.visible || viewport_.hidden || window_.isMiniaturized || !window_.visible) return;
+    @autoreleasepool {
+        try {
+            if (!preview_) {
+                preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
+                // Default host: the Metal view covers HTML, so the renderer draws the
+                // orientation gizmo itself; composite mode uses the HTML gizmo.
+                preview_->setOrientationGizmo(!htmlComposite_);
+            }
+            // StudioSession/renderer are owned and called on the main thread.
+            preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
+                session_->workspace().project.isFps(), session_->selectedObjectId(),
+                session_->previewMaterialName(), session_->previewMaterialFactors(),
+                session_->previewMaterialRevision(),
+                float(session_->workspace().project.rules.levelHeight.toDouble()),
+                session_->workspace().project.dir,
+                session_->workspace().project.rulesJson);
+            if((lightingStatusTicks_++ % 60)==0)
+                [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
+            if (!readyEmitted_) {
+                [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
+                readyEmitted_=YES;
+                cameraSent_=NO;
+            }
+            [self publishSceneCamera];
+        } catch (const std::exception& e) {
+            NSLog(@"AIVERSE native Scene failed: %s",e.what());
+            [self sendStudioEvent:"viewport.error" message:e.what()];
+            readyEmitted_=NO;
+            viewport_.hidden=YES;
+            placement_.visible=false;
+            preview_.reset();
+        }
+    }
+}
+- (void)orbitX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->orbit(float(dx),float(dy));
+}
+- (void)zoom:(CGFloat)amount {
+    if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
+}
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->look(float(dx),float(dy));
+}
+- (void)panX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->pan(float(dx),float(dy));
+}
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward {
+    if (preview_ && std::isfinite(double(right)) && std::isfinite(double(up)) &&
+        std::isfinite(double(forward)))
+        preview_->move(float(right),float(up),float(forward));
+}
+- (void)focusSceneSelection {
+    if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
+        session_->workspace().project.isFps(),session_->selectedObjectId());
+}
+- (void)resetSceneView { if (preview_) preview_->resetView(); }
+- (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    return preview_ && preview_->beginTransformDrag(float(x),float(y),float(width),float(height));
+}
+- (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap {
+    if (!preview_) return;
+    preview_->updateTransformDrag(float(x),float(y),float(width),float(height),invertSnap);
+    const std::string caption=preview_->transformCaption();
+    if (caption!=lastActionCaption_) { lastActionCaption_=caption; [self sendStudioEvent:"viewport.action" message:caption.c_str()]; }
+}
+- (void)setSceneTool:(int)tool {
+    if (!preview_ || tool<0 || tool>3) return;
+    preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(tool));
+    static const char* names[4]={"view","move","rotate","scale"};
+    [self sendStudioEvent:"viewport.tool" message:names[tool]];
+}
+- (int)sceneTool { return preview_ ? int(preview_->transformTool()) : 1; }
+- (void)sceneMoveEnd {
+    if (!preview_ || !session_) return;
+    const auto commit=preview_->endTransformDrag();
+    lastActionCaption_.clear();
+    [self sendStudioEvent:"viewport.action" message:""];
+    using Tool=aiverse::studio::StudioMetalScene::TransformTool;
+    const bool unchanged=!commit ||
+        (commit->tool==Tool::Move && std::abs(commit->move.x)+std::abs(commit->move.y)+std::abs(commit->move.z)<1e-4f) ||
+        (commit->tool==Tool::Rotate && (!std::isfinite(commit->degrees) || std::abs(commit->degrees)<1e-3f)) ||
+        (commit->tool==Tool::Scale && (!std::isfinite(commit->factor) || std::abs(commit->factor-1.0f)<1e-4f));
+    if (unchanged) { preview_->clearTransformPreview(); return; }
+    // Read current Transform values through the same inspector API the UI uses, then
+    // write ONE undoable studio.setProperties (y promotes legacy units; lights use height).
+    auto request=[&](const char* method,aiverse::Json params) {
+        aiverse::Json r=aiverse::Json::object();
+        r.set("id",aiverse::Json::number(int64_t(0)));r.set("method",aiverse::Json::string(method));r.set("params",std::move(params));
+        return session_->dispatch(r);
+    };
+    aiverse::Json params=aiverse::Json::object();params.set("entityId",aiverse::Json::string(commit->id));
+    const auto inspected=request("studio.inspect",params);
+    std::map<std::string,double> current;
+    for (const auto& component:inspected["result"]["components"].items()) {
+        if (component.getStr("id")!="Transform") continue;
+        for (const auto& field:component["properties"].items())
+            if (field.getBool("editable",true) && field["value"].isNumber()) current[field.getStr("key")]=field["value"].toDouble();
+    }
+    aiverse::Json values=aiverse::Json::object();
+    auto add=[&](std::initializer_list<const char*> keys,auto apply,int digits){
+        for (const char* key:keys) if (current.count(key)) { values.set(key,aiverse::Json::number(apply(current[key]),digits)); return; }
+    };
+    if (commit->tool==Tool::Move) {
+        const float d[3]={commit->move.x,commit->move.y,commit->move.z};
+        if (std::abs(d[0])>1e-5f) add({"x"},[&](double v){return v+d[0];},4);
+        if (std::abs(d[1])>1e-5f) add({"y","height"},[&](double v){return v+d[1];},4);
+        if (std::abs(d[2])>1e-5f) add({"z"},[&](double v){return v+d[2];},4);
+    } else if (commit->tool==Tool::Rotate && commit->axis>=0 && commit->axis<3) {
+        static const char* keys[3]={"rotationX","rotationY","rotationZ"};
+        add({keys[commit->axis]},[&](double v){return std::remainder(v+double(commit->degrees),360.0);},3);
+    } else if (commit->tool==Tool::Scale) {
+        static const char* keys[3]={"scaleX","scaleY","scaleZ"};
+        for (int a=0;a<3;++a) if (commit->axis==3 || commit->axis==a)
+            add({keys[a]},[&](double v){return std::clamp(v*double(commit->factor),0.001,10000.0);},4);
+    }
+    if (!values.members().empty()) {
+        aiverse::Json set=aiverse::Json::object();
+        set.set("entityId",aiverse::Json::string(commit->id));set.set("componentId",aiverse::Json::string("Transform"));
+        set.set("values",values);
+        const auto outcome=request("studio.setProperties",set);
+        if (outcome.has("error")) NSLog(@"AIVERSE transform: %s",outcome.getStr("error").c_str());
+    }
+    preview_->clearTransformPreview();
+    [self sendStudioEvent:"document.changed" message:""];
+}
+- (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap;
+- (void)sceneMoveEnd;
+- (void)setSceneTool:(int)tool;
+- (int)sceneTool;
+- (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sendStudioEvent:(const char*)event message:(const char*)message;
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point;
+- (void)sendStudioReply:(const aiverse::Json&)reply;
+- (void)openProjectSheetForRequestId:(int64_t)requestId;
+- (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
+- (void)sendProjectCancelledReply:(int64_t)requestId;
+- (BOOL)confirmDiscardChanges;
+- (void)gameEvent:(const aiverse::platform::Event&)event;
+- (void)tickGame;
+- (aiverse::Json)gameState;
+- (void)saveMapSheetForRequestId:(int64_t)requestId;
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
+@end
+
+// Last left press inside the WebView: HTML asks the host to start a title-bar
+// window drag asynchronously, after the press was already delivered.
+static NSEvent* gStudioLastWebMouseDown=nil;
+@implementation StudioFileDropWebView
+- (void)mouseDown:(NSEvent*)event { gStudioLastWebMouseDown=event; [super mouseDown:event]; }
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingEntered:sender];
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingUpdated:sender];
+}
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSArray<NSURL*>* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost){
+        [self.studioHost importDroppedFileURLs:urls atWindowPoint:sender.draggingLocation];
+        return YES; // native plan + explicit UI confirmation, NEVER direct file copy
+    }
+    return [super performDragOperation:sender];
+}
+@end
+
+@implementation StudioMetalView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)wantsUpdateLayer { return YES; }
+- (CALayer*)makeBackingLayer { return [CAMetalLayer layer]; }
+- (instancetype)initWithFrame:(NSRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        self.wantsLayer = YES;
+        self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+    }
+    return self;
+}
+- (void)mouseDown:(NSEvent*)event {
+    press_=[self convertPoint:event.locationInWindow fromView:nil];
+    dragged_=NO;
+    [self.window makeFirstResponder:self];
+    // Plain LMB on a handle starts a Move / Rotate / Scale drag (Unity W/E/R tools).
+    moveDrag_=!(event.modifierFlags & NSEventModifierFlagOption) &&
+        [self.host sceneMoveBeginAtX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height];
+}
+// Unity Scene view mapping, shared with the HTML composite path
+// (apps/studio-web/src/panels/sceneCamera.ts): LMB select, Alt+LMB orbit,
+// Alt+Cmd+LMB / MMB pan, RMB flythrough (WASD/QE), Alt+RMB zoom.
+- (void)mouseDragged:(NSEvent*)event {
+    if (moveDrag_) {
+        const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+        dragged_=YES;
+        // Ctrl/Cmd held while dragging inverts the snap setting (Unity: Ctrl snaps).
+        const BOOL invert=(event.modifierFlags & (NSEventModifierFlagControl|NSEventModifierFlagCommand))!=0;
+        [self.host sceneMoveUpdateAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height invertSnap:invert];
+        return;
+    }
+    const NSEventModifierFlags flags=event.modifierFlags;
+    // Hand tool (Q): plain LMB drag pans the view.
+    if (!(flags & NSEventModifierFlagOption) && [self.host sceneTool]==0) { dragged_=YES; [self.host panX:event.deltaX y:event.deltaY]; return; }
+    if (!(flags & NSEventModifierFlagOption)) return; // plain LMB drag: reserved for selection
+    dragged_=YES;
+    if (flags & NSEventModifierFlagCommand) [self.host panX:event.deltaX y:event.deltaY];
+    else [self.host orbitX:event.deltaX y:event.deltaY];
+}
+- (void)mouseUp:(NSEvent*)event {
+    if (moveDrag_) { moveDrag_=NO; [self.host sceneMoveEnd]; return; }
+    const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+    if (dragged_ || std::hypot(double(point.x-press_.x), double(point.y-press_.y)) >= 5.0) return;
+    if ([self.host sceneGizmoAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height]) return;
+    [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+}
+- (void)rightMouseDown:(NSEvent*)event { [self.window makeFirstResponder:self]; (void)event; }
+- (void)rightMouseDragged:(NSEvent*)event {
+    if (event.modifierFlags & NSEventModifierFlagOption)
+        [self.host zoom:(event.deltaX+event.deltaY)*0.6];
+    else [self.host lookX:event.deltaX y:event.deltaY];
+}
+- (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
+- (void)keyDown:(NSEvent*)event {
+    // Physical key codes (ANSI positions): shortcuts work with any keyboard layout.
+    enum : unsigned short { kA=0,kS=1,kD=2,kF=3,kQ=12,kW=13,kE=14,kR=15,kLeft=123,kRight=124,kDown=125,kUp=126,kHome=115 };
+    const unsigned short code=event.keyCode;
+    const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    if (event.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) {
+        [super keyDown:event]; return;
+    }
+    // WASD/QE fly only while the right button is held; arrows always move.
+    const BOOL flying=([NSEvent pressedMouseButtons] & (1u<<1))!=0;
+    switch(code) {
+        case kUp: [self.host moveRight:0 up:0 forward:scale]; return;
+        case kDown: [self.host moveRight:0 up:0 forward:-scale]; return;
+        case kLeft: [self.host moveRight:-scale up:0 forward:0]; return;
+        case kRight: [self.host moveRight:scale up:0 forward:0]; return;
+        case kHome: [self.host resetSceneView]; return;
+        case kF: if (!flying) { [self.host focusSceneSelection]; return; } break;
+        default: break;
+    }
+    if (!flying) {
+        // Q/W/E/R pick the Hand / Move / Rotate / Scale tool (physical keys).
+        switch(code) {
+            case kQ: [self.host setSceneTool:0]; return;
+            case kW: [self.host setSceneTool:1]; return;
+            case kE: [self.host setSceneTool:2]; return;
+            case kR: [self.host setSceneTool:3]; return;
+            default: break;
+        }
+        [super keyDown:event]; return;
+    }
     switch(code) {
         case kW: [self.host moveRight:0 up:0 forward:scale]; break;
         case kS: [self.host moveRight:0 up:0 forward:-scale]; break;
@@ -860,7 +1364,7 @@ static NSEvent* gStudioLastWebMouseDown=nil;
             aiverse::Json result=aiverse::Json::object();
             // Pointer/keyboard navigation comes from HTML only in composite mode (the
             // Metal NSView handles it otherwise); toolbar commands work in both.
-            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection";
+            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection" || kind=="tool";
             if ((!htmlComposite_ && !toolbarCommand) || !placement_.visible || !preview_ || viewport_.hidden) {
                 reply.set("error",aiverse::Json::string("Viewport input unavailable"));
             } else if (kind=="orbit" && input["dx"].isNumber() && input["dy"].isNumber()) {
@@ -904,9 +1408,21 @@ static NSEvent* gStudioLastWebMouseDown=nil;
                 if (!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||w<2||h<2||w>20000||h>20000)
                     reply.set("error",aiverse::Json::string("Invalid move coordinates"));
                 else if (phase=="down") result.set("hit",aiverse::Json::fromBool([self sceneMoveBeginAtX:x y:y width:w height:h]));
-                else if (phase=="drag") { [self sceneMoveUpdateAtX:x y:y width:w height:h]; result.set("ok",aiverse::Json::fromBool(true)); }
+                else if (phase=="drag") { [self sceneMoveUpdateAtX:x y:y width:w height:h invertSnap:input["invertSnap"].boolean(false)]; result.set("ok",aiverse::Json::fromBool(true)); }
                 else if (phase=="up") { [self sceneMoveEnd]; result.set("ok",aiverse::Json::fromBool(true)); }
                 else reply.set("error",aiverse::Json::string("Invalid move phase"));
+            } else if (kind=="tool") {
+                // Scene toolbar: tool, Global/Local, snapping, gizmo visibility.
+                static const char* names[4]={"view","move","rotate","scale"};
+                const std::string tool=input.getStr("tool");
+                for (int i=0;i<4;++i) if (tool==names[i]) preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(i));
+                if (input["local"].boolean(false)==input["local"].boolean(true)) preview_->setLocalSpace(input["local"].boolean());
+                if (input["gizmos"].boolean(false)==input["gizmos"].boolean(true)) preview_->setGizmosVisible(input["gizmos"].boolean());
+                if (input["snap"].boolean(false)==input["snap"].boolean(true))
+                    preview_->setSnap(input["snap"].boolean(),float(input["snapMove"].toDouble(0)),
+                        float(input["snapRotate"].toDouble(0)),float(input["snapScale"].toDouble(0)));
+                result.set("tool",aiverse::Json::string(names[int(preview_->transformTool())]));
+                result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="projection" &&
                        input["ortho"].boolean(false)==input["ortho"].boolean(true)) { // a real JSON bool
                 preview_->setOrthographic(input["ortho"].boolean());

@@ -64,10 +64,10 @@ struct Overlay2D {
         tri(x0+nx,y0+ny,x1+nx,y1+ny,x1-nx,y1-ny,col);tri(x0+nx,y0+ny,x1-nx,y1-ny,x0-nx,y0-ny,col);
     }
 };
-// Screen layout of the move handles for a pivot (units of W,H).
-struct MoveHandles { bool valid=false; float px=0,py=0; float tip[3][2]{}; float pick=8; };
-MoveHandles moveHandles(const RTSCamera& view,float3 pivot,float W,float H) {
-    MoveHandles h; float2 p;
+// Screen layout of the transform handles for a pivot along three axis directions.
+struct AxisHandles { bool valid=false; float px=0,py=0; float tip[3][2]{}; float pick=8; float lengthPx=1; float worldLength=1; };
+AxisHandles axisHandles(const RTSCamera& view,float3 pivot,const float3* axes,float W,float H) {
+    AxisHandles h; float2 p;
     if(!view.worldToScreen(pivot,W,H,p))return h;
     const float lengthPx=std::min(W,H)*0.16f;
     // World length that projects to ~lengthPx at the pivot depth (foreshortened per axis).
@@ -80,12 +80,18 @@ MoveHandles moveHandles(const RTSCamera& view,float3 pivot,float W,float H) {
     }
     const float S=lengthPx*worldPerPixel;
     for(int a=0;a<3;++a){
-        float3 axis{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};float2 q;
-        if(!view.worldToScreen(pivot+axis*S,W,H,q))return h;
+        float2 q;
+        if(!view.worldToScreen(pivot+axes[a]*S,W,H,q))return h;
         h.tip[a][0]=q.x;h.tip[a][1]=q.y;
     }
-    h.px=p.x;h.py=p.y;h.pick=std::max(6.0f,lengthPx*0.09f);h.valid=true;return h;
+    h.px=p.x;h.py=p.y;h.pick=std::max(6.0f,lengthPx*0.09f);h.lengthPx=lengthPx;h.worldLength=S;h.valid=true;return h;
 }
+// Orthonormal basis (u, v) of the plane perpendicular to n.
+void ringBasis(float3 n,float3& u,float3& v){
+    const float3 ref=std::fabs(n.y)<0.9f?float3{0,1,0}:float3{1,0,0};
+    u=normalize(cross(n,ref));v=cross(n,u);
+}
+constexpr int kRingSegments=64;
 float segmentDistance(float px,float py,float ax,float ay,float bx,float by){
     const float vx=bx-ax,vy=by-ay,l2=vx*vx+vy*vy;
     const float t=l2>0?std::clamp(((px-ax)*vx+(py-ay)*vy)/l2,0.0f,1.0f):0.0f;
@@ -406,68 +412,189 @@ void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int heig
     constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
     for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
 }
-int StudioMetalScene::moveGizmoHit(float x,float y,float width,float height) const {
-    if(materialMode_ || !selectedPivotValid_ || width<4 || height<4)return -1;
-    const auto h=moveHandles(viewCamera(),selectedPivot_,width,height);
+void StudioMetalScene::setSnap(bool enabled,float move,float rotate,float scale) {
+    snapEnabled_=enabled;
+    if(std::isfinite(move)&&move>0)snapMove_=std::clamp(move,0.001f,1000.0f);
+    if(std::isfinite(rotate)&&rotate>0)snapRotate_=std::clamp(rotate,0.1f,180.0f);
+    if(std::isfinite(scale)&&scale>0)snapScale_=std::clamp(scale,0.001f,10.0f);
+}
+void StudioMetalScene::handleAxes(float3 out[3]) const {
+    // Scale always uses the object's own axes (a world-axis scale of a rotated
+    // object would shear); Move/Rotate follow the Global/Local toggle.
+    const bool local=(tool_==TransformTool::Scale||localSpace_)&&selectedAxesValid_;
+    for(int a=0;a<3;++a)out[a]=local?selectedAxes_[a]:float3{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};
+}
+int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height) const {
+    if(materialMode_||!gizmosVisible_||tool_==TransformTool::View||!selectedPivotValid_||width<4||height<4)return -1;
+    if(selectedIsLight_&&tool_!=TransformTool::Move)return -1;
+    const auto view=viewCamera();
+    float3 axes[3];handleAxes(axes);
+    const auto h=axisHandles(view,selectedPivot_,axes,width,height);
     if(!h.valid)return -1;
     int best=-1;float bestD=h.pick;
+    if(tool_==TransformTool::Rotate) {
+        for(int a=0;a<3;++a){
+            float3 u,v;ringBasis(axes[a],u,v);float2 prev{};bool hasPrev=false;
+            for(int i=0;i<=kRingSegments;++i){
+                const float t=6.2831853f*float(i)/float(kRingSegments);
+                float2 q;if(!view.worldToScreen(selectedPivot_+(u*std::cos(t)+v*std::sin(t))*h.worldLength,width,height,q)){hasPrev=false;continue;}
+                if(hasPrev){const float d=segmentDistance(x,y,prev.x,prev.y,q.x,q.y);if(d<bestD){bestD=d;best=a;}}
+                prev=q;hasPrev=true;
+            }
+        }
+        return best;
+    }
     for(int a=0;a<3;++a){const float d=segmentDistance(x,y,h.px,h.py,h.tip[a][0],h.tip[a][1]);if(d<bestD){bestD=d;best=a;}}
+    if(tool_==TransformTool::Scale && std::hypot(x-h.px,y-h.py)<h.pick*1.4f)best=3; // centre: uniform
     return best;
 }
-bool StudioMetalScene::beginMoveDrag(float x,float y,float width,float height) {
-    const int axis=moveGizmoHit(x,y,width,height);
+bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float height) {
+    const int axis=transformGizmoHit(x,y,width,height);
     if(axis<0)return false;
-    float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return false;
-    const float3 a{axis==0?1.f:0.f,axis==1?1.f:0.f,axis==2?1.f:0.f};
-    float t=0;if(!axisParameter(selectedPivot_,a,o,d,t))return false;
+    const auto view=viewCamera();
+    float3 axes[3];handleAxes(axes);
+    const auto h=axisHandles(view,selectedPivot_,axes,width,height);
+    TransformDrag d;d.axis=axis;d.tool=tool_;d.id=selectedId_;d.pivot=selectedPivot_;
+    for(int a=0;a<3;++a)d.axes[a]=axes[a];
+    d.dir=axis<3?axes[axis]:float3{1,1,1};d.lengthPx=h.lengthPx;d.worldLength=h.worldLength;
+    d.startX=x;d.value=tool_==TransformTool::Scale?1.0f:0.0f;
+    if(tool_==TransformTool::Rotate) {
+        d.startAngle=d.lastAngle=std::atan2(y-h.py,x-h.px);
+        d.facing=dot(d.dir,view.eye()-d.pivot)>0;
+        d.screenPivot={h.px,h.py};
+    } else if(axis<3) {
+        float3 o,dir;if(!view.screenRay(x,y,width,height,o,dir))return false;
+        if(!axisParameter(d.pivot,d.dir,o,dir,d.startT))return false;
+    }
     tween_.active=false;
-    moveDrag_={axis,selectedId_,selectedPivot_,t,{}};
+    drag_=d;
     return true;
 }
-void StudioMetalScene::updateMoveDrag(float x,float y,float width,float height) {
-    if(moveDrag_.axis<0)return;
+void StudioMetalScene::updateTransformDrag(float x,float y,float width,float height,bool invertSnap) {
+    if(drag_.axis<0)return;
+    const bool snap=snapEnabled_!=invertSnap;
+    if(drag_.tool==TransformTool::Rotate) {
+        const float angle=std::atan2(y-drag_.screenPivot.y,x-drag_.screenPivot.x);
+        float step=angle-drag_.lastAngle;
+        if(step>3.14159265f)step-=6.2831853f; else if(step<-3.14159265f)step+=6.2831853f;
+        drag_.lastAngle=angle;drag_.accumulated+=step;
+        // Screen y points down: counter-clockwise on screen is a negative angle.
+        float degrees=drag_.accumulated*57.2957795f*(drag_.facing?-1.0f:1.0f);
+        if(snap)degrees=std::round(degrees/snapRotate_)*snapRotate_;
+        drag_.value=std::clamp(degrees,-36000.0f,36000.0f);
+        return;
+    }
+    if(drag_.tool==TransformTool::Scale && drag_.axis==3) {
+        float f=1.0f+(x-drag_.startX)/std::max(1.0f,drag_.lengthPx);
+        if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
+        drag_.value=std::clamp(f,0.01f,100.0f);
+        return;
+    }
     float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return;
-    const int axis=moveDrag_.axis;
-    const float3 a{axis==0?1.f:0.f,axis==1?1.f:0.f,axis==2?1.f:0.f};
-    float t=0;if(!axisParameter(moveDrag_.pivot,a,o,d,t))return;
-    const float delta=std::clamp(t-moveDrag_.startT,-100000.0f,100000.0f);
-    moveDrag_.offset=a*delta;
+    float t=0;if(!axisParameter(drag_.pivot,drag_.dir,o,d,t))return;
+    float delta=std::clamp(t-drag_.startT,-100000.0f,100000.0f);
+    if(drag_.tool==TransformTool::Move) {
+        if(snap)delta=std::round(delta/snapMove_)*snapMove_;
+        drag_.value=delta;
+    } else {
+        float f=1.0f+delta/std::max(1e-4f,drag_.worldLength);
+        if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
+        drag_.value=std::clamp(f,0.01f,100.0f);
+    }
 }
-std::optional<StudioMetalScene::MoveCommit> StudioMetalScene::endMoveDrag() {
-    if(moveDrag_.axis<0)return std::nullopt;
-    MoveCommit commit{moveDrag_.id,moveDrag_.axis,
-        moveDrag_.axis==0?moveDrag_.offset.x:moveDrag_.axis==1?moveDrag_.offset.y:moveDrag_.offset.z};
-    // The host commits synchronously, then calls clearMovePreview().
-    moveDrag_.axis=-1;
-    return commit;
+render::mat4 StudioMetalScene::dragPreview() const {
+    if(drag_.axis<0)return mat4{};
+    const float3 p=drag_.pivot;
+    if(drag_.tool==TransformTool::Move)return mat4::translate(drag_.dir*drag_.value);
+    if(drag_.tool==TransformTool::Rotate)
+        return mat4::translate(p)*mat4::rotate(quat::axisAngle(drag_.dir,drag_.value*0.017453292f))*mat4::translate(p*-1.0f);
+    // Scale about the pivot along the object's own axes: B * diag(f) * B^T.
+    mat4 basis,basisT;
+    for(int c=0;c<3;++c){const float3 a=drag_.axes[c];
+        basis.at(0,c)=a.x;basis.at(1,c)=a.y;basis.at(2,c)=a.z;basisT.at(c,0)=a.x;basisT.at(c,1)=a.y;basisT.at(c,2)=a.z;}
+    const float f=drag_.value;
+    const float3 k=drag_.axis==3?float3{f,f,f}:float3{drag_.axis==0?f:1.f,drag_.axis==1?f:1.f,drag_.axis==2?f:1.f};
+    return mat4::translate(p)*basis*mat4::scale(k)*basisT*mat4::translate(p*-1.0f);
 }
-void StudioMetalScene::drawMoveGizmo(const render::RTSCamera& view,int width,int height) {
-    if(!selectedPivotValid_)return;
+std::string StudioMetalScene::transformCaption() const {
+    if(drag_.axis<0)return {};
+    static const char* names[4]={"X","Y","Z","XYZ"};
+    char text[96];
+    const char* space=(drag_.tool==TransformTool::Scale||localSpace_)?" (local)":"";
+    if(drag_.tool==TransformTool::Move)std::snprintf(text,sizeof text,"Move %s %+.3g%s",names[drag_.axis],double(drag_.value),space);
+    else if(drag_.tool==TransformTool::Rotate)std::snprintf(text,sizeof text,"Rotate %s %+.4g°%s",names[drag_.axis],double(drag_.value),space);
+    else std::snprintf(text,sizeof text,"Scale %s ×%.3g",names[drag_.axis],double(drag_.value));
+    return text;
+}
+std::optional<StudioMetalScene::TransformCommit> StudioMetalScene::endTransformDrag() {
+    if(drag_.axis<0)return std::nullopt;
+    TransformCommit c;c.id=drag_.id;c.tool=drag_.tool;c.axis=drag_.axis;
+    if(drag_.tool==TransformTool::Move)c.move=drag_.dir*drag_.value;
+    else if(drag_.tool==TransformTool::Rotate)c.degrees=drag_.value;
+    else c.factor=drag_.value;
+    // The host commits synchronously, then calls clearTransformPreview().
+    drag_.axis=-1;
+    return c;
+}
+void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int width,int height) {
+    if(!selectedPivotValid_||!gizmosVisible_||tool_==TransformTool::View)return;
+    if(selectedIsLight_&&tool_!=TransformTool::Move)return;
     const float W=float(width),H=float(height);
-    const float3 pivot=selectedPivot_+(moveDrag_.id==selectedId_?moveDrag_.offset:float3{});
-    const auto h=moveHandles(view,pivot,W,H);
+    const bool dragging=drag_.id==selectedId_ && !drag_.id.empty();
+    const float3 pivot=selectedPivot_+(dragging&&drag_.tool==TransformTool::Move?drag_.dir*drag_.value:float3{});
+    float3 axes[3];handleAxes(axes);
+    const auto h=axisHandles(view,pivot,axes,W,H);
     if(!h.valid)return;
     Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.5f};
     const uint32_t colors[3]={rgba(232,82,72),rgba(120,205,85),rgba(70,135,240)};
+    const uint32_t active=rgba(255,214,64);
     const float u=std::min(W,H)*0.16f/110.0f;
-    // Draw farther axes first so the one facing the viewer stays on top.
+    if(tool_==TransformTool::Rotate) {
+        const float3 toEye=normalize(view.eye()-pivot);
+        for(int a=0;a<3;++a){
+            const bool hot=dragging&&drag_.axis==a;
+            float3 bu,bv;ringBasis(axes[a],bu,bv);
+            float2 prev{};bool hasPrev=false;
+            for(int i=0;i<=kRingSegments;++i){
+                const float t=6.2831853f*float(i)/float(kRingSegments);
+                const float3 dir=bu*std::cos(t)+bv*std::sin(t);
+                float2 q;if(!view.worldToScreen(pivot+dir*h.worldLength,W,H,q)){hasPrev=false;continue;}
+                // The half facing away from the camera is dimmed, like Unity.
+                const bool back=dot(dir,toEye)<-0.05f;
+                const uint32_t col=hot?active:back?((colors[a]&0x00ffffffu)|0x50000000u):colors[a];
+                if(hasPrev)o.segment(prev.x,prev.y,q.x,q.y,(hot?3.0f:2.2f)*u,col);
+                prev=q;hasPrev=true;
+            }
+        }
+        return;
+    }
     int order[3]={0,1,2};
     const float3 fwd=normalize(view.target-view.eye());
-    auto along=[&](int i){return i==0?fwd.x:i==1?fwd.y:fwd.z;};
-    std::sort(order,order+3,[&](int l,int r){return std::fabs(along(l))>std::fabs(along(r));});
+    std::sort(order,order+3,[&](int l,int r){return std::fabs(dot(axes[l],fwd))>std::fabs(dot(axes[r],fwd));});
     for(const int a:order){
-        const uint32_t col=moveDrag_.axis==a?rgba(255,214,64):colors[a];
-        const float dx=h.tip[a][0]-h.px,dy=h.tip[a][1]-h.py,l=std::hypot(dx,dy);
+        const uint32_t col=dragging&&drag_.axis==a?active:colors[a];
+        float tipX=h.tip[a][0],tipY=h.tip[a][1];
+        if(tool_==TransformTool::Scale && dragging && (drag_.axis==a||drag_.axis==3)){
+            tipX=h.px+(tipX-h.px)*drag_.value;tipY=h.py+(tipY-h.py)*drag_.value;
+        }
+        const float dx=tipX-h.px,dy=tipY-h.py,l=std::hypot(dx,dy);
         if(l<3*u)continue;
-        const float ux=dx/l,uy=dy/l,cone=std::min(l*0.4f,14*u),half=5*u;
-        const float bx=h.tip[a][0]-ux*cone,by=h.tip[a][1]-uy*cone;
+        const float ux=dx/l,uy=dy/l;
+        if(tool_==TransformTool::Scale){
+            const float b=4.5f*u;
+            o.segment(h.px,h.py,tipX-ux*b,tipY-uy*b,2.4f*u,col);
+            o.tri(tipX-b,tipY-b,tipX+b,tipY-b,tipX+b,tipY+b,col);o.tri(tipX-b,tipY-b,tipX+b,tipY+b,tipX-b,tipY+b,col);
+            continue;
+        }
+        const float cone=std::min(l*0.4f,14*u),half=5*u;
+        const float bx=tipX-ux*cone,by=tipY-uy*cone;
         o.segment(h.px,h.py,bx,by,2.4f*u,col);
-        o.tri(h.tip[a][0],h.tip[a][1],bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
+        o.tri(tipX,tipY,bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
     }
-    // Small centre square.
-    const float c=3*u;
-    o.tri(h.px-c,h.py-c,h.px+c,h.py-c,h.px+c,h.py+c,rgba(235,240,250));
-    o.tri(h.px-c,h.py-c,h.px+c,h.py+c,h.px-c,h.py+c,rgba(235,240,250));
+    const float c=(tool_==TransformTool::Scale?4.5f:3.0f)*u;
+    const uint32_t centre=tool_==TransformTool::Scale&&dragging&&drag_.axis==3?active:rgba(235,240,250);
+    o.tri(h.px-c,h.py-c,h.px+c,h.py-c,h.px+c,h.py+c,centre);
+    o.tri(h.px-c,h.py-c,h.px+c,h.py+c,h.px-c,h.py+c,centre);
 }
 render::Model* StudioMetalScene::builtinPrimitive(bool sphere) {
     auto& slot=sphere?builtinSphere_:builtinCube_;
@@ -836,8 +963,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     stepTween();
     const auto view=viewCamera();
-    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
-    syncDocumentModels(doc,projectPath,rules,proxies);
+    // proxies/syncDocumentModels ran above: lighting needs modelInstances_ first.
     device_->beginFrame(framebufferWidth, framebufferHeight);
     StudioFrameScope scope{*device_};
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
@@ -891,24 +1017,33 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     primitiveMaterials_.clear();
     for(const auto& entity:proxies) {
         const int sourceIndex=studioMapEntityIndex(entity.id,doc);
-        const bool dragged=!moveDrag_.id.empty() && entity.id==moveDrag_.id;
-        const float3 offset=dragged?moveDrag_.offset:float3{};
+        const bool dragged=!drag_.id.empty() && entity.id==drag_.id;
+        const mat4 preview=dragged?dragPreview():mat4{};
+        const float3 offset=dragged&&drag_.tool==TransformTool::Move?drag_.dir*drag_.value:float3{};
         if(entity.id==selectedId) {
             selectedPivot_=entity.light?entity.center:float3{entity.center.x,entity.boundsMin.y,entity.center.z};
-            selectedPivotValid_=true;
+            selectedPivotValid_=true;selectedIsLight_=entity.light;
+            selectedAxesValid_=false;
         }
         if(sourceIndex>=0 && doc.data.entities[size_t(sourceIndex)].extra["components"].has("NereidWater"))continue;
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
         if (hasModel) continue;
         // Authored entities use their full Transform (3D rotation, per-axis scale).
-        mat4 world=mat4::translate(entity.center+offset)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+        mat4 world=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+        mat4 frame=mat4::rotateY(entity.yaw);
         if(sourceIndex>=0 && editor::authoredEntity(doc.data.entities[size_t(sourceIndex)])) {
             try {
-                world=mat4::translate(offset)*editor::authoredModelMatrix(doc.data.entities[size_t(sourceIndex)])*
-                      mat4::translate({0,entity.half.y,0})*mat4::scale(entity.half*2.0f);
+                frame=editor::authoredModelMatrix(doc.data.entities[size_t(sourceIndex)]);
+                world=frame*mat4::translate({0,entity.half.y,0})*mat4::scale(entity.half*2.0f);
             } catch(const std::exception&) {}
         }
+        if(entity.id==selectedId && !entity.light) {
+            for(int a=0;a<3;++a){const float3 axis=frame.transformDir({a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f});
+                const float l=std::sqrt(dot(axis,axis));selectedAxes_[a]=l>1e-6f?axis*(1.0f/l):float3{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};}
+            selectedAxesValid_=true;
+        }
+        world=preview*world;
         if(entity.id==selectedId && !entity.light) captureSelectedBox(world,{-.5f,-.5f,-.5f},{.5f,.5f,.5f});
         // Mesh Renderer with a built-in primitive: sphere, or an assigned material,
         // draws a PBR primitive Model; plain default cubes keep the cheap proxy path.
@@ -953,7 +1088,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         render::ModelDraw draw;
         draw.model=instance.model;
         draw.world=instance.world;
-        if(!moveDrag_.id.empty() && instance.id==moveDrag_.id) draw.world=mat4::translate(moveDrag_.offset)*instance.world;
+        if(!drag_.id.empty() && instance.id==drag_.id) draw.world=dragPreview()*instance.world;
         if(auto custom=instanceMaterials_.find(instance.id);custom!=instanceMaterials_.end())
             draw.materials=&custom->second.materials;
         if(instance.id==selectedId) {
@@ -973,9 +1108,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({at.x,at.y-extent,at.z},{at.x,at.y+extent,at.z},color);
         renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
-    drawSelectionBox(view,framebufferWidth,framebufferHeight);
-    drawMoveGizmo(view,framebufferWidth,framebufferHeight);
-    if(orientationGizmo_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
+    if(gizmosVisible_)drawSelectionBox(view,framebufferWidth,framebufferHeight);
+    drawTransformGizmo(view,framebufferWidth,framebufferHeight);
+    if(orientationGizmo_&&gizmosVisible_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;

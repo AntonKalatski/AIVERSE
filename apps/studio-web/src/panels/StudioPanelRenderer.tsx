@@ -4,12 +4,13 @@
 import type { ReactNode } from 'react';
 import {
   Activity, Box, FolderOpen,
-  SlidersHorizontal, Focus, RotateCcw
+  Focus, RotateCcw
 } from 'lucide-react';
 import type { StudioEntity, StudioInspector, StudioSnapshot } from '../types';
 import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
+import SceneToolbar from '../components/SceneToolbar';
 import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
@@ -62,8 +63,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <>
           <div className="viewport-toolbar">
             <div className="viewport-tools">
-              <button className="viewport-control selected" title="Select tool">
-                <SlidersHorizontal size={15}/></button>
+              <SceneToolbar enabled={connected && sceneMode !== 'welcome'}/>
               <span className="toolbar-divider"/>
               <button type="button" className="viewport-control" title="Focus selected object (F)"
                 aria-label="Focus selected Scene object" disabled={!connected || !selected}
