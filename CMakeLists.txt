@@ -2886,7 +2886,7 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
         add_test(NAME lighting_luma_vulkan COMMAND aiverse_hdr_vulkan)
         set_tests_properties(lighting_luma_vulkan PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
             LABELS "Lighting;GPU;Vulkan" TIMEOUT 180 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
-            PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+            PASS_REGULAR_EXPRESSION "Luma GPU 9:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan lighting_compute_gi_scroll_vulkan
             PROPERTIES LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
@@ -4723,7 +4723,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
     add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE
-        PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        PASS_REGULAR_EXPRESSION "Luma GPU 9:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
 
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench AND AIVERSE_PLATFORM STREQUAL "macos")

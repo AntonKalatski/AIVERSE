@@ -286,7 +286,7 @@ layout(set=0,binding=16,std140) uniform Params {
     LumaScreenParams current;
     mat4 prevVP;
     vec4 history;   // previousValid, blend, normal dot, depth delta
-    vec4 spatial;   // neighbour depth delta, RGB clamp, camera cut, spare
+    vec4 spatial;   // neighbour depth delta, RGB clamp, camera cut, object velocity bound
 };
 layout(set=0,binding=0,rgba16f) writeonly uniform image2D filtered;
 layout(set=0,binding=1,rgba16f) writeonly uniform image2D normals;
@@ -297,6 +297,7 @@ layout(set=0,binding=7) uniform sampler2D sceneDepth;
 #if defined(LUMAWEAVE_PBR_NORMALS)
 layout(set=0,binding=8) uniform sampler2D surfaceNormal;
 #endif
+layout(set=0,binding=9) uniform sampler2D objectVelocity;
 void main() {
     uint i=gl_GlobalInvocationID.x;
     if(i>=current.limits.z)return;
@@ -335,20 +336,28 @@ void main() {
     color/=sum;
     if(history.x>0.5) {
         vec4 clip=prevVP*vec4(world,1.0);
-        if(clip.w>1e-5) {
-            vec3 ndc=clip.xyz/clip.w;
+        // Moving objects: object velocity replaces camera reprojection (Metal kernel).
+        bool moved=false;
+        vec2 movedUv=vec2(0.0);
+        if(spatial.w>0.5) {
+            vec2 velocityUv=current.eye.w>0.5?vec2(uv.x,1.0-uv.y):uv;
+            vec4 v=texture(objectVelocity,velocityUv);
+            if(v.b>0.5){moved=true;movedUv=uv-v.rg;}
+        }
+        if(clip.w>1e-5 || moved) {
+            vec3 ndc=clip.w>1e-5?clip.xyz/clip.w:vec3(0.0);
             // History stores device depth; GL clip depth maps -1..1 to 0..1.
             float oldDepth=current.control.w!=0u?ndc.z:ndc.z*0.5+0.5;
-            vec2 oldUv=ndc.xy*0.5+0.5;
+            vec2 oldUv=moved?movedUv:ndc.xy*0.5+0.5;
             vec2 readUv=current.eye.w>0.5?vec2(oldUv.x,1.0-oldUv.y):oldUv;
             if(all(greaterThanEqual(readUv,vec2(0.0))) && all(lessThan(readUv,vec2(1.0))) &&
-               oldDepth>=0.0 && oldDepth<=1.0) {
+               (moved || (oldDepth>=0.0 && oldDepth<=1.0))) {
                 ivec2 oldPixel=ivec2(readUv*current.resolution.xy);
                 vec4 old=texelFetch(oldFiltered,oldPixel,0);
                 vec4 oldNormal=texelFetch(oldNormals,oldPixel,0);
                 float delta=abs(oldNormal.w-oldDepth);
                 float nd=dot(normal,oldNormal.xyz);
-                if(old.w>0.0 && old.w<0.99999 && delta<=history.w && nd>=history.z) {
+                if(old.w>0.0 && old.w<0.99999 && (moved || delta<=history.w) && nd>=history.z) {
                     vec3 clampWidth=vec3(spatial.y)*(1.0+color);
                     vec3 historic=clamp(old.rgb,max(color-clampWidth,vec3(0.0)),color+clampWidth);
                     color=mix(color,historic,clamp(history.y,0.0,0.95));

@@ -28,6 +28,7 @@ public:
         bool eligible=false,exclusive=false,composited=false,reusedPrevious=false;
         bool legacyConflict=false,materialMissing=false,gpuBusy=false;
         bool surfaceAvailable=false,materialShaded=false;
+        bool objectVelocity=false; // PRISMA object velocity fed the temporal history
         LumaWeaveDecision quality{};
         LumaWeaveScreenMetal::Submission submission{};
         LumaWeaveScreenMetal::Completion lastGpuCompletion{};
@@ -250,6 +251,28 @@ public:
     }
 
     bool active() const override {return downstream_.active();}
+    // Object motion: the downstream PRISMA owns velocity and its history; Luma
+    // forwards every hook (motion blur / TAA keep object velocity behind Luma)
+    // and borrows the current frame's velocity for its own temporal history.
+    bool wantsObjectMotionVectors() const override {return downstream_.wantsObjectMotionVectors();}
+    gfx::TextureHandle objectMotionSceneDepth() const override {return downstream_.objectMotionSceneDepth();}
+    uint64_t objectMotionEpoch(uint64_t viewId) const override {return downstream_.objectMotionEpoch(viewId);}
+    bool objectMotionContext(uint64_t& viewId,mat4& previousViewProj) const override {
+        return downstream_.objectMotionContext(viewId,previousViewProj);
+    }
+    void acceptObjectMotionVectors(gfx::TextureHandle texture) override {
+        acceptObjectMotionVectors(MotionTextureInput::legacy(texture));
+    }
+    void acceptObjectMotionVectors(MotionTextureInput input) override {
+        objectVelocity_=input.texture;
+        downstream_.acceptObjectMotionVectors(input);
+    }
+    void acceptMotionReactiveMask(gfx::TextureHandle texture) override {
+        downstream_.acceptMotionReactiveMask(texture);
+    }
+    void acceptMotionReactiveMask(MotionTextureInput input) override {
+        downstream_.acceptMotionReactiveMask(input);
+    }
     bool linearScene() const override {return downstream_.linearScene();}
     bool temporalShadowResolve() const override {return downstream_.temporalShadowResolve();}
 
@@ -390,7 +413,8 @@ public:
                     uint32_t(viewWidth_),uint32_t(viewHeight_),
                     frame.viewProj.inverse(),frame.viewProj,
                     frame.cameraPos,decision.samples,uint32_t(++frameCounter_),
-                    materialSurface);
+                    materialSurface,objectVelocity_);
+                last_.objectVelocity=last_.submission.encoded && objectVelocity_.valid();
                 if(last_.submission.encoded) {
                     direct=producer_.encodedOutput(last_.submission.serial);
                     shaded=last_.submission.materialShaded;
@@ -414,7 +438,7 @@ public:
         // Do not bypass existing ScreenLighting, PostFx, HUD or UI pipeline.
         downstream_.resolve(device,out,frame);
         // Reset token so even an automatic caller begins a distinct frame.
-        sceneToken_=0;
+        sceneToken_=0;objectVelocity_={};
         material_={};receiverDepth_={};materialToken_=0;
         surface_={};surfaceReceiverDepth_={};surfaceToken_=0;
     }
@@ -537,6 +561,7 @@ private:
     int surfaceWidth_=0,surfaceHeight_=0;
     gfx::PassDesc scene_{};
     gfx::TextureHandle material_{},receiverDepth_{};
+    gfx::TextureHandle objectVelocity_{}; // borrowed for the current frame only
     gfx::TextureHandle surface_{},surfaceReceiverDepth_{};
     uint32_t materialWidth_=0,materialHeight_=0;
     uint32_t surfaceMaterialWidth_=0,surfaceMaterialHeight_=0;
