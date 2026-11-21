@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include "../../engine/core/ECS.h"
+#include <algorithm>
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
 #include "../../libraries/include/aiverselib/mechanics/Traffic.h"
@@ -63,6 +64,12 @@ struct TrafficIncidentRules {
     uint32_t treatTicks = 1200;              // in hospital this long, then the person walks out of it
     uint32_t abandonTicks = 0;               // a car a hero left on a driving lane this long is towed (0: never)
     Fixed witness = Fixed::fromInt(7);       // a crime is reported when somebody is this close to it
+    std::vector<std::pair<uint16_t, uint16_t>> bodies;   // incidents.bodies: {type: body type} a casualty of that type leaves (sorted)
+    uint16_t bodyFor(uint16_t type) const {
+        auto it = std::lower_bound(bodies.begin(), bodies.end(), std::pair<uint16_t, uint16_t>{type, 0});
+        return it != bodies.end() && it->first == type ? it->second : UINT16_MAX;
+    }
+    bool isBody(uint16_t type) const { for (auto& b : bodies) if (b.second == type) return true; return false; }
     uint16_t patient = UINT16_MAX;           // custody/carry: stand-in body a fallen hero leaves (none: his own type)
     std::vector<std::string> unarmed;        // weapon ids that do not make an offender armed (custody)
     std::vector<uint16_t> lots;              // map object types: towed cars are put next to the nearest one
@@ -137,6 +144,10 @@ struct TrafficCitizen {
     int16_t line = -1;                       // the bus line he takes (-1: any bus)
     int32_t school = -1;                     // the place his child goes to (-1: no child)
     uint8_t via = 0;                         // this trip goes by the school first, and it is still ahead
+    // set by scripts / native modules (Lua traffic.citizen / set_citizen):
+    bool held = false;                       // somebody else runs him now (a job, a visit): the schedule leaves him alone
+    bool off = false;                        // a day off: he does not go to work
+    uint8_t journey = 0;                     // a trip asked for: 1 to work, 2 home (via the school); done: back to 0
 };
 
 struct TrafficRules {
@@ -195,6 +206,7 @@ struct TrafficRules {
     int maxPeople = 24;
     uint8_t peopleOwner = 0;
     Fixed peopleMin = Fixed::fromInt(12), peopleMax = Fixed::fromInt(22), peopleDespawn = Fixed::fromInt(30);
+    uint32_t peopleGrace = 0;                // pedestrians.grace (ticks): before a stuck walker goes on unseen
     int routeMin = 6, routeMax = 30;         // cells of a walk
     Fixed pauseMin = Fixed::fromInt(1), pauseMax = Fixed::fromInt(6);    // seconds between walks
     Fixed side = Fixed::fromRatio(3, 10);    // cells off the sidewalk centre line (each person keeps one)
@@ -308,6 +320,7 @@ struct TrafficStore {
     int64_t gangLoot = 0;                    // taken home so far
     uint32_t gangRobberies = 0, gangCaught = 0;
     uint32_t citizenCursor = 0;              // the next one to look at (a slice per tick)
+    int32_t busDrivers = -1, buses = 0;      // bus depot: drivers on shift (-1: no depot rule), buses out (derived)
     std::vector<TrafficIncident> incidents;  // in the order they happened
     uint32_t nextIncident = 1;
     std::vector<TrafficUsedCar> used;        // ascending entity index

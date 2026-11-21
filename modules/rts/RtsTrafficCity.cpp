@@ -114,6 +114,10 @@ void Traffic::parseCity(const Json& j, TrafficRules& r, const std::vector<std::s
     if (in.has("lethal")) ir.lethal = in.getFx("lethal");
     if (ir.fireDamage.raw < 0 || ir.fireRadius.raw < 0 || ir.witness.raw < 0) throw std::runtime_error(where + ": fireDamage, fireRadius and witness must not be negative");
     ir.lots = typeList(in["lots"], where + ".lots");
+    if (const Json& b = in["bodies"]; b.isObject()) {
+        for (const auto& [tid, body] : b.members()) ir.bodies.push_back({typeOf(tid, where + ".bodies"), typeOf(body.str(), where + ".bodies." + tid)});
+        std::sort(ir.bodies.begin(), ir.bodies.end());
+    }
     if (in.has("patient")) ir.patient = typeOf(in.getStr("patient"), where + ".patient");
     for (const Json& e : in["unarmed"].items()) ir.unarmed.push_back(e.str());
 }
@@ -195,7 +199,7 @@ int Traffic::exitToward(int J, int inSide, int32_t fromPiece, int32_t destPiece)
 }
 
 bool Traffic::isCasualtyType(uint16_t t) const {
-    if (isPersonType(t) || t == rules_.driverPerson || m_->rules().findType("npc_body_" + m_->rules().types[t].id) >= 0) return true;
+    if (isPersonType(t) || t == rules_.driverPerson || rules_.incidents.bodyFor(t) != UINT16_MAX) return true;
     for (auto& s : rules_.services) if (s.crew == t) return true;
     return false;
 }
@@ -281,8 +285,8 @@ void Traffic::incidents(Simulation& sim, TrafficStore& st) {
                 c.eta = sim.tick() + ir.bodyTicks + ir.treatTicks;
             }
             if (ir.body != UINT16_MAX) {
-                const int posedBody = m_->rules().findType("npc_body_" + m_->rules().types[h.type].id);
-                const Entity body = m_->spawn(sim, posedBody >= 0 ? uint16_t(posedBody) : ir.body, 0, v3(h.pos));
+                const uint16_t posedBody = ir.bodyFor(h.type);   // incidents.bodies
+                const Entity body = m_->spawn(sim, posedBody != UINT16_MAX ? posedBody : ir.body, 0, v3(h.pos));
                 if (body.valid()) if (TrafficIncident* inc = incidentOf(st, report(sim, kIncidentInjured, h.pos, body))) {
                     inc->victim = h.type;
                     inc->citizen = citizen;
@@ -377,8 +381,8 @@ void Traffic::incidents(Simulation& sim, TrafficStore& st) {
         TrafficIncident& inc = st.incidents[i];
         bool over = false;
         const uint32_t age = sim.tick() - inc.born;
-        if (inc.kind == kIncidentInjured && living(w, inc.subject) && m_->rules().types[w.get<Unit>(inc.subject).type].id.starts_with("npc_body_"))
-            w.get<Transform>(inc.subject).pos = v3(inc.pos); // Kingston: bodies do not drift during separation
+        if (inc.kind == kIncidentInjured && living(w, inc.subject) && ir.isBody(w.get<Unit>(inc.subject).type))
+            w.get<Transform>(inc.subject).pos = v3(inc.pos);   // a posed body (incidents.bodies) stays where it fell
         if (inc.kind != kIncidentCrime && !living(w, inc.subject)) over = true;
         else if (inc.kind == kIncidentInjured) over = inc.state == 0 && age > ir.bodyTicks;
         else if (inc.kind == kIncidentCrime) over = inc.state == 0 && age > ir.crimeTicks;
@@ -461,7 +465,7 @@ bool Traffic::dispatch(Simulation& sim, TrafficStore& st, TrafficIncident& inc, 
         if(!reroute(sim,*c,v2(w.get<Transform>(c->e).pos),{f.x,f.z})) {*c=previous;continue;}
         c->stopped=0;c->lostSince=0;c->reverseUntil=0;
         inc.state=1;inc.responder=c->e;inc.assigned=sim.tick();
-        gs.trig.vars["dispatch_reused"]=gs.trig.vars["dispatch_reused"]+Fixed::fromInt(1);
+        ++serviceLedger(w).dispatchReused;
         return true;
     }
     const Station* from = nullptr;
@@ -636,7 +640,7 @@ void Traffic::responders(Simulation& sim, TrafficStore& st) {
                 go.type = sv.answers == kIncidentCrime ? OrderType::AttackMove : OrderType::Move;
                 m_->issue(sim, m, go, false);
                 c.crew.push_back(m);
-                gs.trig.vars["service_exit_"+std::to_string(m.packed())]=Fixed::fromInt(sim.tick());
+                w.add<ServiceCrew>(m, ServiceCrew{c.e, sim.tick()});
             }
             c.task = c.crew.empty() ? kTaskWorking : kTaskCrewOut;
             c.taskUntil = sim.tick() + (c.crew.empty() ? sv.workTicks : sim.tickRate() * 15);
@@ -647,7 +651,7 @@ void Traffic::responders(Simulation& sim, TrafficStore& st) {
             const Fixed reach = sv.answers == kIncidentCrime ? Fixed::fromInt(3) : Fixed::fromRatio(9, 10);
             bool there = sv.answers != kIncidentFire && sv.answers != kIncidentInjured && sim.tick() >= c.taskUntil;
             for (Entity m : c.crew) there = there || (v2(w.get<Transform>(m).pos) - inc->pos).lengthSq() < reach * reach;
-            if (sv.answers == kIncidentFire) break; // Project fire action controller owns hose/nozzle readiness.
+            if (w.has<ServiceHold>(c.e)) break;   // a script / native module runs the work at the scene
             if (there) { c.task = kTaskWorking; c.taskUntil = sim.tick() + sv.workTicks; }
             break;
         }
@@ -668,8 +672,7 @@ void Traffic::responders(Simulation& sim, TrafficStore& st) {
             break;
         }
         case kTaskCrewBack: {
-            if (gs.trig.vars["service_return_"+std::to_string(c.e.packed())].raw>0) break; // project door boarding owns completion
-            if (sv.answers == kIncidentFire && m_->state(sim).trig.vars["fire_service_"+std::to_string(c.e.packed())+"_phase"].toInt()==4) break;
+            if (w.has<ServiceHold>(c.e)) break;   // a script / native module brings the crew back in
             bool back = sv.answers != kIncidentFire && sim.tick() >= c.taskUntil;
             if (!back) { back = true; for (Entity m : c.crew) back = back && (v2(w.get<Transform>(m).pos) - pos).lengthSq() < Fixed::fromRatio(36, 25); }
             if (!back) break;

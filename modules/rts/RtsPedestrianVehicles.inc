@@ -47,9 +47,11 @@
         return next[0]>=0?points[size_t(next[0])]:start;
     };
 
+    CrossingWait crossingScratch;   // a game without traffic keeps no waiting state (CrossingWait is not registered)
     auto vehicleCrossingWait=[&](Entity person,Vec2 pos,Vec2 preferred,Fixed radius){
-        const auto key="crossing_"+std::to_string(person.packed())+"_";
-        gs.trig.vars[key+"reason"]={};
+        const bool keep=traffic_&&traffic_->active();
+        auto wait=[&]()->CrossingWait&{if(!keep){crossingScratch={};return crossingScratch;}if(!w.has<CrossingWait>(person))w.add<CrossingWait>(person);return w.get<CrossingWait>(person);};
+        if(auto*cw=traffic_&&traffic_->active()?w.tryGet<CrossingWait>(person):nullptr)cw->reason=0;
         if(!preferred.lengthSq().raw)return false;
         bool danger=false,occluded=false;
         for(const auto&v:vehicleBodies){if(v.e==person)continue;
@@ -64,10 +66,11 @@
                 occluded=occluded||(fxAbs(relative.dot(v.axis))<v.length+Fixed::fromRatio(3,5)&&fxAbs(relative.dot(side))<v.width+Fixed::fromRatio(4,5)&&fxAbs(preferred.dot(side))>preferred.length()/2);
             }
         }
-        if(danger){gs.trig.vars[key+"reason"]=Fixed::fromInt(1);gs.trig.vars[key+"clear_until"]=Fixed::fromInt(tick+sim.tickRate()/2);return true;}
-        if(gs.trig.vars[key+"clear_until"]>Fixed::fromInt(tick)){gs.trig.vars[key+"reason"]=Fixed::fromInt(1);return true;}
-        if(occluded&&!gs.trig.vars[key+"peeked"].raw){gs.trig.vars[key+"peeked"]=Fixed::fromInt(1);gs.trig.vars[key+"peek_until"]=Fixed::fromInt(tick+sim.tickRate());}
-        if(!occluded)gs.trig.vars[key+"peeked"]={};
-        if(gs.trig.vars[key+"peek_until"]>Fixed::fromInt(tick)){gs.trig.vars[key+"reason"]=Fixed::fromInt(2);return true;}
+        if(danger){auto&cw=wait();cw.reason=1;cw.clearUntil=tick+sim.tickRate()/2;return true;}
+        auto*cw=keep?w.tryGet<CrossingWait>(person):nullptr;
+        if(cw&&cw->clearUntil>tick){cw->reason=1;return true;}
+        if(occluded&&!(cw&&cw->peeked)){auto&n=wait();n.peeked=true;n.peekUntil=tick+sim.tickRate();cw=keep?&n:nullptr;}
+        if(!occluded&&cw)cw->peeked=false;
+        if(cw&&cw->peekUntil>tick){cw->reason=2;return true;}
         return false;
     };

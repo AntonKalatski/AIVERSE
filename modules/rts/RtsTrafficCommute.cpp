@@ -178,8 +178,8 @@ Entity Traffic::citizenPerson(Simulation& sim, TrafficStore& st, int32_t id, Vec
     c.e = e;
     TrafficPerson p;
     p.e = e; p.hp = w.get<Unit>(e).hp; p.lastPos = spot; p.until = sim.tick();
-    // Kingston resident admission grace v2: allow external controllers before unreachable walks go unseen.
-    if(m_->state(sim).trig.vars["resident_transit_available"].raw>0) p.until+=sim.tickRate()*2;
+    // a grace before an unreachable walk makes him go on unseen (a script may take him over first)
+    p.until += rules_.peopleGrace;   // traffic.pedestrians.grace
     p.side = Fixed::fromRatio(int(id % 21) - 10, 10) * rules_.side;
     p.citizen = id;
     p.goal = goalCell;
@@ -399,8 +399,6 @@ bool Traffic::kerbFree(Simulation& sim, int32_t piece, int dir, Fixed a, Entity 
     GameState& gs = m_->state(sim);
     const Vec2 pt = tl::trafficLanePoint(net_, P, dir, tl::trafficLanes(P, dir), a), along = tl::trafficDir(P, a, dir);
     if (!onRoad(pt) || !gs.grid.passableAt(v3(pt), kLayerGround)) return false;
-    const auto& vars=gs.trig.vars;auto gateX=vars.find("tow_gate_x"),gateZ=vars.find("tow_gate_z");
-    if(gateX!=vars.end()&&gateZ!=vars.end()&&gateX->second.raw>0&&pt.x>gateX->second&&pt.x<gateX->second+Fixed::fromInt(3)&&fxAbs(pt.y-gateZ->second)<Fixed::fromInt(3))return false;
     for (const auto& r : noParking_)   // map traffic.noParking
         if (pt.x >= r[0] && pt.x <= r[2] && pt.y >= r[1] && pt.y <= r[3]) return false;
     bool clear = true;

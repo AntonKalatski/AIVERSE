@@ -291,6 +291,7 @@ TrafficRules Traffic::parse(const Json& j, const std::vector<std::string>& ids, 
     r.peopleMin = number(p, "spawnMin", r.peopleMin, "traffic.pedestrians", false);
     r.peopleMax = number(p, "spawnMax", r.peopleMax, "traffic.pedestrians", true);
     r.peopleDespawn = number(p, "despawn", r.peopleDespawn, "traffic.pedestrians", true);
+    r.peopleGrace = uint32_t((number(p, "grace", Fixed{}, "traffic.pedestrians", false) * Fixed::fromInt(int64_t(tickRate))).floorInt());
     if (r.peopleMax <= r.peopleMin || r.peopleDespawn < r.peopleMax) throw std::runtime_error("traffic.pedestrians: spawnMin < spawnMax <= despawn");
     Fixed rlo = Fixed::fromInt(r.routeMin), rhi = Fixed::fromInt(r.routeMax);
     range(p, "route", rlo, rhi, "traffic.pedestrians");
@@ -341,6 +342,9 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
     sim.registerPersistentComponent<CarryCar>("traffic.carry_car", 1);
     sim.registerPersistentComponent<VehicleSignals>("traffic.vehicle_signals", 1);
     sim.registerPersistentComponent<VehicleDoor>("traffic.vehicle_door", 1);
+    sim.registerPersistentComponent<ServiceHold>("traffic.service_hold", 1);
+    sim.registerPersistentComponent<ServiceCrew>("traffic.service_crew", 1);
+    sim.registerPersistentComponent<CrossingWait>("traffic.crossing_wait", 1);   // RtsPedestrianVehicles.inc
     sim.registerPersistentResource<ServiceLedger>("traffic.service_ledger", 1);
     noParking_.clear();
     for (const Json& r : mapBlock["noParking"].items()) {   // map traffic.noParking: rectangles in cells
@@ -739,6 +743,7 @@ void Traffic::hash(Simulation& sim, Hasher& h) const {
     h.u32(uint32_t(st->patients.size()));
     for (auto& q : st->patients) { h.u32(q.type); h.fx(q.at.x); h.fx(q.at.y); h.u32(q.release); h.i32(q.citizen); }
     h.u32(uint32_t(st->citizens.size())); h.u32(st->citizenCursor);
+    for (auto& c : st->citizens) if (c.held || c.off || c.journey) { h.u32(c.held); h.u32(c.off); h.u32(c.journey); }
     {
         const TrafficGang& g = st->gang;
         h.u32(g.state); h.i32(g.leader); h.i32(g.target); h.i32(g.loot); h.u64(g.car.packed()); h.u32(g.until); h.u32(g.call); h.u32(g.held);
@@ -769,7 +774,7 @@ void io(Archive& a, TrafficCar& c) {
     a(c.e, c.kind, c.lastStop, c.dwellUntil, c.route, c.wp, c.tailPiece, c.tailDir, c.tailLane, c.cruise, c.stopped, c.blocker, c.ignore, c.ignoreUntil, c.reverseUntil, c.lostSince, c.anchor.x, c.anchor.y, c.anchorTick);
 }
 void io(Archive& a, TrafficPerson& p) { a(p.e, p.state, p.path, p.idx, p.legEnd, p.leg, p.legPt, p.until, p.moved, p.side, p.hp, p.lastPos, p.panic, p.citizen, p.goal); }
-void io(Archive& a, TrafficCitizen& c) { a(c.type, c.home, c.work, c.shift, c.state, c.e, c.from.x, c.from.y, c.left, c.eta, c.commute, c.leg, c.carType, c.car, c.stopA, c.stopB, c.line, c.school, c.via); }
+void io(Archive& a, TrafficCitizen& c) { a(c.type, c.home, c.work, c.shift, c.state, c.e, c.from.x, c.from.y, c.left, c.eta, c.commute, c.leg, c.carType, c.car, c.stopA, c.stopB, c.line, c.school, c.via, c.held, c.off, c.journey); }
 void io(Archive& a, TrafficIncident& i) { a(i.id, i.kind, i.state, i.pos.x, i.pos.y, i.subject, i.offender, i.born, i.assigned, i.responder, i.victim, i.fatal, i.citizen); }
 void io(Archive& a, TrafficPatient& q) { a(q.type, q.at.x, q.at.y, q.release, q.citizen); }
 void io(Archive& a, TrafficBlow& b) { a(b.e, b.damage, b.tick); }
@@ -1245,8 +1250,8 @@ void Traffic::cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& f
     if (rules_.busDepot) {
         const int drivers = busDrivers(st);
         if (drivers >= 0) busLimit = std::min(busLimit, drivers);
-        m_->state(sim).trig.vars["traffic_bus_drivers"] = Fixed::fromInt(drivers);
-        m_->state(sim).trig.vars["traffic_buses"] = Fixed::fromInt(count[kTrafficBus]);
+        st.busDrivers = drivers;
+        st.buses = count[kTrafficBus];
         // a driver's shift is over: the first bus past the depot goes in (its riders get off there)
         if (count[kTrafficBus] > busLimit && sim.tick() % 20 == 0)
             for (size_t i = 0; i < st.cars.size(); ++i) {

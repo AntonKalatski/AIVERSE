@@ -27,6 +27,16 @@ namespace aiverse { class Simulation; class Hasher; class Archive; struct Comman
 
 namespace aiverse::game {
 
+// A walker waiting at the kerb for vehicles (RtsPedestrianVehicles.inc; kept only in games with traffic, which
+// registers it).
+// reason: 0 walking, 1 a vehicle is coming, 2 peeking past a parked one.
+struct CrossingWait {
+    uint8_t reason = 0;
+    bool peeked = false;
+    uint32_t clearUntil = 0, peekUntil = 0;
+    friend void io(Archive& a, CrossingWait& c) { using aiverse::io; io(a, c.reason); io(a, c.peeked); io(a, c.clearUntil); io(a, c.peekUntil); }
+};
+
 class RtsModule;
 
 // A deck is a second level of the map: a bridge over a road, a tunnel under houses (map "decks", docs/driving.md).

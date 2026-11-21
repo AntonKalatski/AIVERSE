@@ -97,6 +97,18 @@ struct VehicleSignals {
     int8_t beacon = 0, siren = 0;
     friend void io(Archive& a, VehicleSignals& v) { using aiverse::io; io(a, v.beacon); io(a, v.siren); }
 };
+// On a service vehicle whose crew work a script / native module drives: the vehicle does not finish getting there
+// (kTaskCrewOut) or getting its crew back (kTaskCrewBack) on its own; the owner moves the task on or removes it.
+struct ServiceHold {
+    uint8_t by = 1;                          // free for the owner
+    friend void io(Archive& a, ServiceHold& h) { using aiverse::io; io(a, h.by); }
+};
+// On a crew member a service vehicle let out.
+struct ServiceCrew {
+    Entity car = kNullEntity;
+    uint32_t since = 0;                      // tick he got out
+    friend void io(Archive& a, ServiceCrew& c) { using aiverse::io; io(a, c.car); io(a, c.since); }
+};
 // A vehicle's door a script / native module opened (presentation; services close it when they drive off):
 // 0 closed, -1 / +1 open on the left / right.
 struct VehicleDoor {
@@ -113,9 +125,10 @@ struct CustodyPlayer {
 struct ServiceLedger {
     std::vector<CustodyPlayer> players;
     uint32_t custodyDelivered = 0, carryDelivered = 0;
+    uint32_t dispatchReused = 0;             // calls answered by a vehicle already out (not from a station)
     std::vector<CarryResult> carried;        // the last minute's ends of carries, oldest first
     CustodyPlayer& player(size_t slot) { if (players.size() <= slot) players.resize(slot + 1); return players[slot]; }
-    friend void io(Archive& a, ServiceLedger& l) { using aiverse::io; io(a, l.players); io(a, l.custodyDelivered); io(a, l.carryDelivered); io(a, l.carried); }
+    friend void io(Archive& a, ServiceLedger& l) { using aiverse::io; io(a, l.players); io(a, l.custodyDelivered); io(a, l.carryDelivered); io(a, l.dispatchReused); io(a, l.carried); }
 };
 inline ServiceLedger& serviceLedger(World& w) {
     if (auto* l = w.resource<ServiceLedger>()) return *l;

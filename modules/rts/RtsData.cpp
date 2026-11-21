@@ -489,6 +489,7 @@ Rules loadRules(const Json& j) {
             }
             w.splash = wj.getFx("splash");
             w.hitsWalls = wj.getBool("hitsWalls", false);
+            w.attackLight = wj.getBool("attackLight", true);
             w.wrecksTag = wj.getStr("wrecks", "");
             w.damageType = damageIdx(wj.getStr("damageType", "normal"));
             w.chargeTime = wj.getFx("chargeTime");
