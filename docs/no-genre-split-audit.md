@@ -132,6 +132,30 @@ F. **Names (G7 rest).** Package ids `bots-rts` -> `bots-commander`, `bots-fps` -
    `action-bots`, `genre-kits` -> `template-kits`; remove the `aiverselib/genre` forwarders and the `lib::genre`
    alias once no code uses them.
 
+## Stage C, revised order (2026-11-21, owner: "full refactoring")
+
+Reading `RtsTopDown` showed that no `modules/rts` system can move alone: every one stands on the RTS data model
+(`UnitType` / `WeaponDef` / `AbilityDef` / `Rules`, components `Unit` / `Combat` / `Mobile` / `Buffs` / `Orders` /
+`Projectile`, `Stat`, status flags, `Progression` shot perks, `MapGrid` paths). And the shared core calls code of two
+concrete games: Kingston (`KingstonPolicePolicy.h`, `KingstonAmbulance.inc`, `KingstonPoliceResponse.inc`,
+`KingstonPedestrianVehicles.inc`, `KingstonPedestrianCrossingPolicy.h`, `KingstonRocketCollision.h` 816 lines,
+`kingston/{CityTrafficAreas,DeckBroadphase,FireResponseDetour,FireResponseRoute,TrafficPriorityPolicy}.h`; trigger vars
+`police_custody_*`, `drive_*_phase` in `RtsTopDown`) and Bunker Wars (`RtsBwAI*`: rules `ai.controller "bw"` parsed in
+`RtsData.cpp`, `BwAIHolder` in `RtsAI`, `RtsBwAISim.cpp` compiled into every game, `RtsModes` garrison hook).
+Moving the core into `engine/` with that code would put games into the engine. Order:
+
+- **C0a game hooks.** Generic extension points in the core (AI controller factory by name; traffic responder /
+  beacon / parking policies; projectile wall query; vehicle deck broadphase; hero input gate), the Kingston and
+  BwAI code registers through them from `modules/rts` (next: from the games' `native/`), no game names in core code.
+- **C0b data model + combat core -> `engine/game/`.** `RtsData` + `*Data.h`, the components, stats / status /
+  damage / projectiles / abilities / progression perks, `MapGrid` + paths; same file depth so relative includes
+  stay; every user updated, no forwarders; capability names in stage F.
+- **C1..C7** the systems in the owner's order (direct control `engine/control` on ECS pilots, traffic, raids /
+  commerce / careers / arsenal, encounters / progression, sensors / flow economy, map generator / city planner,
+  campaign, side commander bot) - each now a move onto `engine/game` types plus ECS state, module copy deleted.
+- Then D (one simulation), E (one scene document), F (names).
+Each step: merge origin/main, KINGSTON build, CTest, template checksums, handoff, audit row, commit, push.
+
 ## Rule for agents meanwhile
 
 A skill or plan that needs a capability from one legacy host includes its extraction (AGENTS.md). Do not add
