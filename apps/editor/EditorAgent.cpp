@@ -69,9 +69,29 @@ void Editor::pollAgentLink() {
         const std::string name = msg["params"].getStr("name");
         const Json& args = msg["params"]["arguments"];
         if (name == "view_screenshot") {
+            if(!shots_.empty() || captureArmed_) {
+                server_.send(m.client,reply(id,Json::parse(R"({"error":"another screenshot is pending; retry after its reply"})")).dump(-1));continue;
+            }
             auto camera=sceneCam;
+            const auto window=args.getStr("window",args.has("device")?"game":"all");
+            const bool clean=args.getBool("clean",window=="scene");
+            int requestedWidth=0,requestedHeight=0;
             bool positioned=false;
             try {
+                if((args.has("window")&&!args["window"].isString()) ||
+                   (window!="all" && window!="scene" && window!="game"))throw std::runtime_error("window must be all|scene|game");
+                if(args.has("clean") && args["clean"].type()!=Json::Type::Bool)throw std::runtime_error("clean must be boolean");
+                if(clean && window!="scene")throw std::runtime_error("clean capture requires window scene");
+                if(args.has("width")!=args.has("height"))throw std::runtime_error("capture width and height must be supplied together");
+                if(args.has("width")) {
+                    if(!clean)throw std::runtime_error("capture dimensions require a clean scene capture");
+                    if(!args["width"].isNumber() || !args["height"].isNumber())throw std::runtime_error("capture dimensions must be numbers");
+                    const auto width=args["width"].toDouble(),height=args["height"].toDouble();
+                    if(!std::isfinite(width) || !std::isfinite(height) || width<256 || height<256 || width>4096 || height>4096 ||
+                        width!=std::floor(width) || height!=std::floor(height) || double(width)*height>8388608)
+                        throw std::runtime_error("capture dimensions must be integer256..4096 and at most8 megapixels");
+                    requestedWidth=int(width);requestedHeight=int(height);
+                }
                 if(args.has("x")!=args.has("z"))throw std::runtime_error("camera x and z must be supplied together");
                 if(args.has("x")) {
                     camera.target={cameraNumber(args,"x",0),cameraNumber(args,"y",0),cameraNumber(args,"z",0)};
@@ -80,7 +100,7 @@ void Editor::pollAgentLink() {
                     camera.target.y=cameraNumber(args,"y",camera.target.y);positioned=true;
                 }
                 if(args.has("distance"))camera.distance=std::clamp(cameraNumber(args,"distance",camera.distance),camera.minDistance,camera.maxDistance);
-                if(args.has("pitch"))camera.pitch=std::clamp(cameraNumber(args,"pitch",0),10.0f,89.0f)*0.0174533f;
+                if(args.has("pitch"))camera.pitch=std::clamp(cameraNumber(args,"pitch",0),-89.0f,89.0f)*0.0174533f;
                 if(args.has("yaw"))camera.yaw=cameraNumber(args,"yaw",0)*0.0174533f;
             } catch(const std::exception& error) {
                 Json result=Json::object();result.set("error",Json::string(error.what()));
@@ -91,7 +111,9 @@ void Editor::pollAgentLink() {
             sceneCam=camera;
             if(positioned)sceneFlying_=false;
             if (args.has("device")) gameDevice = args.getStr("device");
-            shots_.push_back({m.client, id.integer(), args.getStr("window", args.has("device") ? "game" : "all"), Json::object()});
+            Json metadata=Json::object();
+            if(clean){metadata.set("clean",Json::fromBool(true));metadata.set("requested_width",Json::number(int64_t(requestedWidth)));metadata.set("requested_height",Json::number(int64_t(requestedHeight)));}
+            shots_.push_back({m.client,id.integer(),window,std::move(metadata)});
             // Do not put a notification over the requested scene/game image.
             if(args.getStr("window","all")=="all")ws_.log("agent", "Скриншот редактора");
             continue;
@@ -109,11 +131,51 @@ void Editor::pollAgentLink() {
     }
 }
 
+bool Editor::cleanSceneCaptureRequested() const {
+    return std::any_of(shots_.begin(),shots_.end(),[](const auto& shot){return shot.device=="scene" && shot.metadata.getBool("clean");});
+}
+std::pair<int,int> Editor::sceneCaptureSize(int width,int height) const {
+    for(const auto& shot:shots_)if(shot.device=="scene" && shot.metadata.getBool("clean")) {
+        const int requested=int(shot.metadata.getInt("requested_width"));
+        if(requested>0)return {requested,int(shot.metadata.getInt("requested_height"))};
+        // Default: current viewport resolution, bounded for readback payloads.
+        const double scale=std::min({1.0,4096.0/std::max(1,std::max(width,height)),
+            std::sqrt(8388608.0/std::max(1.0,double(width)*height))});
+        return {std::max(1,int(width*scale)),std::max(1,int(height*scale))};
+    }
+    return {width,height};
+}
+
 void Editor::deliverShots(gfx::Device& dev) {
     if (shots_.empty() || captureArmed_) return;
     captureArmed_ = true;
     auto pending = shots_;
     shots_.clear();
+    if(pending.size()==1 && pending[0].device=="scene" && pending[0].metadata.getBool("clean")) {
+        const auto request=pending[0];auto lifetime=captureLifetime_;
+        const auto fail=[&](const char* message){captureArmed_=false;Json result=Json::object();result.set("error",Json::string(message));server_.send(request.client,reply(Json::number(request.id),result).dump(-1));};
+        if(!sceneViewport || sceneViewport->drawnFrame!=ImGui::GetFrameCount() || !sceneViewport->color.valid()) {
+            fail("Requested Scene viewport is unavailable; editor-frame fallback refused");return;
+        }
+        const bool accepted=dev.captureTexture(sceneViewport->color,
+            [this,lifetime,request](int width,int height,std::vector<uint8_t> pixels){
+                if(!lifetime->load(std::memory_order_acquire))return;
+                captureArmed_=false;Json result=request.metadata;
+                if(width<=0 || height<=0 || uint64_t(width)*height>8388608 || pixels.size()<size_t(width)*height*4) {
+                    result.set("error",Json::string("Scene texture readback failed"));
+                } else {
+                    std::vector<uint8_t> rgb(size_t(width)*height*3),png;
+                    for(size_t p=0;p<size_t(width)*height;++p)for(size_t c=0;c<3;++c)rgb[p*3+c]=pixels[p*4+c];
+                    stbi_write_png_to_func(pngWrite,&png,width,height,3,rgb.data(),width*3);
+                    result.set("png_base64",Json::string(base64(png)));
+                    result.set("width",Json::number(int64_t(width)));result.set("height",Json::number(int64_t(height)));
+                    result.set("summary",Json::string("Clean Scene render, without editor overlays"));
+                }
+                server_.send(request.client,reply(Json::number(request.id),result).dump(-1));
+            });
+        if(!accepted)fail("Clean Scene texture capture is unsupported by this backend; editor-frame fallback refused");
+        return;
+    }
     const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
     // crop rectangles in pixels, computed now (the windows were laid out this frame)
     struct Crop { int x, y, w, h; };
@@ -214,8 +276,8 @@ void Editor::registerGuiOps() {
             if(index>=0&&size_t(index)<doc().data.entities.size())result.set("entityId",Json::string(doc().data.entities[size_t(index)].id));
             return result;
         });
-    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); x,y,z set the Scene target (y defaults to zero with x,z), distance/pitch/yaw set its orbit. Returns a PNG image without modifying the map.",
-        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}, "pitch": {"type": "number"}, "yaw": {"type": "number"}}})",
+    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); x,y,z set the Scene target (y defaults to zero with x,z), distance/pitch(-89..89)/yaw set its orbit. Scene defaults to clean texture capture; clean:false keeps viewport UI. Optional width/height render up to8MP without changing the map.",
+        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "clean":{"type":"boolean"}, "width":{"type":"integer"}, "height":{"type":"integer"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}, "pitch": {"type": "number"}, "yaw": {"type": "number"}}})",
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });
     add("view_focus", "Move the Scene camera to look at x,y,z (y and distance optional).",
         R"({"properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})", [this, okSummary](const Json& p) {

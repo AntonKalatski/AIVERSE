@@ -1647,6 +1647,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const auto stageStart = std::chrono::steady_clock::now();
     if (!ws_.project.isFps()) {
         buildEditScene(scene_);
+        if(!editOverlays)for(auto& object:scene_.objects)object.selected=object.hovered=false;
         scene_.gameplayOverlays=false;
         if (lazyEditorAssets_) {
             // Preserve generated preview types without loading the entire catalog.
@@ -1693,6 +1694,10 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const auto [renderW,renderH] = postEnabledForScene
         ? prisma_.renderSizeForOutput(vp.w,vp.h)
         : std::pair<int,int>{vp.w,vp.h};
+    if(cleanSceneCaptureRequested())for(auto& shot:shots_)if(shot.metadata.getBool("clean")) {
+        shot.metadata.set("render_width",Json::number(int64_t(renderW)));
+        shot.metadata.set("render_height",Json::number(int64_t(renderH)));
+    }
     const RTSCamera renderCam = postEnabledForScene
         ? prisma_.jitteredCamera(useCam,renderW,renderH) : useCam;
     // Existing map extra is the presentation manifest, not a new water solver.
@@ -1724,21 +1729,21 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     r3d_.beginScene(renderCam,renderW,renderH);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
-    r3d_.setSceneSelectionOutline(true);
+    r3d_.setSceneSelectionOutline(editOverlays);
     if (!ws_.project.isFps()) setOverlayContext(vp, useCam, false);
     // Scene-only silhouette outline through the existing ModelDraw outline path.
     // Keep the Game view unaffected by restoring the flag after draw.
     if (ws_.project.isFps()) {
-        enqueueFpsSceneGeometry(useCam);
+        enqueueFpsSceneGeometry(useCam,editOverlays);
     } else {
-        view_.setSelectionOutline(true);
+        view_.setSelectionOutline(editOverlays);
         view_.draw(r3d_, scene_, time_, nullptr, grid_);
         view_.setSelectionOutline(false);
     }
     nereidPreview_.draw(r3d_);
     visualPickCacheGeneration_=view_.modelResources().generation();
     const auto afterView = std::chrono::steady_clock::now();
-    if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
+    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
     // Editor-only TerraWeave forest overlay. Explicit opt-in from TerrainWindow:

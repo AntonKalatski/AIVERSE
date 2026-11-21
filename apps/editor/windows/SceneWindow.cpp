@@ -52,7 +52,9 @@ public:
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
         vp_.setGpuDeviceLease(ed.gpuDeviceLease());
-        vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi), ed.viewportRetirement(), "Scene");
+        const bool cleanCapture=ed.cleanSceneCaptureRequested();
+        const auto captureSize=ed.sceneCaptureSize(int(avail.x*dpi),int(avail.y*dpi));
+        vp_.ensure(ed.device(),captureSize.first,captureSize.second,ed.viewportRetirement(),"Scene");
 
         ImVec2 p = ImGui::GetCursorScreenPos();
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
@@ -122,7 +124,7 @@ public:
             // geometry remains uploaded, so no asset reload is required.
             renderer.setModelInstancingEnabled(false);
             renderer.setModelMultiDrawEnabled(false);
-            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing() && !cleanCapture);
             baselineDraws_ = int64_t(renderer.drawCalls());
             baselineModelDraws_ = int64_t(renderer.profile().draws[1]) +
                                   int64_t(renderer.profile().draws[2]);
@@ -130,13 +132,13 @@ public:
             renderer.setModelMultiDrawEnabled(measuredMode ? activeMode != 0 : sceneIndirect_);
             renderer.setGpuAuthoredDrawEnabled(measuredMode ? activeMode == 2 : true);
             // Present optimized scene as usual (not the comparison baseline).
-            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing() && !cleanCapture);
             optimizedDraws_ = int64_t(renderer.drawCalls());
             optimizedModelDraws_ = int64_t(renderer.profile().draws[1]) +
                                    int64_t(renderer.profile().draws[2]);
             comparisonValid_ = true;
         } else {
-            ed.renderScene(vp_, benchmarkActive_ ? benchmarkCamera_ : ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, benchmarkActive_ ? benchmarkCamera_ : ed.sceneCam, !ed.playing() && !cleanCapture);
         }
         if (benchmarkActive_) {
             const double cpuMs = std::chrono::duration<double, std::milli>(
@@ -247,6 +249,9 @@ public:
                 for (double& value : totals) value = 0.0;
             }
         }
+        // A requested export may temporarily use a different aspect ratio.
+        // Resume ordinary hit-testing on the next normal-sized Scene frame.
+        if(cleanCapture)return;
         // PHYSIS authored markers capture only explicit marker clicks/drags.
         // Ordinary FPS/RTS/other selection paths remain untouched otherwise.
         const bool physisMarkerInput = processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
@@ -257,7 +262,7 @@ public:
                 ed.sceneCam.distance = std::clamp(ed.sceneCam.distance * std::pow(0.85f, io.MouseWheel), 1.0f, 2000.0f);
             if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
                 ed.sceneCam.yaw -= io.MouseDelta.x * 0.005f;
-                ed.sceneCam.pitch = std::clamp(ed.sceneCam.pitch + io.MouseDelta.y * 0.005f, 0.05f, 1.5f);
+                ed.sceneCam.pitch = std::clamp(ed.sceneCam.pitch + io.MouseDelta.y * 0.005f, -1.553343f, 1.553343f);
             }
             if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
                 const float s = ed.sceneCam.distance * 0.002f;
@@ -1442,7 +1447,7 @@ private:
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Middle)) panning_ = false;
         if (looking_) {
             cam.yaw -= io.MouseDelta.x * 0.006f;
-            cam.pitch = std::clamp(cam.pitch + io.MouseDelta.y * 0.005f, 0.15f, 1.53f);
+            cam.pitch = std::clamp(cam.pitch + io.MouseDelta.y * 0.005f, -1.553343f, 1.553343f);
         }
         // Free fly: WASD/QE move the camera target while Scene is focused/hovered.
         // Right mouse remains orbit/look, middle mouse pans, Shift increases speed.
