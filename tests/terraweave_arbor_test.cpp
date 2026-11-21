@@ -167,6 +167,21 @@ int main() {
         for(size_t j=0;j<8;++j){const auto& v=collar.vertices[45+j];assert(std::hypot(v.x,v.z)<15.f);}
         const auto tip=centre(collar,45+4*9);
         for(size_t j=0;j<8;++j){const auto& v=collar.vertices[45+4*9+j];assert(distance({v.x,v.y,v.z},tip)<.5f);}
+        // An exposed collar shares the trunk's shading normal rather than
+        // displaying a hard cylindrical seam. Geometry remains outward below.
+        size_t continuous=0;
+        for(size_t j=0;j<8;++j) {
+            const auto& v=collar.vertices[45+j];
+            const float radius=std::hypot(v.x,v.z);
+            if((v.nx*v.x/radius+v.ny*.02f+v.nz*v.z/radius)/std::sqrt(1.0004f)>.9f)++continuous;
+        }
+        assert(continuous>=6);
+        // The branch LOD adapter retains the same parent context; extracting
+        // a Full branch must not reintroduce the seam through different normals.
+        for(size_t j=0;j<45;++j) {
+            const auto& a=joined.vertices[90+j];const auto& b=full.vertices[j];
+            assert(distance({a.nx,a.ny,a.nz},{b.nx,b.ny,b.nz})<.0001f);
+        }
         // Source skeleton remains the same integer generation/save contract.
         assert(fixture.branches[2].y0==625);
         fixture.branches[2].parent=2;bool invalid=false;

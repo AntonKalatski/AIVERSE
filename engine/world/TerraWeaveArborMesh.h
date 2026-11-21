@@ -195,7 +195,8 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         const int32_t thick=std::max(b.startRadiusCm,b.endRadiusCm);
         const bool organicRoot=settings.organicRootFlare&&settings.trunkFlare&&b.parent<0&&
             (settings.naturalBroadleaf||settings.naturalConifer);
-        float parentBarkRadius=0;
+        float parentBarkRadius=0,parentBarkSlope=0;
+        V3 parentBarkCentre{},parentBarkAxis{};
         if(settings.organicBranches&&b.parent>=0) {
             const auto& parent=tree.branches[size_t(b.parent)];
             const V3 from{float(b.x0-parent.x0),float(b.y0-parent.y0),float(b.z0-parent.z0)};
@@ -203,7 +204,10 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
             const float ll=d.x*d.x+d.y*d.y+d.z*d.z;
             const float at=ll>1e-9f?std::clamp((from.x*d.x+from.y*d.y+from.z*d.z)/ll,0.f,1.f):0;
             parentBarkRadius=float(parent.startRadiusCm)*(1-at)+float(parent.endRadiusCm)*at;
-            if(settings.naturalConifer&&std::abs(normalize(d).y)<.95f)parentBarkRadius*=.30f;
+            parentBarkCentre=curveSample(curves[size_t(b.parent)],at);
+            parentBarkAxis=curveTangent(curves[size_t(b.parent)],at);
+            parentBarkSlope=ll>1e-9f?float(parent.endRadiusCm-parent.startRadiusCm)/std::sqrt(ll):0.f;
+            if(settings.naturalConifer&&std::abs(normalize(d).y)<.95f){parentBarkRadius*=.30f;parentBarkSlope*=.30f;}
             if(parent.parent>=0){const float tip=std::clamp((at-.8f)*5.f,0.f,1.f);parentBarkRadius*=1.f-.95f*tip*tip*(3-2*tip);}
         }
         const uint32_t radial=organicRoot?(settings.radialSegments>=6?48u:settings.radialSegments>=4?32u:16u):
@@ -326,7 +330,29 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
                 const uint32_t first=ring*side,last=first+radial;
                 normals[first]=normals[last]=normals[first]+normals[last];
             }
-            for(size_t i=0;i<normals.size();++i){const auto n=normalize(normals[i]);auto& v=out.vertices[base+i];v.nx=n.x;v.ny=n.y;v.nz=n.z;}
+            for(size_t i=0;i<normals.size();++i) {
+                auto n=normalize(normals[i]);auto& v=out.vertices[base+i];
+                if(b.parent>=0 && parentBarkRadius>0) {
+                    const auto dot=[](V3 a,V3 b0){return a.x*b0.x+a.y*b0.y+a.z*b0.z;};
+                    const V3 at{v.x,v.y,v.z};const auto from=at-parentBarkCentre;
+                    const auto radial=from-parentBarkAxis*dot(from,parentBarkAxis);
+                    const auto parentNormal=normalize(normalize(radial)-parentBarkAxis*parentBarkSlope);
+                    const float t=curveRingT(curves[branchIndex],float(i/side)/rings);
+                    const auto ownRadial=at-curveSample(curves[branchIndex],t);
+                    // Only bend toward an outward parent normal. Hidden inner
+                    // skin must never invert and leak backfaces at another LOD.
+                    if(dot(parentNormal,ownRadial)>0 && dot(parentNormal,n)>0) {
+                        const float edge=std::clamp((std::sqrt(dot(radial,radial))-parentBarkRadius)/
+                            std::max(2.f,float(b.startRadiusCm)*1.8f),0.f,1.f);
+                        const auto fromRoot=at-curves[branchIndex].start;
+                        const float reach=parentBarkRadius*8.f+float(b.startRadiusCm)*2.f;
+                        const float end=std::clamp((std::sqrt(dot(fromRoot,fromRoot))-reach*.5f)/std::max(1.f,reach*.5f),0.f,1.f);
+                        const float blend=.5f*(1-edge*edge*(3-2*edge))*(1-end*end*(3-2*end));
+                        n=normalize(n*(1-blend)+parentNormal*blend);
+                    }
+                }
+                v.nx=n.x;v.ny=n.y;v.nz=n.z;
+            }
         }
     }
     if(settings.naturalBroadleaf) {
