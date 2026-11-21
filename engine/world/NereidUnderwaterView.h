@@ -23,6 +23,7 @@ struct NereidUnderwaterView {
     float turbidity=0;
     float distortion=0, scattering=0;
     float surfaceBlend=0; // soft camera crossing opacity, 0..1
+    float silt=0; // authored turbidity of the winning body, 0..1
 };
 
 // Priority semantics follow shared NEREID samples where possible, but only
@@ -52,7 +53,10 @@ inline NereidUnderwaterView sampleNereidUnderwaterFrom(
     NereidUnderwaterView out;
     if(!winner)return out;
     const auto& body=winnerBody;
-    const auto& style=winner->style;
+    // Same resolved optics as the surface shader: turbidity seen from above
+    // and below the water line always matches.
+    const auto style=lib::nereid::resolvedWaterOptics(winner->style);
+    out.silt=std::clamp(winner->style.turbidity,0.f,1.f);
     out.submerged=camera.y<body.surfaceY;
     const double signedDepth=(body.surfaceY-camera.y).toDouble();
     out.surfaceBlend=float(std::clamp(0.5+signedDepth/0.8,0.0,1.0));

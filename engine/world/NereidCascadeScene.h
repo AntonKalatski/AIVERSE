@@ -52,7 +52,8 @@ inline bool sameNereidCascadeSource(const NereidCascadeSource& a,
        s.specular!=t.specular || s.refractionStrength!=t.refractionStrength ||
        s.absorption!=t.absorption || s.shoreFoamDepth!=t.shoreFoamDepth ||
        s.depthTint!=t.depthTint || s.underwaterDistortion!=t.underwaterDistortion ||
-       s.underwaterScattering!=t.underwaterScattering)return false;
+       s.underwaterScattering!=t.underwaterScattering ||
+       s.turbidity!=t.turbidity || s.siltR!=t.siltR || s.siltG!=t.siltG || s.siltB!=t.siltB)return false;
     for(size_t i=0;i<x.points.size();++i)
         if(x.points[i].position!=y.points[i].position ||
            x.points[i].halfWidth!=y.points[i].halfWidth)return false;
@@ -231,6 +232,7 @@ inline render::Mesh uploadNereidCascade(gfx::Device& device,
         const lib::nereid::WaterCascadeMesh& cpu,
         lib::nereid::WaterSurfaceStyle style) {
     if(cpu.empty() || !render::validNereidWaterStyle(style))return {};
+    style=lib::nereid::resolvedWaterOptics(style);
     render::MeshBuilder builder;
     for(const auto& v:cpu.vertices) {
         const float foam=std::clamp(v.foam*style.foamStrength,0.f,1.f);

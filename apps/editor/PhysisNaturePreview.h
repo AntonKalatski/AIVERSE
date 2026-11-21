@@ -51,6 +51,7 @@ struct PhysisNaturePreviewSettings {
     float radiusMeters = 110;     // presentation region around the camera
     bool grass = true, flames = true, sound = true;
     int grassQuality = 1;         // 0 low, 1 medium, 2 high
+    float shoreSandMeters = 7;    // bare sand band along authored water: no grass, no fuel
     float volume = 0.8f;
 };
 
@@ -264,7 +265,7 @@ private:
     }
 
     std::string configKey(const MapDoc& doc) const {
-        return physis_authoring::read(doc).dump(-1) + "|" + std::to_string(water_.revision()) + "|" + std::to_string(doc.data.w) + "x" +
+        return physis_authoring::read(doc).dump(-1) + "|" + std::to_string(water_.revision()) + "|" + std::to_string(int(settings.shoreSandMeters * 10)) + "|" + std::to_string(doc.data.w) + "x" +
                std::to_string(doc.data.h) + "|" + std::to_string(settings.previewCellMeters) +
                "|" + std::to_string(settings.humidity);
     }
@@ -330,6 +331,7 @@ private:
                 if (auto* hazard = world_->tryGet<physis::HazardCell>(e)) {
                     if (edge <= half) { hazard->fuel = Fixed{}; hazard->fire = Fixed{};
                                         hazard->waterDepth = Fixed::fromRatio(1, 2); }
+                    else if (edge <= settings.shoreSandMeters) { hazard->fuel = Fixed{}; hazard->fire = Fixed{}; }   // bare sand
                 }
                 if (auto* surface = world_->tryGet<physis::Surface>(e)) {
                     if (edge <= half) surface->wetness = Fixed::fromInt(1);
@@ -392,11 +394,12 @@ private:
             if (!std::isfinite(y)) y = 0;
             return std::int32_t(std::llround(double(std::clamp(y, -9000.f, 9000.f)) * 100.0));
         };
-        if (grassFilterDirty_) {
+        if (grassFilterDirty_ || grassFilterSand_ != settings.shoreSandMeters) {
             grassFilterDirty_ = false;
+            grassFilterSand_ = settings.shoreSandMeters;
             if (water_.empty()) grass_.setPlacementFilter({});
-            else grass_.setPlacementFilter([water = water_](std::int64_t x, std::int64_t z) {
-                return water.edgeDistance(float(x) * 0.01f, float(z) * 0.01f) > 0.4f;
+            else grass_.setPlacementFilter([water = water_, sand = std::max(0.4f, settings.shoreSandMeters)](std::int64_t x, std::int64_t z) {
+                return water.edgeDistance(float(x) * 0.01f, float(z) * 0.01f) > sand;
             });
             grass_.invalidateAll();
         }
@@ -436,6 +439,7 @@ private:
     std::unique_ptr<World> world_;
     AuthoredWaterQuery water_;
     bool grassFilterDirty_ = true;
+    float grassFilterSand_ = -1;
     std::shared_ptr<const world::NaturePresentationFrame> frame_;
     std::string builtKey_, status_;
     bool usingLive_ = false, resetRequested_ = false, frameDirty_ = true;

@@ -246,11 +246,12 @@ void Editor::registerFxPreviewOps() {
         "physis block in a PRIVATE preview World (never the game, never saved); a running game's PHYSIS is shown read-only. "
         "Fields are optional: enabled, playing, speed, windSpeed (m/s), windDirection (degrees the wind blows towards, 0=+X), "
         "humidity 0..1, cellMeters (0 = map grid, else detailed preview cell), grass, flames, sound, volume, "
+        "shoreSand (m of bare sand along authored NEREID water: no grass, no fuel; default 7), "
         "ignite {x,z} (scene metres; preview only), advanceTicks (0..600, preview only), reset. Then view_screenshot {window:'scene'}.",
         Json::parse(R"({"properties":{"enabled":{"type":"boolean"},"playing":{"type":"boolean"},"speed":{"type":"number"},
             "windSpeed":{"type":"number"},"windDirection":{"type":"number"},"humidity":{"type":"number"},
             "cellMeters":{"type":"integer","minimum":0,"maximum":64},"grass":{"type":"boolean"},"flames":{"type":"boolean"},
-            "sound":{"type":"boolean"},"volume":{"type":"number"},
+            "sound":{"type":"boolean"},"volume":{"type":"number"},"shoreSand":{"type":"number"},
             "ignite":{"type":"object","properties":{"x":{"type":"number"},"z":{"type":"number"}},"required":["x","z"]},
             "advanceTicks":{"type":"integer","minimum":0,"maximum":600},"reset":{"type":"boolean"}},"additionalProperties":false})"),
         [this](const Json& p) -> Json {
@@ -273,6 +274,7 @@ void Editor::registerFxPreviewOps() {
             bool wind = num("windSpeed", 0.f, 60.f, st.windSpeed);
             wind = num("windDirection", -360.f, 360.f, st.windDirectionDeg) || wind;
             if (num("humidity", 0.f, 1.f, st.humidity)) nature.requestReset();
+            if (num("shoreSand", 0.f, 40.f, st.shoreSandMeters)) nature.requestReset();
             if (p.has("cellMeters")) { st.previewCellMeters = int(std::clamp<int64_t>(p.getInt("cellMeters"), 0, 64)); nature.requestReset(); }
             if (wind) nature.applyWindSettings();
             if (p.getBool("reset")) nature.requestReset();
