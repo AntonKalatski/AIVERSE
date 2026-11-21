@@ -53,10 +53,10 @@ public:
 
     void draw(Editor& ed) override {
         if(ed.ws().project.isFps()) {
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            if(ImGui::TreeNodeEx(genreText(ed.ws(),"fps.settings.geometry").c_str(),ImGuiTreeNodeFlags_DefaultOpen)) {
+            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+            if(ImGui::TreeNodeEx(engineText(ed.ws(),"fps.settings.geometry").c_str(),ImGuiTreeNodeFlags_DefaultOpen)) {
                 for(const auto& box:ed.doc().data.fps["colliders"].items()) {
-                    auto label=genreText(ed.ws(),"fps.settings.collider")+" #"+std::to_string(box.getInt("id"));
+                    auto label=engineText(ed.ws(),"fps.settings.collider")+" #"+std::to_string(box.getInt("id"));
                     if(ImGui::Selectable(label.c_str())) {
                         ed.sceneCam.target={float((box["min"][0].toDouble()+box["max"][0].toDouble())/2),float(box["min"][1].toDouble()),float((box["min"][2].toDouble()+box["max"][2].toDouble())/2)};
                         ed.sceneCam.distance=25;

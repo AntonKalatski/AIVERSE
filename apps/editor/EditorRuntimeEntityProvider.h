@@ -23,7 +23,7 @@ struct EditorRuntimeEntity {
 
 inline std::vector<EditorRuntimeEntity> enumerateEditorRuntimeEntities(Editor& ed) {
     std::vector<EditorRuntimeEntity> result;
-    if (ed.ws().project.isFps()) {
+    if (ed.ws().project.actorSessionPlay()) {
         const Json& runtime = ed.fpsRuntimeSnapshot();
         const Json& actors = runtime["actors"];
         if (!actors.isArray()) return result;

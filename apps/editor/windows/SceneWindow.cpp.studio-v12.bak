@@ -24,8 +24,8 @@ public:
 
     void draw(Editor& ed) override {
         if(ed.ws().project.isFps()) {
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            ImGui::SameLine();ImGui::TextDisabled("%s",genreText(ed.ws(),"fps.editor.camera").c_str());
+            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+            ImGui::SameLine();ImGui::TextDisabled("%s",engineText(ed.ws(),"fps.editor.camera").c_str());
         } else toolbar(ed);
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;

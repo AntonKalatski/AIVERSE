@@ -255,7 +255,7 @@ public:
         // PHYSIS authored markers capture only explicit marker clicks/drags.
         // Ordinary FPS/RTS/other selection paths remain untouched otherwise.
         const bool physisMarkerInput = processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
-        if(ed.ws().project.isFps()) {
+        if(ed.ws().project.worldSpaceMaps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
             if (vp_.hovered && io.MouseWheel != 0)
@@ -701,7 +701,7 @@ private:
                 ImGui::TextDisabled("Different GLBs and their material slots may require separate draws.");
                 ImGui::TreePop();
             }
-            if (!ed.ws().project.isFps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
+            if (!ed.ws().project.worldSpaceMaps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
                 const auto& road = ed.view().roads().batchStats();
                 ImGui::Text("Road source chunks: %zu -> %zu uploaded (merge group %d)",
                             road.sourceChunks, road.uploadedChunks, road.mergeGroup);

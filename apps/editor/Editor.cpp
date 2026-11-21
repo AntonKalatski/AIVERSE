@@ -366,7 +366,7 @@ void Editor::openGame(const std::string& idOrDir) {
     fitScene();
     status = "Игра: " + ws_.project.manifest.getStr("name", idOrDir);
     checkNativeModules(false);
-    if(ws_.project.isFps()) {
+    if(ws_.project.worldSpaceMaps()) {
         focusWindow("fps");
         const auto& spawn=doc().data.fps["spawns"][0];
         sceneCam.target={float(spawn[0].toDouble()),0,float(spawn[2].toDouble())};sceneCam.distance=35;
@@ -507,7 +507,7 @@ bool Editor::convertVisualModelSource(const std::string& src) {
 }
 
 void Editor::pollVisualAssets(double dt) {
-    if(!dev_ || ws_.project.dir.empty() || ws_.project.isFps()) {
+    if(!dev_ || ws_.project.dir.empty() || ws_.project.actorSessionRules()) {
         visualAssets_.reset();
         return;
     }
@@ -600,7 +600,7 @@ void Editor::retainEditorType(uint16_t type) {
 
 void Editor::reclaimEditorAssets(bool force) {
     if (!lazyEditorAssets_ || !dev_ || playing() || clientPlaying() ||
-        ws_.project.isFps()) return;
+        ws_.project.actorSessionRules()) return;
     constexpr double kSweepInterval = 5.0;
     constexpr double kUnusedGrace = 15.0;
     if (!modelDemand_.shouldSweep(time_,kSweepInterval,force)) return;
@@ -1642,10 +1642,10 @@ void Editor::drawSpectraGpuPreview() {
 
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
-    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam, 1ULL); return; }
+    if (playing() && !ws_.project.actorSessionPlay()) { renderGame(vp, cam, 1ULL); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto stageStart = std::chrono::steady_clock::now();
-    if (!ws_.project.isFps()) {
+    if (!ws_.project.worldSpaceMaps()) {
         buildEditScene(scene_);
         if(!editOverlays)for(auto& object:scene_.objects)object.selected=object.hovered=false;
         scene_.gameplayOverlays=false;
@@ -1657,9 +1657,9 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         }
     }
     const auto afterBuild = std::chrono::steady_clock::now();
-    if (!ws_.project.isFps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
+    if (!ws_.project.worldSpaceMaps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
     const auto afterFields = std::chrono::steady_clock::now();
-    const bool planets = !ws_.project.isFps() && view_.planetMode();
+    const bool planets = !ws_.project.worldSpaceMaps() && view_.planetMode();
     // A map undo may have removed the TerraWeave recipe since last frame.
     // Release stale preview buffers even when the Terrain panel is closed.
     if (terraWeaveForestPreview_.enabled() &&
@@ -1730,10 +1730,10 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
     r3d_.setSceneSelectionOutline(editOverlays);
-    if (!ws_.project.isFps()) setOverlayContext(vp, useCam, false);
+    if (!ws_.project.worldSpaceMaps()) setOverlayContext(vp, useCam, false);
     // Scene-only silhouette outline through the existing ModelDraw outline path.
     // Keep the Game view unaffected by restoring the flag after draw.
-    if (ws_.project.isFps()) {
+    if (ws_.project.worldSpaceMaps()) {
         enqueueFpsSceneGeometry(useCam,editOverlays);
     } else {
         view_.setSelectionOutline(editOverlays);
@@ -1743,12 +1743,12 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     nereidPreview_.draw(r3d_);
     visualPickCacheGeneration_=view_.modelResources().generation();
     const auto afterView = std::chrono::steady_clock::now();
-    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
+    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.project.worldSpaceMaps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
-    if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
+    if (editOverlays && !planets && !ws_.project.worldSpaceMaps()) drawEditOverlays3D();
     // Editor-only TerraWeave forest overlay. Explicit opt-in from TerrainWindow:
     // shares the standard Renderer3D model/instancing path, no gameplay state.
-    if (!planets && !ws_.project.isFps() && terraWeaveForestPreview_.enabled()) {
+    if (!planets && !ws_.project.worldSpaceMaps() && terraWeaveForestPreview_.enabled()) {
         try {
             const auto cameraPosition = r3d_.cameraPos();
             const double xCm = double(cameraPosition.x) * 100.0;
@@ -1771,7 +1771,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
             terraWeaveForestPreview_.setEnabled(false);
         }
     }
-    if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
+    if (!planets && !ws_.project.worldSpaceMaps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     tickSpectraGpuPreview(useCam,renderW,renderH,false);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
@@ -1790,7 +1790,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (postActiveForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
-    if (!ws_.project.isFps() && !r3d_.studioDebugMode()) {
+    if (!ws_.project.worldSpaceMaps() && !r3d_.studioDebugMode()) {
         gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
         // Scene-view particle reactive coverage; per-scene callback is
         // consumed synchronously by resolvePrisma and never persists.
@@ -1990,7 +1990,7 @@ void Editor::applyChanges() {
 // ============================ play-test ============================
 
 void Editor::startPlay(int humanSlot) {
-    if(ws_.project.isFps()){startFpsPlay();return;}
+    if(ws_.project.actorSessionPlay()){startFpsPlay();return;}
     if (checkNativeModules(true)) return;   // the banner offers to build an editor with them
     stopClientPlay();
     auto issues = doc().validate(rules(), ws_.project.rulesJson);
@@ -2262,7 +2262,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
     // slow upload can overrun the advisory time budget, so also cap count.
     // Interactive Inspector and viewport requests still load immediately.
     if(lazyEditorAssets_ && !playing() && !clientPlaying() &&
-       !ws_.project.isFps()) {
+       !ws_.project.actorSessionRules()) {
         modelDemand_.drainBudget(1.0,2,[&](size_t type){
             if(type<rules().types.size() && !view_.typeLoaded(uint16_t(type)))
                 view_.loadType(uint16_t(type));

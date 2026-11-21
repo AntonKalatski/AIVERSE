@@ -381,7 +381,7 @@
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
             // StudioSession/renderer are owned and called on the main thread.
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
-                session_->workspace().project.isFps(), session_->selectedObjectId(),
+                session_->workspace().project.worldSpaceMaps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
                 session_->previewMaterialRevision(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()),
@@ -425,13 +425,13 @@
 }
 - (void)focusSceneSelection {
     if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
-        session_->workspace().project.isFps(),session_->selectedObjectId());
+        session_->workspace().project.worldSpaceMaps(),session_->selectedObjectId());
 }
 - (void)resetSceneView { if (preview_) preview_->resetView(); }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps());
+        session_->workspace().map,session_->workspace().project.worldSpaceMaps());
     aiverse::Json request=aiverse::Json::object();
     request.set("id",aiverse::Json::number(int64_t(0)));
     request.set("method",aiverse::Json::string("studio.select"));
