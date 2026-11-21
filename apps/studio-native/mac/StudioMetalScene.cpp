@@ -319,6 +319,8 @@ void StudioMetalScene::clearDocumentModels() {
     rejectedDocumentModels_.clear();
     documentModelTimes_.clear();
     instanceMaterials_.clear();
+    proxyDraws_.clear();
+    sceneCacheValid_=false;
 }
 
 void StudioMetalScene::syncDocumentModels(
@@ -359,6 +361,9 @@ void StudioMetalScene::syncDocumentModels(
         }
     }
     std::set<std::string> overridden;
+    // One filesystem check per unique model path per sync: hundreds of entities
+    // share one file and the project may live on a slow external disk.
+    std::map<std::string,std::optional<fs::file_time_type>> checkedFiles;
     for (const auto& proxy:proxies) {
         if (proxy.id.rfind("entity:",0)!=0) continue;
         const int index=studioMapEntityIndex(proxy.id,doc);
@@ -400,31 +405,39 @@ void StudioMetalScene::syncDocumentModels(
         }
         // Never load project-root arbitrary files or external paths.
         if (!contentOk || path.rfind("content/",0)!=0 || path.size()>512) continue;
-        const std::string relative=path.substr(8);
-        const fs::path relativePath(relative);
-        if (relativePath.empty() || relativePath.is_absolute()) continue;
-        bool allowed=true;
-        fs::path current=root;
-        for (const auto& segment:relativePath) {
-            if (segment.empty() || segment=="." || segment=="..") {allowed=false;break;}
-            current/=segment;
-            std::error_code ec;
-            const auto status=fs::symlink_status(current,ec);
-            if (ec || fs::is_symlink(status)) {allowed=false;break;}
+        auto checked=checkedFiles.find(path);
+        if (checked==checkedFiles.end()) {
+            // nullopt: rejected path (outside content/, symlink, missing file).
+            std::optional<fs::file_time_type> result;
+            const fs::path relativePath(path.substr(8));
+            bool allowed=!relativePath.empty() && !relativePath.is_absolute();
+            fs::path current=root;
+            if (allowed) for (const auto& segment:relativePath) {
+                if (segment.empty() || segment=="." || segment=="..") {allowed=false;break;}
+                current/=segment;
+                std::error_code ec;
+                const auto status=fs::symlink_status(current,ec);
+                if (ec || fs::is_symlink(status)) {allowed=false;break;}
+            }
+            std::error_code regularError;
+            if (allowed && fs::is_regular_file(current,regularError)) {
+                std::error_code modifiedError;
+                auto modified=fs::last_write_time(current,modifiedError);
+                if (!modifiedError) {
+                    // Hierarchical wind sidecar edits reload the model too.
+                    std::error_code sidecarError;
+                    fs::path sidecar=current; sidecar+=".wind.json";
+                    const auto sidecarTime=fs::last_write_time(sidecar,sidecarError);
+                    if(!sidecarError && sidecarTime>modified) modified=sidecarTime;
+                    result=modified;
+                }
+            }
+            checked=checkedFiles.emplace(path,result).first;
         }
-        if (!allowed || !fs::is_regular_file(current)) continue;
+        if (!checked->second) continue;
         if (modelInstances_.size()>=2000) break;
         active.insert(path);
-        std::error_code modifiedError;
-        auto modified=fs::last_write_time(current,modifiedError);
-        if (modifiedError) continue;
-        // Hierarchical wind sidecar edits reload the model too.
-        {
-            std::error_code sidecarError;
-            fs::path sidecar=current; sidecar+=".wind.json";
-            const auto sidecarTime=fs::last_write_time(sidecar,sidecarError);
-            if(!sidecarError && sidecarTime>modified) modified=sidecarTime;
-        }
+        const auto modified=*checked->second;
         const auto previousTime=documentModelTimes_.find(path);
         if (previousTime!=documentModelTimes_.end() &&
             previousTime->second!=modified) {
@@ -1239,6 +1252,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     if (renderer_.hasPendingModelPipelineJobs()) renderer_.pollPendingModelPipelineJobs();
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
     const bool facialRequested = facialBinding.bound() && !materialRequested;
+    // Those previews draw every frame; the map view redraws once they end.
+    if(materialRequested || facialRequested) lastFrameSignature_=0;
     if(facialMode_!=facialRequested) {
         facialMode_=facialRequested;
         shadowResolution_={};
@@ -1432,16 +1447,43 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         return;
     }
     const auto& map = doc.data;
-    const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
-    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    const auto now=std::chrono::steady_clock::now();
+    if(lastSeenRevision_!=doc.revision){lastSeenRevision_=doc.revision;lastDocChange_=now;}
+    {
+        // Document-derived scene: rebuilt on change, files re-checked once a second
+        // (hot reload), every frame only while models are still streaming in.
+        const SceneCacheKey key{&doc,doc.revision,fpsProject,levelHeight,projectPath,&rules};
+        const bool documentChanged=!sceneCacheValid_ || !(key==sceneKey_);
+        if(documentChanged || modelsPending_ || now>=nextFileCheck_) {
+            // The periodic pass also catches document changes that did not bump the
+            // revision (direct loads) and rules edits, within a second.
+            {
+                proxies_=studioDocumentProxies(doc,fpsProject,levelHeight);
+                showTerrain_=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
+                lightingSettings_=renderLightingSettings((fpsProject?doc.data.fps:doc.data.extra)["renderLighting"]);
+                useLighting_=lightingSettings_.getStr("indirect")!="off" || lightingSettings_.getStr("direct")!="legacy";
+                activeLights_=studioAuthoredLights(doc,fpsProject,levelHeight,std::numeric_limits<size_t>::max());
+                day_=previewDocumentDay(doc,fpsProject);
+                nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
+            }
+            sceneCacheValid_=false; // stays invalid if the sync below throws
+            syncDocumentModels(doc,projectPath,rules,proxies_);
+            rebuildProxyDraws(doc);
+            sceneKey_=key;sceneCacheValid_=true;
+            nextFileCheck_=now+std::chrono::seconds(1);
+        }
+    }
+    const auto& proxies=proxies_;
+    const bool showTerrain=showTerrain_;
     snapPivots_.clear();
     // Same pivot as the Move gizmo: bottom centre (lights: centre).
     for (const auto& proxy:proxies) if (!hidden_.count(proxy.id))
         snapPivots_.push_back({proxy.id,proxy.light?proxy.center:float3{proxy.center.x,proxy.boundsMin.y,proxy.center.z}});
-    syncDocumentModels(doc,projectPath,rules,proxies);
 
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {
-        lightingRevision_=std::numeric_limits<uint64_t>::max();
+        // A document edit already makes the lighting stale (debounced below);
+        // force an immediate rebuild only for the other terrain causes.
+        if (terrainRevision_ == doc.revision) lightingRevision_=std::numeric_limits<uint64_t>::max();
         terrainLevelHeight_ = levelHeight;
         MeshBuilder source;
         Mesh replacement;
@@ -1451,17 +1493,21 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         terrain_ = replacement;
         terrainRevision_ = doc.revision;
     }
-    const Json settings=renderLightingSettings((fpsProject?doc.data.fps:doc.data.extra)["renderLighting"]);
-    const bool useLighting=settings.getStr("indirect")!="off" || settings.getStr("direct")!="legacy";
-    const auto activeLights=studioAuthoredLights(doc,fpsProject,levelHeight,std::numeric_limits<size_t>::max());
+    const Json& settings=lightingSettings_;
+    const bool useLighting=useLighting_;
+    const auto& activeLights=activeLights_;
     Lighting environment;
-    const auto day=previewDocumentDay(doc,fpsProject);
+    const auto& day=day_;
     const Json& lightingSource=fpsProject ? doc.data.fps["lighting"] : doc.data.extra["lighting"];
     if(lightingSource.isObject()) {
         environment.sunIntensity=day.sun;
         environment.skyColor={.5f*day.ambient,.58f*day.ambient,.7f*day.ambient};
     }
-    if(lightingRevision_!=doc.revision) {
+    const bool lightingForced=lightingRevision_==std::numeric_limits<uint64_t>::max();
+    const bool lightingDue=lightingForced || continuousRedraw_ || now-lastDocChange_>=std::chrono::milliseconds(200) ||
+                           now-lastLightingBuild_>=std::chrono::milliseconds(300);
+    if(lightingRevision_!=doc.revision && lightingDue) {
+        lastLightingBuild_=now;
         if(!lightingRuntime_.shutdown(*device_,renderer_) || !device_->waitForResourceIdle())
             throw std::runtime_error("Studio lighting retirement failed");
         if(lightingModel_) {
@@ -1522,10 +1568,25 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     stepTween();
     const auto view=viewCamera();
+    {
+        // Redraw only when something visible changed (like an editor viewport with
+        // Realtime off), plus settle frames for temporal effects and a 1 s heartbeat.
+        constexpr int kSettleFrames=30;
+        const uint64_t signature=frameSignature(framebufferWidth,framebufferHeight,doc,fpsProject,selectedId);
+        const bool animated=continuousRedraw_ || tween_.active || modelsPending_ ||
+            lightingRevision_!=doc.revision || nereid_.configuredSurfaces()>0 ||
+            (wind_.enabled && riggedInstances_>0) || day.clouds>0 || lodDiagnostics_ ||
+            (lightingRuntime_.indirect && !lightingRuntime_.indirect->converged) ||
+            !thumbJobs_.empty(); // Assets thumbnails render inside drawn frames
+        if(animated || signature!=lastFrameSignature_) settleFrames_=kSettleFrames;
+        lastFrameSignature_=signature;
+        if(settleFrames_>0) --settleFrames_;
+        else if(now-lastDrawn_<std::chrono::seconds(1)) { ++framesSkipped_; return; }
+        lastDrawn_=now; ++framesDrawn_;
+    }
     // proxies/syncDocumentModels ran above: lighting needs modelInstances_ first.
     device_->beginFrame(framebufferWidth, framebufferHeight);
     StudioFrameScope scope{*device_};
-    nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
     nereid_.prepare(*device_,view.eye());
     const double opticalNow=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
@@ -1580,9 +1641,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     selectedId_=selectedId;
     selectedPivotValid_=false;
     selectedBoxValid_=false;
-    primitiveMaterials_.clear();
-    for(const auto& entity:proxies) {
-        const int sourceIndex=studioMapEntityIndex(entity.id,doc);
+    for(auto& cached:proxyDraws_) {
+        const auto& entity=proxies[cached.proxy];
         if(hidden_.count(entity.id))continue;
         const bool dragged=!drag_.id.empty() && entity.id==drag_.id;
         const mat4 preview=dragged?dragPreview():mat4{};
@@ -1592,19 +1652,10 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             selectedPivotValid_=true;selectedIsLight_=entity.light;
             selectedAxesValid_=false;
         }
-        if(sourceIndex>=0 && doc.data.entities[size_t(sourceIndex)].extra["components"].has("NereidWater"))continue;
-        bool hasModel=false;
-        for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
-        if (hasModel) continue;
+        if(cached.water || cached.hasModel)continue;
         // Authored entities use their full Transform (3D rotation, per-axis scale).
-        mat4 world=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
-        mat4 frame=mat4::rotateY(entity.yaw);
-        if(sourceIndex>=0 && editor::authoredEntity(doc.data.entities[size_t(sourceIndex)])) {
-            try {
-                frame=editor::authoredModelMatrix(doc.data.entities[size_t(sourceIndex)]);
-                world=frame*mat4::translate({0,entity.half.y,0})*mat4::scale(entity.half*2.0f);
-            } catch(const std::exception&) {}
-        }
+        mat4 world=cached.world;
+        const mat4& frame=cached.frame;
         if(entity.id==selectedId && !entity.light) {
             for(int a=0;a<3;++a){const float3 axis=frame.transformDir({a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f});
                 const float l=std::sqrt(dot(axis,axis));selectedAxes_[a]=l>1e-6f?axis*(1.0f/l):float3{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};}
@@ -1614,28 +1665,12 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         if(entity.id==selectedId && !entity.light) captureSelectedBox(world,{-.5f,-.5f,-.5f},{.5f,.5f,.5f});
         // Mesh Renderer with a built-in primitive: sphere, or an assigned material,
         // draws a PBR primitive Model; plain default cubes keep the cheap proxy path.
-        const auto* sourceEntity=sourceIndex>=0?&doc.data.entities[size_t(sourceIndex)]:nullptr;
-        const Json staticModel=sourceEntity?sourceEntity->extra["components"]["StaticModel"]:Json::object();
-        const bool sphere=staticModel.getStr("asset")=="builtin:sphere";
-        const Json& materialRef=staticModel["materials"]["*"];
-        if(!lightingModel_ && !entity.light && (sphere || materialRef.isString())) {
-            if(auto* primitive=builtinPrimitive(sphere)) {
-                auto& materials=primitiveMaterials_[entity.id];
-                Json resolved=Json::object();
-                if(materialRef.isString())
-                    resolved=view::AppearanceAuthoringService::resolveMaterial(materialLibrary_,materialRef);
-                if(!resolved["color"].isArray()){
-                    Json color=Json::array();
-                    for(float c:{entity.color.x,entity.color.y,entity.color.z})color.push(Json::number(double(c),3));
-                    resolved.set("color",color);
-                }
-                materials={studioPbrPreviewMaterial(resolved,materialRef.isString()?materialRef.str():"Default")};
-                render::ModelDraw draw;draw.model=primitive;draw.world=world;draw.materials=&materials;
-                if(entity.id==selectedId||selection_.count(entity.id))draw.outline={.25f,.62f,1.0f,.035f};
-                else if(entity.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
-                renderer_.drawModel(draw);
-                continue;
-            }
+        if(!lightingModel_ && cached.primitive) {
+            render::ModelDraw draw;draw.model=cached.primitive;draw.world=world;draw.materials=&cached.materials;
+            if(entity.id==selectedId||selection_.count(entity.id))draw.outline={.25f,.62f,1.0f,.035f};
+            else if(entity.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
+            renderer_.drawModel(draw);
+            continue;
         }
         if(!lightingModel_ && !entity.light) {
             if(entity.id==selectedId||selection_.count(entity.id)) renderer_.drawSelectionMesh(cube_,world,entity.color,{.25f,.62f,1.0f,1.0f});
@@ -1727,6 +1762,72 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             (unsigned long long)stats.cameraLodChains,(unsigned long long)stats.cameraLodBlocked,(unsigned long long)stats.cameraShadowLimitedLod);
     }
     // StudioFrameScope ends the pass and frame, including on exceptions.
+}
+void StudioMetalScene::rebuildProxyDraws(const editor::MapDoc& doc) {
+    std::set<std::string> withModel;
+    for(const auto& instance:modelInstances_)withModel.insert(instance.id);
+    proxyDraws_.clear();
+    proxyDraws_.reserve(proxies_.size());
+    for(size_t i=0;i<proxies_.size();++i) {
+        const auto& entity=proxies_[i];
+        ProxyDraw d;
+        d.proxy=i;
+        d.sourceIndex=studioMapEntityIndex(entity.id,doc);
+        const auto* sourceEntity=d.sourceIndex>=0?&doc.data.entities[size_t(d.sourceIndex)]:nullptr;
+        d.water=sourceEntity && sourceEntity->extra["components"].has("NereidWater");
+        d.hasModel=withModel.count(entity.id)>0;
+        d.world=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+        d.frame=mat4::rotateY(entity.yaw);
+        if(sourceEntity && editor::authoredEntity(*sourceEntity)) {
+            try {
+                d.frame=editor::authoredModelMatrix(*sourceEntity);
+                d.world=d.frame*mat4::translate({0,entity.half.y,0})*mat4::scale(entity.half*2.0f);
+            } catch(const std::exception&) {}
+        }
+        if(sourceEntity && !entity.light && !d.water && !d.hasModel) {
+            const Json& staticModel=sourceEntity->extra["components"]["StaticModel"];
+            const bool sphere=staticModel.getStr("asset")=="builtin:sphere";
+            const Json& materialRef=staticModel["materials"]["*"];
+            if(sphere || materialRef.isString()) if(auto* primitive=builtinPrimitive(sphere)) {
+                Json resolved=Json::object();
+                if(materialRef.isString())
+                    resolved=view::AppearanceAuthoringService::resolveMaterial(materialLibrary_,materialRef);
+                if(!resolved["color"].isArray()){
+                    Json color=Json::array();
+                    for(float c:{entity.color.x,entity.color.y,entity.color.z})color.push(Json::number(double(c),3));
+                    resolved.set("color",color);
+                }
+                d.materials={studioPbrPreviewMaterial(resolved,materialRef.isString()?materialRef.str():"Default")};
+                d.primitive=primitive;
+            }
+        }
+        proxyDraws_.push_back(std::move(d));
+    }
+}
+uint64_t StudioMetalScene::frameSignature(int width,int height,const editor::MapDoc& doc,
+                                          bool fpsProject,const std::string& selectedId) const {
+    uint64_t h=1469598103934665603ull;
+    const auto bytes=[&h](const void* data,size_t size){
+        const auto* p=static_cast<const unsigned char*>(data);
+        for(size_t i=0;i<size;++i){h^=p[i];h*=1099511628211ull;}
+    };
+    const auto value=[&bytes](const auto& v){bytes(&v,sizeof(v));};
+    const auto text=[&](const std::string& v){value(v.size());bytes(v.data(),v.size());};
+    const auto ids=[&](const std::set<std::string>& set){value(set.size());for(const auto& id:set)text(id);};
+    const auto vec=[&](const float3& v){value(v.x);value(v.y);value(v.z);};
+    value(width);value(height);value(doc.revision);value(fpsProject);text(selectedId);
+    vec(camera_.target);value(camera_.distance);value(camera_.pitch);value(camera_.yaw);value(camera_.fovY);
+    value(camera_.ortho);value(autoIso_);value(tween_.active);
+    ids(selection_);ids(hidden_);text(hover_);
+    value(tool_);value(localSpace_);value(gizmosVisible_);value(snapEnabled_);value(pivotSnap_);value(orientationGizmo_);
+    value(drag_.axis);value(drag_.tool);text(drag_.id);vec(drag_.moveOffset);value(drag_.value);
+    value(drag_.accumulated);value(drag_.lastAngle);value(drag_.snapping);
+    value(marquee_.on);value(marquee_.x0);value(marquee_.y0);value(marquee_.x1);value(marquee_.y1);
+    value(wind_.revision);value(wind_.enabled);value(wind_.speed);value(wind_.directionDeg);
+    value(wind_.gust);value(wind_.scale);value(wind_.debug);
+    value(lightingRevision_);value(terrainRevision_);
+    value(modelInstances_.size());value(documentModels_.size());value(loadProgress_.done);
+    return h;
 }
 Json StudioMetalScene::windStats() const {
     Json j=Json::object();
