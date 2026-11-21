@@ -38,6 +38,10 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
         // still match the single-lattice CPU reference.
         auto gpuCfg=cfg;
         if(const char* c=std::getenv("AIVERSE_COMPUTE_GI_CASCADES"))gpuCfg.cascades=std::atoi(c);
+        // AIVERSE_COMPUTE_GI_SCROLL: scrolling cascades; the focus first moves
+        // away (every probe recycled, zeroed) and comes back, so the checked
+        // pixel needs the re-traced probes at the original cells.
+        if(std::getenv("AIVERSE_COMPUTE_GI_SCROLL"))gpuCfg.scroll=true;
         if(s.computeGiVerify && (!s.computeGi.initialize(d,gpuCfg) ||
            !s.computeGi.publishGeometry(gpuScene,1))) {
             std::fprintf(stderr,"GI compute setup FAIL: %s / %s\n",d.lastError().c_str(),s.computeGi.diagnostic());
@@ -112,8 +116,31 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     s.post.setSettings(settings);s.post.setQuality(PrismaQuality::High);
     r.beginScene(s.camera,w,h);
     if(s.computeGiVerify) {
-        s.computeGi.updateFrame({0,0,0});
-        if(!s.computeGi.canPresent()){waitFrame();return;}
+        // AIVERSE_COMPUTE_GI_SCROLL_AWAY=x: how far the focus walks (default 6 cells).
+        static int scrollAway=0;
+        static const float away=std::getenv("AIVERSE_COMPUTE_GI_SCROLL_AWAY")?
+            float(std::atof(std::getenv("AIVERSE_COMPUTE_GI_SCROLL_AWAY"))):6.0f;
+        float3 focus{0,0,0};
+        if(s.computeGi.config().scroll && scrollAway<40){focus={away,0,0};++scrollAway;}
+        s.computeGi.updateFrame(focus);
+        // Scrolling presents while probes update; the pixel check needs them
+        // traced and every cascade back at its home lattice (the return scroll
+        // waits for the GPU to finish with the atlas, a frame or more later).
+        bool home=true;
+        for(int k=0;k<s.computeGi.cascadeCount();++k) {
+            const auto now=s.computeGi.cascade(k).origin;
+            const auto want=GiMainGpuBridge::cascadeConfig(s.computeGi.config(),k).origin;
+            home &= now.x==want.x && now.y==want.y && now.z==want.z;
+        }
+        if(!s.computeGi.canPresent() || s.computeGi.pendingProbes() || !home ||
+           (scrollAway<40 && s.computeGi.config().scroll)){
+            waitFrame();return;}
+        if(s.computeGi.config().scroll && s.gridProbe==test && s.frame==0) {
+            const auto st=s.computeGi.scrollStats();
+            std::printf("GI scroll: %zu scrolls, %zu probes recycled, %zu re-plans, resident %zu tris\n",
+                        st.scrolls,st.recycledProbes,st.residencyReplans,s.computeGi.residency().relevantTriangles);
+            if(st.scrolls<(away!=0?2u:0u)){std::fprintf(stderr,"GI scroll FAIL\n");s.failed=true;return;}
+        }
     }
     // Case 1 intentionally does not reattach: beginScene must clear the previous view.
     if(test!=1 && !(s.computeGiVerify?r.setDynamicGiOverlay(s.computeGi):r.setDynamicGiOverlay(s.dynamicGi))){s.failed=true;return;}

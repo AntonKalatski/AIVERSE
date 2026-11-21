@@ -328,7 +328,7 @@ private:
         ui::help("На более низких уровнях эффект пропускается: так тяжёлые эффекты не попадают на слабые телефоны.");
         for (auto& w : warningsRu(e)) ui::toneText(ui::Tone::Warn, "%s", w.c_str());
         if (d.type == PrismaType::DepthOfField)
-            ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1; стандартный minQuality — High, но его можно переопределить. При некорректной near/far автоматически используется старый режим.");
+            ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Флаг не нужен (AIVERSE_PRISMA_DOF=0 выключает); стандартный minQuality — High, но его можно переопределить. При некорректной near/far автоматически используется старый режим.");
         if (d.type == PrismaType::MotionBlur)
             ui::help("reactiveTapRejection=0 сохраняет прежнее размытие движения. При значении >0 и валидной RGBA8 reactive mask фильтр дополнительно ослабляет цветовые пробы с отличающимся покрытием прозрачных объектов/частиц. Не меняет ECS и не добавляет историю; выходной HDR alpha сохраняется. Для диагностики маски проверяются размеры/формат по metadata и доступной RHI информации, но не содержимое пикселей.");
         if (d.type == PrismaType::AutoExposure)

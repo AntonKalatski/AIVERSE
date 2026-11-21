@@ -28,6 +28,8 @@ public:
     size_t committedCount() const { return committed_.size(); }
     size_t stagedCount() const { return staged_.size(); }
     bool safeToBind() const { return staged_.empty(); }
+    // Patches the attach() listener could not convert (bad layout, ids).
+    size_t listenerErrors() const { return listenerErrors_; }
 
     // If the terrain mesh/collision already changed but its new GI snapshot
     // cannot yet be published (outstanding GPU fence), the caller MUST suppress
@@ -94,6 +96,32 @@ public:
         return attemptPublish(scene,gpu,out);
     }
 
+    // Retry a staged publication GI refused earlier (pending GPU fence).
+    // Call once per frame while !safeToBind().
+    template<class GpuRuntime>
+    Result retry(render::GiGeometryScene& scene,GpuRuntime& gpu) {
+        Result out;
+        out.giRevision=scene.revision();
+        if(staged_.empty()) {out.alreadyCurrent=true;return out;}
+        return attemptPublish(scene,gpu,out);
+    }
+
+    // Hook for terraweave::TerrainMutationCoordinator::setPatchListener.
+    template<class Coordinator,class GpuRuntime>
+    void attach(Coordinator& terrain,render::GiGeometryScene& scene,GpuRuntime& gpu,
+                render::float3 albedo={.22f,.38f,.16f}) {
+        terrain.setPatchListener({
+            [this,&scene,&gpu,albedo](const auto& resident,const auto& patch) {
+                try {(void)syncPublishedPatch(resident,patch,scene,gpu,albedo);}
+                catch(const std::exception&) {++listenerErrors_;}
+            },
+            [this,&scene,&gpu](world::Cell cell) {
+                try {(void)unloadPatch(cell.x,cell.z,scene,gpu);}
+                catch(const std::exception&) {++listenerErrors_;}
+            }
+        });
+    }
+
 private:
     template<class GpuRuntime>
     Result attemptPublish(render::GiGeometryScene& scene,GpuRuntime& gpu,Result out) {
@@ -113,6 +141,7 @@ private:
     }
     std::map<uint64_t,uint64_t> committed_;  // last GPU-accepted source revisions
     std::map<uint64_t,std::optional<uint64_t>> staged_; // pending revisions/unloads
+    size_t listenerErrors_=0;
 };
 
 } // namespace aiverse::world

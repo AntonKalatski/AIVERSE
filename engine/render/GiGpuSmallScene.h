@@ -85,8 +85,11 @@ public:
         nodeBuffer_ = allocate(sizeof(GpuNode),nullptr);
         lampBuffer_ = allocate(sizeof(GpuLamp),nullptr);
         jobBuffer_ = allocate(kMaxJobs*sizeof(GpuJob),nullptr);
+        // Separate job list for clearing recycled probes, so a clear and a
+        // trace can be dispatched in the same frame.
+        clearBuffer_ = allocate(probeCount*sizeof(GpuJob),nullptr);
         if (!triBuffer_.valid() || !nodeBuffer_.valid() ||
-            !lampBuffer_.valid() || !jobBuffer_.valid()) {
+            !lampBuffer_.valid() || !jobBuffer_.valid() || !clearBuffer_.valid()) {
             shutdown();
             return false;
         }
@@ -100,12 +103,14 @@ public:
             if (nodeBuffer_.valid()) retireBuffer(nodeBuffer_);
             if (lampBuffer_.valid()) retireBuffer(lampBuffer_);
             if (jobBuffer_.valid()) retireBuffer(jobBuffer_);
+            if (clearBuffer_.valid()) retireBuffer(clearBuffer_);
             if (compute_.valid()) retirement_.retire(*dev_,compute_);
         }
         triBuffer_={};
         nodeBuffer_={};
         lampBuffer_={};
         jobBuffer_={};
+        clearBuffer_={};
         compute_={};
         atlas_.release();
         dev_=nullptr;
@@ -283,9 +288,25 @@ public:
 
     DispatchResult dispatch(const std::vector<GiProbeTicket>& jobs,
                             uint32_t samples, float traceDistance) {
+        if (jobs.size()>kMaxJobs || samples<8 || samples>kMaxSamples) return {};
+        return run(jobBuffer_,jobs,samples,traceDistance);
+    }
+    // Zero the given atlas probes (recycled cells of a scrolling lattice):
+    // the same kernel with zero samples writes zero coefficients. Own job
+    // buffer; at most one clear per GPU frame (the buffer is rewritten).
+    DispatchResult clear(const std::vector<uint32_t>& probes) {
+        std::vector<GiProbeTicket> jobs;
+        jobs.reserve(probes.size());
+        for (const auto i:probes) jobs.push_back({i,0,0,{}});
+        return run(clearBuffer_,jobs,0,1);
+    }
+
+private:
+    DispatchResult run(gfx::BufferHandle jobBuffer,const std::vector<GiProbeTicket>& jobs,
+                       uint32_t samples, float traceDistance) {
         DispatchResult result;
-        if (!ready() || jobs.empty() || jobs.size()>kMaxJobs ||
-            samples<8 || samples>kMaxSamples || !std::isfinite(traceDistance) ||
+        if (!ready() || jobs.empty() || jobs.size()>atlas_.probeCount() ||
+            !std::isfinite(traceDistance) ||
             traceDistance<=0 || traceDistance>1000 || !dev_->canUpdateSharedBuffers())
             return result;
 
@@ -298,14 +319,14 @@ public:
                 return result;
             packed.push_back({t.index,t.position.x,t.position.y,t.position.z});
         }
-        if(!dev_->updateSharedBufferChecked(jobBuffer_,packed.data(),packed.size()*sizeof(GpuJob)))
+        if(!dev_->updateSharedBufferChecked(jobBuffer,packed.data(),packed.size()*sizeof(GpuJob)))
             return result;
         // With zero geometry the kernel overwrites requested probes with zero RGB
         // (the cache is initialized to zero; old light must not survive).
         if (!dev_->beginCompute(compute_)) return result;
         dev_->setComputeBuffer(0,triBuffer_);
         dev_->setComputeBuffer(1,lampBuffer_);
-        dev_->setComputeBuffer(2,jobBuffer_);
+        dev_->setComputeBuffer(2,jobBuffer);
         dev_->setComputeBuffer(3,nodeBuffer_);
         const bool vulkan=dev_->info().backend==gfx::Backend::Vulkan;
         if(vulkan) {
@@ -368,7 +389,7 @@ private:
     gfx::Device* retirementDevice_=nullptr;
     gfx::Device* dev_=nullptr;
     gfx::ComputeHandle compute_{};
-    gfx::BufferHandle triBuffer_{},nodeBuffer_{},lampBuffer_{},jobBuffer_{};
+    gfx::BufferHandle triBuffer_{},nodeBuffer_{},lampBuffer_{},jobBuffer_{},clearBuffer_{};
     GiDynamicProbeTexture atlas_;
     size_t triangleCount_=0,nodeCount_=0,lightCount_=0;
     std::vector<GpuTri> lastTriangles_;

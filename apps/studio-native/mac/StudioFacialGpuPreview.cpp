@@ -50,7 +50,7 @@ bool StudioFacialGpuPreview::clear(
     animator_.setModel(nullptr);
     pose_.clear();
     nodeWorld_.clear();
-    model_=nullptr;hair_=nullptr;framed_=false;pickSurface_={};pristine_.reset();appliedFace_=Json();appliedLook_=Json();appliedWardrobe_=Json();tryOnRevision_=0;tryOnGuid_.clear();hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
+    metaRig_={};model_=nullptr;hair_=nullptr;framed_=false;pickSurface_={};pristine_.reset();appliedFace_=Json();appliedLook_=Json();appliedWardrobe_=Json();tryOnRevision_=0;tryOnGuid_.clear();hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
     guid_.clear();projectRoot_.clear();modelKey_.clear();
     pendingSource_.clear();pendingProject_.clear();pendingGuid_.clear();
     pendingRevision_=revision_=rejectedRevision_=0;
@@ -236,6 +236,8 @@ bool StudioFacialGpuPreview::sync(
         lib::animation::FacialPreviewSession::Vectors ikTargets;
         for(const auto& [name,v]:binding.vectors())
             ikTargets.emplace(name,render::float3{v[0],v[1],v[2]});
+        // MetaHuman skeletons get presentation drivers (half/twist, jaw, eyes).
+        auto nextRig=vivid::buildMetaHumanRig(*prepared.model);
         // Pristine CPU copy (no texture pixels) for fast in-place edits.
         std::unique_ptr<render::Model> pristine;
         {
@@ -275,6 +277,7 @@ bool StudioFacialGpuPreview::sync(
         appliedFace_=binding.face()?binding.face()->toJson():Json();
         appliedLook_=binding.appearance()?binding.appearance()->toJson():Json();
         appliedWardrobe_=binding.wardrobe();
+        metaRig_=std::move(nextRig);
         appliedReload_=binding.reloadSerial();
         model_=published;
         modelKey_=key;
@@ -378,6 +381,7 @@ bool StudioFacialGpuPreview::submit(
         return false; // FacialControlRig is transactional on failure
     expressionTime_+=animation.playing?frameDt*animation.speed:0.f;
     (void)vivid::applyHumanPreviewExpression(*model_,pose_,animation.expression,expressionTime_);
+    if(!binding.creatorMode())vivid::applyMetaHumanRig(metaRig_,*model_,pose_);
     render::worldMatrices(*model_,pose_,nodeWorld_);
     if(binding.creatorMode() && !creatorRig_.edits().empty()) {
         // Presentation-only rig correction overlay (Creator section 8).

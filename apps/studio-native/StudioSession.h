@@ -114,6 +114,8 @@ private:
     SculptBrush sculpt_;
     std::map<std::string,Json> wardrobeInfoCache_; // humanWardrobeInfo by path+mtime
     std::future<Json> humanBuild_;
+    // MetaHuman adapter runs off the UI thread (large exports take seconds).
+    std::future<Json> metaHumanJob_;std::string metaHumanKey_;Json metaHumanResult_;
     Json humanBuildResult_=Json::object();
     std::string humanBuildProject_;
     std::string previewMaterialName_;
