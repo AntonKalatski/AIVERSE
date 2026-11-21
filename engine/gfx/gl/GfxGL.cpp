@@ -7,11 +7,19 @@
 #include <cstdlib>
 #include <limits>
 #include <cstring>
+#include <cstdlib>
 #include <cstdio>
 #include <deque>
 #include <map>
 #include <string>
 #include <vector>
+
+#if !defined(AIVERSE_GL_LOADER) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+#include <EGL/egl.h>   // eglGetProcAddress: optional GLES 3.2 / EXT base-vertex draws
+#endif
+#ifndef APIENTRY
+#define APIENTRY
+#endif
 
 #if defined(AIVERSE_GL_LOADER)
 #define AIVERSE_GL_DEFINE(ret, name, args) PFN_##name name = nullptr;
@@ -206,6 +214,7 @@ public:
         if (ext.empty() && flavor == Backend::GL33) s3tc_ = true; // core profiles hide the list; every desktop GPU has DXT
         astc_ = has("texture_compression_astc");
         hdr_ = flavor == Backend::GL33 || has("EXT_color_buffer_float") || has("EXT_color_buffer_half_float");
+        resolveBaseVertexDraws(flavor, has);
         anisotropy_ = has("texture_filter_anisotropic");
         if (anisotropy_) {
             GLfloat maxAniso = 1.0f;
@@ -379,6 +388,7 @@ public:
         b.size = d.size; b.usage = d.usage;
         glGenBuffers(1, &b.id);
         glBindBuffer(b.target, b.id);
+        if (b.target == GL_ELEMENT_ARRAY_BUFFER) { gl_.elementKnown = true; gl_.elementBuffer = b.id; }
         glBufferData(b.target, GLsizeiptr(d.size), d.data, d.usage == Usage::Dynamic ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
         attribsDirty_ = true;
         return {buffers_.add(b)};
@@ -387,6 +397,7 @@ public:
         auto* b = buffers_.get(h.id);
         if (!b) return;
         glBindBuffer(b->target, b->id);
+        if (b->target == GL_ELEMENT_ARRAY_BUFFER) { gl_.elementKnown = true; gl_.elementBuffer = b->id; }
         if (offset + size > b->size) {
             b->size = (offset + size) * 3 / 2;
             glBufferData(b->target, GLsizeiptr(b->size), nullptr, GL_DYNAMIC_DRAW);
@@ -403,13 +414,17 @@ public:
         return true;
     }
     void destroyBuffer(BufferHandle h) override {
-        if (auto* b = buffers_.get(h.id)) { glDeleteBuffers(1, &b->id); buffers_.remove(h.id); }
+        if (auto* b = buffers_.get(h.id)) {
+            glDeleteBuffers(1, &b->id); buffers_.remove(h.id);
+            gl_.elementKnown = false; attribsDirty_ = true; // GL may reuse the name
+        }
     }
 
     // ---------- textures ----------
     // Native ES3 / GL3.3 dimension support. Keep the existing Texture2D path below
     // unchanged; non-2D targets are sampled through matching GLSL sampler types.
     TextureHandle createDimensionalTexture(const TextureDesc& d) {
+        invalidateTextureUnits(); // binds through the active unit
         if (!supportsTextureDimension(d.dimension) || d.storage || d.sampleCount != 1 ||
             (d.dimension == TextureDimension::Texture3D && d.format == PixelFormat::Depth) ||
             (d.format == PixelFormat::Depth && d.data)) {
@@ -543,6 +558,7 @@ public:
     }
 
     TextureHandle createTexture(const TextureDesc& d) override {
+        invalidateTextureUnits(); // binds through the active unit
         if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
             error_ = textureDescErrorString(e); return {};
         }
@@ -731,6 +747,7 @@ public:
             error_="GL: legacy Texture2D upload rejected";
     }
     bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override {
+        invalidateTextureUnits(); // binds through the active unit
         auto* t = textures_.get(h.id);
         if (!t || !u.data || t->renderbuffer || t->compressed || t->fmt == PixelFormat::Depth ||
             u.mipLevel < 0 || u.mipLevel >= t->levels || u.arrayLayer < 0 ||
@@ -957,9 +974,10 @@ public:
             sampler = s->native;
         }
         drainPendingGlErrors();
-        glActiveTexture(GL_TEXTURE0 + GLenum(slot));
+        activeUnit(slot);
         glBindTexture(t->target, t->id);
         glBindSampler(GLuint(slot), sampler);
+        if (slot >= 0 && slot < 16) gl_.unitKnown[slot] = false; // a view sampler, not the default
         return glGetError() == GL_NO_ERROR;
     }
     bool textureInfo(TextureHandle h, TextureInfo& out) const override {
@@ -969,6 +987,7 @@ public:
         return true;
     }
     void destroyTexture(TextureHandle h) override {
+        invalidateTextureUnits(); // GL unbinds the name and may reuse it
         std::vector<uint32_t> children;
         views_.each([&](uint32_t id, GLTextureView& view) {
             if (view.parentId == h.id) children.push_back(id);
@@ -1047,6 +1066,7 @@ public:
             return {};
         }
         glUseProgram(p);
+        gl_.program = p;
         for (int i = 0; i < d.uniformSlots; ++i) {
             std::string n = "U" + std::to_string(i);
             GLuint bi = glGetUniformBlockIndex(p, n.c_str());
@@ -1061,7 +1081,7 @@ public:
         return {shaders_.add(GLShader{p, d.glslVertex, d.glslFragment, d.textureSlots, d.uniformSlots, d.linearTarget})};
     }
     void destroyShader(ShaderHandle h) override {
-        if (auto* s = shaders_.get(h.id)) { glDeleteProgram(s->program); shaders_.remove(h.id); }
+        if (auto* s = shaders_.get(h.id)) { glDeleteProgram(s->program); shaders_.remove(h.id); gl_.raster = false; }
     }
 
     PipelineHandle createPipeline(const PipelineDesc& d) override {
@@ -1252,6 +1272,7 @@ public:
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
         if (uboPool_) poolBeginFrame();
+        invalidateGlState();
 #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
         glBufferData(GL_UNIFORM_BUFFER, kUniformRingSize, nullptr, GL_STREAM_DRAW); // orphan the ring
@@ -1710,6 +1731,7 @@ public:
         // PipelineDesc.colorFormat/additionalColorFormats instead.
         hdrPass_ = allHdr;
         glBindVertexArray(vao_);
+        invalidateGlState(); // pass setup changes masks and texture bindings
         glDisable(GL_SCISSOR_TEST);
         if (anySrgb && info_.backend == Backend::GL33 && !srgbWrite_) {
             glEnable(kGL_FRAMEBUFFER_SRGB);
@@ -1829,6 +1851,7 @@ public:
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
         glBindVertexArray(vao_);
         glDisable(GL_SCISSOR_TEST);
+        invalidateGlState(); // clears below change masks; framebuffers may bind textures
         passW_ = fbW_; passH_ = fbH_;
         if (d.colorTarget.valid() || d.depthTarget.valid()) {
             glBindFramebuffer(GL_FRAMEBUFFER, framebufferFor(d.colorTarget.id, d.depthTarget.id));
@@ -1901,6 +1924,7 @@ public:
         explicitPassSamples_ = 0;
         explicitPassColors_ = -1;
         glDisable(GL_POLYGON_OFFSET_FILL);
+        gl_.raster = false;
         if (srgbWrite_) { glDisable(kGL_FRAMEBUFFER_SRGB); srgbWrite_ = false; }
         passW_ = fbW_; passH_ = fbH_;
     }
@@ -1922,6 +1946,7 @@ public:
         glDisable(GL_SCISSOR_TEST);
         glBlitFramebuffer(0, 0, sw, sh, 0, 0, sw, sh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        invalidateGlState();
         return true;
     }
 
@@ -1962,17 +1987,38 @@ public:
                 }
             }
         }
-        glUseProgram(p->program);
-        if (d.cull == CullMode::None) glDisable(GL_CULL_FACE);
-        else { glEnable(GL_CULL_FACE); glCullFace(d.cull == CullMode::Back ? GL_BACK : GL_FRONT); glFrontFace(GL_CCW); }
-        if (d.depthTest) { glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); } else glDisable(GL_DEPTH_TEST);
-        glDepthMask(d.depthWrite ? GL_TRUE : GL_FALSE);
-        const GLboolean cw = d.colorWrite ? GL_TRUE : GL_FALSE;
-        glColorMask(cw, cw, cw, cw);
-        if (d.depthBiasConstant != 0 || d.depthBiasSlope != 0) {
-            glEnable(GL_POLYGON_OFFSET_FILL);
-            glPolygonOffset(d.depthBiasSlope, d.depthBiasConstant);
-        } else glDisable(GL_POLYGON_OFFSET_FILL);
+        const bool known = gl_.raster;
+        if (!known || gl_.program != p->program) { glUseProgram(p->program); gl_.program = p->program; }
+        const int cull = d.cull == CullMode::None ? 0 : d.cull == CullMode::Back ? 1 : 2;
+        if (!known || gl_.cull != cull) {
+            if (cull == 0) glDisable(GL_CULL_FACE);
+            else { glEnable(GL_CULL_FACE); glCullFace(cull == 1 ? GL_BACK : GL_FRONT); glFrontFace(GL_CCW); }
+            gl_.cull = cull;
+        }
+        const int depthTest = d.depthTest ? 1 : 0;
+        if (!known || gl_.depthTest != depthTest) {
+            if (depthTest) { glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); } else glDisable(GL_DEPTH_TEST);
+            gl_.depthTest = depthTest;
+        }
+        const int depthWrite = d.depthWrite ? 1 : 0;
+        if (!known || gl_.depthWrite != depthWrite) { glDepthMask(depthWrite ? GL_TRUE : GL_FALSE); gl_.depthWrite = depthWrite; }
+        const int colorWrite = d.colorWrite ? 1 : 0;
+        if (!known || gl_.colorWrite != colorWrite) {
+            const GLboolean cw = colorWrite ? GL_TRUE : GL_FALSE;
+            glColorMask(cw, cw, cw, cw);
+            gl_.colorWrite = colorWrite;
+        }
+        const int polygonOffset = d.depthBiasConstant != 0 || d.depthBiasSlope != 0 ? 1 : 0;
+        if (!known || gl_.polygonOffset != polygonOffset ||
+            (polygonOffset && (gl_.biasSlope != d.depthBiasSlope || gl_.biasConstant != d.depthBiasConstant))) {
+            if (polygonOffset) {
+                glEnable(GL_POLYGON_OFFSET_FILL);
+                glPolygonOffset(d.depthBiasSlope, d.depthBiasConstant);
+            } else glDisable(GL_POLYGON_OFFSET_FILL);
+            gl_.polygonOffset = polygonOffset; gl_.biasSlope = d.depthBiasSlope; gl_.biasConstant = d.depthBiasConstant;
+        }
+        const int blend = int(d.blend);
+        if (!known || gl_.blend != blend) {
         switch (d.blend) {
             case BlendMode::Opaque: glDisable(GL_BLEND); break;
             case BlendMode::Alpha:
@@ -1994,22 +2040,36 @@ public:
                 glEnable(GL_BLEND); glBlendEquation(GL_FUNC_ADD);
                 glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_ONE, GL_ONE_MINUS_SRC_ALPHA); break;
         }
-        attribsDirty_ = true;
+            gl_.blend = blend;
+        }
+        gl_.raster = true;
+        // The vertex layout is compared in applyAttribs(); no unconditional re-point.
     }
-    void setVertexBuffer(BufferHandle b, size_t offset) override { vbId_ = b.id; vbOffset_ = offset; attribsDirty_ = true; }
+    void setVertexBuffer(BufferHandle b, size_t offset) override { vbId_ = b.id; vbOffset_ = offset; }
     void setIndexBuffer(BufferHandle b, size_t offset) override {
         ibId_ = b.id; ibOffset_ = offset;
-        if (auto* ib = buffers_.get(b.id)) glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib->id);
+        if (auto* ib = buffers_.get(b.id)) {
+            if (!gl_.elementKnown || gl_.elementBuffer != ib->id) {
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib->id);
+                gl_.elementKnown = true; gl_.elementBuffer = ib->id;
+            }
+        }
     }
     void setTexture(int slot, TextureHandle h) override {
         if (slot < 0 || slot >= 16) return;
         auto* t = textures_.get(h.id);
-        glActiveTexture(GL_TEXTURE0 + GLenum(slot));
+        // Known unit with this texture and the default sampler: nothing to issue.
+        if (t && !t->renderbuffer && gl_.unitKnown[slot] &&
+            gl_.unitTarget[slot] == t->target && gl_.unitTexture[slot] == t->id) return;
+        activeUnit(slot);
         // Default texture-specific filtering must not inherit a previously bound
         // independent sampler from bindTextureView.
         glBindSampler(GLuint(slot), 0);
-        if (t && !t->renderbuffer) glBindTexture(t->target, t->id);
-        else {
+        if (t && !t->renderbuffer) {
+            glBindTexture(t->target, t->id);
+            gl_.unitKnown[slot] = true; gl_.unitTarget[slot] = t->target; gl_.unitTexture[slot] = t->id;
+        } else {
+            gl_.unitKnown[slot] = false;
             if (t && t->renderbuffer)
                 error_ = "GL: multisample renderbuffers cannot be bound as sampled textures";
             glBindTexture(GL_TEXTURE_2D, 0);
@@ -2020,15 +2080,24 @@ public:
     }
     void setUniforms(int slot, const void* data, size_t size) override {
         if (slot < 0 || slot >= kMaxUniformSlots || size == 0) return;
+        // The same block again (per-pass/per-material uniforms repeated for every
+        // draw): the slot still holds exactly these bytes within this frame.
+        auto& last = slotData_[slot];
+        if (last.size() == size && std::memcmp(last.data(), data, size) == 0) return;
 #if defined(__EMSCRIPTEN__) || defined(__APPLE__)
         // Metal-backed GL/ANGLE can copy a busy buffer on subData, even for disjoint ring ranges.
         // Orphan only this slot's small block instead of cloning the 1 MB ring per draw.
         glBindBuffer(GL_UNIFORM_BUFFER, slotUbos_[slot]);
         glBufferData(GL_UNIFORM_BUFFER, GLsizeiptr(size), data, GL_STREAM_DRAW);
         glBindBufferRange(GL_UNIFORM_BUFFER, GLuint(slot), slotUbos_[slot], 0, GLsizeiptr(size));
+        last.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
         return;
 #endif
-        if (uboPool_) { poolUniforms(slot, data, size); return; }
+        if (uboPool_) {
+            poolUniforms(slot, data, size);
+            last.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
+            return;
+        }
         size_t off = (uboOffset_ + uboAlign_ - 1) / uboAlign_ * uboAlign_;
         if (off + size > kUniformRingSize) { // ring exhausted: orphan and restart
             glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
@@ -2079,7 +2148,22 @@ public:
     void writeUniforms(int slot, const void* data, size_t size) {
         size_t off = (uboOffset_ + uboAlign_ - 1) / uboAlign_ * uboAlign_;
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
-        glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
+        // Every write lands in a range no draw of this ring generation has used
+        // (the ring is orphaned per frame and when exhausted), so an unsynchronized
+        // map is safe. glBufferSubData into a buffer the GPU still reads makes many
+        // drivers stall or copy the whole 1 MB ring on every draw.
+#if defined(__EMSCRIPTEN__)
+        void* mapped = nullptr; // WebGL2 has no buffer mapping (and uses per-slot blocks)
+#else
+        void* mapped = mapUniformsUnsynchronized_ ? glMapBufferRange(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size),
+            GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT) : nullptr;
+#endif
+        if (mapped) {
+            std::memcpy(mapped, data, size);
+            if (!glUnmapBuffer(GL_UNIFORM_BUFFER)) glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
+        } else {
+            glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
+        }
         glBindBufferRange(GL_UNIFORM_BUFFER, GLuint(slot), ubo_, GLintptr(off), GLsizeiptr(size));
         uboOffset_ = off + size;
     }
@@ -2088,11 +2172,21 @@ public:
         auto* pl = pipelines_.get(pipelineId_);
         auto* vb = buffers_.get(vbId_);
         if (!pl || !vb) return;
-        if (!attribsDirty_ && baseVertex == lastBaseVertex_) return;
         const auto& d = pl->desc;
-        glBindBuffer(GL_ARRAY_BUFFER, vb->id);
-        for (GLuint i = 0; i < 8; ++i) glDisableVertexAttribArray(i);
         const size_t base = vbOffset_ + size_t(baseVertex) * d.stride;
+        bool same = !attribsDirty_ && gl_.attribsKnown && gl_.layoutBuffer == vb->id &&
+            gl_.layoutBase == base && gl_.layoutStride == d.stride && gl_.layoutCount == d.attrCount;
+        for (int i = 0; same && i < d.attrCount; ++i)
+            same = gl_.layout[i].location == d.attrs[i].location && gl_.layout[i].format == d.attrs[i].format &&
+                   gl_.layout[i].offset == d.attrs[i].offset;
+        if (same) return;
+        glBindBuffer(GL_ARRAY_BUFFER, vb->id);
+        uint32_t wanted = 0;
+        for (int i = 0; i < d.attrCount; ++i) if (d.attrs[i].location < 32) wanted |= 1u << d.attrs[i].location;
+        // Unknown state: disable the legacy 0..7 range once, as before.
+        const uint32_t enabled = gl_.attribsKnown ? gl_.enabledAttribs : 0xFFu;
+        for (GLuint i = 0; i < 32; ++i)
+            if ((enabled & ~wanted) & (1u << i)) glDisableVertexAttribArray(i);
         for (int i = 0; i < d.attrCount; ++i) {
             const auto& a = d.attrs[i];
             GLint n = 3; GLenum type = GL_FLOAT; GLboolean norm = GL_FALSE;
@@ -2103,9 +2197,13 @@ public:
                 case VertexFormat::UByte4N: n = 4; type = GL_UNSIGNED_BYTE; norm = GL_TRUE; break;
                 case VertexFormat::UByte4: n = 4; type = GL_UNSIGNED_BYTE; break;
             }
-            glEnableVertexAttribArray(a.location);
+            if (a.location >= 32 || !gl_.attribsKnown || !(gl_.enabledAttribs & (1u << a.location)))
+                glEnableVertexAttribArray(a.location);
             glVertexAttribPointer(a.location, n, type, norm, GLsizei(d.stride), reinterpret_cast<const void*>(base + a.offset));
         }
+        gl_.attribsKnown = true; gl_.enabledAttribs = wanted;
+        gl_.layoutBuffer = vb->id; gl_.layoutBase = base; gl_.layoutStride = d.stride; gl_.layoutCount = d.attrCount;
+        for (int i = 0; i < d.attrCount && i < 8; ++i) gl_.layout[i] = d.attrs[i];
         attribsDirty_ = false;
         lastBaseVertex_ = baseVertex;
     }
@@ -2119,12 +2217,21 @@ public:
     void drawIndexed(uint32_t count, uint32_t firstIndex, int32_t baseVertex, uint32_t instances) override {
         auto* pl = pipelines_.get(pipelineId_);
         if (!pl || !buffers_.get(ibId_)) return;
-        // ES 3.0 / WebGL2 lack glDrawElementsBaseVertex: emulate by offsetting attribute pointers.
-        applyAttribs(baseVertex);
         const bool u32 = pl->desc.indexType == IndexType::UInt32;
         const size_t off = ibOffset_ + size_t(firstIndex) * (u32 ? 4 : 2);
-        if (instances > 1) glDrawElementsInstanced(prim(), GLsizei(count), u32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, reinterpret_cast<const void*>(off), GLsizei(instances));
-        else glDrawElements(prim(), GLsizei(count), u32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, reinterpret_cast<const void*>(off));
+        const GLenum indexType = u32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT;
+        const void* indices = reinterpret_cast<const void*>(off);
+        if (baseVertex != 0 && drawElementsBaseVertex_) {
+            // Native base vertex: the attribute layout stays bound across pooled meshes.
+            applyAttribs(0);
+            if (instances > 1) drawElementsInstancedBaseVertex_(prim(), GLsizei(count), indexType, indices, GLsizei(instances), baseVertex);
+            else drawElementsBaseVertex_(prim(), GLsizei(count), indexType, indices, baseVertex);
+            return;
+        }
+        // ES 3.0 / WebGL2 lack glDrawElementsBaseVertex: emulate by offsetting attribute pointers.
+        applyAttribs(baseVertex);
+        if (instances > 1) glDrawElementsInstanced(prim(), GLsizei(count), indexType, indices, GLsizei(instances));
+        else glDrawElements(prim(), GLsizei(count), indexType, indices);
     }
 
 private:
@@ -2189,6 +2296,85 @@ private:
     size_t vbOffset_ = 0, ibOffset_ = 0;
     bool attribsDirty_ = true;
     int32_t lastBaseVertex_ = 0;
+
+    // Redundant-state filter, as in the GL backends of Unity, Unreal and Godot:
+    // program, raster state, texture units, index buffer and the vertex layout
+    // are issued only when they change. This device is the only GL state owner;
+    // every path that changes the same state outside the draw calls invalidates
+    // the affected part, and beginFrame()/beginPass() reset everything.
+    struct GLStateCache {
+        bool raster = false;   // program and raster fields below are known
+        GLuint program = 0;
+        int cull = -1, depthTest = -1, depthWrite = -1, colorWrite = -1, polygonOffset = -1, blend = -1;
+        float biasSlope = 0, biasConstant = 0;
+        int activeUnit = -1;
+        bool unitKnown[16] = {};
+        GLenum unitTarget[16] = {};
+        GLuint unitTexture[16] = {};
+        bool elementKnown = false;
+        GLuint elementBuffer = 0;
+        bool attribsKnown = false;
+        uint32_t enabledAttribs = 0;
+        uint32_t layoutStride = 0; int layoutCount = -1; VertexAttr layout[8] = {};
+        GLuint layoutBuffer = 0; size_t layoutBase = 0;
+    } gl_;
+    void invalidateGlState() { gl_ = GLStateCache{}; attribsDirty_ = true; }
+    void invalidateTextureUnits() { gl_.activeUnit = -1; for (bool& known : gl_.unitKnown) known = false; }
+    void activeUnit(int slot) {
+        if (gl_.activeUnit != slot) { glActiveTexture(GL_TEXTURE0 + GLenum(slot)); gl_.activeUnit = slot; }
+    }
+    // Native glDrawElements*BaseVertex (desktop GL 3.2+, GLES 3.2, EXT/OES): the
+    // pooled geometry offset goes into the draw call and the vertex layout stays
+    // bound. Without it (WebGL2, GLES 3.0) attributes are re-pointed per offset.
+    using DrawElementsBaseVertexFn = void (APIENTRY*)(GLenum, GLsizei, GLenum, const void*, GLint);
+    using DrawElementsInstancedBaseVertexFn = void (APIENTRY*)(GLenum, GLsizei, GLenum, const void*, GLsizei, GLint);
+    // Ring path only (desktop GL; GLES uses the fenced pools above): opt-in
+    // AIVERSE_GL_UNIFORM_MAP=1 writes through glMapBufferRange(UNSYNCHRONIZED).
+    // Off by default: on Adreno 610 the unsynchronized map measured slower than
+    // the pools (150 vs 79 ms), and no desktop driver measurement exists yet.
+    const bool mapUniformsUnsynchronized_ = [] {
+        const char* v = std::getenv("AIVERSE_GL_UNIFORM_MAP");
+        return v && std::strcmp(v, "1") == 0;
+    }();
+    DrawElementsBaseVertexFn drawElementsBaseVertex_ = nullptr;
+    DrawElementsInstancedBaseVertexFn drawElementsInstancedBaseVertex_ = nullptr;
+    template<class Has>
+    void resolveBaseVertexDraws(Backend flavor, const Has& has) {
+        if (const char* off = std::getenv("AIVERSE_GL_NATIVE_BASE_VERTEX"); off && std::strcmp(off, "0") == 0) return;
+#if defined(__APPLE__)
+        (void)flavor; (void)has;
+        drawElementsBaseVertex_ = &::glDrawElementsBaseVertex;
+        drawElementsInstancedBaseVertex_ = &::glDrawElementsInstancedBaseVertex;
+#elif defined(AIVERSE_GL_LOADER)
+        (void)has;
+        if (flavor != Backend::GL33) return;
+        drawElementsBaseVertex_ = reinterpret_cast<DrawElementsBaseVertexFn>(wglGetProcAddress("glDrawElementsBaseVertex"));
+        drawElementsInstancedBaseVertex_ = reinterpret_cast<DrawElementsInstancedBaseVertexFn>(wglGetProcAddress("glDrawElementsInstancedBaseVertex"));
+#elif !defined(__EMSCRIPTEN__)
+        // eglGetProcAddress may return entry points the context does not support:
+        // require GLES 3.2 (core names) or the extension (suffixed names).
+        GLint major = 0, minor = 0;
+        glGetIntegerv(GL_MAJOR_VERSION, &major);
+        glGetIntegerv(GL_MINOR_VERSION, &minor);
+        while (glGetError() != GL_NO_ERROR) {}
+        const char* suffix = nullptr;
+        if (flavor == Backend::GL33 || major > 3 || (major == 3 && minor >= 2)) suffix = "";
+        else if (has("GL_EXT_draw_elements_base_vertex")) suffix = "EXT";
+        else if (has("GL_OES_draw_elements_base_vertex")) suffix = "OES";
+        if (!suffix) return;
+        const std::string a = std::string("glDrawElementsBaseVertex") + suffix;
+        const std::string b = std::string("glDrawElementsInstancedBaseVertex") + suffix;
+        drawElementsBaseVertex_ = reinterpret_cast<DrawElementsBaseVertexFn>(eglGetProcAddress(a.c_str()));
+        drawElementsInstancedBaseVertex_ = reinterpret_cast<DrawElementsInstancedBaseVertexFn>(eglGetProcAddress(b.c_str()));
+#else
+        (void)flavor; (void)has;
+#endif
+        if (!drawElementsBaseVertex_ || !drawElementsInstancedBaseVertex_) {
+            drawElementsBaseVertex_ = nullptr; drawElementsInstancedBaseVertex_ = nullptr;
+        }
+    }
+public:
+    bool nativeBaseVertex() const noexcept { return drawElementsBaseVertex_ != nullptr; }
 };
 
 } // namespace

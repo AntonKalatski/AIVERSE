@@ -1261,6 +1261,20 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux")
     set_tests_properties(vivid_gles_sculpt_id PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
+# GL backend redundant-state filter and native base-vertex draws on a real
+# EGL/GLES3 context (Mesa llvmpipe is enough); skips without EGL/GLES3.
+# AIVERSE_GL_BENCH=<draws> [AIVERSE_GL_BENCH_VARY=1] also times CPU submission.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux")
+    add_executable(aiverse_gl_state_cache_gpu_tests
+        tests/render/gl_state_cache_gpu.cpp
+        engine/gfx/gl/GfxGL.cpp)
+    target_include_directories(aiverse_gl_state_cache_gpu_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_gl_state_cache_gpu_tests PRIVATE EGL GLESv2)
+    target_compile_features(aiverse_gl_state_cache_gpu_tests PRIVATE cxx_std_20)
+    add_test(NAME gl_state_cache_gpu COMMAND aiverse_gl_state_cache_gpu_tests)
+    set_tests_properties(gl_state_cache_gpu PROPERTIES SKIP_RETURN_CODE 77 LABELS "GLES;GPU")
+endif()
+
 # The platform files define main(); they are compiled into each executable through an OBJECT
 # library so that the entry point lands in the final binary on every toolchain.
 # Native plugins bridge + store/ads/analytics/privacy services (engine/platform/Plugins.h, engine/services). No window
