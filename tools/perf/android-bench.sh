@@ -12,12 +12,12 @@ if [ -z "${AIVERSE_BENCH_ROOT:-}" ]; then
   c="${TMPDIR:-/tmp}/android-bench.$$.sh"; cp "$0" "$c"; exec bash "$c" "$@"
 fi
 ROOT="$AIVERSE_BENCH_ROOT"
-XENV=""; PROFILE=""; PSEC=12
+XENV=""; PROFILE=""; PSEC=12; OFFCPU=""
 PROJECT="$ROOT/templates/skirmish"; MAP=0; FRAMES=1200; CASES=features; BUILD=1
 OUT=/Volumes/KINGSTON/AIVERSE-builds/android-bench
 while [ $# -gt 0 ]; do case "$1" in
   --no-build) BUILD=0;; --fast) BUILD=2;; --project) PROJECT="$2"; shift;; --map) MAP="$2"; shift;; --frames) FRAMES="$2"; shift;;
-  --cases) CASES="$2"; shift;; --gfx) GFXLIST="$2"; shift;; --env) XENV="${XENV:-} $2"; shift;; --profile) PROFILE="$2"; shift;; --seconds) PSEC="$2"; shift;; --out) OUT="$2"; shift;; *) echo "unknown arg $1"; exit 2;; esac; shift; done
+  --cases) CASES="$2"; shift;; --gfx) GFXLIST="$2"; shift;; --env) XENV="${XENV:-} $2"; shift;; --profile) PROFILE="$2"; shift;; --seconds) PSEC="$2"; shift;; --offcpu) OFFCPU=1;; --out) OUT="$2"; shift;; *) echo "unknown arg $1"; exit 2;; esac; shift; done
 case "$PROJECT" in /*) ;; *) PROJECT="$ROOT/$PROJECT";; esac
 NAME="$(basename "$PROJECT")"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -200,7 +200,7 @@ profile() {
   sleep 4
   say "profile $gfx: simpleperf ${PSEC}s"
   A shell rm -f /data/local/tmp/perf.data
-  A shell simpleperf record --app "$PKG" -e cpu-clock -f 2000 --call-graph fp --duration "$PSEC" -o /data/local/tmp/perf.data > "$P/record.txt" 2>&1
+  A shell simpleperf record --app "$PKG" -e cpu-clock -f 2000 --call-graph fp ${OFFCPU:+--trace-offcpu} --duration "$PSEC" -o /data/local/tmp/perf.data > "$P/record.txt" 2>&1
   A logcat -d > "$P/logcat.txt"
   A shell am force-stop "$PKG"
   A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,tid -n > "$P/threads.txt" 2>&1
