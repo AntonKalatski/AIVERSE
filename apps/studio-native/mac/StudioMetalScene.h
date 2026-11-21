@@ -47,6 +47,11 @@ public:
     void move(float right, float up, float forward);
     void focusSelected(const editor::MapDoc& map, bool fpsProject, const std::string& selectedId);
     void resetView();
+    // Automation (AIVERSE_STUDIO_WIND_SHOTS): frame a point of interest.
+    void setShotCamera(float tx, float ty, float tz, float distance, float yaw, float pitch) {
+        camera_.target={tx,ty,tz}; camera_.distance=distance; camera_.yaw=yaw; camera_.pitch=pitch;
+        cameraInitialized_=true;
+    }
     void resetCamera() { lightingRevision_=std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
