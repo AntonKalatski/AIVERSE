@@ -51,3 +51,12 @@ Then: split `engine/render` into CMake sub-targets; shrink AGENTS.md after no-ge
   `engine/world/nereid/` with forwarders (NEREID owner); (b) the bridges move up to `libraries/` (Terra owner).
 - 3: `engine/view/View.h` -> MotionWeave / animation budget, which include `engine/render` and ECS. Option:
   move MotionWeave up into `engine/animation/` or move the View bridge into `libraries/` (MotionWeave owner).
+
+## Stage 03 (2026-11-21, owner asked to finish L1)
+- NEREID core (25 headers) -> `engine/world/nereid/` (27 edges); note in `docs/nereid/HANDOFF.md`, AGENTS ownership row.
+- MotionWeave core (12 headers: MotionWeave, EcsAnimationSystems, schedulers, montage, playback, pose blend,
+  inertialization, budget/work policies, source bridge) -> `engine/animation/` (3 edges);
+  `tools/animation/check_motionweave_dependencies.py` also scans `engine/animation`: PASS.
+- L1 is closed; allowlist = 19 genre-host edges (G3 16, G4 3) owned by the no-genre work.
+- g++ -fsyntax-only: all moved headers and forwarders PASS except pre-existing failures that also fail on
+  the parent commit (gcc size_t lambda in TerraWeaveForestEcology.h; box3d include path not given).
