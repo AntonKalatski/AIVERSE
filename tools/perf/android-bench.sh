@@ -172,7 +172,7 @@ cases_features() {
 # --profile gl|vulkan|gl,vulkan: simpleperf (cpu-clock) for --seconds while the match runs; reports by thread,
 # library and address (symbolize the libmain.so addresses with addr2line on the unstripped library)
 profile() {
-  local gfx="$1" P="$OUT/profile_${NAME}_$gfx"; mkdir -p "$P"
+  local gfx="$1"; local P="$OUT/profile_${NAME}_$gfx"; mkdir -p "$P"
   A shell am force-stop "$PKG"; clearprops
   A shell setprop debug.aiverse.args "'--map $MAP --spectate --gfx $gfx'"
   local i=0
