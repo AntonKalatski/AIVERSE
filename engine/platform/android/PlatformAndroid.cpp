@@ -71,7 +71,7 @@ void applyRenderScale(ANativeWindow* win) {
 struct PerfLog {
     double window = 0;          // seconds per printed window; 0 = off
     long exitAfter = 0;         // AIVERSE_EXIT_AFTER_FRAMES
-    long frames = 0;
+    long frames = 0, windows = 0;
     double windowStart = -1, last = -1;
     std::vector<float> wall, cpu, allWall, allCpu;
     static float pct(std::vector<float> v, double q) {
@@ -98,12 +98,13 @@ struct PerfLog {
         ++frames;
         if (last >= 0 && frames > 30) {   // the first frames load the map: not part of the numbers
             float ms = float((start - last) * 1000.0);
-            wall.push_back(ms); cpu.push_back(float(cpuMs)); allWall.push_back(ms); allCpu.push_back(float(cpuMs));
+            wall.push_back(ms); cpu.push_back(float(cpuMs));
+            if (windows > 0) { allWall.push_back(ms); allCpu.push_back(float(cpuMs)); }   // summary: after the first window (splash, map load)
             if (windowStart < 0) windowStart = last;
         }
         last = start;
         if (window > 0 && windowStart >= 0 && start - windowStart >= window) {
-            print("window", wall, cpu, start - windowStart); wall.clear(); cpu.clear(); windowStart = start;
+            print("window", wall, cpu, start - windowStart); wall.clear(); cpu.clear(); windowStart = start; ++windows;
         }
         if (exitAfter > 0 && frames >= exitAfter) {
             double total = 0; for (float x : allWall) total += double(x);
