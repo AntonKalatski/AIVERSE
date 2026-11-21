@@ -170,7 +170,7 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vivid_human_retirement_tests
         ${PROJECT_SOURCE_DIR}/tests/vivid/human_retirement.cpp)
     target_link_libraries(aiverse_vivid_human_retirement_tests PRIVATE
-        aiverse_vivid_human aiverse_vivid_actor aiverse_zstd_dec)
+        aiverse_vivid_human aiverse_vivid_actor aiverse_zstd_dec AIVERSE::MotionWeave)
     add_test(NAME vivid_human_retirement
         COMMAND aiverse_vivid_human_retirement_tests)
 
