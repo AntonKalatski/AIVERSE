@@ -102,7 +102,7 @@
 | **로그라이크** | `run-graph`: 시드 기반 런과 조우 예산. 희귀 보상이 보장되는 `loot-tables` |
 | **방치형, 공장, 콜로니** | `big-numbers`, `offline-production`(정확한 오프라인 진행), `production-networks`, `logistics`, `tasks` |
 | **리듬 게임** | `rhythm-timing`: 템포 맵과 프레임레이트와 무관한 판정 |
-| **레이싱, 탈것** | `vehicle-controllers`: 자동차(토크, 기어, 접지력, 드리프트), 전차, 호버크래프트, 비행기, 좌석, 피해 구역; 레이스 세션: 출발 그리드, 카운트다운, 순서대로 통과하는 체크포인트, 랩, 순위, 역주행, 레이싱 봇; 모든 프로젝트에서 쓰는 맵 `race` 블록, 공통 HUD와 추격 카메라, 템플릿 1개 |
+| **레이싱, 탈것** | `vehicle-controllers`: 자동차(토크, 기어, 접지력, 드리프트), 전차, 호버크래프트, 비행기, 좌석, 피해 구역; 레이스 세션: 출발 그리드, 카운트다운, 순서대로 통과하는 체크포인트, 랩, 순위, 역주행, 레이싱 봇; 모든 프로젝트에서 쓰는 맵 `race` 블록, 공통 HUD와 추격 카메라, 템플릿 2개 |
 | **모든 모바일 게임** | `aiverse::meta`와 LiveOps, 튜토리얼, UI 화면, 스토어와 광고 플러그인 |
 
 스포츠 게임, 보트, 피트 스톱과 페널티는 아직 [로드맵](docs/genre-mechanics-roadmap.md)에 있습니다. 전체 라이브러리 목록:
@@ -181,7 +181,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 | 경제와 건설 | **Hearth and Haul**(Knights and Merchants) · **Underlord**(Dungeon Keeper) |
 | 2D와 실험 | **Crystal Dunes**(타일, Dune II) · **Green Hills**(3D 지형 위의 2D 스프라이트) · **Planets**(구형 행성과 궤도) · **Wildfire**(필드: 산불과 크립) |
 | FPS | **Crossfire Arena**(5대5) · **Breach Protocol**(전술 라운드) · **Last Survivor**(100인 배틀로얄) · **Aim Lab**(사격장) |
-| 레이싱 | **Oval Sprint**(봇 3대와 겨루는 랩 레이스) |
+| 레이싱 | **Oval Sprint**(봇 3대와 겨루는 랩 레이스) · **Road Circuit**(스플라인 도로 레이스) |
 
 ---
 

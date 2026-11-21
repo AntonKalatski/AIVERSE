@@ -105,7 +105,7 @@ AIVERSE はメカニクスそのものを提供し、エージェントがゲー
 | **ローグライク** | `run-graph`：シード付きのラン、エンカウント予算。レア確定枠付きの `loot-tables` |
 | **放置、工場、コロニー** | `big-numbers`、`offline-production`（正確なオフライン進行）、`production-networks`、`logistics`、`tasks` |
 | **リズムゲーム** | `rhythm-timing`：テンポマップとフレームレートに依存しない判定 |
-| **レース、乗り物** | `vehicle-controllers`：車（トルク、ギア、トラクション、ドリフト）、戦車、ホバークラフト、飛行機、座席、ダメージゾーン；レースセッション：スターティンググリッド、カウントダウン、順番どおりのチェックポイント、周回、順位、逆走、レースボット；どのプロジェクトでも使えるマップの `race` ブロック、共通 HUD とチェイスカメラ、テンプレート 1 個 |
+| **レース、乗り物** | `vehicle-controllers`：車（トルク、ギア、トラクション、ドリフト）、戦車、ホバークラフト、飛行機、座席、ダメージゾーン；レースセッション：スターティンググリッド、カウントダウン、順番どおりのチェックポイント、周回、順位、逆走、レースボット；どのプロジェクトでも使えるマップの `race` ブロック、共通 HUD とチェイスカメラ、テンプレート 2 個 |
 | **あらゆるモバイルゲーム** | `aiverse::meta` と LiveOps、チュートリアル、UI 画面、ストアと広告のプラグイン |
 
 スポーツゲーム、ボート、ピットストップ、ペナルティはまだ[ロードマップ](docs/genre-mechanics-roadmap.md)上にあります。ライブラリの全一覧：
@@ -184,7 +184,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 | 経済と建設 | **Hearth and Haul**（Knights and Merchants）· **Underlord**（Dungeon Keeper） |
 | 2D と実験 | **Crystal Dunes**（タイル、Dune II）· **Green Hills**（3D 地形上の 2D スプライト）· **Planets**（球体の惑星と軌道）· **Wildfire**（フィールド：山火事とクリープ） |
 | FPS | **Crossfire Arena**（5 対 5）· **Breach Protocol**（タクティカルラウンド）· **Last Survivor**（100 人バトルロイヤル）· **Aim Lab**（射撃場） |
-| レース | **Oval Sprint**（3 体のボットと競う周回レース） |
+| レース | **Oval Sprint**（3 体のボットと競う周回レース）· **Road Circuit**（スプライン道路でのレース） |
 
 ---
 

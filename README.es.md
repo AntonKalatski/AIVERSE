@@ -106,7 +106,7 @@ y tiene una configuración validable.
 | **Roguelikes** | `run-graph`: partidas con semilla y presupuestos de encuentros; `loot-tables` con objeto raro garantizado |
 | **Idle, fábricas, colonias** | `big-numbers`, `offline-production` (progreso offline exacto), `production-networks`, `logistics`, `tasks` |
 | **Juegos de ritmo** | `rhythm-timing`: mapas de tempo y evaluación de aciertos independiente de los fotogramas |
-| **Carreras, vehículos** | `vehicle-controllers`: coches (par motor, marchas, tracción, derrape), tanques, aerodeslizadores, aviones, asientos, zonas de daño; sesión de carrera: parrilla, cuenta atrás, puntos de control en orden, vueltas, posiciones, sentido contrario, bots de carreras; bloque `race` del mapa en cualquier proyecto, HUD común y cámara de persecución, 1 plantilla |
+| **Carreras, vehículos** | `vehicle-controllers`: coches (par motor, marchas, tracción, derrape), tanques, aerodeslizadores, aviones, asientos, zonas de daño; sesión de carrera: parrilla, cuenta atrás, puntos de control en orden, vueltas, posiciones, sentido contrario, bots de carreras; bloque `race` del mapa en cualquier proyecto, HUD común y cámara de persecución, 2 plantillas |
 | **Cualquier juego móvil** | `aiverse::meta` y LiveOps, tutoriales, pantallas de UI, plugins de tiendas y anuncios |
 
 Los juegos de deportes, los barcos, las paradas en boxes y las penalizaciones siguen en la [hoja de ruta](docs/genre-mechanics-roadmap.md). Lista completa
@@ -186,7 +186,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 | Economía y construcción | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D y experimentos | **Crystal Dunes** (tiles, Dune II) · **Green Hills** (sprites 2D sobre terreno 3D) · **Planets** (planetas esféricos y órbitas) · **Wildfire** (campos: incendios y creep) |
 | FPS | **Crossfire Arena** (5 contra 5) · **Breach Protocol** (rondas tácticas) · **Last Survivor** (battle royale de 100 jugadores) · **Aim Lab** (galería de tiro) |
-| Carreras | **Oval Sprint** (carrera por vueltas contra tres bots) |
+| Carreras | **Oval Sprint** (carrera por vueltas contra tres bots) · **Road Circuit** (carrera por una carretera spline) |
 
 ---
 

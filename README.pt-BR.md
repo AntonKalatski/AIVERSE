@@ -106,7 +106,7 @@ validável.
 | **Roguelikes** | `run-graph`: runs com seed e orçamento de encontros; `loot-tables` com item raro garantido |
 | **Idle, fábricas, colônias** | `big-numbers`, `offline-production` (progresso offline exato), `production-networks`, `logistics`, `tasks` |
 | **Jogos de ritmo** | `rhythm-timing`: mapas de andamento e avaliação de acertos independente da taxa de quadros |
-| **Corrida, veículos** | `vehicle-controllers`: carros (torque, marchas, tração, drift), tanques, hovercrafts, aviões, assentos, zonas de dano; sessão de corrida: grid de largada, contagem regressiva, checkpoints em ordem, voltas, posições, contramão, bots de corrida; bloco `race` do mapa em qualquer projeto, HUD comum e câmera de perseguição, 1 template |
+| **Corrida, veículos** | `vehicle-controllers`: carros (torque, marchas, tração, drift), tanques, hovercrafts, aviões, assentos, zonas de dano; sessão de corrida: grid de largada, contagem regressiva, checkpoints em ordem, voltas, posições, contramão, bots de corrida; bloco `race` do mapa em qualquer projeto, HUD comum e câmera de perseguição, 2 templates |
 | **Qualquer jogo mobile** | `aiverse::meta` e LiveOps, tutoriais, telas de UI, plugins de lojas e anúncios |
 
 Jogos de esporte, barcos, pit stops e penalidades ainda estão no [roadmap](docs/genre-mechanics-roadmap.md). Lista completa de
@@ -186,7 +186,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 | Economia e construção | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D e experimentos | **Crystal Dunes** (tiles, Dune II) · **Green Hills** (sprites 2D sobre terreno 3D) · **Planets** (planetas esféricos e órbitas) · **Wildfire** (campos: incêndios e creep) |
 | FPS | **Crossfire Arena** (5 contra 5) · **Breach Protocol** (rodadas táticas) · **Last Survivor** (battle royale com 100 jogadores) · **Aim Lab** (estande de tiro) |
-| Corrida | **Oval Sprint** (corrida de voltas contra três bots) |
+| Corrida | **Oval Sprint** (corrida de voltas contra três bots) · **Road Circuit** (corrida em uma estrada spline) |
 
 ---
 

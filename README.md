@@ -104,7 +104,7 @@ from the mechanics libraries — each one deterministic, tested, with save/resto
 | **Roguelikes** | `run-graph`: seeded runs and encounter budgets; `loot-tables` with a guaranteed rare drop |
 | **Idle, factory, colony** | `big-numbers`, `offline-production` (exact offline progress), `production-networks`, `logistics`, `tasks` |
 | **Rhythm games** | `rhythm-timing`: tempo maps and frame-independent hit judgement |
-| **Racing, vehicles** | `vehicle-controllers`: cars (torque, gears, traction, drift), tanks, hovercraft, planes, seats, damage zones; race session: grid, countdown, ordered checkpoints, laps, standings, wrong way, race bots; map `race` block in any project, shared HUD and chase camera, 1 template |
+| **Racing, vehicles** | `vehicle-controllers`: cars (torque, gears, traction, drift), tanks, hovercraft, planes, seats, damage zones; race session: grid, countdown, ordered checkpoints, laps, standings, wrong way, race bots; map `race` block in any project, shared HUD and chase camera, 2 templates |
 | **Any mobile game** | `aiverse::meta` and LiveOps, tutorials, UI screens, store and ads plugins |
 
 Sports games, boats, pit stops and penalties are still on the [roadmap](docs/genre-mechanics-roadmap.md). Full list of
@@ -184,7 +184,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 | Economy and building | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D and experiments | **Crystal Dunes** (tiles, Dune II) · **Green Hills** (2D sprites on 3D terrain) · **Planets** (spherical planets and orbits) · **Wildfire** (fields: wildfires and creep) |
 | FPS | **Crossfire Arena** (5v5) · **Breach Protocol** (tactical rounds) · **Last Survivor** (100-player battle royale) · **Aim Lab** (shooting range) |
-| Racing | **Oval Sprint** (lap race against three bots) |
+| Racing | **Oval Sprint** (lap race against three bots) · **Road Circuit** (race on a spline road) |
 
 ---
 

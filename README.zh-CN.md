@@ -101,7 +101,7 @@
 | **Roguelike** | `run-graph`：基于种子的流程与遭遇预算；`loot-tables` 带稀有保底 |
 | **放置、工厂、殖民地** | `big-numbers`、`offline-production`（精确的离线收益）、`production-networks`、`logistics`、`tasks` |
 | **节奏游戏** | `rhythm-timing`：节拍图和与帧率无关的判定 |
-| **竞速、载具** | `vehicle-controllers`：汽车（扭矩、挡位、牵引力、漂移）、坦克、气垫船、飞机、座位、损伤区域；比赛会话：发车格、倒计时、按顺序通过的检查点、圈数、名次、逆行、竞速机器人；任何项目都可用的地图 `race` 块、通用 HUD 和追尾镜头，1 个模板 |
+| **竞速、载具** | `vehicle-controllers`：汽车（扭矩、挡位、牵引力、漂移）、坦克、气垫船、飞机、座位、损伤区域；比赛会话：发车格、倒计时、按顺序通过的检查点、圈数、名次、逆行、竞速机器人；任何项目都可用的地图 `race` 块、通用 HUD 和追尾镜头，2 个模板 |
 | **任何手机游戏** | `aiverse::meta` 和 LiveOps、新手教程、界面、商店和广告插件 |
 
 体育游戏、船只、进站和处罚仍在[路线图](docs/genre-mechanics-roadmap.md)中。完整的库列表：
@@ -179,7 +179,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 | 经济与建造 | **Hearth and Haul**（Knights and Merchants）· **Underlord**（Dungeon Keeper） |
 | 2D 与实验 | **Crystal Dunes**（瓦片地图，Dune II）· **Green Hills**（3D 地形上的 2D 精灵）· **Planets**（球形星球与轨道）· **Wildfire**（场：野火与菌毯） |
 | FPS | **Crossfire Arena**（5v5）· **Breach Protocol**（战术回合）· **Last Survivor**（100 人大逃杀）· **Aim Lab**（射击训练场） |
-| 竞速 | **Oval Sprint**（与三个机器人比赛的绕圈赛） |
+| 竞速 | **Oval Sprint**（与三个机器人比赛的绕圈赛）· **Road Circuit**（样条道路上的比赛） |
 
 ---
 

@@ -107,7 +107,7 @@ configuration validable.
 | **Roguelikes** | `run-graph` : runs à graine et budgets de rencontres ; `loot-tables` avec objet rare garanti |
 | **Idle, usine, colonie** | `big-numbers`, `offline-production` (progression hors ligne exacte), `production-networks`, `logistics`, `tasks` |
 | **Jeux de rythme** | `rhythm-timing` : cartes de tempo et jugement des frappes indépendant de la fréquence d’images |
-| **Course, véhicules** | `vehicle-controllers` : voitures (couple, rapports, adhérence, drift), chars, aéroglisseurs, avions, sièges, zones de dégâts ; session de course : grille, compte à rebours, points de passage dans l’ordre, tours, classement, contresens, bots de course ; bloc `race` de la carte dans tout projet, HUD commun et caméra de poursuite, 1 modèle |
+| **Course, véhicules** | `vehicle-controllers` : voitures (couple, rapports, adhérence, drift), chars, aéroglisseurs, avions, sièges, zones de dégâts ; session de course : grille, compte à rebours, points de passage dans l’ordre, tours, classement, contresens, bots de course ; bloc `race` de la carte dans tout projet, HUD commun et caméra de poursuite, 2 modèles |
 | **Tout jeu mobile** | `aiverse::meta` et LiveOps, tutoriels, écrans d’interface, plugins de stores et de publicité |
 
 Les jeux de sport, les bateaux, les arrêts au stand et les pénalités sont encore dans la [feuille de route](docs/genre-mechanics-roadmap.md). Liste
@@ -187,7 +187,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 | Économie et construction | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D et expériences | **Crystal Dunes** (tuiles, Dune II) · **Green Hills** (sprites 2D sur terrain 3D) · **Planets** (planètes sphériques et orbites) · **Wildfire** (champs : incendies et creep) |
 | FPS | **Crossfire Arena** (5 contre 5) · **Breach Protocol** (manches tactiques) · **Last Survivor** (battle royale à 100 joueurs) · **Aim Lab** (stand de tir) |
-| Course | **Oval Sprint** (course en tours contre trois bots) |
+| Course | **Oval Sprint** (course en tours contre trois bots) · **Road Circuit** (course sur une route en spline) |
 
 ---
 

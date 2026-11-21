@@ -106,7 +106,7 @@ validierbarer Konfiguration.
 | **Roguelikes** | `run-graph`: Runs mit Seed und Begegnungsbudgets; `loot-tables` mit garantiertem seltenem Drop |
 | **Idle, Fabrik, Kolonie** | `big-numbers`, `offline-production` (exakter Offline-Fortschritt), `production-networks`, `logistics`, `tasks` |
 | **Rhythmusspiele** | `rhythm-timing`: Tempokarten und bildratenunabhängige Trefferbewertung |
-| **Rennspiele, Fahrzeuge** | `vehicle-controllers`: Autos (Drehmoment, Gänge, Traktion, Drift), Panzer, Hovercrafts, Flugzeuge, Sitze, Schadenszonen; Rennsitzung: Startaufstellung, Countdown, Checkpoints in Reihenfolge, Runden, Platzierungen, Falschfahrt, Renn-Bots; `race`-Block der Karte in jedem Projekt, gemeinsames HUD und Verfolgerkamera, 1 Vorlage |
+| **Rennspiele, Fahrzeuge** | `vehicle-controllers`: Autos (Drehmoment, Gänge, Traktion, Drift), Panzer, Hovercrafts, Flugzeuge, Sitze, Schadenszonen; Rennsitzung: Startaufstellung, Countdown, Checkpoints in Reihenfolge, Runden, Platzierungen, Falschfahrt, Renn-Bots; `race`-Block der Karte in jedem Projekt, gemeinsames HUD und Verfolgerkamera, 2 Vorlagen |
 | **Jedes Mobile-Spiel** | `aiverse::meta` und LiveOps, Tutorials, UI-Bildschirme, Store- und Werbe-Plugins |
 
 Sportspiele, Boote, Boxenstopps und Strafen stehen noch auf der [Roadmap](docs/genre-mechanics-roadmap.md). Vollständige
@@ -186,7 +186,7 @@ Jede Vorlage ist ein vollständig spielbares Spiel mit Bots. Im Editor öffnen u
 | Wirtschaft und Aufbau | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D und Experimente | **Crystal Dunes** (Tiles, Dune II) · **Green Hills** (2D-Sprites auf 3D-Terrain) · **Planets** (kugelförmige Planeten und Umlaufbahnen) · **Wildfire** (Felder: Waldbrände und Creep) |
 | FPS | **Crossfire Arena** (5 gegen 5) · **Breach Protocol** (taktische Runden) · **Last Survivor** (Battle Royale mit 100 Spielern) · **Aim Lab** (Schießstand) |
-| Rennspiel | **Oval Sprint** (Rundenrennen gegen drei Bots) |
+| Rennspiel | **Oval Sprint** (Rundenrennen gegen drei Bots) · **Road Circuit** (Rennen auf einer Spline-Straße) |
 
 ---
 
