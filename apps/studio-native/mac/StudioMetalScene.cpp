@@ -9,6 +9,7 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
+#include "modules/rts/view/RtsShapeModels.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -185,9 +186,27 @@ void StudioMetalScene::releasePreviewModel(render::Model& model) {
     renderer_.invalidateModelCachesFor(&model);
     render::releaseModel(*device_,model);
 }
+const render::Model* StudioMetalScene::rtsShapeModel(const Json& type) {
+    if (!shapesBuilt_ && device_) {
+        shapesBuilt_=true;
+        for (auto& [name,model]:game::buildRtsShapeModels()) {
+            if (!model) continue;
+            render::prepareModelUpload(*model);
+            if (render::uploadModel(*device_,*model,true)) shapeModels_.emplace(name,std::move(model));
+        }
+    }
+    const bool structure=type.has("structure") && !type["structure"].isNull() && type["structure"].boolean(true);
+    std::string name=type["view"].getStr("shape",structure ? (type.has("resourceNode") ? "mine" : "structure") : "generic");
+    auto found=shapeModels_.find(name);
+    if (found==shapeModels_.end()) found=shapeModels_.find(structure ? "structure" : "generic");
+    return found==shapeModels_.end() ? nullptr : found->second.get();
+}
 void StudioMetalScene::clearDocumentModels() {
     if (device_) for (auto& [path,model]:documentModels_)
         if (model) releasePreviewModel(*model);
+    if (device_) for (auto& [name,model]:shapeModels_)
+        if (model) releasePreviewModel(*model);
+    shapeModels_.clear();shapesBuilt_=false;instanceTeams_.clear();
     modelInstances_.clear();
     documentModels_.clear();
     rejectedDocumentModels_.clear();
@@ -199,6 +218,7 @@ void StudioMetalScene::syncDocumentModels(
     const editor::MapDoc& doc,const std::string& projectPath,
     const Json& rules,const std::vector<StudioDocumentProxy>& proxies) {
     modelInstances_.clear();
+    instanceTeams_.clear();
     if (projectPath.empty()) { loadProgress_={}; modelsPending_=false; return; }
     // Streaming budget: always load at least one new model per frame, then stop
     // after ~30 ms; the rest load on the following frames (progress is reported).
@@ -207,7 +227,8 @@ void StudioMetalScene::syncDocumentModels(
     namespace fs=std::filesystem;
     const fs::path project=projectPath;
     const fs::path root=project/"content";
-    if (!fs::is_directory(root) || fs::is_symlink(fs::symlink_status(root))) return;
+    // Without a content/ folder only procedural RTS shapes can be shown.
+    const bool contentOk=fs::is_directory(root) && !fs::is_symlink(fs::symlink_status(root));
     // The proxy list is the authoritative list of actual document objects.
     // Only existing, explicitly authored content/ model paths are accepted.
     const auto& entities=doc.data.entities;
@@ -244,8 +265,34 @@ void StudioMetalScene::syncDocumentModels(
            if(raw.isString())path=raw.str();
            else if(raw.isArray()&&raw.size()){const auto& first=raw[size_t(0)];path=first.isString()?first.str():first.getStr("file");}
        }
+        // RTS types without a model file are drawn by the game as built-in procedural
+        // shapes: show the same shape here instead of a grey box.
+        if (path.empty() && !raw.isString() && !raw.isArray() && rules["types"].has(entity.type) &&
+            !entity.extra["components"].has("StaticModel")) {
+            const Json& type=rules["types"][entity.type];
+            const render::Model* shape=rtsShapeModel(type);
+            if (!shape) continue;
+            if (modelInstances_.size()>=2000) break;
+            const float k=float(std::clamp(view["scale"].isNumber() ? view["scale"].toDouble() : 1.0,.05,50.0));
+            const bool structure=type.has("structure") && !type["structure"].isNull() && type["structure"].boolean(true);
+            render::mat4 scale=render::mat4::scale({k,k,k});
+            if (structure) { // the game stretches structure shapes over their footprint
+                const Json& footprint=type["structure"]["footprint"];
+                const float sx=float(std::clamp(footprint.isArray() && footprint.size()>0 ? footprint[size_t(0)].toDouble() : 1.0,.25,64.0));
+                const float sz=float(std::clamp(footprint.isArray() && footprint.size()>1 ? footprint[size_t(1)].toDouble() : 1.0,.25,64.0));
+                scale=render::mat4::scale({sx*k,k*std::max(sx,sz)*.75f,sz*k});
+            }
+            const render::mat4 placement=editor::authoredEntity(entity) ? editor::authoredModelMatrix(entity) :
+                render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
+                (structure ? render::mat4{} : render::mat4::rotateY(proxy.yaw));
+            modelInstances_.push_back({proxy.id,shape,placement*scale});
+            instanceTeams_[proxy.id]=entity.owner==1 ? render::float3{.18f,.42f,.95f} :
+                                     entity.owner==2 ? render::float3{.9f,.22f,.16f} :
+                                     entity.owner==0 ? render::float3{.62f,.64f,.66f} : render::float3{.85f,.7f,.25f};
+            continue;
+        }
         // Never load project-root arbitrary files or external paths.
-        if (path.rfind("content/",0)!=0 || path.size()>512) continue;
+        if (!contentOk || path.rfind("content/",0)!=0 || path.size()>512) continue;
         const std::string relative=path.substr(8);
         const fs::path relativePath(relative);
         if (relativePath.empty() || relativePath.is_absolute()) continue;
@@ -1300,6 +1347,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         if(!drag_.id.empty() && instance.id==drag_.id) draw.world=dragPreview()*instance.world;
         if(auto custom=instanceMaterials_.find(instance.id);custom!=instanceMaterials_.end())
             draw.materials=&custom->second.materials;
+        if(auto team=instanceTeams_.find(instance.id);team!=instanceTeams_.end())draw.team=team->second;
         if(instance.id!=selectedId && selection_.count(instance.id))draw.outline={.25f,.62f,1.0f,.035f};
         else if(instance.id!=selectedId && instance.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
         if(instance.id==selectedId) {

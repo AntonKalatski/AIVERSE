@@ -49,3 +49,6 @@
 @media(max-width:1250px) {.command-search-button {width:auto}.command-search-button span {display:none}}
 @media(max-width:1100px) {.workspace-tabs__tab {padding:0 6px}}
 .studio-statusbar__action {color:#ffd640;font-family:ui-monospace,Menlo,monospace;font-size:10px}
+/* Play / Pause / Step sit in the exact centre of the title bar (Unity); narrow windows fall back to the flow. */
+.compact-shell .titlebar > .header-game-controls {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1}
+@media (max-width:1180px) {.compact-shell .titlebar > .header-game-controls {position:static;transform:none}}

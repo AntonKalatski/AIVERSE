@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { overlayBlocks, watchOverlays, viewportRectChanged, forgetViewportRect } from '../nativeOverlay';
-import { Play, Square, Pause, StepForward, RotateCcw } from 'lucide-react';
+import { Menu, RotateCcw } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioGameState, StudioGameDevice, StudioGameDeviceOption } from '../types';
 import type { StudioPanelContext } from './StudioPanelRenderer';
@@ -27,7 +27,9 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
     });observer.observe(area.current);return ()=>observer.disconnect();
   },[]);
   const device=state?.device;
-  const fitted=gameViewportSize(areaSize.width,areaSize.height,device?.width||0,device?.height||0);
+  // A device preview keeps a margin so its frame stays visible around the screen.
+  const framed=!!device?.width;
+  const fitted=gameViewportSize(areaSize.width-(framed?28:0),areaSize.height-(framed?28:0),device?.width||0,device?.height||0);
   const loaded=connected && !!snapshot?.project.path;
   useEffect(()=>{
     let live=true,inFlight=false;
@@ -86,12 +88,9 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
   };
   return <StudioPanel title="Game" className="studio-game" flush
     actions={<>
-      <StudioButton disabled={!loaded||busy||!!state?.active} onClick={()=>void act('map')}><Play size={14}/> Play map</StudioButton>
-      <StudioButton disabled={!loaded||busy||!!state?.active} onClick={()=>void act('menu')}>Project menu</StudioButton>
-      <StudioButton disabled={!state?.canControl||busy} onClick={()=>void control(state?.paused?'resume':'pause')}><Pause size={14}/>{state?.paused?'Resume':'Pause'}</StudioButton>
-      <StudioButton disabled={!state?.canStep||busy} onClick={()=>void control('step')}><StepForward size={14}/>Step</StudioButton>
+      {/* Play / Pause / Step / Stop live in the title bar (⌘P); only what it lacks is here. */}
+      <StudioButton disabled={!loaded||busy||!!state?.active} onClick={()=>void act('menu')} title="Start from the project's own menus"><Menu size={14}/>Project menu</StudioButton>
       <StudioButton disabled={!state?.active||busy} onClick={()=>void control('restart')}><RotateCcw size={14}/>Restart</StudioButton>
-      <StudioButton disabled={!state?.active||busy} onClick={()=>void act('stop')}><Square size={14}/> Stop</StudioButton>
     </>}
     footer={<><StudioBadge>{state?.active?(state.loading?`Loading ${Math.round(state.progress*100)}%`:state.inMatch?`${state.paused?'Paused':'Running'} · tick ${state.tick}`:'Project menu'):'Stopped'}</StudioBadge><span>Native game client · click the viewport to focus input</span></>}>
     {(error||state?.error) && <StudioAlert tone="danger">{error||state?.error}</StudioAlert>}
@@ -105,7 +104,8 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
       {!!device?.width && <StudioBadge>{device.width} × {device.height} · {device.touch?'Touch':'Mouse'}</StudioBadge>}
     </div>
     <div ref={area} className="studio-game__area">
-    <div style={fitted} ref={surface} className="studio-game__surface" aria-label="Native Game viewport">
+    <div style={fitted} ref={surface} className={'studio-game__surface'+(framed?' studio-game__surface--device':'')}
+      data-orientation={device?.landscape?'landscape':'portrait'} aria-label="Native Game viewport">
       {!state?.active && <StudioEmptyState title={loaded?'Ready to play':'Open a project'}
         description={loaded?'Run the saved map or open the project’s own menus. Stop returns to authoring without copying runtime changes into the map.':'Play uses the native game client and renderer.'}/>}
     </div>

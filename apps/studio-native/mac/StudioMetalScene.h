@@ -124,6 +124,12 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    // RTS built-in procedural shapes ("view": {"shape": …}) for types without a model file,
+    // built once and shared; team-coloured parts take the owner colour.
+    std::map<std::string,std::unique_ptr<render::Model>> shapeModels_;
+    bool shapesBuilt_ = false;
+    std::map<std::string,render::float3> instanceTeams_;
+    const render::Model* rtsShapeModel(const Json& type);
     // Per-entity StaticModel.materials overrides resolved against materials.json.
     struct InstanceMaterials { std::string signature; std::vector<render::Material> materials; };
     std::map<std::string,InstanceMaterials> instanceMaterials_;
