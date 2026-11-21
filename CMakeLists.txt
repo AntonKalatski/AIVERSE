@@ -258,9 +258,30 @@ include(modules/rts/native/Build.cmake)
 file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsMech*.cpp)
 target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} modules/rts/RtsSave.cpp modules/rts/RtsCampaign.cpp   # + save states, campaigns
     modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on RtsModule
+# Optional simulation systems of packaged clients (packaging.engineModules, tools/aiversebuild).
+# A system that runs only when its rules block is present can be left out: OFF compiles the adapter
+# `stub` (modules/rts/disabled/) instead of its sources; the adapter keeps the system inactive and
+# makes rules that need it fail with a readable error. Packaged clients only - the editor, tests,
+# headless runner, servers and HTML5 Studio always build every system.
+function(aiverse_game_module var description stub)
+    option(${var} "${description}" ON)
+    if(${var})
+        target_sources(aiverse_game PRIVATE ${ARGN})
+    else()
+        if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_HEADLESS OR AIVERSE_BUILD_SERVER OR AIVERSE_BUILD_STUDIO_HTML5)
+            message(FATAL_ERROR "${var}=OFF is for packaged clients only; turn off the editor, tests, headless runner, server and HTML5 Studio")
+        endif()
+        target_sources(aiverse_game PRIVATE ${stub})
+    endif()
+endfunction()
+
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
-target_sources(aiverse_game PRIVATE ${AIVERSE_BWAI_SOURCES})
+# RtsBwAISim.cpp is simulation code every game runs (hypnotised sends, per point counters).
+list(FILTER AIVERSE_BWAI_SOURCES EXCLUDE REGEX "RtsBwAISim\\.cpp$")
+target_sources(aiverse_game PRIVATE modules/rts/RtsBwAISim.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
+    modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
 # Localization: string tables, plurals, language choice (presentation only, no sim dependency).
 # RtsLocalize maps RTS data (types, resources, maps...) to string keys.
@@ -1866,7 +1887,9 @@ endforeach()
 # ---------------------------------------------------------------------------
 target_sources(aiverse_game PRIVATE modules/rts/RtsTiles.cpp)
 # terrain / map generator (agent-terrain-gen): integer noise, erosion, biomes, fair starts, presets, planets
-target_sources(aiverse_game PRIVATE modules/rts/gen/GenNoise.cpp modules/rts/gen/GenField.cpp modules/rts/gen/GenTerrain.cpp
+aiverse_game_module(AIVERSE_GAME_WITH_MAPGEN "Include the map generator (map \"generate\" blocks)"
+    modules/rts/disabled/MapGen.cpp
+    modules/rts/gen/GenNoise.cpp modules/rts/gen/GenField.cpp modules/rts/gen/GenTerrain.cpp
     modules/rts/gen/GenContent.cpp modules/rts/gen/GenCity.cpp modules/rts/gen/GenPlanet.cpp modules/rts/gen/GenWorld.cpp modules/rts/gen/MapGen.cpp)
 add_library(aiverse_render2d STATIC engine/render/SpriteBatch.cpp engine/render/TextureCache.cpp)
 target_include_directories(aiverse_render2d PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
@@ -2065,14 +2088,19 @@ endif()
 target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
 target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp modules/rts/RtsDrivingApi.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
+target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
+aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
+    modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
+    modules/rts/disabled/Career.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsSensors.cpp modules/rts/RtsFieldOps.cpp)   # radar / sonar / jammers, field operations
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsProgression.cpp modules/rts/RtsProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
 # boss encounters (agent-df-encounters-glue): rules "encounters" over the boss-encounters library package (docs/encounters.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules \"encounters\")"
+    modules/rts/disabled/Encounters.cpp modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsMapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
@@ -2082,20 +2110,12 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsEnv.cpp modules/rts/RtsEnvDat
 target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_ARSENAL "Include hero weapons (rules \"arsenal\")"
+    modules/rts/disabled/Arsenal.cpp modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
-# AIVERSE_GAME_WITH_TRAFFIC=OFF (packaging.engineModules without "traffic") compiles a small adapter instead:
-# rules with an enabled "traffic" block then fail at match start with a readable error. Packaged clients only:
-# the editor, tests, headless runner and servers keep the full simulation.
-option(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation" ON)
-if(AIVERSE_GAME_WITH_TRAFFIC)
-    target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
-else()
-    if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_HEADLESS OR AIVERSE_BUILD_SERVER OR AIVERSE_BUILD_STUDIO_HTML5)
-        message(FATAL_ERROR "AIVERSE_GAME_WITH_TRAFFIC=OFF is for packaged clients only; turn off the editor, tests, headless runner and server")
-    endif()
-    target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficDisabled.cpp)
-endif()
+aiverse_game_module(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation"
+    modules/rts/disabled/Traffic.cpp
+    modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficRoads.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_roads)

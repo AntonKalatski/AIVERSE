@@ -513,3 +513,39 @@ without a list → legacy defaults. NOT RUN: native/mobile scene builds, CI.
 The editor's "Пустой проект" template is still an RTS project (one unit type,
 mine, terrain PBR materials); switching it to `"module": "scene"` is a
 product decision for the editor owners.
+
+## 2026-11-21 continuation: rule-gated simulation systems
+
+CMake `aiverse_game_module(var description stub sources...)` replaces a
+system's sources with an adapter from `modules/rts/disabled/` when the option
+is OFF (FATAL with editor, tests, headless, server or HTML5 Studio). Traffic
+moved to it (`modules/rts/disabled/Traffic.cpp`). New switches:
+
+| engineModules | CMake | needed when | adapter |
+|---|---|---|---|
+| `bw-ai` | `AIVERSE_GAME_WITH_BWAI` | rules `ai.controller: "bw"` | throws on load; `BwAIHolder` stays empty. `RtsBwAISim.cpp` (hypnotised sends, point counters) stays in every build |
+| `encounters` | `AIVERSE_GAME_WITH_ENCOUNTERS` | rules `encounters` | inactive; Lua `encounters` = {active=false} |
+| `commerce` | `AIVERSE_GAME_WITH_COMMERCE` | rules `commerce` | inactive; Lua `commerce` = {active=false} |
+| `careers` | `AIVERSE_GAME_WITH_CAREERS` | rules `careers` | inactive; Lua `career` = {active=false} |
+| `arsenal` | `AIVERSE_GAME_WITH_ARSENAL` | rules `arsenal` | inactive |
+| `mapgen` | `AIVERSE_GAME_WITH_MAPGEN` | map or world body `generate` | maps without it load unchanged; generated maps fail in prepare/applyGenerate |
+
+`aiversebuild` keeps one table (`kSimModules`): `auto` and the rejection check
+read the composed rules, every map JSON under `maps/` plus the maps listed in
+`game.json` (their `rules` overrides and map blocks). `auto` over all
+templates: boss_arena → encounters; no template needs the others. Fixtures:
+`[]` with a map `generate` → exit 1; `auto` → mapgen ON; map rules
+`ai.controller: "bw"` → bw-ai ON; unknown name → exit 1.
+
+Web Release (skirmish, all optional modules off): index.wasm 13,996,328 B
+(brotli 3,273,607), −949 KB vs traffic-only (14,945,536). The `-O0` link
+check found no undefined symbols; smoke screenshot unchanged (2558 colours,
+same HUD/minimap). NOT RUN: a game that needs an excluded system (error path),
+native/mobile builds, CI.
+
+Next candidates (code before wasm-opt, in the all-off build): planets/sphere
+~0.35 MB (map world bodies; spans sim, view and client), TopDown 0.18 MB
+(rules topDown, 20 files use it), Driving 0.13, Mech 0.13, Progression 0.11,
+Raid 0.09, FieldOps 0.09, Dungeon 0.08. Progression/Raid parse their rules in
+the shared loadRules and FieldOps turns on from type keys, so their adapters
+need parser stubs and wider auto detection.

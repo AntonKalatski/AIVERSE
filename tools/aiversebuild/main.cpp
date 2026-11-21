@@ -711,15 +711,54 @@ AutoModuleEvidence detectAutoModules(const Options& o) {
     return found;
 }
 
-// Rules "traffic" switched on (an object without "enabled": false) in the project's composed rules.
-bool rulesUseTraffic(const Options& o) {
+// Optional simulation systems (CMake aiverse_game_module): each runs only when its rules block is
+// present, so its use is decided by the composed rules, per-map "rules" overrides and map blocks.
+struct SimModule {
+    const char* name;      // packaging.engineModules name
+    const char* var;       // CMake option
+    bool (*inRules)(const Json& rules);
+    bool (*inMap)(const Json& map);
+};
+bool objectBlock(const Json& r, const char* key) { return r[key].isObject() && r[key].getBool("enabled", true); }
+const SimModule kSimModules[] = {
+    {"traffic", "AIVERSE_GAME_WITH_TRAFFIC", [](const Json& r) { return objectBlock(r, "traffic"); }, nullptr},
+    {"bw-ai", "AIVERSE_GAME_WITH_BWAI", [](const Json& r) { return r["ai"]["controller"].str() == "bw"; }, nullptr},
+    {"encounters", "AIVERSE_GAME_WITH_ENCOUNTERS", [](const Json& r) { return r["encounters"].isObject(); }, nullptr},
+    {"commerce", "AIVERSE_GAME_WITH_COMMERCE", [](const Json& r) { return r["commerce"].isObject(); }, nullptr},
+    {"careers", "AIVERSE_GAME_WITH_CAREERS", [](const Json& r) { return r["careers"].isObject(); }, nullptr},
+    {"arsenal", "AIVERSE_GAME_WITH_ARSENAL", [](const Json& r) { return r["arsenal"].isObject(); }, nullptr},
+    {"mapgen", "AIVERSE_GAME_WITH_MAPGEN", nullptr, [](const Json& m) {
+        if (m["generate"].isObject()) return true;
+        for (const auto& b : m["world"]["bodies"].items()) if (b["generate"].isObject()) return true;
+        return false;
+    }},
+};
+constexpr size_t kSimModuleCount = sizeof(kSimModules) / sizeof(kSimModules[0]);
+
+// Which optional simulation systems the project's data needs: the composed rules, every map JSON under
+// maps/ and the maps game.json lists (their "rules" overrides and map-level blocks). Unreadable files
+// are skipped: they fail later with their own error.
+std::array<bool, kSimModuleCount> simModulesUsed(const Options& o) {
+    std::array<bool, kSimModuleCount> used{};
+    auto checkRules = [&](const Json& r) {
+        for (size_t i = 0; i < kSimModuleCount; ++i) if (kSimModules[i].inRules && kSimModules[i].inRules(r)) used[i] = true;
+    };
     try {
-        const Json rules = aiverse::readComposedJson((o.project / o.gameJson.getStr("rules", "rules.json")).string(), aiverse::fileReader());
-        const Json& t = rules["traffic"];
-        return t.isObject() && t.getBool("enabled", true);
-    } catch (const std::exception&) {
-        return false;   // unreadable rules fail later with their own error
+        checkRules(aiverse::readComposedJson((o.project / o.gameJson.getStr("rules", "rules.json")).string(), aiverse::fileReader()));
+    } catch (const std::exception&) {}
+    std::vector<fs::path> maps;
+    for (const auto& m : o.gameJson["maps"].items()) if (!m.getStr("file").empty()) maps.push_back(o.project / m.getStr("file"));
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(o.project / "maps", ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+        if (it->is_regular_file(ec) && it->path().extension() == ".json") maps.push_back(it->path());
+    for (const auto& path : maps) {
+        try {
+            const Json m = Json::parseFile(path.string());
+            if (m["rules"].isObject()) checkRules(m["rules"]);
+            for (size_t i = 0; i < kSimModuleCount; ++i) if (kSimModules[i].inMap && kSimModules[i].inMap(m)) used[i] = true;
+        } catch (const std::exception&) {}
     }
+    return used;
 }
 
 // Explicit optional engine modules for packaged clients. Without a declaration
@@ -727,9 +766,11 @@ bool rulesUseTraffic(const Options& o) {
 std::string engineModuleVars(const Options& o) {
     if (sceneClient(o)) {   // no game module: nothing optional can be used
         info("модули движка: клиент сцены (без игрового модуля)");
-        return " -DAIVERSE_SCENE_CLIENT=ON -DAIVERSE_BUILD_STRATA=OFF -DAIVERSE_RUNTIME_AUTOLOD=OFF -DAIVERSE_VULKAN=OFF"
+        std::string flags = " -DAIVERSE_SCENE_CLIENT=ON -DAIVERSE_BUILD_STRATA=OFF -DAIVERSE_RUNTIME_AUTOLOD=OFF -DAIVERSE_VULKAN=OFF"
                " -DAIVERSE_CLIENT_WITH_SPINE=OFF -DAIVERSE_CLIENT_WITH_GAMEPAD=OFF -DAIVERSE_CLIENT_WITH_FX=OFF -DAIVERSE_FBX=OFF"
-               " -DAIVERSE_LEGACY_MODELS=OFF -DAIVERSE_OBJ=OFF -DAIVERSE_BLP=OFF -DAIVERSE_CLIENT_WITH_CITY=OFF -DAIVERSE_GAME_WITH_TRAFFIC=OFF";
+               " -DAIVERSE_LEGACY_MODELS=OFF -DAIVERSE_OBJ=OFF -DAIVERSE_BLP=OFF -DAIVERSE_CLIENT_WITH_CITY=OFF";
+        for (const auto& m : kSimModules) flags += std::string(" -D") + m.var + "=OFF";
+        return flags;
     }
     const Json& packaging = o.gameJson["packaging"];
     const Json& perTarget = packaging["targets"][o.profile];
@@ -737,7 +778,8 @@ std::string engineModuleVars(const Options& o) {
     // A build folder reused after "module" changed must not keep the scene client.
     if (modules.isNull()) return " -DAIVERSE_SCENE_CLIENT=OFF";
     if (!modules.isArray()) die("packaging.engineModules: ожидается массив имён модулей");
-    bool strata = false, autolod = false, vulkan = false, spine = false, gamepad = false, fx = false, fbx = false, legacyModels = false, obj = false, blp = false, city = false, traffic = false;
+    bool strata = false, autolod = false, vulkan = false, spine = false, gamepad = false, fx = false, fbx = false, legacyModels = false, obj = false, blp = false, city = false;
+    std::array<bool, kSimModuleCount> sim{};
     bool automatic = false;
     for (const auto& item : modules.items()) {
         if (!item.isString()) die("packaging.engineModules: каждое имя должно быть строкой");
@@ -754,8 +796,12 @@ std::string engineModuleVars(const Options& o) {
         else if (name == "obj") obj = true;
         else if (name == "blp") blp = true;
         else if (name == "city-client") city = true;
-        else if (name == "traffic") traffic = true;
-        else die("packaging.engineModules: неизвестный модуль " + name);
+        else {
+            size_t i = 0;
+            while (i < kSimModuleCount && name != kSimModules[i].name) ++i;
+            if (i == kSimModuleCount) die("packaging.engineModules: неизвестный модуль " + name);
+            sim[i] = true;
+        }
     }
     if (automatic) {
         const AutoModuleEvidence found = detectAutoModules(o);
@@ -766,7 +812,12 @@ std::string engineModuleVars(const Options& o) {
         legacyModels |= found.legacyModels;
         obj |= found.obj;
         blp |= found.blp;
-        traffic |= rulesUseTraffic(o);
+    }
+    const std::array<bool, kSimModuleCount> simUsed = simModulesUsed(o);
+    for (size_t i = 0; i < kSimModuleCount; ++i) {
+        if (automatic) sim[i] = sim[i] || simUsed[i];
+        if (!sim[i] && simUsed[i])
+            die(std::string("packaging.engineModules: данные игры используют ") + kSimModules[i].name + "; добавьте модуль " + kSimModules[i].name);
     }
     if (vulkan && o.profile != "windows" && o.profile != "linux" && o.profile != "android")
         die("packaging.engineModules: vulkan недоступен для " + o.profile);
@@ -777,11 +828,10 @@ std::string engineModuleVars(const Options& o) {
     if (!fx && (fs::exists(o.project / "fx" / "fx.json") || fs::exists(o.project / "fx" / "gpu" / "routes.json") ||
                 fs::exists(o.project / "fx" / "graphs")))
         die("packaging.engineModules: проект содержит FX-ресурсы; добавьте модуль fx");
-    if (!traffic && rulesUseTraffic(o))
-        die("packaging.engineModules: правила включают traffic; добавьте модуль traffic");
     std::string selected = std::string(strata ? "strata " : "") + (autolod ? "runtime-autolod " : "") +
-         (vulkan ? "vulkan " : "") + (spine ? "spine " : "") + (gamepad ? "gamepad " : "") + (fx ? "fx " : "") + (fbx ? "fbx " : "") + (legacyModels ? "legacy-models " : "") + (obj ? "obj " : "") + (blp ? "blp " : "") + (city ? "city-client " : "") + (traffic ? "traffic" : "") +
-         (!strata && !autolod && !vulkan && !spine && !gamepad && !fx && !fbx && !legacyModels && !obj && !blp && !city && !traffic ? "нет дополнительных" : "");
+         (vulkan ? "vulkan " : "") + (spine ? "spine " : "") + (gamepad ? "gamepad " : "") + (fx ? "fx " : "") + (fbx ? "fbx " : "") + (legacyModels ? "legacy-models " : "") + (obj ? "obj " : "") + (blp ? "blp " : "") + (city ? "city-client " : "");
+    for (size_t i = 0; i < kSimModuleCount; ++i) if (sim[i]) selected += std::string(kSimModules[i].name) + " ";
+    if (selected.empty()) selected = "нет дополнительных";
     if (!selected.empty() && selected.back() == ' ') selected.pop_back();
     info("модули движка: " + selected);
     return std::string(" -DAIVERSE_SCENE_CLIENT=OFF -DAIVERSE_BUILD_STRATA=") + (strata ? "ON" : "OFF") +
@@ -794,8 +844,11 @@ std::string engineModuleVars(const Options& o) {
            " -DAIVERSE_LEGACY_MODELS=" + (legacyModels ? "ON" : "OFF") +
            " -DAIVERSE_OBJ=" + (obj ? "ON" : "OFF") +
            " -DAIVERSE_BLP=" + (blp ? "ON" : "OFF") +
-           " -DAIVERSE_CLIENT_WITH_CITY=" + (city ? "ON" : "OFF") +
-           " -DAIVERSE_GAME_WITH_TRAFFIC=" + (traffic ? "ON" : "OFF");
+           " -DAIVERSE_CLIENT_WITH_CITY=" + (city ? "ON" : "OFF") + [&] {
+               std::string f;
+               for (size_t i = 0; i < kSimModuleCount; ++i) f += std::string(" -D") + kSimModules[i].var + (sim[i] ? "=ON" : "=OFF");
+               return f;
+           }();
 }
 
 std::string cmakeVars(const Game& g, const Options& o, const fs::path& content, const fs::path& gen) {
