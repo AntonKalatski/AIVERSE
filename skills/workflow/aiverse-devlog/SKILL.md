@@ -17,6 +17,9 @@ own development diary on the site (`devblog-<system>.html`, newest first) and th
   partial attempts, build errors and red tests stay in the handoff and never reach the site.
 - A stage with nothing to show (refactor, internal API, test-only work) is written up together
   with the next stage that has a frame; one entry may cover several stages.
+- Do not stress that a system is "genre-independent", "for any genre", "one for all genres" or
+  "universal" anywhere on the site: that is an internal architecture rule, not news for readers.
+  Say what the system does.
 - People read the diary. Write what changed, what a game or a developer can now do, how it looks
   and where it is turned on. No "the build passed", "build failed", "tests are green", command
   lists, logs, handoff stage numbers or temp paths. `verified`: one or two sentences on where and
