@@ -64,7 +64,13 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     // the extra diagonal factor commutes with it), lift along the object's up, opacity / colour below
     EntityFxValues fx;
     const bool hasFx = !tintOverride && fxFor(o, fx);
-    const float lift = hasFx ? fx.v[EntityFxValues::kLift] : 0.0f;
+    float lift = hasFx ? fx.v[EntityFxValues::kLift] : 0.0f;
+    // Studio Transform Y is an absolute height: keep its offset above the ground
+    // the object was first drawn on, so it follows the terrain if it moves.
+    if (o.posed && o.poseHasY && !placement) {
+        if (!st.poseLiftSet) { st.poseLift = o.poseY - ground; st.poseLiftSet = true; }
+        lift += st.poseLift;
+    }
     // planets: the object's frame (local up = +Y) replaces the flat translation
     const float3 p = placement ? float3{0, (L.air ? L.flyHeight : 0.0f) + lift, 0} : float3{o.pos.x, ground + (L.air ? L.flyHeight : 0.0f) + lift, o.pos.z};
     const float grow = L.construction == Construction::Grow ? std::clamp(o.build, 0.15f, 1.0f) : 1.0f;
@@ -78,7 +84,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     const mat4 identity{};
     const bool immutablePlacement = cacheEnabled &&
         !hasFx && !tintOverride && !placement &&
-        !o.parented && !st.dead && !o.moving && o.build >= 1.0f &&
+        !o.parented && !o.posed && !st.dead && !o.moving && o.build >= 1.0f &&
         (t.structure || t.speed <= Fixed{}) && show == &ch &&
         L.stages.empty() && L.lods.empty() &&
         ch.staticPlacementEligible &&
@@ -117,6 +123,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         base = mat4::translate(p) * mat4::rotateY(st.yaw) * tilt * mat4::rotateY(-st.yaw) * mat4::translate(-p) * base;
     }
     if (hasFx) base = base * mat4::scale({fx.scale(0), fx.scale(1), fx.scale(2)});
+    if (o.posed && !o.parented) base = authoredPoseFrame(o, st.yaw, p) * base;
     if (o.parented && !placement) base = o.parentFrame * mat4::scale({k, k * (t.structure ? grow : 1.f), k});
     if (placement) base = *placement * base;   // flat maps: untouched (bit-identical)
     }
