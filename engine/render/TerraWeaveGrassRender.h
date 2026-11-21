@@ -5,6 +5,7 @@
 #include "engine/world/TerraWeaveGrassCover.h"
 #include "engine/render/Model.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/TerraWeaveVertexWind.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -48,14 +49,35 @@ inline bool sameGrassPresentation(const GrassPatch& a,const GrassPatch& b) {
 
 using GrassSoilHeight=std::function<int32_t(int64_t,int64_t)>;
 
+// Optional host-supplied presentation overlay (2026-11-21). TerraWeave keeps
+// owning grass coverage; a host (e.g. engine/world/PhysisNatureGrass.h for
+// PHYSIS wildfire) only tells the renderer how each blade LOOKS. Nothing here
+// is written back to GrassPatch, Earthworks or any ECS.
+struct GrassFireSample {
+    uint16_t charPermille=0;   // 0 fresh .. 1000 burned to stubble/ash
+    uint16_t firePermille=0;   // flames on this blade right now
+};
+using GrassFireSampler=std::function<GrassFireSample(int64_t xCm,int64_t zCm)>;
+struct GrassPresentationOptions {
+    GrassFireSampler fire;     // empty: unchanged legacy appearance
+    bool windSway=false;       // root->tip vertex weights + canopyWindGraph
+};
+// Burning blades glow through a second, emissive primitive. Bloom of that
+// emission belongs to PRISMA; actual flames/smoke to SpectraFX.
+inline constexpr uint16_t kGrassBurningFirePermille=140;
+
 // Pure CPU model generation; only one or two opaque slender triangles per
 // sampled blade. No per-patch alpha textures or unique shader variants.
 // The sparse, stable stratified sample reacts to coverage/light/age without
 // scanning a 262144-blade patch or allocating persistent blade arrays.
 inline std::unique_ptr<render::Model> makeGrassPatchModel(
         const GrassPatch& patch,const GrassSoilHeight& ground,
-        GrassRenderQuality quality={}) {
+        GrassRenderQuality quality={},
+        const GrassPresentationOptions* presentation=nullptr) {
     validateGrassRenderQuality(quality);
+    const bool sway=presentation && presentation->windSway;
+    const GrassFireSampler* fireSampler=
+        presentation && presentation->fire ? &presentation->fire : nullptr;
     if(!ground)throw std::invalid_argument("TerraWeave grass ground sampler");
     const auto draw=prepareGrassPatch(patch);
     if(draw.bladeCount==0)return {};
@@ -71,7 +93,17 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     grass.doubleSided=true;
     grass.vertexColors=true;
     grass.castShadow=false; // avoid expensive per-blade shadow casters
+    if(sway)grass.shaderGraph=canopyWindGraph();
     model->materials.push_back(grass);
+    if(fireSampler) {
+        render::Material burning=grass;
+        burning.name="TerraWeave Grass Burning";
+        burning.baseColor={1.0f,1.0f,1.0f,1.0f};
+        burning.emissive={1.0f,0.42f,0.08f};
+        burning.emissiveStrength=3.0f;
+        model->materials.push_back(burning);
+    }
+    std::vector<uint32_t> burningIndices;
     render::MeshDef mesh;
     mesh.name="Grass Batch";
     render::Primitive primitive;
@@ -96,18 +128,20 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     const auto rgba=[](uint32_t r,uint32_t g,uint32_t b){
         return (0xffu<<24) | (b<<16) | (g<<8) | r;
     };
+    bool burningBlade=false;
     const auto emitTriangle=[&](render::float3 a,render::float3 b,
                                 render::float3 tip,uint32_t color){
         const auto normal=render::normalize(
             render::cross(b-a,tip-a));
         for(const auto& p:{a,b,tip}) {
+            const bool top=p.y>std::max(a.y,b.y);
             render::ModelVertex v;
             v.pos=p;
             v.nrm=normal;
-            v.color=color;
-            v.uv={p.y>std::max(a.y,b.y)?0.5f:0.0f,
-                  p.y>std::max(a.y,b.y)?1.0f:0.0f};
-            model->indices.push_back(
+            // Wind sway: alpha = root(0)..tip(1) weight for canopyWindGraph.
+            v.color=sway ? ((color&0x00ffffffu)|(top?0xff000000u:0u)) : color;
+            v.uv={top?0.5f:0.0f,top?1.0f:0.0f};
+            (burningBlade?burningIndices:model->indices).push_back(
                 static_cast<uint32_t>(model->vertices.size()));
             model->vertices.push_back(v);
         }
@@ -131,7 +165,7 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
         const int32_t visualSize=std::max<int32_t>(
             1,int32_t(appearance.sizePermille)*
             (750+int32_t((h>>20)%501u))/1000);
-        const float bladeHeight=float(baseHeightCm)*visualSize*0.00001f;
+        float bladeHeight=float(baseHeightCm)*visualSize*0.00001f;
         const float bladeWidth=float(baseWidthCm)*
             (850+float((h>>46)%301u))/100000.f;
         const float mx=float(x-patch.bounds.minX)*0.01f;
@@ -140,8 +174,33 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
         const float bias=(float(int32_t((h>>48)%101u)-50))*0.0003f;
         const uint32_t shade=uint32_t(std::clamp<int>(
             int(light*220u/1000u)+int((h>>29)%36u),70,255));
-        const uint32_t color=rgba(shade,shade,
+        uint32_t color=rgba(shade,shade,
             uint32_t(std::max(1u,shade*3u/4u)));
+        burningBlade=false;
+        if(fireSampler) {
+            const auto burn=(*fireSampler)(x,z);
+            const uint32_t charred=std::min<uint32_t>(burn.charPermille,1000u);
+            const uint32_t fire=std::min<uint32_t>(burn.firePermille,1000u);
+            // Burned blades shrink to stubble and turn to ash; a per-blade
+            // threshold keeps the front ragged instead of a hard line.
+            const uint32_t edge=uint32_t((h>>40)%200u);
+            const uint32_t c=charred>edge ? std::min<uint32_t>(1000u,
+                (charred-edge)*1000u/std::max<uint32_t>(1u,1000u-edge)) : 0u;
+            bladeHeight*=float(1000u-c*82u/100u)/1000.0f;
+            const auto mixc=[&](uint32_t from,uint32_t to,uint32_t t){
+                return (from*(1000u-t)+to*t)/1000u;
+            };
+            const uint32_t ash=uint32_t(26+(h>>51)%22u);
+            const uint32_t r=mixc(shade,ash+6u,c);
+            const uint32_t g=mixc(shade,ash+2u,c);
+            const uint32_t b=mixc(std::max(1u,shade*3u/4u),ash,c);
+            color=rgba(r,g,b);
+            if(fire>=kGrassBurningFirePermille && c<950u) {
+                burningBlade=true;
+                const uint32_t hot=std::min<uint32_t>(255u,150u+fire*105u/1000u);
+                color=rgba(255u,hot*2u/3u,hot/5u);
+            }
+        }
         emitTriangle({mx-bladeWidth,my,mz},
                      {mx+bladeWidth,my,mz},
                      {mx+bias,my+bladeHeight,mz+bias},color);
@@ -154,8 +213,18 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     primitive.vertexCount=static_cast<uint32_t>(model->vertices.size());
     primitive.firstIndex=0;
     primitive.indexCount=static_cast<uint32_t>(model->indices.size());
-    if(!primitive.indexCount)return {}; // completely bare patch: no GPU object
-    mesh.primitives.push_back(primitive);
+    if(!primitive.indexCount && burningIndices.empty())
+        return {}; // completely bare patch: no GPU object
+    if(primitive.indexCount)mesh.primitives.push_back(primitive);
+    if(!burningIndices.empty()) {
+        render::Primitive glowing=primitive;
+        glowing.material=1;
+        glowing.firstIndex=static_cast<uint32_t>(model->indices.size());
+        glowing.indexCount=static_cast<uint32_t>(burningIndices.size());
+        model->indices.insert(model->indices.end(),
+                              burningIndices.begin(),burningIndices.end());
+        mesh.primitives.push_back(glowing);
+    }
     model->meshes.push_back(std::move(mesh));
     render::Node node;
     node.name="Grass Patch";
@@ -182,6 +251,31 @@ public:
                 (void)entry;dirty_.insert(key);
             }
         quality_=quality;
+    }
+
+    // Optional presentation overlay (see GrassPresentationOptions). The
+    // signature callback returns a cheap appearance hash per patch rectangle
+    // (e.g. NaturePresentationFrame::signature); a patch is rebuilt only when
+    // its hash changes, still within maxUploadsPerFrame.
+    void setPresentation(GrassPresentationOptions options,
+                         std::function<uint64_t(const RectCm&)> signature={}) {
+        const bool layout=options.windSway!=presentation_.windSway ||
+                          bool(options.fire)!=bool(presentation_.fire);
+        presentation_=std::move(options);
+        signature_=std::move(signature);
+        if(layout)invalidateAll();
+    }
+    void clearPresentation(){setPresentation({}, {});}
+    // Per-frame wind for windSway (world m/s, x/z), animation phase radians
+    // and gust 0..1. Bounded tip lean 0.14 m at >= 16 m/s.
+    void setWind(float xMetresPerSecond,float zMetresPerSecond,
+                 float phaseRadians,float gust=0.0f) {
+        const auto finite=[](float v){return std::isfinite(v)?v:0.0f;};
+        const float x=finite(xMetresPerSecond),z=finite(zMetresPerSecond);
+        const float speed=std::sqrt(x*x+z*z);
+        const float lean=0.14f*std::clamp(speed/16.0f,0.0f,1.0f);
+        const float k=speed>1e-4f?lean/speed:0.0f;
+        wind_={x*k,z*k,finite(phaseRadians),std::clamp(finite(gust),0.0f,1.0f)};
     }
 
     // Mark only grass whose footprint intersects disturbed ground.
@@ -221,12 +315,16 @@ public:
         size_t uploaded=0;
         for(const auto& [id,patch]:requested) {
             const auto old=resident_.find(id);
+            const uint64_t look=signature_?signature_(patch.bounds):0;
             if(old!=resident_.end() &&
                !dirty_.contains(id) &&
-               sameGrassPresentation(patch,old->second.patch))
+               sameGrassPresentation(patch,old->second.patch) &&
+               old->second.signature==look)
                 continue;
             if(uploaded>=quality_.maxUploadsPerFrame)break;
-            auto candidate=makeGrassPatchModel(patch,ground,quality_);
+            const bool overlay=presentation_.windSway||bool(presentation_.fire);
+            auto candidate=makeGrassPatchModel(patch,ground,quality_,
+                                               overlay?&presentation_:nullptr);
             if(candidate) {
                 render::prepareModelUpload(*candidate);
                 if(!render::uploadModel(device,*candidate) ||
@@ -235,7 +333,7 @@ public:
                     break; // retain previously published model and retry
                 }
             }
-            Resident next{patch,std::move(candidate)};
+            Resident next{patch,std::move(candidate),look};
             if(old!=resident_.end()){
                 if(old->second.model)
                     render::releaseModel(device,*old->second.model);
@@ -279,6 +377,11 @@ public:
                 float(resident.patch.bounds.minZ-origin.z)*0.01f
             });
             draw.flags=render::kDrawStatic|render::kDrawNoCastShadow;
+            if(presentation_.windSway) {
+                draw.useVertexParameters=true;
+                draw.vertexParameters={wind_.x,wind_.y,wind_.z,wind_.w};
+                draw.maxVertexOffsetMetres=0.25f;
+            }
             renderer.drawModel(draw);
         }
     }
@@ -295,8 +398,12 @@ private:
     struct Resident {
         GrassPatch patch{};
         std::unique_ptr<render::Model> model;
+        uint64_t signature=0;
     };
     GrassRenderQuality quality_;
+    GrassPresentationOptions presentation_;
+    std::function<uint64_t(const RectCm&)> signature_;
+    render::float4 wind_{0,0,0,0};
     std::map<uint64_t,Resident> resident_;
     std::set<uint64_t> dirty_;
 };

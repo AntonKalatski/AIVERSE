@@ -3807,6 +3807,15 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_nature_presentation_test PRIVATE aiverse_engine)
     add_test(NAME physis_nature_presentation COMMAND aiverse_physis_nature_presentation_test)
     set_tests_properties(physis_nature_presentation PROPERTIES LABELS "PHYSIS")
+    if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
+        # PHYSIS -> SpectraFX / audio planners and TerraWeave grass overlay
+        # (CPU only; no device, no audio hardware).
+        add_executable(aiverse_physis_nature_cues_test tests/physis_nature_cues_test.cpp)
+        target_link_libraries(aiverse_physis_nature_cues_test PRIVATE
+            aiverse_engine aiverse_fx aiverse_audio aiverse_models aiverse_zstd_dec)
+        add_test(NAME physis_nature_cues COMMAND aiverse_physis_nature_cues_test)
+        set_tests_properties(physis_nature_cues PROPERTIES LABELS "PHYSIS;TERRAWEAVE;VFX;AUDIO")
+    endif()
 endif()
 
 # PHYSIS Stage 14: genre-neutral read-only diagnostics for editor/host overlays.
