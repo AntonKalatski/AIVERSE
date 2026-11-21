@@ -409,6 +409,7 @@ bool VulkanDevice::createSwapchain() {
     swapchain_ = next;
     swapFormat_ = fmt.format;
     swapExtent_ = ext;
+    swapTransform_ = caps.currentTransform;
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, nullptr);
     swapImages_.resize(n);
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, swapImages_.data());
@@ -419,6 +420,14 @@ bool VulkanDevice::createSwapchain() {
     if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) std::fprintf(stderr, "[gfx] Vulkan: swapchain format can't be a blit target\n");
     swapDirty_ = false;
     return true;
+}
+
+bool VulkanDevice::swapchainChanged() {
+    VkSurfaceCapabilitiesKHR caps;
+    if (!surface_ || vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu_, surface_, &caps) != VK_SUCCESS) return true;
+    if (caps.currentTransform != swapTransform_) return true;
+    if (caps.currentExtent.width == 0xFFFFFFFFu) return false;   // the extent follows the swapchain
+    return caps.currentExtent.width != swapExtent_.width || caps.currentExtent.height != swapExtent_.height;
 }
 
 void VulkanDevice::destroySwapchain() {
@@ -717,7 +726,7 @@ void VulkanDevice::beginFrame(int w, int h) {
         if (swapDirty_ || !swapchain_) { swapForW_ = w; swapForH_ = h; createSwapchain(); }
         for (int attempt = 0; swapchain_ && attempt < 2; ++attempt) {
             const VkResult r = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, s.acquired, VK_NULL_HANDLE, &swapIndex_);
-            if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) { swapAcquired_ = true; if (r == VK_SUBOPTIMAL_KHR) swapDirty_ = true; break; }
+            if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) { swapAcquired_ = true; if (r == VK_SUBOPTIMAL_KHR && swapchainChanged()) swapDirty_ = true; break; }
             if (r != VK_ERROR_OUT_OF_DATE_KHR || !createSwapchain()) break;
         }
     }
@@ -781,7 +790,7 @@ void VulkanDevice::endFrame() {
         pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &swapRendered_[swapIndex_];
         pi.swapchainCount = 1; pi.pSwapchains = &swapchain_; pi.pImageIndices = &swapIndex_;
         const VkResult r = vkQueuePresentKHR(queue_, &pi);
-        if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) swapDirty_ = true;
+        if (r == VK_ERROR_OUT_OF_DATE_KHR || (r == VK_SUBOPTIMAL_KHR && swapchainChanged())) swapDirty_ = true;
         swapAcquired_ = false;
     }
     if (capture_) {
