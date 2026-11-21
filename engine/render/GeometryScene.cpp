@@ -356,6 +356,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataGlobalIndexLeases_=std::move(staged->strataGlobalIndexLeases_);
     strataPortableDrawModels_=std::move(staged->strataPortableDrawModels_);
     strataPortableLodHistories_=std::move(staged->strataPortableLodHistories_);
+    strataDebugGeometry_=std::move(staged->strataDebugGeometry_);
     strataGpuDevice_=staged->strataGpuDevice_;
     strataPortableDevice_=staged->strataPortableDevice_;
     strataStreamingFrameSerial_=staged->strataStreamingFrameSerial_;
@@ -368,6 +369,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     staged->strataGlobalIndexLeases_.clear();
     staged->strataPortableDrawModels_.clear();
     staged->strataPortableLodHistories_.clear();
+    staged->strataDebugGeometry_.clear();
     staged->strataGpuDevice_=nullptr;
     staged->strataPortableDevice_=nullptr;
     staged->stats_={};
@@ -380,6 +382,9 @@ void GeometryScene::copyStrataConfigFrom(const GeometryScene& o) {
     strataRenderPreviewEnabled_=o.strataRenderPreviewEnabled_;
     strataPortableRenderingEnabled_=o.strataPortableRenderingEnabled_;
     strataLodHysteresisFraction_=o.strataLodHysteresisFraction_;
+    // Debug view options decide per-source capture during load.
+    strataDebugView_=o.strataDebugView_;
+    strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
     strataGpuLodPolicyEpoch_=o.strataGpuLodPolicyEpoch_;
     strataVulkanGpuIndirectEnabled_=o.strataVulkanGpuIndirectEnabled_;
     strataVulkanGpuSelectionParityVerified_=o.strataVulkanGpuSelectionParityVerified_;
