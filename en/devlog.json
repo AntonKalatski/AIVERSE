@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T16:01:40+00:00",
+ "generated": "2026-11-21T17:11:09+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -91,10 +91,10 @@
     "A shared CPU AdaptiveShadowResolution policy picks a 1024, 2048 or 4096 shadow map from viewport height, camera distance and field of view and the share of the frame the character covers. It upgrades at 15% excess demand and downgrades only after 60 frames of low demand, so the resolution does not jump.",
     "The VIVID portrait key light uses soft PCF instead of the general PCSS: an artistic facial filter, not a physically exact area light. Gameplay lighting and shaders are unchanged."
    ],
-   "status": "in-progress",
+   "status": "done",
    "verified": "CTest adaptive_shadow_resolution: 1/1 PASS in Release with assertions; native VIVID Creator and Studio builds; video of 168 frames at 1500×920, 24 fps, 0 pipeline failures. Frames are native output without retouching.",
    "limits": "The density estimate is conservative, not per pixel; these are not cascaded or virtual shadow maps. Lower resolution tiers at full body are not confirmed with this asset.",
-   "branch": "integration/motionweave-studio-facial-stage184",
+   "branch": "main",
    "commit": "864bd2d8c",
    "media": [
     {
