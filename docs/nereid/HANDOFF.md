@@ -4419,3 +4419,5 @@ and changed Terra colliders, not visual Y teleport. The independent cheap shader
 binding rejection CPU hotspot is still unimplemented. All broader tree/season/
 live ecology, PRISMA video, deformed picking, native Y mouse/Undo, GI/STRATA/VIVID,
 final gallery/site/main work remains active; do not infer completion from water.
+
+Final publication checkpoint: code+handoff ordinary push to origin/feature/terraweave succeeded at427c9a097 (remote wasd71cbc24f, no force). Final map_info dirtyFALSE/1803entities. Owned QA47326 STOPPED after captures to release GPU; user47325 untouched and still loaded with its older running binary. Native built editor/QA artifacts now contain the local-flow fix; restart is needed to load it in an already-running editor. Code worktree clean at publication. Main not merged; preceding open requirements remain.
