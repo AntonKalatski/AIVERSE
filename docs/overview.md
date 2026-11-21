@@ -221,6 +221,11 @@ A `"module": "scene"` project (docs/game-format.md) ships about 150 KB.
 The content pack leaves out `engine/roads/markings.png` (328 KB, stored
 uncompressed) when the project has no `roads/` folder, rules `roadTypes` or map
 `roadNetwork`; the road view then draws its generated paint atlas.
+It also leaves out `engine/materials` (terrain and vegetation PBR libraries,
+about 145 MB): projects copy the materials they use into their own `materials/`
+(`tools/terrain/install_pbr_pack.py`, the editor's empty project) and the runtime
+never reads `engine/materials`. A project whose data names an `engine/materials/`
+path keeps the folder.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

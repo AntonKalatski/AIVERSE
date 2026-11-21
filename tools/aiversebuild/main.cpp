@@ -55,6 +55,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -138,6 +139,31 @@ bool projectUsesRoads(const Options& o) {
         } catch (const std::exception&) { return true; }
     }
     return false;
+}
+
+// engine/assets/materials (terrain + vegetation PBR libraries, ~145 MB) is an authoring source:
+// projects copy what they use into their own materials/ (tools/terrain/install_pbr_pack.py, the
+// editor's empty-project template) and the runtime never reads engine/materials. Ship it only to a
+// project whose own data names an engine/materials/ path.
+bool projectUsesEngineMaterials(const Options& o) {
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(o.project, fs::directory_options::skip_permission_denied, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (it->is_directory(ec)) {
+            if (name == "Builds" || name == "Logs" || name == "logs" || name == "dist" || name == ".aiverse" ||
+                name == "node_modules" || name == ".git" || name == "native" || name == "source")
+                it.disable_recursion_pending();
+            continue;
+        }
+        const std::string ext = it->path().extension().string();
+        if (ext != ".json" && ext != ".lua" && ext != ".rml" && ext != ".rcss" && ext != ".gltf") continue;
+        if (it->file_size(ec) > 64ull * 1024 * 1024) continue;
+        std::ifstream in(it->path(), std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (text.find("engine/materials/") != std::string::npos) return true;
+    }
+    return !!ec;   // could not scan the project: keep everything
 }
 
 struct Game {
@@ -481,6 +507,10 @@ fs::path contentPack(Options& o) {
     // Engine assets only some games need: the road paint atlas (RoadView draws a generated one without it).
     aiverse::pack::IgnoreRules engineRules;
     if (!projectUsesRoads(o)) engineRules.add("roads/markings.png");
+    if (!projectUsesEngineMaterials(o)) {
+        engineRules.add("materials/");
+        info("engine/materials не нужен проекту (материалы копируются в проект): не входит в пак");
+    }
     if (w.addDirectory(game.string(), "", rules, &err) < 0 ||
         (!sceneClient(o) && w.addDirectory((o.engine / "engine" / "assets").string(), "engine", engineRules, &err) < 0))
         die(err);
@@ -622,7 +652,11 @@ void placeContent(Options& o, const fs::path& contentDir) {
         copyFile(contentPack(o), contentDir / "content.rpak");
     } else {
         copyDir(gameContent(o), contentDir);
-        if (!sceneClient(o)) copyDir(o.engine / "engine" / "assets", contentDir / "engine");
+        if (!sceneClient(o)) {
+            copyDir(o.engine / "engine" / "assets", contentDir / "engine");
+            std::error_code ec;
+            if (!projectUsesEngineMaterials(o)) fs::remove_all(contentDir / "engine" / "materials", ec);   // as in the pack
+        }
     }
 }
 
