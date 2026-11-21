@@ -2923,8 +2923,12 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
             add_test(NAME prisma_${_fx}_vulkan COMMAND aiverse_hdr_vulkan)
             set_tests_properties(prisma_${_fx}_vulkan PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Vulkan;Prisma" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
-                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         endforeach()
+        add_test(NAME lighting_baked_vulkan COMMAND aiverse_hdr_vulkan)
+        set_tests_properties(lighting_baked_vulkan PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+            LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         add_test(NAME lighting_luma_vulkan COMMAND aiverse_hdr_vulkan)
         set_tests_properties(lighting_luma_vulkan PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
             LABELS "Lighting;GPU;Vulkan" TIMEOUT 180 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
@@ -4757,14 +4761,25 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
         add_test(NAME prisma_${_fx}_gpu COMMAND aiverse_hdr_scene)
         set_tests_properties(prisma_${_fx}_gpu PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
             LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
-            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS" FAIL_REGULAR_EXPRESSION "FAIL")
         if(TARGET aiverse_hdr_gl)
             add_test(NAME prisma_${_fx}_gl COMMAND aiverse_hdr_gl)
             set_tests_properties(prisma_${_fx}_gl PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
-                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS" FAIL_REGULAR_EXPRESSION "FAIL")
         endif()
     endforeach()
+    # Baked lightmaps and probes drawn by the real renderer (sun off, pixel check).
+    add_test(NAME lighting_baked_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_baked_gpu PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+        LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_baked_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_baked_gl PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+            LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+            PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
     add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE
