@@ -96,7 +96,7 @@
 </div>
 <div class="grid">
 <article class="card"><span class="tag">01 · data</span><h3 class="h3">A project is text</h3><p>game.json, rules.json, levels, UI, audio and effects are readable files. No binary scenes: people and agents edit the same thing.</p></article>
-<article class="card"><span class="tag">02 · mechanics</span><h3 class="h3">Gameplay is built in</h3><p>Full RTS and FPS modules and 88 deterministic libraries: combat, movement, stealth, dialogue, cards, puzzles, economy.</p></article>
+<article class="card"><span class="tag">02 · mechanics</span><h3 class="h3">Gameplay is built in</h3><p>Armies, characters, vehicles and racing, combat, movement, stealth, dialogue, cards, puzzles, economy — 88 deterministic libraries that work in any project.</p></article>
 <article class="card card-ink"><span class="tag">03 · agent</span><h3 class="h3">The AI checks its own work</h3><p>Bot matches, scenarios with checks, balance matrices, a rules linter and screenshots: the agent sees the result instead of working blind.</p></article>
 </div>
 </div>
@@ -145,25 +145,24 @@
 <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:48px">
 <div style="display:flex;flex-direction:column;gap:18px;max-width:760px">
 <p class="eyebrow">Any genre</p>
-<h2 class="h2">Mechanics are the engine’s building blocks</h2>
+<h2 class="h2">Mechanics work in any project</h2>
 </div>
-<p style="margin:0;color:var(--muted);max-width:360px">Every library is deterministic, tested, saveable and validates its own config.</p>
+<p style="margin:0;color:var(--muted);max-width:420px">The engine is not split into “genre modules”: a genre is only a template, and mechanics are switched on by data and combined freely. Every library is deterministic, tested, saveable and validates its own config.</p>
 </div>
 <div class="grid genres">
-<article class="card genre"><div class="genre-top"><h3>RTS, tower defense</h3><span class="badge badge-ink">module</span></div><p>Units and buildings from data, A*/HPA*/flow fields for thousands of units on maps up to 2048², economy, fog of war, AI.</p><code>rts · 26 templates</code></article>
-<article class="card genre"><div class="genre-top"><h3>FPS and TPS</h3><span class="badge badge-ink">module</span></div><p>Client and authoritative server, large streamed worlds up to 100 players, bots, recoil and ballistics.</p><code>fps · weapon-policies · match-rules</code></article>
-<article class="card genre"><div class="genre-top"><h3>Action, fighting, soulslike</h3><span class="badge">libraries</span></div><p>Hitboxes, combos and cancel windows, dodge i-frames, parry, lock-on.</p><code>combat-actions · melee-combat</code></article>
-<article class="card genre"><div class="genre-top"><h3>Platformer, metroidvania</h3><span class="badge">libraries</span></div><p>Coyote time, jump buffer, ledges, ladders, swimming; ability gates and softlock proofs.</p><code>character-locomotion · zone-graph</code></article>
-<article class="card genre"><div class="genre-top"><h3>Stealth, immersive sim</h3><span class="badge">libraries</span></div><p>Sight cones, hearing, suspicion and alerts, disguises; carrying, throwing, ropes, doors.</p><code>stealth-senses · physical-interactions</code></article>
-<article class="card genre"><div class="genre-top"><h3>Story games, visual novels</h3><span class="badge">libraries</span></div><p>Dialogue with conditions, relationships and consequences, backlog; timelines, QTE, slow motion.</p><code>narrative-graphs · cinematic-gameplay</code></article>
-<article class="card genre"><div class="genre-top"><h3>Tactics, cards, board games</h3><span class="badge">libraries</span></div><p>Initiative, action points, reactions; zones, a priority stack and hidden information.</p><code>turn-scheduler · card-runtime</code></article>
-<article class="card genre"><div class="genre-top"><h3>Puzzles</h3><span class="badge">libraries</span></div><p>Sokoban rules, undo/redo and a solver; a VM for programming puzzles.</p><code>grid-puzzles · puzzle-machine</code></article>
-<article class="card genre"><div class="genre-top"><h3>Roguelikes</h3><span class="badge">libraries</span></div><p>Seeded runs, encounter budgets, loot tables with a guaranteed rare drop.</p><code>run-graph · loot-tables</code></article>
-<article class="card genre"><div class="genre-top"><h3>Idle, factory, colony</h3><span class="badge">libraries</span></div><p>Big numbers, exact offline progress, production networks and logistics.</p><code>big-numbers · offline-production</code></article>
-<article class="card genre"><div class="genre-top"><h3>Rhythm games</h3><span class="badge">libraries</span></div><p>Tempo maps and frame-independent hit judgement.</p><code>rhythm-timing</code></article>
-<article class="card genre"><div class="genre-top"><h3>Any mobile game</h3><span class="badge">libraries</span></div><p>Shop, currencies, quests, passes, energy, clans, tournaments, chests — in JSON.</p><code>aiverse::meta · LiveOps</code></article>
+<article class="card genre"><div class="genre-top"><h3>Armies, buildings, economy</h3></div><p>Units and buildings from data, A*/HPA*/flow fields for thousands of units on maps up to 2048², resources, fog of war, a side-commander AI.</p><code>26 templates · aiverse-bots-commander</code></article>
+<article class="card genre"><div class="genre-top"><h3>Characters and networked combat</h3></div><p>Authoritative server with lag-compensated hits, large streamed worlds up to 100 players, recoil and ballistics, bots.</p><code>weapon-policies · match-rules</code></article>
+<article class="card genre"><div class="genre-top"><h3>Vehicles and racing</h3></div><p>Wheeled, tracked, hover and flying vehicles with seats; tracks on spline roads, starting grid, checkpoints, laps, race bots.</p><code>vehicle-controllers · aiverse-races</code></article>
+<article class="card genre"><div class="genre-top"><h3>Close combat</h3></div><p>Hitboxes, combos and cancel windows, dodge i-frames, parry, lock-on.</p><code>combat-actions · melee-combat</code></article>
+<article class="card genre"><div class="genre-top"><h3>Movement and world</h3></div><p>Coyote time, jump buffer, ledges, ladders, swimming; ability gates and softlock proofs.</p><code>character-locomotion · zone-graph</code></article>
+<article class="card genre"><div class="genre-top"><h3>Senses and interaction</h3></div><p>Sight cones, hearing, suspicion and alerts, disguises; carrying, throwing, ropes, doors.</p><code>stealth-senses · physical-interactions</code></article>
+<article class="card genre"><div class="genre-top"><h3>Story and staging</h3></div><p>Dialogue with conditions, relationships and consequences, backlog; timelines, QTE, slow motion.</p><code>narrative-graphs · cinematic-gameplay</code></article>
+<article class="card genre"><div class="genre-top"><h3>Turns, cards, hidden information</h3></div><p>Initiative, action points, reactions; zones, a priority stack, a tactical grid.</p><code>turn-scheduler · card-runtime</code></article>
+<article class="card genre"><div class="genre-top"><h3>Puzzles, rhythm, sports</h3></div><p>Sokoban rules, undo/redo and a solver, a puzzle VM; tempo maps; ball possession, passes, shots, periods.</p><code>grid-puzzles · rhythm-timing · sports-rules</code></article>
+<article class="card genre"><div class="genre-top"><h3>Runs and loot</h3></div><p>Seeded runs, encounter budgets, loot tables with a guaranteed rare drop.</p><code>run-graph · loot-tables</code></article>
+<article class="card genre"><div class="genre-top"><h3>Big numbers and production</h3></div><p>Exact offline progress, layered prestige, production networks and logistics.</p><code>big-numbers · offline-production</code></article>
+<article class="card genre"><div class="genre-top"><h3>Mobile game meta</h3></div><p>Shop, currencies, quests, passes, energy, clans, tournaments, chests — in JSON.</p><code>aiverse::meta · LiveOps</code></article>
 </div>
-<p style="margin:28px 0 0;color:var(--muted)">Racing, sports and vehicles are <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/genre-mechanics-roadmap.md">on the roadmap</a>.</p>
 </section>
 
 <section class="wrap" style="padding-bottom:120px">
