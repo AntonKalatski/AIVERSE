@@ -44,6 +44,26 @@ EGLConfig g_cfg = nullptr;
 std::unique_ptr<gfx::Device> g_device;
 bool g_inited = false;
 bool g_vulkan = false;   // g_device is the Vulkan backend: no EGL, the swapchain follows the native window
+float g_density = 1.0f;       // physical px per point (touches, insets and the keyboard arrive in physical px)
+float g_renderScale = 1.0f;   // window buffer / physical size; the display hardware scales the buffer up
+
+// Render resolution: the window's buffers are made smaller than the screen and the compositor / display
+// controller scales them up for free (both GLES and Vulkan, no extra pass). A 2400x1080 phone drew
+// 2.6 Mpx per frame, which entry-level GPUs can't fill at 60 fps. Default: the short side at most
+// 720 px; AIVERSE_RENDER_SCALE=<0.25..1> overrides (1 = native).
+void applyRenderScale(ANativeWindow* win) {
+    ANativeWindow_setBuffersGeometry(win, 0, 0, 0);   // back to the native size to measure it
+    const int w = ANativeWindow_getWidth(win), h = ANativeWindow_getHeight(win);
+    if (w <= 0 || h <= 0) return;
+    float s = std::min(1.0f, 720.0f / float(std::min(w, h)));
+    if (const char* e = std::getenv("AIVERSE_RENDER_SCALE"); e && *e) s = std::clamp(float(std::atof(e)), 0.25f, 1.0f);
+    const int bw = std::max(1, int(float(w) * s + 0.5f)), bh = std::max(1, int(float(h) * s + 0.5f));
+    if (s < 1.0f) ANativeWindow_setBuffersGeometry(win, bw, bh, 0);
+    g_renderScale = s < 1.0f ? float(bw) / float(w) : 1.0f;
+    state().scale = g_density * g_renderScale;   // framebuffer px per point
+    static bool logged = false;
+    if (!logged) { logged = true; __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[gfx] screen %dx%d, render %dx%d (scale %.3f)", w, h, s < 1.0f ? bw : w, s < 1.0f ? bh : h, double(g_renderScale)); }
+}
 
 // ---- benchmarks over adb (AIVERSE_PERF_LOG=<seconds>): frame-time windows printed to logcat as
 // "[perf] ..." lines. wall = time between frame starts (what the player sees), cpu = time spent in the
@@ -109,10 +129,10 @@ void drainTextQueue() {
         case TextMsg::Text: detail::dispatchText(m.text); break;
         case TextMsg::Backspace: detail::dispatchKeyPress(Key::Backspace); break;
         case TextMsg::Enter: detail::dispatchKeyPress(Key::Enter); break;
-        case TextMsg::Keyboard: detail::setKeyboardHeight(float(m.px) / state().scale); break;
+        case TextMsg::Keyboard: detail::setKeyboardHeight(float(m.px) / g_density); break;
         case TextMsg::Ended: detail::textInputEndedByUser(); break;
         case TextMsg::SafeArea: {
-            const float s = state().scale;
+            const float s = g_density;
             detail::setSafeArea({float(m.inset[0]) / s, float(m.inset[1]) / s, float(m.inset[2]) / s, float(m.inset[3]) / s});
             break;
         }
@@ -186,6 +206,7 @@ void onCmd(android_app* app, int32_t cmd) {
     auto& S = state();
     switch (cmd) {
     case APP_CMD_INIT_WINDOW:
+        if (app->window) applyRenderScale(app->window);   // before the EGL surface / swapchain exist
 #if defined(AIVERSE_WITH_VULKAN)
         if (app->window && (g_vulkan || (!g_device && wantVulkan(S.cfg)))) {   // GraphicsSettings.h
             gfx::VulkanWindow vw;
@@ -327,7 +348,7 @@ int32_t onMouse(AInputEvent* ev) {
     auto& S = state();
     const int32_t code = AMotionEvent_getAction(ev) & AMOTION_EVENT_ACTION_MASK;
     Event e;
-    e.x = AMotionEvent_getX(ev, 0) / S.scale; e.y = AMotionEvent_getY(ev, 0) / S.scale;
+    e.x = AMotionEvent_getX(ev, 0) / g_density; e.y = AMotionEvent_getY(ev, 0) / g_density;
     e.mods = modsOf(AMotionEvent_getMetaState(ev));
     auto buttonOf = [](int32_t b) { return b == AMOTION_EVENT_BUTTON_SECONDARY ? 1 : b == AMOTION_EVENT_BUTTON_TERTIARY ? 2 : 0; };
     // The button of a press / release from the change of the button state (API 14): AMotionEvent_getActionButton
@@ -363,7 +384,7 @@ int32_t onInput(android_app*, AInputEvent* ev) {
     size_t idx = size_t((action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
     auto emit = [&](EventType t, size_t i) {
         Event e; e.type = t;
-        e.x = AMotionEvent_getX(ev, i) / S.scale; e.y = AMotionEvent_getY(ev, i) / S.scale;
+        e.x = AMotionEvent_getX(ev, i) / g_density; e.y = AMotionEvent_getY(ev, i) / g_density;
         e.touchId = AMotionEvent_getPointerId(ev, i);
         detail::dispatch(e);
     };
@@ -560,6 +581,7 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
     int32_t density = AConfiguration_getDensity(conf);
     AConfiguration_delete(conf);
     S.scale = density > 0 ? float(density) / 160.0f : 1.0f;
+    g_density = S.scale;
     // game data: only the RHI backend matters here (game.json "graphics"); the window is the whole screen
     if (S.cb.configure) { AppConfig c = S.cfg; S.cb.configure(c); S.cfg.graphics = c.graphics; }
 

@@ -49,6 +49,7 @@ if [ $BUILD = 1 ]; then
   rc=$?
   grep -E "error:|ОШИБКА|FAILURE|APK" "$OUT/android-build.log" | sort -u | head -40
   [ $rc = 0 ] || { say "FAIL android build rc=$rc (android-build.log)"; exit 1; }
+  G="$(ls -d "$APK_DIR"/.temp/build/android/*/ 2>/dev/null | head -1)"; [ -n "$G" ] && git -C "$ROOT" rev-parse HEAD > "$G/.aiverse-export-commit"
   for c in "$HOME/.aiverse/toolchains/android-sdk" "$HOME/Library/Android/sdk"; do
     [ -z "$ADB" ] && [ -x "$c/platform-tools/adb" ] && { SDK="$c"; ADB="$c/platform-tools/adb"; }; done
 fi
@@ -62,11 +63,24 @@ if [ $BUILD = 2 ]; then
     n="$(basename "$d")"; [ -e "$ROOT/$n" ] || continue
     if [ -d "$d" ]; then rsync -rc --existing "$ROOT/$n/" "$d/"; else rsync -c "$ROOT/$n" "$d"; fi
   done
+  # files added since the export (the content sync above only updates existing ones): copy them when
+  # their folder is part of the exported tree
+  BASE="$(cat "$GP/.aiverse-export-commit" 2>/dev/null || echo f53826ef9)"
+  git -C "$ROOT" diff --name-only --diff-filter=A "$BASE" -- . 2>/dev/null | while read -r f; do
+    [ -d "$GP/app/src/main/cpp/$(dirname "$f")" ] && cp "$ROOT/$f" "$GP/app/src/main/cpp/$f" && echo "fast: + $f"; done
   sed -i.bak "s/abiFilters 'arm64-v8a', 'x86_64'/abiFilters 'arm64-v8a'/" "$GP/app/build.gradle"
   # profiling over adb (simpleperf --app) without making the APK debuggable; bench builds only
   M="$GP/app/src/main/AndroidManifest.xml"
   grep -q "<profileable" "$M" || perl -0pi -e 's/(<application[^>]*>)/$1\n        <profileable android:shell="true" \/>/' "$M"
-  say "fast: gradlew assembleRelease"
+  # the same JDK range aiversebuild accepts (Gradle 8.10 / AGP 8.7 need 17..23)
+  unset JAVA_HOME
+  for j in "$HOME/.aiverse/toolchains"/*/ "$HOME/.aiverse/toolchains"/*/Contents/Home/ /Library/Java/JavaVirtualMachines/*/Contents/Home/ \
+           "/Applications/Android Studio.app/Contents/jbr/Contents/Home/" "$HOME/Library/Java/JavaVirtualMachines"/*/Contents/Home/; do
+    [ -x "$j/bin/java" ] && [ -f "$j/release" ] || continue
+    v="$(grep -m1 '^JAVA_VERSION=' "$j/release" | tr -d '"' | cut -d= -f2 | cut -d. -f1)"
+    [ -n "$v" ] && [ "$v" -ge 17 ] && [ "$v" -le 23 ] && { export JAVA_HOME="${j%/}"; break; }
+  done
+  say "fast: gradlew assembleRelease (JAVA_HOME=${JAVA_HOME:-?})"
   (cd "$GP" && ./gradlew assembleRelease --console=plain) > "$OUT/android-build.log" 2>&1 \
     || { say "FAIL fast build (android-build.log)"; grep -E "error:" "$OUT/android-build.log" | sort -u | head -30; exit 1; }
   APK="$GP/app/build/outputs/apk/release/app-release.apk"
