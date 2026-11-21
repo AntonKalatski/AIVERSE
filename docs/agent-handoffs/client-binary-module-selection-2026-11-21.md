@@ -443,3 +443,11 @@ Driving 0.08, FieldOps 0.08, BwImpl 0.07, RegionSwipe 0.06, Arsenal 0.06,
 Raid 0.06, Commerce 0.06; also ImGui ~0.36 MB and RmlUi Debugger 0.04 MB.
 Next: same treatment for Encounters/Commerce/Raid/Arsenal/Progression/Career
 (each gated by its rules block), then TopDown/Planet views and generators.
+
+Merge of `origin/main` e128dfd38 (Studio Transform in the runtime): that
+commit added `game::io(Archive&, AuthoredPose&)` in namespace `aiverse::game`,
+which hides the unnamed-namespace PS helper from the qualified `game::io(a, p)`
+in `RtsBwAI.cpp` — main did not compile (any compiler). The helper is now
+`ioPs`; save format unchanged. After the merge the C configuration (all
+optional modules off, traffic off) rebuilt and linked: `index.wasm`
+14,966,706 B (brotli 3,503,417); smoke screenshot statistics unchanged.
