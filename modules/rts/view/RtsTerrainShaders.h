@@ -27,12 +27,13 @@
 #pragma once
 #include "../../../engine/render/Shaders.h"
 #include "../../../engine/render/BakedShaders.h"
+#include "../../../engine/render/TerrainPbrShaders.h"
 #include "../../../engine/render/GiDynamicShaders.h"
 
 namespace aiverse::game::shaders {
 
 #define AIVERSE_TERRAIN_GLSL_U0 \
-    "layout(std140) uniform U0 { vec4 t_lod; vec4 t_mode; vec4 t_scale; vec4 t_cliff; vec4 t_fog; vec4 t_tint[4]; vec4 t_cliffTint; vec4 t_fogColor; vec4 t_fogGrid; vec4 t_detail; vec4 t_rock; vec4 t_blend; };\n"
+    "layout(std140) uniform U0 { vec4 t_lod; vec4 t_mode; vec4 t_scale; vec4 t_cliff; vec4 t_fog; vec4 t_tint[4]; vec4 t_cliffTint; vec4 t_fogColor; vec4 t_fogGrid; vec4 t_detail; vec4 t_rock; vec4 t_blend; vec4 t_pbr; };\n"
 
 inline const char* kTerrainVS =
     AIVERSE_TERRAIN_GLSL_U0 AIVERSE_GLSL_FRAME
@@ -92,6 +93,7 @@ inline const char* kTerrainFS =
     "#else\n"
     AIVERSE_GLSL_DYNAMIC_GI_AT("tex21")
     "#endif\n"
+    AIVERSE_GLSL_TERRAIN_PBR
     R"(
 uniform sampler2D tex4;
 uniform sampler2D tex5;
@@ -153,21 +155,23 @@ vec3 planarNormal(vec3 n, vec3 tn) {
 // Atlas uses four repeatable padded 2D tiles. t_blend.w contains the
 // content-tile UV scale. Explicit gradients avoid derivatives of fract()
 // at wrap seams (which otherwise select a wrong high mip).
-vec3 terrainLayerNormal(int layer, vec2 uv) {
+vec4 terrainLayerSample(int layer, vec2 uv) {
     float tileScale=t_blend.w;
     float inset=(0.5-tileScale)*0.5;
     vec2 quadrant=vec2(float(layer % 2),float(layer / 2))*0.5;
     vec2 atlasUv=quadrant+vec2(inset)+fract(uv)*tileScale;
-    return unpackN(textureGrad(tex9,atlasUv,
-        dFdx(uv)*tileScale,dFdy(uv)*tileScale));
+    return textureGrad(tex9,atlasUv,
+        dFdx(uv)*tileScale,dFdy(uv)*tileScale);
 }
+vec3 terrainLayerNormal(int layer, vec2 uv) { return unpackN(terrainLayerSample(layer,uv)); }
 #endif
 #endif
 
 void main() {
     vec3 n = normalize(v_nrm);
     vec3 albedoS = v_col;
-    vec3 geoN = n;                                        // surface normal for slope tests
+    vec3 geoN = n;
+    float pbrAO=1.0, pbrRough=t_pbr.y;                                        // surface normal for slope tests
 #if TERRAIN_DETAIL
     // per-pixel normal of the detail surface (cheap: one fetch, every tier)
     // outside the map (apron, border walls) the clamped edge texels would stretch into streaks: fade to
@@ -259,6 +263,18 @@ void main() {
             n = planarNormal(n, normalize(tn));
         }
 #endif
+
+#if TERRAIN_TIER >= 2
+        if(t_pbr.x>0.5 && t_pbr.w>0.5) {
+            pbrAO=dot(w,vec4(texture(tex5,p/t_scale.x).a,texture(tex6,p/t_scale.y).a,texture(tex7,p/t_scale.z).a,texture(tex8,p/t_scale.w).a));
+#if TERRAIN_GL_NORMAL_ATLAS
+            vec4 roughs=vec4(terrainLayerSample(0,p/t_scale.x).a,terrainLayerSample(1,p/t_scale.y).a,terrainLayerSample(2,p/t_scale.z).a,terrainLayerSample(3,p/t_scale.w).a);
+#else
+            vec4 roughs=vec4(texture(tex9,p/t_scale.x).a,texture(tex10,p/t_scale.y).a,texture(tex11,p/t_scale.z).a,texture(tex12,p/t_scale.w).a);
+#endif
+            pbrRough=dot(w,mix(vec4(t_pbr.y),roughs,vec4(t_tint[0].w,t_tint[1].w,t_tint[2].w,t_tint[3].w)));
+        }
+#endif
         float slope = 1.0 - abs(geoN.y);
         float cw = smoothstep(t_cliff.z, t_cliff.w, slope);
         if (cw > 0.002) {
@@ -279,6 +295,13 @@ void main() {
             // one projection along the dominant axis
             vec2 uv = an.x > an.z ? (an.y > an.x ? q.xz : q.zy) : (an.y > an.z ? q.xz : q.xy);
             vec3 c = texture(tex13, uv).rgb;
+#endif
+#if TERRAIN_TIER >= 2
+            if(t_pbr.x>0.5 && t_pbr.w>0.5) {
+                float ca=texture(tex13,q.zy).a*bw.x+texture(tex13,q.xz).a*bw.y+texture(tex13,q.xy).a*bw.z;
+                float cr=t_cliffTint.w>0.5 ? texture(tex14,q.zy).a*bw.x+texture(tex14,q.xz).a*bw.y+texture(tex14,q.xy).a*bw.z : t_pbr.y;
+                pbrAO=mix(pbrAO,ca,cw);pbrRough=mix(pbrRough,cr,cw);
+            }
 #endif
             s = mix(s, c * t_cliffTint.rgb, cw);
         }
@@ -331,10 +354,13 @@ void main() {
     float spec = pow(max(dot(n, H), 0.0), 40.0) * t_mode.x;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
+    if(t_pbr.x>0.5) {
+        col=terrainDielectricPbr(base,n,L,V,sun,amb,sh,pbrRough,pbrAO);
+        col+=base*0.96*dynamicLight(v_wpos,n,V,0.0);
+    } else col += base * dynamicLight(v_wpos, n, V, t_mode.x);
 #if defined(DYNAMIC_GI_TERRAIN)
     col += base * dynamicGiAt(v_wpos,n);
 #endif
-    col += base * dynamicLight(v_wpos, n, V, t_mode.x);
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
@@ -360,8 +386,8 @@ void main() {
 
 inline const char* kTerrainMSL =
     "#include <metal_stdlib>\nusing namespace metal;\n"
-    "struct TU0 { float4 lod; float4 mode; float4 scale; float4 cliff; float4 fog; float4 tint[4]; float4 cliffTint; float4 fogColor; float4 fogGrid; float4 detail; float4 rock; float4 blend; };\n"
-    AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_BAKED_TERRAIN AIVERSE_MSL_DYNAMIC_GI
+    "struct TU0 { float4 lod; float4 mode; float4 scale; float4 cliff; float4 fog; float4 tint[4]; float4 cliffTint; float4 fogColor; float4 fogGrid; float4 detail; float4 rock; float4 blend; float4 pbr; };\n"
+    AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_BAKED_TERRAIN AIVERSE_MSL_TERRAIN_PBR AIVERSE_MSL_DYNAMIC_GI
     R"(
 
 #if TERRAIN_TIER >= 1
@@ -466,6 +492,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
     float3 n = normalize(in.nrm);
     float3 albedoS = in.col;
     float3 geoN = n;
+    float pbrAO=1.0, pbrRough=u.pbr.y;
 #if TERRAIN_DETAIL
     float2 outD = max(max(-in.wpos.xz, in.wpos.xz - u.lod.zw), float2(0.0));
     float outF = clamp(max(outD.x, outD.y) * 0.5, 0.0, 1.0);
@@ -526,6 +553,14 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
             n = planarNormal(n, normalize(tn));
         }
 #endif
+
+#if TERRAIN_TIER >= 2
+        if(u.pbr.x>0.5 && u.pbr.w>0.5) {
+            pbrAO=dot(w,float4(tex5.sample(s5,p/u.scale.x).a,tex6.sample(s6,p/u.scale.y).a,tex7.sample(s7,p/u.scale.z).a,tex8.sample(s8,p/u.scale.w).a));
+            float4 roughs=float4(tex9.sample(s9,p/u.scale.x).a,tex10.sample(s10,p/u.scale.y).a,tex11.sample(s11,p/u.scale.z).a,tex12.sample(s12,p/u.scale.w).a);
+            pbrRough=dot(w,mix(float4(u.pbr.y),roughs,float4(u.tint[0].w,u.tint[1].w,u.tint[2].w,u.tint[3].w)));
+        }
+#endif
         float slope = 1.0 - abs(geoN.y);
         float cw = smoothstep(u.cliff.z, u.cliff.w, slope);
         if (cw > 0.002) {
@@ -544,6 +579,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
 #else
             float2 uv = an.x > an.z ? (an.y > an.x ? q.xz : q.zy) : (an.y > an.z ? q.xz : q.xy);
             float3 c = tex13.sample(s13, uv).rgb;
+#endif
+#if TERRAIN_TIER >= 2
+            if(u.pbr.x>0.5 && u.pbr.w>0.5) {
+                float ca=tex13.sample(s13,q.zy).a*bw.x+tex13.sample(s13,q.xz).a*bw.y+tex13.sample(s13,q.xy).a*bw.z;
+                float cr=u.cliffTint.w>0.5 ? tex14.sample(s13,q.zy).a*bw.x+tex14.sample(s13,q.xz).a*bw.y+tex14.sample(s13,q.xy).a*bw.z : u.pbr.y;
+                pbrAO=mix(pbrAO,ca,cw);pbrRough=mix(pbrRough,cr,cw);
+            }
 #endif
             s = mix(s, c * u.cliffTint.rgb, cw);
         }
@@ -591,10 +633,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
     float spec = pow(max(dot(n, H), 0.0), 40.0) * u.mode.x;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
+    if(u.pbr.x>0.5) {
+        col=terrainDielectricPbr(base,n,L,V,sun,amb,sh,pbrRough,pbrAO);
+        col+=base*0.96*dynamicLight(l,tex1,s1,in.wpos,n,V,0.0);
+    } else col += base * dynamicLight(l, tex1, s1, in.wpos, n, V, u.mode.x);
 #if defined(DYNAMIC_GI_TERRAIN)
     col += base * dynamicGiAt(tex21,dgi,in.wpos,n);
 #endif
-    col += base * dynamicLight(l, tex1, s1, in.wpos, n, V, u.mode.x);
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);

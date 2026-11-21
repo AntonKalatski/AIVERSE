@@ -143,8 +143,16 @@ public:
     bool bindLensColorTarget(int slot,uint64_t key) const {
         return lensCamerasActive_&&dev_&&lensCameras_.bindColorTarget(*dev_,slot,key);
     }
+    // Editor controls affect only the existing local simulation. Network/city
+    // authority must keep advancing even when a local preview is paused.
+    bool hostCanControl() const;
+    bool hostPaused() const;
+    bool hostCanStep() const;
+    bool setHostPaused(bool paused);
+    bool requestHostStep();
 
 private:
+    bool hostPaused_ = false, hostStep_ = false;
     enum class Screen { Menu, Lobby, Playing, Paused, Over };
     enum class Mode { Normal, AttackMove, Patrol, Place, Rally, Ability, Claim, Skill, Dig, Undig, Room, Road, Unroad, Drop, ScriptCmd, Repair, Reclaim };
 

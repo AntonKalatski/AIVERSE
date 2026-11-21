@@ -992,7 +992,7 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
                 for(const auto& message:warnings)warn(t,message);
                 if(policy.clusters||policy.shadowClusters||policy.occluder)
                     prepareGeometry(*m);
-                if(!uploadModel(dev,*m,false,false))
+                if(!uploadModel(dev,*m,false,false,resources_.retainPickingGeometry()))
                     throw std::runtime_error("appearance Model GPU upload failed: "+path);
                 auto [staged,inserted]=activeStagedModels_->try_emplace(
                     key,std::move(m));
@@ -1013,7 +1013,7 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
             for (auto& s : w) warn(t, s);
             if (!m)throw std::runtime_error("Model load failed: "+path);
             if (policy.clusters || policy.shadowClusters || policy.occluder) prepareGeometry(*m);
-            if (!uploadModel(dev, *m))
+            if (!uploadModel(dev,*m,false,true,resources_.retainPickingGeometry()))
                 throw std::runtime_error("Model GPU upload failed: "+path);
         } catch (const std::exception& e) {
             warn(t, e.what());

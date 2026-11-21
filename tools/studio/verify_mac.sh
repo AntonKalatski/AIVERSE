@@ -3,7 +3,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-BUILD_DIR="$ROOT/build/studio-html5-verify"
+OUTPUT_ROOT="/Volumes/KINGSTON/AIVERSE-builds/studio-html5-verify"
+if [[ ! -d /Volumes/KINGSTON || ! -w /Volumes/KINGSTON ]]; then
+  echo "KINGSTON must be mounted and writable; no internal-disk fallback." >&2
+  exit 2
+fi
+BUILD_DIR="$OUTPUT_ROOT/native"
+WEB_DIST="$OUTPUT_ROOT/web"
+mkdir -p "$OUTPUT_ROOT/tmp"
+export TMPDIR="$OUTPUT_ROOT/tmp"
+export npm_config_cache="$OUTPUT_ROOT/npm-cache"
+export PYTHONDONTWRITEBYTECODE=1
+cd "$ROOT"
 
 if [[ "$(uname -s)" != Darwin ]]; then
   echo "This native build requires macOS, WKWebView and the Apple Metal SDK." >&2
@@ -21,30 +32,33 @@ echo "==== Step 1: HTML5 TypeScript/Vite ===="
   cd "$ROOT/apps/studio-web"
   npm install --no-audit --no-fund
   npm run typecheck
-  npm run build
+  npm run test:web
+  ./node_modules/.bin/tsc --incremental --tsBuildInfoFile "$OUTPUT_ROOT/studio.tsbuildinfo"
+  ./node_modules/.bin/vite build --outDir "$WEB_DIST"
 )
-if [[ ! -f "$ROOT/apps/studio-web/dist/index.html" ]]; then
+if [[ ! -f "$WEB_DIST/index.html" ]]; then
   echo "Vite build did not produce dist/index.html" >&2
   exit 1
 fi
 echo "==== Step 1b: verify bundled ES module asset paths ===="
-python3 tools/studio/test_web_bundle.py
+AIVERSE_STUDIO_WEB_DIST="$WEB_DIST" python3 -m unittest discover -s tools/studio -p 'test_*.py' -v
 
 echo "==== Step 2: CMake configure ===="
 cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DAIVERSE_BUILD_EDITOR=ON \
   -DAIVERSE_BUILD_STUDIO_HTML5=ON \
   -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_STUDIO_WEB_DIST="$WEB_DIST" \
   -DCMAKE_BUILD_TYPE=Debug
 
 echo "==== Step 3: native target and tests ===="
 cmake --build "$BUILD_DIR" \
-  --target aiverse_studio aiverse_studio_session_tests aiverse_studio_lighting_validation_tests aiverse_studio_material_validation_tests aiverse_studio_pbr_adapter_tests aiverse_studio_shader_graph_name_tests aiverse_studio_shader_graph_draft_tests aiverse_studio_light_preview_math_tests aiverse_studio_authored_lights_tests aiverse_studio_fps_lighting_contract_tests aiverse_studio_fps_lighting_document_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
+  --target aiverse_studio aiverse_studio_facial_rig_tests aiverse_studio_model_picking_tests aiverse_studio_visual_picking_tests aiverse_studio_move_journal_tests aiverse_studio_content_tests aiverse_studio_asset_catalog_tests aiverse_studio_asset_transfer_tests aiverse_studio_session_tests aiverse_studio_lighting_validation_tests aiverse_studio_material_validation_tests aiverse_studio_pbr_adapter_tests aiverse_studio_shader_graph_name_tests aiverse_studio_shader_graph_draft_tests aiverse_studio_light_preview_math_tests aiverse_studio_authored_lights_tests aiverse_studio_fps_lighting_contract_tests aiverse_studio_fps_lighting_document_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
   --parallel 4
 
 echo "==== Step 4: studio contracts ===="
 ctest --test-dir "$BUILD_DIR" --output-on-failure \
-  -R '^studio_(session|shader_graph_name|shader_graph_draft|pbr_adapter|material_validation|lighting_validation|light_preview_math|authored_lights|fps_lighting_contract|fps_lighting_document|scene_nodes|document_visuals|viewport_layout|terrain_geometry)$'
+  -R '^studio_'
 
 echo "==== Automated verification finished; macOS visual testing still required ===="
 echo "Open the generated AiverseStudioHTML5.app with --project /path/to/project."

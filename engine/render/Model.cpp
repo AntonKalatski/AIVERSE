@@ -1,4 +1,5 @@
 #include "ModelTextureCache.h"
+#include "AlphaCoverageMips.h"
 #include <filesystem>
 #include "Model.h"
 #include "../data/Json.h"
@@ -154,12 +155,17 @@ namespace {
 using Loader = std::unique_ptr<Model> (*)(const std::string&, const std::string&, const FileReader&, std::vector<std::string>*);
 struct Format { const char* ext; Loader load; };
 const Format kFormats[] = {
-    {".gltf", loadGltf}, {".glb", loadGltf}, {".obj", loadObj},
+    {".gltf", loadGltf}, {".glb", loadGltf},
+#if !defined(AIVERSE_NO_OBJ)
+    {".obj", loadObj},
+#endif
 #if !defined(AIVERSE_NO_FBX)
     {".fbx", loadFbx},
 #endif
+#if !defined(AIVERSE_NO_LEGACY_MODELS)
     {".vox", loadVox}, {".vxl", loadVxl}, {".ply", loadPly}, {".stl", loadStl}, {".3ds", load3ds}, {".dae", loadDae},
     {".mdx", loadMdx}, {".mdl", loadMdl}, {".3do", load3do}, {".w3d", loadW3d},
+#endif
 };
 std::string extOf(const std::string& path) {
     const size_t dot = path.find_last_of('.'), slash = path.find_last_of("/\\");
@@ -189,6 +195,8 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
         throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
     model.batching.autoLod = config.getBool("autoLod", true);
+    if(config.has("independentShadowLod")&&config["independentShadowLod"].type()!=Json::Type::Bool)throw std::runtime_error(path+".batching.json: independentShadowLod must be boolean");
+    model.batching.independentShadowLod=config.getBool("independentShadowLod",false);
     // Optional per-asset policy for native importers and project sidecars.
     // It is applied before GPU upload; editing it requires asset reupload.
     if (config.has("geometryPool")) {
@@ -257,6 +265,14 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
 #if defined(AIVERSE_NO_FBX)
         if (ext == ".fbx") throw std::runtime_error(path + ": FBX import is disabled in this build (AIVERSE_FBX=OFF); convert to .glb");
 #endif
+#if defined(AIVERSE_NO_OBJ)
+        if (ext == ".obj") throw std::runtime_error(path + ": OBJ import is disabled in this build (AIVERSE_OBJ=OFF); convert to .glb");
+#endif
+#if defined(AIVERSE_NO_LEGACY_MODELS)
+        if (ext == ".vox" || ext == ".vxl" || ext == ".ply" || ext == ".stl" || ext == ".3ds" ||
+            ext == ".dae" || ext == ".mdx" || ext == ".mdl" || ext == ".3do" || ext == ".w3d")
+            throw std::runtime_error(path + ": legacy model import is disabled in this build (AIVERSE_LEGACY_MODELS=OFF); convert to .glb");
+#endif
         if (!read(path, bytes)) throw std::runtime_error(path + ": file not found");
         throw std::runtime_error(path + ": unsupported model format '" + ext + "' (convert it with tools/models/modelconv, "
                                  "or use .gltf, .glb, .obj, .fbx, .dae, .3ds, .ply, .stl, .vox, .vxl, .mdx, .mdl, .3do, .w3d)");
@@ -316,7 +332,13 @@ bool decodeImage(const std::string& bytes, Image& out) {
         out.compressed = std::move(ci);
         return true;
     }
-    if (bytes.size() >= 4 && (bytes.compare(0, 4, "BLP1") == 0 || bytes.compare(0, 4, "BLP2") == 0)) return decodeBlp(bytes, out);
+    if (bytes.size() >= 4 && (bytes.compare(0, 4, "BLP1") == 0 || bytes.compare(0, 4, "BLP2") == 0)) {
+#if defined(AIVERSE_NO_BLP)
+        return false;
+#else
+        return decodeBlp(bytes, out);
+#endif
+    }
     if (bytes.size() >= 4 && bytes.compare(0, 4, "DDS ") == 0) return decodeDds(bytes, out);
     int w = 0, h = 0, n = 0;
     stbi_uc* px = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), int(bytes.size()), &w, &h, &n, 4);
@@ -523,6 +545,23 @@ void uploadImage(gfx::Device& dev, Image& img) {
     td.mipmaps = !img.nearest;
     td.data = pixels.data();
     td.label = img.name.c_str();
+    if(img.alphaCoverageThreshold && img.preserveAlphaCoverage && !img.nearest && !img.compressed) {
+        std::vector<AlphaCoverageMip> levels;
+        if(buildAlphaCoverageMips(img.width,img.height,pixels,img.alphaCoverageThreshold,levels)) {
+            td.mipmaps=false;td.mipLevels=int(levels.size()+1);
+            auto texture=dev.createTexture(td);
+            bool complete=texture.valid();
+            for(size_t i=0;complete&&i<levels.size();++i) {
+                const auto& level=levels[i];gfx::TextureUploadDesc upload;
+                upload.mipLevel=int(i+1);upload.width=level.width;upload.height=level.height;
+                upload.rowPitchBytes=level.width*4;upload.data=level.rgba.data();
+                complete=dev.updateTextureRegion(texture,upload);
+            }
+            if(complete){img.tex=texture;img.alphaCoverageMipmaps=true;return;}
+            if(texture.valid())dev.destroyTexture(texture);
+            td.mipmaps=true;td.mipLevels=0;
+        }
+    }
     img.tex = dev.createTexture(td);
 }
 } // namespace
@@ -569,6 +608,7 @@ std::string ModelTextureCache::gpuKey(const Image& image) const {
     const uint64_t epoch=revision==sourceRevisions_.end()?0:revision->second;
     return image.textureKey+(image.repeat?"#repeat":"#clamp")+
            (image.nearest?"#nearest":"#linear")+
+           (image.alphaCoverageThreshold?"#alphaCoverage"+std::to_string(image.alphaCoverageThreshold):"")+
            "#revision"+std::to_string(epoch);
 }
 
@@ -581,6 +621,7 @@ bool ModelTextureCache::borrowResident(Image& image) const {
     image.textureLease=it->second.textureLease;
     image.borrowedTexture=true;
     image.gpuCompressed=it->second.gpuCompressed;
+    image.alphaCoverageMipmaps=it->second.alphaCoverageMipmaps;
     return true;
 }
 
@@ -617,7 +658,7 @@ void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
             it->second.compressed.reset();
         }
     }
-    image.textureLease = it->second.textureLease; image.tex = it->second.tex; image.gpuCompressed = it->second.gpuCompressed; image.borrowedTexture = true;
+    image.textureLease = it->second.textureLease; image.tex = it->second.tex; image.gpuCompressed = it->second.gpuCompressed; image.borrowedTexture = true; image.alphaCoverageMipmaps=it->second.alphaCoverageMipmaps;
 }
 ModelTextureCache::PreparedGpuPromotion
 ModelTextureCache::prepareGpuPromotion(
@@ -805,7 +846,7 @@ void prepareModelUpload(Model& m) {
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
-                 bool publishSharedTextures) {
+                 bool publishSharedTextures, bool keepPickingGeometry) {
     const bool hasCpuVertices = !m.vertices.empty();
     const bool needsGpuBuffers = hasCpuVertices || !m.indices.empty() ||
         m.vb.valid() || m.ib.valid() || bool(m.geometryPoolPage);
@@ -837,6 +878,37 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
     if(hasCpuVertices && !m.geometryPoolPage &&
        (!m.vb.valid() || !m.ib.valid()))
         return false;
+    // A single Image cannot have conflicting alpha-test policies or also be
+    // linear data/blended alpha. Keep those cases and authored compressed/VT
+    // mips unchanged instead of silently changing another material's content.
+    std::vector<int> cutoutThreshold(m.images.size(),0);
+    const auto disable=[&](int image){if(image>=0&&size_t(image)<cutoutThreshold.size())cutoutThreshold[size_t(image)]=-1;};
+    for(const auto& material:m.materials) {
+        for(int image:{material.mrTex,material.normalTex,material.occlusionTex,material.emissiveTex,material.teamTex})disable(image);
+        if(material.alpha!=AlphaMode::Mask)disable(material.baseTex);
+        for(int image:material.graphTextures)disable(image);
+        if(material.alpha==AlphaMode::Mask&&material.baseTex>=0&&size_t(material.baseTex)<cutoutThreshold.size()&&
+           std::isfinite(material.alphaCutoff)&&material.alphaCutoff>0&&
+           std::isfinite(material.baseColor.w)&&material.baseColor.w>0&&material.alphaCutoff<=material.baseColor.w) {
+            auto& threshold=cutoutThreshold[size_t(material.baseTex)];
+            const int value=std::clamp(int(std::ceil(material.alphaCutoff/material.baseColor.w*255.f)),1,255);
+            if(threshold==0)threshold=value;else if(threshold!=value)threshold=-1;
+        }
+    }
+    const char* coverageOption=std::getenv("AIVERSE_ALPHA_COVERAGE_MIPS");
+    const bool coverageEnabled=!(coverageOption&&std::strcmp(coverageOption,"0")==0);
+    for(size_t i=0;i<m.images.size();++i) {
+        auto& image=m.images[i];
+        if(!image.tex.valid()) {
+            const bool eligible=coverageEnabled&&image.preserveAlphaCoverage&&!image.nearest&&!image.compressed&&image.virtualFallbackMaxDimension==0;
+            image.alphaCoverageThreshold=eligible&&cutoutThreshold[i]>0?uint8_t(cutoutThreshold[i]):0;
+            image.alphaCoverageMipmaps=false;
+        }
+    }
+    std::vector<bool> pickAlpha(m.images.size(),false);
+    if(keepPickingGeometry)for(const auto& material:m.materials)
+        if(material.alpha!=AlphaMode::Opaque&&material.baseTex>=0&&size_t(material.baseTex)<pickAlpha.size())pickAlpha[size_t(material.baseTex)]=true;
+    size_t imageIndex=0;
     for (auto& img : m.images) {
         const auto previousTexture = img.tex;
         // Reduced VT fallbacks are per-Image resources and must not borrow
@@ -860,13 +932,14 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if ((img.virtualFallbackMaxDimension > 0 ||
              (img.width > 0 && img.height > 0)) && !img.tex.valid())
             return false;
-        if (!keepCpu) {
+        if (!keepCpu && !pickAlpha[imageIndex]) {
             // Release CPU pixels only after successful upload. swap cannot
             // throw like shrink_to_fit, keeping rollback deterministic.
             std::vector<uint8_t>{}.swap(img.rgba);
             img.compressed.reset();
             img.sharedRgba.reset();
         }
+        ++imageIndex;
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
     size_t texels = 0;
@@ -893,7 +966,7 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if (!m.morphTex.valid()) return false;
         m.morphTexWidth = width;
     }
-    if (!keepCpu) {
+    if (!keepCpu && !keepPickingGeometry) {
         // Never discard morph deltas before a successful GPU morph texture
         // allocation. Failed uploads retain their CPU source for diagnostics
         // and safe retry/rollback by the host.

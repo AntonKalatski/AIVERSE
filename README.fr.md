@@ -83,7 +83,7 @@ travailler sur le jeu.
 | **Le multijoueur, c’est des désynchronisations sans fin.** Un seul `float` suffit pour qu’une partie entre un iPhone et un Android diverge. | La simulation est identique au bit près partout : virgule fixe au lieu de flottants, générateur aléatoire propre, sommes de contrôle. La CI compare les parties sur Linux x64/ARM64, Windows et macOS à chaque push. Seules les commandes transitent sur le réseau ; il y a un lockstep avec rollback et un serveur avec matchmaking et verdict par replay. |
 | **Les GPU mobiles sont faibles, mais le jeu doit être beau.** | Chaque fonction coûteuse — ombres, particules, terrain, post-traitement — a des niveaux de qualité et s’adapte au GPU, des vieux Mali et Adreno jusqu’à Apple Silicon. |
 | **Sortir sur toutes les plateformes est un projet à part entière.** Signatures, icônes, SDK des stores et de la publicité. | `aiversebuild` produit en une commande un .app, un projet Xcode, Gradle/APK, web et .exe. Icônes et écrans de démarrage sont générés. Plugins pour l’App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin et d’autres — un build n’embarque que ceux que le jeu choisit. |
-| **Chaque nouveau jeu repart de zéro.** | Plus de 30 modèles jouables, des kits de genre avec listes de recette, 231 compétences pour les agents. Un nouveau jeu part d’un jeu qui fonctionne déjà. |
+| **Chaque nouveau jeu repart de zéro.** | Plus de 30 modèles jouables, des kits de genre avec listes de recette, 236 compétences pour les agents. Un nouveau jeu part d’un jeu qui fonctionne déjà. |
 | **La méta et le LiveOps sont réécrits dans chaque projet.** | `aiverse::meta` : boutique, monnaies, quêtes, passes, récompenses quotidiennes, énergie, clans, tournois, coffres avec garantie — configurés en JSON. |
 
 ---
@@ -223,7 +223,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 - Éditeur à fenêtres ancrables façon Unity : scène, inspecteur, terrain, effets, éclairage, UI, partie de test et simulateur d’appareils
 - `aiversemcp` — serveur MCP pour les agents — configuration PHYSIS des cartes, validation et Undo/Redo
 - Assistant **Créer un jeu**
-- 231 compétences pour les agents et kits de genre avec listes de recette
+- 236 compétences pour les agents et kits de genre avec listes de recette
 - Importateurs de ressources de jeux classiques depuis votre propre copie
 
 </td>
@@ -318,5 +318,9 @@ Les documents de référence sont en anglais. La vue d’ensemble, l’assistant
 incluses : les importateurs les lisent depuis votre propre copie.
 
 Les builds incluent automatiquement `THIRD_PARTY_NOTICES.txt` ; le projet doit fournir les mentions des SDK externes (voir les [détails](docs/third-party-notices.md)).
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): Pierres, rochers, dalles et éclats décoratifs par graine ; export PBR partagé et trois LOD natifs (optionnel).
+
+**Terra en premier :** [arbres natifs, herbe dense et workflows](docs/terrain/vegetation-authoring.md) ; génération personnalisée uniquement pour les capacités absentes de TerraWeave.
 
 Caméras LENS : [création et MCP](skills/visuals/aiverse-lens/SKILL.md), [intégration native et capture](skills/visuals/aiverse-lens-native/SKILL.md).

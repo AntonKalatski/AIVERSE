@@ -152,12 +152,10 @@ struct RtsView::PreparedSurfaceLease final {
     uint64_t gridSignature=0,sceneSignature=0,cameraSignature=0;
     uint64_t visibilitySignature=0;
     bool tiles=false,fogSheetStaged=false,fogChanged=false;
+    bool retained=true; // immediate leases cannot pass a later matches() check
     // Topology and ordinary scene-frame leases share the same one-shot
     // owner transaction and source-revision checks; only one can be pending.
     bool topology=false,preserveFogHistory=false;
-    // False for a lease staged and published in the same call: its content
-    // fingerprints were never computed, so it can never match later.
-    bool fingerprinted=true;
     std::shared_ptr<TerrainRenderer::PreparedMap> topologyCandidate;
     std::shared_ptr<RtsGroundFx::PreparedFrame> groundCandidate;
     std::shared_ptr<RtsRoadView::PreparedRebuild> roadCandidate;
@@ -172,7 +170,7 @@ struct RtsView::PreparedSurfaceLease final {
     bool matches(const RtsView& view,const Renderer3D& r,
                  const RtsScene& s,double seconds,
                  const std::vector<uint8_t>* field,const MapGrid& g, bool advanced=false) const {
-        return fingerprinted && owner==&view && device==view.dev_ &&
+        return retained && owner==&view && device==view.dev_ &&
             renderer==&r && scene==&s && map==&g && vision==field &&
             time==seconds && frameStamp+uint64_t(advanced)==view.frame_ &&
             terrainGeneration==view.terrainGeneration_ &&
@@ -684,6 +682,7 @@ bool RtsView::prepareTerrainAtomicFrame(
     next->groundRevision=groundFx_.stateRevision();
     next->fogRevision=fog_.stateRevision();
     next->terrainRevision=terrain_.stateRevision();
+    ++surfacePrewarmStats_.sourceSnapshots;
     next->gridSignature=mapLeaseFingerprint(grid);
     next->sceneSignature=sceneLeaseFingerprint(scene);
     next->cameraSignature=cameraLeaseFingerprint(renderer);
@@ -859,8 +858,7 @@ std::optional<bool> RtsView::publishPendingTerrainFrame(
 // their candidate/commit/rollback closures after preparation.
 std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
         Renderer3D& r,const RtsScene& s,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid,
-        bool fingerprint) {
+        const std::vector<uint8_t>* vision,const MapGrid& grid,SurfaceLeaseUse use) {
     if(!dev_ || (hasTerrain_ && !terrain_.mapMatches(grid.w,grid.h)))
         throw std::logic_error("RtsView: build Terrain before surface preflight");
     auto lease=std::make_unique<PreparedSurfaceLease>();
@@ -879,10 +877,12 @@ std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
     next->groundRevision=groundFx_.stateRevision();
     next->fogRevision=fog_.stateRevision();
     next->terrainRevision=terrain_.stateRevision();
-    // Full-content FNV passes over the map / scene / vision are needed only
-    // when the lease is matched again later (prewarm, LENS capture guard).
-    next->fingerprinted=fingerprint;
-    if(fingerprint) {
+    // Only a lease escaping this call needs cross-call content identity.
+    // Immediate prepare/publish keeps the SAME owner transaction and all
+    // preparations; no fingerprint from this path is ever used by matches().
+    next->retained=use==SurfaceLeaseUse::Retained;
+    if(next->retained) {
+        ++surfacePrewarmStats_.sourceSnapshots;
         next->gridSignature=mapLeaseFingerprint(grid);
         next->sceneSignature=sceneLeaseFingerprint(s);
         next->cameraSignature=cameraLeaseFingerprint(r);
@@ -983,8 +983,7 @@ bool RtsView::publishSurfaceFrame(Renderer3D& r,const RtsScene& s,
         ++surfacePrewarmStats_.discarded;
     }
     if(lease)++surfacePrewarmStats_.consumed;
-    // Published right below and never matched again: skip fingerprints.
-    else lease=stageSurfaceFrame(r,s,time,vision,grid,false);
+    else lease=stageSurfaceFrame(r,s,time,vision,grid,SurfaceLeaseUse::Immediate);
     if(!lease->transaction->publish())
         throw std::logic_error("RtsView: surface owner cohort publish failed");
     return lease->fogChanged;
@@ -1627,7 +1626,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     });
     viewProviders.add("world indicators",[&](auto& q,const auto&){
         q.append("world indicators",LayerPhase::Overlay,[&]{
-            overlays_.drawWorld(r,s,time,vision,grid,*this);
+            if(s.gameplayOverlays)overlays_.drawWorld(r,s,time,vision,grid,*this);
             publication.mark(Epoch::Overlays);
         });
     });
@@ -1713,7 +1712,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
 
 void RtsView::drawOverlays(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
     // bars, garrison counts, labels, damage numbers: RtsOverlays (built-in overlays reproduce the old look)
-    overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
+    if(s.gameplayOverlays)overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
 }
 
 bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {
