@@ -943,12 +943,10 @@
           "titleEn": "GI cascades follow the camera"
         },
         {
-          "status": "planned",
-          "target": null,
+          "status": "done",
+          "date": "2026-11-22",
           "title": "Запечённое освещение на Vulkan и Android",
-          "text": "Динамический GI и Luma уже работают на Vulkan и Android; запечённые лайтмапы и пробы там ещё не проверены.",
-          "titleEn": "Baked lighting on Vulkan and Android",
-          "textEn": "Dynamic GI and Luma already run on Vulkan and Android; baked lightmaps and probes are not verified there yet."
+          "titleEn": "Baked lighting on Vulkan and Android"
         }
       ],
       "taglineEn": "Lighting and global illumination",
