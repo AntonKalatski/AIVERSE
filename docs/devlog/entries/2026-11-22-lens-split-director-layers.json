@@ -1,0 +1,50 @@
+{
+  "id": "2026-11-22-lens-split-director-layers",
+  "date": "2026-11-22",
+  "system": "lens",
+  "title": "LENS: сплит-скрин, режиссёр и слои видимости",
+  "summary": "Две камеры делят экран, и у каждой своя обработка: например, цветной основной кадр рядом с чёрно-белым. Камера может не видеть отдельные слои сцены. Режиссёр плавно переводит кадр с одной камеры на другую, когда меняется приоритет.",
+  "body": [
+    "Сплит-скрин, наложения и картинка в картинке собираются одним проходом по экрану. Постэффекты PRISMA теперь можно задать каждой камере отдельно: цветокоррекцию, зерно, виньетку, глубину резкости. Экспозиция и фокус от объектива сохраняются.",
+    "У объектов сцены появились слои видимости, у камеры — маска слоёв. В сцене это ключ layers у экземпляра модели. На кадре слева камера видит меч на слое 2, справа камера с маской без этого слоя его не рисует; без маски меч появляется и справа.",
+    "Режиссёр выбирает камеру с наибольшим приоритетом и при переключении плавно ведёт позицию, поворот и угол обзора от старой камеры к новой. На ленте — кадры до переключения, в середине перехода и после него."
+  ],
+  "status": "done",
+  "verified": "Все кадры сняты на Mac (Metal) в сцене Sponza, 1920×1080. Переход режиссёра длительностью 1 с проверен по весам смешивания: 0,07 / 0,50 / 0,93 / 1,00 на кадрах 10 / 20 / 30 / 40.",
+  "limits": "Слои фильтруют только модели. Меши, спрайты, рельеф и частицы маску пока не учитывают; в сцене с HLOD слои недоступны. В Studio слои и отдельные постэффекты камеры пока не настраиваются. Другие бэкенды, кроме Metal, в кадре не проверены.",
+  "branch": "main",
+  "commit": "8daa28bad",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-lens-split-director-layers/split-masked.jpg",
+      "caption": "Сплит-скрин: слева цветной кадр с мечом на слое 2, справа своя камера с чёрно-белой обработкой и маской без этого слоя — меча нет",
+      "captionEn": "Split-screen: left, a colour view with a sword on layer 2; right, another camera with its own black-and-white processing and a mask without that layer — no sword"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-lens-split-director-layers/split-all-layers.jpg",
+      "caption": "Та же пара без маски: меч виден и правой камере",
+      "captionEn": "The same pair without the mask: the right camera sees the sword too"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-lens-split-director-layers/director-blend.jpg",
+      "caption": "Режиссёр: до переключения, середина плавного перехода, новая камера",
+      "captionEn": "Director: before the switch, the middle of the blend, the new camera"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/camera-system.md",
+      "href": "docs/camera-system.md"
+    }
+  ],
+  "author": "lens",
+  "titleEn": "LENS: split-screen, director and visibility layers",
+  "summaryEn": "Two cameras share the screen and each has its own processing — for example a colour main view next to a black-and-white one. A camera can skip whole layers of the scene. The director blends smoothly from one camera to another when priorities change.",
+  "bodyEn": [
+    "Split-screen, overlays and picture-in-picture are assembled in one screen pass. PRISMA post-processing can now be set per camera: grading, grain, vignette, depth of field. Lens exposure and focus are kept.",
+    "Scene objects have visibility layers, cameras have a layer mask; in a scene it is the layers key of a model instance. In the frame the left camera sees a sword on layer 2, the right camera with a mask without that layer does not draw it; without the mask the sword appears on the right too.",
+    "The director picks the highest-priority camera and, on a switch, blends position, rotation and field of view from the old camera to the new one. The strip shows frames before the switch, in the middle of the blend and after it."
+  ],
+  "verifiedEn": "All frames rendered on a Mac (Metal) in Sponza at 1920×1080. The 1 s director blend was checked by its weights: 0.07 / 0.50 / 0.93 / 1.00 at frames 10 / 20 / 30 / 40.",
+  "limitsEn": "Layers filter models only; meshes, sprites, terrain and particles ignore the mask, and layers are not available in HLOD scenes. Studio does not edit layers or per-camera post-processing yet. Backends other than Metal are not checked in a frame."
+}
