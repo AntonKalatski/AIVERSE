@@ -42,6 +42,11 @@ add one), mark what you are starting as `in-progress`, add newly planned feature
 handoff as `planned` with `"target": null` unless the user gave a date, and keep `includes` and
 `enables` true to what is merged, with their `En` twins. A new flagship system needs every field (see docs/devlog/README.md).
 
+- Mini-article for an `includes` card: add `"id": "<slug>"` to the item, write
+  `docs/devlog/features/<system>/<slug>.md` and `.en.md` (why, what it does, how to turn it on,
+  limits; real screenshots by relative path) and optionally `media` for the card thumbnail.
+  Facts only from the code, docs and verified runs; run `build.py check`.
+
 ## Documentation pages
 
 If your stage adds or rewrites a document game developers need (a system guide, a format, an

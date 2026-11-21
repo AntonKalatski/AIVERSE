@@ -96,5 +96,12 @@
  "verSinceTitle": "Появилась в релизе {v}",
  "verNextTitle": "Уже в main, войдёт в релиз {v}",
  "verBranchTitle": "В отдельной ветке, войдёт в релиз после слияния в main",
- "relNextTitleV": "В следующем релизе — {v}"
+ "relNextTitleV": "В следующем релизе — {v}",
+ "rmNow": "Сейчас",
+ "rmProgress": "готово {d} из {n}",
+ "rmPrev": "Назад",
+ "rmNext": "Вперёд",
+ "incMore": "Подробнее →",
+ "incOther": "Ещё в {s}",
+ "incRuOnly": "Эта статья пока только на русском."
 }

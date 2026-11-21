@@ -462,7 +462,20 @@
           "name": "Отладочный вид",
           "text": "Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация.",
           "nameEn": "Debug view",
-          "textEn": "Colouring of selected clusters by id, LOD level, error or material; presentation only."
+          "textEn": "Colouring of selected clusters by id, LOD level, error or material; presentation only.",
+          "id": "debug-view",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg",
+              "caption": "Кластеры: каждый своим цветом",
+              "captionEn": "Clusters: each in its own colour"
+            },
+            {
+              "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg",
+              "caption": "Уровни LOD: от финального вблизи к грубым вдали",
+              "captionEn": "LOD levels: finest up close, coarse in the distance"
+            }
+          ]
         }
       ],
       "enables": [

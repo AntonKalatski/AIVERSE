@@ -12,6 +12,7 @@ import datetime as dt
 import html
 import json
 from pathlib import Path
+import posixpath
 import re
 import shutil
 import struct
@@ -23,6 +24,7 @@ DEVLOG = ROOT / 'docs/devlog'
 ENTRIES = DEVLOG / 'entries'
 MEDIA = DEVLOG / 'media'
 SYSTEMS = DEVLOG / 'systems.json'
+FEATURES = DEVLOG / 'features'  # features/<system>/<include id>.md (+ .en.md): mini-articles
 SHOWCASE = DEVLOG / 'showcase.json'
 RELEASES = DEVLOG / 'releases.json'
 SITE = ROOT / 'site'
@@ -173,6 +175,54 @@ def check_entry(path, systems):
     return e, errors
 
 
+def feature_article(sid, fid, lang='ru'):
+    f = FEATURES / sid / (f'{fid}.en.md' if lang == 'en' else f'{fid}.md')
+    return f if f.is_file() else None
+
+
+def check_feature(p, sid, it, ids):
+    """An includes item with an "id" gets its own page: a mini-article and/or screenshots."""
+    errors = []
+    fid = it.get('id')
+    if fid is None:
+        if it.get('media'):
+            errors.append(f'{p}: include "{it["name"]}" has media but no "id"')
+        return errors
+    q = f'{p} include {fid!r}'
+    if not re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', str(fid)):
+        return [f'{q}: id must be a lowercase slug']
+    if fid in ids:
+        errors.append(f'{q}: duplicate id')
+    ids.add(fid)
+    md = feature_article(sid, fid)
+    if md is None and feature_article(sid, fid, 'en') is not None:
+        errors.append(f'{q}: {fid}.en.md without the Russian {fid}.md')
+    media = it.get('media') or []
+    if not isinstance(media, list):
+        return errors + [f'{q}: media must be a list']
+    if md is None and not media:
+        errors.append(f'{q}: needs docs/devlog/features/{sid}/{fid}.md or media (or drop the id)')
+    if md is not None and len(md.read_text(encoding='utf-8').strip()) < 200:
+        errors.append(f'{q}: the article is shorter than 200 characters; keep it in "text" instead')
+    for i, m in enumerate(media):
+        mq = f'{q} media[{i}]'
+        if not isinstance(m, dict) or not (m.get('caption') or '').strip():
+            errors.append(f'{mq}: needs "src" and "caption"')
+            continue
+        f = repo_file(m.get('src'))
+        if f is None or not f.is_file():
+            errors.append(f'{mq}: image not found: {m.get("src")!r}')
+        elif f.suffix.lower() not in STILL_EXT:
+            errors.append(f'{mq}: must be a PNG or JPG')
+        elif f.stat().st_size > MAX_FRAME:
+            errors.append(f'{mq}: larger than 6 MB; save a JPG')
+    if md is not None:
+        for ref in re.findall(r'!\[[^\]]*\]\(([^)\s]+)', md.read_text(encoding='utf-8')):
+            if not re.match(r'^https?:', ref) and not (md.parent / ref).resolve().is_file():
+                errors.append(f'{q}: article image not found: {ref}')
+    return errors
+
+
 def check_systems(systems):
     errors = []
     for s in systems.values():
@@ -196,9 +246,12 @@ def check_systems(systems):
         for key in ('includes', 'enables', 'roadmap'):
             if not isinstance(s.get(key), list) or not s[key]:
                 errors.append(f'{p}: flagship system needs a non-empty "{key}" list')
+        ids = set()
         for it in s.get('includes') or []:
             if not (isinstance(it, dict) and (it.get('name') or '').strip() and (it.get('text') or '').strip()):
                 errors.append(f'{p}: includes items are {{"name", "text"}}')
+                continue
+            errors += check_feature(p, s['id'], it, ids)
         for i, it in enumerate(s.get('roadmap') or []):
             q = f'{p} roadmap[{i}]'
             if not isinstance(it, dict) or not (it.get('title') or '').strip():
@@ -315,7 +368,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, Converter, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, fill_tokens)
 
@@ -427,6 +480,11 @@ def cmd_build(args):
             copy_media(s['cover']['src'])
             if s['cover'].get('video'):
                 copy_media(s['cover']['video'])
+        for it in s['includes']:
+            for m in it.get('media') or []:
+                copy_media(m['src'])
+            if it.get('id'):
+                it['article'] = bool(feature_article(s['id'], it['id']))
     entries.sort(key=lambda e: (e['date'], e['id']), reverse=True)
     for e in entries:
         for m in e['media']:
@@ -466,8 +524,41 @@ def cmd_build(args):
             body = system_page(s, flagships, loc_entries, ctx, manifest['repoBlob'], doc_pages)
             (d / f'system-{s["id"]}.html').write_text(render_page(
                 layout, ctx, f'system-{s["id"]}.html', f'{s["name"]} — {ctx.loc(s, "tagline")} · AIVERSE',
-                ctx.loc(s, 'essence'), body, nav='systems'), encoding='utf-8')
+                ctx.loc(s, 'essence'), body, nav='systems', script=TRACK_JS), encoding='utf-8')
             pages += 1
+            for it in s['includes']:
+                if not (it.get('id') and (it.get('article') or it.get('media'))):
+                    continue
+                md = feature_article(s['id'], it['id'], lang) or feature_article(s['id'], it['id'])
+                body_html = ''
+                if md is not None:
+                    text = md.read_text(encoding='utf-8')
+                    rel_dir = md.parent.relative_to(ROOT).as_posix()
+
+                    def image(href, rel_dir=rel_dir):
+                        if re.match(r'^https?:', href):
+                            return href
+                        rel = posixpath.normpath(posixpath.join(rel_dir, href))
+                        copy_media(rel)
+                        return ctx.media(rel)
+
+                    def link(href, rel_dir=rel_dir):
+                        if re.match(r'^(https?:|mailto:|#)', href) or href.endswith('.html'):
+                            return href
+                        path, _, anchor = href.partition('#')
+                        target = posixpath.normpath(posixpath.join(rel_dir, path))
+                        tail = f'#{anchor}' if anchor else ''
+                        if target in doc_pages:
+                            return f'docs-{doc_pages[target]}.html{tail}'
+                        return f'{manifest["repoBlob"]}/{target}{tail}'
+                    body_html = Converter(link, image).convert(text)
+                    if lang == 'en' and md.name.endswith('.md') and not md.name.endswith('.en.md'):
+                        body_html = f'<p class="doc-note">{esc(T["incRuOnly"])}</p>' + body_html
+                name = f'system-{s["id"]}-{it["id"]}.html'
+                (d / name).write_text(render_page(
+                    layout, ctx, name, f'{ctx.loc(it, "name")} — {s["name"]} · AIVERSE', ctx.loc(it, 'text'),
+                    feature_page(s, it, body_html, ctx), nav='systems', script=FEATURE_JS), encoding='utf-8')
+                pages += 1
         (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
                                                     roadmap_page(flagships, ctx), nav='roadmap', script=ROADMAP_JS),
                                         encoding='utf-8')
