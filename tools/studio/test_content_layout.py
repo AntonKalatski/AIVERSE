@@ -21,6 +21,7 @@ class ContentProjectLayoutTests(unittest.TestCase):
         self.assertGreaterEqual(source.count('studioContentRoot(ws_.project.dir)'),2)
         self.assertIn('StudioAssetCatalog catalog(ws_.project.dir)',source)
         self.assertIn('catalog.rebuild()',source)
+        self.assertIn('catalog.all()',source)
         self.assertNotIn('ws_.call("asset_list", Json::object()',source)
 
     def test_content_is_not_a_new_project_manifest_schema(self):

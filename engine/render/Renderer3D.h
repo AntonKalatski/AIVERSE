@@ -8,6 +8,8 @@
 #include "Geometry.h"
 #include <algorithm>
 #include <array>
+#include <array>
+#include <span>
 #include <cstdint>
 #include <functional>
 #include <utility>
@@ -306,6 +308,13 @@ struct ModelDraw {
     float4 vertexParameters{0, 0, 0, 0};
     // Bounded vertexOffset (metres), zero means unknown displacement.
     float maxVertexOffsetMetres = 0;
+    // Opt-in full ModelVertex (60 bytes) dynamic GPU stream for THIS instance.
+    // Bind only on the same gfx::Device, after compute submission and before
+    // render passes. Owner keeps resource alive through all colour/shadow draws.
+    // Experimental path: Metal dedicated per-model buffers only; no pooled
+    // geometry, GPU ICB/MDI, instancing, LOD or legacy shader morph blending.
+    gfx::BufferHandle vertexOverride{};
+    uint32_t vertexOverrideCount = 0;
 };
 
 enum DrawFlags : uint32_t {
@@ -727,6 +736,97 @@ public:
         s.retainedBytes = staticRenderPacketBytes_;
         return s;
     }
+    // Frame-local provenance of Renderer3D's ACTUAL drawModel geometry/LOD
+    // decisions, taken after a source model was submitted to this scene.
+    // It is pre-render submission data, NOT proof an eventual draw passed
+    // GPU occlusion or pipeline compilation. Never cache pointers across
+    // beginScene, asset republish or Device resource retirement.
+    struct ModelViewPrimitive {
+        const Model* model=nullptr;
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0; // one renderer drawModel() instance
+        uint32_t firstIndex=0,indexCount=0;
+        gfx::BufferHandle vertexOverride{};
+        uint32_t vertexOverrideCount=0;
+        bool visible=false,colourCandidate=false;
+        bool gpuLodConditional=false,lodFade=false,batched=false;
+        bool alternativeMeshLod=false;
+        bool skinning=false,baked=false,shaderVertexOffset=false;
+        bool translucent=false; // real colour-pass tint/material/flag classification
+        bool customGpuStream=false;
+        // Stage 7BA: exact sampled Mask state used by the normal colour
+        // draw. No raw Material* escapes the frame. A later model/material
+        // hot-reload must NOT silently alter VIVID's alpha/depth source.
+        bool maskedMaterial=false,maskVertexColors=true;
+        gfx::TextureHandle maskBaseTexture{};
+        float maskAlpha=1.f,maskCutoff=.5f,maskUvRotation=0.f;
+        float2 maskUvOffset{0,0},maskUvScale{1,1};
+        mat4 world{};
+    };
+    struct ModelViewProvenance {
+        uint64_t frameSerial=0;
+        bool hasModel=false;
+        bool complete=false; // false if renderer source view is unsuitable
+        std::vector<ModelViewPrimitive> primitives;
+    };
+    // Source-owned introspection; no cached parallel picking scene database.
+    // Does not dereference async data or issue RHI operations.
+    ModelViewProvenance modelViewProvenance(const Model& model) const;
+    // Stage 7AW: opt-in, frame-local record of *encoded main-colour*
+    // indexed commands, not an extrapolation from staged ModelItems.
+    // Only one queried model is tracked, avoiding a per-world audit cost.
+    enum class ModelSubmissionKind : uint8_t {
+        Direct, DirectInstanced, IndexedIndirect, GpuIndirect, GpuIcb
+    };
+    struct ModelSubmittedPrimitive {
+        ModelViewPrimitive source{};
+        ModelSubmissionKind kind=ModelSubmissionKind::Direct;
+        uint8_t phase=0; // 1 opaque main, 2 blended, 4 transparent depth
+        gfx::PipelineHandle pipeline{};
+    };
+    struct ModelSubmissionProvenance {
+        uint64_t frameSerial=0;
+        bool mainPassEncoded=false;
+        bool truncated=false;
+        std::vector<ModelSubmittedPrimitive> commands;
+    };
+    // Stage 7BA: at most 1 selected model + 4 candidate blockers.
+    // Opt-in bounded, frame-local diagnostics; no global scene registry.
+    // The producer supplies candidate model identities before staging
+    // draws. Every unique pointer is borrowed only through this frame.
+    static constexpr std::size_t kMaxTrackedSubmissionModels=5u;
+    void trackModelSubmissionsMany(
+        std::span<const Model* const> models) noexcept {
+        trackedModelCount_=0;
+        for(auto& model:trackedModels_)model=nullptr;
+        modelSubmitted_.clear();
+        modelSubmissionTruncated_=
+            modelDrawInvocation_!=0 || modelSubmissionMainEncoded_ ||
+            models.empty() || models.size()>trackedModels_.size();
+        if(modelSubmissionTruncated_)return;
+        for(const auto* model:models) {
+            if(!model) {
+                modelSubmissionTruncated_=true;
+                return;
+            }
+            for(std::size_t i=0;i<trackedModelCount_;++i)
+                if(trackedModels_[i]==model) {
+                    modelSubmissionTruncated_=true;
+                    return;
+                }
+            trackedModels_[trackedModelCount_++]=model;
+        }
+    }
+    // Compatible with existing 7AW single and 7AZ paired callers.
+    void trackModelSubmissions(const Model* model,
+                               const Model* occluder=nullptr) noexcept {
+        const std::array<const Model*,2> models{{model,occluder}};
+        trackModelSubmissionsMany(
+            std::span<const Model* const>(models.data(),
+                                        occluder?2u:1u));
+    }
+    ModelSubmissionProvenance modelSubmissionProvenance(
+        const Model& model) const;
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -1494,6 +1594,14 @@ private:
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
         int32_t materialIndex = -1; // remap material pointers on packet replay
+        // Captured at selection time, before colour/LOD batching. Stores
+        // real renderer-selected mesh and source primitive ordinals.
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0;
+        uint32_t vertexOverrideCount=0;
+        bool displacedVertexSource=false;
+        // Full per-instance ModelVertex buffer; empty for the legacy path.
+        gfx::BufferHandle vertexOverride{};
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
         // Copied by value from a transient ModelDraw into this frame's
@@ -1537,6 +1645,9 @@ private:
     void retireModelPrograms();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
                                       bool gpuInstances = false, bool instancePalette = false);
+    void recordModelSubmission(const ModelItem& item,int phase,
+                               ModelSubmissionKind kind,
+                               gfx::PipelineHandle pipeline);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
                         bool submit = true, bool gpuInstances = false,
                         bool instancePalette = false);
@@ -1912,6 +2023,12 @@ private:
     gfx::ShaderHandle objectMotionReactiveBakedShader_;
     gfx::PipelineHandle objectMotionReactiveBakedPipeline_;
 
+    uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
+    std::array<const Model*,kMaxTrackedSubmissionModels> trackedModels_{};
+    std::size_t trackedModelCount_=0;
+    std::vector<ModelSubmittedPrimitive> modelSubmitted_;
+    bool modelSubmissionTruncated_=false;
+    bool modelSubmissionMainEncoded_=false;
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),

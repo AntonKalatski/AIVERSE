@@ -357,6 +357,20 @@ private:
             const Json& ext = j["extensions"];
             if (ext.has("KHR_materials_unlit")) m.shading = ShadingModel::Unlit;
             m.emissiveStrength = float(num(ext["KHR_materials_emissive_strength"]["emissiveStrength"], 1));
+            // Optional portable fallback + native layered eye, versioned and bounded.
+            if (const Json& eye=j["extras"]["aiverseEye"]; eye.isObject()) {
+                const Json& o=eye["optics"];
+                bool valid=eye.getInt("version",0)==1 && o.size()==4;
+                float values[6]{};
+                for(int k=0;k<4;++k){values[k]=float(num(o[size_t(k)],-1));valid=valid&&std::isfinite(values[k]);}
+                values[4]=float(num(eye["ior"],1.376));values[5]=float(num(eye["tearFilm"],.7));
+                valid=valid&&values[0]>=0&&values[0]<=1&&values[1]>=0&&values[1]<=1&&
+                    values[2]>.01f&&values[2]<=.5f&&values[3]>=0&&values[3]<=.05f&&
+                    std::isfinite(values[4])&&values[4]>=1&&values[4]<=2&&
+                    std::isfinite(values[5])&&values[5]>=0&&values[5]<=1;
+                if(valid){m.shading=ShadingModel::Eye;m.eyeOptics={values[0],values[1],values[2],values[3]};m.humanProfile={values[4],values[5]};}
+                else warn("material '"+m.name+"': invalid aiverseEye extras, retaining PBR fallback");
+            }
             if (const Json& sg = ext["KHR_materials_pbrSpecularGlossiness"]; sg.isObject() && !j.has("pbrMetallicRoughness")) {
                 // approximation: diffuse becomes base colour, glossiness becomes 1 - roughness, dielectric
                 if (const Json& d = sg["diffuseFactor"]; d.size() == 4)
