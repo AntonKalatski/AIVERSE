@@ -4421,3 +4421,8 @@ live ecology, PRISMA video, deformed picking, native Y mouse/Undo, GI/STRATA/VIV
 final gallery/site/main work remains active; do not infer completion from water.
 
 Final publication checkpoint: code+handoff ordinary push to origin/feature/terraweave succeeded at427c9a097 (remote wasd71cbc24f, no force). Final map_info dirtyFALSE/1803entities. Owned QA47326 STOPPED after captures to release GPU; user47325 untouched and still loaded with its older running binary. Native built editor/QA artifacts now contain the local-flow fix; restart is needed to load it in an already-running editor. Code worktree clean at publication. Main not merged; preceding open requirements remain.
+
+
+## 2026-11-21 main publication explicitly requested
+
+User «Заливай в мейн» supersedes the prior defer-main condition for publication. Fresh remote main973b32970654cc5318fa6b6571f35d020501dcdd was an ancestor of TerraWeave ab5d360f4cb2f2f1f2e99b78b0262f596c48f8d9; normal push HEAD:main succeeded and ls-remote confirmed that exact SHA. No merge conflicts/new code. Repeated4NEREIDCTestPASS +440LENSchecks0failed. CI/fullGPU rerun NOTRUN this unchanged-code promotion; previous actual GPU evidence remains above. Details and still-open work: docs/agent-handoffs/terraweave-main-promotion-2026-11-21.md. Original dirty checkout/user editor untouched. This separate docs commit records the completed publication and is also published to main/TerraWeave; no claim that erosion-driven rocks or all broader art goals are done.
