@@ -128,7 +128,7 @@ float3 RtsView::bodyToView(int body, float3 local) const {
     return pframe_.toView(planets_.world().center(body, planetSeconds_) + local);
 }
 
-const RTSCamera& RtsView::updatePlanetCamera(double seconds, float dt, int viewH) {
+const Camera& RtsView::updatePlanetCamera(double seconds, float dt, int viewH) {
     (void)viewH;
     planetSeconds_ = seconds;
     const int b = planetCam_.body();
@@ -137,7 +137,7 @@ const RTSCamera& RtsView::updatePlanetCamera(double seconds, float dt, int viewH
     return planetCam_.camera();
 }
 
-bool RtsView::pickPlanet(const RTSCamera& cam, float sx, float sy, float w, float h, int& body, float3& local) const {
+bool RtsView::pickPlanet(const Camera& cam, float sx, float sy, float w, float h, int& body, float3& local) const {
     float3 o, d;
     if (!planets_.active() || !cam.screenRay(sx, sy, w, h, o, d)) return false;
     float best = 1e30f;

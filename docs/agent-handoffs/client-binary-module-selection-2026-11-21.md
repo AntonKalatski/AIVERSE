@@ -523,7 +523,7 @@ moved to it (`modules/rts/disabled/Traffic.cpp`). New switches:
 
 | engineModules | CMake | needed when | adapter |
 |---|---|---|---|
-| `bw-ai` | `AIVERSE_GAME_WITH_BWAI` | rules `ai.controller: "bw"` | throws on load; `BwAIHolder` stays empty. `RtsBwAISim.cpp` (hypnotised sends, point counters) stays in every build |
+| `bw-ai` | `AIVERSE_GAME_WITH_BWAI` | rules `ai.controller: "bw"` | controller "bw" not registered: such rules fail on load ("unknown controller"); hypnotised sends and point counters (`RtsHypnosis.cpp`) stay in every build |
 | `encounters` | `AIVERSE_GAME_WITH_ENCOUNTERS` | rules `encounters` | inactive; Lua `encounters` = {active=false} |
 | `commerce` | `AIVERSE_GAME_WITH_COMMERCE` | rules `commerce` | inactive; Lua `commerce` = {active=false} |
 | `careers` | `AIVERSE_GAME_WITH_CAREERS` | rules `careers` | inactive; Lua `career` = {active=false} |

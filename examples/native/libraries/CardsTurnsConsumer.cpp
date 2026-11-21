@@ -2,12 +2,12 @@
 // bot-driven authoritative commands on each, versioned records in NativeState. A real native module passes sim.rng()
 // (shuffles, shot rolls), routes player commands through the same stepCardGame/stepTactics calls as the bots, sends
 // each seat/team only cardViewFor/cardEventsFor or tacticsViewFor/tacticsEventsFor, and never the full state.
-#include <aiverselib/genre/CardGameConfigured.h>
-#include <aiverselib/genre/CardGameData.h>
-#include <aiverselib/genre/CardGamePersistence.h>
-#include <aiverselib/genre/TacticsConfigured.h>
-#include <aiverselib/genre/TacticsData.h>
-#include <aiverselib/genre/TacticsPersistence.h>
+#include <aiverselib/mechanics/CardGameConfigured.h>
+#include <aiverselib/mechanics/CardGameData.h>
+#include <aiverselib/mechanics/CardGamePersistence.h>
+#include <aiverselib/mechanics/TacticsConfigured.h>
+#include <aiverselib/mechanics/TacticsData.h>
+#include <aiverselib/mechanics/TacticsPersistence.h>
 #include <aiverselib/bots/CardBot.h>
 #include <aiverselib/bots/TacticsBot.h>
 #include "modules/rts/RtsNative.h"

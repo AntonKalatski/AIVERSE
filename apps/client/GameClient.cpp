@@ -1298,7 +1298,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     render::LightSystem::PreparedFrame lensLightingSnapshot;
     if (sim_) {
-        if (planet()) { // orbit camera -> view-world RTSCamera; space is black
+        if (planet()) { // orbit camera -> view-world Camera; space is black
             cam_ = view_.updatePlanetCamera(scene_.seconds, float(dt), fbH());
             pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
         }
@@ -1333,7 +1333,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         // Presentation-only Halton jitter: gameplay aiming, viewport picking,
         // UI and input continue to use the original unjittered cam_.
         const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
-        const render::RTSCamera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
+        const render::Camera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
         // SpectraFX GPU simulation is encoded before the scene pass.
         fx_.setPlanetView(planet() ? &view_ : nullptr);
         fx_.prepareGpuFrame(screen_ == Screen::Playing || screen_ == Screen::Over

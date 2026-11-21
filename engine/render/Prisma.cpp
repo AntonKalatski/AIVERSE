@@ -995,7 +995,7 @@ std::pair<int,int> Prisma::temporalRenderSizeForOutput(int width,int height) {
 // Stage 43: projection-only Halton jitter. Keep the caller's unjittered camera
 // for selection, UI and gameplay. History tracks per-view jitter in stable
 // unflipped UV coordinates; this helper performs no GPU work.
-RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
+Camera Prisma::jitteredCamera(Camera camera, int width, int height) {
     if (width <= 0 || height <= 0) return camera;
     const auto* effect = settings_.find(PrismaType::TemporalResolve);
     const char* temporal = std::getenv("AIVERSE_PRISMA_TEMPORAL");

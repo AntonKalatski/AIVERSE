@@ -322,6 +322,10 @@ struct ModelDraw {
     // geometry, GPU ICB/MDI, instancing, LOD or legacy shader morph blending.
     gfx::BufferHandle vertexOverride{};
     uint32_t vertexOverrideCount = 0;
+    // Visibility layers (bit set) of this draw. A camera draws it only when
+    // (layers & Renderer3D::visibilityMask()) != 0; skipped draws also cast
+    // no shadow in that view. Default layer 0 (bit 1).
+    uint32_t layers = 1;
 };
 
 enum DrawFlags : uint32_t {
@@ -553,6 +557,11 @@ public:
     // Negative resumes the steady clock. Set before beginScene on the render thread.
     void setPresentationTime(float seconds);
     void beginScene(const Camera3D& cam, int fbW, int fbH);
+    // Camera layer mask for model draws of the current view (LENS
+    // CameraComponent::visibilityMask). beginScene resets it to all layers;
+    // set it after beginScene. Meshes, sprites and terrain ignore it.
+    void setVisibilityMask(uint32_t mask) { visibilityMask_ = mask; }
+    uint32_t visibilityMask() const { return visibilityMask_; }
     // Before render only: drop borrowed packets/callbacks of a failed host
     // preparation before destroying its private CPU owners. No RHI work.
     void discardSceneSubmission() noexcept;
@@ -2229,6 +2238,7 @@ private:
     bool suppressGeometryTap_=false;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
+    uint32_t visibilityMask_ = ~0u;
 };
 
 } // namespace aiverse::render

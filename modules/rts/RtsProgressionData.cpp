@@ -1,8 +1,8 @@
 // rules "progression": the match-progression library format plus engine keys (RtsProgressionData.h).
 #include "RtsProgressionData.h"
 #include "RtsEffectsData.h"
-#include "libraries/include/aiverselib/genre/PerksData.h"
-#include "libraries/include/aiverselib/genre/PerksPersistence.h"
+#include "libraries/include/aiverselib/mechanics/PerksData.h"
+#include "libraries/include/aiverselib/mechanics/PerksPersistence.h"
 #include <algorithm>
 #include <bit>
 #include <stdexcept>
@@ -183,7 +183,7 @@ void loadProgressionRules(Rules& r, const Json& j0, EffectParser& ep) {
     }
     for (auto& [id, x] : p.ext) if (!x.bullets.empty()) p.bulletPerks.push_back(id);
     if (p.bulletPerks.size() > 6) bad("perks", "at most 6 perks with bullet modifiers");
-    // ---- configs (library settings names: docs/genre-packages.md § Match progression)
+    // ---- configs (library settings names: docs/mechanics-packages.md § Match progression)
     auto num = [&](const Json& o, const char* key, int64_t def, int64_t lo, int64_t hi, const std::string& where) -> int64_t {
         if (!o.has(key)) return def;
         if (!o[key].isNumber()) bad(where + key, "expected a number");

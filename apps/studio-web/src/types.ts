@@ -483,7 +483,7 @@ export interface StudioBuildLog { from: number; next: number; text: string; size
 export interface StudioBuildEstimate { target: string; pack: Record<string, unknown>; atlas: Record<string, unknown>; split?: Record<string, unknown>;
   heaviest: Array<{ path?: string; file?: string; bytes?: number; storedBytes?: number }> }
 
-export interface MetaHumanReport { detected:boolean; score:number; headBone:string; faceMeshes:string[]; hiddenMaterials:string[]; materialRoles:Record<string,string>;
+export interface MetaHumanReport { pending?:boolean; detected:boolean; score:number; headBone:string; faceMeshes:string[]; hiddenMaterials:string[]; materialRoles:Record<string,string>;
   channelsFound:number; channelsMissing:string[]; facialJoints:number; correctiveJoints:number; skins:number; lodLevels:number; notes:string[]; look:HumanLook; face:HumanFaceShape;
   rig?: { halfJoints:number; twistJoints:number; jawJoint:boolean; eyeJoints:boolean } }
 export type StudioAlignMode = 'minX' | 'centerX' | 'maxX' | 'minZ' | 'centerZ' | 'maxZ' | 'distributeX' | 'distributeZ' | 'ground';

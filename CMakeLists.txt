@@ -252,6 +252,14 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
+# The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
+# the race adapter. The grid-map host (modules/rts/RtsDriving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
+# only implement its world queries.
+add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
+add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
+target_include_directories(aiverse_vehicles PUBLIC "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
+target_link_libraries(aiverse_vehicles PUBLIC aiverse_engine)
+target_link_libraries(aiverse_game PUBLIC aiverse_vehicles)
 # Experimental RTS transform preprocessing remains OFF by default.
 option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
     "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
@@ -301,9 +309,8 @@ endfunction()
 
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
-# RtsBwAISim.cpp is simulation code every game runs (hypnotised sends, per point counters).
-list(FILTER AIVERSE_BWAI_SOURCES EXCLUDE REGEX "RtsBwAISim\\.cpp$")
-target_sources(aiverse_game PRIVATE modules/rts/RtsBwAISim.cpp)
+# Every game: hypnotised sends, per point counters, the controller registry and the registration point.
+target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp modules/rts/RtsAIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
@@ -2235,7 +2242,7 @@ endif()
 target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
 target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
+target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp modules/rts/RtsPrompt.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
     modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
@@ -2785,7 +2792,7 @@ endif()
 
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
     add_executable(aiverse_library_genre_tests tests/libraries/genre_tests.cpp)
-    target_link_libraries(aiverse_library_genre_tests PRIVATE AIVERSE::genre)
+    target_link_libraries(aiverse_library_genre_tests PRIVATE AIVERSE::mechanics)
     add_test(NAME library_genre COMMAND aiverse_library_genre_tests ${PROJECT_SOURCE_DIR})
 endif()
 
@@ -2839,12 +2846,12 @@ endif()
 # match-progression (perks, xp, offers, pickups, summons, battle deck): tests + headless run.
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
     add_executable(aiverse_library_progression_tests tests/libraries/perks_tests.cpp)
-    target_link_libraries(aiverse_library_progression_tests PRIVATE AIVERSE::genre)
+    target_link_libraries(aiverse_library_progression_tests PRIVATE AIVERSE::mechanics)
     add_test(NAME library_progression COMMAND aiverse_library_progression_tests ${PROJECT_SOURCE_DIR})
 endif()
 if(TARGET aiverse_world AND (AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_TOOLS))
     add_executable(aiverse_progression tools/libraries/progression_main.cpp)
-    target_link_libraries(aiverse_progression PRIVATE AIVERSE::genre)
+    target_link_libraries(aiverse_progression PRIVATE AIVERSE::mechanics)
     if(AIVERSE_BUILD_TESTS)
         add_test(NAME progression_headless COMMAND aiverse_progression --root ${PROJECT_SOURCE_DIR} --verify)
     endif()
@@ -3398,6 +3405,7 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME skill_catalog COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/skills/catalog.py check)
     add_test(NAME skill_routing COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/skills/catalog_test.py)
     add_test(NAME skill_audit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/skills/audit.py --strict)
+    add_test(NAME genre_free_engine COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/genre/check_engine_genre_free.py ${CMAKE_CURRENT_SOURCE_DIR})   # NO GENRE SPLIT: no Rts/Fps names in engine code
     # tools behind workflow skills (skills/ai/aiverse-bots-tune, verification/aiverse-determinism-triage, aiverse-visual-qa)
     add_test(NAME tool_bot_sweep COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bots/test_sweep.py)
     add_test(NAME tool_determinism_diff COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/determinism/test_diff.py)

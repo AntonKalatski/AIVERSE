@@ -2,7 +2,7 @@
 // queues (units, research, sidebar structures, larva charges, in-place upgrades), construction,
 // squads reinforcement and Mushroom Wars style garrisons.
 #include "RtsInternal.h"
-#include "libraries/include/aiverselib/genre/FixedRegeneration.h"
+#include "libraries/include/aiverselib/mechanics/FixedRegeneration.h"
 #include <algorithm>
 
 namespace aiverse::game {
@@ -415,7 +415,7 @@ void RtsModule::sysGarrison(Simulation& sim) {
                 g.growth += nativeGrowth ? dt * stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval * nativeRate : dt * stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval;
                 int made = 0;
                 while (g.growth >= kOne && (into != &g || into->count < cap)) { ++into->count; g.growth -= kOne; ++made; }
-                if (made) bwNoteProduced(sim, e, made);   // agent-bw-ai: per point produced units (match stats)
+                if (made) notePointProduced(sim, e, made);   // per point produced units (match stats)
                 if (into == &g && g.count >= cap) g.growth = Fixed{};
             } else if (g.count > cap) {
                 g.growth -= dt * t.garrisonDecay;
@@ -430,7 +430,7 @@ void RtsModule::sysGarrison(Simulation& sim) {
                 g.growth += nativeGrowth ? dt / t.spawnInterval * nativeRate : dt / t.spawnInterval;
                 int made = 0;
                 while (g.growth >= kOne && g.count < cap) { ++g.count; g.growth -= kOne; ++made; }
-                if (made) bwNoteProduced(sim, e, made);   // agent-bw-ai
+                if (made) notePointProduced(sim, e, made);
                 if (g.count >= cap) g.growth = Fixed{};
             } else if (g.count > cap) {
                 g.growth -= dt * t.garrisonDecay;

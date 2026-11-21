@@ -1,8 +1,8 @@
 # In-match progression on real units (rules `progression`)
 
 Hero xp, levels and level-up cards for hero-squad shooters, survivors / bullet-heaven runs and roguelites (reference
-port: Drone Fall). The policy is the `match-progression` library package (`libraries/include/aiverselib/genre/`
-`Perks.h`, `XpPickups.h`, `Summons.h`, `BattleDeck.h`; docs/genre-packages.md § Match progression); this block
+port: Drone Fall). The policy is the `match-progression` library package (`libraries/include/aiverselib/mechanics/`
+`Perks.h`, `XpPickups.h`, `Summons.h`, `BattleDeck.h`; docs/mechanics-packages.md § Match progression); this block
 connects it to the RTS simulation: kills of real units drop xp orbs, the hero picks them up, banked levels open seeded
 offers, a player command (UI, bot, Lua, MCP) picks a card, and the perks act on the units' real stats, bullets and hits.
 Recruits and summoned allies are ordinary units of the player.

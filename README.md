@@ -108,7 +108,7 @@ from the mechanics libraries — each one deterministic, tested, with save/resto
 | **Any mobile game** | `aiverse::meta` and LiveOps, tutorials, UI screens, store and ads plugins |
 
 Sports games, boats, pit stops and penalties are still on the [roadmap](docs/genre-mechanics-roadmap.md). Full list of
-libraries: [`libraries/catalog.json`](libraries/catalog.json) and [genre packages](docs/genre-packages.md).
+libraries: [`libraries/catalog.json`](libraries/catalog.json) and [genre packages](docs/mechanics-packages.md).
 
 ---
 
@@ -302,7 +302,7 @@ Reference documents are in English. The overview, the game wizard, Unity migrati
 |---|---|
 | [**Full overview**](docs/overview.md) | every subsystem, building, platforms, CI, releases |
 | [Game format](docs/game-format.md) | `game.json`, `rules.json`, maps and all data blocks |
-| [Genre packages](docs/genre-packages.md) · [Libraries](docs/libraries.md) | mechanics for any genre |
+| [Genre packages](docs/mechanics-packages.md) · [Libraries](docs/libraries.md) | mechanics for any genre |
 | [Make a game wizard](docs/game-wizard.md) | how an idea plus art becomes a finished project |
 | [Scripting](docs/scripting.md) · [C++ modules](docs/native-modules.md) | when data isn't enough |
 | [Terrain](docs/terrain.md) · [Planets](docs/planets.md) · [Pathfinding](docs/pathfinding.md) | world and movement |

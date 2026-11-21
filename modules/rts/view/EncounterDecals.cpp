@@ -2,7 +2,7 @@
 #include "EncounterDecals.h"
 #include "RtsView.h"
 #include "../RtsModule.h"
-#include "aiverselib/genre/TelegraphDecals.h"
+#include "aiverselib/mechanics/TelegraphDecals.h"
 #include <cmath>
 
 namespace aiverse::game {

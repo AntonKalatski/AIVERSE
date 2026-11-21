@@ -52,7 +52,7 @@ float3 gizmoAxis(int arm) {
 namespace {
 // Flat screen-space overlay drawn just beyond the near plane (always on top).
 struct Overlay2D {
-    Renderer3D& r; const RTSCamera& view; float W, H, depth;
+    Renderer3D& r; const Camera& view; float W, H, depth;
     bool at(float x,float y,float3& out) const {
         float3 o,d; if(!view.screenRay(x,y,W,H,o,d))return false;
         out=o+d*depth; return true;
@@ -68,7 +68,7 @@ struct Overlay2D {
 };
 // Screen layout of the transform handles for a pivot along three axis directions.
 struct AxisHandles { bool valid=false; float px=0,py=0; float tip[3][2]{}; float pick=8; float lengthPx=1; float worldLength=1; };
-AxisHandles axisHandles(const RTSCamera& view,float3 pivot,const float3* axes,float W,float H) {
+AxisHandles axisHandles(const Camera& view,float3 pivot,const float3* axes,float W,float H) {
     AxisHandles h; float2 p;
     if(!view.worldToScreen(pivot,W,H,p))return h;
     const float lengthPx=std::min(W,H)*0.16f;
@@ -95,7 +95,7 @@ void ringBasis(float3 n,float3& u,float3& v){
 }
 constexpr int kRingSegments=64;
 // Move plane handle (normal axis n): small square spanned by the two other axes.
-bool planeQuad(const RTSCamera& view,float3 pivot,const float3* axes,int n,float worldLength,float W,float H,float2 out[4]){
+bool planeQuad(const Camera& view,float3 pivot,const float3* axes,int n,float worldLength,float W,float H,float2 out[4]){
     const float3 a=axes[(n+1)%3],b=axes[(n+2)%3];
     const float s0=worldLength*0.18f,s1=worldLength*0.42f;
     const float3 c[4]={pivot+a*s0+b*s0,pivot+a*s1+b*s0,pivot+a*s1+b*s1,pivot+a*s0+b*s1};
@@ -277,7 +277,7 @@ void StudioMetalScene::renderThumbnail() {
     if(!model||!thumbColor_.valid()||!thumbDepth_.valid()){finish(job.asset);return;}
     const float3 lo=model->boundsMin,hi=model->boundsMax,size=hi-lo;
     const float radius=std::max(0.05f,0.5f*std::sqrt(dot(size,size)));
-    render::RTSCamera cam;
+    render::Camera cam;
     cam.target=(lo+hi)*0.5f;cam.yaw=0.65f;cam.pitch=0.42f;cam.ortho=false;
     cam.distance=radius/std::sin(cam.fovY*0.5f)*1.05f;
     cam.minDistance=0.01f;cam.maxDistance=1e6f;
@@ -667,8 +667,8 @@ void StudioMetalScene::frameAll(const editor::MapDoc& map,bool fpsProject) {
     const float3 size=hi-lo;
     startTween((lo+hi)*.5f,std::clamp(std::max({size.x,size.y,size.z,1.0f})*1.2f,2.0f,100000.0f),camera_.yaw,camera_.pitch);
 }
-render::RTSCamera StudioMetalScene::viewCamera() const {
-    render::RTSCamera view=camera_;
+render::Camera StudioMetalScene::viewCamera() const {
+    render::Camera view=camera_;
     view.zNear=std::clamp(camera_.distance*0.002f,0.05f,0.5f);
     view.zFar=std::max(1000.0f,camera_.distance*6.0f);
     if(view.ortho) {
@@ -708,7 +708,7 @@ void StudioMetalScene::captureSelectedBox(const mat4& world,float3 lo,float3 hi)
         selectedBox_[i]=world.transformPoint({i&1?hi.x:lo.x,i&2?hi.y:lo.y,i&4?hi.z:lo.z});
     selectedBoxValid_=true;
 }
-void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int height) {
+void StudioMetalScene::drawSelectionBox(const Camera& view,int width,int height) {
     if(!selectedBoxValid_)return;
     const float W=float(width),H=float(height);
     float2 p[8];
@@ -740,7 +740,7 @@ Json StudioMetalScene::textureResources() const {
     out.set("textures",list);out.set("totalBytes",Json::number(int64_t(total)));
     return out;
 }
-void StudioMetalScene::drawBrushCursor(const RTSCamera& view,int width,int height) {
+void StudioMetalScene::drawBrushCursor(const Camera& view,int width,int height) {
     const float W=float(width),H=float(height);
     Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.6f};
     const float px=std::max(1.0f,std::min(W,H)/800.0f);   // points → framebuffer pixels (approx.)
@@ -951,7 +951,7 @@ std::optional<StudioMetalScene::TransformCommit> StudioMetalScene::endTransformD
     drag_.axis=-1;
     return c;
 }
-void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int width,int height) {
+void StudioMetalScene::drawTransformGizmo(const render::Camera& view,int width,int height) {
     if(!selectedPivotValid_||!gizmosVisible_||tool_==TransformTool::View)return;
     if(selectedIsLight_&&tool_!=TransformTool::Move)return;
     const float W=float(width),H=float(height);
@@ -1130,7 +1130,7 @@ void StudioMetalScene::activateOrientationGizmo(int hit) {
     else setOrientation(sign>0?0.0f:3.14159265f,0);
     if(!camera_.ortho){camera_.ortho=true;autoIso_=true;}
 }
-void StudioMetalScene::drawOrientationGizmo(const render::RTSCamera& view,int width,int height) {
+void StudioMetalScene::drawOrientationGizmo(const render::Camera& view,int width,int height) {
     // Drawn flat in screen space (like the HTML gizmo): every vertex is a pixel
     // position unprojected onto a plane just beyond the near plane, so the corner
     // placement never adds perspective skew. Overlays are depth-tested without

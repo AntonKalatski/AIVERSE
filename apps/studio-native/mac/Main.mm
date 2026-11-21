@@ -992,7 +992,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 preview_->setEditorState(std::set<std::string>(ids.begin(),ids.end()),session_->hiddenIds(),session_->lockedIds(),hoverId_);
                 preview_->setWindPreview(session_->windPreview());
                 preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
-                    session_->workspace().project.isFps(), session_->selectedObjectId(),
+                    session_->workspace().project.worldSpaceMaps(), session_->selectedObjectId(),
                     session_->previewMaterialName(), session_->previewMaterialFactors(),
                     session_->previewMaterialRevision(),
                     float(session_->workspace().project.rules.levelHeight.toDouble()),
@@ -1098,7 +1098,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     StudioSceneFrameInputs in;
     in.width=placement_.pixelsW;in.height=placement_.pixelsH;
     in.map=mapSnapshot_;in.rules=rulesSnapshot_;
-    in.fps=ws.project.isFps();
+    in.fps=ws.project.worldSpaceMaps();
     in.selected=session_->selectedObjectId();
     in.levelHeight=float(ws.project.rules.levelHeight.toDouble());
     in.project=ws.project.dir;
@@ -1206,7 +1206,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         const int w=int(run.view.bounds.size.width*scale), h=int(run.view.bounds.size.height*scale);
         ((CAMetalLayer*)run.view.layer).drawableSize=CGSizeMake(w,h);
         run.scene->setWindPreview(session_->windPreview());
-        run.scene->frame(w,h,session_->workspace().map,session_->workspace().project.isFps(),"",
+        run.scene->frame(w,h,session_->workspace().map,session_->workspace().project.worldSpaceMaps(),"",
             "",aiverse::Json{},0,float(session_->workspace().project.rules.levelHeight.toDouble()),
             session_->workspace().project.dir,session_->workspace().project.rulesJson);
     } catch(const std::exception& e) {
@@ -1282,7 +1282,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 - (void)focusSceneSelection {
     if (projectLoading_) return;
     if (preview_ && session_) studioOnScene(renderThread_.get(),[&]{ return preview_->focusSelected(session_->workspace().map,
-        session_->workspace().project.isFps(),session_->selectedObjectId()); });
+        session_->workspace().project.worldSpaceMaps(),session_->selectedObjectId()); });
 }
 - (void)resetSceneView { if (preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->resetView(); }); }
 - (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
@@ -1360,7 +1360,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 }
 - (void)frameAllScene {
     if (projectLoading_ || !preview_ || !session_) return;
-    studioOnScene(renderThread_.get(),[&]{ return preview_->frameAll(session_->workspace().map,session_->workspace().project.isFps()); });
+    studioOnScene(renderThread_.get(),[&]{ return preview_->frameAll(session_->workspace().map,session_->workspace().project.worldSpaceMaps()); });
 }
 - (void)setScenePivotSnap:(BOOL)on { if (preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->setPivotSnap(on); }); }
 - (void)sceneMoveEnd {
@@ -1465,7 +1465,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     if (!preview_ || !session_) return;
     studioOnScene(renderThread_.get(),[&]{ return preview_->setMarquee(false); });
     const auto ids=studioOnScene(renderThread_.get(),[&]{ return preview_->idsInRect(float(a.x),float(a.y),float(b.x),float(b.y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps()); });
+        session_->workspace().map,session_->workspace().project.worldSpaceMaps()); });
     aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),list=aiverse::Json::array();
     for (const auto& id:ids) list.push(aiverse::Json::string(id));
     params.set("ids",list);params.set("mode",aiverse::Json::string(mode));
@@ -1477,7 +1477,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     if (!preview_ || !session_ || studioOnScene(renderThread_.get(),[&]{ return preview_->transformDragActive(); })) return;
     if ([self updateBrushCursorAtX:x y:y width:width height:height]) return;
     const std::string id=x<0||y<0?std::string():studioOnScene(renderThread_.get(),[&]{ return preview_->pick(float(x),float(y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps()); });
+        session_->workspace().map,session_->workspace().project.worldSpaceMaps()); });
     if (id==hoverId_) return;
     hoverId_=id;
     [self sendStudioEvent:"viewport.hover" message:id.c_str()];
@@ -1685,7 +1685,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         return;
     }
     const std::string objectId=studioOnScene(renderThread_.get(),[&]{ return preview_->pick(float(x),float(y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps()); });
+        session_->workspace().map,session_->workspace().project.worldSpaceMaps()); });
     // A modifier click on empty space keeps the current selection.
     if (objectId.empty() && std::string(mode)!="replace") return;
     aiverse::Json request=aiverse::Json::object();

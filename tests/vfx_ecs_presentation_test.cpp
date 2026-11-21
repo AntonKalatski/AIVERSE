@@ -1,5 +1,5 @@
 // Same VFX presenter consumes data-only ECS components in unrelated game styles.
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 #include <algorithm>
 #include <iostream>
 #include <map>

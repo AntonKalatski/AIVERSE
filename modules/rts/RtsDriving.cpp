@@ -1,23 +1,32 @@
-#include "kingston/DeckBroadphase.h"
-// Driving (rules "driving", RtsDriving.h): vehicle adoption, getting in / out, the stick -> pedals mapping, the
-// vehicle-controllers step and this module's part of the contract: the sweep of the body over the map grid and other
-// units, collision response, crash and run-over damage. Fixed maths only; every loop runs in entity-index order.
+// Driving on a grid map (RtsDriving.h): the grid-map host of the vehicle system (engine/vehicles/Vehicles.h) -
+// vehicle adoption, getting in / out, the hero's stick as the driver's controls, the sweep of the body over the map
+// grid and other units, decks, damage and the race seats. Fixed maths only; every loop runs in entity-index order.
 #include "RtsDriving.h"
-#include "RtsRace.h"
-#include "RtsRoadNet.h"
+#include <aiverselib/SweptShapes.h>
+namespace {
+// Conservative rejection only: exact deckSpot, deck ordering and mouth rules still decide for nearby cars.
+// Q16 normalization can displace a projected endpoint by < segment-length raw units per axis.
+bool deckMayTouchBody(const aiverse::game::DrivingDeck& d, aiverse::Vec3 center, aiverse::Fixed halfBody) {
+    using namespace aiverse;
+    if (d.pts.size() < 2 || d.at.size() != d.pts.size()) return true;
+    int64_t projectionError = 4;
+    for (size_t i = 1; i < d.pts.size(); ++i) projectionError = std::max(projectionError, (d.at[i] - d.at[i - 1]).floorInt() + 4);
+    const Fixed margin = halfBody + d.width / 2 + Fixed::fromRatio(1, 16) + Fixed::fromRaw(projectionError);
+    return lib::mayTouch(lib::polylineBounds(std::span<const Vec3>(d.pts), margin), center.x, center.z);
+}
+}
 #include "RtsInternal.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
-#include "../../libraries/include/aiverselib/genre/VehicleData.h"
-#include "../../libraries/include/aiverselib/genre/VehiclePersistence.h"
-#include "../../libraries/include/aiverselib/genre/RaceSessionData.h"
-#include "../../libraries/include/aiverselib/genre/VehicleDrive.h"
+#include "../../engine/roads/RoadNet.h"
+#include "../../libraries/include/aiverselib/mechanics/VehiclePersistence.h"
 #include <algorithm>
 #include <stdexcept>
 
 namespace aiverse::game {
 using namespace detail;
-namespace vl = lib::genre;
+namespace vl = lib::mechanics;
+namespace vs = vehicles;
 
 namespace {
 const Fixed kUnit = Fixed::fromInt(1);
@@ -63,197 +72,203 @@ bool deckDeep(const DrivingDeck& d, Vec3 p) {
     return !s.outside && s.along > m && s.along < d.length() - m;
 }
 // Two bodies on different levels pass each other; near a mouth everybody is on the ground.
-bool levelsApart(const DrivingStore& st, int deckA, Vec3 a, int deckB, Vec3 b) {
+bool levelsApart(const std::vector<DrivingDeck>& decks, int deckA, Vec3 a, int deckB, Vec3 b) {
     if (deckA == deckB) return false;
-    return (deckA < 0 || deckDeep(st.decks[size_t(deckA)], a)) && (deckB < 0 || deckDeep(st.decks[size_t(deckB)], b));
+    return (deckA < 0 || deckDeep(decks[size_t(deckA)], a)) && (deckB < 0 || deckDeep(decks[size_t(deckB)], b));
 }
-
-DrivingCar* findCar(DrivingStore& st, Entity e) {
-    // O(1) when the cached position is still the lower bound of e.index in the sorted cars (checked
-    // against both neighbours); otherwise the binary search, which refreshes the cache.
-    const size_t n = st.cars.size();
-    size_t p = n + 1;
-    if (e.index < st.slotOf.size()) {
-        const size_t q = st.slotOf[e.index];
-        if (q <= n && (q == n || st.cars[q].e.index >= e.index) && (q == 0 || st.cars[q - 1].e.index < e.index)) p = q;
-    }
-    if (p > n) {
-        p = size_t(std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& c, uint32_t i) { return c.e.index < i; }) - st.cars.begin());
-        if (st.slotOf.size() <= e.index) st.slotOf.resize(size_t(e.index) + 1, UINT32_MAX);
-        st.slotOf[e.index] = uint32_t(p);
-    }
-    return p < n && st.cars[p].e == e ? &st.cars[p] : nullptr;
+std::vector<DrivingDeck>& decksOf(Simulation& sim) {
+    auto* d = sim.world().resource<DrivingDecks>();
+    return d ? d->decks : sim.world().setResource<DrivingDecks>().decks;
 }
 } // namespace
 
+// ================================================================= the vehicle system's host (Vehicles.h)
+
+class Driving::Host final : public vs::VehicleHost {
+public:
+    Host(Driving& d, Simulation& sim) : d_(d), sim_(sim), w_(sim.world()) {}
+    bool active(Entity e, const vs::VehicleDrive&) override {
+        if (!w_.alive(e)) return false;
+        const Unit& u = w_.get<Unit>(e);
+        return u.hp.raw > 0 && !(u.flags & kUnitInCargo);
+    }
+    bool driverPedals(Entity, const vs::VehicleDrive& c, vl::VehicleInput& in) override {
+        bool ok = false;
+        in = d_.heroPedals(sim_, c, ok);
+        return ok;
+    }
+    // nobody at the wheel: a traffic car's bot driver (RtsTraffic.cpp)
+    bool botPedals(Entity e, const vs::VehicleDrive&, vl::VehicleInput& in) override {
+        Traffic* tr = d_.m_->traffic();
+        return tr && tr->active() && tr->aiInput(sim_, e, in);
+    }
+    void sweep(Entity e, vs::VehicleDrive& c, const vl::VehicleStepResult& res, vs::VehicleImpacts& impacts) override {
+        const Fixed mpc = d_.rules_.metersPerCell;
+        const Vec3 from{res.from.x / mpc, Fixed{}, res.from.z / mpc}, to{c.controller.position.x / mpc, Fixed{}, c.controller.position.z / mpc};
+        const Vec3 dv = to - from;
+        const int n = int(std::clamp<int64_t>(1 + (dv.length() * 4).toInt(), 1, 8));   // sub-steps of a quarter cell
+        Vec3 p = from;
+        for (int i = 1; i <= n; ++i) {
+            p = from + dv * Fixed::fromRatio(i, n);
+            if (d_.collide(sim_, e, p, impacts)) break;
+        }
+        vs::VehicleDrive& cc = *vs::driveOf(w_, e);
+        cc.controller.position = {p.x * mpc, Fixed{}, p.z * mpc};
+        Transform& tr = w_.get<Transform>(e);
+        tr.pos = {p.x, tr.pos.y, p.z};
+    }
+    void placed(Entity e, vs::VehicleDrive& c) override {
+        const Fixed mpc = d_.rules_.metersPerCell;
+        w_.get<Unit>(e).facing = forwardOf(c.controller.yaw);
+        if (auto* mb = w_.tryGet<Mobile>(e)) { mb->moving = false; mb->vel = {c.controller.velocity.x / mpc, Fixed{}, c.controller.velocity.z / mpc}; }
+        if (c.driver.valid() && w_.alive(c.driver)) w_.get<Transform>(c.driver).pos = w_.get<Transform>(e).pos;
+    }
+    void damage(Entity victim, Fixed amount, Entity by, uint8_t player) override {
+        if (w_.alive(victim) && w_.get<Unit>(victim).hp.raw > 0) d_.m_->dealDamage(sim_, victim, amount, 0, by, player);
+    }
+private:
+    Driving& d_;
+    Simulation& sim_;
+    World& w_;
+};
+
+// The race's seats (VehicleRace.h): player i + 1's hero takes car i, a bot or a player without a hero races with the bot.
+class Driving::Seats final : public vs::RaceHost {
+public:
+    Seats(Driving& d, Simulation& sim, vs::VehicleHost& host) : d_(d), sim_(sim), w_(sim.world()), host_(host) {}
+    void placeOnGrid(size_t, Entity car, vs::VehicleDrive& c, const vl::RaceGridSlot& g) override {
+        const Fixed mpc = d_.rules_.metersPerCell;
+        vl::respawnVehicle(d_.rules_.type(c.type)->def, c.controller, g.position, g.yaw);
+        Transform& tr = w_.get<Transform>(car);
+        tr.pos = {g.position.x / mpc, tr.pos.y, g.position.z / mpc};
+        w_.get<Unit>(car).facing = forwardOf(g.yaw);
+    }
+    bool seat(size_t i, Entity car, vs::VehicleDrive& c) override {
+        auto* td = d_.m_->topDown()->store(sim_);
+        const uint8_t player = uint8_t(std::min<size_t>(i + 1, 255));
+        const Entity hero = td && player < td->pilots.size() ? td->pilots[player].hero : kNullEntity;
+        const bool bot = (i < d_.race_->bots.size() && d_.race_->bots[i]) || !w_.alive(hero) || w_.get<Unit>(hero).hp.raw <= 0;
+        if (!bot) {
+            if (Entity other = vs::vehicleOf(w_, hero); other.valid()) d_.leave(sim_, other, hero, true);
+            const Entity at = vs::driveOf(w_, car)->driver;
+            if (at.valid() && at != hero) d_.leave(sim_, car, at, true);
+            if (vs::driveOf(w_, car)->driver != hero) d_.seat(sim_, car, player, hero);
+        } else {
+            if (c.driver.valid()) d_.leave(sim_, car, c.driver, true);
+            vs::VehicleDrive& cc = *vs::driveOf(w_, car);
+            cc.autopilot = true;   // stepped every tick (a racing bot never sleeps)
+            cc.pilot = {};
+            cc.pilot.brake = kUnit;
+            cc.pilot.handbrake = true;
+        }
+        return bot;
+    }
+    vl::VehicleInput pedals(size_t, Entity car, const vs::VehicleDrive& c) override { return vs::ownPedals(host_, car, c); }
+    void respawned(size_t, Entity car, vs::VehicleDrive& c) override {
+        const Fixed mpc = d_.rules_.metersPerCell;
+        Transform& tr = w_.get<Transform>(car);
+        tr.pos = {c.controller.position.x / mpc, tr.pos.y, c.controller.position.z / mpc};
+        w_.get<Unit>(car).facing = forwardOf(c.controller.yaw);
+        if (c.driver.valid() && w_.alive(c.driver)) w_.get<Transform>(c.driver).pos = tr.pos;
+    }
+    int32_t raceOver(int64_t winner) override {   // the race decides the match: the winner's team (0: a draw)
+        int team = 0;
+        if (winner >= 1 && size_t(winner) <= sim_.players().size()) team = sim_.players()[size_t(winner - 1)].team;
+        d_.m_->state(sim_).winnerTeam = team;
+        return team;
+    }
+private:
+    Driving& d_;
+    Simulation& sim_;
+    World& w_;
+    vs::VehicleHost& host_;
+};
+
 // ================================================================= data
 
-DrivingRules Driving::parse(const Json& j, const std::vector<std::string>& ids) {
-    DrivingRules r;
-    if (!j.isObject()) return r;
-    r.enabled = true;
-    r.metersPerCell = number(j, "metersPerCell", r.metersPerCell, "driving", true);
-    r.enterRange = number(j, "enterRange", r.enterRange, "driving", false);
-    r.exitSpeed = number(j, "exitSpeed", r.exitSpeed, "driving", false);
-    r.wreckDamage = number(j, "wreckDamage", r.wreckDamage, "driving", false);
-    r.doorSeconds = number(j, "doorTime", r.doorSeconds, "driving", false);
-    const std::string controls = j.getStr("controls", "tank");
-    if (controls == "tank") r.controls = DriveControls::Tank;
-    else if (controls == "stick") r.controls = DriveControls::Stick;
-    else throw std::runtime_error("driving.controls: 'tank' or 'stick' (got '" + controls + "')");
-    if (const Json& c = j["crash"]; c.isObject()) {
-        r.crashMinSpeed = number(c, "minSpeed", r.crashMinSpeed, "driving.crash", false);
-        r.crashDamage = number(c, "damage", r.crashDamage, "driving.crash", false);
-        r.restitution = number(c, "restitution", r.restitution, "driving.crash", false);
-        if (r.restitution > kUnit) throw std::runtime_error("driving.crash.restitution: 0..1");
-    }
-    if (const Json& c = j["runOver"]; c.isObject()) {
-        r.runOverMinSpeed = number(c, "minSpeed", r.runOverMinSpeed, "driving.runOver", false);
-        r.runOverDamage = number(c, "damage", r.runOverDamage, "driving.runOver", false);
-    }
-    const Json& vs = j["vehicles"];
-    if (vs.isObject()) for (auto& [id, v] : vs.members()) {
-        const std::string where = "driving.vehicles." + id;
-        DrivingVehicleType d;
-        for (size_t i = 0; i < ids.size(); ++i) if (ids[i] == id) d.type = uint16_t(i);
-        if (d.type == UINT16_MAX) throw std::runtime_error(where + ": unknown type '" + id + "'");
-        d.length = number(v, "length", d.length, where, true);
-        d.width = number(v, "width", d.width, where, true);
-        if (d.width > d.length) throw std::runtime_error(where + ": width must not exceed length");
-        if (d.length > Fixed::fromInt(8)) throw std::runtime_error(where + ".length: at most 8 cells");
-        if (v["wheeled"].isObject()) vl::vehicleDataDetail::wheeled(v["wheeled"], where + ".wheeled", d.def.wheeled);
-        if (!vl::valid(d.def)) throw std::runtime_error(where + ".wheeled: invalid controller parameters");
-        r.vehicles.push_back(std::move(d));
-    }
-    if (r.vehicles.empty()) throw std::runtime_error("driving.vehicles: list at least one unit type");
-    std::sort(r.vehicles.begin(), r.vehicles.end(), [](const DrivingVehicleType& a, const DrivingVehicleType& b) { return a.type < b.type; });
-    return r;
+const std::vector<DrivingDeck>* Driving::decks(Simulation& sim) const {
+    if (!active()) return nullptr;
+    const auto* d = sim.world().resource<DrivingDecks>();
+    return d ? &d->decks : nullptr;
 }
-
-const DrivingVehicleType* Driving::typeOf(uint16_t unitType) const {
-    if (unitType < vehicleOf_.size()) return vehicleOf_[unitType] >= 0 ? &rules_.vehicles[size_t(vehicleOf_[unitType])] : nullptr;
-    for (auto& v : rules_.vehicles) if (v.type == unitType) return &v;   // before setup
-    return nullptr;
-}
-
-DrivingStore* Driving::store(Simulation& sim) const { return active() ? sim.world().resource<DrivingStore>() : nullptr; }
 
 void Driving::setup(Simulation& sim, RtsModule& m, const Json& rulesJson) {
     m_ = &m;
     std::vector<std::string> ids;
     for (auto& t : m.rules().types) ids.push_back(t.id);
-    rules_ = parse(rulesJson["driving"], ids);
+    rules_ = vs::parseDriving(rulesJson["driving"], ids);
     if (!active()) return;
     if (!m.topDown() || !m.topDown()->active()) throw std::runtime_error("driving: needs the 'topDown' block (the hero is the driver)");
     rules_.doorTicks = uint32_t((rules_.doorSeconds * int64_t(sim.tickRate())).toInt());
     // how far a body of each type reaches from its centre (cars: half their length): the sweep's cheap first test
-    vehicleOf_.assign(m.rules().types.size(), -1);   // unit type -> vehicle (the first one, as the list is searched)
-    for (size_t i = rules_.vehicles.size(); i-- > 0;) if (rules_.vehicles[i].type < vehicleOf_.size()) vehicleOf_[rules_.vehicles[i].type] = int32_t(i);
     reach_.assign(m.rules().types.size(), Fixed{});
     for (size_t i = 0; i < reach_.size(); ++i) reach_[i] = m.rules().types[i].radius;
-    for (auto& v : rules_.vehicles) if (v.type < reach_.size()) reach_[v.type] = fxMax(v.length / 2, v.width / 2);
-    auto& st = sim.world().setResource<DrivingStore>();
-    adoptAndDrop(sim, st);
+    for (auto& v : rules_.vehicles) if (size_t(v.type) < reach_.size()) reach_[size_t(v.type)] = fxMax(v.length / 2, v.width / 2);
+    sim.world().setResource<DrivingDecks>();
+    adoptAndDrop(sim);
 }
 
-const DrivingCar* Driving::carOf(Simulation& sim, Entity driver) const {
-    auto* st = store(sim);
-    if (!st || !driver.valid()) return nullptr;
-    for (auto& c : st->cars) if (c.driver == driver) return &c;
-    return nullptr;
+const vs::VehicleDrive* Driving::carOf(Simulation& sim, Entity driver) const {
+    if (!active() || !driver.valid()) return nullptr;
+    const vs::VehicleDrive* c = vs::driveOf(sim.world(), vs::vehicleOf(sim.world(), driver));
+    return c && c->driver == driver ? c : nullptr;
 }
 
-const DrivingCar* Driving::car(Simulation& sim, Entity vehicle) const {
-    auto* st = store(sim);
-    return st ? findCar(*st, vehicle) : nullptr;
+Entity Driving::vehicleOf(Simulation& sim, Entity driver) const {
+    return carOf(sim, driver) ? vs::vehicleOf(sim.world(), driver) : kNullEntity;
 }
 
-bool Driving::setAutopilot(Simulation& sim, Entity vehicle, const vl::VehicleInput& input) {
-    auto* st = store(sim);
-    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
-    if (!c || !vl::valid(input)) return false;
-    c->autopilot = true;
-    c->pilot = input;
-    return true;
+const vs::VehicleDrive* Driving::car(Simulation& sim, Entity vehicle) const {
+    return active() ? vs::driveOf(sim.world(), vehicle) : nullptr;
 }
 
-bool Driving::clearAutopilot(Simulation& sim, Entity vehicle) {
-    auto* st = store(sim);
-    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
-    if (!c) return false;
-    c->autopilot = false;
-    c->pilot = {};
-    return true;
-}
-
-Fixed Driving::speed(Simulation& sim, Entity vehicle) const {
-    const DrivingCar* c = car(sim, vehicle);
-    return c ? vl::vehicleForwardSpeed(c->st) : Fixed{};
-}
+bool Driving::setAutopilot(Simulation& sim, Entity vehicle, const vl::VehicleInput& input) { return active() && vs::setAutopilot(sim.world(), vehicle, input); }
+bool Driving::clearAutopilot(Simulation& sim, Entity vehicle) { return active() && vs::clearAutopilot(sim.world(), vehicle); }
+bool Driving::setLocked(Simulation& sim, Entity vehicle, bool locked) { return active() && vs::setLocked(sim.world(), vehicle, locked); }
+bool Driving::locked(Simulation& sim, Entity vehicle) const { return active() && vs::isLocked(sim.world(), vehicle); }
+Fixed Driving::speed(Simulation& sim, Entity vehicle) const { return active() ? vs::speedOf(sim.world(), vehicle) : Fixed{}; }
 
 void Driving::hash(Simulation& sim, Hasher& h) const {
-    auto* st = store(sim);
-    if (!st) return;
-    h.u32(uint32_t(st->cars.size()));
-    for (auto& c : st->cars) {
-        const auto& s = c.st;
-        h.u64(c.e.packed()); h.u64(c.driver.packed()); h.u32(c.player); h.u32(c.doorUntil);
-        if (!st->decks.empty()) h.i32(c.deck);   // maps without decks keep their checksums
-        h.v3(s.position); h.v3(s.velocity);
-        for (Fixed f : {s.yaw, s.yawRate, s.pitch, s.roll, s.steer, s.rpm, s.airspeed, s.sink, s.longAccel, s.trackLeft, s.trackRight}) h.fx(f);
-        h.i32(s.gear); h.u32(s.shiftUntil); h.u32(s.slipMask); h.u32(s.lastTick);
-        h.u32(uint32_t(s.grounded) | uint32_t(s.drifting) << 1 | uint32_t(s.stalled) << 2 | uint32_t(s.initialized) << 3 | uint32_t(c.autopilot) << 4 | uint32_t(c.locked) << 5);
-        for (Fixed f : {c.pilot.throttle, c.pilot.brake, c.pilot.steer}) h.fx(f);
-        h.u32(uint32_t(c.pilot.handbrake) | uint32_t(c.pilot.shiftUp) << 1 | uint32_t(c.pilot.shiftDown) << 2);
-    }
-    if (auto* rs = race_ ? sim.world().resource<DrivingRaceState>() : nullptr) {   // maps with a race only
-        h.u32(uint32_t(rs->started)); h.i32(rs->winnerTeam);
-        for (Entity e : rs->racers) h.u64(e.packed());
-        h.u64(vl::vehicleHash(rs->grid)); h.u64(vl::vehicleHash(rs->session));
-    }
+    if (!active()) return;
+    const auto* d = decks(sim);
+    vs::hashVehicles(sim.world(), h, d && !d->empty());
+    if (race_) race_->hash(sim.world(), h);   // maps with a race only
 }
 
+// The vehicles themselves are RTS pools (VehicleDrive, VehicleOccupant: RtsSave.cpp); here the decks and the race.
 void Driving::io(Simulation& sim, Archive& a) {
-    auto* st = store(sim);
-    if (!st) return;
-    uint32_t n = uint32_t(st->cars.size());
-    aiverse::io(a, n);
-    if (!a.writing()) { if (n > 100000) { a.fail(); return; } st->cars.assign(n, {}); }
-    for (auto& c : st->cars) {
-        auto& s = c.st;
-        a(c.e, c.driver, c.player, c.doorUntil, s.position, s.velocity, s.yaw, s.yawRate, s.pitch, s.roll, s.steer, s.rpm);
-        a(s.airspeed, s.sink, s.longAccel, s.trackLeft, s.trackRight, s.gear, s.shiftUntil, s.slipMask, s.lastTick);
-        a(s.grounded, s.drifting, s.stalled, s.initialized);
-        a(c.autopilot, c.pilot.throttle, c.pilot.brake, c.pilot.steer, c.pilot.handbrake, c.pilot.shiftUp, c.pilot.shiftDown);
-        a(c.deck, c.locked);
-    }
-    uint32_t nd = uint32_t(st->decks.size());
+    if (!active()) return;
+    auto& decks = decksOf(sim);
+    uint32_t nd = uint32_t(decks.size());
     aiverse::io(a, nd);
-    if (!a.writing()) { if (nd > 100000) { a.fail(); return; } st->decks.assign(nd, {}); }
-    for (auto& d : st->decks) a(d.id, d.width, d.pts, d.at);
-    if (!a.writing())
-        for (auto& c : st->cars) if (c.deck >= int(nd)) { a.fail(); return; }
-    if (auto* rs = race_ ? sim.world().resource<DrivingRaceState>() : nullptr) {   // maps with a race only: layout unchanged otherwise
-        a(rs->started, rs->winnerTeam, rs->racers, rs->grid);
-        vl::io(a, rs->session);
-        if (!a.writing() && (rs->racers.size() > vl::kRaceMaxRacers || !vl::valid(rs->session) ||
-                             (rs->started && rs->racers.size() != rs->session.race.racers.size()))) { a.fail(); return; }
+    if (!a.writing()) { if (nd > 100000) { a.fail(); return; } decks.assign(nd, {}); }
+    for (auto& d : decks) a(d.id, d.width, d.pts, d.at);
+    if (!a.writing()) {
+        World& w = sim.world();
+        for (Entity e : vs::vehicleEntities(w)) {
+            const vs::VehicleDrive& c = *vs::driveOf(w, e);
+            if (!vs::valid(c) || c.deck >= int(nd) || !w.has<Unit>(e) || !rules_.type(c.type)) { a.fail(); return; }
+        }
+    }
+    if (race_) {   // maps with a race only: layout unchanged otherwise
+        auto* rs = vs::VehicleRace::state(sim.world());
+        vs::VehicleRace::io(a, rs ? *rs : sim.world().setResource<vs::RaceState>());
     }
 }
 
 // ================================================================= levels
 
 void Driving::loadMap(Simulation& sim, const Json& map, const Json& roadTypes) {
-    auto* st = store(sim);
-    if (!st) return;
-    st->decks.clear();
+    if (!active()) return;
+    auto& decks = decksOf(sim);
+    decks.clear();
     Json list = map["decks"];
     if (!list.isNull() && !list.isArray()) throw std::runtime_error("map decks: expected a list");
-    // spline roads: their bridge and tunnel spans are decks too (heights over the ground, RtsRoadNet roadDecks)
+    // spline roads: their bridge and tunnel spans are decks too (heights over the ground, engine/roads roadDecks)
     if (map["roadNetwork"].isObject()) {
-        const std::vector<RoadTypeDef> types = loadRoadTypes(roadTypes);
-        const RoadNetwork roads = parseRoadNetwork(map["roadNetwork"], types);
-        const Json more = roadDecks(roads, types, buildRoadGeometry(roads, types));
+        const std::vector<roads::RoadTypeDef> types = roads::loadRoadTypes(roadTypes);
+        const roads::RoadNetwork net = roads::parseRoadNetwork(map["roadNetwork"], types);
+        const Json more = roads::roadDecks(net, types, roads::buildRoadGeometry(net, types));
         if (more.size() > 0) {
             if (list.isNull()) list = Json::array();
             for (auto& d : more.items()) list.push(d);
@@ -279,30 +294,29 @@ void Driving::loadMap(Simulation& sim, const Json& map, const Json& roadTypes) {
             d.pts.push_back(p);
             d.at.push_back(at);
         }
-        if (st->decks.size() >= 32000) throw std::runtime_error("map decks: too many");
-        st->decks.push_back(std::move(d));
+        if (decks.size() >= 32000) throw std::runtime_error("map decks: too many");
+        decks.push_back(std::move(d));
     }
 }
 
 int Driving::deckOf(Simulation& sim, Entity vehicle) const {
-    const DrivingCar* c = car(sim, vehicle);
+    const vs::VehicleDrive* c = car(sim, vehicle);
     return c ? c->deck : -1;
 }
 
 int Driving::deckIndex(Simulation& sim, const std::string& id) const {
-    auto* st = store(sim);
-    if (st)
-        for (size_t i = 0; i < st->decks.size(); ++i) if (st->decks[i].id == id) return int(i);
+    if (const auto* d = decks(sim))
+        for (size_t i = 0; i < d->size(); ++i) if ((*d)[i].id == id) return int(i);
     return -1;
 }
 
 Fixed Driving::height(Simulation& sim, Entity vehicle) const {
-    auto* st = store(sim);
-    const DrivingCar* c = car(sim, vehicle);
-    if (!st || !c || c->deck < 0) return {};
-    const DrivingDeck& d = st->decks[size_t(c->deck)];
+    const auto* ds = decks(sim);
+    const vs::VehicleDrive* c = car(sim, vehicle);
+    if (!ds || !c || c->deck < 0) return {};
+    const DrivingDeck& d = (*ds)[size_t(c->deck)];
     const Fixed mpc = rules_.metersPerCell;
-    const DeckSpot s = deckSpot(d, Vec3{c->st.position.x / mpc, Fixed{}, c->st.position.z / mpc});
+    const DeckSpot s = deckSpot(d, Vec3{c->controller.position.x / mpc, Fixed{}, c->controller.position.z / mpc});
     for (size_t i = 0; i + 1 < d.pts.size(); ++i)
         if (s.along <= d.at[i + 1] || i + 2 == d.pts.size())
             return d.pts[i].y + (d.pts[i + 1].y - d.pts[i].y) * fxClamp((s.along - d.at[i]) / (d.at[i + 1] - d.at[i]), Fixed{}, kUnit);
@@ -310,11 +324,11 @@ Fixed Driving::height(Simulation& sim, Entity vehicle) const {
 }
 
 bool Driving::setDeck(Simulation& sim, Entity vehicle, int deck) {
-    auto* st = store(sim);
-    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
-    if (!c || deck < -1 || deck >= int(st->decks.size())) return false;
+    const auto* ds = decks(sim);
+    vs::VehicleDrive* c = ds ? vs::driveOf(sim.world(), vehicle) : nullptr;
+    if (!c || deck < -1 || deck >= int(ds->size())) return false;
     if (deck >= 0) {
-        const DrivingDeck& d = st->decks[size_t(deck)];
+        const DrivingDeck& d = (*ds)[size_t(deck)];
         const DeckSpot s = deckSpot(d, sim.world().get<Transform>(vehicle).pos);
         if (s.outside || s.side > d.width / 2) return false;
     }
@@ -324,137 +338,108 @@ bool Driving::setDeck(Simulation& sim, Entity vehicle, int deck) {
 
 // ================================================================= getting in and out
 
-void Driving::adoptAndDrop(Simulation& sim, DrivingStore& st) {
+void Driving::adoptAndDrop(Simulation& sim) {
     World& w = sim.world();
-    // gone or destroyed vehicles: the driver is thrown out where the wreck is
-    for (size_t i = 0; i < st.cars.size();) {
-        DrivingCar& c = st.cars[i];
-        if (w.alive(c.e) && w.get<Unit>(c.e).hp.raw > 0) { ++i; continue; }
-        if (c.driver.valid()) leave(sim, c, true);
-        st.cars.erase(st.cars.begin() + long(i));
+    // gone or destroyed vehicles: the driver is thrown out where the wreck is (in the vehicles' entity order)
+    struct Gone { Entity car, hero; };
+    std::vector<Gone> gone;
+    w.eachExisting<vs::VehicleDrive>([&](Entity e, vs::VehicleDrive& c) { if (w.get<Unit>(e).hp.raw <= 0) gone.push_back({e, c.driver}); });
+    w.eachExisting<vs::VehicleOccupant>([&](Entity hero, vs::VehicleOccupant& o) { if (!w.alive(o.vehicle)) gone.push_back({o.vehicle, hero}); });
+    std::sort(gone.begin(), gone.end(), [](const Gone& a, const Gone& b) { return a.car.index < b.car.index; });
+    for (const Gone& g : gone) {
+        if (g.hero.valid()) leave(sim, g.car, g.hero, true);
+        if (w.alive(g.car)) w.remove<vs::VehicleDrive>(g.car);
     }
     std::vector<Entity> fresh;
     w.each<Unit, Transform>([&](Entity e, Unit& u, Transform&) {
         if (u.hp.raw <= 0 || (u.flags & (kUnitOffMap | kUnitUnderConstruction)) || !typeOf(u.type)) return;
-        if (!findCar(st, e)) fresh.push_back(e);
+        if (!w.has<vs::VehicleDrive>(e)) fresh.push_back(e);
     });
     std::sort(fresh.begin(), fresh.end(), [](Entity a, Entity b) { return a.index < b.index; });
-    for (Entity e : fresh) adoptOne(sim, st, e);
+    for (Entity e : fresh) adoptOne(sim, e);
 }
 
-void Driving::adoptOne(Simulation& sim, DrivingStore& st, Entity e) {
+void Driving::adoptOne(Simulation& sim, Entity e) {
     World& w = sim.world();
-    {
-        Unit& u = w.get<Unit>(e);
-        const DrivingVehicleType& vt = *typeOf(u.type);
-        const Vec3 p = w.get<Transform>(e).pos;
-        DrivingCar c;
-        c.e = e;
-        c.st = vl::makeVehicleState(vt.def, {p.x * rules_.metersPerCell, Fixed{}, p.z * rules_.metersPerCell},
-                                    Fixed::fromRaw(TopDown::angleOf(u.facing)));
-        u.flags |= kUnitPossessed;          // RTS orders and the movement system leave it to this file
-        if (auto* o = w.tryGet<Orders>(e)) o->queue.clear();
-        if (w.has<Mobile>(e)) m_->stopMoving(sim, e);
-        auto it = std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& x, uint32_t i) { return x.e.index < i; });
-        st.cars.insert(it, c);
-    }
+    Unit& u = w.get<Unit>(e);
+    const vs::VehicleType& vt = *typeOf(u.type);
+    const Vec3 p = w.get<Transform>(e).pos;
+    vs::addVehicle(w, e, vt, {p.x * rules_.metersPerCell, Fixed{}, p.z * rules_.metersPerCell}, Fixed::fromRaw(TopDown::angleOf(u.facing)));
+    w.get<Unit>(e).flags |= kUnitPossessed;          // RTS orders and the movement system leave it to this file
+    if (auto* o = w.tryGet<Orders>(e)) o->queue.clear();
+    if (w.has<Mobile>(e)) m_->stopMoving(sim, e);
 }
 
 bool Driving::adopt(Simulation& sim, Entity e, Fixed speed) {
-    auto* st = store(sim);
     World& w = sim.world();
-    if (!st || !w.alive(e) || !w.has<Transform>(e)) return false;
+    if (!active() || !w.alive(e) || !w.has<Transform>(e)) return false;
     Unit& u = w.get<Unit>(e);
     if (u.hp.raw <= 0 || (u.flags & (kUnitOffMap | kUnitUnderConstruction)) || !typeOf(u.type)) return false;
-    if (!findCar(*st, e)) adoptOne(sim, *st, e);
-    DrivingCar* c = findCar(*st, e);
+    if (!w.has<vs::VehicleDrive>(e)) adoptOne(sim, e);
+    vs::VehicleDrive* c = vs::driveOf(w, e);
     if (!c) return false;
-    const Vec3 f = forwardOf(c->st.yaw);
-    c->st.velocity = Vec3{f.x * speed, Fixed{}, f.z * speed};
+    const Vec3 f = forwardOf(c->controller.yaw);
+    c->controller.velocity = Vec3{f.x * speed, Fixed{}, f.z * speed};
     return true;
-}
-
-bool Driving::setLocked(Simulation& sim, Entity vehicle, bool locked) {
-    auto* st = store(sim);
-    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
-    if (!c) return false;
-    c->locked = locked;
-    return true;
-}
-
-bool Driving::locked(Simulation& sim, Entity vehicle) const {
-    const DrivingCar* c = car(sim, vehicle);
-    return c && c->locked;
 }
 
 Entity Driving::enterTarget(Simulation& sim, Entity hero) const {
-    auto* st = store(sim);
     World& w = sim.world();
-    if (!st || !w.alive(hero)) return kNullEntity;
+    const auto* ds = decks(sim);
+    if (!ds || !w.alive(hero)) return kNullEntity;
     const Unit& hu = w.get<Unit>(hero);
     if (hu.hp.raw <= 0 || (hu.flags & kUnitOffMap)) return kNullEntity;
     const Vec3 hp = w.get<Transform>(hero).pos;
     const Fixed hr = m_->rules().types[hu.type].radius;
     Entity best = kNullEntity;
     Fixed bestD{};
-    for (auto& c : st->cars) {
-        if (c.driver.valid() || !w.alive(c.e)) continue;
-        const Unit& cu = w.get<Unit>(c.e);
+    for (Entity e : vs::vehicleEntities(w)) {
+        const vs::VehicleDrive& c = *vs::driveOf(w, e);
+        if (c.driver.valid()) continue;
+        const Unit& cu = w.get<Unit>(e);
         if (cu.hp.raw <= 0) continue;
-        const Fixed d = flat(w.get<Transform>(c.e).pos - hp).length() - typeOf(cu.type)->length / 2 - hr;
+        const Fixed d = flat(w.get<Transform>(e).pos - hp).length() - typeOf(cu.type)->length / 2 - hr;
         if (d > rules_.enterRange) continue;
-        if (c.deck >= 0 && deckDeep(st->decks[size_t(c.deck)], w.get<Transform>(c.e).pos)) continue;
-        if (!best.valid() || d < bestD) { best = c.e; bestD = d; }
+        if (c.deck >= 0 && deckDeep((*ds)[size_t(c.deck)], w.get<Transform>(e).pos)) continue;   // above / below the hero
+        if (!best.valid() || d < bestD) { best = e; bestD = d; }   // entity order: ties keep the lower index
     }
     return best;
 }
 
-void Driving::enter(Simulation& sim, DrivingStore& st, uint8_t player, Entity hero) {
-    World& w = sim.world();
-    if (!w.alive(hero)) return;
-    Unit& hu = w.get<Unit>(hero);
-    if (hu.hp.raw <= 0 || (hu.flags & kUnitOffMap)) return;
-    const Vec3 hp = w.get<Transform>(hero).pos;
-    const Fixed hr = m_->rules().types[hu.type].radius;
-    DrivingCar* best = nullptr;
-    Fixed bestD{};
-    for (auto& c : st.cars) {
-        if (c.driver.valid() || !w.alive(c.e)) continue;
-        const Unit& cu = w.get<Unit>(c.e);
-        if (cu.hp.raw <= 0) continue;
-        const Fixed d = flat(w.get<Transform>(c.e).pos - hp).length() - typeOf(cu.type)->length / 2 - hr;
-        if (d > rules_.enterRange) continue;
-        if (c.deck >= 0 && deckDeep(st.decks[size_t(c.deck)], w.get<Transform>(c.e).pos)) continue;   // above / below the hero
-        if (!best || d < bestD) { best = &c; bestD = d; }   // cars are in entity order: ties keep the lower index
-    }
-    if (!best || best->locked) return;   // a locked door: the game says so and decides who opens it
-    seat(sim, *best, player, hero);
+void Driving::enter(Simulation& sim, uint8_t player, Entity hero) {
+    const Entity best = enterTarget(sim, hero);
+    if (!best.valid() || vs::isLocked(sim.world(), best)) return;   // a locked door: the game says so and decides who opens it
+    seat(sim, best, player, hero);
 }
 
-void Driving::seat(Simulation& sim, DrivingCar& car, uint8_t player, Entity hero) {
+void Driving::seat(Simulation& sim, Entity car, uint8_t player, Entity hero) {
     World& w = sim.world();
-    car.driver = hero;
-    car.player = player;
-    car.doorUntil = sim.tick() + rules_.doorTicks;
+    vs::seatDriver(w, car, *vs::driveOf(w, car), hero, player, sim.tick() + rules_.doorTicks);
     w.get<Unit>(hero).flags |= kUnitInCargo;   // off the map: not hit, not targeted, not drawn; it follows the car
     if (auto* c = w.tryGet<Combat>(hero)) c->target = kNullEntity;
     if (auto* td = m_->topDown()->store(sim); td && player < td->pilots.size()) { td->pilots[player].vel = {}; td->pilots[player].target = kNullEntity; }
-    w.get<Transform>(hero).pos = w.get<Transform>(car.e).pos;
+    w.get<Transform>(hero).pos = w.get<Transform>(car).pos;
 }
 
-bool Driving::leave(Simulation& sim, DrivingCar& c, bool forced) {
+// The car's pose comes from its VehicleDrive, or (the car is gone) from the driver's VehicleOccupant.
+bool Driving::leave(Simulation& sim, Entity car, Entity hero, bool forced) {
     World& w = sim.world();
-    const Entity hero = c.driver;
-    if (!w.alive(hero)) { c.driver = kNullEntity; c.player = 0; return true; }
-    if (!forced && fxAbs(vl::vehicleForwardSpeed(c.st)) > rules_.exitSpeed) return false;
+    vs::VehicleDrive* c = w.alive(car) ? vs::driveOf(w, car) : nullptr;
+    if (!w.alive(hero)) { if (c) { c->driver = kNullEntity; c->player = 0; } return true; }
+    const vs::VehicleOccupant* o = w.tryGet<vs::VehicleOccupant>(hero);
+    if (!c && !o) return true;
+    const Vec3 at = c ? c->controller.position : o->position;
+    const Fixed yaw = c ? c->controller.yaw : o->yaw, v = c ? vl::vehicleForwardSpeed(c->controller) : o->speed;
+    const int deck = c ? c->deck : o->deck;
+    if (!forced && fxAbs(v) > rules_.exitSpeed) return false;
     Unit& hu = w.get<Unit>(hero);
     const UnitType& ht = m_->rules().types[hu.type];
     const MapGrid& g = m_->state(sim).grid;
-    const Vec3 pos{c.st.position.x / rules_.metersPerCell, w.get<Transform>(hero).pos.y, c.st.position.z / rules_.metersPerCell};
-    if (auto* st = store(sim); st && c.deck >= 0 && !forced && deckDeep(st->decks[size_t(c.deck)], pos)) return false;   // no way down from a bridge, no door room in a tunnel
-    const Vec3 f = forwardOf(c.st.yaw), r = rightOf(f);
+    const Vec3 pos{at.x / rules_.metersPerCell, w.get<Transform>(hero).pos.y, at.z / rules_.metersPerCell};
+    if (const auto* ds = decks(sim); ds && deck >= 0 && deck < int(ds->size()) && !forced && deckDeep((*ds)[size_t(deck)], pos)) return false;   // no way down from a bridge, no door room in a tunnel
+    const Vec3 f = forwardOf(yaw), r = rightOf(f);
     Fixed len = kUnit, wid = kHalf;
-    if (w.alive(c.e)) if (auto* vt = typeOf(w.get<Unit>(c.e).type)) { len = vt->length; wid = vt->width; }
+    if (w.alive(car)) if (auto* vt = typeOf(w.get<Unit>(car).type)) { len = vt->length; wid = vt->width; }
     const Fixed side = wid / 2 + ht.radius + Fixed::fromRatio(1, 10), ends = len / 2 + ht.radius + Fixed::fromRatio(1, 10);
     const Vec3 spots[4] = {pos + r * side, pos - r * side, pos - f * ends, pos + f * ends};   // driver's door (left on screen) first
     Vec3 out = pos;
@@ -464,119 +449,87 @@ bool Driving::leave(Simulation& sim, DrivingCar& c, bool forced) {
     hu.flags = uint16_t(hu.flags & ~kUnitInCargo);
     w.get<Transform>(hero).pos = out;
     hu.facing = f;
-    const Entity wreck = c.e;
-    c.driver = kNullEntity;
-    c.player = 0;
-    c.doorUntil = sim.tick() + rules_.doorTicks;
-    if (forced && rules_.wreckDamage.raw > 0) m_->dealDamage(sim, hero, rules_.wreckDamage, 0, wreck, 0);
+    vs::unseatDriver(w, c, hero, sim.tick() + rules_.doorTicks);
+    if (forced && rules_.wreckDamage.raw > 0) m_->dealDamage(sim, hero, rules_.wreckDamage, 0, car, 0);
     return true;
+}
+
+bool Driving::policeExit(Simulation& sim, Entity hero) {
+    if (!active()) return false;
+    const Entity car = vs::vehicleOf(sim.world(), hero);
+    if (!car.valid()) return true;
+    if (fxAbs(speed(sim, car)) > rules_.exitSpeed) return false;
+    return leave(sim, car, hero, true);
 }
 
 bool Driving::command(Simulation& sim, const Command& cmd) {
     if (cmd.type != kCmdTopDownEnter) return false;
-    auto* st = store(sim);
-    auto* td = st ? m_->topDown()->store(sim) : nullptr;
+    auto* td = active() ? m_->topDown()->store(sim) : nullptr;
     if (!td || cmd.player == 0 || cmd.player >= td->pilots.size()) return true;
     const Entity hero = td->pilots[cmd.player].hero;
     if (!sim.world().alive(hero)) return true;
-    for (auto& c : st->cars) if (c.driver == hero) { if (!raceHoldsCar(sim, c.e)) leave(sim, c, false); return true; }
-    enter(sim, *st, cmd.player, hero);
+    if (const Entity car = vs::vehicleOf(sim.world(), hero); car.valid()) {
+        if (!race_ || !race_->holds(sim.world(), car)) leave(sim, car, hero, false);
+        return true;
+    }
+    enter(sim, cmd.player, hero);
     return true;
 }
 
 // ================================================================= per tick
 
-vl::VehicleInput Driving::inputOf(Simulation& sim, const DrivingCar& c) const {
-    for (const auto& [index, in] : raceInput_) if (index == c.e.index) return in;   // a racer: the race session's pedals
-    return ownInput(sim, c);
-}
-
-vl::VehicleInput Driving::ownInput(Simulation& sim, const DrivingCar& c) const {
-    vl::VehicleInput in;
+// the hero's sticky top-down input through the shared screen-stick mapping (mechanics/VehicleDrive.h)
+vl::VehicleInput Driving::heroPedals(Simulation& sim, const vs::VehicleDrive& c, bool& ok) const {
     auto* td = m_->topDown()->store(sim);
-    if (!c.driver.valid()) {   // nobody at the wheel: a traffic car's bot driver (RtsTraffic.cpp), else parked
-        if (Traffic* tr = m_->traffic(); tr && tr->active() && tr->aiInput(sim, c.e, in)) return in;
-        if (c.autopilot) return c.pilot;
-        in.handbrake = true;
-        return in;
-    }
-    if (!td || c.player >= td->pilots.size()) { in.handbrake = true; return in; }   // parked
-    // the shared screen-stick mapping (genre/VehicleDrive.h): "tank" or "stick" (steer toward the stick)
+    ok = td && c.player < td->pilots.size();
+    if (!ok) return {};
     const topdown::Input& s = td->pilots[c.player].input;
     const vl::DriveScreenStick stick{Fixed::fromRaw(s.moveAngle), Fixed::fromRatio(s.moveMag, topdown::kMagMax), s.fire};
-    return vl::vehicleInputFromStick(rules_.controls == DriveControls::Tank ? vl::DriveStick::Tank : vl::DriveStick::Steer, stick, c.st);
+    return vs::stickPedals(rules_, stick, c.controller);
 }
 
 void Driving::tick(Simulation& sim) {
-    auto* st = store(sim);
-    if (!st) return;
-    adoptAndDrop(sim, *st);
-    raceBefore(sim, *st);
-    for (size_t i = 0; i < st->cars.size(); ++i) drive(sim, *st, i);
-    raceAfter(sim, *st);
-}
-
-void Driving::drive(Simulation& sim, DrivingStore& st, size_t index) {
+    if (!active()) return;
     World& w = sim.world();
-    DrivingCar& c = st.cars[index];
-    if (!w.alive(c.e)) return;
-    Unit& u = w.get<Unit>(c.e);
-    if (u.hp.raw <= 0 || (u.flags & kUnitInCargo)) return;
-    const DrivingVehicleType& vt = *typeOf(u.type);
-    const Fixed mpc = rules_.metersPerCell;
-    // A parked car at rest sleeps: no controller step, no sweep (a city has hundreds of them). Whatever hits it
-    // gives it a velocity (car against car) and that wakes it; getting in or a traffic driver wake it too.
-    if (!c.driver.valid() && !c.autopilot && c.st.initialized && c.st.velocity == Vec3{} && c.st.yawRate.raw == 0) {
-        vl::VehicleInput none;
-        Traffic* tr = m_->traffic();
-        if (!(tr && tr->active() && tr->aiInput(sim, c.e, none))) return;
+    adoptAndDrop(sim);
+    Host host(*this, sim);
+    Seats seats(*this, sim, host);
+    std::vector<vs::RacePedals> pedals;
+    if (race_ && vs::VehicleRace::state(w)) {
+        if (!race_->started(w)) { const auto cars = vs::vehicleEntities(w); race_->start(w, seats, rules_, cars, sim.tick()); }
+        pedals = race_->pedals(w, seats, sim.tick());
     }
-    auto res = vl::stepVehicle(vt.def, c.st, sim.tick(), sim.dt(), inputOf(sim, c), vl::VehicleContacts{});
-    Transform& tr = w.get<Transform>(c.e);
-    if (res) {
-        const Vec3 from{res->from.x / mpc, Fixed{}, res->from.z / mpc}, to{c.st.position.x / mpc, Fixed{}, c.st.position.z / mpc};
-        const Vec3 d = to - from;
-        const int n = int(std::clamp<int64_t>(1 + (d.length() * 4).toInt(), 1, 8));   // sub-steps of a quarter cell
-        Vec3 p = from;
-        for (int i = 1; i <= n; ++i) {
-            p = from + d * Fixed::fromRatio(i, n);
-            if (collide(sim, st, index, p)) break;
-        }
-        DrivingCar& cc = st.cars[index];
-        cc.st.position = {p.x * mpc, Fixed{}, p.z * mpc};
-        tr.pos = {p.x, tr.pos.y, p.z};
-    }
-    DrivingCar& cc = st.cars[index];
-    u.facing = forwardOf(cc.st.yaw);
-    if (auto* mb = w.tryGet<Mobile>(c.e)) { mb->moving = false; mb->vel = {cc.st.velocity.x / mpc, Fixed{}, cc.st.velocity.z / mpc}; }
-    if (cc.driver.valid() && w.alive(cc.driver)) w.get<Transform>(cc.driver).pos = tr.pos;
+    vs::stepVehicles(w, host, rules_, sim.tick(), sim.dt(), pedals, race_.get());
+    if (race_) race_->after(w, seats, rules_, sim.tick());
 }
 
-// The body is three circles along the car. Returns true when something was hit (the rest of the tick's motion is dropped).
-bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos) {
+// The world query of the sweep: the body is three circles along the car. Returns true when something was hit (the
+// rest of the tick's motion is dropped); every pass goes to `impacts` (damage at once).
+bool Driving::collide(Simulation& sim, Entity car, Vec3& pos, vs::VehicleImpacts& impacts) {
     World& w = sim.world();
     GameState& gs = m_->state(sim);
     const MapGrid& g = gs.grid;
-    DrivingCar& c = st.cars[index];
-    const Unit& u = w.get<Unit>(c.e);
+    std::vector<DrivingDeck>& decks = decksOf(sim);
+    vs::VehicleDrive& c = *vs::driveOf(w, car);
+    const Unit& u = w.get<Unit>(car);
     const UnitType& t = m_->rules().types[u.type];
-    const DrivingVehicleType& vt = *typeOf(u.type);
+    const vs::VehicleType& vt = *typeOf(u.type);
     const Fixed mpc = rules_.metersPerCell;
     const Fixed r = vt.width / 2, half = fxMax(vt.length / 2 - r, Fixed{});
-    const Vec3 f = forwardOf(c.st.yaw);
+    const Vec3 f = forwardOf(c.controller.yaw);
     const Fixed offs[3] = {-half, Fixed{}, half};
-    bool hit = false;
-    Fixed crash{};
+    vs::VehicleSweep out;
+    Fixed& crash = out.impact;
 
     // levels: any part of the body inside a mouth puts the car on that deck; the whole body past an end takes it off
     if (c.deck >= 0) {
         bool allOut = true;
-        for (Fixed off : offs) if (!deckSpot(st.decks[size_t(c.deck)], pos + f * off).outside) allOut = false;
+        for (Fixed off : offs) if (!deckSpot(decks[size_t(c.deck)], pos + f * off).outside) allOut = false;
         if (allOut) c.deck = -1;
     }
-    for (size_t i = 0; i < st.decks.size() && c.deck < 0; ++i) {
-        const DrivingDeck& d = st.decks[i];
-        if (!kingston::deckMayTouchBody(d, pos, half)) continue;
+    for (size_t i = 0; i < decks.size() && c.deck < 0; ++i) {
+        const DrivingDeck& d = decks[i];
+        if (!deckMayTouchBody(d, pos, half)) continue;
         const Fixed m = deckMouth(d);
         for (Fixed off : offs) {
             const DeckSpot s = deckSpot(d, pos + f * off);
@@ -591,7 +544,7 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
         for (Fixed off : offs) {
             const Vec3 cp = pos + f * off;
             if (c.deck >= 0) {   // on a deck its own walls count, not the map under / around it; the mouths are open
-                const DrivingDeck& d = st.decks[size_t(c.deck)];
+                const DrivingDeck& d = decks[size_t(c.deck)];
                 const DeckSpot s = deckSpot(d, cp);
                 const Fixed room = fxMax(d.width / 2 - r, Fixed{});
                 if (s.outside || s.side <= room) continue;
@@ -622,16 +575,16 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
         }
         if (deepest.raw <= 0) break;
         pos += normal * deepest;
-        crash = fxMax(crash, vl::vehicleResolveCollision(c.st, c.st.position, normal, rules_.restitution));
-        c.st.yawRate = c.st.yawRate / 2;
-        hit = true;
+        crash = fxMax(crash, vl::vehicleResolveCollision(c.controller, c.controller.position, normal, rules_.restitution));
+        c.controller.yawRate = c.controller.yawRate / 2;
+        out.hit = true;
     }
 
     // other bodies
     struct Near { Entity e; Vec3 p; Fixed r; };
     std::vector<Near> near;
     gs.hash.query(pos, vt.length + Fixed::fromInt(2), [&](Entity o) {
-        if (o == c.e || o == c.driver) return;
+        if (o == car || o == c.driver) return;
         auto* ou = w.tryGet<Unit>(o);
         if (!ou || ou->hp.raw <= 0 || (ou->flags & kUnitOffMap)) return;
         const UnitType& ot = m_->rules().types[ou->type];
@@ -643,15 +596,13 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
         near.push_back({o, op, ot.radius});
     });
     std::sort(near.begin(), near.end(), [](const Near& a, const Near& b) { return a.e.index < b.e.index; });
-    struct Hurt { Entity e; Fixed dmg; Entity by; uint8_t owner; };
-    std::vector<Hurt> hurt;
     for (auto& o : near) {
-        DrivingCar* oc = findCar(st, o.e);
-        if (levelsApart(st, c.deck, pos, oc ? oc->deck : -1, o.p)) continue;   // one of them is on a bridge or in a tunnel
-        const DrivingVehicleType* ovt = oc ? typeOf(w.get<Unit>(o.e).type) : nullptr;
+        vs::VehicleDrive* oc = vs::driveOf(w, o.e);
+        if (levelsApart(decks, c.deck, pos, oc ? oc->deck : -1, o.p)) continue;   // one of them is on a bridge or in a tunnel
+        const vs::VehicleType* ovt = oc ? typeOf(w.get<Unit>(o.e).type) : nullptr;
         const Fixed orad = ovt ? ovt->width / 2 : o.r;
         const Fixed ohalf = ovt ? fxMax(ovt->length / 2 - orad, Fixed{}) : Fixed{};
-        const Vec3 of = oc ? forwardOf(oc->st.yaw) : Vec3{};
+        const Vec3 of = oc ? forwardOf(oc->controller.yaw) : Vec3{};
         const Fixed ooffs[3] = {-ohalf, Fixed{}, ohalf};
         Fixed deepest{};
         Vec3 normal{};
@@ -666,31 +617,31 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
         if (oc) {   // car against car: share the push, exchange the closing speed
             pos += normal * (deepest / 2);
             const Vec3 shift = normal * (deepest / 2);
-            oc->st.position = {oc->st.position.x - shift.x * mpc, oc->st.position.y, oc->st.position.z - shift.z * mpc};
+            oc->controller.position = {oc->controller.position.x - shift.x * mpc, oc->controller.position.y, oc->controller.position.z - shift.z * mpc};
             Transform& otr = w.get<Transform>(o.e);
             otr.pos = {otr.pos.x - shift.x, otr.pos.y, otr.pos.z - shift.z};
-            const Fixed vrel = (c.st.velocity - oc->st.velocity).dot(normal);
+            const Fixed vrel = (c.controller.velocity - oc->controller.velocity).dot(normal);
             if (vrel.raw < 0) {
                 const Fixed j = -vrel * (kUnit + rules_.restitution) / 2;
-                c.st.velocity += normal * j;
-                oc->st.velocity = oc->st.velocity - normal * j;
+                c.controller.velocity += normal * j;
+                oc->controller.velocity = oc->controller.velocity - normal * j;
                 crash = fxMax(crash, j);
-                if (j > rules_.crashMinSpeed) hurt.push_back({o.e, (j - rules_.crashMinSpeed) * rules_.crashDamage, c.e, c.player});
+                out.hits.push_back({vs::VehicleHit::Crash, o.e, j});
             }
-            hit = true;
+            out.hit = true;
             continue;
         }
         const UnitType& ot = m_->rules().types[w.get<Unit>(o.e).type];
         if (ot.speed.raw <= 0) {   // things that never move (trees, lamp posts, hydrants) are solid
             pos += normal * deepest;
-            crash = fxMax(crash, vl::vehicleResolveCollision(c.st, c.st.position, normal, rules_.restitution));
-            hit = true;
+            crash = fxMax(crash, vl::vehicleResolveCollision(c.controller, c.controller.position, normal, rules_.restitution));
+            out.hit = true;
             continue;
         }
-        const Fixed closing = -c.st.velocity.dot(normal);
+        const Fixed closing = -c.controller.velocity.dot(normal);
         if (closing > rules_.runOverMinSpeed) {   // run over: the car barely notices
-            hurt.push_back({o.e, (closing - rules_.runOverMinSpeed) * rules_.runOverDamage, c.e, c.player});
-            c.st.velocity = c.st.velocity * Fixed::fromRatio(98, 100);
+            out.hits.push_back({vs::VehicleHit::RunOver, o.e, closing});
+            c.controller.velocity = c.controller.velocity * Fixed::fromRatio(98, 100);
             continue;
         }
         const Vec3 np = o.p - normal * deepest;
@@ -699,8 +650,8 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
             otr.pos = {np.x, otr.pos.y, np.z};
         } else {
             pos += normal * deepest;
-            vl::vehicleResolveCollision(c.st, c.st.position, normal, Fixed{});
-            hit = true;
+            vl::vehicleResolveCollision(c.controller, c.controller.position, normal, Fixed{});
+            out.hit = true;
         }
     }
     // static colliders (RtsColliders.h): solid like the bodies above that never move (bollards, benches, beds)
@@ -716,149 +667,27 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
             }
             if (deepest.raw <= 0) return;
             pos += normal * deepest;
-            crash = fxMax(crash, vl::vehicleResolveCollision(c.st, c.st.position, normal, rules_.restitution));
-            hit = true;
+            crash = fxMax(crash, vl::vehicleResolveCollision(c.controller, c.controller.position, normal, rules_.restitution));
+            out.hit = true;
         });
-    if (crash > rules_.crashMinSpeed && (!race_ || race_->crashDamage || !raceHoldsCar(sim, c.e)))   // racers: rules race.crashDamage
-        hurt.push_back({c.e, (crash - rules_.crashMinSpeed) * rules_.crashDamage, kNullEntity, 0});
-    for (auto& h : hurt)
-        if (h.dmg.raw > 0 && w.alive(h.e) && w.get<Unit>(h.e).hp.raw > 0) m_->dealDamage(sim, h.e, h.dmg, 0, h.by, h.owner);
+    const bool hit = out.hit;
+    impacts.apply(out);   // crash / run-over damage (driving.crash, driving.runOver; racers: race.crashDamage)
     return hit;
 }
 
-// ================================================================= races (RtsRace.h)
+// ================================================================= races (engine/vehicles/VehicleRace.h)
 
 void Driving::loadRace(Simulation& sim, const Json& rules, const Json& map) {
     race_.reset();
-    raceInput_.clear();
     if (!map.has("race")) return;
-    if (!store(sim)) throw std::runtime_error("map race: the cars are the vehicles of rules \"driving\"");
-    const vl::RaceRules r = vl::readRaceRules(rules["race"], "race", sim.tickRate());
-    vl::RaceTrack t = vl::readRaceTrack(map["race"], "map race", rules_.metersPerCell);   // map cells -> metres
-    if (r.laps) t.course.laps = r.laps;
-    auto d = std::make_shared<DrivingRace>();
-    d->config = r.session;
-    d->crashDamage = r.crashDamage;
-    d->course = std::move(t.course);
-    d->mapGrid = t.grid;
-    if (!t.line.empty()) d->line = lib::bots::makeRaceLine(t.line);
-    // the bots steer in units of the cars' steering lock
-    if (!rules_.vehicles.empty() && rules_.vehicles.front().def.wheeled.maxSteer.raw > 0) d->config.bot.maxSteer = rules_.vehicles.front().def.wheeled.maxSteer;
-    if (!vl::valid(d->config)) throw std::runtime_error("race: invalid race settings");
-    for (auto& p : map["players"].items()) d->bots.push_back(p.getBool("bot", false));
-    race_ = std::move(d);
-    sim.world().setResource<DrivingRaceState>();
+    if (!active()) throw std::runtime_error("map race: the cars are the vehicles of rules \"driving\"");
+    race_ = vs::VehicleRace::read(sim.world(), rules, map, rules_.metersPerCell, sim.tickRate(), rules_);   // map cells -> metres
 }
 
-bool Driving::racing(Simulation& sim) const { return race_ && sim.world().resource<DrivingRaceState>(); }
-
-bool Driving::raceHoldsCar(Simulation& sim, Entity vehicle) const {
-    auto* rs = race_ ? sim.world().resource<DrivingRaceState>() : nullptr;
-    if (!rs || !rs->started || rs->session.phase == vl::RacePhase::Finished) return false;
-    return std::find(rs->racers.begin(), rs->racers.end(), vehicle) != rs->racers.end();
-}
-
-void Driving::raceStart(Simulation& sim, DrivingStore& st) {
-    World& w = sim.world();
-    auto& rs = *w.resource<DrivingRaceState>();
-    rs.started = true;
-    const Fixed mpc = rules_.metersPerCell;
-    auto* td = m_->topDown()->store(sim);
-    size_t n = std::min(st.cars.size(), vl::kRaceMaxRacers);
-    if (race_->mapGrid) n = std::min(n, race_->course.grid.size());
-    std::vector<vl::RaceSessionRacer> racers;
-    for (size_t i = 0; i < n; ++i) {
-        DrivingCar& c = st.cars[i];
-        if (!w.alive(c.e)) continue;
-        Unit& u = w.get<Unit>(c.e);
-        const DrivingVehicleType& vt = *typeOf(u.type);
-        if (race_->mapGrid) {   // on the map's grid
-            const auto& g = race_->course.grid[i];
-            vl::respawnVehicle(vt.def, c.st, g.position, g.yaw);
-            Transform& tr = w.get<Transform>(c.e);
-            tr.pos = {g.position.x / mpc, tr.pos.y, g.position.z / mpc};
-            u.facing = forwardOf(g.yaw);
-        }
-        rs.grid.push_back({c.st.position, c.st.yaw});
-        const uint8_t player = uint8_t(std::min<size_t>(i + 1, 255));
-        const Entity hero = td && player < td->pilots.size() ? td->pilots[player].hero : kNullEntity;
-        const bool bot = (i < race_->bots.size() && race_->bots[i]) || !w.alive(hero) || w.get<Unit>(hero).hp.raw <= 0;
-        if (!bot) {
-            for (auto& other : st.cars) if (other.driver == hero) leave(sim, other, true);
-            if (c.driver.valid() && c.driver != hero) leave(sim, c, true);
-            if (c.driver != hero) seat(sim, c, player, hero);
-        } else {
-            if (c.driver.valid()) leave(sim, c, true);
-            c.autopilot = true;   // stepped every tick (a racing bot never sleeps)
-            c.pilot = {};
-            c.pilot.brake = kUnit;
-            c.pilot.handbrake = true;
-        }
-        c.locked = true;
-        rs.racers.push_back(c.e);
-        racers.push_back({int64_t(rs.racers.size()), bot});
-    }
-    vl::RaceCourse course = race_->course;
-    course.grid = rs.grid;
-    auto session = vl::makeRaceSession(course, race_->config, racers, race_->line ? &*race_->line : nullptr, sim.tick());
-    if (!session) { rs.racers.clear(); rs.grid.clear(); return; }   // no cars, or bots without a racing line: no race
-    rs.session = std::move(*session);
-}
-
-void Driving::raceBefore(Simulation& sim, DrivingStore& st) {
-    raceInput_.clear();
-    auto* rs = race_ ? sim.world().resource<DrivingRaceState>() : nullptr;
-    if (!rs) return;
-    if (!rs->started) raceStart(sim, st);
-    if (rs->racers.empty()) return;
-    std::vector<vl::RaceDriver> drivers;
-    for (size_t i = 0; i < rs->racers.size(); ++i)
-        if (DrivingCar* c = findCar(st, rs->racers[i]))
-            drivers.push_back({int64_t(i + 1), c->st.position, c->st.velocity, c->st.yaw, ownInput(sim, *c)});
-    if (auto in = vl::raceSessionInputs(race_->config, race_->line ? &*race_->line : nullptr, rs->session, sim.tick(), drivers))
-        for (const auto& x : *in) raceInput_.push_back({rs->racers[size_t(x.racer - 1)].index, x.input});
-}
-
-void Driving::raceAfter(Simulation& sim, DrivingStore& st) {
-    raceInput_.clear();
-    auto* rs = race_ ? sim.world().resource<DrivingRaceState>() : nullptr;
-    if (!rs || rs->racers.empty()) return;
-    World& w = sim.world();
-    const Fixed mpc = rules_.metersPerCell;
-    std::vector<vl::RaceSample> samples;
-    for (size_t i = 0; i < rs->racers.size(); ++i)
-        if (DrivingCar* c = findCar(st, rs->racers[i])) samples.push_back({int64_t(i + 1), c->st.position, c->st.velocity});
-    vl::RaceCourse course = race_->course;
-    course.grid = rs->grid;
-    auto report = vl::stepRaceSession(course, race_->config, rs->session, sim.tick(), samples);
-    if (!report) return;
-    for (const auto& spot : report->race.respawns) {   // back on the track at the last checkpoint
-        DrivingCar* c = findCar(st, rs->racers[size_t(spot.racer - 1)]);
-        if (!c || !w.alive(c->e)) continue;
-        Unit& u = w.get<Unit>(c->e);
-        vl::respawnVehicle(typeOf(u.type)->def, c->st, spot.position, spot.yaw);
-        Transform& tr = w.get<Transform>(c->e);
-        tr.pos = {spot.position.x / mpc, tr.pos.y, spot.position.z / mpc};
-        u.facing = forwardOf(spot.yaw);
-        c->deck = -1;
-        if (c->driver.valid() && w.alive(c->driver)) w.get<Transform>(c->driver).pos = tr.pos;
-    }
-    if (rs->session.phase == vl::RacePhase::Finished && rs->winnerTeam < 0) {   // the race decides the match
-        const int64_t winner = vl::raceSessionWinner(rs->session);
-        int team = 0;   // nobody finished: a draw
-        if (winner >= 1 && size_t(winner) <= sim.players().size()) team = sim.players()[size_t(winner - 1)].team;
-        rs->winnerTeam = team;
-        m_->state(sim).winnerTeam = team;
-    }
-}
+bool Driving::racing(Simulation& sim) const { return race_ && vs::VehicleRace::state(sim.world()); }
 
 vl::RaceView Driving::raceView(Simulation& sim, uint8_t player) const {
-    auto* rs = race_ ? sim.world().resource<DrivingRaceState>() : nullptr;
-    if (!rs || rs->racers.empty()) return {};
-    vl::RaceCourse course = race_->course;
-    course.grid = rs->grid;
-    const int64_t racer = player >= 1 && player <= rs->racers.size() ? int64_t(player) : 0;
-    return vl::raceView(course, rs->session, racer, sim.tick());
+    return race_ ? race_->view(sim.world(), player, sim.tick()) : vl::RaceView{};
 }
 
 } // namespace aiverse::game

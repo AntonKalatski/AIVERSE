@@ -21,7 +21,7 @@ int main(){try{
     auto rules=Json::parse(R"({"fps":{"roundTicks":10000}})");auto map=Json::parse(R"({"players":[{"name":"A","team":1},{"name":"B","team":1}],"spawns":[[-5,0.01,0],[-8,0.01,-8]],"colliders":[{"id":1,"min":[-20,-1,-20],"max":[20,0,20]},{"id":2,"min":[-1,0,-6],"max":[1,4,6]}]})");
     Simulation sim({1,60,0},std::make_unique<fps::Module>());sim.setup(rules,map);auto& module=static_cast<fps::Module&>(sim.module());auto mesh=buildNavMesh(module.collision(),c);CHECK(mesh.mesh);FpsState state;FpsConfig bot;
     for(int i=0;i<900;++i){auto cmd=fpsCommand(sim,module,1,bot,{},state,Vec3{5_fx,Fixed::fromRatio(1,100),0_fx},&*mesh.mesh);CHECK(cmd);sim.submit(*cmd);sim.step();}
-    CHECK((module.state(sim).actors[0].pos-Vec3{5_fx,Fixed::fromRatio(1,100),0_fx}).xz().length()<1_fx);
+    CHECK((module.character(sim,1).pos-Vec3{5_fx,Fixed::fromRatio(1,100),0_fx}).xz().length()<1_fx);
     // Disconnected platforms must not be bridged by a clear horizontal sweep.
     world::SpatialWorld gap;gap.add({1,{{-10_fx,-1_fx,-10_fx},{-1_fx,0_fx,10_fx}}});gap.add({2,{{1_fx,-1_fx,-10_fx},{10_fx,0_fx,10_fx}}});
     auto islands=buildNavMesh(gap,c);CHECK(islands.mesh&&!navPath(*islands.mesh,gap,{-5_fx,{},{}},{5_fx,{},{}}));

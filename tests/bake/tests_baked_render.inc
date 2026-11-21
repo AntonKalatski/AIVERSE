@@ -92,7 +92,7 @@ TEST(baked_lighting_lightmap_and_probe_variants) {
     CHECK(baked.upload(dev, std::move(data)));
     r3d.setBakedLighting(&baked);
     r3d.setBakedQuality(BakedQuality::High);
-    RTSCamera cam; cam.target = {2, 0, 3}; cam.distance = 12; cam.pitch = 1.0f;
+    Camera cam; cam.target = {2, 0, 3}; cam.distance = 12; cam.pitch = 1.0f;
     auto frame = [&](const mat4& world) {
         dev.draws.clear();
         r3d.beginScene(cam, 640, 480);

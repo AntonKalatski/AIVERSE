@@ -124,7 +124,7 @@ inline render::float3 physisPivot3(const physis_authoring::FieldPivot& p) {
     return {float(p.x),float(p.y),float(p.z)};
 }
 inline std::vector<physis_gizmo::ScreenMarker> physisVisibleMarkers(
-    const Json& config,const Viewport& vp,const render::RTSCamera& camera) {
+    const Json& config,const Viewport& vp,const render::Camera& camera) {
     std::vector<physis_gizmo::ScreenMarker> output;
     for (const char* key:{"windZones","storms","gravityFields"}) {
         const Json& fields=config[key];
@@ -144,10 +144,10 @@ inline std::vector<physis_gizmo::ScreenMarker> physisVisibleMarkers(
     return output;
 }
 
-inline float physisHandleLength(const render::RTSCamera& camera) {
+inline float physisHandleLength(const render::Camera& camera) {
     return std::clamp(camera.distance*0.28f,2.0f,160.0f);
 }
-inline bool physisAxisScreen(const render::RTSCamera& camera,const Viewport& vp,
+inline bool physisAxisScreen(const render::Camera& camera,const Viewport& vp,
                              render::float3 pivot,int axis,ImVec2& a,ImVec2& b) {
     const auto direction=physis_gizmo::worldAxis(axis);
     const float length=physisHandleLength(camera);
@@ -192,7 +192,7 @@ inline bool physisFieldRadius(const Json& field, double& radius) {
     return std::isfinite(radius) && radius >= 0.0 && radius <= 100000.0;
 }
 
-inline bool physisRadiusHandleScreen(const render::RTSCamera& camera,
+inline bool physisRadiusHandleScreen(const render::Camera& camera,
                                       const Viewport& vp, render::float3 center,
                                       double radius, render::float2& projected) {
     if (!camera.worldToScreen({center.x + float(std::max(1.0, radius)),
@@ -202,7 +202,7 @@ inline bool physisRadiusHandleScreen(const render::RTSCamera& camera,
 }
 
 inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
-                                   const render::RTSCamera& camera) {
+                                   const render::Camera& camera) {
     auto& state = physisFieldEditorState();
     if (!state.showMarkers || !physis_authoring::read(ed.doc()).isObject()) return;
     auto* draw = ImGui::GetWindowDrawList();
@@ -335,7 +335,7 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
 // Optional Scene interaction. Ctrl/Shift-click toggles PHYSIS membership;
 // an unmodified click on a selected group member moves the entire group.
 inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
-                                    const render::RTSCamera& camera) {
+                                    const render::Camera& camera) {
     auto& state=physisFieldEditorState();
     const ImGuiIO& io=ImGui::GetIO();
     if (!state.editMode || !state.showMarkers || ed.playing()) {

@@ -7,7 +7,7 @@
 // linearProgram1/2/3) picks the velocity closest to the preferred one. Cost is O(agents * K^2).
 #include "RtsInternal.h"
 #include "RtsDriving.h"
-#include "KingstonPedestrianCrossingPolicy.h"
+#include <aiverselib/SweptShapes.h>
 #include <algorithm>
 
 namespace aiverse::game {
@@ -124,7 +124,7 @@ void RtsModule::moveAgents(Simulation& sim) {
     const Fixed invDt = kOne / dt;
     const int K = rules_.movement.neighbors;
 
-    #include "KingstonPedestrianVehicles.inc"
+    #include "RtsPedestrianVehicles.inc"
     struct Agent { Entity e; Vec2 p, v, pref, nv; Fixed r, speed; uint8_t layer, owner; bool moving, idle; int32_t goal = -1, arrived = -1; };
     std::vector<Agent> agents;
     std::vector<int32_t> byIndex;
@@ -162,8 +162,8 @@ void RtsModule::moveAgents(Simulation& sim) {
             if (m.pathPos >= m.path.size() && m.moving) { m.moving = false; m.path.clear(); }
             a.moving = m.moving;
         }
-        if (!vehicleBodies.empty()) state(sim).trig.vars["resident_crossing_"+std::to_string(e.packed())+"_reason"]=Fixed{};   // (a game without vehicles keeps its state and checksums)
-        if(a.moving && !vehicleBodies.empty()){   // (no vehicles: nothing to walk round, and no crossing variables written into the state)
+        if (auto* cw = traffic_ && traffic_->active() ? w.tryGet<CrossingWait>(e) : nullptr) cw->reason = 0;
+        if(a.moving && !vehicleBodies.empty()){   // (no vehicles: nothing to walk round)
             const Vec2 goal=m.pathPos<m.path.size()?m.path[m.pathPos].xz():m.goal.xz();
             const Vec2 waypoint=vehicleDetour(e,a.p,goal,a.r);
             if(waypoint!=goal){auto delta=waypoint-a.p;a.pref=delta.lengthSq().raw?normalize(delta)*fxMin(a.speed,delta.length()*invDt):Vec2{};}

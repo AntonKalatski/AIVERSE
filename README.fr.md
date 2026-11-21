@@ -111,7 +111,7 @@ configuration validable.
 | **Tout jeu mobile** | `aiverse::meta` et LiveOps, tutoriels, écrans d’interface, plugins de stores et de publicité |
 
 Les jeux de sport, les bateaux, les arrêts au stand et les pénalités sont encore dans la [feuille de route](docs/genre-mechanics-roadmap.md). Liste
-complète des bibliothèques : [`libraries/catalog.json`](libraries/catalog.json) et [paquets de genre](docs/genre-packages.md).
+complète des bibliothèques : [`libraries/catalog.json`](libraries/catalog.json) et [paquets de genre](docs/mechanics-packages.md).
 
 ---
 
@@ -302,7 +302,7 @@ Les documents de référence sont en anglais. La vue d’ensemble, l’assistant
 |---|---|
 | [**Vue d’ensemble complète**](docs/fr/overview.md) | tous les sous-systèmes, compilation, plateformes, CI, versions |
 | [Format de jeu](docs/game-format.md) | `game.json`, `rules.json`, cartes et tous les blocs de données |
-| [Paquets de genre](docs/genre-packages.md) · [Bibliothèques](docs/libraries.md) | des mécaniques pour tous les genres |
+| [Paquets de genre](docs/mechanics-packages.md) · [Bibliothèques](docs/libraries.md) | des mécaniques pour tous les genres |
 | [Assistant Créer un jeu](docs/fr/game-wizard.md) | comment une idée et des illustrations deviennent un projet fini |
 | [Scripts](docs/scripting.md) · [Modules C++](docs/native-modules.md) | quand les données ne suffisent pas |
 | [Terrain](docs/terrain.md) · [Planètes](docs/planets.md) · [Recherche de chemin](docs/pathfinding.md) | monde et déplacement |

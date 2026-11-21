@@ -1,7 +1,6 @@
 // Setup, commands, shared queries and state hashing for the generic RTS module.
 #include "RtsInternal.h"
 #include "../../engine/data/JsonCompose.h"
-#include "RtsBwAI.h"   // agent-bw-ai
 #include "RtsInitialVars.h"
 #include "RtsMapRules.h"
 #include "../../engine/core/FixedMath.h"
@@ -35,7 +34,8 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
         if (!(gm == map)) generated_ = std::move(gm);
     }
     const Json& mapIn = generated_.isObject() ? generated_ : map;
-    if (rules_.bwAI) bwAI_ = loadBwAIConfig(rulesJson["ai"], mapIn, rules_);   // agent-bw-ai: rules ai.bw + map "ai"
+    aiKind_ = findAIController(rules_.aiController);   // null for builtin / scripted
+    aiConfig_ = aiKind_ && aiKind_->load ? aiKind_->load(rulesJson["ai"], mapIn, rules_) : nullptr;   // rules ai.<controller> + map "ai"
     matchMap_ = mapIn;
     setupMap(sim, mapIn);
     loadTriggers(rules_, rulesJson, mapIn, triggers_);
@@ -1164,7 +1164,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
     if (cmd.type == kCmdScript) { script_->runCommand(sim, cmd); return; }   // rules "commands" (RtsScriptCommands.cpp)
     if (cmd.type == kCmdAutoBuild) { script_->callStd(sim, StdFn::AutoBuild, {cmd.player, cmd.param}); return; }   // lua/commands.lua
 
-    if (cmd.type == kCmdSend && hypnotisedFlagSend(sim, cmd)) return;   // agent-bw-ai: BW PointsHypnosis
+    if (cmd.type == kCmdSend && hypnotisedSend(sim, cmd)) return;   // send out of a hypnotised garrison
     std::vector<Entity> sel;
     if (cmd.type == kCmdSend && rules_.advancedEffects && hypnoticSend(sim, cmd)) return;   // a hypnotised garrison (RtsSkillObjects.cpp)
     for (Entity e : cmd.units) {

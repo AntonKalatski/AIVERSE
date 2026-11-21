@@ -113,7 +113,7 @@ struct BwTrigger {
     std::vector<Group> groups;
 };
 
-struct BwAIConfig {
+struct BwAIConfig : AIControllerConfig {
     std::map<std::string, BwProfile> profiles;            // by name (easy, normal, hard, expert + custom)
     std::string defaultProfile = "normal";
     std::map<int, std::string> slotProfile;              // slot -> profile name
@@ -130,6 +130,8 @@ struct BwAIConfig {
 };
 // rules ai.bw (+ map "ai" block): throws std::runtime_error("ai.bw...: ...") with a readable message.
 std::shared_ptr<const BwAIConfig> loadBwAIConfig(const Json& rulesAi, const Json& map, const Rules& R);
+// Registers the controller "bw" (pointStats on): called by registerGameExtensions().
+void registerBwAIController();
 
 // ---- one think's view of the battle (points, players, groups in transit); built from the simulation
 struct BwPoint {
@@ -181,11 +183,13 @@ struct BwRoutes {
     std::vector<int> roadsInRange;                              // per tower point, -1 unknown
 };
 
-class BwAI {
+// Registered as the computer controller "bw" (rules ai.controller "bw", settings ai.bw + map "ai").
+class BwAI : public AIController {
 public:
     BwAI(uint8_t player, uint64_t seed) : player_(player), rng_(seed ^ 0xb3a1u, player) {}
-    void update(Simulation& sim, RtsModule& m);
-    void stateIo(Archive& a);
+    std::unique_ptr<AIController> clone() const override { return std::make_unique<BwAI>(*this); }
+    void update(Simulation& sim, RtsModule& m) override;
+    void stateIo(Archive& a) override;
 
     struct Ctx;   // per-update context (RtsBwAIInternal.h)
     // The bot's state below is plain data shared by the RtsBwAI*.cpp files (saved by stateIo).
