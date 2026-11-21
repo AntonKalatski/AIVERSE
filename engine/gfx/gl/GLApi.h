@@ -194,6 +194,8 @@
   #include <OpenGL/gl3.h>
 #elif defined(__EMSCRIPTEN__)
   #include <GLES3/gl3.h>
+  // WebGL2 getBufferSubData (Emscripten library_webgl2.js); GLES3 headers omit it.
+  extern "C" void glGetBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, void* data);
 #else
   #include <GLES3/gl3.h>
 #endif

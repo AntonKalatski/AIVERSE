@@ -20,6 +20,7 @@ public:
     void prepareGpuFrame(float, const render::RTSCamera&) {}
     void renderGpu(const render::mat4&, const render::RTSCamera&) {}
     void render(const render::Lighting&) {}
+    void renderPrepared(const render::Camera3D&, const render::mat4&, int, int, const render::Lighting&) {}
     int quality() const { return 0; }
     void setQuality(int) {}
     void playEffect(const std::string&, float, float, float) {
