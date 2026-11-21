@@ -100,7 +100,7 @@ res = {}
 def stats(tag, **cam):
     shot2(tag, 1280, 720, **cam); time.sleep(1.5); shot2(tag, 1280, 720, **cam)
     st = call("geometry_stats")
-    res[tag] = {k: st.get(k) for k in ("drawCalls", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs")}
+    res[tag] = {k: st.get(k) for k in ("drawCalls", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata")}
     print("STATS", tag, json.dumps(res[tag]), flush=True)
 idx = 10; x, z, half = centre[idx]; (nx, nz), (fx, fz) = side(idx)
 bx, bz = x + nx * (half + 6), z + nz * (half + 6)

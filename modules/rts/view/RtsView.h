@@ -536,6 +536,8 @@ public:
     bool muzzleOf(Entity e, render::float3& pos, render::float3& dir) const;
     // Problems found while loading view blocks ("type 'knight': models/knight.glb: file not found").
     const std::vector<std::string>& warnings() const { return warnings_; }
+    // Read-only static geometry scene (HLOD / opt-in STRATA counters).
+    const render::GeometryScene& geometryScene() const { return geometryScene_; }
     const render::Model* modelOf(uint16_t type, size_t choice = 0) const;
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }

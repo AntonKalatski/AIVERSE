@@ -262,6 +262,23 @@ void Editor::registerGuiOps() {
         r.set("ssrRaymarch",Json::fromBool(r3d_.ssrActive() && r3d_.traceActive()));
         r.set("nereidConfiguredSurfaces",Json::number(int64_t(nereidPreview_.configuredSurfaces())));
         r.set("sunShadowModelTriangles",Json::number(int64_t(r3d_.profile().triangles[0])));
+        {   // Static geometry scene: opt-in STRATA virtual geometry counters.
+            const auto& g=view_.geometryScene().stats();auto st=Json::object();
+            st.set("enabled",Json::fromBool(view_.geometryScene().strataPortableRenderingEnabled()));
+            st.set("portableSources",Json::number(int64_t(g.strataPortableSources)));
+            st.set("portableDeclined",Json::number(int64_t(g.strataPortableDeclined)));
+            st.set("portableDraws",Json::number(int64_t(g.strataPortableDraws)));
+            st.set("portableFallbacks",Json::number(int64_t(g.strataPortableFallbacks)));
+            st.set("portableClusters",Json::number(int64_t(g.strataPortableClusters)));
+            st.set("nodes",Json::number(int64_t(g.strataNodes)));
+            st.set("failures",Json::number(int64_t(g.strataFailures)));
+            st.set("stagedSources",Json::number(int64_t(g.strataSources)));
+            st.set("skippedSources",Json::number(int64_t(g.strataSkippedSources)));
+            st.set("seamUnsafeDeclined",Json::number(int64_t(g.strataSeamUnsafeDeclined)));
+            st.set("globalBudgetDeclined",Json::number(int64_t(g.strataGlobalBudgetDeclined)));
+            st.set("instances",Json::number(int64_t(view_.geometryScene().instanceCount())));
+            r.set("strata",st);
+        }
         // Reuse completed host-owned queries only; do not poll, wait or add
         // GPU timestamps from the agent callback. Keep viewport and whole
         // frame scopes separate and omit unsupported/absent samples.
