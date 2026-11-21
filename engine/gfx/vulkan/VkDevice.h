@@ -224,6 +224,7 @@ public:
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
     bool captureTexture(TextureHandle source,CaptureFn callback) override;
+    bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) override;
 
     void beginPass(const PassDesc& d) override;
     bool supportsRenderTargetPasses() const override { return true; }
@@ -244,9 +245,17 @@ public:
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
 
+    // Single compute-authored draw: Indirect or Storage argument buffers
+    // (both carry INDIRECT + STORAGE usage), no multiDrawIndirect needed.
+    bool supportsGpuAuthoredIndirectDraw() const override {
+        return drawIndirectFirstInstance_ && supportsCompute();
+    }
     bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override;
 
 private:
+    // Shared encoder of validated indexed-indirect draws (VkDraw.cpp).
+    bool encodeIndexedIndirect(BufferHandle commands, size_t offset,
+                               uint32_t drawCount, uint32_t stride);
     // GfxVulkan.cpp
     bool createInstance(bool wantSurface, std::string& error);
     bool pickDevice(std::string& error);
@@ -256,11 +265,15 @@ private:
     void ensureBackBuffer(int w, int h);
     void prepareSlot();                          // waits for the slot's previous frame, resets its pools
     void collectGarbage();
+    void deliverPixelReads();  // called on owner thread at next beginFrame
     void present();
     void readBackBuffer();
     void completeTextureCaptures(FrameSlot& slot,bool succeeded);
     void deliverTextureReads();
     void deliverComputeReadbacks();
+    // After device loss no fence signals again: complete every accepted
+    // texture / buffer readback exactly once with an empty failure result.
+    void failPendingReadsAfterDeviceLoss();
     void shutdownCompute();
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
@@ -303,6 +316,7 @@ private:
     DeviceInfo info_;
     std::string error_;
     bool multiDrawIndirect_ = false;
+    bool drawIndirectFirstInstance_ = false;
     bool cubeArray_ = false;
     bool computeQueue_ = false;
     bool samplerAnisotropy_ = false;
@@ -347,6 +361,13 @@ private:
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;
     CaptureFn capture_;
+    struct PixelRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc{};
+        uint64_t serial = 0;
+        PixelReadFn callback;
+    };
+    std::vector<PixelRead> pixelReads_;
 
     // resources
     Pool<VBuffer> buffers_;
@@ -394,6 +415,10 @@ private:
         PixelFormat format = PixelFormat::RGBA8;
         uint64_t serial = 0;
         TextureReadFn callback;
+        // RHI render targets are stored bottom-up (GL convention); flip
+        // them to the documented top-left row order. Uploaded/storage
+        // images already have CPU row order.
+        bool flipRows = false;
     };
     std::vector<TextureRead> textureReads_;
 

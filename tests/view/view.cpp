@@ -1,6 +1,7 @@
 #include "engine/view/View.h"
 #include "../AlwaysCheck.h"
 #include <cmath>
+#include <stdexcept>
 #include <type_traits>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -39,6 +40,19 @@ int main() {
     AIVERSE_TEST_CHECK(view.presentation().get<lib::animation::AnimationPoseComponent>(id).valid);
     AIVERSE_TEST_CHECK(view.presentation().get<lib::animation::AnimationInputsComponent>(id)
         .overrides.values.at("intensity")==.5f);
+    // A rejected batch (duplicate animated source ID) must leave the View
+    // untouched: no stats reset, no frame stamp / LOD hysteresis advance.
+    {
+        std::vector<view::Object> invalid{animated,animated};
+        bool threw=false;
+        try {(void)view.update(invalid,.016f);}
+        catch(const std::invalid_argument&) {threw=true;}
+        AIVERSE_TEST_CHECK(threw);
+        AIVERSE_TEST_CHECK(view.stats().drawable==2);
+        AIVERSE_TEST_CHECK(view.stats().animated==1);
+        AIVERSE_TEST_CHECK(view.stats().source.created==1);
+        AIVERSE_TEST_CHECK(view.presentation().alive(view.presentationEntity(101)));
+    }
     animated.generation++;
     objects[0]=animated;
     result=view.update(objects,.016f);

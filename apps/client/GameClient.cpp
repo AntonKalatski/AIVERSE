@@ -1,3 +1,4 @@
+#include "engine/ui/RaceHud.h"
 #include "engine/platform/WindowSettings.h"
 #include "engine/render/PrismaVolumeData.h"
 #include "modules/rts/RtsInitialVars.h"
@@ -281,11 +282,19 @@ void GameClient::applyLanguage(const std::string& tag, bool save) {
 void GameClient::shutdown() {
     // Preserve the MotionWeave device lease and shutdown contract.
     // The additional camera resources must retire before Renderer3D dies.
+    // A failed GPU idle must not abort the rest of the shutdown (audio, net,
+    // UI, renderer): log it and leak the LENS targets instead of destroying
+    // textures the GPU may still use.
     if(lensCamerasActive_) {
-        if(!dev_ || !dev_->waitForResourceIdle())
-            throw std::runtime_error("LENS client: GPU did not reach idle");
-        lensCameras_.shutdownAfterGpuIdle();
         lensCamerasActive_=false;
+        try {
+            if(!dev_ || !dev_->waitForResourceIdle())
+                std::fprintf(stderr,"[lens] shutdown: GPU did not reach idle; LENS render targets leaked\n");
+            else
+                lensCameras_.shutdownAfterGpuIdle();
+        } catch(const std::exception& e) {
+            std::fprintf(stderr,"[lens] shutdown failed (%s); LENS render targets leaked\n",e.what());
+        }
     }
     loadingSplash_.shutdown();
     net_.reset(); // detaches from the simulation before it goes away
@@ -1356,6 +1365,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
         topDownDraw();
+        // races (rules "race" + map "race", docs/races.md): the same HUD as every other client
+        if (auto* drv = mod().driving(); drv && drv->racing(*sim_))
+            ui::drawRaceHud(loc_, drv->raceView(*sim_, human_), sim_->tick(), sim_->tickRate());
     } else {
         pass.clearColor[0] = 0.10f; pass.clearColor[1] = 0.12f; pass.clearColor[2] = 0.14f;
         dev.beginPass(pass);

@@ -57,6 +57,8 @@ Without `--listen` the first instance takes MCP port `47321`; if the port is bus
 a free one. The actual port is shown in the status bar; the **Agent** window adds it to the connection
 config (`aiversemcp --port <port>`). An automatically assigned port may change after the editor restarts.
 `--listen <port>` pins an exact port (on conflict MCP does not start), `--listen 0` disables MCP.
+The link is authenticated with a per-session token file next to the port
+(`~/.aiverse/agent-link/<port>.token`, owner-only); see [mcp-agent-link.md](mcp-agent-link.md).
 Existing MCP clients do not switch between windows on their own.
 
 ## Building for platforms — aiversebuild
@@ -146,7 +148,7 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 For packaged client builds, `packaging.engineModules` can select optional native
 engine modules. Omitting the field keeps the historical defaults; an explicit
-empty array disables all eleven selectable modules. The supported names are
+empty array disables all twelve selectable modules. The supported names are
 `auto` (detect modules from project assets and settings),
 `strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
 at runtime), `vulkan` (Windows, Linux, Android only), `spine` (Spine UI
@@ -154,9 +156,11 @@ animation and its Lua API), `gamepad` (controller input and action bindings),
 `fx` (SpectraFX particles and the RTS effect bridge), `fbx` (runtime FBX
 import using ufbx), `legacy-models` (runtime VOX/VXL, PLY/STL, 3DS,
 DAE, MDX/MDL, 3DO and W3D loaders), `obj` (runtime OBJ loader), `blp`
-(BLP1/BLP2 texture decoding), and `city-client` (persistent city server client).
+(BLP1/BLP2 texture decoding), `city-client` (persistent city server client),
+and `traffic` (city traffic simulation, rules `"traffic"`).
 `["auto"]` selects Spine and gamepad from `game.json`, FX from project JSON
-and FX assets, and model importers/BLP from source files. A model with a
+and FX assets, model importers/BLP from source files, and traffic from an
+enabled `traffic` block in the composed rules. A model with a
 `<source>.glb` sidecar does not need its source-format loader. Detection is
 conservative: unused source files may keep a loader in the build, while
 runtime-generated paths, script-only calls, city connections, Strata and
@@ -191,6 +195,17 @@ by model files. Without it, convert those textures before packaging. Host
 conversion tools retain BLP support.
 Declare `city-client` if the game uses the `AIVERSE_CITY` server connection.
 With the module excluded, setting `AIVERSE_CITY` produces an error when a match starts.
+Declare `traffic` (or use `auto`) if the rules enable `traffic`. Without it the
+simulation compiles a small adapter: games without traffic run, hash and save
+exactly as before, the `game.traffic_*` Lua queries return nil, and rules that
+enable traffic fail at match start with a readable error. The packager rejects
+such rules when the module is excluded. The switch (`AIVERSE_GAME_WITH_TRAFFIC`)
+is for packaged clients only; the editor, tests, headless runner and servers
+keep the full simulation.
+Measured Web Release `index.wasm` (Emscripten 3.1.50, `templates/skirmish`,
+2026-11-21): legacy defaults 17.22 MB (brotli 4.10 MB); the eleven
+earlier switches off 15.43 MB (brotli 3.62 MB); `[]` including `traffic` off
+14.95 MB (brotli 3.50 MB).
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

@@ -526,3 +526,11 @@ Codec8c0c108c, feature/aiv87_terrain_pbr. Removed unused full MapGrid/scene fing
 ## 2026-11-21 NEREID local flow renderer connection
 
 Codeff84b6648bd3825eea62471614611fced9f196fc, test6402e0bbd28ceffa575a86ee283d4c1841322920. Lit mesh U0/reflection U0 append flow rectangle (672B), texture slots6->7 with flow at6 and white fallback. PBR ModelU2/GI/terrain bindings unchanged. Captured water packets retain an immutable flow lifetime lease; shutdown revocation checked before mesh use, normal old version retires after CPU release+GPU fence. No extra draw/segment, unsafeICB flags or batching defaults changed. NativeEditor/Studio buildPASS,22Metal/GL bent-current capturesPASS, GLES/GLSL14linked variantsPASS,4NEREIDCTest+440LENSchecksPASS. Full evidence and limitations: docs/nereid/HANDOFF.md latest entry. No GPU performance improvement or full retained-camera Metal pixel claim. Native initial graph compilation first120-frame average is startup, not steady runtime.
+
+## 2026-11-21 — VIVID skinned fixed-PCF visual repair
+
+Implementation `93fb42cbd79a4c3877bf6f460331d9733d907e33`, integration/motionweave-studio-facial-stage184. No batching/RHI/timing changes. Shaders.h GLSL/MSL suppress receiver-plane extrapolation on SKINNED/BAKED fixed-PCF surfaces, with bounded footprint-dependent normal offset1..4x. Rigid floor/cyclorama slope correction and PCSS unchanged. Creator/Studio Metal builds and native Bruce/Ada captures PASS, glslang12/12 syntax PASS. This is visual acne mitigation, not performance or Vulkan/mobile parity evidence. Detailed failure experiments/artifacts/limits: docs/qa/vivid-bruce-clothing-2026-11-21.md. Keep experimental ICB defaults unchanged.
+
+## 2026-11-21 — human studio backdrop receiver-only host flag
+
+Implementation `ba0f89312774dbd21ecafa52cc12f87f88ca578a` on integration/motionweave-studio-facial-stage184 sets existing kDrawNoCastShadow only for the VIVID cyclorama in Creator/Studio facial view. Background still receives character shadows. No common renderer, cache, RHI, batching or timing edits; no ICB default changes. Native eight-light and pose captures on Metal plus Creator/Studio builds verified; no performance/Vulkan claims. Evidence and limits: docs/qa/vivid-wardrobe-regression-2026-11-21.md.

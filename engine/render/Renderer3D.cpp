@@ -561,6 +561,12 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     strataPreviewStats_ = {}; // diagnostic preflight never persists across scenes
     maintainIndirectLayoutCaches(); // prune unused layouts even in empty scenes
+    modelDrawInvocation_=0; // frame-scoped Renderer3D source instance IDs
+    trackedModels_.fill(nullptr);
+    trackedModelCount_=0;
+    modelSubmitted_.clear();
+    modelSubmissionTruncated_=false;
+    modelSubmissionMainEncoded_=false;
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
     // material identity across frames, asset reloads or another viewport.
@@ -640,7 +646,11 @@ void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32
     items_.push_back({&m, model, color, flags, specular, emissive});
     // Specialized water/selection draw variants carry extra state that a
     // plain mesh packet cannot replay; skip those until their own packets exist.
-    if(geometryPacketTap_ && !suppressGeometryTap_ && !(flags&kDrawWaterSurface))
+    // A NEREID cascade sheet is a plain drawMesh (no ripple/wake/hydraulic
+    // state), so its Mesh packet with the original flags replays exactly.
+    const bool plainWater=(flags&kDrawNereidCascade)!=0;
+    if(geometryPacketTap_ && !suppressGeometryTap_ &&
+       (!(flags&kDrawWaterSurface) || plainWater))
         geometryPacketTap_({CameraGeometryCommand::Kind::Mesh,&m,model,
                             color,flags,specular,emissive});
 }
@@ -2306,6 +2316,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // twice when the same visible surface is drawn for another target.
     const uint32_t opaqueStart = profile_.triangles[1];
     renderModels(1);
+    // This is the actual main-camera opaque pass; before this point
+    // modelViewProvenance describes staging decisions only.
+    modelSubmissionMainEncoded_=true;
     profile_.cameraModelTriangles += uint32_t(profile_.triangles[1] - opaqueStart);
     if (!sceneSelectionOutline_) renderModels(3); // legacy game outline; editor uses a depth-tested mask
     if (capture) {

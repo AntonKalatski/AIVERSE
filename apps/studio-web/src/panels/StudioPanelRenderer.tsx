@@ -29,6 +29,7 @@ import RuntimePanel from './generated/RuntimePanel';
 import NereidFlowPanel from './generated/NereidFlowPanel';
 
 import WindPanel from './generated/WindPanel';
+import HumanAppearancePanel from './generated/HumanAppearancePanel';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
@@ -146,6 +147,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'runtime': return <RuntimePanel snapshot={snapshot}/>;
       case 'nereid_flow': return <NereidFlowPanel snapshot={snapshot}/>;
       case 'wind': return <WindPanel snapshot={snapshot}/>;
+      case 'human_appearance': return <HumanAppearancePanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
       case 'animation':

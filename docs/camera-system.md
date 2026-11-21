@@ -1,5 +1,5 @@
 # AIVERSE LENS — genre-independent ECS cameras and multi-camera capture
-Updated: 2026-11-20. Current integration: `codex/lens-completion`.
+Updated: 2026-11-21. Current integration: `main`; P2 work on `feature/aiv20261121_lens_p2`.
 
 ## Current implementation and validation
 
@@ -33,8 +33,17 @@ Legacy material-paint and field-visual caches are host providers outside that
 transaction. The ordinary noncapture host path is preserved. Vulkan/GLES
 runtime parity, broad genre acceptance and camera-count performance stress
 must be verified on their target platforms before making those claims.
-Physical exposure/DOF, EXR/video export, stereo/OpenXR and the complete P2 list
-below are roadmap items, not implied by completion of this integration.
+LENS P2 (2026-11-21, branch `feature/aiv20261121_lens_p2`) adds: a physical
+lens that drives per-camera PRISMA manual exposure and defocus
+(`CameraLensPhysics.h`, `CameraLensComponent::driveExposure/driveDepthOfField`),
+cinematic rails with centripetal Catmull-Rom, closed loops, constant speed and
+ease, seeded noise shake on six axes (`CameraRailPath.h`), and linear HDR EXR
+frame sequences from RGBA16F targets (`CameraExr.h`, `CameraHdrFrameRecorder`).
+The `lens`, `rail` and `shake` blocks are part of cameras.json. Exposure is
+relative to the default lens (f/2.8, 1/60 s, ISO 100), because AIVERSE scenes
+are not photometrically calibrated. Video encoding, stereo/OpenXR runtime
+integration and physical bokeh remain roadmap items. Status and tests:
+[LENS P2 handoff](agent-handoffs/lens-p2-2026-11-21.md).
 
 The sections below retain the original design and staged implementation
 history. Their older “planned / NOT RUN” labels describe those checkpoints;
@@ -51,14 +60,19 @@ The existing aiversemcp server and native editor share these Workspace operation
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `lens_scene_get` | none; project must be open | scene, exists, validation, normalizedScene, clientEnabled |
+| `lens_scene_get` | none; project must be open | scene, revision, exists, validation, normalizedScene, clientEnabled |
 | `lens_scene_validate` | scene | native loader validation, normalizedScene, count, clientCompatible |
-| `lens_scene_set` | scene, expectedScene | validated complete asset replacement |
-| `lens_camera_set` | camera, expectedScene | create/replace one complete record by stable id |
-| `lens_camera_delete` | id, expectedScene | remove one existing record |
+| `lens_scene_set` | scene, expectedRevision or expectedScene | validated complete asset replacement |
+| `lens_camera_set` | camera, expectedRevision or expectedScene | create/replace one complete record by stable id |
+| `lens_camera_delete` | id, expectedRevision or expectedScene | remove one existing record |
 
-Call open_game first. Pass the last get response's **scene**, not normalizedScene,
-as expectedScene. Stale edits fail; re-read and reconcile before retrying. Writes
+Call open_game first. Pass the last get response's **revision** (an opaque hash of
+the file bytes, `"missing"` without a file) as expectedRevision; successful writes
+return the new revision. expectedScene (the get response's **scene**, not
+normalizedScene) is still accepted and compared by value: member order and number
+spelling (`1` / `1.0`) are ignored. Stale edits fail; re-read and reconcile before
+retrying. The loader also rejects duplicate texture output keys, width xor height
+0 and texture outputs above 64 Mpix in total (`kCameraSceneMaxTexturePixels`). Writes
 save cameras.json immediately with staged replacement; they do not enter editor
 undo. Reload the native LENS window before saving its in-memory state, and restart
 the client. No live camera/GPU resource is destroyed by these tools, and game.json
@@ -162,7 +176,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 ## 5. Roadmap
 - **P0**: generic `Camera` (stage 1 source migration, not compile validated), portrait extraction, ECS camera entities (Stage 3 snapshot bridge), RenderTarget asset, camera-to-RT, independent screen camera, manual/every-frame capture, two-camera output example, tests.
 - **P1**: policy scheduler, camera stack, director and rigs, persistent ECS schema/serialization, editor camera window, per-view PostFX and temporal state, layer masks/culling and profiling, split-screen.
-- **P2**: physical lens/DOF, cubemap and panoramas, HDR EXR/capture sequences, planar mirrors/portals, camera shakes and cinematic rails, stereo/OpenXR.
+- **P2**: physical lens/DOF (done: exposure + thin-lens DoF through PRISMA), cubemap and panoramas (`CameraPanorama.h`), HDR EXR/capture sequences (done: `CameraExr.h`, `CameraHdrFrameRecorder`), planar mirrors/portals (`CameraCaptureViews.h`), camera shakes and cinematic rails (done: `CameraRailPath.h`), stereo/OpenXR (SDK-independent eye views in `CameraXrViews.h`; runtime integration open).
 - Capture output should support environment-dependent clear/load/store, MSAA resolve, high-DPI size, orientation and backend Y-flip rules.
 
 ## 6. External libraries

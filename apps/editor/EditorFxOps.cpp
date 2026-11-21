@@ -180,10 +180,20 @@ void Editor::registerFxPreviewOps() {
                     instanceParams[it->second.slot]=float(value.toDouble());
                 }
             render::RTSCamera& cam=playing()?gameCam:sceneCam;
+            // x/y/z become the camera target and the emitter position: reject
+            // non-numbers, NaN/inf and absurd magnitudes before using them.
+            const auto coordinate=[&](const char* key,float fallback)->float {
+                if(!p.has(key) || p[key].isNull())return fallback;
+                const double v=p[key].toDouble(std::nan(""));
+                if(!p[key].isNumber() || !std::isfinite(v) || std::abs(v)>1.0e7)
+                    throw std::runtime_error(std::string("fx_graph_preview: ")+key+
+                        " must be a finite number within +-1e7");
+                return float(v);
+            };
             const fx::float3 pos{
-                p.has("x")?float(p["x"].toDouble()):cam.target.x,
-                p.has("y")?float(p["y"].toDouble()):cam.target.y,
-                p.has("z")?float(p["z"].toDouble()):cam.target.z
+                coordinate("x",cam.target.x),
+                coordinate("y",cam.target.y),
+                coordinate("z",cam.target.z)
             };
             cam.target={pos.x,pos.y,pos.z};
             if(!playing())sceneFlying_=false;
@@ -223,7 +233,9 @@ void Editor::registerFxPreviewOps() {
             const fx::FxHandle handle=gameFx_.playWithProgramParameters(
                 id,pos,{0,1,0},1.f,{1,1,1,1},instanceParams);
             if(!handle.valid())throw std::runtime_error("SpectraFX preview could not start (culling or particle quality)");
-            const float advance=std::clamp(float(p["advance"].toDouble(0.12)),0.f,10.f);
+            double advanceSeconds=p["advance"].toDouble(0.12);
+            if(!std::isfinite(advanceSeconds))advanceSeconds=0.12; // NaN would make the loop count UB
+            const float advance=std::clamp(float(advanceSeconds),0.f,10.f);
             for(int i=0;i<int(advance*60.f);++i)gameFx_.update(1.f/60.f);
             fxFrozen_=p.getBool("freeze");
             fxPreview_={runtimeName,pos,1.f,{1,1,1,1},p.getBool("loop"),handle,

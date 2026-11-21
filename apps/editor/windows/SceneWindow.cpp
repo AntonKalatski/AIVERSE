@@ -363,6 +363,7 @@ public:
                          (hovered.kind == Selection::FpsObject &&
                           (ed.selection == hovered || fpsDragKeepSelection_)));
                     fpsDragEdited_ = false;
+                    fpsDragSnapshot_ = false;
                     fpsDragLastX_ = io.MousePos.x;
                     fpsDragLastY_ = io.MousePos.y;
                 }
@@ -404,7 +405,7 @@ public:
                                 }
                             }
                             if (patch.size() > 0) {
-                                if (!fpsDragEdited_) ed.doc().beginEdit();
+                                if (!fpsDragSnapshot_) { ed.doc().beginEdit(); fpsDragSnapshot_ = true; }
                                 fpsDragEdited_ = writeDocumentComponent(
                                     ed.doc(), ref, DocumentComponentKind::Transform,
                                     patch) || fpsDragEdited_;
@@ -438,7 +439,7 @@ public:
                     }
                     if (valid && (std::abs(dx) > 1e-5f ||
                                   std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f)) {
-                        if (!fpsDragEdited_) ed.doc().beginEdit();
+                        if (!fpsDragSnapshot_) { ed.doc().beginEdit(); fpsDragSnapshot_ = true; }
                         fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) ||
                                          fpsDragEdited_;
                     }
@@ -479,6 +480,7 @@ public:
 
 private:
     bool fpsDragActive_ = false, fpsDragEdited_ = false;
+    bool fpsDragSnapshot_ = false;   // one undo snapshot per drag, even while writes fail
     bool fpsDragKeepSelection_ = false;
     int fpsGizmoAxis_ = -1;
     Selection fpsDragClicked_;

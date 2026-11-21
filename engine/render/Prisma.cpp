@@ -144,6 +144,7 @@ PrismaQuality Prisma::defaultQualityFor(const gfx::Device& dev, bool mobile) {
 bool Prisma::init(gfx::Device& dev) {
     checkGpuDevice(dev);
     dev_ = &dev;
+    hdrFailed_ = false; hdrFailedSizes_.clear(); hdrFailedError_.clear();
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
     triangle_ = dev.createBuffer(bd);
@@ -208,6 +209,7 @@ void Prisma::retireView(uint64_t id) {
     viewExposureFreeze_.erase(id);
     viewExposureMeterRegions_.erase(id);
     viewManualExposure_.erase(id);
+    viewDepthOfField_.erase(id);
     if (auto it = temporalViews_.find(id); it != temporalViews_.end()) {
         for (auto& h : it->second.history) retireTarget(h);
         temporalViews_.erase(it);
@@ -655,6 +657,23 @@ void Prisma::setViewManualExposure(uint64_t id, bool enabled, float ev) {
 void Prisma::clearViewManualExposure(uint64_t id) {
     if (viewManualExposure_.erase(id)) resetAutoExposure(id);
 }
+void Prisma::setViewDepthOfField(uint64_t id, DepthOfFieldOverride d) {
+    // Same bounds as the depthOfField catalog parameters.
+    const auto safe = [](float v, float lo, float hi, float fallback) {
+        return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
+    };
+    d.focusDistance = safe(d.focusDistance, 0.05f, 2000.0f, 12.0f);
+    d.focusRangeMeters = safe(d.focusRangeMeters, 0.01f, 500.0f, 4.0f);
+    d.maxBlur = safe(d.maxBlur, 0.0f, 16.0f, 8.0f);
+    viewDepthOfField_[id] = d;
+}
+void Prisma::clearViewDepthOfField(uint64_t id) { viewDepthOfField_.erase(id); }
+bool Prisma::viewDepthOfField(uint64_t id, DepthOfFieldOverride& out) const {
+    auto it = viewDepthOfField_.find(id);
+    if (it == viewDepthOfField_.end()) return false;
+    out = it->second;
+    return true;
+}
 
 // Allocate everything that an output-size temporal resolve requires BEFORE
 // jittering any world geometry. A failed allocation returns the host to the
@@ -1054,13 +1073,7 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     RuntimeCapabilities out;
     out.deviceHealthy=dev_ && dev_->gpuHealthy() && enabled_ && settings_.enabled;
     out.hdrFormatSupported=dev_ && dev_->supports(gfx::PixelFormat::RGBA16F);
-    HdrMode authoredHdr=settings_.hdr;
-    if (const char* flag=std::getenv("AIVERSE_HDR")) {
-        const std::string mode=flag;
-        if (mode=="off" || mode=="0") authoredHdr=HdrMode::Off;
-        else if (mode=="on" || mode=="1") authoredHdr=HdrMode::On;
-    }
-    out.hdrAuthoredRequested=authoredHdr!=HdrMode::Off;
+    out.hdrAuthoredRequested=hdrModeWithEnv(settings_.hdr)!=HdrMode::Off;
     out.hdrRequested=hdrRequested();
     out.hdrEffectiveLastFrame=hdrFrame_ && stats_.width>0 && sceneReady_;
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
@@ -1097,6 +1110,10 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     else if (!dev_->gpuHealthy()) out.fallbackReason="GPU device lost";
     else if (!enabled_ || !settings_.enabled) out.fallbackReason="Prisma disabled";
     else if (!out.hdrFormatSupported) out.fallbackReason="RGBA16F unavailable";
+    else if (hdrFailed_)
+        out.fallbackReason=hdrFailedError_.empty() ?
+            std::string("HDR target allocation failed") :
+            "HDR target allocation failed: "+hdrFailedError_;
     else if (!out.hdrRequested) out.fallbackReason="HDR disabled or tier insufficient";
     else if (out.temporalRequested && quality_!=PrismaQuality::High)
         out.fallbackReason="Temporal HDR requires High quality";
@@ -1124,14 +1141,17 @@ bool Prisma::canonicalTemporalRequested() const {
 
 bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PrismaQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
-    HdrMode mode = settings_.hdr;
+    return hdrAtQuality(hdrModeWithEnv(settings_.hdr), quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
+}
+
+HdrMode Prisma::hdrModeWithEnv(HdrMode authored) {
     if (const char* e = std::getenv("AIVERSE_HDR")) {
         const std::string v = e;
-        if (v == "off" || v == "0") mode = HdrMode::Off;
-        else if (v == "on" || v == "1") mode = HdrMode::On;
-        else if (v == "auto") mode = HdrMode::Auto;
+        if (v == "off" || v == "0") return HdrMode::Off;
+        if (v == "on" || v == "1") return HdrMode::On;
+        if (v == "auto") return HdrMode::Auto;
     }
-    return hdrAtQuality(mode, quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
+    return authored;
 }
 
 bool Prisma::active() const {
@@ -1261,8 +1281,11 @@ gfx::PipelineHandle Prisma::program(Prog p) {
     return pipes_[p];
 }
 
-gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
-    const std::string key = std::to_string(mask) + (graphData ? graphData->dump(-1) : "");
+gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData,
+                                      const std::string* graphKey) {
+    const std::string graphText = graphData ?
+        (graphKey ? *graphKey : graphData->dump(-1)) : std::string();
+    const std::string key = std::to_string(mask) + graphText;
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
@@ -1281,7 +1304,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (graphData) {
         try {
             graphProgram=graph::compile(*graphData,"postfx");
-            graphPaths_[graphData->dump(-1)]=graphProgram.textures;
+            graphPaths_[graphText]=graphProgram.textures;
             const std::string marker="    RETURN(vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0));";
             std::string macros="\n#define SG_SAMPLE(uv) TEX0(TUV(uv))\n";
             for(size_t i=0;i<graphProgram.textures.size();++i) {
@@ -1391,6 +1414,11 @@ gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
 
 gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     if(dev_)checkGpuDevice(*dev_);
+    // A failed HDR allocation is not retried every frame for the same
+    // size, but a new size gets a fresh attempt (quality changes and
+    // init() forget all failures).
+    hdrFailed_ = std::find(hdrFailedSizes_.begin(), hdrFailedSizes_.end(),
+                           std::pair<int,int>{w, h}) != hdrFailedSizes_.end();
     hdrFrame_ = hdrRequested();
     Sized& s = sized(w, h);
     gfx::PassDesc p = out;
@@ -1400,7 +1428,10 @@ gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     sceneReady_ = p.colorTarget.valid() && p.depthTarget.valid();
     if (!sceneReady_ && hdrFrame_) {
         hdrFailed_ = true; hdrFrame_ = false;
-        std::fprintf(stderr, "[postfx] HDR allocation failed; falling back to RGBA8: %s\n", dev_->lastError().c_str());
+        if (hdrFailedSizes_.size() >= 16) hdrFailedSizes_.erase(hdrFailedSizes_.begin());
+        hdrFailedSizes_.emplace_back(w, h);
+        hdrFailedError_ = dev_ ? dev_->lastError() : std::string{};
+        std::fprintf(stderr, "[postfx] HDR allocation failed; falling back to RGBA8: %s\n", hdrFailedError_.c_str());
         return scenePass(out, w, h);
     }
     if (!sceneReady_) return out;
@@ -1858,8 +1889,13 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // sampled, so a separate scratch depth attachment is used for this pass.
     if (const PrismaEffect* dof = find(PrismaType::DepthOfField)) {
         const char* flag = std::getenv("AIVERSE_PRISMA_DOF");
+        const auto lensDof = viewDepthOfField_.find(viewId_);
+        const bool lensOverride = lensDof != viewDepthOfField_.end();
+        const float dofMaxBlur = lensOverride ? lensDof->second.maxBlur
+                                              : dof->get("maxBlur");
         if (flag && std::strcmp(flag, "1") == 0 &&
-            dof->get("intensity") > 0.0f && dof->get("maxBlur") > 0.0f &&
+            (!lensOverride || lensDof->second.enabled) &&
+            dof->get("intensity") > 0.0f && dofMaxBlur > 0.0f &&
             program(kDepthOfField).valid()) {
             const Target destination = target(set, kDof, w, h);
             const auto sceneDepth = depthFor(set, w, h);
@@ -1869,7 +1905,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 DepthOfFieldU dofU{};
                 put(dofU.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
                 put(dofU.p0, dof->get("focusDepth"),
-                    dof->get("focusRange"), dof->get("maxBlur"),
+                    dof->get("focusRange"), dofMaxBlur,
                     dof->get("intensity"));
                 // RHI depth uses non-reversed window [0,1] on GL/Metal.
                 // Orthographic bounds may be signed (e.g. -200..1000);
@@ -1878,13 +1914,17 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     std::isfinite(f.depthNear) && std::isfinite(f.depthFar) &&
                     f.depthFar > f.depthNear + 0.0001f &&
                     (f.orthographic || f.depthNear > 0.0f);
-                const bool metricRequested = dof->get("metricFocus") > 0.5f;
+                const bool metricRequested =
+                    lensOverride || dof->get("metricFocus") > 0.5f;
                 const bool useMetricFocus = metricRequested && projectionValid;
                 dofMetricRequested = metricRequested;
                 put(dofU.depthInfo, f.depthNear, f.depthFar,
                     f.orthographic ? 1.0f : 0.0f, 0.0f);
-                put(dofU.focusInfo, dof->get("focusDistance"),
-                    dof->get("focusRangeMeters"),
+                put(dofU.focusInfo,
+                    lensOverride ? lensDof->second.focusDistance
+                                 : dof->get("focusDistance"),
+                    lensOverride ? lensDof->second.focusRangeMeters
+                                 : dof->get("focusRangeMeters"),
                     dof->get("occlusionToleranceMeters"),
                     useMetricFocus ? 1.0f : 0.0f);
                 gfx::PassDesc pass;
@@ -2668,6 +2708,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
     }
     const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
+    // Serialize the graph once per frame; every composite() lookup below
+    // reuses this key instead of dumping the JSON again.
+    const std::string graphKey = graphData ? graphData->dump(-1) : std::string();
     std::vector<gfx::TextureHandle> graphImages;
     bool graphInputsReady = true;
     if (graphEffect) {
@@ -2676,8 +2719,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         // Bloom/Grade/LUT to fall all the way back to composite(0).
         // Compile the graph's variant once to populate its texture list;
         // the normal composite cache prevents a repeated GPU build.
-        composite(mask, graphData);
-        const auto it = graphPaths_.find(graphEffect->shaderGraph.dump(-1));
+        composite(mask, graphData, &graphKey);
+        const auto it = graphPaths_.find(graphKey);
         if (it != graphPaths_.end()) {
             for (const auto& path : it->second) {
                 graphImages.push_back(graphTexture(path));
@@ -2698,14 +2741,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         selectedGraph ? graphImages.size() : 0, automaticExposure.valid());
     if (automaticExposure.valid() && authoredLayout.valid)
         mask |= kPfAutoExposure;
-    gfx::PipelineHandle pipe = composite(mask, selectedGraph);
+    gfx::PipelineHandle pipe = composite(mask, selectedGraph, &graphKey);
     if (!pipe.valid() && (mask & kPfUnderwaterDepth)) {
         mask &= ~kPfUnderwaterDepth;
-        pipe = composite(mask, selectedGraph);
+        pipe = composite(mask, selectedGraph, &graphKey);
     }
     if (!pipe.valid() && (mask & kPfAutoExposure)) {
         mask &= ~kPfAutoExposure;
-        pipe = composite(mask, selectedGraph);
+        pipe = composite(mask, selectedGraph, &graphKey);
     }
     if (!pipe.valid() && selectedGraph) {
         selectedGraph = nullptr;

@@ -3,15 +3,16 @@
 // Generic Lens components only, no RTS/FPS camera type or renderer dependency.
 #include "../Editor.h"
 #include "../EditorUtil.h"
+#include "../core/LensOps.h"
 #include "engine/sim/CameraSceneAsset.h"
 #include "engine/render/CameraCaptureViews.h"
 #include "engine/render/EcsCameraRender.h"
 #include "engine/render/CameraRig.h"
+#include "engine/render/CameraLensPhysics.h"
 #include "engine/render/CameraFrameRecorder.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -64,6 +65,10 @@ public:
         if(ImGui::Button("Save"))save();
         ImGui::SameLine();
         if(ImGui::Button("Reload"))load();
+        if(conflict_) {
+            ImGui::SameLine();
+            if(ImGui::Button("Overwrite"))save(true);
+        }
         if(!error_.empty())ImGui::TextWrapped("%s",error_.c_str());
         ImGui::Separator();
         for(Entity entity:cameras_) {
@@ -176,6 +181,29 @@ public:
             editPositive("Focus Distance",lens->focusDistance,.05f,.01f,100000.f);
             editPositive("Shutter (s)",lens->shutterSeconds,.0001f,.00001f,60.f);
             editPositive("ISO",lens->iso,1.f,1.f,204800.f);
+            ImGui::Checkbox("Lens Drives Exposure",&lens->driveExposure);
+            float comp=float(lens->exposureCompensation.toDouble());
+            if(ImGui::DragFloat("Exposure Compensation (EV)",&comp,.05f,-8.f,8.f))
+                lens->exposureCompensation=fixedFromUi(std::clamp(comp,-8.f,8.f));
+            ImGui::Checkbox("Lens Drives Depth of Field",&lens->driveDepthOfField);
+            float coc=float(lens->circleOfConfusionMm.toDouble());
+            if(ImGui::DragFloat("Circle of Confusion (mm, 0 = auto)",&coc,.001f,0.f,1.f,"%.3f"))
+                lens->circleOfConfusionMm=fixedFromUi(std::clamp(coc,0.f,1.f));
+            const auto values=render::cameraLensValues(*lens);
+            if(render::cameraLensValuesValid(values)) {
+                ImGui::TextDisabled("EV100 %.2f, exposure %+.2f stops",
+                    render::cameraLensEV100(values),
+                    render::cameraLensExposureStops(values,lens->exposureCompensation.toDouble()));
+                const auto dof=render::cameraLensDepthOfField(values,1080);
+                if(dof.valid) {
+                    if(dof.farInfinite)
+                        ImGui::TextDisabled("Sharp %.2f m .. infinity (hyperfocal %.2f m)",
+                            dof.nearMetres,dof.hyperfocalMetres);
+                    else
+                        ImGui::TextDisabled("Sharp %.2f .. %.2f m (hyperfocal %.2f m)",
+                            dof.nearMetres,dof.farMetres,dof.hyperfocalMetres);
+                }
+            }
         }
         if(output->kind==CameraOutputKind::Texture) {
             ImGui::Separator();
@@ -244,6 +272,8 @@ private:
     std::shared_ptr<CaptureStatus> captureStatus_=std::make_shared<CaptureStatus>();
     render::CameraFrameRecorder recorder_;
     std::string project_,error_;
+    std::string loadedRevision_;   // cameras.json revision this in-memory copy came from
+    bool conflict_=false;
     std::unique_ptr<World> world_;
     std::unique_ptr<SceneHierarchy> hierarchy_;
     std::vector<Entity> cameras_;
@@ -257,9 +287,6 @@ private:
     }
     uint64_t nextId_=1;
 
-    std::filesystem::path assetPath()const{
-        return std::filesystem::path(project_)/"cameras.json";
-    }
     void createFromScene(const render::Camera& camera) {
         if(!world_||!hierarchy_)return;
         const Entity e=world_->create();
@@ -286,17 +313,19 @@ private:
         hierarchy_->update(*world_);
     }
     void load() {
-        error_.clear();
+        error_.clear();conflict_=false;
         auto replacement=std::make_unique<World>();
         auto hierarchy=std::make_unique<SceneHierarchy>();
         std::vector<Entity> entities;
+        std::string revision;
         try {
-            if(std::filesystem::exists(assetPath())) {
-                const Json data=Json::parseFile(assetPath().string());
-                if(!loadCameraScene(*replacement,*hierarchy,data,&entities,&error_))return;
-            }
+            // Same bounded, symlink-refusing reader as the LENS MCP ops.
+            const lens::SceneFile file=lens::readSceneFile(project_);
+            if(!loadCameraScene(*replacement,*hierarchy,file.scene,&entities,&error_))return;
+            revision=file.revision;
         } catch(const std::exception& e) {error_=e.what();return;}
         world_=std::move(replacement);hierarchy_=std::move(hierarchy);
+        loadedRevision_=std::move(revision);
         cameras_=std::move(entities);
         selected_=cameras_.empty()?Entity{}:cameras_.front();
         nextId_=1;
@@ -304,25 +333,29 @@ private:
             if(const auto* name=world_->tryGetConst<CameraNameComponent>(e))
                 nextId_=std::max(nextId_,name->stableId+1);
     }
-    void save(){
+    // Shared LENS write path: native validation, symlink refusal, revision check
+    // against the loaded file and a staged rename that never deletes the last
+    // good cameras.json. overwrite=true skips the revision check (explicit choice).
+    void save(bool overwrite=false){
         if(!world_||project_.empty())return;
+        if(loadedRevision_.empty() && !overwrite) {
+            // cameras.json could not be loaded: replacing it must be explicit.
+            conflict_=true;
+            error_="cameras.json was not loaded (see the error above); Overwrite to replace it.";
+            return;
+        }
         error_.clear();
         try {
-            const auto dest=assetPath();
-            const auto temp=dest.string()+".tmp";
-            std::ofstream out(temp,std::ios::trunc);
-            if(!out){error_="Cannot write cameras.json";return;}
-            out<<cameraSceneToJson(*world_).dump(2);
-            out.flush();
-            if(!out){error_="Camera save failed";return;}
-            out.close();
-            std::error_code ec;
-            std::filesystem::rename(temp,dest,ec);
-            if(ec){
-                std::filesystem::remove(dest,ec);
-                ec.clear();std::filesystem::rename(temp,dest,ec);
+            const auto result=lens::saveScene(project_,cameraSceneToJson(*world_),
+                                              overwrite?std::string():loadedRevision_);
+            conflict_=result.conflict;
+            if(result.conflict) {
+                error_="cameras.json changed on disk since it was loaded (MCP or another tool). "
+                       "Reload to take the file (drops these edits) or Overwrite to replace it.";
+                return;
             }
-            if(ec)error_=ec.message();
+            if(!result.ok){error_=result.error;return;}
+            loadedRevision_=result.revision;
         }catch(const std::exception& e){error_=e.what();}
     }
     void useInScene(Editor& ed) {

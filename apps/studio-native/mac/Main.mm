@@ -420,7 +420,11 @@ struct WindShotRunner {
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
     [self runWindShots];
-    if (!placement_.visible || viewport_.hidden || window_.isMiniaturized || !window_.visible) return;
+    if (!placement_.visible || viewport_.hidden || window_.isMiniaturized || !window_.visible) {
+        session_->setFacialPreviewGpuStatus(
+            false,"Native Scene viewport hidden or not drawable");
+        return;
+    }
     @autoreleasepool {
         try {
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
@@ -432,7 +436,10 @@ struct WindShotRunner {
                 session_->previewMaterialRevision(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()),
                 session_->workspace().project.dir,
-                session_->workspace().project.rulesJson);
+                session_->workspace().project.rulesJson,
+                &session_->facialPreviewBinding());
+            session_->setFacialPreviewGpuStatus(
+                preview_->facialReady(),preview_->facialError());
             if((lightingStatusTicks_++ % 60)==0)
                 [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             if (!readyEmitted_) {

@@ -315,6 +315,17 @@ public:
     // AutoExposure effect and usable linear HDR presentation.
     void setViewManualExposure(uint64_t viewId, bool enabled, float ev);
     void clearViewManualExposure(uint64_t viewId);
+    // Per-view physical-lens defocus (LENS). Replaces metric focus distance,
+    // sharp interval and max blur of the AUTHORED depthOfField effect; keeps
+    // its intensity and silhouette tolerance. enabled=false switches DoF off
+    // for this view. Still requires the effect and AIVERSE_PRISMA_DOF=1.
+    struct DepthOfFieldOverride {
+        bool enabled = true;
+        float focusDistance = 12.0f, focusRangeMeters = 4.0f, maxBlur = 8.0f;
+    };
+    void setViewDepthOfField(uint64_t viewId, DepthOfFieldOverride dof);
+    void clearViewDepthOfField(uint64_t viewId);
+    bool viewDepthOfField(uint64_t viewId, DepthOfFieldOverride& out) const;
     // Optional subpixel jitter for a COPY of the current render camera.
     // Call after setViewId/applyCameraVolumes and BEFORE Renderer3D::beginScene;
     // retain the original camera for gameplay picking and 2D overlays.
@@ -341,7 +352,10 @@ public:
     void setMotionReactiveMask(uint64_t view, MotionTextureInput mask);
 
     void setQuality(PrismaQuality q) {
-        if (quality_ != q) { quality_ = q; resetAutoExposure(); resetMotionHistory(); }
+        if (quality_ != q) {
+            quality_ = q; resetAutoExposure(); resetMotionHistory();
+            hdrFailed_ = false; hdrFailedSizes_.clear(); // fresh HDR attempt per tier
+        }
     }
     PrismaQuality quality() const { return quality_; }
     static PrismaQuality defaultQualityFor(const gfx::Device& dev, bool mobile);   // AIVERSE_POSTFX overrides
@@ -484,7 +498,9 @@ private:
     bool preflightUpscale(int outputW, int outputH, int renderW, int renderH);
     void collectCompletedSizes(uint64_t completedGpuFence);
     gfx::PipelineHandle program(Prog p);
-    gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
+    // graphKey: optional precomputed graph->dump(-1) (one dump per frame).
+    gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr,
+                                  const std::string* graphKey = nullptr);
     void draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const void* u, size_t size,
               std::initializer_list<std::pair<int, gfx::TextureHandle>> tex);
     const Lut* lut(const std::string& path);
@@ -514,7 +530,15 @@ private:
     PrismaQuality quality_ = PrismaQuality::Medium;
     bool enabled_ = true;
     bool hdrFrame_ = false, sceneReady_ = false;
-    bool hdrFailed_ = false; // allocation failure: stay on the low-cost path
+    // HDR target allocation failure: stay on the low-cost path for the
+    // failed target sizes (bounded; several views may alternate sizes).
+    // hdrFailed_ reflects the size of the current scenePass; a new size,
+    // quality change or init() gets a fresh attempt.
+    bool hdrFailed_ = false;
+    std::vector<std::pair<int,int>> hdrFailedSizes_;
+    std::string hdrFailedError_;
+    // Authored HDR mode with the AIVERSE_HDR override (off/0, on/1, auto).
+    static HdrMode hdrModeWithEnv(HdrMode authored);
     gfx::BufferHandle triangle_;
     gfx::TextureHandle black_;
     gfx::TextureHandle sceneDepthForMotion_;
@@ -533,6 +557,7 @@ private:
     std::map<uint64_t, ExposureMeterRegion> viewExposureMeterRegions_;
     struct ManualExposureOverride { bool enabled = false; float ev = 0; };
     std::map<uint64_t, ManualExposureOverride> viewManualExposure_;
+    std::map<uint64_t, DepthOfFieldOverride> viewDepthOfField_;
     std::map<uint64_t, MotionView> motionViews_;
     std::map<uint64_t, TemporalView> temporalViews_;
     std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;

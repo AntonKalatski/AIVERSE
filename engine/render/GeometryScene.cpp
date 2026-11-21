@@ -27,7 +27,7 @@ bool sameUntextured(const Material& a,const Material& b){
         m.metallic,m.roughness,m.normalScale,m.occlusionStrength,m.emissive.x,m.emissive.y,m.emissive.z,m.emissiveStrength,
         m.alpha,m.alphaCutoff,m.doubleSided,m.vertexColors,m.castShadow,m.receiveShadow,m.transparent,m.team,m.teamStrength,
         m.uvOffset.x,m.uvOffset.y,m.uvScale.x,m.uvScale.y,m.uvRotation,m.fixedLight.x,m.fixedLight.y,m.fixedLight.z,m.fixedLight.w,m.thinTransmission,m.shadowDiffusion, m.fixedShade.x,m.fixedShade.y,
-        m.sssStrength,m.sssColor.x,m.sssColor.y,m.sssColor.z,m.sssScale);};
+        m.sssStrength,m.sssColor.x,m.sssColor.y,m.sssColor.z,m.sssScale, m.humanProfile.x, m.humanProfile.y, m.eyeOptics.x, m.eyeOptics.y, m.eyeOptics.z, m.eyeOptics.w);};
     auto plain=[](const Material& m){return !m.shaderGraph&&m.baseTex<0&&m.mrTex<0&&m.normalTex<0&&m.occlusionTex<0&&m.emissiveTex<0&&m.teamTex<0;};
     return plain(a)&&plain(b)&&key(a)==key(b);
 }
@@ -318,9 +318,10 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     // catch path can then retain the failed staging scene without allocating.
     failedStages_.reserve(failedStages_.size()+1);
     auto staged=std::make_unique<GeometryScene>();
-    // The staging owner starts from the live STRATA configuration (flags,
-    // budgets, hysteresis); a scene-authored "strata" block may override.
-    staged->copyStrataSettingsFrom(*this);
+    // The staging owner must build with the live scene's STRATA policy;
+    // a default-constructed scene has every STRATA path disabled and a
+    // transactional reload would otherwise silently turn STRATA off.
+    staged->copyStrataConfigFrom(*this);
     try {
         staged->loadImpl(dev,json,read,{},2000000);
     } catch (...) {
@@ -346,10 +347,9 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     errorPixels_=staged->errorPixels_;
     maxPixels_=staged->maxPixels_;
     proxyVertices_=staged->proxyVertices_;
-    // STRATA runtime state belongs to the staged models/instances that were
-    // just moved in (stable unique_ptr / vector storage), so it moves too.
-    // retireResident() above already released the previous live state.
-    copyStrataSettingsFrom(*staged);
+    // STRATA sidecars are keyed by Model*/Instance* addresses that stay
+    // stable across the container moves above (unique_ptr / vector moves).
+    // retireResident() already released the old live STRATA resources.
     strataStaging_=std::move(staged->strataStaging_);
     strataGpuMetadata_=std::move(staged->strataGpuMetadata_);
     strataGpuCulling_=std::move(staged->strataGpuCulling_);
@@ -360,18 +360,37 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataDebugGeometry_=std::move(staged->strataDebugGeometry_);
     strataGpuDevice_=staged->strataGpuDevice_;
     strataPortableDevice_=staged->strataPortableDevice_;
-    staged->strataGpuDevice_=nullptr;staged->strataPortableDevice_=nullptr;
+    strataStreamingFrameSerial_=staged->strataStreamingFrameSerial_;
+    strataStreamingFrameBudgetLeft_=staged->strataStreamingFrameBudgetLeft_;
+    strataStreamingSourceCursor_=staged->strataStreamingSourceCursor_;
+    // The staged scene started from the live config; a scene-authored
+    // "strata" block may have switched portable rendering / hysteresis.
+    strataPortableRenderingEnabled_=staged->strataPortableRenderingEnabled_;
+    strataLodHysteresisFraction_=staged->strataLodHysteresisFraction_;
+    staged->strataStaging_.reset();
+    staged->strataGpuMetadata_.reset();
+    staged->strataGpuCulling_.reset();
+    staged->strataPortableSources_.clear();
+    staged->strataGlobalIndexLeases_.clear();
+    staged->strataPortableDrawModels_.clear();
+    staged->strataPortableLodHistories_.clear();
+    staged->strataDebugGeometry_.clear();
+    staged->strataGpuDevice_=nullptr;
+    staged->strataPortableDevice_=nullptr;
     staged->stats_={};
     staged->proxyVertices_=0;
 }
-
-void GeometryScene::copyStrataSettingsFrom(const GeometryScene& o){
+void GeometryScene::copyStrataConfigFrom(const GeometryScene& o) {
     strataStagingEnabled_=o.strataStagingEnabled_;
     strataGpuMetadataEnabled_=o.strataGpuMetadataEnabled_;
     strataGpuCullingEnabled_=o.strataGpuCullingEnabled_;
     strataRenderPreviewEnabled_=o.strataRenderPreviewEnabled_;
     strataPortableRenderingEnabled_=o.strataPortableRenderingEnabled_;
     strataLodHysteresisFraction_=o.strataLodHysteresisFraction_;
+    // Debug view options decide per-source capture during load.
+    strataDebugView_=o.strataDebugView_;
+    strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
+    strataGpuLodPolicyEpoch_=o.strataGpuLodPolicyEpoch_;
     strataVulkanGpuIndirectEnabled_=o.strataVulkanGpuIndirectEnabled_;
     strataVulkanGpuSelectionParityVerified_=o.strataVulkanGpuSelectionParityVerified_;
     strataVulkanGpuRasterParityVerified_=o.strataVulkanGpuRasterParityVerified_;
@@ -388,8 +407,6 @@ void GeometryScene::copyStrataSettingsFrom(const GeometryScene& o){
     strataStreamingFrameUploadBudgetBytes_=o.strataStreamingFrameUploadBudgetBytes_;
     strataDiskPageDirectory_=o.strataDiskPageDirectory_;
     strataDropArchivedCpuIndicesEnabled_=o.strataDropArchivedCpuIndicesEnabled_;
-    strataDebugView_=o.strataDebugView_;
-    strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
 }
 
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}

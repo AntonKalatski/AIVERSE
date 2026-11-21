@@ -1,4 +1,5 @@
 #include "apps/editor/AuthoringWater.h"
+#include "StudioHumanCharacterBuild.h"
 #include "StudioSession.h"
 #include "engine/world/NereidFlowAuthoring.h"
 #include "apps/editor/core/ProjectFile.h"
@@ -17,6 +18,7 @@
 #include "apps/studio-native/StudioShaderGraphValidation.h"
 #include "apps/studio-native/StudioShaderGraphDraft.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
+#include "apps/studio-native/StudioHumanLookDocument.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -255,6 +257,7 @@ Json StudioSession::openProject(const std::string& path) {
     (void)studioContentRoot(ws_.project.dir);
     pendingAssetTransfer_.reset();
     selected_.clear();
+    facialPreview_.reset(); // project identity may change; never reuse prior GUID
     previewMaterialName_.clear();
     refreshMaterialPreview();
     return snapshot();
@@ -288,6 +291,146 @@ Json StudioSession::dispatch(const Json& request) {
         }
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if(method=="studio.humanPreviewAnimation") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(params.has("settings"))facialPreview_.previewAnimation=vivid::HumanPreviewAnimation::fromJson(params["settings"]);
+            reply.set("result",facialPreview_.previewAnimation.toJson());
+        } else if(method=="studio.humanStudioLighting") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(params.has("settings"))facialPreview_.studioLighting=vivid::HumanStudioLighting::fromJson(params["settings"]);
+            reply.set("result",facialPreview_.studioLighting.describe());
+        } else if(method=="studio.humanFaceFitScan" || method=="studio.humanHeadBodyImport" || method=="studio.humanWardrobeInfo" || method=="studio.humanWardrobeFromAsset" || method=="studio.humanCharacterBuild" || method=="studio.humanCharacterBuildStatus") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanCharacterBuildStatus") {
+                if(humanBuild_.valid()&&humanBuild_.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
+                    try{humanBuildResult_=humanBuild_.get();}catch(const std::exception& e){humanBuildResult_=Json::object();humanBuildResult_.set("error",Json::string(e.what()));}
+                }
+                auto result=humanBuildProject_==ws_.project.dir?humanBuildResult_:Json::object();
+                result.set("running",Json::fromBool(humanBuild_.valid()));
+                if(!humanBuild_.valid()&&result.has("path")) {StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();const auto asset=catalog.byPath(result.getStr("path"));if(asset)result.set("guid",Json::string(asset->guid));}
+                reply.set("result",result);
+            } else {
+                StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();const auto source=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
+                if(method=="studio.humanFaceFitScan" || method=="studio.humanHeadBodyImport") {
+                    if(humanBuild_.valid())throw std::runtime_error("A character operation is already running");
+                    const auto root=ws_.project.dir;humanBuildProject_=root;humanBuildResult_=Json::object();
+                    if(method=="studio.humanFaceFitScan") {
+                        const auto scan=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("scanGuid"));
+                        const auto face=vivid::HumanFaceShape::fromJson(params["face"]);
+                        if(!params["distance"].isNumber()||!params["strength"].isNumber())throw std::invalid_argument("Scan fit requires numeric limits");
+                        const float distance=float(params["distance"].toDouble()),strength=float(params["strength"].toDouble());
+                        humanBuild_=std::async(std::launch::async,[root,source,scan,face,distance,strength]{auto reader=humanCharacterReader(studioContentRoot(root));auto head=render::loadModel(source,reader),target=render::loadModel(scan,reader);if(!head||!target)throw std::runtime_error("Cannot import scan/template");auto result=Json::object();result.set("face",vivid::faceShapeFromScan(*head,*target,face,distance,strength).toJson());return result;});
+                    } else {
+                        const auto head=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("headGuid"));
+                        auto wardrobe=Json::parse(R"({"version":1,"hiddenMeshes":[],"items":[]})");wardrobe.set("hiddenMeshes",params["hiddenMeshes"]);
+                        auto item=Json::parse(R"({"id":"head","asset":"","slot":"head","enabled":true,"bone":"","translation":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"finish":"source","hideMeshes":[],"masks":[],"independentRig":true})");
+                        item.set("asset",Json::string(head));item.set("bone",params["bone"]);wardrobe.member("items").push(item);vivid::validateHumanWardrobe(wardrobe);
+                        const auto name=params.getStr("name");if(!validStudioHumanLookName(name))throw std::invalid_argument("Invalid imported character name");const Json editable=params;
+                        humanBuild_=std::async(std::launch::async,[root,source,wardrobe,name,editable]{return buildStudioHumanCharacter(root,source,wardrobe,vivid::HumanAppearance{},name,512,editable);});
+                    }
+                    auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
+                } else if(method=="studio.humanWardrobeFromAsset") {
+                    std::string bytes;const auto reader=humanCharacterReader(studioContentRoot(ws_.project.dir));
+                    const auto path=(std::filesystem::path(source).parent_path()/"wardrobe.json").generic_string();
+                    if(!reader(path,bytes)||bytes.size()>128*1024)throw std::runtime_error("No valid wardrobe.json beside this model");
+                    auto recipe=Json::parse(bytes);vivid::validateHumanWardrobe(recipe);
+                    if(recipe.has("sockets"))for(size_t i=0;i<recipe["sockets"].size();++i){auto& socket=recipe.member("sockets").at(i);for(const auto* field:{"translation","rotation","scale"})if(!socket.has(field))socket.set(field,Json::parse(std::string(field)=="scale"?"[1,1,1]":"[0,0,0]"));}
+                    for(size_t i=0;i<recipe["items"].size();++i){auto& item=recipe.member("items").at(i);for(const auto* field:{"translation","rotation","scale"})if(!item.has(field))item.set(field,Json::parse(std::string(field)=="scale"?"[1,1,1]":"[0,0,0]"));if(!item.has("finish"))item.set("finish",Json::string("source"));auto asset=catalog.byPath(item.getStr("asset"));if(!asset||asset->importer!="model")throw std::runtime_error("Wardrobe model not found in project");item.set("asset",Json::string(asset->guid));for(size_t j=0;j<item["masks"].size();++j){auto& mask=item.member("masks").at(j);auto texture=catalog.byPath(mask.getStr("texture"));if(!texture||texture->importer!="texture")throw std::runtime_error("Wardrobe mask not found in project");mask.set("texture",Json::string(texture->guid));}}
+                    reply.set("result",recipe);
+                } else if(method=="studio.humanWardrobeInfo") {
+                    auto model=render::loadModel(source,humanCharacterReader(studioContentRoot(ws_.project.dir)));
+                    if(!model)throw std::runtime_error("Cannot inspect character model");reply.set("result",vivid::inspectHumanWardrobe(*model));
+                } else {
+                    if(humanBuild_.valid())throw std::runtime_error("A character build is already running; check its status");
+                    const auto look=vivid::HumanAppearance::fromJson(params["look"]);auto wardrobe=params["wardrobe"];vivid::validateHumanWardrobe(wardrobe);
+                    const std::string name=params.getStr("name");if(!validStudioHumanLookName(name))throw std::invalid_argument("Invalid character name");
+                    for(size_t wi=0;wi<wardrobe["items"].size();++wi) {
+                        auto& item=wardrobe.member("items").at(wi);
+                        if(!item.getBool("enabled"))continue;
+                        item.set("asset",Json::string(StudioFacialPreviewBinding::checkedModelPath(catalog,item.getStr("asset"))));
+                        for(size_t mi=0;mi<item["masks"].size();++mi) {
+                            auto& mask=item.member("masks").at(mi);
+                            const auto asset=catalog.byGuid(mask.getStr("texture"));if(!asset||asset->directory||asset->importer!="texture")throw std::runtime_error("Body mask must be a project texture");
+                            mask.set("texture",Json::string(asset->path));
+                        }
+                    }
+                    if(!params["textureSize"].isNumber()||params["textureSize"].toDouble()!=double(params.getInt("textureSize")))throw std::invalid_argument("Invalid texture resolution");
+                    const auto root=ws_.project.dir;const int size=int(params.getInt("textureSize"));const Json editable=params;
+                    humanBuildProject_=root;humanBuildResult_=Json::object();
+                    humanBuild_=std::async(std::launch::async,[root,source,wardrobe,look,name,size,editable]{return buildStudioHumanCharacter(root,source,wardrobe,look,name,size,editable);});
+                    auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
+                }
+            }
+        } else if(method=="studio.humanAppearanceInfo" || method=="studio.humanAppearanceApply" ||
+                  method=="studio.humanAppearanceSave" || method=="studio.humanAppearanceLoad" ||
+                  method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanAppearanceFromAsset") {
+                StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
+                const auto relative=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
+                const auto path=studioContentRoot(ws_.project.dir)/std::filesystem::path(relative).parent_path()/"appearance.json";
+                if(std::filesystem::is_symlink(std::filesystem::symlink_status(path)) ||
+                   !std::filesystem::is_regular_file(path) || std::filesystem::file_size(path)>128*1024)
+                    throw std::runtime_error("No appearance.json beside this model; import a profile");
+                std::ifstream in(path,std::ios::binary);
+                if(!in)throw std::runtime_error("Cannot read model appearance");
+                std::string bytes((std::istreambuf_iterator<char>(in)),{});
+                const auto look=vivid::HumanAppearance::fromJson(Json::parse(bytes));
+                auto result=Json::object();result.set("name",Json::string("model profile"));result.set("look",look.toJson());reply.set("result",std::move(result));
+            } else if(method=="studio.humanAppearanceSave") {
+                reply.set("result",saveStudioHumanLook(ws_.project.dir,params.getStr("name"),params["look"]));
+            } else if(method=="studio.humanAppearanceLoad") {
+                reply.set("result",readStudioHumanLook(ws_.project.dir,params.getStr("name")));
+            } else if(method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
+                reply.set("result",listStudioHumanLooks(ws_.project.dir));
+            } else {
+                if(method=="studio.humanAppearanceApply") {
+                    const auto& rev=params["revision"];
+                    if(!rev.isNumber() || rev.toDouble()<0 || rev.toDouble()!=double(rev.integer()))
+                        throw std::invalid_argument("Invalid appearance revision");
+                    StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
+                    facialPreview_.bindAppearance(catalog,params.getStr("guid"),uint64_t(rev.integer()),params["look"],params.has("face")?&params["face"]:nullptr);
+                    previewMaterialName_.clear();refreshMaterialPreview();
+                }
+                auto info=Json::object();info.set("schema",vivid::HumanAppearance::schema());info.set("faceSchema",vivid::HumanFaceShape::schema());info.set("face",facialPreview_.face()?facialPreview_.face()->toJson():Json());
+                info.set("look",facialPreview_.appearance()?facialPreview_.appearance()->toJson():vivid::HumanAppearance{}.toJson());
+                info.set("preview",facialPreview_.describe());reply.set("result",std::move(info));
+            }
+        } else if(method=="studio.facialPreviewBind" ||
+                  method=="studio.facialPreviewControls" ||
+                  method=="studio.facialPreviewInfo") {
+            if(ws_.project.dir.empty())
+                throw std::runtime_error("Open a project first");
+            if(method=="studio.facialPreviewBind") {
+                if(!params["guid"].isString())
+                    throw std::invalid_argument("Facial preview selection requires asset GUID string");
+                const std::string guid=params.getStr("guid");
+                // A clear operation detaches all staged controls without
+                // touching the Scene GPU device or the document's saved rig.
+                if(guid.empty()) {
+                    facialPreview_.reset();
+                    reply.set("result",facialPreview_.describe());
+                } else {
+                    StudioAssetCatalog catalog(ws_.project.dir);
+                    catalog.rebuild();
+                    // Facial mode takes precedence over a previously opened
+                    // material sphere, without mutating map/gameplay data.
+                    Json result=facialPreview_.bind(catalog,guid,params["rig"]);
+                    previewMaterialName_.clear();
+                    refreshMaterialPreview();
+                    reply.set("result",std::move(result));
+                }
+            } else if(method=="studio.facialPreviewControls") {
+                const Json& revision=params["revision"];
+                if(!revision.isNumber() || revision.toDouble()<0 ||
+                   revision.toDouble()!=double(revision.integer()))
+                    throw std::runtime_error("Invalid facial selection revision");
+                reply.set("result",facialPreview_.controls(
+                    uint64_t(revision.integer()),params["values"],
+                    params["vectors"]));
+            } else {
+                reply.set("result",facialPreview_.describe());
+            }
         } else if (method == "studio.facialRigList" ||
                    method == "studio.facialRigGet" ||
                    method == "studio.facialRigValidate" ||

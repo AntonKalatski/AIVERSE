@@ -363,7 +363,11 @@ struct TextureReadbackDesc {
 struct TextureReadbackResult {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;
-    std::vector<uint8_t> pixels; // tightly packed top-left rows, output format
+    // Tightly packed rows in output format, row 0 = top of the image on
+    // every backend: uploaded textures return rows in upload order, render
+    // targets return the rendered top row first (GL/Vulkan flip their
+    // bottom-up render targets; Metal render targets are already top-down).
+    std::vector<uint8_t> pixels;
     bool success() const { return width > 0 && height > 0 && !pixels.empty(); }
 };
 
@@ -904,6 +908,24 @@ public:
     virtual bool readBufferRangeAsync(BufferHandle,size_t,size_t,BufferReadFn) {
         return false;
     }
+    // Small, true asynchronous offscreen RGBA8 *linear* pixel readback.
+    // x/y are top-left source pixel coordinates, unlike native GL readPixels.
+    // Call on the owner thread after endPass and before endFrame. Completion
+    // is delivered on a later owner beginFrame, never inside a GPU encoder.
+    // Returns false on unsupported backends; callers must use CPU fallback.
+    // No colour-space conversion, tone mapping or depth values in this API.
+    using PixelReadFn=std::function<void(std::vector<uint8_t>)>; // 4 RGBA8 bytes; empty on failure
+    virtual bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) { return false; }
+    // Optional native depth readback for real GPU depth diagnostics.
+    // Invalid handle selects the current screen depth attachment; a valid
+    // handle MUST be a Depth render target (never silently use screen).
+    // Top-left coordinates, outside passes, same frame, async owner-thread
+    // callback on a later beginFrame. 'valid' is false on GPU failure;
+    // result is actual hardware depth in [0,1], not CPU-projected depth.
+    // Unsupported RHI backends reject without calling the callback.
+    using DepthPixelReadFn=std::function<void(bool valid,float depth01)>;
+    virtual bool readTextureDepthPixelAsync(TextureHandle,int,int,
+                                            DepthPixelReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     // Shutdown-only GPU barrier. Unsupported devices return false.
     virtual bool waitIdle() { return false; }

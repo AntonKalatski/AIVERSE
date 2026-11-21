@@ -345,8 +345,6 @@ public:
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
     size_t instanceCount() const { return instances_.size(); }
-    // Transactional reloads keep the live STRATA configuration.
-    void copyStrataSettingsFrom(const GeometryScene& other);
 private:
     void retireResident(gfx::Device& dev);
     void loadImpl(gfx::Device& dev,const Json& json,const FileReader& reader,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget);
@@ -369,6 +367,8 @@ private:
     void drawStrataDebug(Renderer3D& renderer,const Instance& instance,
                          const ModelDraw& draw,bool gpuRoute);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
+    // Copies STRATA policy/budget settings (not resources) for staged loads.
+    void copyStrataConfigFrom(const GeometryScene& other);
     NativePresentationRetirement retirement_;
     // Failed transactions may still own GPU models after a refused idle.
     // Retain those retirement queues for a later safe collect/shutdown.

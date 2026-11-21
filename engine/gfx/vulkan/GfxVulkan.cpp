@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace aiverse::gfx::vk {
 namespace {
@@ -130,6 +131,9 @@ bool VulkanDevice::pickDevice(std::string& error) {
     enable.multiDrawIndirect = have.multiDrawIndirect;
     enable.drawIndirectFirstInstance = have.drawIndirectFirstInstance;
     multiDrawIndirect_ = have.multiDrawIndirect && have.drawIndirectFirstInstance;
+    // A single GPU-authored indirect draw needs no multiDrawIndirect, but
+    // its untrusted firstInstance still requires drawIndirectFirstInstance.
+    drawIndirectFirstInstance_ = have.drawIndirectFirstInstance;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
     enable.imageCubeArray = have.imageCubeArray;
@@ -289,6 +293,13 @@ bool VulkanDevice::waitIdle() {
 
 void VulkanDevice::destroyDeviceObjects() {
     vkDeviceWaitIdle(device_);
+    // Pending staging is safe to destroy only after the GPU idle barrier.
+    // Do not invoke editor callbacks during device teardown.
+    for(auto& read:pixelReads_) {
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+    }
+    pixelReads_.clear();
     destroySwapchain();
     completed_ = ~uint64_t(0);
     for(auto& slot:slots_)completeTextureCaptures(slot,false);
@@ -620,10 +631,32 @@ void VulkanDevice::completeTextureCaptures(FrameSlot& slot,bool succeeded) {
     }
 }
 
+void VulkanDevice::failPendingReadsAfterDeviceLoss() {
+    // Staging buffers stay owned by their entries (released at shutdown):
+    // a lost device gives no completion point that proves them unused.
+    // Moving the callback out makes delivery exactly-once even if a later
+    // serial were ever observed complete.
+    std::vector<std::pair<TextureReadFn,PixelFormat>> textures;
+    for (auto& r : textureReads_)
+        if (r.callback) textures.emplace_back(std::move(r.callback), r.format);
+    std::vector<BufferReadFn> buffers;
+    for (auto& r : computeReads_)
+        if (r.callback) buffers.push_back(std::move(r.callback));
+    for (auto& r : textureReads_) r.callback = nullptr;
+    for (auto& r : computeReads_) r.callback = nullptr;
+    for (auto& [callback, format] : textures) {
+        TextureReadbackResult failed;
+        failed.format = format;
+        callback(std::move(failed));
+    }
+    for (auto& callback : buffers) callback({});
+}
+
 void VulkanDevice::deliverTextureReads() {
     // Completed serials are advanced only after a frame-slot fence is waited.
     // Never touch mapped staging data while the GPU can still write to it,
     // and never run the user's callback inside garbage collection.
+    if (!healthy_) { failPendingReadsAfterDeviceLoss(); return; }
     struct Done { TextureReadFn callback; TextureReadbackResult result; };
     std::vector<Done> ready;
     for (size_t i=0; i<textureReads_.size();) {
@@ -635,7 +668,15 @@ void VulkanDevice::deliverTextureReads() {
             result.width = r.width;
             result.height = r.height;
             result.pixels.resize(r.bytes);
-            std::memcpy(result.pixels.data(), r.alloc.mapped, r.bytes);
+            const auto* mapped = static_cast<const uint8_t*>(r.alloc.mapped);
+            const size_t row = r.height > 0 ? r.bytes / size_t(r.height) : 0;
+            if (r.flipRows && row) {
+                for (int y = 0; y < r.height; ++y)
+                    std::memcpy(result.pixels.data() + size_t(y) * row,
+                                mapped + size_t(r.height - 1 - y) * row, row);
+            } else {
+                std::memcpy(result.pixels.data(), mapped, r.bytes);
+            }
         }
         if (r.buffer) vkDestroyBuffer(device_, r.buffer, nullptr);
         memory_.release(r.alloc);
@@ -660,9 +701,81 @@ bool VulkanDevice::waitForSubmittedGpuWork() {
     return true;
 }
 
+// Called on the gfx device-owner thread. A frame-slot fence, never a serial
+// alone, is the authority to read the asynchronous GPU transfer destination.
+void VulkanDevice::deliverPixelReads() {
+    std::vector<PixelRead> completed;
+    for(auto it=pixelReads_.begin();it!=pixelReads_.end();) {
+        if(!healthy_ || it->serial<=completed_) {
+            completed.push_back(std::move(*it));
+            it=pixelReads_.erase(it);
+        }else ++it;
+    }
+    for(auto& read:completed) {
+        std::vector<uint8_t> bytes;
+        if(healthy_ && read.serial<=completed_ && read.alloc.mapped) {
+            const auto* data=static_cast<const uint8_t*>(read.alloc.mapped);
+            bytes.assign(data,data+4);
+        }
+        // Pending record is already removed; callbacks may schedule work.
+        // A device-lost path reports an empty buffer, never fake pixels.
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+        if(read.callback)read.callback(std::move(bytes));
+    }
+}
+
+bool VulkanDevice::readTexturePixelAsync(TextureHandle texture,
+                                         int x,int y,PixelReadFn callback) {
+    if(!recording_ || inPass_ || !healthy_ || !callback ||
+       pixelReads_.size()>=32u || x<0 || y<0)return false;
+    const VTexture* image=textures_.get(texture.id);
+    if(!image || !image->renderTarget || image->compressed ||
+       image->depth || image->format!=PixelFormat::RGBA8 ||
+       image->levels!=1 || x>=image->width || y>=image->height)
+        return false;
+    VkBuffer staging=VK_NULL_HANDLE;
+    Allocation alloc;
+    if(!createBufferObject(4,VK_BUFFER_USAGE_TRANSFER_DST_BIT,true,
+                           staging,alloc))return false;
+    if(!staging || !alloc.mapped) {
+        if(staging)vkDestroyBuffer(device_,staging,nullptr);
+        memory_.release(alloc);
+        return false;
+    }
+    VkCommandBuffer cb=slots_[size_t(slot_)].main;
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,1u,0u);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset=0;
+    copy.bufferRowLength=0;
+    copy.bufferImageHeight=0;
+    copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+    // Vulkan's current pass uses a bottom-left-oriented viewport, matching
+    // the legacy GL rendering contract. Public readback pixels are top-left.
+    copy.imageOffset={x,image->height-1-y,0};
+    copy.imageExtent={1,1,1};
+    vkCmdCopyImageToBuffer(cb,image->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           staging,1,&copy);
+    auto visibility=vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+    visibility.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    visibility.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT,0,1,&visibility,
+                         0,nullptr,0,nullptr);
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,1u,0u);
+    pixelReads_.push_back({staging,alloc,serial_,std::move(callback)});
+    return true;
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
     deliverTextureReads();
+    deliverPixelReads(); // previous frame-slot fence proved completion
     FrameSlot& s = slots_[size_t(slot_)];
     auto bi = vkStruct<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

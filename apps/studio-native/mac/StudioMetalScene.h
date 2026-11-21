@@ -20,6 +20,10 @@
 #include "engine/render/RenderLightingRuntime.h"
 #include "engine/world/NereidManifestHost.h"
 #include "apps/studio-native/StudioWindPreview.h"
+#include "engine/render/PostFx.h"
+#include "engine/render/AdaptiveShadowResolution.h"
+#include "engine/render/RenderDeviceLifetime.h"
+#include "apps/studio-native/mac/StudioFacialGpuPreview.h"
 
 namespace aiverse::studio {
 class StudioMetalScene final {
@@ -32,12 +36,15 @@ public:
                bool fpsProject, const std::string& selectedId,
                const std::string& previewName, const Json& previewFactors,
                uint64_t previewRevision, float levelHeight=1.5f,
-               const std::string& projectPath={}, const Json& rules=Json{});
+               const std::string& projectPath={}, const Json& rules=Json{},
+               const StudioFacialPreviewBinding* facialBinding=nullptr);
     void captureNextFrame(gfx::Device::CaptureFn callback) { device_->captureNextFrame(std::move(callback)); }
     const std::string& lightingStatus() const { return lightingStatus_; }
     // Preview wind for every rigged model (<model>.wind.json) + debug view.
     void setWindPreview(const StudioWindState& state) { wind_ = state; }
     Json windStats() const;
+    bool facialReady() const noexcept{return facialReady_;}
+    const std::string& facialError() const noexcept{return facialError_;}
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -55,6 +62,7 @@ public:
     void resetCamera() { lightingRevision_=std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
+    std::unique_ptr<render::RenderDeviceLifetime> deviceLifetime_;
     render::Renderer3D renderer_;
     world::NereidManifestHost nereid_;
     double underwaterFrameTime_=0;
@@ -64,8 +72,12 @@ private:
     uint64_t lightingRevision_ = std::numeric_limits<uint64_t>::max();
     std::string lightingStatus_ = "Preview geometry · GI: off · Direct: standard";
     render::Mesh cube_;
+    render::Mesh studioCyclorama_;
     render::Mesh terrain_;
     std::unique_ptr<render::Model> materialSphere_;
+    StudioFacialGpuPreview facialGpu_;
+    bool facialMode_=false,facialReady_=false;
+    std::string facialError_;
     uint64_t materialRevision_ = std::numeric_limits<uint64_t>::max();
     bool materialMode_ = false;
     uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();
@@ -84,7 +96,10 @@ private:
     size_t riggedInstances_ = 0, riggedParts_ = 0;
     std::map<const render::Model*, std::optional<render::wind::ModelWindRigView>> windRigs_;
     std::chrono::steady_clock::time_point windClock_ = std::chrono::steady_clock::now();
+    // Facial/material preview FXAA (LDR); the map view keeps PRISMA HDR post_.
+    render::PostFx antialiasing_;
     render::RTSCamera camera_;
+    render::AdaptiveShadowResolution shadowResolution_;
     bool cameraInitialized_ = false;
     bool lodDiagnostics_ = false;
     uint64_t diagnosticFrames_ = 0;

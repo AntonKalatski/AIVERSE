@@ -23,7 +23,7 @@ test('move reorders within a tab stack',()=>{
 test('dragging panels across stacks retains identity',()=>{
   const t=moveTab(defaultDockTree(),'inspector','dock-bottom');
   assert.equal(panelStack(t,'inspector'),'dock-bottom');
-  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','runtime','nereid_flow','wind']);
+  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','runtime','nereid_flow','human_appearance','wind']);
 });
 test('closing and reopening recreates a panel only once',()=>{
   let t=closeTab(defaultDockTree(),'scene');
@@ -94,12 +94,14 @@ test('moving a last tab prunes the source split and expands its neighbor',()=>{
 test('closing last right panels removes their obsolete split',()=>{
   let t=closeTab(defaultDockTree(),'inspector');
   assert.ok(findDockStack(t,'dock-right'));
-  t=closeTab(closeTab(closeTab(closeTab(t,'lighting'),'runtime'),'nereid_flow'),'wind');
+  t=closeTab(closeTab(closeTab(t,'lighting'),'runtime'),'nereid_flow');
+  assert.ok(findDockStack(t,'dock-right'));
+  t=closeTab(closeTab(t,'human_appearance'),'wind');
   assert.equal(findDockStack(t,'dock-right'),null);
   assert.equal(dockStacks(t).length,3);
 });
 test('reopening Inspector restores pruned right-hand dock',()=>{
-  let t=closeTab(closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow'),'wind');
+  let t=closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow'),'human_appearance'),'wind');
   t=reopenTab(t,'inspector','dock-right');
   assert.equal(panelStack(t,'inspector'),'dock-right');
   assert.equal(dockStacks(t).length,4);

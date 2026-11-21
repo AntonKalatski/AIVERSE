@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -34,6 +35,13 @@ inline bool finiteValue(double x) { return std::isfinite(x) && std::abs(x) <= 10
 
 class ValueGraph {
 public:
+    // Upper bound on evaluate()/resolve() steps for one graph compilation,
+    // shared with nested FunctionCall graphs. Results are memoized per
+    // (node, sampling age), so legitimate graphs stay far below this; the
+    // budget only stops pathological fan-out (e.g. nested function lattices)
+    // from freezing the editor/MCP thread.
+    static constexpr std::size_t kMaxEvaluationSteps = 1000000;
+
     ValueGraph(const Json& nodes, const Json& defaults, const Json& overrides,
                std::vector<std::string>& errors,
                const Json* functions=nullptr,
@@ -83,6 +91,7 @@ public:
     bool resolve(const Json& input,Json& out,unsigned depth=0,
                  bool haveAge=false,double age=0) {
         if(depth>40)return fail("value nesting or expression graph exceeds depth 40");
+        if(!step())return false;
         if(input.isObject()) {
             if(input.has("$param")) {
                 if(input.size()!=1 || !input["$param"].isString())
@@ -142,11 +151,27 @@ public:
                   bool haveAge=false,double age=0) {
         if(depth>40)return fail("value expression depth exceeds 40");
         if(!isValue(id))return fail("unknown data node '"+id+"'");
+        if(!step())return false;
+        // A data node's value depends only on (node, sampling age): graph,
+        // parameters and overrides are immutable for this evaluator. Reuse
+        // successful results so shared sub-expressions are not re-evaluated
+        // exponentially (failures abort the whole evaluation, never cached).
+        // Age-independent nodes share one entry for every $curve sample.
+        const bool keyAge=haveAge && usesAge(id);
+        const MemoKey key{id,keyAge,keyAge?age:0.0};
+        if(const auto hit=memo_.find(key);hit!=memo_.end()) {
+            out=hit->second;
+            return true;
+        }
         if(!visiting_.insert(id).second)return fail("cycle in data graph at '"+id+"'");
         const Json& node=*all_.at(id);
         const std::string type=node.getStr("type");
         const Json& p=node["properties"];
-        const auto done=[&](bool ok){visiting_.erase(id);return ok;};
+        const auto done=[&](bool ok){
+            visiting_.erase(id);
+            if(ok)memo_.emplace(key,out);
+            return ok;
+        };
         if(type=="FunctionCall") {
             // A function is a pure local value graph; arguments are resolved
             // in the caller's context and must match the function's declared
@@ -167,6 +192,7 @@ public:
             if(ok) {
                 ValueGraph nested(fn["nodes"],fn["parameters"],args,
                                   errors_,functions_,activeFunctions_);
+                nested.steps_=steps_;
                 ok=nested.initialize() && nested.validateAll() &&
                    nested.evaluate(fn.getStr("output"),out,depth+1,haveAge,age);
             }
@@ -346,6 +372,45 @@ public:
     }
 
 private:
+    using MemoKey=std::tuple<std::string,bool,double>;
+    bool step() {
+        if(++*steps_<=kMaxEvaluationSteps)return true;
+        if(*steps_==kMaxEvaluationSteps+1)
+            fail("value graph evaluation exceeds "+std::to_string(kMaxEvaluationSteps)+
+                 " steps (too many shared references or nested function calls)");
+        return false;
+    }
+    // True if the node's value can depend on the $curve sampling age: it is
+    // AgeNormalized, a FunctionCall (arguments/body are opaque here), or it
+    // reaches one through $node references. $curve references re-sample with
+    // their own ages and therefore do not propagate the caller's age.
+    bool usesAge(const std::string& id) {
+        if(const auto it=usesAge_.find(id);it!=usesAge_.end())return it->second;
+        const auto found=all_.find(id);
+        if(found==all_.end())return true;
+        const std::string type=found->second->getStr("type");
+        if(type=="AgeNormalized"||type=="FunctionCall")return usesAge_[id]=true;
+        if(!ageScan_.insert(id).second)return true; // cycle: stay conservative
+        const bool result=treeUsesAge((*found->second)["properties"],0);
+        ageScan_.erase(id);
+        return usesAge_[id]=result;
+    }
+    bool treeUsesAge(const Json& tree,unsigned depth) {
+        if(depth>64)return true;
+        if(tree.isObject()) {
+            if(tree.has("$node"))
+                return !tree["$node"].isString() || usesAge(tree["$node"].str());
+            if(tree.has("$curve"))return false;
+            for(const auto& [key,value]:tree.members()) {
+                (void)key;
+                if(treeUsesAge(value,depth+1))return true;
+            }
+        } else if(tree.isArray()) {
+            for(const auto& value:tree.items())
+                if(treeUsesAge(value,depth+1))return true;
+        }
+        return false;
+    }
     bool collectDependencies(const Json& tree,std::vector<std::string>& deps,unsigned depth=0) {
         if(depth>40)return fail("data dependency nesting exceeds 40");
         if(tree.isObject()) {
@@ -426,6 +491,11 @@ private:
     std::set<std::string> data_,visiting_,ownedFunctionCalls_;
     const Json* functions_=nullptr;
     std::set<std::string>* activeFunctions_=nullptr;
+    std::map<MemoKey,Json> memo_;
+    std::map<std::string,bool> usesAge_;
+    std::set<std::string> ageScan_;
+    std::size_t ownedSteps_=0;
+    std::size_t* steps_=&ownedSteps_;
 };
 
 } // namespace aiverse::fx::vfx2

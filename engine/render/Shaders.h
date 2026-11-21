@@ -293,7 +293,13 @@ namespace aiverse::render::shaders {
     "    if (u_quality.y < 0.5) return 1.0;\n" \
     "    vec3 L = normalize(u_sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);          // grazing surfaces need the most offset\n" \
-    "    vec4 lp = u_lightViewProj * vec4(wpos + n * u_quality.w * (0.35 + k), 1.0);\n" \
+    "    // A deforming surface crosses many curved triangle planes inside a wide PCF disk.\n" \
+    "    // Bound its normal bias to four texel offsets; rigid planar receivers retain slope correction.\n" \
+    "    float offset = u_quality.w;\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    offset *= u_quality.y < 1.5 ? clamp(u_quality.z / max(u_shadow.w, 1e-7) * 0.15, 1.0, 4.0) : 1.0;\n" \
+    "#endif\n" \
+    "    vec4 lp = u_lightViewProj * vec4(wpos + n * offset * (0.35 + k), 1.0);\n" \
     "    vec3 p = lp.xyz / lp.w;\n" \
     "    vec2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
@@ -301,6 +307,9 @@ namespace aiverse::render::shaders {
     "    vec2 dx = dFdx(uv), dy = dFdy(uv);\n" \
     "    float zx = dFdx(d), zy = dFdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
     "    vec2 gradient = abs(det) > 1e-10 ? vec2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : vec2(0.0);\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    if (u_quality.y < 1.5) gradient = vec2(0.0);\n" \
+    "#endif\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = u_quality.z;\n" \
     "    if (u_quality.x < 2.0) return sunCompare(uv, d);\n" \
@@ -410,7 +419,11 @@ namespace aiverse::render::shaders {
     "    if (f.quality.y < 0.5) return 1.0;\n" \
     "    float3 L = normalize(f.sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);\n" \
-    "    float4 lp = f.lightViewProj * float4(wpos + n * f.quality.w * (0.35 + k), 1.0);\n" \
+    "    float offset = f.quality.w;\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    offset *= f.quality.y < 1.5 ? clamp(f.quality.z / max(f.shadow.w, 1e-7) * 0.15, 1.0, 4.0) : 1.0;\n" \
+    "#endif\n" \
+    "    float4 lp = f.lightViewProj * float4(wpos + n * offset * (0.35 + k), 1.0);\n" \
     "    float3 p = lp.xyz / lp.w;\n" \
     "    float2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (f.shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
@@ -418,6 +431,9 @@ namespace aiverse::render::shaders {
     "    float2 dx = dfdx(uv), dy = dfdy(uv);\n" \
     "    float zx = dfdx(d), zy = dfdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
     "    float2 gradient = abs(det) > 1e-10 ? float2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : float2(0.0);\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    if (f.quality.y < 1.5) gradient = float2(0.0);\n" \
+    "#endif\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = f.quality.z;\n" \
     "    if (f.quality.x < 2.0) return sunCompare(sm, uv, d);\n" \
