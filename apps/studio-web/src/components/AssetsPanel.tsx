@@ -14,6 +14,7 @@ import { assetKind, assetFolders, assetFileName, assetBreadcrumbs,
 import type { AssetFolder, AssetKind } from '../assetTree';
 import './AssetsPanel.css';
 import AssetImportSettings from './AssetImportSettings';
+import { StudioContextMenu, type StudioMenuItem } from '../ui';
 
 const ASSET_DRAG_MIME='application/x-aiverse-content-path';
 const EMPTY:StudioAssetList={root:'content',files:[],folders:[]};
@@ -127,6 +128,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [pinnedAssetGuid,setPinnedAssetGuid]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [mode,setMode]=useState<'grid'|'list'>('grid');
+  const [menu,setMenu]=useState<{x:number;y:number;path:string;directory:boolean}|null>(null);
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
   const [loading,setLoading]=useState(true);
@@ -244,6 +246,27 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     onDrop:(event:DragEvent<HTMLElement>)=>dropInternal(event,target)
   });
 
+  const copyPath=(path:string)=>{
+    const text='content/'+path;
+    void navigator.clipboard?.writeText(text).then(()=>setMessage('Copied '+text),()=>setError('Clipboard unavailable'));
+  };
+  const menuItems=(target:{path:string;directory:boolean}):StudioMenuItem[]=>[
+    target.directory
+      ?{id:'open',label:'Open Folder',icon:<FolderOpen size={13}/>,onSelect:()=>goTo(target.path)}
+      :{id:'settings',label:'Import Settings',icon:<Library size={13}/>,disabled:!native,onSelect:()=>setSelected(target.path)},
+    {id:'copy',label:'Copy Path',icon:<Search size={13}/>,onSelect:()=>copyPath(target.path)},
+    {id:'folder',label:'New Folder Here',icon:<FolderPlus size={13}/>,separator:true,disabled:!native||!projectPath||busy,
+      onSelect:()=>{if(target.directory)goTo(target.path);setAddingFolder(true)}},
+    {id:'import',label:'Import Into Here…',icon:<Upload size={13}/>,disabled:!native||!projectPath||busy,
+      onSelect:()=>{if(target.directory)goTo(target.path);void externalImport()}},
+    {id:'reload',label:'Reload',icon:<RefreshCw size={13}/>,separator:true,onSelect:reload},
+  ];
+  const openMenu=(event:React.MouseEvent,path:string,directory:boolean)=>{
+    event.preventDefault();event.stopPropagation();
+    if(!directory)setSelected(path);
+    setMenu({x:event.clientX,y:event.clientY,path,directory});
+  };
+
   return <section className="studio-assets" aria-label="Project Assets"
       data-content-drop-root="true" data-content-drop-target={folder}>
     <div className="studio-assets-toolbar">
@@ -290,10 +313,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     {error&&<div className="studio-assets-status studio-assets-error" role="alert">{error}</div>}
     <div className="studio-assets-layout">
       <nav className="studio-assets-folders" aria-label="Project asset folders">
-        <div className="studio-assets-sidebar-title">CONTENT / PROJECT ASSETS</div>
         <button type="button" className={'studio-assets-folder'+(folder===''?' active':'')}
           {...folderDropProps('')} onClick={()=>goTo('')}>
-          <Library size={15}/><span>content</span>
+          <Library size={13}/><span>content</span>
           <small>{catalog.files.length}</small>
         </button>
         {folders.slice(0,300).map(entry=>
@@ -301,9 +323,10 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
             draggable onDragStart={e=>dragStart(e,entry.path)}
             {...folderDropProps(entry.path)}
             className={'studio-assets-folder'+(folder===entry.path?' active':'')}
-            style={{paddingLeft:12+entry.depth*13}}
+            style={{paddingLeft:6+entry.depth*12}}
+            onContextMenu={event=>openMenu(event,entry.path,true)}
             onClick={()=>goTo(entry.path)}>
-            {folder===entry.path?<FolderOpen size={15}/>:<Folder size={15}/>}
+            {folder===entry.path?<FolderOpen size={13}/>:<Folder size={13}/>}
             <span>{entry.name}</span><small>{entry.count}</small>
           </button>)}
       </nav>
@@ -322,8 +345,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
                   title={entry.path} role="listitem" draggable
                   onDragStart={e=>dragStart(e,entry.path)}
                   {...folderDropProps(entry.path)}
+                  onContextMenu={event=>openMenu(event,entry.path,true)}
                   onClick={()=>goTo(entry.path)}>
-                  <span className="studio-assets-icon"><Folder size={mode==='grid'?37:22}/></span>
+                  <span className="studio-assets-icon"><Folder size={mode==='grid'?28:14}/></span>
                   <span className="studio-assets-name">{entry.name}</span>
                   <span className="studio-assets-meta">{entry.count} files</span>
                 </button>)}
@@ -333,8 +357,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
                   onDragStart={e=>dragStart(e,asset.path)}
                   className={'studio-assets-item'+(selected===asset.path?' active':'')}
                   data-kind={kind} aria-selected={selected===asset.path}
-                  title={'content/'+asset.path} onClick={()=>setSelected(asset.path)}>
-                  <span className="studio-assets-icon"><AssetIcon kind={kind} size={mode==='grid'?32:20}/></span>
+                  title={'content/'+asset.path} onClick={()=>setSelected(asset.path)}
+                  onContextMenu={event=>openMenu(event,asset.path,false)}>
+                  <span className="studio-assets-icon"><AssetIcon kind={kind} size={mode==='grid'?24:14}/></span>
                   <span className="studio-assets-name">{assetFileName(asset.path)}</span>
                   <span className="studio-assets-meta">{formatBytes(asset.bytes)}</span>
                 </button>;
@@ -347,10 +372,12 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
         onSaved={reload} onError={setError}/>}
     </div>
     <footer className="studio-assets-footer">
-      <span>{catalog.files.length} assets in content/ · metadata indexed by GUID</span>
+      <span>{catalog.files.length} assets</span>
       <span className="studio-assets-current">{selected?
         'content/'+selected:search?'Search in content/':folder?'content/'+folder:'content/'}</span>
     </footer>
+    {menu&&<StudioContextMenu x={menu.x} y={menu.y} label="Asset actions"
+      items={menuItems(menu)} onClose={()=>setMenu(null)}/>}
     {plan&&<PreviewDialog key={plan.token} plan={plan} busy={busy}
       onCancel={()=>setPlan(null)} onCommit={decisions=>void applyTransfer(decisions)}/>}
   </section>;
