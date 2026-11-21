@@ -5356,6 +5356,18 @@ TEST(lighting_quality_governor) {
     CHECK(g.lights() == 2 && g.shadows() == 3);
     feed(g, 60, 60);                               // still too slow: all the way down, but shadows and lights stay on (low)
     CHECK(g.shadows() == 1 && g.lights() == 1);
+    // a weak phone that never renders a frame under 250 ms still steps down (long frames used to be skipped as pauses)
+    QualityGovernor weak;
+    weak.reset(2, 2);
+    feed(weak, 600, 40);
+    CHECK(weak.shadows() == 1 && weak.lights() == 1);
+    // one long frame (loading) changes nothing
+    QualityGovernor hitch;
+    hitch.reset(3, 3);
+    feed(hitch, 16.7, 3);
+    CHECK(!hitch.update(2.0));
+    feed(hitch, 16.7, 3);
+    CHECK(hitch.stepsDown() == 0);
     // a phone capped at 30 fps from the start is not "slowing down"
     QualityGovernor capped;
     capped.reset(2, 2);
