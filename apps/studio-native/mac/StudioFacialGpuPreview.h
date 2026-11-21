@@ -11,6 +11,7 @@
 #include <aiverselib/animation/FacialPreviewSession.h>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <memory>
 #include <string>
 #include <vector>
@@ -71,6 +72,11 @@ private:
     std::unique_ptr<render::Model> pristine_;
     Json appliedFace_,appliedLook_;
     float expressionTime_=0; // test-expression clock (talk visemes)
+    // Live wardrobe try-on assembly (worker thread) and abandoned jobs.
+    std::future<std::unique_ptr<render::Model>> tryOnJob_;
+    std::vector<std::future<std::unique_ptr<render::Model>>> staleTryOn_;
+    uint64_t tryOnRevision_=0;std::string tryOnGuid_;
+    Json appliedWardrobe_;
     bool editInPlace(gfx::Device& device,render::Renderer3D& renderer,const StudioFacialPreviewBinding& binding);
     render::Model* hair_=nullptr;  // Human Creator groom cards (borrowed)
     std::string hairKey_;

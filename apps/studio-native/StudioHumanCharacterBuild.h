@@ -1,7 +1,9 @@
 #pragma once
 #include "StudioHumanLookDocument.h"
 #include "StudioContentDirectory.h"
+#include <algorithm>
 #include <cstdio>
+#include <vector>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -17,6 +19,16 @@ inline render::FileReader humanCharacterReader(const std::filesystem::path& cont
   std::error_code ec;if(!fs::is_regular_file(path,ec)||ec||fs::file_size(path,ec)>128u*1024u*1024u||ec)return false;
   std::ifstream in(path,std::ios::binary);if(!in)return false;out.assign(std::istreambuf_iterator<char>(in),{});return bool(in)||in.eof();
  };
+}
+// Game budget of an assembled character: triangles per LOD level (a mesh
+// without that level keeps drawing its finest available one).
+inline Json studioHumanLodTriangles(const render::Model& m) {
+ auto tris=[&](int mesh){size_t t=0;if(mesh<0||size_t(mesh)>=m.meshes.size())return t;for(const auto& p:m.meshes[size_t(mesh)].primitives)t+=p.indexCount/3;return t;};
+ std::vector<int> base;for(const auto& n:m.nodes)if(n.mesh>=0)base.push_back(n.mesh);
+ size_t levels=1;for(int b:base)levels=std::max(levels,m.meshes.at(size_t(b)).lods.size()+1);levels=std::min<size_t>(levels,6);
+ auto out=Json::array();
+ for(size_t k=0;k<levels;++k){size_t t=0;for(int b:base){const auto& lods=m.meshes.at(size_t(b)).lods;int mesh=b;for(size_t i=0;i<k&&i<lods.size();++i)if(lods[i].mesh>=0)mesh=lods[i].mesh;t+=tris(mesh);}out.push(Json::number(int64_t(t)));}
+ return out;
 }
 inline Json buildStudioHumanCharacter(const std::string& project,const std::string& source,
  const Json& wardrobe,const vivid::HumanAppearance& look,const std::string& name,int size,const Json& editable) {
@@ -51,6 +63,6 @@ inline Json buildStudioHumanCharacter(const std::string& project,const std::stri
 #endif
   (void)::fsync(folder);::close(dir);::close(folder);
  }catch(...){for(auto file:{"model.glb","source.json","appearance.json"})::unlinkat(dir,file,0);::close(dir);::unlinkat(folder,pending.c_str(),AT_REMOVEDIR);::close(folder);throw;}
- auto result=Json::object();result.set("running",Json::fromBool(false));result.set("path",Json::string("Characters/"+name+"/model.glb"));result.set("vertices",Json::number(int64_t(check->vertices.size())));result.set("meshes",Json::number(int64_t(check->meshes.size())));result.set("materials",Json::number(int64_t(check->materials.size())));result.set("bytes",Json::number(int64_t(bytes.size())));return result;
+ auto result=Json::object();result.set("running",Json::fromBool(false));result.set("path",Json::string("Characters/"+name+"/model.glb"));result.set("vertices",Json::number(int64_t(check->vertices.size())));result.set("meshes",Json::number(int64_t(check->meshes.size())));result.set("materials",Json::number(int64_t(check->materials.size())));result.set("bytes",Json::number(int64_t(bytes.size())));result.set("lodTriangles",studioHumanLodTriangles(*check));result.set("textureSize",Json::number(int64_t(size)));return result;
 }
 }

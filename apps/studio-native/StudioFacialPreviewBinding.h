@@ -10,6 +10,7 @@
 #include "engine/character/vivid/HumanFaceShape.h"
 #include "engine/character/vivid/HumanStudioLighting.h"
 #include "engine/character/vivid/HumanPreviewAnimation.h"
+#include "engine/character/vivid/HumanWardrobe.h"
 #include <optional>
 #include <array>
 #include <cmath>
@@ -34,7 +35,7 @@ public:
     uint64_t cameraSerial=0;
     void reset() {
         studioLighting={};previewAnimation={};
-        appearance_.reset();face_.reset();appearanceOnly_=false;
+        appearance_.reset();face_.reset();appearanceOnly_=false;compare_=false;wardrobe_=Json();
         creator_=Json();
         guid_.clear();
         path_.clear();
@@ -48,6 +49,14 @@ public:
     const std::optional<vivid::HumanAppearance>& appearance() const {return appearance_;}
     const std::optional<vivid::HumanFaceShape>& face() const {return face_;}
     bool appearanceOnly() const {return appearanceOnly_;}
+    // Live try-on: wardrobe recipe assembled into the preview (no bake).
+    const Json& wardrobe() const {return wardrobe_;}
+    Json setWardrobe(const Json& recipe) {
+        if(!bound() || creatorMode())throw std::runtime_error("Покажите персонажа, чтобы примерять одежду");
+        if(!recipe.isNull())vivid::validateHumanWardrobe(recipe);
+        if(!(recipe==wardrobe_)){wardrobe_=recipe;gpuReady_=false;++revision_;}
+        return describe();
+    }
     // Before/after: draw the untouched source model while held.
     bool compareOriginal() const {return compare_;}
     Json setCompareOriginal(bool on) {
@@ -62,7 +71,7 @@ public:
         auto candidateFace=guid_==guid?face_:std::optional<vivid::HumanFaceShape>{};
         if(face){candidateFace.reset();if(!face->isNull())candidateFace=vivid::HumanFaceShape::fromJson(*face); }
         if(guid_!=guid || !bound()) {
-            draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;compare_=false;
+            draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;compare_=false;wardrobe_=Json();
         }
         creator_=Json();
         guid_=guid;path_=path;appearance_=candidate;face_=candidateFace;
@@ -241,6 +250,7 @@ public:
         Json result=Json::object();
         result.set("appearanceOnly",Json::fromBool(appearanceOnly_));
         result.set("compare",Json::fromBool(compare_));
+        result.set("tryOn",Json::fromBool(!wardrobe_.isNull()));
         result.set("appearance",appearance_?appearance_->toJson():Json());
         result.set("creator",Json::fromBool(creatorMode()));
         result.set("bound",Json::fromBool(bound()));
@@ -278,6 +288,7 @@ private:
     std::optional<vivid::HumanFaceShape> face_;
     bool appearanceOnly_=false;
     bool compare_=false;
+    Json wardrobe_;
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;

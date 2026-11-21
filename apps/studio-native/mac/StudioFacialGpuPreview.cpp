@@ -1,4 +1,6 @@
 #include "StudioFacialGpuPreview.h"
+#include "apps/studio-native/StudioHumanCharacterBuild.h"
+#include <chrono>
 #include "apps/studio-native/StudioContentDirectory.h"
 #include <algorithm>
 #include <cmath>
@@ -48,7 +50,7 @@ bool StudioFacialGpuPreview::clear(
     animator_.setModel(nullptr);
     pose_.clear();
     nodeWorld_.clear();
-    model_=nullptr;hair_=nullptr;framed_=false;pickSurface_={};pristine_.reset();appliedFace_=Json();appliedLook_=Json();hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
+    model_=nullptr;hair_=nullptr;framed_=false;pickSurface_={};pristine_.reset();appliedFace_=Json();appliedLook_=Json();appliedWardrobe_=Json();tryOnRevision_=0;tryOnGuid_.clear();hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
     guid_.clear();projectRoot_.clear();modelKey_.clear();
     pendingSource_.clear();pendingProject_.clear();pendingGuid_.clear();
     pendingRevision_=revision_=rejectedRevision_=0;
@@ -108,6 +110,7 @@ bool StudioFacialGpuPreview::sync(
         // and only the dedicated vertex buffer is rewritten.
         if(model_ && pristine_ && guid_==binding.guid() && projectRoot_==projectRoot &&
            !binding.creatorMode() && appearanceOnly_ && binding.appearanceOnly() &&
+           binding.wardrobe()==appliedWardrobe_ &&
            editInPlace(device,renderer,binding)) {
             revision_=binding.revision();
             rejectedRevision_=0;rejectedError_.clear();
@@ -167,42 +170,62 @@ bool StudioFacialGpuPreview::sync(
             });
             hairKey_.clear();hair_=nullptr;creatorRig_=vivid::RigAuthoring{};
         }
-        const std::string source="content/"+binding.path();
-        if(pendingRevision_!=binding.revision() ||
-           pendingGuid_!=binding.guid() || pendingProject_!=projectRoot) {
-            if(!pendingSource_.empty())provider_->cancelAsync(pendingSource_);
-            render::ModelAssetProvider::Prepared discarded;
-            while(provider_->takePrepared(discarded)) {}
-            if(readerProject_!=projectRoot) {
-                // Rare project switch joins the old reader's CPU work.
-                // Ordinary generation changes only invalidate its result.
-                provider_->setReader([root=fs::path(projectRoot)](
-                        const std::string& key,std::string& bytes) {
-                    return readProjectFile(root,key,bytes);
-                });
-                readerProject_=projectRoot;
+        render::ModelAssetProvider::Prepared prepared;
+        // Finished/abandoned try-on assemblies are joined only once ready.
+        std::erase_if(staleTryOn_,[](auto& f){return f.wait_for(std::chrono::seconds(0))==std::future_status::ready;});
+        if(!binding.wardrobe().isNull()) {
+            // Live try-on: assemble base + wardrobe on a worker (small
+            // textures, look and face applied below like an import).
+            if(tryOnRevision_!=binding.revision() || tryOnGuid_!=binding.guid()) {
+                if(tryOnJob_.valid())staleTryOn_.push_back(std::move(tryOnJob_));
+                auto reader=studio::humanCharacterReader(studio::studioContentRoot(projectRoot));
+                tryOnJob_=std::async(std::launch::async,[reader,path=binding.path(),recipe=binding.wardrobe()]{
+                    return vivid::assembleHumanCharacter(path,reader,recipe,vivid::HumanAppearance{},256,nullptr);});
+                tryOnRevision_=binding.revision();tryOnGuid_=binding.guid();
             }
-            if(!provider_->requestAsync(source,render::ModelLoadPriority::Interactive)) {
-                error="Facial model import waiting for resource capacity";
+            if(tryOnJob_.wait_for(std::chrono::seconds(0))!=std::future_status::ready) {
+                error="Примерка одежды…";
                 return false;
             }
-            pendingSource_=source;
-            pendingRevision_=binding.revision();
-            pendingGuid_=binding.guid();
-            pendingProject_=projectRoot;
-        }
-        render::ModelAssetProvider::Prepared prepared;
-        if(provider_->publicationBackpressured()) {
-            error="Facial model publication waiting for GPU retirement";
-            return false;
-        }
-        if(!provider_->takePrepared(prepared)) {
-            error="Loading facial model";
-            return false;
-        }
-        if(prepared.source!=pendingSource_) {
-            error="Loading facial model";
-            return false; // stale different-source result never gets published
+            prepared.model=tryOnJob_.get(); // rethrows assembly errors
+            tryOnRevision_=0;
+        } else {
+            const std::string source="content/"+binding.path();
+            if(pendingRevision_!=binding.revision() ||
+               pendingGuid_!=binding.guid() || pendingProject_!=projectRoot) {
+                if(!pendingSource_.empty())provider_->cancelAsync(pendingSource_);
+                render::ModelAssetProvider::Prepared discarded;
+                while(provider_->takePrepared(discarded)) {}
+                if(readerProject_!=projectRoot) {
+                    // Rare project switch joins the old reader's CPU work.
+                    // Ordinary generation changes only invalidate its result.
+                    provider_->setReader([root=fs::path(projectRoot)](
+                            const std::string& key,std::string& bytes) {
+                        return readProjectFile(root,key,bytes);
+                    });
+                    readerProject_=projectRoot;
+                }
+                if(!provider_->requestAsync(source,render::ModelLoadPriority::Interactive)) {
+                    error="Facial model import waiting for resource capacity";
+                    return false;
+                }
+                pendingSource_=source;
+                pendingRevision_=binding.revision();
+                pendingGuid_=binding.guid();
+                pendingProject_=projectRoot;
+            }
+            if(provider_->publicationBackpressured()) {
+                error="Facial model publication waiting for GPU retirement";
+                return false;
+            }
+            if(!provider_->takePrepared(prepared)) {
+                error="Loading facial model";
+                return false;
+            }
+            if(prepared.source!=pendingSource_) {
+                error="Loading facial model";
+                return false; // stale different-source result never gets published
+            }
         }
         if(!prepared.model)
             throw std::runtime_error(prepared.warnings.empty()
@@ -251,6 +274,7 @@ bool StudioFacialGpuPreview::sync(
         pristine_=std::move(pristine);
         appliedFace_=binding.face()?binding.face()->toJson():Json();
         appliedLook_=binding.appearance()?binding.appearance()->toJson():Json();
+        appliedWardrobe_=binding.wardrobe();
         model_=published;
         modelKey_=key;
         facial_=std::move(newSession);

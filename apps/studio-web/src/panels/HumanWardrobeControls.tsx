@@ -3,14 +3,15 @@ import type {HumanSocket,HumanFaceShape,HumanLook,HumanWardrobe,HumanWardrobeIte
 import {invoke} from '../bridge';
 import AssetReferencePicker from '../components/AssetReferencePicker';
 import {StudioField,StudioInput,StudioSelect,StudioButton,StudioAlert} from '../ui';
-import {HcCard,HcHeader,HcNote} from './HumanCreatorUi';
+import {HcCard,HcHeader,HcNote,HcSwitch} from './HumanCreatorUi';
+import {hexToRgb,rgbToHex} from './humanCreatorSchema';
 import {Shirt} from 'lucide-react';
 const empty=():HumanWardrobe=>({version:1,hiddenMeshes:[],items:[]});
 const SLOT_LABELS:Record<string,string>={top:'Верх',bottom:'Низ',feet:'Обувь',head:'Голова',neck:'Шея',wrist_left:'Левое запястье',wrist_right:'Правое запястье',ears:'Уши',accessory_1:'Аксессуар',accessory_2:'Аксессуар'};
 const slotLabel=(slot:string)=>SLOT_LABELS[slot]??slot;
 const assetLabel=(path:string)=>path?path.split('/').pop()!.replace(/\.(gltf|glb|fbx)$/i,'').replace(/([a-z])([A-Z])/g,'$1 $2'):'Без модели';
 const slots=['top','bottom','feet','head','neck','wrist_left','wrist_right','ears','accessory_1','accessory_2'];
-export default function HumanWardrobeControls({guid,look,face}:{guid:string;look:HumanLook;face:HumanFaceShape|null}) {
+export default function HumanWardrobeControls({guid,look,face,onShow}:{guid:string;look:HumanLook;face:HumanFaceShape|null;onShow?:(guid:string)=>void}) {
  const [recipe,setRecipe]=useState<HumanWardrobe>(empty);
  const [history,setHistory]=useState<HumanWardrobe[]>([]);
  const [info,setInfo]=useState<{meshes:string[];bones:string[];materials:string[]}|null>(null);
@@ -25,14 +26,24 @@ export default function HumanWardrobeControls({guid,look,face}:{guid:string;look
  const disabled=busy||!!job?.running;
  const [paths,setPaths]=useState<Record<string,string>>({});
  useEffect(()=>{if(!recipe.items.some(i=>i.asset&&!paths[i.asset]))return;let live=true;void invoke('studio.assets',{}).then(r=>{if(live)setPaths(Object.fromEntries(r.files.filter(f=>f.guid).map(f=>[f.guid!,f.path])));}).catch(()=>{});return ()=>{live=false;};},[recipe.items,paths]);
+ // Live try-on: every change of the outfit re-assembles the preview (small
+ // textures, nothing written to disk) until the switch is turned off.
+ const [tryOn,setTryOn]=useState(true),[trying,setTrying]=useState(false);
+ useEffect(()=>{
+  if(!guid||!recipe.items.length)return;
+  const timer=setTimeout(()=>{setTrying(true);void invoke('studio.humanTryOn',{wardrobe:tryOn?recipe:null}).catch(e=>setError(String(e).replace(/^Error: /,''))).finally(()=>setTrying(false));},350);
+  return ()=>clearTimeout(timer);
+ },[recipe,tryOn,guid]);
+ useEffect(()=>()=>{void invoke('studio.humanTryOn',{wardrobe:null}).catch(()=>{});},[]);
  const toggle=(values:string[],value:string)=>values.includes(value)?values.filter(v=>v!==value):[...values,value];
  return <>
-  <HcHeader title="Одежда" hint="Наденьте комплект модели или добавьте вещи, затем соберите персонажа — одежда появится во вьюпорте после сборки."/>
+  <HcHeader title="Одежда" hint="Наденьте комплект модели или добавьте вещи — с примеркой они сразу видны во вьюпорте. Сборка запекает итог в новый ассет."/>
   {error&&<HcNote tone="error">{error}</HcNote>}
   <HcCard title="Комплект" hint={recipe.items.length?recipe.items.filter(i=>i.enabled).length+' из '+recipe.items.length+' вещей надето':'Загрузите комплект, который лежит рядом с моделью'}
    actions={<StudioButton size="sm" disabled={disabled||!history.length} onClick={()=>{setRecipe(history[history.length-1]);setHistory(history.slice(0,-1));}}>Отменить</StudioButton>}>
    <StudioButton variant={recipe.items.length?'secondary':'primary'} disabled={disabled||!guid} onClick={()=>void run(async()=>{setInfo(await invoke('studio.humanWardrobeInfo',{guid}));edit(await invoke('studio.humanWardrobeFromAsset',{guid}));})}><Shirt size={14}/> Загрузить комплект модели</StudioButton>
    {!guid&&<HcNote tone="warn">Сначала выберите персонажа в «Пресетах».</HcNote>}
+   {recipe.items.length>0&&<HcSwitch label="Примерять во вьюпорте" hint={trying?'Обновляю примерку…':'Текстуры 256 px, на диск ничего не пишется'} checked={tryOn} disabled={!guid} onChange={setTryOn}/>}
    <div className="hc-items">
   {info&&<details><summary>Скрыть части модели под одеждой</summary>
    {info.meshes.map(mesh=><WardrobeField key={mesh} label={mesh}><StudioInput type="checkbox" aria-label={'Показывать '+mesh} checked={!recipe.hiddenMeshes.includes(mesh)} disabled={disabled} onChange={()=>edit({...recipe,hiddenMeshes:toggle(recipe.hiddenMeshes,mesh)})}/></WardrobeField>)}
@@ -50,6 +61,10 @@ export default function HumanWardrobeControls({guid,look,face}:{guid:string;look
    <div className="hc-item__row">
     <label className="hc-item__toggle" title={item.enabled?'Снять':'Надеть'}><input type="checkbox" role="switch" aria-label={(item.enabled?'Снять ':'Надеть ')+assetLabel(paths[item.asset]??item.asset)} checked={item.enabled} disabled={disabled} onChange={e=>itemEdit(index,{enabled:e.target.checked})}/><i aria-hidden="true"/></label>
     <div className="hc-item__name"><strong>{assetLabel(paths[item.asset]??'')}</strong><small>{slotLabel(item.slot)}{item.finish==='source'?' · металл/украшение':''}</small></div>
+    <label className="hc-item__color" title="Цвет вещи"><input type="color" aria-label={'Цвет '+assetLabel(paths[item.asset]??'')} disabled={disabled}
+     value={rgbToHex((item.tint??[1,1,1]).map(v=>Math.min(1,v)))}
+     onChange={e=>{const rgb=hexToRgb(e.target.value);if(rgb)itemEdit(index,{tint:rgb});}}/></label>
+    {item.tint&&<button type="button" className="hc-reset" title="Исходный цвет" disabled={disabled} onClick={()=>itemEdit(index,{tint:undefined})}>↺</button>}
    </div>
    <details className="hc-item__more"><summary>Настроить крепление</summary><div className="au-stack">
    <AssetReferencePicker value={item.asset} kinds={['model']} label="SKM / меш / аксессуар" disabled={disabled} onChange={asset=>itemEdit(index,{asset})}/>
@@ -76,9 +91,24 @@ export default function HumanWardrobeControls({guid,look,face}:{guid:string;look
   <WardrobeField label="Максимальный размер запекаемых текстур"><StudioSelect value={size} disabled={disabled} onChange={e=>setSize(Number(e.target.value))}>{[256,512,1024,2048,4096].map(n=><option key={n}>{n}</option>)}</StudioSelect></WardrobeField>
   <StudioButton variant="primary" disabled={disabled||!guid||!(/^[A-Za-z0-9_-]{1,64}$/).test(name)} onClick={()=>void run(async()=>{setJob(await invoke('studio.humanCharacterBuild',{guid,look,wardrobe:recipe,name,textureSize:size,face}));})}>{job?.running?'Собирается…':'Собрать персонажа'}</StudioButton>
   {job?.running&&<StudioAlert>Импорт, запекание материалов и масок, сборка мешей, проверка повторным импортом GLB…</StudioAlert>}
-  {job?.path&&<><StudioAlert tone="success">{job.path} · {job.meshes} мешей · {job.materials} материалов · {job.vertices} вершин. Рецепт сохранён рядом в source.json.</StudioAlert><StudioButton disabled={disabled||!job.guid} onClick={()=>void run(async()=>{const current=await invoke('studio.humanAppearanceInfo',{});await invoke('studio.humanAppearanceApply',{guid:job.guid!,revision:current.preview.revision,face:null,look:{version:1,values:{},materials:{}}});})}>Показать собранного персонажа</StudioButton></>}
+  {job?.path&&<><StudioAlert tone="success">{job.path} · {job.meshes} мешей · {job.materials} материалов · {job.vertices} вершин. Рецепт сохранён рядом в source.json.</StudioAlert>
+   {job.lodTriangles&&<LodBudget tris={job.lodTriangles} bytes={job.bytes??0} textureSize={job.textureSize??size}/>}
+   <StudioButton disabled={disabled||!job.guid} onClick={()=>void run(async()=>{const current=await invoke('studio.humanAppearanceInfo',{});await invoke('studio.humanAppearanceApply',{guid:job.guid!,revision:current.preview.revision,face:null,look:{version:1,values:{},materials:{}}});onShow?.(job.guid!);})}>Показать собранного персонажа</StudioButton></>}
   </HcCard>
  </>;
+}
+
+// Game budget: triangles per LOD against common targets for a hero
+// character, plus file size and baked texture size.
+function LodBudget({tris,bytes,textureSize}:{tris:number[];bytes:number;textureSize:number}) {
+ const limits=[100000,50000,20000,8000,3000];
+ const fmt=(n:number)=>n>=1000?(n/1000).toFixed(n>=10000?0:1)+'k':String(n);
+ return <div className="hc-budget"><strong>Бюджет для игры</strong>
+  {tris.map((t,i)=>{const limit=limits[Math.min(i,limits.length-1)],pct=Math.min(100,t/limit*100);
+   return <div key={i} className={'hc-budget__row'+(t>limit?' hc-budget__row--over':'')}><span>LOD{i}</span><i style={{['--hc-fill' as string]:pct+'%'}}/><span>{fmt(t)} / {fmt(limit)} тр.</span></div>;})}
+  {tris.length<2&&<small className="hc-hint">Нет LOD-уровней: на расстоянии персонаж будет рисоваться в полной детализации.</small>}
+  <small className="hc-hint">Файл {(bytes/1048576).toFixed(1)} МБ · текстуры до {textureSize} px{textureSize>2048?' — тяжело для толпы':''}</small>
+ </div>;
 }
 
 function WardrobeField({label,hint,children}:{label:string;hint?:string;children:ReactElement<{id?:string}>}) {

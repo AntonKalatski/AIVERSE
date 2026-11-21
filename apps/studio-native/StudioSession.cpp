@@ -575,6 +575,10 @@ Json StudioSession::dispatch(const Json& request) {
                 throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
             sculpt_.regionPick=on;if(on)sculpt_.armed=false;
             auto result=Json::object();result.set("enabled",Json::fromBool(on));reply.set("result",std::move(result));
+        } else if(method=="studio.humanTryOn") {
+            // Live wardrobe try-on in the preview; null takes everything off.
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            reply.set("result",facialPreview_.setWardrobe(params["wardrobe"]));
         } else if(method=="studio.humanCompare") {
             // Before/after: show the untouched source model while held.
             reply.set("result",facialPreview_.setCompareOriginal(params.getBool("original")));

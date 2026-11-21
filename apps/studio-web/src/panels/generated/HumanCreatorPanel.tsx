@@ -169,7 +169,8 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
         <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'body': return <><HcHeader title="Тело" hint="Рост и пропорции. Одежда следует за скелетом — при крайних значениях проверьте пересечения."/>
         <HcCard title="Пропорции"><LookSliders groups={['body']} h={h} live={autoApply && bound}/></HcCard></>;
-      case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face}/>;
+      case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face}
+        onShow={g => { h.setGuid(g); h.setFace(null); h.setStatus('Показан собранный персонаж'); }}/>;
       case 'pose': return <><HcHeader title="Поза и свет" hint="Мимика и поза для проверки лица в движении, студийный свет превью."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
         <details><summary>Роли материалов ({Object.keys(h.draft.materials).length})</summary><div className="hc-grid">
           {Object.entries(h.draft.materials).map(([m, role]) => <StudioField key={m} label={m} htmlFor={'role-' + m}>
