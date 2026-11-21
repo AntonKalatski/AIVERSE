@@ -1933,6 +1933,14 @@ the commit message; prefer adding a new file over editing a shared one.
 `agent-...` or `codex/...`; those in the area table below are existing branches and keep their names.
 The worktree folder follows the branch: `.worktrees/feature/aiv142_city_traffic`.
 
+**Never prune other agents' worktrees.** Cloud sessions reach the repository through a mounted copy, so a
+worktree they create is registered under a session path (`/sessions/...`) that does not exist on the Mac;
+`git worktree list` shows it as `prunable` while its folder and work are alive. Do not run
+`git worktree prune` / `git worktree remove` for entries that are not yours — remove only your own worktree
+by its exact path. A cloud agent registers its worktree so both sides see it: `.git` file in the worktree
+`gitdir: ../../.git/worktrees/<name>` (relative) and `.git/worktrees/<name>/gitdir` = the Mac path
+`/Users/<user>/Projects/AIVERSE/.worktrees/<name>/.git`. Branch commits survive a prune; uncommitted work does not.
+
 | Area | Paths | Owner |
 |---|---|---|
 | Simulation & mechanics, AI, triggers | `engine/core`, `engine/sim`, `modules/rts/*.{h,cpp}` | main agent |
