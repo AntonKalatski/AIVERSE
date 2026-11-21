@@ -54,3 +54,4 @@
 .compact-shell .titlebar {display:grid;grid-template-columns:minmax(max-content,1fr) auto minmax(max-content,1fr);align-items:center}
 .compact-shell .titlebar__side {display:flex;align-items:center;gap:14px;min-width:0;height:100%}
 .compact-shell .titlebar__side--right {justify-content:flex-end}
+.header-game-controls{position:relative}.header-game-note{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);white-space:nowrap;padding:4px 9px;border-radius:7px;background:var(--au-panel-raised);border:1px solid var(--au-line-strong);color:var(--au-text);font-size:var(--au-font-xs);z-index:50;pointer-events:none}

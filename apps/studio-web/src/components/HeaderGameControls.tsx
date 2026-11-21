@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LocateFixed, Play, Pause, Square, StepForward } from 'lucide-react';
+import { ArchiveRestore, LocateFixed, Play, Pause, Square, StepForward } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioGameState } from '../types';
 
@@ -9,6 +9,8 @@ export default function HeaderGameControls({enabled,onPlay,onError,onState}:{
 }) {
   const [state,setState]=useState<StudioGameState|null>(null);
   const [pending,setPending]=useState(false);
+  const [note,setNote]=useState('');
+  useEffect(()=>{ if(!note)return; const t=window.setTimeout(()=>setNote(''),4000); return ()=>window.clearTimeout(t); },[note]);
   useEffect(()=>{ onState?.(state); },[state,onState]);
   useEffect(()=>{
     if(!enabled){setState(null);return;}
@@ -44,6 +46,15 @@ export default function HeaderGameControls({enabled,onPlay,onError,onState}:{
     return ()=>window.removeEventListener('studio:play-control',control);
   });
   const playing=!!state?.active;
+  // Keep play changes: map entities take their in-game positions and amounts (⌥: also remove the ones that died).
+  const keep=async(removeDead:boolean)=>{
+    setPending(true);
+    try {
+      const r=await invoke('studio.keepPlayChanges',{removeDead});
+      setNote(r.moved+r.amounts+r.removed ? `Kept: ${r.moved} moved, ${r.amounts} amounts${r.removed?`, ${r.removed} removed`:''}` : 'Nothing changed on the map');
+    }catch(e){onError(e instanceof Error?e.message:String(e));}
+    finally{setPending(false);}
+  };
   return <div className={'header-game-controls'+(playing?' is-playing':'')} role="group" aria-label="Play controls">
     {playing
       ? <button className="icon-button is-on" aria-label="Stop" title="Stop (⌘P)" disabled={pending}
@@ -56,5 +67,9 @@ export default function HeaderGameControls({enabled,onPlay,onError,onState}:{
       title="Pause (⇧⌘P)" disabled={!state?.canControl||pending} onClick={()=>void action('pause')}><Pause size={16}/></button>
     <button className="icon-button" aria-label="Step one tick" title="Step one tick (⌥⌘P)"
       disabled={!state?.canStep||!state?.paused||pending} onClick={()=>void action('step')}><StepForward size={16}/></button>
+    {playing && <button className="icon-button" aria-label="Keep play changes"
+      title="Keep play changes: map objects take their in-game positions and resource amounts (one undo step) · ⌥-click: also remove the ones that died"
+      disabled={!state?.inMatch||pending} onClick={e=>void keep(e.altKey)}><ArchiveRestore size={15}/></button>}
+    {note && <span className="header-game-note" role="status">{note}</span>}
   </div>;
 }

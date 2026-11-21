@@ -64,7 +64,13 @@ option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot c
 # Register Objective-C++ in the ROOT directory before creating any targets.
 # CMake does not propagate a language enabled only in a child directory back
 # to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
-option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+# The HTML5 Studio is the main editor on macOS: built by default once its web bundle exists
+# (studio_mac.command builds the bundle first; -DAIVERSE_BUILD_STUDIO_HTML5=OFF skips it).
+set(_aiverse_studio_default OFF)
+if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/studio-web/dist/index.html")
+    set(_aiverse_studio_default ON)
+endif()
+option(AIVERSE_BUILD_STUDIO_HTML5 "Build the macOS HTML5 Studio (main editor)" ${_aiverse_studio_default})
 if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
     enable_language(OBJCXX)
 endif()

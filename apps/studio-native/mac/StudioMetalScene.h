@@ -132,6 +132,14 @@ public:
     bool groundPoint(float x, float y, float width, float height, render::float3& out) const;
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
+    // Scene brush ring under the cursor (radius in world units); hidden when visible=false.
+    // Texture Resources / Frame Capture panels: live GPU textures (format-based size estimate) and draw calls.
+    Json textureResources() const;
+    uint32_t drawCalls() const { return renderer_.drawCalls(); }
+    // Project extension gizmos (editor/extensions.lua scene_gizmos): world-space lines, circles (screen px), points.
+    struct OverlayShape { int kind = 0; render::float3 a{}, b{}; float radius = 8, thickness = 2; uint8_t r = 90, g = 180, bl = 255; };
+    void setOverlayShapes(std::vector<OverlayShape> shapes) { overlayShapes_ = std::move(shapes); }
+    void setBrushCursor(bool visible, render::float3 center, float radius) { brushVisible_=visible; brushCenter_=center; brushRadius_=radius; }
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
     // Automation (AIVERSE_STUDIO_WIND_SHOTS): frame a point of interest.
     void setShotCamera(float tx, float ty, float tz, float distance, float yaw, float pitch) {
@@ -249,6 +257,9 @@ private:
     render::float3 selectedBox_[8]{};          // world corners of the selected object's box
     void captureSelectedBox(const render::mat4& world, render::float3 lo, render::float3 hi);
     void drawSelectionBox(const render::RTSCamera& view, int width, int height);
+    std::vector<OverlayShape> overlayShapes_;
+    bool brushVisible_ = false; render::float3 brushCenter_{}; float brushRadius_ = 0;
+    void drawBrushCursor(const render::RTSCamera& view, int width, int height);
     void drawTransformGizmo(const render::RTSCamera& view, int width, int height);
     bool autoIso_ = false; // Iso entered by an axis snap; orbit/look returns to Persp
     void drawOrientationGizmo(const render::RTSCamera& view, int width, int height);

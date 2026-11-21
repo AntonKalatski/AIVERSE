@@ -12,6 +12,7 @@
 #include "apps/studio-native/StudioAssetReferences.h"
 #include "apps/studio-native/StudioAssetUsage.h"
 #include "apps/studio-native/StudioTools.h"
+#include "engine/view/AttachmentLayout.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
@@ -617,34 +618,100 @@ bool StudioSession::pollAgentLink() {
     if(agentLines_.size()>3000)agentLines_.erase(agentLines_.begin(),agentLines_.begin()+1000);
     return changed;
 }
-bool StudioSession::terrainStrokeDab(double x, double y, std::string* error) {
+namespace {
+bool brushPathKind(const std::string& k){return k=="road"||k=="river";}
+const char* brushLabel(const std::string& k){
+    return k=="terrain"?"Terrain brush":k=="paint"?"Paint terrain":k=="tiles"?"Paint tiles":k=="field"?"Paint field":
+           k=="objects"?"Scatter objects":k=="road"?"Draw road":k=="river"?"Draw river":"Brush";
+}
+}
+StudioLuaContext StudioSession::luaContext() const {
+    StudioLuaContext c;
+    const auto ids=selectedObjectIds();
+    c.selectionCount=int(ids.size());
+    c.selectionIndex=ids.empty()?-1:indexFor(ids.back());
+    c.objectCount=int(ws_.map.data.entities.size());
+    return c;
+}
+Json StudioSession::sceneBrushJson() const {
+    const auto& b=brush_;
+    Json o=Json::object();
+    o.set("armed",Json::fromBool(b.armed));o.set("kind",str(b.kind));o.set("op",str(b.op));
+    o.set("radius",Json::number(b.radius,3));o.set("strength",Json::number(b.strength,3));
+    o.set("layer",num(int64_t(b.layer)));o.set("tile",str(b.tile));o.set("field",str(b.field));o.set("fieldMode",str(b.fieldMode));
+    o.set("value",Json::number(b.value,3));o.set("type",str(b.type));o.set("owner",num(int64_t(b.owner)));
+    o.set("count",num(int64_t(b.count)));o.set("spread",Json::number(b.spread,3));
+    o.set("roadType",str(b.roadType));o.set("width",Json::number(b.width,3));
+    return o;
+}
+bool StudioSession::strokeDab(double x, double z, std::string* error) {
     if(!stroking_)return false;
-    // Dabs closer than a third of the radius add little but cost a full map snapshot each.
-    if(std::hypot(x-strokeX_,y-strokeY_)<terrainBrush_.radius*0.33 && ws_.map.undoDepth()>strokeDepth_)return true;
-    Json p=Json::object();
-    p.set("op",str(terrainBrush_.op));p.set("x",Json::number(x,3));p.set("y",Json::number(y,3));
-    p.set("radius",Json::number(terrainBrush_.radius,3));p.set("strength",Json::number(terrainBrush_.strength,3));
-    const Json r=ws_.call("terrain_sculpt",p,"studio");
+    const auto& b=brush_;
+    const double d=std::hypot(x-strokeX_,z-strokeY_);
+    if(brushPathKind(b.kind)){
+        // Path tools: a point every two cells; the op runs once on release.
+        if(d<2.0 && strokePoints_.size()>0)return true;
+        Json pt=Json::array();pt.push(Json::number(x,2));pt.push(Json::number(z,2));
+        if(b.kind=="river")pt.push(Json::number(b.width,2));
+        strokePoints_.push(std::move(pt));strokeX_=x;strokeY_=z;
+        return true;
+    }
+    // Dabs closer than about a third of the radius add little but cost a full map snapshot each.
+    const double spacing=b.kind=="objects"?std::max(1.0,b.radius):b.kind=="tiles"||b.kind=="field"?std::max(1.0,b.radius*0.5):b.radius*0.33;
+    if(d<spacing && strokeDabs_>0)return true;
+    Json p=Json::object();std::string op;
+    if(b.kind=="terrain"){op="terrain_sculpt";p.set("op",str(b.op));p.set("x",Json::number(x,3));p.set("y",Json::number(z,3));
+        p.set("radius",Json::number(b.radius,3));p.set("strength",Json::number(b.strength,3));}
+    else if(b.kind=="paint"){op="terrain_paint_material";p.set("layer",num(int64_t(b.layer)));p.set("x",Json::number(x,3));p.set("y",Json::number(z,3));
+        p.set("radius",Json::number(b.radius,3));p.set("strength",Json::number(std::min(1.0,b.strength),3));}
+    else if(b.kind=="tiles"){op="tile_paint";p.set("terrain",str(b.tile));p.set("x",num(int64_t(std::floor(x))));p.set("y",num(int64_t(std::floor(z))));
+        p.set("radius",num(int64_t(std::lround(b.radius))));}
+    else if(b.kind=="field"){op="field_paint";p.set("id",str(b.field));p.set("x",num(int64_t(std::floor(x))));p.set("z",num(int64_t(std::floor(z))));
+        p.set("radius",num(int64_t(std::lround(b.radius))));p.set("value",Json::number(b.value,3));p.set("mode",str(b.fieldMode));}
+    else if(b.kind=="objects"){op="entity_place";p.set("type",str(b.type));p.set("owner",num(int64_t(b.owner)));
+        p.set("x",Json::number(x,3));p.set("z",Json::number(z,3));
+        if(b.count>1){p.set("count",num(int64_t(b.count)));p.set("spread",Json::number(b.spread,3));}}
+    else {if(error)*error="Unknown brush";return false;}
+    const Json r=ws_.call(op,p,"editor");   // "editor": no Console line per dab; one line per stroke at the end
     if(r.has("error")){if(error)*error=r.getStr("error");return false;}
-    strokeX_=x;strokeY_=y;
+    strokeX_=x;strokeY_=z;++strokeDabs_;
     return true;
 }
-bool StudioSession::terrainStrokeBegin(double x, double y, std::string* error) {
-    if(!terrainBrush_.armed||ws_.project.dir.empty())return false;
+bool StudioSession::strokeBegin(double x, double z, std::string* error) {
+    if(!brush_.armed||ws_.project.dir.empty())return false;
+    const auto& b=brush_;
+    if((b.kind=="tiles"&&b.tile.empty())||(b.kind=="field"&&b.field.empty())||(b.kind=="objects"&&b.type.empty())||(b.kind=="road"&&b.roadType.empty())){
+        if(error)*error=std::string("choose a ")+(b.kind=="tiles"?"tile terrain":b.kind=="field"?"field":b.kind=="objects"?"type":"road type")+" first";
+        return false;
+    }
     syncHistoryLabels();
-    strokeDepth_=ws_.map.undoDepth();stroking_=true;
-    strokeX_=x+1e9;   // the first dab always applies
-    if(!terrainStrokeDab(x,y,error)){stroking_=false;return false;}
+    strokeDepth_=ws_.map.undoDepth();stroking_=true;strokeDabs_=0;strokePoints_=Json::array();
+    strokeX_=x+1e9;strokeY_=z+1e9;   // the first dab always applies
+    if(!strokeDab(x,z,error)){stroking_=false;return false;}
     return true;
 }
-void StudioSession::terrainStrokeEnd() {
-    if(!stroking_)return;
+bool StudioSession::strokeEnd(std::string* error) {
+    if(!stroking_)return true;
     stroking_=false;
-    if(ws_.map.undoDepth()<=strokeDepth_)return;
-    ws_.map.mergeUndoSince(strokeDepth_);
-    while(undoLabels_.size()>strokeDepth_)undoLabels_.pop_back();
-    undoLabels_.push_back("Terrain brush");redoLabels_.clear();
+    const auto& b=brush_;
+    bool ok=true;
+    if(brushPathKind(b.kind)){
+        if(strokePoints_.size()<2){if(error)*error="drag further to draw a "+b.kind;return false;}
+        Json p=Json::object();std::string op;
+        if(b.kind=="road"){op="road_add";p.set("points",strokePoints_);p.set("type",str(b.roadType));p.set("curve",str("smooth"));}
+        else {op="water_set";Json body=Json::object();body.set("kind",str("river"));body.set("points",strokePoints_);p.set("body",std::move(body));}
+        const Json r=ws_.call(op,p,"editor");
+        if(r.has("error")){if(error)*error=r.getStr("error");ok=false;}
+        else strokeDabs_=int(strokePoints_.size());
+    }
+    if(ws_.map.undoDepth()>strokeDepth_){
+        ws_.map.mergeUndoSince(strokeDepth_);
+        while(undoLabels_.size()>strokeDepth_)undoLabels_.pop_back();
+        undoLabels_.push_back(brushLabel(b.kind));redoLabels_.clear();
+        ws_.log("studio",std::string(brushLabel(b.kind))+(brushPathKind(b.kind)?" · "+std::to_string(strokeDabs_)+" points":" · "+std::to_string(strokeDabs_)+" dabs"));
+    }
     syncHistoryLabels();
+    return ok;
 }
 void StudioSession::finishAgentScreenshot(const std::string& pngBase64, int width, int height, const std::string& why) {
     for(const auto& shot:agentShots_){
@@ -697,6 +764,22 @@ Json StudioSession::agentRequest(const std::string& method, const Json& params) 
                       "every map edit is one undo step in the History panel and shows in the Scene at once. The project is "
                       "already open: do not call open_game, map_open or map_new unless asked. Do not save the map; the user "
                       "decides. Keep edits small and say at the end, in two or three sentences, what you changed.\n\n";
+            // What the user is looking at right now: the selection and recent errors of the Console.
+            const auto ids=selectedObjectIds();
+            if(!ids.empty()){
+                task<<"Selected in the Scene:";
+                for(size_t i=0;i<ids.size()&&i<20;++i){
+                    const int index=indexFor(ids[i]);
+                    if(index>=0&&index<int(ws_.map.data.entities.size())){
+                        const auto& e=ws_.map.data.entities[size_t(index)];
+                        task<<" #"<<index<<" "<<e.type<<" (owner "<<e.owner<<", x "<<e.x<<", z "<<e.z<<")"<<(i+1<ids.size()?";":"");
+                    } else task<<" "<<ids[i]<<(i+1<ids.size()?";":"");
+                }
+                task<<"\n";
+            }
+            std::vector<std::string> errors;
+            for(auto it=ws_.activity.rbegin();it!=ws_.activity.rend()&&errors.size()<8;++it)if(it->error)errors.push_back(it->source+": "+it->text);
+            if(!errors.empty()){task<<"Recent errors in the Studio Console (newest first):\n";for(const auto& e:errors)task<<"- "<<clipText(e,300)<<"\n";}
             task<<"Request:\n"<<prompt<<"\n";
         }
         std::string extra="--mcp-config "+shellQuote(configFile.string())+" --strict-mcp-config";
@@ -828,7 +911,7 @@ std::string StudioSession::historyLabel(const std::string& method, const Json& p
         {"studio.assetPlace","Place asset"},{"studio.componentAdd","Add component"},{"studio.componentRemove","Remove component"},
         {"studio.lightAdd","Add light"},{"studio.lightUpdate","Edit light"},{"studio.lightDelete","Delete light"},
         {"studio.lightingSet","Edit lighting"},{"studio.renderLightingSet","Edit render lighting"},
-        {"studio.nereidFlowSet","Edit water"},{"studio.entitiesAlign","Align"},{"studio.newMap","New map"}};
+        {"studio.nereidFlowSet","Edit water"},{"studio.keepPlayChanges","Keep play changes"},{"studio.entitiesAlign","Align"},{"studio.newMap","New map"}};
     for(const auto& [m,label]:names)if(method==m)return label;
     if(method=="studio.op")return studioToolLabel(params.getStr("op"));
     return "Edit";
@@ -2096,17 +2179,145 @@ Json StudioSession::dispatchImpl(const Json& request) {
             out.set("dirty",Json::fromBool(ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty));
             out.set("sceneFrameMs",Json::number(sceneFrameMs_,2));out.set("sceneFrames",num(int64_t(sceneFrames_)));
             reply.set("result",std::move(out));
-        } else if (method == "studio.terrainBrush") {
-            // Arm / disarm the Scene brush and set its op, radius and strength (session only).
-            static const std::set<std::string> ops={"raise","lower","smooth","flatten","noise","erode"};
-            if (params.has("op")) { const std::string op=params.getStr("op"); if(!ops.count(op))throw std::runtime_error("Unknown brush op"); terrainBrush_.op=op; }
-            if (params.has("radius")) { const double r=params["radius"].toDouble(); if(!std::isfinite(r)||r<0.25||r>64)throw std::runtime_error("Radius 0.25..64"); terrainBrush_.radius=r; }
-            if (params.has("strength")) { const double v=params["strength"].toDouble(); if(!std::isfinite(v)||v<0||v>20)throw std::runtime_error("Strength 0..20"); terrainBrush_.strength=v; }
-            if (params.has("armed")) terrainBrush_.armed=params.getBool("armed")&&!ws_.project.dir.empty();
+        } else if (method == "studio.extensions" || method == "studio.extensionAction" || method == "studio.extensionCreate") {
+            // Extensions panel: the project's declarative Lua editor API (StudioLuaPanel.h).
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.extensionCreate") {
+                std::string err;
+                if (!StudioLuaPanel::createExample(ws_.project.dir,&err)) throw std::runtime_error(err);
+            }
+            if (method == "studio.extensionAction") {
+                const std::string id=params.getStr("id");
+                if (id.empty()||id.size()>128) throw std::runtime_error("Invalid widget id");
+                Json command=lua_.action(ws_.project.dir,luaContext(),id,params.has("value")?&params["value"]:nullptr);
+                // select_entity names a map index; the panel selects by Studio id.
+                if (command.isObject() && command.getStr("command")=="select_entity") {
+                    const int64_t index=command["index"].integer(-1);
+                    if (index>=0 && index<int64_t(ws_.map.data.entities.size()))
+                        command.set("entityId",str(studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(index)))));
+                }
+                Json out=Json::object();out.set("command",command);
+                reply.set("result",std::move(out));
+            } else {
+                Json out=lua_.window(ws_.project.dir,luaContext());
+                out.set("gizmos",lua_.gizmos(ws_.project.dir,luaContext()));
+                reply.set("result",std::move(out));
+            }
+        } else if (method == "studio.attachmentsGet" || method == "studio.attachmentsSet") {
+            // Attachments: an attachment layout JSON (parent model + children on named sockets), read and
+            // written through the engine codec, so invalid layouts are refused with its message.
+            namespace fs=std::filesystem;
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const std::string rel=params.getStr("path","attachments.json");
+            const fs::path relPath=fs::path(rel).lexically_normal();
+            if (rel.empty()||rel.size()>300||relPath.is_absolute()||rel.find("..")!=std::string::npos||relPath.extension()!=".json")
+                throw std::runtime_error("Choose a .json file inside the project");
+            const fs::path file=fs::path(ws_.project.dir)/relPath;
+            view::AttachmentLayout layout;
+            if (method=="studio.attachmentsSet") {
+                view::AttachmentLayoutCodec::read(params["document"],layout);   // throws on invalid data
+                const Json canonical=view::AttachmentLayoutCodec::write(layout);
+                std::error_code ec;fs::create_directories(file.parent_path(),ec);
+                std::ofstream out(file,std::ios::binary|std::ios::trunc);
+                if (!out || !(out<<canonical.dump(2)<<"\n")) throw std::runtime_error("Unable to write "+rel);
+            }
+            Json result=Json::object();
+            std::error_code ec;
+            const bool exists=fs::is_regular_file(file,ec);
+            result.set("path",str(relPath.generic_string()));result.set("exists",Json::fromBool(exists));
+            if (exists) {
+                try { view::AttachmentLayoutCodec::read(Json::parseFile(file.string()),layout); result.set("document",view::AttachmentLayoutCodec::write(layout)); }
+                catch (const std::exception& e) { result.set("error",str(e.what())); }
+            } else {
+                Json empty=Json::object();empty.set("parent",str(""));empty.set("attachments",Json::array());
+                result.set("document",std::move(empty));
+            }
+            reply.set("result",std::move(result));
+        } else if (method == "studio.keepPlayChanges") {
+            // Play → map: positions and resource amounts of map entities as the running game has them now,
+            // optionally removing the ones that died. Matched by index AND type (a map edited during play
+            // is not touched where they disagree). One History step "Keep play changes".
+            const Json& states=params["entities"];
+            if (!states.isArray() || states.size()>200000) throw std::runtime_error("Invalid play state");
+            const bool removeDead=params.getBool("removeDead");
+            auto& d=ws_.map.data;
+            std::vector<size_t> dead;
+            int moved=0,amounts=0,skipped=0;
+            bool begun=false;
+            auto begin=[&]{if(!begun){ws_.map.beginEdit();begun=true;}};
+            for (const auto& st:states.items()) {
+                const int64_t i=st["index"].integer(-1);
+                if (i<0 || i>=int64_t(d.entities.size())) {++skipped;continue;}
+                auto& e=d.entities[size_t(i)];
+                if (st.getBool("removed")) { if(removeDead)dead.push_back(size_t(i)); continue; }
+                if (st.has("type") && st.getStr("type")!=e.type) {++skipped;continue;}
+                if (st["x"].isNumber() && st["z"].isNumber()) {
+                    const float x=float(st["x"].toDouble()),z=float(st["z"].toDouble());
+                    if (std::isfinite(x)&&std::isfinite(z)&&std::hypot(x-e.x,z-e.z)>0.01f) {
+                        begin();e.x=x;e.z=z;
+                        if (e.extra["components"]["Transform"].isObject()) {
+                            Json comps=e.extra["components"],tr=comps["Transform"];
+                            tr.set("x",Json::number(double(x),3));tr.set("z",Json::number(double(z),3));
+                            comps.set("Transform",std::move(tr));e.extra.set("components",std::move(comps));
+                        }
+                        ++moved;
+                    }
+                }
+                if (st["amount"].isNumber()) {
+                    const float a=float(st["amount"].toDouble());
+                    // A map entity without an amount uses its type's default: only a real change is kept.
+                    const float current=e.amount>=0?e.amount:float(st["defaultAmount"].toDouble(double(a)));
+                    if (std::isfinite(a)&&a>=0&&std::abs(a-current)>0.01f) {begin();e.amount=a;++amounts;}
+                }
+            }
+            int removed=0;
+            if (!dead.empty()) {
+                std::sort(dead.rbegin(),dead.rend());
+                begin();
+                for (size_t idx:dead) {
+                    // Roads are entity index pairs: drop the ones that end here, shift the rest.
+                    std::vector<std::pair<int,int>> roads;
+                    for (auto [a,b]:d.roads) {
+                        if (a==int(idx)||b==int(idx)) continue;
+                        roads.push_back({a>int(idx)?a-1:a,b>int(idx)?b-1:b});
+                    }
+                    d.roads=std::move(roads);
+                    d.entities.erase(d.entities.begin()+long(idx));
+                    ++removed;
+                }
+                clearSelection();dropOrdinalFlags();
+            }
+            if (begun) { ws_.map.touched(); ws_.log("studio","Keep play changes: "+std::to_string(moved)+" moved, "+std::to_string(amounts)+" amounts, "+std::to_string(removed)+" removed"); }
             Json out=Json::object();
-            out.set("armed",Json::fromBool(terrainBrush_.armed));out.set("op",str(terrainBrush_.op));
-            out.set("radius",Json::number(terrainBrush_.radius,3));out.set("strength",Json::number(terrainBrush_.strength,3));
+            out.set("moved",num(int64_t(moved)));out.set("amounts",num(int64_t(amounts)));out.set("removed",num(int64_t(removed)));
+            out.set("skipped",num(int64_t(skipped)));out.set("snapshot",snapshot());
             reply.set("result",std::move(out));
+        } else if (method == "studio.sceneBrush") {
+            // Arm / disarm the Scene brush and set its tool and settings (session only).
+            auto& b=brush_;
+            static const std::set<std::string> kinds={"terrain","paint","tiles","field","objects","road","river"};
+            static const std::set<std::string> ops={"raise","lower","smooth","flatten","noise","erode"};
+            static const std::set<std::string> modes={"set","add","max","erase"};
+            auto number=[&](const char* k,double lo,double hi){const double v=params[k].toDouble();
+                if(!params[k].isNumber()||!std::isfinite(v)||v<lo||v>hi)throw std::runtime_error(std::string(k)+" must be "+std::to_string(lo)+".."+std::to_string(hi));return v;};
+            auto text=[&](const char* k){const std::string v=params.getStr(k);if(v.size()>128)throw std::runtime_error(std::string(k)+" is too long");return v;};
+            if (params.has("kind")) { const std::string k=params.getStr("kind"); if(!kinds.count(k))throw std::runtime_error("Unknown brush tool"); b.kind=k; }
+            if (params.has("op")) { const std::string op=params.getStr("op"); if(!ops.count(op))throw std::runtime_error("Unknown brush op"); b.op=op; }
+            if (params.has("radius")) b.radius=number("radius",0.25,64);
+            if (params.has("strength")) b.strength=number("strength",0,20);
+            if (params.has("layer")) b.layer=int(number("layer",0,15));
+            if (params.has("tile")) b.tile=text("tile");
+            if (params.has("field")) b.field=text("field");
+            if (params.has("fieldMode")) { const std::string m=params.getStr("fieldMode"); if(!modes.count(m))throw std::runtime_error("Unknown field mode"); b.fieldMode=m; }
+            if (params.has("value")) b.value=number("value",-1000,1000);
+            if (params.has("type")) b.type=text("type");
+            if (params.has("owner")) b.owner=int(number("owner",-1,16));
+            if (params.has("count")) b.count=int(number("count",1,50));
+            if (params.has("spread")) b.spread=number("spread",0,32);
+            if (params.has("roadType")) b.roadType=text("roadType");
+            if (params.has("width")) b.width=number("width",1,200);
+            if (params.has("armed")) b.armed=params.getBool("armed")&&!ws_.project.dir.empty();
+            reply.set("result",sceneBrushJson());
         } else if (method == "studio.agentInfo" || method == "studio.agentStart" || method == "studio.agentStop" || method == "studio.agentReset") {
             reply.set("result", agentRequest(method, params));
         } else if (method == "studio.buildInfo" || method == "studio.buildToolchain" || method == "studio.buildStart" ||

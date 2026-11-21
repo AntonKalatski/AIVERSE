@@ -22,6 +22,7 @@ import engineLogo from '../../../engine/assets/branding/mark.png';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
 import StudioMenuBar, { type StudioMenu } from './components/StudioMenuBar';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows';
+import WelcomeTour, { tourSeen } from './components/WelcomeTour';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
 import { resetLive } from './panels/livePlay';
 import {
@@ -71,6 +72,7 @@ export default function App() {
   useEffect(() => { if (!game?.active) resetLive(); }, [game?.active]); // live refs belong to one session
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(() => !tourSeen());
   const [uiScale, setUiScale] = useState<number>(() => {
     const stored = Number(window.localStorage.getItem('aiverse.studio.uiScale'));
     return Number.isFinite(stored) && stored >= 0.75 && stored <= 2 ? stored : 1;
@@ -422,7 +424,8 @@ export default function App() {
         checked: workspace === id, onSelect: () => switchWorkspace(id) })),
       { id: 'reset', label: 'Reset ' + WORKSPACE_INFO[workspace].title + ' Layout', separator: true, onSelect: () => setDock(workspaceDockTree(workspace)) },
       { id: 'palette', label: 'Command Palette…', shortcut: '⌘K', onSelect: () => setPalette('') },
-      { id: 'legacy', label: 'Legacy editor — not migrated yet', caption: true, separator: true, onSelect: () => {} },
+      { id: 'tour', label: 'Welcome Tour…', onSelect: () => setTourOpen(true) },
+      ...(LEGACY_WINDOWS_NOT_MIGRATED.length ? [{ id: 'legacy', label: 'Legacy editor — not migrated yet', caption: true, separator: true, onSelect: () => {} }] : []),
       ...LEGACY_WINDOWS_NOT_MIGRATED.map(w => {
         const area = legacyWorkspace(w.id);
         return { id: 'legacy-' + w.id, label: w.title + (area ? '  ·  ' + WORKSPACE_INFO[area].title : ''), disabled: true, onSelect: () => {} };
@@ -531,6 +534,7 @@ export default function App() {
       onFloat={connected ? floatOut : undefined} onAdopt={adopt}/>
     <ProjectLoadingDialog state={loading} onClose={clearLoading}/>
     {dockHover && <div className="dock-drop-hint" data-native-overlay role="status">Release to dock the window's tabs here</div>}
+    {tourOpen && !FLOAT && <WelcomeTour onClose={() => setTourOpen(false)}/>}
     <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction || sceneLoadingText(loading)}
       onOpenConsole={() => { showPanel('console');
         window.setTimeout(() => window.dispatchEvent(new CustomEvent('studio:console-filter', { detail: 'error' })), 0); }}/>
