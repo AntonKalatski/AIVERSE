@@ -72,3 +72,5 @@ python3 -m http.server -d build/site 8000
 ```
 
 Never edit `gh-pages` by hand and never commit `build/site`.
+
+Open task for system frames: [cover-scenes.md](cover-scenes.md).
