@@ -210,6 +210,10 @@ static void runDisk() {
     {
         std::fstream edit(path,std::ios::binary|std::ios::in|std::ios::out);
         assert(edit);
+        edit.seekg(std::streamoff(length-1),std::ios::beg);
+        char original=0;
+        edit.read(&original,1);
+        assert(edit);
         edit.seekp(std::streamoff(length-1),std::ios::beg);
         const char corrupted=char(0xff);
         edit.write(&corrupted,1);
@@ -226,6 +230,42 @@ static void runDisk() {
         std::vector<uint32_t> unverified;
         assert(!disk.ready(0,2,unverified));
         assert(disk.stats().failedReads==1);
+        // A failed read is not pinned forever: after a short request
+        // backoff the page is retried, and a good read clears the failure.
+        assert(!disk.request(0,2)); // backoff
+        {
+            std::fstream repair(path,std::ios::binary|std::ios::in|std::ios::out);
+            assert(repair);
+            repair.seekp(std::streamoff(length-1),std::ios::beg);
+            repair.write(&original,1);
+            repair.flush();
+            assert(repair);
+        }
+        bool retried=false;
+        for(int i=0;i<8 && !retried;++i)retried=disk.request(0,2);
+        assert(retried);
+        std::vector<uint32_t> repaired;
+        assert(within([&]{return disk.ready(0,2,repaired);}));
+        assert(repaired==std::vector<uint32_t>({1,3,2}));
+        assert(!disk.failed(0,2));
+        assert(disk.stats().failedReads==1);
+        disk.consume(0,2);
+        // Persistent corruption becomes permanent after bounded retries.
+        {
+            std::fstream again(path,std::ios::binary|std::ios::in|std::ios::out);
+            assert(again);
+            again.seekp(std::streamoff(length-1),std::ios::beg);
+            again.write(&corrupted,1);
+            again.flush();
+            assert(again);
+        }
+        for(int i=0;i<200;++i){
+            (void)disk.request(0,2);
+            (void)within([&]{return disk.failed(0,2);});
+        }
+        assert(disk.failed(0,2));
+        assert(!disk.request(0,2));
+        assert(disk.stats().failedReads==6);
         disk.close();
     }
 

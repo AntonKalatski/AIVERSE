@@ -1637,3 +1637,22 @@ Editor build PASS; SpectraFX 20/20 PASS (16.78s), five real Metal checks with
 no skips; actual PRISMA frame review 5/5 PASS. Two unused GraphWindow helpers
 removed; cleanup build has zero warnings. Full repository/platform/manual UI
 coverage remains unrun. Exact commands and integration decisions: `docs/agent-handoffs/inspector-spectrafx-lighting-sync-2026-11-20.md`.
+
+
+## 2026-11-21 — Review fixes (SpectraFX + Json depth limit)
+
+Branch `feature/aiv20261121_fix_spectrafx` (base `973b32970`), commits
+`8419965`..`2793498`. Fixed: graph-v2 value memoization + step budget,
+Json::parse depth limit 256, distinct SpectraFxGraphWindow id
+(`spectrafx_vfx_graph`; SpectraGraphWindow keeps `spectrafx_graph`),
+orphaned GPU pool group retirement (retirement-token fenced), cached GPU
+emitter library without per-Play IO, CPU handle pruning, HybridPlayback
+retirement by `completedFrameSerial()`, cue inbox Stop/Kill reserve,
+GpuCueBridge retry of rejected cues, editor preview restart retry, fx_graph_preview
+coordinate validation, typed-field undo. Deferred: batched GPU slot uploads
+(needs scatter compute + Metal validation), ParticleSystem undefine for
+redefined CPU fallback effects. Standalone g++ builds of vfx_graph_compiler,
+spectrafx_contract, spectrafx_retirement, vfx_gpu_backend,
+vfx_shared_batch_world, vfx_graph_runtime, vfx_cue_scheduler: PASS. Full
+CMake/CTest, Metal and editor UI NOT RUN. Details:
+`docs/agent-handoffs/review-fixes-spectrafx-2026-11-21.md`.

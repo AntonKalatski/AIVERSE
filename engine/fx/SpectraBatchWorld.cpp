@@ -91,6 +91,9 @@ void BatchWorld::stop(fx::FxHandle h) {
 void BatchWorld::kill(fx::FxHandle h) {
     if (initialized_) particles_.kill(h);
 }
+bool BatchWorld::alive(fx::FxHandle h) const {
+    return initialized_ && particles_.alive(h);
+}
 bool BatchWorld::playing(fx::FxHandle h) const {
     return initialized_ && particles_.playing(h);
 }
