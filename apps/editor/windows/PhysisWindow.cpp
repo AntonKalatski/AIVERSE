@@ -229,8 +229,15 @@ private:
     // Live edits go through a GameModule-opted-in Simulation command, never
     // from the Scene overlay into the authoritative World directly.
     void drawRemoteEdit(Editor& ed) {
-        ui::section(ICON_GLOBE,"PHYSIS · Remote Editing");
+        ui::section(ICON_GLOBE,"PHYSIS · Remote Editing (только API)");
         auto& remote=physis_remote::link();
+        // Review 2026-11-21: nothing in the shipped editor/engine calls
+        // link().attachAuthenticated(); be explicit instead of implying a
+        // connection may appear by itself.
+        if(!remote.attached() && !remote.authenticating())
+            ui::hint("Только API: в этой сборке редактор не подключает канал "
+                     "PHYSIS. Нужен хост проекта, вызывающий "
+                     "physis_remote::link().attachAuthenticated().");
         // Poll the handshake even before EditorLink is fully authenticated.
         // Otherwise a host-started loopback connector could never finish.
         remote.poll(::aiverse::net::nowMs());
@@ -298,7 +305,12 @@ private:
     }
 
     void drawLiveEdit(Editor& ed) {
-        ui::section(ICON_PENCIL, "PHYSIS · Live Editing");
+        ui::section(ICON_PENCIL, "PHYSIS · Live Editing (только API)");
+        // Review 2026-11-21: no engine GameModule implements FieldEditHost,
+        // so this panel only works for a game's own native module.
+        ui::hint("Только API: встроенные GameModule движка не реализуют "
+                 "FieldEditHost; правки доступны лишь нативному модулю игры, "
+                 "который явно разрешил их.");
         auto* sim=ed.sim();
         liveEdit_.observe(sim);
         std::string reason;
