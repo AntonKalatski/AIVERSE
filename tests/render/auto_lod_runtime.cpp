@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
 #include <vector>
 
 using namespace aiverse::render;
@@ -213,7 +214,11 @@ int main() {
           "anonymous morph channels must not get guessed LOD mapping");
     auto badLayout=makeMorphFace();
     badLayout.meshes[0].primitives[0].morphDeltas.pop_back();
-    generateMissingModelLods(badLayout);
+    // Other (valid) meshes of the fixture still get LODs; the closing
+    // Model::finalize() then rejects the malformed face layout. Either
+    // outcome is fine as long as the face never reaches the simplifier.
+    try {generateMissingModelLods(badLayout);}
+    catch(const std::runtime_error&) {}
     check(badLayout.meshes[0].lods.empty(),
           "malformed morph data must not enter simplifier");
     std::puts("auto LOD regression: rigid/morph channels, aliases, envelopes, indices and opt-outs passed");
