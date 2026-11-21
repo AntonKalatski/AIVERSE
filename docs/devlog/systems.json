@@ -677,7 +677,7 @@
       "nameEn": "VIVID",
       "doc": null,
       "flagship": true,
-      "where": "branch",
+      "where": "main",
       "tagline": "Цифровые люди",
       "essence": "Лицевой контроллер и морфы на GPU поверх анимации MotionWeave: мимика, моргание, глаза, LOD для персонажей.",
       "cover": {
@@ -775,12 +775,10 @@
           "titleEn": "Adaptive soft shadows in portrait lighting"
         },
         {
-          "status": "in-progress",
-          "target": null,
+          "status": "done",
+          "date": "2026-11-21",
           "title": "Слияние в main",
-          "text": "Сейчас система живёт в отдельных ветках.",
-          "titleEn": "Merge into main",
-          "textEn": "The system lives in separate branches for now."
+          "titleEn": "Merge into main"
         },
         {
           "status": "planned",
@@ -791,12 +789,12 @@
           "textEn": "No Unreal dependency at runtime."
         },
         {
-          "status": "planned",
-          "target": null,
+          "status": "done",
+          "date": "2026-11-21",
           "title": "VIVID Creator: редактор внешности",
-          "text": "По документации — поздняя веха.",
+          "text": "В Studio: смешивание лица, лепка, кожа, макияж, волосы, тело, одежда с примеркой, сборка в игру.",
           "titleEn": "VIVID Creator: appearance editor",
-          "textEn": "A later milestone per the docs."
+          "textEn": "In Studio: face blending, sculpting, skin, makeup, hair, body, outfit try-on, build to game."
         }
       ],
       "taglineEn": "Digital humans",
