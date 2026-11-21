@@ -177,6 +177,7 @@ Imported materials keep their PBR values. Overrides per material name, `"*"` for
 | `color` | base colour factor `[r,g,b(,a)]` (linear) |
 | `metallic`, `roughness` | factors (multiplied with the metallic-roughness texture) |
 | `shadowDiffusion` | Extra received sun-shadow blur radius, 0..1 world units; default 0. Medium/High shadow tiers only; independent of roughness. |
+| `thinTransmission` | Direct diffuse transmission for thin PBR leaves/cloth, 0..1; default 0. Independent of artistic SSS. |
 | `sssStrength` | Artistic subsurface diffuse response, 0..1; default 0 (disabled). |
 | `sssColor` | Linear RGB scattering tint; default [1,1,1]. |
 | `sssScale` | Wrap width and backlight falloff, 0..1; default 0.5. |

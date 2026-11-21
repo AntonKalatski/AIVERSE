@@ -10,6 +10,7 @@
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -316,9 +317,9 @@ void StudioMetalScene::syncDocumentModels(
 }
 
 StudioMetalScene::~StudioMetalScene() {
-    clearDocumentModels();
     if (device_) {
         device_->waitForResourceIdle();
+        clearDocumentModels();
         lightingRuntime_.shutdown(*device_,renderer_);
         if(lightingModel_) {
             renderer_.invalidateModelCachesFor(lightingModel_.get());
@@ -750,6 +751,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     const auto& map = doc.data;
     const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
+    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    syncDocumentModels(doc,projectPath,rules,proxies);
+
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {
         lightingRevision_=std::numeric_limits<uint64_t>::max();
         terrainLevelHeight_ = levelHeight;
@@ -781,14 +785,34 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         lightingRevision_=doc.revision;
         lightingStatus_="Preview geometry · GI: off · Direct: standard";
         if(useLighting || fpsProject) {
-            lightingModel_=studioLightingPreview(doc,fpsProject,levelHeight);
-            if(!lightingModel_)throw std::runtime_error("Studio lighting geometry missing");
-            prepareModelUpload(*lightingModel_);
-            const auto geometry=giModelGeometry(*lightingModel_);
-            if(!uploadModel(*device_,*lightingModel_,true))throw std::runtime_error("Studio lighting upload failed");
-            const float3 center{(lightingModel_->boundsMin.x+lightingModel_->boundsMax.x)*.5f,
-                lightingModel_->boundsMin.y+.25f,(lightingModel_->boundsMin.z+lightingModel_->boundsMax.z)*.5f};
+            std::set<std::string> modelIds;
+            for(const auto& instance:modelInstances_)modelIds.insert(instance.id);
+            lightingModel_=studioLightingPreview(doc,fpsProject,levelHeight,modelIds);
+            StaticShadowGeometry geometry;
+            if(lightingModel_) {
+                prepareModelUpload(*lightingModel_);
+                geometry=giModelGeometry(*lightingModel_);
+                if(!uploadModel(*device_,*lightingModel_,true))throw std::runtime_error("Studio lighting upload failed");
+            }
+            const float3 center=lightingModel_?float3{(lightingModel_->boundsMin.x+lightingModel_->boundsMax.x)*.5f,
+                lightingModel_->boundsMin.y+.25f,(lightingModel_->boundsMin.z+lightingModel_->boundsMax.z)*.5f}:float3{map.w*.5f,.25f,map.h*.5f};
             try {
+                // Reuse the shared immutable opaque-geometry snapshot for real
+                // assets. Reject an oversized snapshot explicitly; never crop it
+                // to a misleading subset or substitute proxy geometry silently.
+                if(useLighting)for(const auto& instance:modelInstances_) {
+                    size_t faces=0;
+                    for(const auto& node:instance.model->nodes)if(node.mesh>=0)
+                        for(const auto& p:instance.model->meshes[size_t(node.mesh)].primitives) {
+                            const auto& material=instance.model->materials[size_t(p.material)];
+                            if(material.castShadow&&material.alpha==AlphaMode::Opaque&&!material.transparent)faces+=p.indexCount/3;
+                        }
+                    if(faces>1000000 || geometry.triangles.size()>1000000-faces)throw std::runtime_error("Studio GI snapshot exceeds one million opaque triangles");
+                    auto source=giModelGeometry(*instance.model,instance.world);
+                    const auto offset=uint32_t(geometry.albedos.size());
+                    geometry.albedos.insert(geometry.albedos.end(),source.albedos.begin(),source.albedos.end());
+                    for(auto triangle:source.triangles){triangle.surface+=offset;geometry.triangles.push_back(triangle);}
+                }
                 if(useLighting)lightingRuntime_.initialize(*device_,renderer_,post_,settings,geometry,activeLights,center,environment);
             } catch(const std::exception& e) {
                 const std::string reason=e.what();
@@ -818,6 +842,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     StudioFrameScope scope{*device_};
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
     nereid_.prepare(*device_,view.eye());
+    const double opticalNow=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
+    underwaterFrameTime_=opticalNow;
     renderer_.beginScene(view, framebufferWidth, framebufferHeight);
     renderer_.setSceneSelectionOutline(true); // editor-only depth-tested silhouette
     renderer_.lighting=environment;
@@ -920,6 +947,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             for(const auto& edge:edges)
                 renderer_.line(p[edge[0]],p[edge[1]],rgba(64,158,255));
         }
+
     }
     for(const auto& instance:modelInstances_) {
         render::ModelDraw draw;
@@ -951,9 +979,10 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
-    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):nullptr);
+    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):static_cast<PostProcess*>(&post_));
     renderer_.resolvePrisma();
     lightingRuntime_.presented();
+
     if(lodDiagnostics_&&++diagnosticFrames_%120==0){
         const auto& stats=renderer_.modelStats();
         std::fprintf(stderr,"[studio-lod] instances=%zu assets=%zu cameraTriangles=%llu shadowTriangles=%u lod=%llu/%llu/%llu/%llu chains=%llu blocked=%llu shadowLimited=%llu\n",

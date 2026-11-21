@@ -125,7 +125,7 @@ void RtsView::buildShapes(gfx::Device& dev) {
             mp.push_back({list[i].first, list[i].second.get(), m, mat4{}});
         }
         auto model = modelFromParts("shape:" + shape, mp);
-        uploadModel(dev, *model);
+        uploadModel(dev,*model,false,true,resources_.retainPickingGeometry());
         resources_.replace(dev,"shape:" + shape,std::move(model),
             [this](const render::Model* previous) {
                 animationCache_.erase(previous);

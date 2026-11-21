@@ -59,7 +59,10 @@ struct TerrainLook {
     double detailBudgetMB = 96;                 // detail LOD meshes kept on the GPU (LRU beyond)
     render::float3 rockColor{0.45f, 0.41f, 0.36f}; // steep slopes without a cliff texture
     bool hasRockColor = false;
-    bool render = true; // explicit authored ground disables legacy visual surface
+    // Opt-in dielectric PBR. Packed assets use albedo.a=AO, normal.a=roughness.
+    bool pbr = false, packedPbr = false;
+    float pbrRoughness = 0.85f;
+    bool render = true; // explicit authored/external ground disables only this legacy visual surface
     bool materials() const { return !layers.empty(); }
 };
 

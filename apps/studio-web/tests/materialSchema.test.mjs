@@ -55,3 +55,11 @@ test('texture reference slots share typed asset picker and have string defaults'
  });
  assert.equal(withPaths.find(f=>f.key==='texture')?.value,'0123456789abcdef0123456789abcdef');
 });
+
+test('thin transmission remains independent of the SSS draft',()=>{
+ const fields=materialFields({thinTransmission:.35,sssScale:.8},{sssScale:.2});
+ assert.equal(fields.find(f=>f.key==='thinTransmission')?.value,.35);
+ assert.equal(fields.find(f=>f.key==='sssScale')?.value,.2);
+ assert.equal(materialFields({}).find(f=>f.key==='thinTransmission')?.value,0);
+ assert.deepEqual(editablePatch({thinTransmission:.35,sssScale:.8}),{thinTransmission:.35,sssScale:.8});
+});

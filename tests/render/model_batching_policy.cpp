@@ -1,6 +1,7 @@
 // Engine regression: static batching preserves runtime-mutable subtrees.
 // This is intentionally independent from any particular project/genre.
 #include "engine/render/Model.h"
+#include "engine/render/ModelTextureCache.h"
 #include "engine/render/Animation.h" // full NodePose definition for active-pose regression
 #include "engine/render/ModelMerge.h"
 #include "engine/render/GpuMaterialState.h"
@@ -14,6 +15,7 @@
 #include "engine/render/ModelLodTransition.h"
 #include "engine/render/EcsStaticModelRender.h"
 #include "engine/render/ModelShaders.h"
+#include "engine/render/ModelSamplingPolicy.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -74,7 +76,18 @@ public:
         CHECK(buffers.erase(h.id) == 1);
         ++destroyed;
     }
-    aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc&) override { return {100}; }
+    struct TextureRequest {int width,height,mips;bool generate;};
+    std::vector<TextureRequest> textureRequests;
+    bool acceptTextureRegions=false;int textureRegionWrites=0;
+    aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc& d) override {
+        textureRequests.push_back({d.width,d.height,d.mipLevels,d.mipmaps});
+        return {100u+uint32_t(textureRequests.size())};
+    }
+    bool updateTextureRegion(aiverse::gfx::TextureHandle,const aiverse::gfx::TextureUploadDesc& d) override {
+        CHECK(d.mipLevel>0&&d.width>0&&d.height>0&&d.rowPitchBytes==d.width*4&&d.data);
+        if(acceptTextureRegions)++textureRegionWrites;
+        return acceptTextureRegions;
+    }
     void updateTexture(aiverse::gfx::TextureHandle,int,int,int,int,const void*,int) override {}
     void destroyTexture(aiverse::gfx::TextureHandle) override {}
     aiverse::gfx::ShaderHandle createShader(const aiverse::gfx::ShaderDesc&) override { return {1}; }
@@ -280,6 +293,48 @@ static void verifyGeometryPoolRetirementAndUploadRecovery() {
         releaseModel(dev, model);
         CHECK(dev.buffers.empty());
     }
+    {
+        MockDevice dev;auto model=pooledFixture(31);
+        model.images.resize(2);
+        for(auto& image:model.images){image.width=image.height=2;image.rgba.assign(16,255);}
+        model.materials[0].alpha=AlphaMode::Mask;model.materials[0].baseTex=0;model.materials[0].mrTex=1;
+        CHECK(uploadModel(dev,model,false,true,true));
+        CHECK(!model.vertices.empty()&&!model.indices.empty());
+        CHECK(!model.images[0].rgba.empty()&&model.images[1].rgba.empty());
+        releaseModel(dev,model);CHECK(dev.buffers.empty());
+    }
+
+}
+
+static void verifyCutoutMipUploadPolicy() {
+    for(int policy=0;policy<6;++policy) {
+        MockDevice dev;dev.acceptTextureRegions=policy!=1;
+        auto model=pooledFixture(71);model.images.resize(1);
+        auto& image=model.images[0];image.width=image.height=4;image.rgba.assign(64,255);
+        for(size_t i=3;i<image.rgba.size();i+=8)image.rgba[i]=0;
+        const auto original=image.rgba;
+        model.materials[0].alpha=AlphaMode::Mask;model.materials[0].baseTex=0;
+        if(policy==2)image.nearest=true;
+        if(policy==5)model.materials[0].baseColor.w=.5f;
+        if(policy==3){model.materials.push_back(Material{});model.materials.back().baseTex=0;}
+        if(policy==4){model.materials.push_back(model.materials[0]);model.materials.back().alphaCutoff=.7f;}
+        CHECK(uploadModel(dev,model,true));
+        CHECK(image.rgba==original);
+        CHECK(image.alphaCoverageThreshold==(policy<2?128:policy==5?255:0));
+        CHECK(image.alphaCoverageMipmaps==(policy==0||policy==5));
+        if(policy==0||policy==5){CHECK(dev.textureRegionWrites==2);CHECK(dev.textureRequests[0].mips==3&&!dev.textureRequests[0].generate);}
+        if(policy==1){CHECK(dev.textureRequests.size()==2&&dev.textureRequests.back().generate);}
+        releaseModel(dev,model);
+    }
+    MockDevice dev;dev.acceptTextureRegions=true;
+    auto cache=std::make_shared<ModelTextureCache>();
+    Image first;first.textureKey="shared-cutout";first.width=first.height=4;first.rgba.assign(64,255);first.alphaCoverageThreshold=128;
+    Image second=first;second.alphaCoverageThreshold=191;
+    cache->upload(dev,first);cache->upload(dev,second);
+    CHECK(first.tex.valid()&&second.tex.valid()&&!(first.tex==second.tex));
+    Image replay;replay.textureKey="shared-cutout";replay.alphaCoverageThreshold=128;
+    CHECK(cache->borrowResident(replay)&&replay.tex==first.tex&&replay.alphaCoverageMipmaps);
+    cache->shutdown(dev);
 }
 
 static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
@@ -390,6 +445,45 @@ static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
 }
 
 int main() {
+    // Resource admission must agree between pipeline compilation and binding.
+    // In particular, constrained RHIs retain base PBR instead of losing meshes.
+    {
+        auto plan = modelSamplingPlan(16,4,true,false,false,false,true,true);
+        CHECK(!plan.graph && plan.graphBudgetFallback && plan.alphaR8);
+        plan = modelSamplingPlan(16,3,true,false,false,false,false,true);
+        CHECK(plan.graph && plan.graphSlot==13);
+        plan = modelSamplingPlan(16,3,true,false,false,true,false,true);
+        CHECK(!plan.graph && plan.graphBudgetFallback && plan.dynamicGiSlot==13);
+        plan = modelSamplingPlan(32,4,true,false,false,true,false,true);
+        CHECK(plan.graph && plan.graphSlot==14 && plan.dynamicGiSlot==13);
+        plan = modelSamplingPlan(16,2,true,true,true,false,false,true);
+        CHECK(plan.graph && !plan.virtualTexture && plan.graphSlot==13);
+        plan = modelSamplingPlan(16,1,true,true,true,true,false,true);
+        CHECK(plan.graph && !plan.virtualTexture && plan.graphSlot==14);
+        plan = modelSamplingPlan(16,0,false,false,true,true,true,true);
+        CHECK(!plan.graph && !plan.virtualTexture && plan.alphaR8 && plan.dynamicGiSlot==13);
+        plan = modelSamplingPlan(32,4,true,true,true,true,false,true);
+        CHECK(plan.graph && plan.virtualTexture && plan.graphSlot==13);
+        CHECK(plan.atlasSlot==17 && plan.tableSlot==18 && plan.dynamicGiSlot==19);
+        plan = modelSamplingPlan(32,1,true,true,true,true,false,false);
+        CHECK(plan.graph && !plan.virtualTexture && plan.graphSlot==14);
+        plan = modelSamplingPlan(16,size_t(-1),true,true,true,true,false,true);
+        CHECK(!plan.graph && plan.graphBudgetFallback && plan.virtualTexture);
+        // Every combination keeps admitted bindings inside its advertised budget.
+        for (int slots : {16,32}) for(size_t sources=0;sources<=5;++sources)
+        for(int flags=0;flags<64;++flags) {
+            const bool graph=flags&1, usesVt=flags&2, vt=flags&4;
+            const bool gi=flags&8, alpha=flags&16, allow=flags&32;
+            const auto p=modelSamplingPlan(slots,sources,graph,usesVt,vt,gi,alpha,allow);
+            CHECK(!p.graph || p.graphSlot+int(sources)<=slots);
+            CHECK(!p.virtualTexture || (p.atlasSlot<slots && p.tableSlot<slots));
+            CHECK(!gi || p.dynamicGiSlot<slots);
+            CHECK(!p.graph || !p.alphaR8);
+            CHECK(!p.virtualTexture || (allow && vt && (!p.graph || usesVt)));
+            CHECK(!gi || !p.virtualTexture || p.dynamicGiSlot>p.tableSlot);
+        }
+    }
+
     // This process tests both serial-fenced retirement and a dedicated
     // fallback. Per-process production default remains OFF.
 #ifdef _WIN32
@@ -398,6 +492,7 @@ int main() {
     CHECK(setenv("AIVERSE_GEOMETRY_POOL_RECYCLE", "1", 1) == 0);
 #endif
     verifyVehiclePartsRemainIndependent();
+    verifyCutoutMipUploadPolicy();
     verifyIncrementalBatchingWorkspaceAndRhiCounters();
     verifyGeometryPoolRetirementAndUploadRecovery();
     Model m;
@@ -493,6 +588,10 @@ int main() {
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) != gpuMaterialStateHash(gpuB, gpuB.materials[0]));
     gpuB.materials[0].roughness = gpuA.materials[0].roughness;
+    gpuB.materials[0].thinTransmission=.4f;
+    CHECK(!equivalentGpuMaterial(gpuA,gpuA.materials[0],gpuB,gpuB.materials[0]));
+    CHECK(gpuMaterialStateHash(gpuA,gpuA.materials[0])!=gpuMaterialStateHash(gpuB,gpuB.materials[0]));
+    gpuB.materials[0].thinTransmission=0;
     gpuB.materials[0].shadowDiffusion = .1f;
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) != gpuMaterialStateHash(gpuB, gpuB.materials[0]));

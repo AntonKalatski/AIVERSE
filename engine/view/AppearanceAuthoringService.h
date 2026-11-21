@@ -89,6 +89,7 @@ public:
         }
         mt.metallic=num(o["metallic"],mt.metallic);
         mt.roughness=num(o["roughness"],mt.roughness);
+        mt.thinTransmission=std::clamp(num(o["thinTransmission"],mt.thinTransmission),0.0f,1.0f);
         mt.shadowDiffusion=std::clamp(num(o["shadowDiffusion"],mt.shadowDiffusion),0.0f,1.0f);
         mt.sssStrength=std::clamp(num(o["sssStrength"],mt.sssStrength),0.0f,1.0f);
         mt.sssScale=std::clamp(num(o["sssScale"],mt.sssScale),0.0f,1.0f);

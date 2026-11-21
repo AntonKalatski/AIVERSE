@@ -19,6 +19,9 @@ int main(){
   AIVERSE_TEST_CHECK(!validStudioMaterialNumber("shadowDiffusion",-1));
   AIVERSE_TEST_CHECK(!validStudioMaterialNumber("shadowDiffusion",1.001));
   AIVERSE_TEST_CHECK(!validStudioMaterialNumber("shadowDiffusion",std::numeric_limits<double>::quiet_NaN()));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("thinTransmission",.35));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("thinTransmission",1.1));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("thinTransmission",std::numeric_limits<double>::quiet_NaN()));
   AIVERSE_TEST_CHECK(validStudioMaterialNumber("sssStrength",.6));
   AIVERSE_TEST_CHECK(validStudioMaterialNumber("sssThickness",.06));
   AIVERSE_TEST_CHECK(!validStudioMaterialNumber("sssThickness",-1));

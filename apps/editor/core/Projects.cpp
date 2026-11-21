@@ -223,6 +223,23 @@ std::string createProject(const std::string& engineDir, const std::string& templ
             m.set("maps", maps);
         }
         if (templateId != "empty") m.set("template", Json::string(templateId));
+        if (templateId == "empty") {
+            // New blank projects start with a neutral scale reference, never procedural grass.
+            // Copy runtime assets into the project so packaging stays self-contained.
+            const fs::path pack = fs::path(engineDir) / "engine/assets/materials/terrain";
+            if (!fs::exists(pack / "default-terrain.json"))
+                return fail("bundled terrain PBR materials are missing: " + pack.string());
+            for (const auto& entry : fs::recursive_directory_iterator(pack)) {
+                const fs::path target = dst / "materials/terrain" / fs::relative(entry.path(), pack);
+                if (entry.is_directory()) fs::create_directories(target);
+                else aiverse::pack::copyFileReplaceOrThrow(entry.path(), target);
+            }
+            const Json terrain = Json::parseFile((pack / "default-terrain.json").string());
+            const Json library = Json::parseFile((pack / "materials.json").string());
+            m.set("terrain", terrain);
+            if (!writeFile(dst / "materials.json", library.dump(2) + "\n"))
+                return fail("cannot write bundled PBR material library");
+        }
         writeFile(dst / "game.json", m.dump() + "\n");
         ProjectFile pf;
         pf.name = title;

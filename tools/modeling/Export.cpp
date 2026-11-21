@@ -126,6 +126,7 @@ std::string exportGlb(const Model &m) {
         j.set("pbrMetallicRoughness", pbr);
         j.set("emissiveFactor", floats({mt.emissive.x, mt.emissive.y, mt.emissive.z}));
         j.set("doubleSided", Json::fromBool(mt.doubleSided));
+        if(mt.thinTransmission>0){auto extras=Json::object();extras.set("aiverseThinTransmission",Json::number(double(mt.thinTransmission),8));j.set("extras",extras);}
         if (mt.alpha == AlphaMode::Blend)
             j.set("alphaMode", Json::string("BLEND"));
         w.root.member("materials").push(j);

@@ -77,6 +77,16 @@ struct FxPointLight { float3 pos; float radius = 1; float3 color{1, 1, 1}; float
 // A live particle as seen from outside (tests, tools).
 struct FxParticleInfo { float3 pos, vel; float size = 0, age = 0, life = 0, rotation = 0; float4 color; int effect = -1, emitter = 0; };
 
+// Stage 29: bounded, presentation-only live particle import from a GPU
+// checkpoint. The caller must use a compatible already-defined emitter.
+// No authoring source, gameplay ECS state or GPU handles are imported.
+struct FxImportedParticle {
+    float3 pos{}, vel{};
+    float age=0, lifetime=1, size=1;
+    float4 tint{1,1,1,1};
+    std::array<float,8> programParams{}, customAttributes{};
+};
+
 struct FxStats {
     int particles = 0, instances = 0, drawn = 0, batches = 0, drawCalls = 0;
     int trailQuads = 0;     // ribbon segments drawn (included in drawn)
@@ -141,7 +151,18 @@ public:
     // `dir`: emission axis (the effect's "direction" is relative to it, +Y = dir). `scale` sizes
     // the whole effect. Returns an invalid handle when nothing was started (off, culled, budget).
     FxHandle play(int effect, float3 pos, float3 dir = {0, 1, 0}, float scale = 1, float4 tint = {1, 1, 1, 1});
+    // Atomic start: VM instance params are set BEFORE prewarm/spawn code.
+    // Existing play ABI remains unchanged for legacy games.
+    FxHandle playWithProgramParameters(int effect,float3 pos,float3 dir,
+                                       float scale,float4 tint,
+                                       const std::array<float,8>& params);
     FxHandle play(const std::string& effectName, float3 pos, float3 dir = {0, 1, 0}, float scale = 1, float4 tint = {1, 1, 1, 1});
+    // Eight per-instance, read-only particle VM scalar inputs param0..param7.
+    // Changes apply to future births; set affectExisting=true to update
+    // currently live particles owned by the same generation-safe handle.
+    // This does NOT recompile the effect/graph or mutate gameplay ECS.
+    bool setProgramParameter(FxHandle h, uint32_t slot, float value,
+                             bool affectExisting = false);
     void move(FxHandle h, float3 pos);                 // attached effects (trails, burning buildings)
     void move(FxHandle h, float3 pos, float3 dir);
     void stop(FxHandle h);                             // stops emitting; live particles fade out
@@ -172,6 +193,11 @@ public:
     // in total (fewer on low tiers). Call between Renderer3D::beginScene and render.
     void collectLights(std::vector<FxPointLight>& out, int maxLights = 32) const;
 
+    // Atomic append: validates all particles/budget/effect before mutation.
+    // Only a single-emitter, no-source-dependent GPU subset is supported.
+    // Imported particles do not resume emitter spawning. Invalid data leaves
+    // all previously live CPU particles unchanged.
+    bool importLiveParticles(int effect,const std::vector<FxImportedParticle>& particles);
     void snapshot(std::vector<FxParticleInfo>& out) const;   // every live particle (current size and colour)
     const FxStats& stats() const { return stats_; }
     // SpectraFX owns particle GPU vertex/index buffers and builtin atlas.

@@ -73,6 +73,7 @@ private:
     std::unique_ptr<gfx::Device> device_;
     render::Renderer3D renderer_;
     world::NereidManifestHost nereid_;
+    double underwaterFrameTime_=0;
     render::Prisma post_;
     render::RenderLightingRuntime lightingRuntime_;
     std::unique_ptr<render::Model> lightingModel_;

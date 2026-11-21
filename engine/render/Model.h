@@ -65,6 +65,7 @@ struct Material {
     float4 fixedLight{0, 0, 0, 0};          // xyz direction towards the light (normalized), w 1 = on
     float2 fixedShade{1, 0};                // ambient, diffuse
     float shadowDiffusion = 0;            // extra received sun-shadow radius in world units [0,1]; medium/high only
+    float thinTransmission = 0;          // diffuse back-light fraction [0,1], 0 retains legacy PBR
     float sssStrength = 0;                 // artistic diffuse wrap/backlight, 0 disables
     float3 sssColor{1, 1, 1};             // linear scattering tint
     float sssScale = 0.5f;                // wrap width and backlight falloff, [0,1]
@@ -98,6 +99,11 @@ struct Image {
     // TextureCache must never receive either reduced texture.
     bool virtualFallbackPreserveAlpha = false;
     gfx::TextureHandle virtualAlphaMask;
+    // Derived before first upload for ordinary uncompressed alpha-test base
+    // images. Cache identity includes the threshold; source alpha is unchanged.
+    bool preserveAlphaCoverage = true;
+    uint8_t alphaCoverageThreshold = 0;
+    bool alphaCoverageMipmaps = false;
 };
 
 // 60 bytes, one interleaved stream for every model (unskinned meshes leave joints/weights zero).
@@ -348,13 +354,15 @@ std::unique_ptr<Model> modelFromParts(const std::string& name, const std::vector
 void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& idx, uint32_t first, uint32_t count);
 
 // GPU resources. Textures get mipmaps. CPU copies are released unless keepCpu.
+// Authoring keepPickingGeometry retains vertices/indices/morph data and only
+// cutout/blended base-alpha image pixels; other texture CPU copies still release.
 void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
 // A speculative model import may borrow already resident shared textures,
 // but must not create new entries in the live shared GPU texture cache.
 // Pass publishSharedTextures=false only when an external host owns a staged
 // Model and can retire the entire Model on abort after a real GPU barrier.
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false,
-                 bool publishSharedTextures = true);
+                 bool publishSharedTextures = true, bool keepPickingGeometry = false);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
 // Upload one host-staged image without touching any live Model::images vector.
 // Returns false if the GPU did not create a valid texture handle.

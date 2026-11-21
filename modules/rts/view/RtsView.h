@@ -135,6 +135,7 @@ struct RtsScene {
     const std::vector<GridFieldDef>* fieldDefs = nullptr;
     std::vector<FieldSceneLayer> fields;
     // drag-to-send arrows (Mushroom-Wars input) and box selection are drawn by the client
+    bool gameplayOverlays=true; // authoring Scene opts out; native game hosts retain module HUD
 };
 
 // Things the view noticed this frame, for sound and particles: clip events ("step", "hit"),
@@ -464,6 +465,7 @@ public:
                          const MapGrid& grid);
     struct SurfacePrewarmStats {
         uint64_t staged=0,consumed=0,discarded=0;
+        uint64_t sourceSnapshots=0; // full dependency snapshots retained across calls
     };
     SurfacePrewarmStats surfacePrewarmStats() const noexcept {
         return surfacePrewarmStats_;
@@ -528,6 +530,7 @@ public:
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }
     void setSelectionOutline(bool on) { outline_ = on; }
+    void setRetainPickingGeometry(bool on){resources_.setRetainPickingGeometry(on);}
     // Register immutable native pose operations before init().
     void setAnimationOperations(render::AnimationOperations operations) { animationOperations_ = std::move(operations); }
     // Optional host physics queries override the default terrain / visible AABB adapter.
@@ -955,9 +958,11 @@ private:
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;
+    enum class SurfaceLeaseUse { Immediate, Retained };
     std::unique_ptr<PreparedSurfaceLease> stageSurfaceFrame(
         render::Renderer3D& renderer,const RtsScene& scene,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid);
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        SurfaceLeaseUse use=SurfaceLeaseUse::Retained);
     // Commit a matching one-shot prewarm lease, or rebuild on a stale lease.
     // This completes only the surface owner cohort, NOT FramePublicationEpoch.
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,

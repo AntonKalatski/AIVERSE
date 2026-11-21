@@ -52,7 +52,9 @@ public:
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
         vp_.setGpuDeviceLease(ed.gpuDeviceLease());
-        vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi), ed.viewportRetirement(), "Scene");
+        const bool cleanCapture=ed.cleanSceneCaptureRequested();
+        const auto captureSize=ed.sceneCaptureSize(int(avail.x*dpi),int(avail.y*dpi));
+        vp_.ensure(ed.device(),captureSize.first,captureSize.second,ed.viewportRetirement(),"Scene");
 
         ImVec2 p = ImGui::GetCursorScreenPos();
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
@@ -64,7 +66,7 @@ public:
         // The map document assigns 0xED-prefixed IDs to authored entities.
         // Trace only the selected one; avoid per-entity allocation in runtime.
         uint64_t lodTarget = 0;
-        renderer.setLodDiagnosticsEnabled(lodPopupVisible_);
+        renderer.setLodDiagnosticsEnabled(lodPopupVisible_ || std::getenv("AIVERSE_LOD_DIAGNOSTICS"));
         if (lodPopupVisible_ &&
             ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
             size_t(ed.selection.index) < ed.doc().data.entities.size())
@@ -122,7 +124,7 @@ public:
             // geometry remains uploaded, so no asset reload is required.
             renderer.setModelInstancingEnabled(false);
             renderer.setModelMultiDrawEnabled(false);
-            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing() && !cleanCapture);
             baselineDraws_ = int64_t(renderer.drawCalls());
             baselineModelDraws_ = int64_t(renderer.profile().draws[1]) +
                                   int64_t(renderer.profile().draws[2]);
@@ -130,13 +132,13 @@ public:
             renderer.setModelMultiDrawEnabled(measuredMode ? activeMode != 0 : sceneIndirect_);
             renderer.setGpuAuthoredDrawEnabled(measuredMode ? activeMode == 2 : true);
             // Present optimized scene as usual (not the comparison baseline).
-            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing() && !cleanCapture);
             optimizedDraws_ = int64_t(renderer.drawCalls());
             optimizedModelDraws_ = int64_t(renderer.profile().draws[1]) +
                                    int64_t(renderer.profile().draws[2]);
             comparisonValid_ = true;
         } else {
-            ed.renderScene(vp_, benchmarkActive_ ? benchmarkCamera_ : ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, benchmarkActive_ ? benchmarkCamera_ : ed.sceneCam, !ed.playing() && !cleanCapture);
         }
         if (benchmarkActive_) {
             const double cpuMs = std::chrono::duration<double, std::milli>(
@@ -247,6 +249,9 @@ public:
                 for (double& value : totals) value = 0.0;
             }
         }
+        // A requested export may temporarily use a different aspect ratio.
+        // Resume ordinary hit-testing on the next normal-sized Scene frame.
+        if(cleanCapture)return;
         // PHYSIS authored markers capture only explicit marker clicks/drags.
         // Ordinary FPS/RTS/other selection paths remain untouched otherwise.
         const bool physisMarkerInput = processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
@@ -257,7 +262,7 @@ public:
                 ed.sceneCam.distance = std::clamp(ed.sceneCam.distance * std::pow(0.85f, io.MouseWheel), 1.0f, 2000.0f);
             if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
                 ed.sceneCam.yaw -= io.MouseDelta.x * 0.005f;
-                ed.sceneCam.pitch = std::clamp(ed.sceneCam.pitch + io.MouseDelta.y * 0.005f, 0.05f, 1.5f);
+                ed.sceneCam.pitch = std::clamp(ed.sceneCam.pitch + io.MouseDelta.y * 0.005f, -1.553343f, 1.553343f);
             }
             if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
                 const float s = ed.sceneCam.distance * 0.002f;
@@ -1442,7 +1447,7 @@ private:
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Middle)) panning_ = false;
         if (looking_) {
             cam.yaw -= io.MouseDelta.x * 0.006f;
-            cam.pitch = std::clamp(cam.pitch + io.MouseDelta.y * 0.005f, 0.15f, 1.53f);
+            cam.pitch = std::clamp(cam.pitch + io.MouseDelta.y * 0.005f, -1.553343f, 1.553343f);
         }
         // Free fly: WASD/QE move the camera target while Scene is focused/hovered.
         // Right mouse remains orbit/look, middle mouse pans, Shift increases speed.
@@ -1495,13 +1500,16 @@ private:
     }
 
     // Hit-test the projected move handles, independently of entity mesh picking.
-    // Map documents currently expose X/Z positions; Y, rotation and scale are
-    // not writable through DocEntity and must not pretend to be interactive.
+    // Component-authored entities expose XYZ; legacy map units retain X/Z.
     int moveHandle(Editor& ed, float sx, float sy) {
         if (ed.playing() || ed.tool != Tool::Select || ed.planetMap()) return -1;
         float wx, wz;
         if (!ed.selectionPos(ed.selection, wx, wz)) return -1;
-        const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+        float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+        if (ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
+            size_t(ed.selection.index) < ed.doc().data.entities.size() &&
+            authoredEntity(ed.doc().data.entities[size_t(ed.selection.index)]))
+            wy = float(authoredLocalTransform(ed.doc().data.entities[size_t(ed.selection.index)]).position.y.toDouble()) + 0.4f;
         if (ed.transformTool == TransformTool::Rotate &&
             ed.selection.kind == Selection::Entity &&
             ed.selection.index >= 0 &&
@@ -1512,10 +1520,12 @@ private:
                 vp_.originX, vp_.originY, sx, sy,
                 {wx, wy, wz}, 1.5f) ? 3 : -1;
         }
-        if (ed.transformTool != TransformTool::Move) return -1;
+        if (ed.transformTool != TransformTool::Move || ed.selectedEntity() < 0 ||
+            size_t(ed.selectedEntity()) >= ed.doc().data.entities.size()) return -1;
         return pickMoveGizmoAxis(ed.sceneCam, vp_.pointsW, vp_.pointsH,
                                   vp_.originX, vp_.originY, sx, sy,
-                                  {wx, wy, wz}, 1.5f, 0x5);
+                                  {wx, wy, wz}, 1.5f,
+                                  authoredEntity(ed.doc().data.entities[size_t(ed.selectedEntity())]) ? 0x7 : 0x5);
     }
 
     void down(Editor& ed, float sx, float sy, ImGuiIO& io) {
@@ -1528,13 +1538,14 @@ private:
         switch (ed.tool) {
         case Tool::Select: {
             const int handle = moveHandle(ed, sx, sy);
-            if (handle >= 0 && ed.selectedEntity() >= 0 && ground) {
+            if (handle >= 0 && ed.selectedEntity() >= 0 && (ground || handle == 1)) {
                 gizmoAxis_ = handle;
                 dragging_ = true;
                 dragMoved_ = false;
                 gizmoGroundX_ = x;
                 gizmoGroundZ_ = z;
                 gizmoLastScreenX_ = sx;
+                gizmoLastScreenY_ = sy;
                 break;
             }
             const Selection picked = ed.pickObject(vp_, ed.sceneCam, sx, sy);
@@ -1606,12 +1617,29 @@ private:
 
     void drag(Editor& ed, float sx, float sy, ImGuiIO& io) {
         float x, z;
-        if (!ed.groundAt(vp_, ed.sceneCam, sx, sy, x, z)) return;
+        if (!ed.groundAt(vp_, ed.sceneCam, sx, sy, x, z) && gizmoAxis_ != 1) return;
         auto& doc = ed.doc();
         auto& d = doc.data;
         int sel = ed.selectedEntity();
         if (dragging_ && gizmoAxis_ >= 0 && sel >= 0 && sel < int(d.entities.size())) {
-            if (gizmoAxis_ == 3 && ed.transformTool == TransformTool::Rotate &&
+            if (gizmoAxis_ == 1 && ed.transformTool == TransformTool::Move) {
+                const double dy = double(gizmoLastScreenY_ - sy) *
+                    std::max(0.01f, ed.sceneCam.distance * 0.002f);
+                if (std::isfinite(dy) && std::abs(dy) > 1e-6) {
+                    std::vector<DocumentEntityRef> refs;
+                    for (int index : ed.selectedEntities()) {
+                        if (index < 0 || size_t(index) >= d.entities.size()) continue;
+                        const auto& entity = d.entities[size_t(index)];
+                        if (authoredEntity(entity) && !ed.objectLocked(entity.owner, entity.type))
+                            refs.push_back(DocumentEntityRef::mapEntity(size_t(index)));
+                    }
+                    if (!refs.empty()) {
+                        if (!dragMoved_) doc.beginEdit();
+                        dragMoved_ = translateDocumentEntities(doc, refs, {0.0, dy, 0.0}) || dragMoved_;
+                    }
+                }
+                gizmoLastScreenY_ = sy;
+            } else if (gizmoAxis_ == 3 && ed.transformTool == TransformTool::Rotate &&
                 d.entities[size_t(sel)].extra["facing"].isNumber()) {
                 const double delta = double(sx - gizmoLastScreenX_) * 0.5;
                 if (std::isfinite(delta) && std::abs(delta) > 1e-6) {
@@ -1707,7 +1735,11 @@ private:
             for (const Selection& sel : ed.selected()) {
                 float wx, wz;
                 if (!ed.selectionPos(sel, wx, wz)) continue;
-                const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+                float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+                if (sel.kind == Selection::Entity && sel.index >= 0 &&
+                    size_t(sel.index) < ed.doc().data.entities.size() &&
+                    authoredEntity(ed.doc().data.entities[size_t(sel.index)]))
+                    wy = float(authoredLocalTransform(ed.doc().data.entities[size_t(sel.index)]).position.y.toDouble()) + 0.4f;
                 float2 p;
                 if (!ed.sceneCam.worldToScreen({wx, wy, wz}, vp_.pointsW, vp_.pointsH, p)) continue;
                 const ImVec2 c(vp_.originX + p.x, vp_.originY + p.y);
@@ -1741,15 +1773,17 @@ private:
                             }
                         }
                     } else if (ed.transformTool == TransformTool::Move) {
-                        const float3 ends[2] = {
-                            {wx + extent, wy, wz}, {wx, wy, wz + extent}
+                        const float3 ends[3] = {
+                            {wx + extent, wy, wz}, {wx, wy + extent, wz}, {wx, wy, wz + extent}
                         };
-                        const ImU32 colors[2] = {
+                        const ImU32 colors[3] = {
                             IM_COL32(245, 93, 91, 255),
+                            IM_COL32(93, 215, 115, 255),
                             IM_COL32(91, 155, 250, 255)
                         };
-                        const char* axisLabels[2] = {"X", "Z"};
-                        for (int axis = 0; axis < 2; ++axis) {
+                        const char* axisLabels[3] = {"X", "Y", "Z"};
+                        for (int axis = 0; axis < 3; ++axis) {
+                            if (axis == 1 && !authoredEntity(entity)) continue;
                             float2 projected;
                             if (!ed.sceneCam.worldToScreen(
                                     ends[axis], vp_.pointsW, vp_.pointsH,
@@ -1882,6 +1916,7 @@ private:
     int gizmoAxis_ = -1;
     float gizmoGroundX_ = 0.0f, gizmoGroundZ_ = 0.0f;
     float gizmoLastScreenX_ = 0.0f;
+    float gizmoLastScreenY_ = 0.0f;
     bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
     // 0: follow process environment (OFF by default), 1: opt-in only for
     // Scene viewport, 2: force off for Scene viewport. Never persists to Game.

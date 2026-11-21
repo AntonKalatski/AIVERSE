@@ -23,10 +23,10 @@ enum : uint32_t {
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
     kPfAutoExposure = 1u << 13,
-    kPfUnderwater = 1u << 14, kPfUnderwaterDepth = 1u << 15,
+    kPfUnderwater = 1u << 14, kPfUnderwaterDepth = 1u << 15, kPfLensWater = 1u << 16,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH", "PF_LENS_WATER"};
 
 // Target roles inside one Sized set.
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131, kPhysicalSky = 200, kLocalFog = 201 };
@@ -71,10 +71,10 @@ const char* kTemporalFields[] = {
     "prev0", "prev1", "prev2", "prev3", "jitter", "inputPx"
 };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4], lensWater0[4], lensWater1[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera", "lensWater0", "lensWater1"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -196,6 +196,7 @@ void Prisma::collectCompletedSizes(uint64_t completedGpuFence) {
             s.graphExecutor->collectCompleted(completedGpuFence);
 }
 void Prisma::retireView(uint64_t id) {
+    lensWaterViews_.erase(id);
     // Per-camera temporal state is not shared with another view, even if
     // both viewports have the same size. Do NOT touch Sized: color/depth
     // and graph targets are still shared by dimensions.
@@ -557,11 +558,21 @@ void Prisma::shutdown() {
     release(black_);
     triangle_ = {};
     underwater_ = {};
+    lensWaterViews_.clear();
     dev_ = nullptr;
 }
 
 void Prisma::setUnderwater(PrismaUnderwater target,float deltaSeconds) {
     underwater_=advancePrismaUnderwater(underwater_,target,deltaSeconds);
+    const auto* effect=settings_.find(PrismaType::LensWater);
+    if(!enabled_||!settings_.enabled||!effect||!effect->enabled||quality_<effect->minQuality||effect->get("amount")<=0){lensWaterViews_.erase(viewId_);return;}
+    auto found=lensWaterViews_.find(viewId_);
+    if(found==lensWaterViews_.end()) {
+        if(!target.submerged||lensWaterViews_.size()>=64)return;
+        found=lensWaterViews_.emplace(viewId_,PrismaLensWaterState{}).first;
+    }
+    found->second=advancePrismaLensWater(found->second,target.submerged,deltaSeconds,effect->get("dryTime"));
+    if(found->second.wetness<=0)lensWaterViews_.erase(found);
 }
 
 size_t Prisma::pendingTargetRetirements() const {
@@ -1255,7 +1266,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
-    for (int i = 0; i < 16; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
+    for (size_t i = 0; i < sizeof(kPfNames)/sizeof(kPfNames[0]); ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
     if (mask & kPfUnderwaterDepth) {
         tex |= 1u << 5;
@@ -1292,7 +1303,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
         if (layout.exposureSlot == 9)
             defines += "#define PF_AUTO_EXPOSURE_SLOT9 1\n";
     }
-    Built b=buildProgram(kCompositeFields,23,tex,defines,prisma::kCompositeHelpers,body.c_str(),
+    Built b=buildProgram(kCompositeFields,int(sizeof(kCompositeFields)/sizeof(kCompositeFields[0])),tex,defines,prisma::kCompositeHelpers,body.c_str(),
         (mask & kPfUnderwaterDepth) ? (1u << 5) : 0);
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
@@ -2603,6 +2614,16 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         u.graphFrame[1]=underwater_.crossing*budget.crossing;
         ++stats_.effects;
     }
+    if(const auto* effect=find(PrismaType::LensWater)) {
+        const auto it=lensWaterViews_.find(viewId_);
+        if(it!=lensWaterViews_.end()&&!it->second.submerged&&it->second.wetness>0&&effect->get("amount")>0){
+            mask|=kPfLensWater;
+            const float lensScale=float(w)/std::max(1,outW);
+            put(u.lensWater0,effect->get("amount")*it->second.wetness,effect->get("dropSize")*lensScale,effect->get("density"),effect->get("distortion")*lensScale);
+            put(u.lensWater1,effect->get("flowSpeed")*lensScale,it->second.age,effect->get("film"),float(h)*outW/(float(std::max(1,outH))*std::max(1,w)));
+            ++stats_.effects;
+        }
+    }
     const auto* graphEffect = find(PrismaType::ShaderGraph);
     // Depth sampling is enabled only after the scene pass has ended.
     // ShaderGraph owns tex5+, so avoid conflicting with its inputs.
@@ -2911,6 +2932,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             case PrismaType::Posterize: compositeBit(kPfPosterize); break;
             case PrismaType::Vignette: compositeBit(kPfVignette); break;
             case PrismaType::Grain: compositeBit(kPfGrain); break;
+            case PrismaType::LensWater: compositeBit(kPfLensWater); break;
             case PrismaType::Fade: compositeBit(kPfFade); break;
             case PrismaType::Letterbox: compositeBit(kPfLetterbox); break;
             default:

@@ -149,6 +149,15 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("targetGpuMs", 16.6f, 4.0f, 50.0f, "target completed GPU frame milliseconds; whole frame, not viewport-only", "Целевое время GPU, мс"),
         num("minRenderScale", 0.5f, 0.5f, 1.0f, "minimum adaptive internal render scale; never exceed authored renderScale", "Минимальный масштаб"),
         num("maxPrismaMemoryMiB", 256.0f, 32.0f, 4096.0f, "known Prisma live + GPU-pending bytes pressure threshold, NOT actual total VRAM", "Бюджет Prisma, МиБ")}});
+    c.push_back({T::LensWater,"lensWater","Вода на линзе",
+        "Optional draining lens droplets after the camera exits water; independent from underwater absorption.",C::Medium,kMed,{
+        num("amount",.75f,0,1,"wet-lens strength; zero disables and clears wetness","Сила"),
+        num("dropSize",16,2,64,"drop radius in output pixels","Размер капель, пикс."),
+        num("density",.55f,0,1,"fraction of cells containing droplets","Количество капель"),
+        num("distortion",12,0,48,"maximum refraction offset in pixels","Искажение, пикс."),
+        num("flowSpeed",24,0,240,"downward lens drainage in pixels per second","Скорость стекания"),
+        num("dryTime",4,.1f,30,"seconds to dry completely after leaving water","Время высыхания, с"),
+        num("film",.2f,0,1,"strength of thin draining water film","Водяная плёнка")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -482,6 +491,7 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::ColorGrade: return {0.15f, 0};
     case T::Vignette: return {0.05f, 0};
     case T::Grain: return {0.1f, 0};
+    case T::LensWater: return {2.5f,0}; // estimate only, not measured GPU time
     case T::Fade: case T::Letterbox: return {0.02f, 0};
     case T::Pixelate: case T::Posterize: return {0.05f, 0};
     case T::Lut: return {1.0f, 0};

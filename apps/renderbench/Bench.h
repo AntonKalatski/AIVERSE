@@ -8,6 +8,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "SceneAssets.h"
+#include "engine/world/NereidManifestHost.h"
 #include "DynamicGiHost.h"
 #include "LumaHost.h"
 #include "AnimatedLightingGeometry.h"
@@ -64,6 +65,8 @@ struct Bench {
     Prisma post;
     PrismaScreenLighting screen;
     SceneAssets additions;
+    world::NereidManifestHost water;
+    double previousWaterPreviewTime=-1;
     DynamicGiHost dynamicGi;
     LumaHost luma;
     AnimatedLightingGeometry animatedGeometry;
@@ -246,6 +249,7 @@ struct Bench {
                 for(const auto& [key,value]:result.members())report.set(key,value);
             }
             if(!uploadModel(d,*model))throw std::runtime_error("model upload failed: "+d.lastError());
+            report.set("primaryAlphaCoverageImages",Json::number(int64_t(std::count_if(model->images.begin(),model->images.end(),[](const Image& image){return image.alphaCoverageMipmaps;}))));
             report.set("loadAndUploadMs",Json::number(ms(start,Clock::now())));
             const auto& optim=config["modelOptimization"];
             renderer.setLodDiagnosticsEnabled(true);
@@ -253,7 +257,16 @@ struct Bench {
             renderer.setModelCullingEnabled(config["look"].getBool("culling",optim.getBool("culling",true)));
             renderer.setModelInstancingEnabled(optim.getBool("instancing",true));
             renderer.setShadowQuality(options.profile=="low"?ShadowQuality::Low:ShadowQuality::High);
-            renderer.setMaterialQuality(options.profile=="low"?MaterialQuality::Medium:MaterialQuality::High);
+            auto materialQuality=options.profile=="low"?MaterialQuality::Medium:MaterialQuality::High;
+            if(config.has("materialQuality")) {
+                const auto quality=config.getStr("materialQuality");
+                if(quality=="low")materialQuality=MaterialQuality::Low;
+                else if(quality=="medium")materialQuality=MaterialQuality::Medium;
+                else if(quality=="high")materialQuality=MaterialQuality::High;
+                else throw std::runtime_error("materialQuality requires low|medium|high");
+            }
+            renderer.setMaterialQuality(materialQuality);
+            report.set("materialQuality",Json::string(materialQuality==MaterialQuality::Low?"low":materialQuality==MaterialQuality::Medium?"medium":"high"));
             renderer.setTraceEnabled(options.profile=="full");renderer.setModelReflectionsEnabled(options.profile=="full");
             renderer.lights.setQuality(luma.enabled||options.profile=="low"||(additions.lights.empty()&&!config.has("probeGI"))?LightQuality::Off:LightQuality::High);
             // "look": presentation-only overrides applied after the light-cache key (sun/sky colours,
@@ -309,6 +322,7 @@ struct Bench {
                     throw std::runtime_error("volumetricLight: density 0..1, anisotropy -.95...95, maxDistance 0..1000, steps 4..32, tint >= 0");
                 screen.setVolumetricLight(light);
             }
+            post.setPhysicalSky(parsePhysicalSky(config["postfx"],Json()));
             post.setSettings(s);post.setQuality(options.profile=="low"?PrismaQuality::Low:PrismaQuality::High);
             report.set("schema",Json::number(int64_t(1)));report.set("engine",Json::string("AIVERSE"));
 #if defined(__aarch64__) || defined(__arm64__)
@@ -387,15 +401,29 @@ struct Bench {
             pose.zNear=camera.zNear;pose.zFar=camera.zFar;camera=pose;
             if(shot!=tourShot){screen.reset();additions.selectLights(camera.eye());tourShot=shot;}
         }
+        post.setPhysicalSkyTime(options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?previewTime+options.tourStart:double(frame)/60.0);
+        renderer.setLodDiagnosticsEnabled(true);
+        water.configure(config);
+        water.prepare(d,camera.eye());
+        const float waterDelta=options.previewSeconds>0&&previousWaterPreviewTime>=0
+            ?float(std::max(0.0,previewTime-previousWaterPreviewTime)):1.f/60.f;
+        water.updateUnderwater(post,waterDelta);
+        previousWaterPreviewTime=previewTime;
+        renderer.setPresentationTime(options.freezeTime);
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
+        water.draw(renderer);
         additions.draw(renderer,animatedGeometry.enabled?lightingPoseSeconds:options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low" && !luma.enabled);
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
         renderer.render(pass,luma.enabled?static_cast<PostProcess*>(luma.pipeline.get()):options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
         try {luma.presented();} catch(const std::exception& e){fail(e.what());}
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
+            settings.set("physicalSkyRequested",Json::fromBool(post.physicalSky().enabled));
+            auto lodLevels=Json::array();for(auto n:renderer.modelStats().cameraLodNodes)lodLevels.push(Json::number(int64_t(n)));settings.set("cameraLodNodes",lodLevels);settings.set("cameraLodChains",Json::number(int64_t(renderer.modelStats().cameraLodChains)));settings.set("cameraLodBlocked",Json::number(int64_t(renderer.modelStats().cameraLodBlocked)));settings.set("shadowLimitedLod",Json::number(int64_t(renderer.modelStats().cameraShadowLimitedLod)));
+            settings.set("nereidSurfaces",Json::number(int64_t(water.configuredSurfaces())));
+            settings.set("waterUsesRendererClock",Json::fromBool(water.configuredSurfaces()!=0));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));
             settings.set("shadowResolution",Json::number(int64_t(renderer.shadowMapSize())));
             settings.set("shadowPcfSamples",Json::number(int64_t(options.profile=="low"?4:16)));
@@ -418,7 +446,7 @@ struct Bench {
             settings.set("lightAttenuation",Json::string(renderer.lights.staticPointLightsActive()?"3D finite-radius attenuation / (1 + distance squared); linear RGB; unshadowed":"RTS finite-radius approximation; not photometric glTF"));
             settings.set("staticPointLightGrid",Json::fromBool(renderer.lights.staticPointLightsActive()));
             settings.set("pointLightBudget",Json::number(int64_t(options.profile=="low"?0:renderer.lights.staticPointLightsActive()?additions.lights.size():std::min(additions.lights.size(),LightSystem::kMaxLights))));settings.set("rayTracing",Json::fromBool(false));
-            settings.set("ssr",Json::fromBool(renderer.ssrActive()));settings.set("dynamicResolution",Json::fromBool(false));
+            settings.set("opaqueSceneCapture",Json::fromBool(renderer.ssrActive()));settings.set("ssr",Json::fromBool(renderer.ssrActive() && renderer.traceActive()));settings.set("dynamicResolution",Json::fromBool(false));
             settings.set("modelOptimization",config["modelOptimization"]);
             settings.set("validationMotionYawPerFrame",Json::number(double(options.motionYaw),8));
             settings.set("validationFreezeTime",Json::number(double(options.freezeTime)));
@@ -443,6 +471,15 @@ struct Bench {
         }
         if(view>=int(cameras.size())&&!captureRequested&&!options.capture.empty()) {
             captureRequested=true;
+            Json effects=Json::array();
+            if(const auto* status=post.effectReport(post.viewId()))for(const auto& effect:status->effects){
+                Json state=Json::object();state.set("type",Json::string(prismaType(effect.type).id));
+                state.set("requested",Json::fromBool(effect.requested));state.set("encoded",Json::fromBool(effect.encoded));
+                state.set("reason",Json::string(effect.reason));effects.push(state);
+            }
+            report.set("capturedPrismaEffects",effects);
+            report.set("cameraUnderwater",Json::fromBool(water.underwater().submerged));
+            report.set("underwaterBlend",Json::number(double(post.underwater().blend)));
             auto cb=[this](int w,int h,std::vector<uint8_t> px){
                 if(w!=width||h!=height||px.size()!=size_t(w*h*4)){fail("invalid capture");return;}
                 std::ofstream f(options.capture,std::ios::binary);f<<"P6\n"<<w<<" "<<h<<"\n255\n";
@@ -501,6 +538,7 @@ struct Bench {
         report.set("error",Json::string(error));report.set("frames",rows);
         std::ofstream f(options.output);f<<report.dump()<<"\n";if(!f)fail("cannot write report");
         if(model)releaseModel(d,*model);
+        water.shutdown(d);
         additions.release(d);screen.shutdown();post.shutdown();renderer.shutdown();platform::setHostedView(nullptr);
     }
 };

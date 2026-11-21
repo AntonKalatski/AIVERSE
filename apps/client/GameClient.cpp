@@ -1048,11 +1048,11 @@ bool GameClient::requestHostStep() {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    lensCameras_.collectRetiredTargets();
     const bool hostFrozen = hostCanControl() && hostPaused_;
     const bool singleStep = hostFrozen && hostCanStep() && hostStep_;
     hostStep_ = false;
     if (hostFrozen) dt = 0;
-    lensCameras_.collectRetiredTargets();
     // Even on menus/loading screens there may be previous per-view motion
     // textures awaiting the GPU completion fence from an old match.
     prisma_.collectGpuRetirements();

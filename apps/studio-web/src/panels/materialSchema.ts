@@ -3,7 +3,7 @@ export type FieldValue=string|number|boolean;
 export type MaterialData=Record<string,unknown>;
 export interface MaterialLibrary {library:Record<string,MaterialData>}
 export const MATERIAL_EDIT_KEYS=[
-  'metallic','roughness','shadowDiffusion','sssStrength','sssScale','sssThickness','sssColor','cutoff','teamStrength','occlusionStrength',
+  'metallic','roughness','thinTransmission','shadowDiffusion','sssStrength','sssScale','sssThickness','sssColor','cutoff','teamStrength','occlusionStrength',
   'emissiveStrength','normalScale','doubleSided','unlit','castShadow',
   'receiveShadow','vertexColors','alpha','team','description',
   'texture','normalMap','emissiveMap','teamMask','metallicRoughnessMap','occlusionMap'
@@ -22,6 +22,8 @@ export interface MaterialField {
 const fields:Array<Omit<MaterialField,'value'|'editable'>>=[
  {key:'metallic',label:'Metallic',type:'number',min:0,max:1,step:.01},
  {key:'roughness',label:'Roughness',type:'number',min:0,max:1,step:.01},
+ {key:'thinTransmission',label:'Thin transmission',type:'number',min:0,max:1,step:.01,
+  description:'Diffuse light passing through thin leaves or cloth. PBR only; 0 disables it.'},
  {key:'shadowDiffusion',label:'Shadow diffusion (world units)',type:'number',min:0,max:1,step:.005,
   description:'Extra received sun-shadow softness. 0 preserves the original shadow; Medium/High shadows only.'},
  {key:'sssStrength',label:'SSS strength',type:'number',min:0,max:1,step:.01,
@@ -53,7 +55,7 @@ const fields:Array<Omit<MaterialField,'value'|'editable'>>=[
  {key:'occlusionMap',label:'Occlusion map',type:'asset',assetKinds:['image']}
 ];
 const defaults:Record<MaterialKey,FieldValue>={
- metallic:0,roughness:1,shadowDiffusion:0,sssStrength:0,sssScale:.5,sssThickness:0,sssColor:'1,1,1',cutoff:.5,teamStrength:1,occlusionStrength:1,
+ metallic:0,roughness:1,thinTransmission:0,shadowDiffusion:0,sssStrength:0,sssScale:.5,sssThickness:0,sssColor:'1,1,1',cutoff:.5,teamStrength:1,occlusionStrength:1,
  emissiveStrength:0,normalScale:1,doubleSided:false,unlit:false,castShadow:true,
  receiveShadow:true,vertexColors:false,alpha:'opaque',team:'none',description:'',
  texture:'',normalMap:'',emissiveMap:'',teamMask:'',metallicRoughnessMap:'',occlusionMap:''

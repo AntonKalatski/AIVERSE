@@ -53,7 +53,11 @@ public:
         const TreeSkeleton skeleton=generateTree(profile,meshSeed,TreeLOD::High);
         std::vector<render::float3> pivots;
         pivots.reserve(skeleton.branches.size());
-        for(const TreeBranch& branch:skeleton.branches)
+        if(mesh.organicBranches) {
+            const auto curves=arbor_detail::branchCurves(skeleton,mesh);
+            for(const auto& curve:curves){const auto at=arbor_detail::curveSample(curve,0);
+                pivots.push_back({at.x*.01f,at.y*.01f,at.z*.01f});}
+        } else for(const TreeBranch& branch:skeleton.branches)
             pivots.push_back({float(branch.x0)*0.01f,
                               float(branch.y0)*0.01f,
                               float(branch.z0)*0.01f});
@@ -64,7 +68,7 @@ public:
         billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
         branchPivots_.emplace(profile.speciesId,std::move(pivots));
-        evergreen_[profile.speciesId]=(profile.shape==CrownShape::Conifer);
+        evergreen_[profile.speciesId]=treeIsEvergreen(profile);
         prototypeSeeds_[profile.speciesId]=meshSeed;
         if(phenology_!=CanopyPhenology{} || gpuCrownWindActive())
             rebuildPhenologyMaterials();
@@ -451,7 +455,7 @@ private:
     // All Arbor branch geometry is authored in model-space centimetres
     // converted to metres, not re-centered around a local branch origin.
     // Therefore compose cumulative model-space transforms around each
-    // branch's ORIGINAL start pivot; children inherit their parent's pose.
+    // branch's presentation start pivot; children inherit their parent's pose.
     void buildBranchWindPose(
             const render::Model& model,
             const std::vector<render::float3>& pivots,

@@ -130,13 +130,6 @@ public:
     Simulation* simulation() { return sim_.get(); }
     bool inMatch() const { return !mapLoading_ && sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
     const std::string& errorText() const { return error_; }
-    // Editor controls affect only the existing local simulation. Network/city
-    // authority must keep advancing even when a local preview is paused.
-    bool hostCanControl() const;
-    bool hostPaused() const;
-    bool hostCanStep() const;
-    bool setHostPaused(bool paused);
-    bool requestHostStep();
     // Non-owning, frame-scoped LENS RT handles for native UI/material consumers.
     gfx::TextureHandle lensColorTarget(uint64_t key) const {
         return lensCamerasActive_?lensCameras_.colorTarget(key):gfx::TextureHandle{};
@@ -150,6 +143,13 @@ public:
     bool bindLensColorTarget(int slot,uint64_t key) const {
         return lensCamerasActive_&&dev_&&lensCameras_.bindColorTarget(*dev_,slot,key);
     }
+    // Editor controls affect only the existing local simulation. Network/city
+    // authority must keep advancing even when a local preview is paused.
+    bool hostCanControl() const;
+    bool hostPaused() const;
+    bool hostCanStep() const;
+    bool setHostPaused(bool paused);
+    bool requestHostStep();
 
 private:
     bool hostPaused_ = false, hostStep_ = false;

@@ -121,6 +121,8 @@ int main() {
 
     Json invalid = base;
     invalid.set("version",Json::number(int64_t(2)));
+    check(spectra::compileGraph(invalid,effect,errors), "supported graph v2 rejected");
+    invalid.set("version",Json::number(int64_t(3)));
     check(!spectra::compileGraph(invalid,effect,errors), "invalid version accepted");
     invalid = base;
     invalid.set("outputs",Json::parse(R"JSON(["update"])JSON"));

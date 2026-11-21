@@ -374,6 +374,7 @@ bool PortableSource::prepareModel(
     using HistoryKey=PortableLodHistory::Key;
     std::vector<std::pair<HistoryKey,std::vector<uint8_t>>> historyUpdates;
     uint64_t selected=0;
+    std::vector<SelectedCluster> debugPicks; // published only on success
     for(size_t i=0;i<asset_->primitives.size();++i){
         const auto& entry=asset_->primitives[i];
         if(!safePrimitive(*source_,entry.mesh,entry.primitive,entry.material))
@@ -488,6 +489,7 @@ bool PortableSource::prepareModel(
             prim.boundsMin={bounds.min[0],bounds.min[1],bounds.min[2]};
             prim.boundsMax={bounds.max[0],bounds.max[1],bounds.max[2]};
             alias.meshes[entry.mesh].primitives.push_back(std::move(prim));
+            if(debugCapture_)debugPicks.push_back({uint32_t(i),n});
             ++selected;
         }
     }
@@ -517,6 +519,7 @@ bool PortableSource::prepareModel(
         }
     }
     output=std::move(alias); // transaction: original output untouched on error
+    if(debugCapture_)debugSelection_=std::move(debugPicks);
     ++stats_.drawPreparations;
     stats_.selectedClusters+=selected;
     stats_.forcedFinest=forceFinestForUnspecifiedPass;
@@ -542,5 +545,6 @@ void PortableSource::shutdown(gfx::Device& dev){
     sourceGeometryRevision_=sourceMaterialRevision_=0;
     primitiveOffsets_.clear();
     stats_={};
+    std::vector<SelectedCluster>().swap(debugSelection_);
 }
 } // namespace aiverse::render::strata

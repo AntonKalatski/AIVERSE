@@ -5,6 +5,7 @@
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
 #include "ModelVirtualTextureSampling.h"
+#include "ModelSamplingPolicy.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -53,7 +54,10 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         mu.light[0] = mt.shading == ShadingModel::Pbr ? mt.sssColor.x : mt.fixedLight.x;
         mu.light[1] = mt.shading == ShadingModel::Pbr ? mt.sssColor.y : mt.fixedLight.y;
         mu.light[2] = mt.shading == ShadingModel::Pbr ? mt.sssColor.z : mt.fixedLight.z;
-        mu.light[3] = mt.shading == ShadingModel::Pbr ? std::clamp(mt.sssThickness, 0.0f, 1.0f) : mt.fixedLight.w;
+        // PBR light.w packs two independent features: integer part = thin
+        // transmission quantised to 1/255, fraction = SSS max transmitted
+        // world depth in [0,1) (0 keeps the artistic backlight).
+        mu.light[3] = mt.shading == ShadingModel::Unlit ? mt.fixedLight.w : gpuPackThinSss(mt.thinTransmission, mt.sssThickness);
     return mu;
 }
 inline std::array<gfx::TextureHandle,4> gpuGraphSourceTextures(
@@ -432,41 +436,22 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
-    const auto selectedGraph = it.mat->shaderGraph &&
-        int(matQuality_) >= it.mat->shaderGraph->minQuality ?
-        it.mat->shaderGraph : nullptr;
-    const auto* graph = selectedGraph.get();
-    // The original full-size base alpha was extracted to an R8 image.
-    // Keep colour/shadow/selection on the same full-resolution coverage.
-    // Slot 15 is intentionally not used with shader-graph variants.
-    bool alphaR8 = false;
-    if (mask && !graph && it.mat->baseTex >= 0 &&
-        size_t(it.mat->baseTex) < it.model->images.size()) {
-        alphaR8 = it.model->images[size_t(it.mat->baseTex)]
-                      .virtualAlphaMask.valid();
-    }
-    // The graph's four source textures occupy tex13..16 on Metal.
-    // A virtual material sample uses two additional texture slots,
-    // requiring tex17/18 when all four graph sources are present.
-    // This does not consume additional Metal sampler slots (s1 reused).
-    const bool graphVirtual = graph && graph->usesVirtualTexture;
-    if (graph && !supportsModelGraphSourceTextures(*dev_,graph->textures.size())) {
-        modelError_ = "shader graph source textures exceed RHI fragment slot budget";
-        return {}; // Never bind an unrepresentable tex16 on GL/Vulkan.
-    }
-    int virtualAtlasSlot=13, virtualTableSlot=14;
-    const bool graphVirtualSlots = !graphVirtual ||
-        modelGraphVirtualTextureSlots(*dev_,graph->textures.size(),
-                                     virtualAtlasSlot,virtualTableSlot);
+    const auto* candidateGraph=it.mat->shaderGraph&&int(matQuality_)>=it.mat->shaderGraph->minQuality?it.mat->shaderGraph.get():nullptr;
+    const bool availableAlphaR8=mask&&it.mat->baseTex>=0&&size_t(it.mat->baseTex)<it.model->images.size()&&
+        it.model->images[size_t(it.mat->baseTex)].virtualAlphaMask.valid();
+    const bool allowVirtual=giPhase&&!materialPalette;
     ModelVirtualTextureBinding vtBinding;
-    const bool vtSampling = giPhase && (!graph || graphVirtual) &&
-        !materialPalette && graphVirtualSlots &&
-        resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
-    const bool vtTrilinear = vtSampling && vtBinding.indexedMipTable;
-    const int graphTextureSlot=kGraphTextureSlot+(dynamicGi && !vtSampling ? 1 : 0);
-    const int dynamicGiTextureSlot=vtSampling ? std::max(virtualTableSlot+1,alphaR8?16:0) : 13;
-    if(dynamicGi && dynamicGiTextureSlot>=dev_->maxFragmentTextureSlots()) {
-        modelError_="dynamic GI and virtual material exceed fragment texture budget";
+    const bool availableVirtual=allowVirtual&&resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
+    const auto sampling=modelSamplingPlan(dev_->maxFragmentTextureSlots(),candidateGraph?candidateGraph->textures.size():0,
+        candidateGraph!=nullptr,candidateGraph&&candidateGraph->usesVirtualTexture,availableVirtual,dynamicGi,availableAlphaR8,allowVirtual);
+    const auto selectedGraph=sampling.graph?it.mat->shaderGraph:nullptr;
+    const auto* graph=selectedGraph.get();
+    const bool alphaR8=sampling.alphaR8,vtSampling=sampling.virtualTexture;
+    const int virtualAtlasSlot=sampling.atlasSlot,virtualTableSlot=sampling.tableSlot;
+    const bool vtTrilinear=vtSampling&&vtBinding.indexedMipTable;
+    const int graphTextureSlot=sampling.graphSlot,dynamicGiTextureSlot=sampling.dynamicGiSlot;
+    if(dynamicGi&&dynamicGiTextureSlot>=dev_->maxFragmentTextureSlots()) {
+        modelError_="dynamic GI exceeds base PBR fragment texture budget";
         return {};
     }
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
@@ -534,6 +519,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (instancePalette) defs += "#define MATERIAL_INSTANCE_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
         if (outline) defs += "#define OUTLINE 1\n";
+        if (maskPass) defs += "#define SELECTION_MASK 1\n";
         if (shaderKey & kKeyDrawCallView) defs += "#define DRAW_CALL_VIEW 1\n";
         if (materialCapture) defs += surfaceCapture ? "#define LUMAWEAVE_SURFACE 1\n" : "#define LUMAWEAVE_MATERIAL 1\n";
         if (studioShaderBits && !materialCapture) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
@@ -622,10 +608,11 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+="#undef SG_SAMPLE\n";
                     replace(source,"// SG_COLOR",code);
                     std::string surface;
-                    for(auto name:{"roughness","metallic","emission","normal"}) {
+                    for(auto name:{"roughness","metallic","occlusion","emission","normal"}) {
                         auto it=graph->outputs.find(name);if(it==graph->outputs.end())continue;
                         const std::string key=name;
                         if(key=="normal") surface+="n="+it->second+".xyz/max(length("+it->second+".xyz),0.00001);\n";
+                        else if(key=="occlusion") surface+="ao=clamp("+it->second+".r,0.0,1.0);\n";
                         else surface+=(key=="roughness"?"rough":key=="emission"?"emis":"metallic")+std::string(" = ")+it->second+(key=="emission"?".rgb;\n":".r;\n");
                     }
                     replace(source,"// SG_SURFACE",surface);
@@ -716,7 +703,12 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         pd.indexType = gfx::IndexType::UInt32;
         pd.cull = maskPass ? (it.mat->doubleSided ? gfx::CullMode::None : gfx::CullMode::Back) :
                   outline ? gfx::CullMode::Front : twoSided ? gfx::CullMode::None : gfx::CullMode::Back;
-        if (maskPass) pd.depthWrite = false;
+        if (maskPass) {
+            pd.depthWrite=false;
+            // A separately compiled mask VS can round coplanar depth by an
+            // ulp. Bias only this read-only replay to avoid internal holes.
+            pd.depthBiasConstant=-1.f;pd.depthBiasSlope=-1.f;
+        }
         if (shadow) {
             pd.depthOnly = true;
             pd.depthBiasConstant = 2.0f; pd.depthBiasSlope = 2.5f;
@@ -1424,6 +1416,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
+            if(shadowOnly) {
+                if(shadowRole==1)return; // covered by the opaque shadow batch
+                shadowRole=2; // excludes shadow detail from reflections/auxiliary colour
+            }
             if (p.indexCount == 0 ||
                 (d.primitiveMaterialFilter >= 0 &&
                  p.material != d.primitiveMaterialFilter)) return;
@@ -1706,19 +1702,22 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Even if the model pipeline is already bound, another pass may have
     // changed the texture/uniform state. Always refresh this opt-in borrow.
     const Material& mt = *it.mat;
-    const auto activeGraph = mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality ? mt.shaderGraph.get() : nullptr;
+    const auto* candidateGraph=mt.shaderGraph&&int(matQuality_)>=mt.shaderGraph->minQuality?mt.shaderGraph.get():nullptr;
+    const bool availableAlphaR8=mt.alpha==AlphaMode::Mask&&(phase!=3||selectionMaskPass_)&&mt.baseTex>=0&&
+        size_t(mt.baseTex)<it.model->images.size()&&it.model->images[size_t(mt.baseTex)].virtualAlphaMask.valid();
+    const bool materialPalette=phase==1&&(instancePalette||it.paletteMaterials);
+    const bool allowVirtual=(phase==1||phase==2)&&!materialPalette;
+    const bool dynamicGi=(phase==1||phase==2)&&dynamicGiAtlas_.valid();
     ModelVirtualTextureBinding vt;
-    int atlasSlot=13,tableSlot=14;
-    const bool canBindVt=!activeGraph || (activeGraph->usesVirtualTexture &&
-        modelGraphVirtualTextureSlots(*dev_,activeGraph->textures.size(),atlasSlot,tableSlot));
-    const bool drawVt=(phase==1 || phase==2) && !instancePalette && !it.paletteMaterials &&
-        canBindVt && resolveModelVirtualTexture(*it.model,mt,vt);
-    const bool alphaCoverage=mt.alpha==AlphaMode::Mask && !activeGraph && mt.baseTex>=0 &&
-        size_t(mt.baseTex)<it.model->images.size() && it.model->images[size_t(mt.baseTex)].virtualAlphaMask.valid();
-    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid()) {
-        dev_->setUniforms(drawVt?7:6,dynamicGiUniforms_.data(),
-                          dynamicGiUniforms_.size()*sizeof(float));
-        dev_->setTexture(drawVt?std::max(tableSlot+1,alphaCoverage?16:0):13,dynamicGiAtlas_);
+    const bool availableVirtual=allowVirtual&&resolveModelVirtualTexture(*it.model,mt,vt);
+    const auto sampling=modelSamplingPlan(dev_->maxFragmentTextureSlots(),candidateGraph?candidateGraph->textures.size():0,
+        candidateGraph!=nullptr,candidateGraph&&candidateGraph->usesVirtualTexture,availableVirtual,dynamicGi,availableAlphaR8,allowVirtual);
+    const auto* activeGraph=sampling.graph?candidateGraph:nullptr;
+    const bool drawVt=sampling.virtualTexture;
+    const int atlasSlot=sampling.atlasSlot,tableSlot=sampling.tableSlot;
+    if(dynamicGi) {
+        dev_->setUniforms(drawVt?7:6,dynamicGiUniforms_.data(),dynamicGiUniforms_.size()*sizeof(float));
+        dev_->setTexture(sampling.dynamicGiSlot,dynamicGiAtlas_);
     }
     const auto afterPipeBind = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     // Upload the whole instance block declared by this backend's shader variant.
@@ -1782,18 +1781,18 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(2, &mu, sizeof mu);
     }
     if (materialStateChanged || newModel) {
-        const int graphTextureSlot=kGraphTextureSlot+(((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !drawVt)?1:0);
+        const int graphTextureSlot=sampling.graphSlot;
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
         dev_->setTexture(1, tex(mt.baseTex, white_));
         if (mt.alpha == AlphaMode::Mask && mt.baseTex >= 0 &&
             size_t(mt.baseTex) < it.model->images.size() &&
-            !(mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality)) {
+            sampling.alphaR8) {
             const auto coverage = it.model->images[size_t(mt.baseTex)].virtualAlphaMask;
             if (coverage.valid()) dev_->setTexture(15,coverage);
         }
-        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(graphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
+        if(activeGraph)for(size_t i=0;i<activeGraph->textures.size();++i)dev_->setTexture(graphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
             dev_->setTexture(3, tex(mt.normalTex, flatNormal_));

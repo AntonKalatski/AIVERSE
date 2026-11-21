@@ -95,6 +95,17 @@ struct HdrScene {
                 if (thicknessTest)
                     m.sssThickness=std::clamp(std::strtof(thicknessTest,nullptr),0.0f,1.0f);
             }
+            // Integration fixture controls: the two PBR effects must not
+            // alias one U2 slot or alter unlit fixed-light parameters.
+            if(const char* thin=std::getenv("AIVERSE_THIN_TRANSMISSION_TEST"))
+                m.thinTransmission=std::clamp(std::strtof(thin,nullptr),0.f,1.f);
+            if(const char* scale=std::getenv("AIVERSE_SSS_TEST_SCALE"))
+                m.sssScale=std::clamp(std::strtof(scale,nullptr),0.f,1.f);
+            if(std::getenv("AIVERSE_MATERIAL_TEST_UNLIT")) {
+                m.shading=ShadingModel::Unlit;
+                const auto direction=normalize(float3{.55f,1,.35f});
+                m.fixedLight={direction.x,direction.y,direction.z,1};m.fixedShade={.2f,.8f};
+            }
             const mat4 transform=backlightTest
                 ? mat4::translate({i?1.1f:-1.1f,0.8f,0})*
                   mat4::scale({1,1,i?1.0f:0.08f})

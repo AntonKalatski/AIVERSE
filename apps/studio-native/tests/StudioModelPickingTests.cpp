@@ -89,5 +89,24 @@ int main() {
     AIVERSE_TEST_CHECK(studioPickSceneSurfaces(instances,{fallback,hiddenProxy},origin,direction)=="cube");
     // A proxy replaced by a real rendered model must NOT steal the selection.
     AIVERSE_TEST_CHECK(studioPickSceneSurfaces(instances,{hiddenProxy},origin,direction)=="front");
+    // Transparent card pixels must not intercept a visual mesh click.
+    auto masked=oneTriangle();masked.materials.resize(1);auto& material=masked.materials[0];
+    masked.meshes[0].primitives[0].material=0;
+    material.alpha=AlphaMode::Mask;material.alphaCutoff=.5f;material.baseTex=0;
+    masked.vertices[0].uv={0,0};masked.vertices[1].uv={1,0};masked.vertices[2].uv={0,1};
+    Image image;image.width=image.height=2;image.repeat=false;image.nearest=true;
+    image.rgba={255,255,255,0,255,255,255,255,255,255,255,0,255,255,255,255};masked.images.push_back(image);
+    AIVERSE_TEST_CHECK(!studioPickModelSurface(masked,mat4::identity(),{.25f,.25f,5},direction));
+    AIVERSE_TEST_CHECK(studioPickModelSurface(masked,mat4::identity(),{1.5f,.25f,5},direction));
+    AIVERSE_TEST_CHECK(!studioPickModelSurface(masked,mat4::identity(),{1.5f,.25f,-5},{0,0,1}));
+    material.doubleSided=true;
+    AIVERSE_TEST_CHECK(studioPickModelSurface(masked,mat4::identity(),{1.5f,.25f,-5},{0,0,1}));
+    masked.images[0].nearest=false;
+    AIVERSE_TEST_CHECK(!studioPickModelSurface(masked,mat4::identity(),{.9f,.25f,5},direction));
+    AIVERSE_TEST_CHECK(studioPickModelSurface(masked,mat4::identity(),{1.1f,.25f,5},direction));
+    material.uvOffset.x=.5f;
+    AIVERSE_TEST_CHECK(studioPickModelSurface(masked,mat4::identity(),{.25f,.25f,5},direction));
+    masked.images[0].rgba.clear();
+    AIVERSE_TEST_CHECK(!studioPickModelSurface(masked,mat4::identity(),{.25f,.25f,5},direction));
     std::cout<<"PASS studio CPU model triangle picking\n";
 }

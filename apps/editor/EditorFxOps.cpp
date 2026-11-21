@@ -29,8 +29,10 @@ void Editor::tickFx(const render::RTSCamera& cam, int w, int h, const std::vecto
     if (playing() && dt > 0) gameFxBridge_.update(*sim_, objects, dt);
     if (fxFrozen_) dt = 0;
     if (fxPreview_.loop && !fxPreview_.name.empty() && !gameFx_.playing(fxPreview_.h) && time_ >= fxPreview_.next && dt > 0) {
-        fxPreview_.h = gameFx_.play(fxPreview_.name, fxPreview_.pos, {0, 1, 0}, fxPreview_.scale, fxPreview_.tint);
         int id = gameFx_.effect(fxPreview_.name);
+        fxPreview_.h = id < 0 ? fx::FxHandle{} :
+            gameFx_.playWithProgramParameters(id,fxPreview_.pos,{0,1,0},
+                fxPreview_.scale,fxPreview_.tint,fxPreview_.programParams);
         const fx::EffectDef* d = gameFx_.def(id);
         fxPreview_.next = time_ + (d && !d->looping() ? std::min(8.0, double(d->lifetime()) + 0.5) : 0.5);
     }
@@ -57,12 +59,14 @@ void Editor::registerFxPreviewOps() {
             Json r = Json::object();
             if (p.getBool("stop")) {
                 gameFx_.kill(fxPreview_.h);
+                stopSpectraGpuPreview();
                 fxPreview_ = {};
                 fxFrozen_ = false;
                 r.set("ok", Json::fromBool(true));
                 r.set("summary", Json::string("Превью эффекта убрано"));
                 return r;
             }
+            stopSpectraGpuPreview(); // a CPU fx_preview replaces Metal preview
             if (ws_.project.dir.empty()) throw std::runtime_error("no game is open (open_game)");
             const std::string name = p.getStr("effect");
             if (!validFxName(name) || name == "fx") throw std::runtime_error("'effect' must be an effect name (fx_list)");
@@ -139,7 +143,7 @@ void Editor::registerFxPreviewOps() {
         "The current preview is replaced; old fx/*.json files remain untouched.",
         Json::parse(R"({"properties":{"name":{"type":"string"},"graph":{"type":"object"},"overrides":{"type":"object"},
             "x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},
-            "advance":{"type":"number"},"loop":{"type":"boolean"},"freeze":{"type":"boolean"}},"required":["graph"]})"),
+            "advance":{"type":"number"},"loop":{"type":"boolean"},"freeze":{"type":"boolean"},"gpu":{"type":"boolean"},"instanceValues":{"type":"object"}},"required":["graph"]})"),
         [this](const Json& p)->Json {
             if(ws_.project.dir.empty())throw std::runtime_error("open a game project first");
             fx::EffectDef compiled;
@@ -150,6 +154,31 @@ void Editor::registerFxPreviewOps() {
                 for(const auto& e:errors)why+="\n"+e;
                 throw std::runtime_error(why);
             }
+            // The graph stays compiled once. Each preview instance receives
+            // its own eight scalar VM inputs before the first particle Spawn,
+            // including prewarmed particles.
+            spectra::InstanceParameterTable definitions;
+            if(!spectra::loadInstanceParameterTable(
+                p["graph"]["instanceParameters"],definitions,errors))
+                throw std::runtime_error(errors.empty()?
+                    "invalid SpectraFX instance parameters":errors.back());
+            std::array<float,8> instanceParams{};
+            for(const auto& [name,def]:definitions) {
+                (void)name;
+                instanceParams[def.slot]=def.initial;
+            }
+            const Json& values=p["instanceValues"];
+            if(!values.isNull()&&!values.isObject())
+                throw std::runtime_error("instanceValues must be a JSON object");
+            if(values.isObject())
+                for(const auto& [name,value]:values.members()) {
+                    const auto it=definitions.find(name);
+                    if(it==definitions.end() || !value.isNumber() ||
+                       !spectra::checkInstanceParameterValue(it->second,
+                           float(value.toDouble())))
+                        throw std::runtime_error("invalid SpectraFX instanceValues."+name);
+                    instanceParams[it->second.slot]=float(value.toDouble());
+                }
             render::RTSCamera& cam=playing()?gameCam:sceneCam;
             const fx::float3 pos{
                 p.has("x")?float(p["x"].toDouble()):cam.target.x,
@@ -161,6 +190,29 @@ void Editor::registerFxPreviewOps() {
             Viewport* vp=playing()?gameViewport:sceneViewport;
             const int width=vp&&vp->w>0?vp->w:1280;
             const int height=vp&&vp->h>0?vp->h:720;
+            if(p.getBool("gpu")) {
+                if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
+                   !dev_->supportsCompute())
+                    throw std::runtime_error("SpectraFX GPU preview requires a Metal compute device");
+                spectra::GraphRuntimeOptions options;
+                options.preference=spectra::ComputePreference::RequireGpu;
+                options.gpuProgram=true;options.gpuMaterial=true;
+                const auto eligibility=spectra::inspectGraphGpuEligibility(compiled,options);
+                if(!eligibility.eligible)
+                    throw std::runtime_error("SpectraFX Metal GPU preview rejected: "+eligibility.reason);
+                gameFx_.kill(fxPreview_.h);
+                fxPreview_={};fxFrozen_=false;
+                queueSpectraGpuPreview(compiled,instanceParams,pos,
+                    playing()&&!ws_.project.isFps(),p.getBool("loop"));
+                Json response=Json::object();
+                response.set("ok",Json::fromBool(true));
+                response.set("queued",Json::fromBool(true));
+                response.set("backend",Json::string("Metal"));
+                response.set("view",Json::string(playing()&&!ws_.project.isFps()?"game":"scene"));
+                response.set("summary",Json::string("Metal preview will start before the next scene render pass"));
+                return response;
+            }
+            stopSpectraGpuPreview();
             gameFx_.setView(cam,cam.proj(float(width)/float(height),
                 dev_&&dev_->info().clipDepthZeroToOne)*cam.view(),width,height);
 
@@ -168,13 +220,15 @@ void Editor::registerFxPreviewOps() {
             const std::string runtimeName="__spectrafx_editor_preview";
             const int id=gameFx_.define(runtimeName,compiled);
             if(id<0)throw std::runtime_error("SpectraFX preview definition rejected");
-            const fx::FxHandle handle=gameFx_.play(id,pos);
+            const fx::FxHandle handle=gameFx_.playWithProgramParameters(
+                id,pos,{0,1,0},1.f,{1,1,1,1},instanceParams);
             if(!handle.valid())throw std::runtime_error("SpectraFX preview could not start (culling or particle quality)");
             const float advance=std::clamp(float(p["advance"].toDouble(0.12)),0.f,10.f);
             for(int i=0;i<int(advance*60.f);++i)gameFx_.update(1.f/60.f);
             fxFrozen_=p.getBool("freeze");
             fxPreview_={runtimeName,pos,1.f,{1,1,1,1},p.getBool("loop"),handle,
                 time_+(compiled.looping()?0.5:std::min(8.0,double(compiled.lifetime())+0.5)),false,0.f};
+            fxPreview_.programParams=instanceParams;
             fxTime_=time_;
             Json response=Json::object();
             response.set("ok",Json::fromBool(true));
