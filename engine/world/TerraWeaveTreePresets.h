@@ -4,6 +4,7 @@
 #include "engine/world/TerraWeaveArbor.h"
 #include "engine/world/TerraWeaveVegetationSoil.h"
 #include "engine/world/TerraWeavePhenology.h"
+#include "engine/world/TerraWeaveRocks.h"
 #include <array>
 #include <string_view>
 
@@ -13,6 +14,24 @@ struct TreePreset {
     TreeProfile profile;
     std::string_view barkMaterial, leafMaterial;
 };
+
+// Palette index only: reuse the global four-color scatter lattice, with no
+// mutable neighborhood cache or second placement generator. Eight neighboring
+// cells differ in species (>=4 kinds) or seed variant (single-kind banks).
+inline uint32_t treePrototypeVariant(int64_t cellX,int64_t cellZ,uint64_t seed,
+        uint32_t speciesCount,uint32_t variantsPerSpecies) {
+    if(speciesCount<1||speciesCount>16||variantsPerSpecies<1||variantsPerSpecies>8||
+       (speciesCount<4&&variantsPerSpecies<4))
+        throw std::invalid_argument("tree palette needs four species or four variants");
+    const uint32_t color=rockVariant(cellX,cellZ,seed,4);
+    const uint64_t hash=detail::hash2(cellX,cellZ,seed^0xd1b54a32d192ed03ULL);
+    const uint32_t species=speciesCount>=4?
+        color+4*uint32_t(hash%((speciesCount-1-color)/4+1)):
+        uint32_t(hash%speciesCount);
+    const uint32_t variant=speciesCount>=4?uint32_t((hash>>32)%variantsPerSpecies):
+        color+4*uint32_t((hash>>32)%((variantsPerSpecies-1-color)/4+1));
+    return species*variantsPerSpecies+variant;
+}
 
 inline const std::array<TreePreset, 10>& botanicalTreePresets() {
     static const auto values=[] {

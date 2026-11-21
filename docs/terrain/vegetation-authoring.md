@@ -149,3 +149,22 @@ python3 tools/vegetation/bake_pbr_pack.py --only birch_leaves maple_leaves apple
 
 Normal relief is authored from fine albedo variation, not a measured scan.
 PBR materials use dielectric metallic0, roughness/normal/ORM/AO and cutout alpha.
+
+### Neighbor-aware botanical placement palette
+
+`aiverse_terraweave_vegetation --catalog botanical --variants 4 --seed 2718
+--placements LANDSCAPE/catalog.json --placement-spacing-cm 550` appends a
+`placements` array to its output catalog. Existing landscape tree poses remain
+unchanged; `variant` selects the exported prototype, with `kind` and
+`prototypeSeed` metadata. Import these assets as ordinary StaticModel entities;
+this does not register a live ecology/physics owner.
+
+The public `treePrototypeVariant(cellX,cellZ,seed,speciesCount,variantsPerSpecies)`
+uses the shared global four-color lattice. All eight neighboring cells differ
+in species when at least four species are available. With fewer species, at
+least four seed variants are required and neighboring prototype IDs differ.
+Negative coordinates and chunk boundaries use the same rule, without mutable
+neighbor state. Choose the cell spacing used by native scatter. This guarantees
+local cell diversity, not arbitrary-distance nearest-neighbor exclusion after
+manual moving/deleting of entities. Palette size is bounded to16species and
+8variants per species. Existing conifer export and catalog fields stay compatible.

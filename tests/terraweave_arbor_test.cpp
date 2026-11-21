@@ -135,6 +135,27 @@ void testInvalidProfiles() {
 }
 }
 int main() {
+    for(uint32_t species:{1u,2u,3u,4u,10u,16u}) {
+        constexpr uint32_t variants=4;
+        std::vector<bool> seen(species*variants,false);
+        for(int64_t z=-20;z<=20;++z)for(int64_t x=-20;x<=20;++x) {
+            const auto index=treePrototypeVariant(x,z,2718,species,variants);
+            assert(index<seen.size());seen[index]=true;
+            assert(index==treePrototypeVariant(x,z,2718,species,variants));
+            for(int dz=-1;dz<=1;++dz)for(int dx=-1;dx<=1;++dx) {
+                if(!dx&&!dz)continue;
+                const auto neighbor=treePrototypeVariant(x+dx,z+dz,2718,species,variants);
+                assert(index!=neighbor);
+                if(species>=4)assert(index/variants!=neighbor/variants);
+            }
+        }
+        assert(std::all_of(seen.begin(),seen.end(),[](bool value){return value;}));
+    }
+    {
+        bool rejected=false;
+        try{(void)treePrototypeVariant(0,0,1,1,3);}catch(const std::invalid_argument&){rejected=true;}
+        assert(rejected);
+    }
     {
         // A rounded pine crown widens above its base, then narrows at the
         // leader. The former monotonic envelope was just another cone.

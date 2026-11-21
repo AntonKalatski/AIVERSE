@@ -12,8 +12,8 @@ using aiverse::Json;
 using namespace aiverse::terraweave;
 using namespace aiverse::terrain_export;
 int main(int argc,char** argv){try{
-    fs::path out,materials,groundFile;uint64_t seed=42;std::string catalogKind="conifers",season="summer";uint32_t variants=4;PlantEnvironment environment;environment.ageTicks=100;environment.matureTicks=100;
-    for(int i=1;i<argc;++i){const std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");const std::string v=argv[++i];if(k=="--out")out=v;else if(k=="--materials")materials=v;else if(k=="--ground")groundFile=v;else if(k=="--seed")seed=std::stoull(v);else if(k=="--catalog")catalogKind=v;else if(k=="--season")season=v;else if(k=="--variants"){const auto n=std::stoull(v);if(n<1||n>8)throw std::runtime_error("variants1..8");variants=uint32_t(n);}else if(k=="--age-ticks")environment.ageTicks=std::stoull(v);else if(k=="--mature-ticks")environment.matureTicks=std::stoull(v);else if(k=="--lifespan-ticks")environment.lifespanTicks=std::stoull(v);else throw std::runtime_error("unknown option: "+k);}
+    fs::path out,materials,groundFile,placementFile;int64_t placementSpacing=550;uint64_t seed=42;std::string catalogKind="conifers",season="summer";uint32_t variants=4;PlantEnvironment environment;environment.ageTicks=100;environment.matureTicks=100;
+    for(int i=1;i<argc;++i){const std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");const std::string v=argv[++i];if(k=="--out")out=v;else if(k=="--materials")materials=v;else if(k=="--ground")groundFile=v;else if(k=="--placements")placementFile=v;else if(k=="--placement-spacing-cm")placementSpacing=std::stoll(v);else if(k=="--seed")seed=std::stoull(v);else if(k=="--catalog")catalogKind=v;else if(k=="--season")season=v;else if(k=="--variants"){const auto n=std::stoull(v);if(n<1||n>8)throw std::runtime_error("variants1..8");variants=uint32_t(n);}else if(k=="--age-ticks")environment.ageTicks=std::stoull(v);else if(k=="--mature-ticks")environment.matureTicks=std::stoull(v);else if(k=="--lifespan-ticks")environment.lifespanTicks=std::stoull(v);else throw std::runtime_error("unknown option: "+k);}
     if(out.empty() || materials.empty())throw std::runtime_error("usage: aiverse_terraweave_vegetation --out NEW_DIR --materials VEGETATION_TEXTURES [--ground HEIGHT_GRID_JSON --seed N]");
     if(fs::exists(out))throw std::runtime_error("output exists; refusing overwrite");
     if((catalogKind!="conifers"&&catalogKind!="botanical")||(season!="summer"&&season!="winter")||variants<1||variants>8)throw std::runtime_error("catalog conifers|botanical; season summer|winter; variants1..8");
@@ -22,6 +22,18 @@ int main(int argc,char** argv){try{
     std::set<std::string> stems={"spruce_bark","spruce_leaves","pine_bark","pine_leaves"};
     if(botanical)for(const auto& p:botanicalTreePresets()){stems.insert(std::string(p.barkMaterial));stems.insert(std::string(p.leafMaterial));}
     for(const auto& name:stems)for(auto suffix:{"basecolor","normal","orm","ao"})if(!fs::is_regular_file(materials/(name+"_"+suffix+".png")))throw std::runtime_error("missing PBR map: "+name);
+    Json placementSource;
+    if(!placementFile.empty()) {
+        if(!botanical||placementSpacing<1||placementSpacing>1000000)throw std::runtime_error("placements require botanical catalog and valid cell spacing");
+        placementSource=Json::parseFile(placementFile.string());
+        if(!placementSource["trees"].isArray()||placementSource["trees"].size()>100000)throw std::runtime_error("bounded landscape trees array required");
+        for(const auto& entry:placementSource["trees"].items())
+            for(const auto* key:{"xCm","yCm","zCm","yaw","scale"}) {
+                if(!entry[key].isNumber())throw std::runtime_error("invalid placement transform");
+                const auto value=entry[key].integer();
+                if(value< -kWorldLimitCm||value>kWorldLimitCm)throw std::runtime_error("placement transform range");
+            }
+    }
     fs::create_directories(out/"textures");
     for(const auto& name:stems)for(auto suffix:{"basecolor","normal","orm","ao"}){std::string f=name+"_"+suffix+".png";fs::copy_file(materials/f,out/"textures"/f);}
     auto catalog=Json::object(),trees=Json::array(),patches=Json::array();
@@ -72,6 +84,20 @@ int main(int argc,char** argv){try{
             model->materials[0].baseColor={.16f,.26f,.06f,1};const std::string name="grass-"+std::to_string(p.key);save(out,name,*model);
             auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(p.bounds.minX));e.set("zCm",Json::number(p.bounds.minZ));patches.push(e);
         }
+    }
+    if(!placementFile.empty()) {
+        auto placements=Json::array();
+        for(const auto& source:placementSource["trees"].items()) {
+            auto entry=source;
+            const auto index=treePrototypeVariant(detail::floorDiv(source.getInt("xCm"),placementSpacing),
+                detail::floorDiv(source.getInt("zCm"),placementSpacing),seed,uint32_t(botanicalTreePresets().size()),variants);
+            entry.set("variant",Json::number(int64_t(index)));
+            entry.set("kind",trees[index]["kind"]);entry.set("prototypeSeed",trees[index]["seed"]);
+            placements.push(entry);
+        }
+        catalog.set("placements",placements);
+        catalog.set("placementSpacingCm",Json::number(placementSpacing));
+        catalog.set("placementPolicy",Json::string("global-four-color-species-palette"));
     }
     catalog.set("version",Json::number(int64_t(1)));catalog.set("trees",trees);catalog.set("grass",patches);write(out/"catalog.json",catalog.dump());std::cout<<"Native Arbor prototypes: "<<trees.size()<<"; native grass patches: "<<patches.size()<<'\n';return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
