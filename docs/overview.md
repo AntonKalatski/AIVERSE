@@ -57,6 +57,8 @@ Without `--listen` the first instance takes MCP port `47321`; if the port is bus
 a free one. The actual port is shown in the status bar; the **Agent** window adds it to the connection
 config (`aiversemcp --port <port>`). An automatically assigned port may change after the editor restarts.
 `--listen <port>` pins an exact port (on conflict MCP does not start), `--listen 0` disables MCP.
+The link is authenticated with a per-session token file next to the port
+(`~/.aiverse/agent-link/<port>.token`, owner-only); see [mcp-agent-link.md](mcp-agent-link.md).
 Existing MCP clients do not switch between windows on their own.
 
 ## Building for platforms — aiversebuild
