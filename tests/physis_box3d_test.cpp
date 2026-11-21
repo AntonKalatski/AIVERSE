@@ -1,3 +1,5 @@
+#include <functional>
+#include <vector>
 #include "engine/physics/PhysisBox3D.h"
 #include "engine/world/TerraWeaveBox3DTerrain.h"
 #include <cmath>
@@ -111,7 +113,40 @@ void testTerrainBox3DRevisionOrdering() {
     CHECK(publisher.publish(scene,older) && publisher.revision({1,0,2})==3);
     publisher.shutdown(scene);
 }
+// Review follow-up: the publisher follows committed tiles of a coordinator
+// through addPatchListener, next to another listener (GI) that stays attached.
+struct FakeCoordinator {
+    struct Listener {
+        std::function<void(const int&,const aiverse::terraweave::TerrainPatch&)> published;
+        std::function<void(aiverse::world::Cell)> retired;
+    };
+    std::vector<Listener> listeners;
+    void addPatchListener(Listener l){listeners.push_back(std::move(l));}
+};
+void testTerrainBox3DAttach() {
+    using namespace aiverse::terraweave;
+    EarthworksLayer earth(100,[](int64_t,int64_t){return int32_t(0);});
+    TerrainPatch patch=bakeEarthworksTerrainPatch(earth,{1,0,2},16,3);
+    patch.sourceRevision=5;
+    FakeCoordinator terrain;
+    int other=0;
+    terrain.addPatchListener({[&](const int&,const TerrainPatch&){++other;},{}});
+    Scene scene;
+    TerrainBox3DPublisher publisher;
+    publisher.attach(terrain,scene);
+    CHECK(terrain.listeners.size()==2);
+    const int resident=0;
+    for(auto& l:terrain.listeners)if(l.published)l.published(resident,patch);
+    CHECK(other==1 && publisher.residentTiles()==1 && publisher.revision({1,0,2})==5);
+    TerrainPatch stale=patch;stale.sourceRevision=2;
+    for(auto& l:terrain.listeners)if(l.published)l.published(resident,stale);
+    CHECK(publisher.revision({1,0,2})==5 && publisher.rejectedPublishes()==1);
+    for(auto& l:terrain.listeners)if(l.retired)l.retired({1,0,2});
+    CHECK(publisher.residentTiles()==0 && publisher.listenerErrors()==0);
+    publisher.shutdown(scene);
+}
 int main(){testNoDoubleGravity();testZeroGAndWindAndVortex();
 testTerrainBox3DRevisionOrdering();
+testTerrainBox3DAttach();
 std::printf("PHYSIS Box3D: %s\n",failures?"FAIL":"PASS");
 return failures?1:0;}
