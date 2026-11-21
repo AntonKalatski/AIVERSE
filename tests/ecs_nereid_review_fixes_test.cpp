@@ -4,6 +4,7 @@
 #include <aiverselib/water/NereidErosion.h>
 #include <aiverselib/water/NereidFloodRouting.h>
 #include "engine/world/NereidRipples.h"
+#include "engine/world/NereidCascadeScene.h"
 #include "TestCheck.h"
 #include <iostream>
 #include <memory>
@@ -203,6 +204,20 @@ static void wakeTileCullMatchesShaderEllipse(){
         bodyId,0,0,4.0,4.4,-0.1,0.1).rings[0].w>0.f);
 }
 
+static void cascadeMeshAddressSurvivesSetCascades(){
+    world::NereidCascadeScene scene;
+    world::NereidCascadeSource a;a.id=7;a.cascade.enabled=false;
+    world::NereidCascadeSource b;b.id=8;b.cascade.enabled=false;
+    scene.setCascades({a});
+    const render::Mesh* before=scene.meshFor(7);
+    AIVERSE_TEST_CHECK(before!=nullptr);
+    // Renderer3D items_ keep &mesh until render: the object must not move.
+    scene.setCascades({a,b});
+    AIVERSE_TEST_CHECK(scene.meshFor(7)==before && scene.meshFor(8)!=nullptr);
+    scene.setCascades({b});
+    AIVERSE_TEST_CHECK(scene.meshFor(7)==nullptr && scene.count()==1);
+}
+
 int main(){
     rockIsNotErodible();
     partialObstructionPassesWater();
@@ -210,5 +225,6 @@ int main(){
     portsMustBeInsideGrid();
     obstructionIndexMatchesScan();
     wakeTileCullMatchesShaderEllipse();
-    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull)\n";
+    cascadeMeshAddressSurvivesSetCascades();
+    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull, cascade mesh)\n";
 }
