@@ -176,8 +176,11 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
                                                      node.getStr("function")));
                 }
             }
+            // ValueGraph stores references: the overrides object must outlive
+            // it (a Json::object() temporary here dangled after construction).
+            const Json noOverrides=Json::object();
             vfx2::ValueGraph valueNodes(fn["nodes"],fn["parameters"],
-                                       Json::object(),errors,&functions);
+                                       noOverrides,errors,&functions);
             if(!valueNodes.initialize() || !valueNodes.validateAll())
                 return false;
             if(!valueNodes.hasNode(fn.getStr("output")) ||

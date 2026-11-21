@@ -669,7 +669,7 @@ private:
     double scriptsCheckAt_ = 0;
     uint64_t scriptsStamp_ = 0;
 
-    net::LineServer server_;
+    net::LineServer server_{net::LineServer::Token::Publish};   // agent link: session token file (docs/mcp-agent-link.md)
     struct PendingShot { int client; int64_t id; std::string device; Json metadata; };
     std::vector<PendingShot> shots_;
     bool captureArmed_ = false;
