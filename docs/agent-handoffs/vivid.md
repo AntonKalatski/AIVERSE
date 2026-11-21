@@ -3134,3 +3134,17 @@ HumanCreatorOps.cpp, HumanWardrobe.cpp, human_wardrobe.cpp, StudioHumanLookSessi
 ctest (studio_human_appearance_session, vivid_human_wardrobe, ...) and visual checks in Studio — next step.
 Known gaps: try-on assembly cost on big outfits is unmeasured; brush circle size is an estimate (face camera);
 thumbnails need the character shown in the viewport.
+
+## 2026-11-21 (later) — Character Creator second pass + main merge
+
+Merged origin/main (85 commits; Studio workspaces) — added a "Character" workspace (⌘7) and kept main's async project
+open (last project saved there). Added: MCP `studio_character_snapshot` (file handshake with the running Studio),
+makeup layers (`makeup.*`), hairstyle library + shared outfit try-on, age control, crowd variants, model animation
+clips in "Поза и свет", index-only LODs for skinned characters at build (`HumanLod.cpp`), reference photo overlay,
+`.aivchar` packages, height in cm + ruler.
+
+Tests actually run (Linux VM): tsc clean; web `node --test` 137/137; `tests/vivid/human_lod.cpp` compiled with
+meshoptimizer and RUN — passes; g++ -fsyntax-only of StudioSession.cpp, StudioMetalScene.cpp, StudioFacialGpuPreview.cpp,
+HumanMaterials.cpp, HumanCreatorOps.cpp, StudioHumanLookSessionTests.cpp. Not run: Mac build, ctest, Studio visuals.
+Known gaps: makeup positions are UV estimates (artist aligns once per model); hairstyles need models skinned to the
+same head bone; no retargeting of external animation files (only clips inside the character glTF).
