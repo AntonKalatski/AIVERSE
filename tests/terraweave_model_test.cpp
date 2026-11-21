@@ -85,6 +85,24 @@ int main() {
             }
         }
     }
+    quality.naturalBlades=true;
+    const auto naturalGrass=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality);
+    const auto naturalAgain=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality);
+    assert(naturalGrass && naturalAgain);
+    bool hasGradient=false;
+    for(size_t i=0;i<naturalGrass->vertices.size();++i){
+        const auto& v=naturalGrass->vertices[i];const auto& repeat=naturalAgain->vertices[i];
+        assert(v.color==repeat.color && v.pos.x==repeat.pos.x && v.pos.y==repeat.pos.y && v.pos.z==repeat.pos.z);
+        assert(std::isfinite(v.nrm.x)&&std::abs(aiverse::render::dot(v.nrm,v.nrm)-1.f)<.001f);
+        if(v.uv.y==0)assert(std::abs(v.pos.y-1.23f)<.0001f);
+        if(i%7==6 && v.color!=naturalGrass->vertices[i-6].color)hasGradient=true;
+    }
+    assert(hasGradient);
+    // Pigment and profile variation add no vertices, triangles, materials or textures.
+    quality.naturalBlades=false;
+    const auto plainGrass=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality);
+    assert(plainGrass->vertices.size()==naturalGrass->vertices.size());
+    assert(plainGrass->indices==naturalGrass->indices && naturalGrass->materials.size()==1);
     quality.bladeSegments=5;bool badGrass=false;
     try{(void)makeGrassPatchModel(patch,[](auto,auto){return 0;},quality);}catch(const std::invalid_argument&){badGrass=true;}
     assert(badGrass);

@@ -36,6 +36,7 @@ struct GrassRenderQuality {
     uint32_t sourceSamples=0;      // 0=own cap; LOD source sampling budget, <=8192
     uint32_t sampleStride=1;      // 1..8; LOD keeps seeded tuft centres
     uint32_t heightVariationPermille=250; // 0..600, symmetric size variation
+    bool naturalBlades=false; // seeded pigment, narrow shoulder and varied sweep; no extra geometry
 };
 
 inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
@@ -154,11 +155,17 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
             int(light*220u/1000u)+int((h>>29)%36u),70,255));
         const uint32_t color=rgba(shade,shade,
             uint32_t(std::max(1u,shade*3u/4u)));
+        const auto pigmentSeed=detail::mix64(patch.seed^patch.key^
+            (uint64_t(sampleIndex/quality.bladesPerTuft)*0xd6e8feb86659fd93ULL));
+        const bool straw=quality.naturalBlades && pigmentSeed%100u<8u;
+        const float pigment=.82f+float((pigmentSeed>>17)%301u)*.001f;
+        const float widthVariation=quality.naturalBlades?.55f+float((h>>7)%551u)*.001f:1.f;
+        const float sweep=quality.naturalBlades?.16f+float((h>>33)%501u)*.001f:.36f;
         const float yaw=float((h>>10)%62832)*.0001f;
         for(uint32_t plane=0;plane<(quality.crossedBlades?2u:1u);++plane){
             const float a=yaw+float(plane)*1.57079633f;
-            const render::float3 side{std::cos(a)*bladeWidth,0,std::sin(a)*bladeWidth};
-            const render::float3 bend{-std::sin(a)*bladeHeight*.36f,0,std::cos(a)*bladeHeight*.36f};
+            const render::float3 side{std::cos(a)*bladeWidth*widthVariation,0,std::sin(a)*bladeWidth*widthVariation};
+            const render::float3 bend{-std::sin(a)*bladeHeight*sweep,0,std::cos(a)*bladeHeight*sweep};
             const uint32_t base=uint32_t(model->vertices.size());
             for(uint32_t seg=0;seg<=quality.bladeSegments;++seg){
                 const float t=float(seg)/quality.bladeSegments;
@@ -168,8 +175,20 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
                 const auto normal=render::normalize(render::cross(side,direction));
                 for(uint32_t edge=0;edge<(seg==quality.bladeSegments?1u:2u);++edge){
                     render::ModelVertex vertex;
-                    vertex.pos=center+side*((edge?1.f:-1.f)*(1-t));vertex.nrm=normal;
+                    // A narrow root opens into a shoulder, then tapers to a point.
+                    // Folded edge normals catch light without doubling the mesh.
+                    const float width=(1-t)*(quality.naturalBlades?(.60f+1.20f*t):1.f);
+                    vertex.pos=center+side*((edge?1.f:-1.f)*width);vertex.nrm=normal;
                     vertex.uv={seg==quality.bladeSegments?.5f:float(edge),t};vertex.color=color;
+                    if(quality.naturalBlades){
+                        const auto across=render::normalize(side);
+                        vertex.nrm=render::normalize(normal+across*(edge?.24f:-.24f));
+                        const float brightness=float(shade)*pigment;
+                        const auto channel=[&](float gain){return uint32_t(std::clamp(std::lround(brightness*gain),1l,255l));};
+                        const float root=.42f+.58f*std::sqrt(t);
+                        vertex.color=straw?rgba(channel(root*1.23f),channel(root*.91f),channel(root*.65f)):
+                            rgba(channel(root*(.78f+.30f*t)),channel(root),channel(root*(.55f+.22f*t)));
+                    }
                     model->vertices.push_back(vertex);
                 }
                 if(seg<quality.bladeSegments){
@@ -238,7 +257,7 @@ public:
         if(quality.maxBladesPerPatch!=quality_.maxBladesPerPatch ||
            quality.crossedBlades!=quality_.crossedBlades ||
            quality.bladesPerTuft!=quality_.bladesPerTuft || quality.tuftRadiusCm!=quality_.tuftRadiusCm ||
-           quality.sourceSamples!=quality_.sourceSamples || quality.sampleStride!=quality_.sampleStride || quality.heightVariationPermille!=quality_.heightVariationPermille ||
+           quality.sourceSamples!=quality_.sourceSamples || quality.sampleStride!=quality_.sampleStride || quality.heightVariationPermille!=quality_.heightVariationPermille || quality.naturalBlades!=quality_.naturalBlades ||
            quality.bladeSegments!=quality_.bladeSegments ||
            quality.bladeHeightCm!=quality_.bladeHeightCm ||
            quality.bladeHalfWidthCm!=quality_.bladeHalfWidthCm)

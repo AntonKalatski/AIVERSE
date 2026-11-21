@@ -225,3 +225,11 @@ exact material-tier checks; its existing `low` profile otherwise chooses Medium.
 Rigid roots were checked on actual Metal at High/Low, macro range and yaw45;
 animated deformation, mobile GPU cost and whole-forest art acceptance remain
 separate checks.
+
+
+Native GrassRenderQuality now appends naturalBlades=false (legacy profile retained).
+The native vegetation exporter enables it, with default bladeHalfWidthCm=1 rather
+than3: seeded sweep/width variation, folded lighting normals, root-to-tip pigment
+and8% dry-tuft palette. No additional vertices/textures/materials/draw calls;
+ordinary dielectric PBR and resident/exported shared LOD remain in use. Explicit
+width overrides still apply. This is not a textured species atlas or live wind.

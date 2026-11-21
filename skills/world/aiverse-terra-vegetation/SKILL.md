@@ -93,3 +93,11 @@ configured sand threshold. The native PBR baker and vegetation exporter use the
 same NEREID-footprint/graded-height shore mask. Do not add a global water-plane
 height rejection on top: it incorrectly removes lowland grass far from rivers.
 Legacy v1 snapshots keep their old behavior until deliberately re-exported.
+
+
+Native GrassRenderQuality now appends naturalBlades=false (legacy profile retained).
+The native vegetation exporter enables it, with default bladeHalfWidthCm=1 rather
+than3: seeded sweep/width variation, folded lighting normals, root-to-tip pigment
+and8% dry-tuft palette. No additional vertices/textures/materials/draw calls;
+ordinary dielectric PBR and resident/exported shared LOD remain in use. Explicit
+width overrides still apply. This is not a textured species atlas or live wind.
