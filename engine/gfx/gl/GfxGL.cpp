@@ -1929,7 +1929,17 @@ public:
     void writeUniforms(int slot, const void* data, size_t size) {
         size_t off = (uboOffset_ + uboAlign_ - 1) / uboAlign_ * uboAlign_;
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
-        glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
+        // GLES (Android): glBufferSubData into storage that earlier draws of this frame still reference
+        // makes tile-based drivers copy the whole 1 MB ring (Adreno: kgsl_sharedmem_alloc on every draw,
+        // ~65 % of a frame on Adreno 610). The ring is orphaned every frame and filled front to back, so
+        // this range is never read by a queued draw: write it unsynchronized.
+        if (info_.backend == Backend::GLES3) {
+            if (void* dst = glMapBufferRange(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size),
+                                             GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT)) {
+                std::memcpy(dst, data, size);
+                glUnmapBuffer(GL_UNIFORM_BUFFER);
+            } else glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
+        } else glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
         glBindBufferRange(GL_UNIFORM_BUFFER, GLuint(slot), ubo_, GLintptr(off), GLsizeiptr(size));
         uboOffset_ = off + size;
     }
