@@ -315,9 +315,13 @@ public:
             gfx::PassDesc pass;
             pass.colorTarget=target->color;
             pass.depthTarget=target->depth;
+            const auto shadowState=renderer_.shadowBoundsState();
+            if(request.shadowBounds)
+                renderer_.setShadowBounds(request.shadowMin,request.shadowMax);
             renderer_.beginScene(request.camera,request.width,request.height);
             submit(request,renderer_);
             renderer_.render(pass);
+            renderer_.restoreShadowBounds(shadowState);
             device_.endPass();
             if(!device_.gpuHealthy()) {
                 targets_.markInvalid(request.targetAssetKey);

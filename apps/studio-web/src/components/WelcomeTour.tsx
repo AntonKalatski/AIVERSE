@@ -24,11 +24,11 @@ export default function WelcomeTour({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const close = () => { markSeen(); onClose(); };
   const s = STEPS[step], Icon = s.icon;
-  return <div className="tour" role="dialog" aria-modal="true" aria-label="Welcome to AIVERSE Studio">
+  return <div className="tour" role="dialog" aria-modal="true" aria-label="Welcome to AIVERSE">
     <div className="tour__card">
       <button type="button" className="tour__close" aria-label="Close tour" onClick={close}><X size={14}/></button>
       <div className="tour__icon"><Icon size={26} strokeWidth={1.5}/></div>
-      <small>Welcome to AIVERSE Studio · {step + 1} / {STEPS.length}</small>
+      <small>Welcome to AIVERSE · {step + 1} / {STEPS.length}</small>
       <h2>{s.title}</h2>
       <p>{s.text}</p>
       <div className="tour__dots">{STEPS.map((_, i) => <button key={i} type="button" aria-label={'Step ' + (i + 1)} className={i === step ? 'is-on' : ''} onClick={() => setStep(i)}/>)}</div>

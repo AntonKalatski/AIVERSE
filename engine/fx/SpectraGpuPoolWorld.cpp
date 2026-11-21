@@ -63,6 +63,7 @@ void GpuPoolWorld::shutdown() {
     resetAccepted_.clear();
     resetReport_={};
     bindings_.clear();
+    cpuDefinitionIds_.clear();
     definitions_.clear();
     sources_.clear();freeSourceSlots_.clear();
     sourceWorldEpoch_=0;nextBindingRevision_=1;nextSourceToken_=1;
@@ -105,6 +106,12 @@ void GpuPoolWorld::recountBindings() {
         if(!binding.gpu && binding.cpuId>=0)distinctCpu.insert(binding.cpuId);
     }
     stats_.cpuDefinitions=uint32_t(distinctCpu.size());
+    // A CPU fallback definition no name binds any more (redefined with
+    // different content) is freed from the shared ParticleSystem; plays read
+    // the binding each time, so nothing else still holds the old id.
+    for(const int id:cpuDefinitionIds_)
+        if(!distinctCpu.count(id))cpu_.releaseEffect(id);
+    cpuDefinitionIds_=std::move(distinctCpu);
 }
 
 bool GpuPoolWorld::defineGraph(const std::string& name,const Json& graph,

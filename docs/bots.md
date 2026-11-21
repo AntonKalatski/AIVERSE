@@ -8,12 +8,12 @@
 | bots-fps | Perception, remembered target, reaction, bounded aim, firing/reload, retreat, patrol, safe-zone movement | AIVERSE::fps_bots |
 | navmesh | Automatic layered polygon mesh from static AABB collision; agent clearance/erosion, step links, connected regions, bounded routes | AIVERSE::navmesh |
 | bot-matches | Headless actual-engine match runner and deterministic restoration scenarios | aiverse_bot_match |
-| genre-bots | Genre-independent melee/shooter bot policies, squad roles + formations, objective choice over owner-supplied perception ([genre-packages.md](genre-packages.md#genre-bots-genre-bots-010)) | AIVERSE::lib_genre_bots |
-| settlement-production (colony planner) | Rule-based colony/survival planner choosing builds, bills, gathering and work priorities from needs, stock, power and owner facts; emits player-equivalent ColonyCommands ([genre-packages.md](genre-packages.md#settlement-and-production-settlement-production-010)) | AIVERSE::lib_settlement_production |
+| genre-bots | Genre-independent melee/shooter bot policies, squad roles + formations, objective choice over owner-supplied perception ([mechanics-packages.md](mechanics-packages.md#genre-bots-genre-bots-010)) | AIVERSE::lib_genre_bots |
+| settlement-production (colony planner) | Rule-based colony/survival planner choosing builds, bills, gathering and work priorities from needs, stock, power and owner facts; emits player-equivalent ColonyCommands ([mechanics-packages.md](mechanics-packages.md#settlement-and-production-settlement-production-010)) | AIVERSE::lib_settlement_production |
 
 Public headers live in `libraries/include/aiverselib/bots`. No Lua or project-specific engine edits are
 needed. Executable host targets link the appropriate target. Registered OBJECT native modules call
-`aiverse_native_use_bots(aiverse_native_<id> RTS FPS)` after `aiverse_native_module(...)`; choose only the needed
+`aiverse_native_use_bots(aiverse_native_<id> COMMANDER COMBATANT)` (legacy `RTS FPS` accepted) after `aiverse_native_module(...)`; choose only the needed
 RTS/FPS/NAVMESH arguments. The helper propagates backend links to aiverse_game without creating an object
 module dependency cycle. The targets exist
 before the engine reads the project's native CMake. FPS symbols require the FPS module introduced by

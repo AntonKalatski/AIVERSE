@@ -97,7 +97,7 @@ void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, do
     previewType.id = "material preview";
     mats_ = m.materials;
     view.applyMaterial(*dev_, previewType, m, mats_[0], material);
-    RTSCamera cam;
+    Camera cam;
     cam.target = {0, 0.45f, 0};
     cam.distance = 2.1f;
     cam.minDistance = 0.1f;
@@ -118,7 +118,7 @@ void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, do
 // already-resolved ModelDraw (including materials, variant, pose and tint).
 // All borrowed pointers are consumed synchronously before returning.
 bool Portrait::renderAppearance(const ModelDraw& draw,
-                                const RTSCamera& camera,float4 background) {
+                                const Camera& camera,float4 background) {
     if(!dev_ || !color_.valid() || !draw.model)return false;
     sceneView_.beginScene(r3d_,camera,size_,size_);
     ::aiverse::View::submitModel(r3d_,draw);
@@ -141,7 +141,7 @@ bool Portrait::renderStaticModel(render::ModelAssetProvider& provider,
     // synchronous packet and does not create a second animation World.
     const Model* model=provider.load(*dev_,source);
     if(!model)return false;
-    RTSCamera cam;
+    Camera cam;
     cam.target=(model->boundsMin+model->boundsMax)*0.5f;
     const auto extent=model->boundsMax-model->boundsMin;
     cam.distance=std::max({extent.x,extent.y,extent.z,0.3f})*2.1f;
@@ -158,7 +158,7 @@ bool Portrait::renderStaticModel(render::ModelAssetProvider& provider,
 void Portrait::renderPose(const Model& model,const Pose& pose,float yaw) {
     if(!dev_||!color_.valid()||pose.size()!=model.nodes.size())return;
     std::vector<mat4> world;worldMatrices(model,pose,world);
-    RTSCamera cam;cam.target=(model.boundsMin+model.boundsMax)*.5f;
+    Camera cam;cam.target=(model.boundsMin+model.boundsMax)*.5f;
     auto e=model.boundsMax-model.boundsMin;cam.distance=std::max({e.x,e.y,e.z,.3f})*2.1f;
     cam.minDistance=.01f;cam.pitch=.15f;cam.yaw=yaw;cam.fovY=.6f;
     r3d_.lighting.skyColor={.8f,.85f,.9f};r3d_.lighting.groundColor={.5f,.5f,.5f};
@@ -191,7 +191,7 @@ void Portrait::render(RtsView& view, uint16_t type, uint8_t owner, double time, 
     }
     const float s = view.selectionRadius(type);
     radius = std::max(radius, s);
-    RTSCamera cam;
+    Camera cam;
     cam.target = {0, std::min(height, radius * 1.4f) * 0.45f, 0};
     cam.distance = radius * 3.2f;
     cam.minDistance = 0.1f;

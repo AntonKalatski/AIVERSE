@@ -205,7 +205,7 @@ private:
         const Viewport* vp = ed.sceneViewport;
         const Json& arr = ed.doc().data.extra["lights"];
         if (!vp || !ed.sceneVisible() || vp->pointsW < 8 || vp->pointsH < 8 || !arr.isArray() || arr.size() == 0) return;
-        const render::RTSCamera& cam = ed.sceneCam;
+        const render::Camera& cam = ed.sceneCam;
         const render::mat4 vpm = cam.proj(vp->pointsW / vp->pointsH, false) * cam.view();
         auto toScreen = [&](render::float3 p, ImVec2& out) {
             const render::float4 c = vpm * render::float4{p.x, p.y, p.z, 1};

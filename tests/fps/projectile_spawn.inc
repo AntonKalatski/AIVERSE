@@ -1,6 +1,6 @@
-// Regression for actual FPS weapon/grenade creation into ProjectileRuntime.
+// Regression for actual FPS weapon/grenade creation into Projectile entities.
 // No genre-specific test-only spawn hook: exercise production input Commands.
-void ecsProjectileSpawnAuthorityParityCase(bool cow) {
+void projectileSpawnsCase(bool cow) {
     const auto rules=Json::parse(R"({
         "fps":{"tickRate":20,"mode":"deathmatch",
                "weapons":[{"damage":10,"magazine":12,"intervalTicks":1,
@@ -14,49 +14,13 @@ void ecsProjectileSpawnAuthorityParityCase(bool cow) {
         "spawns":[[0,0.01,0],[0,0.01,10]],
         "colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]
     })");
-    auto ecsRules=rules;
-    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
-    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
-    if(cow) {
-        legacy->world().enableCowSnapshots(true);
-        ecs->world().enableCowSnapshots(true);
-    }
-    auto compare=[&]() {
-        CHECK(legacy->checksum()==ecs->checksum());
-        const auto& a=state(*legacy);
-        const auto& b=state(*ecs);
-        CHECK(a.actors==b.actors);
-        CHECK(a.projectiles.size()==b.projectiles.size());
-        CHECK(a.nextObject==b.nextObject);
-        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
-        CHECK(index!=nullptr);
-        size_t liveCount=0;
-        ecs->world().eachExistingConst<fps::ProjectileRuntime>(
-            [&](Entity e,const fps::ProjectileRuntime&) {
-                if(ecs->world().alive(e))++liveCount;
-            });
-        CHECK(liveCount==b.projectiles.size());
-        for(size_t i=0;i<b.projectiles.size();++i) {
-            const auto& left=a.projectiles[i];
-            const auto& right=b.projectiles[i];
-            CHECK(left.id==right.id);
-            CHECK(left.kind==right.kind);
-            CHECK(left.owner==right.owner);
-            CHECK(left.pos==right.pos);
-            CHECK(left.velocity==right.velocity);
-            CHECK(left.damage==right.damage);
-            CHECK(left.expires==right.expires);
-            const uint64_t key=(uint64_t(1)<<32)|right.id;
-            CHECK(index->byKey.contains(key));
-            const auto entity=index->byKey.at(key);
-            CHECK(ecs->world().alive(entity));
-            const auto* runtime=ecs->world().tryGetConst<fps::ProjectileRuntime>(entity);
-            CHECK(runtime && runtime->order==i);
-            CHECK(runtime->value.id==right.id);
-            CHECK(runtime->value.pos==right.pos);
-            CHECK(runtime->value.kind==right.kind);
-            CHECK(runtime->value.damage==right.damage);
-        }
+    auto sim=simulation(rules,map);
+    if(cow)sim->world().enableCowSnapshots(true);
+    auto ordered=[&]() {
+        const auto shots=projectilesOf(*sim);
+        CHECK(shots.size()==sim->world().countExisting<fps::Projectile>());
+        for(size_t i=1;i<shots.size();++i)CHECK(shots[i-1].id<shots[i].id);
+        for(const auto& shot:shots)CHECK(shot.id<state(*sim).nextObject);
     };
     auto tick=[&](uint32_t t,uint32_t buttons,fps::Action action) {
         fps::Input input;
@@ -66,74 +30,61 @@ void ecsProjectileSpawnAuthorityParityCase(bool cow) {
         input.action=action;
         auto cmd=fps::command(1,input);
         cmd.tick=t;
-        legacy->inject(cmd);
-        ecs->inject(cmd);
-        legacy->step();
-        ecs->step();
-        compare();
+        sim->inject(cmd);
+        sim->step();
+        ordered();
     };
-    // First accepted shot is created in the actor stage, after the flight
+    // First accepted shot is created in the character stage, after the flight
     // stage, so it must not advance until the next tick.
     tick(0,fps::Fire,fps::Action::None);
-    CHECK(state(*ecs).projectiles.size()==1);
-    const uint32_t weaponShotId=state(*ecs).projectiles[0].id;
-    CHECK(state(*ecs).projectiles[0].kind==0);
-    // The new one-way ECS mirror must NEVER copy a stale compatibility
-    // State value back over the runtime at the end-of-tick barrier.
-    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
-    const uint64_t key=(uint64_t(1)<<32)|weaponShotId;
-    CHECK(index && index->byKey.contains(key));
-    auto* canonical=ecs->world().tryGet<fps::ProjectileRuntime>(
-        index->byKey.at(key));
-    CHECK(canonical && canonical->value.kind==0);
-    canonical->value.damage=17;
-    state(*legacy).projectiles[0].damage=17;
-    state(*ecs).projectiles[0].damage=777; // intentionally stale
-    static_cast<fps::Module&>(ecs->module()).syncDynamicEntities(*ecs,true);
-    CHECK(state(*ecs).projectiles[0].damage==17);
-    compare();
+    CHECK(projectilesOf(*sim).size()==1);
+    const uint32_t weaponShotId=projectilesOf(*sim)[0].id;
+    CHECK(projectilesOf(*sim)[0].kind==0);
+    // The entity component is the only copy: a native write is what the next stage reads.
+    auto& live=projectileAt(*sim,0);
+    CHECK(live.id==weaponShotId&&live.kind==0);
+    live.damage=17;
+    CHECK(projectilesOf(*sim)[0].damage==17);
     // All three throwable actions use the same production spawn adapter.
     tick(1,0,fps::Action::Frag);
     tick(2,0,fps::Action::Smoke);
     tick(3,0,fps::Action::Flash);
     bool frag=false,smoke=false,flash=false;
-    for(const auto& shot:state(*ecs).projectiles) {
+    for(const auto& shot:projectilesOf(*sim)) {
         if(shot.kind==1)frag=true;
         if(shot.kind==2)smoke=true;
         if(shot.kind==3)flash=true;
     }
     CHECK(frag && smoke && flash);
-    CHECK(state(*ecs).nextObject>weaponShotId+3);
-    SimSnapshot checkpointLegacy,checkpointEcs;
-    legacy->saveState(checkpointLegacy);
-    ecs->saveState(checkpointEcs);
-    const auto legacyBytes=legacy->serialize();
-    const auto ecsBytes=ecs->serialize();
-    auto fromLegacy=simulation(ecsRules,map);
-    auto fromEcs=simulation(rules,map);
-    CHECK(fromLegacy->deserialize(legacyBytes));
-    CHECK(fromEcs->deserialize(ecsBytes));
-    CHECK(fromLegacy->checksum()==legacy->checksum());
-    CHECK(fromEcs->checksum()==ecs->checksum());
-    for(uint32_t t=4;t<14;++t)
+    CHECK(state(*sim).nextObject>weaponShotId+3);
+    SimSnapshot checkpoint;
+    sim->saveState(checkpoint);
+    auto restored=simulation(rules,map);
+    CHECK(restored->deserialize(sim->serialize()));
+    CHECK(restored->checksum()==sim->checksum());
+    std::vector<uint64_t> hashes;
+    for(uint32_t t=4;t<14;++t){
         tick(t,t==4?fps::Fire:0,fps::Action::None);
-    const auto finalChecksum=ecs->checksum();
-    legacy->loadState(checkpointLegacy);
-    ecs->loadState(checkpointEcs);
-    compare();
-    for(uint32_t t=4;t<14;++t)
+        hashes.push_back(sim->checksum());
+    }
+    const auto finalChecksum=sim->checksum();
+    sim->loadState(checkpoint);
+    ordered();
+    for(uint32_t t=4;t<14;++t){
         tick(t,t==4?fps::Fire:0,fps::Action::None);
-    CHECK(ecs->checksum()==finalChecksum);
+        CHECK(sim->checksum()==hashes[t-4]);
+    }
+    CHECK(sim->checksum()==finalChecksum);
 }
-void ecsProjectileSpawnAuthorityParity() {
-    ecsProjectileSpawnAuthorityParityCase(false);
-    ecsProjectileSpawnAuthorityParityCase(true);
+void projectileSpawns() {
+    projectileSpawnsCase(false);
+    projectileSpawnsCase(true);
 }
 
 
-// Bomb-round cleanup must retire canonical Runtime/ID mappings immediately,
-// and a subsequent spawn must not reuse a stale projectile key or view.
-void ecsProjectileRoundResetParityCase(bool cow) {
+// Bomb-round cleanup must destroy the projectile entities immediately,
+// and a subsequent spawn must not reuse a stale projectile id.
+void projectileRoundResetCase(bool cow) {
     const auto rules=Json::parse(R"({
         "fps":{"tickRate":20,"mode":"bomb",
                "weapons":[{"damage":10,"magazine":12,"intervalTicks":1}],
@@ -147,83 +98,47 @@ void ecsProjectileRoundResetParityCase(bool cow) {
         "bombSites":[{"min":[-2,0,-2],"max":[2,3,2]}],
         "colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]
     })");
-    auto ecsRules=rules;
-    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
-    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
-    if(cow) {
-        legacy->world().enableCowSnapshots(true);
-        ecs->world().enableCowSnapshots(true);
-    }
-    auto compare=[&]() {
-        CHECK(legacy->checksum()==ecs->checksum());
-        CHECK(state(*legacy).actors==state(*ecs).actors);
-        const auto& a=state(*legacy).projectiles;
-        const auto& b=state(*ecs).projectiles;
-        CHECK(a.size()==b.size());
-        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
-        CHECK(index!=nullptr);
-        size_t runtimeCount=0;
-        ecs->world().eachExistingConst<fps::ProjectileRuntime>(
-            [&](Entity e,const fps::ProjectileRuntime& r) {
-                if(ecs->world().alive(e)) {
-                    ++runtimeCount;
-                    CHECK(r.order<b.size());
-                    CHECK(r.value.id==b[r.order].id);
-                }
-            });
-        CHECK(runtimeCount==b.size());
-        for(size_t i=0;i<b.size();++i) {
-            CHECK(a[i].id==b[i].id);
-            const uint64_t key=(uint64_t(1)<<32)|b[i].id;
-            CHECK(index->byKey.contains(key));
-            CHECK(ecs->world().alive(index->byKey.at(key)));
-        }
-    };
+    auto sim=simulation(rules,map);
+    if(cow)sim->world().enableCowSnapshots(true);
     auto tick=[&](uint32_t t,fps::Action action) {
         fps::Input input;input.sequence=t+1;input.viewTick=t;
         input.action=action;
         auto cmd=fps::command(1,input);cmd.tick=t;
-        legacy->inject(cmd);ecs->inject(cmd);
-        legacy->step();ecs->step();compare();
+        sim->inject(cmd);
+        sim->step();
+        CHECK(projectilesOf(*sim).size()==sim->world().countExisting<fps::Projectile>());
     };
     tick(0,fps::Action::None); // freeze phase
-    tick(1,fps::Action::Frag); // create a real Runtime grenade
-    CHECK(state(*legacy).projectiles.size()==1);
-    const uint32_t previousId=state(*legacy).projectiles[0].id;
+    tick(1,fps::Action::Frag); // create a real grenade entity
+    CHECK(projectilesOf(*sim).size()==1);
+    const uint32_t previousId=projectilesOf(*sim)[0].id;
+    const auto lootBefore=lootOf(*sim).size();
+    const auto vehiclesBefore=fpsModule(*sim).vehicleEntities(*sim);
 
-    // Force a round conclusion from identical in-match State resources.
-    // The normal tickSystems() reset must call clearProjectiles() and
-    // destroy ECS entities while keeping existing loot/vehicle identities.
-    state(*legacy).match.end=legacy->tick();
-    state(*ecs).match.end=ecs->tick();
-    SimSnapshot beforeLegacy,beforeEcs;
-    legacy->saveState(beforeLegacy);ecs->saveState(beforeEcs);
+    // Force a round conclusion. The normal tickSystems() reset must call
+    // clearProjectiles() and destroy the projectile entities while keeping
+    // the existing vehicle entities.
+    state(*sim).match.end=sim->tick();
+    SimSnapshot before;
+    sim->saveState(before);
     tick(2,fps::Action::None);
-    CHECK(state(*ecs).projectiles.empty());
-    CHECK(ecs->world().countExisting<fps::ProjectileRuntime>()==0);
-    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
-    CHECK(index!=nullptr);
-    for(const auto& [key,entity]:index->byKey) {
-        (void)entity;
-        CHECK((key>>32)!=1); // no dead projectile ID survives reset
-    }
-    const uint64_t resetChecksum=ecs->checksum();
-    auto legacyBytes=legacy->serialize(),ecsBytes=ecs->serialize();
-    auto fromLegacy=simulation(ecsRules,map),fromEcs=simulation(rules,map);
-    CHECK(fromLegacy->deserialize(legacyBytes));
-    CHECK(fromEcs->deserialize(ecsBytes));
-    CHECK(fromLegacy->checksum()==resetChecksum);
-    CHECK(fromEcs->checksum()==resetChecksum);
+    CHECK(projectilesOf(*sim).empty());
+    CHECK(sim->world().countExisting<fps::Projectile>()==0);
+    CHECK(lootOf(*sim).size()==lootBefore);
+    CHECK(fpsModule(*sim).vehicleEntities(*sim)==vehiclesBefore);
+    const uint64_t resetChecksum=sim->checksum();
+    auto restored=simulation(rules,map);
+    CHECK(restored->deserialize(sim->serialize()));
+    CHECK(restored->checksum()==resetChecksum);
 
-    legacy->loadState(beforeLegacy);ecs->loadState(beforeEcs);
+    sim->loadState(before);
     tick(2,fps::Action::None);
-    CHECK(ecs->checksum()==resetChecksum);
-    tick(3,fps::Action::Frag); // new object after ECS destruction/recycle
-    CHECK(state(*legacy).projectiles.size()==1);
-    CHECK(state(*legacy).projectiles[0].id>previousId);
-    compare();
+    CHECK(sim->checksum()==resetChecksum);
+    tick(3,fps::Action::Frag); // new object after entity destruction/recycle
+    CHECK(projectilesOf(*sim).size()==1);
+    CHECK(projectilesOf(*sim)[0].id>previousId);
 }
-void ecsProjectileRoundResetParity() {
-    ecsProjectileRoundResetParityCase(false);
-    ecsProjectileRoundResetParityCase(true);
+void projectileRoundReset() {
+    projectileRoundResetCase(false);
+    projectileRoundResetCase(true);
 }

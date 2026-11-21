@@ -99,7 +99,7 @@ int main() {
     check(!rejected.initEffect(world,a,mandatoryGpu),"shared batching silently downgraded RequireGpu");
     check(!rejected.reason().empty(),"missing RequireGpu rejection reason");
 
-    render::RTSCamera camera{{0,0,0},8.f,0.5f,0.5f};
+    render::Camera camera{{0,0,0},8.f,0.5f,0.5f};
     gfx.beginFrame(1280,720);
     world.setView(camera,camera.proj(1280.f/720.f,false)*camera.view(),1280,720);
     check(one.burstAt({0,0,0}),"first effect instance failed to emit");
@@ -177,6 +177,26 @@ int main() {
     fromGraph.shutdown();
     world.particles().snapshot(snapshot);
     check(snapshot.empty(),"graph shutdown left orphaned shared particles");
+
+    // Releasing an unreferenced definition frees it and kills its particles;
+    // the id is never reused and other definitions keep theirs.
+    const auto lone=effect("builtin:soft",6);
+    const int loneId=world.defineEffect(lone);
+    check(loneId>=0 && world.play(loneId,{0,0,0}).valid(),"lone effect emission");
+    check(world.play(idB,{0,0,0}).valid(),"second effect emission");
+    world.update(0.05f);
+    world.particles().snapshot(snapshot);
+    check(snapshot.size()==13,"expected 6+7 particles before release");
+    check(world.releaseEffect(loneId),"release of a defined effect failed");
+    check(!world.releaseEffect(loneId),"double release must fail");
+    world.particles().snapshot(snapshot);
+    check(snapshot.size()==7,"release must remove only that effect's particles");
+    check(!world.play(loneId,{0,0,0}).valid(),"released id must not play");
+    check(world.particles().def(loneId)==nullptr,"released definition kept");
+    const int again=world.defineEffect(lone);
+    check(again>=0 && again!=loneId && again!=idB && again!=idA,
+          "a released id was reused or collided with a live definition");
+    check(world.defineEffect(b)==idB,"unrelated definition lost its id");
     world.shutdown();
 
     std::cout<<"PASS SpectraFX: cross-instance same-atlas batching, blend isolation, "

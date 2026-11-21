@@ -63,6 +63,7 @@ ArsenalRules Arsenal::parse(const Json& j, const std::vector<std::string>& ids, 
             const Fixed spread = nonNegative(v, "spread", Fixed{}, where);
             if (spread > Fixed::fromInt(180)) throw std::runtime_error(where + ".spread: at most 180 degrees");
             a.spread = spread / 360;
+            a.windup = v.getBool("windup", true);
         }
         r.weapons.push_back(std::move(a));
     }
@@ -142,6 +143,7 @@ void Arsenal::hash(Simulation& sim, Hasher& h) const {
     for (auto& a : st->hands) {
         h.u64(a.hero.packed()); h.i32(a.current); h.u32(a.readyAt);
         h.u32(uint32_t(a.ammo.size())); for (int32_t n : a.ammo) h.i32(n);
+        if (rules_.aimWindup) { h.u32(a.aimActive); h.u32(a.aimTrigger); h.u32(a.aimPending); h.i32(a.aimSlot); h.u32(a.aimUntil); }
     }
     h.u32(uint32_t(st->crates.size()));
     for (auto& c : st->crates) { h.u64(c.e.packed()); h.u32(c.kind); h.u32(c.respawnAt); }
@@ -158,6 +160,7 @@ void Arsenal::io(Simulation& sim, Archive& a) {
         a(hd.hero, hd.current, hd.readyAt, k);
         if (!a.writing()) { if (k > 32) { a.fail(); return; } hd.ammo.assign(k, 0); }
         for (auto& x : hd.ammo) a(x);
+        a(hd.aimActive, hd.aimTrigger, hd.aimPending, hd.aimSlot, hd.aimUntil);
     }
     n = uint32_t(st->crates.size());
     aiverse::io(a, n);
@@ -271,7 +274,7 @@ void Arsenal::crates(Simulation& sim, ArsenalStore& st) {
         if (!w.alive(hero) || w.get<Unit>(hero).hp.raw <= 0) continue;
         Entity body = hero;
         if (m_->driving() && m_->driving()->active())
-            if (const DrivingCar* c = m_->driving()->carOf(sim, hero)) body = c->e;
+            if (const Entity car = m_->driving()->vehicleOf(sim, hero); car.valid()) body = car;
         if (!w.alive(body)) continue;
         Fixed radius = types[w.get<Unit>(body).type].radius;
         if (body != hero)   // a car collects with its whole length
@@ -363,18 +366,17 @@ void Arsenal::fire(Simulation& sim, ArsenalHand& h, Entity hero, uint8_t player)
     bool trigger = pilot.input.fire || (pilot.input.aim && td->rules().aimFires);
     if (rules_.aimWindup) {   // rule arsenal.aimWindup: a quarter second with the weapon raised before the first shot
     // Saved first-shot windup: a tap is queued, sustained fire keeps its normal cadence.
-    if(size_t(h.current)<rules_.weapons.size()&&rules_.weapons[size_t(h.current)].weapon!="fists"){
-        auto& vars=m_->state(sim).trig.vars;const auto key="kingston_aim_"+std::to_string(hero.packed())+"_";
+    if(size_t(h.current)<rules_.weapons.size()&&rules_.weapons[size_t(h.current)].windup){
         const bool aiming=pilot.input.aim||pilot.input.fire;
-        if(aiming&&(vars[key+"active"].raw<=0||vars[key+"slot"].toInt()!=h.current)){
-            vars[key+"until"]=Fixed::fromInt(sim.tick()+std::max<uint32_t>(1,(sim.tickRate()+3)/4));
-            vars[key+"slot"]=Fixed::fromInt(h.current);
+        if(aiming&&(!h.aimActive||h.aimSlot!=h.current)){
+            h.aimUntil=sim.tick()+std::max<uint32_t>(1,(sim.tickRate()+3)/4);
+            h.aimSlot=h.current;
         }
-        if(trigger&&vars[key+"trigger"].raw<=0)vars[key+"pending"]=Fixed::fromInt(1);
-        vars[key+"trigger"]=Fixed::fromInt(trigger);vars[key+"active"]=Fixed::fromInt(aiming);
-        trigger=trigger||vars[key+"pending"].raw>0;
-        if(trigger&&int64_t(sim.tick())<vars[key+"until"].toInt())return;
-        if(trigger&&sim.tick()>=h.readyAt)vars[key+"pending"]={};
+        if(trigger&&!h.aimTrigger)h.aimPending=true;
+        h.aimTrigger=trigger;h.aimActive=aiming;
+        trigger=trigger||h.aimPending;
+        if(trigger&&sim.tick()<h.aimUntil)return;
+        if(trigger&&sim.tick()>=h.readyAt)h.aimPending=false;
     }
     }
     if (!trigger || sim.tick() < h.readyAt) return;

@@ -1,6 +1,6 @@
 // Real RtsModule + fps::Module integration gate, not only mock genre hosts.
 // The same deterministic engine snapshot/save/replay contract must survive
-// actual genre adapters, gameplay commands and FPS ECS authority migration.
+// actual genre adapters and gameplay commands (FPS state lives on ECS only).
 #include "engine/data/JsonCompose.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsModule.h"
@@ -21,7 +21,7 @@ void require(bool ok,const std::string& reason) {
     if(!ok)throw std::runtime_error(reason);
 }
 
-std::unique_ptr<Simulation> make(Genre genre,bool cow,bool fpsEcs) {
+std::unique_ptr<Simulation> make(Genre genre,bool cow) {
     const std::string root=AIVERSE_SOURCE_DIR;
     Json rules,map;
     std::unique_ptr<GameModule> module;
@@ -36,7 +36,6 @@ std::unique_ptr<Simulation> make(Genre genre,bool cow,bool fpsEcs) {
         rules=Json::parseFile(base+"rules.json");
         map=Json::parseFile(base+"map.json");
         rules.member("fps").set("mode",Json::string("deathmatch"));
-        rules.member("fps").set("ecsAuthority",Json::fromBool(fpsEcs));
         tickRate=fps::readConfig(rules).tickRate;
         module=std::make_unique<fps::Module>();
     }
@@ -122,10 +121,10 @@ void advance(Simulation& sim,Genre genre,uint32_t tick,
     require(sim.tick()==before+1,"real genre simulation did not advance");
 }
 
-uint64_t run(Genre genre,bool cow,bool fpsEcs) {
+uint64_t run(Genre genre,bool cow) {
     constexpr uint32_t checkpoint=20,totalTicks=46;
-    auto a=make(genre,cow,fpsEcs);
-    auto b=make(genre,cow,fpsEcs);
+    auto a=make(genre,cow);
+    auto b=make(genre,cow);
     const RtsSubjects subjects=genre==Genre::Rts?findRtsSubjects(*a):RtsSubjects{};
     require(a->checksum()==b->checksum(),"real genre initial peer checksum mismatch");
     for(uint32_t t=0;t<checkpoint;++t) {
@@ -146,7 +145,7 @@ uint64_t run(Genre genre,bool cow,bool fpsEcs) {
     require(saved.size()>8 && uint8_t(saved[4])==9,
             "real genre without registered native types must retain v9 save");
     require(a->checksum()==savedHash,"serialization mutated live simulation");
-    auto restored=make(genre,cow,fpsEcs);
+    auto restored=make(genre,cow);
     std::string error;
     require(restored->deserialize(saved,&error),
             "real genre deserialize rejected v9 state: "+error);
@@ -187,18 +186,12 @@ uint64_t run(Genre genre,bool cow,bool fpsEcs) {
 
 int main() {
     try {
-        // Compare deep-copy and COW for each real module, then compare FPS
-        // legacy and canonical ECS storage on the same command timeline.
-        const uint64_t rts=run(Genre::Rts,false,false);
-        require(run(Genre::Rts,true,false)==rts,"RTS COW changed replay");
-        const uint64_t fpsLegacy=run(Genre::Fps,false,false);
-        require(run(Genre::Fps,true,false)==fpsLegacy,
-                "FPS legacy COW changed replay");
-        require(run(Genre::Fps,false,true)==fpsLegacy,
-                "FPS ECS authority changed checksum");
-        require(run(Genre::Fps,true,true)==fpsLegacy,
-                "FPS ECS authority + COW changed checksum");
-        std::cout<<"PASS real RTS/FPS commands, v9 disk save, peer reorder, rollback, COW and FPS ECS parity\n";
+        // Compare deep-copy and COW for each real module on the same command timeline.
+        const uint64_t rts=run(Genre::Rts,false);
+        require(run(Genre::Rts,true)==rts,"RTS COW changed replay");
+        const uint64_t fpsHash=run(Genre::Fps,false);
+        require(run(Genre::Fps,true)==fpsHash,"FPS COW changed replay");
+        std::cout<<"PASS real RTS/FPS commands, v9 disk save, peer reorder, rollback and COW\n";
         return 0;
     } catch(const std::exception& e) {
         std::cerr<<"FAIL real genre save/replay: "<<e.what()<<'\n';

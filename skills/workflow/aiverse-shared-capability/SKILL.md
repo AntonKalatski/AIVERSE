@@ -11,7 +11,7 @@ place a feature works.
 
 1. Find the owner, not a host. `python3 tools/skills/catalog.py search <words>` (English and Russian), the library
    catalog and `docs/`; then `grep` the code for the data blocks and types. List every module that implements the
-   same thing (e.g. cars: `modules/fps/FpsVehicles.cpp` and `modules/rts/RtsDriving.cpp`).
+   same thing (e.g. cars were `modules/fps/FpsVehicles.cpp` and `modules/rts/RtsDriving.cpp` before `engine/vehicles`).
 2. Split the capability into: data format (rules / map blocks, one format for every project, in the map's own
    units), simulation policy (Fixed math, no module types), presentation (view, HUD, camera) and host glue (who owns
    the entities, the collision world, the input). Only host glue may stay per module.
@@ -23,7 +23,7 @@ place a feature works.
    claude.ai project doc `claude/no-genre-split.md`). Note broken old saves / replays in the handoff.
 4. Data instead of modes: a block's presence enables the capability (map `"race"`, map `"roadNetwork"`); never a
    `mode` string, an `isFps()` / `isRts()` gate or a genre id. Readers live next to the policy and throw readable errors
-   (`readRaceRules`, `readRaceTrack` in `genre/RaceSessionData.h`).
+   (`readRaceRules`, `readRaceTrack` in `mechanics/RaceSessionData.h`).
 5. Adapters per host: call the shared readers at setup and the shared steps per tick; keep the host's part to what
    only it knows (its entities, its collision, its save layout). Save / hash new state only when the capability is
    used, so other games keep their checksums and save bytes.
@@ -34,10 +34,10 @@ place a feature works.
    adapters; module docs point to it; update the owning skill and README rows; record what is still split as debt in
    the handoff (never extend it).
 
-Examples on main: races (`genre/RaceSession.h`, `RaceSessionData.h`, `docs/races.md`, adapters `FpsRace.cpp` and
-`RtsDriving.cpp`), controls -> pedals (`genre/VehicleDrive.h`), spline roads (`engine/roads`, drawn by both
-clients; the compatibility headers `modules/rts/RtsRoadNet.h`, `view/RtsRoadView.h`, `view/RtsRoadKit.h` left by that
-move are debt to delete), the race HUD (`engine/ui/RaceHud.h`) and chase camera
+Examples: races (`mechanics/RaceSession.h`, `RaceSessionData.h`, `docs/races.md`, one adapter
+`engine/vehicles/VehicleRace.h`), the vehicle system (`engine/vehicles`: components + one step, hosts implement only
+`VehicleHost` / `RaceHost`; docs/driving.md), controls -> pedals (`mechanics/VehicleDrive.h`), spline roads
+(`engine/roads`, drawn by both clients; the old forwarders are deleted), the race HUD (`engine/ui/RaceHud.h`) and chase camera
 (`engine/render/ChaseCamera.h`).
 
 Runtime library: none (workflow).

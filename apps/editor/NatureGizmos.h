@@ -46,7 +46,7 @@ namespace nature_gizmo_detail {
 struct Painter {
     ImDrawList* draw;
     const Viewport& vp;
-    const render::RTSCamera& camera;
+    const render::Camera& camera;
     bool project(render::float3 p, ImVec2& out) const {
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
             std::abs(p.x) > 1e6f || std::abs(p.y) > 1e6f || std::abs(p.z) > 1e6f) return false;
@@ -97,7 +97,7 @@ inline float ground(Editor& ed, float x, float z) {
 
 } // namespace nature_gizmo_detail
 
-inline void drawNatureGizmos(Editor& ed, const Viewport& vp, const render::RTSCamera& camera) {
+inline void drawNatureGizmos(Editor& ed, const Viewport& vp, const render::Camera& camera) {
     using namespace nature_gizmo_detail;
     auto& cfg = natureGizmoSettings();
     if (vp.pointsW <= 0 || vp.pointsH <= 0 || ed.planetMap()) return;

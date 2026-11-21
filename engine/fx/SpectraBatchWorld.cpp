@@ -39,7 +39,7 @@ int BatchWorld::defineEffect(const fx::EffectDef& definition) {
     if (existing != definitionIds_.end()) return existing->second;
 
     const std::string internalName = "__spectrafx_batch_" +
-                                     std::to_string(definitionIds_.size());
+                                     std::to_string(nextInternalName_++);
     const int id = particles_.define(internalName, definition);
     if (id < 0) {
         error_ = "SpectraFX shared ParticleSystem rejected an effect";
@@ -49,6 +49,16 @@ int BatchWorld::defineEffect(const fx::EffectDef& definition) {
     definitionIds_.emplace(identity, id);
     error_.clear();
     return id;
+}
+
+bool BatchWorld::releaseEffect(int effect) {
+    if (!initialized_ || effect < 0) return false;
+    for (auto it = definitionIds_.begin(); it != definitionIds_.end(); ++it)
+        if (it->second == effect) {
+            definitionIds_.erase(it);
+            return particles_.undefine(effect);
+        }
+    return false;
 }
 
 int BatchWorld::defineGraph(const Json& graph, const Json& overrides) {

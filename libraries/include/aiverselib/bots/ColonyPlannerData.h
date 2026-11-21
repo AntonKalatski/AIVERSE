@@ -1,5 +1,5 @@
 #pragma once
-// JSON for the colony planner bot (example: examples/libraries/genre/production-survival/planner.json):
+// JSON for the colony planner bot (example: examples/libraries/mechanics/production-survival/planner.json):
 // {"intervalTicks":100,"maxCommands":4,"rules":[{"id":1,"priority":50,"action":"bill","ref":1,"value":30,
 //   "when":[{"metric":"stockPerColonist","ref":3,"below":true,"threshold":3000}],"cooldownTicks":0,"maxOpen":1,"stockpile":1}]}
 // actions: build | bill | gather | priority; metrics: stockPerColonist | stock | powerDeficit | coldColonists | needLow |

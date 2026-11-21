@@ -32,6 +32,9 @@ public:
     // deduplicates equivalent definitions but NEVER merges distinct logic
     // merely because both effects refer to the same texture.
     int defineEffect(const fx::EffectDef& definition);
+    // Frees a definition no caller references any more (its particles are
+    // removed). Ids are never reused, so a later identical define gets a new id.
+    bool releaseEffect(int effect);
     int defineGraph(const Json& graph,
                     const Json& overrides = Json::object());
     fx::FxHandle play(int effect, fx::float3 position,
@@ -89,6 +92,7 @@ private:
     // Complete serialized definition fingerprint; distinct effects stay
     // separate even when they share one atlas texture / RHI draw call.
     std::map<std::string,int> definitionIds_;
+    uint64_t nextInternalName_ = 0; // monotonic: released names are never reused
     bool initialized_ = false;
     std::string error_;
     std::vector<std::string> errors_;

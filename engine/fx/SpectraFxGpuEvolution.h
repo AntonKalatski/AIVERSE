@@ -174,6 +174,11 @@ public:
     // Write/recycle one slot. GPU mode: at a GPU-buffer update safe point,
     // before compute dispatch and with no render/compute pass open.
     // Lifetime zero marks the slot dormant (billboard alpha zero).
+    // Writes are queued and uploaded at the start of the next step(): only
+    // the compute kernel reads these buffers (drawing samples the texture it
+    // writes), so deferring them is invisible. Runs of consecutive written
+    // slots go up as one range per buffer; a range never spans a slot that
+    // was not written this frame, so GPU-evolved state is never overwritten.
     bool writeSlot(uint32_t slot,const SpectraFxGpuSeed& seed) {
         if(!ready() || slot>=count_ || !validSeed(seed)) return false;
         const render::float4 a{seed.position.x,seed.position.y,seed.position.z,seed.age};
@@ -183,11 +188,45 @@ public:
             cpuVelocity_[slot]=v;
             return true;
         }
-        if(!device_->canUpdateSharedBuffers()) return false;
-        device_->updateBuffer(position_,&a,sizeof(a),size_t(slot)*sizeof(a));
-        device_->updateBuffer(velocity_,&v,sizeof(v),size_t(slot)*sizeof(v));
+        if(pendingIndex_.size()!=count_) pendingIndex_.assign(count_,kNoPending);
+        uint32_t& at=pendingIndex_[slot];
+        if(at==kNoPending) {          // last write of a slot in a frame wins
+            at=uint32_t(pending_.size());
+            pending_.push_back({slot,a,v});
+        } else {
+            pending_[at].position=a;pending_[at].velocity=v;
+        }
         return true;
     }
+    // Uploads queued slot writes now (step() does this itself). False when
+    // the RHI cannot update shared buffers yet; the queue is kept.
+    bool flushWrites() {
+        if(pending_.empty()) return true;
+        if(!ready() || !device_->canUpdateSharedBuffers()) return false;
+        std::sort(pending_.begin(),pending_.end(),
+                  [](const PendingWrite& x,const PendingWrite& y){return x.slot<y.slot;});
+        for(size_t i=0;i<pending_.size();) {
+            size_t j=i+1;
+            while(j<pending_.size() && pending_[j].slot==pending_[j-1].slot+1) ++j;
+            runPosition_.clear();runVelocity_.clear();
+            for(size_t k=i;k<j;++k) {
+                runPosition_.push_back(pending_[k].position);
+                runVelocity_.push_back(pending_[k].velocity);
+            }
+            const size_t offset=size_t(pending_[i].slot)*sizeof(render::float4);
+            const size_t bytes=runPosition_.size()*sizeof(render::float4);
+            device_->updateBuffer(position_,runPosition_.data(),bytes,offset);
+            device_->updateBuffer(velocity_,runVelocity_.data(),bytes,offset);
+            ++uploadRanges_;
+            i=j;
+        }
+        for(const auto& w:pending_) pendingIndex_[w.slot]=kNoPending;
+        pending_.clear();
+        return true;
+    }
+    uint32_t pendingWrites() const {return uint32_t(pending_.size());}
+    // Buffer range uploads issued by flushWrites() since init (diagnostics).
+    uint64_t uploadRanges() const {return uploadRanges_;}
 
     // Within beginFrame/endFrame, outside a render pass; dt is limited so that
     // a paused or stalled game cannot explode visual-only velocity integration.
@@ -223,6 +262,10 @@ public:
                                  env.acceleration.z,0},
                                 {env.groundHeight,env.restitution,
                                  env.tangentRetention,env.collideGround?1.0f:0.0f}};
+        if(!flushWrites()) {
+            error_="SpectraFX GPU slot writes cannot be uploaded yet";
+            return false;
+        }
         if(!device_->beginCompute(shader_)) {
             error_="SpectraFX compute must run inside frame, outside render pass";
             return false;
@@ -309,6 +352,7 @@ public:
         feedbackEnabled_=false;
         ownsShader_=false;
         twin_=false;
+        pending_.clear();pendingIndex_.clear();uploadRanges_=0;
     }
 
 private:
@@ -393,5 +437,11 @@ private:
     std::vector<TwinImpact> twinImpacts_;
     render::float3 sortEye_{},sortForward_{};
     std::string error_;
+    struct PendingWrite {uint32_t slot;render::float4 position,velocity;};
+    static constexpr uint32_t kNoPending=~0u;
+    std::vector<PendingWrite> pending_;
+    std::vector<uint32_t> pendingIndex_;      // slot -> index in pending_
+    std::vector<render::float4> runPosition_,runVelocity_;
+    uint64_t uploadRanges_=0;
 };
 } // namespace aiverse::fx

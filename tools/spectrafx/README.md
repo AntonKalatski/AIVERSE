@@ -61,7 +61,7 @@ project data; review them before sharing externally.
 
 ## One-at-a-time native GPU capture host
 
-The public native header `<aiverselib/genre/SpectraFX.h>`
+The public native header `<aiverselib/mechanics/SpectraFX.h>`
 exports `GpuPoolCaptureHost`. It is renderer-side only and
 must be driven on the owning graphics Device thread:
 
@@ -228,9 +228,9 @@ matching safe JSON filename is similarly serial-free. The adjacent RAW
 
 ### External render-host capture mailbox
 
-The public native header `<aiverselib/genre/SpectraFX.h>` exports
+The public native header `<aiverselib/mechanics/SpectraFX.h>` exports
 `GpuCaptureRequestMailbox` from
-`libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h`.
+`libraries/include/aiverselib/mechanics/SpectraGpuCaptureMailbox.h`.
 An editor may attach a **non-owning** pointer supplied by the external
 native renderer. The editor can request a named GPU group index,
 inspect `Idle / Requested / Claimed / InFlight / Ready / Failed`

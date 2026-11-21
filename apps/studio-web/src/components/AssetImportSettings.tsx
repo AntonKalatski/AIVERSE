@@ -1,3 +1,4 @@
+import { copyText } from '../clipboard';
 import {useEffect,useState} from 'react';
 import {X, FileCog, ClipboardCopy, Lock, LockOpen} from 'lucide-react';
 import {invoke} from '../bridge';
@@ -95,7 +96,7 @@ export default function AssetImportSettings({asset,onClose,onSaved,onError,locke
         <div className="studio-asset-guid">
           <span>GUID</span><code title={detail.guid}>{detail.guid}</code>
           <button type="button" title="Copy GUID" aria-label="Copy asset GUID"
-            onClick={()=>{void navigator.clipboard?.writeText(detail.guid)}}><ClipboardCopy size={14}/></button>
+            onClick={()=>{void copyText(detail.guid)}}><ClipboardCopy size={14}/></button>
         </div>
         {detail.importer==='texture'&&<>
           <SettingSelect label="Compression" value={str('compression')}

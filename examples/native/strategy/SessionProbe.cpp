@@ -45,7 +45,7 @@ void authority(bool udpMode){
             if(now%20==0){fps::Input input;input.right=100;client->submit(input);server->step();}
         }
         CHECK(client->ready()&&client->connected()&&client->snapshot().localSlot==1);
-        for(const auto& actor:client->snapshot().actors)if(actor.slot!=1)CHECK(actor.ammo==0&&actor.reserve==0&&actor.bag.empty());
+        for(const auto& actor:client->snapshot().characters)if(actor.slot!=1)CHECK(actor.ammo==0&&actor.reserve==0&&actor.bag.empty());
     };
     connect(0);pump(0,3000);auto first=client->snapshot().ack;CHECK(first>40);
     client.reset();for(uint64_t now=3000;now<3200;now+=5){if(udpMode)listener.poll(now);server->poll(now);server->step();}

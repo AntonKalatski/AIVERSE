@@ -5,8 +5,8 @@
 #include "../EditorUtil.h"
 #include "../core/FxOps.h"
 #include "engine/fx/SpectraFX.h"
-#include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
-#include "libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h"
+#include "libraries/include/aiverselib/mechanics/SpectraGpuCaptureMailbox.h"
+#include "libraries/include/aiverselib/mechanics/SpectraGpuRecoveryHost.h"
 #include "engine/fx/SpectraModuleSchema.h"
 #include "engine/fx/SpectraAuthoring.h"
 #include <string_view>
