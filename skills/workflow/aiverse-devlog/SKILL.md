@@ -33,6 +33,14 @@ fixes nobody can see get no entry.
 6. Commit the entry and media with the feature (or as the stage's handoff commit). Do not
    push `gh-pages` and do not commit `build/site`: `.github/workflows/site.yml` publishes from `main`.
 
+## System page and roadmap
+
+If your stage belongs to a flagship system in `docs/devlog/systems.json`, update that system in
+the same commit: move the finished `roadmap` item to `"status": "done"` with today's `date` (or
+add one), mark what you are starting as `in-progress`, add newly planned features from your
+handoff as `planned` with `"target": null` unless the user gave a date, and keep `includes` and
+`enables` true to what is merged. A new flagship system needs every field (see docs/devlog/README.md).
+
 ## System cover (main page, "Системы движка")
 
 Flagship systems in `docs/devlog/systems.json` each have one cover frame and a `coverBrief`

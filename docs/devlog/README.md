@@ -53,6 +53,12 @@ Systems with `"flagship": true` are cards in "Системы движка" on th
 `tagline`, `essence` (what the system is), `where` (`main` or `branch`), `cover` and `coverBrief`.
 `cover` is one real frame that shows the essence of the system (landscape, ≥ 1280 px,
 PNG/JPG ≤ 6 MB, `caption`, `approved`). Without a cover the card shows the system name.
+Each flagship system also has its own page (`system-<id>.html`) and feeds the shared roadmap
+(`roadmap.html`): `article` (repository doc or `https://` link about its development), `started`
+(date of its first commit), `includes` (`[{"name", "text"}]` — parts of the system), `enables`
+(what a game can do with it) and `roadmap` items `{"status", "title", "text"?, "date"|"target"}`:
+`done` needs `date` (YYYY-MM-DD, when it landed), `in-progress`/`planned` take `target` (YYYY-MM)
+or `null` — shown as "срок не назначен". Targets come from the user or the system's docs, never guessed.
 `coverBrief` says what the frame must show; the owning agent renders it and, if it has no cover
 yet, may set `cover` with `"approved": false`. Replacing an existing cover needs the user.
 
