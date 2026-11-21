@@ -1,17 +1,18 @@
 #!/bin/bash
 # Android build + GLES / Vulkan benchmark on a device connected over USB (macOS or Linux host).
-#   tools/perf/android-bench.sh [--no-build] [--project templates/skirmish] [--map 0] [--frames 1200]
+#   tools/perf/android-bench.sh [--no-build | --fast] [--project templates/skirmish] [--map 0] [--frames 1200]
 #                               [--cases quick|features] [--out /Volumes/KINGSTON/AIVERSE-builds/android-bench]
 # Builds aiversebuild (host), packages the project as a Release APK, installs it and runs every case
 # twice (gles, vulkan). Settings reach the game through debug.aiverse.* properties (PlatformAndroid.cpp);
 # frame times come from its "[perf]" logcat lines. Results: <out>/results.tsv, raw logs in <out>/runs/.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+XENV=""; PROFILE=""; PSEC=12
 PROJECT="$ROOT/templates/skirmish"; MAP=0; FRAMES=1200; CASES=features; BUILD=1
 OUT=/Volumes/KINGSTON/AIVERSE-builds/android-bench
 while [ $# -gt 0 ]; do case "$1" in
-  --no-build) BUILD=0;; --project) PROJECT="$2"; shift;; --map) MAP="$2"; shift;; --frames) FRAMES="$2"; shift;;
-  --cases) CASES="$2"; shift;; --out) OUT="$2"; shift;; *) echo "unknown arg $1"; exit 2;; esac; shift; done
+  --no-build) BUILD=0;; --fast) BUILD=2;; --project) PROJECT="$2"; shift;; --map) MAP="$2"; shift;; --frames) FRAMES="$2"; shift;;
+  --cases) CASES="$2"; shift;; --env) XENV="${XENV:-} $2"; shift;; --profile) PROFILE="$2"; shift;; --seconds) PSEC="$2"; shift;; --out) OUT="$2"; shift;; *) echo "unknown arg $1"; exit 2;; esac; shift; done
 case "$PROJECT" in /*) ;; *) PROJECT="$ROOT/$PROJECT";; esac
 NAME="$(basename "$PROJECT")"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -41,12 +42,34 @@ if [ $BUILD = 1 ]; then
   say "android: aiversebuild --target android --config Release (долго: движок x2 ABI)"
   "$AB" --project "$OUT/projects/$NAME" --engine "$ROOT" --target android --config Release --out "$APK_DIR" --install-missing > "$OUT/android-build.log" 2>&1
   rc=$?
-  grep -E "error:|ОШИБКА|FAILURE|APK" "$OUT/android-build.log" | head -40
+  grep -E "error:|ОШИБКА|FAILURE|APK" "$OUT/android-build.log" | sort -u | head -40
   [ $rc = 0 ] || { say "FAIL android build rc=$rc (android-build.log)"; exit 1; }
   for c in "$HOME/.aiverse/toolchains/android-sdk" "$HOME/Library/Android/sdk"; do
     [ -z "$ADB" ] && [ -x "$c/platform-tools/adb" ] && { SDK="$c"; ADB="$c/platform-tools/adb"; }; done
 fi
-APK="$(find "$APK_DIR" -maxdepth 3 -name '*-release.apk' -not -path '*/.temp/*' | head -1)"
+# --fast: reuse the exported Gradle project of the last full build, copy only the engine files whose
+# content changed (incremental native build), arm64 only
+GP="$(ls -d "$APK_DIR"/.temp/build/android/*/ 2>/dev/null | head -1)"
+if [ $BUILD = 2 ]; then
+  [ -n "$GP" ] && [ -x "$GP/gradlew" ] || { say "FAIL: --fast needs a full build first"; exit 1; }
+  say "fast: sync changed sources into $GP"
+  for d in "$GP"app/src/main/cpp/*; do
+    n="$(basename "$d")"; [ -e "$ROOT/$n" ] || continue
+    if [ -d "$d" ]; then rsync -rc --existing "$ROOT/$n/" "$d/"; else rsync -c "$ROOT/$n" "$d"; fi
+  done
+  sed -i.bak "s/abiFilters 'arm64-v8a', 'x86_64'/abiFilters 'arm64-v8a'/" "$GP/app/build.gradle"
+  # profiling over adb (simpleperf --app) without making the APK debuggable; bench builds only
+  M="$GP/app/src/main/AndroidManifest.xml"
+  grep -q "<profileable" "$M" || perl -0pi -e 's/(<application[^>]*>)/$1\n        <profileable android:shell="true" \/>/' "$M"
+  say "fast: gradlew assembleRelease"
+  (cd "$GP" && ./gradlew assembleRelease --console=plain) > "$OUT/android-build.log" 2>&1 \
+    || { say "FAIL fast build (android-build.log)"; grep -E "error:" "$OUT/android-build.log" | sort -u | head -30; exit 1; }
+  APK="$GP/app/build/outputs/apk/release/app-release.apk"
+  for c in "$HOME/.aiverse/toolchains/android-sdk" "$HOME/Library/Android/sdk"; do
+    [ -z "$ADB" ] && [ -x "$c/platform-tools/adb" ] && { SDK="$c"; ADB="$c/platform-tools/adb"; }; done
+else
+  APK="$(find "$APK_DIR" -maxdepth 3 -name '*-release.apk' -not -path '*/.temp/*' | head -1)"
+fi
 [ -n "$APK" ] || { say "FAIL: нет APK в $APK_DIR"; exit 1; }
 [ -x "$ADB" ] || { say "FAIL: adb не найден"; exit 1; }
 
@@ -79,7 +102,7 @@ run() {
   A shell am force-stop "$PKG"; clearprops
   A shell setprop debug.aiverse.args "'--map $MAP --spectate --gfx $gfx'"
   local i=0
-  for kv in AIVERSE_PERF_LOG=5 AIVERSE_EXIT_AFTER_FRAMES=$FRAMES AIVERSE_SEED=3 AIVERSE_GFX=$gfx "$@"; do
+  for kv in AIVERSE_PERF_LOG=5 AIVERSE_EXIT_AFTER_FRAMES=$FRAMES AIVERSE_SEED=3 AIVERSE_GFX=$gfx $XENV "$@"; do
     A shell setprop debug.aiverse.env$i "'$kv'"; i=$((i+1)); done
   local th0="$(thermal)" bt0="$(battemp)"
   A logcat -c; A shell am start -W -n "$ACT" > /dev/null
@@ -120,7 +143,36 @@ cases_features() {
     for g in gl vulkan; do run "$n" $g $U "$@"; done
   done
 }
-say "bench $NAME map=$MAP frames=$FRAMES cases=$CASES"
+# --profile gl|vulkan: simpleperf (cpu-clock) for --seconds while the match runs; reports by thread,
+# library and address (symbolize the libmain.so addresses with addr2line on the unstripped library)
+profile() {
+  local gfx="$1" P="$OUT/profile_${NAME}_$gfx"; mkdir -p "$P"
+  A shell am force-stop "$PKG"; clearprops
+  A shell setprop debug.aiverse.args "'--map $MAP --spectate --gfx $gfx'"
+  local i=0
+  for kv in AIVERSE_PERF_LOG=2 AIVERSE_SEED=3 AIVERSE_GFX=$gfx $XENV; do A shell setprop debug.aiverse.env$i "'$kv'"; i=$((i+1)); done
+  A logcat -c; A shell am start -W -n "$ACT" > /dev/null
+  say "profile $gfx: waiting for the match"
+  local t=0; while [ $t -lt 120 ] && ! A logcat -d -s AIVERSE:I | grep -q '\[perf\] window'; do sleep 2; t=$((t+2)); done
+  sleep 4
+  say "profile $gfx: simpleperf ${PSEC}s"
+  A shell rm -f /data/local/tmp/perf.data
+  A shell simpleperf record --app "$PKG" -e cpu-clock -f 2000 --call-graph fp --duration "$PSEC" -o /data/local/tmp/perf.data > "$P/record.txt" 2>&1
+  A logcat -d > "$P/logcat.txt"
+  A shell am force-stop "$PKG"
+  A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,tid -n > "$P/threads.txt" 2>&1
+  A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,dso -n > "$P/dso.txt" 2>&1
+  A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,dso,symbol -n --percent-limit 0.2 > "$P/symbols.txt" 2>&1
+  A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,dso,vaddr_in_file -n --percent-limit 0.01 > "$P/vaddr.txt" 2>&1
+  A shell simpleperf report -i /data/local/tmp/perf.data -g --children --sort comm,dso,symbol -n --percent-limit 1 > "$P/children.txt" 2>&1
+  A pull /data/local/tmp/perf.data "$P/perf.data" > /dev/null 2>&1
+  say "profile $gfx: done -> $P"
+}
+if [ -n "$PROFILE" ]; then
+  for g in $PROFILE; do profile "$g"; done
+  clearprops; say "DONE profile"; exit 0
+fi
+say "bench $NAME map=$MAP frames=$FRAMES cases=$CASES env=$XENV"
 cases_$CASES
 clearprops
 say "DONE results: $OUT/results.tsv"

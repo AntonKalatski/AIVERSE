@@ -542,12 +542,19 @@ void VulkanDevice::prepareSlot() {
 }
 
 void VulkanDevice::collectGarbage() {
-    size_t keep = 0;
-    for (size_t i = 0; i < garbage_.size(); ++i) {
-        if (garbage_[i].serial <= completed_) garbage_[i].fn();
-        else garbage_[keep++] = std::move(garbage_[i]);
+    // A deferred destructor may defer more work (back buffer -> framebuffers): it must not push into
+    // the vector being walked (reallocation moved the running std::function away, a later entry was
+    // then called empty: bad_function_call on Android). Walk a detached list, keep newcomers.
+    std::vector<Garbage> pending;
+    pending.swap(garbage_);
+    std::vector<Garbage> keep;
+    keep.reserve(pending.size());
+    for (auto& g : pending) {
+        if (g.serial <= completed_) { if (g.fn) g.fn(); }
+        else keep.push_back(std::move(g));
     }
-    garbage_.resize(keep);
+    for (auto& g : garbage_) keep.push_back(std::move(g));
+    garbage_.swap(keep);
 }
 
 VkCommandBuffer VulkanDevice::transferCmd() {
