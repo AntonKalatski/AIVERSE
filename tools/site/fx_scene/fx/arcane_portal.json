@@ -1,0 +1,25 @@
+// Arcane portal: a spinning ring of sparks with trails, an inward violet swirl and a cold core light.
+// Effect space Y is the portal axis: play it with dir pointing out of the portal (rings orbit around it).
+{
+  "emitters": [
+    { "comment": "core glow + light", "texture": "builtin:soft", "blend": "additive", "rate": 6, "loop": true,
+      "life": [0.8, 1.1], "speed": [0, 0], "size": [3.2, 3.8], "color": [[0, "#4060ff00"], [0.4, "#5070ff26"], [1, "#3040ff00"]],
+      "light": { "color": "#7088ff", "radius": 7, "intensity": 1.1, "max": 1, "useParticleColor": false, "alphaAffectsIntensity": false } },
+    { "comment": "ring sparks", "texture": "builtin:spark", "blend": "additive", "rate": 520, "loop": true,
+      "life": [0.9, 1.5], "speed": [0, 0.05], "shape": "ring", "radius": 1.5, "thickness": 0.02,
+      "size": [0.04, 0.09], "velocityOverLife": { "orbitalY": [150, 200] },
+      "color": [[0, "#e0f4ffff"], [0.4, "#80a8ffe0"], [1, "#8a40ff00"]] },
+    { "comment": "rim line", "texture": "builtin:soft", "blend": "additive", "rate": 700, "loop": true,
+      "life": [0.35, 0.5], "speed": [0, 0], "shape": "ring", "radius": 1.5, "thickness": 0.01,
+      "size": [0.16, 0.22], "velocityOverLife": { "orbitalY": [60, 60] },
+      "color": [[0, "#a0c4ff00"], [0.3, "#90b0ff70"], [1, "#7050ff00"]] },
+    { "comment": "counter ring", "texture": "builtin:spark", "blend": "additive", "rate": 300, "loop": true,
+      "life": [0.8, 1.3], "speed": [0, 0.05], "shape": "ring", "radius": 1.22, "thickness": 0.02,
+      "size": [0.035, 0.07], "velocityOverLife": { "orbitalY": [-170, -130] },
+      "color": [[0, "#f0d0ffff"], [0.5, "#b070ffd0"], [1, "#6030ff00"]] },
+    { "comment": "inward swirl", "texture": "builtin:soft", "blend": "additive", "rate": 70, "loop": true,
+      "life": [1.4, 2.0], "speed": [0, 0], "shape": "disc", "radius": 1.45, "size": [0.2, 0.45],
+      "velocityOverLife": { "orbitalY": [70, 110], "radial": [-0.7, -0.4] },
+      "color": [[0, "#6040ff00"], [0.3, "#7050ff30"], [1, "#a0c0ff00"]] }
+  ]
+}

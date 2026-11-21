@@ -1,0 +1,9 @@
+// Slow glowing motes rising from the portal base.
+{
+  "emitters": [
+    { "texture": "builtin:soft", "blend": "additive", "rate": 18, "loop": true,
+      "life": [3, 5], "speed": [0.2, 0.5], "spread": 35, "shape": "disc", "radius": 1.2,
+      "size": [0.06, 0.12], "noise": { "strength": 0.5, "frequency": 0.6 },
+      "color": [[0, "#90b0ff00"], [0.2, "#a0c0ffff"], [1, "#b080ff00"]] }
+  ]
+}
