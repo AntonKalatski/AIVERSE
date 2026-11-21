@@ -66,7 +66,10 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
         auto encode=[](float v){return v<=.0031308f?12.92f*v:1.055f*std::pow(v,1/2.4f)-.055f;};
         const float3 expected={encode(energy),encode(energy*.5f),encode(energy*.25f)};
         const int flags=int(stats.composited)|int(stats.objectVelocity)<<1|
-                        int(stats.submission.encoded)<<2|int(stats.reusedPrevious)<<3|int(stats.gpuBusy)<<4;
+                        int(stats.submission.encoded)<<2|int(stats.reusedPrevious)<<3|int(stats.gpuBusy)<<4|
+                        int(r.objectMotionStats().submitted)<<5|int(r.objectMotionStats().velocitySeedOnly)<<6|
+                        int(r.objectMotionStats().rigidDraws>0)<<7|int(r.objectMotionStats().rejected>0)<<8|
+                        int(s.post.wantsObjectMotionVectors())<<9|int(s.post.objectMotionSceneDepth().valid())<<10;
         auto receive=[&s,test,expected,stateOk,flags](int cw,int ch,std::vector<uint8_t> px) {
             if(cw<4||ch<4||px.size()!=size_t(cw*ch*4)){s.failed=true;return;}
             // AIVERSE_HDR_CAPTURE set: keep each case frame as <path>.luma<case>.ppm.
