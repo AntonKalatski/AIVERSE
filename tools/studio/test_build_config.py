@@ -30,5 +30,10 @@ class StudioBuildConfigTests(unittest.TestCase):
         self.assertEqual(text.count('ctest --test-dir "$BUILD_DIR"'),1)
         self.assertIn("-R '^studio_'",text)
 
+    def test_working_studio_build_is_optimized_by_default(self):
+        text=(ROOT/"tools/studio/verify_mac.sh").read_text(encoding="utf-8")
+        self.assertIn('STUDIO_BUILD_TYPE="${STUDIO_BUILD_TYPE:-RelWithDebInfo}"',text)
+        self.assertNotIn("-DCMAKE_BUILD_TYPE=Debug",text)
+
 if __name__=="__main__":
     unittest.main()

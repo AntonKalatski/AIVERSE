@@ -19,7 +19,7 @@ export interface WorkspaceInfo {
 
 export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
   scene: { id: 'scene', title: 'Scene', purpose: 'Place and test', key: '1',
-    left: ['hierarchy', 'project'], center: ['scene', 'game'], right: ['inspector'], bottom: ['assets', 'console'],
+    left: ['hierarchy', 'project'], center: ['scene', 'game'], right: ['inspector', 'history'], bottom: ['assets', 'console'],
     legacy: ['tools', 'studio_camera_bookmarks'] },
   world: { id: 'world', title: 'World', purpose: 'Terrain, water, roads', key: '2',
     left: ['hierarchy'], center: ['scene', 'game'], right: ['inspector', 'nereid_flow'], bottom: ['assets', 'console'],
@@ -85,7 +85,7 @@ export function readActiveWorkspace(store: Storage | null = storage()): StudioWo
 export function saveActiveWorkspace(id: StudioWorkspace, store: Storage | null = storage()): void {
   try { store?.setItem(ACTIVE_KEY, id); } catch { /* private mode */ }
 }
-const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = { publish: ['build'], look: ['wind'] };
+const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = { publish: ['build'], look: ['wind'], scene: ['history'] };
 /** Saved layout of a workspace; the Scene workspace inherits the pre-workspace layout once. */
 export function readWorkspaceDock(id: StudioWorkspace, store: Storage | null = storage()): DockTree {
   try {

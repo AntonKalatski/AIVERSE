@@ -273,7 +273,8 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
             Json options=Json::array();
             {Json none=Json::object();none.set("label",str("Default (owner colour)"));none.set("value",str(""));options.push(none);}
             for(const auto& [name,value]:library.members()){(void)value;Json o=Json::object();o.set("label",str(name));o.set("value",str(name));options.push(o);}
-            if(comps.has("StaticModel") || authored) {
+            // A Transform alone (authored pose) keeps the type's look: only StaticModel overrides it.
+            if(comps.has("StaticModel")) {
                 const std::string asset=editor::authoredModelAsset(e);
                 // No mesh = the built-in cube the Scene actually draws.
                 Json field=prop("asset","Mesh","asset",str(asset.empty()?"builtin:cube":asset),authored);
@@ -296,7 +297,15 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
                 const Json& model=view["model"];
                 std::string path=model.isString()?model.str():model.isArray()&&model.size()?
                     (model[size_t(0)].isString()?model[size_t(0)].str():model[size_t(0)].getStr("file")):"";
-                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"Cube (built-in)":path))));
+                std::string look=path;
+                if(look.empty()) {
+                    // RTS types without a model are drawn as built-in procedural shapes (game and Scene).
+                    const Json& type=ws_.project.rulesJson["types"][e.type];
+                    const bool structure=type.has("structure") && !type["structure"].isNull() && type["structure"].boolean(true);
+                    look=type.isObject() ? "Shape · "+view.getStr("shape",structure?(type.has("resourceNode")?"mine":"structure"):"generic")+" (built-in)"
+                                         : std::string("Cube (built-in)");
+                }
+                mesh.push(readOnly(prop("asset","Mesh","text",str(look))));
                 for(const auto& [slot,ref]:view["materials"].members())
                     mesh.push(readOnly(prop(("material:"+slot).c_str(),(slot=="*"?std::string("Material (all slots)"):"Material · "+slot).c_str(),
                         "text",str(ref.isString()?ref.str():ref.dump(-1)))));
@@ -448,6 +457,7 @@ Json StudioSession::snapshot() const {
         row.set("level", str(activity[i].error ? "error" : "info"));
         row.set("text", str(activity[i].text));
         row.set("time", str(activity[i].source));
+        row.set("source", str(activity[i].source));
         logs.push(std::move(row));
     }
     result.set("logs", std::move(logs));
@@ -615,7 +625,77 @@ Json StudioSession::buildRequest(const std::string& method, const Json& params) 
     out.set("heaviest", files);
     return out;
 }
+std::string StudioSession::historyLabel(const std::string& method, const Json& params) {
+    const Json& values=params["values"];
+    auto has=[&](std::initializer_list<const char*> keys){for(const char* k:keys)if(values.has(k)||params.getStr("key")==k)return true;return false;};
+    if(method=="studio.setProperties"||method=="studio.setProperty") {
+        if(has({"rotationX","rotationY","rotationZ"}))return "Rotate";
+        if(has({"scaleX","scaleY","scaleZ"}))return "Scale";
+        if(has({"x","y","z"}))return "Move";
+        const std::string key=params.getStr("key");
+        const std::string comp=params.getStr("componentId");
+        return key.empty() ? "Edit "+(comp.empty()?std::string("properties"):comp) : "Set "+key;
+    }
+    static const std::pair<const char*,const char*> names[]={
+        {"studio.entityCreate","Create object"},{"studio.entityDelete","Delete"},{"studio.entitiesDelete","Delete"},
+        {"studio.entityDuplicate","Duplicate"},{"studio.entitiesDuplicate","Duplicate"},{"studio.entityMove","Reorder"},
+        {"studio.assetPlace","Place asset"},{"studio.componentAdd","Add component"},{"studio.componentRemove","Remove component"},
+        {"studio.lightAdd","Add light"},{"studio.lightUpdate","Edit light"},{"studio.lightDelete","Delete light"},
+        {"studio.lightingSet","Edit lighting"},{"studio.renderLightingSet","Edit render lighting"},
+        {"studio.nereidFlowSet","Edit water"},{"studio.entitiesAlign","Align"},{"studio.newMap","New map"}};
+    for(const auto& [m,label]:names)if(method==m)return label;
+    return "Edit";
+}
+void StudioSession::syncHistoryLabels() {
+    // Edits made outside this session (agent tools) or a trimmed MapDoc stack keep the counts honest.
+    const size_t u=ws_.map.undoDepth(),r=ws_.map.redoDepth();
+    while(undoLabels_.size()>u)undoLabels_.erase(undoLabels_.begin());
+    while(undoLabels_.size()<u)undoLabels_.insert(undoLabels_.begin(),"Edit");
+    while(redoLabels_.size()>r)redoLabels_.erase(redoLabels_.begin());
+    while(redoLabels_.size()<r)redoLabels_.insert(redoLabels_.begin(),"Edit");
+}
+Json StudioSession::historyJson() const {
+    Json out=Json::object(),steps=Json::array();
+    for(const auto& l:undoLabels_){Json s=Json::object();s.set("label",str(l));s.set("done",Json::fromBool(true));steps.push(std::move(s));}
+    for(auto it=redoLabels_.rbegin();it!=redoLabels_.rend();++it){Json s=Json::object();s.set("label",str(*it));s.set("done",Json::fromBool(false));steps.push(std::move(s));}
+    out.set("steps",steps);out.set("position",Json::number(int64_t(undoLabels_.size())));
+    return out;
+}
 Json StudioSession::dispatch(const Json& request) {
+    const std::string method=request.getStr("method");
+    if(method=="studio.history"||method=="studio.historyJump") {
+        Json reply=Json::object();reply.set("id",request["id"]);
+        try {
+            syncHistoryLabels();
+            if(method=="studio.historyJump") {
+                // Undo / redo until `position` steps are applied (one step per call of the MapDoc).
+                const int64_t target=request["params"]["position"].integer(-1);
+                if(target<0||target>int64_t(undoLabels_.size()+redoLabels_.size()))throw std::runtime_error("Invalid history position");
+                while(int64_t(undoLabels_.size())>target && ws_.map.canUndo()){ws_.map.undo();redoLabels_.push_back(undoLabels_.back());undoLabels_.pop_back();}
+                while(int64_t(undoLabels_.size())<target && ws_.map.canRedo()){ws_.map.redo();undoLabels_.push_back(redoLabels_.back());redoLabels_.pop_back();}
+                clearSelection();dropOrdinalFlags();
+                Json out=historyJson();out.set("snapshot",snapshot());
+                reply.set("result",std::move(out));
+            } else reply.set("result",historyJson());
+        } catch(const std::exception& e){reply.set("error",str(e.what()));}
+        return reply;
+    }
+    syncHistoryLabels();
+    const size_t before=ws_.map.undoDepth();
+    Json reply=dispatchImpl(request);
+    if(reply.has("error"))return reply;
+    if(method=="studio.undo"){ if(!undoLabels_.empty()){redoLabels_.push_back(undoLabels_.back());undoLabels_.pop_back();} }
+    else if(method=="studio.redo"){ if(!redoLabels_.empty()){undoLabels_.push_back(redoLabels_.back());redoLabels_.pop_back();} }
+    else if(method=="studio.openMap"||method=="studio.newMap"||method=="studio.openProject"){undoLabels_.clear();redoLabels_.clear();}
+    else if(ws_.map.undoDepth()>before) {
+        // A new edit (one or more MapDoc snapshots) drops the redo branch.
+        for(size_t i=before;i<ws_.map.undoDepth();++i)undoLabels_.push_back(historyLabel(method,request["params"]));
+        redoLabels_.clear();
+    }
+    syncHistoryLabels();
+    return reply;
+}
+Json StudioSession::dispatchImpl(const Json& request) {
     Json reply = Json::object();
     reply.set("id", request["id"]);
     try {
@@ -1750,6 +1830,47 @@ Json StudioSession::dispatch(const Json& request) {
             }
             ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
             reply.set("result",snapshot());
+        } else if (method == "studio.entitiesAlign") {
+            // Align / distribute / drop to ground for the selected map entities: ONE undo step.
+            const std::string mode=params.getStr("mode");
+            std::vector<std::string> ids;
+            for(const auto& v:params["entityIds"].items())if(v.isString()&&v.str().rfind("entity:",0)==0)ids.push_back(v.str());
+            if(ids.size()>10000)throw std::runtime_error("Too many entities");
+            static const std::set<std::string> modes={"minX","centerX","maxX","minZ","centerZ","maxZ","distributeX","distributeZ","ground"};
+            if(!modes.count(mode))throw std::runtime_error("Unknown align mode");
+            const bool distribute=mode.rfind("distribute",0)==0;
+            if(ids.size()<(mode=="ground"?1u:distribute?3u:2u))throw std::runtime_error(distribute?"Select at least three objects":"Select at least two objects");
+            struct Item{std::string id;double x,z;};
+            std::vector<Item> items;
+            for(const auto& id:ids){const auto& e=ws_.map.data.entities.at(size_t(indexFor(id)));items.push_back({id,double(e.x),double(e.z)});}
+            const bool onX=mode.back()=='X';
+            auto coord=[&](const Item& i){return onX?i.x:i.z;};
+            double lo=1e300,hi=-1e300;for(const auto& i:items){lo=std::min(lo,coord(i));hi=std::max(hi,coord(i));}
+            std::vector<std::pair<std::string,Json>> edits;   // id -> {key: value}
+            if(mode=="ground") {
+                const float level=float(ws_.project.rules.levelHeight.toDouble());
+                for(const auto& i:items){Json v=Json::object();v.set("y",Json::number(double(terrainPreviewHeight(ws_.map.data,float(i.x),float(i.z),level)),4));edits.push_back({i.id,v});}
+            } else if(distribute) {
+                std::sort(items.begin(),items.end(),[&](const Item& a,const Item& b){return coord(a)<coord(b);});
+                for(size_t k=0;k<items.size();++k){Json v=Json::object();
+                    v.set(onX?"x":"z",Json::number(lo+(hi-lo)*double(k)/double(items.size()-1),4));edits.push_back({items[k].id,v});}
+            } else {
+                const double target=mode.rfind("min",0)==0?lo:mode.rfind("max",0)==0?hi:(lo+hi)*.5;
+                for(const auto& i:items){Json v=Json::object();v.set(onX?"x":"z",Json::number(target,4));edits.push_back({i.id,v});}
+            }
+            const size_t depth=ws_.map.undoDepth();
+            try {
+                for(const auto& [id,values]:edits) for(const auto& [key,value]:values.members()) {
+                    Json nested=Json::object(),input=Json::object();
+                    nested.set("id",request["id"]);nested.set("method",str("studio.setProperty"));
+                    input.set("entityId",str(id));input.set("key",str(key));input.set("value",value);
+                    nested.set("params",input);
+                    const auto updated=dispatchImpl(nested);
+                    if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
+                }
+            } catch(...) { ws_.map.abandonSince(depth); throw; }
+            ws_.map.mergeUndoSince(depth);
+            reply.set("result",snapshot());
         } else if (method == "studio.setProperties") {
             // Several properties of one component as ONE undo step (paste / reset).
             const Json& values=params["values"];
@@ -1767,7 +1888,7 @@ Json StudioSession::dispatch(const Json& request) {
                     input.set("entityId",str(target));input.set("key",str(key));input.set("value",value);
                     if(params.has("componentId"))input.set("componentId",params["componentId"]);
                     nested.set("params",input);
-                    const auto updated=dispatch(nested);
+                    const auto updated=dispatchImpl(nested);
                     if(updated.has("error"))throw std::runtime_error(key+": "+updated.getStr("error"));
                 }
             } catch(...) { ws_.map.abandonSince(depth); throw; }
@@ -1798,7 +1919,7 @@ Json StudioSession::dispatch(const Json& request) {
                     Json nested=Json::object(),input=Json::object();
                     nested.set("id",request["id"]);nested.set("method",str("studio.lightUpdate"));
                     input.set("index",num(int64_t(index)));input.set("key",str(key));input.set("value",value);nested.set("params",input);
-                    const auto updated=dispatch(nested);
+                    const auto updated=dispatchImpl(nested);
                     if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
                 } else {
                     editor::MapDoc draft;draft.data=ws_.map.data;

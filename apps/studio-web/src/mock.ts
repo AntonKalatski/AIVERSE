@@ -135,6 +135,8 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.windowBroadcast') return { ok: true } as StudioResult['studio.windowBroadcast'];
   if (method === 'studio.windowTitle') return { ok: true } as StudioResult['studio.windowTitle'];
   if (method.startsWith('studio.build')) throw new Error('Builds run in the native Studio');
+  if (method === 'studio.history') return { steps: [], position: 0 } as StudioResult['studio.history'];
+  if (method === 'studio.historyJump' || method === 'studio.entitiesAlign') throw new Error('Open the native Studio');
   if (method === 'studio.componentCatalog') return [
     { id: 'MeshRenderer', title: 'Mesh Renderer', group: 'Rendering', hint: 'Model and material slots', action: 'native', available: false, reason: 'Already on this entity' },
     { id: 'Light', title: 'Point Light', group: 'Rendering', hint: 'Adds a light entity at this position', action: 'light', available: true },

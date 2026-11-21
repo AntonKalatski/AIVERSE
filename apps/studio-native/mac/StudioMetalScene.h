@@ -15,6 +15,7 @@
 #include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
+#include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
@@ -41,7 +42,7 @@ public:
                uint64_t previewRevision, float levelHeight = 1.5f,
                const std::string& projectPath = {}, const Json& rules = Json::object(),
                const StudioFacialPreviewBinding* facialBinding=nullptr);
-    void captureNextFrame(gfx::Device::CaptureFn callback) { device_->captureNextFrame(std::move(callback)); }
+    void captureNextFrame(gfx::Device::CaptureFn callback) { lastFrameSignature_=0; device_->captureNextFrame(std::move(callback)); }
     const std::string& lightingStatus() const { return lightingStatus_; }
     // Preview wind for every rigged model (<model>.wind.json) + debug view.
     void setWindPreview(const StudioWindState& state) { wind_ = state; }
@@ -72,8 +73,8 @@ public:
     // Persp/Iso toggle. Orientation/projection are editor camera state only.
     void setOrientation(float yaw, float pitch);
     void setOrthographic(bool ortho);
-    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; };
-    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho}; }
+    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; render::float3 target{}; };
+    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho, camera_.target}; }
     // Corner orientation gizmo rendered by Renderer3D, for the default host where
     // the Metal view covers the WebView (the HTML gizmo is used in composite mode).
     void setOrientationGizmo(bool enabled) { orientationGizmo_ = enabled; }
@@ -91,6 +92,11 @@ public:
     bool localSpace() const { return localSpace_; }
     void setSnap(bool enabled, float move, float rotate, float scale);
     void setGizmosVisible(bool visible) { gizmosVisible_ = visible; }
+    // Hold V while moving: the object's pivot snaps to the nearest other object's pivot on screen.
+    void setPivotSnap(bool on) { pivotSnap_ = on; }
+    // ⇧F: fit every document object into the view.
+    void frameAll(const editor::MapDoc& map, bool fpsProject);
+    void tweenCamera(render::float3 target, float distance, float yaw, float pitch) { startTween(target, distance, yaw, pitch); }
     // -1 none, 0..2 axis, 3 centre (uniform scale), 4..6 Move plane (normal X, Y, Z: YZ, XZ, XY).
     int transformGizmoHit(float x, float y, float width, float height) const;
     bool beginTransformDrag(float x, float y, float width, float height);
@@ -122,6 +128,13 @@ public:
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
+    // Frames actually drawn / skipped because nothing visible changed (diagnostics).
+    uint64_t framesDrawn() const { return framesDrawn_; }
+    uint64_t framesSkipped() const { return framesSkipped_; }
+    // Default: draw every frame() call and rebuild lighting on every edit (tests,
+    // automation, captures). The interactive Studio viewport turns this off: it
+    // then skips idle frames and debounces lighting rebuilds during edit bursts.
+    void setContinuousRedraw(bool on) { continuousRedraw_ = on; }
     // Automation (AIVERSE_STUDIO_WIND_SHOTS): frame a point of interest.
     void setShotCamera(float tx, float ty, float tz, float distance, float yaw, float pitch) {
         camera_.target={tx,ty,tz}; camera_.distance=distance; camera_.yaw=yaw; camera_.pitch=pitch;
@@ -163,6 +176,8 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    bool pivotSnap_ = false;
+    std::vector<std::pair<std::string,render::float3>> snapPivots_; // proxy centres of the last frame
     // RTS built-in procedural shapes ("view": {"shape": …}) for types without a model file,
     // built once and shared; team-coloured parts take the owner colour.
     std::map<std::string,std::unique_ptr<render::Model>> shapeModels_;
@@ -235,5 +250,55 @@ private:
     uint64_t diagnosticFrames_ = 0;
     int lastMapWidth_ = 0;
     int lastMapHeight_ = 0;
+
+    // Document-derived scene cache. Unreal/Godot keep a persistent render-side
+    // scene (scene proxies / RenderingServer instances) and update it on change;
+    // the Studio likewise rebuilds proxies, lights, water and model instances only
+    // when the document, rules or project change, and re-checks model files on
+    // disk (hot reload) at most once a second, not on every 60 Hz frame.
+    struct SceneCacheKey {
+        const editor::MapDoc* doc = nullptr; uint64_t revision = std::numeric_limits<uint64_t>::max();
+        bool fps = false; float levelHeight = 0; std::string project; const Json* rules = nullptr;
+        bool operator==(const SceneCacheKey& o) const {
+            return doc==o.doc && revision==o.revision && fps==o.fps && levelHeight==o.levelHeight &&
+                   project==o.project && rules==o.rules;
+        }
+    };
+    // Per document proxy: everything the frame loop needs that depends only on the
+    // document, rules and loaded models (selection, hover, hide and drag stay per frame).
+    struct ProxyDraw {
+        size_t proxy = 0;            // index into proxies_
+        int sourceIndex = -1;        // map entity index or -1
+        bool water = false;          // NereidWater component: drawn by NEREID
+        bool hasModel = false;       // drawn through modelInstances_
+        render::mat4 world{}, frame{};
+        render::Model* primitive = nullptr; // Mesh Renderer builtin cube/sphere (PBR path)
+        std::vector<render::Material> materials;
+    };
+    SceneCacheKey sceneKey_;
+    bool sceneCacheValid_ = false;
+    std::chrono::steady_clock::time_point nextFileCheck_{};
+    std::vector<StudioDocumentProxy> proxies_;
+    std::vector<ProxyDraw> proxyDraws_;
+    std::vector<render::PointLight> activeLights_;
+    Json lightingSettings_ = Json::object();
+    bool useLighting_ = false;
+    PreviewDayLighting day_{};
+    bool showTerrain_ = true;
+    void rebuildProxyDraws(const editor::MapDoc& doc);
+    // Lighting/GI rebuilds are expensive (GPU idle wait, GI snapshot): a burst of
+    // edits (Inspector slider scrubbing) rebuilds at most every ~0.3 s and once
+    // more after the edits settle, like a debounced "Build Lighting".
+    uint64_t lastSeenRevision_ = std::numeric_limits<uint64_t>::max();
+    std::chrono::steady_clock::time_point lastDocChange_{}, lastLightingBuild_{};
+    // Idle frame skipping: the viewport redraws only when something visible changed,
+    // plus a few settle frames (temporal AA, GI) and a 1 s heartbeat.
+    uint64_t lastFrameSignature_ = 0;
+    int settleFrames_ = 0;
+    std::chrono::steady_clock::time_point lastDrawn_{};
+    uint64_t framesDrawn_ = 0, framesSkipped_ = 0;
+    bool continuousRedraw_ = true;
+    uint64_t frameSignature(int width, int height, const editor::MapDoc& doc, bool fpsProject,
+                            const std::string& selectedId) const;
 };
 }
