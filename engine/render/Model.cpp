@@ -18,8 +18,8 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
-#include <stdexcept>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 // stb_image with static linkage: the UI layer has its own copy, both may end up in one binary.
@@ -111,6 +111,63 @@ void Model::finalize() {
                 p.boundsMin = min3(p.boundsMin, v); p.boundsMax = max3(p.boundsMax, v);
             }
             if (p.indexCount == 0) p.boundsMin = p.boundsMax = {0, 0, 0};
+            // AutoLOD's index-only morph alias must retain the source
+            // channel envelope even if this LOD drops extreme triangles.
+            if(p.morphAliasMesh>=0) {
+                if(p.morphAliasPrimitive<0 ||
+                   size_t(p.morphAliasMesh)>=meshes.size() ||
+                   size_t(p.morphAliasPrimitive)>=
+                       meshes[size_t(p.morphAliasMesh)].primitives.size())
+                    throw std::runtime_error("invalid AutoLOD morph source");
+                const Primitive& source=meshes[size_t(p.morphAliasMesh)]
+                    .primitives[size_t(p.morphAliasPrimitive)];
+                if(source.morphAliasMesh>=0 ||
+                   source.morphTargets!=p.morphTargets ||
+                   source.firstVertex!=p.firstVertex ||
+                   source.vertexCount!=p.vertexCount)
+                    throw std::runtime_error("incompatible AutoLOD morph source");
+                p.boundsMin=min3(p.boundsMin,source.boundsMin);
+                p.boundsMax=max3(p.boundsMax,source.boundsMax);
+            }
+            // Conservatively include all morph targets for normalized
+            // weights [0,1]. For any vertex, each target can independently
+            // contribute its negative or positive displacement. The LOD
+            // selector only enables morph LOD when current weights lie in
+            // this bounded interval.
+            if(p.morphTargets>0 && !p.morphDeltas.empty()) {
+                const size_t first=size_t(p.firstVertex);
+                const size_t count=size_t(p.vertexCount);
+                const size_t channels=size_t(p.morphTargets);
+                if(channels>size_t(kMaxMorphTargets) ||
+                   first>vertices.size() ||
+                   count>vertices.size()-first ||
+                   count==0 ||
+                   channels>std::numeric_limits<size_t>::max()/6u/count ||
+                   p.morphDeltas.size()!=channels*count*6u)
+                    throw std::runtime_error("invalid morph bounds source");
+                for(size_t v=0;v<count;++v) {
+                    float3 low=vertices[first+v].pos;
+                    float3 high=low;
+                    for(size_t channel=0;channel<channels;++channel) {
+                        const size_t at=(channel*count+v)*6u;
+                        const float x=p.morphDeltas[at],
+                                    y=p.morphDeltas[at+1],
+                                    z=p.morphDeltas[at+2];
+                        if(!std::isfinite(x) || !std::isfinite(y) ||
+                           !std::isfinite(z))
+                            throw std::runtime_error("nonfinite morph displacement");
+                        low.x+=std::min(0.f,x); high.x+=std::max(0.f,x);
+                        low.y+=std::min(0.f,y); high.y+=std::max(0.f,y);
+                        low.z+=std::min(0.f,z); high.z+=std::max(0.f,z);
+                    }
+                    if(!std::isfinite(low.x) || !std::isfinite(low.y) ||
+                       !std::isfinite(low.z) || !std::isfinite(high.x) ||
+                       !std::isfinite(high.y) || !std::isfinite(high.z))
+                        throw std::runtime_error("morph bounds overflow");
+                    p.boundsMin=min3(p.boundsMin,low);
+                    p.boundsMax=max3(p.boundsMax,high);
+                }
+            }
             mesh.boundsMin = min3(mesh.boundsMin, p.boundsMin); mesh.boundsMax = max3(mesh.boundsMax, p.boundsMax);
             mesh.deformable |= !p.jointPalette.empty() || p.morphTargets > 0;
         }
@@ -365,6 +422,11 @@ std::unique_ptr<Model> modelFromParts(const std::string& name, const std::vector
         if (mat.name.empty()) mat.name = part.name;
         m->materials.push_back(mat);
         const uint32_t base = uint32_t(m->vertices.size());
+        // ModelVertex stream overrides and renderer LOD/geometry policies
+        // require the full model-relative vertex interval for each primitive.
+        // modelFromParts previously left these counts at their zero defaults.
+        p.firstVertex = base;
+        p.vertexCount = static_cast<uint32_t>(sv.size());
         for (const auto& v : sv) {
             ModelVertex mv;
             mv.pos = v.pos; mv.nrm = v.nrm;
@@ -859,8 +921,48 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if (m.ib.valid()) dev.destroyBuffer(m.ib);
         m.vb = {}; m.ib = {};
     }
+    // CPU preparation can create morph aliases. Preflight the FINAL model
+    // topology before allocating a single GPU buffer/texture.
+    if(hasCpuVertices && !m.vb.valid())prepareModelUpload(m);
+    for(const auto& mesh:m.meshes)
+        for(const auto& primitive:mesh.primitives) {
+            if(primitive.morphAliasMesh>=0) {
+                const size_t sm=size_t(primitive.morphAliasMesh);
+                if(primitive.morphAliasPrimitive<0 ||
+                   sm>=m.meshes.size() ||
+                   size_t(primitive.morphAliasPrimitive)>=m.meshes[sm].primitives.size() ||
+                   !primitive.morphDeltas.empty() ||
+                   m.meshes[sm].morphTargetNames!=mesh.morphTargetNames)
+                    return false;
+                const auto& source=m.meshes[sm].primitives[
+                    size_t(primitive.morphAliasPrimitive)];
+                if(source.morphAliasMesh>=0 || source.morphTargets<=0 ||
+                   source.morphTargets!=primitive.morphTargets ||
+                   source.firstVertex!=primitive.firstVertex ||
+                   source.vertexCount!=primitive.vertexCount ||
+                   (source.morphDeltas.empty() && !m.morphTex.valid()))
+                    return false;
+                continue;
+            }
+            if(primitive.morphAliasPrimitive>=0)return false;
+            if(primitive.morphTargets<0 ||
+               primitive.morphTargets>kMaxMorphTargets)return false;
+            if(primitive.morphTargets==0) {
+                if(!primitive.morphDeltas.empty())return false;
+                continue;
+            }
+            if(primitive.vertexCount==0)return false;
+            if(primitive.morphDeltas.empty()) {
+                if(!m.morphTex.valid())return false;
+                continue;
+            }
+            const size_t channels=size_t(primitive.morphTargets);
+            const size_t vertices=size_t(primitive.vertexCount);
+            if(vertices>std::numeric_limits<size_t>::max()/6u/channels ||
+               primitive.morphDeltas.size()!=vertices*channels*6u)
+                return false;
+        }
     if (hasCpuVertices && !m.vb.valid()) {
-        prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
             gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
             const gfx::BufferHandle newVb = dev.createBuffer(vb);
@@ -941,13 +1043,36 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         }
         ++imageIndex;
     }
-    // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
-    size_t texels = 0;
-    for (auto& mesh : m.meshes)
-        for (auto& p : mesh.primitives) if (p.morphTargets > 0 && !p.morphDeltas.empty()) texels += p.morphDeltas.size() / 3;
+    // Two RGBA32F texels per (morph channel, mesh vertex). The texture
+    // base offset is supplied to GLSL/MSL as a FLOAT uniform, which has
+    // exact integer precision only up to 2^24. Cap this texture accordingly
+    // rather than silently sampling the wrong channel on large facial rigs.
+    constexpr size_t kMorphWidth=2048u;
+    constexpr size_t kMaxMorphTexels=1u<<24; // 256 MiB RGBA32F, float-exact offsets
+    size_t morphBudgetTexels=kMaxMorphTexels;
+    // Optional project/device GPU morph budget in MiB. Smaller budgets
+    // reject an oversized asset BEFORE allocation; no silent morph
+    // channel truncation or LOD-pose corruption. RHI may impose even lower
+    // maximum texture dimensions and can still reject createTexture().
+    if(const char* budget=std::getenv("AIVERSE_MORPH_TEXTURE_MIB")) {
+        char* end=nullptr;
+        const unsigned long mib=std::strtoul(budget,&end,10);
+        if(end==budget || *end!='\0' || mib<1 || mib>256)return false;
+        morphBudgetTexels=std::min(
+            morphBudgetTexels,size_t(mib)*(1u<<20)/16u);
+    }
+    size_t texels=0;
+    for(const auto& mesh:m.meshes)
+        for(const auto& primitive:mesh.primitives)
+            if(primitive.morphTargets>0 && !primitive.morphDeltas.empty()) {
+                const size_t added=primitive.morphDeltas.size()/3u;
+                if(added>morphBudgetTexels-texels)return false;
+                texels+=added;
+            }
     if (texels > 0 && !m.morphTex.valid()) {
-        const int width = 2048, height = int((texels + width - 1) / width);
-        std::vector<float> data(size_t(width) * size_t(height) * 4, 0.0f);
+        const size_t rows=(texels+kMorphWidth-1u)/kMorphWidth;
+        const int width=int(kMorphWidth),height=int(rows);
+        std::vector<float> data(kMorphWidth*rows*4u, 0.0f);
         size_t at = 0;
         for (auto& mesh : m.meshes)
             for (auto& p : mesh.primitives) {
@@ -966,6 +1091,13 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if (!m.morphTex.valid()) return false;
         m.morphTexWidth = width;
     }
+    // Resolve generated coarse primitives AFTER source offsets were assigned
+    // by the only RGBA32F allocation; aliases never consume extra texels.
+    for(auto& mesh:m.meshes)
+        for(auto& p:mesh.primitives)
+            if(p.morphAliasMesh>=0)
+                p.morphTexel=m.meshes[size_t(p.morphAliasMesh)]
+                    .primitives[size_t(p.morphAliasPrimitive)].morphTexel;
     if (!keepCpu && !keepPickingGeometry) {
         // Never discard morph deltas before a successful GPU morph texture
         // allocation. Failed uploads retain their CPU source for diagnostics

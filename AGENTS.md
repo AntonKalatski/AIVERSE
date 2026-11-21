@@ -1943,6 +1943,19 @@ This overrides earlier local/worktree build examples and release paths in this f
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
 
+Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
+
+**Never create builds in the shared engine checkout's `build/` folder** (the user's main
+checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
+integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+
+- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
+  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
+- Game / project work (packaging, native modules, test runs of a game): the project's own
+  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
+  and `aiversebuild` already use this layout).
+- Logs, bundles, patches and scratch archives belong with the build that produced them,
+
 ## 5. Working in parallel
 
 **Per-stage continuation rule (multi-stage tasks):** after each stage, update the task's agent handoff document with APIs, files, tests/results, remaining risks and the next-agent entry point. For Enhanced Input use `docs/enhanced-input-agent-handoff.md`. Do this BEFORE starting the next stage; do not claim a stage verified without real build/test results.
@@ -5541,6 +5554,17 @@ fixtures, and record actual platform coverage in the handoff. Build/cache/log
 paths for this integration are on KINGSTON, per the user's instruction.
 
 
+## LENS P2: physical lens, rails/shake, HDR EXR (2026-11-21)
+
+`CameraLensComponent::driveExposure/driveDepthOfField` feed per-camera PRISMA
+manual EV and `Prisma::setViewDepthOfField` through `CameraPostFxPool` (only on
+change; never add PRISMA effects implicitly). Rails/shake live in
+`engine/render/CameraRailPath.h` (pure functions of presentation seconds; linear
+rail and sine shake keep the old formulas). `CameraExr.h` +
+`CameraHdrFrameRecorder` write linear EXR from RGBA16F readback and must reject,
+not down-convert, 8-bit results. Do not reintroduce multi-line raw strings inside
+`#define` (GCC rejects them). Handoff: `docs/agent-handoffs/lens-p2-2026-11-21.md`.
+
 ## LENS authoring tools and engine skills
 
 Use `skills/visuals/aiverse-lens/SKILL.md` for project camera authoring and
@@ -5679,3 +5703,59 @@ Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping
 
 Текущий контракт, список модулей и ограничения `auto`: `docs/overview.md`
 и `docs/agent-handoffs/client-binary-module-selection-2026-11-21.md`.
+
+
+## MotionWeave / Universal View — Stage 158 attachment document and transforms
+
+- Read [Stage 158 independent handoff / readiness matrix](docs/agent-handoffs/animation-stage158-universal-attachment-layout-transform-2026-11-20.md) and [generic attachment layout JSON schema](docs/attachment-layout.md). Commits `fa6d5667`, `f016d19a`, `da19d85e`, `ff173710`, `2dc8d06d`, `29ab06b6`, `e900fa82`, `ecd222d3` on `feature/universal-ecs-animation-pipeline`. PR #22 remains Draft/unmerged. Native CMake/C++/CTest/current CI green/GPU/ASan-TSan/VRAM-perf **NOT RUN** under user feature-first single-suite policy.
+- Shared `engine/view/AttachmentLayout.h` defines completely genre-free `AttachmentLayoutItem` with `model`, `socket`, `enabled`, and full affine `render::mat4 local` + `childWorld`. `AttachmentLayoutCodec::read` is last-good transactional and rejects missing/invalid names, nonfinite, malformed or non-affine 16-number matrices; missing transform fields are identity for legacy files. `write` validates and serializes all transforms as column-major. It has NO filesystem/GPU/ECS/graph ownership.
+- `ImportedAttachmentAuthoring::childFromLayout` is the canonical genre-neutral translation from authored item plus published child Appearance snapshot into a compiled imported child request. ModelView and Studio use the shared codec + runtime mapper; ModelView can open a parent directly from a serialized attachment JSON file; Studio edits local and child affine basis and offsets. The host STILL owns Model/GPU/texture leases, project paths and single-writer animation source identity.
+- Stage 158 does NOT implement scene/prefab ECS instantiate/restore, child animations or tokenized nonblocking ModelAssetProvider shutdown. GPU audit: `ModelResourceCache::shutdown` and image rollback drain require full idle; do not treat a completed token as authorization to invoke unchanged shutdown without blocking or prove other queues safe. Stage 159 should close actual ECS prefab/scene runtime and graphics ownership. After each stage, write separate handoff and **user-visible readiness table**. Do not merge/rebase/force-push unrelated concurrent branches; Mac full suite only after feature freeze.
+
+
+## MotionWeave / universal ECS attachment scenes — Stage 159
+
+- [Stage 159 standalone handoff and mandatory status matrix](docs/agent-handoffs/animation-stage159-presentation-ecs-attachment-prefab-restore-2026-11-20.md). Source commits `b0266c3d` and `1f35c040` on `feature/universal-ecs-animation-pipeline`; PR #22 remains Draft. Native build/CTest, current passing CI, Metal/Vulkan/GLES, ASan/TSan/fence/performance **NOT RUN**; user's feature-first single comprehensive Mac pass is still pending.
+- `engine/view/EcsAttachmentScene.h` is a **genre-independent presentation ECS bridge**, NEVER a default authoritative gameplay/world simulation. Its `SceneAttachmentRootComponent` attaches to the host-owned parent Entity; `SceneAttachmentChildComponent` adds one real child Entity per authored layout entry, even disabled, with parent generation ID, authored index, unique instance revision, model/socket, enabled and full `local/childWorld` matrices. Parent Entity must remain owned by host.
+- `EcsAttachmentScene::publish` validates the entire JSON/matrix layout and named bones/published model/cache leases BEFORE making ECS children; commits a revised root only after candidate children exist; destroys ONLY old revision-matching child handles. Failed preflight/creation preserves previous instance/root; no concurrent structural World changes or COW gameplay snapshot use. `restore` rehydrates fresh child Entity handles from pointer-free attachment JSON; `save` emits ONLY source-neutral JSON, never serialized raw Entity IDs/Model pointers/GPU handles. `valid/prepare` reject stale destroyed/reused parent or child handles before HostPrecomputed View submission. `forget` removes only the exact owned root/children, NEVER the parent or foreign entities.
+- Studio now owns an independent presentation `World` in each attachment Session, builds its parent and real child entities during staged asset publication, uses `EcsAttachmentScene::prepare` in the 3D preview, and calls `forget` before old provider resource retirement. Parent preview Animator remains the SINGLE pose owner; static children never receive a graph player.
+- The peer `engine/scene` SceneLoadCoordinator is **NOT IN THIS BRANCH** (GitHub directory returned 404). Do not pull/auto-merge/force-push unrelated scene branches merely to claim automatic scene runtime integration. Stage 160 requires reviewed adapters at prefab activation/unload/restore boundaries, stable child source identity, and remaining GPU-token/retarget work. Maintain separate handoff and user-visible readiness table every stage; final Mac native tests only after all features close.
+
+
+
+## MotionWeave / Universal View — Stage 160 stable child identity and scene host lifecycle
+
+- Start with [the Stage 160 independent handoff/status table](docs/agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md) and [SceneAttachmentHost native integration contract](docs/scene-attachment-host.md). Source commits `a981b9d1`, `ea24e0b2`, `42377b45`, `6d175d17`, `8089ac28`, `7dfa1d81`, `e1369058`, `b66b40e5`, `64896de8`, `d1d136ac` on `feature/universal-ecs-animation-pipeline`; PR #22 is Draft. **NOT RUN:** native Mac compiler/CTest/current green CI/Metal/Vulkan/GLES/ASan-TSan/VRAM/perf.
+- Shared `AttachmentLayoutItem` appends optional `id` for a child authored key (nonempty, unique in one document, <=128 characters). Legacy positional entries without an ID remain valid. `AttachmentLayoutCodec` verifies duplicates/type/length transactionally before replacing the old authored document. Studio/ModelView retain these IDs through authoring and import; ModelView catches invalid Save BEFORE truncating valid JSON and validates full layout before GPU imports.
+- `SceneAttachmentHost` is genre-neutral and bound to ONE cosmetic presentation `World`, NEVER to authoritative `Simulation::world()`. `activate` maps `{nonzero scene instance ID, persistent object key}` to a host-supplied visual parent, validated imported Model/socket/affine child layouts and real `EcsAttachmentScene` entities. `deactivate/unload/clear` delete only owned child entities, not the host parent/gameplay. `saveScene` exports pointer-free authored keys, never serialized ECS handles. `resolveChild(scene,object,childId)` looks up a FRESH valid-generation Entity after each restore/reimport; old Entity handles MUST NOT be cached.
+- Studio attachment preview now uses the new host adapter (`{1,"preview"}`) and still owns its ModelAssetProvider, separate preview World and one host pose writer. New scene source branches identified: `feature/scene-runtime-multiworld` `SceneLoadCoordinator::SpawnPrefab`, `feature/ecs-static-prefab-scene-integration` `PrefabStaticSceneBinding`. Neither branch was merged/modified and `engine/scene` is ABSENT from animation branch. The future native callback adapter must map the authoritative SceneObjectAsset::id to an EXTERNAL visual parent and call `SceneAttachmentHost::activate` only at a presentation structural barrier, with unload/clear before GPU Model release.
+- DO NOT label SceneLoadCoordinator direct binding, independently animated child Graph sources, or complete GPU-token ModelAssetProvider shutdown as done. Stage 161 should implement explicit child source identity/one-graph-writer and coordinate reviewed cross-branch integration. Native full testing only after actual feature closure; every stage requires separate handoff and **user-visible readiness table**.
+
+
+
+## MotionWeave / Universal View — Stage 161 independent animated child source contract
+
+- Start with [Stage 161 handoff and readiness matrix](docs/agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md) and [native animated scene attachments guide](docs/animated-scene-attachments.md). Feature branch `feature/universal-ecs-animation-pipeline`, source commits `7fa7cba2`, `5efa0a99`, `36a1508f`, `04778255`, `d3fab4d1`, `cc572856`, `42849691`, `1671c702`, `5f4b6b93`, `55bab054`, `ed90f778`. PR #22 Draft, unmerged; native CMake/compiler/CTest/current green CI/Metal-Vulkan-GLES/ASan-TSan/GPU fault/performance **NOT RUN**.
+- AttachmentLayoutItem appends `animated=false` and `animationGraph` asset key. Enabled animated entries MUST have stable unique `id` and nonempty Graph path. Stage 159 EcsAttachmentScene still instantiates a child ECS Entity but MUST NOT submit it as a static parent-pose socket ModelAttachment. Static children remain the previous code path; animated child requires its OWN published immutable child Model+Graph with nonzero publication epoch and stable scene/object/child source identity.
+- The new `view::AnimatedSceneAttachmentSources` owns dedicated independent MotionWeave presentation ECS `World` and `MotionWeaveSourceBridge`. Call `sync` exactly ONCE on the presentation owner thread with full child source input span BEFORE any rendering, while parent/child models are cache-read-leased. Every child has monotonic source ID and current ECS Entity.packed() logical generation; reimport restarts the correct source. `prepare` verifies model epochs, named parent socket, current parent-child ECS identity and child's sole evaluated Pose; returns move-only parent/child ModelReadLease and a GRAPHLESS `View::Object`. NEVER call View::update on those prepared child objects or run the same child Graph a second time; use an isolated child render-only View to avoid shared visual-ID cache collision with parent.
+- Studio now publishes real animated child Model+Graph snapshots using `AppearanceAssetRegistry::Request.animationGraph`/graphReader; its `EditorWindow::update` steps all child players exactly once before ImGui draw, while 3D viewport only consumes graphless prepared child packets and the existing parent pose. Clear the child source bridge BEFORE replacing old Model/Graph provider generations. Missing/bad Graph fails staged publication and preserves last-good session.
+- ModelView only saves/loads new child fields and deliberately rejects enabled animated children rather than incorrectly drawing them static; it needs its own child source host in Stage 162. SceneLoadCoordinator direct binding on other branches, fully GPU-fenced provider shutdown, advanced morph/skeleton retarget and native validation remain incomplete. Keep shared animation genre-independent, one writer per animation source, independent stage handoff and user-visible readiness table after every stage.
+
+## VIVID universal digital humans (2026-11-19)
+
+**Feature branch:** `feature/vivid-digital-humans`. **Canonical contract:** `docs/vivid.md`.
+**Mandatory stage-by-stage handoff:** `docs/agent-handoffs/vivid.md`.
+**Local ownership:** `engine/character/vivid/AGENTS.md`, `engine/character/vivid/*`, `tests/vivid/*`.
+
+VIVID is genre-independent and presentation-only. It provides a pure C++20 facial
+controller (`AIVERSE::vivid`), `AIVERSE::vivid_render` legacy morph binding
+and `AIVERSE::vivid_gpu` extended sparse morph compute.
+MotionWeave owns the final presentation skeleton pose and final graph/retarget output.
+VIVID applies optional facial channels afterwards. Do not duplicate MotionWeave
+workers, IK, animation graphs or LOD policies. Never alter the legacy eight-target
+renderer ABI without a staged GPU parity test. Every completed stage MUST have
+a separate committed handoff with SHA, executed tests, risks, and next step.
+
+## MotionWeave + VIVID combined Studio checkpoint (2026-11-20)
+
+Integration branch `integration/motionweave-studio-facial-stage184`; durable status: `docs/agent-handoffs/motionweave-vivid-integration-2026-11-20.md`. Code `4a719af8c1c5a97b381c768155e28fd858877903` closes Studio facial preview shared-owner adoption: ModelAssetProvider takePrepared/publishPrepared allows pre-GPU rig validation; one Animator, async CPU import, frame ModelReadLease, renderer cache invalidation and fenced retirement. Keep project texture caches isolated and stale CPU revisions unpublished. Do not regress to direct per-bind upload/release or claim all backend/visual parity from scoped Metal tests. User requires all builds/logs/artifacts on `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/`. See Studio handoff 84 and actual passing commands in the joint log.

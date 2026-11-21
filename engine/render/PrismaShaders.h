@@ -102,6 +102,15 @@ PF_FN float prismaDofViewDepth(float d, vec4 info) {
     float denominator = max(info.y-d*(info.y-info.x),0.0001);
     return info.x*info.y/denominator;
 }
+// Normalized circle of confusion (0..1) of a view-space distance.
+PF_FN float prismaDofCoc(float dist, vec4 focus, float intensity) {
+    float range = max(focus.y,0.01);
+    return clamp((abs(dist-focus.x)-range*0.5)/range,0.0,1.0)*intensity;
+}
+// Share of a tap whose blur circle (cocPx) reaches a pixel offsetPx away.
+PF_FN float prismaDofReach(float cocPx, float offsetPx) {
+    return clamp(cocPx-offsetPx+1.0,0.0,1.0);
+}
 )";
 inline const char* kDepthOfField = R"(
     vec2 uv = TUV(s);
@@ -124,39 +133,44 @@ inline const char* kDepthOfField = R"(
     }
 
     // Metric mode: the same focus plane works in perspective and ortho.
-    // Depth 1 is background/sky on the existing non-reversed RHI path;
-    // do not let background bleed across foreground silhouettes.
+    // Scatter-as-gather over the full blur radius: a tap contributes when
+    // its own blur circle reaches this pixel. Taps nearer than this pixel
+    // use their own circle, so an out-of-focus foreground spreads over the
+    // background and over the sharp zone (no hard cutout on its outline).
+    // Taps at the same depth or behind are limited by the smaller of the two
+    // circles, so the background never bleeds onto a sharper foreground; in
+    // the near field the background shows through the blurred edge.
+    // Depth 1 is background/sky (non-reversed RHI depth): treated as far.
     vec4 center = TEX0(uv);
+    float maxPx = p0.z*p0.w;
+    if (maxPx <= 0.00001) RETURN(center);
     float rawDepth = TEX1(uv).r;
-    if (rawDepth >= 0.99999) RETURN(center);
-    float centerDistance = prismaDofViewDepth(rawDepth,depthInfo);
-    float range = max(focusInfo.y,0.01);
-    float coc = clamp((abs(centerDistance-focusInfo.x)-range*0.5) /
-                      range,0.0,1.0)*p0.w;
-    if (coc <= 0.00001 || p0.z <= 0.00001) RETURN(center);
-    vec2 radius = px.xy * p0.z * coc;
-    vec3 sum = center.rgb * 2.0;
-    float weight = 2.0;
+    float centerDistance = rawDepth >= 0.99999 ? depthInfo.y
+                         : prismaDofViewDepth(rawDepth,depthInfo);
+    float centerPx = prismaDofCoc(centerDistance,focusInfo,p0.w)*p0.z;
     float tolerance = max(focusInfo.z,0.001);
-    for (int i=0; i<8; ++i) {
-        vec2 direction =
-            i==0 ? vec2(1.0,0.0) :
-            i==1 ? vec2(-1.0,0.0) :
-            i==2 ? vec2(0.0,1.0) :
-            i==3 ? vec2(0.0,-1.0) :
-            i==4 ? vec2(0.7071,0.7071) :
-            i==5 ? vec2(-0.7071,0.7071) :
-            i==6 ? vec2(0.7071,-0.7071) :
-                   vec2(-0.7071,-0.7071);
-        vec2 sampleUv = TUV(clamp(s + radius*direction,
+    // A pixel in front of the sharp zone is a blurred foreground edge: the
+    // background shows through it, so taps behind use this pixel's circle.
+    float nearField = step(centerDistance,
+                           focusInfo.x-max(focusInfo.y,0.01)*0.5);
+    vec3 sum = center.rgb;
+    float weight = 1.0;
+    for (int i=0; i<24; ++i) {
+        // Three rings of 8 taps, each ring turned by 15 degrees.
+        float ring = float(i/8)+1.0;
+        float angle = float(i-(i/8)*8)*0.785398+ring*0.261799;
+        float offsetPx = maxPx*ring/3.0;
+        vec2 sampleUv = TUV(clamp(s + px.xy*offsetPx*vec2(cos(angle),sin(angle)),
                                   vec2(0.0),vec2(1.0)));
         float tapDepth = TEX1(sampleUv).r;
-        if (tapDepth >= 0.99999) continue;
-        float tapDistance = prismaDofViewDepth(tapDepth,depthInfo);
-        // Reject both background->foreground and foreground->background
-        // contributions across occlusion edges, with a soft transition.
-        float difference = abs(tapDistance-centerDistance);
-        float w = 1.0-smoothstep(tolerance,tolerance*2.0,difference);
+        float tapDistance = tapDepth >= 0.99999 ? depthInfo.y
+                          : prismaDofViewDepth(tapDepth,depthInfo);
+        float tapPx = prismaDofCoc(tapDistance,focusInfo,p0.w)*p0.z;
+        float nearer = 1.0-smoothstep(0.0,tolerance,centerDistance-tapDistance);
+        // nearer: 0 when the tap is clearly in front of this pixel.
+        float w = mix(prismaDofReach(tapPx,offsetPx),
+                      prismaDofReach(mix(min(tapPx,centerPx),centerPx,nearField),
+                                     offsetPx),nearer);
         if (w <= 0.00001) continue;
         sum += TEX0(sampleUv).rgb*w;
         weight += w;
