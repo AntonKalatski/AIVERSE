@@ -160,12 +160,14 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
         tableSlot > (extendedMetalSlots ? 18 : 15)) return false;
     const std::string atlasName="tex"+std::to_string(atlasSlot);
     const std::string tableName="tex"+std::to_string(tableSlot);
+    // The base colour fetch uses the (optionally parallax-shifted) opticalUv
+    // of ModelShaders.h; VT must sample the same coordinate.
     const std::string sourceFragment =
-        "    vec4 tb = texture(tex1, v_uv);";
+        "    vec4 tb = texture(tex1, opticalUv);";
     const auto glSample = fragmentGLSL.find(sourceFragment);
     if (glSample == std::string::npos) return false;
     const std::string sourceMetal =
-        "    float4 tb = tex1.sample(s1, in.uv);";
+        "    float4 tb = tex1.sample(s1, opticalUv);";
     const auto metalSample = msl.find(sourceMetal);
     if (metalSample == std::string::npos) return false;
     // ModelShaders.h has optional VIRTUAL_ALPHA_MASK arguments between
@@ -190,10 +192,10 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // are validated. Studio debug and shadow paths stay unchanged.
     fragmentGLSL.replace(glSample,sourceFragment.size(),
         "    vec4 tb = "+modelVirtualSampleExpression(false,trilinear,
-           atlasName,tableName,"v_uv","texture(tex1,v_uv)")+";");
+           atlasName,tableName,"opticalUv","texture(tex1,opticalUv)")+";");
     msl.replace(metalSample,sourceMetal.size(),
         "    float4 tb = "+modelVirtualSampleExpression(true,trilinear,
-           atlasName,tableName,"in.uv","tex1.sample(s1,in.uv)")+";");
+           atlasName,tableName,"opticalUv","tex1.sample(s1,opticalUv)")+";");
 
     fragmentGLSL.insert(0,
         std::string(trilinear ?

@@ -4391,7 +4391,8 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     aiverse_keep_test_asserts(aiverse_terraweave_ops_test)
     add_test(NAME terraweave_ops COMMAND aiverse_terraweave_ops_test)
     add_executable(aiverse_terraweave_preview_test tests/terraweave_preview_test.cpp)
-    target_link_libraries(aiverse_terraweave_preview_test PRIVATE aiverse_models aiverse_zstd_dec)
+    # TerraWeaveHorizonScene owns a world::AsyncChunkStream (aiverse_world).
+    target_link_libraries(aiverse_terraweave_preview_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec)
     aiverse_keep_test_asserts(aiverse_terraweave_preview_test)
     add_test(NAME terraweave_preview COMMAND aiverse_terraweave_preview_test)
     add_executable(aiverse_terraweave_erosion_zones_test tests/terraweave_erosion_zones_test.cpp)
@@ -4545,6 +4546,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_gpu_paged_bvh
             gi_gpu_residency_planner
             gi_world_dirty_accumulator
+            model_vt_shader_injection
             gi_geometry_scene
             gi_world_geometry_bridge
             gi_terraweave_resident_bridge
