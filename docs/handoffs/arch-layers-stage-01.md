@@ -32,3 +32,22 @@ engine/ -> libraries/ edges, by group; each group is its own stage, then `check_
 3. `engine/platform/*Input*` -> `aiverselib/gameplay/InputFlow.h` (4): move InputFlow core to `engine/platform`.
 4. `engine/meta`, `engine/render/graph` -> `aiverselib/Graphs.h`, `Loot.h`; `engine/net` -> `SnapshotDelta.h` (4).
 Then: split `engine/render` into CMake sub-targets; shrink AGENTS.md after no-genre is merged into main.
+
+## Stage 02 (2026-11-21)
+- 2e88a870e: InputFlow core -> `engine/platform/input/` (4 L1 edges).
+- d2980fa3c: `Graphs.h` -> `engine/core/`, `Progression.h`/`Loot.h` -> `engine/core/progression/`,
+  `SnapshotDelta.h` -> `engine/net/` (4 L1 edges); meta package pin hashes the moved files.
+- Old `aiverselib/...` paths are forwarding headers; namespaces, CMake targets, catalogs unchanged.
+- Checks: g++ -fsyntax-only of moved headers, forwarders and engine users: PASS (Linux VM).
+  Mac build `./run-tests.sh --quick --build-dir /Volumes/KINGSTON/AIVERSE-builds/arch-layers`: NOT RUN yet
+  (launcher `_tmp/build_arch_layers.command`, log `/Volumes/KINGSTON/AIVERSE-builds/arch-layers-tests.log`).
+- Worktree note: a worktree created from the VM is registered with a VM path and gets removed by
+  `git worktree prune` on the Mac. This worktree now uses a relative `.git` file and the Mac path in
+  `.git/worktrees/arch-layers/gitdir`.
+
+## Remaining L1 (30 edges) — needs owner decision, not changed
+- 27: `engine/world/{Nereid*,TerraWeave*,PhysisNereid*,WorldScene.h}` -> `aiverselib/water/*`. NEREID core
+  (23 headers, 3.2k lines) depends only on `engine/sim`/`engine/core`. Options: (a) NEREID core moves to
+  `engine/world/nereid/` with forwarders (NEREID owner); (b) the bridges move up to `libraries/` (Terra owner).
+- 3: `engine/view/View.h` -> MotionWeave / animation budget, which include `engine/render` and ECS. Option:
+  move MotionWeave up into `engine/animation/` or move the View bridge into `libraries/` (MotionWeave owner).
