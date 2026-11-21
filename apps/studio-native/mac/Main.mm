@@ -5,6 +5,7 @@
 #include <regex>
 #include <algorithm>
 #import <QuartzCore/CAMetalLayer.h>
+#import <QuartzCore/CATransaction.h>
 #import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioSession.h"
 #include "apps/studio-native/StudioHumanLookDocument.h"
