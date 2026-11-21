@@ -187,6 +187,8 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
     int size=q==ShadowQuality::High?highShadowSize_:
              q==ShadowQuality::Medium?1536:1024;
     if(q==ShadowQuality::Off)size=0;
+    static const int sizeOverride=[]{const char* e=std::getenv("AIVERSE_SHADOW_SIZE");return e?std::atoi(e):0;}();
+    if(size>0 && sizeOverride>=256)size=std::min(sizeOverride,4096);   // testing
     if(size==shadowSize_ && shadowMap_.valid()) {
         quality_=q;return;
     }
