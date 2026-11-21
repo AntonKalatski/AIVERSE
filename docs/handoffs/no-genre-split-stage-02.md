@@ -28,7 +28,14 @@ Run on Mac Studio, commit 4ac342bfc, build dir `/Volumes/KINGSTON/aiverse-build/
   `skill_library_isolation`, `ecs_real_genre_replay_test`, `voxel_*`.
 - Only failure: `skill_audit` - `skills/editor/studio-ui/SKILL.md` names the placeholder path
   `docs/handoff/studio-html5/NN-*.md`; identical on origin/main, not touched by this branch.
-- Not run in this pass: template checksums `tests/checksums/check.sh` (see next handoff), extra suites
+- Template checksums `sh tests/checksums/check.sh /Volumes/KINGSTON/aiverse-build/no-genre` (all rts-host
+  templates, seeds 1-3): 92/93 identical to `tests/checksums/baseline.txt`. The one difference, `boss_arena` seed 2,
+  is pre-existing nondeterminism on main: the branch base 7f3a9fbb4 built separately
+  (`/Volumes/KINGSTON/aiverse-build/main-ref`) printed `daa3958fae53912f` and then `a51dde24dba483be` for the same
+  run; this branch printed `daa3958fae53912f` twice. Report to the encounters owner.
+- origin/main e128dfd38 (newer than the base) does not compile: `modules/rts/RtsBwAI.cpp:810` binds `PS&` to
+  `game::io(Archive&, AuthoredPose&)`. Not touched by this branch; MAIN agent to fix before the next merge.
+- Not run in this pass: extra suites
   (`run-tests.sh` without `--quick`), `tests/libraries/run.py`, the native Studio (`apps/studio-native`, Xcode).
 
 ## Not started (need build-driven work, one stage per build cycle)
