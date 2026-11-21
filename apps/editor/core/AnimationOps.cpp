@@ -2,6 +2,7 @@
 #include "AnimationDocument.h"
 #include "engine/render/AnimationAsset.h"
 #include "engine/render/AnimationGraph.h"
+#include "engine/render/ModelClips.h"
 #include "engine/animation/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/HumanoidProfile.h"
 #include "libraries/include/aiverselib/animation/RagdollAsset.h"

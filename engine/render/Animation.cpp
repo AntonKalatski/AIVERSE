@@ -323,6 +323,10 @@ void Animator::play(int layer, int clip, const Play& p) {
     else { L.prev = Track{}; L.fade = 1; }
     if (p.fade <= 0) L.fade = 1;
     L.cur = Track{clip, 0, p.speed, p.loop};
+    if(clip>=0 && std::isfinite(p.startTime)) {
+        const float duration=model_->clips[size_t(clip)].duration;
+        if(duration>0)L.cur.time=p.loop?std::fmod(std::max(0.f,p.startTime),duration):std::clamp(p.startTime,0.f,duration);
+    }
 }
 
 void Animator::stop(int layer, float fade) {

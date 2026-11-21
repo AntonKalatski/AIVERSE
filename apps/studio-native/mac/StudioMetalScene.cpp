@@ -28,18 +28,29 @@ namespace { struct StudioFrameScope {
 StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
+    deviceLifetime_=std::make_unique<render::RenderDeviceLifetime>(*device_);
+    facialGpu_.setDeviceLease(deviceLifetime_->lease());
+    renderer_.setGpuDeviceLease(deviceLifetime_->lease());
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
     if (!post_.init(*device_)) throw std::runtime_error("Studio HDR init failed");
     PrismaSettings postSettings;postSettings.hdr=HdrMode::On;
     post_.setSettings(postSettings);post_.setQuality(PrismaQuality::High);
     lodDiagnostics_=std::getenv("AIVERSE_LOD_DIAGNOSTICS")!=nullptr;
     renderer_.setLodDiagnosticsEnabled(lodDiagnostics_);
+    antialiasing_.setGpuDeviceLease(deviceLifetime_->lease());
+    if(!antialiasing_.init(*device_))throw std::runtime_error("Studio anti-aliasing init failed");
+    PostFxSettings aa;aa.hdr=HdrMode::Off;
+    aa.effects.push_back(defaultPostFxEffect(PostFxType::Fxaa));
+    antialiasing_.setSettings(std::move(aa));
+    antialiasing_.setQuality(PostFxQuality::Medium);
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
     builder.color(rgba(255,255,255));
     builder.box({0,0,0}, {1,1,1});
     cube_ = builder.upload(*device_);
     if (!cube_.vb.valid() || !cube_.ib.valid()) throw std::runtime_error("Preview cube mesh upload failed");
+    studioCyclorama_=vivid::humanStudioCyclorama().upload(*device_);
+    if(!studioCyclorama_.vb.valid()||!studioCyclorama_.ib.valid())throw std::runtime_error("Studio cyclorama upload failed");
     camera_.pitch = 0.85f;
     camera_.yaw = 0.55f;
 }
@@ -213,6 +224,9 @@ StudioMetalScene::~StudioMetalScene() {
             releaseModel(*device_,*lightingModel_);lightingModel_.reset();
         }
         post_.shutdown();
+        (void)facialGpu_.clear(*device_,renderer_);
+        if(studioCyclorama_.vb.valid())device_->destroyBuffer(studioCyclorama_.vb);
+        if(studioCyclorama_.ib.valid())device_->destroyBuffer(studioCyclorama_.ib);
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
@@ -222,13 +236,17 @@ StudioMetalScene::~StudioMetalScene() {
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         nereid_.shutdown(*device_);
+        antialiasing_.shutdown();
         renderer_.shutdown();
+        if(deviceLifetime_)deviceLifetime_->retire();
     }
 }
 std::string StudioMetalScene::pick(float x, float y, float width, float height,
                                    const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
-    if (materialMode_ || !cameraInitialized_ ||
+    // Facial preview is an imported Model, not an object in the active map.
+    // Never route its clicks to unrelated MapDoc entities underneath.
+    if (materialMode_ || facialMode_ || !cameraInitialized_ ||
         !camera_.screenRay(x,y,width,height,origin,direction)) return {};
     // Pick the oriented cube mesh that Renderer3D actually draws, not its
     // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
@@ -316,9 +334,87 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
                              bool fpsProject, const std::string& selectedId,
                              const std::string& previewName, const Json& previewFactors,
                              uint64_t previewRevision, float levelHeight,
-               const std::string& projectPath,const Json& rules) {
+                             const std::string& projectPath,const Json& rules,
+                             const StudioFacialPreviewBinding* facialBindingIn) {
+    static const StudioFacialPreviewBinding kNoFacialBinding{};
+    const StudioFacialPreviewBinding& facialBinding=facialBindingIn?*facialBindingIn:kNoFacialBinding;
+    const std::string& projectRoot=projectPath;
+    facialReady_=false;
+    facialError_.clear();
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
+    if(antialiasing_.pendingTargetRetirements())antialiasing_.collectRetiredTargets();
+    if (renderer_.pendingProgramRetirements()) renderer_.collectRetiredPrograms();
+    if (renderer_.pendingTargetRetirements()) renderer_.collectRetiredTargets();
+    if (renderer_.hasPendingModelPipelineJobs()) renderer_.pollPendingModelPipelineJobs();
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
+    const bool facialRequested = facialBinding.bound() && !materialRequested;
+    if(facialMode_!=facialRequested) {
+        facialMode_=facialRequested;
+        shadowResolution_={};
+        if(facialRequested)renderer_.setShadowQuality(ShadowQuality::High);
+        cameraInitialized_=false;
+        // Facial preview overwrites renderer_.lighting; re-apply map lighting after it.
+        lightingRevision_=std::numeric_limits<uint64_t>::max();
+    }
+    // A real imported Model is drawn through the SAME Metal Renderer3D used
+    // for native materials and the map; no HTML fake character, no second
+    // Animator/Graph clock. CPU import is asynchronous; GPU publication and
+    // retirement remain on this owner thread before frame submissions.
+    if(!facialRequested){renderer_.setModelLodEnabled(true);renderer_.clearShadowBounds();renderer_.setShadowQuality(ShadowQuality::Off);renderer_.lights.setQuality(LightQuality::Medium);}
+    if(facialRequested) {
+        renderer_.setModelLodEnabled(facialBinding.previewAnimation.automaticLod);
+        std::string reason;
+        if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
+            // Spans both pose evaluation and the deferred renderer draw list.
+            const auto modelRead=facialGpu_.acquireRead();
+            if(!modelRead) {
+                facialError_="Facial Model read lease unavailable";
+                return;
+            }
+            if(!cameraInitialized_) {
+                camera_.target={0,0,0};
+                camera_.distance=4.2f;
+                camera_.pitch=.4f;
+                camera_.yaw=.25f;
+                cameraInitialized_=true;
+            }
+            device_->beginFrame(framebufferWidth,framebufferHeight);
+            renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
+            renderer_.clearDynamicGiOverlay(); // map GI must not leak into the isolated facial preview
+            const auto* model=facialGpu_.model();
+            // Match the exact normalization used by StudioFacialGpuPreview::submit.
+            const auto extent=model->boundsMax-model->boundsMin;
+            const float scale=2.f/std::max({extent.x,extent.y,extent.z,.0001f});
+            const float h=std::max(.01f,extent.y*scale);
+            const float3 foot{0,-extent.y*.5f*scale,0};
+            vivid::applyHumanStudioLighting(renderer_,facialBinding.studioLighting,foot,h);
+            vivid::updateHumanStudioShadows(renderer_,shadowResolution_,h,framebufferHeight);
+            const auto bg=facialBinding.studioLighting.rig().background;
+            if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},kDrawNoCastShadow,0);
+
+            const bool submitted=facialGpu_.submit(
+                renderer_,facialBinding,1.f/60.f,reason);
+            gfx::PassDesc pass;
+            pass.clearColor[0]=bg.x;
+            pass.clearColor[1]=bg.y;
+            pass.clearColor[2]=bg.z;
+            pass.clearColor[3]=1.f;
+            renderer_.render(pass,&antialiasing_);
+            renderer_.resolvePostFx();
+            device_->endPass();
+            device_->endFrame();
+            facialReady_=submitted;
+            facialError_=submitted?std::string{}:reason;
+            return;
+        }
+        // Failed bind never displays stale model from a different GUID.
+        // The ordinary map remains visible while a diagnostic is returned.
+        facialError_=reason;
+        cameraInitialized_=false;
+    }else if(!facialBinding.bound()) {
+        if(!facialGpu_.clear(*device_,renderer_))
+            facialError_="Previous facial Model retirement lacks GPU completion";
+    }
     if (materialRevision_ != previewRevision) {
         materialRevision_ = previewRevision;
         if (materialRequested) {
@@ -376,7 +472,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         previewPass.clearColor[0]=.07f;
         previewPass.clearColor[1]=.09f;
         previewPass.clearColor[2]=.135f;
-        renderer_.render(previewPass);
+        renderer_.render(previewPass,&antialiasing_);
+        renderer_.resolvePostFx();
 
         return;
     }

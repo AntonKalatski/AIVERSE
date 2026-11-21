@@ -496,3 +496,21 @@ After **every** further MotionWeave / universal animation implementation stage, 
 - Studio now publishes real animated child Model+Graph snapshots using `AppearanceAssetRegistry::Request.animationGraph`/graphReader; its `EditorWindow::update` steps all child players exactly once before ImGui draw, while 3D viewport only consumes graphless prepared child packets and the existing parent pose. Clear the child source bridge BEFORE replacing old Model/Graph provider generations. Missing/bad Graph fails staged publication and preserves last-good session.
 - ModelView only saves/loads new child fields and deliberately rejects enabled animated children rather than incorrectly drawing them static; it needs its own child source host in Stage 162. SceneLoadCoordinator direct binding on other branches, fully GPU-fenced provider shutdown, advanced morph/skeleton retarget and native validation remain incomplete. Keep shared animation genre-independent, one writer per animation source, independent stage handoff and user-visible readiness table after every stage.
 
+## VIVID universal digital humans (2026-11-19)
+
+**Feature branch:** `feature/vivid-digital-humans`. **Canonical contract:** `docs/vivid.md`.
+**Mandatory stage-by-stage handoff:** `docs/agent-handoffs/vivid.md`.
+**Local ownership:** `engine/character/vivid/AGENTS.md`, `engine/character/vivid/*`, `tests/vivid/*`.
+
+VIVID is genre-independent and presentation-only. It provides a pure C++20 facial
+controller (`AIVERSE::vivid`), `AIVERSE::vivid_render` legacy morph binding
+and `AIVERSE::vivid_gpu` extended sparse morph compute.
+MotionWeave owns the final presentation skeleton pose and final graph/retarget output.
+VIVID applies optional facial channels afterwards. Do not duplicate MotionWeave
+workers, IK, animation graphs or LOD policies. Never alter the legacy eight-target
+renderer ABI without a staged GPU parity test. Every completed stage MUST have
+a separate committed handoff with SHA, executed tests, risks, and next step.
+
+## MotionWeave + VIVID combined Studio checkpoint (2026-11-20)
+
+Integration branch `integration/motionweave-studio-facial-stage184`; durable status: `docs/agent-handoffs/motionweave-vivid-integration-2026-11-20.md`. Code `4a719af8c1c5a97b381c768155e28fd858877903` closes Studio facial preview shared-owner adoption: ModelAssetProvider takePrepared/publishPrepared allows pre-GPU rig validation; one Animator, async CPU import, frame ModelReadLease, renderer cache invalidation and fenced retirement. Keep project texture caches isolated and stale CPU revisions unpublished. Do not regress to direct per-bind upload/release or claim all backend/visual parity from scoped Metal tests. User requires all builds/logs/artifacts on `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/`. See Studio handoff 84 and actual passing commands in the joint log.

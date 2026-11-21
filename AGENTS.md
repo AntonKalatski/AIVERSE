@@ -83,7 +83,7 @@ back into AGENTS.md: this file holds only rules that apply to every agent.
 | weather, wind, fire, quake, nature fields | [docs/agents/physis.md](docs/agents/physis.md) — PHYSIS environmental ECS: diagnostics, stages 15-79, map authoring |
 | build monitor, CI triage | [docs/agents/build-monitor.md](docs/agents/build-monitor.md) — Terminal build monitor, warnings/errors reporting |
 | terrain, foliage, shoreline, erosion, ecology | [docs/agents/terraweave.md](docs/agents/terraweave.md) — TerraWeave terrain/foliage/ecology stages 53-65, cosmetic rocks |
-| animation, View model lifetime, LOD retarget | [docs/agents/motionweave.md](docs/agents/motionweave.md) — MotionWeave / Universal View stages 117-157, animation reporting rule |
+| animation, VIVID digital humans, View model lifetime, LOD retarget | [docs/agents/motionweave.md](docs/agents/motionweave.md) — MotionWeave / Universal View stages 117-161, VIVID digital humans, animation reporting rule |
 | climbing, legged locomotion | [docs/agents/surface-locomotion.md](docs/agents/surface-locomotion.md) — Procedural climbing, spider gaits and surface locomotion |
 
 ## HTML5 Studio UI design system (all future editor windows)
@@ -445,6 +445,19 @@ This overrides earlier local/worktree build examples and release paths in this f
   stop the build and report it; never silently fall back to the internal disk or `/tmp`.
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
+
+Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
+
+**Never create builds in the shared engine checkout's `build/` folder** (the user's main
+checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
+integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+
+- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
+  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
+- Game / project work (packaging, native modules, test runs of a game): the project's own
+  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
+  and `aiversebuild` already use this layout).
+- Logs, bundles, patches and scratch archives belong with the build that produced them,
 
 ## 5. Working in parallel
 
