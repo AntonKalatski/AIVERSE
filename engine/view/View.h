@@ -8,6 +8,7 @@
 #include "engine/render/Renderer3D.h"
 #include "SceneLayerProviders.h"
 #include "ModelComposition.h"
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -157,8 +158,11 @@ public:
         next->frameStamp_=frameStamp_;
         next->lodState_=lodState_;
         next->cameraLodState_=cameraLodState_;
-        // Scheduler workers and per-submit scratch have no persistent pose
-        // authority. Build them lazily in the independent candidate.
+        // Scheduler workers have no persistent pose authority: share them
+        // with the candidate instead of respawning worker threads for every
+        // prepared frame (update() unshares if both run at once). Per-submit
+        // scratch is still built lazily in the independent candidate.
+        next->scheduler_=scheduler_;
         return next;
     }
     std::unique_ptr<View> prepareUpdate(std::span<const Object> objects,float dt) const {
@@ -205,13 +209,30 @@ public:
             if(obj.graph && animationSourceModel(obj) && obj.id==0)
                 throw std::invalid_argument(
                     "View animation requires a stable nonzero object ID");
+        std::vector<lib::animation::AnimationSourceFrame> sources;
+        sources.reserve(objects.size());
+        for(const auto& obj:objects) {
+            const auto* animationModel=animationSourceModel(obj);
+            if(!obj.graph || !animationModel)continue;
+            lib::animation::AnimationSourceFrame input;
+            input.sourceId=obj.id;
+            input.generation=obj.generation;
+            input.model=animationModel;
+            input.graph=obj.graph;
+            input.inputs=obj.parameters;
+            input.modelPublicationGeneration=obj.animationModelGeneration;
+            sources.push_back(std::move(input));
+        }
+        // The bridge validates the whole batch (duplicate IDs, graph/model
+        // mismatch, epoch without recompile) before it mutates the World.
+        // Run it before touching stats, frame stamp or LOD hysteresis so a
+        // rejected batch leaves this View exactly as it was.
+        const auto sourceStats=bridge_.sync(presentation_,sources);
         stats_={};
         retargetStats_={};
         if(++frameStamp_==0) {
             frameStamp_=1; lodState_.clear();cameraLodState_.clear();
         }
-        std::vector<lib::animation::AnimationSourceFrame> sources;
-        sources.reserve(objects.size());
         for(const auto& obj:objects) {
             if(obj.visible)++stats_.visible;
             if(obj.draw.model && obj.visible)++stats_.drawable;
@@ -236,19 +257,9 @@ public:
                     selection.seen=frameStamp_;
                 }
             }
-            const auto* animationModel=animationSourceModel(obj);
-            if(!obj.graph || !animationModel)continue;
-            ++stats_.animated;
-            lib::animation::AnimationSourceFrame input;
-            input.sourceId=obj.id;
-            input.generation=obj.generation;
-            input.model=animationModel;
-            input.graph=obj.graph;
-            input.inputs=obj.parameters;
-            input.modelPublicationGeneration=obj.animationModelGeneration;
-            sources.push_back(std::move(input));
+            if(obj.graph && animationSourceModel(obj))++stats_.animated;
         }
-        stats_.source=bridge_.sync(presentation_,sources);
+        stats_.source=sourceStats;
         for(auto it=lodState_.begin();it!=lodState_.end();) {
             if(it->second.seen!=frameStamp_)it=lodState_.erase(it);
             else ++it;
@@ -267,10 +278,19 @@ public:
         }
         stats_.budget=lib::animation::assignAnimationBudgets(presentation_,budgets_);
         if(stats_.animated>=minimumParallelActors_) {
-            if(!scheduler_)scheduler_=std::make_unique<
-                lib::animation::MotionWeaveScheduler>(workerCount_);
+            if(!scheduler_)scheduler_=std::make_shared<SharedScheduler>(workerCount_);
+            if(scheduler_->busy.exchange(true,std::memory_order_acquire)) {
+                // A View sharing this scheduler is updating concurrently:
+                // never re-enter it, take a private one instead.
+                scheduler_=std::make_shared<SharedScheduler>(workerCount_);
+                scheduler_->busy.store(true,std::memory_order_relaxed);
+            }
+            struct Release {
+                std::shared_ptr<SharedScheduler> held;
+                ~Release(){held->busy.store(false,std::memory_order_release);}
+            } release{scheduler_};
             stats_.animation=lib::animation::MotionWeave::update(
-                presentation_,dt,*scheduler_);
+                presentation_,dt,release.held->scheduler);
         } else
             lib::animation::MotionWeave::update(presentation_,dt);
         return stats_;
@@ -665,6 +685,11 @@ public:
         budgets_=policy;
     }
     void setParallelThreshold(size_t count) {minimumParallelActors_=count;}
+    // Diagnostic: a preparation candidate reuses the published View's
+    // animation worker scheduler instead of spawning new threads.
+    bool sharesAnimationScheduler(const View& other) const noexcept {
+        return scheduler_ && scheduler_==other.scheduler_;
+    }
     Entity presentationEntity(uint64_t id) const {return bridge_.find(id);}
     // Detach selected presentation sources before their host-owned models
     // are evicted; other graph players keep their clocks and pose state.
@@ -779,7 +804,14 @@ private:
     }
     World presentation_;
     lib::animation::MotionWeaveSourceBridge bridge_;
-    std::unique_ptr<lib::animation::MotionWeaveScheduler> scheduler_;
+    // Worker threads + per-frame scratch only (no World state); shared
+    // between a published View and its preparation candidates.
+    struct SharedScheduler {
+        explicit SharedScheduler(size_t workers):scheduler(workers){}
+        lib::animation::MotionWeaveScheduler scheduler;
+        std::atomic<bool> busy{false};
+    };
+    std::shared_ptr<SharedScheduler> scheduler_;
     lib::animation::AnimationBudgetPolicy budgets_;
     size_t workerCount_=0,minimumParallelActors_=16;
     Stats stats_;

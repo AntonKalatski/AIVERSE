@@ -94,7 +94,12 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
                                   DocumentTransform& out) {
     if(ref.isLight()) {
         const auto* light=documentLight(map,ref);if(!light)return false;
-        out={(*light)["x"].toDouble(),(*light)["height"].toDouble(1),(*light)["z"].toDouble()};
+        // Legacy map lights store "pos":[x,z]; the runtime reads it before x/z
+        // (RtsLights::parseMapLights), so the editor must too or a move teleports to 0.
+        const Json& pos=(*light)["pos"];
+        const bool legacy=pos.isArray() && pos.size()>=2 && pos[0].isNumber() && pos[1].isNumber();
+        out={legacy?pos[0].toDouble():(*light)["x"].toDouble(),(*light)["height"].toDouble(1),
+             legacy?pos[1].toDouble():(*light)["z"].toDouble()};
     } else if (ref.source == DocumentEntityRef::Source::MapEntity) {
         const DocEntity* entity = documentMapEntity(map, ref);
         if (!entity) return false;
@@ -533,16 +538,27 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
         }
         if (ref.source == DocumentEntityRef::Source::MapEntity &&
             value.has("rotationY")) {
+            // A patch may carry rotationY and position together: validate both,
+            // then apply both (position was silently dropped before). Objects
+            // without authored "facing" do not get one invented, but their
+            // position part is still written.
             DocEntity* entity = documentMapEntity(map, ref);
-            if (!entity || !entity->extra["facing"].isNumber() ||
-                !value["rotationY"].isNumber()) return false;
+            if (!entity || !value["rotationY"].isNumber()) return false;
             const double degrees = value["rotationY"].toDouble();
             if (!std::isfinite(degrees)) return false;
+            DocumentTransform position;
+            const bool hasPosition = value.has("position");
+            if (hasPosition && !readVec3(value["position"], position)) return false;
+            if (hasPosition && position.y != 0) return false;   // RTS maps are 2D
             const Json rotated = Json::number(degrees, 3);
-            if (entity->extra["facing"] == rotated) return false;
-            entity->extra.set("facing", rotated);
-            map.touched();
-            return true;
+            bool changed = false;
+            if (entity->extra["facing"].isNumber() && !(entity->extra["facing"] == rotated)) {
+                entity->extra.set("facing", rotated);
+                map.touched();
+                changed = true;
+            }
+            if (hasPosition) changed = setDocumentPosition(map, ref, position) || changed;
+            return changed;
         }
         if (ref.source == DocumentEntityRef::Source::FpsCollider) {
             const Json* object = fpsDocumentEntity(map.data.fps, ref);

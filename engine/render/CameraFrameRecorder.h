@@ -4,6 +4,7 @@
 #pragma once
 #include "../gfx/Gfx.h"
 #include "CameraPng.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>
