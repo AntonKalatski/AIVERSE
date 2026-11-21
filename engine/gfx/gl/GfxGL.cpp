@@ -779,20 +779,42 @@ public:
         glPixelStorei(kSkipRows,0);
         glPixelStorei(kSkipImages,0);
         const auto* src = static_cast<const uint8_t*>(u.data);
+        // GL33/GLES3/WebGL2 all support UNPACK_ROW_LENGTH / IMAGE_HEIGHT:
+        // one call per region (or per slice) when pitches are whole pixels
+        // / whole rows; per-row uploads remain for odd byte pitches.
+        // Both values are restored below with the rest of the unpack state.
+        const bool wholePixelRows = u.rowPitchBytes % bpp == 0;
+        const bool wholeRowSlices = wholePixelRows && imagePitch % u.rowPitchBytes == 0;
+        if (wholePixelRows) glPixelStorei(kRowLength, u.rowPitchBytes / bpp);
         if (t->dimension == TextureDimension::Texture2D ||
             t->dimension == TextureDimension::Cube) {
             const GLenum target = t->dimension == TextureDimension::Cube ?
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(u.arrayLayer) : GL_TEXTURE_2D;
-            for (int y = 0; y < u.height; ++y)
-                glTexSubImage2D(target, u.mipLevel, u.x, u.y + y, u.width, 1, format, type,
-                                src + size_t(y) * size_t(u.rowPitchBytes));
+            if (wholePixelRows)
+                glTexSubImage2D(target, u.mipLevel, u.x, u.y, u.width, u.height,
+                                format, type, src);
+            else
+                for (int y = 0; y < u.height; ++y)
+                    glTexSubImage2D(target, u.mipLevel, u.x, u.y + y, u.width, 1, format, type,
+                                    src + size_t(y) * size_t(u.rowPitchBytes));
         } else {
             const int z = t->dimension == TextureDimension::Texture3D ? u.z : u.arrayLayer;
-            for (int zz = 0; zz < u.depth; ++zz)
-                for (int y = 0; y < u.height; ++y)
-                    glTexSubImage3D(t->target, u.mipLevel, u.x, u.y + y, z + zz,
-                      u.width, 1, 1, format, type,
-                      src + size_t(zz) * size_t(imagePitch) + size_t(y) * size_t(u.rowPitchBytes));
+            if (wholeRowSlices) {
+                glPixelStorei(kImageHeight, imagePitch / u.rowPitchBytes);
+                glTexSubImage3D(t->target, u.mipLevel, u.x, u.y, z,
+                                u.width, u.height, u.depth, format, type, src);
+            } else if (wholePixelRows) {
+                for (int zz = 0; zz < u.depth; ++zz)
+                    glTexSubImage3D(t->target, u.mipLevel, u.x, u.y, z + zz,
+                                    u.width, u.height, 1, format, type,
+                                    src + size_t(zz) * size_t(imagePitch));
+            } else {
+                for (int zz = 0; zz < u.depth; ++zz)
+                    for (int y = 0; y < u.height; ++y)
+                        glTexSubImage3D(t->target, u.mipLevel, u.x, u.y + y, z + zz,
+                          u.width, 1, 1, format, type,
+                          src + size_t(zz) * size_t(imagePitch) + size_t(y) * size_t(u.rowPitchBytes));
+            }
         }
         if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
         const GLenum uploadError = glGetError();
