@@ -241,7 +241,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   };
   const dragStart=(event:DragEvent<HTMLElement>,path:string)=>{
     event.dataTransfer.setData(ASSET_DRAG_MIME,path);
-    event.dataTransfer.effectAllowed='move';
+    // The native Scene view accepts plain text "aiverse-asset:<path>" (models → new entity).
+    if(assetKind(path)==='model')event.dataTransfer.setData('text/plain','aiverse-asset:'+path);
+    event.dataTransfer.effectAllowed='copyMove';
   };
   const acceptInternal=(event:DragEvent<HTMLElement>)=>{
     if(event.dataTransfer.types.includes(ASSET_DRAG_MIME)){

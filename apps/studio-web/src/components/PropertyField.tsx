@@ -15,21 +15,23 @@ interface PropertyFieldProps {
 
 /** Controlled, schema-driven property editor; writes happen only after validation. */
 export default function PropertyField({ property, disabled, onChange, variant = 'row', className }: PropertyFieldProps) {
-  const [draft, setDraft] = useState(String(property.value));
+  const [draft, setDraft] = useState(property.mixed ? '' : String(property.value));
   const [error, setError] = useState('');
   const skipBlur = useRef(false);
   const locked = disabled || property.editable === false;
 
   useEffect(() => {
-    setDraft(String(property.value));
+    setDraft(property.mixed ? '' : String(property.value));
     setError('');
-  }, [property.key, property.value]);
+  }, [property.key, property.value, property.mixed]);
 
   const validateAndCommit = (text: string) => {
+    // Mixed multi-selection value left empty: nothing to write.
+    if (property.mixed && text.trim() === '') { setError(''); return; }
     const parsed = parseFieldDraft(property, text);
     if (!parsed.ok) { setError(parsed.error); return; }
     setError('');
-    if (!isSameFieldValue(property.value, parsed.value)) onChange(parsed.value);
+    if (property.mixed || !isSameFieldValue(property.value, parsed.value)) onChange(parsed.value);
   };
 
   if (property.type === 'asset') {
@@ -45,7 +47,8 @@ export default function PropertyField({ property, disabled, onChange, variant = 
   if (property.type === 'boolean') {
     return <label className="property-row">
       <span>{property.label}</span>
-      <input type="checkbox" className="au-checkbox__input" disabled={locked} checked={Boolean(property.value)}
+      <input type="checkbox" className="au-checkbox__input" disabled={locked} checked={!property.mixed && Boolean(property.value)}
+        ref={el => { if (el) el.indeterminate = !!property.mixed; }}
         aria-label={property.label}
         onChange={event => {
           const next = validateBooleanChange(property, event.target.checked);
@@ -62,7 +65,7 @@ export default function PropertyField({ property, disabled, onChange, variant = 
   const scrubHandlers = scrubbable ? {
     onPointerDown: (event: React.PointerEvent<HTMLSpanElement>) => {
       if (event.button !== 0) return;
-      const start = Number(draft.trim() === '' ? property.value : draft);
+      const start = Number(draft.trim() === '' ? property.value : draft); // mixed: starts from the primary object
       if (!Number.isFinite(start)) return;
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -93,9 +96,10 @@ export default function PropertyField({ property, disabled, onChange, variant = 
   return <label className={'property-row' + (variant === 'axis' ? ' property-row--axis' : '') + (className ? ' ' + className : '')}>
     <span className={scrubbable ? 'property-scrub' : undefined} {...scrubHandlers}>{property.label}</span>
     {property.options?.length ?
-      <select className="au-select" disabled={locked} value={String(property.value)}
+      <select className="au-select" disabled={locked} value={property.mixed ? '\u0000mixed' : String(property.value)}
         aria-label={property.label}
         onChange={event => validateAndCommit(event.target.value)}>
+        {property.mixed && <option value={'\u0000mixed'} disabled>—</option>}
         {property.options.map(option =>
           <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
       </select>
@@ -104,6 +108,7 @@ export default function PropertyField({ property, disabled, onChange, variant = 
           disabled={locked}
           type={property.type === 'number' ? 'number' : 'text'}
           value={draft}
+          placeholder={property.mixed ? '—' : undefined}
           min={property.type === 'number' ? property.min : undefined}
           max={property.type === 'number' ? property.max : undefined}
           step={property.type === 'number' ? (property.step ?? 'any') : undefined}

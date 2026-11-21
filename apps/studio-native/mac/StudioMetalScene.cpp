@@ -356,10 +356,35 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     proxies.erase(std::remove_if(proxies.begin(),proxies.end(),[&](const auto& proxy){
         const int index=studioMapEntityIndex(proxy.id,map);
-        return index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater");
+        return hidden_.count(proxy.id) || locked_.count(proxy.id) ||
+            (index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater"));
     }),proxies.end());
     // These are the exact model instances submitted by the previous frame.
-    return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
+    if(hidden_.empty() && locked_.empty())return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
+    std::vector<StudioModelPickInstance> instances;
+    for(const auto& instance:modelInstances_)if(!hidden_.count(instance.id)&&!locked_.count(instance.id))instances.push_back(instance);
+    return studioPickSceneSurfaces(instances,proxies,origin,direction);
+}
+std::vector<std::string> StudioMetalScene::idsInRect(float x0,float y0,float x1,float y1,float width,float height,
+                                                     const editor::MapDoc& map,bool fpsProject) const {
+    std::vector<std::string> out;
+    if(materialMode_||!cameraInitialized_||width<2||height<2)return out;
+    const float lx=std::min(x0,x1),hx=std::max(x0,x1),ly=std::min(y0,y1),hy=std::max(y0,y1);
+    const auto view=viewCamera();
+    for(const auto& proxy:studioDocumentProxies(map,fpsProject,terrainLevelHeight_)) {
+        if(hidden_.count(proxy.id)||locked_.count(proxy.id))continue;
+        const int index=studioMapEntityIndex(proxy.id,map);
+        if(index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater"))continue;
+        float2 p;if(!view.worldToScreen(proxy.center,width,height,p))continue;
+        if(p.x>=lx&&p.x<=hx&&p.y>=ly&&p.y<=hy)out.push_back(proxy.id);
+    }
+    return out;
+}
+bool StudioMetalScene::groundPoint(float x,float y,float width,float height,float3& out) const {
+    float3 o,d;
+    if(!cameraInitialized_||!viewCamera().screenRay(x,y,width,height,o,d)||std::fabs(d.y)<1e-5f)return false;
+    const float t=-o.y/d.y; if(!(t>0)||!std::isfinite(t))return false;
+    out=o+d*t; return true;
 }
 render::RTSCamera StudioMetalScene::viewCamera() const {
     render::RTSCamera view=camera_;
@@ -1017,6 +1042,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     primitiveMaterials_.clear();
     for(const auto& entity:proxies) {
         const int sourceIndex=studioMapEntityIndex(entity.id,doc);
+        if(hidden_.count(entity.id))continue;
         const bool dragged=!drag_.id.empty() && entity.id==drag_.id;
         const mat4 preview=dragged?dragPreview():mat4{};
         const float3 offset=dragged&&drag_.tool==TransformTool::Move?drag_.dir*drag_.value:float3{};
@@ -1064,13 +1090,15 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
                 }
                 materials={studioPbrPreviewMaterial(resolved,materialRef.isString()?materialRef.str():"Default")};
                 render::ModelDraw draw;draw.model=primitive;draw.world=world;draw.materials=&materials;
-                if(entity.id==selectedId)draw.outline={.25f,.62f,1.0f,.035f};
+                if(entity.id==selectedId||selection_.count(entity.id))draw.outline={.25f,.62f,1.0f,.035f};
+                else if(entity.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
                 renderer_.drawModel(draw);
                 continue;
             }
         }
         if(!lightingModel_ && !entity.light) {
-            if(entity.id==selectedId) renderer_.drawSelectionMesh(cube_,world,entity.color,{.25f,.62f,1.0f,1.0f});
+            if(entity.id==selectedId||selection_.count(entity.id)) renderer_.drawSelectionMesh(cube_,world,entity.color,{.25f,.62f,1.0f,1.0f});
+            else if(entity.id==hover_) renderer_.drawSelectionMesh(cube_,world,entity.color,{.62f,.8f,1.0f,.55f});
             else renderer_.drawMesh(cube_,world,entity.color,kDrawNoCastShadow);
         } else if(entity.id==selectedId && entity.light) {
             const auto lo=entity.boundsMin+offset,hi=entity.boundsMax+offset;
@@ -1085,12 +1113,15 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
 
     }
     for(const auto& instance:modelInstances_) {
+        if(hidden_.count(instance.id))continue;
         render::ModelDraw draw;
         draw.model=instance.model;
         draw.world=instance.world;
         if(!drag_.id.empty() && instance.id==drag_.id) draw.world=dragPreview()*instance.world;
         if(auto custom=instanceMaterials_.find(instance.id);custom!=instanceMaterials_.end())
             draw.materials=&custom->second.materials;
+        if(instance.id!=selectedId && selection_.count(instance.id))draw.outline={.25f,.62f,1.0f,.035f};
+        else if(instance.id!=selectedId && instance.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
         if(instance.id==selectedId) {
             draw.outline={.25f,.62f,1.0f,.035f};
             if(instance.model)captureSelectedBox(draw.world,instance.model->boundsMin,instance.model->boundsMax);
@@ -1111,6 +1142,16 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     if(gizmosVisible_)drawSelectionBox(view,framebufferWidth,framebufferHeight);
     drawTransformGizmo(view,framebufferWidth,framebufferHeight);
     if(orientationGizmo_&&gizmosVisible_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
+    if(marquee_.on) {
+        const float W=float(framebufferWidth),H=float(framebufferHeight);
+        Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.4f};
+        const float x0=std::min(marquee_.x0,marquee_.x1)*W,x1=std::max(marquee_.x0,marquee_.x1)*W;
+        const float y0=std::min(marquee_.y0,marquee_.y1)*H,y1=std::max(marquee_.y0,marquee_.y1)*H;
+        o.tri(x0,y0,x1,y0,x1,y1,rgba(130,181,255,40));o.tri(x0,y0,x1,y1,x0,y1,rgba(130,181,255,40));
+        const float w=std::max(1.0f,std::min(W,H)*0.0015f);
+        o.segment(x0,y0,x1,y0,w,rgba(130,181,255,220));o.segment(x1,y0,x1,y1,w,rgba(130,181,255,220));
+        o.segment(x1,y1,x0,y1,w,rgba(130,181,255,220));o.segment(x0,y1,x0,y0,w,rgba(130,181,255,220));
+    }
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;

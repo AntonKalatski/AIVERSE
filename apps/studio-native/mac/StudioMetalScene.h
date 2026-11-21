@@ -77,6 +77,19 @@ public:
     bool transformDragActive() const { return drag_.axis >= 0; }
     void clearTransformPreview() { drag_ = {}; }
     std::string transformCaption() const; // "Move X +1.25" while dragging, else empty
+    // Editor selection state supplied by the host before each frame: extra selected
+    // ids (outlined), hidden ids (not drawn, not picked), locked ids (not picked), hover.
+    void setEditorState(std::set<std::string> selection, std::set<std::string> hidden,
+                        std::set<std::string> locked, std::string hover) {
+        selection_=std::move(selection); hidden_=std::move(hidden); locked_=std::move(locked); hover_=std::move(hover);
+    }
+    // Marquee rectangle in normalised view coordinates (0..1), drawn over the Scene.
+    void setMarquee(bool on, float x0 = 0, float y0 = 0, float x1 = 0, float y1 = 0) { marquee_ = {on, x0, y0, x1, y1}; }
+    // Visible, unlocked objects whose pivot projects into the rectangle (view units).
+    std::vector<std::string> idsInRect(float x0, float y0, float x1, float y1, float width, float height,
+                                       const editor::MapDoc& map, bool fpsProject) const;
+    // Ray through (x, y) onto the ground plane y = 0 (asset drops).
+    bool groundPoint(float x, float y, float width, float height, render::float3& out) const;
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
@@ -142,6 +155,9 @@ private:
         float startAngle = 0, lastAngle = 0, accumulated = 0; bool facing = false; render::float2 screenPivot{};
     } drag_;
     bool selectedIsLight_ = false, selectedAxesValid_ = false;
+    std::set<std::string> selection_, hidden_, locked_;
+    std::string hover_;
+    struct Marquee { bool on = false; float x0 = 0, y0 = 0, x1 = 0, y1 = 0; } marquee_;
     render::float3 selectedAxes_[3]{{1,0,0},{0,1,0},{0,0,1}};
     void handleAxes(render::float3 out[3]) const;
     render::mat4 dragPreview() const;

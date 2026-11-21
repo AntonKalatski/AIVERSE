@@ -122,6 +122,44 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && !call("studio.undo").has("error"));
        AIVERSE_TEST_CHECK(entity().extra["components"].has("StaticModel"));
    }
+   // Multi-selection, group edit / duplicate / delete (one undo each), editor-only flags.
+   {
+       auto& map=session.workspace().map;
+       const size_t before=map.data.entities.size();
+       AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@second"})").has("error"));
+       const std::string other=map.data.entities[0].id=="second"?map.data.entities[1].id:map.data.entities[0].id;
+       const std::string otherId="entity:@"+other;
+       AIVERSE_TEST_CHECK(!call("studio.select",("{\"id\":\""+otherId+"\",\"mode\":\"add\"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(session.selectedObjectIds().size()==2 && session.selectedObjectId()==otherId);
+       auto snap=call("studio.snapshot");
+       AIVERSE_TEST_CHECK(snap["result"]["selectedIds"].size()==2);
+       AIVERSE_TEST_CHECK(!call("studio.select",("{\"id\":\""+otherId+"\",\"mode\":\"toggle\"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(session.selectedObjectIds().size()==1 && session.selectedObjectId()=="entity:@second");
+       AIVERSE_TEST_CHECK(call("studio.select",R"({"ids":["entity:@nope"]})").has("error"));
+       const std::string both="{\"entityIds\":[\"entity:@second\",\""+otherId+"\"]";
+       AIVERSE_TEST_CHECK(!call("studio.setProperties",(both+",\"componentId\":\"Transform\",\"values\":{\"scaleX\":3}}").c_str()).has("error"));
+       for(const auto& e:map.data.entities)AIVERSE_TEST_CHECK(editor::authoredScale3(e)[0]==3);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+       for(const auto& e:map.data.entities)AIVERSE_TEST_CHECK(editor::authoredScale3(e)[0]!=3);
+       AIVERSE_TEST_CHECK(!call("studio.entitiesDuplicate",(both+"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(map.data.entities.size()==before+2 && session.selectedObjectIds().size()==2);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
+       AIVERSE_TEST_CHECK(!call("studio.entitiesDelete",(both+"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(map.data.entities.size()==before-2 && session.selectedObjectIds().empty());
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
+       AIVERSE_TEST_CHECK(!call("studio.entityFlags",R"({"entityIds":["entity:@second"],"hidden":true,"locked":true})").has("error"));
+       AIVERSE_TEST_CHECK(session.hiddenIds().count("entity:@second") && session.lockedIds().count("entity:@second"));
+       snap=call("studio.snapshot");
+       for(const auto& row:snap["result"]["scene"]["entities"].items())
+           if(row.getStr("id")=="entity:@second")AIVERSE_TEST_CHECK(!row.getBool("visible",true) && row.getBool("locked"));
+       AIVERSE_TEST_CHECK(!call("studio.entityFlags",R"({"entityIds":["entity:@second"],"hidden":false})").has("error") && !session.hiddenIds().count("entity:@second"));
+       // Asset drop needs a scenery type or a selected entity type; here the selection supplies "tree".
+       AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@second"})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.assetPlace",R"({"asset":"content/rock.glb","x":5,"z":6})").has("error"));
+       AIVERSE_TEST_CHECK(map.data.entities.size()==before+1 && map.data.entities.back().extra["components"]["StaticModel"].getStr("asset")=="content/rock.glb");
+       AIVERSE_TEST_CHECK(call("studio.assetPlace",R"({"asset":"content/missing.glb","x":5,"z":6})").has("error") && map.data.entities.size()==before+1);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

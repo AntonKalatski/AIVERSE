@@ -24,3 +24,17 @@ test('missing material option detection', () => {
   assert.ok(!missingOption({ key: 'material:*', label: 'M', type: 'text', value: 'stone', options: opts }));
   assert.ok(!missingOption({ key: 'material:*', label: 'M', type: 'text', value: '', options: opts }));
 });
+
+import { mergeInspectors } from '../src/panels/inspectorActions.ts';
+test('multi-selection keeps common components and marks differing values', () => {
+  const a = { id: 'a', name: 'A', kind: 'tree', components: [transform, { id: 'Unit', title: 'Unit', properties: [n('owner', 1)] }] };
+  const b = { id: 'b', name: 'B', kind: 'rock', components: [{ ...transform, properties: transform.properties.map(p => p.key === 'x' ? { ...p, value: 7 } : p.key === 'y' ? { ...p, editable: false } : p) }] };
+  const m = mergeInspectors([a, b]);
+  assert.equal(m.name, '2 objects'); assert.equal(m.kind, 'Mixed');
+  assert.deepEqual(m.components.map(c => c.id), ['Transform']);
+  const x = m.components[0].properties.find(p => p.key === 'x');
+  const z = m.components[0].properties.find(p => p.key === 'z');
+  assert.ok(x.mixed); assert.ok(!z.mixed);
+  assert.equal(m.components[0].properties.find(p => p.key === 'y').editable, false);
+  assert.equal(mergeInspectors([a]), a);
+});

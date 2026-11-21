@@ -39,6 +39,7 @@ export default function App() {
   const [paletteAssets, setPaletteAssets] = useState<StudioAsset[]>([]);
   const [game, setGame] = useState<StudioGameState | null>(null);
   const [sceneAction, setSceneAction] = useState('');
+  const [hoverId, setHoverId] = useState('');
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {
@@ -86,6 +87,8 @@ export default function App() {
           setDock(current => reopenTab(current,'scene','dock-center'));
         }
         void refresh();
+      } else if (event === 'viewport.hover') {
+        setHoverId(payload && typeof payload === 'object' && 'message' in payload ? String(payload.message) : '');
       } else if (event === 'viewport.action') {
         setSceneAction(payload && typeof payload === 'object' && 'message' in payload ? String(payload.message) : '');
       } else if (event === 'workspace.changed' || event === 'selection.changed' ||
@@ -145,6 +148,9 @@ export default function App() {
       } else if (key === 's' && connected && snapshot?.project.path) {
         event.preventDefault();
         if (snapshot.project.dirty) void historyAction('studio.save');
+      } else if (key === 'd' && !editable && !event.shiftKey) {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent('studio:entity-action', { detail: 'duplicate' }));
       } else if (key === 'z' && !editable && !event.shiftKey && snapshot?.history.canUndo) {
         event.preventDefault();
         void historyAction('studio.undo');
@@ -158,9 +164,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', shortcut);
   }, [busy, connected, snapshot, historyAction, switchWorkspace]);
 
-  const select = async (id: string | null) => {
+  const select = async (id: string | null, mode: 'replace' | 'add' | 'toggle' = 'replace') => {
     setBusy(true);
-    try { setSnapshot(await invoke('studio.select', { id })); setError(''); }
+    try { setSnapshot(await invoke('studio.select', { id, mode })); setError(''); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  const selectIds = async (ids: string[], mode: 'replace' | 'add' | 'toggle' = 'replace') => {
+    setBusy(true);
+    try { setSnapshot(await invoke('studio.select', { ids, mode })); setError(''); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -202,7 +214,7 @@ export default function App() {
   const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
     snapshot, busy, connected, search, setSearch, rows, selected,
     inspector, inspectorPinned: !!inspectorPin, toggleInspectorPin,
-    select, changeProperty, openProject, updateSnapshot: value => {
+    select, selectIds, hoverId, changeProperty, openProject, updateSnapshot: value => {
       setInspectorPin(null); // create/delete/duplicate or map replacement invalidates positional pins
       setSnapshot(value);
     }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError
@@ -210,12 +222,20 @@ export default function App() {
 
   const project = connected && !!snapshot?.project.path;
   const selectedEntity = snapshot?.selectedId ?? null;
+  const selection = (snapshot?.selectedIds?.length ? snapshot.selectedIds : selectedEntity ? [selectedEntity] : [])
+    .filter(id => id.startsWith('entity:'));
   const entityAction = (method: 'studio.entityDuplicate' | 'studio.entityDelete') => {
-    if (!selectedEntity) return;
+    if (!selection.length || busy) return;
     setBusy(true);
-    void invoke(method, { entityId: selectedEntity }).then(next => { setInspectorPin(null); setSnapshot(next); setError(''); })
+    void invoke(method === 'studio.entityDelete' ? 'studio.entitiesDelete' : 'studio.entitiesDuplicate', { entityIds: selection })
+      .then(next => { setInspectorPin(null); setSnapshot(next); setError(''); })
       .catch(e => setError(e instanceof Error ? e.message : String(e))).finally(() => setBusy(false));
   };
+  useEffect(() => {
+    const run = (event: Event) => entityAction((event as CustomEvent<string>).detail === 'delete' ? 'studio.entityDelete' : 'studio.entityDuplicate');
+    window.addEventListener('studio:entity-action', run);
+    return () => window.removeEventListener('studio:entity-action', run);
+  });
   const showPanel = (panel: StudioPanel) => setDock(t => reopenTab(t, panel, STUDIO_PANEL_HOME[panel]));
   const menus: StudioMenu[] = [
     { id: 'file', label: 'File', items: () => [
@@ -230,9 +250,9 @@ export default function App() {
     { id: 'edit', label: 'Edit', items: () => [
       { id: 'undo', label: 'Undo', shortcut: '⌘Z', disabled: busy || !snapshot?.history.canUndo, onSelect: () => void historyAction('studio.undo') },
       { id: 'redo', label: 'Redo', shortcut: '⇧⌘Z', disabled: busy || !snapshot?.history.canRedo, onSelect: () => void historyAction('studio.redo') },
-      { id: 'dup', label: 'Duplicate', shortcut: '⌘D', separator: true, disabled: busy || !selectedEntity?.startsWith('entity:'),
+      { id: 'dup', label: selection.length > 1 ? 'Duplicate ' + selection.length + ' Objects' : 'Duplicate', shortcut: '⌘D', separator: true, disabled: busy || !selection.length,
         onSelect: () => entityAction('studio.entityDuplicate') },
-      { id: 'del', label: 'Delete', shortcut: '⌫', disabled: busy || !selectedEntity?.startsWith('entity:'),
+      { id: 'del', label: selection.length > 1 ? 'Delete ' + selection.length + ' Objects' : 'Delete', shortcut: '⌫', disabled: busy || !selection.length,
         onSelect: () => entityAction('studio.entityDelete') },
       { id: 'frame', label: 'Frame Selected', shortcut: 'F', disabled: !selectedEntity || !connected,
         onSelect: () => void invoke('studio.viewportInput', { kind: 'focus' }).catch(console.warn) },

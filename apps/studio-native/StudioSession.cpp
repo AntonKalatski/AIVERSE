@@ -192,6 +192,22 @@ Json StudioSession::componentCatalog(const std::string& entityId) const {
     item("Unit","Unit","Gameplay","Type, owner and stats come from rules.json","native",false,"Defined by the entity type");
     return out;
 }
+bool StudioSession::documentHas(const std::string& id) const {
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps()))
+        if (nodeId(ws_.map,node.ref) == id) return true;
+    return false;
+}
+std::vector<std::string> StudioSession::selectedObjectIds() const {
+    std::vector<std::string> out;
+    if(selected_.empty())return out;
+    for(const auto& id:selection_)if(id!=selected_ && documentHas(id) && std::find(out.begin(),out.end(),id)==out.end())out.push_back(id);
+    out.push_back(selected_);
+    return out;
+}
+void StudioSession::dropOrdinalFlags() {
+    auto prune=[](std::set<std::string>& set){for(auto it=set.begin();it!=set.end();)it=it->rfind("entity:@",0)==0?std::next(it):set.erase(it);};
+    prune(hidden_);prune(locked_);
+}
 Json StudioSession::inspectorFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
@@ -380,7 +396,10 @@ Json StudioSession::snapshot() const {
         row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
             ? (node.ref.index < ws_.map.data.entities.size() ? ws_.map.data.entities[node.ref.index].type : "Entity")
             : node.ref.isLight()?"Light":node.ref.source == editor::DocumentEntityRef::Source::FpsCollider ? "Collider" : "Spawn"));
-        row.set("visible", Json::fromBool(true));
+        row.set("visible", Json::fromBool(!hidden_.count(nodeId(ws_.map,node.ref))));
+        if(locked_.count(nodeId(ws_.map,node.ref)))row.set("locked",Json::fromBool(true));
+        if(node.ref.source==editor::DocumentEntityRef::Source::MapEntity && node.ref.index<ws_.map.data.entities.size())
+            row.set("owner",num(int64_t(ws_.map.data.entities[node.ref.index].owner)));
         rows.push(std::move(row));
     }
     scene.set("entities", std::move(rows));
@@ -412,6 +431,7 @@ Json StudioSession::snapshot() const {
         }
     }
     result.set("selectedId", valid ? str(selected_) : Json());
+    {Json ids=Json::array();for(const auto& id:selectedObjectIds())ids.push(str(id));result.set("selectedIds",std::move(ids));}
     result.set("properties", std::move(fields));
     result.set("components",std::move(componentViews));
     result.set("entityProperties",std::move(entityFields));
@@ -473,7 +493,7 @@ Json StudioSession::openProject(const std::string& path) {
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
     (void)studioContentRoot(ws_.project.dir);
     pendingAssetTransfer_.reset();
-    selected_.clear();
+    clearSelection();hidden_.clear();locked_.clear();
     previewMaterialName_.clear();
     refreshMaterialPreview();
     return snapshot();
@@ -986,18 +1006,99 @@ Json StudioSession::dispatch(const Json& request) {
             item.set("settings",entry->settings);
             reply.set("result",std::move(item));
         } else if (method == "studio.select") {
-            const Json& id = params["id"];
-            if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
-            const std::string next = id.isNull() ? "" : id.str();
-            if (!next.empty()) {
-                bool found = false;
-                for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-                    if (nodeId(ws_.map,node.ref) == next) { found = true; break; }
-                }
-                if (!found) throw std::runtime_error("Selection refers to an unknown document entity");
+            // mode: replace (default) | add | toggle; `ids` selects several at once (marquee).
+            const std::string mode=params.getStr("mode","replace");
+            if(mode!="replace" && mode!="add" && mode!="toggle")throw std::runtime_error("Invalid selection mode");
+            std::vector<std::string> ids;
+            if(params["ids"].isArray()) {
+                if(params["ids"].size()>100000)throw std::runtime_error("Selection too large");
+                for(const auto& v:params["ids"].items()){if(!v.isString())throw std::runtime_error("Invalid selection");ids.push_back(v.str());}
+            } else {
+                const Json& id = params["id"];
+                if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
+                if(id.isString() && !id.str().empty())ids.push_back(id.str());
             }
-            selected_ = next;
+            for(const auto& id:ids)if(!documentHas(id))throw std::runtime_error("Selection refers to an unknown document entity");
+            std::vector<std::string> current=mode=="replace"?std::vector<std::string>{}:selectedObjectIds();
+            for(const auto& id:ids) {
+                const auto at=std::find(current.begin(),current.end(),id);
+                if(mode=="toggle" && at!=current.end()){current.erase(at);continue;}
+                if(at!=current.end())current.erase(at);
+                current.push_back(id); // last = primary
+            }
+            if(current.empty())clearSelection();
+            else {selected_=current.back();current.pop_back();selection_=std::move(current);}
             reply.set("result", snapshot());
+        } else if (method == "studio.entitiesDelete" || method == "studio.entitiesDuplicate") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            std::vector<int> indices;
+            for(const auto& v:params["entityIds"].items()) {
+                if(!v.isString() || v.str().compare(0,7,"entity:")!=0)continue; // lights/colliders: not map entities
+                const int index=indexFor(v.str());
+                if(std::find(indices.begin(),indices.end(),index)==indices.end())indices.push_back(index);
+            }
+            if(indices.empty())throw std::runtime_error("Select map entities first");
+            if(method=="studio.entitiesDuplicate") {
+                const auto copies=editor::worldedit::duplicate(ws_.map,indices);
+                if(copies.empty())throw std::runtime_error("Unable to duplicate entities");
+                std::vector<std::string> next;
+                for(const int c:copies)next.push_back(studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(c)),ws_.map));
+                selected_=next.back();next.pop_back();selection_=std::move(next);
+            } else {
+                std::sort(indices.rbegin(),indices.rend()); // highest first: lower indices stay valid
+                const size_t depth=ws_.map.undoDepth();
+                try {
+                    for(const int index:indices) {
+                        Json args=Json::object(); args.set("index",num(index));
+                        const Json result=ws_.call("entity_delete",args,"studio");
+                        if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                    }
+                } catch(...) { ws_.map.abandonSince(depth); throw; }
+                ws_.map.mergeUndoSince(depth);
+                clearSelection();dropOrdinalFlags();
+            }
+            reply.set("result",snapshot());
+        } else if (method == "studio.entityFlags") {
+            // Editor-only Hierarchy flags (not saved): hide from the Scene, lock against picking.
+            for(const auto& v:params["entityIds"].items()) {
+                if(!v.isString() || !documentHas(v.str()))throw std::runtime_error("Unknown document entity");
+                for(const auto& [key,set]:{std::pair<const char*,std::set<std::string>*>{"hidden",&hidden_},{"locked",&locked_}}) {
+                    const Json& flag=params[key];
+                    if(flag.isNull())continue;
+                    if(!(flag.boolean(false)==flag.boolean(true)))throw std::runtime_error("Flags must be booleans");
+                    if(flag.boolean())set->insert(v.str()); else set->erase(v.str());
+                }
+            }
+            reply.set("result",snapshot());
+        } else if (method == "studio.assetPlace") {
+            // Drop a model from Assets into the Scene: a new authored entity with
+            // Transform + StaticModel. Needs a scenery type in rules.json.
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            const std::string asset=params.getStr("asset");
+            for(const char* key:{"x","z"}){const double v=params[key].toDouble(NAN);if(!std::isfinite(v)||std::abs(v)>1000000)throw std::runtime_error("Drop position out of range");}
+            std::string type;
+            for(const char* candidate:{"prop","props","decor","decoration","scenery","doodad","static"})
+                if(ws_.project.rules.findType(candidate)>=0){type=candidate;break;}
+            if(type.empty() && !selected_.empty() && selected_.compare(0,7,"entity:")==0)
+                type=ws_.map.data.entities.at(size_t(indexFor(selected_))).type;
+            if(type.empty())throw std::runtime_error("Add a scenery type (\"prop\") to rules.json, or select an entity whose type to use");
+            Json place=Json::object();place.set("type",str(type));place.set("x",params["x"]);place.set("z",params["z"]);place.set("owner",num(int64_t(0)));
+            const size_t depth=ws_.map.undoDepth();
+            try {
+                const Json placed=ws_.call("entity_place",place,"studio");
+                if(placed.has("error"))throw std::runtime_error(placed.getStr("error"));
+                const int index=int(ws_.map.data.entities.size())-1;
+                auto candidate=promotedAuthored(index);
+                auto components=candidate.extra["components"];components.set("StaticModel",Json::object());candidate.extra.set("components",components);
+                ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
+                const std::string id=studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(index)));
+                if(!asset.empty())setMeshRenderer(index,"asset",str(asset)); // validates the path
+                selectOnly(id);
+            } catch(...) { ws_.map.abandonSince(depth); throw; }
+            ws_.map.mergeUndoSince(depth);
+            reply.set("result",snapshot());
         } else if (method == "studio.project") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             Json state=Json::object(),maps=Json::array();
@@ -1040,7 +1141,7 @@ Json StudioSession::dispatch(const Json& request) {
                 if (result.has("error")) throw std::runtime_error(result.getStr("error"));
                 ws_.map.touched();
             }
-            selected_.clear();previewMaterialName_.clear();refreshMaterialPreview();
+            clearSelection();hidden_.clear();locked_.clear();previewMaterialName_.clear();refreshMaterialPreview();
             reply.set("result",snapshot());
         } else if (method == "studio.entityCatalog") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
@@ -1072,7 +1173,7 @@ Json StudioSession::dispatch(const Json& request) {
                 for (const char* key : {"type","x","z","owner"}) args.set(key,params[key]);
                 const Json result=ws_.call("entity_place",args,"studio");
                 if (result.has("error")) throw std::runtime_error(result.getStr("error"));
-                selected_="entity:"+std::to_string(ws_.map.data.entities.size()-1);
+                selectOnly("entity:"+std::to_string(ws_.map.data.entities.size()-1));
             } else {
                 const std::string id=params.getStr("entityId");
                 if (selected_.empty() || id!=selected_) throw std::runtime_error("Selection changed while editing");
@@ -1081,11 +1182,11 @@ Json StudioSession::dispatch(const Json& request) {
                     Json args=Json::object(); args.set("index",num(index));
                     const Json result=ws_.call("entity_delete",args,"studio");
                     if (result.has("error")) throw std::runtime_error(result.getStr("error"));
-                    selected_.clear();
+                    clearSelection();dropOrdinalFlags();
                 } else {
                     const auto copies=editor::worldedit::duplicate(ws_.map,{index});
                     if (copies.empty()) throw std::runtime_error("Unable to duplicate entity");
-                    selected_=studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(copies.front())),ws_.map);
+                    selectOnly(studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(copies.front())),ws_.map));
                 }
             }
             reply.set("result",snapshot());
@@ -1114,7 +1215,7 @@ Json StudioSession::dispatch(const Json& request) {
                 entities=std::move(reordered);
                 for (auto& [a,b]:ws_.map.data.roads){a=newIndex[size_t(a)];b=newIndex[size_t(b)];}
                 ws_.map.touched();
-                selected_=studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(to)));
+                selectOnly(studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(to))));dropOrdinalFlags();
             }
             reply.set("result",snapshot());
         } else if (method == "studio.save") {
@@ -1127,12 +1228,12 @@ Json StudioSession::dispatch(const Json& request) {
         } else if (method == "studio.undo") {
             if (!ws_.map.canUndo()) throw std::runtime_error("Nothing to undo");
             ws_.map.undo();
-            selected_.clear();
+            clearSelection();dropOrdinalFlags();
             reply.set("result", snapshot());
         } else if (method == "studio.redo") {
             if (!ws_.map.canRedo()) throw std::runtime_error("Nothing to redo");
             ws_.map.redo();
-            selected_.clear();
+            clearSelection();dropOrdinalFlags();
             reply.set("result", snapshot());
         } else if (method == "studio.propertiesFor") {
             reply.set("result", propertiesFor(params.getStr("entityId")));
@@ -1167,12 +1268,16 @@ Json StudioSession::dispatch(const Json& request) {
             const Json& values=params["values"];
             if(!values.isObject() || values.members().empty())throw std::runtime_error("Missing property values");
             if(values.members().size()>64)throw std::runtime_error("Too many properties");
+            std::vector<std::string> targets;
+            if(params["entityIds"].isArray()){for(const auto& v:params["entityIds"].items())if(v.isString())targets.push_back(v.str());}
+            else targets.push_back(params.getStr("entityId"));
+            if(targets.empty() || targets.size()>10000)throw std::runtime_error("Invalid entity list");
             const size_t depth=ws_.map.undoDepth();
             try {
-                for(const auto& [key,value]:values.members()) {
+                for(const auto& target:targets) for(const auto& [key,value]:values.members()) {
                     Json nested=Json::object(),input=Json::object();
                     nested.set("id",request["id"]);nested.set("method",str("studio.setProperty"));
-                    input.set("entityId",str(params.getStr("entityId")));input.set("key",str(key));input.set("value",value);
+                    input.set("entityId",str(target));input.set("key",str(key));input.set("value",value);
                     if(params.has("componentId"))input.set("componentId",params["componentId"]);
                     nested.set("params",input);
                     const auto updated=dispatch(nested);

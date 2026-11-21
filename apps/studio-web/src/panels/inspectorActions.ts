@@ -47,3 +47,29 @@ export function canRemove(component: StudioInspectorComponent): boolean {
 export function missingOption(p: StudioProperty): boolean {
   return !!p.options?.length && p.value !== '' && !p.options.some(o => String(o.value) === String(p.value));
 }
+
+/**
+ * Multi-selection Inspector: components every object has, properties every one of
+ * them has; differing values are `mixed` (shown as "—"); editable only if editable on all.
+ */
+export function mergeInspectors(list: import('../types.ts').StudioInspector[]): import('../types.ts').StudioInspector | null {
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  const [first, ...rest] = list;
+  const components: StudioInspectorComponent[] = [];
+  for (const component of first.components) {
+    const others = rest.map(i => i.components.find(c => c.id === component.id));
+    if (others.some(c => !c)) continue;
+    const properties: StudioProperty[] = [];
+    for (const p of component.properties) {
+      const same = others.map(c => c!.properties.find(q => q.key === p.key));
+      if (same.some(q => !q)) continue;
+      const mixed = same.some(q => q!.value !== p.value);
+      const editableAll = p.editable !== false && same.every(q => q!.editable !== false);
+      properties.push({ ...p, mixed: mixed || undefined, editable: editableAll ? p.editable : false });
+    }
+    components.push({ ...component, properties });
+  }
+  const kinds = new Set(list.map(i => i.kind));
+  return { id: first.id, name: list.length + ' objects', kind: kinds.size === 1 ? first.kind : 'Mixed', nameEditable: false, components };
+}

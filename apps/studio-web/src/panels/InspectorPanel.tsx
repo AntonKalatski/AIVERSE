@@ -6,7 +6,8 @@ import type { StudioComponentCatalogItem, StudioInspectorComponent, StudioProper
 import { invoke } from '../bridge';
 import PropertyField from '../components/PropertyField';
 import { StudioContextMenu, StudioEmptyState, StudioIconButton, type StudioMenuItem } from '../ui';
-import { canRemove, canReset, copyValues, missingOption, pasteValues, resetValues, type CopiedComponent, type FieldValue } from './inspectorActions';
+import { canRemove, canReset, copyValues, mergeInspectors, missingOption, pasteValues, resetValues, type CopiedComponent, type FieldValue } from './inspectorActions';
+import type { StudioInspector } from '../types';
 import { fuzzyScore } from '../commandSearch';
 import type { StudioPanelContext } from './StudioPanelRenderer';
 import './InspectorPanel.css';
@@ -136,8 +137,22 @@ function AddComponent({ entityId, busy, onPick }: { entityId: string; busy: bool
 }
 
 /** Unity-style Inspector: entity header + its document components. */
-export default function InspectorPanel({ inspector, selected, busy, inspectorPinned, toggleInspectorPin,
-  changeProperty, setBusy, commitSnapshot, showPanel, reportError }: StudioPanelContext) {
+export default function InspectorPanel({ inspector: primary, selected, busy, inspectorPinned, toggleInspectorPin,
+  changeProperty, setBusy, commitSnapshot, showPanel, reportError, snapshot }: StudioPanelContext) {
+  // Multi-selection: read every selected object and show their common components.
+  const ids = !inspectorPinned && snapshot?.selectedIds && snapshot.selectedIds.length > 1 ? snapshot.selectedIds.slice(-50) : null;
+  const [others, setOthers] = useState<StudioInspector[] | null>(null);
+  const idsKey = ids?.join('|') ?? '';
+  useEffect(() => {
+    if (!ids) { setOthers(null); return; }
+    let live = true;
+    void Promise.all(ids.map(entityId => invoke('studio.inspect', { entityId }))).then(list => { if (live) setOthers(list); })
+      .catch(() => { if (live) setOthers(null); });
+    return () => { live = false; };
+  }, [idsKey, snapshot]); // eslint-disable-line react-hooks/exhaustive-deps
+  const multi = !!ids && !!others && others.length > 1;
+  const inspector = multi ? mergeInspectors(others!) : primary;
+  const targetIds = multi ? ids! : null;
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [menu, setMenu] = useState<{ x: number; y: number; component: StudioInspectorComponent } | null>(null);
   const run = async (action: () => Promise<import('../types').StudioSnapshot>) => {
@@ -148,7 +163,13 @@ export default function InspectorPanel({ inspector, selected, busy, inspectorPin
   };
   const setMany = (component: StudioInspectorComponent, values: Record<string, FieldValue> | null) => {
     if (!inspector || !values || !Object.keys(values).length) return;
-    void run(() => invoke('studio.setProperties', { entityId: inspector.id, componentId: component.id, values }));
+    void run(() => invoke('studio.setProperties', targetIds
+      ? { entityIds: targetIds, componentId: component.id, values }
+      : { entityId: inspector.id, componentId: component.id, values }));
+  };
+  const change = (component: StudioInspectorComponent, key: string, value: FieldValue) => {
+    if (targetIds) setMany(component, { [key]: value });
+    else void changeProperty(key, value, component.id);
   };
   const menuItems = (component: StudioInspectorComponent): StudioMenuItem[] => [
     { id: 'reset', label: 'Reset', disabled: busy || !canReset(component), onSelect: () => setMany(component, resetValues(component)) },
@@ -158,7 +179,7 @@ export default function InspectorPanel({ inspector, selected, busy, inspectorPin
     } },
     { id: 'paste', label: 'Paste Values', disabled: busy || !pasteValues(componentClipboard, component),
       onSelect: () => setMany(component, pasteValues(componentClipboard, component)) },
-    { id: 'remove', label: 'Remove Component', danger: true, separator: true, disabled: busy || !inspector || !canRemove(component),
+    { id: 'remove', label: 'Remove Component', danger: true, separator: true, disabled: busy || !inspector || !!targetIds || !canRemove(component),
       onSelect: () => { if (inspector) void run(() => invoke('studio.componentRemove', { entityId: inspector.id, componentId: component.id })); } },
   ];
   const addComponent = (item: StudioComponentCatalogItem) => {
@@ -210,9 +231,10 @@ export default function InspectorPanel({ inspector, selected, busy, inspectorPin
         component={component} entityId={inspector.id} busy={busy}
         collapsed={!!collapsed[component.id]}
         onToggle={() => setCollapsed(current => ({ ...current, [component.id]: !current[component.id] }))}
-        onChange={(key, value) => void changeProperty(key, value, component.id)}
+        onChange={(key, value) => change(component, key, value)}
         onMenu={(x, y) => setMenu({ x, y, component })} onCreateMaterial={createMaterial}/>)}
-      <AddComponent entityId={inspector.id} busy={busy} onPick={addComponent}/>
+      {multi ? <p className="insp-comp__hint insp-multi-hint">Editing {ids!.length} objects · values that differ show “—”.</p>
+        : <AddComponent entityId={inspector.id} busy={busy} onPick={addComponent}/>}
     </div>}
     {menu && <StudioContextMenu x={menu.x} y={menu.y} label={menu.component.title} items={menuItems(menu.component)} onClose={() => setMenu(null)}/>}
   </div>;

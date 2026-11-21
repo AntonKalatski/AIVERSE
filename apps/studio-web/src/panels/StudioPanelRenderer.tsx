@@ -41,7 +41,10 @@ export interface StudioPanelContext {
   inspector: StudioInspector | null;
   inspectorPinned: boolean;
   toggleInspectorPin: () => void;
-  select: (id: string | null) => Promise<void>;
+  select: (id: string | null, mode?: 'replace' | 'add' | 'toggle') => Promise<void>;
+  selectIds: (ids: string[], mode?: 'replace' | 'add' | 'toggle') => Promise<void>;
+  /** Scene object under the cursor (Scene or Hierarchy hover). */
+  hoverId: string;
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
   /** Apply a snapshot from an Inspector action without dropping the Inspector pin. */
   commitSnapshot: (value: StudioSnapshot) => void;

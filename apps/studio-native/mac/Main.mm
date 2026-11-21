@@ -15,6 +15,7 @@
 #include <exception>
 #include <memory>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -48,6 +49,9 @@
     NSPoint press_;
     BOOL dragged_;
     BOOL moveDrag_;
+    BOOL marquee_;             // plain LMB drag on empty space: rectangle selection
+    NSTrackingArea* hoverTracking_;
+    NSTimeInterval lastHover_;
 }
 @property(nonatomic, assign) StudioHost* host;
 @end
@@ -78,6 +82,7 @@
     double lastCameraYaw_, lastCameraPitch_, lastCameraDistance_;
     BOOL lastCameraOrtho_, cameraSent_;
     std::string lastActionCaption_; // last "viewport.action" caption sent to the web UI
+    std::string hoverId_;           // Scene / Hierarchy hover highlight
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -96,6 +101,12 @@
 - (void)setSceneTool:(int)tool;
 - (int)sceneTool;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode;
+- (void)sceneMarqueeFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height;
+- (void)sceneMarqueeEndFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode;
+- (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sceneSelectionAction:(const char*)method;
+- (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
 - (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point;
@@ -151,12 +162,43 @@ static NSEvent* gStudioLastWebMouseDown=nil;
     if ((self = [super initWithFrame:frame])) {
         self.wantsLayer = YES;
         self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+        // Assets panel drags carry "aiverse-asset:<content path>" as plain text.
+        [self registerForDraggedTypes:@[NSPasteboardTypeString]];
     }
     return self;
 }
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if(hoverTracking_)[self removeTrackingArea:hoverTracking_];
+    hoverTracking_=[[NSTrackingArea alloc] initWithRect:NSZeroRect options:
+        NSTrackingMouseMoved|NSTrackingMouseEnteredAndExited|NSTrackingActiveInKeyWindow|NSTrackingInVisibleRect owner:self userInfo:nil];
+    [self addTrackingArea:hoverTracking_];
+}
+- (void)mouseMoved:(NSEvent*)event {
+    // Scene hover highlight, throttled (a pick per ~50 ms).
+    const NSTimeInterval now=event.timestamp;
+    if (now-lastHover_<0.05) return;
+    lastHover_=now;
+    const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+    [self.host sceneHoverAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+}
+- (void)mouseExited:(NSEvent*)event { (void)event; [self.host sceneHoverAtX:-1 y:-1 width:self.bounds.size.width height:self.bounds.size.height]; }
+static NSString* const kStudioAssetDragPrefix=@"aiverse-asset:";
+static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
+    NSString* text=[[sender draggingPasteboard] stringForType:NSPasteboardTypeString];
+    return [text hasPrefix:kStudioAssetDragPrefix] ? [text substringFromIndex:kStudioAssetDragPrefix.length] : nil;
+}
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender { return studioDraggedAsset(sender) ? NSDragOperationCopy : NSDragOperationNone; }
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender { return studioDraggedAsset(sender) ? NSDragOperationCopy : NSDragOperationNone; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSString* asset=studioDraggedAsset(sender);
+    if (!asset.length || asset.length>1024) return NO;
+    const NSPoint point=[self convertPoint:sender.draggingLocation fromView:nil];
+    return [self.host placeAsset:asset.UTF8String atX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+}
 - (void)mouseDown:(NSEvent*)event {
     press_=[self convertPoint:event.locationInWindow fromView:nil];
-    dragged_=NO;
+    dragged_=NO;marquee_=NO;
     [self.window makeFirstResponder:self];
     // Plain LMB on a handle starts a Move / Rotate / Scale drag (Unity W/E/R tools).
     moveDrag_=!(event.modifierFlags & NSEventModifierFlagOption) &&
@@ -177,7 +219,14 @@ static NSEvent* gStudioLastWebMouseDown=nil;
     const NSEventModifierFlags flags=event.modifierFlags;
     // Hand tool (Q): plain LMB drag pans the view.
     if (!(flags & NSEventModifierFlagOption) && [self.host sceneTool]==0) { dragged_=YES; [self.host panX:event.deltaX y:event.deltaY]; return; }
-    if (!(flags & NSEventModifierFlagOption)) return; // plain LMB drag: reserved for selection
+    if (!(flags & NSEventModifierFlagOption)) {
+        // Plain LMB drag on empty space: rectangle (marquee) selection.
+        const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+        if (!marquee_ && std::hypot(double(point.x-press_.x),double(point.y-press_.y))<5.0) return;
+        marquee_=YES;dragged_=YES;
+        [self.host sceneMarqueeFrom:press_ to:point width:self.bounds.size.width height:self.bounds.size.height];
+        return;
+    }
     dragged_=YES;
     if (flags & NSEventModifierFlagCommand) [self.host panX:event.deltaX y:event.deltaY];
     else [self.host orbitX:event.deltaX y:event.deltaY];
@@ -185,9 +234,17 @@ static NSEvent* gStudioLastWebMouseDown=nil;
 - (void)mouseUp:(NSEvent*)event {
     if (moveDrag_) { moveDrag_=NO; [self.host sceneMoveEnd]; return; }
     const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+    // Shift adds to the selection, Cmd toggles (Unity / Finder convention).
+    const char* mode=(event.modifierFlags & NSEventModifierFlagCommand)?"toggle":
+        (event.modifierFlags & NSEventModifierFlagShift)?"add":"replace";
+    if (marquee_) {
+        marquee_=NO;
+        [self.host sceneMarqueeEndFrom:press_ to:point width:self.bounds.size.width height:self.bounds.size.height mode:mode];
+        return;
+    }
     if (dragged_ || std::hypot(double(point.x-press_.x), double(point.y-press_.y)) >= 5.0) return;
     if ([self.host sceneGizmoAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height]) return;
-    [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+    [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height mode:mode];
 }
 - (void)rightMouseDown:(NSEvent*)event { [self.window makeFirstResponder:self]; (void)event; }
 - (void)rightMouseDragged:(NSEvent*)event {
@@ -201,6 +258,10 @@ static NSEvent* gStudioLastWebMouseDown=nil;
     enum : unsigned short { kA=0,kS=1,kD=2,kF=3,kQ=12,kW=13,kE=14,kR=15,kLeft=123,kRight=124,kDown=125,kUp=126,kHome=115 };
     const unsigned short code=event.keyCode;
     const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    // Delete / ⌘D act on the whole Scene selection (one undo step).
+    const NSEventModifierFlags mods=event.modifierFlags&(NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption|NSEventModifierFlagShift);
+    if ((code==51 || code==117) && !(mods&~NSEventModifierFlagShift)) { [self.host sceneSelectionAction:"studio.entitiesDelete"]; return; }
+    if (code==kD && mods==NSEventModifierFlagCommand) { [self.host sceneSelectionAction:"studio.entitiesDuplicate"]; return; }
     if (event.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) {
         [super keyDown:event]; return;
     }
@@ -244,6 +305,10 @@ static NSEvent* gStudioLastWebMouseDown=nil;
 @end
 
 @implementation StudioGameView
+// The hosted game never accepts Scene asset drops.
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender { (void)sender; return NSDragOperationNone; }
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender { (void)sender; return NSDragOperationNone; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender { (void)sender; return NO; }
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
     if(tracking_)[self removeTrackingArea:tracking_];
@@ -456,6 +521,10 @@ static NSEvent* gStudioLastWebMouseDown=nil;
                 preview_->setOrientationGizmo(!htmlComposite_);
             }
             // StudioSession/renderer are owned and called on the main thread.
+            {
+                const auto ids=session_->selectedObjectIds();
+                preview_->setEditorState(std::set<std::string>(ids.begin(),ids.end()),session_->hiddenIds(),session_->lockedIds(),hoverId_);
+            }
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
@@ -602,15 +671,75 @@ static NSEvent* gStudioLastWebMouseDown=nil;
     [self sendStudioEventPayload:"viewport.camera" payload:payload];
 }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    [self selectAtX:x y:y width:width height:height mode:"replace"];
+}
+- (void)sceneMarqueeFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height {
+    if (!preview_ || width<2 || height<2) return;
+    preview_->setMarquee(true,float(a.x/width),float(a.y/height),float(b.x/width),float(b.y/height));
+}
+- (void)sceneMarqueeEndFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode {
+    if (!preview_ || !session_) return;
+    preview_->setMarquee(false);
+    const auto ids=preview_->idsInRect(float(a.x),float(a.y),float(b.x),float(b.y),float(width),float(height),
+        session_->workspace().map,session_->workspace().project.isFps());
+    aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),list=aiverse::Json::array();
+    for (const auto& id:ids) list.push(aiverse::Json::string(id));
+    params.set("ids",list);params.set("mode",aiverse::Json::string(mode));
+    request.set("id",aiverse::Json::number(int64_t(0)));request.set("method",aiverse::Json::string("studio.select"));request.set("params",params);
+    if (!session_->dispatch(request).has("error")) [self sendStudioEvent:"selection.changed" message:""];
+}
+- (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (!preview_ || !session_ || preview_->transformDragActive()) return;
+    const std::string id=x<0||y<0?std::string():preview_->pick(float(x),float(y),float(width),float(height),
+        session_->workspace().map,session_->workspace().project.isFps());
+    if (id==hoverId_) return;
+    hoverId_=id;
+    [self sendStudioEvent:"viewport.hover" message:id.c_str()];
+}
+- (void)sceneSelectionAction:(const char*)method {
+    if (!session_) return;
+    aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),list=aiverse::Json::array();
+    for (const auto& id:session_->selectedObjectIds()) list.push(aiverse::Json::string(id));
+    if (list.size()==0) return;
+    params.set("entityIds",list);
+    request.set("id",aiverse::Json::number(int64_t(0)));request.set("method",aiverse::Json::string(method));request.set("params",params);
+    const auto outcome=session_->dispatch(request);
+    if (outcome.has("error")) { NSLog(@"AIVERSE %s: %s",method,outcome.getStr("error").c_str()); return; }
+    [self sendStudioEvent:"document.changed" message:""];
+    [self sendStudioEvent:"selection.changed" message:""];
+}
+- (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (!preview_ || !session_) return NO;
+    aiverse::render::float3 at{};
+    if (!preview_->groundPoint(float(x),float(y),float(width),float(height),at)) return NO;
+    aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object();
+    params.set("asset",aiverse::Json::string(asset));
+    params.set("x",aiverse::Json::number(double(at.x),3));params.set("z",aiverse::Json::number(double(at.z),3));
+    request.set("id",aiverse::Json::number(int64_t(0)));request.set("method",aiverse::Json::string("studio.assetPlace"));request.set("params",params);
+    const auto outcome=session_->dispatch(request);
+    if (outcome.has("error")) {
+        aiverse::Json payload=aiverse::Json::object();
+        payload.set("message",aiverse::Json::string("Place in Scene: "+outcome.getStr("error")));
+        [self sendStudioEventPayload:"assets.importError" payload:payload];
+        return NO;
+    }
+    [self sendStudioEvent:"document.changed" message:""];
+    [self sendStudioEvent:"selection.changed" message:""];
+    return YES;
+}
+- (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode {
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
         session_->workspace().map,session_->workspace().project.isFps());
+    // A modifier click on empty space keeps the current selection.
+    if (objectId.empty() && std::string(mode)!="replace") return;
     aiverse::Json request=aiverse::Json::object();
     request.set("id",aiverse::Json::number(int64_t(0)));
     request.set("method",aiverse::Json::string("studio.select"));
     aiverse::Json params=aiverse::Json::object();
     if(!objectId.empty()) params.set("id",aiverse::Json::string(objectId));
     else params.set("id",aiverse::Json());
+    params.set("mode",aiverse::Json::string(mode));
     request.set("params",std::move(params));
     const aiverse::Json outcome=session_->dispatch(request);
     if (!outcome.has("error")) [self sendStudioEvent:"selection.changed" message:""];
@@ -908,7 +1037,7 @@ static NSEvent* gStudioLastWebMouseDown=nil;
             aiverse::Json result=aiverse::Json::object();
             // Pointer/keyboard navigation comes from HTML only in composite mode (the
             // Metal NSView handles it otherwise); toolbar commands work in both.
-            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection" || kind=="tool";
+            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection" || kind=="tool" || kind=="hover";
             if ((!htmlComposite_ && !toolbarCommand) || !placement_.visible || !preview_ || viewport_.hidden) {
                 reply.set("error",aiverse::Json::string("Viewport input unavailable"));
             } else if (kind=="orbit" && input["dx"].isNumber() && input["dy"].isNumber()) {
@@ -955,6 +1084,11 @@ static NSEvent* gStudioLastWebMouseDown=nil;
                 else if (phase=="drag") { [self sceneMoveUpdateAtX:x y:y width:w height:h invertSnap:input["invertSnap"].boolean(false)]; result.set("ok",aiverse::Json::fromBool(true)); }
                 else if (phase=="up") { [self sceneMoveEnd]; result.set("ok",aiverse::Json::fromBool(true)); }
                 else reply.set("error",aiverse::Json::string("Invalid move phase"));
+            } else if (kind=="hover") {
+                // Hierarchy row hover highlights the object in the Scene.
+                const std::string id=input["id"].isString()?input["id"].str():"";
+                if (id.size()>256) reply.set("error",aiverse::Json::string("Invalid hover id"));
+                else { hoverId_=id; result.set("ok",aiverse::Json::fromBool(true)); }
             } else if (kind=="tool") {
                 // Scene toolbar: tool, Global/Local, snapping, gizmo visibility.
                 static const char* names[4]={"view","move","rotate","scale"};
@@ -1094,7 +1228,8 @@ static NSEvent* gStudioLastWebMouseDown=nil;
              method=="studio.nereidFlowSet" || method=="studio.renderLightingSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate" || method=="studio.setProperties" ||
-             method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove")) {
+             method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove" ||
+             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags")) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

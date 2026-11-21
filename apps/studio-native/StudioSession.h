@@ -2,6 +2,7 @@
 #pragma once
 #include <string>
 #include <optional>
+#include <set>
 #include <vector>
 #include <filesystem>
 #include <functional>
@@ -15,6 +16,11 @@ public:
     const editor::Workspace& workspace() const { return ws_; }
     int selectedEntityIndex() const;
     const std::string& selectedObjectId() const { return selected_; }
+    // Multi-selection (primary = selectedObjectId(), always last) and editor-only
+    // Hierarchy flags: hidden entities are not drawn or picked, locked ones not picked.
+    std::vector<std::string> selectedObjectIds() const;
+    const std::set<std::string>& hiddenIds() const { return hidden_; }
+    const std::set<std::string>& lockedIds() const { return locked_; }
     const std::string& previewMaterialName() const { return previewMaterialName_; }
     const Json& previewMaterialFactors() const { return previewMaterialFactors_; }
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
@@ -37,6 +43,12 @@ private:
     int indexFor(const std::string& id) const;
     editor::Workspace ws_;
     std::string selected_;
+    std::vector<std::string> selection_;          // extra selected ids (primary kept in selected_)
+    std::set<std::string> hidden_, locked_;
+    void selectOnly(const std::string& id) { selected_=id; selection_.clear(); }
+    void clearSelection() { selected_.clear(); selection_.clear(); }
+    bool documentHas(const std::string& id) const;
+    void dropOrdinalFlags(); // positional ids shift after structural edits
     std::string previewMaterialName_;
     Json previewMaterialFactors_;
     uint64_t previewMaterialRevision_ = 0;

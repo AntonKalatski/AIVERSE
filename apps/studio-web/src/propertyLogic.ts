@@ -15,6 +15,8 @@ export interface FieldDescriptor {
   description?: string;
   /** Optional asset kinds accepted by reference-picker fields. */
   assetKinds?: Array<'image' | 'model' | 'audio' | 'code' | 'document'>;
+  /** Multi-selection: values differ between the selected objects (shown as "—"). */
+  mixed?: boolean;
 }
 export type ParsedField = { ok: true; value: string | number | boolean } | { ok: false; error: string };
 

@@ -131,8 +131,10 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
     return structuredClone(fieldsFor(id));
   }
   if (method === 'studio.select') {
-    const id = (params as StudioParams['studio.select']).id;
+    const select = params as StudioParams['studio.select'];
+    const id = select.ids?.length ? select.ids[select.ids.length - 1] : select.id ?? null;
     if (id !== null && !snapshot.scene.entities.some(entity => entity.id === id)) throw Error('Unknown entity: ' + id);
+    snapshot.selectedIds = id === null ? [] : select.ids?.length ? [...select.ids] : [id];
     if (snapshot.selectedId && !entityFields.has(snapshot.selectedId)) {
       entityFields.set(snapshot.selectedId, structuredClone(snapshot.properties));
     }
