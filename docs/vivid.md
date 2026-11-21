@@ -2005,3 +2005,25 @@ click in facial mode is a stroke, not a selection: `StudioMetalScene::sculptPick
 -> `vivid::raycastHumanFace` (selected face meshes, bind pose) -> `vivid::humanSculptLandmark` -> a `HumanFaceShape`
 landmark on the bound character; the native event `human.sculpt` refreshes the window. Strokes are landmarks (max 256),
 baked with the character build. Each stroke re-imports the preview model (seconds on large characters).
+
+### Character Creator — MetaHuman-style workflow (2026-11-21)
+
+- Viewport sculpt: drag paints strokes (one per brush spacing, coalesced while native is busy), a brush circle follows
+  the cursor (`components/ViewportPlaceholder.tsx`, `panels/sculptBrushStore.ts`); up to 1024 landmarks.
+  The Scene keeps the previous character on screen while another one imports.
+- Live sliders: `useHumanLook.live()` applies while dragging without toggling busy; one history step per gesture.
+  One undo/redo history (look + face + sculpt), ⌘Z / ⇧⌘Z in the window.
+- Presets: saved looks get a 256 px picture `human-looks/<name>.png` (`studio.humanLookCapture` -> next facial frame via
+  `Device::captureNextFrame`, `studio.humanAppearanceThumbnails` returns data URLs). Random character with locked parts
+  and an offline Russian description parser (`describeToLook`) plus a copyable agent prompt.
+- Face blend per part: `studio.humanFacePick {enabled}` turns viewport clicks into head points (`human.facePick`
+  event); the picked part (nose, mouth, eyes, brows, jaw, cheeks) gets its own blend handle (`blendFace(..., perRegion)`).
+- Before/after: `studio.humanCompare {original}` draws the untouched source model (edit-in-place path).
+- Test expressions: `HumanPreviewAnimation.expression` (idle smile laugh surprise anger sad disgust talk), ARKit-named
+  morph weights layered over the clip pose (`applyHumanPreviewExpression`); models without those targets are unchanged.
+- Wardrobe: live try-on `studio.humanTryOn {wardrobe|null}` assembles base + outfit on a worker at 256 px textures
+  (nothing written); item `tint` [r,g,b] 0..4 multiplies the item colour; the build reports `lodTriangles` per LOD and
+  `textureSize`; "В игру" = `studio.humanPlaceInGame {type, path}` merges an RTS type with `view.model` and places one unit.
+- Pose & light tab: expression chips, pose segments, light preset cards (8 rigs) applied on click.
+- MCP: `human_look_schema`, `human_look_list`, `human_look_get`, `human_look_save` (`HumanCreatorOps.cpp`).
+

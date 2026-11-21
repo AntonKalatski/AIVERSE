@@ -1,5 +1,9 @@
 #include "HumanCreatorOps.h"
 #include "engine/character/vivid/HumanCreatorWorkbench.h"
+#include "engine/character/vivid/HumanAppearance.h"
+#include <fstream>
+#include <iterator>
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 
@@ -85,6 +89,24 @@ void applyEdits(vivid::HumanCreatorWorkbench& human, const Json& p, int& changes
     }
 }
 
+// Studio Character Creator looks (human-looks/<name>.json): the appearance of
+// an imported character model (skin, eyes, hair, body), shared with Studio.
+std::filesystem::path lookFile(const std::string& dir, const std::string& name) {
+    if (name.empty() || name.size() > 64 || name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos)
+        throw std::invalid_argument("invalid look name (A-Z a-z 0-9 _ -, up to 64)");
+    const auto folder = std::filesystem::path(dir) / "human-looks";
+    if (std::filesystem::is_symlink(std::filesystem::symlink_status(folder))) throw std::runtime_error("human-looks cannot be a symlink");
+    return folder / (name + ".json");
+}
+vivid::HumanAppearance readLook(const std::string& dir, const std::string& name) {
+    const auto file = lookFile(dir, name);
+    if (!std::filesystem::is_regular_file(file) || std::filesystem::file_size(file) > 256 * 1024)
+        throw std::runtime_error("human-looks/" + name + ".json not found");
+    std::ifstream in(file, std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(in)), {});
+    return vivid::HumanAppearance::fromJson(Json::parse(bytes));
+}
+
 } // namespace
 
 void registerHumanCreatorOps(Workspace& ws) {
@@ -158,6 +180,76 @@ void registerHumanCreatorOps(Workspace& ws) {
             Json r = describe(human, name, false);
             r.set("changes", Json::number(int64_t(changes)));
             r.set("summary", Json::string("Edited human " + name + " (" + std::to_string(changes) + " changes)"));
+            return r;
+        }});
+    ws.registerOp({"human_look_schema",
+        "Character Creator look fields for an imported character model (Studio > Character Creator: Skin, Eyes, Hair, Body): "
+        "key, label, min, max, initial. A look is {version:1, values:{key:number}, materials:{sourceMaterial: role}}.",
+        Json::parse("{}"), [](const Json&) {
+            Json r = Json::object();
+            r.set("ok", Json::fromBool(true));
+            r.set("schema", vivid::HumanAppearance::schema());
+            return r;
+        }});
+    ws.registerOp({"human_look_list", "Saved Character Creator looks of the open game (human-looks/<name>.json); Studio shows "
+        "them as preset cards.", Json::parse("{}"),
+        [w](const Json&) {
+            const auto folder = std::filesystem::path(projectDir(*w)) / "human-looks";
+            Json names = Json::array();
+            std::vector<std::string> sorted;
+            if (std::filesystem::is_directory(folder))
+                for (const auto& e : std::filesystem::directory_iterator(folder))
+                    if (e.is_regular_file() && e.path().extension() == ".json") sorted.push_back(e.path().stem().string());
+            std::sort(sorted.begin(), sorted.end());
+            for (const auto& n : sorted) names.push(Json::string(n));
+            Json r = Json::object();
+            r.set("ok", Json::fromBool(true));
+            r.set("looks", names);
+            return r;
+        }});
+    ws.registerOp({"human_look_get", "One saved Character Creator look with every value (defaults filled in).",
+        Json::parse(R"({"properties": {"name": {"type": "string"}}, "required": ["name"]})"),
+        [w](const Json& p) {
+            Json r = Json::object();
+            r.set("ok", Json::fromBool(true));
+            r.set("name", Json::string(p.getStr("name")));
+            r.set("look", readLook(projectDir(*w), p.getStr("name")).toJson());
+            return r;
+        }});
+    ws.registerOp({"human_look_save",
+        "Write a Character Creator look (agent draft from a text description). 'values' {key: number} from human_look_schema "
+        "are merged onto 'base' (another saved look) or the defaults; 'materials' maps source material -> role. Fails if the "
+        "look exists unless overwrite:true. The artist then applies it in Studio > Character Creator > Presets.",
+        Json::parse(R"({"properties": {"name": {"type": "string"}, "base": {"type": "string"},
+            "values": {"type": "object"}, "materials": {"type": "object"}, "overwrite": {"type": "boolean"}}, "required": ["name"]})"),
+        [w](const Json& p) {
+            const auto dir = projectDir(*w);
+            const auto name = p.getStr("name");
+            const auto file = lookFile(dir, name);
+            if (!p.getBool("overwrite") && std::filesystem::exists(file))
+                throw std::runtime_error("human-looks/" + name + ".json exists (pass overwrite:true)");
+            Json look = p.has("base") ? readLook(dir, p.getStr("base")).toJson() : vivid::HumanAppearance{}.toJson();
+            if (p.has("values")) {
+                if (!p["values"].isObject()) throw std::invalid_argument("'values' must be {key: number}");
+                for (const auto& [k, v] : p["values"].members()) look.member("values").set(k, v);
+            }
+            if (p.has("materials")) {
+                if (!p["materials"].isObject()) throw std::invalid_argument("'materials' must be {material: role}");
+                for (const auto& [k, v] : p["materials"].members()) look.member("materials").set(k, v);
+            }
+            const auto checked = vivid::HumanAppearance::fromJson(look); // validates keys and limits
+            std::filesystem::create_directories(file.parent_path());
+            {
+                std::ofstream out(file.string() + ".pending", std::ios::binary | std::ios::trunc);
+                out << checked.toJson().dump(2) << "\n";
+                if (!out) throw std::runtime_error("cannot write human-looks/" + name + ".json");
+            }
+            std::filesystem::rename(file.string() + ".pending", file);
+            Json r = Json::object();
+            r.set("ok", Json::fromBool(true));
+            r.set("name", Json::string(name));
+            r.set("look", checked.toJson());
+            r.set("summary", Json::string("Saved look " + name));
             return r;
         }});
     ws.registerOp({"human_validate", "Check a digital-human document (as written by hand) without saving: version 1, dna limits, "

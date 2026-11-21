@@ -66,3 +66,17 @@ test('a part with its own handle blends independently of the rest',async()=>{
  const plain=blendFace(base,all,schema),solo=blendFace(base,all,schema,FACE_ARCHETYPES,{'Нос':wide});
  assert.equal(solo.jawWidth??0,plain.jawWidth??0);assert.notEqual(solo.noseWidth??0,plain.noseWidth??0);
 });
+test('random look leaves locked parts alone and stays in believable ranges',async()=>{
+ const {randomLook}=await import('../src/panels/humanCreatorSchema.ts');
+ let seed=1;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+ const base={'body.height':1,'hair.melanin':.72};
+ const out=randomLook(base,['body'],rnd);
+ assert.equal(out['body.height'],1);assert.ok(out['hair.melanin']>=.1&&out['hair.melanin']<=.98);assert.ok(out['skin.exposure']>=-.6&&out['skin.exposure']<=.6);
+});
+test('a Russian description becomes a look draft',async()=>{
+ const {describeToLook}=await import('../src/panels/humanCreatorSchema.ts');
+ const d=describeToLook('Пожилой рыжий рыбак, обветренная кожа, голубые глаза, широкое лицо, высокий');
+ assert.equal(d.values['hair.redness'],.9);assert.equal(d.values['eyes.irisB'],.7);assert.equal(d.values['body.height'],1.1);
+ assert.equal(d.face,'broad');assert.ok(d.matched.includes('обветренная кожа'));
+ assert.deepEqual(describeToLook('просто человек').matched,[]);
+});

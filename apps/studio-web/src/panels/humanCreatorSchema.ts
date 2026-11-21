@@ -137,3 +137,68 @@ export function faceRegionAt(p: [number, number, number]): string | null {
     'Щека': 'Скулы и овал', 'Рот': 'Рот', 'Подбородок': 'Челюсть' };
   return map[zone] ?? null;
 }
+
+// ---- Random character (with locked parts) and text description drafts ----
+export type LookPart = 'face' | 'skin' | 'eyes' | 'hair' | 'body';
+export const LOOK_PARTS: { id: LookPart; label: string }[] = [
+  { id: 'face', label: 'Лицо' }, { id: 'skin', label: 'Кожа' }, { id: 'eyes', label: 'Глаза' }, { id: 'hair', label: 'Волосы' }, { id: 'body', label: 'Тело' }];
+const EYE_COLOURS: [number, number, number][] = [[.176, .077, .045], [.3, .15, .06], [.25, .45, .7], [.2, .45, .25], [.45, .5, .52], [.4, .3, .12]];
+/** Plausible random look: only artistic fields move, within believable
+ *  ranges; locked parts keep the current values. rnd returns [0,1). */
+export function randomLook(current: Record<string, number>, locked: LookPart[], rnd: () => number = Math.random): Record<string, number> {
+  const out = { ...current }; const r = (a: number, b: number) => +(a + (b - a) * rnd()).toFixed(4);
+  if (!locked.includes('skin')) Object.assign(out, { 'skin.exposure': r(-.6, .6), 'skin.saturation': r(.85, 1.15), 'skin.redness': r(0, .35), 'skin.freckles': rnd() < .3 ? r(.2, .8) : 0 });
+  if (!locked.includes('eyes')) { const c = EYE_COLOURS[Math.floor(rnd() * EYE_COLOURS.length)]; Object.assign(out, { 'eyes.irisR': c[0], 'eyes.irisG': c[1], 'eyes.irisB': c[2], 'eyes.redness': r(0, .15) }); }
+  if (!locked.includes('hair')) Object.assign(out, { 'hair.melanin': r(.1, .98), 'hair.redness': rnd() < .2 ? r(.6, .95) : r(0, .25), 'hair.gray': rnd() < .2 ? r(.3, .9) : 0 });
+  if (!locked.includes('body')) for (const k of ['height', 'width', 'shoulders', 'chest', 'waist', 'hips', 'legs']) out['body.' + k] = r(.93, 1.07);
+  return out;
+}
+export function randomHandle(rnd: () => number = Math.random): [number, number] {
+  const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * .85; return [+(Math.cos(a) * d).toFixed(3), +(Math.sin(a) * d).toFixed(3)];
+}
+interface Rule { re: RegExp; values?: Record<string, number>; face?: string; label: string }
+const RULES: Rule[] = [
+  { re: /стар|пожил|в возрасте/, values: { 'hair.gray': .6, 'skin.roughness': .78, 'skin.redness': .2 }, label: 'возраст' },
+  { re: /молод|юн/, values: { 'hair.gray': 0, 'skin.roughness': .55 }, label: 'молодой' },
+  { re: /сед/, values: { 'hair.gray': .9, 'hair.grayLightness': .75 }, label: 'седина' },
+  { re: /рыж/, values: { 'hair.melanin': .45, 'hair.redness': .9 }, label: 'рыжие волосы' },
+  { re: /блонд|светловолос|белокур|светлые волосы/, values: { 'hair.melanin': .15, 'hair.redness': .2 }, label: 'светлые волосы' },
+  { re: /брюнет|темноволос|черноволос|тёмные волосы|темные волосы|чёрные волосы|черные волосы/, values: { 'hair.melanin': .95, 'hair.redness': .05 }, label: 'тёмные волосы' },
+  { re: /шатен|русые/, values: { 'hair.melanin': .65, 'hair.redness': .2 }, label: 'русые волосы' },
+  { re: /голуб|синие глаза|синеглаз/, values: { 'eyes.irisR': .25, 'eyes.irisG': .45, 'eyes.irisB': .7 }, label: 'голубые глаза' },
+  { re: /зелен|зелён/, values: { 'eyes.irisR': .2, 'eyes.irisG': .45, 'eyes.irisB': .25 }, label: 'зелёные глаза' },
+  { re: /кари|кареглаз/, values: { 'eyes.irisR': .3, 'eyes.irisG': .15, 'eyes.irisB': .06 }, label: 'карие глаза' },
+  { re: /серые глаза|сероглаз/, values: { 'eyes.irisR': .45, 'eyes.irisG': .5, 'eyes.irisB': .52 }, label: 'серые глаза' },
+  { re: /загорел|смугл/, values: { 'skin.exposure': -.45, 'skin.redness': .2 }, label: 'загар' },
+  { re: /бледн/, values: { 'skin.exposure': .45, 'skin.saturation': .8 }, label: 'бледная кожа' },
+  { re: /веснушк|конопат/, values: { 'skin.freckles': .7, 'skin.freckleDensity': .55 }, label: 'веснушки' },
+  { re: /обветр|груб.. кож|морщин/, values: { 'skin.roughness': .82, 'skin.redness': .35, 'skin.pores': .35 }, label: 'обветренная кожа' },
+  { re: /румян/, values: { 'skin.redness': .45 }, label: 'румянец' },
+  { re: /высок/, values: { 'body.height': 1.1, 'body.legs': 1.05 }, label: 'высокий' },
+  { re: /невысок|низк|коротыш/, values: { 'body.height': .92 }, label: 'невысокий' },
+  { re: /худ|строй|тощ/, values: { 'body.width': .9, 'body.waist': .85, 'body.hips': .93 }, label: 'худой' },
+  { re: /полн|толст|тучн|грузн/, values: { 'body.width': 1.15, 'body.waist': 1.2, 'body.depth': 1.12 }, label: 'полный' },
+  { re: /широкоплеч|мускулист|атлет|качок|мощн/, values: { 'body.shoulders': 1.12, 'body.chest': 1.1 }, label: 'атлетичный' },
+  { re: /узк.. лиц|худ.. лиц|узколиц/, face: 'narrow', label: 'узкое лицо' },
+  { re: /широк.. лиц|кругл.. лиц|скуласт/, face: 'broad', label: 'широкое лицо' },
+  { re: /остр.. черт|резк.. черт|хищн/, face: 'sharp', label: 'острые черты' },
+  { re: /мягк.. черт|добр.. лиц/, face: 'soft', label: 'мягкие черты' },
+  { re: /вытянут|длинн.. лиц/, face: 'long', label: 'вытянутое лицо' }];
+/** Offline draft from a Russian description: look values, an optional face
+ *  archetype and the phrases that were understood. */
+export function describeToLook(text: string): { values: Record<string, number>; face: string | null; matched: string[] } {
+  const t = text.toLowerCase().replace(/ё/g, 'е'); const values: Record<string, number> = {}; const matched: string[] = []; let face: string | null = null;
+  for (const rule of RULES) if (rule.re.test(t.replace(/ё/g, 'е'))) {
+    if (rule.values) Object.assign(values, rule.values);
+    if (rule.face) face = rule.face;
+    matched.push(rule.label);
+  }
+  return { values, face, matched };
+}
+/** Prompt for an agent with the AIVERSE MCP tools (human_look_*). */
+export function agentLookPrompt(text: string, name: string): string {
+  return `Создай черновик персонажа для Character Creator в AIVERSE по описанию: «${text.trim()}».\n` +
+    `1) Вызови human_look_schema и выбери значения полей (кожа, глаза, волосы, тело).\n` +
+    `2) Сохрани их через human_look_save с name "${name}" (overwrite: true).\n` +
+    `3) Коротко перечисли, какие поля изменил и почему. Форму лица задаёт художник кругом смешивания в Studio.`;
+}

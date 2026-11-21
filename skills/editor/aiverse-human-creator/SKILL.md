@@ -1,6 +1,6 @@
 ---
 name: aiverse-human-creator
-description: Author VIVID digital humans (skin, eyes, hair, face and body proportions, 52 facial rest channels, morph routes, rig bone names, rig corrections, skin weights) through the aiversemcp human_* tools or the Studio "Human Creator" window, saved as humans/<name>.json and previewed in the Studio viewport.
+description: Author VIVID digital humans and Character Creator looks (skin, eyes, hair, face and body proportions, 52 facial rest channels, routes, rig, skin weights; looks of imported models from a text description) through the aiversemcp human_* / human_look_* tools or the Studio Character Creator window.
 ---
 
 # VIVID Human Creator
@@ -11,7 +11,8 @@ eyes or hair in an AIVERSE game, or asks about the Studio "Human Creator" window
 One document, two editors:
 - Studio window "Human Creator" (centre dock, panel id human_creator), native bridge methods studio.humanCreator*.
 - MCP tools `human_schema`, `human_list`, `human_get`, `human_create`, `human_edit`, `human_validate`
-  (GPU-free; run in aiversemcp without an editor).
+  (GPU-free; run in aiversemcp without an editor), plus `human_look_schema`, `human_look_list`, `human_look_get`,
+  `human_look_save` for Character Creator looks of imported models.
 - Both read and write `<project>/humans/<name>.json` (version 1: `dna`, `rigCorrections`, `skinWeights`, `routes`)
   through `engine/character/vivid/HumanCreatorWorkbench.h` (`aiverse::vivid::HumanCreatorWorkbench`, target `aiverse_vivid_human`).
   Saves are atomic and never truncate the last-good file.
@@ -34,11 +35,25 @@ One document, two editors:
 5. Visual check: the user opens Studio > Human Creator > Load `<name>` > "Show in viewport". Say plainly that you did not
    see pixels: `aiversemcp` has no Studio screenshot tool yet.
 
-## Project characters (body, face, sculpt, wardrobe)
-The same window, source "Модель проекта", edits an imported character: tabs Тело, Лицо (face meshes, sliders, photo,
-scan fit, head + body import), Скульпт (viewport brush: studio.humanSculpt / studio.humanSculptStroke / studio.humanSculptUndo),
-Кожа и волосы, Одежда (wardrobe + bake), Поза и свет, Профили. Those edits have no MCP tools yet: describe the steps
-to the user or drive the Studio window.
+## Project characters (Character Creator, model source)
+The same window, source "Модель", edits an imported character (MetaHuman-style categories: Пресеты, Лицо, Скульпт,
+Кожа, Глаза, Волосы, Тело, Одежда, Поза и свет). Looks are `<project>/human-looks/<name>.json`
+(`{version:1, values:{key:number}, materials:{sourceMaterial: role}}`), with `<name>.png` preset pictures.
+
+Agent draft from a text description ("пожилой рыбак, обветренная кожа"):
+1. `human_look_schema` once: field `key`, `label`, `min`, `max`, `initial` (skin.*, eyes.*, hair.*, lashes.*, body.*).
+   Never guess a key; colours are separate R/G/B keys (e.g. `eyes.irisR`).
+2. `human_look_save {name, values, base?, materials?, overwrite?}` - values merge onto `base` (another look) or the
+   defaults; the whole look is validated, nothing is written on error.
+3. `human_look_list` / `human_look_get {name}` to confirm. The artist applies it in Studio > Character Creator >
+   Пресеты (cards) and sets the face shape with the blend circle; face shape, sculpt and wardrobe have no MCP tools.
+The Presets tab can copy this request for you ("Запрос агенту").
+
+Studio-only features (describe the steps, do not claim to have run them): face blend circle with per-part handles
+picked in the viewport (`studio.humanFacePick`), drag sculpt with a brush circle, before/after (`studio.humanCompare`),
+test expressions (preview animation `expression`: idle smile laugh surprise anger sad disgust talk), live wardrobe
+try-on (`studio.humanTryOn`), clothing `tint` [r,g,b] in the wardrobe recipe, LOD/game budget after the build and
+"В игру" (`studio.humanPlaceInGame` adds an RTS type with `view.model` and places one unit).
 
 ## Sections (Studio window = tools/vivid-creator)
 Skin, Eyes, Hair/groom, Face and body proportions, Facial morph / 52 channels (baked into the preview through the

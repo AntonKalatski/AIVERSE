@@ -575,6 +575,42 @@ Json StudioSession::dispatch(const Json& request) {
                 throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
             sculpt_.regionPick=on;if(on)sculpt_.armed=false;
             auto result=Json::object();result.set("enabled",Json::fromBool(on));reply.set("result",std::move(result));
+        } else if(method=="studio.humanPlaceInGame") {
+            // "To the game": the built character becomes an RTS unit type
+            // (view.model) and, when a map is open, one unit is placed.
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string type=params.getStr("type");
+            if(type.empty()||type.size()>48||!std::all_of(type.begin(),type.end(),[](unsigned char c){return std::isalnum(c)||c=='_';})||std::isdigit((unsigned char)type[0]))
+                throw std::invalid_argument("Имя типа: латиница, цифры и _ (до 48 символов)");
+            const std::string asset=params.getStr("path");
+            namespace fs=std::filesystem;
+            const fs::path relative(asset);
+            if(asset.empty()||relative.is_absolute()||asset.find("..")!=std::string::npos||(relative.extension()!=".glb"&&relative.extension()!=".gltf"))
+                throw std::invalid_argument("Нужна модель персонажа .glb из content");
+            const fs::path file=studioContentRoot(ws_.project.dir)/relative;
+            if(!fs::is_regular_file(file))throw std::runtime_error("Модель персонажа не найдена: "+asset);
+            const auto viewPath=fs::relative(file,fs::path(ws_.project.dir)).generic_string();
+            auto view=Json::object();view.set("model",Json::string(viewPath));view.set("height",Json::number(1.8));
+            auto def=Json::object();def.set("view",view);
+            if(ws_.project.rules.findType(type)<0){
+                def.set("name",Json::string(params.getStr("name").empty()?type:params.getStr("name")));
+                auto move=Json::object();move.set("speed",Json::number(3.));def.set("move",move);
+                auto health=Json::object();health.set("max",Json::number(100.));def.set("health",health);
+            }
+            auto value=Json::object();value.set(type,def);
+            auto args=Json::object();args.set("path",Json::string("types"));args.set("value",value);
+            const Json merged=ws_.call("rules_merge",args,"studio");
+            if(merged.has("error"))throw std::runtime_error(merged.getStr("error"));
+            bool placed=false;
+            if(!ws_.project.isFps() && ws_.map.data.w>0) {
+                auto at=Json::object();at.set("type",Json::string(type));
+                at.set("x",Json::number(double(ws_.map.data.w)/2));at.set("z",Json::number(double(ws_.map.data.h)/2));at.set("owner",Json::number(1.));
+                const Json put=ws_.call("entity_place",at,"studio");
+                placed=!put.has("error");
+                if(placed)selected_="entity:"+std::to_string(ws_.map.data.entities.size()-1);
+            }
+            auto result=Json::object();result.set("type",Json::string(type));result.set("model",Json::string(viewPath));result.set("placed",Json::fromBool(placed));
+            reply.set("result",std::move(result));
         } else if(method=="studio.humanTryOn") {
             // Live wardrobe try-on in the preview; null takes everything off.
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");

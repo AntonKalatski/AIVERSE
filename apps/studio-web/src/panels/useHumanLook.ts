@@ -6,6 +6,8 @@ import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 
 export const emptyLook = (): HumanLook => ({ version: 1, values: {}, materials: {} });
 
+export interface Snapshot { look: HumanLook; face: HumanFaceShape | null }
+
 export function useHumanLook(project: string) {
   const [info, setInfo] = useState<HumanLookInfo | null>(null);
   const [face, setFace] = useState<HumanFaceShape | null>(null);
@@ -15,8 +17,11 @@ export function useHumanLook(project: string) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
-  const [undo, setUndo] = useState<HumanLook[]>([]);
-  const [redo, setRedo] = useState<HumanLook[]>([]);
+  // One history for look AND face shape (blend, proportions, sculpt).
+  const [undo, setUndo] = useState<Snapshot[]>([]);
+  const [redo, setRedo] = useState<Snapshot[]>([]);
+  const lastRecord = useRef(0);
+  const current = useRef<Snapshot>({ look: emptyLook(), face: null });
   const generation = useRef(0);
 
   useEffect(() => {
@@ -31,12 +36,26 @@ export function useHumanLook(project: string) {
     return () => { ++generation.current; };
   }, [project]);
 
-  const edit = useCallback((next: HumanLook) => {
-    setDraft(old => { setUndo(u => [...u.slice(-63), old]); return next; });
-    setRedo([]); setStatus('Есть неприменённые изменения');
+  current.current = { look: draft, face };
+  // Slider drags fire many edits: one history step per gesture (500 ms).
+  const record = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRecord.current > 500) { const snap = current.current; setUndo(u => [...u.slice(-63), snap]); setRedo([]); }
+    lastRecord.current = now;
   }, []);
-  const undoLook = () => { if (!undo.length) return; setRedo(r => [...r, draft]); setDraft(undo[undo.length - 1]); setUndo(undo.slice(0, -1)); };
-  const redoLook = () => { if (!redo.length) return; setUndo(u => [...u, draft]); setDraft(redo[redo.length - 1]); setRedo(redo.slice(0, -1)); };
+  const edit = useCallback((next: HumanLook) => {
+    record(); setDraft(next); setStatus('Есть неприменённые изменения');
+  }, [record]);
+  const editFace = useCallback((next: HumanFaceShape | null) => { record(); setFace(next); }, [record]);
+  /** Returns the restored state so the caller can re-apply it to the preview. */
+  const undoLook = (): Snapshot | null => {
+    if (!undo.length) return null; const snap = undo[undo.length - 1];
+    setRedo(r => [...r, current.current]); setUndo(undo.slice(0, -1)); setDraft(snap.look); setFace(snap.face); lastRecord.current = 0; return snap;
+  };
+  const redoLook = (): Snapshot | null => {
+    if (!redo.length) return null; const snap = redo[redo.length - 1];
+    setUndo(u => [...u, current.current]); setRedo(redo.slice(0, -1)); setDraft(snap.look); setFace(snap.face); lastRecord.current = 0; return snap;
+  };
 
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true); setError('');
@@ -91,11 +110,11 @@ export function useHumanLook(project: string) {
   }, [project, info?.preview.revision, info?.preview.bound]);
 
   // Viewport sculpt strokes change the native face shape: pull it back.
-  useEffect(() => onNativeEvent(event => {
-    if (event === 'human.sculpt') void refresh().catch(() => {});
-  }), [refresh]);
+  useEffect(() => onNativeEvent((event, payload) => {
+    if (event === 'human.sculpt' && (payload as { hit?: boolean } | null)?.hit) { record(); void refresh().catch(() => {}); }
+  }), [refresh, record]);
 
   return { info, setInfo, face, setFace, draft, setDraft, edit, guid, setGuid, saved, setSaved, busy, error, setError,
-    status, setStatus, undo, redo, undoLook, redoLook, run, loadAsset, apply, live, refresh };
+    status, setStatus, undo, redo, undoLook, redoLook, run, loadAsset, apply, live, refresh, editFace };
 }
 export type HumanLookState = ReturnType<typeof useHumanLook>;

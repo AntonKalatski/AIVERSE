@@ -19,8 +19,8 @@ import HumanSculptControls from '../HumanSculptControls';
 import HumanFaceBlend from '../HumanFaceBlend';
 import { HcCard, HcHeader, HcSlider } from '../HumanCreatorUi';
 import HumanDnaCreator from '../HumanDnaCreator';
-import { useHumanLook } from '../useHumanLook';
-import { blendLooks, guessFaceMeshes } from '../humanCreatorSchema';
+import { useHumanLook, type Snapshot } from '../useHumanLook';
+import { FACE_ARCHETYPES, FACE_REGIONS, LOOK_PARTS, agentLookPrompt, archetypePoint, blendFace, blendLooks, describeToLook, guessFaceMeshes, randomHandle, randomLook, type LookPart } from '../humanCreatorSchema';
 import { DOCK_PRESET_EVENT } from '../../nestedDock';
 import './HumanCreatorPanel.css';
 
@@ -75,6 +75,32 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
     setCamera(view); void invoke('studio.humanCamera', { view }).catch(() => {});
   }, []);
   const pick = (c: typeof CATEGORIES[number]) => { setCategory(c.id); if (bound) frame(c.camera); };
+  // One history for look, face blend, proportions and sculpt; restoring a
+  // step re-applies it to the viewport.
+  const restore = (snap: Snapshot | null) => { if (snap && bound) void h.apply(snap.face, snap.look); };
+  const undo = () => restore(h.undoLook());
+  const redo = () => restore(h.redoLook());
+  const keys = (e: React.KeyboardEvent) => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+    if ((e.target as HTMLElement).closest('input[type=text],input:not([type]),textarea')) return;
+    e.preventDefault(); if (e.shiftKey) redo(); else undo();
+  };
+  const [locked, setLocked] = useState<LookPart[]>([]);
+  const [description, setDescription] = useState('');
+  const [understood, setUnderstood] = useState<string[] | null>(null);
+  // Random / described drafts: look values plus an optional face handle.
+  const applyDraft = (values: Record<string, number>, handle: [number, number] | null) => void h.run(async () => {
+    const look = { ...h.draft, values: { ...h.draft.values, ...values } };
+    let f = h.face;
+    if (handle) {
+      let meshes = h.face?.meshes ?? [];
+      if (!meshes.length && h.guid) meshes = guessFaceMeshes((await invoke('studio.humanWardrobeInfo', { guid: h.guid })).meshes);
+      if (meshes.length) f = { version: 1, meshes, landmarks: h.face?.landmarks ?? [],
+        values: blendFace(handle, Object.fromEntries(Object.keys(FACE_REGIONS).map(k => [k, 1])), h.info?.faceSchema ?? []) };
+    }
+    h.edit(look); if (f !== h.face) h.editFace(f);
+    if (bound) await h.apply(f, look); else h.setStatus('Черновик готов — нажмите «Показать»');
+  });
   const [comparing, setComparing] = useState(false);
   const compare = (original: boolean) => { setComparing(original); void invoke('studio.humanCompare', { original }).catch(() => {}); };
   const applyNow = () => void h.apply(h.face, h.draft);
@@ -107,6 +133,28 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
             <StudioButton variant="primary" disabled={h.busy || !h.guid || !h.info} onClick={applyNow}>Показать</StudioButton>
           </div>
           <StudioCheckbox label="Применять изменения сразу" checked={autoApply} onChange={e => setAutoApply(e.target.checked)}/>
+        </HcCard>
+        <HcCard title="Случайный персонаж" hint="Закреплённые части не меняются">
+          <div className="hc-chips">{LOOK_PARTS.map(p => <button key={p.id} type="button" className="hc-chip" aria-pressed={locked.includes(p.id)}
+            title={locked.includes(p.id) ? 'Закреплено' : 'Будет меняться'}
+            onClick={() => setLocked(l => l.includes(p.id) ? l.filter(x => x !== p.id) : [...l, p.id])}>{locked.includes(p.id) ? '🔒' : '🎲'} {p.label}</button>)}</div>
+          <StudioButton variant="primary" disabled={h.busy || !h.info} onClick={() => applyDraft(
+            randomLook({ ...Object.fromEntries((h.info?.schema ?? []).map(f => [f.key, h.draft.values[f.key] ?? f.initial])) }, locked),
+            locked.includes('face') ? null : randomHandle())}>Сгенерировать</StudioButton>
+        </HcCard>
+        <HcCard title="По описанию" hint="Опишите персонажа словами — получится черновик, который можно доработать">
+          <textarea className="hc-textarea" rows={3} value={description} placeholder="Например: пожилой рыбак, обветренная кожа, седые волосы, голубые глаза, широкое лицо"
+            onChange={e => { setDescription(e.target.value); setUnderstood(null); }}/>
+          <div className="hc-row">
+            <StudioButton variant="primary" disabled={h.busy || !h.info || !description.trim()} onClick={() => {
+              const d = describeToLook(description); setUnderstood(d.matched);
+              const i = d.face ? FACE_ARCHETYPES.findIndex(a => a.id === d.face) : -1;
+              if (d.matched.length) applyDraft(d.values, i >= 0 ? archetypePoint(i) : null);
+            }}>Создать черновик</StudioButton>
+            <StudioButton disabled={!description.trim()} title="Запрос для агента с MCP-инструментами AIVERSE"
+              onClick={() => { void navigator.clipboard?.writeText(agentLookPrompt(description, profileName)); h.setStatus('Запрос для агента скопирован'); }}>Запрос агенту</StudioButton>
+          </div>
+          {understood && <p className="hc-hint">{understood.length ? 'Понял: ' + understood.join(', ') : 'Ничего не распознал — уточните цвет волос, глаз, кожу, телосложение или форму лица, либо отправьте запрос агенту.'}</p>}
         </HcCard>
         <HcCard title="Образы" hint="Клик применяет образ к персонажу">
           <div className="hc-cards">{h.saved.map(n => <button key={n} type="button" className="hc-card" disabled={h.busy}
@@ -147,9 +195,9 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           selected={faceTab} onChange={setFaceTab}/>
         {faceTab === 'blend'
           ? <HumanFaceBlend guid={h.guid} face={h.face} schema={h.info?.faceSchema ?? []} disabled={h.busy || !h.guid}
-              onCommit={f => { h.setFace(f); if (bound) void h.apply(f, h.draft); else h.setStatus('Форма готова — нажмите «Показать»'); }}/>
+              onCommit={f => { h.editFace(f); if (bound) void h.apply(f, h.draft); else h.setStatus('Форма готова — нажмите «Показать»'); }}/>
           : <HumanFaceControls key={'face' + project + h.guid} guid={h.guid} face={h.face}
-              schema={h.info?.faceSchema ?? []} onChange={f => { h.setFace(f); if (autoApply && bound) void h.apply(f, h.draft); }}
+              schema={h.info?.faceSchema ?? []} onChange={f => { h.editFace(f); if (autoApply && bound) void h.apply(f, h.draft); }}
               onImported={g => { h.setGuid(g); h.setFace(null); }}/>}</>;
       case 'sculpt': return <HumanSculptControls face={h.info?.face ?? h.face} ready={ready} onChanged={refresh}
           prepare={async () => {
@@ -189,7 +237,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
     footer={source === 'model' ? <div className={'hc-status' + (h.error ? ' hc-status--error' : '')} role="status" title={h.error || h.status || pv?.reason || ''}>
       <StudioBadge tone={ready ? 'success' : bound ? 'warning' : 'neutral'}>{ready ? 'Во вьюпорте' : bound ? 'Загрузка' : 'Не показан'}</StudioBadge>
       <span>{h.error || (bound && !ready ? (pv?.reason ?? 'Загрузка персонажа…') : h.status) || 'Готово'}</span></div> : undefined}>
-    {source === 'dna' ? <HumanDnaCreator snapshot={snapshot}/> : <div className="hc-shell">
+    {source === 'dna' ? <HumanDnaCreator snapshot={snapshot}/> : <div className="hc-shell" onKeyDown={keys}>
       <nav className="hc-rail" aria-label="Категории персонажа">{CATEGORIES.map(c => { const Icon = c.icon;
         return <button key={c.id} type="button" className="hc-rail__item" aria-current={category === c.id ? 'page' : undefined}
           onClick={() => pick(c)} title={c.label}><Icon size={18}/><span>{c.label}</span></button>; })}</nav>
@@ -201,8 +249,8 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           <StudioButton size="sm" title="Удерживайте, чтобы увидеть исходную модель" aria-pressed={comparing} disabled={!ready}
             onPointerDown={() => compare(true)} onPointerUp={() => compare(false)} onPointerLeave={() => { if (comparing) compare(false); }}>
             <SplitSquareHorizontal size={14}/> До/после</StudioButton>
-          <StudioButton size="sm" aria-label="Отменить" disabled={h.busy || !h.undo.length} onClick={h.undoLook}><Undo2 size={14}/></StudioButton>
-          <StudioButton size="sm" aria-label="Повторить" disabled={h.busy || !h.redo.length} onClick={h.redoLook}><Redo2 size={14}/></StudioButton>
+          <StudioButton size="sm" aria-label="Отменить (⌘Z)" title="Отменить (⌘Z)" disabled={h.busy || !h.undo.length} onClick={undo}><Undo2 size={14}/></StudioButton>
+          <StudioButton size="sm" aria-label="Повторить (⇧⌘Z)" title="Повторить (⇧⌘Z)" disabled={h.busy || !h.redo.length} onClick={redo}><Redo2 size={14}/></StudioButton>
         </div>
         <div className="hc-content" onPointerUp={() => { if (['skin', 'eyes', 'hair', 'body'].includes(category)) commit(); }}>{content()}</div>
       </div>

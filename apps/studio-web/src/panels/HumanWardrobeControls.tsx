@@ -28,7 +28,7 @@ export default function HumanWardrobeControls({guid,look,face,onShow}:{guid:stri
  useEffect(()=>{if(!recipe.items.some(i=>i.asset&&!paths[i.asset]))return;let live=true;void invoke('studio.assets',{}).then(r=>{if(live)setPaths(Object.fromEntries(r.files.filter(f=>f.guid).map(f=>[f.guid!,f.path])));}).catch(()=>{});return ()=>{live=false;};},[recipe.items,paths]);
  // Live try-on: every change of the outfit re-assembles the preview (small
  // textures, nothing written to disk) until the switch is turned off.
- const [tryOn,setTryOn]=useState(true),[trying,setTrying]=useState(false);
+ const [tryOn,setTryOn]=useState(true),[trying,setTrying]=useState(false),[placed,setPlaced]=useState('');
  useEffect(()=>{
   if(!guid||!recipe.items.length)return;
   const timer=setTimeout(()=>{setTrying(true);void invoke('studio.humanTryOn',{wardrobe:tryOn?recipe:null}).catch(e=>setError(String(e).replace(/^Error: /,''))).finally(()=>setTrying(false));},350);
@@ -93,7 +93,9 @@ export default function HumanWardrobeControls({guid,look,face,onShow}:{guid:stri
   {job?.running&&<StudioAlert>Импорт, запекание материалов и масок, сборка мешей, проверка повторным импортом GLB…</StudioAlert>}
   {job?.path&&<><StudioAlert tone="success">{job.path} · {job.meshes} мешей · {job.materials} материалов · {job.vertices} вершин. Рецепт сохранён рядом в source.json.</StudioAlert>
    {job.lodTriangles&&<LodBudget tris={job.lodTriangles} bytes={job.bytes??0} textureSize={job.textureSize??size}/>}
-   <StudioButton disabled={disabled||!job.guid} onClick={()=>void run(async()=>{const current=await invoke('studio.humanAppearanceInfo',{});await invoke('studio.humanAppearanceApply',{guid:job.guid!,revision:current.preview.revision,face:null,look:{version:1,values:{},materials:{}}});onShow?.(job.guid!);})}>Показать собранного персонажа</StudioButton></>}
+   <StudioButton disabled={disabled||!job.guid} onClick={()=>void run(async()=>{const current=await invoke('studio.humanAppearanceInfo',{});await invoke('studio.humanAppearanceApply',{guid:job.guid!,revision:current.preview.revision,face:null,look:{version:1,values:{},materials:{}}});onShow?.(job.guid!);})}>Показать собранного персонажа</StudioButton>
+   <StudioButton disabled={disabled} title="Добавить тип юнита с этой моделью в rules.json и поставить его на карту" onClick={()=>void run(async()=>{const r=await invoke('studio.humanPlaceInGame',{type:name.replace(/[^A-Za-z0-9_]/g,'_').replace(/^(\d)/,'_$1'),path:job.path!,name});setPlaced(r.placed?'Тип «'+r.type+'» добавлен в правила и поставлен в центр карты':'Тип «'+r.type+'» добавлен в правила — поставьте его на карту из палитры');})}>В игру</StudioButton>
+   {placed&&<HcNote>{placed}</HcNote>}</>}
   </HcCard>
  </>;
 }
