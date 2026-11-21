@@ -143,7 +143,9 @@ def check_entry(path, systems):
     if not isinstance(e['body'], list) or not all(isinstance(x, str) and x.strip() for x in e['body']):
         errors.append(f'{p}: body must be a list of paragraphs')
     media = e['media']
-    if not isinstance(media, list) or not media:
+    flagship = bool((systems.get(e['system']) or {}).get('flagship'))
+    if not isinstance(media, list) or (flagship and not media):
+        # flagship diaries always show a frame; blog posts about other topics may be text only
         errors.append(f'{p}: at least one screenshot or video in "media"')
         media = []
     for m in media:
@@ -368,7 +370,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, Converter, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, fill_tokens)
 
@@ -560,6 +562,11 @@ def cmd_build(args):
                     feature_page(s, it, body_html, ctx), nav='systems', script=FEATURE_JS), encoding='utf-8')
                 pages += 1
         flag_ids = {s['id'] for s in flagships}
+        blog = [e for e in loc_entries if e['system'] not in flag_ids]
+        (d / 'blog.html').write_text(render_page(
+            layout, ctx, 'blog.html', f'{T["blogHubTitle"]} · AIVERSE', T['blogHubLead'],
+            blog_page(blog, systems, ctx), nav='blog', script=FEATURE_JS + BLOG_JS), encoding='utf-8')
+        pages += 1
         for s in systems:
             mine = [e for e in loc_entries if e['system'] == s['id']]
             if not mine:

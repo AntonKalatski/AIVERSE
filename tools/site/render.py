@@ -187,14 +187,11 @@ def include_card(s, it, ctx):
             f'<h3>{name}</h3><p>{text}</p><span class="inc-more">{ctx.T["incMore"]}</span></a>')
 
 
-def devblog_page(s, mine, ctx, flagship):
-    """All stages of one system, newest first, fully expanded: the system's own development diary."""
-    sid = esc(s['id'])
-    name = esc(s['name'])
+def blog_posts(entries, ctx, names=None):
+    """Fully expanded posts on a vertical date rail; names: system id -> name to tag each post with its topic."""
     status = {'done': ctx.T['stDone'], 'in-progress': ctx.T['stProgress'], 'experimental': ctx.T['stExperimental']}
-    sys_href = f'system-{sid}.html' if flagship else f'devlog.html#system={sid}'
     posts = []
-    for e in mine:
+    for e in entries:
         figs = []
         for m in e['media']:
             cap = esc(m['caption'])
@@ -204,19 +201,59 @@ def devblog_page(s, mine, ctx, flagship):
             else:
                 figs.append(f'<figure><a href="{esc(m["src"])}" data-cap="{cap}"><img src="{esc(m["src"])}" alt="{cap}" loading="lazy"></a>'
                             f'<figcaption>{cap}</figcaption></figure>')
+        gal = f'<div class="blog-media n{min(len(figs), 3)}">{"".join(figs)}</div>' if figs else ''
         body = ''.join(f'<p>{esc(p)}</p>' for p in (e.get('body') or []))
         facts = f'<div><dt>{ctx.T["blogVerified"]}</dt><dd>{esc(e["verified"])}</dd></div>'
         if e.get('limits'):
             facts += f'<div><dt>{ctx.T["blogLimits"]}</dt><dd>{esc(e["limits"])}</dd></div>'
         src = esc(e['branch'] or '') + (f' · {esc(e["commit"])}' if e.get('commit') else '')
+        topic = (f'<a class="entry-sys" href="devblog-{esc(e["system"])}.html">{esc(names[e["system"]])}</a>'
+                 if names else '')
         links = ''.join(f'<a href="{esc(l["href"])}">{esc(l["title"])}</a>' for l in e.get('links') or [])
-        posts.append(f'<li class="blog-post" id="{esc(e["id"])}"><time class="blog-date mono" datetime="{esc(e["date"])}">{ctx.fmt_date(e["date"])}</time>'
+        posts.append(f'<li class="blog-post" id="{esc(e["id"])}" data-sys="{esc(e["system"])}">'
+                     f'<time class="blog-date mono" datetime="{esc(e["date"])}">{ctx.fmt_date(e["date"])}</time>'
                      f'<span class="blog-dot" aria-hidden="true"></span><article class="blog-card">'
-                     f'<div class="entry-meta"><span class="st st-{esc(e["status"])}">{esc(status.get(e["status"], e["status"]))}</span>'
+                     f'<div class="entry-meta">{topic}<span class="st st-{esc(e["status"])}">{esc(status.get(e["status"], e["status"]))}</span>'
                      f'{f"<span>{src}</span>" if src else ""}</div>'
                      f'<h2>{esc(e["title"])}</h2><p class="summary">{esc(e["summary"])}</p>'
-                     f'<div class="blog-media n{min(len(figs), 3)}">{"".join(figs)}</div>{body}'
+                     f'{gal}{body}'
                      f'<dl class="facts-list">{facts}</dl>{f"<div class=entry-links>{links}</div>" if links else ""}</article></li>')
+    return f'<ol class="blog-list">{"".join(posts)}</ol>'
+
+
+LIGHTBOX = ('<div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button>'
+            '<img id="lb-img" alt=""><p id="lb-cap"></p></div>')
+
+
+def blog_page(entries, systems, ctx):
+    """The engine blog: everything outside the flagship systems, newest first, filterable by topic."""
+    names = {s['id']: s['name'] for s in systems}
+    topics = [s for s in systems if any(e['system'] == s['id'] for e in entries)]
+    chips = [f'<button class="filter" type="button" data-sys="" aria-pressed="true">{ctx.T["rmAll"]}</button>']
+    chips += [f'<button class="filter" type="button" data-sys="{esc(s["id"])}" aria-pressed="false">{esc(s["name"])}</button>'
+              for s in topics]
+    empty = f'<p class="blog-empty">{ctx.T["blogEmpty"]}</p>' if not entries else ''
+    return (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["navBlog"]}</p><h1>{ctx.T["blogHubTitle"]}</h1>'
+            f'<p>{ctx.T["blogHubLead"]}</p></div>'
+            f'<div class="dl-stats"><div><strong>{len(entries)}</strong><span>{ctx.T["blogPosts"]}</span></div>'
+            f'<div><strong>{len(topics)}</strong><span>{ctx.T["blogTopics"]}</span></div></div></section>'
+            f'<div class="dl-filters blog-filters" role="group" aria-label="{ctx.T["rmFilter"]}">{"".join(chips)}</div>'
+            f'{empty}{blog_posts(entries, ctx, names)}<div class="blog-end"></div>{LIGHTBOX}')
+
+
+BLOG_JS = """<script>
+(function(){var b=document.querySelectorAll('.blog-filters .filter');function set(id){b.forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.sys===id));});
+document.querySelectorAll('.blog-post').forEach(function(p){p.hidden=!!id&&p.dataset.sys!==id;});history.replaceState(null,'',id?'#topic='+id:location.pathname);}
+b.forEach(function(x){x.addEventListener('click',function(){set(x.dataset.sys);});});
+var m=location.hash.match(/^#topic=(.+)$/);if(m&&document.querySelector('.blog-filters [data-sys="'+m[1]+'"]'))set(m[1]);})();
+</script>"""
+
+
+def devblog_page(s, mine, ctx, flagship):
+    """All stages of one system, newest first, fully expanded: the system's own development diary."""
+    sid = esc(s['id'])
+    name = esc(s['name'])
+    sys_href = f'system-{sid}.html' if flagship else f'blog.html#topic={sid}'
     first = ctx.fmt_date(mine[-1]['date']) if mine else ''
     last = ctx.fmt_date(mine[0]['date']) if mine else ''
     return (f'<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / '
@@ -224,10 +261,8 @@ def devblog_page(s, mine, ctx, flagship):
             f'<h1>{ctx.T["blogTitle"]}: {name}</h1><p>{esc(ctx.T["blogLead"].format(s=s["name"]))}</p></div>'
             f'<div class="dl-stats"><div><strong>{len(mine)}</strong><span>{ctx.T["blogStages"]}</span></div>'
             f'<div><strong class="blog-stat-date">{last}</strong><span>{ctx.T["blogLast"]}</span></div></div></section>'
-            f'<ol class="blog-list">{"".join(posts)}</ol>'
-            f'<p class="blog-first mono">{ctx.T["blogFirst"]}: {first}</p>'
-            '<div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button>'
-            '<img id="lb-img" alt=""><p id="lb-cap"></p></div>')
+            f'{blog_posts(mine, ctx)}'
+            f'<p class="blog-first mono">{ctx.T["blogFirst"]}: {first}</p>{LIGHTBOX}')
 
 
 def feature_page(s, it, body_html, ctx):

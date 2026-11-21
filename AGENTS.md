@@ -16,6 +16,13 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   `docs/devlog/media/<id>/`. Порядок и формат: навык
   [skills/workflow/aiverse-devlog/SKILL.md](skills/workflow/aiverse-devlog/SKILL.md),
   описание формата — [docs/devlog/README.md](docs/devlog/README.md).
+- **Блог разработки** (`blog.html`) — для всего, чего нет среди систем на главной: редактор
+  Studio, сборка и платформы, сеть, мета, геймплей и жанры, рендер, мир, ECS, инструменты
+  агентов. Агент, закончивший такой этап, пишет такую же запись `docs/devlog/entries/*.json`,
+  указывая в `system` тему из `systems.json` без `flagship` (`studio`, `build`, `network`,
+  `meta`, `gameplay`, `render`, `world`, `ecs`, `agents`); новую тему можно добавить туда же.
+  Скриншоты в блоге желательны, но не обязательны. Правила ниже — только успешное, для людей —
+  те же.
 - В дневник идут **только успешные этапы**: то, что работает и показано на кадре. Неудачные,
   брошенные и незаконченные попытки, ошибки сборки и падения тестов остаются в handoff, на сайт
   не попадают. Этап без того, что можно показать (рефакторинг, внутренний API), описывается

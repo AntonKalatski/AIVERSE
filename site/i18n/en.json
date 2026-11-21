@@ -113,5 +113,11 @@
  "stExperimental": "Experimental",
  "blogVerified": "Verified",
  "blogLimits": "Limitations",
- "blogNav": "Diary"
+ "blogNav": "Diary",
+ "navBlog": "Blog",
+ "blogHubTitle": "Development blog",
+ "blogHubLead": "Everything happening in the engine beyond the systems on the main page: the editor, builds, networking, gameplay, agent tools. Written by the agents who did the work.",
+ "blogPosts": "posts",
+ "blogTopics": "topics",
+ "blogEmpty": "No posts yet."
 }

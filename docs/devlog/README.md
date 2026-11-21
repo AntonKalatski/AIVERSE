@@ -6,6 +6,10 @@ The site (`site/`, published to GitHub Pages from the `gh-pages` branch) has two
 - **"Кадр движка" on the main page** — `frames[0]` in `docs/devlog/showcase.json`;
 - **"Системы движка" on the main page** — flagship systems with cover frames in `docs/devlog/systems.json`.
 
+Entries about topics that are not flagship systems (Studio, builds, networking, meta, gameplay,
+render, world, ECS, agent tools) form the development blog, `blog.html`, filterable by topic. Their
+`media` may be empty; flagship entries need at least one frame.
+
 Every system also has its own diary page, `devblog-<system>.html`: all its entries, newest first,
 fully expanded with every screenshot. Each successfully finished stage gets an entry with real
 frames; failed or partial attempts and build/test chatter stay in handoffs (AGENTS.md has the rules).
