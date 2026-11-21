@@ -224,6 +224,7 @@ public:
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
     bool captureTexture(TextureHandle source,CaptureFn callback) override;
+    bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) override;
 
     void beginPass(const PassDesc& d) override;
     bool supportsRenderTargetPasses() const override { return true; }
@@ -264,6 +265,7 @@ private:
     void ensureBackBuffer(int w, int h);
     void prepareSlot();                          // waits for the slot's previous frame, resets its pools
     void collectGarbage();
+    void deliverPixelReads();  // called on owner thread at next beginFrame
     void present();
     void readBackBuffer();
     void completeTextureCaptures(FrameSlot& slot,bool succeeded);
@@ -363,6 +365,13 @@ private:
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;
     CaptureFn capture_;
+    struct PixelRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc{};
+        uint64_t serial = 0;
+        PixelReadFn callback;
+    };
+    std::vector<PixelRead> pixelReads_;
 
     // resources
     Pool<VBuffer> buffers_;

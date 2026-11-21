@@ -240,7 +240,7 @@ void Editor::init(gfx::Device& dev) {
         out = {r.tex, r.u0, r.v0, r.u1, r.v1};
         return true;
     });
-    gameFx_.setGroundHeight([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : view_.heightAt(grid_, x, z); });
+    gameFx_.setGroundHeight([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : surfaceHeightAt(x, z); });
     gameFx_.setMeshLoader([this](const std::string& name, fx::FxMesh& out) { return fx::meshFromModelFile(name, projectReader(ws_.project.dir), out); });
     gameFx_.setGpuDeviceLease(gpuDeviceLease());
     if (!gameFx_.init(&dev)) ws_.log("fx", gameFx_.lastError(), true);
@@ -292,6 +292,9 @@ void Editor::shutdown() {
     else if (!dev_->gpuHealthy())
         clientHost_.abandonOnDeviceLoss();
     gameFxBridge_.detach();
+    // Nature preview retires grass Models through previewModelRetirement_
+    // and stops its particles while gameFx_ is still alive.
+    physisNaturePreview_.release(*dev_, gameFx_);
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
@@ -360,6 +363,7 @@ void Editor::openGame(const std::string& idOrDir) {
     ws_.changes.clear();
     if (dev_) terraWeaveForestPreview_.release(*dev_);
     terraWeaveForestPreview_.setEnabled(false);
+    if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
     reloadRules();
     selection = {};
     showPicker_ = false;
@@ -641,6 +645,7 @@ void Editor::reclaimEditorAssets(bool force) {
 void Editor::newMap(int w, int h) {
     if (dev_) terraWeaveForestPreview_.release(*dev_);
     terraWeaveForestPreview_.setEnabled(false);
+    if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
     doc().reset(w, h);
     selection = {};
     syncGrid();
@@ -655,6 +660,7 @@ void Editor::openMap(const std::string& file) {
     if (doc().load(ec ? file : norm, &err)) {
         if (dev_) terraWeaveForestPreview_.release(*dev_);
         terraWeaveForestPreview_.setEnabled(false);
+        if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
         status = "Открыто: " + ws_.relative(doc().path);
         selection = {};
         syncGrid();
@@ -784,6 +790,76 @@ int Editor::pickEntity(const Viewport& vp,const RTSCamera& cam,float sx,float sy
         if(hit&&hit.distance<distance){distance=hit.distance;nearest=int(index);}
     }
     return nearest;
+}
+
+float Editor::surfaceHeightAt(float x,float z) const {
+    const float legacy=view_.heightAt(grid_,x,z);
+    const auto& d=doc().data;
+    if(d.extra.getStr("terrainPresentation","legacy")!="entities"||!std::isfinite(x)||!std::isfinite(z))return legacy;
+    const auto& owner=view_.modelResources();
+    if(owner.generation()!=visualPickCacheGeneration_)return legacy;
+    // Rebuild with the document and the pick cache (models, transforms):
+    // rasterize every terrain-tile triangle top-down into a 0.5 m grid once.
+    const uint64_t key=doc().revision*1000003ull^visualPickCacheGeneration_^(uint64_t(visualPickModelCount_)<<40);
+    constexpr float kStep=.5f;
+    if(key!=surfaceHeightCacheKey_){
+        surfaceHeightCacheKey_=key;
+        surfaceGridW_=std::clamp(int(std::ceil(float(d.w)/kStep))+1,1,8192);
+        surfaceGridH_=std::clamp(int(std::ceil(float(d.h)/kStep))+1,1,8192);
+        surfaceGrid_.assign(size_t(surfaceGridW_)*size_t(surfaceGridH_),-std::numeric_limits<float>::infinity());
+        for(size_t i=0;i<visualPickModelCount_;++i){
+            const auto& packet=visualPickModels_[i];
+            if(packet.documentIndex>=d.entities.size())continue;
+            const auto& entity=d.entities[packet.documentIndex];
+            if(entity.type.rfind("TerraTerrain",0)!=0&&!entity.extra["components"].has("TerraTerrain"))continue;
+            const auto lease=owner.acquireModelRead(packet.model);
+            if(!lease)continue;
+            const auto& m=*lease.get();
+            if(m.bindWorld.size()!=m.nodes.size())continue;
+            for(size_t n=0;n<m.nodes.size();++n){
+                const auto& node=m.nodes[n];
+                if(node.mesh<0||size_t(node.mesh)>=m.meshes.size())continue;
+                const mat4 xf=packet.world*(packet.nodes.size()==m.nodes.size()?packet.nodes[n]:m.bindWorld[n]);
+                for(const auto& prim:m.meshes[size_t(node.mesh)].primitives){
+                    if(prim.firstIndex>m.indices.size()||prim.indexCount>m.indices.size()-prim.firstIndex)continue;
+                    for(size_t t=0;t+2<prim.indexCount;t+=3){
+                        float3 v[3];bool ok=true;
+                        for(int k=0;k<3;++k){const uint32_t idx=m.indices[prim.firstIndex+t+size_t(k)];if(idx>=m.vertices.size()){ok=false;break;}v[k]=xf.transformPoint(m.vertices[idx].pos);}
+                        if(!ok)continue;
+                        const float area=(v[1].x-v[0].x)*(v[2].z-v[0].z)-(v[1].z-v[0].z)*(v[2].x-v[0].x);
+                        if(std::fabs(area)<1e-8f)continue;
+                        const int x0=std::max(0,int(std::floor(std::min({v[0].x,v[1].x,v[2].x})/kStep)));
+                        const int x1=std::min(surfaceGridW_-1,int(std::ceil(std::max({v[0].x,v[1].x,v[2].x})/kStep)));
+                        const int z0=std::max(0,int(std::floor(std::min({v[0].z,v[1].z,v[2].z})/kStep)));
+                        const int z1=std::min(surfaceGridH_-1,int(std::ceil(std::max({v[0].z,v[1].z,v[2].z})/kStep)));
+                        for(int gz=z0;gz<=z1;++gz)for(int gx=x0;gx<=x1;++gx){
+                            const float px=float(gx)*kStep,pz=float(gz)*kStep;
+                            const float w0=((v[1].x-px)*(v[2].z-pz)-(v[1].z-pz)*(v[2].x-px))/area;
+                            const float w1=((v[2].x-px)*(v[0].z-pz)-(v[2].z-pz)*(v[0].x-px))/area;
+                            const float w2=1.f-w0-w1;
+                            if(w0<-1e-4f||w1<-1e-4f||w2<-1e-4f)continue;
+                            float& cell=surfaceGrid_[size_t(gz)*size_t(surfaceGridW_)+size_t(gx)];
+                            cell=std::max(cell,w0*v[0].y+w1*v[1].y+w2*v[2].y);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if(surfaceGrid_.empty())return legacy;
+    // Bilinear over covered samples; uncovered -> the legacy surface.
+    const float fx=x/kStep,fz=z/kStep;
+    const int gx=int(std::floor(fx)),gz=int(std::floor(fz));
+    float sum=0,weight=0;
+    for(int dz=0;dz<2;++dz)for(int dx=0;dx<2;++dx){
+        const int cx=gx+dx,cz=gz+dz;
+        if(cx<0||cz<0||cx>=surfaceGridW_||cz>=surfaceGridH_)continue;
+        const float h=surfaceGrid_[size_t(cz)*size_t(surfaceGridW_)+size_t(cx)];
+        if(!std::isfinite(h))continue;
+        const float w=(dx?fx-float(gx):1.f-(fx-float(gx)))*(dz?fz-float(gz):1.f-(fz-float(gz)));
+        sum+=h*w;weight+=w;
+    }
+    return weight>1e-6f?sum/weight:legacy;
 }
 
 int Editor::pickRoad(const Viewport& vp, const RTSCamera& cam, float sx, float sy) const {
@@ -1767,6 +1843,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
                 std::abs(xCm) > double(terraweave::kWorldLimitCm) ||
                 std::abs(zCm) > double(terraweave::kWorldLimitCm))
                 throw std::out_of_range("TerraWeave forest camera outside world extent");
+            terraWeaveForestPreview_.setEngineDir(ws_.engineDir);
             terraWeaveForestPreview_.draw(*dev_, r3d_, doc(),
                 int64_t(std::llround(xCm)), int64_t(std::llround(zCm)),
                 [this](int64_t x, int64_t z) -> int32_t {
@@ -1781,6 +1858,24 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
             terraWeaveForestPreview_.setEnabled(false);
         }
     }
+    // PHYSIS «Живая природа»: wildfire on TerraWeave grass, wind, smoke and
+    // sound without a play-test (private preview World or read-only live sim).
+    if (!planets && !ws_.project.isFps() && physisNaturePreview_.settings.enabled) {
+        try {
+            physisNaturePreview_.setWater(authoredWater());
+            physisNaturePreview_.draw(*dev_, r3d_, gameFx_, projectReader(ws_.project.dir), doc(),
+                sim_ ? &sim_->world() : nullptr, useCam, time_,
+                [this](float x, float z) { return surfaceHeightAt(x, z); },
+                [this](std::unique_ptr<render::Model>& model) { retirePreviewModel(model); });
+        } catch (const std::exception& e) {
+            status = std::string("PHYSIS природа: ") + e.what();
+            physisNaturePreview_.settings.enabled = false;
+            physisNaturePreview_.release(*dev_, gameFx_);
+        }
+    } else if (physisNaturePreview_.hasPreviewWorld() || physisNaturePreview_.flames())
+        physisNaturePreview_.release(*dev_, gameFx_);
+    // Models with <model>.wind.json sway with the PHYSIS preview wind.
+    r3d_.setSceneWind(physisNaturePreview_.sceneWind(time_));
     if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     tickSpectraGpuPreview(useCam,renderW,renderH,false);
     gfx::PassDesc pass;
@@ -1788,6 +1883,13 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.13f; pass.clearColor[1] = 0.15f; pass.clearColor[2] = 0.17f;
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
+    // Clean captures (agent beauty shots) have no UI: show the horizon/fog
+    // colour instead of the editor's neutral backdrop.
+    else if (cleanSceneCaptureRequested()) {
+        pass.clearColor[0] = r3d_.lighting.fogColor.x;
+        pass.clearColor[1] = r3d_.lighting.fogColor.y;
+        pass.clearColor[2] = r3d_.lighting.fogColor.z;
+    }
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
     const bool postActiveForScene = postEnabledForScene && prisma_.active();

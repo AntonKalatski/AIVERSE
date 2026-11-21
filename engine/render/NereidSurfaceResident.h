@@ -94,6 +94,7 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         x.depthTint==y.depthTint &&
         x.underwaterDistortion==y.underwaterDistortion &&
         x.underwaterScattering==y.underwaterScattering &&
+        x.turbidity==y.turbidity && x.siltR==y.siltR && x.siltG==y.siltG && x.siltB==y.siltB &&
         x.rapidFoamStrength==y.rapidFoamStrength &&
         x.rapidFlowThreshold==y.rapidFlowThreshold &&
         x.rapidNoiseScale==y.rapidNoiseScale &&

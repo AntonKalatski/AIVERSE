@@ -513,3 +513,80 @@ without a list → legacy defaults. NOT RUN: native/mobile scene builds, CI.
 The editor's "Пустой проект" template is still an RTS project (one unit type,
 mine, terrain PBR materials); switching it to `"module": "scene"` is a
 product decision for the editor owners.
+
+## 2026-11-21 continuation: rule-gated simulation systems
+
+CMake `aiverse_game_module(var description stub sources...)` replaces a
+system's sources with an adapter from `modules/rts/disabled/` when the option
+is OFF (FATAL with editor, tests, headless, server or HTML5 Studio). Traffic
+moved to it (`modules/rts/disabled/Traffic.cpp`). New switches:
+
+| engineModules | CMake | needed when | adapter |
+|---|---|---|---|
+| `bw-ai` | `AIVERSE_GAME_WITH_BWAI` | rules `ai.controller: "bw"` | throws on load; `BwAIHolder` stays empty. `RtsBwAISim.cpp` (hypnotised sends, point counters) stays in every build |
+| `encounters` | `AIVERSE_GAME_WITH_ENCOUNTERS` | rules `encounters` | inactive; Lua `encounters` = {active=false} |
+| `commerce` | `AIVERSE_GAME_WITH_COMMERCE` | rules `commerce` | inactive; Lua `commerce` = {active=false} |
+| `careers` | `AIVERSE_GAME_WITH_CAREERS` | rules `careers` | inactive; Lua `career` = {active=false} |
+| `arsenal` | `AIVERSE_GAME_WITH_ARSENAL` | rules `arsenal` | inactive |
+| `mapgen` | `AIVERSE_GAME_WITH_MAPGEN` | map or world body `generate` | maps without it load unchanged; generated maps fail in prepare/applyGenerate |
+
+`aiversebuild` keeps one table (`kSimModules`): `auto` and the rejection check
+read the composed rules, every map JSON under `maps/` plus the maps listed in
+`game.json` (their `rules` overrides and map blocks). `auto` over all
+templates: boss_arena → encounters; no template needs the others. Fixtures:
+`[]` with a map `generate` → exit 1; `auto` → mapgen ON; map rules
+`ai.controller: "bw"` → bw-ai ON; unknown name → exit 1.
+
+Web Release (skirmish, all optional modules off): index.wasm 13,996,328 B
+(brotli 3,273,607), −949 KB vs traffic-only (14,945,536). The `-O0` link
+check found no undefined symbols; smoke screenshot unchanged (2558 colours,
+same HUD/minimap). NOT RUN: a game that needs an excluded system (error path),
+native/mobile builds, CI.
+
+Next candidates (code before wasm-opt, in the all-off build): planets/sphere
+~0.35 MB (map world bodies; spans sim, view and client), TopDown 0.18 MB
+(rules topDown, 20 files use it), Driving 0.13, Mech 0.13, Progression 0.11,
+Raid 0.09, FieldOps 0.09, Dungeon 0.08. Progression/Raid parse their rules in
+the shared loadRules and FieldOps turns on from type keys, so their adapters
+need parser stubs and wider auto detection.
+
+## 2026-11-21 continuation: -Oz + LTO by default for Web Release
+
+`CMakeLists.txt`: `AIVERSE_WEB_OPTIMIZE_SIZE` (EMSCRIPTEN only, default ON)
+adds `-Oz -flto` to compile and link options for Release/MinSizeRel before any
+target, so every library shares the LTO format; `-Oz` follows CMake's `-O3`
+and wins (checked in `ninja -t commands`). OFF restores the previous flags.
+
+Web Release, skirmish content, Emscripten 3.1.50, `BINARYEN_CORES=1`:
+
+| configuration | index.wasm | brotli |
+|---|---|---|
+| -O3, traffic off | 14,945,536 | 3,500,882 |
+| -Oz + LTO, traffic off | 8,336,282 | 2,408,000 |
+| -Oz + LTO, every optional module off | 7,994,736 | 2,292,603 |
+| scene client, -Oz + LTO | 311,677 | 108,058 (+ index.js 39,932) |
+
+Smoke for both RTS LTO builds: match draws (2517 / 2525 sampled colours, HUD,
+minimap), no exception. Runtime speed of `-Oz` versus `-O3` was NOT measured
+(only first-frame time under load: 6.7–8.3 s vs 9.3 s); a game that needs speed
+can set `-DAIVERSE_WEB_OPTIMIZE_SIZE=OFF`. These LTO numbers came from a build
+folder configured with the same flags by hand (`CMAKE_*_FLAGS_RELEASE=-Oz -flto`);
+the option itself was checked only by its generated commands, not by a full
+rebuild. NOT RUN: aiversebuild end-to-end with the option, native/mobile, CI.
+
+Remaining for an RTS project: index.data (engine/assets) ~0.63 MB brotli, mostly
+`engine/roads/markings.png` (only roads use it) and `engine/fonts/ui.ttf`.
+
+## 2026-11-21 continuation: road paint atlas only for road projects
+
+`aiversebuild` packs `engine/assets` with `IgnoreRules` "roads/markings.png"
+unless `projectUsesRoads()` (a `roads/` folder, rules `roadTypes`, a map
+`roadNetwork` or map `rules.roadTypes`; unreadable data keeps the file).
+`RoadView` already falls back to `roadkit::markingAtlas`. `--estimate` on the
+minimal RTS project: pack 655.8 KB → 327.8 KB (51 files); adding `roads/`
+restores the file. Visual difference between the PNG and the generated atlas
+was NOT compared.
+
+Merged `origin/main` efa96dd25 (clean, AGENTS.md and CMakeLists.txt touched by
+both). After the merge the all-modules-off LTO client compiled and linked;
+index.wasm 8,042,095 B (brotli 2,302,463); smoke unchanged (2517 colours).

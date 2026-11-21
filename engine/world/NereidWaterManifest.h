@@ -190,6 +190,8 @@ inline NereidSceneSurface surface(const Json& j) {
         if(v.has("depthTint"))s.style.depthTint=scalar(v["depthTint"],"depthTint",0.f,1.f);
         if(v.has("underwaterDistortion"))s.style.underwaterDistortion=scalar(v["underwaterDistortion"],"underwaterDistortion",0.f,1.f);
         if(v.has("underwaterScattering"))s.style.underwaterScattering=scalar(v["underwaterScattering"],"underwaterScattering",0.f,1.f);
+        if(v.has("turbidity"))s.style.turbidity=scalar(v["turbidity"],"turbidity",0.f,1.f);
+        if(v.has("siltColor"))color(v["siltColor"],s.style.siltR,s.style.siltG,s.style.siltB);
         if(v.has("rapidFoamStrength"))s.style.rapidFoamStrength=scalar(v["rapidFoamStrength"],"rapidFoamStrength",0.f,1.f);
         if(v.has("rapidFlowThreshold"))s.style.rapidFlowThreshold=scalar(v["rapidFlowThreshold"],"rapidFlowThreshold",0.f,100.f);
         if(v.has("rapidNoiseScale"))s.style.rapidNoiseScale=scalar(v["rapidNoiseScale"],"rapidNoiseScale",0.1f,8.f);

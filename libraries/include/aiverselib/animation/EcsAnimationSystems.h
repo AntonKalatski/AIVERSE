@@ -5,6 +5,7 @@
 #include "AnimationMontage.h"
 #include "PhysicalPoseBlend.h"
 #include "PoseInertialization.h"
+#include "FacialControlRig.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -30,6 +31,11 @@ struct AnimationPlayerComponent {
     // Model/AnimationGraph asset replacement. Never persisted in sim ECS.
     std::optional<render::AnimationGraphInstance::PlaybackSnapshot>
         pendingPlayback;
+    // Telemetry for the most recent attempted named playback restore;
+    // queued is not synonymous with successfully restored.
+    uint64_t playbackRestoreAttempts=0;
+    uint64_t playbackRestoreAccepted=0;
+    uint64_t playbackRestoreDeclined=0;
 };
 struct AnimationPoseComponent {
     render::Pose local;
@@ -71,6 +77,17 @@ struct AnimationRecoveryComponent {
     PoseInertializer inertializer;
     float duration=0.3f;
     bool requested=false;
+};
+// Per-source cosmetic facial layer. Each entity has an independent smoothed
+// control/IK state; no second Animator, simulated physics or network authority.
+// Set controls in this component even when the parent AnimationGraph has no
+// face-specific parameter declarations. Do not snapshot this presentation World.
+struct AnimationFacialControlComponent {
+    std::shared_ptr<const FacialControlRig> rig;
+    render::AnimationParameters controls;
+    FacialControlState state;
+    float weight=1.f;
+    bool enabled=true;
 };
 // One-off normalized clip-phase seed after switching CPU/GPU backends.
 // Only applied on first GraphInstance initialization or an explicit request.
@@ -154,6 +171,7 @@ struct AnimationPreparedPools {
     Pool<AnimationGraphNotifiesComponent>* graphNotifies=nullptr;
     Pool<AnimationRecoveryComponent>* recoveries=nullptr;
     Pool<AnimationPhaseSeedComponent>* phaseSeeds=nullptr;
+    Pool<AnimationFacialControlComponent>* facialControls=nullptr;
 };
 inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
     AnimationPreparedPools p;
@@ -165,6 +183,7 @@ inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
     p.graphNotifies=world.prepareExistingWrite<AnimationGraphNotifiesComponent>();
     p.recoveries=world.prepareExistingWrite<AnimationRecoveryComponent>();
     p.phaseSeeds=world.prepareExistingWrite<AnimationPhaseSeedComponent>();
+    p.facialControls=world.prepareExistingWrite<AnimationFacialControlComponent>();
     return p;
 }
 inline void evaluateAnimationPresentationRange(World& world,
@@ -179,6 +198,7 @@ inline void evaluateAnimationPresentationRange(World& world,
     auto* graphNotifies=p.graphNotifies;
     auto* recoveries=p.recoveries;
     auto* phaseSeeds=p.phaseSeeds;
+    auto* faceControls=p.facialControls;
     const World& read=world;
     const size_t available=selected?selected->size():players->size();
     for(size_t k=begin;k<std::min(end,available);++k) {
@@ -195,11 +215,14 @@ inline void evaluateAnimationPresentationRange(World& world,
         const auto* physical=read.tryGetConst<AnimationPhysicalPoseComponent>(e);
         auto* recovery=recoveries?recoveries->tryGet(e.index):nullptr;
         auto* phaseSeed=phaseSeeds?phaseSeeds->tryGet(e.index):nullptr;
+        auto* face=faceControls?faceControls->tryGet(e.index):nullptr;
+        std::string faceError;
         const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
         if (!asset || !asset->model || !asset->graph ||
             asset->graph->model()!=asset->model) {
             player.active.reset(); player.instance.reset();
             player.pendingPlayback.reset();
+            if(face)face->state.reset();
             pose->local.clear(); pose->matrices.clear(); pose->valid=false;
             if (status) {
                 status->healthy=false;
@@ -218,16 +241,21 @@ inline void evaluateAnimationPresentationRange(World& world,
                     // renamed state/clip or allocation failure simply
                     // leaves the freshly reset graph at authored defaults.
                     // Never replay old notifies, contacts or root motion.
-                    (void)player.instance->restorePlayback(*player.pendingPlayback);
+                    ++player.playbackRestoreAttempts;
+                    if(player.instance->restorePlayback(*player.pendingPlayback))
+                        ++player.playbackRestoreAccepted;
+                    else ++player.playbackRestoreDeclined;
                 }catch(...) {
                     // CPU-only cosmetic handoff is optional. The new graph's
                     // rig/pose must remain valid even after a failed restore.
+                    ++player.playbackRestoreDeclined;
                 }
                 player.pendingPlayback.reset();
             }
             player.restart=false;
             pose->valid=false;
             if(recovery)recovery->inertializer.reset();
+            if(face)face->state.reset();
             if (budget) budget->elapsed=0;
         }
         auto& inst=*player.instance;
@@ -305,6 +333,17 @@ inline void evaluateAnimationPresentationRange(World& world,
                         recovery->inertializer.apply(pose->local);
                     }
                 }
+                // Exactly one post-Graph facial IK/morph layer. The generic
+                // compiled control rig reuses AnimationRig::execute rather
+                // than spawning an independent graph pose writer.
+                if(face && face->enabled && face->rig) {
+                    const float sampledDt=(budget && budget->elapsed>dt)
+                        ?budget->elapsed:dt;
+                    if(!face->rig->apply(
+                            *asset->model,face->controls,pose->local,
+                            face->state,sampledDt,face->weight,&faceError))
+                        validInputs=false;
+                }
                 render::worldMatrices(*asset->model,pose->local,pose->matrices);
             }
             else { pose->local.clear(); pose->matrices.clear(); }
@@ -313,7 +352,8 @@ inline void evaluateAnimationPresentationRange(World& world,
         }
         if (status) {
             status->healthy=validInputs && inst.healthy();
-            status->error=validInputs?inst.error():"invalid animation or physical pose input";
+            status->error=validInputs?inst.error():
+                (faceError.empty()?"invalid animation, physical or facial input":faceError);
             status->state=inst.state();
         }
     }

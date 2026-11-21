@@ -344,6 +344,7 @@ public:
     const Stats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
+    size_t instanceCount() const { return instances_.size(); }
 private:
     void retireResident(gfx::Device& dev);
     void loadImpl(gfx::Device& dev,const Json& json,const FileReader& reader,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget);

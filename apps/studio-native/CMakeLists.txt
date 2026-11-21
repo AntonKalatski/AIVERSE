@@ -3,11 +3,16 @@
 # The sidecar metadata files are authoritative. This SQLite database is a
 # regenerable local GUID index; no data is migrated into the game runtime.
 find_package(SQLite3 REQUIRED)
-add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp mac/StudioGameSurface.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
+add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp mac/StudioGameSurface.cpp mac/StudioFacialGpuPreview.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
 target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
-target_link_libraries(aiverse_studio PRIVATE aiverse_hosted_client SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa" "-framework WebKit")
+target_link_libraries(aiverse_studio PRIVATE aiverse_hosted_client SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view AIVERSE::vivid_human AIVERSE::libraries "-framework Cocoa" "-framework WebKit")
 target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
 target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+# Publish / Build panel: the packager built next to Studio.
+if(TARGET aiversebuild)
+    add_dependencies(aiverse_studio aiversebuild)
+    target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_BUILD_TOOL="$<TARGET_FILE:aiversebuild>")
+endif()
 set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 set_target_properties(aiverse_studio PROPERTIES
     OUTPUT_NAME AiverseStudioHTML5
@@ -27,9 +32,9 @@ else()
     message(FATAL_ERROR "HTML5 bundle missing: build on KINGSTON and set AIVERSE_STUDIO_WEB_DIST")
 endif()
 if(AIVERSE_BUILD_TESTS)
-    add_executable(aiverse_studio_metal_lighting_tests tests/StudioMetalLightingTests.mm mac/StudioMetalScene.cpp)
+    add_executable(aiverse_studio_metal_lighting_tests tests/StudioMetalLightingTests.mm mac/StudioMetalScene.cpp mac/StudioFacialGpuPreview.cpp StudioAssetCatalog.cpp)
     target_include_directories(aiverse_studio_metal_lighting_tests PRIVATE "${PROJECT_SOURCE_DIR}")
-    target_link_libraries(aiverse_studio_metal_lighting_tests PRIVATE aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa")
+    target_link_libraries(aiverse_studio_metal_lighting_tests PRIVATE SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view AIVERSE::libraries "-framework Cocoa")
     target_sources(aiverse_studio_metal_lighting_tests PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
     add_test(NAME studio_metal_lighting COMMAND aiverse_studio_metal_lighting_tests "${CMAKE_CURRENT_BINARY_DIR}/metal-lighting-captures")
     set_tests_properties(studio_metal_lighting PROPERTIES LABELS "EDITOR;LIGHTING" TIMEOUT 90 PASS_REGULAR_EXPRESSION "Studio Metal lighting PASS" FAIL_REGULAR_EXPRESSION "Studio Metal lighting FAIL")
@@ -38,6 +43,16 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_studio_render_lighting_tests PRIVATE aiverse_editor_core SQLite::SQLite3)
     add_test(NAME studio_render_lighting COMMAND aiverse_studio_render_lighting_tests "${CMAKE_CURRENT_BINARY_DIR}/render-lighting-fixture")
     set_tests_properties(studio_render_lighting PROPERTIES LABELS "EDITOR")
+    add_executable(aiverse_studio_human_appearance_session_tests tests/StudioHumanLookSessionTests.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
+    target_include_directories(aiverse_studio_human_appearance_session_tests PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_human_appearance_session_tests PRIVATE aiverse_editor_core SQLite::SQLite3)
+    add_test(NAME studio_human_appearance_session COMMAND aiverse_studio_human_appearance_session_tests)
+    set_tests_properties(studio_human_appearance_session PROPERTIES LABELS "EDITOR")
+    add_executable(aiverse_studio_human_creator_tests tests/StudioHumanCreatorTests.cpp)
+    target_include_directories(aiverse_studio_human_creator_tests PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_human_creator_tests PRIVATE aiverse_zstd_dec)
+    add_test(NAME studio_human_creator COMMAND aiverse_studio_human_creator_tests)
+    set_tests_properties(studio_human_creator PROPERTIES LABELS "EDITOR" PASS_REGULAR_EXPRESSION "studio human creator PASS")
     add_executable(aiverse_studio_content_tests tests/StudioContentDirectoryTests.cpp)
     target_include_directories(aiverse_studio_content_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     add_test(NAME studio_content_directory COMMAND aiverse_studio_content_tests)
@@ -83,8 +98,41 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_studio_pbr_adapter_tests PRIVATE aiverse_editor_core)
     add_test(NAME studio_pbr_adapter COMMAND aiverse_studio_pbr_adapter_tests)
     set_tests_properties(studio_pbr_adapter PROPERTIES LABELS "EDITOR")
-    # Facial Control Rig authoring is project-local, native validated and
-    # independent of the unmerged MotionWeave runtime branch.
+    # Project Asset GUID + typed facial input bridge; GPU acceptance is
+    # tested separately from this portable binding contract.
+    add_executable(aiverse_studio_facial_preview_binding_tests
+        tests/StudioFacialPreviewBindingTests.cpp StudioAssetCatalog.cpp)
+    target_include_directories(aiverse_studio_facial_preview_binding_tests
+        PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_preview_binding_tests
+        PRIVATE SQLite::SQLite3 aiverse_editor_core AIVERSE::vivid_human)
+    add_test(NAME studio_facial_preview_binding
+        COMMAND aiverse_studio_facial_preview_binding_tests)
+    set_tests_properties(studio_facial_preview_binding PROPERTIES LABELS "EDITOR")
+
+    # Stage 185: compiler/CPU proof of the real imported-model semantic
+    # MotionWeave facial layer, including 52 channels and existing eye IK.
+    add_executable(aiverse_studio_facial_runtime_tests
+        tests/StudioFacialRuntimeTests.cpp)
+    target_include_directories(aiverse_studio_facial_runtime_tests
+        PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_runtime_tests
+        PRIVATE aiverse_models aiverse_zstd_dec AIVERSE::libraries)
+    add_test(NAME studio_facial_runtime
+        COMMAND aiverse_studio_facial_runtime_tests)
+    set_tests_properties(studio_facial_runtime PROPERTIES LABELS "EDITOR")
+
+    add_executable(aiverse_studio_facial_gpu_tests
+        tests/StudioFacialGpuTests.mm mac/StudioFacialGpuPreview.cpp StudioAssetCatalog.cpp)
+    target_include_directories(aiverse_studio_facial_gpu_tests PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_gpu_tests PRIVATE
+        SQLite::SQLite3 aiverse_editor_core aiverse_runtime AIVERSE::vivid_human AIVERSE::libraries
+        "-framework Cocoa" "-framework QuartzCore" "-framework Metal")
+    set_source_files_properties(tests/StudioFacialGpuTests.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    add_test(NAME studio_facial_gpu COMMAND aiverse_studio_facial_gpu_tests)
+    set_tests_properties(studio_facial_gpu PROPERTIES LABELS "EDITOR;GPU" TIMEOUT 60)
+
+    # Facial Control Rig authoring is project-local and native validated.
     add_executable(aiverse_studio_facial_rig_tests tests/StudioFacialRigDocumentTests.cpp)
     target_include_directories(aiverse_studio_facial_rig_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_facial_rig_tests PRIVATE aiverse_editor_core)
@@ -147,3 +195,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME studio_session COMMAND aiverse_studio_session_tests)
     set_tests_properties(studio_session PROPERTIES LABELS "EDITOR")
 endif()
+
+foreach(target aiverse_studio aiverse_studio_session_tests aiverse_studio_human_appearance_session_tests aiverse_studio_human_creator_tests
+        aiverse_studio_render_lighting_tests aiverse_studio_metal_lighting_tests)
+    if(TARGET ${target})
+        target_link_libraries(${target} PRIVATE aiverse_vivid_human aiverse_modeling)
+    endif()
+endforeach()
+add_executable(aiverse_vivid_assemble ../../tools/vivid-creator/assemble.cpp)
+target_include_directories(aiverse_vivid_assemble PRIVATE "${PROJECT_SOURCE_DIR}")
+target_link_libraries(aiverse_vivid_assemble PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)

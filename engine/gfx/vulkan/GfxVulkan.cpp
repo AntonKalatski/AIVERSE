@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace aiverse::gfx::vk {
 namespace {
@@ -292,6 +293,13 @@ bool VulkanDevice::waitIdle() {
 
 void VulkanDevice::destroyDeviceObjects() {
     vkDeviceWaitIdle(device_);
+    // Pending staging is safe to destroy only after the GPU idle barrier.
+    // Do not invoke editor callbacks during device teardown.
+    for(auto& read:pixelReads_) {
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+    }
+    pixelReads_.clear();
     destroySwapchain();
     completed_ = ~uint64_t(0);
     for(auto& slot:slots_)completeTextureCaptures(slot,false);
@@ -709,9 +717,81 @@ bool VulkanDevice::waitForSubmittedGpuWork() {
     return true;
 }
 
+// Called on the gfx device-owner thread. A frame-slot fence, never a serial
+// alone, is the authority to read the asynchronous GPU transfer destination.
+void VulkanDevice::deliverPixelReads() {
+    std::vector<PixelRead> completed;
+    for(auto it=pixelReads_.begin();it!=pixelReads_.end();) {
+        if(!healthy_ || it->serial<=completed_) {
+            completed.push_back(std::move(*it));
+            it=pixelReads_.erase(it);
+        }else ++it;
+    }
+    for(auto& read:completed) {
+        std::vector<uint8_t> bytes;
+        if(healthy_ && read.serial<=completed_ && read.alloc.mapped) {
+            const auto* data=static_cast<const uint8_t*>(read.alloc.mapped);
+            bytes.assign(data,data+4);
+        }
+        // Pending record is already removed; callbacks may schedule work.
+        // A device-lost path reports an empty buffer, never fake pixels.
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+        if(read.callback)read.callback(std::move(bytes));
+    }
+}
+
+bool VulkanDevice::readTexturePixelAsync(TextureHandle texture,
+                                         int x,int y,PixelReadFn callback) {
+    if(!recording_ || inPass_ || !healthy_ || !callback ||
+       pixelReads_.size()>=32u || x<0 || y<0)return false;
+    const VTexture* image=textures_.get(texture.id);
+    if(!image || !image->renderTarget || image->compressed ||
+       image->depth || image->format!=PixelFormat::RGBA8 ||
+       image->levels!=1 || x>=image->width || y>=image->height)
+        return false;
+    VkBuffer staging=VK_NULL_HANDLE;
+    Allocation alloc;
+    if(!createBufferObject(4,VK_BUFFER_USAGE_TRANSFER_DST_BIT,true,
+                           staging,alloc))return false;
+    if(!staging || !alloc.mapped) {
+        if(staging)vkDestroyBuffer(device_,staging,nullptr);
+        memory_.release(alloc);
+        return false;
+    }
+    VkCommandBuffer cb=slots_[size_t(slot_)].main;
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,1u,0u);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset=0;
+    copy.bufferRowLength=0;
+    copy.bufferImageHeight=0;
+    copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+    // Vulkan's current pass uses a bottom-left-oriented viewport, matching
+    // the legacy GL rendering contract. Public readback pixels are top-left.
+    copy.imageOffset={x,image->height-1-y,0};
+    copy.imageExtent={1,1,1};
+    vkCmdCopyImageToBuffer(cb,image->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           staging,1,&copy);
+    auto visibility=vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+    visibility.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    visibility.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT,0,1,&visibility,
+                         0,nullptr,0,nullptr);
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,1u,0u);
+    pixelReads_.push_back({staging,alloc,serial_,std::move(callback)});
+    return true;
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
     deliverTextureReads();
+    deliverPixelReads(); // previous frame-slot fence proved completion
     FrameSlot& s = slots_[size_t(slot_)];
     auto bi = vkStruct<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

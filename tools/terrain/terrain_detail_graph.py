@@ -9,7 +9,7 @@ import json
 
 def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
                    noise_underlay=True, resolution=1024, gutter=32, mask_resolution=1024, secondary_sand=False, secondary_rock=False,
-                   height_normals=False, height_metres=.04):
+                   height_normals=False, height_metres=.04, anti_tile=True, macro=.18):
     if secondary_rock and not height_normals:
         raise ValueError('secondary rock requires height-normal mode')
     if not math.isfinite(height_metres) or not 0 < height_metres <= 1:
@@ -18,6 +18,8 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
         raise ValueError('detail metres 0.25..64')
     if not math.isfinite(transparency) or not 0 <= transparency <= .2:
         raise ValueError('underlay transparency 0..0.2')
+    if not math.isfinite(macro) or not 0 <= macro <= .5:
+        raise ValueError('macro variation 0..0.5')
     if not 256 <= mask_resolution <= 4096:
         raise ValueError('weight mask resolution 256..4096')
     nodes = []
@@ -76,6 +78,18 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     footprint = n('max', n('red', footprint), n('green', footprint))
     lod = n('clampRange', n('log2', n('multiply', footprint, c(resolution))), c(0), c(4))
     wrapped = n('fract', tiled)
+    # Extra lookups only for the soft ground layers (grass, then sand) and
+    # only while the 16-sample material budget allows it.
+    base_samples = 1 + len(weights) * (2 if height_normals else 3)
+    anti_tile_layers = max(0, min(2, 16 - base_samples)) if anti_tile else 0
+    if anti_tile_layers:
+        # Anti-tiling: a second lookup rotated ~53 deg and rescaled, mixed by
+        # world gradient noise, so the 4m repeat never lines up. Only the
+        # soft ground layers (grass/sand) pay the extra sample: budget 15/16.
+        tiled_b = n('add', n('multiply', n('rotateUV', tiled, c(0), c(.93)), c(1.37)), c([.37, .61, 0, 0]))
+        wrapped_b = n('fract', tiled_b)
+        mix_noise = n('gradientNoise', n('multiply', projected, c(1 / (metres * 1.7))))
+        tile_mix = n('smoothstep', c(.32), c(.68), mix_noise)
     cell = resolution + 2 * gutter
     columns = 3 if len(weights)>4 else 2
     atlas_size = [columns * cell, 2 * cell]
@@ -85,6 +99,10 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
                   (i // columns * cell + gutter) / atlas_size[1], 0, 0]
         coordinate = n('add', n('multiply', wrapped, c([resolution / atlas_size[0], resolution / atlas_size[1], 0, 0])), c(offset))
         color = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['basecolor'], srgb=True)
+        if anti_tile and i < anti_tile_layers:
+            coordinate_b = n('add', n('multiply', wrapped_b, c([resolution / atlas_size[0], resolution / atlas_size[1], 0, 0])), c(offset))
+            color_b = n('sampleTextureLod', coordinate_b, lod, texture=atlas_paths['basecolor'], srgb=True)
+            color = n('mix', color, color_b, tile_mix)
         detail_normal = None if height_normals else n('sampleTextureLod', coordinate, lod, texture=atlas_paths['normal'])
         orm = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['orm'])
         colors.append(n('multiply', color, weight))
@@ -92,6 +110,13 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
             normals.append(n('multiply', detail_normal, weight))
         roughness.append(n('multiply', orm, weight))
     color = add_many(colors)
+    if macro > 0:
+        # Two-octave world brightness variation (23m and 7m), no texture cost.
+        broad = n('gradientNoise', n('multiply', projected, c(1 / 23.0)))
+        fine = n('gradientNoise', n('multiply', projected, c(1 / 7.3)))
+        variation = n('add', n('multiply', broad, c(.65)), n('multiply', fine, c(.35)))
+        shade = n('add', c(1 - macro), n('multiply', variation, c(2 * macro)))
+        color = n('multiply', color, n('setAlpha', shade, c(1)))
     height = n('multiply', n('alpha', color), c(height_metres)) if height_normals else None
     if noise_underlay:
         # Grayscale texture is packed in mask alpha, independent of PBR alpha.
@@ -126,10 +151,11 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     roughness_output = n('green', surface_orm)
     occlusion_output = n('red', surface_orm) if secondary_sand or height_normals else None
     metallic_output = c(0)
-    if len(nodes) > 128:
+    if len(nodes) > 192:
         raise ValueError('terrain graph exceeds native node budget')
     outputs=dict(color=color, normal=final_normal, roughness=roughness_output, metallic=metallic_output)
     if secondary_sand or height_normals:
         outputs['occlusion']=occlusion_output
     return dict(version=1, domain='material', minQuality='low', sampleBudget=16,
+                nodeBudget=max(128, len(nodes)),
                 nodes=nodes, outputs=outputs)

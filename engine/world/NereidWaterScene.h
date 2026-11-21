@@ -71,6 +71,7 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        u.depthTint!=v.depthTint ||
        u.underwaterDistortion!=v.underwaterDistortion ||
        u.underwaterScattering!=v.underwaterScattering ||
+       u.turbidity!=v.turbidity || u.siltR!=v.siltR || u.siltG!=v.siltG || u.siltB!=v.siltB ||
        u.rapidFoamStrength!=v.rapidFoamStrength ||
        u.rapidFlowThreshold!=v.rapidFlowThreshold ||
        u.rapidNoiseScale!=v.rapidNoiseScale ||

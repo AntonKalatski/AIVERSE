@@ -1,18 +1,28 @@
 /** Persistable nested docking geometry; no React, renderer or genre dependencies. */
-export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow'] as const;
+export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules','human_appearance','build','human_creator','wind'] as const;
 export type StudioPanel = typeof STUDIO_PANELS[number];
 /** Single metadata source for the UI shell and AI-authored panel integrations. */
 export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   hierarchy: 'Hierarchy', assets: 'Assets', scene: 'Scene', game: 'Game',
   materials: 'Materials', animation: 'Animation', facial_rig: 'Facial Rig', inspector: 'Inspector', console: 'Console', lighting: 'Lighting', shader_graph: 'Shader Graph', project: 'Project',
   runtime: "Runtime",
-  nereid_flow: "NEREID Water"
+  nereid_flow: "NEREID Water",
+  rules: "Rules",
+  human_appearance: "VIVID Appearance",
+  build: "Build",
+  wind: "Ветер",
+  human_creator: "Character Creator"
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   hierarchy: 'dock-left', assets: 'dock-bottom', scene: 'dock-center', game: 'dock-center',
   materials: 'dock-center', animation: 'dock-center', facial_rig: 'dock-center', inspector: 'dock-right', console: 'dock-bottom', lighting: 'dock-right', shader_graph: 'dock-center', project: 'dock-left',
   runtime: "dock-right",
-  nereid_flow: "dock-right"
+  nereid_flow: "dock-right",
+  rules: "dock-center",
+  human_appearance: "dock-right",
+  build: "dock-center",
+  wind: "dock-right",
+  human_creator: "dock-right"
 };
 
 export type DockAxis = 'horizontal' | 'vertical';
@@ -45,8 +55,8 @@ export function defaultDockTree(): DockTree {
     split('split-body-left','horizontal',.19,
       stack('dock-left',['hierarchy','project'],'hierarchy'),
       split('split-body-right','horizontal',.72,
-        stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph'],'scene'),
-        stack('dock-right',['inspector','lighting','runtime','nereid_flow'],'inspector'))),
+        stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph','rules','build'],'scene'),
+        stack('dock-right',['inspector','human_creator','lighting','runtime','nereid_flow','human_appearance','wind'],'inspector'))),
     stack('dock-bottom',['assets','console'],'assets')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {
@@ -204,11 +214,27 @@ export function migrateDockV2(input: unknown): DockTree {
   const withRight=update(withLeft,'split-body-right',n=>n.kind==='split'?{...n,ratio:size(1-right/1000,.77,.12,.88)}:n);
   return normalizeDockTree({version:3,root:withRight});
 }
+// MetaHuman-style character studio: the editor wide on the left, the Scene
+// viewport as the main stage, a narrow right column, no bottom dock.
+export const DOCK_PRESET_EVENT='aiverse:dock-preset';
+export function characterDockTree(): DockTree {
+  return { version:3, root:split('root','horizontal',.36,
+    stack('dock-left',['human_creator','hierarchy','project'],'human_creator'),
+    split('split-body-right','horizontal',.8,
+      stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph'],'scene'),
+      stack('dock-right',['inspector','lighting','runtime','nereid_flow','human_appearance'],'lighting'))) };
+}
+// The character editor previews in the Scene viewport, which is not drawn
+// while another tab covers it: never keep the editor in the Scene stack.
+export function moveCharacterEditorBesideScene(tree: DockTree): DockTree {
+  return panelStack(tree,'human_creator')==='dock-center' && findDockStack(tree,'dock-right')
+    ? moveTab(tree,'human_creator','dock-right') : tree;
+}
 export function readNestedDock(): DockTree {
   if(typeof window==='undefined')return defaultDockTree();
   try{
     const stored=window.localStorage.getItem(STORAGE_KEY);
-    if(stored!==null)return normalizeDockTree(JSON.parse(stored) as unknown);
+    if(stored!==null)return moveCharacterEditorBesideScene(normalizeDockTree(JSON.parse(stored) as unknown));
     const previous=window.localStorage.getItem(PREVIOUS_KEY);
     return previous!==null?migrateDockV2(JSON.parse(previous) as unknown):defaultDockTree();
   }catch{return defaultDockTree();}
