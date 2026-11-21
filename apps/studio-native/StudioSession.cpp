@@ -371,7 +371,8 @@ Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json&
         }
         if(materials.size())model.set("materials",materials); else model.erase("materials");
     } else throw std::runtime_error("Unknown Mesh Renderer property");
-    if(model.size())components.set("StaticModel",model); else components.erase("StaticModel");
+    // An empty StaticModel stays: it is the explicit Mesh Renderer drawing the built-in cube.
+    components.set("StaticModel",model);
     candidate.extra.set("components",components);
     if(candidate.extra!=source.extra) {
         ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
