@@ -117,7 +117,7 @@ renderer.beginScene(renderCamera, framebufferW, framebufferH);
 ```
 
 `jitteredCamera` uses a per-camera 8-phase Halton (2,3) sequence in
-`RTSCamera::jitter` (NDC). The temporal shader samples the current HDR
+`Camera::jitter` (NDC). The temporal shader samples the current HDR
 scene at `stablePixel + currentJitter` and reads prior HDR history at the
 reprojected pixel **minus previousJitter**; the persistent history target
 always uses the stable output grid. The previous jitter is removed from

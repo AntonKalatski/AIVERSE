@@ -999,7 +999,7 @@ paths can continue using the existing generic callback.
 
 `PostFrame` now carries the camera's actual projection near/far
 planes and perspective/orthographic mode. The renderer populates
-these from its `RTSCamera`; orthographic near/far match its
+these from its `Camera`; orthographic near/far match its
 explicit -200..1000 projection.
 
 `motionBlur` adds two optional settings:
@@ -1965,14 +1965,14 @@ The effect adds two optional float parameters:
 
 **C++ camera contract:** Call `setViewId(id)`, then
 `applyCameraVolumes(stack, camera.eye())`, then
-`RTSCamera renderCamera = prisma.jitteredCamera(camera,w,h)` immediately
+`Camera renderCamera = prisma.jitteredCamera(camera,w,h)` immediately
 **before** `renderer.beginScene(renderCamera,w,h)`. `jitteredCamera`
 returns a copy and never mutates `camera` itself: keep the original
-`RTSCamera` for mouse picking, editor gizmos, UI, and touch input.
+`Camera` for mouse picking, editor gizmos, UI, and touch input.
 The standard GameClient, Editor Scene and Editor Game rendering paths
 have been updated to follow this sequence. ShaderGraph, FX and native
 preview owners may opt in separately. The real render projection uses
-`RTSCamera::jitter`, and the renderer's shadow-camera strips jitter
+`Camera::jitter`, and the renderer's shadow-camera strips jitter
 already, avoiding artificial shadow-map projection shifts.
 
 **Shader behavior:** Each view ID maintains its own 8-step Halton (2,3)

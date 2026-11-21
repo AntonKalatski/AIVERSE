@@ -18,7 +18,7 @@ void orbit(fx::ParticleSystem& ps, fx::FxHandle h, fx::float3 c, float t) {
 }
 } // namespace
 
-void Editor::tickFx(const render::RTSCamera& cam, int w, int h, const std::vector<game::SceneObject>* objects) {
+void Editor::tickFx(const render::Camera& cam, int w, int h, const std::vector<game::SceneObject>* objects) {
     const bool active = playing() || !fxPreview_.name.empty() || gameFx_.stats().particles > 0 || gameFx_.stats().instances > 0;
     if (!active) { fxTime_ = time_; return; }
     float dt = fxTime_ < 0 ? 0.0f : float(time_ - fxTime_);
@@ -86,7 +86,7 @@ void Editor::registerFxPreviewOps() {
             }
             fx::float4 tint{1, 1, 1, 1};
             if (p.has("color") && !fx::parseColor(p["color"], tint)) throw std::runtime_error("color must be \"#rrggbb\" or \"#rrggbbaa\"");
-            render::RTSCamera& cam = playing() ? gameCam : sceneCam;
+            render::Camera& cam = playing() ? gameCam : sceneCam;
             const float x = p.has("x") ? float(p["x"].toDouble()) : cam.target.x, z = p.has("z") ? float(p["z"].toDouble()) : cam.target.z;
             const float ground = sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : view_.heightAt(grid_, x, z);
             const fx::float3 pos{x, ground + float(p["y"].toDouble(0)), z};
@@ -179,7 +179,7 @@ void Editor::registerFxPreviewOps() {
                         throw std::runtime_error("invalid SpectraFX instanceValues."+name);
                     instanceParams[it->second.slot]=float(value.toDouble());
                 }
-            render::RTSCamera& cam=playing()?gameCam:sceneCam;
+            render::Camera& cam=playing()?gameCam:sceneCam;
             // x/y/z become the camera target and the emitter position: reject
             // non-numbers, NaN/inf and absurd magnitudes before using them.
             const auto coordinate=[&](const char* key,float fallback)->float {

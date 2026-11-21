@@ -288,7 +288,7 @@ struct Preview {
                 blocker.images[n].borrowedTexture=true;
                 blocker.images[n].width=blocker.images[n].height=1;
             }
-            render::RTSCamera fixedCamera;
+            render::Camera fixedCamera;
             fixedCamera.target={0,0.45f,0};
             fixedCamera.distance=5.8f;
             fixedCamera.pitch=0.25f;
@@ -561,7 +561,7 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                     actors[std::size_t(i)]->lastError());
         }
 
-        render::RTSCamera camera;
+        render::Camera camera;
         camera.target={0,0.45f,0};
         camera.distance=5.8f;
         camera.pitch=0.25f;

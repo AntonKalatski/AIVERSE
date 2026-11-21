@@ -170,7 +170,7 @@ private:
     std::chrono::steady_clock::time_point windClock_ = std::chrono::steady_clock::now();
     // Facial/material preview FXAA (LDR); the map view keeps PRISMA HDR post_.
     render::PostFx antialiasing_;
-    render::RTSCamera camera_;
+    render::Camera camera_;
     render::AdaptiveShadowResolution shadowResolution_;
     bool cameraInitialized_ = false;
     // Short eased transition for focus / axis snaps; any direct input cancels it.
@@ -184,7 +184,7 @@ private:
     void stepTween();
     // Camera actually submitted/picked: clip planes follow distance, ortho keeps
     // its framing from `distance` while the eye stays inside the depth range.
-    render::RTSCamera viewCamera() const;
+    render::Camera viewCamera() const;
     bool orientationGizmo_ = false;
     TransformTool tool_ = TransformTool::Move;
     bool localSpace_ = false, gizmosVisible_ = true, snapEnabled_ = false;
@@ -212,10 +212,10 @@ private:
     bool selectedBoxValid_ = false;
     render::float3 selectedBox_[8]{};          // world corners of the selected object's box
     void captureSelectedBox(const render::mat4& world, render::float3 lo, render::float3 hi);
-    void drawSelectionBox(const render::RTSCamera& view, int width, int height);
-    void drawTransformGizmo(const render::RTSCamera& view, int width, int height);
+    void drawSelectionBox(const render::Camera& view, int width, int height);
+    void drawTransformGizmo(const render::Camera& view, int width, int height);
     bool autoIso_ = false; // Iso entered by an axis snap; orbit/look returns to Persp
-    void drawOrientationGizmo(const render::RTSCamera& view, int width, int height);
+    void drawOrientationGizmo(const render::Camera& view, int width, int height);
     bool lodDiagnostics_ = false;
     uint64_t diagnosticFrames_ = 0;
     int lastMapWidth_ = 0;

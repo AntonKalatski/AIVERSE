@@ -570,7 +570,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     overlays_.shutdown(dev);
 }
 
-bool RtsView::spriteHit(const RTSCamera& cam, const SceneObject& o, const MapGrid& grid, float sx, float sy, float w, float h) const {
+bool RtsView::spriteHit(const Camera& cam, const SceneObject& o, const MapGrid& grid, float sx, float sy, float w, float h) const {
     return twoD_ && !o.isProjectile && twoD_->hasSprite(o.type) && twoD_->hit(cam, o, heightAt(grid, o.pos.x, o.pos.z), sx, sy, w, h);
 }
 
@@ -1713,12 +1713,12 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
 }
 
-void RtsView::drawOverlays(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
+void RtsView::drawOverlays(const Camera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
     // bars, garrison counts, labels, damage numbers: RtsOverlays (built-in overlays reproduce the old look)
     if(s.gameplayOverlays)overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
 }
 
-bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {
+bool RtsView::overlayTop(const Camera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {
     if (!rules_ || o.type >= rules_->types.size() || o.type >= looks_.size()) return false;
     const UnitType& t = rules_->types[o.type];
     if (planets_.active()) // anchors computed by drawPlanets (view world; hidden behind the planet / far away)

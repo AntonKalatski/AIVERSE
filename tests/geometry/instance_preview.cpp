@@ -17,7 +17,7 @@ int aiverseMain(int argc,char** argv){
         auto& timing=dev.gpuTimingRouter();timing.poll(dev);
         for(auto t:timing.take(timingSubscriber))
             if(t.valid)gpu.push_back(t.milliseconds);
-        auto start=std::chrono::steady_clock::now();render::RTSCamera cam;cam.distance=100;cam.pitch=0;cam.target={0,0,0};renderer.beginScene(cam,1280,720);
+        auto start=std::chrono::steady_clock::now();render::Camera cam;cam.distance=100;cam.pitch=0;cam.target={0,0,0};renderer.beginScene(cam,1280,720);
         for(int i=0;i<1025;++i){render::ModelDraw d;d.model=model.model.get();d.world=render::mat4::translate({float(i%41-20)*2.2f,float(i/41-12)*2.2f,0})*render::mat4::scale({.4f,.4f,.4f});d.tint={.4f+float(i%3)*.3f,.4f+float(i%5)*.15f,.4f+float(i%7)*.1f,1};renderer.drawModel(d);}
         gfx::PassDesc pass;renderer.render(pass);
         if(frame>=60&&frame<180){

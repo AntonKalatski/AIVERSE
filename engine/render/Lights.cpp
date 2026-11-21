@@ -306,7 +306,7 @@ void LightSystem::shutdown() {
     dev_ = nullptr;
 }
 
-void LightSystem::begin(const RTSCamera& cam, float aspect) {
+void LightSystem::begin(const Camera& cam, float aspect) {
     contacts_.clear();
     lights_.clear();
     decals_.clear();

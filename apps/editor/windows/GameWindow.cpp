@@ -499,7 +499,7 @@ private:
         if(region_.enabled){regionInput(ed);return;}
         if (gameHud_.blocked()) { boxing_ = false; return; }
         ImGuiIO& io = ImGui::GetIO();
-        RTSCamera& cam = ed.gameCam;
+        Camera& cam = ed.gameCam;
         const float wheel=cameraWheel();
         if (vp_.hovered && wheel != 0) cam.distance = std::clamp(cam.distance * std::pow(0.88f, wheel), cam.minDistance, cam.maxDistance);
         if (vp_.hovered &&

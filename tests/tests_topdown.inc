@@ -377,7 +377,7 @@ TEST(topdown_controls_sticks_keys_quantize_and_camera) {
     // touch UI off on desktop with "auto"; the draw output exists when on
     CHECK(!tc.draw(W, H, {1.0f}).empty() && !tc.draw(W, H, {0.5f})[0].verts.empty());
     // camera: follows the hero with look-ahead, stays inside the map margin
-    render::RTSCamera cam;
+    render::Camera cam;
     tc.snapCamera(cam, {16, 0, 8}, 32, 16);
     CHECK(std::abs(cam.target.x - 16) < 0.01f && std::abs(cam.distance - 20) < 0.01f && std::abs(cam.pitch - 60 * 3.14159265f / 180) < 0.01f);
     tc.compose(keys, 0);
@@ -736,7 +736,7 @@ TEST(topdown_speed_camera_zooms_out_and_looks_ahead) {
     tc.configure(Json::parse(R"({"topDown": {"camera": {"pitch": 90, "distance": 16, "minDistance": 8, "maxDistance": 30,
         "smoothing": 0, "lookAhead": 0, "lookAheadSmoothing": 0, "velocityLookAhead": 0.5, "maxLookAhead": 3,
         "speedZoom": {"from": 1, "to": 5, "distance": 28, "smoothing": 0}}}})"), r, rts);
-    render::RTSCamera cam;
+    render::Camera cam;
     render::float3 hero{20, 0, 50};
     tc.snapCamera(cam, hero, 200, 100);
     CHECK(std::abs(cam.distance - 16) < 0.01f && std::abs(cam.target.x - 20) < 0.01f);
@@ -885,13 +885,13 @@ TEST(topdown_camera_fov_far_yaw_ortho_and_map_override) {
     game::TopDownControls tc;
     tc.configure(gj, r, rts);
     CHECK(std::abs(tc.config().camera.fov - 20) < 1e-4f && std::abs(tc.config().camera.yaw - 180) < 1e-4f);
-    render::RTSCamera cam;
+    render::Camera cam;
     const render::float3 hero{100, 0, 60};
     tc.snapCamera(cam, hero, 200, 120);
     const float kDeg = 3.14159265f / 180;
     CHECK(std::abs(cam.fovY - 20 * kDeg) < 1e-4f && std::abs(cam.distance - 320) < 0.01f && !cam.ortho);
     CHECK(cam.zNear > 5 && cam.zNear < 10 && cam.zFar >= 4 * 320 - 1);
-    auto depthOk = [](const render::RTSCamera& c, render::float3 p, float W, float H) {   // inside the clip volume
+    auto depthOk = [](const render::Camera& c, render::float3 p, float W, float H) {   // inside the clip volume
         const render::float4 cl = (c.proj(W / H, false) * c.view()) * render::float4{p.x, p.y, p.z, 1};
         return cl.w > 0 && cl.z / cl.w > -1 && cl.z / cl.w < 1;
     };
@@ -917,7 +917,7 @@ TEST(topdown_camera_fov_far_yaw_ortho_and_map_override) {
     game::TopDownControls oc;
     oc.configure(Json::parse(R"({"topDown": {"camera": {"pitch": 60, "distance": 320, "maxDistance": 320, "smoothing": 0, "lookAhead": 0,
         "fov": 20, "projection": "ortho", "bounds": false, "fogFollow": false}}})"), r, rts);
-    render::RTSCamera ocam;
+    render::Camera ocam;
     oc.snapCamera(ocam, hero, 200, 120);
     CHECK(ocam.ortho && oc.fogScale() == 1);
     CHECK(ocam.worldToScreen(hero, W, H, sp) && std::abs(sp.x - W / 2) < 1 && std::abs(sp.y - H / 2) < 1 && depthOk(ocam, hero, W, H));
@@ -927,13 +927,13 @@ TEST(topdown_camera_fov_far_yaw_ortho_and_map_override) {
     const auto& mcc = mc.config().camera;
     CHECK(std::abs(mcc.pitch - 70) < 1e-4f && std::abs(mcc.distance - 150) < 1e-4f && std::abs(mcc.fov - 30) < 1e-4f);
     CHECK(std::abs(mcc.yaw - 180) < 1e-4f && std::abs(mcc.minDistance - 116) < 1e-4f && std::abs(mcc.maxDistance - 320) < 1e-4f);
-    render::RTSCamera mcam;
+    render::Camera mcam;
     mc.snapCamera(mcam, hero, 200, 120);
     CHECK(std::abs(mcam.distance - 150) < 0.01f && std::abs(mcam.fovY - 30 * kDeg) < 1e-4f);
     // without "fov" the client's lens and the engine clip planes stay
     game::TopDownControls plain;
     plain.configure(Json::parse(R"({"topDown": {"camera": {"distance": 20, "smoothing": 0}}})"), r, rts);
-    render::RTSCamera pcam;
+    render::Camera pcam;
     const float fov0 = pcam.fovY;
     plain.snapCamera(pcam, hero, 200, 120);
     CHECK(pcam.fovY == fov0 && plain.fogScale() == 1 && pcam.zNear == 0.5f && pcam.zFar == 1000.0f && !pcam.ortho);
