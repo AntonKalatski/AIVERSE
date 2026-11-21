@@ -3,6 +3,7 @@
 #include "modules/fps/Project.h"
 #include "modules/fps/view/FirstPersonCamera.h"
 #include "RoyaleHud.h"
+#include "RaceHud.h"
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"
@@ -54,6 +55,8 @@ struct App {
 #ifndef __EMSCRIPTEN__
     net::UdpListener udp;net::WsListener ws;
 #endif
+    struct RotatedBox{Vec3 center{},half{};Fixed yaw{};};
+    std::vector<RotatedBox> rotatedBoxes;   // map colliders with "yaw": drawn as oriented boxes (collision holds their triangles)
     world::SpatialWorld geometry;world::ChunkScene chunks;std::unique_ptr<world::WorldScene> streamedScene;std::string projectRoot;
     terraweave::HorizonFrameTimingBridge horizonFrameTiming; // optional, native stream QoS
     platform::ContentReader contentReader;
@@ -245,6 +248,8 @@ struct App {
         lang.load([](const auto& path,auto& out){return platform::readContentFile(path,out);},"en",{"engine/assets/lang"});
         Simulation sim({1,config.tickRate,0},std::make_unique<fps::Module>());sim.setup(rules,map);
         geometry=static_cast<fps::Module&>(sim.module()).collision();
+        rotatedBoxes.clear();
+        for(const auto& b:map["colliders"].items())if(b.has("yaw"))rotatedBoxes.push_back({world::worldVector(b["center"],100000_fx),world::worldVector(b["half"],100000_fx),b["yaw"].fx()});
         if(map["world"].getBool("async"))streamedScene=std::make_unique<world::WorldScene>(map["world"],contentReader);
         else chunks.configure(map["world"]);
         audio::AudioConfig ac;
@@ -868,6 +873,17 @@ struct App {
         auto localEye=visual(world::relativeTo(eye,origin,32));
         auto cameraLook=look;cameraLook.pitch+=float(actor.recoil.toDouble());
         auto cam=cameraLook.camera(localEye);
+        // Race: chase camera behind the driven car, interpolated between the last two snapshots.
+        const fps::Vehicle* ride=nullptr;const fps::Vehicle* rideBefore=nullptr;
+        if(actor.vehicle&&config.race){
+            for(const auto& v:received.vehicles)if(v.id==actor.vehicle)ride=&v;
+            for(const auto& v:previousSnapshot.vehicles)if(v.id==actor.vehicle)rideBefore=&v;
+        }
+        if(ride){
+            auto at=visual(world::relativeTo(ride->pos,origin,32));float yaw=float(ride->yaw.toDouble());
+            if(rideBefore){auto from=visual(world::relativeTo(rideBefore->pos,origin,32));at=from+(at-from)*interpolation;yaw=fps::view::lerpTurns(float(rideBefore->yaw.toDouble()),yaw,interpolation);}
+            cam=fps::view::chaseCamera(at,yaw);localEye=cam.eye();
+        }
         if(aimHeld)cam.fovY=(weapon.range>=700_fx||(actor.attachments[actor.weaponIndex]&1))?0.28f:0.65f;
         audio::ListenerPose listener;auto globalEye=visual(eye);listener.pos[0]=globalEye.x;listener.pos[1]=globalEye.y;listener.pos[2]=globalEye.z;auto forward=render::normalize(cam.target-cam.eye());listener.forward[0]=forward.x;listener.forward[1]=forward.y;listener.forward[2]=forward.z;audio.setListener(listener);
         if(fxOriginReady && fxScene.enabled()) {
@@ -899,8 +915,14 @@ struct App {
             drawSceneMesh(transform,{0.4f,0.46f,0.5f,1});
         }
         Vec3 extent{600_fx,600_fx,600_fx};
+        for(const auto& r:rotatedBoxes)if((r.center-actor.pos).xz().lengthSq()<extent.x*extent.x) {
+            auto base=r.center-Vec3{{},r.half.y,{}};
+            auto transform=render::mat4::translate(visual(world::relativeTo(base,origin,32)))*render::mat4::rotateY(float(r.yaw.toDouble())*6.28318530718f)*render::mat4::scale(visual(r.half*2_fx));
+            drawSceneMesh(transform,{0.4f,0.46f,0.5f,1});
+        }
         for(auto id:geometry.query({actor.pos-extent,actor.pos+extent})) {
             if(chunks.enabled()&&id!=1&&id<fps::kBuildingColliderBase)continue;   // generated buildings are not in the chunk files
+            if(id>=fps::kRotatedColliderBase&&!rotatedBoxes.empty())continue;      // triangles of rotated boxes: drawn above
             const auto& b=geometry.colliders().at(id).bounds;
             // Draw relative to the observer before converting coordinates to floating point.
             auto base=Vec3{(b.min.x+b.max.x)/2,b.min.y,(b.min.z+b.max.z)/2};
@@ -1023,7 +1045,15 @@ struct App {
             worldPackets.add(item);
         };
         for(const auto& loot:client->snapshot().loot)box(loot.pos,{0.35f,0.35f,0.35f},{0.9f,0.75f,0.15f,1});
-        for(const auto& v:client->snapshot().vehicles)if(v.health>0)box(v.pos,{2,1.4f,4},{0.2f,0.5f,0.25f,1});
+        for(const auto& v:client->snapshot().vehicles)if(v.health>0){
+            // Oriented car body; in a race each racer's car has its own colour (own car: gold).
+            render::float4 color{0.2f,0.5f,0.25f,1};
+            if(config.race){static const render::float4 palette[8]={{0.85f,0.2f,0.2f,1},{0.2f,0.45f,0.9f,1},{0.25f,0.75f,0.35f,1},{0.9f,0.55f,0.15f,1},{0.65f,0.3f,0.85f,1},{0.2f,0.75f,0.8f,1},{0.85f,0.85f,0.85f,1},{0.35f,0.35f,0.4f,1}};
+                color=v.driver==client->snapshot().localSlot?render::float4{0.95f,0.78f,0.2f,1}:palette[(v.driver+7)%8];}
+            ::aiverse::view::MeshObject item;item.mesh=&cube;
+            item.world=render::mat4::translate(visual(world::relativeTo(v.pos,origin,32)))*render::mat4::rotateY(float(v.yaw.toDouble())*6.28318530718f)*render::mat4::scale({2,1.4f,4});
+            item.color=color;worldPackets.add(item);
+        }
         for(const auto& projectile:client->snapshot().projectiles){
             if(projectile.kind==4){auto r=float(config.systems.smokeRadius.toDouble());box(projectile.pos-Vec3{{},config.systems.smokeRadius,{}},{r*2,r*2,r*2},{0.65f,0.68f,0.7f,1});}
             else box(projectile.pos,{0.15f,0.15f,0.15f},projectile.kind?render::float4{0.2f,0.3f,0.15f,1}:render::float4{1,0.8f,0.2f,1});
@@ -1041,8 +1071,9 @@ struct App {
         ImGui::SetNextWindowPos({16,16});ImGui::SetNextWindowBgAlpha(0.65f);
         ImGui::Begin("##fps",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
         auto text=lang.tr("fps.status",i18n::Args().num("health",actor.health).num("ammo",actor.ammo).num("reserve",actor.reserve).num("tick",client->snapshot().tick));
-        ImGui::TextUnformatted(text.c_str());
+        if(!config.race)ImGui::TextUnformatted(text.c_str());   // a race shows its own HUD (RaceHud.h), no weapons
         if((streamedScene&&!streamedScene->status().complete())||(server&&server->module().streamingStatus()&&!server->module().streamingStatus()->complete()))ImGui::TextUnformatted(lang.tr("fps.worldLoading").c_str());
+        if(!config.race){
         ImGui::TextUnformatted(lang.tr(weapon.nameKey).c_str());
         if(actor.reloadUntil)ImGui::TextUnformatted(lang.tr("fps.reloading").c_str());
         else if(actor.ammo==0)ImGui::TextUnformatted(lang.tr("fps.empty").c_str());
@@ -1050,7 +1081,8 @@ struct App {
             auto label=lang.tr("fps.weaponSlot",i18n::Args().num("slot",int(i+1)).str("weapon",lang.tr(config.weapons[i].nameKey)));
             ImGui::TextColored(i==actor.weaponIndex?ImVec4(1,0.8f,0.3f,1):ImVec4(0.6f,0.65f,0.7f,1),"%s",label.c_str());
         }
-        ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr(client->ready()?"fps.controls":"fps.connecting").c_str());ImGui::PopTextWrapPos();
+        }   // !config.race
+        ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr(!client->ready()?"fps.connecting":config.race?"fps.race.controls":"fps.controls").c_str());ImGui::PopTextWrapPos();
         if(!client->connected())ImGui::TextUnformatted(lang.tr("fps.disconnected").c_str());
         if(client->snapshot().winner)ImGui::TextUnformatted(lang.tr("fps.finished").c_str());
         if(characterModel && characterAnimationStatsEnabled) {
@@ -1066,7 +1098,7 @@ struct App {
                     lastAnimationStats.estimatedSafeCost);
             }
         }
-        if(config.systems.enabled){
+        if(config.systems.enabled&&!config.race){
             auto stats=lang.tr("fps.systems.status",i18n::Args().num("armor",actor.armor).num("money",actor.money));ImGui::TextUnformatted(stats.c_str());
             if(actor.downed)ImGui::TextUnformatted(lang.tr("fps.downed").c_str());
             if(actor.health<=0)ImGui::TextUnformatted(lang.tr("fps.dead").c_str());
@@ -1078,6 +1110,7 @@ struct App {
         ImGui::End();
         drawInputSettings();
         auto* draw=ImGui::GetForegroundDrawList();float x=platform::windowWidth()/2,y=platform::windowHeight()/2;
+        if(!ride){   // no crosshair and no weapon while racing at the wheel
         draw->AddLine({x-5,y},{x+5,y},IM_COL32_WHITE,1.5f);draw->AddLine({x,y-5},{x,y+5},IM_COL32_WHITE,1.5f);
         if(hitFlash>0) {
             for(float sign:{-1.f,1.f}){draw->AddLine({x+sign*8,y+8},{x+sign*14,y+14},IM_COL32(255,100,60,255),2);draw->AddLine({x+sign*8,y-8},{x+sign*14,y-14},IM_COL32(255,100,60,255),2);}
@@ -1097,7 +1130,9 @@ struct App {
         }
         for(const auto& cloud:client->snapshot().projectiles)if(cloud.kind==4&&(actor.pos-cloud.pos).lengthSq()<config.systems.smokeRadius*config.systems.smokeRadius)draw->AddRectFilled({0,0},{w,h},IM_COL32(165,170,175,250));
         if(actor.blindUntil>client->snapshot().tick){auto remain=actor.blindUntil-client->snapshot().tick;auto alpha=int(std::min(1.0,double(remain)/std::max(1u,config.systems.flashTicks))*255);draw->AddRectFilled({0,0},{w,h},IM_COL32(255,255,255,alpha));}
+        }   // !ride
         fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
+        fps::view::drawRaceHud(lang,client->snapshot(),config);
         gui.render();device.endPass();device.endFrame();
         horizonFrameTiming.finish(streamedScene.get(),frameStarted);
     }

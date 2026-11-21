@@ -35,6 +35,7 @@ bool Module::canFireFromVehicle(State& s,const Actor& a) const {
 // Interact on or in a typed vehicle becomes a seat request handled by tickVehicles this tick. False: not typed.
 bool Module::vehicleInteract(Simulation& sim,Actor& a) {
     auto& s=state(sim);if(s.vehicleRuns.empty())return false;
+    if(s.race.enabled)return true;   // racers stay at the wheel: Interact does nothing during a race
     VehicleSeatRequest r;r.actor=a.slot;r.team=a.team;r.actorPosition=a.pos;
     if(a.vehicle){
         auto* run=vehicleRun(s,a.vehicle);if(!run)return false;
@@ -51,7 +52,16 @@ bool Module::vehicleInteract(Simulation& sim,Actor& a) {
     r.id=best->seats.lastRequest+1+int64_t(best->requests.size());r.action=VehicleSeatAction::Enter;r.preferred=VehicleSeatRole::Driver;
     best->requests.push_back(r);return true;
 }
-void Module::tickVehicles(Simulation& sim) {
+// The driver's held pedals (released after the input timeout): forward / back -> throttle / brake, right steers,
+// Jump is the handbrake, pitch drives flight.
+VehicleInput Module::driverInput(const Actor& a,uint32_t now) const {
+    VehicleInput in;if(now-a.lastInputTick>config_.inputTimeout)return in;
+    auto f=Fixed::fromRatio(a.input.forward,1000);in.throttle=fxMax(Fixed{},f);in.brake=fxMax(Fixed{},-f);
+    in.steer=fxClamp(Fixed::fromRatio(a.input.right,1000),-1_fx,1_fx);in.handbrake=(a.input.buttons&Jump)!=0;
+    in.pitch=fxClamp(-a.input.pitch*4,-1_fx,1_fx);in.yaw=in.steer;return in;
+}
+// drive: pedals that replace the driver's own for these vehicle ids this tick (race countdown, race bots).
+void Module::tickVehicles(Simulation& sim,std::span<const std::pair<uint32_t,VehicleInput>> drive) {
     auto& s=state(sim);if(s.vehicleRuns.empty())return;auto now=sim.tick();
     for(auto& run:s.vehicleRuns){
         Vehicle* v=nullptr;for(auto& x:s.vehicles)if(x.id==run.vehicle)v=&x;if(!v)continue;
@@ -74,12 +84,8 @@ void Module::tickVehicles(Simulation& sim) {
         // Controller step: the driver's held input (released after the input timeout) -> pedals and steering.
         VehicleInput in;
         if(driver&&v->health>0){
-            const auto& a=s.actors[size_t(driver-1)];
-            if(now-a.lastInputTick<=config_.inputTimeout){
-                auto f=Fixed::fromRatio(a.input.forward,1000);in.throttle=fxMax(Fixed{},f);in.brake=fxMax(Fixed{},-f);
-                in.steer=fxClamp(Fixed::fromRatio(a.input.right,1000),-1_fx,1_fx);in.handbrake=(a.input.buttons&Jump)!=0;
-                in.pitch=fxClamp(-a.input.pitch*4,-1_fx,1_fx);in.yaw=in.steer;
-            }
+            in=driverInput(s.actors[size_t(driver-1)],now);
+            for(const auto& [id,x]:drive)if(id==v->id){in=x;break;}
         }else in.brake=1_fx;
         auto under=run.controller.position+Vec3{{},2_fx,{}};auto hit=collision_.cast(under,{{},-64_fx,{}});
         VehicleContacts k;k.groundHeight=hit.hit?under.y-64_fx*hit.fraction:groundBelow(run.controller.position);k.groundNormal=hit.hit&&hit.normal.y>Fixed{}?hit.normal:Vec3{{},1_fx,{}};
@@ -91,7 +97,7 @@ void Module::tickVehicles(Simulation& sim) {
             if(sweep.hit&&sweep.normal.y<Fixed::fromRatio(1,2)){
                 auto stop=before+Vec3{delta.x,{},delta.z}*fxMax(Fixed{},sweep.fraction-Fixed::fromRatio(1,100));stop.y=run.controller.position.y;
                 auto impulse=vehicleResolveCollision(run.controller,stop,sweep.normal);
-                if(impulse>8_fx)v->health=std::max(0,v->health-int32_t((impulse-8_fx).toInt()*10));   // hard crash
+                if(impulse>8_fx&&(!config_.race||config_.race->crashDamage))v->health=std::max(0,v->health-int32_t((impulse-8_fx).toInt()*10));   // hard crash
             }
             auto& p=run.controller.position;p.x=fxClamp(p.x,-config_.worldLimit,config_.worldLimit);p.z=fxClamp(p.z,-config_.worldLimit,config_.worldLimit);
         }

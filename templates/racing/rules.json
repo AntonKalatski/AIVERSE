@@ -1,0 +1,16 @@
+{
+  "include": [
+    "rules/race.json"
+  ],
+  "fps": {
+    "tickRate": 60,
+    "snapshotRate": 20,
+    "maxPlayers": 8,
+    "mode": "race",
+    "worldLimit": 256,
+    "roundTicks": 36000,
+    "mechanics": {
+      "enabled": true
+    }
+  }
+}
