@@ -1452,10 +1452,10 @@ void Workspace::registerCoreOps() {
         Op op{name, desc, schema(sch), [](const Json&) -> Json { throw std::runtime_error("this tool needs the editor window (start aiverse_editor)"); }, true};
         registerOp(std::move(op));
     };
-    gui("view_screenshot", "Screenshot of the editor viewport (what the user sees), optionally inside a device frame. Returns a PNG image.",
-        R"({"properties": {"device": {"type": "string", "description": "device preset id (see device_list) or 'none'"}, "x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}})");
-    gui("view_focus", "Move the editor camera to look at x,z (distance optional).",
-        R"({"properties": {"x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})");
+    gui("view_screenshot", "Screenshot of the editor viewport; optional x,y,z target and orbit distance/pitch/yaw. Returns a PNG image without changing the map.",
+        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string", "description": "device preset id (see device_list) or 'none'"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}, "pitch": {"type": "number"}, "yaw": {"type": "number"}}})");
+    gui("view_focus", "Move the editor camera to look at x,y,z (y and distance optional).",
+        R"({"properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})");
     gui("play_start", "Play-test the open map inside the editor window (bots on all sides unless 'human' is set). The user watches live.",
         R"({"properties": {"speed": {"type": "number"}, "human": {"type": "integer", "description": "player slot controlled by the user, 0 = bots only"}, "device": {"type": "string"}}})");
     gui("play_stop", "Stop the play-test and return to editing.", "{}");

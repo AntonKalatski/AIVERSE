@@ -50,3 +50,14 @@ Scene coordinates,0..1 from top-left. It returns hit/index/entityId and never
 changes selection/document. Use the current editor_select docs array when selecting
 its returned index, and re-query after structural edits. Scene screenshot capture
 still fails closed when its viewport is unavailable, never captures desktop.
+
+## Native agent camera height
+
+For nonplanet Scene inspection, `view_screenshot` accepts optional world target
+`x,y,z` with orbit `distance,pitch,yaw`. Supplying x,z without y retains legacy
+Y0; y alone changes the existing target height. `view_focus` also accepts y.
+All numeric fields must be finite and within +/-1000000; an invalid request
+changes neither camera nor document. Screenshot camera changes do not edit the
+map. The shared Workspace schema advertises these fields; Studio's independent
+native camera/mouse API remains its existing implementation, not a new screenshot
+transport. Planet focus still uses its existing face-coordinate semantics.

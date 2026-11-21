@@ -50,6 +50,13 @@ Json reply(const Json& id, Json result) {
     r.set("result", std::move(result));
     return r;
 }
+float cameraNumber(const Json& args,const char* key,float fallback) {
+    if(!args.has(key))return fallback;
+    const double value=args[key].toDouble();
+    if(!args[key].isNumber()||!std::isfinite(value)||std::abs(value)>1000000.0)
+        throw std::runtime_error(std::string("camera ")+key+" must be a finite number within +/-1000000");
+    return float(value);
+}
 } // namespace
 
 void Editor::pollAgentLink() {
@@ -62,14 +69,28 @@ void Editor::pollAgentLink() {
         const std::string name = msg["params"].getStr("name");
         const Json& args = msg["params"]["arguments"];
         if (name == "view_screenshot") {
-            if (args.has("device")) gameDevice = args.getStr("device");
-            if (args.has("x") && args.has("z")) { // jump (not fly): the picture is taken this frame
-                sceneCam.target = {float(args["x"].toDouble()), 0, float(args["z"].toDouble())};
-                if (args.has("distance")) sceneCam.distance = std::clamp(float(args["distance"].toDouble()), sceneCam.minDistance, sceneCam.maxDistance);
-                sceneFlying_ = false;
+            auto camera=sceneCam;
+            bool positioned=false;
+            try {
+                if(args.has("x")!=args.has("z"))throw std::runtime_error("camera x and z must be supplied together");
+                if(args.has("x")) {
+                    camera.target={cameraNumber(args,"x",0),cameraNumber(args,"y",0),cameraNumber(args,"z",0)};
+                    positioned=true;
+                } else if(args.has("y")) {
+                    camera.target.y=cameraNumber(args,"y",camera.target.y);positioned=true;
+                }
+                if(args.has("distance"))camera.distance=std::clamp(cameraNumber(args,"distance",camera.distance),camera.minDistance,camera.maxDistance);
+                if(args.has("pitch"))camera.pitch=std::clamp(cameraNumber(args,"pitch",0),10.0f,89.0f)*0.0174533f;
+                if(args.has("yaw"))camera.yaw=cameraNumber(args,"yaw",0)*0.0174533f;
+            } catch(const std::exception& error) {
+                Json result=Json::object();result.set("error",Json::string(error.what()));
+                server_.send(m.client,reply(id,std::move(result)).dump(-1));continue;
             }
-            if (args.has("pitch")) sceneCam.pitch = std::clamp(float(args["pitch"].toDouble()), 10.0f, 89.0f) * 0.0174533f;   // degrees over the horizon
-            if (args.has("yaw")) sceneCam.yaw = float(args["yaw"].toDouble()) * 0.0174533f;
+            // Apply only after the entire request validates. Camera inspection
+            // never edits entity transforms or marks the document dirty.
+            sceneCam=camera;
+            if(positioned)sceneFlying_=false;
+            if (args.has("device")) gameDevice = args.getStr("device");
             shots_.push_back({m.client, id.integer(), args.getStr("window", args.has("device") ? "game" : "all"), Json::object()});
             // Do not put a notification over the requested scene/game image.
             if(args.getStr("window","all")=="all")ws_.log("agent", "Скриншот редактора");
@@ -189,12 +210,14 @@ void Editor::registerGuiOps() {
             if(index>=0&&size_t(index)<doc().data.entities.size())result.set("entityId",Json::string(doc().data.entities[size_t(index)].id));
             return result;
         });
-    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); with 'device' the Game window shows that device first; x, z, distance, pitch, yaw (degrees) place the Scene camera. Returns a PNG image.",
-        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}})",
+    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); x,y,z set the Scene target (y defaults to zero with x,z), distance/pitch/yaw set its orbit. Returns a PNG image without modifying the map.",
+        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}, "pitch": {"type": "number"}, "yaw": {"type": "number"}}})",
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });
-    add("view_focus", "Move the Scene camera to look at x,z (optional distance).",
-        R"({"properties": {"x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})", [this, okSummary](const Json& p) {
-            focusScene(float(p["x"].toDouble()), float(p["z"].toDouble()), float(p["distance"].toDouble(-1)));
+    add("view_focus", "Move the Scene camera to look at x,y,z (y and distance optional).",
+        R"({"properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})", [this, okSummary](const Json& p) {
+            const float x=cameraNumber(p,"x",0),y=cameraNumber(p,"y",0),z=cameraNumber(p,"z",0),distance=cameraNumber(p,"distance",-1);
+            focusScene(x,z,distance);
+            if(!view_.planetMode())sceneGoal_.y=y;
             return okSummary("Камера: (" + std::to_string(int(p["x"].toDouble())) + ", " + std::to_string(int(p["z"].toDouble())) + ")");
         });
     add("play_start", "Play-test the open map in the Game window: bots on every side, or the user plays slot 'human'. The user watches live. "
