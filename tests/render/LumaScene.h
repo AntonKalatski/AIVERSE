@@ -75,7 +75,13 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
         const float energy=((test==0||test==7||test==9||test==10||test==11)?1.0f:test==5?.97f:test==8?.25f:0.0f)*4*atten/3.14159265358979323846f;
         auto encode=[](float v){return v<=.0031308f?12.92f*v:1.055f*std::pow(v,1/2.4f)-.055f;};
         const float3 expected={encode(energy),encode(energy*.5f),encode(energy*.25f)};
-        auto receive=[&s,test,expected,stateOk](int cw,int ch,std::vector<uint8_t> px) {
+        const int flags=int(stats.composited)|int(stats.objectVelocity)<<1|
+                        int(stats.submission.encoded)<<2|int(stats.reusedPrevious)<<3|int(stats.gpuBusy)<<4|
+                        int(r.objectMotionStats().submitted)<<5|int(r.objectMotionStats().velocitySeedOnly)<<6|
+                        int(r.objectMotionStats().rigidDraws>0)<<7|int(r.objectMotionStats().rejected>0)<<8|
+                        int(s.post.wantsObjectMotionVectors())<<9|int(s.post.objectMotionSceneDepth().valid())<<10;
+        const std::string lastError=d.lastError();
+        auto receive=[&s,test,expected,stateOk,flags,lastError](int cw,int ch,std::vector<uint8_t> px) {
             if(cw<4||ch<4||px.size()!=size_t(cw*ch*4)){s.failed=true;return;}
             // AIVERSE_HDR_CAPTURE set: keep each case frame as <path>.luma<case>.ppm.
             if(std::getenv("AIVERSE_HDR_CAPTURE")) {
@@ -87,8 +93,9 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
             for(int y=ch/2-2;y<ch/2+2;++y)for(int x=cw/2-2;x<cw/2+2;++x)
                 for(int c=0;c<3;++c)actual[c]+=px[size_t(y*cw+x)*4+c]/(16*255.0f);
             bool ok=stateOk;for(int c=0;c<3;++c)ok &= std::abs(actual[c]-target[c])<5/255.0f;
-            std::printf("Luma GPU %d: RGB %.5f %.5f %.5f expected %.5f %.5f %.5f state=%d %s\n",
-                test,actual[0],actual[1],actual[2],target[0],target[1],target[2],stateOk,ok?"PASS":"FAIL");
+            std::printf("Luma GPU %d: RGB %.5f %.5f %.5f expected %.5f %.5f %.5f state=%d flags=%d %s\n",
+                test,actual[0],actual[1],actual[2],target[0],target[1],target[2],stateOk,flags,ok?"PASS":"FAIL");
+            if(!ok)std::printf("Luma GPU %d device error: %s\n",test,lastError.c_str());
             s.failed |= !ok;++s.probeIndex;s.frame=0;if(s.probeIndex==12)s.captured=true;
         };
         if(s.readOutput)s.readOutput(receive);else d.captureNextFrame(receive);

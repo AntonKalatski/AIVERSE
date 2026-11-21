@@ -1481,7 +1481,24 @@ public:
         const auto source=colorShaderPrefix(true,d.linearTarget)+d.msl;
         id<MTLLibrary> lib=shaderAssets_->library(source);
         if(!lib && !shaderAssets_->strict()) lib=[device_ newLibraryWithSource:[NSString stringWithUTF8String:source.c_str()] options:nil error:&err];
-        if (!lib) { error_ = std::string("MSL compile: ") + (err ? err.localizedDescription.UTF8String : "?"); return {}; }
+        if (!lib) {
+            // Name the shader and quote the first failing source line: the
+            // message's line numbers count the colour prefix too.
+            error_ = std::string("MSL compile (") + (d.label ? d.label : "unnamed") + "): " +
+                     (err ? err.localizedDescription.UTF8String : "?");
+            const auto at = error_.find("program_source:");
+            if (at != std::string::npos) {
+                const int line = std::atoi(error_.c_str() + at + 15);
+                size_t pos = 0;
+                for (int i = 1; i < line && pos != std::string::npos; ++i) {
+                    pos = source.find('\n', pos);
+                    if (pos != std::string::npos) ++pos;
+                }
+                if (pos != std::string::npos && line > 0)
+                    error_ += " | line: " + source.substr(pos, source.find('\n', pos) - pos);
+            }
+            return {};
+        }
         MTShader s;
         s.source = d.msl; s.linear = d.linearTarget;
         s.vs = [lib newFunctionWithName:@"vs_main"];
