@@ -1,101 +1,83 @@
 {
- "generated": "2026-11-21T10:38:46+00:00",
+ "generated": "2026-11-21T11:19:53+00:00",
+ "lang": "ru",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
   {
    "id": "terraweave",
-   "name": "TerraWeave",
-   "nameEn": "TerraWeave"
+   "name": "TerraWeave"
   },
   {
    "id": "physis",
-   "name": "PHYSIS",
-   "nameEn": "PHYSIS"
+   "name": "PHYSIS"
   },
   {
    "id": "nereid",
-   "name": "NEREID",
-   "nameEn": "NEREID"
+   "name": "NEREID"
   },
   {
    "id": "strata",
-   "name": "STRATA",
-   "nameEn": "STRATA"
+   "name": "STRATA"
   },
   {
    "id": "lens",
-   "name": "LENS",
-   "nameEn": "LENS"
+   "name": "LENS"
   },
   {
    "id": "vivid",
-   "name": "VIVID",
-   "nameEn": "VIVID"
+   "name": "VIVID"
   },
   {
    "id": "lighting",
-   "name": "LUMA",
-   "nameEn": "LUMA lighting"
+   "name": "LUMA"
   },
   {
    "id": "prisma",
-   "name": "PRISMA",
-   "nameEn": "PRISMA post-processing"
+   "name": "PRISMA"
   },
   {
    "id": "spectrafx",
-   "name": "SpectraFX",
-   "nameEn": "SpectraFX VFX"
+   "name": "SpectraFX"
   },
   {
    "id": "motionweave",
-   "name": "MotionWeave",
-   "nameEn": "MotionWeave animation"
+   "name": "MotionWeave"
   },
   {
    "id": "render",
-   "name": "Рендер и материалы",
-   "nameEn": "Rendering and materials"
+   "name": "Рендер и материалы"
   },
   {
    "id": "world",
-   "name": "Мир: дороги и города",
-   "nameEn": "World: roads and cities"
+   "name": "Мир: дороги и города"
   },
   {
    "id": "ecs",
-   "name": "ECS и сущности",
-   "nameEn": "ECS and entities"
+   "name": "ECS и сущности"
   },
   {
    "id": "studio",
-   "name": "Studio — редактор",
-   "nameEn": "Studio editor"
+   "name": "Studio — редактор"
   },
   {
    "id": "network",
-   "name": "Сеть и сервер",
-   "nameEn": "Networking and server"
+   "name": "Сеть и сервер"
   },
   {
    "id": "meta",
-   "name": "Мета и LiveOps",
-   "nameEn": "Meta and LiveOps"
+   "name": "Мета и LiveOps"
   },
   {
    "id": "gameplay",
-   "name": "Жанры и механики",
-   "nameEn": "Genres and mechanics"
+   "name": "Жанры и механики"
   },
   {
    "id": "agents",
-   "name": "MCP и навыки агентов",
-   "nameEn": "MCP and agent skills"
+   "name": "MCP и навыки агентов"
   },
   {
    "id": "build",
-   "name": "Сборка и платформы",
-   "nameEn": "Builds and platforms"
+   "name": "Сборка и платформы"
   }
  ],
  "entries": [

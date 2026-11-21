@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpectraFX — Particle effects · AIVERSE</title>
+<meta name="description" content="Particles, ribbons, smoke, fire and explosions from effect graphs, with CPU and GPU emitters and ECS event bindings.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../system-spectrafx.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems" aria-current="page">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
+</div>
+<a class="lang-switch" href="../system-spectrafx.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="sp-hero"><p class="crumbs"><a href="./#systems">Engine systems</a> / SpectraFX</p><div class="sp-title"><h1>SpectraFX</h1><span class="badge badge-ink">in main</span></div><p class="sp-tag">Particle effects</p><p class="sp-lead">Particles, ribbons, smoke, fire and explosions from effect graphs, with CPU and GPU emitters and ECS event bindings.</p><p class="sp-since mono">in development since Oct 28, 2026</p><div class="actions"><a class="btn btn-ink" href="docs-spectrafx.html">System docs</a><a class="btn btn-line" href="devlog.html#system=spectrafx">Devlog · 0</a></div></section><figure class="sp-cover"><img src="../media/docs/devlog/media/systems/spectrafx-explosion.jpg" alt="SpectraFX: a big explosion and fire with smoke from JSON effects, CPU particle backend"><figcaption>SpectraFX: a big explosion and fire with smoke from JSON effects, CPU particle backend</figcaption></figure><section class="sp-sec"><h2 class="h2">What is inside</h2><div class="grid sp-inc"><article class="card"><h3>Effect graphs</h3><p>A typed graph v2, function subgraphs, variants and hot reload.</p></article><article class="card"><h3>CPU and GPU</h3><p>A CPU particle backend and GPU particles on Metal.</p></article><article class="card"><h3>ECS link</h3><p>Effect sources from entities, events and cue scheduling.</p></article><article class="card"><h3>Editor</h3><p>A visual graph editor in Studio and authoring through MCP.</p></article><article class="card"><h3>Batching</h3><p>Shared material batching across effects.</p></article><article class="card"><h3>Import</h3><p>Unity ParticleSystem modules and effect import from Unity.</p></article></div></section><section class="sp-sec"><h2 class="h2">What it lets you do</h2><ul class="sp-ena"><li>Build fire, smoke, explosions and magic from a graph, not code.</li><li>Trigger effects from gameplay events without touching the deterministic simulation.</li><li>Bring effects over from Unity projects.</li></ul></section><section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">Roadmap</h2><a href="roadmap.html#spectrafx">Engine roadmap →</a></div><ol class="rm-list"><li class="rm-item rm-done"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-done">Done</span><time>Oct 28, 2026</time></div><h3>Start of work on the effects system</h3></div></li><li class="rm-item rm-done"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-done">Done</span><time>Nov 18, 2026</time></div><h3>The SpectraFX name, public C++ API and asset format</h3></div></li><li class="rm-item rm-done"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-done">Done</span><time>Nov 18, 2026</time></div><h3>Shared batching across effects</h3></div></li><li class="rm-item rm-done"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-done">Done</span><time>Nov 19, 2026</time></div><h3>Persistent particle attributes on GPU</h3></div></li><li class="rm-item rm-done"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-done">Done</span><time>Nov 19, 2026</time></div><h3>GPU scatter-kill pipeline and a native ECS integration example</h3><p>Stage 36.</p></div></li><li class="rm-item rm-done"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-done">Done</span><time>Nov 20, 2026</time></div><h3>Graph v2 in the Inspector and a verified Metal lifecycle</h3></div></li><li class="rm-item rm-in-progress"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-in-progress">In progress</span><time>no date set</time></div><h3>Full GPU and CPU integration in production</h3></div></li><li class="rm-item rm-planned"><span class="rm-dot" aria-hidden="true"></span><div><div class="rm-meta"><span class="st st-planned">Planned</span><time>no date set</time></div><h3>Automatic hookup to RTS and FPS</h3></div></li></ol></section><section class="sp-sec"><h2 class="h2">Devlog</h2><p class="empty">No entries yet. The system's agent adds them with its next stage.</p></section><section class="sp-sec sp-others"><p class="eyebrow">Other systems</p><div class="chips"><a class="chip" href="system-terraweave.html">TerraWeave</a><a class="chip" href="system-physis.html">PHYSIS</a><a class="chip" href="system-nereid.html">NEREID</a><a class="chip" href="system-strata.html">STRATA</a><a class="chip" href="system-lens.html">LENS</a><a class="chip" href="system-vivid.html">VIVID</a><a class="chip" href="system-lighting.html">LUMA</a><a class="chip" href="system-prisma.html">PRISMA</a><a class="chip chip-ink" href="system-spectrafx.html">SpectraFX</a><a class="chip" href="system-motionweave.html">MotionWeave</a></div></section>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="devlog.html">Devlog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · data: docs/devlog in the repository</small>
+</div>
+</footer>
+
+</body>
+</html>

@@ -1,8 +1,19 @@
 // AIVERSE devlog page: renders devlog.json built by tools/site/build.py. No framework.
 (function () {
   'use strict';
-  var STATUS = { 'done': 'Готово', 'in-progress': 'В работе', 'experimental': 'Эксперимент' };
-  var MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+  var I18N = {
+    ru: { status: { 'done': 'Готово', 'in-progress': 'В работе', 'experimental': 'Эксперимент' },
+          months: ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'],
+          open: 'Открыть снимок: ', verified: 'Проверено', limits: 'Ограничения', more: 'Подробнее', all: 'Все системы',
+          none: 'Записей с такими условиями нет.', failed: 'Не удалось загрузить devlog.json.', updated: 'MIT License · обновлено ' },
+    en: { status: { 'done': 'Done', 'in-progress': 'In progress', 'experimental': 'Experimental' },
+          months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+          open: 'Open frame: ', verified: 'Verified', limits: 'Limitations', more: 'Details', all: 'All systems',
+          none: 'No entries match these filters.', failed: 'Could not load devlog.json.', updated: 'MIT License · updated ' }
+  };
+  var L = I18N[document.documentElement.lang] || I18N.ru;
+  var STATUS = L.status;
+  var MONTHS = L.months;
   var state = { system: '', status: '', q: '' };
   var data = null;
 
@@ -41,7 +52,7 @@
         ? el('video', { src: m.src, controls: '', muted: '', playsinline: '', preload: 'metadata', 'aria-label': m.caption })
         : el('img', { src: m.src, alt: m.caption, loading: 'lazy' });
       if (isVideo) { box.appendChild(inner); return; }
-      var b = el('button', { type: 'button', 'aria-label': 'Открыть снимок: ' + m.caption }, [inner, el('span', { class: 'cap', text: m.caption })]);
+      var b = el('button', { type: 'button', 'aria-label': L.open + m.caption }, [inner, el('span', { class: 'cap', text: m.caption })]);
       b.addEventListener('click', function () { openLightbox(m); });
       box.appendChild(b);
     });
@@ -56,10 +67,10 @@
       e.branch ? el('span', { text: e.branch + (e.commit ? ' · ' + e.commit : '') }) : null
     ]);
     var facts = el('dl', { class: 'facts-list' }, [
-      el('div', {}, [el('dt', { text: 'Проверено' }), el('dd', { text: e.verified })]),
-      e.limits ? el('div', {}, [el('dt', { text: 'Ограничения' }), el('dd', { text: e.limits })]) : null
+      el('div', {}, [el('dt', { text: L.verified }), el('dd', { text: e.verified })]),
+      e.limits ? el('div', {}, [el('dt', { text: L.limits }), el('dd', { text: e.limits })]) : null
     ]);
-    var details = el('details', {}, [el('summary', { text: 'Подробнее' })]
+    var details = el('details', {}, [el('summary', { text: L.more })]
       .concat((e.body || []).map(function (p) { return el('p', { text: p }); }))
       .concat([facts]));
     var links = (e.links || []).length ? el('div', { class: 'entry-links' }, e.links.map(function (l) {
@@ -76,7 +87,7 @@
     host.textContent = '';
     var counts = {};
     data.entries.forEach(function (e) { counts[e.system] = (counts[e.system] || 0) + 1; });
-    var all = [{ id: '', name: 'Все системы' }].concat(data.systems.filter(function (s) { return counts[s.id]; }));
+    var all = [{ id: '', name: L.all }].concat(data.systems.filter(function (s) { return counts[s.id]; }));
     all.forEach(function (s) {
       var b = el('button', { class: 'sys', type: 'button', 'aria-pressed': String(state.system === s.id) }, [
         el('span', { text: s.name }), el('span', { class: 'count', text: String(s.id ? counts[s.id] : data.entries.length) })
@@ -90,7 +101,7 @@
     var feed = document.getElementById('feed');
     feed.textContent = '';
     var list = data.entries.filter(matches);
-    if (!list.length) { feed.appendChild(el('p', { class: 'empty', text: 'Записей с такими условиями нет.' })); return; }
+    if (!list.length) { feed.appendChild(el('p', { class: 'empty', text: L.none })); return; }
     var month = '';
     list.forEach(function (e) {
       var m = e.date.slice(0, 7);
@@ -140,13 +151,13 @@
     document.getElementById('stat-entries').textContent = data.entries.length;
     document.getElementById('stat-systems').textContent = Object.keys(used).length;
     document.getElementById('stat-date').textContent = data.entries.length ? data.entries[0].date.slice(5).split('-').reverse().join('.') : '—';
-    document.getElementById('generated').textContent = 'MIT License · обновлено ' + data.generated.slice(0, 10);
+    document.getElementById('generated').textContent = L.updated + data.generated.slice(0, 10);
     sync();
     if (location.hash.length > 1 && !m) {
       var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
       if (target) target.scrollIntoView();
     }
   }).catch(function () {
-    document.getElementById('feed').textContent = 'Не удалось загрузить devlog.json.';
+    document.getElementById('feed').textContent = L.failed;
   });
 })();

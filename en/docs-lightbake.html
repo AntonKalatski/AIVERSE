@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Light baking — AIVERSE</title>
+<meta name="description" content="Lightmaps and probes with the engine&#x27;s path tracer.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../docs-lightbake.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Docs</a>
+</div>
+<a class="lang-switch" href="../docs-lightbake.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap docs-main">
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-genre-packages.html">Genre packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-dynamic-gi.html">Dynamic GI</a><a href="docs-lightbake.html" aria-current="page">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="baked-lighting-lightmaps-light-probes-the-light-baker">Baked lighting (lightmaps, light probes, the light baker)<a class="anchor" href="#baked-lighting-lightmaps-light-probes-the-light-baker" aria-label="#">#</a></h1>
+<p>AIVERSE bakes global illumination itself: an offline CPU path tracer (<code>engine/bake</code>) writes lightmaps for static objects and the terrain plus a light probe grid for everything that moves. The runtime samples them in the lit shaders (GLSL + MSL) and mixes them with the realtime sun like Unity's mixed lighting. Owner: agent-lightbake.</p>
+<h2 id="quick-start">Quick start<a class="anchor" href="#quick-start" aria-label="#">#</a></h2>
+<ol><li>Mark map lights that should be baked: <code>&quot;bake&quot;: &quot;mixed&quot;</code> (stays realtime, its bounce is baked) or <code>&quot;bake&quot;: &quot;baked&quot;</code> (only in the lightmap / probes; its realtime light and halo sprite switch off once a bake is loaded). MCP: <code>light_add</code> / <code>light_update</code> with <code>bake</code>.</li><li>Editor → <strong>Графика → Запекание света</strong>: mode, density, samples, bounces, probes → <strong>Запечь</strong>. MCP: <code>lightbake_set {quality: &quot;preview&quot;|&quot;medium&quot;|&quot;high&quot;, mode, ...}</code>, <code>lightbake_bake {force?}</code>, poll <code>lightbake_status</code>, <code>lightbake_get</code>, <code>lightbake_clear</code>.</li><li>The result is <code>maps/&lt;map&gt;.bake/</code> next to the map; the game client loads it when the map starts.</li></ol>
+<p><strong>Rebakes are skipped</strong> when nothing changed: the bake stores a 64-bit content hash of everything it used (geometry, materials, textures, transforms, sun / sky / lights, settings); <code>lightbake_bake</code> without <code>force</code> compares it first.</p>
+<h2 id="what-is-static">What is static<a class="anchor" href="#what-is-static" aria-label="#">#</a></h2>
+<p>The bake captures what the Scene view draws with <code>kDrawStatic</code> (<code>Renderer3D::DrawFlags</code>): objects of types that cannot move (<code>structure</code> or speed 0), finished, alive, not flying, without entity fx. Every such model node is a lightmap receiver and an occluder. Anything else (units, projectiles) is lit by the probes. Other renderers can opt in by setting <code>kDrawStatic</code> on their <code>ModelDraw</code>.</p>
+<p>At runtime a model node finds its lightmap region by <strong>model path + node index + world matrix</strong> (quantized to 1/256), so no ids have to be stored in the map: an object drawn exactly where it was baked is lightmapped, a moved one falls back to probes. Animated nodes therefore are not lightmapped.</p>
+<h2 id="lightmap-uvs">Lightmap UVs<a class="anchor" href="#lightmap-uvs" aria-label="#">#</a></h2>
+<ul><li>Models with a second UV set use it: glTF <code>TEXCOORD_1</code>, FBX second UV set (Unity's UV2; values in [0, 1]). Unskinned primitives only; stored in <code>ModelVertex::joints</code> as two unorm16 (<code>engine/render/LightmapUv.h</code>), so the vertex layout is unchanged.</li><li>Otherwise the baker unwraps the mesh with <strong>xatlas</strong> (MIT, <code>third_party/xatlas</code>, pinned f700c7790aaa030e794b52ba7791a05c085faf0c) and writes <code>&lt;model&gt;.lmuv</code> next to the model; <code>loadModel</code> applies it from then on (it checks a hash of the source geometry, a stale sidecar is ignored with a warning). Commit the <code>.lmuv</code> files with the models.</li><li>Each mesh has its own [0, 1] space; each placed node gets a region sized by <code>texelsPerUnit</code> × its world area, packed into power-of-two pages.</li></ul>
+<h2 id="mixing-modes-mode">Mixing modes (<code>mode</code>)<a class="anchor" href="#mixing-modes-mode" aria-label="#">#</a></h2>
+<div class="table"><table><thead><tr><th>mode</th><th>lightmap holds</th><th>sun on static objects</th><th>for</th></tr></thead><tbody><tr><td><code>indirect</code></td><td>sky, bounces, emissive, baked-only lights</td><td>realtime (shadow map)</td><td>day/night cycles</td></tr><tr><td><code>shadowmask</code> (default)</td><td>as indirect + sun visibility mask</td><td>realtime, shadow = min(shadow map, mask)</td><td>static shadows beyond the shadow distance and with shadows off</td></tr><tr><td><code>subtractive</code></td><td>everything incl. the direct sun</td><td>baked; realtime shadows of dynamic objects darken it to <code>shadowColor</code></td><td>weak phones</td></tr></tbody></table></div>
+<p>Dynamic objects always get the realtime sun plus probe ambient. The sky term is exact: an open floor bakes to the same ambient the realtime shader computes (<code>mix(ground, sky, n.y * .5 + .5)</code>), so lightmapped and realtime objects match where nothing occludes.</p>
+<h2 id="quality-tiers">Quality tiers<a class="anchor" href="#quality-tiers" aria-label="#">#</a></h2>
+<p><code>Renderer3D::setBakedQuality(Off | Low | High)</code>, default Low on phones (<code>defaultBakedQualityFor</code>), <code>AIVERSE_BAKED=off|low|high</code> overrides. Low: lightmaps + shadow mask, probes from the nearest probe (3 texel fetches per vertex). High: trilinear probes (24 fetches per vertex). Off: realtime only. Lightmaps cost one RGBM fetch (+ one mask fetch in shadowmask mode) per pixel on every tier.</p>
+<h2 id="baker">Baker<a class="anchor" href="#baker" aria-label="#">#</a></h2>
+<p><code>engine/bake</code> (host library <code>aiverse_bake</code>, also usable without the editor — see <code>tests/bake</code>):</p>
+<ul><li><code>SceneBuilder</code> loads models (CPU geometry), unwraps, converts materials (base colour × base texture for albedo, alpha test for masked foliage, emissive; unlit materials glow), adds a terrain mesh from a height function with planar lightmap UVs.</li><li>Binned-SAH BVH, closest / any hit, alpha test.</li><li>Per texel: cosine-weighted hemisphere paths (R2 sequence rotated per texel) with next-event estimation of the sun (soft, <code>angle</code>) and point / spot lights at every bounce, sky on miss; sun visibility mask (<code>maskSamples</code>); direct light of baked-only lights; optional AO; texels inside geometry (backface hits) are dropped and refilled by dilation; edge-aware à-trous denoiser on the indirect term.</li><li>Probes: regular grid over the scene (<code>probeSpacing</code>, <code>probeHeight</code> above the floor, capped by <code>maxProbes</code>), uniform sphere sampling into ambient + gradient (<code>irradiance(n) = a + B n</code>), baked-only lights added analytically; probes inside geometry are refilled from neighbours.</li><li>Multithreaded (<code>threads</code>, 0 = all cores). Every random stream is keyed by its texel / probe, so the output is <strong>bit-identical for any thread count</strong> (tested).</li></ul>
+<p>Presets: <code>preview</code> (16 samples, 1 bounce, 2 texels/m), <code>medium</code> (64, 2, 4), <code>high</code> (256, 3, 8).</p>
+<h2 id="files-mapsbake">Files (<code>maps/&lt;map&gt;.bake/</code>)<a class="anchor" href="#files-mapsbake" aria-label="#">#</a></h2>
+<p><code>lightmap.json</code> (version, hash, mode, RGBM range, pages, regions <code>key -&gt; [page, scale.xy, offset.xy]</code>, terrain region, probe grid, settings, stats), <code>lm&lt;i&gt;.png</code> RGBM pages (linear, range <code>rgbmRange</code>), <code>mask&lt;i&gt;.png</code> (shadowmask mode, r = sun visibility), <code>probes.bin</code> (float16 × 12 per probe). PNG and float16 keep the folder small and pack-friendly; the folder is plain content (rpak includes it like any other file). Settings live in the map's <code>&quot;bake&quot;</code> block.</p>
+<h2 id="hooks-for-other-renderers">Hooks for other renderers<a class="anchor" href="#hooks-for-other-renderers" aria-label="#">#</a></h2>
+<ul><li>Models: automatic (<code>Renderer3D::drawModel</code>, <code>ModelShaders.h</code> variants <code>LIGHTMAP</code> / <code>PROBES</code>).</li><li>Terrain and other custom lit shaders: <code>AIVERSE_GLSL_BAKED_TERRAIN(block, lmTex, maskTex)</code> / <code>AIVERSE_MSL_BAKED_TERRAIN</code> (<code>engine/render/BakedShaders.h</code>) and <code>Renderer3D::bindBakedTerrain(uniformSlot, lightmapSlot, maskSlot)</code>; the flat terrain (<code>RtsTerrainShaders.h</code>) uses U3 + tex19 / tex20. The baker's terrain covers [0, w] × [0, h] of the map.</li></ul>
+<h2 id="example-templatesshowcase-valley">Example (templates/showcase, valley)<a class="anchor" href="#example-templatesshowcase-valley" aria-label="#">#</a></h2>
+<p>Before (realtime only) / after (shadowmask bake, AO 1 m, two <code>&quot;bake&quot;: &quot;baked&quot;</code> lamps) / the decoded lightmap page (terrain region left, crystal tower and windmill regions top right):</p>
+<p><img src="https://raw.githubusercontent.com/chromealex/AIVERSE/main/docs/images/lightbake_before_realtime.png" alt="realtime" loading="lazy"> <img src="https://raw.githubusercontent.com/chromealex/AIVERSE/main/docs/images/lightbake_after_baked.png" alt="baked" loading="lazy"></p>
+<p><img src="https://raw.githubusercontent.com/chromealex/AIVERSE/main/docs/images/lightbake_lightmap.png" alt="lightmap page" loading="lazy"></p>
+<p>Bake: 0.5 s on 4 VM cores (medium: 64 samples, 2 bounces, 52k texels, 2475 probes); a second <code>lightbake_bake</code> reports "up to date" (hash unchanged).</p>
+<h2 id="limits-not-yet">Limits / not yet<a class="anchor" href="#limits-not-yet" aria-label="#">#</a></h2>
+<ul><li>No directional lightmaps (normal maps use the lightmap irradiance only), no baked specular.</li><li>Albedo of the terrain in the bake is a constant (bounce colour from splat materials is not sampled); vertex colours are ignored in bounces.</li><li>Planet terrain, sprites and procedural shapes (<code>shape:*</code> models of types without a model file, <code>drawMesh</code>) are not part of the bake: they neither receive lightmaps nor occlude; shape models are lit by the probes.</li><li>A day/night cycle keeps baked indirect light fixed (use <code>indirect</code> mode).</li><li>Importing Bakery / Unity lightmaps is not implemented (rebake with the engine's baker; UV2 is read).</li><li>Metal (MSL) variants are written but compiled only on macOS/iOS builds.</li></ul><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/lightbake.md">Source on GitHub: docs/lightbake.md</a></p></article><aside class="doc-toc" aria-label="On this page"><span>On this page</span><a class="toc-2" href="#quick-start">Quick start</a><a class="toc-2" href="#what-is-static">What is static</a><a class="toc-2" href="#lightmap-uvs">Lightmap UVs</a><a class="toc-2" href="#mixing-modes-mode">Mixing modes (mode)</a><a class="toc-2" href="#quality-tiers">Quality tiers</a><a class="toc-2" href="#baker">Baker</a><a class="toc-2" href="#files-mapsbake">Files (maps/&amp;lt;map&amp;gt;.bake/)</a><a class="toc-2" href="#hooks-for-other-renderers">Hooks for other renderers</a><a class="toc-2" href="#example-templatesshowcase-valley">Example (templates/showcase, valley)</a><a class="toc-2" href="#limits-not-yet">Limits / not yet</a></aside></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="devlog.html">Devlog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · data: docs/devlog in the repository</small>
+</div>
+</footer>
+
+</body>
+</html>

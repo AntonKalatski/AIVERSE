@@ -8,6 +8,7 @@
 <meta property="og:title" content="AIVERSE — игру описывают, а не пишут с нуля">
 <meta property="og:description" content="Движок, в котором ИИ-агент собирает игру из данных и сам её проверяет.">
 <meta property="og:image" content="media/docs/images/readme/sponza.jpg">
+<link rel="alternate" hreflang="en" href="en/index.html">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,11 +22,11 @@
 <div class="menu">
 <a href="#systems">Системы</a>
 <a href="#genres">Жанры</a>
-<a href="#network">Сеть</a>
 <a href="roadmap.html">Роадмап</a>
 <a href="devlog.html">Ход разработки</a>
-<a href="https://github.com/chromealex/AIVERSE/blob/main/docs/overview.md">Документация</a>
+<a href="docs.html">Документация</a>
 </div>
+<a class="lang-switch" href="en/index.html" hreflang="en" lang="en">EN</a>
 <a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
 </nav>
 </header>
@@ -72,7 +73,7 @@
 
 <section class="showcase" aria-labelledby="showcase-title">
 <figure><img src="media/docs/devlog/media/showcase/2026-11-20-alpine-valley.jpg" alt="Alpine Valley: горная долина в реальном времени">
-<figcaption><div class="wrap"><div><p class="eyebrow">Кадр движка</p><h2 id="showcase-title">Alpine Valley: горная долина в реальном времени</h2><p>Авторская сцена: 662 хвойных дерева, камни TerraWeave на берегах, трава и снег под штатным небом PhysicalSky с объёмными облаками. Настоящий кадр Metal без ретуши.</p></div><div class="meta"><span>TerraWeave · 2026-11-20</span></div></div></figcaption></figure>
+<figcaption><div class="wrap"><div><p class="eyebrow">Кадр движка</p><h2 id="showcase-title">Alpine Valley: горная долина в реальном времени</h2><p>Авторская сцена: 662 хвойных дерева, камни TerraWeave на берегах, трава и снег под штатным небом PhysicalSky с объёмными облаками. Настоящий кадр Metal без ретуши.</p></div><div class="meta"><span>TerraWeave · 20.11.2026</span></div></div></figcaption></figure>
 </section>
 
 <section id="systems" class="section wrap" aria-labelledby="systems-title">
@@ -92,7 +93,7 @@
 <article class="sys-card" id="sys-vivid"><figure><video src="media/docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/adaptive-soft-shadows.mp4" poster="media/docs/devlog/media/systems/vivid-portrait.jpg" autoplay muted loop playsinline preload="none" aria-label="VIVID: портрет в студийном свете, нативный кадр Metal"></video><figcaption>VIVID: портрет в студийном свете, нативный кадр Metal</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-vivid.html">VIVID</a></h3><span class="badge">в разработке</span></div><p class="sys-tag">Цифровые люди</p><p>Лицевой контроллер и морфы на GPU поверх анимации MotionWeave: мимика, моргание, глаза, LOD для персонажей.</p><a class="sys-link" href="system-vivid.html">О системе и роадмап →</a></div></article>
 <article class="sys-card" id="sys-lighting"><figure><img src="media/docs/images/readme/sponza.jpg" alt="Sponza: PBR, тени и ambient occlusion" loading="lazy"><figcaption>Sponza: PBR, тени и ambient occlusion</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-lighting.html">LUMA</a></h3><span class="badge badge-ink">в main</span></div><p class="sys-tag">Свет и глобальное освещение</p><p>Свет как компонент сущности, пробы GI, запекание лайтмапов своим path tracer и динамическое непрямое освещение.</p><a class="sys-link" href="system-lighting.html">О системе и роадмап →</a></div></article>
 <article class="sys-card" id="sys-prisma"><figure><img src="media/docs/images/readme/sponza-light-shafts.png" alt="Лучи света сквозь дымку: выключено / включено" loading="lazy"><figcaption>Лучи света сквозь дымку: выключено / включено</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-prisma.html">PRISMA</a></h3><span class="badge badge-ink">в main</span></div><p class="sys-tag">Постобработка и атмосфера</p><p>HDR, экспозиция и тонмаппинг, bloom, DoF, motion blur, TAA, цветокоррекция и экранные атмосферные эффекты с профилями качества.</p><a class="sys-link" href="system-prisma.html">О системе и роадмап →</a></div></article>
-<article class="sys-card sys-pending" id="sys-spectrafx"><div class="sys-placeholder" aria-hidden="true"><svg width="72" height="68" viewBox="-280 -280 560 530"><g fill="#F3EFE8"><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58"/><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58" transform="rotate(120)"/><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58" transform="rotate(240)"/></g><polygon points="0,-78 78,0 0,78 -78,0" fill="#E9C3A4"/></svg><span>SpectraFX</span></div><div class="sys-body"><div class="sys-head"><h3><a href="system-spectrafx.html">SpectraFX</a></h3><span class="badge badge-ink">в main</span></div><p class="sys-tag">Эффекты частиц</p><p>Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.</p><p class="sys-wait">Кадр системы готовится</p><a class="sys-link" href="system-spectrafx.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-spectrafx"><figure><img src="media/docs/devlog/media/systems/spectrafx-explosion.jpg" alt="SpectraFX: большой взрыв и огонь с дымом из JSON-эффектов, CPU-бэкенд частиц" loading="lazy"><figcaption>SpectraFX: большой взрыв и огонь с дымом из JSON-эффектов, CPU-бэкенд частиц</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-spectrafx.html">SpectraFX</a></h3><span class="badge badge-ink">в main</span></div><p class="sys-tag">Эффекты частиц</p><p>Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.</p><a class="sys-link" href="system-spectrafx.html">О системе и роадмап →</a></div></article>
 <article class="sys-card sys-pending" id="sys-motionweave"><div class="sys-placeholder" aria-hidden="true"><svg width="72" height="68" viewBox="-280 -280 560 530"><g fill="#F3EFE8"><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58"/><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58" transform="rotate(120)"/><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58" transform="rotate(240)"/></g><polygon points="0,-78 78,0 0,78 -78,0" fill="#E9C3A4"/></svg><span>MotionWeave</span></div><div class="sys-body"><div class="sys-head"><h3><a href="system-motionweave.html">MotionWeave</a></h3><span class="badge badge-ink">в main</span></div><p class="sys-tag">Анимация персонажей</p><p>Графы анимации, ретаргет между ригами, LOD скелетов и вложения — единая анимация для всех жанров.</p><p class="sys-wait">Кадр системы готовится</p><a class="sys-link" href="system-motionweave.html">О системе и роадмап →</a></div></article>
 </div>
 </section>
@@ -269,7 +270,7 @@ open build/mac/AiverseEditor.app</pre>
 <a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
 <div class="foot-cols">
 <div><span>Движок</span><a href="#pillars">Возможности</a><a href="#genres">Жанры</a><a href="#templates">Шаблоны</a></div>
-<div><span>Разработчикам</span><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/overview.md">Документация</a><a href="devlog.html">Ход разработки</a><a href="roadmap.html">Роадмап</a></div>
+<div><span>Разработчикам</span><a href="docs.html">Документация</a><a href="devlog.html">Ход разработки</a><a href="roadmap.html">Роадмап</a></div>
 <div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
 </div>
 <small>MIT License · AIVERSE</small>
