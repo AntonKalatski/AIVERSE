@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 #include "PrismaData.h"
+#include "PrismaLensWater.h"
 #include "PhysicalSky.h"
 #include "LocalFog.h"
 #include "PostFxData.h" // legacy aliases used by existing clients and editor
@@ -496,6 +497,7 @@ private:
     }
     RenderDeviceLifetime::Lease gpuDeviceLease_;
     PrismaUnderwaterState underwater_{};
+    std::map<uint64_t,PrismaLensWaterState> lensWaterViews_;
     gfx::Device* dev_ = nullptr;
     PrismaSettings settings_;
     double fogTime_=-1,fogEpoch_=-1;

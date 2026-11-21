@@ -14621,6 +14621,42 @@ TEST(lens_stage48b2b_unpublished_scene_lease_is_consumed_once) {
     renderer.shutdown();
 }
 
+TEST(lens_immediate_surface_publication_avoids_retained_source_snapshots) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    auto rules=skirmishRules();
+    game::RtsView view;
+    CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
+    game::MapGrid grid;grid.init(12,9);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;std::vector<uint8_t> vision(size_t(grid.w)*grid.h,2);
+    render::RTSCamera camera;camera.target={6,0,4};camera.distance=35;camera.pitch=1.f;
+    for(int frame=1;frame<=3;++frame) {
+        renderer.beginScene(camera,640,480);
+        view.draw(renderer,scene,double(frame),&vision,grid);
+        CHECK(view.visualFrameReadyFor(grid,double(frame)));
+        CHECK(view.surfacePrewarmStats().sourceSnapshots==0);
+        renderer.render(gfx::PassDesc{});
+    }
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareMapFrame(renderer,scene,4.,&vision,grid));
+    auto staged=view.surfacePrewarmStats();
+    CHECK(staged.sourceSnapshots==1);
+    // Cross-call validation must still reject a same-pointer byte mutation.
+    grid.creep[0]=1;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,4.,&vision,grid);
+    auto current=view.surfacePrewarmStats();
+    CHECK(current.discarded==staged.discarded+1);
+    CHECK(current.consumed==staged.consumed);
+    CHECK(current.sourceSnapshots==staged.sourceSnapshots);
+    CHECK(view.visualFrameReadyFor(grid,4.));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);renderer.shutdown();
+}
+
 TEST(lens_stage48b2b_stale_visibility_map_or_camera_discards_private_lease) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;

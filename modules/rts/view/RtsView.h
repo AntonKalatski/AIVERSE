@@ -103,7 +103,17 @@ struct SceneObject {
     // Optional stable identity supplied by editor/native scene sources whose
     // SceneObject::entity is invalid. Zero uses ECS entity identity or transient.
     uint64_t persistentKey = 0;
+    // Studio-authored Transform (sim AuthoredPose): absolute height, X/Z tilt in
+    // degrees and per-axis scale, applied about the object's ground point.
+    bool posed = false, poseHasY = false;
+    float poseY = 0, poseRotX = 0, poseRotZ = 0;
+    render::float3 poseScale{1, 1, 1};
 };
+
+// World-space premultiplier for SceneObject's authored pose. `facingYaw` is the
+// RTS draw yaw (models face +X: yaw = authored Y rotation + 90 degrees), `p`
+// the object's pivot. Identity when the object has no tilt / scale.
+render::mat4 authoredPoseFrame(const SceneObject& o, float facingYaw, render::float3 p);
 
 struct RtsScene {
     std::shared_ptr<render::PaintLayers> paintLayers;
@@ -135,6 +145,7 @@ struct RtsScene {
     const std::vector<GridFieldDef>* fieldDefs = nullptr;
     std::vector<FieldSceneLayer> fields;
     // drag-to-send arrows (Mushroom-Wars input) and box selection are drawn by the client
+    bool gameplayOverlays=true; // authoring Scene opts out; native game hosts retain module HUD
 };
 
 // Things the view noticed this frame, for sound and particles: clip events ("step", "hit"),
@@ -433,6 +444,7 @@ public:
     }
     // Visual detail heightmap of the map (terrain.detail, docs/terrain.md; files read with the view's
     // reader). Without one, terrain.style "smooth" synthesises the detail. Takes effect at buildTerrain().
+    void setMapSurfaceEnabled(bool enabled){terrain_.setMapSurfaceEnabled(enabled);}
     void setTerrainDetail(const Json& map);
     void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) {
         framePublication_.invalidate();
@@ -463,6 +475,7 @@ public:
                          const MapGrid& grid);
     struct SurfacePrewarmStats {
         uint64_t staged=0,consumed=0,discarded=0;
+        uint64_t sourceSnapshots=0; // full dependency snapshots retained across calls
     };
     SurfacePrewarmStats surfacePrewarmStats() const noexcept {
         return surfacePrewarmStats_;
@@ -527,6 +540,7 @@ public:
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }
     void setSelectionOutline(bool on) { outline_ = on; }
+    void setRetainPickingGeometry(bool on){resources_.setRetainPickingGeometry(on);}
     // Register immutable native pose operations before init().
     void setAnimationOperations(render::AnimationOperations operations) { animationOperations_ = std::move(operations); }
     // Optional host physics queries override the default terrain / visible AABB adapter.
@@ -719,6 +733,7 @@ private:
         std::vector<render::mat4> world;
         std::vector<render::ProcRuntime> rt;
         render::mat4 objXf;                       // procedural whole-object offset
+        float poseLift = 0; bool poseLiftSet = false; // authored Y minus ground at first draw
         render::mat4 drawn;                       // last world transform of the host model
         // Reuse finished non-animated scenery placement without rebuilding
         // translate/rotate/scale matrices. Every varying input is validated
@@ -954,9 +969,11 @@ private:
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;
+    enum class SurfaceLeaseUse { Immediate, Retained };
     std::unique_ptr<PreparedSurfaceLease> stageSurfaceFrame(
         render::Renderer3D& renderer,const RtsScene& scene,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid);
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        SurfaceLeaseUse use=SurfaceLeaseUse::Retained);
     // Commit a matching one-shot prewarm lease, or rebuild on a stale lease.
     // This completes only the surface owner cohort, NOT FramePublicationEpoch.
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,

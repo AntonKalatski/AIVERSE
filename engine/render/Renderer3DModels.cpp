@@ -5,6 +5,7 @@
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
 #include "ModelVirtualTextureSampling.h"
+#include "ModelSamplingPolicy.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -42,14 +43,19 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         MaterialUniforms mu{};
         mu.base[0] = mt.baseColor.x; mu.base[1] = mt.baseColor.y; mu.base[2] = mt.baseColor.z; mu.base[3] = mt.baseColor.w;
         mu.emissive[0] = mt.emissive.x * mt.emissiveStrength; mu.emissive[1] = mt.emissive.y * mt.emissiveStrength; mu.emissive[2] = mt.emissive.z * mt.emissiveStrength;
-        mu.emissive[3] = std::isfinite(mt.shadowDiffusion) ? std::clamp(mt.shadowDiffusion,0.0f,1.0f) : 0.0f;
+        mu.emissive[3] = std::isfinite(mt.shadowDiffusion) ? std::clamp(mt.shadowDiffusion, 0.0f, 1.0f) : 0.0f;
         mu.pbr[0] = mt.metallic; mu.pbr[1] = mt.roughness; mu.pbr[2] = mt.normalScale; mu.pbr[3] = mt.occlusionStrength;
         mu.misc[0] = mt.alpha == AlphaMode::Mask ? mt.alphaCutoff : 0.0f;
         mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
         mu.uv0[0] = mt.uvOffset.x; mu.uv0[1] = mt.uvOffset.y; mu.uv0[2] = mt.uvScale.x; mu.uv0[3] = mt.uvScale.y;
         mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
-        mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
-        mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
+        mu.uv1[2] = mt.shading == ShadingModel::Pbr ? std::clamp(mt.sssStrength, 0.0f, 1.0f) : mt.fixedShade.x;
+        mu.uv1[3] = mt.shading == ShadingModel::Pbr ? std::clamp(mt.sssScale, 0.0f, 1.0f) : mt.fixedShade.y;
+        mu.light[0] = mt.shading == ShadingModel::Pbr ? mt.sssColor.x : mt.fixedLight.x;
+        mu.light[1] = mt.shading == ShadingModel::Pbr ? mt.sssColor.y : mt.fixedLight.y;
+        mu.light[2] = mt.shading == ShadingModel::Pbr ? mt.sssColor.z : mt.fixedLight.z;
+        mu.light[3] = mt.shading == ShadingModel::Unlit ? mt.fixedLight.w :
+            (std::isfinite(mt.thinTransmission) ? std::clamp(mt.thinTransmission,0.f,1.f) : 0.f);
     return mu;
 }
 inline std::array<gfx::TextureHandle,4> gpuGraphSourceTextures(
@@ -428,41 +434,22 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
-    const auto selectedGraph = it.mat->shaderGraph &&
-        int(matQuality_) >= it.mat->shaderGraph->minQuality ?
-        it.mat->shaderGraph : nullptr;
-    const auto* graph = selectedGraph.get();
-    // The original full-size base alpha was extracted to an R8 image.
-    // Keep colour/shadow/selection on the same full-resolution coverage.
-    // Slot 15 is intentionally not used with shader-graph variants.
-    bool alphaR8 = false;
-    if (mask && !graph && it.mat->baseTex >= 0 &&
-        size_t(it.mat->baseTex) < it.model->images.size()) {
-        alphaR8 = it.model->images[size_t(it.mat->baseTex)]
-                      .virtualAlphaMask.valid();
-    }
-    // The graph's four source textures occupy tex13..16 on Metal.
-    // A virtual material sample uses two additional texture slots,
-    // requiring tex17/18 when all four graph sources are present.
-    // This does not consume additional Metal sampler slots (s1 reused).
-    const bool graphVirtual = graph && graph->usesVirtualTexture;
-    if (graph && !supportsModelGraphSourceTextures(*dev_,graph->textures.size())) {
-        modelError_ = "shader graph source textures exceed RHI fragment slot budget";
-        return {}; // Never bind an unrepresentable tex16 on GL/Vulkan.
-    }
-    int virtualAtlasSlot=13, virtualTableSlot=14;
-    const bool graphVirtualSlots = !graphVirtual ||
-        modelGraphVirtualTextureSlots(*dev_,graph->textures.size(),
-                                     virtualAtlasSlot,virtualTableSlot);
+    const auto* candidateGraph=it.mat->shaderGraph&&int(matQuality_)>=it.mat->shaderGraph->minQuality?it.mat->shaderGraph.get():nullptr;
+    const bool availableAlphaR8=mask&&it.mat->baseTex>=0&&size_t(it.mat->baseTex)<it.model->images.size()&&
+        it.model->images[size_t(it.mat->baseTex)].virtualAlphaMask.valid();
+    const bool allowVirtual=giPhase&&!materialPalette;
     ModelVirtualTextureBinding vtBinding;
-    const bool vtSampling = giPhase && (!graph || graphVirtual) &&
-        !materialPalette && graphVirtualSlots &&
-        resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
-    const bool vtTrilinear = vtSampling && vtBinding.indexedMipTable;
-    const int graphTextureSlot=kGraphTextureSlot+(dynamicGi && !vtSampling ? 1 : 0);
-    const int dynamicGiTextureSlot=vtSampling ? std::max(virtualTableSlot+1,alphaR8?16:0) : 13;
-    if(dynamicGi && dynamicGiTextureSlot>=dev_->maxFragmentTextureSlots()) {
-        modelError_="dynamic GI and virtual material exceed fragment texture budget";
+    const bool availableVirtual=allowVirtual&&resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
+    const auto sampling=modelSamplingPlan(dev_->maxFragmentTextureSlots(),candidateGraph?candidateGraph->textures.size():0,
+        candidateGraph!=nullptr,candidateGraph&&candidateGraph->usesVirtualTexture,availableVirtual,dynamicGi,availableAlphaR8,allowVirtual);
+    const auto selectedGraph=sampling.graph?it.mat->shaderGraph:nullptr;
+    const auto* graph=selectedGraph.get();
+    const bool alphaR8=sampling.alphaR8,vtSampling=sampling.virtualTexture;
+    const int virtualAtlasSlot=sampling.atlasSlot,virtualTableSlot=sampling.tableSlot;
+    const bool vtTrilinear=vtSampling&&vtBinding.indexedMipTable;
+    const int graphTextureSlot=sampling.graphSlot,dynamicGiTextureSlot=sampling.dynamicGiSlot;
+    if(dynamicGi&&dynamicGiTextureSlot>=dev_->maxFragmentTextureSlots()) {
+        modelError_="dynamic GI exceeds base PBR fragment texture budget";
         return {};
     }
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
@@ -530,6 +517,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (instancePalette) defs += "#define MATERIAL_INSTANCE_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
         if (outline) defs += "#define OUTLINE 1\n";
+        if (maskPass) defs += "#define SELECTION_MASK 1\n";
         if (shaderKey & kKeyDrawCallView) defs += "#define DRAW_CALL_VIEW 1\n";
         if (materialCapture) defs += surfaceCapture ? "#define LUMAWEAVE_SURFACE 1\n" : "#define LUMAWEAVE_MATERIAL 1\n";
         if (studioShaderBits && !materialCapture) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
@@ -618,10 +606,11 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+="#undef SG_SAMPLE\n";
                     replace(source,"// SG_COLOR",code);
                     std::string surface;
-                    for(auto name:{"roughness","metallic","emission","normal"}) {
+                    for(auto name:{"roughness","metallic","occlusion","emission","normal"}) {
                         auto it=graph->outputs.find(name);if(it==graph->outputs.end())continue;
                         const std::string key=name;
                         if(key=="normal") surface+="n="+it->second+".xyz/max(length("+it->second+".xyz),0.00001);\n";
+                        else if(key=="occlusion") surface+="ao=clamp("+it->second+".r,0.0,1.0);\n";
                         else surface+=(key=="roughness"?"rough":key=="emission"?"emis":"metallic")+std::string(" = ")+it->second+(key=="emission"?".rgb;\n":".r;\n");
                     }
                     replace(source,"// SG_SURFACE",surface);
@@ -712,7 +701,12 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         pd.indexType = gfx::IndexType::UInt32;
         pd.cull = maskPass ? (it.mat->doubleSided ? gfx::CullMode::None : gfx::CullMode::Back) :
                   outline ? gfx::CullMode::Front : twoSided ? gfx::CullMode::None : gfx::CullMode::Back;
-        if (maskPass) pd.depthWrite = false;
+        if (maskPass) {
+            pd.depthWrite=false;
+            // A separately compiled mask VS can round coplanar depth by an
+            // ulp. Bias only this read-only replay to avoid internal holes.
+            pd.depthBiasConstant=-1.f;pd.depthBiasSlope=-1.f;
+        }
         if (shadow) {
             pd.depthOnly = true;
             pd.depthBiasConstant = 2.0f; pd.depthBiasSlope = 2.5f;
@@ -1173,7 +1167,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_LOD");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    const bool packetEligible = staticRenderPacketsEnabled_ && !gpuPacketLod &&
+    const bool packetEligible = staticRenderPacketsEnabled_ && !m->batching.independentShadowLod && !gpuPacketLod &&
         staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
                                         lodDiagnosticsEnabled_, eligibility);
     const size_t packetStart = modelItems_.size();
@@ -1321,6 +1315,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
         const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
+        // CPU-owned rigid scenery only. GPU-authored packets retain their own
+        // mesh/primitive identities and never borrow a second shadow LOD.
+        const bool independentLod=m->batching.independentShadowLod&&rigid&&lodEligible&&!m->geometry&&
+            !d.gpuIndexed.valid()&&d.gpuIndexedPrimitives.empty()&&d.gpuShadowPrimitives.empty();
+        int shadowLodMesh=node.mesh;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
             float3 lodMin = baseMesh.boundsMin-margin, lodMax = baseMesh.boundsMax+margin;
@@ -1344,9 +1343,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                 ? geometryErrorPixels(viewProj_ * lodWorld, lodMin, lodMax, error,
                                        sceneW_, sceneH_, zeroToOne) : 0.0f;
             float pixels = cameraPixels;
-            if (nodeShadow) pixels = std::max(pixels, geometryErrorPixels(
-                lightViewProj_ * lodWorld, lodMin, lodMax, error,
-                shadowSize_, shadowSize_, zeroToOne));
+            const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne):0.f;
+            if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
+            else if(nodeShadow)pixels=std::max(pixels,shadowPixels);
             if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
             const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
                 std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
@@ -1390,8 +1389,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
         // Shadow batch (mergeStaticPrimitives): one shadow draw covers the opaque parts of the mesh.
         // Material copies are common in game views; only shadow-incompatible overrides disable batching.
-        for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
-        meshIndex=part?lodBlend.incoming:lodBlend.mesh;
+        const int cameraParts=lodBlend.incoming>=0?2:1;
+        const bool separateShadow=independentLod&&modelLodEnabled_&&nodeShadow&&std::any_of(baseMesh.primitives.begin(),baseMesh.primitives.end(),[&](const Primitive& p){return p.material>=0&&size_t(p.material)<mats.size()&&mats[size_t(p.material)].castShadow;});
+        for(int part=0;part<cameraParts+(separateShadow?1:0);++part) {
+        const bool shadowOnly=part==cameraParts;
+        meshIndex=shadowOnly?shadowLodMesh:(part?lodBlend.incoming:lodBlend.mesh);
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
         // A GPU-indexed source has separate GPU command packets for each
         // original primitive. Never replace those originals with the CPU
@@ -1406,12 +1408,16 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                  !d.nodeMaterial && d.variant < 0 &&
                                  shadowBatchCompatible(drawMesh,mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (d.primitiveMaterialFilter < 0 && !gpuPacketSource &&
+        if (!shadowOnly && d.primitiveMaterialFilter < 0 && !gpuPacketSource &&
             !m->geometry && !d.nodeMaterial &&
             d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
+            if(shadowOnly) {
+                if(shadowRole==1)return; // covered by the opaque shadow batch
+                shadowRole=2; // excludes shadow detail from reflections/auxiliary colour
+            }
             if (p.indexCount == 0 ||
                 (d.primitiveMaterialFilter >= 0 &&
                  p.material != d.primitiveMaterialFilter)) return;
@@ -1457,7 +1463,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                     }
                 }
             }
-            if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
+            if(!shadowOnly&&lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
             // Restrict GPU LOD to a single compatible rigid primitive in each
             // of exactly two meshes. Complex materials and fading stay on CPU.
@@ -1465,7 +1471,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                 const char* value = std::getenv("AIVERSE_GPU_ICB_LOD");
                 return value && std::strcmp(value, "1") == 0;
             }();
-            if (gpuLod && modelLodEnabled_ && rigid && !m->geometry &&
+            if (gpuLod && !separateShadow && modelLodEnabled_ && rigid && !m->geometry &&
                 lodBlend.incoming < 0 && d.variant < 0 && !d.nodeMaterial &&
                 !shadowBatch && materialRole == 0 && shadowRole == 0 &&
                 baseMesh.lods.size() == 1 && baseMesh.primitives.size() == 1 &&
@@ -1509,7 +1515,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             it.motionPersistentId = d.persistentId;
             it.motionNodeIndex = n;
             it.castShadow = !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 && it.mat->castShadow && it.mat->alpha != AlphaMode::Blend && !transparentItem(it.flags);
-            it.inView = nodeView; it.inShadow = nodeShadow && it.castShadow;
+            it.inView = nodeView && !shadowOnly; it.inShadow = nodeShadow && it.castShadow && (shadowOnly||!separateShadow);
             it.joints = -1; it.baked = false; it.anim = anim; it.morph = -1;
             const bool skinnedPrim = node.skin >= 0 && !p.jointPalette.empty();
             if (skinnedPrim && canBake && node.skin == m->baked.skin) {
@@ -1694,19 +1700,22 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Even if the model pipeline is already bound, another pass may have
     // changed the texture/uniform state. Always refresh this opt-in borrow.
     const Material& mt = *it.mat;
-    const auto activeGraph = mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality ? mt.shaderGraph.get() : nullptr;
+    const auto* candidateGraph=mt.shaderGraph&&int(matQuality_)>=mt.shaderGraph->minQuality?mt.shaderGraph.get():nullptr;
+    const bool availableAlphaR8=mt.alpha==AlphaMode::Mask&&(phase!=3||selectionMaskPass_)&&mt.baseTex>=0&&
+        size_t(mt.baseTex)<it.model->images.size()&&it.model->images[size_t(mt.baseTex)].virtualAlphaMask.valid();
+    const bool materialPalette=phase==1&&(instancePalette||it.paletteMaterials);
+    const bool allowVirtual=(phase==1||phase==2)&&!materialPalette;
+    const bool dynamicGi=(phase==1||phase==2)&&dynamicGiAtlas_.valid();
     ModelVirtualTextureBinding vt;
-    int atlasSlot=13,tableSlot=14;
-    const bool canBindVt=!activeGraph || (activeGraph->usesVirtualTexture &&
-        modelGraphVirtualTextureSlots(*dev_,activeGraph->textures.size(),atlasSlot,tableSlot));
-    const bool drawVt=(phase==1 || phase==2) && !instancePalette && !it.paletteMaterials &&
-        canBindVt && resolveModelVirtualTexture(*it.model,mt,vt);
-    const bool alphaCoverage=mt.alpha==AlphaMode::Mask && !activeGraph && mt.baseTex>=0 &&
-        size_t(mt.baseTex)<it.model->images.size() && it.model->images[size_t(mt.baseTex)].virtualAlphaMask.valid();
-    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid()) {
-        dev_->setUniforms(drawVt?7:6,dynamicGiUniforms_.data(),
-                          dynamicGiUniforms_.size()*sizeof(float));
-        dev_->setTexture(drawVt?std::max(tableSlot+1,alphaCoverage?16:0):13,dynamicGiAtlas_);
+    const bool availableVirtual=allowVirtual&&resolveModelVirtualTexture(*it.model,mt,vt);
+    const auto sampling=modelSamplingPlan(dev_->maxFragmentTextureSlots(),candidateGraph?candidateGraph->textures.size():0,
+        candidateGraph!=nullptr,candidateGraph&&candidateGraph->usesVirtualTexture,availableVirtual,dynamicGi,availableAlphaR8,allowVirtual);
+    const auto* activeGraph=sampling.graph?candidateGraph:nullptr;
+    const bool drawVt=sampling.virtualTexture;
+    const int atlasSlot=sampling.atlasSlot,tableSlot=sampling.tableSlot;
+    if(dynamicGi) {
+        dev_->setUniforms(drawVt?7:6,dynamicGiUniforms_.data(),dynamicGiUniforms_.size()*sizeof(float));
+        dev_->setTexture(sampling.dynamicGiSlot,dynamicGiAtlas_);
     }
     const auto afterPipeBind = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     // Upload the whole instance block declared by this backend's shader variant.
@@ -1770,18 +1779,18 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(2, &mu, sizeof mu);
     }
     if (materialStateChanged || newModel) {
-        const int graphTextureSlot=kGraphTextureSlot+(((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !drawVt)?1:0);
+        const int graphTextureSlot=sampling.graphSlot;
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
         dev_->setTexture(1, tex(mt.baseTex, white_));
         if (mt.alpha == AlphaMode::Mask && mt.baseTex >= 0 &&
             size_t(mt.baseTex) < it.model->images.size() &&
-            !(mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality)) {
+            sampling.alphaR8) {
             const auto coverage = it.model->images[size_t(mt.baseTex)].virtualAlphaMask;
             if (coverage.valid()) dev_->setTexture(15,coverage);
         }
-        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(graphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
+        if(activeGraph)for(size_t i=0;i<activeGraph->textures.size();++i)dev_->setTexture(graphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
             dev_->setTexture(3, tex(mt.normalTex, flatNormal_));

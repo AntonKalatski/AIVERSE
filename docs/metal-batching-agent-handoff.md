@@ -517,3 +517,12 @@ Actual validation on KINGSTON:
 Next: full quick native suite and editor/client builds, Releasearm64 current
 source and Sponza timings, platform gates. UI screenshot remains blocked by
 locked Mac; user asked asynchronously to unlock. Do not mark all complete yet.
+
+## 2026-11-21 Terra native Scene CPU source-snapshot fix
+
+Codec8c0c108c, feature/aiv87_terrain_pbr. Removed unused full MapGrid/scene fingerprints ONLY from immediate same-call surface publication; retained LENS leases still exactvalidate. NativeLENS440checksPASS. Same-scene A/B/A shoreline SceneCPU medians18.2485 ->5.155 ->17.1125ms, rendererCPUunchanged~1.46ms, exactsame959302modeltris/2048water/355draws. WholeGPUvariable/anothereditoractive, noFPSclaim. Details, scope, logs, pendingwater/rigidsupport andQAprocess state: docs/agent-handoffs/lens-terra-immediate-publication-performance-2026-11-21.md. Newgeometry_stats GPUfields readcompletedqueriesonly; unavailableviewportcountersempty, nocounter-derivedtimings. DefaultICB/MDIflagsuntouched.
+
+
+## 2026-11-21 NEREID local flow renderer connection
+
+Codeff84b6648bd3825eea62471614611fced9f196fc, test6402e0bbd28ceffa575a86ee283d4c1841322920. Lit mesh U0/reflection U0 append flow rectangle (672B), texture slots6->7 with flow at6 and white fallback. PBR ModelU2/GI/terrain bindings unchanged. Captured water packets retain an immutable flow lifetime lease; shutdown revocation checked before mesh use, normal old version retires after CPU release+GPU fence. No extra draw/segment, unsafeICB flags or batching defaults changed. NativeEditor/Studio buildPASS,22Metal/GL bent-current capturesPASS, GLES/GLSL14linked variantsPASS,4NEREIDCTest+440LENSchecksPASS. Full evidence and limitations: docs/nereid/HANDOFF.md latest entry. No GPU performance improvement or full retained-camera Metal pixel claim. Native initial graph compilation first120-frame average is startup, not steady runtime.

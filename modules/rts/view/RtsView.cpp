@@ -152,6 +152,7 @@ struct RtsView::PreparedSurfaceLease final {
     uint64_t gridSignature=0,sceneSignature=0,cameraSignature=0;
     uint64_t visibilitySignature=0;
     bool tiles=false,fogSheetStaged=false,fogChanged=false;
+    bool retained=true; // immediate leases cannot pass a later matches() check
     // Topology and ordinary scene-frame leases share the same one-shot
     // owner transaction and source-revision checks; only one can be pending.
     bool topology=false,preserveFogHistory=false;
@@ -169,7 +170,7 @@ struct RtsView::PreparedSurfaceLease final {
     bool matches(const RtsView& view,const Renderer3D& r,
                  const RtsScene& s,double seconds,
                  const std::vector<uint8_t>* field,const MapGrid& g, bool advanced=false) const {
-        return owner==&view && device==view.dev_ &&
+        return retained && owner==&view && device==view.dev_ &&
             renderer==&r && scene==&s && map==&g && vision==field &&
             time==seconds && frameStamp+uint64_t(advanced)==view.frame_ &&
             terrainGeneration==view.terrainGeneration_ &&
@@ -681,6 +682,7 @@ bool RtsView::prepareTerrainAtomicFrame(
     next->groundRevision=groundFx_.stateRevision();
     next->fogRevision=fog_.stateRevision();
     next->terrainRevision=terrain_.stateRevision();
+    ++surfacePrewarmStats_.sourceSnapshots;
     next->gridSignature=mapLeaseFingerprint(grid);
     next->sceneSignature=sceneLeaseFingerprint(scene);
     next->cameraSignature=cameraLeaseFingerprint(renderer);
@@ -856,7 +858,7 @@ std::optional<bool> RtsView::publishPendingTerrainFrame(
 // their candidate/commit/rollback closures after preparation.
 std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
         Renderer3D& r,const RtsScene& s,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid) {
+        const std::vector<uint8_t>* vision,const MapGrid& grid,SurfaceLeaseUse use) {
     if(!dev_ || (hasTerrain_ && !terrain_.mapMatches(grid.w,grid.h)))
         throw std::logic_error("RtsView: build Terrain before surface preflight");
     auto lease=std::make_unique<PreparedSurfaceLease>();
@@ -875,10 +877,17 @@ std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
     next->groundRevision=groundFx_.stateRevision();
     next->fogRevision=fog_.stateRevision();
     next->terrainRevision=terrain_.stateRevision();
-    next->gridSignature=mapLeaseFingerprint(grid);
-    next->sceneSignature=sceneLeaseFingerprint(s);
-    next->cameraSignature=cameraLeaseFingerprint(r);
-    next->visibilitySignature=visibilityLeaseFingerprint(vision);
+    // Only a lease escaping this call needs cross-call content identity.
+    // Immediate prepare/publish keeps the SAME owner transaction and all
+    // preparations; no fingerprint from this path is ever used by matches().
+    next->retained=use==SurfaceLeaseUse::Retained;
+    if(next->retained) {
+        ++surfacePrewarmStats_.sourceSnapshots;
+        next->gridSignature=mapLeaseFingerprint(grid);
+        next->sceneSignature=sceneLeaseFingerprint(s);
+        next->cameraSignature=cameraLeaseFingerprint(r);
+        next->visibilitySignature=visibilityLeaseFingerprint(vision);
+    }
     next->tiles=bool(twoD_ && twoD_->hasTiles());
     next->transaction=std::make_unique<render::OwnerPrepareCommit>();
     const std::function<float(float,float)> groundHeight=
@@ -974,7 +983,7 @@ bool RtsView::publishSurfaceFrame(Renderer3D& r,const RtsScene& s,
         ++surfacePrewarmStats_.discarded;
     }
     if(lease)++surfacePrewarmStats_.consumed;
-    else lease=stageSurfaceFrame(r,s,time,vision,grid);
+    else lease=stageSurfaceFrame(r,s,time,vision,grid,SurfaceLeaseUse::Immediate);
     if(!lease->transaction->publish())
         throw std::logic_error("RtsView: surface owner cohort publish failed");
     return lease->fogChanged;
@@ -1220,10 +1229,13 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const auto& look=looks_[o.type];if(look.models.empty())continue;uint64_t key=o.entity.valid()?o.entity.packed():(uint64_t(1)<<63)|oi;auto state=anims_.find(key);
         size_t choice=state!=anims_.end()&&size_t(state->second.choice)<look.models.size()?size_t(state->second.choice):0;const ModelChoice* ch=&look.models[choice];
         const Stage* stage=nullptr;for(const auto& sg:look.stages){if(o.build<1&&look.construction==Construction::Stages&&sg.build>=0&&sg.build<=o.build&&(!stage||sg.build>stage->build))stage=&sg;if(o.build>=1&&sg.hp>=0&&o.hp<=sg.hp&&(!stage||sg.hp<stage->hp))stage=&sg;}if(stage)ch=&stage->choice;if(!ch->model)continue;
-        EntityFxValues values;bool hasFx=fxFor(o,values);float lift=hasFx?values.v[EntityFxValues::kLift]:0;float3 position{o.pos.x,heightAt(grid,o.pos.x,o.pos.z)+(look.air?look.flyHeight:0)+lift,o.pos.z};
+        EntityFxValues values;bool hasFx=fxFor(o,values);float lift=hasFx?values.v[EntityFxValues::kLift]:0;const float groundY=heightAt(grid,o.pos.x,o.pos.z);
+        if(o.posed&&o.poseHasY)lift+=state!=anims_.end()&&state->second.poseLiftSet?state->second.poseLift:o.poseY-groundY;
+        float3 position{o.pos.x,groundY+(look.air?look.flyHeight:0)+lift,o.pos.z};
         float yaw=state!=anims_.end()?state->second.yaw:std::atan2(-o.facing.z,o.facing.x);float k=look.scale,grow=look.construction==Construction::Grow?std::clamp(o.build,.15f,1.f):1;
         mat4 base;if(look.structure&&look.shape&&!stage)base=mat4::translate(position)*mat4::scale({look.sx*k,k*std::max(look.sx,look.sz)*.75f*grow,look.sz*k});else base=mat4::translate(position)*mat4::rotateY(yaw)*mat4::scale({k,k*(look.structure?grow:1),k});
         if(hasFx){auto tilt=mat4::rotateZ(-values.v[EntityFxValues::kPitch]*.017453292f)*mat4::rotateX(-values.v[EntityFxValues::kRoll]*.017453292f);base=mat4::translate(position)*mat4::rotateY(yaw)*tilt*mat4::rotateY(-yaw)*mat4::translate(-position)*base*mat4::scale({values.scale(0),values.scale(1),values.scale(2)});}
+        if(o.posed&&!o.parented)base=authoredPoseFrame(o,yaw,position)*base;
         if(o.parented)base=o.parentFrame*mat4::scale({k,k*(look.structure?grow:1),k});
         if(state!=anims_.end())base=base*state->second.objXf;base=base*ch->fix;const auto& model=*ch->model;
         const auto& matrices=!stage&&state!=anims_.end()&&state->second.world.size()==model.nodes.size()?state->second.world:model.bindWorld;
@@ -1617,7 +1629,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     });
     viewProviders.add("world indicators",[&](auto& q,const auto&){
         q.append("world indicators",LayerPhase::Overlay,[&]{
-            overlays_.drawWorld(r,s,time,vision,grid,*this);
+            if(s.gameplayOverlays)overlays_.drawWorld(r,s,time,vision,grid,*this);
             publication.mark(Epoch::Overlays);
         });
     });
@@ -1703,7 +1715,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
 
 void RtsView::drawOverlays(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
     // bars, garrison counts, labels, damage numbers: RtsOverlays (built-in overlays reproduce the old look)
-    overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
+    if(s.gameplayOverlays)overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
 }
 
 bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {
@@ -1719,6 +1731,20 @@ bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, 
     float top = t.structure ? 1.6f * looks_[o.type].scale * std::max(1.0f, std::max(t.footprintW, t.footprintH) * 0.6f) : 1.2f * looks_[o.type].scale;
     if (looks_[o.type].air) top += 2.4f;
     return cam.worldToScreen({o.pos.x, top, o.pos.z}, w, h, sp);
+}
+
+mat4 authoredPoseFrame(const SceneObject& o, float facingYaw, float3 p) {
+    if (!o.posed) return mat4{};
+    const bool tilt = o.poseRotX != 0.0f || o.poseRotZ != 0.0f;
+    const bool scaled = o.poseScale.x != 1.0f || o.poseScale.y != 1.0f || o.poseScale.z != 1.0f;
+    if (!tilt && !scaled) return mat4{};
+    // Studio order R = Ry(yaw) * Rx * Rz with yaw the authored Y rotation; the
+    // RTS draw already applies Ry(facingYaw) = Ry(yaw + 90 deg), so tilt/scale
+    // are expressed in the authored frame and conjugated by the authored yaw.
+    constexpr float kDeg = 0.017453292f;
+    const float yaw = facingYaw - 1.5707963f;
+    return mat4::translate(p) * mat4::rotateY(yaw) * mat4::rotateX(o.poseRotX * kDeg) *
+           mat4::rotateZ(o.poseRotZ * kDeg) * mat4::scale(o.poseScale) * mat4::rotateY(-yaw) * mat4::translate(-p);
 }
 
 void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
@@ -1802,6 +1828,12 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         if (!gs.routes.walks.empty()) so.fade = float(m->routeAlpha(sim, e).toDouble());   // route end fade
         if (auto* c = w.tryGet<Construction>(e)) so.build = float(c->progress.toDouble());
         so.unpowered = (u.flags & kUnitDisabled) || (o.player < gs.players.size() && gs.players[o.player].productionMult < Fixed::fromInt(1));
+        if (auto* ap = w.tryGet<AuthoredPose>(e)) {
+            so.posed = true; so.poseHasY = ap->hasY;
+            so.poseY = float(ap->y.toDouble());
+            so.poseRotX = float(ap->rotX.toDouble()); so.poseRotZ = float(ap->rotZ.toDouble());
+            so.poseScale = toF(ap->scale);
+        }
         if (auto* g = w.tryGet<Garrison>(e)) so.garrison = g->count;
         if (auto* tp = w.tryGet<Transport>(e); tp && !tp->cargo.empty()) so.garrison = int(tp->cargo.size());   // passengers
         if (auto* c = w.tryGet<Cargo>(e)) { so.carry = float(c->amount.toDouble()); so.carryRes = c->res; }

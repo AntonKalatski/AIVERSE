@@ -43,6 +43,14 @@ option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_TOOLS "Build aiversebuild packager" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot client" ${AIVERSE_DESKTOP})
 
+# Register Objective-C++ in the ROOT directory before creating any targets.
+# CMake does not propagate a language enabled only in a child directory back
+# to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
+option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
+    enable_language(OBJCXX)
+endif()
+
 # Explicit system Khronos libktx support for BasisLZ/ETC1S and UASTC.
 # OFF by default: no hidden vendoring, network fetch or platform dependency.
 option(AIVERSE_TEXTURE_WITH_LIBKTX "Use installed libktx Basis Universal KTX2 transcoder" OFF)
@@ -60,14 +68,6 @@ if(AIVERSE_TEXTURE_WITH_LIBKTX)
     target_include_directories(aiverse_texture_libktx INTERFACE "${AIVERSE_LIBKTX_INCLUDE_DIR}")
     target_link_libraries(aiverse_texture_libktx INTERFACE "${AIVERSE_LIBKTX_LIBRARY}")
     target_compile_definitions(aiverse_texture_libktx INTERFACE AIVERSE_TEXTURE_WITH_LIBKTX=1)
-endif()
-
-# Register Objective-C++ in the ROOT directory before creating any targets.
-# CMake does not propagate a language enabled only in a child directory back
-# to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
-option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
-if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
-    enable_language(OBJCXX)
 endif()
 
 # Game being built (aiversebuild overrides these).
@@ -453,6 +453,13 @@ add_library(aiverse_fx STATIC engine/fx/FxEffect.cpp engine/fx/ParticleSystem.cp
 # Metal compute subset + portable CPU fallback (opt-in SpectraFX v1).
 target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuParticles.cpp)
 target_sources(aiverse_fx PRIVATE engine/fx/SpectraGraphRuntime.cpp)
+# Shared presentation world unifies compatible effects across graph instances.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraBatchWorld.cpp)
+# Optional generic tick-cue/attachment scheduler over shared CPU BatchWorld.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraCueScheduler.cpp)
+# Genre-neutral pooled GPU emitter resource groups with shared CPU fallback.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuPoolWorld.cpp)
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuCueBridge.cpp)
 target_link_libraries(aiverse_fx PUBLIC aiverse_engine aiverse_shader_graph)
 # SpectraFX is the official public name; retain aiverse_fx for existing clients.
 add_library(AIVERSE::spectrafx ALIAS aiverse_fx)
@@ -481,21 +488,32 @@ add_library(aiverse_models STATIC
     engine/render/ModelMerge.cpp   # static batching of parts that share a material
     engine/render/GlobalGeometryPool.cpp
     engine/render/ModelGltf.cpp
-    engine/render/ModelObj.cpp
     engine/render/Animation.cpp
     engine/render/TextureCodec.cpp
-    # more formats (docs/models.md): voxels, interchange, classic RTS formats, their textures
-    engine/render/ModelVox.cpp
-    engine/render/ModelPly.cpp
-    engine/render/Model3ds.cpp
-    engine/render/ModelDae.cpp
-    engine/render/ModelMdx.cpp
-    engine/render/ModelMdl.cpp
-    engine/render/Model3do.cpp
-    engine/render/ModelW3d.cpp
-    engine/render/ImageBlp.cpp
     engine/render/ImageDds.cpp
     engine/render/TextureGen.cpp)
+option(AIVERSE_BLP "Runtime BLP1/BLP2 image decoding" ON)
+if(AIVERSE_BLP)
+    target_sources(aiverse_models PRIVATE engine/render/ImageBlp.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_BLP=1)
+endif()
+option(AIVERSE_OBJ "Runtime OBJ model import" ON)
+if(AIVERSE_OBJ)
+    target_sources(aiverse_models PRIVATE engine/render/ModelObj.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_OBJ=1)
+endif()
+option(AIVERSE_LEGACY_MODELS "Runtime VOX/VXL, PLY/STL, 3DS, DAE, MDX/MDL, 3DO and W3D import" ON)
+if(AIVERSE_LEGACY_MODELS)
+    target_sources(aiverse_models PRIVATE
+        engine/render/ModelVox.cpp engine/render/ModelPly.cpp
+        engine/render/Model3ds.cpp engine/render/ModelDae.cpp
+        engine/render/ModelMdx.cpp engine/render/ModelMdl.cpp
+        engine/render/Model3do.cpp engine/render/ModelW3d.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_LEGACY_MODELS=1)
+endif()
 # baked lighting, CPU side (agent-lightbake): lightmap UVs of models (+ .lmuv sidecars), bake folder reader
 target_sources(aiverse_models PRIVATE engine/render/LightmapUv.cpp engine/bake/LightmapData.cpp)
 # ufbx (MIT / public domain): FBX parser, compiled as its own C library without warnings.
@@ -1156,6 +1174,12 @@ if(AIVERSE_MOCK_PLUGINS)
 endif()
 
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
+# Packaged clients link an archive of the runtime objects. The linker extracts
+# only translation units needed by the client, while editor and test targets
+# keep the existing complete OBJECT runtime contract.
+add_library(aiverse_client_runtime STATIC $<TARGET_OBJECTS:aiverse_runtime>)
+target_link_libraries(aiverse_client_runtime PUBLIC
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_LIBRARIES>")
 if(AIVERSE_VULKAN)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
 endif()
@@ -1350,19 +1374,25 @@ endfunction()
 
 if(AIVERSE_BUILD_CLIENT)
     if(AIVERSE_PLATFORM STREQUAL "android")
-        add_library(main SHARED apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-        target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
-        target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
+        add_library(main SHARED apps/client/main.cpp)
+        target_link_libraries(main PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
+        target_link_libraries(main PRIVATE aiverse_game_audio)
         # Keep ANativeActivity_onCreate from the glue library.
         set_target_properties(main PROPERTIES LINK_FLAGS "-u ANativeActivity_onCreate")
         aiverse_package_notices(main)
         set(AIVERSE_CLIENT_TARGET main)
     else()
-        add_executable(aiverse_client apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-        target_link_libraries(aiverse_client PRIVATE aiverse_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
-        target_link_libraries(aiverse_client PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
+        add_executable(aiverse_client apps/client/main.cpp)
+        target_link_libraries(aiverse_client PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
+        target_link_libraries(aiverse_client PRIVATE aiverse_game_audio)
         aiverse_package_app(aiverse_client)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
+    endif()
+    # Mach-O keeps otherwise unused functions from directly linked client
+    # objects unless dead stripping is requested explicitly. Static archives
+    # above select translation units; this also removes unreachable sections.
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        target_link_options(aiverse_client PRIVATE "LINKER:-dead_strip")
     endif()
     # Native plugins (platforms agent): C++ / Objective-C++ sources compiled into the game itself,
     # so AIVERSE_PLUGIN(...) static registration is never dropped by the linker.
@@ -1751,14 +1781,19 @@ add_library(aiverse_ui STATIC engine/ui/UiLayer.cpp engine/ui/UiRender.cpp engin
     engine/ui/UiLinear.cpp)   # linear UI blending (ui-linear)
 target_include_directories(aiverse_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
 target_link_libraries(aiverse_ui PUBLIC aiverse_rmlui aiverse_rmlui_lua aiverse_lua aiverse_engine)
-if(TARGET aiverse_client)
-    target_sources(aiverse_client PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
-    target_link_libraries(aiverse_client PRIVATE aiverse_ui aiverse_net aiverse_game_fx)
-endif()
-if(TARGET main)
-    target_sources(main PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
-    target_link_libraries(main PRIVATE aiverse_ui aiverse_net aiverse_game_fx)
-endif()
+option(AIVERSE_CLIENT_WITH_FX "Include SpectraFX particles in packaged clients" ON)
+foreach(t aiverse_client main)
+    if(TARGET ${t})
+        target_sources(${t} PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
+        target_link_libraries(${t} PRIVATE aiverse_ui aiverse_net)
+        if(AIVERSE_CLIENT_WITH_FX)
+            target_sources(${t} PRIVATE apps/client/ClientFx.cpp)
+            target_link_libraries(${t} PRIVATE aiverse_game_fx)
+        else()
+            target_compile_definitions(${t} PRIVATE AIVERSE_CLIENT_NO_FX=1)
+        endif()
+    endif()
+endforeach()
 
 # ---------------------------------------------------------------------------
 # 2D games (2D-mode agent): tile maps + autotiling (deterministic, part of the game library),
@@ -2007,13 +2042,18 @@ target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsViewScript.cpp modu
 target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp modules/rts/view/RtsPaintLayers.cpp modules/rts/view/RtsGroundCanvas.cpp)
 
 # Shared region gesture input; gameplay remains in project Lua ability effects.
+option(AIVERSE_CLIENT_WITH_CITY "Include persistent city server client in packaged clients" ON)
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_sources(${t} PRIVATE apps/client/ClientRegionInput.cpp)
         target_sources(${t} PRIVATE apps/client/ClientTopDown.cpp)   # top-down heroes (agent-topdown-control)
         target_sources(${t} PRIVATE apps/client/ClientCommerce.cpp)   # city economy (agent-gta2)
-        target_sources(${t} PRIVATE apps/client/ClientCity.cpp)       # a seat in a city on a server (agent-gta2)
-        target_link_libraries(${t} PRIVATE aiverse_net_city)
+        if(AIVERSE_CLIENT_WITH_CITY)
+            target_sources(${t} PRIVATE apps/client/ClientCity.cpp)   # a seat in a city on a server
+            target_link_libraries(${t} PRIVATE aiverse_net_city)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientCityStub.cpp)
+        endif()
     endif()
 endforeach()
 
@@ -2125,7 +2165,8 @@ set(AIVERSE_CLIENT_CORE_SOURCES apps/client/ClientLoading.cpp apps/client/GameCl
     apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp
     apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp apps/client/ClientRegionInput.cpp
     apps/client/ClientBaked.cpp   # ClientBaked: the map's baked lighting (agent-lightbake)
-    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp)   # top-down heroes (agent-topdown-control), city economy (agent-gta2)
+    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp
+    apps/client/ClientGameActionsLua.cpp)   # shared sendPercent/useAbility UI Lua; independent of gamepad
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_link_libraries(${t} PRIVATE aiverse_content_reader)   # streamed world: worker-thread project reader
@@ -2134,14 +2175,26 @@ foreach(t aiverse_client main)
     endif()
 endforeach()
 # Editor: play the project as in the game client, hosted in the Game window or in AiverseGame (apps/editor/EditorClientPlay.cpp)
+if(TARGET aiverse_editor OR AIVERSE_BUILD_STUDIO_HTML5)
+    # Shared game runtime host; editor shells own controls and native surfaces.
+    # Existing in-game overlay rendering remains inside GameClient, not Studio UI.
+    add_library(aiverse_hosted_client STATIC apps/client/HostedClient.cpp ${AIVERSE_CLIENT_CORE_SOURCES})
+    target_include_directories(aiverse_hosted_client PUBLIC "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_hosted_client PUBLIC aiverse_runtime aiverse_game_view
+        aiverse_net_city aiverse_splash aiverse_net aiverse_game_audio aiverse_atlas
+        aiverse_ui aiverse_game_fx aiverse_i18n aiverse_content_reader AIVERSE::InputFlow)
+endif()
 if(TARGET aiverse_editor)
-    target_sources(aiverse_editor PRIVATE apps/editor/EditorClientPlay.cpp apps/editor/ClientHost.cpp ${AIVERSE_CLIENT_CORE_SOURCES})
-    target_link_libraries(aiverse_editor PRIVATE aiverse_net_city)
-    target_link_libraries(aiverse_editor PRIVATE aiverse_splash aiverse_net aiverse_game_audio aiverse_atlas aiverse_ui aiverse_game_fx aiverse_i18n aiverse_content_reader)
+    target_sources(aiverse_editor PRIVATE apps/editor/EditorClientPlay.cpp)
+    target_link_libraries(aiverse_editor PRIVATE aiverse_hosted_client)
 endif()
 if(AIVERSE_BUILD_TESTS AND (AIVERSE_PLATFORM STREQUAL "linux" OR AIVERSE_PLATFORM STREQUAL "macos"))
     add_executable(aiverse_hosted_view_tests tests/hosted_view.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_hosted_view_tests PRIVATE aiverse_runtime)
+    if(TARGET aiverse_hosted_client)
+        target_link_libraries(aiverse_hosted_view_tests PRIVATE aiverse_hosted_client)
+        target_compile_definitions(aiverse_hosted_view_tests PRIVATE AIVERSE_TEST_HOSTED_CLIENT=1)
+    endif()
     add_test(NAME aiverse_hosted_view_tests COMMAND aiverse_hosted_view_tests)
 endif()
 
@@ -2325,6 +2378,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_ecs_nereid_geometry_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_geometry_test COMMAND aiverse_ecs_nereid_geometry_test)
+    add_executable(aiverse_ecs_nereid_river_grade_test tests/ecs_nereid_river_grade_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_river_grade_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_river_grade_test COMMAND aiverse_ecs_nereid_river_grade_test)
     # NEREID stage 4: transient spatial query index, parity and rollback.
     add_executable(aiverse_ecs_nereid_query_index_test tests/ecs_nereid_query_index_test.cpp)
     target_link_libraries(aiverse_ecs_nereid_query_index_test PRIVATE
@@ -2361,7 +2417,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_ecs_nereid_renderer_contract_test
         tests/ecs_nereid_renderer_contract_test.cpp)
     target_link_libraries(aiverse_ecs_nereid_renderer_contract_test PRIVATE
-        aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
+        aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
     # NEREID stages 41-44: JSON links, reference/indexed/scene flow parity
@@ -2377,6 +2433,10 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
     target_compile_definitions(aiverse_ecs_native_rts_integration_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME ecs_native_rts_integration_test COMMAND aiverse_ecs_native_rts_integration_test)
+    add_executable(aiverse_rts_authored_pose_test tests/rts_authored_pose_test.cpp)
+    target_link_libraries(aiverse_rts_authored_pose_test PRIVATE aiverse_game aiverse_game_view)
+    target_compile_definitions(aiverse_rts_authored_pose_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME rts_authored_pose_test COMMAND aiverse_rts_authored_pose_test)
     add_executable(aiverse_ecs_native_persistence_test tests/ecs_native_persistence_test.cpp)
     target_link_libraries(aiverse_ecs_native_persistence_test PRIVATE aiverse_engine)
     add_test(NAME ecs_native_persistence_test COMMAND aiverse_ecs_native_persistence_test)
@@ -2539,12 +2599,18 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_prisma_graph_tests tests/render/prisma_graph.cpp)
     target_include_directories(aiverse_prisma_graph_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME prisma_graph COMMAND aiverse_prisma_graph_tests)
+    add_executable(aiverse_prisma_lens_water_tests tests/render/prisma_lens_water.cpp)
+    target_link_libraries(aiverse_prisma_lens_water_tests PRIVATE aiverse_postfx_data)
+    add_test(NAME prisma_lens_water COMMAND aiverse_prisma_lens_water_tests)
     add_executable(aiverse_prisma_volume_tests tests/render/prisma_volume.cpp)
     target_link_libraries(aiverse_prisma_volume_tests PRIVATE aiverse_postfx_data)
     add_test(NAME prisma_volume COMMAND aiverse_prisma_volume_tests)
 endif()
 
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_alpha_coverage_mips_test tests/render/alpha_coverage_mips.cpp)
+    target_include_directories(aiverse_alpha_coverage_mips_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME alpha_coverage_mips COMMAND aiverse_alpha_coverage_mips_test)
     add_executable(aiverse_shader_graph_tests tests/shader_graph/compiler.cpp)
     target_link_libraries(aiverse_shader_graph_tests PRIVATE aiverse_shader_graph aiverse_postfx_data aiverse_fx)
     add_test(NAME shader_graph COMMAND aiverse_shader_graph_tests)
@@ -2776,6 +2842,7 @@ if(AIVERSE_BUILD_STRATA)
     # Renderer3D/GlobalGeometryPool; no second Strata vertex allocator.
     add_library(aiverse_strata_portable STATIC
         engine/render/StrataPortableRender.cpp
+        engine/render/StrataDebugView.cpp
         engine/render/StrataIndexResidency.cpp
         engine/render/StrataIndexPages.cpp)
     target_link_libraries(aiverse_strata_portable PUBLIC
@@ -2869,6 +2936,11 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_portable_tests PRIVATE
             aiverse_strata_portable aiverse_zstd_dec)
         add_test(NAME strata_portable COMMAND aiverse_strata_portable_tests)
+        add_executable(aiverse_strata_debug_view_tests
+            tests/render/strata_debug_view.cpp)
+        target_link_libraries(aiverse_strata_debug_view_tests PRIVATE
+            aiverse_strata_portable aiverse_zstd_dec)
+        add_test(NAME strata_debug_view COMMAND aiverse_strata_debug_view_tests)
         add_executable(aiverse_strata_index_residency_tests
             tests/render/strata_index_residency.cpp)
         target_link_libraries(aiverse_strata_index_residency_tests PRIVATE
@@ -3034,10 +3106,27 @@ endif()
 add_library(aiverse_spine STATIC engine/spine/SpineData.cpp engine/spine/SpineSkeleton.cpp)
 target_include_directories(aiverse_spine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_spine PUBLIC aiverse_engine)
-foreach(t aiverse_client main aiverse_editor)
+option(AIVERSE_CLIENT_WITH_SPINE "Include Spine UI animation in packaged clients" ON)
+option(AIVERSE_CLIENT_WITH_GAMEPAD "Include gamepad controls in packaged clients" ON)
+foreach(t aiverse_client main aiverse_hosted_client)
     if(TARGET ${t})
-        target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp apps/client/ClientServices.cpp apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
-        target_link_libraries(${t} PRIVATE aiverse_spine aiverse_render2d)
+        if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_SPINE)
+            target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp)
+            target_link_libraries(${t} PRIVATE aiverse_spine)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientSpineDisabled.cpp)
+            target_compile_definitions(${t} PRIVATE AIVERSE_CLIENT_NO_SPINE=1)
+        endif()
+        target_sources(${t} PRIVATE apps/client/ClientServices.cpp)
+        if(NOT t STREQUAL "aiverse_hosted_client")
+            target_sources(${t} PRIVATE apps/client/ClientGameActionsLua.cpp)
+        endif()
+        if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_GAMEPAD)
+            target_sources(${t} PRIVATE apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientGamepadDisabled.cpp)
+        endif()
+        target_link_libraries(${t} PRIVATE aiverse_render2d)
     endif()
 endforeach()
 if(TARGET aiverse_tests)
@@ -3643,6 +3732,7 @@ endif()
 # It is deliberately independent of RTS/FPS and reuses the CPU EffectDef compiler.
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraGraphOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraFunctionOps.cpp)
 endif()
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
     add_executable(aiverse_vfx_ops_tests tests/vfx_graph_ops_test.cpp)
@@ -3650,6 +3740,19 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
     target_link_libraries(aiverse_vfx_ops_tests PRIVATE aiverse_editor_core aiverse_fx)
     add_test(NAME vfx_graph_ops COMMAND aiverse_vfx_ops_tests)
     set_tests_properties(vfx_graph_ops PROPERTIES LABELS "SpectraFX")
+endif()
+
+# Stage 44 — pure C++20 SPFX-V2 checkpoint/ZIP/privacy diagnostics, no GPU.
+# Keep this test runnable on headless Linux and macOS without Metal hardware.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_spfx_diagnostics_test
+        tests/vfx_spfx_diagnostics_test.cpp)
+    target_include_directories(aiverse_vfx_spfx_diagnostics_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME vfx_spfx_diagnostics
+        COMMAND aiverse_vfx_spfx_diagnostics_test)
+    set_tests_properties(vfx_spfx_diagnostics
+        PROPERTIES LABELS "SpectraFX")
 endif()
 
 # SpectraFX GPU backend policy and legacy CPU fallback must be testable headlessly.
@@ -3939,6 +4042,47 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave COMMAND aiverse_terraweave_test)
+    # Stage70 sparse 4m per-NEREID-body nutrient and v2 archive migration.
+    # Source fixtures authored; first real C++ compile/CTest owned by QA.
+    add_executable(aiverse_terraweave_micro_nutrient_test
+        tests/terraweave_micro_nutrient_test.cpp)
+    target_link_libraries(aiverse_terraweave_micro_nutrient_test PRIVATE
+        aiverse_engine Threads::Threads)
+    target_compile_options(aiverse_terraweave_micro_nutrient_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_micro_nutrient
+        COMMAND aiverse_terraweave_micro_nutrient_test)
+    # Native headers must compile together: ECS, NEREID, 4m nutrient
+    # adapters and optional PHYSIS weather without that feature branch.
+    add_executable(aiverse_terraweave_native_micro_compile_test
+        tests/terraweave_native_micro_compile_test.cpp)
+    target_include_directories(aiverse_terraweave_native_micro_compile_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+    target_link_libraries(aiverse_terraweave_native_micro_compile_test PRIVATE
+        aiverse_models aiverse_world aiverse_zstd_dec)
+    target_compile_options(aiverse_terraweave_native_micro_compile_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_native_micro_compile
+        COMMAND aiverse_terraweave_native_micro_compile_test)
+    # The physics adapter is optional: Box3D include paths are provided
+    # transitively ONLY by the public AIVERSE::physics target, not by
+    # aiverse_world or aiverse_models. Test it separately when enabled.
+    if(TARGET aiverse_physics)
+        add_executable(aiverse_terraweave_native_micro_physics_compile_test
+            tests/terraweave_native_micro_compile_test.cpp)
+        target_include_directories(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+        target_compile_definitions(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS=1)
+        target_link_libraries(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE aiverse_models aiverse_world aiverse_zstd_dec AIVERSE::physics)
+        target_compile_options(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+        add_test(NAME terraweave_native_micro_physics_compile
+            COMMAND aiverse_terraweave_native_micro_physics_compile_test)
+    endif()
     add_executable(aiverse_terraweave_arbor_test tests/terraweave_arbor_test.cpp)
     target_link_libraries(aiverse_terraweave_arbor_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_arbor_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
@@ -4010,6 +4154,35 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME local_fog COMMAND aiverse_local_fog_tests)
 endif()
 
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_nereid_flow_map_tests tests/render/nereid_flow_map.cpp)
+    target_link_libraries(aiverse_nereid_flow_map_tests PRIVATE aiverse_models AIVERSE::lib_nereid_water)
+    add_test(NAME nereid_flow_map COMMAND aiverse_nereid_flow_map_tests)
+    add_executable(aiverse_terraweave_rocks_test tests/terraweave_rocks_test.cpp)
+    target_link_libraries(aiverse_terraweave_rocks_test PRIVATE aiverse_models aiverse_zstd_dec)
+    target_compile_options(aiverse_terraweave_rocks_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_rocks COMMAND aiverse_terraweave_rocks_test)
+endif()
+if(AIVERSE_BUILD_TOOLS AND TARGET aiverse_modeling)
+    add_executable(aiverse_terraweave_rocks tools/terrain/rocks.cpp)
+    target_link_libraries(aiverse_terraweave_rocks PRIVATE aiverse_modeling aiverse_zstd_dec)
+endif()
+
+if(AIVERSE_BUILD_TOOLS AND TARGET aiverse_modeling)
+    add_executable(aiverse_terraweave_vegetation tools/terrain/vegetation.cpp)
+    target_link_libraries(aiverse_terraweave_vegetation PRIVATE aiverse_modeling aiverse_zstd_dec)
+endif()
+if(AIVERSE_BUILD_TOOLS AND TARGET aiverse_modeling)
+    add_executable(aiverse_terraweave_landscape tools/terrain/landscape.cpp)
+    target_link_libraries(aiverse_terraweave_landscape PRIVATE aiverse_modeling aiverse_world aiverse_zstd_dec AIVERSE::lib_nereid_water)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_terraweave_landscape_test tests/terraweave_landscape_test.cpp)
+    target_link_libraries(aiverse_terraweave_landscape_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec AIVERSE::lib_nereid_water)
+    target_compile_options(aiverse_terraweave_landscape_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_landscape COMMAND aiverse_terraweave_landscape_test)
+endif()
+
 # LENS CPU-only project authoring shared with MCP.
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/LensOps.cpp)
@@ -4031,6 +4204,37 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core AND AIVERSE_BUILD_STRATA)
     add_executable(aiverse_strata_editor_test tests/strata_editor_test.cpp)
     target_link_libraries(aiverse_strata_editor_test PRIVATE aiverse_editor_core)
     add_test(NAME strata_editor COMMAND aiverse_strata_editor_test)
+endif()
+
+# Stage 14: genuine Apple Metal compute/argument smoke (not a software mock).
+# When the macOS runner has no Metal device it exits 77 => CTest SKIP, not PASS.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_vfx_metal_smoke tests/vfx_metal_compaction_smoke.mm)
+    target_include_directories(aiverse_vfx_metal_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_source_files_properties(tests/vfx_metal_compaction_smoke.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(aiverse_vfx_metal_smoke PRIVATE "-framework Metal" "-framework Foundation")
+    add_test(NAME vfx_metal_compaction_smoke COMMAND aiverse_vfx_metal_smoke)
+    set_tests_properties(vfx_metal_compaction_smoke PROPERTIES
+        LABELS "SpectraFX;Metal" SKIP_RETURN_CODE 77)
+endif()
+
+# Independent graph instances must share compatible RHI draw submissions.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_shared_batch_tests tests/vfx_shared_batch_world_test.cpp)
+    target_include_directories(aiverse_vfx_shared_batch_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_vfx_shared_batch_tests PRIVATE AIVERSE::spectrafx)
+    add_test(NAME vfx_shared_batch_world COMMAND aiverse_vfx_shared_batch_tests)
+    set_tests_properties(vfx_shared_batch_world PROPERTIES LABELS "SpectraFX")
+endif()
+
+# Stage 15 — generic bounded tick cues, ECS attachments, generation and rollback.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_cue_scheduler_tests tests/vfx_cue_scheduler_test.cpp)
+    target_include_directories(aiverse_vfx_cue_scheduler_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+    target_link_libraries(aiverse_vfx_cue_scheduler_tests PRIVATE AIVERSE::spectrafx)
+    add_test(NAME vfx_cue_scheduler COMMAND aiverse_vfx_cue_scheduler_tests)
+    set_tests_properties(vfx_cue_scheduler PROPERTIES LABELS "SpectraFX")
 endif()
 
 # Lighting main integration: CPU-only source/cluster/indirect composition and

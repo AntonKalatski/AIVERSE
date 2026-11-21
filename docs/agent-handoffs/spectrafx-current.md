@@ -1,4 +1,35 @@
+## 2026-11-20 — Inspector revalidated with lighting main
+
+Combined implementation `4acfb482742d2bb1d615c3eaae60308af09ffa1b` preserves incoming main `d84e958b1`.
+Editor build PASS; SpectraFX 20/20 PASS (16.78s), five real Metal checks with
+no skips; actual PRISMA frame review 5/5 PASS. Two unused GraphWindow helpers
+removed; cleanup build has zero warnings. Full repository/platform/manual UI
+coverage remains unrun. Exact commands and integration decisions: `docs/agent-handoffs/inspector-spectrafx-lighting-sync-2026-11-20.md`.
+
+
+## 2026-11-20 — Inspector graph-v2 integration with current main
+
+Implementation `9db6d2014137e41cd67ff82dc187cf1136f73bb3`; branch `feature/aiv20261120_perf_inspector_integration`.
+Editor build PASS; final SpectraFX 20/20 PASS including five hardware Metal tests;
+actual PRISMA frame checks 5/5 PASS. Source-compatible view adapters and GPU
+preview retirement corrections preserve newer main ownership. No experimental
+defaults enabled. Full repo/Release/Vulkan/GLES/manual editor UI NOT RUN.
+Exact commands, earlier failures, warnings, APIs and next steps:
+`docs/agent-handoffs/inspector-spectrafx-main-2026-11-20.md`. Separate documentation commit follows implementation.
+
+
 # SpectraFX — handoff for the next implementation agent
+
+## 2026-11-21 packaged client build selection
+
+On `feature/studio-html5`, implementation `7d92031a3` adds opt-in `fx` to
+`packaging.engineModules`; omitting it from an explicit packaged-client list
+excludes the client FX host and SpectraFX libraries. The editor-hosted client
+and default legacy client retain full FX. macOS client builds with FX ON/OFF,
+the hosted client build and the packager build passed; WebAssembly and GPU
+visual parity were NOT RUN. See
+`docs/agent-handoffs/spectrafx-stage121-client-build-pruning-2026-11-21.md`
+for exact measurements and risks.
 
 ## Stage 120 — merged main + SpectraFX full native acceptance PASS (M3 Ultra)
 

@@ -74,8 +74,27 @@ struct HdrScene {
         water = MeshBuilder().quad({-5,0,-1},{-5,0,4},{5,0,4},{5,0,-1}).upload(d);
         MeshBuilder sphere; sphere.sphere({0,0,0},0.7f,24,32);
         std::vector<ModelPart> parts;
+        const char* sssTest=std::getenv("AIVERSE_SSS_TEST");
         for (int i=0;i<5;++i) {
             Material m; m.baseColor={0.7f,0.38f,0.12f,1}; m.metallic=i/4.0f; m.roughness=0.1f+i*0.19f;
+            if (sssTest) {
+                m.metallic=0;
+                m.baseColor={0.78f,0.48f,0.39f,1};
+                m.sssStrength=std::clamp(std::strtof(sssTest,nullptr),0.0f,1.0f);
+                m.sssScale=0.8f;
+                m.sssColor={1.0f,0.35f,0.22f};
+            }
+            // Integration fixture controls: the two PBR effects must not
+            // alias one U2 slot or alter unlit fixed-light parameters.
+            if(const char* thin=std::getenv("AIVERSE_THIN_TRANSMISSION_TEST"))
+                m.thinTransmission=std::clamp(std::strtof(thin,nullptr),0.f,1.f);
+            if(const char* scale=std::getenv("AIVERSE_SSS_TEST_SCALE"))
+                m.sssScale=std::clamp(std::strtof(scale,nullptr),0.f,1.f);
+            if(std::getenv("AIVERSE_MATERIAL_TEST_UNLIT")) {
+                m.shading=ShadingModel::Unlit;
+                const auto direction=normalize(float3{.55f,1,.35f});
+                m.fixedLight={direction.x,direction.y,direction.z,1};m.fixedShade={.2f,.8f};
+            }
             parts.push_back({"sphere",&sphere,m,mat4::translate({float(i-2)*2.0f,0.75f,-2.5f})});
         }
         if(const char* library=std::getenv("AIVERSE_MATERIAL_LIBRARY")) {

@@ -30,7 +30,8 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
             m.emissive.z, m.emissiveStrength, m.uvOffset.x,
             m.uvOffset.y, m.uvScale.x, m.uvScale.y, m.uvRotation,
             m.fixedLight.x, m.fixedLight.y, m.fixedLight.z, m.fixedLight.w,
-            m.shadowDiffusion, m.fixedShade.x, m.fixedShade.y);
+            m.thinTransmission, m.shadowDiffusion, m.fixedShade.x, m.fixedShade.y,
+            m.sssStrength, m.sssColor.x, m.sssColor.y, m.sssColor.z, m.sssScale);
     };
     if (state(a) != state(b)) return false;
     auto texture = [](const Model& model, int slot) -> uint32_t {
@@ -88,7 +89,8 @@ inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
     f(m.uvOffset.x); f(m.uvOffset.y);
     f(m.uvScale.x); f(m.uvScale.y); f(m.uvRotation);
     f(m.fixedLight.x); f(m.fixedLight.y); f(m.fixedLight.z); f(m.fixedLight.w);
-    f(m.shadowDiffusion); f(m.fixedShade.x); f(m.fixedShade.y);
+    f(m.thinTransmission); f(m.shadowDiffusion); f(m.fixedShade.x); f(m.fixedShade.y);
+    f(m.sssStrength); f(m.sssColor.x); f(m.sssColor.y); f(m.sssColor.z); f(m.sssScale);
     auto texture = [&](int index) {
         u(index >= 0 && size_t(index) < model.images.size()
             ? model.images[size_t(index)].tex.id : 0);

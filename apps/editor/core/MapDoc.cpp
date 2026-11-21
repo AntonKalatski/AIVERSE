@@ -85,6 +85,7 @@ void MapDoc::ensureLayers() {
 
 void MapDoc::reset(int w, int h) {
     data = MapData{};
+    data.extra.set("terrainPresentation",Json::string("entities"));
     data.w = w; data.h = h;
     ensureLayers();
     path.clear();

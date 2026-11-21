@@ -1,6 +1,37 @@
 // Particle effects in the game client: one ParticleSystem + the RTS event bridge, fed from the
 // match each frame. Kept in its own file so the client only calls a handful of methods.
 #pragma once
+#ifdef AIVERSE_CLIENT_NO_FX
+#include <cstdio>
+#include <string>
+#include "engine/render/Renderer3D.h"
+#include "modules/rts/view/RtsView.h"
+namespace aiverse::client {
+class ClientFx {
+public:
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease) {}
+    void init(gfx::Device&, const game::Rules&) {}
+    void shutdown() {}
+    void startMatch(Simulation&, uint8_t, const game::RtsView&, const game::MapGrid&) {}
+    void stopMatch() {}
+    void setPlanetView(const game::RtsView*) {}
+    void update(Simulation&, const game::RtsScene&, const render::RTSCamera&, const render::mat4&, int, int, float) {}
+    void addLights(render::LightSystem&) {}
+    void prepareGpuFrame(float, const render::RTSCamera&) {}
+    void renderGpu(const render::mat4&, const render::RTSCamera&) {}
+    void render(const render::Lighting&) {}
+    int quality() const { return 0; }
+    void setQuality(int) {}
+    void playEffect(const std::string&, float, float, float) {
+        static bool warned = false;
+        if (!warned) { warned = true; std::fprintf(stderr, "[fx] effect requested, but this client was built without the fx module\n"); }
+    }
+    bool hasReactiveGeometry() const { return false; }
+    void renderReactive(gfx::Device&, gfx::TextureHandle, int, int) {}
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const { return {}; }
+};
+} // namespace aiverse::client
+#else
 #include "engine/fx/ParticleSystem.h"
 #include "engine/fx/SpectraFxGpuRoutes.h"
 #include "engine/fx/SpectraFxSimulationBridge.h"
@@ -50,6 +81,9 @@ public:
 
     int quality() const { return int(ps_.quality()); }
     void setQuality(int q) { ps_.setQuality(fx::FxQuality(q < 0 ? 0 : q > 3 ? 3 : q)); }
+    void playEffect(const std::string& name, float x, float y, float z) { ps_.play(name, {x, y, z}); }
+    bool hasReactiveGeometry() const { return ps_.hasReactiveGeometry(); }
+    void renderReactive(gfx::Device& dev, gfx::TextureHandle depth, int w, int h) { ps_.renderReactive(dev, depth, w, h); }
     fx::ParticleSystem& particles() { return ps_; }
     // This host owns particle GPU buffers/atlas AND separate sprite cache.
     // The particle batches only borrow sprite textures from this cache.
@@ -95,3 +129,4 @@ private:
 };
 
 } // namespace aiverse::client
+#endif

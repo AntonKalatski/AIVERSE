@@ -1,6 +1,7 @@
 // Editor-facing document entity adapter. Genre modules map their native
 // serialized objects to this identity; rendering and UI do not own selection.
 #pragma once
+#include "apps/editor/AuthoringComponents.h"
 #include "core/MapDoc.h"
 #include <cstddef>
 #include <cstdint>
@@ -98,7 +99,8 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
         const DocEntity* entity = documentMapEntity(map, ref);
         if (!entity) return false;
         if (!std::isfinite(entity->x) || !std::isfinite(entity->z)) return false;
-        out = {entity->x, 0.0, entity->z};
+        try { out = {entity->x, authoredEntity(*entity)?authoredLocalTransform(*entity).position.y.toDouble():0.0, entity->z}; }
+        catch(const std::exception&) { return false; }
     } else {
         const Json* object = fpsDocumentEntity(map.data.fps, ref);
         if (!object) return false;
@@ -160,11 +162,11 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
         light->set("height",Json::number(after.y,3));light->erase("pos");
     } else if (ref.source == DocumentEntityRef::Source::MapEntity) {
         // RTS maps are 2D in their serialized format. Never silently discard Y.
-        if (delta.y != 0) return false;
         DocEntity* entity = documentMapEntity(map, ref);
-        if (!entity) return false;
+        if (!entity || (delta.y!=0&&!authoredEntity(*entity))) return false;
         const float x = float(after.x), z = float(after.z);
         if (!std::isfinite(x) || !std::isfinite(z)) return false;
+        if(delta.y!=0){try{*entity=editAuthoredPlacement(*entity,"y",Json::number(after.y,4));}catch(const std::exception&){return false;}}
         entity->x = x;
         entity->z = z;
         if (entity->at.isObject()) {
@@ -413,7 +415,8 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         result.set("position", xyz);
         if (ref.source == DocumentEntityRef::Source::MapEntity) {
             const DocEntity* entity = documentMapEntity(map, ref);
-            if (entity && entity->extra["facing"].isNumber() &&
+            if(entity&&authoredEntity(*entity)){const auto& t=entity->extra["components"]["Transform"];result.set("rotationY",t.has("yaw")?t["yaw"]:Json::number(0.0));result.set("uniformScale",t.has("scale")?t["scale"]:Json::number(1.0));}
+            if (entity && !authoredEntity(*entity) && entity->extra["facing"].isNumber() &&
                 std::isfinite(entity->extra["facing"].toDouble()))
                 result.set("rotationY",
                     Json::number(entity->extra["facing"].toDouble(), 3));
@@ -437,6 +440,7 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         if (!entity) return false;
         if (kind == DocumentComponentKind::Renderable) {
             result.set("type", Json::string(entity->type));
+            if(authoredEntity(*entity))result.set("asset",Json::string(authoredModelAsset(*entity)));
             return true;
         }
         if (kind == DocumentComponentKind::Gameplay) {
@@ -508,6 +512,25 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
         *light=std::move(next);map.touched();return true;
     }
     if (kind == DocumentComponentKind::Transform) {
+        if (ref.source == DocumentEntityRef::Source::MapEntity) {
+            auto* entity=documentMapEntity(map,ref);
+            if(entity && authoredEntity(*entity)) {
+                auto candidate=*entity;
+                try {
+                    if(value.has("position")) {
+                        DocumentTransform p;
+                        if(!readVec3(value["position"],p)||std::abs(p.x)>1000000||std::abs(p.z)>1000000)return false;
+                        candidate.x=float(p.x);candidate.z=float(p.z);
+                        candidate=editAuthoredPlacement(candidate,"y",Json::number(p.y,4));
+                    }
+                    if(value.has("rotationY"))candidate=editAuthoredPlacement(candidate,"yaw",value["rotationY"]);
+                    if(value.has("uniformScale"))candidate=editAuthoredPlacement(candidate,"scale",value["uniformScale"]);
+                    (void)authoredLocalTransform(candidate);
+                } catch(const std::exception&) {return false;}
+                if(candidate.x==entity->x && candidate.z==entity->z && candidate.extra==entity->extra)return false;
+                *entity=std::move(candidate);map.touched();return true;
+            }
+        }
         if (ref.source == DocumentEntityRef::Source::MapEntity &&
             value.has("rotationY")) {
             DocEntity* entity = documentMapEntity(map, ref);

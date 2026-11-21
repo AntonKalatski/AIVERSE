@@ -144,6 +144,56 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 ### Split builds and content download
 
+For packaged client builds, `packaging.engineModules` can select optional native
+engine modules. Omitting the field keeps the historical defaults; an explicit
+empty array disables all eleven selectable modules. The supported names are
+`auto` (detect modules from project assets and settings),
+`strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
+at runtime), `vulkan` (Windows, Linux, Android only), `spine` (Spine UI
+animation and its Lua API), `gamepad` (controller input and action bindings),
+`fx` (SpectraFX particles and the RTS effect bridge), `fbx` (runtime FBX
+import using ufbx), `legacy-models` (runtime VOX/VXL, PLY/STL, 3DS,
+DAE, MDX/MDL, 3DO and W3D loaders), `obj` (runtime OBJ loader), `blp`
+(BLP1/BLP2 texture decoding), and `city-client` (persistent city server client).
+`["auto"]` selects Spine and gamepad from `game.json`, FX from project JSON
+and FX assets, and model importers/BLP from source files. A model with a
+`<source>.glb` sidecar does not need its source-format loader. Detection is
+conservative: unused source files may keep a loader in the build, while
+runtime-generated paths, script-only calls, city connections, Strata and
+runtime LOD generation require explicit names such as
+`["auto", "city-client"]`. The absence of `engineModules` retains the
+legacy defaults.
+A target-specific
+`packaging.targets.web.engineModules` or similar overrides the shared list.
+For example, `"packaging": {"engineModules": [], "targets":
+{"windows": {"engineModules": ["vulkan"]}}}` builds without these optional
+modules except for Vulkan on Windows. Declare `runtime-autolod` when the game
+relies on runtime LOD generation; otherwise prepare LODs before packaging.
+Declare `spine` if `game.json` defines Spine views or UI Lua scripts call the
+`spine` table. The packager rejects declared Spine views when this module is
+excluded; script-only use must be listed explicitly.
+Declare `gamepad` if `game.json` has gamepad settings or the game is intended
+to support controllers. The packager rejects declared gamepad settings when
+the module is excluded.
+Declare `fx` if the game has `fx/fx.json`, GPU routes, graph assets, or scripts
+that request particle effects. The packager rejects known FX resources when
+`fx` is excluded; script-only requests emit a runtime warning and no effect.
+Declare `fbx` when the client must import FBX at runtime. Without it, convert
+FBX assets to GLB before packaging; the loader reports a clear error for FBX
+without a converted `.glb` sidecar. Host conversion tools retain FBX support.
+Declare `legacy-models` if clients load any of those model formats directly.
+Without it, convert them to GLB before packaging. Host conversion tools retain
+the legacy loaders.
+Declare `obj` if the client loads OBJ directly; otherwise convert OBJ assets
+to GLB before packaging. Host conversion tools retain OBJ support.
+Declare `blp` if the client reads BLP textures, including BLP images referenced
+by model files. Without it, convert those textures before packaging. Host
+conversion tools retain BLP support.
+Declare `city-client` if the game uses the `AIVERSE_CITY` server connection.
+With the module excluded, setting `AIVERSE_CITY` produces an error when a match starts.
+This selection affects the executable, not the content pack. Core client,
+renderer, and gameplay modules still follow their C++ dependency graph.
+
 Optionally a build can be split: the app carries only a base pack with what is needed to start, the rest goes into
 parts (`content.001.rpkc`, …) of a given size that the game downloads from any source. The game author decides
 everything, in `game.json` (shared settings and per platform) or with `aiversebuild` flags:

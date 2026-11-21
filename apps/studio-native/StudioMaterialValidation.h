@@ -1,9 +1,30 @@
 // AIVERSE Studio: strict safe subset of the shared materials.json authoring API.
 // No filesystem paths, arbitrary JSON, shader source or dangerous material keys.
 #pragma once
+#include <array>
 #include <cmath>
+#include <optional>
+#include <sstream>
+#include <string>
 #include <string_view>
 namespace aiverse::studio {
+inline std::optional<std::array<double,3>> parseStudioSssColor(std::string_view text) {
+    std::istringstream input{std::string(text)};
+    std::array<double,3> color{};
+    char comma=0;
+    if(!(input>>color[0]) || !(input>>comma) || comma!=',' ||
+       !(input>>color[1]) || !(input>>comma) || comma!=',' ||
+       !(input>>color[2])) return std::nullopt;
+    input>>std::ws;
+    if(!input.eof()) return std::nullopt;
+    for(double channel:color)
+        if(!std::isfinite(channel) || channel<0 || channel>1) return std::nullopt;
+    return color;
+}
+inline bool studioMaterialTextureKey(std::string_view key) {
+    return key=="texture" || key=="normalMap" || key=="emissiveMap" ||
+           key=="teamMask" || key=="metallicRoughnessMap" || key=="occlusionMap";
+}
 inline bool validStudioMaterialPreset(std::string_view preset) {
     return preset=="matte" || preset=="metal" || preset=="glass";
 }
@@ -16,7 +37,8 @@ inline bool validStudioMaterialName(std::string_view name) {
 }
 inline bool validStudioMaterialNumber(std::string_view key,double value) {
     if(!std::isfinite(value))return false;
-    if(key=="metallic"||key=="roughness"||key=="shadowDiffusion"||key=="cutoff"||
+    if(key=="metallic"||key=="roughness"||key=="shadowDiffusion"||
+       key=="thinTransmission"||key=="sssStrength"||key=="sssScale"||key=="cutoff"||
        key=="teamStrength"||key=="occlusionStrength")
         return value>=0&&value<=1;
     if(key=="emissiveStrength")return value>=0&&value<=100;
@@ -28,6 +50,7 @@ inline bool validStudioMaterialBoolean(std::string_view key) {
            key=="receiveShadow"||key=="vertexColors";
 }
 inline bool validStudioMaterialText(std::string_view key,std::string_view value) {
+    if(key=="sssColor")return parseStudioSssColor(value).has_value();
     if(key=="alpha")return value=="opaque"||value=="mask"||value=="blend";
     if(key=="team")return value=="none"||value=="tint"||
            value=="mask"||value=="alpha"||value=="vertex";

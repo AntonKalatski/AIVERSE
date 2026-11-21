@@ -4,10 +4,11 @@
 import type { ReactNode } from 'react';
 import { StudioSection } from '../ui';
 import {
-  Activity, Box, ChevronDown, FolderOpen, FolderTree, Lightbulb, MonitorPlay,
-  MoreHorizontal, Plus, Search, SlidersHorizontal
+  Activity, Box, ChevronDown, FolderOpen,
+  SlidersHorizontal, Focus, RotateCcw, Lock, LockOpen
 } from 'lucide-react';
-import type { StudioEntity, StudioSnapshot } from '../types';
+import type { StudioEntity, StudioProperty, StudioSnapshot } from '../types';
+import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
 import PanelTitle from '../components/PanelTitle';
 import PropertyField from '../components/PropertyField';
@@ -16,80 +17,74 @@ import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
 import ShaderGraphPanel from './ShaderGraphPanel';
+import FacialRigPanel from './FacialRigPanel';
 import { studioSceneMode } from './sceneState';
+import HierarchyPanel from './HierarchyPanel';
+import GamePanel from './GamePanel';
+
+import ProjectPanel from './generated/ProjectPanel';
+
+import RuntimePanel from './generated/RuntimePanel';
+
+import NereidFlowPanel from './generated/NereidFlowPanel';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
+  setBusy: (value: boolean) => void;
+  updateSnapshot: (value: StudioSnapshot) => void;
   connected: boolean;
   openProject: () => Promise<void>;
   search: string;
   setSearch: (value: string) => void;
   rows: Array<{node: StudioEntity; depth: number}>;
   selected: StudioEntity | undefined;
+  inspectorProperties: StudioProperty[];
+  inspectorPinned: boolean;
+  toggleInspectorPin: () => void;
   select: (id: string | null) => Promise<void>;
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,search,setSearch,rows,selected,select,changeProperty}=ctx;
+  const {snapshot,busy,connected,openProject,selected,inspectorProperties,inspectorPinned,toggleInspectorPin,changeProperty,select}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
-        return <>
-          <PanelTitle title="HIERARCHY" right={<>
-            <button className="icon-button" disabled title="Create entity (pending)"><Plus size={16}/></button>
-            <button className="icon-button" disabled title="Hierarchy menu (pending)"><MoreHorizontal size={16}/></button>
-          </>}/>
-          <label className="search-box"><Search size={15}/>
-            <input aria-label="Search hierarchy" placeholder="Search objects..."
-              value={search} onChange={e => setSearch(e.target.value)}/>
-            <kbd>⌘ K</kbd>
-          </label>
-          <div className="tree-label"><ChevronDown size={14}/><FolderTree size={15}/>
-            <span>{connected && !snapshot?.project.path ? 'No project' : snapshot?.scene.name ?? 'Scene'}</span>
-          </div>
-          <div className="tree-list">
-            {rows.filter(({ node }) => node.name.toLowerCase().includes(search.toLowerCase()))
-              .map(({ node, depth }) =>
-                <button key={node.id}
-                  className={'tree-row ' + (snapshot?.selectedId === node.id ? 'active' : '')}
-                  style={{ paddingLeft: 14 + depth * 16 }} onClick={() => void select(node.id)}
-                  disabled={busy}>
-                  {node.kind === 'Light' ? <Lightbulb size={15}/> :
-                    node.kind === 'Camera' ? <MonitorPlay size={15}/> : <Box size={15}/>}
-                  <span>{node.name}</span>
-                </button>)}
-          </div>
-          <div className="panel-footer">{snapshot?.scene.entities.length ?? 0} objects</div>
-        </>;
+        return <HierarchyPanel {...ctx}/>;
       case 'assets':
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return <>
           <PanelTitle title="INSPECTOR" right={
-            <button className="icon-button" disabled aria-label="Inspector menu">
-              <MoreHorizontal size={16}/>
+            <button className="icon-button" onClick={toggleInspectorPin}
+              disabled={!selected} aria-pressed={inspectorPinned}
+              title={inspectorPinned ? 'Unpin Inspector from selected object' : 'Lock Inspector to current object'}
+              aria-label={inspectorPinned ? 'Unlock Inspector' : 'Lock Inspector'}>
+              {inspectorPinned ? <Lock size={16}/> : <LockOpen size={16}/>}
             </button>}/>
           {selected ? <>
-            <div className="selected-object">
-              <div className="object-icon"><Box size={21}/></div>
-              <div><h3>{selected.name}</h3><span>{selected.kind} · {selected.id}</span></div>
+            <div className="selected-object compact-object-header">
+              <input type="checkbox" className="au-checkbox__input" aria-label="Object active"
+                checked={selected.visible !== false} disabled
+                title="Object activation is not yet exposed by the native document API"/>
+              <input className="au-input" aria-label="Object name" value={selected.name} readOnly
+                title="Object naming is not yet exposed by the native document API"/>
             </div>
-            {snapshot?.entityProperties?.map(property =>
+            {(!inspectorPinned ? snapshot?.entityProperties : [])?.map(property =>
               <PropertyField key={'entity:' + selected.id + ':' + property.key} property={property}
                 disabled={busy || property.editable === false}
                 onChange={value => void changeProperty(property.key, value, 'Entity')}/>)}
-            {snapshot?.components?.map(component =>
+            {(!inspectorPinned ? snapshot?.components : [])?.map(component =>
               <StudioSection key={selected.id + ':' + component.id} title={component.title}>
                 {component.properties.map(property =>
                   <PropertyField key={component.id + ':' + property.key} property={property}
                     disabled={busy || property.editable === false}
                     onChange={value => void changeProperty(property.key, value, component.id)}/>)}
               </StudioSection>)}
-            {!!snapshot?.properties.length && <div className="inspector-section">
+            {!!inspectorProperties.length && <div className="inspector-section">
               <div className="section-heading"><ChevronDown size={13}/> Properties</div>
-              {snapshot?.properties.map(property =>
+              {inspectorProperties.map(property =>
                 <PropertyField key={selected.id + ':' + property.key}
                   property={property} disabled={busy || property.editable === false}
                   onChange={value => void changeProperty(property.key, value)}/>)}
@@ -104,6 +99,14 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
                 <SlidersHorizontal size={15}/></button>
               <span className="toolbar-divider"/>
               <span className="viewport-label">Perspective</span>
+              <button type="button" className="viewport-control" title="Focus selected object (F)"
+                aria-label="Focus selected Scene object" disabled={!connected || !selected}
+                onClick={()=>void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn)}>
+                <Focus size={15}/></button>
+              <button type="button" className="viewport-control" title="Reset Scene camera (Home)"
+                aria-label="Reset Scene camera" disabled={!connected}
+                onClick={()=>void invoke('studio.viewportInput',{kind:'reset'}).catch(console.warn)}>
+                <RotateCcw size={15}/></button>
             </div>
             <span className="render-badge"><Activity size={13}/>
               {sceneMode === 'welcome' ? 'Open project to render' : 'Native Renderer3D (experimental)'}
@@ -135,8 +138,13 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
           previewMaterial={snapshot?.previewMaterial}/>;
       case 'shader_graph':
         return <ShaderGraphPanel projectPath={snapshot?.project.path ?? ''}/>;
+      case 'project': return <ProjectPanel {...ctx}/>;
+      case 'facial_rig':
+        return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
+      case 'runtime': return <RuntimePanel snapshot={snapshot}/>;
+      case 'nereid_flow': return <NereidFlowPanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
-      case 'game':
+      case 'game': return <GamePanel {...ctx}/>;
       case 'animation':
         return <div className="dock-unported" role="status">
           <Box size={28}/>

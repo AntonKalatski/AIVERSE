@@ -68,6 +68,20 @@ class StudioDesignSystemTests(unittest.TestCase):
         self.assertIn("StudioEmptyState",docs)
         self.assertIn("StudioField",docs)
 
+    def test_approved_first_cinematic_design_is_documented(self):
+        visual=(ROOT/"docs/studio-visual-direction.md").read_text(encoding="utf-8")
+        guide=(ROOT/"docs/studio-ui-agent-guide.md").read_text(encoding="utf-8")
+        rules=(ROOT/"apps/studio-web/AGENTS.md").read_text(encoding="utf-8")
+        skill=(ROOT/"skills/editor/studio-ui/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Approved visual baseline: First Cinematic Concept",visual)
+        self.assertIn("not a screenshot of the current shipping build",visual.lower())
+        self.assertIn("StudioPanel",guide)
+        self.assertIn("tools/studio/new_panel.py",guide)
+        self.assertIn("first cinematic concept",rules.lower())
+        self.assertIn("First Cinematic Concept",skill)
+        self.assertIn("docs/studio-visual-direction.md",skill)
+
+
     def test_root_agent_discovery_and_skill(self):
         root_agents=(ROOT/"AGENTS.md").read_text(encoding="utf-8")
         skill=(ROOT/"skills/editor/studio-ui/SKILL.md").read_text(encoding="utf-8")

@@ -724,6 +724,12 @@ public:
         updateBuffer(h, data, size, offset);
         return true;
     }
+    // Optional error-reporting storage upload, used for GPU source kills.
+    // Accepting means the copy was encoded in the device's current ordered
+    // frame command buffer, NOT completed. Unsupported backends return false.
+    virtual bool updateStorageBufferChecked(BufferHandle,const void*,size_t,size_t=0) {
+        return false;
+    }
     virtual void destroyBuffer(BufferHandle h) = 0;
     // Optional per-buffer diagnostics. No GPU stall/readback, and never
     // authoritatively measures GPU memory bandwidth or execution.
@@ -891,6 +897,13 @@ public:
     using TextureReadFn = std::function<void(TextureReadbackResult)>;
     virtual bool readTextureAsync(TextureHandle, TextureReadbackDesc,
                                   TextureReadFn) { return false; }
+    // Optional ranged async readback for bounded large storage snapshots.
+    // Offset and size are in bytes; unsupported backends return false.
+    // A completed callback gets exactly size bytes or an empty vector on GPU
+    // error. Multiple accepted requests are delivered on the device thread.
+    virtual bool readBufferRangeAsync(BufferHandle,size_t,size_t,BufferReadFn) {
+        return false;
+    }
     virtual bool gpuHealthy() const { return true; }
     // Shutdown-only GPU barrier. Unsupported devices return false.
     virtual bool waitIdle() { return false; }
@@ -1005,6 +1018,10 @@ public:
     // command bytes are produced by an earlier compute pass and MUST NOT be
     // read back or validated on the CPU. Unsupported backends return false.
     // This is intentionally one draw per call, not multi-draw batching.
+    // Experimental opt-in compute-authored draw arguments. Feature queries
+    // are explicit: the mere presence of BufferType::Storage or compute does
+    // not guarantee safe GPU-authored indirect indexed rendering.
+    virtual bool supportsGpuAuthoredIndirectDraw() const { return false; }
     virtual bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) {
         (void)arguments; (void)offset; return false;
     }

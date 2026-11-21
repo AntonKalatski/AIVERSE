@@ -42,7 +42,7 @@ float3 jsonColor(const Json& j, float3 def) {
     return {float(j[0].toDouble()), float(j[1].toDouble()), float(j[2].toDouble())};
 }
 
-struct TU0 { float lod[4], mode[4], scale[4], cliff[4], fog[4], tint[4][4], cliffTint[4], fogColor[4], fogGrid[4], detail[4], rock[4], blend[4]; };
+struct TU0 { float lod[4], mode[4], scale[4], cliff[4], fog[4], tint[4][4], cliffTint[4], fogColor[4], fogGrid[4], detail[4], rock[4], blend[4], pbr[4]; };
 
 const char* kKindNames[] = {"grass", "sand", "ramp", "rock", "blocked", "lakebed", "shallows", "dug"};
 } // namespace
@@ -139,6 +139,13 @@ void TerrainRenderer::init(gfx::Device& dev, const Rules& rules, const FileReade
 
 void TerrainRenderer::parseLook(const Json& t) {
     if (!t.isObject()) return;
+    look_.render=t.getBool("render",look_.render);
+    if (t["pbr"].isObject()) {
+        const Json& p=t["pbr"];
+        look_.pbr=p.getBool("enabled",look_.pbr);
+        look_.packedPbr=p.getBool("packedMaps",look_.packedPbr);
+        look_.pbrRoughness=std::clamp(float(p["roughness"].toDouble(look_.pbrRoughness)),0.045f,1.0f);
+    }
     if (t["layers"].isArray()) {
         look_.layers.clear();
         for (auto& l : t["layers"].items()) {
@@ -515,6 +522,7 @@ std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
     staged.gpuDeviceLease_=gpuDeviceLease_;
     staged.rules_=rules_;
     staged.look_=look_;
+    staged.mapSurfaceEnabled_=mapSurfaceEnabled_;
     staged.materialLayer_=materialLayer_;
     staged.hasFileDetail_=hasFileDetail_;
     staged.fileDetail_=fileDetail_;
@@ -1941,6 +1949,7 @@ void TerrainRenderer::drawPrepared(Renderer3D& r,const MapGrid& g,
 void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
                                    const std::vector<uint8_t>* vision,
                                    bool preparedOnly) {
+    if(!look_.render||!mapSurfaceEnabled_){r.setHeightField({});return;}
     if (!built_ || !dev_ || g.w != mapW_ || g.h != mapH_) return;
     gfx::Device& dev = *dev_;
     // A LENS primary owner transaction has already installed the immutable
@@ -2042,6 +2051,9 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         giPipeline=true;
     const bool compactGi=giPipeline && pipes_[12].valid() && pipe==pipes_[12];
     TU0 u{};
+    u.pbr[0]=look_.pbr ? 1.0f:0.0f;
+    u.pbr[1]=look_.pbrRoughness;
+    u.pbr[3]=look_.packedPbr ? 1.0f:0.0f;
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
     u.mode[0] = 0.05f;
     u.mode[1] = effectiveTier >= 1 && look_.materials() ? 1.0f : 0.0f;
@@ -2149,7 +2161,7 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     });
     // Water was already captured as a model/mesh packet in the primary
     // view; avoid duplicating it when the secondary terrain path runs.
-    if (!preparedOnly && hasWater_ && water_.indexCount)
+    if (look_.render && mapSurfaceEnabled_ && !preparedOnly && hasWater_ && water_.indexCount)
         r.drawMeshSnapshot(water_,mat4{},look_.waterColor,kDrawNoCastShadow,0.9f);
     // AIVERSE_TERRAIN_STATS=1: chunks / triangles / frame time every 60 frames (stderr; perf checks on big maps)
     static const bool printStats = std::getenv("AIVERSE_TERRAIN_STATS") != nullptr;

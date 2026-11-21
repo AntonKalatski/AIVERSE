@@ -50,6 +50,13 @@ Json reply(const Json& id, Json result) {
     r.set("result", std::move(result));
     return r;
 }
+float cameraNumber(const Json& args,const char* key,float fallback) {
+    if(!args.has(key))return fallback;
+    const double value=args[key].toDouble();
+    if(!args[key].isNumber()||!std::isfinite(value)||std::abs(value)>1000000.0)
+        throw std::runtime_error(std::string("camera ")+key+" must be a finite number within +/-1000000");
+    return float(value);
+}
 } // namespace
 
 void Editor::pollAgentLink() {
@@ -62,16 +69,53 @@ void Editor::pollAgentLink() {
         const std::string name = msg["params"].getStr("name");
         const Json& args = msg["params"]["arguments"];
         if (name == "view_screenshot") {
-            if (args.has("device")) gameDevice = args.getStr("device");
-            if (args.has("x") && args.has("z")) { // jump (not fly): the picture is taken this frame
-                sceneCam.target = {float(args["x"].toDouble()), 0, float(args["z"].toDouble())};
-                if (args.has("distance")) sceneCam.distance = std::clamp(float(args["distance"].toDouble()), sceneCam.minDistance, sceneCam.maxDistance);
-                sceneFlying_ = false;
+            if(!shots_.empty() || captureArmed_) {
+                server_.send(m.client,reply(id,Json::parse(R"({"error":"another screenshot is pending; retry after its reply"})")).dump(-1));continue;
             }
-            if (args.has("pitch")) sceneCam.pitch = std::clamp(float(args["pitch"].toDouble()), 10.0f, 89.0f) * 0.0174533f;   // degrees over the horizon
-            if (args.has("yaw")) sceneCam.yaw = float(args["yaw"].toDouble()) * 0.0174533f;
-            shots_.push_back({m.client, id.integer(), args.getStr("window", args.has("device") ? "game" : "all"), Json::object()});
-            ws_.log("agent", "Скриншот редактора");
+            auto camera=sceneCam;
+            const auto window=args.getStr("window",args.has("device")?"game":"all");
+            const bool clean=args.getBool("clean",window=="scene");
+            int requestedWidth=0,requestedHeight=0;
+            bool positioned=false;
+            try {
+                if((args.has("window")&&!args["window"].isString()) ||
+                   (window!="all" && window!="scene" && window!="game"))throw std::runtime_error("window must be all|scene|game");
+                if(args.has("clean") && args["clean"].type()!=Json::Type::Bool)throw std::runtime_error("clean must be boolean");
+                if(clean && window!="scene")throw std::runtime_error("clean capture requires window scene");
+                if(args.has("width")!=args.has("height"))throw std::runtime_error("capture width and height must be supplied together");
+                if(args.has("width")) {
+                    if(!clean)throw std::runtime_error("capture dimensions require a clean scene capture");
+                    if(!args["width"].isNumber() || !args["height"].isNumber())throw std::runtime_error("capture dimensions must be numbers");
+                    const auto width=args["width"].toDouble(),height=args["height"].toDouble();
+                    if(!std::isfinite(width) || !std::isfinite(height) || width<256 || height<256 || width>4096 || height>4096 ||
+                        width!=std::floor(width) || height!=std::floor(height) || double(width)*height>8388608)
+                        throw std::runtime_error("capture dimensions must be integer256..4096 and at most8 megapixels");
+                    requestedWidth=int(width);requestedHeight=int(height);
+                }
+                if(args.has("x")!=args.has("z"))throw std::runtime_error("camera x and z must be supplied together");
+                if(args.has("x")) {
+                    camera.target={cameraNumber(args,"x",0),cameraNumber(args,"y",0),cameraNumber(args,"z",0)};
+                    positioned=true;
+                } else if(args.has("y")) {
+                    camera.target.y=cameraNumber(args,"y",camera.target.y);positioned=true;
+                }
+                if(args.has("distance"))camera.distance=std::clamp(cameraNumber(args,"distance",camera.distance),camera.minDistance,camera.maxDistance);
+                if(args.has("pitch"))camera.pitch=std::clamp(cameraNumber(args,"pitch",0),-89.0f,89.0f)*0.0174533f;
+                if(args.has("yaw"))camera.yaw=cameraNumber(args,"yaw",0)*0.0174533f;
+            } catch(const std::exception& error) {
+                Json result=Json::object();result.set("error",Json::string(error.what()));
+                server_.send(m.client,reply(id,std::move(result)).dump(-1));continue;
+            }
+            // Apply only after the entire request validates. Camera inspection
+            // never edits entity transforms or marks the document dirty.
+            sceneCam=camera;
+            if(positioned)sceneFlying_=false;
+            if (args.has("device")) gameDevice = args.getStr("device");
+            Json metadata=Json::object();
+            if(clean){metadata.set("clean",Json::fromBool(true));metadata.set("requested_width",Json::number(int64_t(requestedWidth)));metadata.set("requested_height",Json::number(int64_t(requestedHeight)));}
+            shots_.push_back({m.client,id.integer(),window,std::move(metadata)});
+            // Do not put a notification over the requested scene/game image.
+            if(args.getStr("window","all")=="all")ws_.log("agent", "Скриншот редактора");
             continue;
         }
         if ((name == "modeling_preview" || name == "animation_preview") && (!shots_.empty() || captureArmed_)) {
@@ -87,11 +131,51 @@ void Editor::pollAgentLink() {
     }
 }
 
+bool Editor::cleanSceneCaptureRequested() const {
+    return std::any_of(shots_.begin(),shots_.end(),[](const auto& shot){return shot.device=="scene" && shot.metadata.getBool("clean");});
+}
+std::pair<int,int> Editor::sceneCaptureSize(int width,int height) const {
+    for(const auto& shot:shots_)if(shot.device=="scene" && shot.metadata.getBool("clean")) {
+        const int requested=int(shot.metadata.getInt("requested_width"));
+        if(requested>0)return {requested,int(shot.metadata.getInt("requested_height"))};
+        // Default: current viewport resolution, bounded for readback payloads.
+        const double scale=std::min({1.0,4096.0/std::max(1,std::max(width,height)),
+            std::sqrt(8388608.0/std::max(1.0,double(width)*height))});
+        return {std::max(1,int(width*scale)),std::max(1,int(height*scale))};
+    }
+    return {width,height};
+}
+
 void Editor::deliverShots(gfx::Device& dev) {
     if (shots_.empty() || captureArmed_) return;
     captureArmed_ = true;
     auto pending = shots_;
     shots_.clear();
+    if(pending.size()==1 && pending[0].device=="scene" && pending[0].metadata.getBool("clean")) {
+        const auto request=pending[0];auto lifetime=captureLifetime_;
+        const auto fail=[&](const char* message){captureArmed_=false;Json result=Json::object();result.set("error",Json::string(message));server_.send(request.client,reply(Json::number(request.id),result).dump(-1));};
+        if(!sceneViewport || sceneViewport->drawnFrame!=ImGui::GetFrameCount() || !sceneViewport->color.valid()) {
+            fail("Requested Scene viewport is unavailable; editor-frame fallback refused");return;
+        }
+        const bool accepted=dev.captureTexture(sceneViewport->color,
+            [this,lifetime,request](int width,int height,std::vector<uint8_t> pixels){
+                if(!lifetime->load(std::memory_order_acquire))return;
+                captureArmed_=false;Json result=request.metadata;
+                if(width<=0 || height<=0 || uint64_t(width)*height>8388608 || pixels.size()<size_t(width)*height*4) {
+                    result.set("error",Json::string("Scene texture readback failed"));
+                } else {
+                    std::vector<uint8_t> rgb(size_t(width)*height*3),png;
+                    for(size_t p=0;p<size_t(width)*height;++p)for(size_t c=0;c<3;++c)rgb[p*3+c]=pixels[p*4+c];
+                    stbi_write_png_to_func(pngWrite,&png,width,height,3,rgb.data(),width*3);
+                    result.set("png_base64",Json::string(base64(png)));
+                    result.set("width",Json::number(int64_t(width)));result.set("height",Json::number(int64_t(height)));
+                    result.set("summary",Json::string("Clean Scene render, without editor overlays"));
+                }
+                server_.send(request.client,reply(Json::number(request.id),result).dump(-1));
+            });
+        if(!accepted)fail("Clean Scene texture capture is unsupported by this backend; editor-frame fallback refused");
+        return;
+    }
     const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
     // crop rectangles in pixels, computed now (the windows were laid out this frame)
     struct Crop { int x, y, w, h; };
@@ -111,6 +195,8 @@ void Editor::deliverShots(gfx::Device& dev) {
             Json r = pending[k].metadata.isObject() ? pending[k].metadata : Json::object();
             if (w <= 0 || px.empty()) {
                 r.set("error", Json::string("screenshots are not supported by this graphics backend"));
+            } else if((pending[k].device=="scene"||pending[k].device=="game") && (crops[k].w<=0||crops[k].h<=0)) {
+                r.set("error",Json::string("Requested viewport is unavailable; full editor capture refused"));
             } else {
                 Crop c = crops[k];
                 if (c.w <= 0 || c.h <= 0) c = {0, 0, w, h};
@@ -161,21 +247,58 @@ void Editor::registerGuiOps() {
         ws_.registerOp({name, desc, Json::parse(schema), std::move(fn), true});
     };
     auto okSummary = [](const std::string& s) { Json r = Json::object(); r.set("ok", Json::fromBool(true)); r.set("summary", Json::string(s)); return r; };
-    add("geometry_stats", "Counters for the last rendered editor view, reset each frame. Compare policy on/off at the same camera; counters are not GPU timing.", "{}", [this](const Json&) {
+    add("geometry_stats", "Geometry counters for the last rendered editor view, reset each frame. Optional completedGpuFrameMs and viewportGpuTimings are separate asynchronous completed GPU-query intervals, not derived from counters.", "{}", [this](const Json&) {
         const auto& s = r3d_.geometryStats(); Json r=Json::object();
         r.set("clustersTested",Json::number(int64_t(s.clustersTested)));
         r.set("clustersCulled",Json::number(int64_t(s.clustersCulled)));
         r.set("coarseClusters",Json::number(int64_t(s.coarseClusters)));
         r.set("occluded",Json::number(int64_t(s.occluded)));
         r.set("occluderTriangles",Json::number(int64_t(s.occluderTriangles)));
-        r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls()))); return r;
+        r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls())));
+        r.set("cameraModelTriangles",Json::number(int64_t(r3d_.profile().cameraModelTriangles)));
+        r.set("cameraMeshTriangles",Json::number(int64_t(r3d_.profile().cameraMeshTriangles)));
+        r.set("opaqueSceneCapture",Json::fromBool(r3d_.ssrActive()));
+        r.set("ssrRaymarch",Json::fromBool(r3d_.ssrActive() && r3d_.traceActive()));
+        r.set("nereidConfiguredSurfaces",Json::number(int64_t(nereidPreview_.configuredSurfaces())));
+        r.set("sunShadowModelTriangles",Json::number(int64_t(r3d_.profile().triangles[0])));
+        // Reuse completed host-owned queries only; do not poll, wait or add
+        // GPU timestamps from the agent callback. Keep viewport and whole
+        // frame scopes separate and omit unsupported/absent samples.
+        const double frameGpu=dev_?dev_->gpuFrameMs():0;
+        if(std::isfinite(frameGpu)&&frameGpu>0)
+            r.set("completedGpuFrameMs",Json::number(frameGpu,6));
+        auto viewportGpu=Json::array();
+        for(const auto& timing:prisma_.viewGpuTimings()) {
+            auto sample=Json::object();
+            sample.set("viewId",Json::number(int64_t(timing.viewId)));
+            sample.set("milliseconds",Json::number(timing.lastGpuMs,6));
+            sample.set("sampleSequence",Json::number(int64_t(timing.sampleSequence)));
+            viewportGpu.push(sample);
+        }
+        r.set("viewportGpuTimings",viewportGpu);
+        const auto& model=r3d_.modelStats();auto levels=Json::array();for(auto count:model.cameraLodNodes)levels.push(Json::number(int64_t(count)));r.set("cameraLodNodes",levels);r.set("lodChains",Json::number(int64_t(model.cameraLodChains)));r.set("lodBlocked",Json::number(int64_t(model.cameraLodBlocked)));r.set("shadowLimitedLod",Json::number(int64_t(model.cameraShadowLimitedLod)));return r;
     });
-    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); with 'device' the Game window shows that device first; x, z, distance, pitch, yaw (degrees) place the Scene camera. Returns a PNG image.",
-        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}})",
+    add("view_pick","Read-only visual mesh hit at normalized Scene coordinates u,v; uses the same picking path as mouse selection.",
+        R"({"properties":{"u":{"type":"number"},"v":{"type":"number"}},"required":["u","v"]})",[this](const Json& p){
+            if(!sceneViewport||!sceneViewport->color.valid())throw std::runtime_error("Scene viewport unavailable");
+            if(!p["u"].isNumber()||!p["v"].isNumber())throw std::runtime_error("u,v required");
+            const double u=p["u"].toDouble(),v=p["v"].toDouble();
+            if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)throw std::runtime_error("u,v outside0..1");
+            const auto& viewport=*sceneViewport;
+            const auto selection=pickObject(viewport,sceneCam,viewport.originX+float(u)*viewport.pointsW,viewport.originY+float(v)*viewport.pointsH);
+            const int index=selection.kind==Selection::Entity?selection.index:-1;
+            Json result=Json::object();result.set("hit",Json::fromBool(index>=0));result.set("index",Json::number(int64_t(index)));
+            if(index>=0&&size_t(index)<doc().data.entities.size())result.set("entityId",Json::string(doc().data.entities[size_t(index)].id));
+            return result;
+        });
+    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); x,y,z set the Scene target (y defaults to zero with x,z), distance/pitch(-89..89)/yaw set its orbit. Scene defaults to clean texture capture; clean:false keeps viewport UI. Optional width/height render up to8MP without changing the map.",
+        R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "clean":{"type":"boolean"}, "width":{"type":"integer"}, "height":{"type":"integer"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}, "pitch": {"type": "number"}, "yaw": {"type": "number"}}})",
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });
-    add("view_focus", "Move the Scene camera to look at x,z (optional distance).",
-        R"({"properties": {"x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})", [this, okSummary](const Json& p) {
-            focusScene(float(p["x"].toDouble()), float(p["z"].toDouble()), float(p["distance"].toDouble(-1)));
+    add("view_focus", "Move the Scene camera to look at x,y,z (y and distance optional).",
+        R"({"properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})", [this, okSummary](const Json& p) {
+            const float x=cameraNumber(p,"x",0),y=cameraNumber(p,"y",0),z=cameraNumber(p,"z",0),distance=cameraNumber(p,"distance",-1);
+            focusScene(x,z,distance);
+            if(!view_.planetMode())sceneGoal_.y=y;
             return okSummary("Камера: (" + std::to_string(int(p["x"].toDouble())) + ", " + std::to_string(int(p["z"].toDouble())) + ")");
         });
     add("play_start", "Play-test the open map in the Game window: bots on every side, or the user plays slot 'human'. The user watches live. "

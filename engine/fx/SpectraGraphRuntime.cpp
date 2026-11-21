@@ -1,4 +1,6 @@
 #include "SpectraGraphRuntime.h"
+#include "SpectraGpuProgram.h"
+#include "SpectraGpuMaterial.h"
 #include <utility>
 
 namespace aiverse::spectra {
@@ -9,6 +11,12 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.capacity=options.capacity;
     result.gpu.quality=options.quality;
     result.gpu.backend=options.preference;
+    result.gpu.gpuIndirect=options.gpuIndirect;
+    result.gpu.gpuProgram=options.gpuProgram;
+    result.gpu.gpuMaterial=options.gpuMaterial;
+    result.gpu.checkpointEveryFrames=options.checkpointEveryFrames;
+    result.gpu.adaptiveCheckpoint=options.adaptiveCheckpoint;
+    result.gpu.checkpointBudget=options.checkpointBudget;
 
     const auto reject=[&](const char* why) {
         result.reason=why;
@@ -20,6 +28,29 @@ GraphGpuEligibility inspectGraphGpuEligibility(
         return reject("GPU v1 has no effect force fields");
 
     const fx::EmitterDef& e=effect.emitters[0];
+    const bool hasMaterial=!e.shaderGraph.isNull()||!e.graphInputs.isNull();
+    if(hasMaterial) {
+        if(!options.gpuMaterial || e.shaderGraph.isNull())
+            return reject("shaderGraph requires opt-in gpuMaterial and a complete particle material");
+        gpu_material::Material compiled;
+        std::string why;
+        if(!gpu_material::compile(e.shaderGraph,e.graphInputs,compiled,why)) {
+            result.reason=why.empty()?"GPU shaderGraph unsupported":why;
+            return result;
+        }
+    }
+    // VM capability is opt-in and must cover the entire program. A prepared
+    // payload alone never implies a passing real Metal GPU shader test.
+    if(!e.particleProgram.isNull()) {
+        if(!options.gpuProgram)
+            return reject("particle VM needs explicit GPU program opt-in; CPU fallback");
+        gpu_program::Payload payload;
+        std::string why;
+        if(!gpu_program::prepareForMetal(e.particleProgram,payload,why)) {
+            result.reason=why.empty()?"GPU VM cannot execute this program":why;
+            return result;
+        }
+    }
     // Nothing is inferred from a node's name or visual layout. We require a
     // materially identical EffectDef, not just a compatible-looking output.
     if(e.burst<=0||e.burst>64)
@@ -29,7 +60,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     if(e.texture!="builtin:soft"||e.blend!=fx::FxBlend::Additive||
        e.align!=fx::FxAlign::Camera||e.shape!=fx::FxShape::Point)
         return reject("GPU v1 supports only additive soft camera-facing point sprites");
-    if(!e.shaderGraph.isNull() || e.hidden || e.noise.enabled() ||
+    if(e.hidden || e.noise.enabled() ||
        e.collision.enabled || e.trail.enabled || e.light.enabled ||
        e.trigger.enabled || !e.subEmitters.empty() || e.force.enabled ||
        e.velocityOverLife.enabled || e.inheritVelocity.enabled ||
@@ -70,6 +101,14 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     supported.spread=0;
     supported.gravity=e.gravity;
     supported.drag=e.drag;
+    // A full-program eligibility check above has already validated every
+    // operation/stage. Keep it in the normalized effect comparison so other
+    // authored emitter fields cannot disappear.
+    supported.particleProgram=e.particleProgram;
+    if(hasMaterial) {
+        supported.shaderGraph=e.shaderGraph;
+        supported.graphInputs=e.graphInputs;
+    }
     fx::EffectDef limited;
     limited.emitters.push_back(std::move(supported));
     if(!(fx::effectToJson(effect)==fx::effectToJson(limited)))
@@ -81,6 +120,11 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.size=e.size.min;
     result.gpu.gravityY=e.gravity.y;
     result.gpu.drag=e.drag.min;
+    result.gpu.particleProgram=e.particleProgram;
+    if(hasMaterial) {
+        result.gpu.shaderGraph=e.shaderGraph;
+        result.gpu.graphInputs=e.graphInputs;
+    }
     std::string why;
     if(!validComputeEmitter(result.gpu,&why)) {
         result.reason="GPU v1 configuration: "+why;
@@ -93,12 +137,83 @@ GraphGpuEligibility inspectGraphGpuEligibility(
 bool GraphRuntime::initGraph(gfx::Device* dev,const Json& graph,
                              const Json& overrides,const GraphRuntimeOptions& options) {
     shutdown();
+    InstanceParameterTable schema;
+    if(graph.getInt("version")==2 &&
+       !loadInstanceParameterTable(graph["instanceParameters"],schema,errors_)) {
+        reason_=errors_.empty()?"invalid instance parameters":errors_.front();
+        return false;
+    }
     fx::EffectDef compiled;
     if(!fx::compileSpectraGraph(graph,overrides,compiled,errors_)) {
         reason_="SpectraFX graph compilation failed";
         return false;
     }
-    return initEffect(dev,compiled,options);
+    const bool canServeNamedOnGpu=compiled.emitters.size()==1 &&
+        ((options.gpuProgram && !compiled.emitters[0].particleProgram.isNull()) ||
+         (options.gpuMaterial && !compiled.emitters[0].shaderGraph.isNull()));
+    if(!schema.empty() && !canServeNamedOnGpu &&
+       options.preference==ComputePreference::RequireGpu) {
+        reason_="runtime instance parameters need an enabled GPU VM program; RequireGpu rejected";
+        return false;
+    }
+    GraphRuntimeOptions actual=options;
+    if(!schema.empty() && !canServeNamedOnGpu)
+        actual.preference=ComputePreference::CpuOnly;
+    if(!initEffect(dev,compiled,actual))return false;
+    namedParams_=std::move(schema);
+    for(const auto& [name,definition]:namedParams_) {
+        (void)name;
+        if(!setProgramParameter(definition.slot,definition.initial,false))return false;
+    }
+    return true;
+}
+
+bool GraphRuntime::initGraph(BatchWorld& shared, const Json& graph,
+                            const Json& overrides,
+                            const GraphRuntimeOptions& options) {
+    shutdown();
+    InstanceParameterTable schema;
+    if(graph.getInt("version")==2 &&
+       !loadInstanceParameterTable(graph["instanceParameters"],schema,errors_)) {
+        reason_=errors_.empty()?"invalid instance parameters":errors_.front();
+        return false;
+    }
+    fx::EffectDef compiled;
+    if (!fx::compileSpectraGraph(graph, overrides, compiled, errors_)) {
+        reason_ = errors_.empty() ? "SpectraFX graph compile failed" : errors_.front();
+        return false;
+    }
+    if(!initEffect(shared,compiled,options))return false;
+    namedParams_=std::move(schema);
+    for(const auto& [name,definition]:namedParams_) {
+        (void)name;
+        if(!setProgramParameter(definition.slot,definition.initial,false))return false;
+    }
+    return true;
+}
+
+bool GraphRuntime::initEffect(BatchWorld& shared, const fx::EffectDef& effect,
+                             const GraphRuntimeOptions& options) {
+    shutdown();
+    if (options.preference == ComputePreference::RequireGpu) {
+        reason_ = "shared cross-instance batching currently uses the CPU ParticleSystem; "
+                  "RequireGpu cannot silently fall back";
+        return false;
+    }
+    if (!shared.ready()) {
+        reason_ = "SpectraFX shared BatchWorld is not initialized";
+        return false;
+    }
+    const int id = shared.defineEffect(effect);
+    if (id < 0) {
+        reason_ = shared.error();
+        return false;
+    }
+    sharedWorld_ = &shared;
+    cpuEffect_ = id;
+    backend_ = ComputeBackend::Cpu;
+    initialized_ = true;
+    return true;
 }
 
 bool GraphRuntime::initEffect(gfx::Device* dev,const fx::EffectDef& effect,
@@ -156,6 +271,15 @@ bool GraphRuntime::initCpu(gfx::Device* device,const fx::EffectDef& effect,
 }
 
 void GraphRuntime::shutdown() {
+    if (sharedWorld_) {
+        for (const auto h : sharedHandles_) sharedWorld_->kill(h);
+    }
+    sharedHandles_.clear();
+    cpuHandles_.clear();
+    paramValues_={};
+    paramSet_={};
+    namedParams_.clear();
+    sharedWorld_ = nullptr;
     gpu_.shutdown();
     cpu_.shutdown();
     cpuEffect_=-1;
@@ -165,35 +289,107 @@ void GraphRuntime::shutdown() {
     reason_.clear();
     errors_.clear();
 }
+bool GraphRuntime::setProgramParameter(uint32_t slot,float value,
+                                       bool affectExisting) {
+    if(!initialized_ || slot>=8 || !spectra::program::number(value)) {
+        reason_="SpectraFX per-source VM parameters need an initialized runtime and finite scalar";
+        return false;
+    }
+    if(useComputeWrapper_) {
+        const bool ok=gpu_.setProgramParameter(slot,value,affectExisting);
+        if(!ok)reason_="Metal VM parameter not supported by this GPU effect";
+        else reason_.clear();
+        return ok;
+    }
+    paramValues_[slot]=value;
+    paramSet_[slot]=true;
+    if(affectExisting) {
+        if(sharedWorld_) {
+            for(const auto h:sharedHandles_)
+                (void)sharedWorld_->setProgramParameter(h,slot,value,true);
+        } else {
+            for(const auto h:cpuHandles_)
+                (void)cpu_.setProgramParameter(h,slot,value,true);
+        }
+    }
+    reason_.clear();
+    return true;
+}
+bool GraphRuntime::setNamedProgramParameter(const std::string& name,float value,
+                                            bool affectExisting) {
+    const auto it=namedParams_.find(name);
+    if(it==namedParams_.end()) {
+        reason_="unknown SpectraFX instance parameter '"+name+"'";
+        return false;
+    }
+    if(!checkInstanceParameterValue(it->second,value)) {
+        reason_="out-of-range SpectraFX instance parameter '"+name+"'";
+        return false;
+    }
+    return setProgramParameter(it->second.slot,value,affectExisting);
+}
 bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
     if(!initialized_)return false;
+    if(sharedWorld_) {
+        const fx::FxHandle handle=sharedWorld_->playWithProgramParameters(
+            cpuEffect_,position,dir,1.f,tint,paramValues_);
+        if(!handle.valid())return false;
+        // Bound bookkeeping even for very high event rates; prevent old
+        // continuous emitters from escaping this source's reset ownership.
+        if(sharedHandles_.size()>=65536) {
+            sharedWorld_->kill(sharedHandles_.front());
+            sharedHandles_.pop_front();
+        }
+        sharedHandles_.push_back(handle);
+        return true;
+    }
     if(useComputeWrapper_)return gpu_.burstAt(position,dir,tint);
-    return cpu_.play(cpuEffect_,position,dir,1.f,tint).valid();
+    const fx::FxHandle handle=cpu_.playWithProgramParameters(
+        cpuEffect_,position,dir,1.f,tint,paramValues_);
+    if(!handle.valid())return false;
+    if(cpuHandles_.size()>=65536) {
+        cpu_.kill(cpuHandles_.front());
+        cpuHandles_.pop_front();
+    }
+    cpuHandles_.push_back(handle);
+    return true;
 }
-void GraphRuntime::setView(const render::RTSCamera& camera,const render::mat4& viewProj,
-                            int width,int height) {
-    if(!initialized_)return;
-    if(useComputeWrapper_)gpu_.setView(camera,viewProj,width,height);
-    else cpu_.setView(camera,viewProj,width,height);
+void GraphRuntime::setView(const fx::SpectraFxView& view) {
+    if(!initialized_||sharedWorld_)return; // host sets view ONCE on BatchWorld
+    if(useComputeWrapper_)gpu_.setView(view);
+    else cpu_.setView(view);
 }
 bool GraphRuntime::step(float dt) {
     if(!initialized_)return false;
+    if(sharedWorld_)return true; // host calls sharedWorld_->update(dt) exactly once
     if(!useComputeWrapper_) {cpu_.update(dt);return true;}
     const bool success=gpu_.step(dt);
-    // The internal simple-emitter wrapper may itself fall back to CPU after
-    // a GPU health error. Retain its ownership and report its actual backend.
+    // This wrapper owns any subsequent CPU fallback. Report the real state,
+    // including RequireGpu failure and a lost-device transition.
     backend_=gpu_.backend();
+    initialized_=gpu_.ready();
+    if(!success) reason_=gpu_.reason();
     return success;
 }
 void GraphRuntime::draw(const fx::FxFog& fog) {
-    if(!initialized_)return;
+    if(!initialized_||sharedWorld_)return; // host makes ONE batched draw submission
     if(useComputeWrapper_)gpu_.draw(fog);
     else cpu_.render(fog);
 }
 void GraphRuntime::clear() {
     if(!initialized_)return;
+    if(sharedWorld_) {
+        // Only this graph's instances disappear; all other GraphRuntime
+        // handles and particles in the shared world remain untouched.
+        for(const auto h:sharedHandles_)sharedWorld_->kill(h);
+        sharedHandles_.clear();
+        return;
+    }
     if(useComputeWrapper_)gpu_.clear();
-    else cpu_.clear();
+    else {
+        cpu_.clear();
+        cpuHandles_.clear();
+    }
 }
 
 } // namespace aiverse::spectra

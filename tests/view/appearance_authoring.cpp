@@ -14,7 +14,8 @@ int main() {
     using view::AppearanceAuthoringService;
     const Json library=Json::parse(R"({
         "base":{"color":[0.2,0.3,0.4,1],"metallic":0.4,
-                "roughness":0.9,"shadowDiffusion":0.2,"alpha":"opaque"},
+                "roughness":0.9,"thinTransmission":0.35,"shadowDiffusion":0.125,"sssStrength":0.6,
+                "sssScale":0.4,"sssColor":[1,0.4,0.2],"alpha":"opaque"},
         "paint":{"base":"base","roughness":0.25,"team":"tint"}
     })");
     std::vector<std::string> warnings;
@@ -42,7 +43,10 @@ int main() {
     AIVERSE_TEST_CHECK(material.baseTex==7);
     AIVERSE_TEST_CHECK(textureCalls==1);
     AIVERSE_TEST_CHECK(material.roughness==0.5f);
-    AIVERSE_TEST_CHECK(material.shadowDiffusion==0.2f);
+    AIVERSE_TEST_CHECK(material.shadowDiffusion==0.125f);
+    AIVERSE_TEST_CHECK(material.thinTransmission==0.35f);
+    AIVERSE_TEST_CHECK(material.sssStrength==0.6f && material.sssScale==0.4f);
+    AIVERSE_TEST_CHECK(material.sssColor.y==0.4f);
     AIVERSE_TEST_CHECK(material.team==render::TeamMode::Tint);
     AIVERSE_TEST_CHECK(warnings.empty());
     const auto missing=AppearanceAuthoringService::resolveMaterial(

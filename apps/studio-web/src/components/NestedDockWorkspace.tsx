@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
 import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, activateTab, closeTab, defaultDockTree, dockStacks,
@@ -19,13 +20,16 @@ interface BranchProperties extends Properties {
   dragging: StudioPanel | null;
   setDragging: (panel: StudioPanel | null) => void;
   stacks: DockStack[];
+  actionsPanel: StudioPanel | null;
+  showActions: (panel: StudioPanel) => void;
 }
 const validPanel = (input: string): input is StudioPanel => (STUDIO_PANELS as readonly string[]).includes(input);
 function draggedPanel(event: DragEvent<HTMLElement>, dragging: StudioPanel | null): StudioPanel | null {
   const data = event.dataTransfer.getData(MIME);
   return validPanel(data) ? data : dragging;
 }
-function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging, stacks }: BranchProperties & { node: DockStack }) {
+function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
+                    actionsPanel, showActions }: BranchProperties & { node: DockStack }) {
   const [hover, setHover] = useState<DockEdge | 'center' | null>(null);
   const transfer = (event: DragEvent<HTMLElement>, edge?: DockEdge, before?: StudioPanel) => {
     event.preventDefault();
@@ -51,12 +55,13 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging, sta
           onClick={()=>setTree(t=>activateTab(t,node.id,panel))}>{STUDIO_PANEL_TITLES[panel]}</button>
         <button className="nested-tab-close" title={'Close '+STUDIO_PANEL_TITLES[panel]}
           aria-label={'Close '+STUDIO_PANEL_TITLES[panel]} onClick={()=>setTree(t=>closeTab(t,panel))}>×</button>
+        {node.active===panel && <button type="button"
+          className="nested-panel-actions-button" draggable={false}
+          aria-label={'Panel actions for '+STUDIO_PANEL_TITLES[panel]}
+          aria-expanded={actionsPanel===panel}
+          title="Move, split or close this panel"
+          onClick={()=>showActions(panel)}><MoreHorizontal size={14}/></button>}
       </div>)}
-      {node.active && <select className="nested-move" value={node.id}
-        aria-label={'Move '+STUDIO_PANEL_TITLES[node.active]+' to dock'}
-        onChange={event=>setTree(t=>moveTab(t,node.active!,event.target.value))}>
-        {stacks.map(stack=><option key={stack.id} value={stack.id}>{stack.id.replace('dock-','')}</option>)}
-      </select>}
     </div>
     <div className="nested-stack-body" role="tabpanel" aria-label={node.active ? STUDIO_PANEL_TITLES[node.active] : 'Empty dock'}>
       {node.active ? renderPanel(node.active) : <div className="nested-empty">Drop a panel here</div>}
@@ -72,7 +77,8 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging, sta
     </div>
   </section>;
 }
-function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging, stacks }: BranchProperties & { node: DockSplit }) {
+function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging,
+                         stacks, actionsPanel, showActions }: BranchProperties & { node: DockSplit }) {
   const horizontal=node.axis==='horizontal';
   const adjust=(ratio:number)=>setTree(t=>resizeDockSplit(t,node.id,ratio));
   const resize=(event: ReactPointerEvent<HTMLDivElement>)=>{
@@ -103,7 +109,7 @@ function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging
       event.preventDefault();adjust(event.key==='Home'?.12:.88);
     }
   };
-  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks};
+  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions};
   return <div className={'nested-split '+(horizontal?'nested-horizontal':'nested-vertical')}>
     <div className="nested-child" style={{flex:node.ratio+' 1 0%'}}>
       <DockBranch node={node.first} {...shared}/>
@@ -122,24 +128,61 @@ function DockBranch(props: BranchProperties) {
 }
 export default function NestedDockWorkspace({ tree, setTree, renderPanel }: Properties) {
   const [dragging,setDragging]=useState<StudioPanel|null>(null);
+  const [actionsPanel,setActionsPanel]=useState<StudioPanel|null>(null);
   const stacks=dockStacks(tree);
+  const currentStackId=actionsPanel ? panelStack(tree,actionsPanel) : null;
+  const currentStack=stacks.find(stack=>stack.id===currentStackId);
+  useEffect(()=>{
+    if(!actionsPanel)return;
+    const dismiss=(event:KeyboardEvent)=>{if(event.key==='Escape')setActionsPanel(null);};
+    window.addEventListener('keydown',dismiss);
+    return ()=>window.removeEventListener('keydown',dismiss);
+  },[actionsPanel]);
+  const applyAction=(update:(next:DockTree)=>DockTree)=>{
+    setTree(update);
+    setActionsPanel(null);
+  };
   return <div className="nested-workspace-root">
-    <div className="nested-toolbar">
-      <details className="nested-panels-list">
-        <summary>Panels</summary>
-        <div className="nested-panels-popover">
-          {STUDIO_PANELS.map(panel=><label key={panel}>
-            <input type="checkbox" checked={panelStack(tree,panel)!==null}
-              onChange={event=>setTree(t=>event.target.checked
-                ?reopenTab(t,panel,STUDIO_PANEL_HOME[panel]):closeTab(t,panel))}/>
-            {STUDIO_PANEL_TITLES[panel]}
-          </label>)}
-        </div>
-      </details>
-      <button onClick={()=>setTree(defaultDockTree())}>Reset layout</button>
-      <span>Drag tabs to a dock or drop on its edges to split</span>
+    <div className={"nested-toolbar"+(actionsPanel?" nested-toolbar--actions":"")}>
+      {actionsPanel && currentStackId ? <div className="nested-action-bar" role="toolbar"
+          aria-label={'Panel actions for '+STUDIO_PANEL_TITLES[actionsPanel]}>
+        <strong className="nested-action-title">{STUDIO_PANEL_TITLES[actionsPanel]}</strong>
+        <span className="nested-action-label">Move to</span>
+        {stacks.filter(stack=>stack.id!==currentStackId).map(stack=>{
+          const label=stack.tabs[0] ? STUDIO_PANEL_TITLES[stack.tabs[0]] : 'Empty area';
+          return <button key={stack.id} type="button" title={'Move to '+label}
+            onClick={()=>applyAction(t=>moveTab(t,actionsPanel,stack.id))}>{label}</button>;
+        })}
+        <span className="nested-action-label">Split</span>
+        {(['left','right','top','bottom'] as DockEdge[]).map(edge=>
+          <button key={edge} type="button"
+            disabled={!currentStack || currentStack.tabs.length<=1}
+            onClick={()=>applyAction(t=>splitDockStack(t,actionsPanel,currentStackId,edge))}>
+            {edge}
+          </button>)}
+        <button type="button" className="nested-action-danger"
+          onClick={()=>applyAction(t=>closeTab(t,actionsPanel))}>Close panel</button>
+        <button type="button" className="nested-action-done"
+          onClick={()=>setActionsPanel(null)}>Done</button>
+      </div> : <>
+        <details className="nested-panels-list">
+          <summary>Panels</summary>
+          <div className="nested-panels-popover">
+            {STUDIO_PANELS.map(panel=><label key={panel}>
+              <input type="checkbox" checked={panelStack(tree,panel)!==null}
+                onChange={event=>setTree(t=>event.target.checked
+                  ?reopenTab(t,panel,STUDIO_PANEL_HOME[panel]):closeTab(t,panel))}/>
+              {STUDIO_PANEL_TITLES[panel]}
+            </label>)}
+          </div>
+        </details>
+        <button onClick={()=>setTree(defaultDockTree())}>Reset layout</button>
+        <span>Drag tabs to rearrange, or use … for panel actions</span>
+      </>}
     </div>
     <DockBranch node={tree.root} tree={tree} setTree={setTree} renderPanel={renderPanel}
-      dragging={dragging} setDragging={setDragging} stacks={stacks}/>
+      dragging={dragging} setDragging={setDragging} stacks={stacks}
+      actionsPanel={actionsPanel} showActions={panel=>setActionsPanel(current=>
+        current===panel?null:panel)}/>
   </div>;
 }

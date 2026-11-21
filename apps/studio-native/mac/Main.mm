@@ -7,25 +7,42 @@
 #include "apps/studio-native/StudioSession.h"
 #include "apps/studio-native/StudioViewportLayout.h"
 #include "apps/studio-native/mac/StudioMetalScene.h"
+#include "apps/studio-native/mac/StudioGameSurface.h"
+#include "apps/studio-native/StudioGameInput.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <exception>
 #include <memory>
 #include <string>
+#include <vector>
+#include <filesystem>
 
 #ifndef AIVERSE_STUDIO_SOURCE_DIR
 #define AIVERSE_STUDIO_SOURCE_DIR "."
 #endif
 
-// Transparent WKWebView is opt-in: the normal Metal-over-WebView host stays as fallback.
-@interface StudioTransparentWebView : WKWebView
+@interface StudioWindowChrome : NSView
+@end
+@implementation StudioWindowChrome
+- (BOOL)acceptsFirstMouse:(NSEvent*)event { (void)event; return YES; }
+- (void)mouseDown:(NSEvent*)event {
+    if(event.clickCount==2)[self.window performZoom:nil];
+    else [self.window performWindowDragWithEvent:event];
+}
+@end
+@class StudioHost;
+// A native drop receiver is required because Finder drags local file URLs,
+// not JavaScript-provided paths. These are trusted only after NSDraggingDestination
+// resolves them and the drop falls inside the HTML5 Assets panel.
+@interface StudioFileDropWebView : WKWebView <NSDraggingDestination>
+@property(nonatomic, assign) StudioHost* studioHost;
+@end
+@interface StudioTransparentWebView : StudioFileDropWebView
 @end
 @implementation StudioTransparentWebView
 - (BOOL)isOpaque { return NO; }
 @end
-
-@class StudioHost;
 @interface StudioMetalView : NSView {
     NSPoint press_;
     BOOL dragged_;
@@ -33,10 +50,17 @@
 @property(nonatomic, assign) StudioHost* host;
 @end
 
-@interface StudioHost : NSObject <NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
+@interface StudioGameView : StudioMetalView { NSTrackingArea* tracking_; }
+@end
+
+@interface StudioHost : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
     NSWindow* window_;
     WKWebView* web_;
     StudioMetalView* viewport_;
+    StudioGameView* gameViewport_;
+    std::unique_ptr<aiverse::studio::StudioGameSurface> game_;
+    aiverse::studio::NativeViewportPlacement gamePlacement_;
+    double gameFrameTime_;
     NSTimer* timer_;
     NSString* dist_;
     NSURL* devURL_;
@@ -47,16 +71,57 @@
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
     unsigned lightingStatusTicks_;
+    BOOL closeApproved_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
+- (void)panX:(CGFloat)dx y:(CGFloat)dy;
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy;
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward;
+- (void)focusSceneSelection;
+- (void)resetSceneView;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point;
 - (void)sendStudioReply:(const aiverse::Json&)reply;
 - (void)openProjectSheetForRequestId:(int64_t)requestId;
 - (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
 - (void)sendProjectCancelledReply:(int64_t)requestId;
+- (BOOL)confirmDiscardChanges;
+- (void)gameEvent:(const aiverse::platform::Event&)event;
+- (void)tickGame;
+- (aiverse::Json)gameState;
+- (void)saveMapSheetForRequestId:(int64_t)requestId;
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
+@end
+
+@implementation StudioFileDropWebView
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingEntered:sender];
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingUpdated:sender];
+}
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSArray<NSURL*>* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost){
+        [self.studioHost importDroppedFileURLs:urls atWindowPoint:sender.draggingLocation];
+        return YES; // native plan + explicit UI confirmation, NEVER direct file copy
+    }
+    return [super performDragOperation:sender];
+}
 @end
 
 @implementation StudioMetalView
@@ -85,10 +150,110 @@
     if (!dragged_ && std::hypot(double(point.x-press_.x), double(point.y-press_.y)) < 5.0)
         [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
-- (void)rightMouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
+- (void)rightMouseDragged:(NSEvent*)event { [self.host lookX:event.deltaX y:event.deltaY]; }
+- (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
+- (void)keyDown:(NSEvent*)event {
+    NSString* keys=event.charactersIgnoringModifiers.lowercaseString;
+    if (!keys.length) { [super keyDown:event]; return; }
+    const unichar key=[keys characterAtIndex:0];
+    const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    switch(key) {
+        case 'w': [self.host moveRight:0 up:0 forward:scale]; break;
+        case 's': [self.host moveRight:0 up:0 forward:-scale]; break;
+        case 'a': [self.host moveRight:-scale up:0 forward:0]; break;
+        case 'd': [self.host moveRight:scale up:0 forward:0]; break;
+        case 'q': [self.host moveRight:0 up:-scale forward:0]; break;
+        case 'e': [self.host moveRight:0 up:scale forward:0]; break;
+        case 'f': [self.host focusSceneSelection]; break;
+        case NSHomeFunctionKey: [self.host resetSceneView]; break;
+        default: [super keyDown:event]; break;
+    }
+}
+
 - (void)scrollWheel:(NSEvent*)event {
     const CGFloat wheel = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.12 : 1.0);
     [self.host zoom:wheel];
+}
+@end
+
+@implementation StudioGameView
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if(tracking_)[self removeTrackingArea:tracking_];
+    tracking_=[[NSTrackingArea alloc] initWithRect:NSZeroRect options:
+        NSTrackingMouseMoved|NSTrackingActiveInKeyWindow|NSTrackingInVisibleRect
+        owner:self userInfo:nil];
+    [self addTrackingArea:tracking_];
+}
+- (void)sendMouse:(NSEvent*)event type:(aiverse::platform::EventType)type {
+    if(type==aiverse::platform::EventType::MouseDown)[self.window makeFirstResponder:self];
+    const auto p=[self convertPoint:event.locationInWindow fromView:nil];
+    aiverse::platform::Event e;e.type=type;e.x=p.x;e.y=p.y;e.button=int(event.buttonNumber);
+    e.deltaX=event.deltaX;e.deltaY=event.deltaY;
+    // Cocoa's scrolling accessors are only valid for scroll-wheel events.
+    if(type==aiverse::platform::EventType::MouseWheel) {
+        e.wheelX=event.scrollingDeltaX;e.wheelY=event.scrollingDeltaY;
+    }
+    e.mods=((event.modifierFlags & NSEventModifierFlagShift)?aiverse::platform::kModShift:0)|
+        ((event.modifierFlags & NSEventModifierFlagControl)?aiverse::platform::kModCtrl:0)|
+        ((event.modifierFlags & NSEventModifierFlagOption)?aiverse::platform::kModAlt:0)|
+        ((event.modifierFlags & NSEventModifierFlagCommand)?aiverse::platform::kModSuper:0);
+    [self.host gameEvent:e];
+}
+- (void)mouseDown:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseDown]; }
+- (void)rightMouseDown:(NSEvent*)e { [self mouseDown:e]; }
+- (void)otherMouseDown:(NSEvent*)e { [self mouseDown:e]; }
+- (void)mouseUp:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseUp]; }
+- (void)rightMouseUp:(NSEvent*)e { [self mouseUp:e]; }
+- (void)otherMouseUp:(NSEvent*)e { [self mouseUp:e]; }
+- (void)mouseMoved:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseMove]; }
+- (void)mouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)rightMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)otherMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)scrollWheel:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseWheel]; }
+- (void)sendKey:(NSEvent*)event down:(BOOL)down {
+    using namespace aiverse::platform;
+    Event e;e.type=down?EventType::KeyDown:EventType::KeyUp;e.repeat=event.isARepeat;
+    NSString* text=event.charactersIgnoringModifiers;
+    e.key=aiverse::studio::studioGameKey(text.UTF8String?text.UTF8String:"");
+    switch(event.keyCode) {
+        case 53:e.key=Key::Escape;break;case 36:e.key=Key::Enter;break;case 48:e.key=Key::Tab;break;
+        case 51:e.key=Key::Backspace;break;case 117:e.key=Key::Delete;break;
+        case 123:e.key=Key::Left;break;case 124:e.key=Key::Right;break;
+        case 125:e.key=Key::Down;break;case 126:e.key=Key::Up;break;
+        case 115:e.key=Key::Home;break;case 119:e.key=Key::End;break;
+        case 116:e.key=Key::PageUp;break;case 121:e.key=Key::PageDown;break;
+        case 122:e.key=Key::F1;break;case 120:e.key=Key::F2;break;
+        case 99:e.key=Key::F3;break;case 118:e.key=Key::F4;break;
+        case 96:e.key=Key::F5;break;case 97:e.key=Key::F6;break;
+        case 98:e.key=Key::F7;break;case 100:e.key=Key::F8;break;
+        case 101:e.key=Key::F9;break;case 109:e.key=Key::F10;break;
+        case 103:e.key=Key::F11;break;case 111:e.key=Key::F12;break;
+    }
+    e.mods=((event.modifierFlags & NSEventModifierFlagShift)?kModShift:0)|
+        ((event.modifierFlags & NSEventModifierFlagControl)?kModCtrl:0)|
+        ((event.modifierFlags & NSEventModifierFlagOption)?kModAlt:0)|
+        ((event.modifierFlags & NSEventModifierFlagCommand)?kModSuper:0);
+    [self.host gameEvent:e];
+    if(down && !(e.mods&(kModCtrl|kModSuper))) {
+        NSString* chars=event.characters;
+        for(NSUInteger i=0;i<chars.length;++i) {
+            uint32_t c=[chars characterAtIndex:i];
+            if(c>=0xd800 && c<=0xdbff && i+1<chars.length) {
+                uint32_t low=[chars characterAtIndex:i+1];
+                if(low>=0xdc00 && low<=0xdfff){c=0x10000+((c-0xd800)<<10)+(low-0xdc00);++i;}
+            }
+            if(c>=32 && !(c>=0xd800 && c<=0xdfff) && !(c>=0xf700 && c<=0xf8ff)) {
+                Event input;input.type=EventType::Char;input.codepoint=c;[self.host gameEvent:input];
+            }
+        }
+    }
+}
+- (void)keyDown:(NSEvent*)e { [self sendKey:e down:YES]; }
+- (void)keyUp:(NSEvent*)e { [self sendKey:e down:NO]; }
+- (BOOL)resignFirstResponder {
+    aiverse::platform::Event e;e.type=aiverse::platform::EventType::FocusLost;[self.host gameEvent:e];
+    return [super resignFirstResponder];
 }
 @end
 
@@ -118,9 +283,12 @@
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     (void)note;
     window_=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1440,900)
-        styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable)
+        styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable|NSWindowStyleMaskFullSizeContentView)
         backing:NSBackingStoreBuffered defer:NO];
-    window_.title=@"AIVERSE Studio HTML5";
+    window_.title=@"AIVERSE";
+    window_.titleVisibility=NSWindowTitleHidden;
+    window_.titlebarAppearsTransparent=YES;
+    window_.delegate=self;
     [window_ center];
 
     WKWebViewConfiguration* cfg=[[WKWebViewConfiguration alloc] init];
@@ -135,7 +303,9 @@
     if (htmlComposite_) {
         web_=[[StudioTransparentWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
         if (@available(macOS 12.0, *)) web_.underPageBackgroundColor=[NSColor clearColor];
-    } else web_=[[WKWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    } else web_=[[StudioFileDropWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    ((StudioFileDropWebView*)web_).studioHost=self;
+    [web_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
     web_.navigationDelegate=self;
     web_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     [window_.contentView addSubview:web_];
@@ -145,6 +315,25 @@
     viewport_.hidden=YES;
     [window_.contentView addSubview:viewport_
         positioned:(htmlComposite_ ? NSWindowBelow : NSWindowAbove) relativeTo:web_];
+    gameViewport_=[[StudioGameView alloc] initWithFrame:NSZeroRect];
+    gameViewport_.host=self;gameViewport_.hidden=YES;
+    [window_.contentView addSubview:gameViewport_ positioned:NSWindowAbove relativeTo:web_];
+    StudioWindowChrome* chrome=[[StudioWindowChrome alloc]
+        initWithFrame:NSMakeRect(0,window_.contentView.bounds.size.height-44,80,44)];
+    chrome.autoresizingMask=NSViewMinYMargin;
+    NSInteger buttonIndex=0;
+    for(NSNumber* kind in @[@(NSWindowCloseButton),@(NSWindowMiniaturizeButton),@(NSWindowZoomButton)]) {
+        NSWindowButton buttonKind=(NSWindowButton)kind.integerValue;
+        [window_ standardWindowButton:buttonKind].hidden=YES;
+        NSButton* button=[NSWindow standardWindowButton:buttonKind forStyleMask:window_.styleMask];
+        button.target=window_;
+        button.action=buttonKind==NSWindowCloseButton ? @selector(performClose:) :
+            (buttonKind==NSWindowMiniaturizeButton ? @selector(performMiniaturize:) : @selector(performZoom:));
+        button.frame=NSMakeRect(14+20*buttonIndex++,15,14,14);
+        [chrome addSubview:button];
+    }
+    [window_.contentView addSubview:chrome positioned:NSWindowAbove relativeTo:nil];
+    window_.acceptsMouseMovedEvents=YES;
     [window_ makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     if (devURL_) [web_ loadRequest:[NSURLRequest requestWithURL:devURL_]];
@@ -161,7 +350,28 @@
     timer_=[NSTimer timerWithTimeInterval:1.0/60 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer:timer_ forMode:NSRunLoopCommonModes];
 }
+- (aiverse::Json)gameState {
+    if(game_)return game_->state();
+    auto out=aiverse::Json::parse(R"({"paused":false,"canControl":false,"canStep":false,"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
+    out.set("device",aiverse::studio::StudioGameDevice{}.json());return out;
+}
+- (void)gameEvent:(const aiverse::platform::Event&)event {
+    if(game_ && !gameViewport_.hidden)game_->event(event);
+}
+- (void)windowDidResignKey:(NSNotification*)note { (void)note;if(game_)game_->suspend(); }
+- (void)tickGame {
+    const double now=CACurrentMediaTime(),dt=gameFrameTime_>0?now-gameFrameTime_:0;
+    gameFrameTime_=now;
+    if(!game_)return;
+    if(!gamePlacement_.visible || gameViewport_.hidden || window_.isMiniaturized || !window_.visible) {
+        game_->suspend();return;
+    }
+    game_->frame(gamePlacement_.pixelsW,gamePlacement_.pixelsH,
+        float(gamePlacement_.width),float(gamePlacement_.height),dt,
+        window_.isKeyWindow && window_.firstResponder==gameViewport_);
+}
 - (void)tick {
+    [self tickGame];
     // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
@@ -174,7 +384,9 @@
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
                 session_->previewMaterialRevision(),
-                float(session_->workspace().project.rules.levelHeight.toDouble()));
+                float(session_->workspace().project.rules.levelHeight.toDouble()),
+                session_->workspace().project.dir,
+                session_->workspace().project.rulesJson);
             if((lightingStatusTicks_++ % 60)==0)
                 [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             if (!readyEmitted_) {
@@ -198,6 +410,24 @@
 - (void)zoom:(CGFloat)amount {
     if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
 }
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->look(float(dx),float(dy));
+}
+- (void)panX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->pan(float(dx),float(dy));
+}
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward {
+    if (preview_ && std::isfinite(double(right)) && std::isfinite(double(up)) &&
+        std::isfinite(double(forward)))
+        preview_->move(float(right),float(up),float(forward));
+}
+- (void)focusSceneSelection {
+    if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
+        session_->workspace().project.isFps(),session_->selectedObjectId());
+}
+- (void)resetSceneView { if (preview_) preview_->resetView(); }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
@@ -211,6 +441,52 @@
     request.set("params",std::move(params));
     const aiverse::Json outcome=session_->dispatch(request);
     if (!outcome.has("error")) [self sendStudioEvent:"selection.changed" message:""];
+}
+- (BOOL)confirmDiscardChanges {
+    const auto& ws=session_->workspace();
+    if (!ws.map.dirty && !ws.project.rulesDirty && !ws.project.manifestDirty) return YES;
+    if (window_.attachedSheet) return NO;
+    NSAlert* alert=[[NSAlert alloc] init];
+    alert.messageText=@"Discard unsaved changes?";
+    alert.informativeText=@"Save the current document first to keep your changes.";
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert addButtonWithTitle:@"Discard Changes"];
+    return [alert runModal]==NSAlertSecondButtonReturn;
+}
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+    (void)sender;
+    if (window_.attachedSheet || ![self confirmDiscardChanges]) return NO;
+    closeApproved_=YES;
+    return YES;
+}
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
+    (void)sender;
+    if (closeApproved_) return NSTerminateNow;
+    if (window_.attachedSheet) return NSTerminateCancel;
+    return [self confirmDiscardChanges] ? NSTerminateNow : NSTerminateCancel;
+}
+- (void)saveMapSheetForRequestId:(int64_t)requestId {
+    NSSavePanel* panel=[NSSavePanel savePanel];
+    panel.canCreateDirectories=YES;
+    panel.nameFieldStringValue=@"scene.json";
+    const std::string directory=session_->workspace().project.dir+"/maps";
+    panel.directoryURL=[NSURL fileURLWithPath:[NSString stringWithUTF8String:directory.c_str()]];
+    [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse result) {
+        aiverse::Json request=aiverse::Json::object();
+        request.set("id",aiverse::Json::number(requestId));
+        request.set("method",aiverse::Json::string("studio.snapshot"));
+        aiverse::Json reply=session_->dispatch(request);
+        if (result==NSModalResponseOK && panel.URL.path.length) {
+            try {
+                reply.set("result",session_->saveMapAs(panel.URL.path.UTF8String));
+                [self sendStudioEvent:"document.changed" message:""];
+            } catch (const std::exception& error) {
+                reply=aiverse::Json::object();reply.set("id",aiverse::Json::number(requestId));
+                reply.set("error",aiverse::Json::string(error.what()));
+            }
+        }
+        [self sendStudioReply:reply];
+    }];
 }
 - (void)sendStudioReply:(const aiverse::Json&)reply {
     const std::string output=reply.dump(-1);
@@ -257,6 +533,7 @@
         if (result==NSModalResponseOK && panel.URL.path.length) {
             try {
                 payload.set("cancelled",aiverse::Json::fromBool(false));
+                if(game_)game_->stop();
                 payload.set("snapshot",session_->openProject(panel.URL.path.UTF8String));
                 if (preview_) preview_->resetCamera();
                 [self sendStudioEvent:"workspace.changed" message:""];
@@ -271,6 +548,95 @@
         [self sendStudioReply:reply];
     }];
 }
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination {
+    if(session_->workspace().project.dir.empty()){
+        aiverse::Json response=aiverse::Json::object();
+        response.set("id",aiverse::Json::number(requestId));
+        response.set("error",aiverse::Json::string("Open a project before importing assets"));
+        [self sendStudioReply:response];
+        return;
+    }
+    NSOpenPanel* panel=[NSOpenPanel openPanel];
+    panel.canChooseFiles=YES;
+    panel.canChooseDirectories=YES;
+    panel.allowsMultipleSelection=YES;
+    panel.canCreateDirectories=NO;
+    panel.prompt=@"Import into content";
+    panel.message=@"Select files or folders to copy into the project's content directory.";
+    panel.directoryURL=[NSURL fileURLWithPath:
+        [NSString stringWithUTF8String:session_->workspace().project.dir.c_str()] isDirectory:YES];
+    NSString* safeDestination=[destination copy];
+    [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse code) {
+        aiverse::Json reply=aiverse::Json::object();
+        reply.set("id",aiverse::Json::number(requestId));
+        if(code==NSModalResponseOK && panel.URLs.count){
+            try {
+                std::vector<std::filesystem::path> sources;
+                if(panel.URLs.count>64)throw std::runtime_error("Select at most 64 assets");
+                for(NSURL* url in panel.URLs){
+                    if(!url.isFileURL)throw std::runtime_error("Expected a local file");
+                    sources.emplace_back(url.path.UTF8String);
+                }
+                reply.set("result",session_->previewExternalAssets(sources,
+                    safeDestination.UTF8String ?: ""));
+            }catch(const std::exception& error){
+                reply.set("error",aiverse::Json::string(error.what()));
+            }
+        }else{
+            aiverse::Json cancelled=aiverse::Json::object();
+            cancelled.set("cancelled",aiverse::Json::fromBool(true));
+            reply.set("result",std::move(cancelled));
+        }
+        [self sendStudioReply:reply];
+    }];
+}
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point {
+    if(urls.count==0 || urls.count>64 || session_->workspace().project.dir.empty())return;
+    NSPoint local=[web_ convertPoint:point fromView:nil];
+    const double x=double(local.x),y=web_.isFlipped?double(local.y):
+        double(web_.bounds.size.height-local.y);
+    if(!std::isfinite(x)||!std::isfinite(y))return;
+    // The native handler reads a destination from the currently displayed
+    // HTML Assets pane only. No browser-provided source filesystem paths.
+    NSString* js=[NSString stringWithFormat:
+        @"(function(){const el=document.elementFromPoint(%f,%f);"
+        @"const root=el&&el.closest('[data-content-drop-root]');"
+        @"if(!root)return null;"
+        @"const dest=el.closest('[data-content-drop-target]');"
+        @"return dest?dest.getAttribute('data-content-drop-target'):"
+        @"root.getAttribute('data-content-drop-target');})()",
+        x,y];
+    NSArray<NSURL*>* safeURLs=[urls copy];
+    [web_ evaluateJavaScript:js completionHandler:^(id result,NSError* error) {
+        if(error || ![result isKindOfClass:[NSString class]])return;
+        const std::string folder=[(NSString*)result UTF8String];
+        try{
+            std::vector<std::filesystem::path> sources;
+            sources.reserve(safeURLs.count);
+            for(NSURL* url in safeURLs){
+                if(!url.isFileURL)throw std::runtime_error("Only local files can be imported");
+                sources.emplace_back(url.path.UTF8String);
+            }
+            const auto preview=session_->previewExternalAssets(sources,folder);
+            [self sendStudioEventPayload:"assets.importPreview" payload:preview];
+        }catch(const std::exception& ex){
+            aiverse::Json payload=aiverse::Json::object();
+            payload.set("message",aiverse::Json::string(ex.what()));
+            [self sendStudioEventPayload:"assets.importError" payload:payload];
+        }
+    }];
+}
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload {
+    aiverse::Json packet=aiverse::Json::object();
+    packet.set("event",aiverse::Json::string(event));
+    packet.set("payload",payload);
+    const std::string bytes=packet.dump(-1);
+    NSString* text=[[NSString alloc]initWithBytes:bytes.data()
+        length:bytes.size() encoding:NSUTF8StringEncoding];
+    if(text)[web_ evaluateJavaScript:[NSString stringWithFormat:
+        @"window.__aiverseReceive && window.__aiverseReceive(%@);",text]
+        completionHandler:nil];
+}
 - (void)sendStudioEvent:(const char*)event message:(const char*)message {
     aiverse::Json packet=aiverse::Json::object();
     packet.set("event",aiverse::Json::string(event));
@@ -282,6 +648,22 @@
     if (json) [web_ evaluateJavaScript:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json] completionHandler:nil];
 }
 - (void)applyViewport:(const aiverse::Json&)params {
+    if(params.getStr("id")=="game") {
+        aiverse::studio::ViewportRect rect;
+        rect.x=params["x"].toDouble();rect.y=params["y"].toDouble();
+        rect.width=params["width"].toDouble();rect.height=params["height"].toDouble();
+        rect.dpr=params["dpr"].toDouble(1);rect.visible=params.getBool("visible");
+        gamePlacement_=aiverse::studio::viewportPlacement(rect,web_.bounds.size.width,
+            web_.bounds.size.height,window_.backingScaleFactor);
+        gameViewport_.hidden=!gamePlacement_.visible;
+        if(gamePlacement_.visible) {
+            gameViewport_.frame=NSMakeRect(gamePlacement_.x,gamePlacement_.y,gamePlacement_.width,gamePlacement_.height);
+            CAMetalLayer* layer=(CAMetalLayer*)gameViewport_.layer;
+            layer.contentsScale=window_.backingScaleFactor;
+            layer.drawableSize=CGSizeMake(gamePlacement_.pixelsW,gamePlacement_.pixelsH);
+        }else if(game_)game_->suspend();
+        return;
+    }
     aiverse::studio::ViewportRect rect;
     if (params.getStr("id") != "scene") { viewport_.hidden=YES; placement_={}; return; }
     rect.x=params["x"].toDouble(); rect.y=params["y"].toDouble();
@@ -349,6 +731,29 @@
                 if (!std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx)>1000 || std::abs(dy)>1000)
                     reply.set("error",aiverse::Json::string("Invalid orbit delta"));
                 else { [self orbitX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="look" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid look delta"));
+                else { [self lookX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="pan" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid pan delta"));
+                else { [self panX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="move" && input["right"].isNumber() &&
+                       input["up"].isNumber() && input["forward"].isNumber()) {
+                const double right=input["right"].toDouble(),up=input["up"].toDouble(),
+                             forward=input["forward"].toDouble();
+                if (!std::isfinite(right)||!std::isfinite(up)||!std::isfinite(forward)||
+                    std::abs(right)>50||std::abs(up)>50||std::abs(forward)>50)
+                    reply.set("error",aiverse::Json::string("Invalid camera movement"));
+                else { [self moveRight:right up:up forward:forward];
+                       result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="focus") {
+                [self focusSceneSelection]; result.set("ok",aiverse::Json::fromBool(true));
+            } else if (kind=="reset") {
+                [self resetSceneView]; result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="zoom" && input["amount"].isNumber()) {
                 const double wheel=input["amount"].toDouble();
                 if (!std::isfinite(wheel) || std::abs(wheel)>1000)
@@ -367,11 +772,85 @@
             [self sendStudioReply:reply];
             return;
         }
+        const auto gameMethod=req.getStr("method");
+        if((gameMethod=="studio.gameEntities" || gameMethod=="studio.gameInspect") && req["id"].isNumber()) {
+            auto reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try {
+                const auto& args=req["params"];
+                if(gameMethod=="studio.gameEntities") {
+                    if(!args["offset"].isNumber() || !args["limit"].isNumber() || !args["query"].isString() ||
+                       args["offset"].toDouble()<0 || args["offset"].toDouble()>10000000 ||
+                       args["limit"].toDouble()<1 || args["limit"].toDouble()>100)
+                        throw std::runtime_error("Invalid runtime page");
+                    const auto offset=int(args["offset"].integer()),limit=int(args["limit"].integer());
+                    if(game_)reply.set("result",game_->entities(offset,limit,args.getStr("query")));
+                    else {aiverse::studio::StudioRuntimeInspect empty;reply.set("result",empty.entities(nullptr,"0",offset,limit,args.getStr("query")));}
+                }else {
+                    if(!game_)throw std::runtime_error("No game is running");
+                    reply.set("result",game_->inspect(args.getStr("epoch"),args.getStr("ref")));
+                }
+            }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
+            [self sendStudioReply:reply];return;
+        }
+        if(gameMethod=="studio.gameDevices" && req["id"].isNumber()) {
+            auto reply=aiverse::Json::object();reply.set("id",req["id"]);
+            reply.set("result",aiverse::studio::studioGameDevices());[self sendStudioReply:reply];return;
+        }
+        if((gameMethod=="studio.gameStart" || gameMethod=="studio.gameStop" || gameMethod=="studio.gameState" || gameMethod=="studio.gameControl" || gameMethod=="studio.gameDevice") && req["id"].isNumber()) {
+            aiverse::Json reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try {
+                if(gameMethod=="studio.gameDevice") {
+                    const auto profile=aiverse::studio::StudioGameDevice::parse(req["params"]);
+                    if(!game_)game_=std::make_unique<aiverse::studio::StudioGameSurface>((__bridge void*)gameViewport_.layer);
+                    game_->setDevice(profile);
+                }else if(gameMethod=="studio.gameStart") {
+                    const auto entry=req["params"].getStr("entry");
+                    if(entry!="map" && entry!="menu")throw std::runtime_error("Invalid game entry");
+                    const auto plan=aiverse::studio::studioGameLaunch(session_->workspace(),entry=="map");
+                    if(!game_)game_=std::make_unique<aiverse::studio::StudioGameSurface>((__bridge void*)gameViewport_.layer);
+                    game_->start(plan,std::string(AIVERSE_STUDIO_SOURCE_DIR)+"/engine/assets");
+                    gameFrameTime_=0;
+                }else if(gameMethod=="studio.gameStop" && game_)game_->stop();
+                else if(gameMethod=="studio.gameControl") {
+                    if(!game_)throw std::runtime_error("No game is running");
+                    game_->control(req["params"].getStr("action"));
+                }
+                reply.set("result",[self gameState]);
+            }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
+            [self sendStudioReply:reply];return;
+        }
         if (req.getStr("method")=="studio.openProject" && req["id"].isNumber()) {
             // Path is chosen by AppKit, never accepted from untrusted JavaScript.
             [self openProjectSheetForRequestId:req["id"].integer()];
             return;
         }
+        const std::string documentMethod=req.getStr("method");
+        if (req["id"].isNumber() && !session_->workspace().project.dir.empty()) {
+            if (documentMethod=="studio.saveAs" ||
+                (documentMethod=="studio.save" && session_->workspace().map.path.empty())) {
+                [self saveMapSheetForRequestId:req["id"].integer()];return;
+            }
+            if ((documentMethod=="studio.openMap" || documentMethod=="studio.newMap") && ![self confirmDiscardChanges]) {
+                auto cancelled=req;cancelled.set("method",aiverse::Json::string("studio.snapshot"));
+                [self sendStudioReply:session_->dispatch(cancelled)];return;
+            }
+        }
+        if (req.getStr("method")=="studio.assetImportPreview" && req["id"].isNumber()) {
+            // The browser can choose a verified relative DESTINATION only.
+            // The local SOURCE paths come exclusively from a native NSOpenPanel.
+            const std::string destination=req["params"].getStr("destination");
+            if(destination.size()>512){
+                aiverse::Json reply=aiverse::Json::object();
+                reply.set("id",req["id"]);
+                reply.set("error",aiverse::Json::string("Invalid import destination"));
+                [self sendStudioReply:reply];
+            }else{
+                NSString* folder=[NSString stringWithUTF8String:destination.c_str()];
+                [self openAssetImportForRequestId:req["id"].integer() destination:folder];
+            }
+            return;
+        }
+        if(game_ && (documentMethod=="studio.openMap" || documentMethod=="studio.newMap"))game_->stop();
         aiverse::Json reply;
         if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
@@ -385,13 +864,17 @@
         }
         [self sendStudioReply:reply];
         const std::string method=req.getStr("method");
+        if (!reply.has("error") && preview_ && (method=="studio.openMap" || method=="studio.newMap"))
+            preview_->resetCamera();
         if (!reply.has("error") && method=="studio.materialPreview") {
             [self sendStudioEvent:"material.preview" message:req["params"].getStr("name").c_str()];
         }
         if (!reply.has("error") &&
-            (method=="studio.setProperty" || method=="studio.save" ||
+            (method=="studio.openMap" || method=="studio.newMap" ||
+             method=="studio.entityCreate" || method=="studio.entityDelete" ||
+             method=="studio.entityDuplicate" || method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
-             method=="studio.renderLightingSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
+             method=="studio.renderLightingSet" || method=="studio.nereidFlowSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate")) {
             [self sendStudioEvent:"document.changed" message:""];
@@ -403,6 +886,7 @@
     (void)note;
     [timer_ invalidate];
     timer_=nil;
+    game_.reset(); // hosted client/device retire before native surface
     preview_.reset(); // release GPU resources before CAMetalLayer
     [web_.configuration.userContentController removeScriptMessageHandlerForName:@"aiverse"];
 }

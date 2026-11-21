@@ -364,6 +364,9 @@ public:
             }
         }
     }
+    // Authoring opt-in, set before upload. Games keep CPU release by default.
+    void setRetainPickingGeometry(bool value){retainPickingGeometry_=value;}
+    bool retainPickingGeometry()const{return retainPickingGeometry_;}
     uint64_t stagingQueueFailures() const noexcept{return stagingQueueFailures_;}
     uint64_t stagingOrphanModels() const noexcept{return stagingOrphanModels_;}
 
@@ -379,7 +382,7 @@ public:
         bindResourceDevice(dev);
         if(models_.count(key))return false;
         try {
-            if(prepared.model && !render::uploadModel(dev,*prepared.model)) {
+            if(prepared.model && !render::uploadModel(dev,*prepared.model,false,true,retainPickingGeometry_)) {
                 ++preparedUploadFailures_;
                 retireUnpublished(dev,prepared.model);
                 return false;
@@ -661,6 +664,7 @@ public:
         readState_->ownerThread={};
     }
 private:
+    bool retainPickingGeometry_=false;
     // All map readers require the render/reader owner. The map is NOT a
     // concurrent-read/write container, including during new-key streaming.
     // Before first binding/reader acquisition the host must serialize its

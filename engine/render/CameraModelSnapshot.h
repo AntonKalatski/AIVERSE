@@ -178,11 +178,11 @@ public:
                     renderer.triangle(packet.a,packet.b,packet.c,packet.rgba);
                     break;
                 case CameraGeometryCommand::Kind::Water:
-                    if(packet.mesh)renderer.drawNereidRippleMesh(
+                    if(packet.mesh&&packet.waterFlow.validForReplay())renderer.drawNereidRippleMesh(
                         *packet.mesh,packet.world,packet.tint,
                         packet.specular,packet.emissive,packet.ripples,
                         packet.firstIndex,packet.indexCount,packet.wakes,
-                        packet.wind,packet.hydraulics,packet.rapidColor);
+                        packet.wind,packet.hydraulics,packet.rapidColor,packet.waterFlow);
                     break;
                 case CameraGeometryCommand::Kind::Selection:
                     if(packet.mesh)renderer.drawSelectionMesh(

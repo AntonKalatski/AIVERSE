@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <utility>
 #include <string>
 #include <vector>
 #include <deque>
@@ -17,6 +18,7 @@
 #include "../gfx/VirtualTextureFeedbackPass.h"
 #include "Lights.h"
 #include "Math3D.h"
+#include "NereidFlowBinding.h"
 #include "PrismaMotionTextureInput.h"
 #include "PrismaGpuRetirement.h"
 #include "Model.h"
@@ -445,6 +447,7 @@ struct CameraGeometryCommand {
     float4 wind{},hydraulics{},rapidColor{};
     uint32_t firstIndex=0,indexCount=0;
     float4 selection{};
+    NereidFlowBinding waterFlow{};
 };
 
 class Renderer3D {
@@ -514,6 +517,9 @@ public:
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
+    // Shader presentation clock only; never changes simulation/current velocity.
+    // Negative resumes the steady clock. Set before beginScene on the render thread.
+    void setPresentationTime(float seconds);
     void beginScene(const Camera3D& cam, int fbW, int fbH);
     // Before render only: drop borrowed packets/callbacks of a failed host
     // preparation before destroying its private CPU owners. No RHI work.
@@ -588,7 +594,8 @@ public:
                               uint32_t firstIndex=0,uint32_t indexCount=0,
                               const std::array<float4,16>& wakeShapes={},
                               float4 wind={},float4 hydraulics={},
-                               float4 rapidColor={0.84f,0.93f,0.94f,1.f});
+                               float4 rapidColor={0.84f,0.93f,0.94f,1.f},
+                               NereidFlowBinding flow={});
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -1460,6 +1467,7 @@ public:
     // Copy borrowed pointers before drawModel returns; not light-baker capture.
     using ModelPacketTap = std::function<void(const ModelDraw&)>;
     void setModelPacketTap(ModelPacketTap tap) { modelPacketTap_=std::move(tap); }
+    ModelPacketTap exchangeModelPacketTap(ModelPacketTap tap){return std::exchange(modelPacketTap_,std::move(tap));}
     // Optional synchronous capture of mesh/line/triangle commands.
     // No callbacks retained by the renderer across frames; client removes it.
     using GeometryPacketTap=std::function<void(const CameraGeometryCommand&)>;
@@ -1481,6 +1489,7 @@ private:
         float4 waterHydraulics{};
         float4 waterRapidColor{};
         uint32_t waterFirstIndex=0,waterIndexCount=0;
+        NereidFlowBinding waterFlow{};
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
@@ -1645,6 +1654,7 @@ private:
     gfx::TextureHandle dummyDepth_, dummyHeight_;
     double graphEpoch_ = -1;
     float graphTime_ = 0;
+    float presentationTime_ = -1;
     uint64_t traceFrame_ = 0;
     gfx::ShaderHandle blitShader_;
     gfx::PipelineHandle blitPipe_;

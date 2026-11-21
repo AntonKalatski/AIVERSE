@@ -20,6 +20,8 @@ int aiverseMain(int argc,char** argv) { @autoreleasepool {
         [window orderFront:nil];
         studio::StudioMetalScene scene((__bridge void*)layer);
         editor::MapDoc doc;doc.reset(8,8);
+        // This GPU fixture explicitly authors a legacy terrain receiver.
+        doc.data.extra.set("terrainPresentation",Json::string("legacy"));
         doc.data.extra.set("lights",Json::parse(R"([{"x":4,"z":4,"height":2,"radius":12,"intensity":6,"color":[1,0.3,0.1]}])"));
         const Json empty;
         bool fps=false;
