@@ -81,3 +81,17 @@ Then: split `engine/render` into CMake sub-targets; shrink AGENTS.md after no-ge
   logic left to its author).
 - 99611fa7d: registry schema 2 (core/partial/planned, `tests`, `gameReady`), 5 genre library suites (+4 examples)
   moved into the root CTest, `genre_registry` check. Build/run of those new root targets: NOT RUN yet.
+
+## Stage 06 (2026-11-21) — no compatibility headers, verified
+- Owner rule (main e0713339c): the 43 forwarding headers removed, every user on the real path (ea578868d);
+  `AIVERSE::libraries` exports the repository root because library headers include `engine/...` (9be615a03).
+- Merged origin/main (3a0d3564c): BwAI fix taken from main; V1-V3 from the racing merge, V3 -> core; 2 new
+  engine -> libraries edges from the racing merge recorded as L2 (racing owner).
+- Mac `./run-tests.sh --quick --build-dir /Volumes/KINGSTON/AIVERSE-builds/arch-layers` on 9be615a03:
+  configure PASS, build PASS, CTest **372/374 PASS** (aiverse_tests 950 s; the 10 new tests strategy_libraries,
+  library_genre_puzzles(+example), library_cards_turns(+example), library_vehicles_sports(+example),
+  library_genre_production_survival, library_production_survival_example, genre_registry all PASS).
+  FAIL, both from main: skill_audit (missing docs/handoff/studio-html5/NN-*.md), rts_authored_pose_test
+  (e128dfd38 feature logic: "authored entities not spawned").
+- Branch is ready for MAIN merge. Launcher: `_tmp/run-arch2.command` (Finder double-click works; a file edited
+  with `sed -i` from the VM gets an ACL and macOS refuses to run it — recreate with `cat >` + chmod 755).
