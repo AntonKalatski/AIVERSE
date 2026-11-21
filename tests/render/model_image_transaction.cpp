@@ -356,15 +356,15 @@ int main(){
     auto oldModel=std::make_unique<render::Model>();
     oldModel->images.push_back(makeImage("preview-old.png"));
     auto* old=provider.publishPrepared(device,"preview/1",std::move(oldModel));
-    assert(old && old->images[0].tex.valid());
+    AIVERSE_TEST_CHECK(old && old->images[0].tex.valid());
     {
         auto lease=provider.resources().acquireModelRead(old);
-        assert(lease);
+        AIVERSE_TEST_CHECK(lease);
         bool rejected=false;
         try {provider.publishPrepared(device,"preview/2",std::make_unique<render::Model>());}
         catch(const std::logic_error&) {rejected=true;}
-        assert(rejected && provider.find("preview/1")==old);
-        assert(provider.find("preview/2")==nullptr);
+        AIVERSE_TEST_CHECK(rejected && provider.find("preview/1")==old);
+        AIVERSE_TEST_CHECK(provider.find("preview/2")==nullptr);
     }
     auto nextModel=std::make_unique<render::Model>();
     nextModel->images.push_back(makeImage("preview-next.png"));
@@ -372,17 +372,17 @@ int main(){
     device.complete=false;device.idle=false;
     const int beforeRetire=device.destroyed;
     provider.invalidate(device,{"preview/1"},[&](const auto& affected) {
-        assert(affected.size()==1 && affected[0].model==old);
+        AIVERSE_TEST_CHECK(affected.size()==1 && affected[0].model==old);
     });
-    assert(provider.find("preview/2")==next);
-    assert(provider.find("preview/1")==nullptr);
-    assert(!provider.collectRetired(device) && device.destroyed==beforeRetire);
+    AIVERSE_TEST_CHECK(provider.find("preview/2")==next);
+    AIVERSE_TEST_CHECK(provider.find("preview/1")==nullptr);
+    AIVERSE_TEST_CHECK(!provider.collectRetired(device) && device.destroyed==beforeRetire);
     device.complete=true;
-    assert(provider.collectRetired(device));
-    assert(device.destroyed==beforeRetire+1);
+    AIVERSE_TEST_CHECK(provider.collectRetired(device));
+    AIVERSE_TEST_CHECK(device.destroyed==beforeRetire+1);
     device.idle=true;
     provider.shutdown(device);
-    assert(device.live.empty());
+    AIVERSE_TEST_CHECK(device.live.empty());
 
     // Stage 114 offscreen targets use the same per-batch fence semantics.
     // A resize or window destruction must not immediately release GPU

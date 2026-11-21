@@ -156,7 +156,6 @@ public:
     uint64_t frameSerial() const override { return healthy_ ? serial_ : 0; }
     uint64_t completedFrameSerial() const override { return healthy_ ? completed_ : 0; }
     const std::string& lastError() const override { return error_; }
-    uint64_t frameSerial() const override { return recording_ ? serial_ : 0; }
     bool supports(PixelFormat f) const override;
     std::vector<TextureResourceInfo> textureResources() const override;
     bool supportsCompute() const override { return device_ && healthy_ && computeQueue_ &&

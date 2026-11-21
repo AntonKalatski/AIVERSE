@@ -2,6 +2,10 @@
 #include "StudioHumanLookDocument.h"
 #include "StudioContentDirectory.h"
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <optional>
 #include "engine/character/vivid/HumanWardrobe.h"
 #include "tools/modeling/Modeling.h"
 #include <sys/stat.h>
