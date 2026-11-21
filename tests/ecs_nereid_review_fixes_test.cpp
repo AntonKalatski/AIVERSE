@@ -5,6 +5,7 @@
 #include <aiverselib/water/NereidFloodRouting.h>
 #include "engine/world/NereidRipples.h"
 #include "engine/world/NereidCascadeScene.h"
+#include "engine/world/TerraWeaveSedimentEcs.h"
 #include "TestCheck.h"
 #include <iostream>
 #include <memory>
@@ -235,6 +236,30 @@ static void reAddedSurfaceGetsFreshRevision(){
     AIVERSE_TEST_CHECK(seen[0]!=seen[1] && again!=0);
 }
 
+static void duplicateSedimentLinksDoNotThrow(){
+    World w;
+    const auto ocean=[&]{
+        const Entity e=w.create();
+        nw::WaterBodyComponent body;
+        body.kind=nw::WaterKind::Ocean;
+        body.footprint=nw::WaterFootprint::Infinite;
+        body.surfaceY=10_fx;body.bottomY=-100_fx;
+        w.add<nw::WaterBodyComponent>(e,body);
+        return e;
+    };
+    const Entity a=ocean(),b=ocean(),c=ocean();
+    // 600 identical junctions = 1200 raw links (> the 1024 kernel budget)
+    // but only two distinct body pairs.
+    for(int i=0;i<600;++i){
+        nw::WaterConfluenceComponent j;
+        j.inletCount=2;j.inlets[0]=a;j.inlets[1]=b;j.outlet=c;
+        AIVERSE_TEST_CHECK(nw::validWaterConfluence(j));
+        w.add<nw::WaterConfluenceComponent>(w.create(),j);
+    }
+    const auto result=terraweave::transportNereidBankSediment(w,1,100,16);
+    AIVERSE_TEST_CHECK(result.visitedBanks==0 && result.transferCount==0);
+}
+
 int main(){
     rockIsNotErodible();
     partialObstructionPassesWater();
@@ -244,5 +269,6 @@ int main(){
     wakeTileCullMatchesShaderEllipse();
     cascadeMeshAddressSurvivesSetCascades();
     reAddedSurfaceGetsFreshRevision();
-    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull, cascade mesh, surface revision)\n";
+    duplicateSedimentLinksDoNotThrow();
+    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull, cascade mesh, surface revision, sediment links)\n";
 }
