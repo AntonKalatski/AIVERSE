@@ -49,7 +49,15 @@ void stateIo(Archive& a,State& s,bool programs=false,bool melee=false) {
 }
 }
 Config readConfig(const Json& root) {
-    const auto& j=root["fps"];if(!j.isObject())throw JsonError("rules.fps: expected object");
+    if(!root["fps"].isObject())throw JsonError("rules.fps: expected object");
+    // Capability blocks that are not specific to this host may sit at the top level of the rules (shared names,
+    // docs/no-genre-split-audit.md G6); the legacy place rules.fps.<key> still loads. One place per block.
+    Json j=root["fps"];
+    for(const char* key:{"royale","gear","crate","vehicleTypes","bots","weapons","weapon"}){
+        if(!root.has(key))continue;
+        if(j.has(key))throw JsonError(std::string("rules.")+key+" and rules.fps."+key+": keep one of them");
+        j.set(key,root[key]);
+    }
     Config c;
     c.tickRate=uint32_t(integer(j,"tickRate",60,20,120));
     c.ecsAuthority=j.getBool("ecsAuthority",false);

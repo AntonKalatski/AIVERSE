@@ -10,6 +10,14 @@ New Project: `fps_training` (stationary targets), `fps_arena` (5 vs 5 bots), or
 `fps_survival` (100 slots, sparse large world, battle royale with air insertion and a phased zone). The editor launches a separate FPS client.
 Existing copied projects are not overwritten when engine templates change.
 
+## Shared blocks at the top level of rules
+
+The actor-session host (game.json `"module": "fps"`, legacy name) reads its settings from `rules.fps`. The blocks
+that describe capabilities rather than this host - `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`,
+`weapon` - may also be written at the top level of the rules (`rules.royale`, ...), which is where shared systems
+read them as they are extracted from the legacy hosts (docs/no-genre-split-audit.md, G6). A block may sit in only one
+of the two places; both at once is a load error. Existing projects keep `rules.fps.<block>` unchanged.
+
 ## Controls and weapons
 
 LMB captures the mouse and fires. Short clicks are retained until an input tick is

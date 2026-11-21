@@ -44,6 +44,6 @@ Build selection: `AIVERSE::lib_vehicle_controllers` (depends on `match-rules`, `
 native OBJECT modules call `aiverse_native_use_libraries(target vehicle-controllers)`. See `skills/catalog.json`.
 
 Legacy hosts already wire it: `modules/rts` through rules `driving` (`skills/gameplay/aiverse-driving`) and `modules/fps`
-through rules `fps.vehicleTypes` + map vehicles with `"type"` (two hosts of one capability - debt G5 in
+through rules `vehicleTypes` (top level, or legacy `fps.vehicleTypes`) + map vehicles with `"type"` (two hosts of one capability - debt G5 in
 `docs/no-genre-split-audit.md`; extend the shared system, never a third host). The FPS host runs these controllers and seats on its actors (`modules/fps/FpsVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
 `tests/fps/tests.cpp`).

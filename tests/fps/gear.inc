@@ -7,6 +7,12 @@ void gear() {
       "loot":[{"pos":[0,0.01,1],"type":202},{"pos":[0,0.01,1.5],"type":203},{"pos":[0,0.01,2],"type":204}]})");
     auto bad=Json::parse(R"({"fps":{"tickRate":20,"gear":[{"id":1}]}})");
     try{fps::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.gear: requires mechanics.enabled")!=std::string::npos);}
+    {   // the same block at the top level of rules (shared name, G6) loads identically; both places at once is an error
+        auto top=rules;auto fpsBlock=top["fps"];top.set("gear",fpsBlock["gear"]);fpsBlock.erase("gear");top.set("fps",fpsBlock);
+        CHECK(fps::readConfig(top).gear.size()==fps::readConfig(rules).gear.size());
+        auto both=rules;both.set("gear",rules["fps"]["gear"]);
+        try{fps::readConfig(both);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("keep one of them")!=std::string::npos);}
+    }
     auto sim=simulation(rules,map);auto& s=state(*sim);CHECK(s.gear.size()==2&&s.loot.size()==3&&s.loot[0].ammo==100);
     auto interact=[&](uint32_t seq){fps::Input i;i.sequence=seq;i.viewTick=sim->tick();i.action=fps::Action::Interact;auto c=fps::command(1,i);c.tick=sim->tick();sim->inject(c);sim->step();sim->step();};
     interact(1);CHECK(s.gear[0].slots.at(1).def==2&&s.loot.size()==2);   // vest L2 picked up
