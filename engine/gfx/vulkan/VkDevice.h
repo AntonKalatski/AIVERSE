@@ -63,7 +63,16 @@ private:
 };
 
 struct VBuffer {
-    struct Version { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; uint64_t usedSerial = 0; };
+    // syncedEpoch: the last shadow write this version contains (kUnsynced:
+    // contents unknown, a full copy is needed before a partial write).
+    static constexpr uint64_t kUnsynced = ~uint64_t(0);
+    struct Version { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; uint64_t usedSerial = 0;
+                     uint64_t syncedEpoch = 0; };
+    // Shadow writes since the oldest version's sync point, so switching to a
+    // reused version copies only the ranges it missed instead of the whole
+    // shadow. Bounded: dropped entries raise logBaseEpoch, and a version
+    // synced before it falls back to a full copy.
+    struct DirtyRange { size_t offset = 0, size = 0; uint64_t epoch = 0; };
     BufferType type = BufferType::Vertex;
     Usage usage = Usage::Immutable;
     size_t size = 0;
@@ -73,6 +82,8 @@ struct VBuffer {
     std::vector<Version> versions;
     int current = 0;
     std::vector<uint8_t> shadow;       // host buffers: the contents, copied into a fresh version
+    uint64_t writeEpoch = 0, logBaseEpoch = 0;
+    std::vector<DirtyRange> dirtyLog;
 };
 
 struct VTexture {
@@ -281,6 +292,8 @@ private:
     // Null on allocation failure. Never return an in-flight version as a
     // fallback: writing it corrupts commands already submitted to the GPU.
     VBuffer::Version* writableVersion(VBuffer& b, bool keepContents);
+    void recordShadowWrite(VBuffer& b, VBuffer::Version& written,
+                           size_t offset, size_t size, bool staleTail);
     bool updateBufferChecked(BufferHandle h, const void* data,
                              size_t size, size_t offset);
     VkBuffer resolveBuffer(uint32_t id, uint64_t serialUse);
