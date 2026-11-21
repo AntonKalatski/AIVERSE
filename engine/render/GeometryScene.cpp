@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "GeometryScene.h"
 #include "Renderer3D.h"
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
@@ -362,6 +363,10 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataStreamingFrameSerial_=staged->strataStreamingFrameSerial_;
     strataStreamingFrameBudgetLeft_=staged->strataStreamingFrameBudgetLeft_;
     strataStreamingSourceCursor_=staged->strataStreamingSourceCursor_;
+    // The staged scene started from the live config; a scene-authored
+    // "strata" block may have switched portable rendering / hysteresis.
+    strataPortableRenderingEnabled_=staged->strataPortableRenderingEnabled_;
+    strataLodHysteresisFraction_=staged->strataLodHysteresisFraction_;
     staged->strataStaging_.reset();
     staged->strataGpuMetadata_.reset();
     staged->strataGpuCulling_.reset();
@@ -412,6 +417,15 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
     retireResident(dev);
     strataPortableDevice_=&dev;
     models_=std::move(models);geometryEnabled_=surfacesEnabled_=cacheEnabled_=true;
+    // Scene-authored STRATA opt-in (default OFF). AIVERSE_STRATA=off keeps
+    // the legacy path for A/B. Applied before staging below.
+    if(json.has("strata")) {
+        const char* env=std::getenv("AIVERSE_STRATA");
+        const bool off=env&&(std::string(env)=="off"||std::string(env)=="0");
+        strataPortableRenderingEnabled_=!off&&json["strata"].getBool("enabled");
+        if(json["strata"].has("hysteresis"))
+            (void)setStrataLodHysteresisFraction(float(json["strata"]["hysteresis"].toDouble()));
+    }
     hlod_=json["hlod"].getBool("enabled");errorPixels_=float(json["hlod"]["errorPixels"].toDouble(2));maxPixels_=float(json["hlod"]["maxPixels"].toDouble(256));
     try{
         size_t vertices=0;

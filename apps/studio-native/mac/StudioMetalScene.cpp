@@ -57,6 +57,7 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
 void StudioMetalScene::releasePreviewModel(render::Model& model) {
     // Retire CPU packets/layouts before the Model and its geometry disappear.
     renderer_.invalidateModelCachesFor(&model);
+    windRigs_.erase(&model);
     render::releaseModel(*device_,model);
 }
 void StudioMetalScene::clearDocumentModels() {
@@ -112,8 +113,15 @@ void StudioMetalScene::syncDocumentModels(
         if (modelInstances_.size()>=2000) break;
         active.insert(path);
         std::error_code modifiedError;
-        const auto modified=fs::last_write_time(current,modifiedError);
+        auto modified=fs::last_write_time(current,modifiedError);
         if (modifiedError) continue;
+        // Hierarchical wind sidecar edits reload the model too.
+        {
+            std::error_code sidecarError;
+            fs::path sidecar=current; sidecar+=".wind.json";
+            const auto sidecarTime=fs::last_write_time(sidecar,sidecarError);
+            if(!sidecarError && sidecarTime>modified) modified=sidecarTime;
+        }
         const auto previousTime=documentModelTimes_.find(path);
         if (previousTime!=documentModelTimes_.end() &&
             previousTime->second!=modified) {
@@ -570,6 +578,12 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     underwaterFrameTime_=opticalNow;
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
     renderer_.setSceneSelectionOutline(true);
+    {
+        const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-windClock_).count();
+        renderer_.setSceneWind(wind_.sceneWind(seconds));
+        renderer_.setWindRigDebugView(wind_.debug==render::wind::WindDebugView::Skeleton ?
+            render::wind::WindDebugView::Off : wind_.debug);
+    }
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {
         renderer_.lights.setNightGlow(day.night*1.5f);
@@ -618,12 +632,30 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         }
 
     }
+    riggedInstances_=0; riggedParts_=0;
+    const double windSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-windClock_).count();
     for(const auto& instance:modelInstances_) {
         render::ModelDraw draw;
         draw.model=instance.model;
         draw.world=instance.world;
         if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
         renderer_.drawModel(draw);
+        // Skeleton debug view: parts as lines (depth colour, mask brightness),
+        // displaced by the same reference math as the GPU.
+        auto cachedRig=windRigs_.find(instance.model);
+        if(cachedRig==windRigs_.end())
+            cachedRig=windRigs_.emplace(instance.model,render::wind::findWindRig(*instance.model)).first;
+        if(const auto& rig=cachedRig->second) {
+            ++riggedInstances_; riggedParts_+=rig->decoded.nodes.size();
+            if(wind_.debug==render::wind::WindDebugView::Skeleton &&
+               (selectedId.empty() || instance.id==selectedId || riggedInstances_<=32)) {
+                std::vector<render::wind::WindDebugLine> lines;
+                const auto params=render::wind::windRigParamsForDraw(wind_.sceneWind(windSeconds),draw.world);
+                render::wind::windRigDebugLines(*rig,draw.world,params,lines,6,1024);
+                for(const auto& l:lines)
+                    renderer_.line({l.a.x,l.a.y,l.a.z},{l.b.x,l.b.y,l.b.z},l.rgba);
+            }
+        }
     }
     nereid_.draw(renderer_);
     // Editor gizmos for authored lights; actual light contribution is passed through
@@ -650,5 +682,12 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             (unsigned long long)stats.cameraLodNodes[0],(unsigned long long)stats.cameraLodNodes[1],(unsigned long long)stats.cameraLodNodes[2],(unsigned long long)stats.cameraLodNodes[3],
             (unsigned long long)stats.cameraLodChains,(unsigned long long)stats.cameraLodBlocked,(unsigned long long)stats.cameraShadowLimitedLod);
     }
+}
+Json StudioMetalScene::windStats() const {
+    Json j=Json::object();
+    j.set("riggedInstances",Json::number(int64_t(riggedInstances_)));
+    j.set("riggedParts",Json::number(int64_t(riggedParts_)));
+    j.set("models",Json::number(int64_t(documentModels_.size())));
+    return j;
 }
 }

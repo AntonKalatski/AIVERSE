@@ -257,6 +257,50 @@
 }
 @end
 
+// Developer automation for scene-only wind-mask screenshots (no desktop or
+// WebView capture): AIVERSE_STUDIO_WIND_SHOTS=<dir> walks preview states,
+// grabs the Metal Scene drawable as PPM files, then quits when
+// AIVERSE_STUDIO_SHOTS_EXIT=1. Camera: AIVERSE_STUDIO_SHOT_CAMERA="x y z dist yaw pitch".
+namespace {
+struct WindShotRunner {
+    std::string dir;
+    bool exitAfter=false;
+    float camera[6]={0,0,0,0,0,0};
+    bool hasCamera=false;
+    int stage=-1, frames=0;
+    bool waiting=false, done=false;
+    std::shared_ptr<bool> captured=std::make_shared<bool>(false);
+    // Own window + Metal scene: independent of the user's saved dock layout.
+    NSWindow* window=nil;
+    NSView* view=nil;
+    std::unique_ptr<aiverse::studio::StudioMetalScene> scene;
+    struct Stage { const char* name; const char* patch; int settle; };
+    static const std::vector<Stage>& stages() {
+        static const std::vector<Stage> list={
+            {"0-calm",R"({"enabled":false,"debug":"off"})",40},
+            {"1-wind-a",R"({"enabled":true,"speed":12,"direction":0,"gust":0.5,"scale":0.05,"debug":"off"})",60},
+            {"2-wind-b",R"({"debug":"off"})",23},
+            {"3-parts",R"({"debug":"parts"})",30},
+            {"4-depth",R"({"debug":"depth"})",30},
+            {"5-weight",R"({"debug":"weight"})",30},
+            {"6-skeleton",R"({"debug":"skeleton"})",30},
+        };
+        return list;
+    }
+    static WindShotRunner& get() {
+        static WindShotRunner r=[]{
+            WindShotRunner w;
+            if(const char* d=std::getenv("AIVERSE_STUDIO_WIND_SHOTS"))w.dir=d;
+            if(const char* e=std::getenv("AIVERSE_STUDIO_SHOTS_EXIT"))w.exitAfter=std::string(e)=="1";
+            if(const char* c=std::getenv("AIVERSE_STUDIO_SHOT_CAMERA"))
+                w.hasCamera=std::sscanf(c,"%f %f %f %f %f %f",&w.camera[0],&w.camera[1],&w.camera[2],&w.camera[3],&w.camera[4],&w.camera[5])==6;
+            return w;
+        }();
+        return r;
+    }
+};
+}
+
 @implementation StudioHost
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite {
     if ((self=[super init])) {
@@ -375,6 +419,7 @@
     // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
+    [self runWindShots];
     if (!placement_.visible || viewport_.hidden || window_.isMiniaturized || !window_.visible) {
         session_->setFacialPreviewGpuStatus(
             false,"Native Scene viewport hidden or not drawable");
@@ -384,6 +429,7 @@
         try {
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
             // StudioSession/renderer are owned and called on the main thread.
+            preview_->setWindPreview(session_->windPreview());
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
@@ -408,6 +454,80 @@
             placement_.visible=false;
             preview_.reset();
         }
+    }
+}
+- (void)runWindShots {
+    auto& run=WindShotRunner::get();
+    if(run.dir.empty()||run.done)return;
+    @autoreleasepool {
+    try {
+        if(!run.window) {
+            const NSRect frame=NSMakeRect(60,60,1280,800);
+            run.window=[[NSWindow alloc] initWithContentRect:frame
+                styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+            run.window.title=@"AIVERSE wind shots";
+            run.window.releasedWhenClosed=NO;
+            run.view=[[StudioMetalView alloc] initWithFrame:NSMakeRect(0,0,1280,800)];
+            run.window.contentView=run.view;
+            [run.window orderFront:nil];
+            run.view.layer.contentsScale=run.window.backingScaleFactor;
+            run.scene=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)run.view.layer);
+        }
+        const CGFloat scale=run.window.backingScaleFactor;
+        const int w=int(run.view.bounds.size.width*scale), h=int(run.view.bounds.size.height*scale);
+        ((CAMetalLayer*)run.view.layer).drawableSize=CGSizeMake(w,h);
+        run.scene->setWindPreview(session_->windPreview());
+        run.scene->frame(w,h,session_->workspace().map,session_->workspace().project.isFps(),"",
+            "",aiverse::Json{},0,float(session_->workspace().project.rules.levelHeight.toDouble()),
+            session_->workspace().project.dir,session_->workspace().project.rulesJson);
+    } catch(const std::exception& e) {
+        NSLog(@"[wind-shots] scene failed: %s",e.what());
+        run.done=true;
+        if(run.exitAfter)[NSApp terminate:nil];
+        return;
+    }
+    }
+    ++run.frames;
+    if(run.stage<0) {
+        if(run.frames<150)return;                 // let models load and upload
+        if(run.hasCamera)run.scene->setShotCamera(run.camera[0],run.camera[1],run.camera[2],run.camera[3],run.camera[4],run.camera[5]);
+        std::filesystem::create_directories(run.dir);
+        run.stage=0; run.frames=0; run.waiting=false;
+    }
+    const auto& stages=WindShotRunner::stages();
+    if(run.stage>=int(stages.size())) {
+        run.done=true;
+        NSLog(@"[wind-shots] finished: %s stats %s",run.dir.c_str(),run.scene->windStats().dump(-1).c_str());
+        [run.window orderOut:nil];
+        if(run.exitAfter)[NSApp terminate:nil];
+        return;
+    }
+    const auto& st=stages[size_t(run.stage)];
+    if(run.frames==1) {
+        aiverse::Json request=aiverse::Json::object();
+        request.set("id",aiverse::Json::number(int64_t(0)));
+        request.set("method",aiverse::Json::string("studio.windSet"));
+        request.set("params",aiverse::Json::parse(st.patch));
+        const auto reply=session_->dispatch(request);
+        if(reply.has("error"))NSLog(@"[wind-shots] %s: %s",st.name,reply.getStr("error").c_str());
+    }
+    if(!run.waiting && run.frames>=st.settle) {
+        run.waiting=true; *run.captured=false;
+        const std::string path=run.dir+"/"+st.name+".ppm";
+        auto flag=run.captured;
+        run.scene->captureNextFrame([path,flag](int w,int h,std::vector<uint8_t> rgba) {
+            if(FILE* f=std::fopen(path.c_str(),"wb")) {
+                std::fprintf(f,"P6\n%d %d\n255\n",w,h);
+                for(size_t i=0;i+3<rgba.size();i+=4)std::fwrite(&rgba[i],1,3,f);
+                std::fclose(f);
+            }
+            *flag=true;
+        });
+        return;
+    }
+    if(run.waiting && *run.captured) {
+        NSLog(@"[wind-shots] %s captured",st.name);
+        ++run.stage; run.frames=0; run.waiting=false;
     }
 }
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy {
@@ -867,6 +987,8 @@
             result.set("ok",aiverse::Json::fromBool(true));
             reply.set("result",std::move(result));
         } else {
+            if (preview_ && (req.getStr("method")=="studio.wind" || req.getStr("method")=="studio.windSet"))
+                session_->setWindSceneStats(preview_->windStats());
             reply=session_->dispatch(req);
         }
         [self sendStudioReply:reply];
