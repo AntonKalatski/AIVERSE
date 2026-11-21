@@ -4424,6 +4424,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_gpu_paged_bvh
             gi_gpu_residency_planner
             gi_world_dirty_accumulator
+            gi_geometry_scene
+            gi_world_geometry_bridge
+            gi_terraweave_resident_bridge
             lumaweave_direct_reference
             gi_dynamic_probe_reference
             gi_cpu_trace_budget

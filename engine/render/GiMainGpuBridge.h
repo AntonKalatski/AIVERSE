@@ -47,6 +47,23 @@ public:
     const char* diagnostic() const {return diagnostic_;}
 
     bool publishGeometry(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,uint64_t revision) {
+        return publish(std::move(scene),revision,nullptr);
+    }
+    // Local edit: only probes whose rays can reach `changed` (trace distance
+    // plus the widest published light) are re-traced. Needs a current scene;
+    // otherwise this is a full publication.
+    bool publishGeometryRegion(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,uint64_t revision,
+                               GiBounds changed) {
+        const auto finite=[](float3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);};
+        if(!finite(changed.min) || !finite(changed.max) || changed.min.x>changed.max.x ||
+           changed.min.y>changed.max.y || changed.min.z>changed.max.z) {
+            blocked_=true;geometryCurrent_=false;diagnostic_="GI geometry region rejected";return false;
+        }
+        if(!scene_ || !geometryCurrent_)return publish(std::move(scene),revision,nullptr);
+        return publish(std::move(scene),revision,&changed);
+    }
+private:
+    bool publish(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,uint64_t revision,const GiBounds* region) {
         blocked_=true;geometryCurrent_=false;
         if(!ready() || !scene || !revision || revision<=revision_) {
             diagnostic_="GI geometry revision rejected";return false;
@@ -74,9 +91,11 @@ public:
             diagnostic_="GI GPU geometry capacity or upload rejected";return false;
         }
         scene_=std::move(scene);revision_=revision;geometryCurrent_=true;
-        scheduler_.invalidateAll(GiDirtyReason::Geometry);
+        if(region)scheduler_.invalidate(*region,GiDirtyReason::Geometry,config_.traceDistance+lightRadius_);
+        else scheduler_.invalidateAll(GiDirtyReason::Geometry);
         blocked_=false;diagnostic_="";return true;
     }
+public:
     bool publishLights(std::vector<GiMovingLight> lights) {
         blocked_=true;lightsCurrent_=false;
         float reach=0;
@@ -92,7 +111,7 @@ public:
         if(!gpu_.setLights(std::move(lights))) {
             diagnostic_="GI GPU light capacity or source rejected";return false;
         }
-        lightsCurrent_=true;
+        lightRadius_=reach;lightsCurrent_=true;
         scheduler_.invalidateAll(GiDirtyReason::Lighting);
         blocked_=false;diagnostic_="";return true;
     }
@@ -160,7 +179,7 @@ public:
         if(!gpu_.shutdownAfterGpuIdle())return false;
         scene_.reset();inFlight_.clear();scheduler_={};
         chunkCache_={};pages_=GiGpuPagedBvhArena{};residency_={};pageStats_={};
-        residentReach_=requestedLightReach_=0;
+        residentReach_=requestedLightReach_=lightRadius_=0;
         pendingFence_=sampledFence_=revision_=0;device_=nullptr;return true;
     }
 private:
@@ -177,7 +196,7 @@ private:
     GiGpuPagedBvhArena pages_;
     GiGpuResidencyPlan residency_{};
     GiGpuPagedBvhArena::Stats pageStats_{};
-    float lightReach_=kDefaultLightReach,residentReach_=0,requestedLightReach_=0;
+    float lightReach_=kDefaultLightReach,residentReach_=0,requestedLightReach_=0,lightRadius_=0;
     GiUpdateScheduler scheduler_;
     GiMainCpuConfig config_{};
     gfx::Device* device_=nullptr;

@@ -24,6 +24,7 @@ struct GpuPlanFake : FakeDevice {
     uint64_t gpuSubmissionFence() const override {return inFrame?1:0;}
     uint64_t gpuCompletedFence() const override {return 1;}
     bool gpuHealthy() const override {return true;}
+    bool computeDispatchSucceeded() const override {return dispatchCount>0;}
 };
 
 int main() {
@@ -92,10 +93,25 @@ int main() {
     auto farEdit=std::make_shared<const GiChunkedGeometrySnapshot>(chunks.publish());
     AIVERSE_TEST_CHECK(bridge.publishGeometry(farEdit,2));
     AIVERSE_TEST_CHECK(bridge.pageStats().reused==1 && bridge.pageStats().rewritten==0);
+    // Regional publication: converge, then an edit out of every probe's reach
+    // dirties nothing, a near edit dirties only part of the volume.
+    for(int i=0;i<64 && bridge.pendingProbes();++i)AIVERSE_TEST_CHECK(bridge.updateFrame({0,0,0}));
+    bridge.poll();
+    AIVERSE_TEST_CHECK(!bridge.pendingProbes() && bridge.canPresent());
+    chunks.replace(2,plane(2000,2,9000),{{.2f,.3f,.4f}});
+    AIVERSE_TEST_CHECK(bridge.publishGeometryRegion(
+        std::make_shared<const GiChunkedGeometrySnapshot>(chunks.publish()),3,
+        GiBounds{{2000,0,0},{2001,3,1}}));
+    AIVERSE_TEST_CHECK(!bridge.pendingProbes() && bridge.canPresent());
+    chunks.replace(1,plane(1,1,2),{{1,1,1}});
+    AIVERSE_TEST_CHECK(bridge.publishGeometryRegion(
+        std::make_shared<const GiChunkedGeometrySnapshot>(chunks.publish()),4,
+        GiBounds{{0,0,0},{2,1,1}}));
+    AIVERSE_TEST_CHECK(bridge.pendingProbes()>0 && !bridge.canPresent());
     // A relevant overflow is refused and keeps the previous upload.
     chunks.replace(3,plane(1,0,8192),{{1,0,0}});
     auto nearOverflow=std::make_shared<const GiChunkedGeometrySnapshot>(chunks.publish());
-    AIVERSE_TEST_CHECK(!bridge.publishGeometry(nearOverflow,3));
+    AIVERSE_TEST_CHECK(!bridge.publishGeometry(nearOverflow,5));
     AIVERSE_TEST_CHECK(bridge.residency().exceededBudget);
     AIVERSE_TEST_CHECK(!bridge.canPresent());
     device.endFrame();
