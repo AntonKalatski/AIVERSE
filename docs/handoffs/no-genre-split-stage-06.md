@@ -3,8 +3,10 @@
 Branch `feature/aiv20261121_no-genre`. Plan: `docs/no-genre-split-audit.md` ("Stage C, revised order").
 Design of the direct-control step that follows: `docs/handoffs/no-genre-split-stage-05-design.md`.
 
-**Status: code done, NOT yet built on the Mac.** The stage is not finished until the KINGSTON build, CTest and
-template checksums pass (`_tmp/no-genre-build.command`). Each commit below was only syntax-checked (`-fsyntax-only`).
+**Status: built and tested on the Mac (KINGSTON, 74c8e98cc + link fix):** CTest 397/398 (only `skill_audit`, known
+from main); template checksums all equal except `boss_arena` seed 2 (known non-determinism from main).
+Link fix: `aiverse_terraweave_preview_test` now compiles `engine/world/AsyncChunkStream.cpp` and `ChunkStreamer.cpp`
+(TerraWeaveHorizonScene from main uses them; main has the same missing link).
 
 ## Code
 - 4aac6d009 merge of origin/main.
