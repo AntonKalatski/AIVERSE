@@ -16,6 +16,7 @@
 //    RigLogic drivers are NOT evaluated), skins, LOD levels.
 #include "engine/data/Json.h"
 #include "engine/render/Model.h"
+#include "engine/render/Animation.h"
 #include <string>
 #include <vector>
 namespace aiverse::vivid {
@@ -34,4 +35,23 @@ struct MetaHumanReport {
     Json face() const;                    // HumanFaceShape JSON with the meshes
 };
 MetaHumanReport adaptMetaHuman(const render::Model& model);
+
+// Presentation-only runtime drivers for a MetaHuman skeleton (NOT RigLogic):
+//  - "<bone>_half_<side>" joints follow half of their base joint's rotation;
+//  - "lowerarm_twist_0N_<side>" share the hand's roll (N/3);
+//  - FACIAL_C_Jaw / FACIAL_L_Eye / FACIAL_R_Eye follow the ARKit channels
+//    (jawOpen, eyeLook*) ONLY when the face morphs do not already move the
+//    teeth / eyeballs (measured once from the morph deltas).
+// Build once per model (needs CPU morph deltas), apply after the clip pose.
+struct MetaHumanRig {
+    struct Driver{int node=-1,base=-1;render::quat bindNode,bindBase;float factor=0;bool twist=false;};
+    std::vector<Driver> drivers;
+    int jaw=-1,eyeL=-1,eyeR=-1;
+    // Face mesh nodes and the ARKit morph slots they carry: channel -> (node, slot).
+    std::vector<std::pair<int,int>> jawOpen,lookUpL,lookDownL,lookInL,lookOutL,lookUpR,lookDownR,lookInR,lookOutR;
+    bool empty() const {return drivers.empty()&&jaw<0&&eyeL<0&&eyeR<0;}
+    Json toJson() const;
+};
+MetaHumanRig buildMetaHumanRig(const render::Model& model);
+void applyMetaHumanRig(const MetaHumanRig& rig,const render::Model& model,render::Pose& pose);
 }

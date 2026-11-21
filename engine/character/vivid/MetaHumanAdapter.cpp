@@ -5,6 +5,8 @@
 #include <cctype>
 #include <regex>
 #include <set>
+#include <map>
+#include <cmath>
 
 namespace aiverse::vivid {
 namespace {
@@ -58,11 +60,11 @@ MetaHumanReport adaptMetaHuman(const render::Model& m) {
     r.detected=r.score>=3;
     if(!r.detected)r.notes.push_back("Не похоже на экспорт MetaHuman: нет скелета UE5 (spine_05, neck_02, head) и/или FaceMesh / head_shader.");
     if(r.detected) {
-        if(r.correctiveJoints>0)r.notes.push_back("Корректирующие кости ("+std::to_string(r.correctiveJoints)+") остаются в bind pose: драйверы RigLogic не исполняются, позы локтей/плеч без коррекции.");
-        if(r.facialJoints>0)r.notes.push_back("Лицевые кости FACIAL_* ("+std::to_string(r.facialJoints)+") не анимируются: мимика идёт через ARKit-морфы.");
+        if(r.correctiveJoints>0)r.notes.push_back("Корректирующие кости ("+std::to_string(r.correctiveJoints)+"): суставы *_half и твисты предплечья ведёт VIVID; остальные (bulge, in/out, fwd/bck) стоят в bind pose — RigLogic не исполняется.");
+        if(r.facialJoints>0)r.notes.push_back("Лицевые кости FACIAL_* ("+std::to_string(r.facialJoints)+"): челюсть и глаза ведутся по ARKit-каналам, если морфы их ещё не двигают; остальные — через морфы.");
         if(!r.channelsMissing.empty())r.notes.push_back("Нет ARKit-каналов: "+[&]{std::string s;for(const auto& c:r.channelsMissing)s+=(s.empty()?"":", ")+c;return s;}()+" — они не двигаются.");
         if(r.channelsFound.empty())r.notes.push_back("В FaceMesh нет ARKit-морфов: экспортируйте с ARKit blend shapes (или используйте tools/vivid-dna-import).");
-        r.notes.push_back("Грум (strand) не импортируется: используются карточки из экспорта; .dna читается только офлайн-инструментом tools/vivid-dna-import.");
+        r.notes.push_back("Грум (strand) не импортируется: используются карточки из экспорта; .dna читается только офлайн-инструментом tools/vivid-dna-import; GLB с Draco распаковывается офлайн: tools/vivid-dna-import/decompress_draco.cjs.");
     }
     return r;
 }
@@ -84,5 +86,92 @@ Json MetaHumanReport::face() const {
     auto j=Json::object();j.set("version",Json::number(int64_t(1)));
     auto meshes=Json::array();for(const auto& s:faceMeshes)meshes.push(Json::string(s));
     j.set("meshes",meshes);j.set("values",Json::object());j.set("landmarks",Json::array());return j;
+}
+
+namespace {
+render::quat conj(render::quat q){return {-q.x,-q.y,-q.z,q.w};}
+// Twist of q about unit axis a (swing-twist decomposition).
+render::quat twistOf(render::quat q,render::float3 a){const float d=q.x*a.x+q.y*a.y+q.z*a.z;return render::qnormalize(render::quat{a.x*d,a.y*d,a.z*d,q.w});}
+render::quat power(render::quat q,float t){return render::slerp(render::quat{},q,t);}
+}
+
+MetaHumanRig buildMetaHumanRig(const render::Model& m) {
+    MetaHumanRig r;
+    std::map<std::string,int> byName;
+    for(size_t i=0;i<m.nodes.size();++i)byName.emplace(bone(m.nodes[i].name),int(i));
+    if(!byName.contains("spine_05")||!byName.contains("head"))return r; // not a MetaHuman skeleton
+    static const std::regex half(R"(^(.+)_half_([lr])$)"),twist(R"(^lowerarm_twist_0(\d)_([lr])$)");
+    // Every duplicated skeleton (body, face, clothing skins) gets its own
+    // drivers: the base joint is looked up next to the corrective joint.
+    auto near=[&](int node,const std::string& want)->int{
+        const int p=m.nodes[size_t(node)].parent;if(p<0)return -1;
+        if(bone(m.nodes[size_t(p)].name)==want)return p;
+        for(int c:m.nodes[size_t(p)].children)if(c!=node&&bone(m.nodes[size_t(c)].name)==want)return c;
+        return -1;};
+    for(size_t i=0;i<m.nodes.size();++i) {
+        const auto name=bone(m.nodes[i].name);std::smatch mm;MetaHumanRig::Driver d;d.node=int(i);
+        if(std::regex_match(name,mm,half)) {
+            d.base=near(d.node,mm[1].str()+"_"+mm[2].str());if(d.base<0)continue;
+            d.factor=m.nodes[i].parent==d.base?-.5f:.5f;
+        } else if(std::regex_match(name,mm,twist)) {
+            d.base=near(d.node,"hand_"+mm[2].str());if(d.base<0)continue;
+            d.twist=true;d.factor=std::clamp(float(std::stoi(mm[1].str()))/3.f,0.f,1.f);
+        } else continue;
+        d.bindNode=m.nodes[i].r;d.bindBase=m.nodes[size_t(d.base)].r;r.drivers.push_back(d);
+    }
+    // ARKit morph slots on face meshes, and whether they already move the
+    // teeth / eyeballs (then the joints must not move them a second time).
+    auto movesMaterial=[&](const char* morph,const char* materialPart){
+        for(const auto& n:m.nodes){if(n.mesh<0)continue;const auto& mesh=m.meshes[size_t(n.mesh)];
+            const auto it=std::find(mesh.morphTargetNames.begin(),mesh.morphTargetNames.end(),morph);if(it==mesh.morphTargetNames.end())continue;
+            const size_t t=size_t(it-mesh.morphTargetNames.begin());
+            for(const auto& p:mesh.primitives){if(p.material<0||size_t(p.material)>=m.materials.size())continue;
+                if(lower(m.materials[size_t(p.material)].name).find(materialPart)==std::string::npos)continue;
+                if(p.morphDeltas.size()<(t+1)*p.vertexCount*6u)return true; // deltas released: assume baked (do not double-drive)
+                for(size_t v=0;v<p.vertexCount;++v){const float* d=&p.morphDeltas[(t*p.vertexCount+v)*6];if(std::fabs(d[0])+std::fabs(d[1])+std::fabs(d[2])>1e-4f)return true;}}}
+        return false;};
+    auto slots=[&](const char* morph){std::vector<std::pair<int,int>> out;
+        for(size_t i=0;i<m.nodes.size();++i){const auto& n=m.nodes[i];if(n.mesh<0)continue;const auto& names=m.meshes[size_t(n.mesh)].morphTargetNames;
+            const auto it=std::find(names.begin(),names.end(),morph);if(it!=names.end()&&it-names.begin()<render::kMaxMorphTargets)out.emplace_back(int(i),int(it-names.begin()));}
+        return out;};
+    if(auto j=byName.find("FACIAL_C_Jaw");j!=byName.end()&&!movesMaterial("jawOpen","teeth")){r.jaw=j->second;r.jawOpen=slots("jawOpen");}
+    const bool eyesBaked=movesMaterial("eyeLookOutLeft","eyeleft")||movesMaterial("eyeLookUpLeft","eyeleft");
+    if(!eyesBaked) {
+        if(auto e=byName.find("FACIAL_L_Eye");e!=byName.end())r.eyeL=e->second;
+        if(auto e=byName.find("FACIAL_R_Eye");e!=byName.end())r.eyeR=e->second;
+        r.lookUpL=slots("eyeLookUpLeft");r.lookDownL=slots("eyeLookDownLeft");r.lookInL=slots("eyeLookInLeft");r.lookOutL=slots("eyeLookOutLeft");
+        r.lookUpR=slots("eyeLookUpRight");r.lookDownR=slots("eyeLookDownRight");r.lookInR=slots("eyeLookInRight");r.lookOutR=slots("eyeLookOutRight");
+    }
+    return r;
+}
+
+void applyMetaHumanRig(const MetaHumanRig& r,const render::Model& m,render::Pose& pose) {
+    if(r.empty()||pose.size()!=m.nodes.size())return;
+    for(const auto& d:r.drivers) {
+        const auto delta=conj(d.bindBase)*pose[size_t(d.base)].r;
+        const auto part=d.twist?power(twistOf(delta,{1,0,0}),d.factor):power(d.factor<0?conj(delta):delta,std::fabs(d.factor));
+        pose[size_t(d.node)].r=render::qnormalize(d.bindNode*part);
+    }
+    if(r.jaw<0&&r.eyeL<0&&r.eyeR<0)return;
+    auto weight=[&](const std::vector<std::pair<int,int>>& s){float w=0;for(const auto& [n,k]:s)w=std::max(w,pose[size_t(n)].w[k]);return w;};
+    std::vector<render::mat4> world;render::worldMatrices(m,pose,world);
+    // Rotate a joint by a WORLD-space rotation around its own pivot.
+    auto turn=[&](int node,render::quat worldTurn){
+        const int parent=m.nodes[size_t(node)].parent;
+        const auto parentRot=parent>=0?render::rotationOf(world[size_t(parent)]):render::quat{};
+        const auto own=render::rotationOf(world[size_t(node)]);
+        pose[size_t(node)].r=render::qnormalize(conj(parentRot)*worldTurn*own);};
+    if(r.jaw>=0)turn(r.jaw,render::quat::axisAngle({1,0,0},.32f*weight(r.jawOpen)));
+    auto eye=[&](int node,float yaw,float pitch){if(node<0)return;
+        turn(node,render::quat::axisAngle({0,1,0},yaw)*render::quat::axisAngle({1,0,0},pitch));};
+    eye(r.eyeL,.4f*(weight(r.lookOutL)-weight(r.lookInL)),-.35f*(weight(r.lookUpL)-weight(r.lookDownL)));
+    eye(r.eyeR,.4f*(weight(r.lookInR)-weight(r.lookOutR)),-.35f*(weight(r.lookUpR)-weight(r.lookDownR)));
+}
+
+Json MetaHumanRig::toJson() const {
+    auto j=Json::object();size_t halves=0,twists=0;for(const auto& d:drivers)(d.twist?twists:halves)++;
+    j.set("halfJoints",Json::number(int64_t(halves)));j.set("twistJoints",Json::number(int64_t(twists)));
+    j.set("jawJoint",Json::fromBool(jaw>=0));j.set("eyeJoints",Json::fromBool(eyeL>=0||eyeR>=0));
+    return j;
 }
 }

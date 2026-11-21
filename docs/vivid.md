@@ -2061,4 +2061,10 @@ MetaHuman exports (not vendored) via `AIVERSE_METAHUMAN_SAMPLES`: Ada (`VIVID-Lo
 detected, score 5, head bone `head`, 2 face meshes, 10 material roles, 4 hidden, ARKit 51/52 (missing `tongueOut`),
 843 FACIAL joints, 271 corrective joints, 5 skins; Bruce (`Characters/Bruce-Full/model.gltf`): detected with >=40
 ARKit channels (assertion). The original `bruce.glb` is Draco-compressed and is rejected by the importer.
+- Follow-up: `vivid::buildMetaHumanRig` / `applyMetaHumanRig` (presentation drivers, not RigLogic): `*_half_<side>`
+  joints take half their neighbouring base joint's rotation (counter-half when parented to it), `lowerarm_twist_0N`
+  share N/3 of the hand roll, FACIAL_C_Jaw / FACIAL_L_Eye / FACIAL_R_Eye follow jawOpen / eyeLook* in world space only
+  when the morphs do not already move teeth / eyeballs. Applied in Studio's facial preview after the clip pose.
+  Draco GLB: offline `tools/vivid-dna-import/decompress_draco.cjs` (the importer error points to it); the real
+  `bruce.glb` decodes and is part of the adapter verification samples.
 

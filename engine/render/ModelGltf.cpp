@@ -148,7 +148,8 @@ private:
             "KHR_mesh_quantization", "KHR_texture_transform", "KHR_materials_unlit", "KHR_materials_emissive_strength",
             "KHR_materials_pbrSpecularGlossiness", "KHR_materials_variants", "KHR_lights_punctual"};
         for (const auto& e : doc_["extensionsRequired"].items())
-            if (!supported.count(e.str())) fail("required extension " + e.str() + " is not supported (re-export without it)");
+            if (!supported.count(e.str())) fail("required extension " + e.str() + " is not supported (re-export without it" +
+                std::string(e.str() == "KHR_draco_mesh_compression" ? " or decode it offline: tools/vivid-dna-import/decompress_draco.cjs)" : ")"));
         // optional refinements that don't change how a model reads in an RTS view (assimp's exporter
         // writes the first three for every material): ignored without a warning
         static const std::set<std::string> quiet = {"KHR_materials_specular", "KHR_materials_ior", "FB_ngon_encoding",

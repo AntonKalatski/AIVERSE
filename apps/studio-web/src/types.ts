@@ -484,7 +484,8 @@ export interface StudioBuildEstimate { target: string; pack: Record<string, unkn
   heaviest: Array<{ path?: string; file?: string; bytes?: number; storedBytes?: number }> }
 
 export interface MetaHumanReport { detected:boolean; score:number; headBone:string; faceMeshes:string[]; hiddenMaterials:string[]; materialRoles:Record<string,string>;
-  channelsFound:number; channelsMissing:string[]; facialJoints:number; correctiveJoints:number; skins:number; lodLevels:number; notes:string[]; look:HumanLook; face:HumanFaceShape }
+  channelsFound:number; channelsMissing:string[]; facialJoints:number; correctiveJoints:number; skins:number; lodLevels:number; notes:string[]; look:HumanLook; face:HumanFaceShape;
+  rig?: { halfJoints:number; twistJoints:number; jawJoint:boolean; eyeJoints:boolean } }
 export type StudioAlignMode = 'minX' | 'centerX' | 'maxX' | 'minZ' | 'centerZ' | 'maxZ' | 'distributeX' | 'distributeZ' | 'ground';
 /** Undo history: applied steps first (oldest → newest), then the redo branch; position = applied count. */
 export interface StudioHistory { steps: Array<{ label: string; done: boolean }>; position: number }

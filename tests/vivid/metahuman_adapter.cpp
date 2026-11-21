@@ -5,6 +5,8 @@
 #include "engine/character/vivid/Face.h"
 #include "engine/character/vivid/HumanAppearance.h"
 #include "engine/character/vivid/HumanFaceShape.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -35,6 +37,18 @@ int main(){
           look.materials.at("ada_facemesh_eyelashes_shader_shader")=="lashes"&&look.materials.at("hair_s_coil_cardsmesh_group0_lod0_Cards_M")=="hair"&&
           look.materials.at("f_med_nrw_top_shirt_nrm_cinematic_lambert1")=="cloth"&&!look.materials.contains("ada_facemesh_teeth_shader_shader"),"material roles");
     check(vivid::HumanFaceShape::fromJson(r.face()).meshes.size()==2,"face selection JSON");
+    {   // Runtime drivers: a "_half" joint beside its base follows half the bend.
+        render::Model s;
+        for(const char* n:{"root","pelvis","spine_05","head","elbow_parent","lowerarm_l","lowerarm_half_l"}){render::Node x;x.name=n;s.nodes.push_back(x);}
+        s.nodes[4].children={5,6};s.nodes[5].parent=4;s.nodes[6].parent=4;
+        const auto rig=vivid::buildMetaHumanRig(s);
+        check(rig.drivers.size()==1&&rig.drivers[0].base==5&&rig.drivers[0].factor>0,"half driver not built");
+        render::Pose pose;render::bindPose(s,pose);
+        pose[5].r=render::quat::axisAngle({0,0,1},1.0f);
+        vivid::applyMetaHumanRig(rig,s,pose);
+        const float angle=2.f*std::acos(std::clamp(std::fabs(pose[6].r.w),0.f,1.f));
+        check(std::fabs(angle-.5f)<1e-3f,"half joint must take half the base rotation");
+    }
     render::Model plain;plain.nodes.push_back({"Hips"});render::MeshDef x;x.name="Body";plain.meshes.push_back(x);
     check(!vivid::adaptMetaHuman(plain).detected,"non-MetaHuman detected");
     if(const char* list=std::getenv("AIVERSE_METAHUMAN_SAMPLES")) {

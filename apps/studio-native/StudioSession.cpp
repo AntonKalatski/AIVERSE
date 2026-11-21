@@ -1090,6 +1090,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             if(!model)throw std::runtime_error("Не удалось загрузить модель "+relative);
             const auto report=vivid::adaptMetaHuman(*model);
             auto result=report.toJson();result.set("look",report.look());result.set("face",report.face());
+            result.set("rig",vivid::buildMetaHumanRig(*model).toJson());
             reply.set("result",std::move(result));
         } else if(method=="studio.humanPlaceInGame") {
             // "To the game": the built character becomes an RTS unit type

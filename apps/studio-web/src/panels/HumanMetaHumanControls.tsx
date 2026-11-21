@@ -24,6 +24,17 @@ export default function HumanMetaHumanControls({ guid, draft, face, onApply }:
     {report && (report.detected ? <>
       <p className="hc-hint">Распознан MetaHuman: кость головы «{report.headBone}», мешей лица {report.faceMeshes.length}, ролей материалов {Object.keys(report.materialRoles).length},
         ARKit-каналов {report.channelsFound} из 52, LOD {report.lodLevels}, скинов {report.skins}. Роли и меши лица применены к образу.</p>
+      <div className="hc-mh">
+        <div><b>{report.channelsFound}/52</b><span>мимических каналов</span></div>
+        <div><b>{report.rig ? report.rig.halfJoints + report.rig.twistJoints : 0}</b><span>корректоров ведёт VIVID</span></div>
+        <div><b>{report.rig?.jawJoint ? 'да' : 'морфы'}</b><span>челюсть</span></div>
+        <div><b>{report.rig?.eyeJoints ? 'кости' : 'морфы'}</b><span>глаза</span></div>
+      </div>
+      {report.channelsMissing.length > 0 && <p className="hc-hint">Нет каналов: {report.channelsMissing.join(', ')}</p>}
+      <details className="hc-item__more"><summary>Материалы ({Object.keys(report.materialRoles).length} ролей, скрыто {report.hiddenMaterials.length})</summary>
+        {Object.entries(report.materialRoles).map(([m, r]) => <p key={m} className="hc-hint">{m} → {({ skin: 'кожа', eyes: 'глаза', lashes: 'ресницы', hair: 'волосы', cloth: 'ткань' } as Record<string, string>)[r] ?? r}</p>)}
+        {report.hiddenMaterials.map(m => <p key={m} className="hc-hint">{m} → скрыт</p>)}
+      </details>
       {report.notes.map(n => <HcNote key={n} tone="warn">{n}</HcNote>)}
     </> : <HcNote tone="warn">{report.notes[0] ?? 'Это не экспорт MetaHuman.'}</HcNote>)}
   </HcCard>;
