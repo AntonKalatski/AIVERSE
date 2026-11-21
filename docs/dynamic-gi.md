@@ -51,6 +51,7 @@ Add an opt-in `dynamicGI` object to a native renderbench scene:
   "spacing": 3,
   "samples": 32,
   "distance": 20,
+  "cascades": 1,
   "cpuBudgetMs": 2,
   "sunDirection": [0.35, 1, 0.55],
   "sunColor": [1, 0.96, 0.9],
@@ -64,8 +65,13 @@ all captured geometry on CPU. `gpu` fails explicitly if unsupported; `cpu` force
 the portable path. Sources are not silently truncated. Recipe point lights are
 converted from the renderer's stored sRGB representation back to linear transport.
 Environment colors above are already linear and are indirect-only; no implicit
-copy of direct sun/sky settings occurs. Large geometry is split into 65536-triangle
-chunks. The benchmark waits for initial convergence before timed frames and reports
+copy of direct sun/sky settings occurs. Geometry is split into spatial chunks of
+about one `distance`; the GPU path keeps resident only chunks a GI ray can reach
+(`GiGpuResidencyPlanner`), so a world above the 8192-triangle GPU budget stays on
+the GPU while the reachable part fits. `cascades` (1..3, GPU only) adds nested
+lattices around the same center, cascade k with `spacing`·2^k and `distance`·2^k;
+all share the one GI atlas (texture 13, U6 nine float4), a point uses the finest
+cascade that contains it and fades into the next one at its edge. The benchmark waits for initial convergence before timed frames and reports
 `dynamicGiBackend`, `dynamicGiFallback`, `dynamicGiTriangles` and
 `dynamicGiConvergenceMs`. It reattaches GI on every camera view.
 
