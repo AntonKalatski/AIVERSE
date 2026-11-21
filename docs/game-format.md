@@ -28,6 +28,14 @@ is optional — the blocks present on a type decide what it can do.
 ```
 `"audio"`: another name for the sound file (default `audio.json`).
 
+`"module"`: the game module — `"rts"`, `"fps"`, `"voxel"`, or `"scene"`. A `"scene"` project has no game
+module: it needs only `game.json` (`name`, `id`, `version`, `build`, `"module": "scene"`, optional
+`"background": "#rrggbb"`). `aiversebuild` packages it with the minimal scene client
+(`apps/client/SceneMain.cpp`, CMake `AIVERSE_SCENE_CLIENT`): window or canvas, content pack and an empty
+scene cleared to the background colour — no simulation, renderer, UI, scripting or audio, and no
+`engine/assets` in the pack. Web Release, 2026-11-21: 158 KB to download (brotli: `index.wasm` 121 KB,
+`index.js` 39 KB). Projects without `"module"` remain RTS projects.
+
 `"icons"` and `"splash"`: game icons for every platform and the loading screen — see "Icons and
 splash" below (the old single `"icon"` still works as the master icon).
 

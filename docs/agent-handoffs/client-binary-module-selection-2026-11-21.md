@@ -479,3 +479,37 @@ Found on the way:
   message) aborts the client with a bare number instead of the native error
   screen. Not changed here; reading the message from wasm memory in the
   browser worked for diagnosis.
+
+## 2026-11-21 continuation: scene client (projects without a game module)
+
+Owner goal: an empty project well under 1 MB to download. The RTS client
+cannot reach that (its code floor with every module off is 3.5 MB brotli), so
+`game.json` `"module": "scene"` now selects a separate minimal client.
+
+- `apps/client/SceneMain.cpp`: platform run loop, reads `game.json` from the
+  content (title, `"background": "#rrggbb"`), clears every frame. Links only
+  `aiverse_client_runtime`, so the linker keeps the platform layer, the GL
+  backend, the pack reader and JSON.
+- CMake `AIVERSE_SCENE_CLIENT` (default OFF; FATAL with editor, tests or HTML5
+  Studio): `aiverse_client` / Android `main` are built from `SceneMain.cpp`.
+  `AIVERSE_GAME_CLIENT_TARGETS` replaces the literal `aiverse_client main`
+  lists of the GameClient source/library blocks and is empty in scene mode.
+  Windows icon, iOS storyboard, macOS dead strip and native plugins still apply.
+- `aiversebuild`: `sceneClient()` = `"module": "scene"`. Scene projects get
+  `-DAIVERSE_SCENE_CLIENT=ON` with every optional module OFF on all targets
+  (through `engineModuleVars`, so Android gets it too), and the pack holds
+  only project files (no `engine/assets`), also for `--no-pack`. Other
+  projects now always pass `-DAIVERSE_SCENE_CLIENT=OFF` so a reused build
+  folder cannot keep the scene client; `--check-engine-modules` still prints
+  "legacy defaults" when no module list is declared.
+
+Verification: `aiversebuild --target web` on a `"module": "scene"` project
+(Release, Emscripten 3.1.50): index.wasm 390,080 B (brotli 120,965),
+index.js 172,722 B (39,158), index.data 241 B (215), index.html 1,228 brotli:
+**161,566 B total**. Headless Chrome: every sampled pixel is the configured
+`#1e3a5f` (the smoke harness reports "blank frame" by design for one colour).
+`--check-engine-modules`: scene project → scene client flags; skirmish copy
+without a list → legacy defaults. NOT RUN: native/mobile scene builds, CI.
+The editor's "Пустой проект" template is still an RTS project (one unit type,
+mine, terrain PBR materials); switching it to `"module": "scene"` is a
+product decision for the editor owners.
