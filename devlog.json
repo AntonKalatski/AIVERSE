@@ -1,0 +1,289 @@
+{
+ "generated": "2026-11-21T09:33:50+00:00",
+ "repo": "https://github.com/chromealex/AIVERSE",
+ "systems": [
+  {
+   "id": "terraweave",
+   "name": "TerraWeave",
+   "nameEn": "TerraWeave"
+  },
+  {
+   "id": "physis",
+   "name": "PHYSIS",
+   "nameEn": "PHYSIS"
+  },
+  {
+   "id": "nereid",
+   "name": "NEREID",
+   "nameEn": "NEREID"
+  },
+  {
+   "id": "strata",
+   "name": "STRATA",
+   "nameEn": "STRATA"
+  },
+  {
+   "id": "lens",
+   "name": "LENS",
+   "nameEn": "LENS"
+  },
+  {
+   "id": "vivid",
+   "name": "VIVID",
+   "nameEn": "VIVID"
+  },
+  {
+   "id": "lighting",
+   "name": "LUMA",
+   "nameEn": "LUMA lighting"
+  },
+  {
+   "id": "prisma",
+   "name": "PRISMA",
+   "nameEn": "PRISMA post-processing"
+  },
+  {
+   "id": "spectrafx",
+   "name": "SpectraFX",
+   "nameEn": "SpectraFX VFX"
+  },
+  {
+   "id": "motionweave",
+   "name": "MotionWeave",
+   "nameEn": "MotionWeave animation"
+  },
+  {
+   "id": "render",
+   "name": "Рендер и материалы",
+   "nameEn": "Rendering and materials"
+  },
+  {
+   "id": "world",
+   "name": "Мир: дороги и города",
+   "nameEn": "World: roads and cities"
+  },
+  {
+   "id": "ecs",
+   "name": "ECS и сущности",
+   "nameEn": "ECS and entities"
+  },
+  {
+   "id": "studio",
+   "name": "Studio — редактор",
+   "nameEn": "Studio editor"
+  },
+  {
+   "id": "network",
+   "name": "Сеть и сервер",
+   "nameEn": "Networking and server"
+  },
+  {
+   "id": "meta",
+   "name": "Мета и LiveOps",
+   "nameEn": "Meta and LiveOps"
+  },
+  {
+   "id": "gameplay",
+   "name": "Жанры и механики",
+   "nameEn": "Genres and mechanics"
+  },
+  {
+   "id": "agents",
+   "name": "MCP и навыки агентов",
+   "nameEn": "MCP and agent skills"
+  },
+  {
+   "id": "build",
+   "name": "Сборка и платформы",
+   "nameEn": "Builds and platforms"
+  }
+ ],
+ "entries": [
+  {
+   "id": "2026-11-21-vivid-adaptive-soft-shadows",
+   "date": "2026-11-21",
+   "system": "vivid",
+   "title": "Цифровые люди: мягкие тени на лице с адаптивным разрешением",
+   "summary": "Разрешение карты теней подстраивается под размер персонажа на экране, а студийный свет даёт мягкую портретную тень — без ступенек на шее и рваного края у носа.",
+   "body": [
+    "Общая CPU-политика AdaptiveShadowResolution выбирает карту теней 1024, 2048 или 4096 по высоте вьюпорта, расстоянию и углу обзора камеры и доле кадра, которую занимает персонаж. Повышение — при превышении спроса на 15%, понижение — только после 60 кадров низкого спроса, чтобы разрешение не прыгало.",
+    "Портретный ключевой свет VIVID использует мягкий PCF вместо общего PCSS: это художественный фильтр для лица, а не физически точный протяжённый источник. Игровое освещение и шейдеры не менялись."
+   ],
+   "status": "in-progress",
+   "verified": "CTest adaptive_shadow_resolution: 1/1 PASS в Release с включёнными проверками; нативные сборки VIVID Creator и Studio собраны; ролик 168 кадров 1500×920, 24 fps, ошибок пайплайна 0. Кадры — нативный вывод без ретуши.",
+   "limits": "Оценка плотности консервативная, не по пикселям; это не каскадные и не виртуальные карты теней. Нижние уровни разрешения на полном росте этим ассетом не подтверждены.",
+   "branch": "integration/motionweave-studio-facial-stage184",
+   "commit": "864bd2d8c",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/adaptive-soft-shadows.mp4",
+     "caption": "Поворот головы и моргание: мягкие тени на лице, Metal"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/turn.jpg",
+     "caption": "Кадр из ролика: голова в повороте, мягкая тень под скулой"
+    }
+   ],
+   "links": [],
+   "author": "vivid"
+  },
+  {
+   "id": "2026-11-16-world-city-roads",
+   "date": "2026-11-16",
+   "system": "world",
+   "title": "Город, собранный агентом: дороги и кварталы",
+   "summary": "Сплайновые дороги, перекрёстки и застроенные кварталы — агент собрал их навыками aiverse-roads и aiverse-city-blocks.",
+   "body": [
+    "Дороги задаются сплайнами в roadNetwork карты, кварталы нарезаются по полигонам сети дорог генератором площадок и застраиваются по стилям и назначениям."
+   ],
+   "status": "done",
+   "verified": "Снимок сделан движком.",
+   "limits": null,
+   "branch": "main",
+   "commit": "ad6025b50",
+   "media": [
+    {
+     "src": "media/docs/images/readme/city-roads.jpg",
+     "caption": "Кварталы, перекрёстки и парковки"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/city-planner.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/city-planner.md"
+    }
+   ],
+   "author": "city"
+  },
+  {
+   "id": "2026-11-16-render-sponza-pbr",
+   "date": "2026-11-16",
+   "system": "render",
+   "title": "Sponza: PBR, тени и ambient occlusion",
+   "summary": "Классическая тестовая сцена Sponza целиком в рендере AIVERSE: физически корректные материалы, тени от солнца и затенение.",
+   "body": [
+    "Кадр снят движком; на этой же сцене собраны бенчмарки освещения, проб GI и дымки в docs/benchmarks/sponza-2026-11-12."
+   ],
+   "status": "done",
+   "verified": "Снимок сделан движком на сцене Sponza.",
+   "limits": null,
+   "branch": "main",
+   "commit": "ad6025b50",
+   "media": [
+    {
+     "src": "media/docs/images/readme/sponza.jpg",
+     "caption": "Sponza: PBR, тени, AO"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/probe-gi.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/probe-gi.md"
+    }
+   ],
+   "author": "render"
+  },
+  {
+   "id": "2026-11-12-prisma-light-shafts",
+   "date": "2026-11-12",
+   "system": "prisma",
+   "title": "Лучи света сквозь дымку",
+   "summary": "Объёмные лучи солнца в дымке на сцене Sponza: сравнение выключено / включено.",
+   "body": [
+    "Снимки из бенчмарка Sponza 2026-11-12. Настройки сцены лежат рядом со снимками в docs/benchmarks/sponza-2026-11-12."
+   ],
+   "status": "done",
+   "verified": "Снимки сняты движком на сцене Sponza.",
+   "limits": null,
+   "branch": "main",
+   "commit": "b9c9be65d",
+   "media": [
+    {
+     "src": "media/docs/images/readme/sponza-light-shafts.png",
+     "caption": "Выключено / включено"
+    },
+    {
+     "src": "media/docs/benchmarks/sponza-2026-11-12/haze-shafts-crop.png",
+     "caption": "Лучи крупно"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/prisma.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/prisma.md"
+    }
+   ],
+   "author": "prisma"
+  },
+  {
+   "id": "2026-11-12-lighting-probe-moments",
+   "date": "2026-11-12",
+   "system": "lighting",
+   "title": "Пробы GI: видимость по моментам вместо плоскости",
+   "summary": "Видимость световых проб хранится как моменты Чебышёва — пропала тёмная полоса на арках Sponza.",
+   "body": [
+    "Перезапекание заменяет только 96 тексел видимости на пробу, перенос солнца, неба и точечных источников остаётся прежним. Sponza — 10 710 проб и 10,8 млн треугольников — перезапекается примерно за 18 секунд на двух ядрах.",
+    "Старый кэш с плоской видимостью рендерится бит в бит как до изменения (максимальная разница канала — 0)."
+   ],
+   "status": "done",
+   "verified": "Облачный Linux, llvmpipe GLES 3.2: снимки High до/после, HDR GPU-проверки 1–53 проходят на Linux GL.",
+   "limits": "Моменты всё ещё слегка протекают через тонкую геометрию; пробы внутри геометрии не переносятся. MSL, захват на Metal и Android не проверены.",
+   "branch": "main",
+   "commit": "da9cfbbac",
+   "media": [
+    {
+     "src": "media/docs/benchmarks/sponza-2026-11-12/moments-high-before-after.png",
+     "caption": "Кадр целиком: плоскость сверху, моменты снизу"
+    },
+    {
+     "src": "media/docs/benchmarks/sponza-2026-11-12/moments-arch-before-after.png",
+     "caption": "Правая арка крупно"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/probe-gi.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/probe-gi.md"
+    }
+   ],
+   "author": "probe-gi"
+  },
+  {
+   "id": "2026-11-12-lighting-lightbake",
+   "date": "2026-11-12",
+   "system": "lighting",
+   "title": "Запекание света: лайтмапы и пробы",
+   "summary": "Свой офлайн path tracer на CPU пишет лайтмапы для статики и террейна и сетку проб для всего, что движется.",
+   "body": [
+    "Свет на карте помечается как mixed (остаётся realtime, запекается отскок) или baked (только в лайтмапе и пробах). Рантайм смешивает запечённый свет с realtime-солнцем, как mixed lighting в Unity.",
+    "Перезапекание пропускается, если ничего не изменилось: запекание хранит 64-битный хэш геометрии, материалов, текстур, трансформов, света и настроек. Доступно из редактора (Графика → Запекание света) и через MCP: lightbake_set, lightbake_bake, lightbake_status."
+   ],
+   "status": "done",
+   "verified": "Снимки до и после запекания сняты движком.",
+   "limits": null,
+   "branch": "main",
+   "commit": "91bb89d95",
+   "media": [
+    {
+     "src": "media/docs/images/lightbake_before_realtime.png",
+     "caption": "До: только realtime"
+    },
+    {
+     "src": "media/docs/images/lightbake_after_baked.png",
+     "caption": "После запекания"
+    },
+    {
+     "src": "media/docs/images/lightbake_lightmap.png",
+     "caption": "Лайтмап"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/lightbake.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/lightbake.md"
+    }
+   ],
+   "author": "agent-lightbake"
+  }
+ ]
+}
