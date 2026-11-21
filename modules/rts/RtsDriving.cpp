@@ -2,7 +2,7 @@
 // vehicle adoption, getting in / out, the hero's stick as the driver's controls, the sweep of the body over the map
 // grid and other units, decks, damage and the race seats. Fixed maths only; every loop runs in entity-index order.
 #include "RtsDriving.h"
-#include "kingston/DeckBroadphase.h"
+#include "RtsDeckBroadphase.h"
 #include "RtsInternal.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
@@ -517,7 +517,7 @@ bool Driving::collide(Simulation& sim, Entity car, Vec3& pos, vs::VehicleImpacts
     }
     for (size_t i = 0; i < decks.size() && c.deck < 0; ++i) {
         const DrivingDeck& d = decks[i];
-        if (!kingston::deckMayTouchBody(d, pos, half)) continue;
+        if (!deckMayTouchBody(d, pos, half)) continue;
         const Fixed m = deckMouth(d);
         for (Fixed off : offs) {
             const DeckSpot s = deckSpot(d, pos + f * off);

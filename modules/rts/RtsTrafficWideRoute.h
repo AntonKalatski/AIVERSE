@@ -1,11 +1,11 @@
 #pragma once
 #include <aiverselib/Graphs.h>
-#include "FireResponseDetour.h"
+#include "RtsTrafficDetour.h"
 #include "libraries/include/aiverselib/mechanics/Traffic.h"
-namespace kingston {
+namespace aiverse::game {
 // Keep station/address access, but avoid narrow connecting streets when a wide
 // route exists. Reuse the engine BFS; all choices depend only on the immutable road net.
-inline int wideResponseExit(const aiverse::lib::genre::TrafficNet& net,int junction,int incoming,int from,int destination,int fallback){
+inline int wideRouteExit(const aiverse::lib::genre::TrafficNet& net,int junction,int incoming,int from,int destination,int fallback){
  using namespace aiverse::lib;
  if(from==destination)return fallback;
  const auto sink=net.junctions.size();Graph graph(sink+1);

@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <aiverselib/Graphs.h>
 #include "libraries/include/aiverselib/mechanics/Traffic.h"
-namespace kingston {
-template<class Clear> std::vector<aiverse::Vec2> fireLocalDetour(aiverse::Vec2 start,aiverse::Vec2 goal,Clear clear){
+namespace aiverse::game {
+template<class Clear> std::vector<aiverse::Vec2> localDetour(aiverse::Vec2 start,aiverse::Vec2 goal,Clear clear){
  using namespace aiverse;using namespace aiverse::lib;
  constexpr int radius=24,n=radius*2+1,count=n*n;const Fixed step=Fixed::fromRatio(1,4);
  auto point=[&](int i){return start+Vec2{step*(i%n-radius),step*(i/n-radius)};};

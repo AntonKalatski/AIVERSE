@@ -1,6 +1,6 @@
 #pragma once
 #include "modules/rts/RtsDriving.h"
-namespace kingston {
+namespace aiverse::game {
 // Conservative rejection only. Keep exact engine deckSpot, deck ordering and mouth
 // rules for nearby cars. No cache, world pointer or authoritative state is retained.
 inline bool deckMayTouchBody(const aiverse::game::DrivingDeck& d,

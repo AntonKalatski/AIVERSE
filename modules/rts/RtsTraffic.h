@@ -16,6 +16,7 @@
 // State lives in the TrafficStore world resource: hashed, saved after the vehicles, copied by rollback snapshots.
 // Games without the block keep their checksums and save layout.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -170,6 +171,8 @@ struct TrafficRules {
     std::string busCrew;
     // emergency vehicles: fast, through red lights, the other traffic pulls over
     std::vector<TrafficWeighted> emergency;
+    std::vector<uint16_t> wideRoadTypes;     // traffic.wideRoads: responders of these types keep to wide streets and detour round jams
+    bool wideRoads(uint16_t type) const { for (uint16_t t : wideRoadTypes) if (t == type) return true; return false; }
     int maxEmergency = 0;
     Fixed emMin = Fixed::fromInt(13), emMax = Fixed::fromInt(16);        // m/s
     Fixed emIntervalMin = Fixed::fromInt(20), emIntervalMax = Fixed::fromInt(60);   // seconds between call-outs
@@ -456,6 +459,7 @@ private:
     TrafficRules rules_;
     bool base_ = false; int baseLimits_[4] = {0, 0, 0, 0};   // scaleLimits: the rules' own limits
     lib::genre::TrafficNet net_;
+    std::vector<std::array<Fixed, 4>> noParking_;   // map traffic.noParking: [x0, z0, x1, z1] cell rectangles where nobody parks
     std::vector<uint32_t> offset_;           // per junction: signal phase offset (ticks)
     std::vector<uint8_t> walk_;              // per cell: sidewalk or crossing (pedestrian graph)
     std::vector<int32_t> stripAt_;           // per cell: crossing strip or -1

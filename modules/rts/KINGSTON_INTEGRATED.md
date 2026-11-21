@@ -13,9 +13,10 @@ top-down, arsenal, projectile, view and render files.
 What was changed on the way in:
 - behaviour that broke engine tests is now a rule, off by default: `arsenal.aimWindup` (true: a quarter second with the weapon raised before the first shot), `traffic.services.<id>.custody` (police detain instead of fighting), `...carry` (the ambulance
   crew carries the patient and delivers him);
-- the project headers the patches included by absolute path are copied to `kingston/` under their own names
-  (`FireResponseRoute.h`, `FireResponseDetour.h`, `TrafficPriorityPolicy.h`, `CityTrafficAreas.h`,
-  `DeckBroadphase.h`) and included as `"kingston/<name>.h"`;
+- the project headers the patches included by absolute path became engine code with generic names:
+  `RtsTrafficWideRoute.h` (`wideRouteExit`, used for types listed in `traffic.wideRoads`),
+  `RtsTrafficDetour.h` (`localDetour`), `RtsTrafficPriority.h` (`beaconEnabled`), `RtsDeckBroadphase.h`;
+  the hard-coded no-parking rectangles are now map data `traffic.noParking` ([x0,z0,x1,z1] in cells);
 - 108 repeated `#include "Kingston*.inc"` lines in `RtsTrafficCity.cpp` (the patcher appended a pair on every
   configure) were reduced to one pair.
 

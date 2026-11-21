@@ -2,7 +2,7 @@
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/RtsTraffic.h"
 #include "modules/rts/RtsDriving.h"
-namespace kingston {
+namespace aiverse::game {
 inline bool activeResponse(aiverse::game::RtsModule& m,aiverse::Simulation& sim,aiverse::Entity e){
  if(auto*d=m.driving())if(auto*car=d->car(sim,e))if(car->player)return false;
  auto*t=m.traffic();auto*store=t?t->store(sim):nullptr;if(!store)return false;

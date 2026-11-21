@@ -8,7 +8,6 @@
 //    the stop near his destination lets him off (the buses have no lines: any of them will do).
 // Fixed maths only, entity-index order, randomness from sim.rng().
 #include "RtsTraffic.h"
-#include "kingston/CityTrafficAreas.h"
 #include "RtsInternal.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>
@@ -402,7 +401,8 @@ bool Traffic::kerbFree(Simulation& sim, int32_t piece, int dir, Fixed a, Entity 
     if (!onRoad(pt) || !gs.grid.passableAt(v3(pt), kLayerGround)) return false;
     const auto& vars=gs.trig.vars;auto gateX=vars.find("tow_gate_x"),gateZ=vars.find("tow_gate_z");
     if(gateX!=vars.end()&&gateZ!=vars.end()&&gateX->second.raw>0&&pt.x>gateX->second&&pt.x<gateX->second+Fixed::fromInt(3)&&fxAbs(pt.y-gateZ->second)<Fixed::fromInt(3))return false;
-    if (kingston::trafficParkingReserved(pt.x,pt.y)) return false;
+    for (const auto& r : noParking_)   // map traffic.noParking
+        if (pt.x >= r[0] && pt.x <= r[2] && pt.y >= r[1] && pt.y <= r[3]) return false;
     bool clear = true;
     w.each<Unit, Transform>([&](Entity o, const Unit&, const Transform&) { // Kingston: current-tick occupancy
         auto* ou = w.tryGet<Unit>(o);
