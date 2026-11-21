@@ -11,6 +11,7 @@ import {
 } from './workspaces';
 import type { CommandEntry } from './commandSearch';
 import CommandPalette from './components/CommandPalette';
+import PanelErrorBoundary from './components/PanelErrorBoundary';
 import StudioStatusBar from './components/StudioStatusBar';
 import WorkspaceTabs from './components/WorkspaceTabs';
 import type { StudioPanel } from './nestedDock';
@@ -211,14 +212,14 @@ export default function App() {
   const inspector = inspectorPin ? inspectorPin.inspector : snapshot?.inspector ?? null;
   const toggleInspectorPin = () => setInspectorPin(current => current ? null :
     selected ? {entity: {...selected}, inspector: snapshot?.inspector ? structuredClone(snapshot.inspector) : null} : null);
-  const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
+  const renderPanel = (panel: StudioPanel) => <PanelErrorBoundary key={panel} name={STUDIO_PANEL_TITLES[panel]}>{renderStudioPanel(panel, {
     snapshot, busy, connected, search, setSearch, rows, selected,
     inspector, inspectorPinned: !!inspectorPin, toggleInspectorPin,
     select, selectIds, hoverId, changeProperty, openProject, updateSnapshot: value => {
       setInspectorPin(null); // create/delete/duplicate or map replacement invalidates positional pins
       setSnapshot(value);
     }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError
-  });
+  })}</PanelErrorBoundary>;
 
   const project = connected && !!snapshot?.project.path;
   const selectedEntity = snapshot?.selectedId ?? null;

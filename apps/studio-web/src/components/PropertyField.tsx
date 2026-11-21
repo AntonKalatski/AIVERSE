@@ -34,30 +34,8 @@ export default function PropertyField({ property, disabled, onChange, variant = 
     if (property.mixed || !isSameFieldValue(property.value, parsed.value)) onChange(parsed.value);
   };
 
-  if (property.type === 'asset') {
-    return <div className="property-row">
-      <span>{property.label}</span>
-      <AssetReferencePicker label={property.label} value={String(property.value)}
-        kinds={property.assetKinds} disabled={locked}
-        onChange={value => { if (value !== property.value) onChange(value); }}/>
-      {property.description && <small className="property-description">{property.description}</small>}
-    </div>;
-  }
-
-  if (property.type === 'boolean') {
-    return <label className="property-row">
-      <span>{property.label}</span>
-      <input type="checkbox" className="au-checkbox__input" disabled={locked} checked={!property.mixed && Boolean(property.value)}
-        ref={el => { if (el) el.indeterminate = !!property.mixed; }}
-        aria-label={property.label}
-        onChange={event => {
-          const next = validateBooleanChange(property, event.target.checked);
-          if (next.ok && !isSameFieldValue(property.value, next.value)) onChange(next.value);
-        }}/>
-      {property.description && <small className="property-description au-field__hint">{property.description}</small>}
-    </label>;
-  }
-
+  // Hooks must run on every render, before the type-specific early returns:
+  // the same row can switch type (e.g. a legacy unit's Mesh becomes an asset field).
   // Drag the label (Unity "scrub"): 1 px = 1 step; Shift = fine, Alt = snap
   // (15° for rotations, 1 unit otherwise). One commit on release = one undo step.
   const scrubbable = property.type === 'number' && !property.options?.length && !locked;
@@ -93,6 +71,30 @@ export default function PropertyField({ property, disabled, onChange, variant = 
     onClick: (event: React.MouseEvent) => { event.preventDefault(); },
     title: 'Drag to change · Shift fine · Alt snap',
   } : {};
+  if (property.type === 'asset') {
+    return <div className="property-row">
+      <span>{property.label}</span>
+      <AssetReferencePicker label={property.label} value={String(property.value)}
+        kinds={property.assetKinds} disabled={locked}
+        onChange={value => { if (value !== property.value) onChange(value); }}/>
+      {property.description && <small className="property-description">{property.description}</small>}
+    </div>;
+  }
+
+  if (property.type === 'boolean') {
+    return <label className="property-row">
+      <span>{property.label}</span>
+      <input type="checkbox" className="au-checkbox__input" disabled={locked} checked={!property.mixed && Boolean(property.value)}
+        ref={el => { if (el) el.indeterminate = !!property.mixed; }}
+        aria-label={property.label}
+        onChange={event => {
+          const next = validateBooleanChange(property, event.target.checked);
+          if (next.ok && !isSameFieldValue(property.value, next.value)) onChange(next.value);
+        }}/>
+      {property.description && <small className="property-description au-field__hint">{property.description}</small>}
+    </label>;
+  }
+
   return <label className={'property-row' + (variant === 'axis' ? ' property-row--axis' : '') + (className ? ' ' + className : '')}>
     <span className={scrubbable ? 'property-scrub' : undefined} {...scrubHandlers}>{property.label}</span>
     {property.options?.length ?

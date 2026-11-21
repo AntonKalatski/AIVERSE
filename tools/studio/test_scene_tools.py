@@ -26,5 +26,13 @@ class SceneToolsContract(unittest.TestCase):
             self.assertIn(key, bar)
         self.assertIn("SCENE_TOOL_KEYS", read("apps/studio-web/src/components/ViewportPlaceholder.tsx"))
 
+class WebRobustnessContract(unittest.TestCase):
+    def test_property_field_hooks_before_early_returns(self):
+        src = read("apps/studio-web/src/components/PropertyField.tsx")
+        self.assertLess(src.index("const scrub = useRef"), src.index("if (property.type === 'asset')"),
+                        "hooks after an early return crash React when a row changes type")
+    def test_panels_have_error_boundary(self):
+        self.assertIn("<PanelErrorBoundary", read("apps/studio-web/src/App.tsx"))
+
 if __name__ == "__main__":
     unittest.main()
