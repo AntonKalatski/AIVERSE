@@ -1180,6 +1180,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
+    if ((d.layers & visibilityMask_) == 0) return;
     if (applyWindRig(d)) return;
     if(modelPacketTap_)modelPacketTap_(d);
     const auto overrideStatus = modelVertexOverrideStatus(
