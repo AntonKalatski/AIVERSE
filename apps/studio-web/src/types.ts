@@ -113,7 +113,7 @@ export interface StudioParams {
   'studio.windSet':Partial<WindSettings>;
   'studio.nereidFlow':Record<string,never>;
   'studio.nereidFlowSet':NereidFlowInput;
-  'studio.gameStart': {entry: 'map' | 'menu'};
+  'studio.gameStart': {entry: 'map' | 'menu'; fromScene?: boolean};
   'studio.gameStop': Record<string,never>;
   'studio.gameState': Record<string,never>;
   'studio.gameEntities': {offset:number;limit:number;query:string};

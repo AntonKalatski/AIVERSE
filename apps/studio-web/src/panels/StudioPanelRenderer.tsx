@@ -27,6 +27,8 @@ import ProjectPanel from './generated/ProjectPanel';
 import RuntimePanel from './generated/RuntimePanel';
 import BuildPanel from './BuildPanel';
 import ConsolePanel from './ConsolePanel';
+import { LiveHierarchy, LiveInspector, LiveSwitch } from './LivePanels';
+import { useLivePlay } from './livePlay';
 
 import NereidFlowPanel from './generated/NereidFlowPanel';
 
@@ -54,8 +56,19 @@ export interface StudioPanelContext {
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
   /** Apply a snapshot from an Inspector action without dropping the Inspector pin. */
   commitSnapshot: (value: StudioSnapshot) => void;
+  /** A game runs in the Game panel: Hierarchy / Inspector offer the live view. */
+  playing?: boolean;
   showPanel: (panel: StudioPanel) => void;
   reportError: (message: string) => void;
+}
+
+function PlayHierarchy({ ctx }: { ctx: StudioPanelContext }) {
+  const { showLive } = useLivePlay();
+  return <LiveSwitch>{showLive ? <LiveHierarchy/> : <HierarchyPanel {...ctx}/>}</LiveSwitch>;
+}
+function PlayInspector({ ctx }: { ctx: StudioPanelContext }) {
+  const { showLive } = useLivePlay();
+  return <LiveSwitch>{showLive ? <LiveInspector/> : <InspectorPanel {...ctx}/>}</LiveSwitch>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
@@ -63,11 +76,11 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
-        return <HierarchyPanel {...ctx}/>;
+        return ctx.playing ? <PlayHierarchy ctx={ctx}/> : <HierarchyPanel {...ctx}/>;
       case 'assets':
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
-        return <InspectorPanel {...ctx}/>;
+        return ctx.playing ? <PlayInspector ctx={ctx}/> : <InspectorPanel {...ctx}/>;
       case 'build':
         return <BuildPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'rules':

@@ -1671,7 +1671,12 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 }else if(gameMethod=="studio.gameStart") {
                     const auto entry=req["params"].getStr("entry");
                     if(entry!="map" && entry!="menu")throw std::runtime_error("Invalid game entry");
-                    const auto plan=aiverse::studio::studioGameLaunch(session_->workspace(),entry=="map");
+                    auto plan=aiverse::studio::studioGameLaunch(session_->workspace(),entry=="map");
+                    if(entry=="map" && req["params"].getBool("fromScene") && preview_) {
+                        const auto cam=preview_->cameraState();
+                        plan.camera=std::array<float,5>{cam.target.x,cam.target.z,cam.distance,
+                            float(cam.pitch*57.29578),float(cam.yaw*57.29578)};
+                    }
                     if(!game_)game_=std::make_unique<aiverse::studio::StudioGameSurface>((__bridge void*)gameViewport_.layer);
                     game_->start(plan,std::string(AIVERSE_STUDIO_SOURCE_DIR)+"/engine/assets");
                     gameFrameTime_=0;

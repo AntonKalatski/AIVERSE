@@ -23,6 +23,7 @@ import NestedDockWorkspace from './components/NestedDockWorkspace';
 import StudioMenuBar, { type StudioMenu } from './components/StudioMenuBar';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
+import { resetLive } from './panels/livePlay';
 import {
   floatOwner, floatingPanels, floatingParams, forgetFloatTree, newFloatKey, readFloatTree, readFloating, releasePanel,
   removeFloatWindow, saveFloatTree, saveFloating, setFloatPanels, treePanels, updateFloatingFrame, validFloatKey,
@@ -67,6 +68,7 @@ export default function App() {
   const [loading, clearLoading] = useProjectLoading();
   // Requests answered while the native side opens a project are expected, not errors.
   useEffect(() => { if (error === 'Project is loading') setError(''); }, [error]);
+  useEffect(() => { if (!game?.active) resetLive(); }, [game?.active]); // live refs belong to one session
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {
@@ -266,7 +268,8 @@ export default function App() {
     select, selectIds, hoverId, changeProperty, openProject, updateSnapshot: value => {
       setInspectorPin(null); // create/delete/duplicate or map replacement invalidates positional pins
       setSnapshot(value);
-    }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError
+    }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError,
+    playing: !!game?.active
   })}</PanelErrorBoundary>;
 
   const project = connected && !!snapshot?.project.path;
@@ -462,7 +465,7 @@ export default function App() {
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 
-  return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')}>
+  return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')+(game?.active?' is-playing':'')}>
     <header className="titlebar"
       onMouseDown={event => {
         // Empty title-bar areas move the native window (like the macOS title bar).
