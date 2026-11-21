@@ -1031,10 +1031,10 @@
           "titleEn": "Wind-driven fog banks and ground mist"
         },
         {
-          "status": "in-progress",
-          "target": null,
+          "status": "done",
           "title": "Глубина резкости и motion blur вне экспериментального режима",
-          "titleEn": "Depth of field and motion blur out of experimental mode"
+          "titleEn": "Depth of field and motion blur out of experimental mode",
+          "date": "2026-11-22"
         }
       ],
       "taglineEn": "Post-processing and atmosphere",
