@@ -10,6 +10,7 @@ Rules for agents: AGENTS.md "Ход разработки на сайте", skill
 import argparse
 import datetime as dt
 import html
+import hashlib
 import json
 from pathlib import Path
 import posixpath
@@ -603,6 +604,17 @@ def cmd_build(args):
         (d / 'devlog.json').write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
         pages += 6
     (out / '.nojekyll').write_text('', encoding='utf-8')
+    # Cache busting: the CDN and browsers keep style.css / devlog.js for minutes, so a fresh page
+    # could meet a stale stylesheet. Every page asks for the exact version it was built with.
+    for asset in ('style.css', 'devlog.js'):
+        f = out / asset
+        if f.is_file():
+            v = hashlib.sha1(f.read_bytes()).hexdigest()[:10]
+            for page in out.rglob('*.html'):
+                t = page.read_text(encoding='utf-8')
+                t2 = re.sub(r'(href|src)="((?:\.\./)?)' + re.escape(asset) + r'(\?v=[0-9a-f]+)?"', rf'\1="\2{asset}?v={v}"', t)
+                if t2 != t:
+                    page.write_text(t2, encoding='utf-8')
     print(f'{out}: {len(LANGS)} languages, {pages} pages, {len(entries)} entries, {len(copied)} media files')
     return 0
 
