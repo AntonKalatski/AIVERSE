@@ -7,6 +7,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioSession.h"
+#include "apps/editor/core/BuildTool.h"
 #include "apps/studio-native/StudioViewportLayout.h"
 #include "apps/studio-native/mac/StudioMetalScene.h"
 #include "apps/studio-native/mac/StudioGameSurface.h"
@@ -454,6 +455,12 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         std::string root=AIVERSE_STUDIO_SOURCE_DIR;
         // The project opens asynchronously after the UI loads (progress dialog).
         session_=std::make_unique<aiverse::studio::StudioSession>(root,std::string());
+#ifdef AIVERSE_STUDIO_BUILD_TOOL
+        session_->setBuildTool(AIVERSE_STUDIO_BUILD_TOOL);
+#else
+        session_->setBuildTool(aiverse::editor::findBuildTool(
+            [[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent].UTF8String,root));
+#endif
         pendingProject_=project;
         __unsafe_unretained StudioHost* host=self;
         session_->setMaterialSlotProvider([host](const std::string& asset) {
@@ -1326,6 +1333,28 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 ? current : gStudioLastWebMouseDown;
             NSWindow* target=currentWeb_.window ?: window_;
             if (press && ([NSEvent pressedMouseButtons] & 1u)) [target performWindowDragWithEvent:press];
+            return;
+        }
+        if (req.getStr("method")=="studio.buildReveal" && req["id"].isNumber()) {
+            // Show a build folder (or the last build log) in Finder; the path is the session's, never JS-provided.
+            aiverse::Json reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try {
+                const auto& ws=session_->workspace();
+                if (ws.project.dir.empty()) throw std::runtime_error("Open a project first");
+                const std::string target=req["params"].getStr("target");
+                static const std::regex valid("^(macos|ios|android|web|windows|linux)?$");
+                if (!std::regex_match(target,valid)) throw std::runtime_error("Unknown build target");
+                std::filesystem::path path=std::filesystem::path(ws.project.dir)/"Builds";
+                if (!target.empty()) path/=target;
+                if (req["params"].getBool("log")) path=const_cast<aiverse::editor::Workspace&>(ws).lastLogFile();
+                std::error_code ec;
+                if (path.empty() || !std::filesystem::exists(path,ec)) throw std::runtime_error("Nothing built there yet");
+                NSURL* url=[NSURL fileURLWithPath:[NSString stringWithUTF8String:path.string().c_str()]];
+                [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[url]];
+                aiverse::Json result=aiverse::Json::object();result.set("ok",aiverse::Json::fromBool(true));
+                reply.set("result",std::move(result));
+            } catch (const std::exception& e) { reply.set("error",aiverse::Json::string(e.what())); }
+            [self sendStudioReply:reply];
             return;
         }
         if (req.getStr("method")=="studio.windowZoom") { [(currentWeb_.window ?: window_) zoom:nil]; return; }

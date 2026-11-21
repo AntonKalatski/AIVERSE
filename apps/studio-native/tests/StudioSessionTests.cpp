@@ -171,6 +171,25 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(!call("studio.rulesSet",R"({"path":"types.tree.health.max","value":null})").has("error"));
        AIVERSE_TEST_CHECK(!call("studio.rules")["result"]["types"]["tree"]["health"].has("max"));
    }
+   // Build panel: targets and identity; unknown targets/configs rejected; a project with unsaved
+   // changes is never built (no implicit save); no estimate yet is an error, not an empty report.
+   {
+       const auto info=call("studio.buildInfo");
+       AIVERSE_TEST_CHECK(!info.has("error") && info["result"]["targets"].size()==6 && info["result"].has("identity"));
+       AIVERSE_TEST_CHECK(call("studio.buildToolchain",R"({"target":"amiga"})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.buildStart",R"({"target":"amiga","config":"Release"})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.buildStart",R"({"target":"web","config":"Fast"})").has("error"));
+       auto& buildDoc=const_cast<editor::Workspace&>(session.workspace()).map;
+       const bool wasDirty=buildDoc.dirty;buildDoc.dirty=true;
+       const auto dirty=call("studio.buildStart",R"({"target":"web","config":"Release"})");
+       AIVERSE_TEST_CHECK(dirty.has("error") && dirty.getStr("error").find("Save")!=std::string::npos);
+       AIVERSE_TEST_CHECK(!session.workspace().building());
+       buildDoc.dirty=wasDirty;
+       AIVERSE_TEST_CHECK(call("studio.buildEstimate",R"({"target":"ios"})").has("error"));
+       const auto log=call("studio.buildLog",R"({"from":999999})");
+       AIVERSE_TEST_CHECK(!log.has("error") && log["result"]["text"].str().empty());
+       AIVERSE_TEST_CHECK(log["result"]["next"].integer()==log["result"]["size"].integer());
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

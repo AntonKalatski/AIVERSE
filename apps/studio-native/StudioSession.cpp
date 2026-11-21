@@ -514,6 +514,106 @@ int StudioSession::selectedEntityIndex() const {
     try { return indexFor(selected_); }
     catch (const std::exception&) { return -1; }
 }
+namespace {
+// Build panel targets (aiversebuild --target); "all" is left to the command line.
+const char* const kBuildTargets[][2] = {
+    {"macos", "macOS (.app)"}, {"ios", "iOS"}, {"android", "Android"}, {"web", "Web (HTML5)"},
+    {"windows", "Windows (.exe)"}, {"linux", "Linux"}};
+bool knownBuildTarget(const std::string& target) {
+    for (const auto& t : kBuildTargets) if (target == t[0]) return true;
+    return false;
+}
+}
+// Publish / Build: aiversebuild runs in the background through the Workspace build runner (the same
+// one the legacy Build window and the MCP build_start use); the panel polls the log by offset.
+Json StudioSession::buildRequest(const std::string& method, const Json& params) {
+    namespace fs = std::filesystem;
+    if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+    const fs::path builds = fs::path(ws_.project.dir) / "Builds";
+    if (method == "studio.buildInfo") {
+        Json out = Json::object(), targets = Json::array();
+        for (const auto& t : kBuildTargets) {
+            Json v = Json::object();
+            v.set("id", str(t[0])); v.set("name", str(t[1]));
+            std::error_code ec;
+            v.set("built", Json::fromBool(fs::is_directory(builds / t[0], ec)));
+            targets.push(std::move(v));
+        }
+        out.set("targets", targets);
+        std::error_code ec;
+        const bool toolFound = !ws_.buildTool.empty() && fs::is_regular_file(ws_.buildTool, ec);
+        out.set("toolFound", Json::fromBool(toolFound));
+        out.set("outDir", str(builds.string()));
+        out.set("running", Json::fromBool(ws_.building()));
+        out.set("label", str(ws_.runLabel()));
+        out.set("exitCode", Json::number(int64_t(ws_.buildResult())));
+        out.set("runs", Json::number(int64_t(ws_.runCount())));
+        out.set("dirty", Json::fromBool(ws_.map.dirty || ws_.project.rulesDirty || ws_.project.manifestDirty));
+        const Json& m = ws_.project.manifest;
+        Json identity = Json::object();
+        identity.set("name", str(m.getStr("name"))); identity.set("id", str(m.getStr("id")));
+        identity.set("version", str(m.getStr("version"))); identity.set("build", Json::number(m["build"].integer(0)));
+        identity.set("orientation", str(m.getStr("orientation")));
+        out.set("identity", std::move(identity));
+        return out;
+    }
+    const std::string target = params.getStr("target");
+    if (method == "studio.buildToolchain") {
+        if (!knownBuildTarget(target)) throw std::runtime_error("Unknown build target");
+        return ws_.toolchainCheck(target);
+    }
+    if (method == "studio.buildStart") {
+        if (!knownBuildTarget(target)) throw std::runtime_error("Unknown build target");
+        const std::string config = params.getStr("config", "Release");
+        if (config != "Release" && config != "Debug") throw std::runtime_error("Unknown build configuration");
+        // A build packs the files on disk: never save implicitly from here.
+        if (ws_.map.dirty || ws_.project.rulesDirty || ws_.project.manifestDirty)
+            throw std::runtime_error("Save the project before building");
+        if (params.getBool("estimate"))
+            ws_.startBuild(target, config, "--estimate --out '" + (builds / ".temp" / "estimate").string() + "'");
+        else ws_.startBuild(target, config, params.getBool("installMissing") ? "--install-missing" : "");
+        Json out = Json::object(); out.set("started", Json::fromBool(true));
+        return out;
+    }
+    if (method == "studio.buildLog") {
+        const std::string log = ws_.buildLog();
+        // Offsets are UTF-8 bytes (the log is Russian/English text): never split a character,
+        // the reply must stay valid UTF-8. The client continues from `next`.
+        size_t from = size_t(std::clamp<int64_t>(params["from"].integer(0), 0, int64_t(log.size())));
+        while (from < log.size() && (static_cast<unsigned char>(log[from]) & 0xC0) == 0x80) ++from;
+        constexpr size_t kChunk = 256 * 1024;
+        size_t end = std::min(log.size(), from + kChunk);
+        while (end < log.size() && end > from && (static_cast<unsigned char>(log[end]) & 0xC0) == 0x80) --end;
+        Json out = Json::object();
+        out.set("from", Json::number(int64_t(from)));
+        out.set("next", Json::number(int64_t(end)));
+        out.set("text", str(log.substr(from, end - from)));
+        out.set("size", Json::number(int64_t(log.size())));
+        out.set("running", Json::fromBool(ws_.building()));
+        out.set("label", str(ws_.runLabel()));
+        out.set("exitCode", Json::number(int64_t(ws_.buildResult())));
+        out.set("runs", Json::number(int64_t(ws_.runCount())));
+        out.set("logFile", str(ws_.lastLogFile()));
+        return out;
+    }
+    // studio.buildEstimate: the size report of the last estimate run for `target`.
+    if (!knownBuildTarget(target)) throw std::runtime_error("Unknown build target");
+    const fs::path report = builds / ".temp" / "estimate" / target / "size-report.json";
+    std::error_code ec;
+    if (!fs::is_regular_file(report, ec)) throw std::runtime_error("No size estimate yet for " + target);
+    const Json rep = Json::parseFile(report.string());
+    Json out = Json::object();
+    out.set("target", str(target));
+    out.set("pack", rep["pack"]); out.set("atlas", rep["atlas"]);
+    if (rep.has("split")) out.set("split", rep["split"]);
+    std::vector<const Json*> all;
+    for (const auto& f : rep["files"].items()) all.push_back(&f);
+    std::stable_sort(all.begin(), all.end(), [](const Json* a, const Json* b) { return (*a)["storedBytes"].integer() > (*b)["storedBytes"].integer(); });
+    Json files = Json::array();
+    for (size_t i = 0; i < all.size() && i < 25; ++i) files.push(*all[i]);
+    out.set("heaviest", files);
+    return out;
+}
 Json StudioSession::dispatch(const Json& request) {
     Json reply = Json::object();
     reply.set("id", request["id"]);
@@ -1407,6 +1507,9 @@ Json StudioSession::dispatch(const Json& request) {
             out.set("resources",list["resources"]);out.set("summary",list["types"]);
             out.set("dirty",Json::fromBool(ws_.project.rulesDirty));
             reply.set("result",std::move(out));
+        } else if (method == "studio.buildInfo" || method == "studio.buildToolchain" || method == "studio.buildStart" ||
+                   method == "studio.buildLog" || method == "studio.buildEstimate") {
+            reply.set("result", buildRequest(method, params));
         } else if (method == "studio.componentCatalog") {
             reply.set("result", componentCatalog(params.getStr("entityId")));
         } else if (method == "studio.componentAdd" || method == "studio.componentRemove") {

@@ -7,7 +7,7 @@ export const LEGACY_WINDOWS_NOT_MIGRATED: ReadonlyArray<{ id: string; title: str
   { id: 'agent', title: 'AI Agent' }, { id: 'animation_assets', title: 'Animation Assets' },
   { id: 'animation_graph', title: 'Animation Graph' }, { id: 'animation_rig', title: 'Animation Rig' },
   { id: 'animation_attachments', title: 'Attachments' }, { id: 'AnimationWindow', title: 'Model Animation' },
-  { id: 'branding', title: 'Branding' }, { id: 'build', title: 'Build' },
+  { id: 'branding', title: 'Branding' }, 
   { id: 'effects', title: 'Effects (FX)' }, { id: 'fields', title: 'Fields' }, { id: 'fog', title: 'Fog' },
   { id: 'FpsWindow', title: 'FPS Authoring' }, { id: 'generate', title: 'Generate' },
   { id: 'input', title: 'Input' }, { id: 'lightbake', title: 'Light Bake' },

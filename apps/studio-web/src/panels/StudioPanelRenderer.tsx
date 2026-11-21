@@ -25,6 +25,7 @@ import GamePanel from './GamePanel';
 import ProjectPanel from './generated/ProjectPanel';
 
 import RuntimePanel from './generated/RuntimePanel';
+import BuildPanel from './BuildPanel';
 
 import NereidFlowPanel from './generated/NereidFlowPanel';
 
@@ -65,6 +66,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return <InspectorPanel {...ctx}/>;
+      case 'build':
+        return <BuildPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'rules':
         return <RulesPanel projectPath={snapshot?.project.path ?? ''} onChanged={() => void invoke('studio.snapshot', {}).then(ctx.commitSnapshot).catch(() => {})}/>;
       case 'scene':

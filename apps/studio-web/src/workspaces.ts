@@ -5,7 +5,7 @@
  * Legacy (not yet migrated) ImGui windows are grouped by the same areas so the
  * command palette and Window menu can show where they will live.
  */
-import { normalizeDockTree, type DockNode, type DockTree, type StudioPanel } from './nestedDock.ts';
+import { normalizeDockTree, panelStack, reopenTab, type DockNode, type DockTree, type StudioPanel } from './nestedDock.ts';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows.ts';
 
 export const WORKSPACES = ['scene', 'world', 'look', 'animate', 'logic', 'publish'] as const;
@@ -34,8 +34,8 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     left: ['hierarchy'], center: ['rules', 'game', 'scene'], right: ['runtime', 'inspector'], bottom: ['console', 'assets'],
     legacy: ['scripts', 'input', 'overlays', 'FpsWindow', 'raid', 'agent', 'stats'] },
   publish: { id: 'publish', title: 'Publish', purpose: 'Build and audit', key: '6',
-    left: ['project', 'hierarchy'], center: ['scene', 'game'], right: ['inspector'], bottom: ['console', 'assets'],
-    legacy: ['build', 'branding', 'project_import', 'studio_asset_audit', 'studio_extensions', 'studio_frame_capture', 'studio_snapshot_diff'] },
+    left: ['project', 'hierarchy'], center: ['build', 'game', 'scene'], right: ['inspector'], bottom: ['console', 'assets'],
+    legacy: ['branding', 'project_import', 'studio_asset_audit', 'studio_extensions', 'studio_frame_capture', 'studio_snapshot_diff'] },
 };
 
 export function isWorkspace(value: unknown): value is StudioWorkspace {
@@ -82,11 +82,21 @@ export function readActiveWorkspace(store: Storage | null = storage()): StudioWo
 export function saveActiveWorkspace(id: StudioWorkspace, store: Storage | null = storage()): void {
   try { store?.setItem(ACTIVE_KEY, id); } catch { /* private mode */ }
 }
+const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = { publish: ['build'] };
 /** Saved layout of a workspace; the Scene workspace inherits the pre-workspace layout once. */
 export function readWorkspaceDock(id: StudioWorkspace, store: Storage | null = storage()): DockTree {
   try {
     const saved = store?.getItem(LAYOUT_KEY(id)) ?? (id === 'scene' ? store?.getItem(LEGACY_SCENE_KEY) : null);
-    return saved ? normalizeDockTree(JSON.parse(saved) as unknown) : workspaceDockTree(id);
+    if (!saved) return workspaceDockTree(id);
+    let tree = normalizeDockTree(JSON.parse(saved) as unknown);
+    // Panels a workspace gained after its layout was saved appear once (closing them later sticks).
+    for (const panel of WORKSPACE_ADDED[id] ?? []) {
+      const flag = 'aiverse.studio.ws.added.' + id + '.' + panel;
+      if (store?.getItem(flag)) continue;
+      if (panelStack(tree, panel) === null) tree = reopenTab(tree, panel, 'dock-center');
+      store?.setItem(flag, '1');
+    }
+    return tree;
   } catch { return workspaceDockTree(id); }
 }
 export function saveWorkspaceDock(id: StudioWorkspace, tree: DockTree, store: Storage | null = storage()): void {

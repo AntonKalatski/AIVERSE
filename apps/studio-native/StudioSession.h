@@ -34,6 +34,8 @@ public:
         facialPreview_.setGpuStatus(rendered,reason);
     }
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
+    // aiversebuild used by the Build panel (resolved by the native host next to Studio).
+    void setBuildTool(const std::string& path) { ws_.buildTool = path; }
     // Host-provided material slot names of a loaded content model (the native
     // Scene owns model loading). Without it, slots come from authored overrides.
     using MaterialSlotProvider=std::function<std::vector<std::string>(const std::string& asset)>;
@@ -42,6 +44,7 @@ public:
                                const std::string& destination); // native picker ONLY
 private:
     Json snapshot() const;
+    Json buildRequest(const std::string& method, const Json& params);
     Json propertiesFor(const std::string& entityId) const;
     Json componentCatalog(const std::string& entityId) const;
     editor::DocEntity promotedAuthored(int index) const;

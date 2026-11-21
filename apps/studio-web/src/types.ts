@@ -95,7 +95,7 @@ export interface StudioGameDeviceChrome { corner:number; cutout?:{x:number;y:num
 export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boolean; width:number; height:number; touch:boolean; chrome?:StudioGameDeviceChrome }
 export interface StudioGameDeviceOption { id:string; name:string; group:string }
 export interface StudioGameState { device:StudioGameDevice; paused: boolean; canControl: boolean; canStep: boolean; active: boolean; loading: boolean; progress: number; inMatch: boolean; tick: number; error: string }
-export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.inspect' | 'studio.componentCatalog' | 'studio.componentAdd' | 'studio.componentRemove' | 'studio.setProperties' | 'studio.entitiesDelete' | 'studio.entitiesDuplicate' | 'studio.entityFlags' | 'studio.assetPlace' | 'studio.rules' | 'studio.rulesSet' | 'studio.windowOpen' | 'studio.windowClose' | 'studio.windowBroadcast' | 'studio.windowTitle' | 'studio.entityMove' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' | 'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanPreviewAnimation' | 'studio.humanStudioLighting' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus';
+export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.inspect' | 'studio.componentCatalog' | 'studio.componentAdd' | 'studio.componentRemove' | 'studio.setProperties' | 'studio.entitiesDelete' | 'studio.entitiesDuplicate' | 'studio.entityFlags' | 'studio.assetPlace' | 'studio.rules' | 'studio.rulesSet' | 'studio.windowOpen' | 'studio.windowClose' | 'studio.windowBroadcast' | 'studio.windowTitle' | 'studio.buildInfo' | 'studio.buildToolchain' | 'studio.buildStart' | 'studio.buildLog' | 'studio.buildEstimate' | 'studio.buildReveal' | 'studio.entityMove' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' | 'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanPreviewAnimation' | 'studio.humanStudioLighting' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus';
 export interface HumanLook { version: 1; values: Record<string,number>; materials: Record<string,string> }
 export interface HumanLookField { key:string; label:string; min:number; max:number; initial:number }
 export interface HumanPreviewAnimationSettings {pose:string;playing:boolean;faceIdle:boolean;speed:number;automaticLod?:boolean}
@@ -155,6 +155,13 @@ export interface StudioParams {
   'studio.windowClose': { window: string };
   /** A floating window names itself (its active tab). */
   'studio.windowTitle': { title: string };
+  'studio.buildInfo': Record<string,never>;
+  'studio.buildToolchain': { target: string };
+  'studio.buildStart': { target: string; config: 'Release' | 'Debug'; installMissing?: boolean; estimate?: boolean };
+  'studio.buildLog': { from: number };
+  'studio.buildEstimate': { target: string };
+  /** Show a build folder (or the last build log) in Finder. */
+  'studio.buildReveal': { target?: string; log?: boolean };
   /** UI-only event (name starts with "ui.") delivered to every Studio window. */
   'studio.windowBroadcast': { event: string; payload: unknown };
   'studio.save': Record<string, never>;
@@ -248,6 +255,12 @@ export interface StudioResult {
   'studio.windowClose': { closed: boolean };
   'studio.windowBroadcast': { ok: boolean };
   'studio.windowTitle': { ok: boolean };
+  'studio.buildInfo': StudioBuildInfo;
+  'studio.buildToolchain': StudioToolchain;
+  'studio.buildStart': { started: boolean };
+  'studio.buildLog': StudioBuildLog;
+  'studio.buildEstimate': StudioBuildEstimate;
+  'studio.buildReveal': { ok: boolean };
   'studio.save': StudioSnapshot;
   'studio.undo': StudioSnapshot;
   'studio.redo': StudioSnapshot;
@@ -293,3 +306,17 @@ export interface HumanSocket {name:string;bone:string;translation:number[];rotat
 export interface HumanWardrobeItem {independentRig?:boolean;attachmentRule?:'keep_world'|'snap';socket?:string;id:string;asset:string;slot:string;enabled:boolean;bone:string;translation:number[];rotation:number[];scale:number[];finish:'cloth'|'source';hideMeshes:string[];masks:{material:string;texture:string}[]}
 export interface HumanWardrobe {sockets?:HumanSocket[];version:1;hiddenMeshes:string[];items:HumanWardrobeItem[]}
 export interface HumanBuildStatus {face?:HumanFaceShape;running:boolean;error?:string;path?:string;guid?:string;vertices?:number;meshes?:number;materials?:number;bytes?:number}
+
+/** Publish / Build panel (aiversebuild through the Workspace build runner). */
+export interface StudioBuildTarget { id: string; name: string; built: boolean }
+export interface StudioBuildInfo {
+  targets: StudioBuildTarget[]; toolFound: boolean; outDir: string; running: boolean; label: string; exitCode: number; runs: number;
+  dirty: boolean; identity: { name: string; id: string; version: string; build: number; orientation: string };
+}
+export interface StudioToolchainRequirement { id: string; name: string; required: boolean; found: boolean; autoInstall: boolean;
+  path?: string; version?: string; detail?: string; install?: string; size?: string; manual?: string }
+export interface StudioToolchain { target: string; host: string; hostSupported: boolean; hostNote?: string; ok: boolean; missing: string[];
+  requirements: StudioToolchainRequirement[] }
+export interface StudioBuildLog { from: number; next: number; text: string; size: number; running: boolean; label: string; exitCode: number; runs: number; logFile: string }
+export interface StudioBuildEstimate { target: string; pack: Record<string, unknown>; atlas: Record<string, unknown>; split?: Record<string, unknown>;
+  heaviest: Array<{ path?: string; file?: string; bytes?: number; storedBytes?: number }> }
