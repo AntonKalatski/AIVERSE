@@ -33,6 +33,12 @@ For live ForestScene register the unscaled profile and let existing instance
 age/ecology size it once; offline treeProfileAtAge is for exports only.
 Larch has explicit Deciduous canopy habit despite its conifer crown shape.
 
+Thin foliage: ordinary model alpha-test PNGs use shared coverage-preserving mip
+upload (docs/terrain/alpha-coverage-mips.md). Diagnose texture minification as well
+as geometry LOD; adding triangles alone does not recover discarded needle alpha.
+Preserve authored compressed mips/nearest. Dynamic texture atlases must opt out
+before upload; do not patch only level0 of manual coverage chains.
+
 ## Grass
 
 Use `engine/render/TerraWeaveGrassRender.h` over existing aggregate GrassPatch state.

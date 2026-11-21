@@ -1,6 +1,7 @@
 // Engine regression: static batching preserves runtime-mutable subtrees.
 // This is intentionally independent from any particular project/genre.
 #include "engine/render/Model.h"
+#include "engine/render/ModelTextureCache.h"
 #include "engine/render/Animation.h" // full NodePose definition for active-pose regression
 #include "engine/render/ModelMerge.h"
 #include "engine/render/GpuMaterialState.h"
@@ -74,7 +75,18 @@ public:
         CHECK(buffers.erase(h.id) == 1);
         ++destroyed;
     }
-    aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc&) override { return {100}; }
+    struct TextureRequest {int width,height,mips;bool generate;};
+    std::vector<TextureRequest> textureRequests;
+    bool acceptTextureRegions=false;int textureRegionWrites=0;
+    aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc& d) override {
+        textureRequests.push_back({d.width,d.height,d.mipLevels,d.mipmaps});
+        return {100u+uint32_t(textureRequests.size())};
+    }
+    bool updateTextureRegion(aiverse::gfx::TextureHandle,const aiverse::gfx::TextureUploadDesc& d) override {
+        CHECK(d.mipLevel>0&&d.width>0&&d.height>0&&d.rowPitchBytes==d.width*4&&d.data);
+        if(acceptTextureRegions)++textureRegionWrites;
+        return acceptTextureRegions;
+    }
     void updateTexture(aiverse::gfx::TextureHandle,int,int,int,int,const void*,int) override {}
     void destroyTexture(aiverse::gfx::TextureHandle) override {}
     aiverse::gfx::ShaderHandle createShader(const aiverse::gfx::ShaderDesc&) override { return {1}; }
@@ -293,6 +305,37 @@ static void verifyGeometryPoolRetirementAndUploadRecovery() {
 
 }
 
+static void verifyCutoutMipUploadPolicy() {
+    for(int policy=0;policy<6;++policy) {
+        MockDevice dev;dev.acceptTextureRegions=policy!=1;
+        auto model=pooledFixture(71);model.images.resize(1);
+        auto& image=model.images[0];image.width=image.height=4;image.rgba.assign(64,255);
+        for(size_t i=3;i<image.rgba.size();i+=8)image.rgba[i]=0;
+        const auto original=image.rgba;
+        model.materials[0].alpha=AlphaMode::Mask;model.materials[0].baseTex=0;
+        if(policy==2)image.nearest=true;
+        if(policy==5)model.materials[0].baseColor.w=.5f;
+        if(policy==3){model.materials.push_back(Material{});model.materials.back().baseTex=0;}
+        if(policy==4){model.materials.push_back(model.materials[0]);model.materials.back().alphaCutoff=.7f;}
+        CHECK(uploadModel(dev,model,true));
+        CHECK(image.rgba==original);
+        CHECK(image.alphaCoverageThreshold==(policy<2?128:policy==5?255:0));
+        CHECK(image.alphaCoverageMipmaps==(policy==0||policy==5));
+        if(policy==0||policy==5){CHECK(dev.textureRegionWrites==2);CHECK(dev.textureRequests[0].mips==3&&!dev.textureRequests[0].generate);}
+        if(policy==1){CHECK(dev.textureRequests.size()==2&&dev.textureRequests.back().generate);}
+        releaseModel(dev,model);
+    }
+    MockDevice dev;dev.acceptTextureRegions=true;
+    auto cache=std::make_shared<ModelTextureCache>();
+    Image first;first.textureKey="shared-cutout";first.width=first.height=4;first.rgba.assign(64,255);first.alphaCoverageThreshold=128;
+    Image second=first;second.alphaCoverageThreshold=191;
+    cache->upload(dev,first);cache->upload(dev,second);
+    CHECK(first.tex.valid()&&second.tex.valid()&&!(first.tex==second.tex));
+    Image replay;replay.textureKey="shared-cutout";replay.alphaCoverageThreshold=128;
+    CHECK(cache->borrowResident(replay)&&replay.tex==first.tex&&replay.alphaCoverageMipmaps);
+    cache->shutdown(dev);
+}
+
 static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
     // Stage 21-24: current-pass exact page/material grouping, epoch-safe
     // membership, and deterministic bucket sorting of the admitted prefix.
@@ -409,6 +452,7 @@ int main() {
     CHECK(setenv("AIVERSE_GEOMETRY_POOL_RECYCLE", "1", 1) == 0);
 #endif
     verifyVehiclePartsRemainIndependent();
+    verifyCutoutMipUploadPolicy();
     verifyIncrementalBatchingWorkspaceAndRhiCounters();
     verifyGeometryPoolRetirementAndUploadRecovery();
     Model m;

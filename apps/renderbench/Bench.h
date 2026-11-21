@@ -249,6 +249,7 @@ struct Bench {
                 for(const auto& [key,value]:result.members())report.set(key,value);
             }
             if(!uploadModel(d,*model))throw std::runtime_error("model upload failed: "+d.lastError());
+            report.set("primaryAlphaCoverageImages",Json::number(int64_t(std::count_if(model->images.begin(),model->images.end(),[](const Image& image){return image.alphaCoverageMipmaps;}))));
             report.set("loadAndUploadMs",Json::number(ms(start,Clock::now())));
             const auto& optim=config["modelOptimization"];
             renderer.setLodDiagnosticsEnabled(true);

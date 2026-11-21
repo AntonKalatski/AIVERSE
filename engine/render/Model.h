@@ -94,6 +94,11 @@ struct Image {
     // TextureCache must never receive either reduced texture.
     bool virtualFallbackPreserveAlpha = false;
     gfx::TextureHandle virtualAlphaMask;
+    // Derived before first upload for ordinary uncompressed alpha-test base
+    // images. Cache identity includes the threshold; source alpha is unchanged.
+    bool preserveAlphaCoverage = true;
+    uint8_t alphaCoverageThreshold = 0;
+    bool alphaCoverageMipmaps = false;
 };
 
 // 60 bytes, one interleaved stream for every model (unskinned meshes leave joints/weights zero).
