@@ -440,6 +440,18 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
         looks_[t]=TypeLook{}; loadedTypes_[t]=false; changed=true;
     }
     if (!changed) return;
+    // Detach MotionWeave presentation sources of unloaded types BEFORE their
+    // Models are released below: MotionWeaveSourceBridge::sync would
+    // otherwise snapshot the player of a retired Model on the next frame.
+    std::vector<uint64_t> sourceIds;
+    for (const auto& [id,animation] : anims_) {
+        (void)id;
+        if (animation.type<keep.size() && !keep[animation.type] &&
+            animation.genericViewId!=0)
+            sourceIds.push_back(animation.genericViewId);
+    }
+    if (genericView_ && !sourceIds.empty())
+        genericView_->forgetSources(sourceIds);
     for (auto it=anims_.begin();it!=anims_.end();) {
         if (!keep[it->second.type]) it=anims_.erase(it); else ++it;
     }
@@ -915,6 +927,19 @@ void RtsView::loadType(uint16_t type) {
         std::fprintf(stderr,"[lod-residency] type=%u level=%s\n",unsigned(type),requestedModels_[type].empty()?"detail":"coarse");
     if(!(replacing && ready.shape && !looks_[type].shape))looks_[type]=std::move(ready);
     loadedModels_[type]=requestedModels_[type];
+    if(replacing) {
+        // The old Models stay CPU-readable until trimTypes() below; detach
+        // their MotionWeave sources now (with portable playback) so the
+        // bridge never snapshots a player of a released Model.
+        std::vector<uint64_t> sourceIds;
+        for(const auto& [id,animation]:anims_) {
+            (void)id;
+            if(animation.type==type && animation.genericViewId!=0)
+                sourceIds.push_back(animation.genericViewId);
+        }
+        if(genericView_ && !sourceIds.empty())
+            genericView_->forgetSourcesForReimport(sourceIds);
+    }
     if(replacing)for(auto it=anims_.begin();it!=anims_.end();) {
         if(it->second.type==type) {
             rememberReloadPlayback(it->first,it->second);
