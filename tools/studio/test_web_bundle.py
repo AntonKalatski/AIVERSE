@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 import os
 import sys
+import os
 import unittest
 from urllib.parse import urlsplit, unquote
 
@@ -43,7 +44,12 @@ def verify_bundle(dist: Path) -> list[str]:
             errors.append(f"Invalid {tag} asset path: {url}")
             continue
         destination=(root/relative).resolve()
-        if not destination.is_relative_to(root) or not destination.is_file():
+        try:
+            destination.relative_to(root)
+            contained=True
+        except ValueError:
+            contained=False
+        if not contained or not destination.is_file():
             errors.append(f"Missing or escaping {tag} asset: {url}")
     return errors
 

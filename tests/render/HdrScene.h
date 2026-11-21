@@ -1,9 +1,14 @@
 // Deterministic, asset-free visual fixture shared by GL and Metal runners.
 #pragma once
 #include "engine/render/Prisma.h"
+#include "engine/render/LumaWeavePostProcess.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "engine/world/PhysisSkyBridge.h"
 #include "HdrShaders.h"
+#include "TerrainGiReceiver.h"
+#include "engine/render/GiMainCpuBridge.h"
+#include "engine/render/GiMainGpuBridge.h"
+#include "engine/render/GiDynamicSampling.h"
 #include "engine/render/graph/ShaderGraph.h"
 #include <cstdio>
 #include <cstdlib>
@@ -12,16 +17,34 @@
 namespace aiverse::test {
 using namespace render;
 struct HdrScene;
+void drawLumaScene(HdrScene&,gfx::Device&,int,int);
 void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
+void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
+
+void initFogLandscape(HdrScene&,gfx::Device&,const std::string&);
+void drawFogLandscape(HdrScene&);
 struct HdrScene {
     Renderer3D renderer;
+    gfx::TextureHandle giVtAtlas{},giVtTable{};
+    GiMainCpuBridge dynamicGi;
+    GiMainGpuBridge computeGi;
+    TerrainGiReceiver terrainGi;
+    bool terrainGiVerify=false;
+    bool computeGiVerify=false;
+    bool dynamicGiVerify=false;
     Prisma post;
+    std::unique_ptr<LumaWeavePostProcess> luma;
+    LumaWeaveRegistry lumaSources;
+    LumaWeaveClusters lumaClusters;
+    bool lumaVerify=false;
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
     RTSCamera camera;
     Mesh floor, cube, water;
+    bool fogLandscape=false;
+    Mesh fogTerrain,fogTrees,fogRocks;
     std::unique_ptr<Model> spheres;
     std::unique_ptr<Model> shadowReceiver;
     int frame = 0, probeIndex = 0, gridProbe = -1;
@@ -92,7 +115,11 @@ struct HdrScene {
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
-        verify = std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
+        computeGiVerify=std::getenv("AIVERSE_COMPUTE_GI_VERIFY")!=nullptr;
+        terrainGiVerify=std::getenv("AIVERSE_TERRAIN_GI_VERIFY")!=nullptr;
+        dynamicGiVerify=terrainGiVerify || computeGiVerify || std::getenv("AIVERSE_DYNAMIC_GI_VERIFY")!=nullptr;
+        lumaVerify=std::getenv("AIVERSE_LUMA_VERIFY")!=nullptr;
+        verify = lumaVerify || dynamicGiVerify || std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
 #ifdef _WIN32
@@ -178,10 +205,13 @@ struct HdrScene {
             if(which=="ortho")camera.ortho=true;
             if(which=="combined"){PhysicalSkySettings sky;sky.enabled=true;post.setPhysicalSky(sky);post.setPhysicalSkyTime(0);}
         }
+        if(const char* which=std::getenv("AIVERSE_LOCAL_FOG_TEST");which&&(std::string(which).starts_with("forest")||std::string(which).starts_with("valley")))initFogLandscape(*this,d,which);
         const char* p=std::getenv("AIVERSE_HDR_CAPTURE"); path=p?p:"/tmp/hdr-scene.ppm";
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
+        if (lumaVerify) { drawLumaScene(*this,d,w,h); return; }
+        if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
@@ -190,6 +220,7 @@ struct HdrScene {
         }
         if(ownsFrame)d.beginFrame(w,h);
         renderer.beginScene(advanced?screen.jittered(camera,w,h):camera,w,h);
+        if(fogLandscape)drawFogLandscape(*this);else {
         if (shadowReceiver) { ModelDraw receiver; receiver.model=shadowReceiver.get(); renderer.drawModel(receiver); }
         else renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});
         if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) drawContactShadowScene(*this); else {
@@ -201,6 +232,7 @@ struct HdrScene {
         renderer.drawMesh(cube,mat4::translate({-2.3f,0,1.3f}),{0.95f,0.15f,0.1f,0.5f},kDrawUnlit,0,0);
         renderer.drawMesh(water,mat4::translate({0,0.12f,0}),{0.08f,0.16f,0.22f,0.65f},kDrawNoCastShadow,0.9f);
         renderer.lights.add({2,1.5f,0.8f},4,{0.15f,0.5f,1},3);
+        }
         }
         }
         gfx::PassDesc pass = output; pass.clearColor[0]=0.09f;pass.clearColor[1]=0.11f;pass.clearColor[2]=0.15f;
@@ -412,14 +444,40 @@ struct HdrScene {
         d.endPass();if(ownsFrame)d.endFrame();++frame;
     }
     void shutdown(gfx::Device& d) {
+        if(terrainGi.vertices.valid()) {
+            if(d.waitForResourceIdle())terrainGi.shutdownAfterGpuIdle(d);else failed=true;
+        }
+        if(luma) {
+            if(!d.waitForResourceIdle())failed=true;
+            luma->pollGpu();
+            if(!luma->drainRetiredAfterGpuIdle() || !luma->shutdown())failed=true;
+            luma.reset();
+        }
+        renderer.clearDynamicGiOverlay();
+        if(computeGi.ready()) {
+            if(!d.waitForResourceIdle() || !computeGi.shutdownAfterGpuIdle())failed=true;
+        }
+        if(dynamicGi.ready()) {
+            if(!d.waitForResourceIdle() || !dynamicGi.shutdownAfterGpuIdle())failed=true;
+        }
+        if(giVtAtlas.valid() || giVtTable.valid()) {
+            if(d.waitForResourceIdle()) { d.destroyTexture(giVtAtlas); d.destroyTexture(giVtTable); }
+            else failed=true;
+        }
         if(probeBg)releaseModel(d,*probeBg);
         if(probeFg)releaseModel(d,*probeFg);
         if(shadowReceiver) releaseModel(d,*shadowReceiver);
         if(spheres) releaseModel(d,*spheres);
-        for(auto* m:{&floor,&cube,&water}) {d.destroyBuffer(m->vb);d.destroyBuffer(m->ib);}
+        for(auto* m:{&floor,&cube,&water,&fogTerrain,&fogTrees,&fogRocks}) {d.destroyBuffer(m->vb);d.destroyBuffer(m->ib);}
         screen.shutdown();post.shutdown(); renderer.shutdown();
     }
 };
 }
 
 #include "ContactShadowScene.h"
+
+#include "DynamicGiScene.h"
+
+#include "LumaScene.h"
+
+#include "FogLandscape.h"

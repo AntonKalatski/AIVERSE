@@ -308,3 +308,27 @@ sky/fog/reveal and GL OBB smoke. Full commands, failed initial merge/build,
 limitations and next step are in
 `docs/handoffs/prisma-stage-physical-sky-main-2026-11-20.md`. Full suite, editor/
 client, Vulkan/mobile and CI NOT RUN. Feature branch history remains unchanged.
+
+## Structured fog continuation — 2026-11-20
+
+Code `1fd380b6fe0ad1325162bc3c0a32e5c3eb1dab53`, branch
+`codex/structured-volumetric-fog`: opt-in 3D density noise, world-Y falloff,
+wind and explicit fog presentation clock, keeping sphere/OBB reveal semantics.
+Two user-reference directions have native synthetic forest/valley fixtures.
+PASS 7/7 targeted tests, GLSL/MSL compilers, Metal/GL rendering and exact full
+reveal/off comparisons. Uniform legacy image differs by only 3 one-level channel
+roundings; not bit-identical. See `docs/handoffs/prisma-stage-structured-fog-2026-11-20.md`
+for commands, limitations and visual tuning. Not merged to main in this stage.
+
+## Fog billows/self-shadowing — 2026-11-20
+
+Code `19d2d8f1a2f2357b235dc9ef6dd08da70d243cb9`, same structured-fog branch.
+User rejected flat appearance: added world-space height crests, 3D domain warp,
+edge erosion and bounded 4/6-sample optical sun self-shadowing through all fog/
+reveal volumes. Zero defaults preserve compatibility. Native fixtures now expose
+bank surfaces at low/elevated angles and A/B self-shadowing. PASS 7/7 CTests,
+GLSL/MSL, Metal/GL, full reveal exact-pixel and shadow/wind difference checks.
+See `docs/handoffs/prisma-stage-fog-billows-2026-11-20.md` for evidence/limits.
+**All future builds/caches/compiler temporary files on KINGSTON**, per user:
+`/Volumes/KINGSTON/AIVERSE-builds/physical-sky-clouds/sky`; local build/sky is only
+an alias. Internal duplicate removed after external compilation. No main merge.

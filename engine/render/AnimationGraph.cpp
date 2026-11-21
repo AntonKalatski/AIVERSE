@@ -9,6 +9,25 @@
 #include <stdexcept>
 
 namespace aiverse::render {
+std::unique_ptr<AnimationGraphInstance> AnimationGraphInstance::cloneForPreparation() const {
+    // The private memberwise copy includes every scalar, clock, pose, native
+    // state span, notify queue and diagnostic. Detach all mutable shared owners
+    // before exposing the candidate; allocation failure leaves this untouched.
+    auto next=std::unique_ptr<AnimationGraphInstance>(new AnimationGraphInstance(*this));
+    for(auto& traits:next->traitState_)
+        for(auto& trait:traits)
+            if(trait.rig)trait.rig=std::make_shared<AnimationRigState>(*trait.rig);
+    for(auto& child:next->children_)
+        if(child)child=child->cloneForPreparation();
+    for(auto& motion:next->motions_)
+        if(motion)motion=std::make_shared<MotionPlayer>(*motion);
+    for(auto& controller:next->controllers_)
+        if(controller)controller=std::make_shared<AnimationControllerPlayer>(*controller);
+    for(auto& rig:next->rigs_)
+        if(rig)rig=std::make_shared<AnimationRigState>(*rig);
+    return next;
+}
+
 namespace {
 [[noreturn]] void bad(const std::string& s) { throw std::runtime_error("animationGraph: " + s); }
 float number(const Json& j, float fallback) {

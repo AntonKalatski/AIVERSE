@@ -20,6 +20,19 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 - Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
 
 
+## Dynamic indirect GI (lighting integration branch, 2026-11-20)
+
+Reuse `engine/render/GiMainCpuBridge.h` / `GiMainGpuBridge.h` and
+`Renderer3D::setDynamicGiOverlay`; do not create genre-specific GI engines.
+Native host: `apps/renderbench/DynamicGiHost.h`; contracts: `docs/dynamic-gi.md`.
+Read the latest `docs/agent-handoffs/lighting-main-stage*-2026-11-20.md`;
+Stage 24 adds automatic native animated snapshots. Shared pose extraction:
+`GiModelGeometry.h`; Luma HDR contract: `docs/luma-native-lighting.md`.
+Compute is bounded and fence-backed; larger scenes use explicit CPU fallback.
+Metal/desktop GL pixels and native glTF host are checked. Vulkan SPIR-V compiles;
+Vulkan/mobile GPU acceptance and production performance remain separate gates.
+All builds for this task must stay on KINGSTON, as required by the owner.
+
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
 **Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
@@ -38,6 +51,35 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 **Compatibility is intentional:** `PostFx*.h`/editor `PostFxOps.h` are forwarding legacy includes and `PostFx*.cpp` are empty shims. Keep the external `"postfx"` JSON key, `postfx_*` MCP operation names, `view_postfx` and editor saved ID `"postfx"` until a separately approved versioned data migration. Do not create a second implementation or double-register the old editor window. Legacy `PostFx` types remain source aliases to PRISMA. Old source filenames must never be linked instead of the new canonical PRISMA .cpp files. The optional `aiverse_postfx_data` CMake target remains as compatibility link name.
 
 **Agent handoff:** Every PRISMA implementation stage MUST have a **separate, committed** `docs/handoffs/prisma-stage-XX.md` on its working branch, naming code changes, public APIs, real test commands/results, untested paths, current SHA and precise next step. Never mark unrun tests PASS. SpectraFX has a separate living handoff `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`; do not overwrite it with PRISMA changes. Any shared-render integration must be documented in both systems' design docs and note the exact common interface.
+
+## Все объекты сцены — Entity (обязательное правило, 2026-11-20)
+
+Любой объект сцены/мира должен быть entity с устойчивой идентичностью и
+компонентами. Это относится в том числе к источникам света, камерам, мешам,
+коллайдерам, точкам появления, VFX, звуковым источникам и триггерам. Нельзя
+создавать отдельную модель объектов для каждого типа или жанра.
+
+- Hierarchy, Inspector, выбор во viewport, transform, Undo/Redo и сохранение
+  должны обращаться к одной entity и её компонентам.
+- Свет — компонент entity; панель Lighting является представлением/редактором
+  этих же данных, а не владельцем отдельного списка независимых объектов.
+- При миграции старых форматов разрешены совместимые адаптеры с явно указанным
+  каноническим владельцем; запрещены две независимо изменяемые копии состояния.
+  Не объявлять миграцию завершённой, пока старые объекты лишь отображаются как
+  строки Hierarchy без единой идентичности, компонентов и операций.
+- Presentation-компоненты и GPU-ресурсы не переносить в авторитетную
+  детерминированную симуляцию; сохранять существующие ECS-контракты проекта.
+- Общее окружение/настройки сцены и определения ресурсов сами по себе не являются
+  размещёнными объектами. Любой их экземпляр в мире подчиняется правилу entity.
+
+## Agent lighting/entity tools (2026-11-20)
+
+Use `skills/editor/aiverse-scene-entities/SKILL.md` for native scene entities and
+component edits, and `skills/visuals/aiverse-lighting/SKILL.md` for Light/GI/Luma.
+The existing AIVERSE MCP exposes scene_entity_list/get, scene_component_set,
+scene_light_create/delete and scene_render_lighting_get/set through the shared
+Workspace registry. Use returned entity IDs, native component validation and
+map_save; never create independent light state. See docs/studio-light-entities.md.
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
@@ -1800,6 +1842,19 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+## Validation follow-up for CPU MDI GPU safety (2026-11-19)
+
+The Vulkan `writableVersion` API now returns `nullptr` when a
+new GPU-safe version could not be allocated, **never** a writable
+reference to an in-flight VkBuffer. `updateBuffer` must select a
+safe destination BEFORE modifying its CPU shadow, and transactional
+growth must preserve the old allocations on failure. Do not revert
+to overwriting the previous serial's memory to avoid an OOM. Existing
+`tests/render/model_batching_policy.cpp` now exercises Stage 21–24
+preflight rank/bucket/generation behavior and Stage 28–29 monotonic
+RHI buffer stats; these are CPU tests, not Metal/Vulkan GPU validation.
+CI results must be reported only when the corresponding workflow run
+actually completes, not inferred from test source or staging.
 
 
 ## PRISMA post-processing rules (short reference)
@@ -4727,3 +4782,107 @@ and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them
 
 Текущий контракт, список модулей и ограничения `auto`: `docs/overview.md`
 и `docs/agent-handoffs/client-binary-module-selection-2026-11-21.md`.
+
+## LENS captured-frame integration (2026-11-20)
+
+Read `docs/camera-system.md` and the latest entries of
+`docs/agent-handoffs/lens-native-validation-2026-11-20.md` before editing LENS.
+Secondary cameras consume the published visual epoch and owned Mesh metadata;
+never call stateful `RtsView::draw` or MotionWeave update a second time.
+Captured primary frames defer the surface cohort publication until animation,
+Sprite/tile uploads, lighting and Overlay preparation have succeeded. Candidate
+height/road queries are scoped to that preparation and must restore on failure.
+Keep immutable GPU packets and host-boundary completion-token retirement;
+preparation atomicity does not roll back GPU execution or the separate legacy
+paint/field providers. `lens_metal_frame` requires explicit
+`AIVERSE_LENS_METAL_VALIDATE=1`; a skipped test is not GPU validation.
+Preserve the native failure/retry, temporary Mesh lifetime and pixel parity
+fixtures, and record actual platform coverage in the handoff. Build/cache/log
+paths for this integration are on KINGSTON, per the user's instruction.
+
+
+## LENS authoring tools and engine skills
+
+Use `skills/visuals/aiverse-lens/SKILL.md` for project camera authoring and
+`skills/visuals/aiverse-lens-native/SKILL.md` for native presentation integration.
+`apps/editor/core/LensOps.cpp` registers five CPU-only lens_scene_* / lens_camera_*
+operations through Workspace for both editor and standalone MCP. Writes require
+the exact expectedScene from the last read, validate in a scratch World and
+stage replacement without deleting last-good data on failure. They save immediately
+without undo: Reload the LENS window before further UI edits; restart the client.
+Do not equate loader validation/clientCompatible with GPU capture acceptance.
+Keep lens_ops regression tests and the separate LENS stage handoff.
+
+## STRATA engine skill and MCP authoring (2026-11-20)
+
+Use `skills/visuals/aiverse-strata/SKILL.md` for STRATA asset authoring,
+MCP analysis and native verification. It is registered in the engine skill
+catalog. The shared editor/MCP operations `strata_capabilities` and
+`strata_model_analyze` provide read-only compiled-support and CPU import results;
+they never enable GPU parity gates or certify measured rendering performance.
+See `docs/strata.md` and the Stage 23 tools handoff for limits and verification.
+## PHYSIS agent map authoring
+
+Use `skills/world/aiverse-physis-authoring/SKILL.md` for `physis_get`,
+`physis_validate`, `physis_set` in the shared editor/MCP Workspace. These
+are revision-checked document edits with Undo/Redo, never live ECS writes.
+For physical sky and local fog/reveal use the atmosphere reference linked
+from `skills/visuals/aiverse-prisma/SKILL.md`; rendering remains PRISMA-owned.
+
+## Lighting integration checkpoint (2026-11-20)
+
+Use shared `engine/render/RenderLightingRuntime.h`, `DynamicGiHost.h`,
+`LumaHost.h` and `GiModelGeometry.h` for native presentation ownership; do not
+fork separate RTS/FPS GI or direct-light engines. Renderbench headers are
+compatibility aliases. Animated opaque snapshots retain CPU geometry and use
+actual GPU fences for replacement/retirement, not elapsed frame counts.
+
+The optional map `renderLighting` v1 block is normalized by
+`RenderLightingSettings.h`. Studio's typed native methods validate before
+mutation and support Save/Undo/Redo for RTS and FPS. Studio Metal uses PBR
+versions of its existing terrain/document proxies; this is **not full game-asset
+preview parity**. It reports actual backend/convergence/fallback. Keep new UI in
+Studio UI v1. Do not treat legacy LightSystem's 1024-source limit as Luma's
+4096-source capacity or silently truncate the GI geometry to GPU limits.
+
+Dynamic GI uses texture13 and U6/buffer7. Graph textures relocate to14+.
+Experimental Metal ICB binds atlas13 at argument26 and snapshots U6; both CPU
+and GPU GI providers have actual-command and pixel acceptance tests. ICB flags
+remain OFF by default; those tests do not establish whole-engine performance.
+See `docs/agent-handoffs/lighting-main-stage27-viewport-2026-11-20.md` and
+`docs/agent-handoffs/lighting-main-stage28-icb-2026-11-20.md`. Vulkan/mobile
+hardware acceptance and native HTML visual QA must be reported separately from
+Metal/desktop GL tests, source contracts or successful builds.
+
+## Lighting/main resource integration (2026-11-20)
+
+Keep canonical Vulkan TextureResources compute for probe GI (buffers12..15,
+image0, UBO16); do not restore the former parallel GI-only backend. Model GI
+uses U7 and a texture after the page table when VT is active, preserving VT U6.
+Plain PBR keeps GI tex13/U6. Graph/VT + GI fall back from experimental ICB to
+ordinary GPU shading. Preserve LENS staged terrain publication and immutable
+captured bindings; GI variants occupy terrain slots6..12. Read the Stage36
+lighting handoff and docs/dynamic-gi.md before changing these shared contracts.
+
+**Structured fog:** `FogVolume::structure` is opt-in cosmetic 3D noise/height/wind.
+Preserve `amount=0,heightFalloff=0` uniform compatibility and CPU `densityAt(p,t)`
+semantics. World-Y height does not imply terrain following. Noise is a periodic
+256-cell integer lattice; time wrap must preserve its phase. Reveals apply after
+structure; validate new fields transactionally. `Prisma::setLocalFogTime` controls
+presentation only. Structured 48/96-step budgets are separate from uniform 32/64.
+
+## Build storage — user instruction 2026-11-20
+
+All further build outputs, compiler/module caches, shader binaries and temporary
+compiler files must reside on `/Volumes/KINGSTON`. This feature uses
+`/Volumes/KINGSTON/AIVERSE-builds/physical-sky-clouds/sky` and sibling `tmp` /
+`modules` directories. Set TMPDIR and CLANG_MODULE_CACHE_PATH there. Keep source
+worktrees intact; do not silently fall back to the internal drive if unmounted.
+
+**Local fog billows/self-shadowing:** `FogStructure::{heightVariation,warp,edgeErosion}`
+shape density in world space and preserve CPU/GPU query semantics. New values
+must be validated transactionally. `LocalFogSettings::selfShadow` defaults to 0;
+when enabled, integrate all volumes AND reveal holes toward the sun with bounded
+4/6 light samples and `shadowDistance`. Do not substitute a 2D darkening overlay.
+Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping,
+8+8 volume caps and separate handoffs; no multiple-scattering or perf claim.

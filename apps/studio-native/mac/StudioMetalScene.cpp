@@ -1,5 +1,7 @@
 #include "apps/editor/AuthoringWater.h"
 #include "StudioMetalScene.h"
+#include "apps/studio-native/StudioLightingPreview.h"
+#include "engine/render/GiModelGeometry.h"
 #include "apps/editor/SceneRenderable.h"
 #include "apps/studio-native/StudioVisualPicking.h"
 #include "apps/studio-native/StudioTerrainGeometry.h"
@@ -18,12 +20,19 @@
 
 namespace aiverse::studio {
 using namespace aiverse::render;
+namespace { struct StudioFrameScope {
+    gfx::Device& device;
+    ~StudioFrameScope(){device.endPass();device.endFrame();}
+}; }
 StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
     lodDiagnostics_=std::getenv("AIVERSE_LOD_DIAGNOSTICS")!=nullptr;
     renderer_.setLodDiagnosticsEnabled(lodDiagnostics_);
+    if (!post_.init(*device_)) throw std::runtime_error("Studio HDR init failed");
+    PrismaSettings postSettings;postSettings.hdr=HdrMode::On;
+    post_.setSettings(postSettings);post_.setQuality(PrismaQuality::High);
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
     builder.color(rgba(255,255,255));
@@ -196,6 +205,13 @@ void StudioMetalScene::syncDocumentModels(
 StudioMetalScene::~StudioMetalScene() {
     clearDocumentModels();
     if (device_) {
+        device_->waitForResourceIdle();
+        lightingRuntime_.shutdown(*device_,renderer_);
+        if(lightingModel_) {
+            renderer_.invalidateModelCachesFor(lightingModel_.get());
+            releaseModel(*device_,*lightingModel_);lightingModel_.reset();
+        }
+        post_.shutdown();
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
@@ -326,9 +342,11 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     if (materialMode_ != materialRequested) {
         materialMode_=materialRequested;
+        lightingRevision_=std::numeric_limits<uint64_t>::max();
         cameraInitialized_=false;
     }
     if (materialMode_) {
+        lightingStatus_="Material preview · GI: off · Direct: standard";
         if (!cameraInitialized_) {
             camera_.target={0,0,0};
             camera_.distance=4.3f;
@@ -337,7 +355,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             cameraInitialized_=true;
         }
         device_->beginFrame(framebufferWidth,framebufferHeight);
+        StudioFrameScope scope{*device_};
         renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
+        renderer_.clearDynamicGiOverlay();
         renderer_.lighting=render::Lighting{};
         renderer_.lighting.sunIntensity=1.2f;
         renderer_.lighting.skyColor={.42f,.51f,.66f};
@@ -356,13 +376,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         previewPass.clearColor[1]=.09f;
         previewPass.clearColor[2]=.135f;
         renderer_.render(previewPass);
-        device_->endPass();
-        device_->endFrame();
+
         return;
     }
     const auto& map = doc.data;
     const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {
+        lightingRevision_=std::numeric_limits<uint64_t>::max();
         terrainLevelHeight_ = levelHeight;
         MeshBuilder source;
         Mesh replacement;
@@ -372,9 +392,50 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         terrain_ = replacement;
         terrainRevision_ = doc.revision;
     }
+    const Json settings=renderLightingSettings((fpsProject?doc.data.fps:doc.data.extra)["renderLighting"]);
+    const bool useLighting=settings.getStr("indirect")!="off" || settings.getStr("direct")!="legacy";
+    const auto activeLights=studioAuthoredLights(doc,fpsProject,levelHeight,std::numeric_limits<size_t>::max());
+    Lighting environment;
+    const auto day=previewDocumentDay(doc,fpsProject);
+    const Json& lightingSource=fpsProject ? doc.data.fps["lighting"] : doc.data.extra["lighting"];
+    if(lightingSource.isObject()) {
+        environment.sunIntensity=day.sun;
+        environment.skyColor={.5f*day.ambient,.58f*day.ambient,.7f*day.ambient};
+    }
+    if(lightingRevision_!=doc.revision) {
+        if(!lightingRuntime_.shutdown(*device_,renderer_) || !device_->waitForResourceIdle())
+            throw std::runtime_error("Studio lighting retirement failed");
+        if(lightingModel_) {
+            renderer_.invalidateModelCachesFor(lightingModel_.get());
+            releaseModel(*device_,*lightingModel_);lightingModel_.reset();
+        }
+        lightingRevision_=doc.revision;
+        lightingStatus_="Preview geometry · GI: off · Direct: standard";
+        if(useLighting || fpsProject) {
+            lightingModel_=studioLightingPreview(doc,fpsProject,levelHeight);
+            if(!lightingModel_)throw std::runtime_error("Studio lighting geometry missing");
+            prepareModelUpload(*lightingModel_);
+            const auto geometry=giModelGeometry(*lightingModel_);
+            if(!uploadModel(*device_,*lightingModel_,true))throw std::runtime_error("Studio lighting upload failed");
+            const float3 center{(lightingModel_->boundsMin.x+lightingModel_->boundsMax.x)*.5f,
+                lightingModel_->boundsMin.y+.25f,(lightingModel_->boundsMin.z+lightingModel_->boundsMax.z)*.5f};
+            try {
+                if(useLighting)lightingRuntime_.initialize(*device_,renderer_,post_,settings,geometry,activeLights,center,environment);
+            } catch(const std::exception& e) {
+                const std::string reason=e.what();
+                if(!lightingRuntime_.shutdown(*device_,renderer_))throw;
+                lightingStatus_="Lighting rejected: "+reason+" · standard preview retained";
+            }
+        }
+    }
     if (!cameraInitialized_ || lastMapWidth_ != map.w || lastMapHeight_ != map.h) {
         camera_.target = {map.w * .5f, 0.0f, map.h * .5f};
         camera_.distance = std::clamp(float(std::max(map.w, map.h)) * 1.4f, 16.0f, 100000.0f);
+        if(fpsProject && lightingModel_) {
+            const auto lo=lightingModel_->boundsMin,hi=lightingModel_->boundsMax;
+            camera_.target=(lo+hi)*.5f;
+            camera_.distance=std::clamp(std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z})*1.4f,16.f,100000.f);
+        }
         cameraInitialized_ = true;
         lastMapWidth_ = map.w;
         lastMapHeight_ = map.h;
@@ -382,27 +443,32 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
     syncDocumentModels(doc,projectPath,rules,proxies);
     device_->beginFrame(framebufferWidth, framebufferHeight);
+    StudioFrameScope scope{*device_};
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
     nereid_.prepare(*device_,camera_.eye());
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
-    renderer_.lighting=Lighting{}; // reset when project and lighting settings change
-    const auto day=previewDocumentDay(doc,fpsProject);
-    const Json& lightingSource=fpsProject ? doc.data.fps["lighting"] : doc.data.extra["lighting"];
+    renderer_.lighting=environment;
     if (lightingSource.isObject()) {
-        renderer_.lighting.sunIntensity=day.sun;
-        renderer_.lighting.skyColor={.5f*day.ambient,.58f*day.ambient,.7f*day.ambient};
         renderer_.lights.setNightGlow(day.night*1.5f);
         renderer_.lights.setClouds(day.clouds,.6f,16.f,0,0);
     }
-    const auto activeLights=studioAuthoredLights(doc,fpsProject,levelHeight);
-    for(const auto& light:activeLights) renderer_.lights.add(light);
+    if(!lightingRuntime_.direct || !lightingRuntime_.direct->enabled)
+        for(const auto& light:activeLights)renderer_.lights.add(light);
+    lightingRuntime_.update(*device_,renderer_,camera_.target);
+    if(lightingRuntime_.indirect || lightingRuntime_.direct)lightingStatus_=lightingRuntime_.status();
 
     // Real map dimensions and positions from the active native Workspace.
     // Temporary primitive preview (NOT legacy editor terrain, animation or materials).
     const float w = float(std::max(map.w, 1));
     const float h = float(std::max(map.h, 1));
+    if(lightingModel_) {
+        // Shared lit preview geometry (terrain + document proxies) owned by the lighting runtime.
+        ModelDraw draw;draw.model=lightingModel_.get();renderer_.drawModel(draw);
+    }
     if(showTerrain){
-    if (terrain_.vb.valid() && terrain_.ib.valid()) {
+    if(lightingModel_) {
+        // Terrain is already part of the lit preview model.
+    } else if (terrain_.vb.valid() && terrain_.ib.valid()) {
         renderer_.drawMesh(terrain_, mat4{}, {1,1,1,1}, kDrawNoCastShadow);
     } else {
         // Unsupported planet maps or empty terrain: basic plane only.
@@ -412,9 +478,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     const int xStep = std::max(1, map.w / 48);
     const int zStep = std::max(1, map.h / 48);
-    for (int x=0; x<=map.w; x+=xStep)
+    for (int x=0; !fpsProject && x<=map.w; x+=xStep)
         renderer_.line({float(x),.01f,0},{float(x),.01f,h},rgba(55,84,109,120));
-    for (int z=0; z<=map.h; z+=zStep)
+    for (int z=0; !fpsProject && z<=map.h; z+=zStep)
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
     } // external/Terra surface suppresses the default plane and grid
@@ -425,7 +491,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
         if (hasModel) continue;
-        renderer_.drawMesh(cube_,
+        if(!lightingModel_ && !entity.light)renderer_.drawMesh(cube_,
             mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
             mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
         if(entity.id==selectedId) {
@@ -460,7 +526,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
-    renderer_.render(pass);
+    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):nullptr);
+    renderer_.resolvePrisma();
+    lightingRuntime_.presented();
     if(lodDiagnostics_&&++diagnosticFrames_%120==0){
         const auto& stats=renderer_.modelStats();
         std::fprintf(stderr,"[studio-lod] instances=%zu assets=%zu cameraTriangles=%llu shadowTriangles=%u lod=%llu/%llu/%llu/%llu chains=%llu blocked=%llu shadowLimited=%llu\n",
@@ -468,7 +536,6 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             (unsigned long long)stats.cameraLodNodes[0],(unsigned long long)stats.cameraLodNodes[1],(unsigned long long)stats.cameraLodNodes[2],(unsigned long long)stats.cameraLodNodes[3],
             (unsigned long long)stats.cameraLodChains,(unsigned long long)stats.cameraLodBlocked,(unsigned long long)stats.cameraShadowLimitedLod);
     }
-    device_->endPass();
-    device_->endFrame();
+    // StudioFrameScope ends the pass and frame, including on exceptions.
 }
 }

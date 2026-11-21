@@ -170,6 +170,7 @@ Json toContent(const Json& result) {
 
 const char* kInstructions =
     "Tools to build real-time strategy games with AIVERSE: a game is data (game.json, rules.json, maps). "
+    "STRATA virtual geometry: strata_capabilities reports compiled authoring support; strata_model_analyze {model: project-relative path} builds read-only CPU staging, not GPU acceptance. "
     "Projects live anywhere on disk; the engine ships templates (sample games). "
     "Workflow: list_projects (recent projects + templates) / create_project {name, template, location} / open_game {game: folder} -> read rules_schema (the data format reference) -> rules_list / rules_get -> "
     "edit rules with rules_set / rules_merge (keep rules small: shared values in an \"abstract\": true base that entries \"extends\", "
@@ -198,18 +199,26 @@ const char* kInstructions =
     "Visual effects: fx_templates (explosion, fire, smoke, magic, weather, ...) or fx_import_unity {source: a Unity .prefab / folder} "
     "to make the same effect as a Unity one, tune with fx_get / fx_set, look with fx_preview {effect, advance, freeze} + view_screenshot, "
     "attach to events with fx_bind (died, hit, attack, ability, spawned per type / weapon / ability). "
+    "LENS cameras: lens_scene_get -> lens_scene_validate -> lens_camera_set / lens_scene_set / lens_camera_delete. "
+    "Writes require expectedScene from the last read and save immediately without undo; Reload the native LENS window afterward. "
     "Look of the game: own meshes / textures via asset_import, then the type's \"view\" block with rules_merge "
     "(model, materials overrides per material name, team colour, clips: docs/models.md; model_info lists nodes, clips, materials); "
     "custom materials: texture_generate (bricks, metal panels, wood, camo, scales, ... + normal maps, team masks) -> material_set "
     "(shared library materials.json) -> material_apply {type, material, target | node} -> material_preview + view_screenshot; "
     "lighting: lighting_set (sun, sky, day/night, presets), light_add / light_update (point lights on the map); "
+    "PHYSIS map authoring: physis_get -> physis_validate -> physis_set with expectedRevision from physis_get; "
+    "these edit map configuration only, not live simulation or visual fog. "
     "fog of war: rules_merge {path: \"fogOfWar\"} (mode, colour, style, softness, grid, lineOfSight for 3D visibility by heights, "
     "vision.blocks on wall types, delivery.blocksVision on smoke skills); "
+    "Scene entities/components: scene_entity_list -> scene_entity_get -> scene_component_set. "
+    "Lights: scene_light_create/delete with persistent entityId; configure GI/Luma with scene_render_lighting_get/set. "
+    "Read engine skills/editor/aiverse-scene-entities/SKILL.md and skills/visuals/aiverse-lighting/SKILL.md; "
+    "map_save persists requested edits. Other legacy scene IDs remain provisional. "
     "post effects (bloom, colour grading, LUT, vignette, tilt-shift, ...): postfx_catalog -> postfx_preset / postfx_add; their answers carry "
     "'warnings' with ms per frame for heavy effects (bloom, fxaa, sunShafts) - pass them on to the user; view_postfx {quality: low} + view_screenshot "
     "shows what weak phones get; "
     "game UI: ui_contract (documents, data bindings, events) -> game_file_write ui/hud.rml, ui/skin.rcss ... (the game's ui/ overrides the engine's). "
-    "Everything you do shows up live in the user's editor window and can be undone there. "
+    "Map edits appear live in the editor with undo. Project-file tools describe their own save and reload behavior. "
     "You can only change game projects, never the engine.";
 
 } // namespace

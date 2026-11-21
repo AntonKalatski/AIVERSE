@@ -38,6 +38,7 @@
 #pragma once
 #include "Shaders.h"
 #include "BakedShaders.h"
+#include "GiDynamicShaders.h"
 
 namespace aiverse::render::shaders {
 
@@ -192,7 +193,7 @@ void main() {
 )";
 
 inline const char* kModelFS =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12")
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI
     R"(
 uniform mediump sampler2D tex1;
 #if defined(VIRTUAL_ALPHA_MASK)
@@ -356,6 +357,22 @@ void main() {
     ao = mix(1.0, texture(tex4, v_uv).r, m_pbr.w);
 #endif
     // SG_SURFACE
+#if defined(LUMAWEAVE_SURFACE)
+    // Opt-in linear signed world normal from the SAME PBR shading path,
+    // including tangent normal map and Shader Graph perturbations. W is
+    // roughness; an independent depth pass rejects mismatched occluders.
+    if(m_uv1.y > 0.5) discard;
+    o_color=vec4(normalize(n),clamp(rough,0.045,1.0));
+    return;
+#endif
+#if defined(LUMAWEAVE_MATERIAL)
+    // HDR side-channel: exact material diffuse base + metallic, not the
+    // already-illuminated scene color. Respect alpha mask, tint, PBR textures
+    // and Shader Graph overrides applied above. No legacy direct or GI term.
+    if(m_uv1.y > 0.5) discard;
+    o_color=vec4(clamp(base.rgb,vec3(0.0),vec3(1.0)),clamp(metallic,0.0,1.0));
+    return;
+#endif
     ao *= m_misc.w > 1.5 ? (m_misc.w > 3.5 && !gl_FrontFacing ? v_col.r : v_col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
@@ -444,6 +461,10 @@ void main() {
         float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5 * transmission) * m_uv1.z;
         col += diff * m_light.rgb * sun * scatter * ao;
     }
+#if defined(DYNAMIC_GI)
+    // Add INDIRECT diffuse only: no extra sun, specular or baked base.
+    col += diff * dynamicGiAt(v_wpos,n) * ao;
+#endif
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (u_trace2.w > 1.5 && m_uv1.y < 0.5 && rough < 0.8) {
         float hit; vec3 reflected = ssrWater(v_wpos + n * 0.02, n, V, hit);
@@ -610,7 +631,7 @@ void main() {
     "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX AIVERSE_MSL_DYNAMIC_GI
     "#if defined(PROBES)\n" AIVERSE_MSL_PROBES "#endif\n"
     R"(
 struct VOut {
@@ -699,6 +720,9 @@ struct IcbPbrTextures {
     sampler s11 [[id(23)]];
     depth2d<float> tex12 [[id(24)]];
     sampler s12 [[id(25)]];
+#if defined(DYNAMIC_GI)
+    texture2d<float> tex13 [[id(26)]];
+#endif
 #if defined(AIVERSE_SG_ICB_GRAPH)
     // Fragment-only graph source slots 13..16 use the same 2*slot IDs
     // as the standard PBR argument table; source tex16 uses a constexpr
@@ -772,6 +796,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
+#if defined(DYNAMIC_GI)
+                        , constant GiDynamicU& dgi [[buffer(DYNAMIC_GI_BUFFER)]]
+#if !defined(AIVERSE_ICB_PBR)
+                        , texture2d<float> DYNAMIC_GI_TEXTURE [[texture(DYNAMIC_GI_SLOT)]]
+#endif
+#endif
                         GI_FARGS
 #if defined(VIRTUAL_ALPHA_MASK) && !defined(AIVERSE_ICB_PBR)
                         , texture2d<float> tex15 [[texture(15)]],
@@ -805,6 +835,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #define s11 icbTextures.s11
 #define tex12 icbTextures.tex12
 #define s12 icbTextures.s12
+#if defined(DYNAMIC_GI)
+#define tex13 icbTextures.tex13
+#endif
 #endif
 #if defined(STUDIO_DEBUG_VIEW)
 #if STUDIO_DEBUG_VIEW == 2
@@ -921,6 +954,19 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     ao = mix(1.0, tex4.sample(s4, in.uv).r, m.pbr.w);
 #endif
     // SG_SURFACE
+#if defined(LUMAWEAVE_SURFACE)
+    // World-space signed normal.xyz and physically bounded roughness.w.
+    // Input has passed the same AlphaMask, normal map and PBR processing
+    // as the visible model, without applying any existing direct/indirect GI.
+    if(m.uv1.y > 0.5) discard_fragment();
+    return float4(normalize(n),clamp(rough,0.045f,1.0f));
+#endif
+#if defined(LUMAWEAVE_MATERIAL)
+    // Real linear material receiver for external direct lighting. The
+    // compute result is multiplied by the physically correct diffuse color.
+    if(m.uv1.y > 0.5) discard_fragment();
+    return float4(clamp(base.rgb,float3(0.0),float3(1.0)),clamp(metallic,0.0f,1.0f));
+#endif
     ao *= m.misc.w > 1.5 ? (m.misc.w > 3.5 && !frontFacing ? in.col.r : in.col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
@@ -1009,6 +1055,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f * transmission) * m.uv1.z;
         col += diff * m.light.rgb * sun * scatter * ao;
     }
+#if defined(DYNAMIC_GI)
+    col += diff * dynamicGiAt(DYNAMIC_GI_TEXTURE,dgi,in.wpos,n) * ao;
+#endif
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (f.trace2.w > 1.5 && m.uv1.y < 0.5 && rough < 0.8) {
         float hit; float3 reflected = ssrWater(f, tex11, s11, tex12, s12, in.wpos + n * 0.02, n, V, hit);

@@ -7,6 +7,12 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 **Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, the latest `docs/handoffs/prisma-stage-66.md`.
 
+## Atmosphere workflow
+
+For physical sky, volumetric clouds/god rays and local sphere/OBB fog with runtime
+reveal, read [the atmosphere reference](references/atmosphere.md). It maps the
+existing native interfaces and distinguishes them from PHYSIS authoring MCP.
+
 ## Choose the right owner
 
 - PRISMA owns **image-space processing**: HDR scene resolve, tonemapping, color grading, LUTs, bloom, DoF, motion blur, auto exposure, TAA/FXAA/upscaling, screen-space GI/AO/SSR, camera volumes and full-screen `postfx` Shader Graph domain. `PrismaScreenLighting` is part of PRISMA.

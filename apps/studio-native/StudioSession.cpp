@@ -11,6 +11,7 @@
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
+#include "engine/render/RenderLightingSettings.h"
 #include "apps/studio-native/StudioFpsLightingDocument.h"
 #include "apps/studio-native/StudioMaterialValidation.h"
 #include "apps/studio-native/StudioShaderGraphValidation.h"
@@ -26,6 +27,7 @@
 #include <map>
 #include <stdexcept>
 #include <utility>
+#include <tuple>
 
 namespace aiverse::studio {
 namespace {
@@ -48,7 +50,8 @@ Json numericProp(const char* key, const char* label, Json value, bool integer = 
     if (integer) r.set("integer", Json::fromBool(true));
     return r;
 }
-std::string nodeId(const editor::DocumentEntityRef& ref,const editor::MapDoc& map) { return studioDocumentId(ref,map); }
+std::string nodeId(const editor::MapDoc& map,const editor::DocumentEntityRef& ref) { return studioDocumentId(map,ref); }
+std::string nodeId(const editor::DocumentEntityRef& ref,const editor::MapDoc& map) { return studioDocumentId(map,ref); }
 // Resolve native picker/CLI inputs before locating the project-local journal.
 // Workspace supports directories, manifest/project files and sample template IDs.
 std::string recoveredProjectDir(const editor::Workspace& ws,const std::string& input) {
@@ -85,8 +88,21 @@ Json StudioSession::propertiesFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     Json fields = Json::array();
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-        if (nodeId(node.ref,ws_.map) != entityId) continue;
-        if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
+        if (nodeId(ws_.map,node.ref) != entityId) continue;
+        if(node.ref.isLight()) {
+            const auto& light=*editor::documentLight(ws_.map,node.ref);
+            fields.push(prop("name","Name","text",str(light.getStr("name"))));
+            auto type=prop("type","Light type","text",str(light.getStr("type","point")));
+            type.set("options",Json::parse(R"([{"label":"Point","value":"point"},{"label":"Spot","value":"spot"}])"));fields.push(type);
+            for(const auto& [key,label,def,lo,hi]:std::vector<std::tuple<const char*,const char*,double,double,double>>{
+                {"x","Position X",0,-1000000,1000000},
+                {"height",ws_.project.isFps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
+                auto field=numericProp(key,label,Json::number(light[key].toDouble(def),3));
+                field.set("min",Json::number(lo));field.set("max",Json::number(hi));fields.push(field);
+            }
+            fields.push(prop("nightOnly","Night only","boolean",Json::fromBool(light.getBool("nightOnly"))));
+            fields.push(prop("electric","Electric","boolean",Json::fromBool(light.getBool("electric"))));
+        } else if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
             const auto& e = ws_.map.data.entities.at(node.ref.index);
             fields.push(prop("type", "Type", "text", str(e.type)));
             fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
@@ -123,21 +139,47 @@ Json StudioSession::snapshot() const {
     const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps());
     for (const auto& node : nodes) {
         Json row = Json::object();
-        row.set("id", str(nodeId(node.ref,ws_.map)));
+        row.set("id", str(nodeId(ws_.map,node.ref)));
         row.set("name", str(node.label));
         // UI receives only generic display kind; document source names remain native.
         row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
             ? (node.ref.index < ws_.map.data.entities.size() ? ws_.map.data.entities[node.ref.index].type : "Entity")
-            : node.ref.source == editor::DocumentEntityRef::Source::FpsCollider ? "Collider" : "Spawn"));
+            : node.ref.isLight()?"Light":node.ref.source == editor::DocumentEntityRef::Source::FpsCollider ? "Collider" : "Spawn"));
         row.set("visible", Json::fromBool(true));
         rows.push(std::move(row));
     }
     scene.set("entities", std::move(rows));
     result.set("scene", std::move(scene));
-    const bool valid = !selected_.empty() && std::any_of(nodes.begin(), nodes.end(),
-        [&](const auto& node) { return nodeId(node.ref,ws_.map) == selected_; });
+    Json fields = Json::array(), componentViews=Json::array(), entityFields=Json::array();
+    bool valid = false;
+    if (!selected_.empty()) {
+        for (const auto& node : nodes) {
+            if (nodeId(ws_.map,node.ref) != selected_) continue;
+            valid = true;
+            fields = propertiesFor(selected_);
+            if(node.ref.isLight()) {
+                // Light entities expose Entity/Transform/Light components over the
+                // same canonical document object; no separate light state exists.
+                for(const auto& descriptor:editor::documentComponents(ws_.map,node.ref)) {
+                    Json component=Json::object(),properties=Json::array();
+                    component.set("id",str(descriptor.id));component.set("title",str(descriptor.title));
+                    for(const auto& field:fields.items()) {
+                        const auto key=field.getStr("key");
+                        if(key=="name")continue;
+                        const bool transform=key=="x" || key=="z" || key=="height";
+                        if(transform==(descriptor.kind==editor::DocumentComponentKind::Transform))properties.push(field);
+                    }
+                    component.set("properties",properties);componentViews.push(component);
+                }
+                entityFields.push(fields[0]);fields=Json::array();
+            }
+            break;
+        }
+    }
     result.set("selectedId", valid ? str(selected_) : Json());
-    result.set("properties", valid ? propertiesFor(selected_) : Json::array());
+    result.set("properties", std::move(fields));
+    result.set("components",std::move(componentViews));
+    result.set("entityProperties",std::move(entityFields));
     Json logs = Json::array();
     const auto& activity = ws_.activity;
     for (size_t i = activity.size() > 100 ? activity.size() - 100 : 0; i < activity.size(); ++i) {
@@ -217,7 +259,16 @@ Json StudioSession::dispatch(const Json& request) {
     try {
         if (!request.isObject() || !request["id"].isNumber()) throw std::runtime_error("Invalid request envelope");
         const std::string method = request.getStr("method");
-        const Json& params = request["params"];
+        Json params = request["params"];
+        if((method=="studio.lightUpdate" || method=="studio.lightDelete") && params.has("entityId")) {
+            if(!params["entityId"].isString())throw std::runtime_error("Invalid light entity ID");
+            bool found=false;
+            for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
+                if(node.ref.isLight() && nodeId(ws_.map,node.ref)==params.getStr("entityId")) {
+                    params.set("index",num(int64_t(node.ref.index)));found=true;break;
+                }
+            if(!found)throw std::runtime_error("Light entity no longer exists");
+        }
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
         } else if (method == "studio.facialRigList" ||
@@ -446,6 +497,28 @@ Json StudioSession::dispatch(const Json& request) {
                 editor::editAuthoredWaterFlow(ws_.map,params);
             }
             reply.set("result",world::nereidFlowState(editor::authoredWaterDocument(ws_.map)));
+        } else if(method=="studio.renderLighting" || method=="studio.renderLightingSet") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const Json current=ws_.map.toJson();
+            Json settings=render::renderLightingSettings(current["renderLighting"]);
+            if(method=="studio.renderLightingSet") {
+                const Json& patch=params["patch"];
+                if(!patch.isObject() || patch.size()==0 || patch.size()>10)
+                    throw std::runtime_error("Lighting patch requires 1..10 settings");
+                for(const auto& [key,value]:patch.members())settings.set(key,value);
+                settings=render::renderLightingSettings(settings); // validate BEFORE beginEdit
+                if(!(settings==current["renderLighting"])) {
+                    if(ws_.project.isFps()) {
+                        Json next=current;next.set("renderLighting",settings);
+                        Json input=Json::object();input.set("map",next);
+                        const auto updated=ws_.call("fps_set",input,"studio");
+                        if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
+                    } else {
+                        ws_.map.beginEdit();ws_.map.data.extra.set("renderLighting",settings);ws_.map.touched();
+                    }
+                }
+            }
+            reply.set("result",settings);
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
@@ -682,7 +755,7 @@ Json StudioSession::dispatch(const Json& request) {
             if (!next.empty()) {
                 bool found = false;
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-                    if (nodeId(node.ref,ws_.map) == next) { found = true; break; }
+                    if (nodeId(ws_.map,node.ref) == next) { found = true; break; }
                 }
                 if (!found) throw std::runtime_error("Selection refers to an unknown document entity");
             }
@@ -806,6 +879,48 @@ Json StudioSession::dispatch(const Json& request) {
             if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
             const std::string key = params.getStr("key");
             const Json& value = params["value"];
+            if(entityId.compare(0,6,"light:")==0) {
+                bool found=false;size_t index=0;
+                for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
+                    if(node.ref.isLight() && nodeId(ws_.map,node.ref)==entityId){index=node.ref.index;found=true;break;}
+                if(!found)throw std::runtime_error("Light entity no longer exists");
+                const std::string owner=key=="name"?"Entity":
+                    (key=="x" || key=="z" || key=="height")?"Transform":"Light";
+                if(params.has("componentId") && params.getStr("componentId")!=owner)
+                    throw std::runtime_error("Property does not belong to this component");
+                if(owner=="Entity") {
+                    Json nested=Json::object(),input=Json::object();
+                    nested.set("id",request["id"]);nested.set("method",str("studio.lightUpdate"));
+                    input.set("index",num(int64_t(index)));input.set("key",str(key));input.set("value",value);nested.set("params",input);
+                    const auto updated=dispatch(nested);
+                    if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
+                } else {
+                    editor::MapDoc draft;draft.data=ws_.map.data;
+                    const auto ref=editor::DocumentEntityRef::light(index,ws_.project.isFps());
+                    bool changed=false;
+                    if(owner=="Transform") {
+                        if(!value.isNumber() || !validLightScalar(key,value.toDouble()))
+                            throw std::runtime_error("Invalid light transform");
+                        editor::DocumentTransform position;
+                        if(!editor::readDocumentTransform(draft,ref,position))throw std::runtime_error("Transform unavailable");
+                        double& coordinate=key=="x"?position.x:key=="z"?position.z:position.y;
+                        if(coordinate==value.toDouble()){reply.set("result",snapshot());return reply;}
+                        coordinate=value.toDouble();changed=editor::setDocumentPosition(draft,ref,position);
+                    } else {
+                        const auto* current=editor::documentLight(draft,ref);
+                        if(current && (*current)[key]==value){reply.set("result",snapshot());return reply;}
+                        Json patch=Json::object();patch.set(key,value);
+                        changed=editor::writeDocumentComponent(draft,ref,editor::DocumentComponentKind::Light,patch);
+                    }
+                    if(!changed)throw std::runtime_error("Invalid component property");
+                    if(ws_.project.isFps()) {
+                        Json args=Json::object();args.set("map",draft.toJson());
+                        const auto updated=ws_.call("fps_set",args,"studio");
+                        if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
+                    } else {ws_.map.beginEdit();ws_.map.data=std::move(draft.data);ws_.map.touched();}
+                }
+                reply.set("result",snapshot());return reply;
+            }
             if (entityId.compare(0, 7, "entity:") != 0) {
                 // Non-map document sources use the shared editor transform adapter.
                 // fps_set validates the COMPLETE edited document atomically before
@@ -821,7 +936,7 @@ Json StudioSession::dispatch(const Json& request) {
                 editor::DocumentEntityRef ref;
                 editor::DocumentTransform target{};
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, true)) {
-                    if (nodeId(node.ref,ws_.map) != entityId) continue;
+                    if (nodeId(ws_.map,node.ref) != entityId) continue;
                     if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity ||
                         !node.hasPosition)
                         throw std::runtime_error("Document position is unavailable");

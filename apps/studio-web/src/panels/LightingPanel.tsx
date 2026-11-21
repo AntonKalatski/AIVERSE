@@ -5,16 +5,17 @@ import PropertyField from '../components/PropertyField';
 import { LIGHTING_KEYS, LIGHT_EDITABLE_KEYS, lightingProperties, lightProperties } from './lightingSchema';
 import type { LightEditableKey, LightingScalarKey, LightingState } from './lightingSchema';
 import './LightingPanel.css';
+import RenderLightingControls from './RenderLightingControls';
 
-interface LightingPanelProps { projectPath: string }
+interface LightingPanelProps { projectPath: string; selectedId: string | null; onSelect: (id: string | null) => Promise<void> }
 const empty: LightingState = { lighting: null, lights: [] };
 
-export default function LightingPanel({ projectPath }: LightingPanelProps) {
+export default function LightingPanel({ projectPath, selectedId, onSelect }: LightingPanelProps) {
   const [state, setState] = useState<LightingState>(empty);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState(0);
+  const selected = state.lights.findIndex(light => Boolean(light.entityId) && `light:${light.entityId}` === selectedId);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reloadIndex, setReloadIndex] = useState(0);
   const available = !nativeConnected() || Boolean(projectPath);
@@ -39,14 +40,17 @@ export default function LightingPanel({ projectPath }: LightingPanelProps) {
     return () => { cancelled = true; };
   }, [available, projectPath, reloadIndex]);
 
-  const perform = async (action: () => Promise<LightingState>) => {
+  const perform = async (action: () => Promise<LightingState>, selectAdded = false) => {
     if (busy || loading || !available) return;
     setBusy(true);
     setError('');
     try {
       const result = await action();
       setState(result);
-      setSelected(current => Math.min(current, Math.max(0, result.lights.length - 1)));
+      if (selectAdded) {
+        const added = result.lights.at(-1);
+        if (added?.entityId) await onSelect(`light:${added.entityId}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setBusy(false); }
@@ -60,12 +64,12 @@ export default function LightingPanel({ projectPath }: LightingPanelProps) {
   };
   const editLight = (key: string, value: string | number | boolean) => {
     if (!(LIGHT_EDITABLE_KEYS as readonly string[]).includes(key) || !activeLight) return;
-    void perform(() => invoke('studio.lightUpdate', { index: selected, key: key as LightEditableKey, value }));
+    void perform(() => invoke('studio.lightUpdate', { index: selected, entityId: selectedId ?? undefined, key: key as LightEditableKey, value }));
   };
   const deleteLight = () => {
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setConfirmDelete(false);
-    void perform(() => invoke('studio.lightDelete', { index: selected }));
+    void perform(() => invoke('studio.lightDelete', { index: selected, entityId: selectedId ?? undefined }));
   };
 
   return <section className="lighting-editor">
@@ -84,11 +88,12 @@ export default function LightingPanel({ projectPath }: LightingPanelProps) {
           {settings.map(property => <PropertyField key={property.key} property={property}
             disabled={busy || !available || !nativeConnected()} onChange={value => editSetting(property.key, value)}/>)}
         </div>
+        <RenderLightingControls projectPath={projectPath}/>
         <div className="lighting-section-heading lighting-list-heading">
           <span>Local lights ({state.lights.length})</span>
           <button className="lighting-add" disabled={busy || !available || !nativeConnected()}
             title="Add light at map center / FPS origin"
-            onClick={() => void perform(() => invoke('studio.lightAdd', {}))}>
+            onClick={() => void perform(() => invoke('studio.lightAdd', {}), true)}>
             <Plus size={14}/> Add
           </button>
         </div>
@@ -96,9 +101,9 @@ export default function LightingPanel({ projectPath }: LightingPanelProps) {
           <>
             <div className="lighting-light-list" role="listbox" aria-label="Map lights">
               {state.lights.map((light, index) =>
-                <button key={index} type="button" role="option" aria-selected={selected === index}
+                <button key={light.entityId ?? index} type="button" role="option" aria-selected={selected === index}
                   className={'lighting-light-item' + (selected === index ? ' active' : '')}
-                  onClick={() => { setSelected(index); setConfirmDelete(false); }}>
+                  onClick={() => { if (light.entityId) void onSelect(`light:${light.entityId}`); setConfirmDelete(false); }}>
                   <Lightbulb size={15}/><span>{light.name || (light.type === 'spot' ? 'Spot' : 'Point') + ' #' + (index + 1)}</span>
                   <small>{index + 1}</small>
                 </button>)}

@@ -2,6 +2,7 @@
 import type { FieldDescriptor } from '../propertyLogic';
 export type LightingScalarKey = 'time' | 'dayLength' | 'nightLevel' | 'clouds' | 'storm';
 export interface LightEntry {
+  entityId?: string;
   x?: number; z?: number; height?: number; radius?: number; intensity?: number;
   name?: string; type?: string; nightOnly?: boolean; electric?: boolean; bake?: string;
 }

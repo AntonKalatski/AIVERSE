@@ -238,7 +238,13 @@ static void testVulkanTemporalParity(gfx::Device& device) {
     device.destroyBuffer(metadata);
 }
 
-int main() {
+int main(int argc,char** argv) {
+    const bool compileOnly=argc==2 && std::string(argv[1])=="--compile-only";
+    const bool requireDevice=argc==2 && std::string(argv[1])=="--require-device";
+    if(argc>2 || (argc==2 && !compileOnly && !requireDevice)) {
+        std::cerr<<"usage: strata_vulkan_kernel [--compile-only|--require-device]\n";
+        return 2;
+    }
     std::string error;
     std::vector<uint32_t> spirv;
     assert(aiverse::gfx::vk::compileComputeProgram(
@@ -249,15 +255,19 @@ int main() {
     assert(!aiverse::gfx::vk::compileComputeProgram(
         "#version 450\nvoid main(){missing_function();}",spirv,&error));
     assert(!error.empty() && spirv==saved);
+    std::cout<<"[strata-vulkan] GLSL/SPIR-V compiler contract PASS\n";
+    if(compileOnly)return 0;
 
     auto device=createVulkanDevice(VulkanWindow{},&error);
     if(!device) {
-        std::cout<<"[strata-vulkan] SKIP no device: "<<error<<"\n";
-        return 0; // shader compilation has still been checked
+        std::cout<<"[strata-vulkan] "<<(requireDevice ? "FAIL" : "SKIP")
+                 <<" no device: "<<error<<"\n";
+        return requireDevice ? 1 : 77;
     }
     if(!device->supportsCompute()) {
-        std::cout<<"[strata-vulkan] SKIP compute unsupported\n";
-        return 0;
+        std::cout<<"[strata-vulkan] "<<(requireDevice ? "FAIL" : "SKIP")
+                 <<" compute unsupported\n";
+        return requireDevice ? 1 : 77;
     }
     testComputeLayouts(*device);
     const auto asset=sample();

@@ -1,5 +1,6 @@
 // aiverse_root_motion_bake MODEL CLIP ROOT --id INTEGER --rate INTEGER [--loop] [--out FILE]
 #include <aiverselib/animation/RootMotionBaker.h>
+#include "engine/render/ModelClips.h"
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -28,7 +29,7 @@ int main(int argc,char** argv){
         };
         auto model=loadModel(path,read);
         const int clip=model->findClip(name);
-        const int root=findNodePath(*model,boneName);
+        const int root=aiverse::lib::animation::findNodePath(*model,boneName);
         if(clip<0 || root<0)
             throw std::invalid_argument("unknown root bone path or clip");
         RootMotionTracksResource asset;

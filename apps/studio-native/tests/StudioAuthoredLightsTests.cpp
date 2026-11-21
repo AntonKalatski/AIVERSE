@@ -22,5 +22,9 @@ int main() {
     doc.data.fps=Json::parse(R"({"lights":[{"x":9,"z":8,"height":3,"radius":4}]})");
     const auto fps=studio::studioAuthoredLights(doc,true);
     AIVERSE_TEST_CHECK(fps.size()==1 && fps[0].pos.x==9 && fps[0].pos.y==3);
+    auto many=Json::array();for(size_t i=0;i<1500;++i)many.push(Json::parse(R"({"radius":4,"intensity":1})"));
+    doc.data.fps.set("lights",many);
+    AIVERSE_TEST_CHECK(studio::studioAuthoredLights(doc,true).size()==render::LightSystem::kMaxLights);
+    AIVERSE_TEST_CHECK(studio::studioAuthoredLights(doc,true,1.5f,4096).size()==1500);
     std::cout<<"Studio authored lights PASS\n";
 }

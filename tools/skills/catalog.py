@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT/'skills/catalog.json'
 # Category folders: skills/<category>/<skill>/SKILL.md (AGENTS.md 'Adding and updating repository skills').
-CATEGORIES = ('core','gameplay','genres','ai','world','ui','visuals','network','verification','meta','workflow')
+CATEGORIES = ('core','gameplay','genres','ai','world','ui','visuals','network','verification','meta','workflow','editor')
 
 def load_meta():
     spec = importlib.util.spec_from_file_location('meta_catalog', ROOT/'tools/meta/catalog.py')
@@ -87,6 +87,12 @@ ALIASES = {
 
 # MCP and repository workflows (no runtime library): id, summary, source of truth.
 WORKFLOWS=[
+ ('aiverse-lens','LENS camera scene authoring, MCP validation and native Studio PNG capture','apps/editor/core/LensOps.cpp'),
+ ('aiverse-lens-native','LENS native multi-camera scheduling, prepared-frame replay and GPU capture ownership','docs/camera-system.md'),
+
+ ('aiverse-scene-entities','Native scene entity and component MCP authoring with stable light identity','docs/studio-light-entities.md'),
+ ('aiverse-lighting','Light entity authoring, probe GI and Luma through native MCP and shared runtime','docs/dynamic-gi.md'),
+ ('studio-ui','HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA','docs/studio-design-system.md'),
  ('aiverse-bots-configure','Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots','docs/ai-controllers.md'),
  ('aiverse-bots-tune','Bot strength tuning with bot batches and a sweep over every map','modules/rts/RtsAI.cpp'),
  ('aiverse-bots-debug','Diagnose bots that do not play and teach RtsAI a new mechanic','modules/rts/RtsMechAI.cpp'),
@@ -126,6 +132,7 @@ WORKFLOWS=[
  ('aiverse-terrain','Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP','docs/terrain.md'),
  ('aiverse-terraweave','Procedural world terrain, biomes, Arbor/Flora, Horizon HLOD, authored seams and native C++ scene integration','docs/terrain/TERRAWEAVE.md'),
  ('aiverse-water','Spline straits, rivers and open sea with shore types, bridges and the water window','docs/water.md'),
+ ('aiverse-physis-authoring','PHYSIS map configuration through revision-checked MCP operations and Undo/Redo','apps/editor/core/PhysisOps.cpp'),
  ('aiverse-physis','Genre-neutral nature, climate, wind, gravity, storms, ECS and Box3D adapter with editor diagnostics','docs/physis.md'),
  ('aiverse-city-blocks','City block paving, curb elevations, planting beds and street furniture','skills/world/aiverse-city-blocks/SKILL.md'),
  ('aiverse-city-planner','Procedural city maps with the city / metropolis generator preset','docs/city-planner.md'),
@@ -141,6 +148,7 @@ WORKFLOWS=[
  ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
  ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-voxel-game','Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps','docs/voxel.md'),
+ ('aiverse-strata','STRATA virtual geometry CPU authoring, MCP analysis, native routing and GPU verification','docs/strata.md'),
  ('aiverse-texture-rhi','Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance','docs/texture-rhi.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
@@ -151,6 +159,11 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-lens':'lens camera cameras capture offscreen minimap камер захват линз',
+ 'aiverse-lens-native':'lens native camera replay snapshot gpu capture натив камер захват',
+
+ 'aiverse-strata':'strata страта virtual geometry meshlet streaming lod batching батчинг геометрия',
+ 'aiverse-physis-authoring':'physis authoring mcp map config validate weather wind gravity настройка погода карта',
  'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
  'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',
@@ -203,6 +216,8 @@ WORKFLOW_ALIASES={
  'aiverse-fx':'fx effect particles explosion эффект частиц взрыв',
  'aiverse-niagara-vfx':'niagara unreal vfx legacy compatibility ниягара анриал старая совместимость',
  'aiverse-spectrafx':'spectrafx spectra vfx particles particle graph effects visual ecs game genre gpu cpu spectrum спектрафх эффекты частицы граф универсальн',
+ 'aiverse-scene-entities':'scene entity component inspector hierarchy transform mcp сущность компоненты лампа свет',
+ 'aiverse-lighting':'lighting light luma gi probes mcp освещение свет лампа пробы',
  'aiverse-prisma':'prisma postfx postprocess post-processing bloom hdr exposure tonemap lut grade depth of field motion blur taa ssr volume screen-space постобработка постэффект призма камера',
  'aiverse-animation-ecs':'animation ecs clip montage retarget budget fixed root motion animation system анимация бюджет корневая',
  'aiverse-motionweave':'motionweave animation rig retarget pose workers scheduler shared universal анимация риг потоки',

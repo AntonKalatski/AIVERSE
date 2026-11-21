@@ -12,6 +12,7 @@
 #include <map>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 namespace aiverse::game {
 
@@ -1954,24 +1955,31 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
             "road View cannot rebind before verified GPU retirement");
     }
     dev_ = &dev;
+    ++stateRevision_;
     read_ = std::move(reader);
     warnings_.clear();
     dirty_ = true;
     try { types_ = loadRoadTypes(roadTypes); }
     catch (const std::exception& e) { warnings_.push_back(e.what()); types_ = loadRoadTypes(Json()); }
     cellMeters_ = float(roadCellMeters(roadTypes).toDouble());
-    // the kit: textures uploaded once, chunk models borrow them
-    Model kit;
+    // Own all partially uploaded GPU kit textures even if addImage,
+    // material creation, or a later decal/atlas operation throws.
+    buildingKit_=std::make_unique<Model>();
     materials_.clear();
-    std::vector<int> tex(kMatCount, -1);
-    for (int m = 0; m < kMatCount; ++m) {
-        Image img = roadkit::texture(m);
-        if (!img.rgba.empty()) tex[size_t(m)] = addImage(dev, kit, std::move(img));
-        Material mt = roadkit::material(m);
-        mt.baseTex = tex[size_t(m)];
+    std::vector<int> tex(kMatCount,-1);
+    for(int m=0;m<kMatCount;++m) {
+        Image img=roadkit::texture(m);
+        if(!img.rgba.empty()) {
+            tex[size_t(m)]=addImage(dev,*buildingKit_,std::move(img));
+            if(tex[size_t(m)]<0)
+                throw std::runtime_error("road View: GPU kit texture allocation failed");
+        }
+        Material mt=roadkit::material(m);
+        mt.baseTex=tex[size_t(m)];
         materials_.push_back(mt);
     }
-    images_ = std::move(kit.images);
+    images_=std::move(buildingKit_->images);
+    buildingKit_.reset();
     for (auto& img : images_) img.borrowedTexture = false;   // owned here, released in shutdown
     // road paint: decals (lines, zebras, arrows, text) from one generated atlas
     if (!decalBatch_.init(dev)) warnings_.push_back("road paint: decal pipeline: " + dev.lastError());
@@ -1982,10 +1990,26 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
         if (platform::readContentFile(path, probe)) { paint_ = paintTex_.resolve(path, false, "", true); if (paint_.valid()) break; }
     if (!paint_.valid()) paint_ = paintTex_.addGenerated("builtin:road-paint", 1024, 1024, roadkit::markingAtlas(256), false);
     verge_ = paintTex_.addGenerated("builtin:road-verges", 256 * roadkit::kVergeSlots, 256, roadkit::vergeAtlas(256), false);
-    if (hasNet_) {   // new types: the network's type indices change
+    if(!paint_.valid() || !verge_.valid())
+        throw std::runtime_error("road View: GPU paint atlas allocation failed");
+    if (hasNet_ && netJson_.isObject()) {   // reparse serialized type IDs
         try { net_ = parseRoadNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
     }
+}
+
+void RtsRoadView::inheritRuntimeStateForReload(const RtsRoadView& old) {
+    // No GPU handles or derived mesh caches are copied. In particular a
+    // different ruleset may assign different road type IDs.
+    hasNet_=old.hasNet_;
+    netJson_=old.netJson_;
+    net_=old.net_;
+    replaces_=old.replaces_;
+    wet_=old.wet_; puddles_=old.puddles_;
+    mapWet_=old.mapWet_; mapPuddles_=old.mapPuddles_;
+    weatherSet_=old.weatherSet_;
+    ghost_=old.ghost_;
+    dirty_=true; ghostDirty_=true;
 }
 
 namespace {
@@ -2071,6 +2095,7 @@ void RtsRoadView::release(gfx::Device& dev) {
 void RtsRoadView::shutdown(gfx::Device& dev) {
     if(!dev_)return;
     if(dev_!=&dev)throw std::logic_error("road View GPU owner mismatch");
+    ++stateRevision_;
     release(dev);
     for (auto& p : propModels_) retirement_.retireModel(dev,p.model);
     propModels_.clear();
@@ -2084,6 +2109,10 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
         // owners after this host failed to establish a completion barrier.
         throw std::runtime_error("road View GPU retirement barrier failed");
     }
+    if(buildingKit_) {
+        releaseModel(dev,*buildingKit_);
+        buildingKit_.reset();
+    }
     for (auto& img : images_) if (img.tex.valid()) {
         dev.destroyTexture(img.tex); img.tex = {};
     }
@@ -2096,10 +2125,15 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
 }
 
 void RtsRoadView::setMap(const Json& map) {
+    ++stateRevision_;
     hasNet_ = map["roadNetwork"].isObject();
     net_ = RoadNetwork{};
     dirty_ = true;
-    if (!hasNet_) return;
+    if(!hasNet_) {
+        netJson_=Json();
+        replaces_.clear();
+        return;
+    }
     netJson_ = map["roadNetwork"];
     replaces_.clear();
     for (auto& v : netJson_["replaces"].items()) if (v.isString()) replaces_.push_back(v.str());
@@ -2140,6 +2174,8 @@ int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
         materials_.push_back(m);
         mat = int(materials_.size() - 1);
     }
+    if(strictStaging_ && mat<0)
+        throw std::runtime_error("road staged painted material: GPU image allocation failed");
     painted_[key] = mat;
     return mat;
 }
@@ -2166,6 +2202,7 @@ int RtsRoadView::propModel(gfx::Device& dev, const std::string& path) {
                     ": GPU completion unavailable; partial Model quarantined");
         } else pm.model.reset(); // CPU-only load, no GPU handles created
         warnings_.push_back("road prop " + path + ": " + e.what());
+        if(strictStaging_ && uploadStarted)throw;
     }
     propModels_.push_back(std::move(pm));
     return propModels_.back().model ? int(propModels_.size() - 1) : -1;
@@ -2236,9 +2273,10 @@ void addShapes(Acc& a, const std::string& shape, const mat4& xf, float worldPerM
 
 } // namespace
 
-void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
-    ++surfaceGeneration_;
-    release(dev);
+void RtsRoadView::buildUnpublished(gfx::Device& dev,
+        const std::function<float(float, float)>& heightAt) {
+    // Build only on a private candidate; the currently published road GPU
+    // models, materials, surface samples and decals must remain untouched.
     dirty_ = false;
     ghostDirty_ = true;
     if (net_.empty()) return;
@@ -2254,8 +2292,16 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
         const int64_t cx = int64_t(std::floor(at.x / float(kChunk))), cz = int64_t(std::floor(at.z / float(kChunk)));
         addShapes(mesh.chunks[(cx << 32) ^ (cz & 0xffffffff)], p.shape, p.xf, 1.0f / cm, shapes);
     }
-    if (!mesh.decals.empty()) decalMesh_ = decalBatch_.buildMesh(dev, mesh.decals);
-    if (!mesh.verges.empty()) vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
+    if (!mesh.decals.empty()) {
+        decalMesh_ = decalBatch_.buildMesh(dev, mesh.decals);
+        if(!decalMesh_.vb.valid())
+            throw std::runtime_error("road staged decal buffer upload failed");
+    }
+    if (!mesh.verges.empty()) {
+        vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
+        if(!vergeMesh_.vb.valid())
+            throw std::runtime_error("road staged verge buffer upload failed");
+    }
     film_ = std::move(mesh.film);
     spots_ = std::move(mesh.spots);
     rasterSurface(mesh.surf, heightAt);
@@ -2354,6 +2400,7 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
             if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
                 warnings_.push_back("road chunk: GPU completion unavailable; partial Model quarantined");
             warnings_.push_back(std::string("road chunk: ")+e.what());
+            if(strictStaging_)throw; // no partially published batch
         }
     }
     batchStats_.uploadedChunks = chunks_.size();
@@ -2387,10 +2434,170 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
     }
 }
 
+struct RtsRoadView::PreparedRebuild {
+    gfx::Device* device=nullptr;
+    std::unique_ptr<RtsRoadView> staged;
+    size_t priorImageCount=0;
+    bool replaceGeometry=false,replaceFilm=false,replacePuddles=false,replaceGhost=false;
+    bool committed=false;
+    // The candidate is never submitted by a camera. It owns new Models and
+    // generated images only; the previous kit's textures are borrowed.
+    ~PreparedRebuild() noexcept {
+        if(!device || !staged)return;
+        auto& owner=*staged;
+        for(auto& chunk:owner.chunks_)
+            if(chunk.model)releaseModel(*device,*chunk.model);
+        for(auto& prop:owner.propModels_)
+            if(prop.model)releaseModel(*device,*prop.model);
+        if(owner.ghostModel_)releaseModel(*device,*owner.ghostModel_);
+        for(auto* mesh:{&owner.decalMesh_,&owner.vergeMesh_,
+                        &owner.filmMesh_,&owner.puddleMesh_}) {
+            if(mesh->vb.valid()) {
+                device->destroyBuffer(mesh->vb);
+                *mesh={};
+            }
+        }
+        for(size_t i=priorImageCount;i<owner.images_.size();++i) {
+            auto& img=owner.images_[i];
+            if(img.tex.valid() && !img.borrowedTexture) {
+                device->destroyTexture(img.tex);
+                img.tex={};
+            }
+        }
+    }
+};
+
+std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
+        bool forceGround) {
+    if(dev_!=&dev)
+        throw std::logic_error("RtsRoadView prepare: GPU owner mismatch");
+    if(!needsVisualPreparation() && !forceGround)return {};
+    auto candidate=std::make_shared<PreparedRebuild>();
+    candidate->device=&dev;
+    candidate->priorImageCount=images_.size();
+    // Full map topology requires resampling the road and wheel surface
+    // even when the authored road network itself is unchanged.
+    candidate->replaceGeometry=dirty_ || forceGround;
+    candidate->replaceFilm=candidate->replaceGeometry ||
+        int(std::lround(wet_*32.f))!=wetStep_;
+    candidate->replacePuddles=candidate->replaceGeometry ||
+        int(std::lround(puddles_*32.f))!=puddleStep_;
+    candidate->replaceGhost=candidate->replaceGeometry || ghostDirty_;
+    candidate->staged=std::make_unique<RtsRoadView>();
+    RtsRoadView& staged=*candidate->staged;
+    staged.dev_=&dev;
+    staged.strictStaging_=true;
+    staged.read_=read_;
+    staged.types_=types_;
+    staged.cellMeters_=cellMeters_;
+    staged.net_=net_;
+    staged.hasNet_=hasNet_;
+    staged.ghost_=ghost_;
+    staged.ghostDirty_=candidate->replaceGhost;
+    staged.wet_=wet_;
+    staged.puddles_=puddles_;
+    staged.weatherSet_=weatherSet_;
+    staged.mapWet_=mapWet_;
+    staged.mapPuddles_=mapPuddles_;
+    staged.images_=images_;
+    staged.materials_=materials_;
+    staged.painted_=painted_;
+    staged.warnings_=warnings_;
+    // An exception from any of the CPU copies above still leaves the old
+    // GPU kit in the original owner; the candidate destructor only releases
+    // resources that it subsequently generated.
+    for(auto& img:staged.images_)img.borrowedTexture=true;
+    if(candidate->replaceGeometry) {
+        staged.buildUnpublished(dev,heightAt);
+    }else {
+        // Weather/preview edits do not change lane geometry, wheel-surface
+        // samples, decal paint, or the road presentation generation.
+        staged.film_=film_;
+        staged.spots_=spots_;
+        staged.wetStep_=wetStep_;
+        staged.puddleStep_=puddleStep_;
+    }
+    staged.buildWeather(dev);
+    if(candidate->replaceGhost && staged.ghost_.on)
+        staged.buildGhost(dev,heightAt);
+    return candidate;
+}
+
+void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
+    if(!candidate || candidate->committed)return;
+    ++stateRevision_;
+    candidate->committed=true;
+    RtsRoadView& staged=*candidate->staged;
+    // The candidate copied old kit handles with borrowed flags. Transfer
+    // their original ownership policy back to the live owner at publication.
+    for(size_t i=0;i<candidate->priorImageCount;++i)
+        staged.images_[i].borrowedTexture=images_[i].borrowedTexture;
+    if(!candidate->replaceGeometry) {
+        if(candidate->replaceFilm) {
+            retireSpriteBuffer(*dev_,filmMesh_);
+            filmMesh_=std::exchange(staged.filmMesh_,SpriteMesh{});
+            wetStep_=staged.wetStep_;
+        }
+        if(candidate->replacePuddles) {
+            retireSpriteBuffer(*dev_,puddleMesh_);
+            puddleMesh_=std::exchange(staged.puddleMesh_,SpriteMesh{});
+            puddleStep_=staged.puddleStep_;
+        }
+        if(candidate->replaceGhost) {
+            retirement_.retireModel(*dev_,ghostModel_);
+            ghostModel_=std::move(staged.ghostModel_);
+            ghostDirty_=false;
+        }
+        images_.swap(staged.images_);
+        materials_.swap(staged.materials_);
+        painted_.swap(staged.painted_);
+        warnings_.swap(staged.warnings_);
+        return; // unchanged road geometry/surface generation
+    }
+    release(*dev_);
+    for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
+    propModels_.clear();
+    chunks_.swap(staged.chunks_);
+    props_.swap(staged.props_);
+    propModels_.swap(staged.propModels_);
+    images_.swap(staged.images_);
+    materials_.swap(staged.materials_);
+    painted_.swap(staged.painted_);
+    using std::swap;
+    swap(geom_,staged.geom_);
+    surface_.swap(staged.surface_);
+    film_.swap(staged.film_);
+    spots_.swap(staged.spots_);
+    swap(batchStats_,staged.batchStats_);
+    decalMesh_=std::exchange(staged.decalMesh_,SpriteMesh{});
+    vergeMesh_=std::exchange(staged.vergeMesh_,SpriteMesh{});
+    filmMesh_=std::exchange(staged.filmMesh_,SpriteMesh{});
+    puddleMesh_=std::exchange(staged.puddleMesh_,SpriteMesh{});
+    ghostModel_=std::move(staged.ghostModel_);
+    wetStep_=staged.wetStep_;
+    puddleStep_=staged.puddleStep_;
+    ghostDirty_=false;
+    warnings_.swap(staged.warnings_);
+    dirty_=false;
+    ++surfaceGeneration_;
+}
+
+void RtsRoadView::rebuild(gfx::Device& dev,
+        const std::function<float(float,float)>& heightAt) {
+    // Legacy direct draw path remains supported outside RtsView's global
+    // prepare/commit frame phase.
+    auto prepared=prepareRebuild(dev,heightAt);
+    commitRebuild(std::move(prepared));
+}
+
 void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
-    ghostDirty_ = false;
-    retirement_.retireModel(dev,ghostModel_);
-    if (!ghost_.on || ghost_.net.empty()) return;
+    if (!ghost_.on || ghost_.net.empty()) {
+        ghostDirty_=false;
+        retirement_.retireModel(dev,ghostModel_);
+        return;
+    }
+    std::unique_ptr<Model> next;
     try {
         const float cm = cellMeters_;
         const RoadGround ground = [&](Vec2 p) { return Fixed::fromRaw(int64_t(std::llround(double(heightAt(f(p.x), f(p.y)) * cm) * 65536.0))); };
@@ -2399,19 +2606,26 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
         mesh.build();
         std::map<std::string, std::vector<roadkit::Tri>> shapes;
         for (auto& p : mesh.props) if (p.model.empty()) addShapes(mesh.chunks[0], p.shape, p.xf, 1.0f / cm, shapes);
-        if (mesh.chunks.empty()) return;
-        ghostModel_ = toModel("road-ghost", mesh.chunks[0], images_, materials_);
-        if (ghostModel_ && !uploadModel(dev,*ghostModel_))
-            throw std::runtime_error("road ghost GPU upload returned false");
+        if (!mesh.chunks.empty()) {
+            next = toModel("road-ghost", mesh.chunks[0], images_, materials_);
+            if (next && !uploadModel(dev,*next))
+                throw std::runtime_error("road ghost GPU upload returned false");
+        }
     } catch (const std::exception& e) {
-        const auto status=abortFailedModelUpload(dev,ghostModel_);
+        const auto status=abortFailedModelUpload(dev,next);
         if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
             warnings_.push_back("road ghost: GPU completion unavailable; partial Model quarantined");
         warnings_.push_back(std::string("road ghost: ")+e.what());
+        if(strictStaging_)throw;
+        return;
     }
+    retirement_.retireModel(dev,ghostModel_);
+    ghostModel_=std::move(next);
+    ghostDirty_=false;
 }
 
 void RtsRoadView::setWeather(float wet, float puddles) {
+    ++stateRevision_;
     weatherSet_ = true;
     wet_ = std::clamp(wet, 0.0f, 1.0f);
     puddles_ = std::clamp(puddles, 0.0f, 1.0f);
@@ -2423,49 +2637,101 @@ float RtsRoadView::puddleScale(const PuddleSpot& p, float puddles) {
 }
 
 void RtsRoadView::buildWeather(gfx::Device& dev) {
-    const int ws = int(std::lround(wet_ * 32)), ps = int(std::lround(puddles_ * 32));
-    if (ws != wetStep_) {
-        wetStep_ = ws;
-        retireSpriteBuffer(dev,filmMesh_);
-        filmMesh_ = {};
-        if (ws > 0 && !film_.empty()) {
-            // wet asphalt / dirt: darker and a little cooler (the sky's colour in the water film)
-            std::vector<SpriteVertex> v = film_;
-            const uint32_t a = uint32_t(std::lround(0.55f * float(ws) / 32.0f * 255.0f));
-            for (auto& x : v) x.color = (x.color & 0xffffffu) | (a << 24);
-            filmMesh_ = decalBatch_.buildMesh(dev, v);
+    const int ws=int(std::lround(wet_*32)),ps=int(std::lround(puddles_*32));
+    const bool updateFilm=ws!=wetStep_,updatePuddles=ps!=puddleStep_;
+    if(!updateFilm && !updatePuddles)return;
+    SpriteMesh stagedFilm{},stagedPuddles{};
+    try {
+        if(updateFilm && ws>0 && !film_.empty()) {
+            std::vector<SpriteVertex> vertices=film_;
+            const uint32_t alpha=uint32_t(std::lround(
+                0.55f*float(ws)/32.0f*255.0f));
+            for(auto& v:vertices)
+                v.color=(v.color&0xffffffu)|(alpha<<24);
+            stagedFilm=decalBatch_.buildMesh(dev,vertices);
+            if(!stagedFilm.vb.valid())
+                throw std::runtime_error("RoadView: wet film GPU upload failed");
         }
-    }
-    if (ps != puddleStep_) {
-        puddleStep_ = ps;
-        retireSpriteBuffer(dev,puddleMesh_);
-        puddleMesh_ = {};
-        const float level = float(ps) / 32.0f;
-        std::vector<SpriteVertex> v;
-        const float u0 = float(roadkit::kVergePuddleSlot) / float(roadkit::kVergeSlots) + 0.001f, u1 = float(roadkit::kVergePuddleSlot + 1) / float(roadkit::kVergeSlots) - 0.001f;
-        for (size_t i = 0; i < spots_.size() && ps > 0; ++i) {
-            const PuddleSpot& p = spots_[i];
-            const float k = puddleScale(p, level);
-            if (k <= 0.02f) continue;
-            const float3 dl{p.dir.x * p.len * 0.5f * k, 0, p.dir.y * p.len * 0.5f * k}, dw{-p.dir.y * p.width * 0.5f * k, 0, p.dir.x * p.width * 0.5f * k};
-            float3 c = p.c;
-            c.y += 0.0025f;
-            const float3 q[4] = {c - dl - dw, c + dl - dw, c + dl + dw, c - dl + dw};
-            // a different part of the round pool for every spot: flip / swap the texture's axes
-            const bool fu = (i & 1) != 0, fv = (i & 2) != 0;
-            const float a0 = fu ? u1 : u0, a1 = fu ? u0 : u1, b0 = fv ? 1.0f : 0.0f, b1 = fv ? 0.0f : 1.0f;
-            const float2 uv[4] = {{a0, b0}, {a1, b0}, {a1, b1}, {a0, b1}};
-            const uint32_t alpha = uint32_t(std::lround(std::min(1.0f, 0.35f + k) * 255.0f));
-            const uint32_t tint = p.dirt ? 0xd2e2f0u : 0xffffffu;   // muddy water on dirt (abgr)
-            for (int c4 = 0; c4 < 4; ++c4) {
-                SpriteVertex x;
-                x.pos = q[c4]; x.uv = uv[c4]; x.color = tint | (alpha << 24); x.team = 0;
-                x.rpos = {x.pos.x, x.pos.y, x.pos.z, 0};
-                v.push_back(x);
+        if(updatePuddles) {
+            const float level=float(ps)/32.0f;
+            std::vector<SpriteVertex> vertices;
+            const float u0=float(roadkit::kVergePuddleSlot)/
+                float(roadkit::kVergeSlots)+0.001f;
+            const float u1=float(roadkit::kVergePuddleSlot+1)/
+                float(roadkit::kVergeSlots)-0.001f;
+            for(size_t i=0;i<spots_.size() && ps>0;++i) {
+                const PuddleSpot& p=spots_[i];
+                const float k=puddleScale(p,level);
+                if(k<=0.02f)continue;
+                const float3 dl{p.dir.x*p.len*0.5f*k,0,
+                                p.dir.y*p.len*0.5f*k};
+                const float3 dw{-p.dir.y*p.width*0.5f*k,0,
+                                  p.dir.x*p.width*0.5f*k};
+                float3 c=p.c;
+                c.y+=0.0025f;
+                const float3 q[4]={c-dl-dw,c+dl-dw,c+dl+dw,c-dl+dw};
+                const bool fu=(i&1)!=0,fv=(i&2)!=0;
+                const float a0=fu?u1:u0,a1=fu?u0:u1;
+                const float b0=fv?1.0f:0.0f,b1=fv?0.0f:1.0f;
+                const float2 uv[4]={{a0,b0},{a1,b0},{a1,b1},{a0,b1}};
+                const uint32_t alpha=uint32_t(std::lround(
+                    std::min(1.0f,0.35f+k)*255.0f));
+                const uint32_t tint=p.dirt?0xd2e2f0u:0xffffffu;
+                for(int j=0;j<4;++j) {
+                    SpriteVertex v{};
+                    v.pos=q[j];
+                    v.uv=uv[j];
+                    v.color=tint|(alpha<<24);
+                    v.team=0;
+                    v.rpos={v.pos.x,v.pos.y,v.pos.z,0};
+                    vertices.push_back(v);
+                }
+            }
+            if(!vertices.empty()) {
+                stagedPuddles=decalBatch_.buildMesh(dev,vertices);
+                if(!stagedPuddles.vb.valid())
+                    throw std::runtime_error("RoadView: puddle GPU upload failed");
             }
         }
-        if (!v.empty()) puddleMesh_ = decalBatch_.buildMesh(dev, v);
+    }catch(...) {
+        // All candidates are never submitted, so no RHI fence is required.
+        if(stagedFilm.vb.valid())dev.destroyBuffer(stagedFilm.vb);
+        if(stagedPuddles.vb.valid())dev.destroyBuffer(stagedPuddles.vb);
+        throw;
     }
+    // Commit both replacements only when every requested GPU upload
+    // succeeded, preserving the former film/puddles on late failures.
+    if(updateFilm) {
+        retireSpriteBuffer(dev,filmMesh_);
+        filmMesh_=stagedFilm;
+        wetStep_=ws;
+    }
+    if(updatePuddles) {
+        retireSpriteBuffer(dev,puddleMesh_);
+        puddleMesh_=stagedPuddles;
+        puddleStep_=ps;
+    }
+}
+
+float RtsRoadView::candidateSurfaceAt(const std::shared_ptr<PreparedRebuild>& c,
+        float x,float z,float terrain) const {
+    return c && c->replaceGeometry ? c->staged->surfaceAt(x,z,terrain):surfaceAt(x,z,terrain);
+}
+void RtsRoadView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Renderer3D& r) {
+    if(!c){drawPrepared(r);return;}
+    if(c->committed || c->device!=dev_)throw std::logic_error("Road: stale candidate draw");
+    auto& n=*c->staged;
+    const auto exchange=[&]() noexcept {
+        using std::swap;
+        if(c->replaceGeometry) {
+            swap(chunks_,n.chunks_);swap(props_,n.props_);swap(propModels_,n.propModels_);
+            swap(decalMesh_,n.decalMesh_);swap(vergeMesh_,n.vergeMesh_);
+        }
+        if(c->replaceFilm)swap(filmMesh_,n.filmMesh_);
+        if(c->replacePuddles)swap(puddleMesh_,n.puddleMesh_);
+        if(c->replaceGhost)swap(ghostModel_,n.ghostModel_);
+    };
+    exchange();try {drawPrepared(r);}catch(...) {exchange();throw;}exchange();
 }
 
 void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt) {
@@ -2473,22 +2739,41 @@ void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& 
     if (dirty_) rebuild(*dev_, heightAt);
     if (ghostDirty_) buildGhost(*dev_, heightAt);
     buildWeather(*dev_);
+    drawPrepared(r);
+}
+void RtsRoadView::drawPrepared(Renderer3D& r) {
     for (auto& c : chunks_) {
         ModelDraw d;
         d.model = c.model.get();
         d.flags = kDrawStatic;
         r.drawModel(d);
     }
-    if ((decalMesh_.vb.valid() && paint_.valid()) || (vergeMesh_.vb.valid() && verge_.valid()) || filmMesh_.vb.valid() || puddleMesh_.vb.valid()) {
-        r.drawCustom([this, &r](gfx::Device& d) {
+    if ((decalMesh_.vb.valid() && paint_.valid()) ||
+        (vergeMesh_.vb.valid() && verge_.valid()) ||
+        filmMesh_.vb.valid() || puddleMesh_.vb.valid()) {
+        // Each queued camera pass retains the exact handles selected by
+        // this frame. Never re-read live RoadView SpriteMesh fields after
+        // the host has published another road/weather generation.
+        const SpriteMesh decal=decalMesh_,verge=vergeMesh_;
+        const SpriteMesh film=filmMesh_,puddle=puddleMesh_;
+        const TextureRef paint=paint_,vergeTexture=verge_;
+        const mat4 projection=r.viewProj();
+        const bool receivesShadows=r.shadowQuality()>=ShadowQuality::Medium;
+        SpriteBatch* spriteBatch=&decalBatch_; // pipeline owner, stable until idle-safe shutdown
+        r.drawCustom([&r,spriteBatch,decal,verge,film,puddle,
+                      paint,vergeTexture,projection,receivesShadows](gfx::Device& d) {
             SpriteLighting lighting;
-            lighting.bind = [&r] { r.bindLitFrame(); };
-            lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
-            lighting.bindReflection = [&r](int slot) { r.lights.bind(2, 1, slot); };
-            if (vergeMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, vergeMesh_, verge_.tex, r.viewProj(), &lighting, true);   // under the paint
-            if (filmMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, filmMesh_, verge_.tex, r.viewProj(), &lighting, true);   // wet: under the paint
-            if (decalMesh_.vb.valid() && paint_.valid()) decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
-            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawWater(d, puddleMesh_, verge_.tex, r.viewProj(), lighting);   // water over the lines
+            lighting.bind=[&r]{r.bindLitFrame();};
+            lighting.receiveShadows=receivesShadows;
+            lighting.bindReflection=[&r](int slot){r.lights.bind(2,1,slot);};
+            if(verge.vb.valid() && vergeTexture.valid())
+                spriteBatch->drawMesh(d,verge,vergeTexture.tex,projection,&lighting,true);
+            if(film.vb.valid() && vergeTexture.valid())
+                spriteBatch->drawMesh(d,film,vergeTexture.tex,projection,&lighting,true);
+            if(decal.vb.valid() && paint.valid())
+                spriteBatch->drawMesh(d,decal,paint.tex,projection,&lighting,true);
+            if(puddle.vb.valid() && vergeTexture.valid())
+                spriteBatch->drawWater(d,puddle,vergeTexture.tex,projection,lighting);
         });
     }
     for (auto& p : props_) {

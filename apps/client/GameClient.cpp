@@ -137,6 +137,19 @@ void GameClient::initStep(gfx::Device& dev, int step) {
             std::string bytes;
             return platform::readContentFile(path, bytes) && render::decodeImage(bytes, w, h, rgba);
         });
+        // Optional texture-only cameras. The existing GameClient always owns
+        // its main framebuffer and UI, so screen outputs are forbidden here.
+        if(manifest_["lens"].getBool("enabled",false)) {
+            std::string bytes,lensError;
+            if(platform::readContentFile("cameras.json",bytes) &&
+               lensCameras_.loadOffscreenAsset(bytes,&lensError) &&
+               lensCameras_.init(dev,r3d_)) {
+                lensCamerasActive_=true;
+            } else {
+                std::fprintf(stderr,"[lens] disabled: %s\n",
+                    lensError.empty()?"camera asset unavailable":lensError.c_str());
+            }
+        }
         break;
     case 2:
         view_.setGpuDeviceLease(gpuDeviceLease_);
@@ -266,6 +279,14 @@ void GameClient::applyLanguage(const std::string& tag, bool save) {
 }
 
 void GameClient::shutdown() {
+    // Preserve the MotionWeave device lease and shutdown contract.
+    // The additional camera resources must retire before Renderer3D dies.
+    if(lensCamerasActive_) {
+        if(!dev_ || !dev_->waitForResourceIdle())
+            throw std::runtime_error("LENS client: GPU did not reach idle");
+        lensCameras_.shutdownAfterGpuIdle();
+        lensCamerasActive_=false;
+    }
     loadingSplash_.shutdown();
     net_.reset(); // detaches from the simulation before it goes away
     fx_.shutdown();
@@ -1031,6 +1052,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     const bool singleStep = hostFrozen && hostCanStep() && hostStep_;
     hostStep_ = false;
     if (hostFrozen) dt = 0;
+    lensCameras_.collectRetiredTargets();
     // Even on menus/loading screens there may be previous per-view motion
     // textures awaiting the GPU completion fence from an old match.
     prisma_.collectGpuRetirements();
@@ -1206,6 +1228,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     pass.colorTarget = hostColor_;
     pass.depthTarget = hostDepth_;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
+    render::LightSystem::PreparedFrame lensLightingSnapshot;
     if (sim_) {
         if (planet()) { // orbit camera -> view-world RTSCamera; space is black
             cam_ = view_.updatePlanetCamera(scene_.seconds, float(dt), fbH());
@@ -1272,6 +1295,19 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             oc.over = screen_ == Screen::Over;
             view_.setOverlayContext(oc);
         }
+        render::CameraModelSnapshot::CaptureGuard lensCaptureGuard;
+        // Automatically clear the borrowed RtsView capture pointer if
+        // any rendering/animation callback throws before the normal end.
+        struct PreparedCaptureReset {
+            game::RtsView* view=nullptr;
+            ~PreparedCaptureReset() {
+                if(view)view->setCameraPreparedCapture(nullptr);
+            }
+        } preparedCaptureReset{lensCamerasActive_?&view_:nullptr};
+        if(lensCamerasActive_) {
+            lensCaptureGuard.begin(lensModelSnapshot_,r3d_);
+            view_.setCameraPreparedCapture(&lensModelSnapshot_);
+        }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
@@ -1292,9 +1328,15 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
         drawToolPreview();
+        lensCaptureGuard.end();
+        if(preparedCaptureReset.view) {
+            preparedCaptureReset.view->setCameraPreparedCapture(nullptr);
+            preparedCaptureReset.view=nullptr;
+        }
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
+        if(lensCamerasActive_) lensLightingSnapshot=r3d_.lights.capturePrepared();
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
         // GPU billboards share this scene depth/pass; no separate pass and no
@@ -1322,6 +1364,47 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
     ui_.render();
     dev.endPass();
+    // A separate offscreen path after the already presented scene/UI pass.
+    // Never replay RtsView::draw: its animation, event and appearance updates
+    // are stateful, even with MotionWeave's universal View adapter.
+    if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy() &&
+       view_.visualFrameReadyFor(mod().state(*sim_).grid,time_)) {
+        // Use the actual multi-owner committed epoch, never an unrelated
+        // client counter. Failed primary updates cannot be replayed by RT.
+        const auto published=view_.publishedVisualFrame();
+        const render::CameraVisualFrameId visualId{
+            uint64_t(sim_->tick()),published.id,time_};
+        const auto result=lensCameras_.renderPrepared(
+            lensModelSnapshot_,visualId,float(dt),
+            [&](const render::CameraModelSnapshot& snapshot,
+                const render::EcsCameraView& camera,render::Renderer3D& renderer){
+                if(worldScene_ && !planet())
+                    worldScene_->draw(renderer,world::Cell{0,0,0},1);
+                // Separate per-camera terrain culling and view projection,
+                // but reuse the primary frame's already uploaded GPU state.
+                if(!planet()) {
+                    auto& gs=mod().state(*sim_);
+                    view_.drawPreparedTerrainFog(renderer,gs.grid,
+                        spectator_?nullptr:&gs.vision[human_],time_,published.id);
+                    view_.drawPreparedSprites(renderer,published.id);
+                }
+                // Renderer3D::beginScene reset the per-camera light list.
+                // Reuse primary-frame particle lights without collecting FX again.
+                renderer.lights.replayPrepared(lensLightingSnapshot);
+                // Re-submit final pose/material/attachment packets directly.
+                // RtsView::draw and MotionWeave::update are NOT repeated.
+                snapshot.submit(renderer,camera.entity.packed());
+            },{},[&](const render::EcsCameraView& camera,
+                     render::Renderer3D& renderer,int width,int height) {
+                // The already updated particle population is reprojected
+                // into each camera's still-open draw pass. No FX tick/event.
+                fx_.renderPrepared(camera.camera,renderer.viewProj(),
+                                   width,height,renderer.lighting);
+            });
+        if(std::getenv("AIVERSE_LENS_LOG") && !result.diagnostics.empty())
+            std::fprintf(stderr,"[lens] submitted=%zu skipped=%zu diagnostics=%zu\n",
+                result.submitted,result.skipped,result.diagnostics.size());
+    }
     if (!sim_) {
         // Menu-only output: no active camera view; avoid keeping the
         // previous match's private histories and size caches indefinitely.

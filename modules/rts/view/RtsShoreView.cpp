@@ -636,6 +636,7 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
             "shore View cannot rebind before verified GPU retirement");
     }
     dev_ = &dev;
+    ++stateRevision_;
     read_ = std::move(reader);
     warnings_.clear();
     dirty_ = true;
@@ -644,7 +645,7 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
     // materials: the road kit's, then the shore kit's; the game's textures replace a surface's
     std::map<int, std::string> custom;
     for (auto& t : types_.list) for (auto& [surface, path] : t.textures) if (!custom.count(surfaceMat(surface))) custom[surfaceMat(surface)] = path;
-    Model kit;
+    buildingKit_=std::make_unique<Model>();
     materials_.assign(size_t(kShoreMatEnd), Material{});
     for (int m = 0; m < kShoreMatEnd; ++m) {
         if (m >= RV::kMatCount && m < kStone) continue;
@@ -655,19 +656,31 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
             else { warnings_.push_back("shore texture '" + it->second + "': cannot read"); img = Image{}; }
         }
         if (img.rgba.empty() && !img.compressed) img = m < RV::kMatCount ? roadkit::texture(m) : (m == kStone || m == kRock || m == kSand || m == kFoam ? texture(m, m == kRock ? 512 : 256) : Image{});
-        const int tex = (!img.rgba.empty() || img.compressed) ? addImage(dev, kit, std::move(img)) : -1;
+        const bool upload=!img.rgba.empty() || img.compressed;
+        const int tex=upload?addImage(dev,*buildingKit_,std::move(img)):-1;
+        if(upload && tex<0)
+            throw std::runtime_error("shore View: GPU kit texture allocation failed");
         Material mt = m < RV::kMatCount ? roadkit::material(m) : material(m);
         if (m != kFoam) { mt.alpha = AlphaMode::Opaque; mt.transparent = false; }   // the road kit's verge grass is blended; shores are solid
         if (custom.count(m)) mt.baseColor = {1, 1, 1, mt.baseColor.w};
         mt.baseTex = tex;
         materials_[size_t(m)] = mt;
     }
-    images_ = std::move(kit.images);
-    for (auto& img : images_) img.borrowedTexture = false;
+    images_=std::move(buildingKit_->images);
+    buildingKit_.reset();
+    for(auto& img:images_)img.borrowedTexture=false;
     if (netJson_.isObject()) {   // new types: parse the network again
         try { net_ = parseNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = Network{}; }
     }
+}
+
+void RtsShoreView::inheritRuntimeStateForReload(const RtsShoreView& old) {
+    // The old GPU meshes and materials are never copied. Parsing the new
+    // shore type kit will rebuild the water network against the new rules.
+    netJson_=old.netJson_;
+    net_=old.net_;
+    dirty_=true;
 }
 
 void RtsShoreView::release(gfx::Device& dev) {
@@ -681,6 +694,7 @@ void RtsShoreView::release(gfx::Device& dev) {
 void RtsShoreView::shutdown(gfx::Device& dev) {
     if(!dev_)return;
     if(dev_!=&dev)throw std::logic_error("shore View GPU owner mismatch");
+    ++stateRevision_;
     release(dev);
     for (auto& p : propModels_) retirement_.retireModel(dev,p.model);
     propModels_.clear();
@@ -693,6 +707,10 @@ void RtsShoreView::shutdown(gfx::Device& dev) {
         // owners after this host failed to establish a completion barrier.
         throw std::runtime_error("shore View GPU retirement barrier failed");
     }
+    if(buildingKit_) {
+        releaseModel(dev,*buildingKit_);
+        buildingKit_.reset();
+    }
     for (auto& img : images_) if (img.tex.valid()) {
         dev.destroyTexture(img.tex); img.tex = {};
     }
@@ -701,6 +719,7 @@ void RtsShoreView::shutdown(gfx::Device& dev) {
 }
 
 void RtsShoreView::setMap(const Json& map) {
+    ++stateRevision_;
     net_ = Network{};
     dirty_ = true;
     netJson_ = map["waterNetwork"];
@@ -734,8 +753,9 @@ int RtsShoreView::propModel(gfx::Device& dev, const std::string& path) {
     return propModels_.back().model ? int(propModels_.size() - 1) : -1;
 }
 
-void RtsShoreView::rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
-    release(dev);
+void RtsShoreView::buildUnpublished(gfx::Device& dev, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
+    // Invoked ONLY on a private candidate owner whose published containers
+    // are empty. Do not retire or mutate the live ShoreView here.
     dirty_ = false;
     builtWaterY_ = waterY; builtW_ = w; builtH_ = h;
     if (net_.empty()) return;
@@ -765,6 +785,7 @@ void RtsShoreView::rebuild(gfx::Device& dev, const std::function<float(float, fl
             if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
                 warnings_.push_back("shore chunk: GPU completion unavailable; partial Model quarantined");
             warnings_.push_back(std::string("shore chunk: ")+e.what());
+            throw; // one late upload must cancel the entire candidate
         }
     }
     if (!mesh.foam.empty()) {
@@ -780,14 +801,88 @@ void RtsShoreView::rebuild(gfx::Device& dev, const std::function<float(float, fl
                 if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
                     warnings_.push_back("shore foam: GPU completion unavailable; partial Model quarantined");
                 warnings_.push_back(std::string("shore foam: ")+e.what());
+                throw; // never publish partial foam/bank scenery
             }
         }
     }
 }
 
+struct RtsShoreView::PreparedRebuild {
+    gfx::Device* device=nullptr;
+    std::unique_ptr<RtsShoreView> staged;
+    bool committed=false;
+    ~PreparedRebuild() noexcept {
+        if(!device || !staged)return;
+        // These replacements never reached a submitted camera. The borrowed
+        // shore material textures continue to belong to the active kit.
+        for(auto& model:staged->chunks_)
+            if(model)releaseModel(*device,*model);
+        for(auto& model:staged->transparent_)
+            if(model)releaseModel(*device,*model);
+        for(auto& prop:staged->propModels_)
+            if(prop.model)releaseModel(*device,*prop.model);
+    }
+};
+
+std::shared_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
+        float waterY,int w,int h,bool forceGround) {
+    if(dev_!=&dev)
+        throw std::logic_error("RtsShoreView prepare: GPU owner mismatch");
+    if(!needsVisualPreparation(waterY,w,h) && !forceGround)return {};
+    auto candidate=std::make_shared<PreparedRebuild>();
+    candidate->device=&dev;
+    candidate->staged=std::make_unique<RtsShoreView>();
+    RtsShoreView& staged=*candidate->staged;
+    staged.dev_=&dev;
+    staged.read_=read_;
+    staged.types_=types_;
+    staged.net_=net_;
+    staged.images_=images_;
+    staged.materials_=materials_;
+    staged.warnings_=warnings_;
+    staged.dirty_=true;
+    staged.buildUnpublished(dev,heightAt,waterY,w,h);
+    return candidate;
+}
+
+void RtsShoreView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
+    if(!candidate || candidate->committed)return;
+    ++stateRevision_;
+    candidate->committed=true;
+    RtsShoreView& staged=*candidate->staged;
+    release(*dev_);
+    for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
+    propModels_.swap(staged.propModels_);
+    chunks_.swap(staged.chunks_);
+    transparent_.swap(staged.transparent_);
+    props_.swap(staged.props_);
+    warnings_.swap(staged.warnings_);
+    builtWaterY_=staged.builtWaterY_;
+    builtW_=staged.builtW_;
+    builtH_=staged.builtH_;
+    dirty_=false;
+}
+
+void RtsShoreView::rebuild(gfx::Device& dev,
+        const std::function<float(float,float)>& heightAt,
+        float waterY,int w,int h) {
+    auto prepared=prepareRebuild(dev,heightAt,waterY,w,h);
+    commitRebuild(std::move(prepared));
+}
+
+void RtsShoreView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Renderer3D& r) {
+    if(!c){drawPrepared(r);return;}
+    if(c->committed || c->device!=dev_)throw std::logic_error("Shore: stale candidate draw");
+    c->staged->drawPrepared(r);
+}
+
 void RtsShoreView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
     if (!dev_) return;
     if (dirty_ || waterY != builtWaterY_ || w != builtW_ || h != builtH_) rebuild(*dev_, heightAt, waterY, w, h);
+    drawPrepared(r);
+}
+void RtsShoreView::drawPrepared(Renderer3D& r) {
     for (auto& c : chunks_) { ModelDraw d; d.model = c.get(); d.flags = kDrawStatic; r.drawModel(d); }
     for (auto& p : props_) { ModelDraw d; d.model = propModels_[size_t(p.model)].model.get(); d.world = p.xf; d.flags = kDrawStatic; r.drawModel(d); }
     for (auto& c : transparent_) { ModelDraw d; d.model = c.get(); d.flags = kDrawNoCastShadow | kDrawTransparent; r.drawModel(d); }

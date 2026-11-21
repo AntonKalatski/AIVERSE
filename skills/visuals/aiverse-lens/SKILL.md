@@ -1,0 +1,58 @@
+---
+name: aiverse-lens
+description: Author AIVERSE LENS ECS cameras through MCP; inspect, validate, create, replace or delete cameras.json records and capture a PNG in native Studio. Use for multi-camera scenes, minimaps, offscreen outputs and camera rigs; not camera input controllers or PRISMA screen effects.
+---
+
+# LENS camera authoring
+
+Use the existing engine camera system; start with `docs/camera-system.md`.
+The shared editor/MCP implementation is `apps/editor/core/LensOps.cpp`.
+
+1. Open the intended project with `open_game`, then call `lens_scene_get`.
+   Keep its exact scene value for the next write's expectedScene. A missing file
+   returns an empty version-1 scene; malformed files report an error.
+2. Create or replace one complete record with `lens_camera_set`. For a partial
+   edit, merge changes into the existing record locally first. Stable positive
+   ids identify cameras; texture output keys identify render targets.
+3. Call `lens_scene_validate` with a scene before a bulk edit. Read normalizedScene:
+   the native loader supplies defaults and clamps some fields; this is not strict
+   unknown-key validation. Invalid clips, duplicate ids and over 256 cameras fail.
+   clientCompatible only means texture-only outputs; it is not a GPU test.
+4. Use `lens_scene_set` for a complete scene replacement, or `lens_camera_delete`
+   with id. Every write requires expectedScene from the last read. On conflict,
+   re-read and merge your intended change; never blindly retry an old snapshot.
+5. Writes save immediately, without editor undo. The LENS window must Reload
+   before editing or saving its in-memory copy. Restart a running client to load
+   the changed asset. These operations do not toggle the game's LENS opt-in.
+
+Minimal lens_camera_set arguments after reading an absent cameras.json:
+
+```json
+{
+  "expectedScene": {"version": 1, "cameras": []},
+  "camera": {
+    "id": 1, "name": "Overview", "position": [0, 12, 18],
+    "camera": {"projection": "perspective", "fov": 0.8, "near": 0.1, "far": 500},
+    "output": {"kind": "texture", "key": 42, "width": 512, "height": 512},
+    "update": {"mode": 1, "everyNFrames": 4}
+  }
+}
+```
+
+FOV is in radians. Set rotation as an authored quaternion, not Euler angles.
+The complete version-1 format is implemented by `engine/sim/CameraSceneAsset.h`.
+Files are limited to 1 MiB; symlink assets are refused. Only cameras.json is
+written. Validation occurs in a scratch World, never the authoritative game.
+
+For visual verification open the native LENS / Cameras window, Reload, select
+and preview the camera, then use Capture PNG. Inspect the actual saved image;
+a successful authoring response does not certify framing or readback. There is
+no dedicated headless MCP camera capture command. Existing view screenshots
+show editor views, not an arbitrary LENS target. See
+`skills/visuals/aiverse-lens-native/SKILL.md` for runtime capture ownership.
+For postprocessing use `skills/visuals/aiverse-prisma/SKILL.md`; input/controller
+helpers remain in `skills/ui/aiverse-camera/SKILL.md`.
+
+Verification: build target aiverse_lens_ops_tests, run CTest lens_ops and
+camera_scene_asset; keep build, temporary files and logs on KINGSTON when
+requested. Workflow over existing engine APIs and MCP; no runtime library.

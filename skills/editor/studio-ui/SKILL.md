@@ -1,3 +1,8 @@
+---
+name: studio-ui
+description: Author HTML5 Studio editor windows using shared Studio UI v1 components and the typed native bridge.
+---
+
 # AIVERSE Studio UI — Skill for AI window authors
 
 Use this skill whenever an AI agent **creates, redesigns, or migrates** an AIVERSE HTML5 editor window.

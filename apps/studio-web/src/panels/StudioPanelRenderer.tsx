@@ -2,6 +2,7 @@
 // For a new editor panel, register a typed panel ID in nestedDock.ts,
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
+import { StudioSection } from '../ui';
 import {
   Activity, Box, ChevronDown, FolderOpen,
   SlidersHorizontal, Focus, RotateCcw, Lock, LockOpen
@@ -42,11 +43,11 @@ export interface StudioPanelContext {
   inspectorPinned: boolean;
   toggleInspectorPin: () => void;
   select: (id: string | null) => Promise<void>;
-  changeProperty: (key: string, value: string | number | boolean) => Promise<void>;
+  changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,selected,inspectorProperties,inspectorPinned,toggleInspectorPin,changeProperty}=ctx;
+  const {snapshot,busy,connected,openProject,selected,select,inspectorProperties,inspectorPinned,toggleInspectorPin,changeProperty}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
@@ -70,13 +71,25 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
               <input className="au-input" aria-label="Object name" value={selected.name} readOnly
                 title="Object naming is not yet exposed by the native document API"/>
             </div>
-            <div className="inspector-section">
+            {!inspectorPinned && snapshot?.entityProperties?.map(property =>
+              <PropertyField key={'entity:' + selected.id + ':' + property.key} property={property}
+                disabled={busy || property.editable === false}
+                onChange={value => void changeProperty(property.key, value, 'Entity')}/>)}
+            {!inspectorPinned && snapshot?.components?.map(component =>
+              <StudioSection key={selected.id + ':' + component.id} title={component.title}>
+                {component.properties.map(property =>
+                  <PropertyField key={component.id + ':' + property.key} property={property}
+                    disabled={busy || property.editable === false}
+                    onChange={value => void changeProperty(property.key, value, component.id)}/>)}
+              </StudioSection>)}
+            {/* Pinned objects use propertiesFor: a flat list including component fields. */}
+            {!!inspectorProperties.length && <div className="inspector-section">
               <div className="section-heading"><ChevronDown size={13}/> Properties</div>
               {inspectorProperties.map(property =>
                 <PropertyField key={selected.id + ':' + property.key}
                   property={property} disabled={busy || property.editable === false}
                   onChange={value => void changeProperty(property.key, value)}/>)}
-            </div>
+            </div>}
           </> : <div className="empty-panel">Select an entity to inspect its properties.</div>}
         </>;
       case 'scene':
@@ -120,7 +133,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             </div>)}
         </div>;
       case 'lighting':
-        return <LightingPanel projectPath={snapshot?.project.path ?? ''}/>;
+        return <LightingPanel projectPath={snapshot?.project.path ?? ''} selectedId={snapshot?.selectedId ?? null} onSelect={select}/>;
       case 'materials':
         return <MaterialsPanel projectPath={snapshot?.project.path ?? ''}
           previewMaterial={snapshot?.previewMaterial}/>;

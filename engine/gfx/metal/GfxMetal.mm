@@ -96,7 +96,7 @@ struct MTTexture {
 struct MTTextureView { id<MTLTexture> tex; uint32_t parentId = 0; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
 struct MTShaderCompilation { MTShader value; std::string error; std::atomic<bool> done{false}; };
-struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
+struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; bool icbDynamicGi = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
 
 MTLVertexFormat toMTL(VertexFormat f) {
     switch (f) {
@@ -355,6 +355,19 @@ public:
         }
     }
     const std::string& lastError() const override { return error_; }
+    bool waitIdle() override {
+        if(enc_ || compute_ || !queue_) return false;
+        // A fresh command buffer waits for every previously submitted command
+        // on this single queue. Never wait on cmd_ before endFrame commits it.
+        id<MTLCommandBuffer> barrier=[queue_ commandBuffer];
+        [barrier commit];
+        [barrier waitUntilCompleted];
+        if(barrier.status!=MTLCommandBufferStatusCompleted)return false;
+        deliverBufferReads();
+        deliverCapture();
+        deliverTextureCaptures();
+        return true;
+    }
 
     // ---------- buffers ----------
     BufferHandle createBuffer(const BufferDesc& d) override {
@@ -601,6 +614,7 @@ public:
     }
     void destroyCompute(ComputeHandle h) override { computes_.remove(h.id); }
     bool beginCompute(ComputeHandle h) override {
+        computeDispatchSucceeded_=false;
         auto* state=computes_.get(h.id);
         if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !state) return false;
         compute_=[cmd_ computeCommandEncoder];[compute_ setComputePipelineState:*state];return compute_!=nil;
@@ -630,10 +644,13 @@ public:
     }
     void setComputeUniforms(const void* data,size_t size) override { if(size<=4096)[compute_ setBytes:data length:size atIndex:8]; }
     void dispatch(uint32_t x,uint32_t y) override {
+        computeDispatchSucceeded_=false;
         if (!compute_ || !x || !y) return;
         [compute_ dispatchThreadgroups:MTLSizeMake((x+63)/64,y,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];
         if (@available(macOS 10.14, iOS 12.0, *)) [compute_ memoryBarrierWithScope:MTLBarrierScopeBuffers|MTLBarrierScopeTextures];
+        computeDispatchSucceeded_=true;
     }
+    bool computeDispatchSucceeded() const override { return computeDispatchSucceeded_; }
     void endCompute() override { if(compute_){[compute_ endEncoding];compute_=nil;} }
     bool readBuffer(BufferHandle h,void* data,size_t size) override {
         auto* b=buffers_.get(h.id);if(cmd_||!b||!data||size>b->size)return false;
@@ -1427,6 +1444,8 @@ public:
             pipeline.desc.depthOnly || shaderAssets_->strict() ||
             device_.argumentBuffersSupport < MTLArgumentBuffersTier2) return;
         const auto& src = shader->source;
+        if(src.find("#define DYNAMIC_GI 1")!=std::string::npos &&
+           src.find("#define AIVERSE_MODEL_VT 1")!=std::string::npos) return;
         if (src.find("#define AIVERSE_MODEL_SSR 1") == std::string::npos ||
             src.find("#define LIGHTMAP 1") != std::string::npos ||
             src.find("#define PROBES 1") != std::string::npos ||
@@ -1465,6 +1484,7 @@ public:
         }
         auto encoder = [cached.fragment newArgumentEncoderWithBufferIndex:8];
         if (!encoder) return;
+        pipeline.icbDynamicGi = src.find("#define DYNAMIC_GI 1") != std::string::npos;
         pipeline.icbPbrState = state;
         pipeline.icbPbrEncoder = encoder;
     }
@@ -1646,10 +1666,56 @@ public:
     int captureDelay_ = 0;
     struct Captured { int w = 0, h = 0; std::vector<uint8_t> px; std::atomic<bool> ready{false}; CaptureFn fn; };
     std::shared_ptr<Captured> captured_;
+    std::vector<std::shared_ptr<Captured>> capturedTextures_;
     void captureNextFrame(CaptureFn fn) override {
         capture_ = std::move(fn);
         layer_.framebufferOnly = NO; // drawables acquired from now on can be blitted
         captureDelay_ = drawable_ && !drawable_.texture.framebufferOnly ? 0 : 1;
+    }
+    bool captureTexture(TextureHandle source,CaptureFn fn) override {
+        auto* resource=textures_.get(source.id);
+        if(!fn||!cmd_||enc_||!resource||!resource->tex)return false;
+        id<MTLTexture> tex=resource->tex;
+        const bool bgra=tex.pixelFormat==MTLPixelFormatBGRA8Unorm ||
+                        tex.pixelFormat==MTLPixelFormatBGRA8Unorm_sRGB;
+        const bool rgba=tex.pixelFormat==MTLPixelFormatRGBA8Unorm ||
+                        tex.pixelFormat==MTLPixelFormatRGBA8Unorm_sRGB;
+        if(!bgra&&!rgba)return false; // HDR requires explicit tonemap first
+        const NSUInteger width=tex.width,height=tex.height,row=width*4;
+        if(width==0||height==0||width>8192||height>8192)return false;
+        id<MTLBuffer> buffer=[device_ newBufferWithLength:row*height
+            options:MTLResourceStorageModeShared];
+        if(!buffer)return false;
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        [blit copyFromTexture:tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0)
+             sourceSize:MTLSizeMake(width,height,1) toBuffer:buffer destinationOffset:0
+             destinationBytesPerRow:row destinationBytesPerImage:row*height];
+        [blit endEncoding];
+        auto request=std::make_shared<Captured>();
+        request->w=int(width);request->h=int(height);request->fn=std::move(fn);
+        capturedTextures_.push_back(request);
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> finished) {
+            if(finished.status==MTLCommandBufferStatusCompleted) {
+                const auto* bytes=static_cast<const uint8_t*>(buffer.contents);
+                request->px.resize(size_t(row*height));
+                for(size_t i=0;i<size_t(width*height);++i){
+                    request->px[i*4]=bytes[i*4+(bgra?2:0)];
+                    request->px[i*4+1]=bytes[i*4+1];
+                    request->px[i*4+2]=bytes[i*4+(bgra?0:2)];
+                    request->px[i*4+3]=bytes[i*4+3];
+                }
+            }else{request->w=0;request->h=0;}
+            request->ready=true;
+        }];
+        return true;
+    }
+    void deliverTextureCaptures() {
+        for(size_t i=0;i<capturedTextures_.size();) {
+            auto capture=capturedTextures_[i];
+            if(!capture->ready){++i;continue;}
+            capturedTextures_.erase(capturedTextures_.begin()+std::ptrdiff_t(i));
+            if(capture->fn)capture->fn(capture->w,capture->h,std::move(capture->px));
+        }
     }
     void deliverCapture() {
         if (captured_ && captured_->ready) {
@@ -1743,6 +1809,7 @@ public:
         deliverColorReads();
         deliverTextureReads();
         deliverCapture(); // the previous frame's GPU work is done here
+        deliverTextureCaptures();
         ++frame_;
         // Programmatic .gputrace for one explicit frame. Capture must begin
         // BEFORE commandBuffer creation; beginning in the fixture callback
@@ -3096,6 +3163,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     }
                 }
             }
+            if(pipeline->icbDynamicGi) {
+                if(!icbFragmentTextures_[13])return reject("GI ICB atlas not bound");
+                [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[13] atIndex:26];
+                declareIndirectRead(icbFragmentTextures_[13],MTLRenderStageFragment);
+            }
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
         }
@@ -3198,6 +3270,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (alphaCoverage) bindPbrSlot(15);
         }
 
+        if(pbr && p->icbDynamicGi) {
+            if(!icbFragmentTextures_[13])return false;
+            [p->icbPbrEncoder setTexture:icbFragmentTextures_[13] atIndex:26];
+            declareIndirectRead(icbFragmentTextures_[13],MTLRenderStageFragment);
+        }
         const auto afterArgs = std::chrono::steady_clock::now();
         // Controlled experiment: inherit only the shared pipeline from the
         // parent encoder. Per-command vertex/fragment buffers remain explicit:
@@ -3558,6 +3635,7 @@ private:
     uint64_t lastCommittedGpuFrame_ = 0;
     id<MTLRenderCommandEncoder> enc_;
     id<MTLComputeCommandEncoder> compute_;
+    bool computeDispatchSucceeded_=false;
     Pool<id<MTLComputePipelineState>> computes_;
     std::shared_ptr<std::atomic<bool>> gpuHealthy_=std::make_shared<std::atomic<bool>>(true);
     std::shared_ptr<std::atomic<double>> gpuMs_=std::make_shared<std::atomic<double>>(0);

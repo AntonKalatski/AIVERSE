@@ -1,5 +1,6 @@
 #include "engine/render/ModelTextureCache.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/FramePublicationEpoch.h"
 #include "engine/render/ModelImageUploadTransaction.h"
 #include "engine/view/AppearanceAssetRegistry.h"
 // LEGACY compatibility adapter for historical RTS/editor scene presentation.
@@ -54,6 +55,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsTerrainRender.h"
 #include "EntityFx.h"
 
+namespace aiverse::render { class CameraModelSnapshot; }
 namespace aiverse::view {
 class View;
 struct ModelPoseRetarget;
@@ -335,10 +337,6 @@ public:
     // The editor may subscribe to cache GPU-retirement diagnostics without
     // gaining mutable access to the model owner or its resident assets.
     // The underlying cache enforces owner-thread and detach-callback guards.
-    void setModelRetirementDiagnosticObserver(
-            render::ModelResourceCache::RetirementDiagnosticObserver observer) {
-        resources_.setRetirementDiagnosticObserver(std::move(observer));
-    }
     // Host frame-boundary retirement: call before beginning render submissions
     // for this frame. No draw happens here; previous GPU work must complete.
     // Includes road/shore Models AND SpriteMesh buffers so existing client/
@@ -367,6 +365,10 @@ public:
     }
     render::RenderTexture::SubmissionStats paintGpuCanvasSubmitStats() const noexcept {
         return paintLayers_.canvasSubmitStats();
+    }
+    void setModelRetirementDiagnosticObserver(
+            render::ModelResourceCache::RetirementDiagnosticObserver observer) {
+        resources_.setRetirementDiagnosticObserver(std::move(observer));
     }
     void setImageRetirementDiagnosticObserver(
             render::ModelImageRollbackPool::DiagnosticObserver observer) {
@@ -399,16 +401,96 @@ public:
     // the editor changes the grid. Resource fields / creep changing in a match need no call (the
     // terrain shader reads them from per-cell textures).
     void buildTerrain(gfx::Device& dev, const MapGrid& grid);
+    // Opt-in fully staged editor sculpt/detail update. Unlike the normal
+    // sparse buildTerrain path this regenerates the full terrain candidate,
+    // road/shore height samples, GroundFX grid geometry state and Fog Sheet
+    // before a single five-owner commit. Existing Fog R8/visibility history
+    // survives same-size edits. Higher temporary GPU memory; use only for
+    // explicit transactional edits, not every brush sample.
+    void buildTerrainAtomic(gfx::Device& dev,const MapGrid& grid);
+    // Opt-in scene-aware map transaction. Requires a configured primary
+    // Renderer3D camera/scene and a previously primed Terrain GPU kit.
+    // Builds the visible GroundFX chunks against the UNPUBLISHED Terrain,
+    // bounded by the existing 16-chunk/128 MiB GPU preparation budget.
+    // Does not publish a camera FramePublicationEpoch; the next draw does.
+    void buildTerrainAtomicScene(gfx::Device& dev,const MapGrid& grid,
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision);
+    // Stage a one-shot unpublished Terrain+Roads+Shores+GroundFX+Fog map
+    // and camera-visible GroundFX mesh bundle WITHOUT publishing any owner.
+    // Must follow renderer.beginScene(); returns false when initial Terrain
+    // kit, planet mode, hierarchical scene or 2D tiles forbid this path.
+    // A matching next primary draw commits once before it evaluates poses;
+    // a stale lease is discarded and rebuilt from the current source.
+    bool prepareTerrainAtomicFrame(gfx::Device& dev,const MapGrid& grid,
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision);
     // Optional painted material layer per cell (map key "terrainMaterial": rows of digits 0..3, '.' =
     // by cell kind; see docs/game-format.md). Takes effect at the next buildTerrain().
-    void setTerrainMaterial(const Json& rows, int w, int h) { terrain_.setMaterialLayer(parseMaterialRows(rows, w, h)); }
+    void setTerrainMaterial(const Json& rows, int w, int h) {
+        framePublication_.invalidate();
+        terrain_.setMaterialLayer(parseMaterialRows(rows, w, h));
+    }
     // Visual detail heightmap of the map (terrain.detail, docs/terrain.md; files read with the view's
     // reader). Without one, terrain.style "smooth" synthesises the detail. Takes effect at buildTerrain().
     void setMapSurfaceEnabled(bool enabled){terrain_.setMapSurfaceEnabled(enabled);}
     void setTerrainDetail(const Json& map);
-    void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) { terrain_.setDetail(d, splat); }
+    void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) {
+        framePublication_.invalidate();
+        terrain_.setDetail(d, splat);
+    }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
+    // After a synchronous map-size transition, all resource owners already
+    // agree on dimensions. GroundFX mesh fills still await primary draw.
+    bool surfacePresentationMapReady(const MapGrid& grid) const noexcept {
+        return terrain_.mapMatches(grid.w,grid.h) &&
+               groundFx_.mapMatches(grid.w,grid.h) &&
+               fog_.sheetMatches(grid.w,grid.h);
+    }
+    // Optional one-shot render-owner prewarm for a built map. A successful
+    // call keeps all five owners' GPU/CPU candidates UNPUBLISHED in a lease.
+    // The next matching primary draw consumes and publishes them exactly once,
+    // with no second GPU preparation. Any changed map, scene, camera, viewer,
+    // visibility, owner revision or time drops the lease and re-prepares.
+    // Neither prewarm nor its lease makes a secondary camera epoch ready.
+    void setTerrainTopologyPreparationBudgetBytes(size_t bytes) {
+        terrain_.setTopologyPreparationBudgetBytes(bytes);
+    }
+    size_t terrainTopologyPreparationBytes() const noexcept {
+        return terrain_.topologyPreparationBytes();
+    }
+    bool prepareMapFrame(render::Renderer3D& renderer,const RtsScene& scene,
+                         double time,const std::vector<uint8_t>* vision,
+                         const MapGrid& grid);
+    struct SurfacePrewarmStats {
+        uint64_t staged=0,consumed=0,discarded=0;
+    };
+    SurfacePrewarmStats surfacePrewarmStats() const noexcept {
+        return surfacePrewarmStats_;
+    }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
+    // The generic frame fence is committed ONLY after all primary-frame
+    // owners finish. Secondary RT cameras must consume exactly this epoch.
+    render::FramePublicationEpoch::Snapshot publishedVisualFrame() const noexcept {
+        return framePublication_.published();
+    }
+    bool visualFrameReadyFor(const MapGrid& grid,double seconds) const noexcept {
+        return framePublication_.readyFor(grid.w,grid.h,seconds);
+    }
+    // Secondary camera: emits prepared terrain and fog without updating
+    // simulation, animation clocks, field textures or fog transitions.
+    // Requires a primary draw() in the same presentation frame.
+    void drawPreparedTerrainFog(render::Renderer3D& renderer,
+                                const MapGrid& grid,
+                                const std::vector<uint8_t>* vision,
+                                double seconds,uint64_t expectedEpoch=0);
+    // Same-frame sprite/tile draw-only pass, without sprite state changes.
+    void drawPreparedSprites(render::Renderer3D& renderer,uint64_t expectedEpoch=0);
+    // Optional LENS one-frame capture of pre-LOD MotionWeave model packets.
+    // Owner must disable this before resources can be reimported or destroyed.
+    void setCameraPreparedCapture(render::CameraModelSnapshot* target) noexcept {
+        cameraPreparedCapture_=target;
+    }
     // spline roads (map "roadNetwork", docs/roads.md): set with the map (setTerrainDetail(map) does it too)
     void setRoadMap(const Json& map);
     RtsRoadView& roads() { return *roads_; }
@@ -521,7 +603,11 @@ public:
     float planetFxAltitude(render::float3 local) const;
     // Object frame in the view world (columns: east, up, south, ground point); false when not on a body.
     bool planetPlacement(const SceneObject& o, render::mat4& out) const;
-    void setFogLook(const FogLook& l) { fog_.setLook(l); fogMeshDirty_ = true; }
+    void setFogLook(const FogLook& l) {
+        framePublication_.invalidate();
+        fog_.setLook(l);
+        fogMeshDirty_=true;
+    }
     // Overlays (RtsOverlays): selection rings, bars, markers and every game-defined helper element.
     // The client / editor pass the local input state once per frame, before draw().
     void setOverlayContext(const OverlayContext& c) { overlays_.setContext(c); }
@@ -619,11 +705,10 @@ private:
         // "groundShadow": a flat image under the model (OpenWar's footprint sprites), turning with the drawn model
         struct GroundShadow { std::string image; float w = 0, d = 0, ox = 0, oz = 0, lift = 0.05f; uint32_t rgba = 0x0000008cu; bool flipU = false, flipV = false; } shadow;
     };
-    struct EntityAnim {
+    struct EntityAnimState {
         uint16_t type = 0;
         int choice = 0;
         render::Animator anim;
-        render::AnimationGraphInstance graph;
         // One-shot named clock snapshot from model/source reload. Restore
         // only AFTER resolving a possible per-entity programmable override,
         // never prematurely against the TypeLook's default graph.
@@ -679,6 +764,17 @@ private:
         bool launched = false;
         double lastSeenTime = -1;                 // previews keep their own clock
     };
+
+    struct EntityAnim : EntityAnimState {
+        render::AnimationGraphInstance graph;
+        EntityAnim cloneForPreparation() const {
+            EntityAnim next;
+            static_cast<EntityAnimState&>(next)=*this;
+            next.graph=std::move(*graph.cloneForPreparation());
+            return next;
+        }
+    };
+    class PreparedAnimationLease;
 
     // Short-lived, Model-pointer-free presentation clock handoff while a
     // source/graph/visual LOD reimport destroys and rebuilds a TypeLook.
@@ -794,6 +890,7 @@ private:
     LegacyLodFallbackStats legacyLodFallbackStats_;
     size_t genericRetargetScratchBudgetBytes_=512u*1024u;
     std::unique_ptr<::aiverse::view::View> genericView_;
+    render::CameraModelSnapshot* cameraPreparedCapture_=nullptr;
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
     TerrainRenderer terrain_;    // chunked terrain + water (RtsTerrainRender.cpp)
@@ -802,12 +899,17 @@ private:
     std::vector<ViewEffect> effects_;
     bool outline_ = true, animLod_ = true;
     std::unique_ptr<Rts2DView> twoD_;
+    // Failed staging may retain GPU allocations when device idle is refused.
+    // Keep it owned until a host-confirmed idle/recovery, never let a local
+    // unique_ptr silently drop the recovery path.
+    std::unique_ptr<Rts2DView> pendingSpriteRecovery_;
     SpriteDefaults spriteDefaults_;
     std::string contentBase_;
     std::vector<render::float3> bars_;   // per scene object: health bar anchor of sprite objects
     double lastTime_ = -1;
     uint32_t lastTick_ = ~0u;
     uint64_t frame_ = 0;
+    render::FramePublicationEpoch framePublication_;
     uint32_t placementCacheHits_ = 0, placementCacheMisses_ = 0;
     uint32_t groundCacheHits_ = 0, groundCacheMisses_ = 0;
     uint64_t terrainGeneration_ = 1;
@@ -839,8 +941,41 @@ private:
         animDt = dt;
         return age + dt;
     }
+    void buildTerrainImpl(gfx::Device& dev,const MapGrid& grid,
+                          bool forceAtomic,render::Renderer3D* renderer=nullptr,
+                          const RtsScene* scene=nullptr,double time=0,
+                          const std::vector<uint8_t>* vision=nullptr);
+    // Same conservative fingerprint as the scene prewarm lease, shared
+    // across C++ translation units to reject mid-staging editor changes.
+    static uint64_t mapSourceFingerprint(const MapGrid& grid) noexcept;
+    static uint64_t sceneSourceFingerprint(const RtsScene& scene) noexcept;
+    static uint64_t cameraSourceFingerprint(const render::Renderer3D& renderer);
+    static uint64_t visibilitySourceFingerprint(
+        const std::vector<uint8_t>* vision) noexcept;
+    // RAII candidate bundle is defined in RtsView.cpp before the view's
+    // out-of-line destructor. It never owns external scene/grid pointers.
+    struct PreparedSurfaceLease;
+    std::unique_ptr<PreparedSurfaceLease> stageSurfaceFrame(
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid);
+    // Commit a matching one-shot prewarm lease, or rebuild on a stale lease.
+    // This completes only the surface owner cohort, NOT FramePublicationEpoch.
+    bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,
+                             double time,const std::vector<uint8_t>* vision,
+                             const MapGrid& grid);
+    std::optional<bool> publishPendingTerrainFrame(render::Renderer3D& renderer,
+        const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid);
+    // Must be defined out-of-line: the opaque lease owns private GPU handles.
+    void discardPendingSurfaceLease() noexcept;
+    std::unique_ptr<PreparedSurfaceLease> pendingSurfaceLease_;
+    SurfacePrewarmStats surfacePrewarmStats_;
     std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
     std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
+    // Staged GPU kits may still own RHI handles after a refused full-idle
+    // rollback. Do not drop their owner until a later host recovery/shutdown.
+    std::unique_ptr<RtsRoadView> pendingRoadRecovery_;
+    std::unique_ptr<RtsShoreView> pendingShoreRecovery_;
     RtsGroundFx groundFx_;   // territory, diggable rock, lanes, roads (RtsGroundFx.cpp)
     FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
     RtsOverlays overlays_;   // data-driven overlays (RtsOverlays.cpp)
@@ -848,6 +983,11 @@ private:
     const std::vector<GridFieldDef>* fieldDefsSeen_ = nullptr;
     size_t fieldDefsCount_ = 0;
     bool fogMeshDirty_ = false;
+    // Strictly transient scope for scene mesh staging; never survives an
+    // RtsGroundFx::prepareMapSceneFrame call, including its throw path.
+    const MapGrid* stagedHeightGrid_ = nullptr;
+    const std::function<float(float,float)>* stagedHeightFn_ = nullptr;
+    const std::function<float(float,float,float)>* stagedRoadFn_ = nullptr;
     render::mat4 viewProj_;
     render::float3 camPos_;
     // planets

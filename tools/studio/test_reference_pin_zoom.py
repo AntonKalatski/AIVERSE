@@ -181,7 +181,7 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         scene=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")
         api=(ROOT/"apps/studio-native/mac/StudioMetalScene.h").read_text(encoding="utf-8")
         host=(ROOT/"apps/studio-native/mac/Main.mm").read_text(encoding="utf-8")
-        self.assertIn('const auto& view=rules["types"][entities[index].type]["view"]',scene)
+        self.assertIn('const auto& view=rules["types"][entity.type]["view"]',scene)
         self.assertIn('path.rfind("content/",0)!=0',scene)
         self.assertIn('fs::is_symlink(status)',scene)
         self.assertIn('render::loadModel(path,read)',scene)
@@ -194,7 +194,7 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn('if (hasModel) continue;',scene)
         self.assertIn('clearDocumentModels();',scene)
         self.assertIn('model->skinned()',scene)
-        self.assertIn('material.alpha!=render::AlphaMode::Opaque',scene)
+        self.assertIn('material.alpha==render::AlphaMode::Blend',scene)  # masked rigid models are allowed
         self.assertIn('model->batching.autoLod=false',scene)
         self.assertIn('rejectedDocumentModels_',api)
         self.assertIn('documentModelTimes_',api)

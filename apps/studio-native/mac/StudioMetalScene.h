@@ -15,6 +15,8 @@
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/NereidManifestHost.h"
+#include "engine/render/Prisma.h"
+#include "engine/render/RenderLightingRuntime.h"
 
 namespace aiverse::studio {
 class StudioMetalScene final {
@@ -26,8 +28,10 @@ public:
     void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                bool fpsProject, const std::string& selectedId,
                const std::string& previewName, const Json& previewFactors,
-               uint64_t previewRevision, float levelHeight,
-               const std::string& projectPath, const Json& rules);
+               uint64_t previewRevision, float levelHeight = 1.5f,
+               const std::string& projectPath = {}, const Json& rules = Json::object());
+    void captureNextFrame(gfx::Device::CaptureFn callback) { device_->captureNextFrame(std::move(callback)); }
+    const std::string& lightingStatus() const { return lightingStatus_; }
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -37,11 +41,16 @@ public:
     void move(float right, float up, float forward);
     void focusSelected(const editor::MapDoc& map, bool fpsProject, const std::string& selectedId);
     void resetView();
-    void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
+    void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
     render::Renderer3D renderer_;
     world::NereidManifestHost nereid_;
+    render::Prisma post_;
+    render::RenderLightingRuntime lightingRuntime_;
+    std::unique_ptr<render::Model> lightingModel_;
+    uint64_t lightingRevision_ = std::numeric_limits<uint64_t>::max();
+    std::string lightingStatus_ = "Preview geometry · GI: off · Direct: standard";
     render::Mesh cube_;
     render::Mesh terrain_;
     std::unique_ptr<render::Model> materialSphere_;

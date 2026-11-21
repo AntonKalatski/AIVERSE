@@ -2079,3 +2079,15 @@ Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
 owner and one editor viewport target owner, both animation playback APIs and GPU
 fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
 merge only. Remote documentation and latest MotionWeave merge/push remain next.
+
+
+## 2026-11-20 — lighting branch Light entities
+
+Code d6ddd951b521f7a10aff5ddace7ebd76032eb8c7 adds stable document light identities, common Transform/Light components and component-targeted Studio Inspector writes. Canonical data remains legacy lights[] through an explicit compatibility adapter; no duplicate state or simulation ECS migration claim. Native RTS/FPS persistence and Release Metal/UI checks passed. See docs/agent-handoffs/lighting-main-stage34-light-entities-2026-11-20.md for commands, compatibility, remaining scope and exact evidence.
+
+
+## 2026-11-20 — Lighting main integration Stage 36
+
+Merge 9611d05d5aaf299f0892b1fe2f60b935a6c5bede on main preserves VT/LENS/Vulkan contracts and adds tested
+GI coexistence. See docs/agent-handoffs/lighting-main-stage36-merge-2026-11-20.md
+for exact builds/tests, initial failures and remaining platform gates.

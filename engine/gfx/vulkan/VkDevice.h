@@ -121,6 +121,15 @@ struct VPipeline {
 };
 
 struct FrameSlot {
+    // Offscreen RT readbacks are owned by the submitting frame slot until its
+    // fence signals. Never recycle staging storage while a copy is in flight.
+    struct TextureCapture {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation allocation{};
+        int width=0, height=0;
+        Device::CaptureFn callback;
+    };
+    std::vector<TextureCapture> textureCaptures;
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer pre = VK_NULL_HANDLE, main = VK_NULL_HANDLE;
     bool preRecording = false;
@@ -193,6 +202,7 @@ public:
     bool copyColor(TextureHandle from, TextureHandle to) override;
     bool readTextureAsync(TextureHandle, TextureReadbackDesc, TextureReadFn) override;
     bool gpuHealthy() const override { return healthy_; }
+    bool waitIdle() override;
     // serial_ names the currently recording VkFence-backed frame. This is
     // NOT evidence of completion. completed_ advances only after a real
     // vkWaitForFences return of VK_SUCCESS for its recorded frame slot.
@@ -213,6 +223,7 @@ public:
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
+    bool captureTexture(TextureHandle source,CaptureFn callback) override;
 
     void beginPass(const PassDesc& d) override;
     bool supportsRenderTargetPasses() const override { return true; }
@@ -247,6 +258,7 @@ private:
     void collectGarbage();
     void present();
     void readBackBuffer();
+    void completeTextureCaptures(FrameSlot& slot,bool succeeded);
     void deliverTextureReads();
     void deliverComputeReadbacks();
     void shutdownCompute();

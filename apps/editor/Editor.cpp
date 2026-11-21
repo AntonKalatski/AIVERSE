@@ -254,6 +254,7 @@ void Editor::shutdown() {
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
+    for(auto& window:windows_)window->shutdownAfterGpuIdle(*this);
     windows_.clear(); // All windows (including ShaderGraph previews) retire owned resources.
     // The last submitted GPU frame may still reference ShaderGraph
     // pipelines/buffers/portrait resources queued by window destruction.

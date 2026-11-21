@@ -14,6 +14,9 @@
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
 #include "StrataGpuCulling.h"
 #endif
+#include "GiMainCpuBridge.h"
+#include "GiMainGpuBridge.h"
+#include "GiTextureBudget.h"
 
 #include <algorithm>
 #include <array>
@@ -84,6 +87,7 @@ constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
 constexpr uint32_t kKeyDrawCallView = 32768;
+constexpr uint32_t kKeyDynamicGi = 1u << 25; // isolated opt-in model shader variant
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
 constexpr uint32_t kKeyModelVirtualTexture = 1u << 28;
 constexpr uint32_t kKeyModelVirtualAlpha = 1u << 30;
@@ -113,6 +117,46 @@ std::array<double, 8> cpuMdiStageValues(
 }
 
 } // namespace
+
+bool Renderer3D::setDynamicGiOverlay(const GiMainCpuBridge& bridge) {
+    dynamicGiAtlas_={};
+    if (!dev_ || bridge.atlas().device()!=dev_ ||
+        !giFragmentTextureBudgetAllows(16,false,false,false))
+        return false;
+    const auto atlas=bridge.borrowedAtlas();
+    if (!atlas.valid()) return false;
+    const auto& config=bridge.config();
+    if (!std::isfinite(config.spacing) || config.spacing<=0 ||
+        config.nx<1 || config.ny<1 || config.nz<1)
+        return false;
+    dynamicGiUniforms_={
+        config.origin.x,config.origin.y,config.origin.z,1.0f/config.spacing,
+        float(config.nx),float(config.ny),float(config.nz),0.0f,
+        0.0f,0.0f,0.0f,0.0f
+    };
+    dynamicGiAtlas_=atlas;
+    return true;
+}
+
+bool Renderer3D::setDynamicGiOverlay(const GiMainGpuBridge& bridge) {
+    dynamicGiAtlas_={};
+    if (!dev_ || bridge.device()!=dev_ ||
+        !giFragmentTextureBudgetAllows(16,false,false,false))
+        return false;
+    const auto atlas=bridge.borrowForFrame();
+    if (!atlas.valid()) return false;
+    const auto& config=bridge.config();
+    if (!std::isfinite(config.spacing) || config.spacing<=0 ||
+        config.nx<1 || config.ny<1 || config.nz<1)
+        return false;
+    dynamicGiUniforms_={
+        config.origin.x,config.origin.y,config.origin.z,1.0f/config.spacing,
+        float(config.nx),float(config.ny),float(config.nz),0.0f,
+        0.0f,0.0f,0.0f,0.0f
+    };
+    dynamicGiAtlas_=atlas;
+    return true;
+}
 
 void Renderer3D::recordCpuMdiStageSample(
     size_t phase, const ModelRenderStats::CpuMdiStageProfile& before) {
@@ -378,7 +422,13 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         (it.mat->alpha == AlphaMode::Blend || it.tint.w < 0.99f || transparentItem(it.flags)));
     const bool twoSided = !outline && it.mat->doubleSided;
     const bool giPhase = phase == 1 || phase == 2;
+    const bool surfaceCapture=lumaSurfaceCapture_ && giPhase;
+    const bool materialCapture=(lumaMaterialCapture_ || surfaceCapture) && giPhase;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
+    // tex13 is Shader Graph's first sampler; opt-in GI and graph materials
+    // move to tex14+ when GI occupies tex13. GPU-driven ICB uses a separate ABI.
+    const bool dynamicGi = giPhase &&
+                           dynamicGiAtlas_.valid();
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
@@ -413,15 +463,22 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         !materialPalette && graphVirtualSlots &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
     const bool vtTrilinear = vtSampling && vtBinding.indexedMipTable;
+    const int graphTextureSlot=kGraphTextureSlot+(dynamicGi && !vtSampling ? 1 : 0);
+    const int dynamicGiTextureSlot=vtSampling ? std::max(virtualTableSlot+1,alphaR8?16:0) : 13;
+    if(dynamicGi && dynamicGiTextureSlot>=dev_->maxFragmentTextureSlots()) {
+        modelError_="dynamic GI and virtual material exceed fragment texture budget";
+        return {};
+    }
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
         (vtTrilinear ? kKeyModelVirtualTrilinear : 0u) |
         (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
-        gpuInstanceShaderBit | studioShaderBits |
+        gpuInstanceShaderBit | (materialCapture ? 0u : studioShaderBits) |
+        (materialCapture ? (1u<<24) : 0u) | (surfaceCapture ? (1u<<23) : 0u) |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
                                ((drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2)) ? kKeyDrawCallView : 0u) |
-                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
+                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u) | (dynamicGi ? kKeyDynamicGi : 0u);
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) |
         (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u) | (maskPass ? (1u << 29) : 0u);
@@ -461,7 +518,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         // Only fragment-only, opaque Shader Graph permutations can have
         // their direct texture slots remapped into the Metal PBR ICB
         // argument table. Vertex-graph texture arguments stay on CPU draws.
-        const bool graphIcbCandidate = graph && !shadow && !outline &&
+        const bool graphIcbCandidate = graph && !dynamicGi && !shadow && !outline &&
             !depthAfter && !mask && !blend && !lodFade &&
             !skinned && !baked && !morph && !materialPalette &&
             graph->vertexMsl.empty() && graph->vertexGlsl.empty() &&
@@ -478,14 +535,32 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (lodFade) defs += "#define LODFADE 1\n";
         if (outline) defs += "#define OUTLINE 1\n";
         if (shaderKey & kKeyDrawCallView) defs += "#define DRAW_CALL_VIEW 1\n";
-        if (studioShaderBits) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
+        if (materialCapture) defs += surfaceCapture ? "#define LUMAWEAVE_SURFACE 1\n" : "#define LUMAWEAVE_MATERIAL 1\n";
+        if (studioShaderBits && !materialCapture) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
+        if (dynamicGi) {
+            defs += "#define DYNAMIC_GI 1\n";
+            defs += "#define DYNAMIC_GI_TEXTURE tex"+std::to_string(dynamicGiTextureSlot)+"\n";
+            defs += "#define DYNAMIC_GI_SLOT "+std::to_string(dynamicGiTextureSlot)+"\n";
+            defs += "#define DYNAMIC_GI_BUFFER "+std::to_string(vtSampling?8:7)+"\n";
+            defs += std::string("#define DYNAMIC_GI_UNIFORM U")+(vtSampling?"7":"6")+"\n";
+        }
         if (lightmap || probes) defs += "#define AIVERSE_GIQ " + std::to_string(bakedQuality_ == BakedQuality::Low ? 1 : 2) + "\n";
         defs += "#define AIVERSE_Q " + std::to_string(int(matQuality_)) + "\n";
         std::string vs = defs + (shadow ? shaders::kModelShadowVS : shaders::kModelVS);
         std::string fs = defs + (shadow ? shaders::kModelShadowFS : shaders::kModelFS);
         std::string msl = defs + (shadow ? shaders::kModelShadowMSL : shaders::kModelMSL);
+        if(dynamicGi && vtSampling) {
+            // Resolve names before the Vulkan source binding translator sees them.
+            auto rename=[](std::string& text,const std::string& from,const std::string& to) {
+                size_t at=0;while((at=text.find(from,at))!=std::string::npos) {
+                    text.replace(at,from.size(),to);at+=to.size();
+                }
+            };
+            rename(fs,"uniform U6 {","uniform U7 {");
+            rename(fs,"tex13","tex"+std::to_string(dynamicGiTextureSlot));
+        }
         if (graph) {
             auto replace = [](std::string& source,const std::string& marker,const std::string& text) {
                 const auto at=source.find(marker);if(at!=std::string::npos)source.replace(at,marker.size(),text);
@@ -495,9 +570,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 if(!vertexOnly) {
                     std::string declarations, args, macros;
                     for(size_t i=0;i<graph->textures.size();++i) {
-                        const auto slot=std::to_string(kGraphTextureSlot+int(i)), index=std::to_string(i);
+                        const auto slot=std::to_string(graphTextureSlot+int(i)), index=std::to_string(i);
                         declarations+="uniform sampler2D tex"+slot+";\n";
-                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(kGraphTextureSlot+int(i));
+                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE"+index+"(uv) "+(metal?"tex"+slot+".sample(s"+slot+",uv)":"texture(tex"+slot+",uv)")+"\n";
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
@@ -567,9 +642,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+=v3+" sg_view="+(metal?"f.camPos.xyz":"u_camPos.xyz")+"-sg_world; "+v+" sg_color="+(metal?"in.col":"a_col")+"; float sg_time="+(metal?"f.camPos.w":"u_camPos.w")+";\n";
                     std::string args,declarations,macros;
                     for(size_t i=0;i<graph->textures.size();++i) {
-                        const auto slot=std::to_string(kGraphTextureSlot+int(i)),index=std::to_string(i);
+                        const auto slot=std::to_string(graphTextureSlot+int(i)),index=std::to_string(i);
                         declarations+="uniform sampler2D tex"+slot+";\n";
-                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(kGraphTextureSlot+int(i));
+                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
                     if(metal)replace(source,"vs_main(VERTEX_ARGS)","vs_main(VERTEX_ARGS"+args+")");else source=declarations+source;
@@ -581,7 +656,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 }
             };
             inject(vs,false,true);inject(fs,false,false);inject(msl,true,false);
-            for(int slot=16;slot<kGraphTextureSlot+int(graph->textures.size());++slot) {
+            for(int slot=16;slot<graphTextureSlot+int(graph->textures.size());++slot) {
                 const auto at=msl.find("using namespace metal;");
                 if(at!=std::string::npos)msl.insert(at+22,"\nconstexpr sampler s"+std::to_string(slot)+"(coord::normalized, address::repeat, filter::linear, mip_filter::linear);");
             }
@@ -596,10 +671,12 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
-        sd.uniformSlots = vtSampling ? 7 : (shadow ? 5 : 6);
+        sd.uniformSlots = dynamicGi ? (vtSampling ? 8 : 7) : vtSampling ? 7 : (shadow ? 5 : 6);
         sd.textureSlots = alphaR8 ? 16 : vtSampling ? virtualTableSlot+1 :
             (graph && !graph->textures.empty() ?
-            kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13); sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
+            graphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13);
+        sd.textureSlots=std::max(sd.textureSlots,dynamicGi ? dynamicGiTextureSlot+1 : 0);
+        sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
         else e.shader = dev_->createShader(sd);
@@ -1013,6 +1090,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
+    if(modelPacketTap_)modelPacketTap_(d);
     recordPersistentModel(d);
     if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
@@ -1623,7 +1701,24 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (!ph.valid()) return false;
     if (!(ph == currentPipe_)) {
         dev_->setPipeline(ph); currentPipe_ = ph;
-        if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
+        if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }
+    }
+    // Even if the model pipeline is already bound, another pass may have
+    // changed the texture/uniform state. Always refresh this opt-in borrow.
+    const Material& mt = *it.mat;
+    const auto activeGraph = mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality ? mt.shaderGraph.get() : nullptr;
+    ModelVirtualTextureBinding vt;
+    int atlasSlot=13,tableSlot=14;
+    const bool canBindVt=!activeGraph || (activeGraph->usesVirtualTexture &&
+        modelGraphVirtualTextureSlots(*dev_,activeGraph->textures.size(),atlasSlot,tableSlot));
+    const bool drawVt=(phase==1 || phase==2) && !instancePalette && !it.paletteMaterials &&
+        canBindVt && resolveModelVirtualTexture(*it.model,mt,vt);
+    const bool alphaCoverage=mt.alpha==AlphaMode::Mask && !activeGraph && mt.baseTex>=0 &&
+        size_t(mt.baseTex)<it.model->images.size() && it.model->images[size_t(mt.baseTex)].virtualAlphaMask.valid();
+    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid()) {
+        dev_->setUniforms(drawVt?7:6,dynamicGiUniforms_.data(),
+                          dynamicGiUniforms_.size()*sizeof(float));
+        dev_->setTexture(drawVt?std::max(tableSlot+1,alphaCoverage?16:0):13,dynamicGiAtlas_);
     }
     const auto afterPipeBind = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     // Upload the whole instance block declared by this backend's shader variant.
@@ -1663,7 +1758,6 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (!gpuInstances)
         dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
     const auto afterInstanceUpload = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-    const Material& mt = *it.mat;
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
     const bool newModel = !lastItem_ || lastItem_->model != it.model || (phase != 0 && lastItem_->gi != 0);
     // As in a state-oriented render batch, Material* identity does not decide
@@ -1688,6 +1782,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(2, &mu, sizeof mu);
     }
     if (materialStateChanged || newModel) {
+        const int graphTextureSlot=kGraphTextureSlot+(((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !drawVt)?1:0);
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
@@ -1698,7 +1793,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             const auto coverage = it.model->images[size_t(mt.baseTex)].virtualAlphaMask;
             if (coverage.valid()) dev_->setTexture(15,coverage);
         }
-        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(kGraphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
+        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(graphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
             dev_->setTexture(3, tex(mt.normalTex, flatNormal_));
@@ -1711,18 +1806,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // the scene may switch a Horizon archive generation between frames.
     // Shader variants use two spare built-in fragment slots (13/14) and
     // one U6 vec4. The original tex1 remains bound as fallback.
-    const auto activeGraph = mt.shaderGraph &&
-        int(matQuality_) >= mt.shaderGraph->minQuality ?
-        mt.shaderGraph.get() : nullptr;
-    if ((phase == 1 || phase == 2) &&
-        !instancePalette && !it.paletteMaterials &&
-        (!activeGraph || activeGraph->usesVirtualTexture)) {
-        ModelVirtualTextureBinding vt;
-        int atlasSlot=13,tableSlot=14;
-        const bool canBind = !activeGraph ||
-            modelGraphVirtualTextureSlots(*dev_,activeGraph->textures.size(),
-                                         atlasSlot,tableSlot);
-        if (canBind && resolveModelVirtualTexture(*it.model,mt,vt)) {
+    if (drawVt) {
             ModelVirtualTextureUniforms params;
             params.layer = float(vt.layer);
             params.gutterPixels = vt.gutterPixels;
@@ -1740,7 +1824,6 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
                 trilinear.anisotropyTaps=float(vt.virtualAnisotropyTaps);
                 dev_->setUniforms(6,&trilinear,sizeof(trilinear));
             } else dev_->setUniforms(6,&params,sizeof(params));
-        }
     }
     if (newModel) {
         dev_->setTexture(7, it.model->baked.tex.valid() ? it.model->baked.tex : white_);
@@ -2163,6 +2246,8 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
+    // Dynamic probe GI uses the ICB argument-buffer tex13 and inherited U6.
+    // Baked lightmaps/probes and deforming/graph models keep their own fallback.
 
     // Feedback from the previous completed pass, sampled before counters reset.
     // This is CPU submission feedback, not measured GPU busy-time.
@@ -2201,7 +2286,7 @@ void Renderer3D::prepareGpuModelDraws() {
             (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
             it.tint.w < .99f || it.mat->transparent ||
             (it.mat->shaderGraph &&
-             (!graphIcbEnabled ||
+             (!graphIcbEnabled || dynamicGiAtlas_.valid() ||
               int(matQuality_)<it.mat->shaderGraph->minQuality ||
               !gpuIcbFragmentGraphEligible(*it.mat) ||
               !supportsModelGraphSourceTextures(
@@ -2242,7 +2327,7 @@ void Renderer3D::prepareGpuModelDraws() {
             // parameters. Indexed sampling needs the 48-byte U6 contract and
             // has no ICB shader permutation. Exclude it before preflight/cache
             // construction instead of attempting an unsupported draw each frame.
-            if (vtBindings[index].indexedMipTable) continue;
+            if (vtBindings[index].indexedMipTable || dynamicGiAtlas_.valid()) continue;
             vtEnabled[index] = 1;
         }
         eligibleIndices[acceptedCount++]=index;

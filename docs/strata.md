@@ -1,18 +1,48 @@
 # Strata — AIVERSE virtual geometry
 
-Status (2026-11-19): **experimental CPU staging and per-pass planning, not GPU draw submission**.
-Working branch: `feature/strata-virtual-geometry`.
-Agent resume log: [strata-virtual-geometry handoff](agent-handoffs/strata-virtual-geometry.md).
+Status (2026-11-20): **integrated into main; experimental and opt-in, with
+CPU planning, streaming, portable indexed rendering and gated Vulkan GPU
+selection/indirect routing implemented. Full production acceptance is open.**
+
+## Current implementation and verification
+
+| Subsystem | Implemented behavior | Verification and remaining limits |
+| --- | --- | --- |
+| Builder, source seams, LOD planning | Rigid opaque source adaptation, hierarchy and source seam certification, per-view CPU selection and hysteresis | CPU fixtures pass; certificates do not prove lossy visual quality |
+| Residency and disk streaming | Budgeted index pages, root fallback, asynchronous disk reads and shared multi-world coordination | CPU/recording lifecycle, corrupt-archive and budget tests pass, including repeated runs; hardware residency-pressure orbit remains open |
+| Portable rendering | CPU-selected frontiers submitted through the existing Renderer3D and original source vertex buffers | Actual Metal lossless raster, sun-depth and reflection fixtures pass; Vulkan/GLES/GL/WebGL hardware visual acceptance remains open |
+| GPU selection and temporal state | Metal/Vulkan compute culling and bounded GPU temporal histories | Actual Metal selection and three-frame temporal fixtures pass; Vulkan runtime requires its own real device gate |
+| Vulkan GPU indirect rendering | Explicitly gated per-material/instance/pass packets consumed by Renderer3D | Recording contracts and GLSL/SPIR-V compilation pass; real Vulkan compute/indirect/temporal and raster/depth/reflection acceptance is not certified |
+| Production readiness | Experimental flags and manual parity gates stay OFF by default | Spot-shadow, lossy mixed-LOD seam ROI, hardware pressure/popping, native arm64 and performance acceptance are not established by the current QA run |
+
+The latest [system QA report](qa/strata-system-2026-11-20.md) records the
+tested SHA, actual device, evidence and failures. That Mac run used x86_64
+binaries under Rosetta on Apple M3 Ultra, not native arm64 binaries. Successful
+Metal fixture execution must not be generalized to other backends or scenes.
+The [visual acceptance matrix](strata-stage18-visual-acceptance.md) remains
+the release checklist; it is not a declaration that every scenario passed.
+
+The Vulkan test executable supports `--compile-only` (no device required),
+the default optional runtime mode (CTest skip code 77 if unavailable), and
+`--require-device` (unavailable device/compute is a failure). The focused
+Lavapipe CI uses the strict mode. Shader compilation alone is not GPU parity.
+
+Resume from the [Stage21 QA handoff](agent-handoffs/strata-stage21-system-qa-2026-11-20.md)
+and its follow-up fixes. The [original feature log](agent-handoffs/strata-virtual-geometry.md)
+and numbered stages below are historical implementation checkpoints;
+their dated “not implemented/not tested” statements describe those stages,
+not the current summary above.
 
 ## Scope and ownership
 Strata is a genre-independent **presentation** system for rigid, opaque geometry.
 It must not own ECS worlds, physics/terrain simulation, game logic or materials.
 It does not replace `GeometryScene`, existing `GeometryCluster`, AutoLOD,
 `GlobalGeometryPool`, Metal batching, or the existing RHI.
-Strata is intended to become an optional geometry representation consumed by
-the shared renderer. The current implementation has no GPU rendering path.
+Strata is an optional geometry representation consumed by the shared renderer.
+It prepares selections and index/indirect data; Renderer3D remains the single
+draw owner, with the original geometry/material ownership and Legacy fallback.
 
-## Current public contract
+## Builder and CPU asset contract
 - `engine/render/StrataGeometry.h`: `ClusterNode`, `SelectionInput`,
   `SelectionOutput`, `validate()`, CPU reference `select()`.
 - `engine/render/StrataBuilder.h`: `BuildInput`, `BuildOptions`,
@@ -22,7 +52,9 @@ the shared renderer. The current implementation has no GPU rendering path.
   This is a read-only, opt-in adapter for CPU `Model` assets, not a renderer hook.
 - Link `aiverse_strata_builder` or `aiverse_strata_model_adapter` in project
   CMake when `AIVERSE_BUILD_STRATA=ON` (ON by default). Both reuse the pinned
-  `aiverse_meshoptimizer_lod` dependency. There is **no render integration**.
+  `aiverse_meshoptimizer_lod` dependency. Runtime integration uses the separate
+  `aiverse_strata_view`, `aiverse_strata_portable`, `aiverse_strata_gpu_scene`,
+  `aiverse_strata_gpu_culling` and `aiverse_strata_render_routing` targets.
 - `build()` accepts **one material partition per invocation**; vertex
   positions begin with three floats and may be interleaved. Source indices
   and positions are borrowed during the call only. On failure, output stays
@@ -53,9 +85,10 @@ the shared renderer. The current implementation has no GPU rendering path.
   It skips mutable nodes, skinned/morphed, already uploaded, meshes with existing
   authored/generated LODs, material variants and alpha/custom-shader materials.
   It returns explicit skip reasons and fails transactionally on invalid eligible
-  geometry. The adapter is not hooked up to GeometryScene draw calls yet.
-- This is still experimental: no verified cracks/material parity, GPU streaming
-  or per-pass culling. Do not automatically route displaced surfaces here.
+  geometry. GeometryScene staging consumes these assets; the adapter itself
+  does not submit draws or take ownership from Renderer3D.
+- This is still experimental; the limited verified scenarios are listed above.
+  Do not automatically route displaced surfaces here.
   Importers should preserve existing meshes and exact LOD0 as a fallback.
 
 ## Stage 4 — optional CPU staging in GeometryScene
@@ -2368,3 +2401,32 @@ comparison to the zero-hysteresis baseline; Stage19 is the
 single final full build, CTest and real hardware acceptance.
 Exact commits/next-agent handoff:
 `docs/agent-handoffs/strata-virtual-geometry.md`, Stage17.4.
+
+
+## Engine skill and MCP authoring (2026-11-20)
+
+The engine skill is [aiverse-strata](../skills/visuals/aiverse-strata/SKILL.md),
+registered in `skills/catalog.json` (regenerate with `python3 tools/skills/catalog.py generate`).
+It ships with the engine; no global Codex skill installation is required.
+
+Rebuild `aiversemcp` and the editor to expose the shared Workspace operations:
+
+- `strata_capabilities {}` reports whether this executable includes the builder,
+  analysis limits and documentation paths. `gpuVerified: false` means this command
+  does not verify a GPU; it is not a device capability probe.
+- `strata_model_analyze {"model":"models/scenery.glb"}` requires an open project.
+  It loads the actual source and invokes `buildModelAsset` with default options,
+  reporting eligible/skipped primitives, exact skip reasons, node/meshlet counts,
+  auxiliary index bytes and source/primitive seam certificates. No scene edits,
+  archive writes, GPU resources or flag changes occur.
+
+Analysis allows at most 250000 vertices, 750000 indices and 64 MiB cumulative
+file reads. All dependency paths are project-contained, including resolved
+symlinks. These bounds limit importer input and builder work, not decoded image
+memory. `AIVERSE_BUILD_STRATA=OFF` retains capability discovery and returns an
+explicit unavailable error for analysis. CPU eligibility and seam certification
+are not GPU visual parity, draw-call counts, VRAM usage or measured speedups.
+
+Use the existing AIVERSE MCP connection. The stdio server can run these Workspace
+operations locally without an editor (`--no-editor`); when connected, calls use
+the live editor registry. Restart/rebuild both sides to avoid stale tool lists.

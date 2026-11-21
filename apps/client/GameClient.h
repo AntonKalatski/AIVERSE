@@ -30,6 +30,8 @@
 #include "engine/render/BakedLighting.h"
 #include "engine/render/QualityGovernor.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/CameraClientAdapter.h"
+#include "engine/render/CameraModelSnapshot.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/services/Store.h"
 #include "engine/sim/Simulation.h"
@@ -135,6 +137,19 @@ public:
     bool hostCanStep() const;
     bool setHostPaused(bool paused);
     bool requestHostStep();
+    // Non-owning, frame-scoped LENS RT handles for native UI/material consumers.
+    gfx::TextureHandle lensColorTarget(uint64_t key) const {
+        return lensCamerasActive_?lensCameras_.colorTarget(key):gfx::TextureHandle{};
+    }
+    gfx::TextureHandle lensDepthTarget(uint64_t key) const {
+        return lensCamerasActive_?lensCameras_.depthTarget(key):gfx::TextureHandle{};
+    }
+    bool lensTargetInfo(uint64_t key,int& w,int& h,bool& hdr) const {
+        return lensCamerasActive_&&lensCameras_.targetInfo(key,w,h,hdr);
+    }
+    bool bindLensColorTarget(int slot,uint64_t key) const {
+        return lensCamerasActive_&&dev_&&lensCameras_.bindColorTarget(*dev_,slot,key);
+    }
 
 private:
     bool hostPaused_ = false, hostStep_ = false;
@@ -344,6 +359,9 @@ private:
     Minimap minimap_;
 
     Renderer3D r3d_;
+    render::CameraClientAdapter lensCameras_;
+    render::CameraModelSnapshot lensModelSnapshot_;
+    bool lensCamerasActive_=false;
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
     // Stage41: ordered nonblocking CPU/GPU samples only when the streamed

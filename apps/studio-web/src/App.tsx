@@ -118,12 +118,12 @@ export default function App() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
-  const changeProperty = async (key: string, value: string | number | boolean) => {
+  const changeProperty = async (key: string, value: string | number | boolean, componentId?: string) => {
     const entityId = inspectorPin?.entity.id ?? snapshot?.selectedId;
     if (!entityId) return;
     setBusy(true);
     try {
-      const result = await invoke('studio.setProperty', { entityId, key, value });
+      const result = await invoke('studio.setProperty', { entityId, componentId, key, value });
       setSnapshot(result);
       if (inspectorPin) setInspectorPin(current => current && current.entity.id === entityId
         ? { ...current, properties: current.properties.map(property =>

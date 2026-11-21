@@ -71,6 +71,7 @@
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
     BOOL closeApproved_;
+    unsigned lightingStatusTicks_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -386,6 +387,8 @@
                 float(session_->workspace().project.rules.levelHeight.toDouble()),
                 session_->workspace().project.dir,
                 session_->workspace().project.rulesJson);
+            if((lightingStatusTicks_++ % 60)==0)
+                [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
@@ -871,7 +874,7 @@
              method=="studio.entityCreate" || method=="studio.entityDelete" ||
              method=="studio.entityDuplicate" || method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
-             method=="studio.nereidFlowSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
+             method=="studio.nereidFlowSet" || method=="studio.renderLightingSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate")) {
             [self sendStudioEvent:"document.changed" message:""];
