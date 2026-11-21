@@ -46,6 +46,7 @@
 @interface StudioMetalView : NSView {
     NSPoint press_;
     BOOL dragged_;
+    BOOL moveDrag_;
 }
 @property(nonatomic, assign) StudioHost* host;
 @end
@@ -87,6 +88,9 @@
 - (void)publishSceneCamera;
 - (std::vector<std::string>)materialSlotsFor:(const std::string&)asset;
 - (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sceneMoveEnd;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
@@ -103,7 +107,11 @@
 - (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
 @end
 
+// Last left press inside the WebView: HTML asks the host to start a title-bar
+// window drag asynchronously, after the press was already delivered.
+static NSEvent* gStudioLastWebMouseDown=nil;
 @implementation StudioFileDropWebView
+- (void)mouseDown:(NSEvent*)event { gStudioLastWebMouseDown=event; [super mouseDown:event]; }
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
     NSArray* urls=[[sender draggingPasteboard]
         readObjectsForClasses:@[[NSURL class]]
@@ -146,11 +154,20 @@
     press_=[self convertPoint:event.locationInWindow fromView:nil];
     dragged_=NO;
     [self.window makeFirstResponder:self];
+    // Plain LMB on a move handle starts an axis drag (Unity Move tool).
+    moveDrag_=!(event.modifierFlags & NSEventModifierFlagOption) &&
+        [self.host sceneMoveBeginAtX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height];
 }
 // Unity Scene view mapping, shared with the HTML composite path
 // (apps/studio-web/src/panels/sceneCamera.ts): LMB select, Alt+LMB orbit,
 // Alt+Cmd+LMB / MMB pan, RMB flythrough (WASD/QE), Alt+RMB zoom.
 - (void)mouseDragged:(NSEvent*)event {
+    if (moveDrag_) {
+        const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+        dragged_=YES;
+        [self.host sceneMoveUpdateAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+        return;
+    }
     const NSEventModifierFlags flags=event.modifierFlags;
     if (!(flags & NSEventModifierFlagOption)) return; // plain LMB drag: reserved for selection
     dragged_=YES;
@@ -158,6 +175,7 @@
     else [self.host orbitX:event.deltaX y:event.deltaY];
 }
 - (void)mouseUp:(NSEvent*)event {
+    if (moveDrag_) { moveDrag_=NO; [self.host sceneMoveEnd]; return; }
     const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
     if (dragged_ || std::hypot(double(point.x-press_.x), double(point.y-press_.y)) >= 5.0) return;
     if ([self.host sceneGizmoAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height]) return;
@@ -171,29 +189,32 @@
 }
 - (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
 - (void)keyDown:(NSEvent*)event {
-    NSString* keys=event.charactersIgnoringModifiers.lowercaseString;
-    if (!keys.length) { [super keyDown:event]; return; }
-    const unichar key=[keys characterAtIndex:0];
+    // Physical key codes (ANSI positions): shortcuts work with any keyboard layout.
+    enum : unsigned short { kA=0,kS=1,kD=2,kF=3,kQ=12,kW=13,kE=14,kLeft=123,kRight=124,kDown=125,kUp=126,kHome=115 };
+    const unsigned short code=event.keyCode;
     const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    if (event.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) {
+        [super keyDown:event]; return;
+    }
     // WASD/QE fly only while the right button is held; arrows always move.
     const BOOL flying=([NSEvent pressedMouseButtons] & (1u<<1))!=0;
-    switch(key) {
-        case NSUpArrowFunctionKey: [self.host moveRight:0 up:0 forward:scale]; return;
-        case NSDownArrowFunctionKey: [self.host moveRight:0 up:0 forward:-scale]; return;
-        case NSLeftArrowFunctionKey: [self.host moveRight:-scale up:0 forward:0]; return;
-        case NSRightArrowFunctionKey: [self.host moveRight:scale up:0 forward:0]; return;
-        case NSHomeFunctionKey: [self.host resetSceneView]; return;
-        case 'f': if (!flying) { [self.host focusSceneSelection]; return; } break;
+    switch(code) {
+        case kUp: [self.host moveRight:0 up:0 forward:scale]; return;
+        case kDown: [self.host moveRight:0 up:0 forward:-scale]; return;
+        case kLeft: [self.host moveRight:-scale up:0 forward:0]; return;
+        case kRight: [self.host moveRight:scale up:0 forward:0]; return;
+        case kHome: [self.host resetSceneView]; return;
+        case kF: if (!flying) { [self.host focusSceneSelection]; return; } break;
         default: break;
     }
     if (!flying) { [super keyDown:event]; return; }
-    switch(key) {
-        case 'w': [self.host moveRight:0 up:0 forward:scale]; break;
-        case 's': [self.host moveRight:0 up:0 forward:-scale]; break;
-        case 'a': [self.host moveRight:-scale up:0 forward:0]; break;
-        case 'd': [self.host moveRight:scale up:0 forward:0]; break;
-        case 'q': [self.host moveRight:0 up:-scale forward:0]; break;
-        case 'e': [self.host moveRight:0 up:scale forward:0]; break;
+    switch(code) {
+        case kW: [self.host moveRight:0 up:0 forward:scale]; break;
+        case kS: [self.host moveRight:0 up:0 forward:-scale]; break;
+        case kA: [self.host moveRight:-scale up:0 forward:0]; break;
+        case kD: [self.host moveRight:scale up:0 forward:0]; break;
+        case kQ: [self.host moveRight:0 up:-scale forward:0]; break;
+        case kE: [self.host moveRight:0 up:scale forward:0]; break;
         default: [super keyDown:event]; break;
     }
 }
@@ -467,6 +488,45 @@
         session_->workspace().project.isFps(),session_->selectedObjectId());
 }
 - (void)resetSceneView { if (preview_) preview_->resetView(); }
+- (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    return preview_ && preview_->beginMoveDrag(float(x),float(y),float(width),float(height));
+}
+- (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (preview_) preview_->updateMoveDrag(float(x),float(y),float(width),float(height));
+}
+- (void)sceneMoveEnd {
+    if (!preview_ || !session_) return;
+    const auto commit=preview_->endMoveDrag();
+    if (!commit || !std::isfinite(commit->delta) || std::abs(commit->delta)<1e-4f) { preview_->clearMovePreview(); return; }
+    // Read the current Transform value through the same inspector API the UI uses,
+    // then write one undoable setProperty (y promotes legacy units; lights use height).
+    auto request=[&](const char* method,aiverse::Json params) {
+        aiverse::Json r=aiverse::Json::object();
+        r.set("id",aiverse::Json::number(int64_t(0)));r.set("method",aiverse::Json::string(method));r.set("params",std::move(params));
+        return session_->dispatch(r);
+    };
+    aiverse::Json params=aiverse::Json::object();params.set("entityId",aiverse::Json::string(commit->id));
+    const auto inspected=request("studio.inspect",params);
+    std::string key; double current=0; bool found=false;
+    const char* wanted[3][2]={{"x","x"},{"y","height"},{"z","z"}};
+    for (const auto& component:inspected["result"]["components"].items()) {
+        if (component.getStr("id")!="Transform") continue;
+        for (const char* candidate:wanted[commit->axis])
+            for (const auto& field:component["properties"].items())
+                if (!found && field.getStr("key")==candidate && field.getBool("editable",true)) {
+                    key=candidate;current=field["value"].toDouble();found=true;
+                }
+    }
+    if (found) {
+        aiverse::Json set=aiverse::Json::object();
+        set.set("entityId",aiverse::Json::string(commit->id));set.set("componentId",aiverse::Json::string("Transform"));
+        set.set("key",aiverse::Json::string(key));set.set("value",aiverse::Json::number(current+double(commit->delta),4));
+        const auto outcome=request("studio.setProperty",set);
+        if (outcome.has("error")) NSLog(@"AIVERSE move: %s",outcome.getStr("error").c_str());
+    }
+    preview_->clearMovePreview();
+    [self sendStudioEvent:"document.changed" message:""];
+}
 - (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return NO;
     const int hit=preview_->orientationGizmoHit(float(x),float(y),float(width),float(height));
@@ -778,6 +838,15 @@
     try {
         std::string bytes((const char*)data.bytes,(size_t)data.length);
         const aiverse::Json req=aiverse::Json::parse(bytes);
+        if (req.getStr("method")=="studio.windowDrag") {
+            // Title-bar drag from HTML: the WebView covers the transparent title bar.
+            NSEvent* current=[NSApp currentEvent];
+            NSEvent* press=(current && (current.type==NSEventTypeLeftMouseDown || current.type==NSEventTypeLeftMouseDragged))
+                ? current : gStudioLastWebMouseDown;
+            if (press && ([NSEvent pressedMouseButtons] & 1u)) [window_ performWindowDragWithEvent:press];
+            return;
+        }
+        if (req.getStr("method")=="studio.windowZoom") { [window_ zoom:nil]; return; }
         if (req.getStr("method")=="studio.webDiagnostic") {
             const std::string note=req["params"].getStr("message");
             if (note.size()<=1200) NSLog(@"[studio-web] JS: %s",note.c_str());
@@ -828,6 +897,16 @@
                     reply.set("error",aiverse::Json::string("Invalid camera orientation"));
                 else { preview_->setOrientation(float(yaw),float(pitch));
                        result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="handle" && input["phase"].isString() && input["x"].isNumber() && input["y"].isNumber() &&
+                       input["width"].isNumber() && input["height"].isNumber()) {
+                const double x=input["x"].toDouble(),y=input["y"].toDouble(),w=input["width"].toDouble(),h=input["height"].toDouble();
+                const std::string phase=input.getStr("phase");
+                if (!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||w<2||h<2||w>20000||h>20000)
+                    reply.set("error",aiverse::Json::string("Invalid move coordinates"));
+                else if (phase=="down") result.set("hit",aiverse::Json::fromBool([self sceneMoveBeginAtX:x y:y width:w height:h]));
+                else if (phase=="drag") { [self sceneMoveUpdateAtX:x y:y width:w height:h]; result.set("ok",aiverse::Json::fromBool(true)); }
+                else if (phase=="up") { [self sceneMoveEnd]; result.set("ok",aiverse::Json::fromBool(true)); }
+                else reply.set("error",aiverse::Json::string("Invalid move phase"));
             } else if (kind=="projection" &&
                        input["ortho"].boolean(false)==input["ortho"].boolean(true)) { // a real JSON bool
                 preview_->setOrthographic(input["ortho"].boolean());

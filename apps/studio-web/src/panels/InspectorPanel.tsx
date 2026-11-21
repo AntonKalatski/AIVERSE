@@ -18,11 +18,11 @@ const readCollapsed = (): Record<string, boolean> => {
   catch { return {}; }
 };
 
-/** Unity-like Transform rows: Position X Y Z, Rotation Y, Scale. */
+/** Unity-like Transform rows: Position, Rotation and Scale, each X Y Z. */
 const VECTOR_ROWS: Array<{ label: string; keys: Record<string, string> }> = [
   { label: 'Position', keys: { x: 'X', y: 'Y', height: 'Y', z: 'Z' } },
-  { label: 'Rotation', keys: { yaw: 'Y', facing: 'Y' } },
-  { label: 'Scale', keys: { scale: 'XYZ' } },
+  { label: 'Rotation', keys: { rotationX: 'X', rotationY: 'Y', rotationZ: 'Z', yaw: 'Y', facing: 'Y' } },
+  { label: 'Scale', keys: { scaleX: 'X', scaleY: 'Y', scaleZ: 'Z', scale: 'XYZ' } },
 ];
 function splitVectors(properties: StudioProperty[]) {
   const used = new Set<StudioProperty>();

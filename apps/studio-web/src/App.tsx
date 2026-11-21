@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { shortcutKey } from './keyboard';
 import {
   ChevronDown, CheckCircle2, FileCode2, FolderOpen,
   PanelBottom, Redo2, RefreshCw, Save, Settings2, Terminal, Undo2
 } from 'lucide-react';
-import { invoke, nativeConnected, onNativeEvent } from './bridge';
+import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
 import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
 } from './nestedDock';
@@ -90,9 +91,18 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Editor chrome: no browser context menu (Reload/Inspect…) except in text fields.
+    const menu = (event: MouseEvent) => {
+      if (!(event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')))
+        event.preventDefault();
+    };
+    window.addEventListener('contextmenu', menu);
+    return () => window.removeEventListener('contextmenu', menu);
+  }, []);
+  useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey || busy) return;
-      const key = event.key.toLowerCase();
+      const key = shortcutKey(event);
       const target = event.target;
       const editable = target instanceof HTMLElement &&
         !!target.closest('input,textarea,[contenteditable="true"]');
@@ -164,7 +174,13 @@ export default function App() {
   });
 
   return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')}>
-    <header className="titlebar">
+    <header className="titlebar"
+      onMouseDown={event => {
+        // Empty title-bar areas move the native window (like the macOS title bar).
+        if (event.button !== 0 || (event.target as HTMLElement).closest('button,input,select,textarea,a,[role=button],[role=menu]')) return;
+        if (event.detail === 2) nativeWindowAction('studio.windowZoom');
+        else nativeWindowAction('studio.windowDrag');
+      }}>
       <div className="wordmark"><img className="engine-mark" src={engineLogo} alt=""/>
         <strong>AIVERSE</strong></div>
       <button className="project-breadcrumb tool-button" onClick={() => void openProject()}

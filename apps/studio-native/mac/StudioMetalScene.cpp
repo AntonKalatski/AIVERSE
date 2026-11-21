@@ -46,6 +46,57 @@ float3 gizmoAxis(int arm) {
     return a;
 }
 }
+namespace {
+// Flat screen-space overlay drawn just beyond the near plane (always on top).
+struct Overlay2D {
+    Renderer3D& r; const RTSCamera& view; float W, H, depth;
+    bool at(float x,float y,float3& out) const {
+        float3 o,d; if(!view.screenRay(x,y,W,H,o,d))return false;
+        out=o+d*depth; return true;
+    }
+    void tri(float ax,float ay,float bx,float by,float cx,float cy,uint32_t col) const {
+        float3 a,b,c; if(at(ax,ay,a)&&at(bx,by,b)&&at(cx,cy,c))r.triangle(a,b,c,col);
+    }
+    void segment(float x0,float y0,float x1,float y1,float w,uint32_t col) const {
+        const float lx=x1-x0,ly=y1-y0,l=std::hypot(lx,ly); if(l<1e-3f)return;
+        const float nx=-ly/l*w*.5f,ny=lx/l*w*.5f;
+        tri(x0+nx,y0+ny,x1+nx,y1+ny,x1-nx,y1-ny,col);tri(x0+nx,y0+ny,x1-nx,y1-ny,x0-nx,y0-ny,col);
+    }
+};
+// Screen layout of the move handles for a pivot (units of W,H).
+struct MoveHandles { bool valid=false; float px=0,py=0; float tip[3][2]{}; float pick=8; };
+MoveHandles moveHandles(const RTSCamera& view,float3 pivot,float W,float H) {
+    MoveHandles h; float2 p;
+    if(!view.worldToScreen(pivot,W,H,p))return h;
+    const float lengthPx=std::min(W,H)*0.16f;
+    // World length that projects to ~lengthPx at the pivot depth (foreshortened per axis).
+    float worldPerPixel;
+    if(view.ortho) worldPerPixel=2.0f*view.orthoHalfHeight()/H;
+    else {
+        const float3 eye=view.eye();const float3 fwd=normalize(view.target-eye);
+        const float depth=std::max(0.05f,dot(pivot-eye,fwd));
+        worldPerPixel=2.0f*depth*std::tan(view.fovY*0.5f)/H;
+    }
+    const float S=lengthPx*worldPerPixel;
+    for(int a=0;a<3;++a){
+        float3 axis{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};float2 q;
+        if(!view.worldToScreen(pivot+axis*S,W,H,q))return h;
+        h.tip[a][0]=q.x;h.tip[a][1]=q.y;
+    }
+    h.px=p.x;h.py=p.y;h.pick=std::max(6.0f,lengthPx*0.09f);h.valid=true;return h;
+}
+float segmentDistance(float px,float py,float ax,float ay,float bx,float by){
+    const float vx=bx-ax,vy=by-ay,l2=vx*vx+vy*vy;
+    const float t=l2>0?std::clamp(((px-ax)*vx+(py-ay)*vy)/l2,0.0f,1.0f):0.0f;
+    return std::hypot(px-(ax+vx*t),py-(ay+vy*t));
+}
+// Parameter t of the point on the axis line (pivot + a*t) closest to a ray.
+bool axisParameter(float3 pivot,float3 a,float3 o,float3 d,float& t){
+    const float3 w0=pivot-o;const float b=dot(a,d),dw=dot(a,w0),ew=dot(d,w0);
+    const float denom=1.0f-b*b; if(std::fabs(denom)<1e-5f)return false;
+    t=(b*ew-dw)/denom; return std::isfinite(t);
+}
+}
 StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
@@ -337,6 +388,84 @@ void StudioMetalScene::setOrientation(float yaw,float pitch) {
     startTween(camera_.target,camera_.distance,yaw,std::clamp(pitch,-1.5707963f,1.5707963f));
 }
 void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; autoIso_=false; }
+void StudioMetalScene::captureSelectedBox(const mat4& world,float3 lo,float3 hi) {
+    for(int i=0;i<8;++i)
+        selectedBox_[i]=world.transformPoint({i&1?hi.x:lo.x,i&2?hi.y:lo.y,i&4?hi.z:lo.z});
+    selectedBoxValid_=true;
+}
+void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int height) {
+    if(!selectedBoxValid_)return;
+    const float W=float(width),H=float(height);
+    float2 p[8];
+    for(int i=0;i<8;++i)if(!view.worldToScreen(selectedBox_[i],W,H,p[i]))return;
+    Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.6f};
+    const float w=std::max(1.5f,std::min(W,H)*0.0025f);
+    constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
+    for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
+}
+int StudioMetalScene::moveGizmoHit(float x,float y,float width,float height) const {
+    if(materialMode_ || !selectedPivotValid_ || width<4 || height<4)return -1;
+    const auto h=moveHandles(viewCamera(),selectedPivot_,width,height);
+    if(!h.valid)return -1;
+    int best=-1;float bestD=h.pick;
+    for(int a=0;a<3;++a){const float d=segmentDistance(x,y,h.px,h.py,h.tip[a][0],h.tip[a][1]);if(d<bestD){bestD=d;best=a;}}
+    return best;
+}
+bool StudioMetalScene::beginMoveDrag(float x,float y,float width,float height) {
+    const int axis=moveGizmoHit(x,y,width,height);
+    if(axis<0)return false;
+    float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return false;
+    const float3 a{axis==0?1.f:0.f,axis==1?1.f:0.f,axis==2?1.f:0.f};
+    float t=0;if(!axisParameter(selectedPivot_,a,o,d,t))return false;
+    tween_.active=false;
+    moveDrag_={axis,selectedId_,selectedPivot_,t,{}};
+    return true;
+}
+void StudioMetalScene::updateMoveDrag(float x,float y,float width,float height) {
+    if(moveDrag_.axis<0)return;
+    float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return;
+    const int axis=moveDrag_.axis;
+    const float3 a{axis==0?1.f:0.f,axis==1?1.f:0.f,axis==2?1.f:0.f};
+    float t=0;if(!axisParameter(moveDrag_.pivot,a,o,d,t))return;
+    const float delta=std::clamp(t-moveDrag_.startT,-100000.0f,100000.0f);
+    moveDrag_.offset=a*delta;
+}
+std::optional<StudioMetalScene::MoveCommit> StudioMetalScene::endMoveDrag() {
+    if(moveDrag_.axis<0)return std::nullopt;
+    MoveCommit commit{moveDrag_.id,moveDrag_.axis,
+        moveDrag_.axis==0?moveDrag_.offset.x:moveDrag_.axis==1?moveDrag_.offset.y:moveDrag_.offset.z};
+    // The host commits synchronously, then calls clearMovePreview().
+    moveDrag_.axis=-1;
+    return commit;
+}
+void StudioMetalScene::drawMoveGizmo(const render::RTSCamera& view,int width,int height) {
+    if(!selectedPivotValid_)return;
+    const float W=float(width),H=float(height);
+    const float3 pivot=selectedPivot_+(moveDrag_.id==selectedId_?moveDrag_.offset:float3{});
+    const auto h=moveHandles(view,pivot,W,H);
+    if(!h.valid)return;
+    Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.5f};
+    const uint32_t colors[3]={rgba(232,82,72),rgba(120,205,85),rgba(70,135,240)};
+    const float u=std::min(W,H)*0.16f/110.0f;
+    // Draw farther axes first so the one facing the viewer stays on top.
+    int order[3]={0,1,2};
+    const float3 fwd=normalize(view.target-view.eye());
+    auto along=[&](int i){return i==0?fwd.x:i==1?fwd.y:fwd.z;};
+    std::sort(order,order+3,[&](int l,int r){return std::fabs(along(l))>std::fabs(along(r));});
+    for(const int a:order){
+        const uint32_t col=moveDrag_.axis==a?rgba(255,214,64):colors[a];
+        const float dx=h.tip[a][0]-h.px,dy=h.tip[a][1]-h.py,l=std::hypot(dx,dy);
+        if(l<3*u)continue;
+        const float ux=dx/l,uy=dy/l,cone=std::min(l*0.4f,14*u),half=5*u;
+        const float bx=h.tip[a][0]-ux*cone,by=h.tip[a][1]-uy*cone;
+        o.segment(h.px,h.py,bx,by,2.4f*u,col);
+        o.tri(h.tip[a][0],h.tip[a][1],bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
+    }
+    // Small centre square.
+    const float c=3*u;
+    o.tri(h.px-c,h.py-c,h.px+c,h.py-c,h.px+c,h.py+c,rgba(235,240,250));
+    o.tri(h.px-c,h.py-c,h.px+c,h.py+c,h.px-c,h.py+c,rgba(235,240,250));
+}
 std::vector<std::string> StudioMetalScene::modelMaterialSlots(const std::string& asset) const {
     std::vector<std::string> names;
     const auto found=documentModels_.find(asset);
@@ -442,8 +571,9 @@ void StudioMetalScene::drawOrientationGizmo(const render::RTSCamera& view,int wi
 void StudioMetalScene::orbit(float dx, float dy) {
     tween_.active=false;
     if(autoIso_){camera_.ortho=false;autoIso_=false;}
-    camera_.yaw += dx * 0.007f;
-    camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, -1.52f, 1.52f);
+    // Unity: drag right turns the view right, drag up looks up (pivot stays centred).
+    camera_.yaw -= dx * 0.007f;
+    camera_.pitch = std::clamp(camera_.pitch + dy * 0.007f, -1.52f, 1.52f);
 }
 void StudioMetalScene::zoom(float wheel) {
     tween_.active=false;
@@ -466,8 +596,8 @@ void StudioMetalScene::look(float dx, float dy) {
     tween_.active=false;
     if(autoIso_){camera_.ortho=false;autoIso_=false;}
     const float3 position=camera_.eye();
-    camera_.yaw += dx*0.007f;
-    camera_.pitch=std::clamp(camera_.pitch-dy*0.007f,-1.52f,1.52f);
+    camera_.yaw -= dx*0.007f;   // Unity: drag right looks right, drag up looks up
+    camera_.pitch=std::clamp(camera_.pitch+dy*0.007f,-1.52f,1.52f);
     const float cp=std::cos(camera_.pitch),sp=std::sin(camera_.pitch);
     const float3 fromTarget{std::sin(camera_.yaw)*cp,sp,std::cos(camera_.yaw)*cp};
     camera_.target=position-fromTarget*camera_.distance;
@@ -672,6 +802,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
     nereid_.prepare(*device_,view.eye());
     renderer_.beginScene(view, framebufferWidth, framebufferHeight);
+    renderer_.setSceneSelectionOutline(true); // editor-only depth-tested silhouette
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {
         renderer_.lights.setNightGlow(day.night*1.5f);
@@ -710,33 +841,55 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
 
     } // external/Terra surface suppresses the default plane and grid
 
+    selectedId_=selectedId;
+    selectedPivotValid_=false;
+    selectedBoxValid_=false;
     for(const auto& entity:proxies) {
         const int sourceIndex=studioMapEntityIndex(entity.id,doc);
+        const bool dragged=!moveDrag_.id.empty() && entity.id==moveDrag_.id;
+        const float3 offset=dragged?moveDrag_.offset:float3{};
+        if(entity.id==selectedId) {
+            selectedPivot_=entity.light?entity.center:float3{entity.center.x,entity.boundsMin.y,entity.center.z};
+            selectedPivotValid_=true;
+        }
         if(sourceIndex>=0 && doc.data.entities[size_t(sourceIndex)].extra["components"].has("NereidWater"))continue;
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
         if (hasModel) continue;
-        if(!lightingModel_ && !entity.light)renderer_.drawMesh(cube_,
-            mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
-            mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
-        if(entity.id==selectedId) {
-            const auto lo=entity.boundsMin,hi=entity.boundsMax;
+        // Authored entities use their full Transform (3D rotation, per-axis scale).
+        mat4 world=mat4::translate(entity.center+offset)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+        if(sourceIndex>=0 && editor::authoredEntity(doc.data.entities[size_t(sourceIndex)])) {
+            try {
+                world=mat4::translate(offset)*editor::authoredModelMatrix(doc.data.entities[size_t(sourceIndex)])*
+                      mat4::translate({0,entity.half.y,0})*mat4::scale(entity.half*2.0f);
+            } catch(const std::exception&) {}
+        }
+        if(entity.id==selectedId && !entity.light) captureSelectedBox(world,{-.5f,-.5f,-.5f},{.5f,.5f,.5f});
+        if(!lightingModel_ && !entity.light) {
+            if(entity.id==selectedId) renderer_.drawSelectionMesh(cube_,world,entity.color,{.25f,.62f,1.0f,1.0f});
+            else renderer_.drawMesh(cube_,world,entity.color,kDrawNoCastShadow);
+        } else if(entity.id==selectedId && entity.light) {
+            const auto lo=entity.boundsMin+offset,hi=entity.boundsMax+offset;
             const float3 p[8]={{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},
                 {hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,lo.z},
                 {hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}};
             constexpr int edges[12][2]={{0,1},{1,2},{2,3},{3,0},
                 {4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
             for(const auto& edge:edges)
-                renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
+                renderer_.line(p[edge[0]],p[edge[1]],rgba(64,158,255));
         }
     }
     for(const auto& instance:modelInstances_) {
         render::ModelDraw draw;
         draw.model=instance.model;
         draw.world=instance.world;
+        if(!moveDrag_.id.empty() && instance.id==moveDrag_.id) draw.world=mat4::translate(moveDrag_.offset)*instance.world;
         if(auto custom=instanceMaterials_.find(instance.id);custom!=instanceMaterials_.end())
             draw.materials=&custom->second.materials;
-        if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
+        if(instance.id==selectedId) {
+            draw.outline={.25f,.62f,1.0f,.035f};
+            if(instance.model)captureSelectedBox(draw.world,instance.model->boundsMin,instance.model->boundsMax);
+        }
         renderer_.drawModel(draw);
     }
     nereid_.draw(renderer_);
@@ -750,6 +903,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({at.x,at.y-extent,at.z},{at.x,at.y+extent,at.z},color);
         renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
+    drawSelectionBox(view,framebufferWidth,framebufferHeight);
+    drawMoveGizmo(view,framebufferWidth,framebufferHeight);
     if(orientationGizmo_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;

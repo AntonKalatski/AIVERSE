@@ -145,6 +145,9 @@ Json genericField(const std::string& key,const Json& value) {
     else {r.set("type",str("text"));r.set("value",str(value.dump(-1)));}
     return r;
 }
+// Map "facing" is clockwise degrees seen from above; Transform rotation Y is
+// right-handed (counter-clockwise). Both normalized to [0,360).
+double studioFacingToYaw(double facing){double y=std::fmod(360.0-std::fmod(facing,360.0),360.0);return y<0?y+360.0:y;}
 bool studioModelAssetPath(const std::string& path) {
     if(path.rfind("content/",0)!=0 || path.size()>512 || path.find("..")!=std::string::npos || path.find('\\')!=std::string::npos)
         return false;
@@ -178,32 +181,33 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
             result.set("kind",str(e.type));
             const auto& comps=e.extra["components"];
             Json transform=Json::array();
+            // Full 3D Transform for every map entity. Legacy units show their ground
+            // height and runtime facing; the first Y/rotation/scale edit writes an
+            // explicit components.Transform (see setProperty).
+            const double levelHeight=ws_.project.rules.levelHeight.toDouble();
+            const double ground=e.at.isNull()?terrainPreviewHeight(ws_.map.data,e.x,e.z,float(levelHeight)):0.0;
+            const auto rotation=authored?editor::authoredRotationDegrees(e):
+                std::array<double,3>{0.0,studioFacingToYaw(e.extra["facing"].toDouble(0)),0.0};
+            const auto scale=authored?editor::authoredScale3(e):std::array<double,3>{1.0,1.0,1.0};
+            const bool water=comps.has("NereidWater");
             transform.push(numericProp("x","Position X",Json::number(double(e.x),4)));
-            if(authored) {
-                const auto& t=comps["Transform"];
-                transform.push(numericProp("y","Position Y",t.has("y")?t["y"]:Json::number(0.0)));
-            } else {
-                // Map units stand on the terrain: Y is the ground height the Scene uses.
-                const double ground=e.at.isNull()?terrainPreviewHeight(ws_.map.data,e.x,e.z,
-                    float(ws_.project.rules.levelHeight.toDouble())):0.0;
-                auto y=readOnly(numericProp("y","Position Y",Json::number(ground,3)));
-                y.set("description",str("Terrain height: map units are placed on the ground."));
-                transform.push(y);
-            }
+            transform.push(numericProp("y","Position Y",authored?Json::number(comps["Transform"]["y"].toDouble(0),4):Json::number(ground,4)));
             transform.push(numericProp("z","Position Z",Json::number(double(e.z),4)));
-            if(authored && !comps.has("NereidWater")) {
-                const auto& t=comps["Transform"];
-                transform.push(numericProp("yaw","Rotation Y",t.has("yaw")?t["yaw"]:Json::number(0.0)));
-                auto scale=numericProp("scale","Scale",t.has("scale")?t["scale"]:Json::number(1.0));
-                scale.set("min",Json::number(.001));scale.set("max",Json::number(10000.0));transform.push(scale);
-            } else if(!authored) {
-                // Runtime reads map "facing" (degrees, clockwise from north) for initial rotation.
-                auto facing=numericProp("facing","Rotation Y",Json::number(e.extra["facing"].toDouble(0),3));
-                facing.set("min",Json::number(int64_t(0)));facing.set("max",Json::number(int64_t(360)));facing.set("step",Json::number(int64_t(1)));
-                transform.push(facing);
-                auto scale=readOnly(numericProp("scale","Scale",Json::number(1.0)));
-                scale.set("description",str("Map units use their type's scale; per-instance scale is not supported by the RTS runtime yet."));
-                transform.push(scale);
+            const char* rotKeys[3]={"rotationX","rotationY","rotationZ"};
+            const char* rotLabels[3]={"Rotation X","Rotation Y","Rotation Z"};
+            const char* scaleKeys[3]={"scaleX","scaleY","scaleZ"};
+            const char* scaleLabels[3]={"Scale X","Scale Y","Scale Z"};
+            for(int i=0;i<3;++i){
+                auto r=numericProp(rotKeys[i],rotLabels[i],Json::number(rotation[size_t(i)],3));
+                r.set("min",Json::number(int64_t(-360000)));r.set("max",Json::number(int64_t(360000)));r.set("step",Json::number(int64_t(1)));
+                if(water)r=readOnly(r);
+                transform.push(r);
+            }
+            for(int i=0;i<3;++i){
+                auto sc=numericProp(scaleKeys[i],scaleLabels[i],Json::number(scale[size_t(i)],4));
+                sc.set("min",Json::number(.001));sc.set("max",Json::number(10000.0));
+                if(water)sc=readOnly(sc);
+                transform.push(sc);
             }
             components.push(component("Transform","Transform",transform));
             // Mesh Renderer: authored StaticModel (editable) or the type's view (read-only).
@@ -1199,9 +1203,24 @@ Json StudioSession::dispatch(const Json& request) {
                 return reply;
             }
             const int index = indexFor(entityId);
-            if((key=="y"||key=="yaw"||key=="scale")&&editor::authoredEntity(ws_.map.data.entities[size_t(index)])) {
-               auto candidate=editor::editAuthoredPlacement(ws_.map.data.entities[size_t(index)],key,value);
-               if(candidate.extra!=ws_.map.data.entities[size_t(index)].extra){ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();}
+            if(editor::authoredTransformKey(key)) {
+               const auto& source=ws_.map.data.entities[size_t(index)];
+               auto candidate=source;
+               const bool legacy=!editor::authoredEntity(source);
+               if(legacy) {
+                   // Promote: keep the unit exactly where/how it stands now.
+                   Json t=Json::object();
+                   t.set("y",Json::number(source.at.isNull()?double(terrainPreviewHeight(ws_.map.data,source.x,source.z,
+                       float(ws_.project.rules.levelHeight.toDouble()))):0.0,4));
+                   if(source.extra["facing"].isNumber())t.set("yaw",Json::number(studioFacingToYaw(source.extra["facing"].toDouble()),3));
+                   auto components=candidate.extra["components"].isObject()?candidate.extra["components"]:Json::object();
+                   components.set("Transform",t);candidate.extra.set("components",components);
+               }
+               candidate=editor::editAuthoredPlacement(candidate,key,value);
+               // The RTS runtime reads "facing" for the initial rotation: keep it in sync.
+               if((key=="rotationY"||key=="yaw") && (legacy || source.extra.has("facing")))
+                   candidate.extra.set("facing",Json::number(studioFacingToYaw(editor::authoredRotationDegrees(candidate)[1]),3));
+               if(candidate.extra!=source.extra){ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();}
                reply.set("result",snapshot());return reply;
            }
            if (key == "type") {

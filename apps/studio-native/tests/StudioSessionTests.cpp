@@ -126,19 +126,37 @@ void entityWorkflow() {
             return session.dispatch(request);
         };
         {
-            // Legacy map entities expose a full Transform: X/Y(terrain)/Z, Rotation (facing), Scale.
+            // Every map entity exposes a full 3D Transform; the first Y/rotation/scale
+            // edit of a legacy unit writes components.Transform and keeps facing in sync.
             auto params=Json::object();params.set("entityId",Json::string("entity:0"));
             auto inspect=call("studio.inspect",params);
             AIVERSE_TEST_CHECK(!inspect.has("error"));
             std::set<std::string> keys;
             for(const auto& c:inspect["result"]["components"].items())
-                if(c.getStr("id")=="Transform")for(const auto& f:c["properties"].items())keys.insert(f.getStr("key"));
-            AIVERSE_TEST_CHECK(keys.count("x")&&keys.count("y")&&keys.count("z")&&keys.count("facing")&&keys.count("scale"));
-            auto set=Json::parse(R"({"entityId":"entity:0","componentId":"Transform","key":"facing","value":90})");
+                if(c.getStr("id")=="Transform")for(const auto& f:c["properties"].items())
+                    if(f.getBool("editable",true))keys.insert(f.getStr("key"));
+            for(const char* key:{"x","y","z","rotationX","rotationY","rotationZ","scaleX","scaleY","scaleZ"})
+                AIVERSE_TEST_CHECK(keys.count(key)==1);
+            auto set=Json::parse(R"({"entityId":"entity:0","componentId":"Transform","key":"rotationY","value":90})");
             AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
-            AIVERSE_TEST_CHECK(session.workspace().map.data.entities[0].extra["facing"].toDouble()==90);
-            set.set("value",Json::number(int64_t(400)));AIVERSE_TEST_CHECK(call("studio.setProperty",set).has("error"));
-            AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            {
+                const auto& e=session.workspace().map.data.entities[0];
+                AIVERSE_TEST_CHECK(e.extra["components"]["Transform"].isObject());
+                AIVERSE_TEST_CHECK(e.extra["facing"].toDouble()==270); // clockwise facing of a CCW 90° yaw
+            }
+            set=Json::parse(R"({"entityId":"entity:0","key":"rotationX","value":30})");
+            AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
+            set=Json::parse(R"({"entityId":"entity:0","key":"scaleZ","value":2})");
+            AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
+            {
+                const auto& t=session.workspace().map.data.entities[0].extra["components"]["Transform"];
+                AIVERSE_TEST_CHECK(t["rotation"].size()==3 && t["rotation"][size_t(0)].toDouble()==30 && t["rotation"][size_t(1)].toDouble()==90);
+                AIVERSE_TEST_CHECK(t["scale"].size()==3 && t["scale"][size_t(2)].toDouble()==2);
+            }
+            set=Json::parse(R"({"entityId":"entity:0","key":"scaleX","value":0})");
+            AIVERSE_TEST_CHECK(call("studio.setProperty",set).has("error"));
+            for(int i=0;i<3;++i)AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[0].extra.has("components"));
             AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[0].extra.has("facing"));
         }
         {

@@ -133,7 +133,7 @@ export interface StudioParams {
   'studio.select': { id: string | null };
   'studio.setProperty': { entityId: string; componentId?: string; key: string; value: string | number | boolean };
   'studio.viewportRect': { id: 'scene' | 'game'; x: number; y: number; width: number; height: number; dpr: number; visible: boolean };
-  'studio.viewportInput': { kind: 'orbit' | 'pan' | 'look'; dx: number; dy: number } | { kind: 'move'; right: number; up: number; forward: number } | { kind: 'focus' | 'reset' } | { kind: 'zoom'; amount: number } | { kind: 'view'; yaw: number; pitch: number } | { kind: 'projection'; ortho: boolean } | { kind: 'pick'; x: number; y: number; width: number; height: number };
+  'studio.viewportInput': { kind: 'orbit' | 'pan' | 'look'; dx: number; dy: number } | { kind: 'move'; right: number; up: number; forward: number } | { kind: 'focus' | 'reset' } | { kind: 'zoom'; amount: number } | { kind: 'view'; yaw: number; pitch: number } | { kind: 'projection'; ortho: boolean } | { kind: 'handle'; phase: 'down' | 'drag' | 'up'; x: number; y: number; width: number; height: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }
 export interface StudioResult {
   'studio.nereidFlow':NereidFlowState;
@@ -193,5 +193,5 @@ export interface StudioResult {
   'studio.select': StudioSnapshot;
   'studio.setProperty': StudioSnapshot;
   'studio.viewportRect': { ok: boolean };
-  'studio.viewportInput': { ok: boolean };
+  'studio.viewportInput': { ok?: boolean; hit?: boolean };
 }

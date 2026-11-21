@@ -3,6 +3,7 @@
 #pragma once
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -56,6 +57,15 @@ public:
     int orientationGizmoHit(float x, float y, float width, float height) const;
     // Applies a hit: snaps to the axis view (auto Iso) or toggles the projection.
     void activateOrientationGizmo(int hit);
+    // Move tool (translate handles on the selected object). Coordinates in the
+    // caller's view units (points) with the view size; same as pick().
+    int moveGizmoHit(float x, float y, float width, float height) const;
+    bool beginMoveDrag(float x, float y, float width, float height);
+    void updateMoveDrag(float x, float y, float width, float height);
+    struct MoveCommit { std::string id; int axis = -1; float delta = 0; };
+    std::optional<MoveCommit> endMoveDrag();
+    bool moveDragActive() const { return moveDrag_.axis >= 0; }
+    void clearMovePreview() { moveDrag_ = {}; }
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
@@ -106,6 +116,15 @@ private:
     // its framing from `distance` while the eye stays inside the depth range.
     render::RTSCamera viewCamera() const;
     bool orientationGizmo_ = false;
+    struct MoveDrag { int axis = -1; std::string id; render::float3 pivot{}; float startT = 0; render::float3 offset{}; } moveDrag_;
+    std::string selectedId_;
+    bool selectedPivotValid_ = false;
+    render::float3 selectedPivot_{};
+    bool selectedBoxValid_ = false;
+    render::float3 selectedBox_[8]{};          // world corners of the selected object's box
+    void captureSelectedBox(const render::mat4& world, render::float3 lo, render::float3 hi);
+    void drawSelectionBox(const render::RTSCamera& view, int width, int height);
+    void drawMoveGizmo(const render::RTSCamera& view, int width, int height);
     bool autoIso_ = false; // Iso entered by an axis snap; orbit/look returns to Persp
     void drawOrientationGizmo(const render::RTSCamera& view, int width, int height);
     bool lodDiagnostics_ = false;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { shortcutKey } from '../keyboard';
 import { Box, Copy, Focus, Lightbulb, Plus, Search, Shield, Trash2, User, X } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioEntity, StudioEntityCatalog, StudioSnapshot } from '../types';
@@ -66,7 +67,8 @@ export default function HierarchyPanel({ snapshot, busy, connected, search, setS
       }
       return;
     }
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); searchRef.current?.focus(); return; }
+    const key = shortcutKey(event);
+    if ((event.metaKey || event.ctrlKey) && key === 'f') { event.preventDefault(); searchRef.current?.focus(); return; }
     if (!selectedId || busy) return;
     const index = visible.findIndex(({node}) => node.id === selectedId);
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -75,8 +77,8 @@ export default function HierarchyPanel({ snapshot, busy, connected, search, setS
       if (next) { void select(next.node.id);
         listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(next.node.id)}"]`)?.focus(); }
     } else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); remove(selectedId); }
-    else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicate(selectedId); }
-    else if (event.key.toLowerCase() === 'f' && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void focus(selectedId); }
+    else if ((event.metaKey || event.ctrlKey) && key === 'd') { event.preventDefault(); duplicate(selectedId); }
+    else if (key === 'f' && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void focus(selectedId); }
   };
 
   const dragOver = (event: DragEvent<HTMLElement>, id: string) => {

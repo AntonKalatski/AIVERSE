@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { shortcutKey } from '../keyboard';
 import { Box } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import SceneAxisGizmo from './SceneAxisGizmo';
@@ -7,7 +8,7 @@ import {
   type SceneCameraState, type SceneNavigation
 } from '../panels/sceneCamera';
 
-type DragMode = Exclude<SceneNavigation, 'select'> | 'select';
+type DragMode = Exclude<SceneNavigation, 'select'> | 'select' | 'handle';
 const FLY_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e']);
 // Unity also moves the Scene camera with arrow keys without flythrough mode.
 const ARROW_KEYS: Record<string, string> = { arrowup: 'w', arrowdown: 's', arrowleft: 'a', arrowright: 'd' };
@@ -16,8 +17,9 @@ const ARROW_KEYS: Record<string, string> = { arrowup: 'w', arrowdown: 's', arrow
 export default function ViewportPlaceholder({ title, active }: { title: string; active: boolean }) {
   const element = useRef<HTMLElement>(null);
   const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean; mode: DragMode; button: number } | null>(null);
-  const pendingDelta = useRef<{ x: number; y: number; raf: number; mode: Exclude<DragMode, 'select'> }>({ x: 0, y: 0, raf: 0, mode: 'orbit' });
+  const pendingDelta = useRef<{ x: number; y: number; raf: number; mode: Exclude<DragMode, 'select' | 'handle'> }>({ x: 0, y: 0, raf: 0, mode: 'orbit' });
   const flying = useRef(false);
+  const handleInFlight = useRef(false);
   const flySpeedRef = useRef(1);
   const autoIso = useRef(false);
   const [flySpeed, setFlySpeed] = useState(1);
@@ -120,7 +122,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       const target=event.target;
       if (target instanceof HTMLElement &&
           target.closest('input, textarea, select, [contenteditable="true"]')) return;
-      const key=event.key.toLowerCase();
+      const key=shortcutKey(event);
       boost=event.shiftKey;
       if (event.altKey) return;
       if (key==='f' && !event.repeat && !flying.current) {
@@ -134,7 +136,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       }
     };
     const keyup=(event:KeyboardEvent)=>{
-      const key=event.key.toLowerCase();
+      const key=shortcutKey(event);
       keys.delete(key);
       boost=event.shiftKey;
       if (keys.size===0) heldSince=0;
@@ -172,7 +174,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     };
   },[active,native,gpuReady,send]);
   const composite = () => native && document.documentElement.classList.contains('native-composite');
-  const sendDelta = (dx: number, dy: number, mode: Exclude<DragMode, 'select'>) => {
+  const sendDelta = (dx: number, dy: number, mode: Exclude<DragMode, 'select' | 'handle'>) => {
     const state = pendingDelta.current;
     if (state.mode !== mode && (state.x || state.y)) {
       const x=state.x,y=state.y; state.x=state.y=0;
@@ -189,7 +191,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       if (x !== 0 || y !== 0) void flushDelta(state.mode, x, y);
     });
   };
-  const flushDelta = (mode: Exclude<DragMode, 'select'>, x: number, y: number) =>
+  const flushDelta = (mode: Exclude<DragMode, 'select' | 'handle'>, x: number, y: number) =>
     mode === 'zoom' ? send({ kind: 'zoom', amount: Math.max(-900, Math.min(900, dragZoomAmount(x, y))) })
       : send({ kind: mode, dx: Math.max(-999, Math.min(999, x)), dy: Math.max(-999, Math.min(999, y)) });
   const endDrag = () => {
@@ -211,6 +213,15 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       if (mode==='look') flying.current=true;
       drag.current = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
         moved: false, mode, button:event.button };
+      if (mode==='select') {
+        // Move tool: a press on a translate handle turns this drag into an axis move.
+        const bounds=event.currentTarget.getBoundingClientRect();
+        const state=drag.current;
+        void invoke('studio.viewportInput',{kind:'handle',phase:'down',x:event.clientX-bounds.left,
+          y:event.clientY-bounds.top,width:bounds.width,height:bounds.height}).then(result=>{
+          if (result.hit && drag.current===state) { state.mode='handle'; setNavigationActive(true); }
+        }).catch(console.warn);
+      }
       if (mode!=='select') setNavigationActive(true);
       event.currentTarget.setPointerCapture(event.pointerId);
     }}
@@ -220,7 +231,14 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       const dx=event.clientX-state.x,dy=event.clientY-state.y;
       state.x=event.clientX; state.y=event.clientY;
       if (Math.hypot(event.clientX-state.startX,event.clientY-state.startY)>4) state.moved=true;
-      if (state.moved && state.mode!=='select') sendDelta(dx,dy,state.mode);
+      if (state.mode==='handle') {
+        if (handleInFlight.current) return;
+        const bounds=event.currentTarget.getBoundingClientRect();
+        handleInFlight.current=true;
+        void invoke('studio.viewportInput',{kind:'handle',phase:'drag',x:event.clientX-bounds.left,
+          y:event.clientY-bounds.top,width:bounds.width,height:bounds.height})
+          .catch(console.warn).finally(()=>{handleInFlight.current=false;});
+      } else if (state.moved && state.mode!=='select') sendDelta(dx,dy,state.mode);
     }}
     onPointerUp={event => {
       const state=drag.current;
@@ -228,6 +246,12 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       endDrag();
       if (!composite() || !gpuReady) return;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      if (state.mode==='handle') {
+        const bounds=event.currentTarget.getBoundingClientRect();
+        void invoke('studio.viewportInput',{kind:'handle',phase:'up',x:event.clientX-bounds.left,
+          y:event.clientY-bounds.top,width:bounds.width,height:bounds.height}).catch(console.warn);
+        return;
+      }
       if (!state.moved && state.mode==='select') {
         const bounds=event.currentTarget.getBoundingClientRect();
         void send({kind:'pick', x:event.clientX-bounds.left,y:event.clientY-bounds.top,width:bounds.width,height:bounds.height});
