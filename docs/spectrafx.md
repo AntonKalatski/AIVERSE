@@ -40,7 +40,7 @@ Future opt-in path: GPU simulation/backend + advanced Niagara dataflow nodes
 ## Public C++ entry points
 
 - `engine/fx/SpectraFX.h`: `aiverse::spectra::Runtime`, `Effect`, `Handle`, `GraphAssets`, `GraphLoadResult`, `compileGraph`.
-- `libraries/include/aiverselib/genre/SpectraFX.h`: `aiverse::spectra::SourceComponent`, `EventBinding`, `PresentationSystem`.
+- `libraries/include/aiverselib/mechanics/SpectraFX.h`: `aiverse::spectra::SourceComponent`, `EventBinding`, `PresentationSystem`.
 - `AIVERSE::spectrafx`: CMake link target, alias of existing `aiverse_fx`; the legacy target remains valid for other agents and projects.
 
 ### Author a graph
@@ -93,7 +93,7 @@ Runtime loop: call `setView(camera, viewProj, width, height)`, `update(dt)`, the
 ### Opt-in native ECS presentation
 
 ```cpp
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 using namespace aiverse;
 
 auto entity = world.create();
@@ -707,7 +707,7 @@ per frame. All scheduling and particle handles stay outside gameplay
 ECS, deterministic hashes and rollback state.
 
 Use the canonical include `engine/fx/SpectraFX.h` for the pure
-presentation API, or `<aiverselib/genre/SpectraFX.h>` in native
+presentation API, or `<aiverselib/mechanics/SpectraFX.h>` in native
 ECS projects to also access `syncEcsCueSources` and
 `acceptSimCueTick`. The ECS adapter **reuses**
 `SpectraSourceComponent` (no new ECS component type or ID).
@@ -717,7 +717,7 @@ existing `SpectraPresentationSystem`. Source keys use
 cannot reuse an old effect handle.
 
 ```cpp
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 
 // BatchWorld and CueScheduler must outlive each other's handles in this
 // order: shared BatchWorld initialized first, CueScheduler destroyed first.
@@ -1908,7 +1908,7 @@ into shared `ComputeParticles` groups and uses the original shared CPU
 `BatchWorld` for unsupported effects.
 
 ```cpp
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 aiverse::spectra::GpuPoolWorld pool;
 pool.init(device);
 pool.defineGraph("impact", graphJson, aiverse::Json::object(), options);
@@ -1953,7 +1953,7 @@ particles: the host must dedicate the pool to the same presentation
 rollback scope.
 
 Native ECS projects use
-`libraries/include/aiverselib/genre/SpectraGpuCueEcsAdapter.h`
+`libraries/include/aiverselib/mechanics/SpectraGpuCueEcsAdapter.h`
 and `acceptSimGpuCueTick` for the existing `SimEvent` type.
 The adapter is read-only and makes no FPS/RTS/genre assumptions.
 
@@ -2232,9 +2232,9 @@ or async captures are rejected.
 
 ### Generic native ECS attachment bridge
 
-`<aiverselib/genre/SpectraFX.h>` now exports the header-only
+`<aiverselib/mechanics/SpectraFX.h>` now exports the header-only
 `spectra::GpuEcsAttachmentPresenter`, implemented in
-`libraries/include/aiverselib/genre/SpectraGpuAttachmentEcsAdapter.h`.
+`libraries/include/aiverselib/mechanics/SpectraGpuAttachmentEcsAdapter.h`.
 It reads the **existing**
 `lib::genre::SpectraSourceComponent` from `const World&` using
 `eachExistingConst`. Each source is keyed by `Entity::packed()`, so
@@ -2528,9 +2528,9 @@ presentation attachments.
 ### Render-pose interpolation for ECS sources
 
 The public native header
-`<aiverselib/genre/SpectraFX.h>` exports
+`<aiverselib/mechanics/SpectraFX.h>` exports
 `GpuEcsPoseInterpolator` from
-`libraries/include/aiverselib/genre/SpectraEcsRenderPose.h`.
+`libraries/include/aiverselib/mechanics/SpectraEcsRenderPose.h`.
 The native host supplies the same `ResolvePose` callback used by
 `GpuEcsAttachmentPresenter`. The interpolator stores at most two
 renderer-side pose snapshots, captured once per **committed** ECS tick
@@ -2592,9 +2592,9 @@ source code presence.
 ### Native GPU recovery notifications and explicit Device replacement
 
 The genre-neutral native presentation header
-`<aiverselib/genre/SpectraFX.h>` now exports
+`<aiverselib/mechanics/SpectraFX.h>` now exports
 `GpuPoolRecoveryHost` from
-`libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h`.
+`libraries/include/aiverselib/mechanics/SpectraGpuRecoveryHost.h`.
 This object holds **references only** to an initialized
 `GpuPoolWorld`, the presentation-owned
 `GpuEcsAttachmentPresenter` and optionally a render-pose
@@ -2866,9 +2866,9 @@ treated as project data.
 
 ### Native owner-thread capture and callback lifetime
 
-A new public `<aiverselib/genre/SpectraFX.h>` integration
+A new public `<aiverselib/mechanics/SpectraFX.h>` integration
 `spectra::GpuPoolCaptureHost` (implemented in
-`libraries/include/aiverselib/genre/SpectraGpuCaptureHost.h`)
+`libraries/include/aiverselib/mechanics/SpectraGpuCaptureHost.h`)
 provides a bounded **one-at-a-time** request API:
 
 ```cpp
@@ -3115,9 +3115,9 @@ sharing. The existing `Save RAW GPU checkpoint
 
 ### Non-owning native capture mailbox
 
-The public `<aiverselib/genre/SpectraFX.h>` includes
+The public `<aiverselib/mechanics/SpectraFX.h>` includes
 `GpuCaptureRequestMailbox` from
-`libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h`.
+`libraries/include/aiverselib/mechanics/SpectraGpuCaptureMailbox.h`.
 The mailbox is a same-owner-thread intent/status holder
 with states
 `Idle / Requested / Claimed / InFlight / Ready / Failed /

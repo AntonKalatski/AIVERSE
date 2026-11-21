@@ -10,7 +10,7 @@ Read `AGENTS.md`, `docs/ecs-all-features-migration-plan.md`,
 `skills/gameplay/aiverse-character-locomotion/SKILL.md` when present.
 
 ## State and systems
-Include `<aiverselib/genre/EcsLocomotionSystems.h>` and link
+Include `<aiverselib/mechanics/EcsLocomotionSystems.h>` and link
 `AIVERSE::lib_ecs_locomotion`. Attach these ECS components to any
 controllable Entity:
 - `LocomotionParametersComponent` (validated fixed-point MotionConfig)

@@ -47,6 +47,7 @@ struct ArsenalWeapon {
     int32_t max = 999;                  // ammo cap (unlimited weapons ignore it)
     int pellets = 1;                    // projectiles per shot (shotgun), fanned over `spread`
     Fixed spread{};                     // turns (data: degrees)
+    bool windup = true;                 // "windup": false: no aimWindup delay before its first shot (fists)
     std::vector<int16_t> index;         // weapon index per unit type (-1: the type has no such weapon)
 };
 
@@ -75,6 +76,10 @@ struct ArsenalHand {
     int16_t current = 0;
     uint32_t readyAt = 0;                          // next shot tick
     std::vector<int32_t> ammo;                     // per slot (-1: unlimited)
+    // rule aimWindup: the weapon is raised (aimActive) since aimSlot was chosen; a tap is kept (aimPending) until aimUntil
+    bool aimActive = false, aimTrigger = false, aimPending = false;
+    int16_t aimSlot = -1;
+    uint32_t aimUntil = 0;
 };
 
 struct ArsenalCrate {

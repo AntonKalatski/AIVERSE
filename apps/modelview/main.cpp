@@ -139,7 +139,7 @@ struct Viewer {
     gfx::Device* dev = nullptr;
     Renderer3D r3d;
     ImGuiLayer gui;
-    RTSCamera cam;
+    Camera cam;
     std::map<std::string, std::unique_ptr<Model>> models;
     std::unique_ptr<ModelAssetProvider> nativeModels=
         std::make_unique<ModelAssetProvider>();

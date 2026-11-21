@@ -11,8 +11,8 @@ destructible objects. Not for action menus or built-in engine commands (Smart/Pi
 those are `object-interactions`. Not a rigid-body engine: `engine/physics` (Box3D) stays optional and
 presentation-only for these mechanics.
 
-1. Read `docs/genre-packages.md` (physical-interactions section) and the catalog entry. Headers under
-   `libraries/include/aiverselib/genre/`: `PhysicalInteractions.h` (umbrella: `Carry.h`, `Push.h`, `Ropes.h`,
+1. Read `docs/mechanics-packages.md` (physical-interactions section) and the catalog entry. Headers under
+   `libraries/include/aiverselib/mechanics/`: `PhysicalInteractions.h` (umbrella: `Carry.h`, `Push.h`, `Ropes.h`,
    `Doors.h`, `Platforms.h`, `Breakables.h`, shared `PhysicalCommon.h` / `InteractionConfig.h`),
    `InteractionConfigured.h`, `InteractionData.h`, `InteractionPersistence.h`.
 2. Determinism/network model: these Fixed-math, integer-tick policies ARE the authoritative state. Run them on
@@ -22,7 +22,7 @@ presentation-only for these mechanics.
    `DebrisRequest` (use its `seed`); never copy Box3D poses back into these states.
 3. Data: scalar knobs in the optional generated `interaction` section of `libraries/spec/gameplay.json`
    (`readGameplaySettings`, `interactionSettingsErrors`, `interactionConfig`). Object definitions:
-   `readInteractionDefinitions(json)` (example `examples/libraries/genre/interactables.json`); errors are
+   `readInteractionDefinitions(json)` (example `examples/libraries/mechanics/interactables.json`); errors are
    `JsonError("interaction.doors[0].openTicks: must be in 1..3600")`. Edit the spec and run
    `python3 tools/libraries/generate_gameplay.py`; never hand-edit generated files.
 4. Per authoritative tick call each used step exactly once with strictly increasing ticks (repeated/backwards

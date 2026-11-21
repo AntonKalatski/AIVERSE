@@ -18,7 +18,7 @@ This skill is ONLY for world-space VFX emitters, particles, ribbon/mesh FX, effe
 
 1. Create `fx/graphs/<name>.vfx.json` with `version:1`, `nodes`, `links`, `outputs`, and optional `parameters`. Supported chain: `Spawn → Initialize → Update* → SpriteOutput|MeshOutput|RibbonOutput`. Node `properties` reuse `engine/fx/FxEffect.h` emitter fields. Example: `docs/spectrafx.md`.
 2. In native C++ include `engine/fx/SpectraFX.h` and call `aiverse::spectra::GraphAssets(particles, reader).load(name, overrides)`. Play the returned effect ID with the existing CPU particle runtime; check the `errors` and `fallback` fields. Parameter overrides create independent variants.
-3. For continuous ECS-attached effects include `<aiverselib/genre/SpectraFX.h>`. Add `spectra::SourceComponent` to any Entity (unit, actor, spell, vehicle, world prop). The renderer-side `spectra::PresentationSystem::sync` reads it and invokes the native project's render-pose resolver.
+3. For continuous ECS-attached effects include `<aiverselib/mechanics/SpectraFX.h>`. Add `spectra::SourceComponent` to any Entity (unit, actor, spell, vehicle, world prop). The renderer-side `spectra::PresentationSystem::sync` reads it and invokes the native project's render-pose resolver.
 4. One-shot impact, fire, ability and death effects use `PresentationSystem::consumeTickEvents(tick, events, bindings)`, exactly once per committed tick. Call `reset()` when the client rolls back or starts a new session.
 5. Preserve `aiverse_fx`, `fx/<name>.json`, `fx/fx.json`, legacy `RtsFx` and older `Vfx*` aliases until production parity tests pass.
 
@@ -293,7 +293,7 @@ It is a shared CPU particle scheduler, NOT a separate RHI renderer or
 automatic multi-emitter Metal/GPU runtime. Use the engine's canonical
 `engine/fx/SpectraFX.h` for `CueScheduler`, `CueEvent`,
 `CueBudgets`, `AttachedCue` and `CueSchedulerStats`. Native ECS
-projects include `<aiverselib/genre/SpectraFX.h>` for adapter helpers
+projects include `<aiverselib/mechanics/SpectraFX.h>` for adapter helpers
 `syncEcsCueSources(world, scheduler, resolvePose)` and
 `acceptSimCueTick(scheduler, committedTick, simEvents)`.
 
@@ -808,7 +808,7 @@ shared GPU emitters or lossless shared CPU fallback. Bind each
 game-defined event type to a graph name, call `accept(tick,events)`
 **once per committed simulation tick**, and call `flush()`
 between the pool's `beginPresentationFrame` and `step` operations.
-Native games include `<aiverselib/genre/SpectraFX.h>` and use
+Native games include `<aiverselib/mechanics/SpectraFX.h>` and use
 `acceptSimGpuCueTick` to convert existing `SimEvent` positions;
 no VFX state or handles enter authoritative ECS.
 
@@ -867,7 +867,7 @@ stress and actual visuals have NOT RUN. Do not report them as passing.
 
 ## Stage 35 — native ECS sources and Metal GPU completion fences
 
-Use `<aiverselib/genre/SpectraFX.h>` to import
+Use `<aiverselib/mechanics/SpectraFX.h>` to import
 `GpuEcsAttachmentPresenter` for persistent ECS-driven render effects.
 This is a **presentation-only read adapter** to the EXISTING
 `lib::genre::SpectraSourceComponent` and `Entity::packed()` generation
@@ -1022,7 +1022,7 @@ same-pool replacement variant and device lifetime warning.
 
 To interpolate presentation poses without writing floats or GPU
 handles into gameplay ECS, use `GpuEcsPoseInterpolator` exported from
-`<aiverselib/genre/SpectraFX.h>`. It records two committed
+`<aiverselib/mechanics/SpectraFX.h>`. It records two committed
 render-pose snapshots with exact packed entity generations. Call
 `captureCommitted(tick,const World&,resolvePose)` after a committed
 simulation tick, then pass `poses.resolver(alpha)` to
@@ -1047,7 +1047,7 @@ device-loss recovery and CPU-GPU parity have NOT RUN.
 ## Stage 39 — native recovery events and bounded GPU diagnostics
 
 Use `GpuPoolRecoveryHost` from the native
-`<aiverselib/genre/SpectraFX.h>` API whenever a project owns a
+`<aiverselib/mechanics/SpectraFX.h>` API whenever a project owns a
 `GpuPoolWorld`, a read-only `GpuEcsAttachmentPresenter`, and
 an optional `GpuEcsPoseInterpolator`. The recovery coordinator
 has **no platform Device ownership** and never automatically
@@ -1170,7 +1170,7 @@ binary parser, serialization format or GPU readback loop
 when this inspector already exists.
 
 Native projects can include
-`<aiverselib/genre/SpectraFX.h>` and use the new
+`<aiverselib/mechanics/SpectraFX.h>` and use the new
 `GpuPoolCaptureHost` to request ONE bounded asynchronous
 GPU group capture. Call `request(groupIndex)` between frames;
 after `Device::beginFrame` and BEFORE any new `pool.step`,
@@ -1301,7 +1301,7 @@ support bundle.
 
 For external editor/native integration, use
 `GpuCaptureRequestMailbox` from the public
-`<aiverselib/genre/SpectraFX.h>` API. The native
+`<aiverselib/mechanics/SpectraFX.h>` API. The native
 render-host owns the mailbox; the editor receives
 a **non-owning** pointer and may only queue a selected
 GPU group or request release. The host consumes

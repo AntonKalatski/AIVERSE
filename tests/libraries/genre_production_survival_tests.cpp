@@ -1,6 +1,6 @@
 // settlement-production + survival-ecology + colony planner bot tests (own CTest: library_genre_production_survival).
-#include <aiverselib/genre/Colony.h>
-#include <aiverselib/genre/SurvivalEcology.h>
+#include <aiverselib/mechanics/Colony.h>
+#include <aiverselib/mechanics/SurvivalEcology.h>
 #include <aiverselib/bots/ColonyPlannerData.h>
 #include <iostream>
 #include <stdexcept>
@@ -266,7 +266,7 @@ void planner(){
     expectError([&]{bots::readColonyPlanner(Json::parse(R"({"rules":[{"id":1,"action":"fly","ref":1}]})"),d);},"planner.rules[0].action: unknown value 'fly'");
 }
 void data(const std::string& root){
-    const auto dir=root+"/examples/libraries/genre/production-survival/";
+    const auto dir=root+"/examples/libraries/mechanics/production-survival/";
     auto settings=gameplay::readGameplaySettings(Json::parseFile(dir+"settings.json"));CHECK(settings.value);
     CHECK(colonySettingsErrors(*settings.value).empty()&&survivalSettingsErrors(*settings.value).empty());
     CHECK(colonyConfig(*settings.value).ticksPerHour==50&&survivalConfig(*settings.value).hungerPerTick==0);

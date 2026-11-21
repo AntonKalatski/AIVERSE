@@ -156,7 +156,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 9. Avoid duplicating immutable geometry uploads per camera. Plan shadow, culling and LOD reuse without sharing view-dependent visibility incorrectly.
 
 ## 2. Existing implementation to preserve
-- `engine/render/Math3D.h`: new `render::Camera` value type (formerly `RTSCamera`) with target/distance/orbit, perspective/orthographic, near/far and jitter.
+- `engine/render/Math3D.h`: new `render::Camera` value type (formerly `Camera`) with target/distance/orbit, perspective/orthographic, near/far and jitter.
 - `Renderer3D::beginScene(camera, w, h) -> draw* -> render(gfx::PassDesc, PostProcess*) -> [resolvePostFx()] -> gfx::Device::endPass()`.
 - `gfx::PassDesc` already supports separate `colorTarget` / `depthTarget` textures.
 - `apps/editor/Editor.h::Viewport` already contains independent render-target pair for Scene/Game windows.

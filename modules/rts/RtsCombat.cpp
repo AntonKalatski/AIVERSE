@@ -2,8 +2,8 @@
 // abilities (autocast, auras, buffs, stuns, summons, blink), hero experience, death (bounty, score,
 // wrecks, depleted extractors).
 #include "RtsInternal.h"
-#include "../../libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h"
-#include "../../libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+#include "../../libraries/include/aiverselib/mechanics/EcsKinematicProjectileSystems.h"
+#include "../../libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h"
 #include <algorithm>
 #include <map>
 

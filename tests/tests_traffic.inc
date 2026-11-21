@@ -1,4 +1,4 @@
-// City traffic (rules "traffic", RtsTraffic.h, libraries/include/aiverselib/genre/Traffic.h): the road network from
+// City traffic (rules "traffic", RtsTraffic.h, libraries/include/aiverselib/mechanics/Traffic.h): the road network from
 // tile characters, signal phases, traffic cars that keep their lanes and stop on red, pedestrians who cross on walk,
 // hijacking a traffic car, determinism, saves and rollback snapshots.
 #include "modules/rts/RtsTraffic.h"
@@ -235,7 +235,7 @@ TEST(traffic_hijack_throws_the_driver_out) {
     const size_t people = tstore(*sim).people.size();
     Command c; c.player = 1; c.type = game::kCmdTopDownEnter; sim->submit(c);
     run(*sim, 0.3);
-    CHECK(mod(*sim).driving()->isDriving(*sim, hero) && mod(*sim).driving()->carOf(*sim, hero)->e == car);
+    CHECK(mod(*sim).driving()->isDriving(*sim, hero) && mod(*sim).driving()->vehicleOf(*sim, hero) == car);
     bool still = false;
     for (auto& tc : tstore(*sim).cars) still = still || tc.e == car;
     CHECK(!still);
@@ -357,7 +357,7 @@ TEST(traffic_light_props_only_near_the_heroes_and_parked_cars_sleep) {
     Entity parked = kNullEntity;
     w.each<game::Unit, Transform>([&](Entity e, game::Unit&, Transform& t) { if (t.pos.x == Fixed::fromRatio(41, 2) && t.pos.z == Fixed::fromRatio(41, 2)) parked = e; });
     CHECK(parked.valid() && mod(*sim).driving()->car(*sim, parked) && trf(*sim).kindOf(*sim, parked) == -1);
-    CHECK(mod(*sim).driving()->car(*sim, parked)->st.lastTick == 0);
+    CHECK(mod(*sim).driving()->car(*sim, parked)->controller.lastTick == 0);
 }
 
 TEST(traffic_goes_round_an_island_in_a_junction) {
@@ -828,7 +828,7 @@ TEST(traffic_population_a_stolen_car_is_reported_and_its_owner_goes_without) {
     run(*sim, 2);
     CHECK(mod(*sim).driving()->carOf(*sim, hero) != nullptr);
     if (!mod(*sim).driving()->carOf(*sim, hero)) return;
-    car = mod(*sim).driving()->carOf(*sim, hero)->e;   // whichever of the parked cars he got into
+    car = mod(*sim).driving()->vehicleOf(*sim, hero);   // whichever of the parked cars he got into
     victim = -1;
     for (size_t i = 0; i < tstore(*sim).citizens.size(); ++i) if (tstore(*sim).citizens[i].car == car) victim = int(i);
     CHECK(victim >= 0 && tstore(*sim).citizens[size_t(victim)].work >= 0);
@@ -922,7 +922,7 @@ TEST(traffic_people_jump_out_of_the_way_of_a_car) {
     while (mod(*sim).driving()->speed(*sim, car) < Fixed::fromInt(5) && guard++ < 200) sim->step();
     CHECK(guard < 200);
     const auto* dc = mod(*sim).driving()->car(*sim, car);
-    Vec3 dir{dc->st.velocity.x, Fixed{}, dc->st.velocity.z};
+    Vec3 dir{dc->controller.velocity.x, Fixed{}, dc->controller.velocity.z};
     dir = dir / dir.length();
     w.get<Transform>(man).pos = w.get<Transform>(car).pos + dir * Fixed::fromRatio(7, 2);
     const Fixed hp = w.get<game::Unit>(man).hp;
@@ -1185,26 +1185,26 @@ TEST(traffic_drives_spline_roads) {
 }
 
 TEST(road_network_geometry_and_decks) {
-    const auto types = game::loadRoadTypes(Json::parse(R"({"cellMeters": 4})"));
-    CHECK(types.size() >= 27 && game::findRoadType(types, "dirt_road") >= 0 && game::findRoadType(types, "highway_ramp") >= 0);
+    const auto types = roads::loadRoadTypes(Json::parse(R"({"cellMeters": 4})"));
+    CHECK(types.size() >= 27 && roads::findRoadType(types, "dirt_road") >= 0 && roads::findRoadType(types, "highway_ramp") >= 0);
     // a bridge: the middle control points high over the ground
-    const auto net = game::parseRoadNetwork(Json::parse(R"({"nodes": [{"id": 1, "x": 0, "z": 10}, {"id": 2, "x": 40, "z": 10}],
+    const auto net = roads::parseRoadNetwork(Json::parse(R"({"nodes": [{"id": 1, "x": 0, "z": 10}, {"id": 2, "x": 40, "z": 10}],
         "edges": [{"id": 1, "a": 1, "b": 2, "type": "rural_2", "c1": [13, 10, 6], "c2": [27, 10, 6]}]})"), types);
-    const auto g = game::buildRoadGeometry(net, types);
+    const auto g = roads::buildRoadGeometry(net, types);
     CHECK(g.edges.size() == 1 && g.edges[0].spans.size() == 1 && !g.edges[0].spans[0].tunnel);
     // level where it meets the ground, highest in the middle
-    CHECK(fxAbs(g.edges[0].pts.front().e) < Fixed::fromRatio(1, 10) && game::roadSampleAt(g.edges[0], Fixed::fromInt(20)).e > Fixed::fromInt(5));
-    const Json decks = game::roadDecks(net, types, g);
+    CHECK(fxAbs(g.edges[0].pts.front().e) < Fixed::fromRatio(1, 10) && roads::roadSampleAt(g.edges[0], Fixed::fromInt(20)).e > Fixed::fromInt(5));
+    const Json decks = roads::roadDecks(net, types, g);
     CHECK(decks.size() == 1 && decks[size_t(0)]["path"].size() > 4);
     // an unpaved road may not run on from a four-lane road
-    const auto bad = game::parseRoadNetwork(Json::parse(R"({"nodes": [{"id": 1, "x": 0, "z": 0}, {"id": 2, "x": 20, "z": 0}, {"id": 3, "x": 40, "z": 0}],
+    const auto bad = roads::parseRoadNetwork(Json::parse(R"({"nodes": [{"id": 1, "x": 0, "z": 0}, {"id": 2, "x": 20, "z": 0}, {"id": 3, "x": 40, "z": 0}],
         "edges": [{"id": 1, "a": 1, "b": 2, "type": "avenue_4"}, {"id": 2, "a": 2, "b": 3, "type": "dirt_road"}]})"), types);
     bool refused = false;
-    for (auto& s : game::buildRoadGeometry(bad, types).issues) refused |= s.find("cannot run on from") != std::string::npos;
+    for (auto& s : roads::buildRoadGeometry(bad, types).issues) refused |= s.find("cannot run on from") != std::string::npos;
     CHECK(refused);
     // bad data has readable errors
     auto fails = [&](const char* j, const char* what) {
-        try { game::parseRoadNetwork(Json::parse(j), types); } catch (const std::exception& e) { return std::string(e.what()).find(what) != std::string::npos; }
+        try { roads::parseRoadNetwork(Json::parse(j), types); } catch (const std::exception& e) { return std::string(e.what()).find(what) != std::string::npos; }
         return false;
     };
     CHECK(fails(R"({"nodes": [{"id": 1, "x": 0, "z": 0}], "edges": [{"id": 1, "a": 1, "b": 9, "type": "street_2"}]})", "node ids"));

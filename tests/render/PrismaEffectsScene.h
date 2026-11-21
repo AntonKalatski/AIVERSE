@@ -26,7 +26,114 @@ inline double frameSharpness(int w,int h,const std::vector<uint8_t>& px) {
     }
     return n?sum/double(n):0;
 }
+// ---- 2026-11-22 effects: phase 0 = same HDR/High chain without the effect, phase 1 = with it.
+// The effect must be encoded and change the frame in its own direction:
+//   ao: darker; ssr / distort / haze / smaa / fsr: different; flare / streaks / halation: brighter;
+//   smaa: horizontal steps soften but stay within 40% (no blur); histogram: encoded and changes exposure.
+struct PrismaNewEffect { const char* id; PrismaType type; const char* json; };
+inline const PrismaNewEffect* prismaNewEffect(const char* which) {
+    static const PrismaNewEffect k[] = {
+        {"ao", PrismaType::AmbientOcclusion, R"({"type":"ambientOcclusion","intensity":2,"radius":1.5})"},
+        {"ssr", PrismaType::ScreenSpaceReflections, R"({"type":"screenSpaceReflections","intensity":1,"minNormalY":0.5,"fresnel":0})"},
+        {"flare", PrismaType::LensFlare, R"({"type":"lensFlare","intensity":3,"threshold":0.15,"dirt":1})"},
+        {"smaa", PrismaType::Smaa, R"({"type":"smaa","threshold":0.05})"},
+        {"distort", PrismaType::LensDistortion, R"({"type":"lensDistortion","distortion":0.5,"panini":0.5})"},
+        {"streaks", PrismaType::AnamorphicStreaks, R"({"type":"anamorphicStreaks","intensity":3,"threshold":0.15})"},
+        {"halation", PrismaType::Halation, R"({"type":"halation","intensity":2,"threshold":0.15})"},
+        {"haze", PrismaType::HeatHaze, R"({"type":"heatHaze","amplitude":6,"scale":30})"},
+        {"fsr", PrismaType::Fsr, R"({"type":"fsr","renderScale":0.5})"},
+        {"histogram", PrismaType::AutoExposure, R"({"type":"autoExposure","histogram":true,"histogramLow":0.1,"histogramHigh":0.6,"speedUp":20,"speedDown":20})"},
+    };
+    for (const auto& e : k) if (std::strcmp(e.id, which) == 0) return &e;
+    return nullptr;
+}
+inline void prismaFrameStats(int w, int h, const std::vector<uint8_t>& px, double& luma, double& red) {
+    luma = red = 0;
+    const size_t n = size_t(w) * size_t(h);
+    for (size_t i = 0; i < n; ++i) {
+        const uint8_t* p = px.data() + i * 4;
+        luma += .2126 * p[0] + .7152 * p[1] + .0722 * p[2];
+        red += p[0];
+    }
+    luma /= double(n); red /= double(n);
+}
+inline void drawPrismaNewEffect(HdrScene& s, gfx::Device& d, int w, int h, const PrismaNewEffect& fx) {
+    struct State { int phase = 0; double luma[2] = {}, red[2] = {}, sharp[2] = {}; std::vector<uint8_t> first; double diff = 0; };
+    static State st;
+    constexpr int kFrames = 12;
+    if (s.frame == 0) {
+        const std::string effects = st.phase == 1 ? fx.json : "";
+        s.post.configure(Json::parse("{\"hdr\":\"on\",\"effects\":[" + effects + "]}"), Json());
+        s.post.setQuality(PrismaQuality::High);
+        s.camera.yaw = .18f;
+        if (fx.type == PrismaType::HeatHaze && st.phase == 1)
+            s.post.setShockwaves(s.post.viewId(), {{{0, 0.5f, -1}, 3.0f, 1.0f, 1.0f}});
+        if (fx.type == PrismaType::AutoExposure) {
+#ifdef _WIN32
+            _putenv_s("AIVERSE_PRISMA_AUTO_EXPOSURE", st.phase == 1 ? "1" : "0");
+#else
+            ::setenv("AIVERSE_PRISMA_AUTO_EXPOSURE", st.phase == 1 ? "1" : "0", 1);
+#endif
+        }
+    }
+    if (s.ownsFrame) d.beginFrame(w, h);
+    auto& r = s.renderer;
+    // Hosts query the internal 3D size before beginScene (FSR / DLSS / temporal upscaling).
+    const auto [rw, rh] = s.post.renderSizeForOutput(w, h);
+    r.beginScene(s.camera, rw, rh);
+    r.drawMesh(s.floor, {}, {0.34f, 0.36f, 0.4f, 1});
+    ModelDraw md; md.model = s.spheres.get(); r.drawModel(md);
+    for (int i = 0; i < 5; ++i) r.drawMesh(s.cube, mat4::translate({float(i - 2) * 2, 0, -4.5f}), {0.6f, 0.24f, 0.06f, 1}, kDrawUnlit, 0, 1);
+    // A small, very bright emitter for the flare / streak / halation phases.
+    r.drawMesh(s.cube, mat4::translate({3.5f, 2.6f, -6}) * mat4::scale({0.3f, 0.3f, 0.3f}), {8, 7, 5, 1}, kDrawUnlit, 0, 1);
+    gfx::PassDesc pass = s.output; pass.clearColor[0] = .09f; pass.clearColor[1] = .11f; pass.clearColor[2] = .15f;
+    r.render(pass, s.pipeline());
+    r.resolvePrisma();
+    if (s.frame == kFrames) {
+        if (st.phase == 1) {
+            bool encoded = false; std::string reason = "not authored";
+            if (const auto* report = s.post.effectReport(s.post.viewId()))
+                for (const auto& e : report->effects)
+                    if (e.type == fx.type) { encoded = e.encoded && !e.degraded; reason = e.reason; }
+            if (!encoded) { std::fprintf(stderr, "PRISMA %s not encoded (%s) FAIL\n", fx.id, reason.c_str()); s.failed = true; }
+        }
+        auto receive = [&s, &fx](int cw, int ch, std::vector<uint8_t> px) {
+            if (cw < 8 || ch < 8 || px.size() != size_t(cw * ch * 4)) { s.failed = true; s.captured = true; return; }
+            prismaFrameStats(cw, ch, px, st.luma[st.phase], st.red[st.phase]);
+            st.sharp[st.phase] = frameSharpness(cw, ch, px);
+            {
+                std::ofstream f(s.path + "." + fx.id + std::to_string(st.phase) + ".ppm", std::ios::binary);
+                f << "P6\n" << cw << " " << ch << "\n255\n";
+                for (size_t i = 0; i < px.size(); i += 4) f.write(reinterpret_cast<const char*>(px.data() + i), 3);
+            }
+            if (st.phase == 0) st.first = px;
+            else if (st.first.size() == px.size()) {
+                double sum = 0;
+                for (size_t i = 0; i < px.size(); i += 4)
+                    for (int c = 0; c < 3; ++c) sum += std::abs(int(px[i + c]) - int(st.first[i + c]));
+                st.diff = sum / double(px.size() / 4 * 3);
+            }
+            std::printf("PRISMA %s phase %d: luma %.2f red %.2f sharpness %.3f\n", fx.id, st.phase,
+                        st.luma[st.phase], st.red[st.phase], st.sharp[st.phase]);
+            if (++st.phase == 2) {
+                const std::string id = fx.id;
+                bool ok = st.diff > 0.05;   // mean per-channel change, 0..255
+                if (id == "ao") ok = ok && st.luma[1] < st.luma[0] - 0.2;
+                if (id == "flare" || id == "streaks") ok = ok && st.luma[1] > st.luma[0] + 0.1;
+                if (id == "halation") ok = ok && st.red[1] > st.red[0] + 0.1 && st.red[1] - st.red[0] > st.luma[1] - st.luma[0];
+                if (id == "smaa") ok = ok && st.sharp[1] < st.sharp[0] && st.sharp[1] > st.sharp[0] * 0.6;
+                std::printf("PRISMA %s: diff %.3f %s\n", fx.id, st.diff, ok ? "PASS" : "FAIL");
+                s.failed |= !ok; s.captured = true;
+            }
+            s.frame = -1;
+        };
+        if (s.readOutput) s.readOutput(receive); else d.captureNextFrame(receive);
+    }
+    d.endPass(); if (s.ownsFrame) d.endFrame(); ++s.frame;
+}
+
 inline void drawPrismaEffects(HdrScene& s,gfx::Device& d,int w,int h,const char* which) {
+    if (const PrismaNewEffect* fx = prismaNewEffect(which)) { drawPrismaNewEffect(s, d, w, h, *fx); return; }
     auto& st=prismaEffectsState();
     const bool dof=std::strcmp(which,"dof")==0;
     constexpr int kFrames=12;

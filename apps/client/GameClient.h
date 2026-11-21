@@ -403,7 +403,7 @@ private:
     game::AudioScriptSound scriptSoundImpl_{audio_};   // the Lua `sound` table of view scripts and the UI Lua
     game::ScriptSound* scriptSound_ = nullptr;          // set once the audio engine is up
     std::vector<Entity> heardSelection_;  // selection when the last select sound played
-    RTSCamera cam_;
+    Camera cam_;
     aiverse::Vec2 screenSize_{};        // map screen being framed (BW multiscreen)
     bool screenFramed_ = false;
     Json manifest_, rulesJson_;

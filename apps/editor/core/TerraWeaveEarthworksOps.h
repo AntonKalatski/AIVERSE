@@ -30,7 +30,7 @@ inline int32_t terraWeaveCornerCm(int16_t value) {
 
 inline void registerTerraWeaveEarthworksOps(Workspace& ws) {
     ws.registerOp({"terraweave_excavate",
-        "Dig or fill a radius in the current flat RTS heightfield. "
+        "Dig or fill a radius in the current flat grid heightfield. "
         "Center xCm/zCm, radiusCm and depthCm use world centimetres. "
         "Never creates caves/undercuts; preserves authored detail material "
         "and fine surface by rebasing the detail onto changed corners. Undoable.",
@@ -47,9 +47,9 @@ inline void registerTerraWeaveEarthworksOps(Workspace& ws) {
         })"),[w=&ws](const Json& p) -> Json {
             if(w->project.dir.empty())
                 throw std::runtime_error("open game first");
-            if(w->project.isFps() || w->map.data.planet())
+            if(w->project.worldSpaceMaps() || w->map.data.planet())
                 throw std::invalid_argument(
-                    "TerraWeave Earthworks flat MapDoc adapter requires RTS grid");
+                    "TerraWeave Earthworks flat MapDoc adapter requires a flat grid map (world-space maps: G2)");
             const MapData& map=w->map.data;
             const int width=map.w,height=map.h;
             const size_t required=(size_t(width)+1u)*(size_t(height)+1u);

@@ -1,6 +1,6 @@
 ---
 name: aiverse-snapshot-delta
-description: Cut server-to-client snapshot bandwidth in any authoritative AIVERSE game (FPS, top-down, vehicles, custom native hosts) with delta compression against acknowledged baselines - record sets, per-peer sender history, client acks and bounded decoding over lossy latest-only channels.
+description: Cut server-to-client snapshot bandwidth in any authoritative AIVERSE game (actor hosts, city worlds, vehicles, custom native hosts) with delta compression against acknowledged baselines - record sets, per-peer sender history, client acks and bounded decoding over lossy latest-only channels.
 ---
 
 # snapshot-delta

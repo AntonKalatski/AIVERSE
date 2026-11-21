@@ -305,6 +305,34 @@ private:
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
 
+public:   // native access for vendor libraries (Gfx.h NativeVulkanContext)
+    bool nativeVulkanContext(NativeVulkanContext& out) override {
+        if (!device_ || !recording_ || inPass_ || !healthy_) return false;
+        out.instance = instance_;
+        out.physicalDevice = gpu_;
+        out.device = device_;
+        out.commandBuffer = transferCmd();
+        out.getInstanceProcAddr = reinterpret_cast<void*>(vkGetInstanceProcAddr);
+        out.queueFamily = queueFamily_;
+        return true;
+    }
+    bool nativeVulkanImage(TextureHandle h, NativeVulkanImage& out) const override {
+        const VTexture* t = textures_.get(h.id);
+        if (!t || !t->image) return false;
+        out.image = t->image;
+        out.view = t->view;
+        out.format = uint32_t(t->vkFormat);
+        out.width = t->width; out.height = t->height;
+        out.depth = t->depth; out.storage = t->storage;
+        return true;
+    }
+    bool nativeVulkanImageBarrier(TextureHandle h, uint32_t fromLayout, uint32_t toLayout) override {
+        const VTexture* t = textures_.get(h.id);
+        if (!t || !t->image || !recording_ || inPass_) return false;
+        barrierImage(transferCmd(), t->image, t->depth, VkImageLayout(fromLayout), VkImageLayout(toLayout));
+        return true;
+    }
+
 public:   // helpers shared by the translation units
     VkCommandBuffer transferCmd();               // main command buffer outside passes, else the pre-frame one
     void barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels = VK_REMAINING_MIP_LEVELS,

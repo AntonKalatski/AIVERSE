@@ -1,7 +1,7 @@
 // One ordered ECS impact-resolution barrier for unrelated game hosts.
 // Exercises queued direct/splash damage, delayed reentrant submission,
 // sequence IDs and deep/COW snapshot rollback without genre-module linkage.
-#include <aiverselib/genre/EcsImpactQueueSystems.h>
+#include <aiverselib/mechanics/EcsImpactQueueSystems.h>
 #include <cstdint>
 #include <iostream>
 #include <memory>

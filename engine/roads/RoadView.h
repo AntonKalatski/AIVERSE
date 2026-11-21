@@ -1,7 +1,7 @@
 // Spline roads in the view (docs/roads.md § Look): the map's "roadNetwork" turned into static models — carriageways
 // with lane markings, curbs, shoulders, sidewalks, medians, junction surfaces with fillets and zebra crossings,
 // barriers, bridge decks with pillars, tunnel portals and the road props (built-in shapes or the game's models).
-// Geometry comes from RtsRoadNet (the simulation's numbers); meshes are cut into square chunks so the renderer culls
+// Geometry comes from RoadNet.h (the simulation's numbers); meshes are cut into square chunks so the renderer culls
 // them. Textures: the game's (road type "look.textures") or procedural tiles generated at init. No shaders of its own:
 // everything is drawn through Renderer3D::drawModel (PBR, shadows, lightmaps as static scenery).
 #pragma once
