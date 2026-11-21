@@ -21,6 +21,7 @@
 #include "apps/studio-native/StudioShaderGraphDraft.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "apps/studio-native/StudioHumanLookDocument.h"
+#include "apps/studio-native/StudioHumanPackage.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -759,8 +760,19 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     for(size_t i=0;i<recipe["items"].size();++i){auto& item=recipe.member("items").at(i);for(const auto* field:{"translation","rotation","scale"})if(!item.has(field))item.set(field,Json::parse(std::string(field)=="scale"?"[1,1,1]":"[0,0,0]"));if(!item.has("finish"))item.set("finish",Json::string("source"));auto asset=catalog.byPath(item.getStr("asset"));if(!asset||asset->importer!="model")throw std::runtime_error("Wardrobe model not found in project");item.set("asset",Json::string(asset->guid));for(size_t j=0;j<item["masks"].size();++j){auto& mask=item.member("masks").at(j);auto texture=catalog.byPath(mask.getStr("texture"));if(!texture||texture->importer!="texture")throw std::runtime_error("Wardrobe mask not found in project");mask.set("texture",Json::string(texture->guid));}}
                     reply.set("result",recipe);
                 } else if(method=="studio.humanWardrobeInfo") {
-                    auto model=render::loadModel(source,humanCharacterReader(studioContentRoot(ws_.project.dir)));
-                    if(!model)throw std::runtime_error("Cannot inspect character model");reply.set("result",vivid::inspectHumanWardrobe(*model));
+                    // Importing a full character takes seconds: answer repeat
+                    // questions from a cache keyed by path + file time.
+                    std::error_code ec;const auto file=studioContentRoot(ws_.project.dir)/source;
+                    const auto stamp=std::to_string(static_cast<long long>(std::filesystem::last_write_time(file,ec).time_since_epoch().count()));
+                    const auto key=ws_.project.dir+"|"+source+"|"+stamp;
+                    auto cached=wardrobeInfoCache_.find(key);
+                    if(cached==wardrobeInfoCache_.end()) {
+                        auto model=render::loadModel(source,humanCharacterReader(studioContentRoot(ws_.project.dir)));
+                        if(!model)throw std::runtime_error("Cannot inspect character model");
+                        if(wardrobeInfoCache_.size()>16)wardrobeInfoCache_.clear();
+                        cached=wardrobeInfoCache_.emplace(key,vivid::inspectHumanWardrobe(*model)).first;
+                    }
+                    reply.set("result",cached->second);
                 } else {
                     if(humanBuild_.valid())throw std::runtime_error("A character build is already running; check its status");
                     const auto look=vivid::HumanAppearance::fromJson(params["look"]);auto wardrobe=params["wardrobe"];vivid::validateHumanWardrobe(wardrobe);
@@ -782,9 +794,207 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
                 }
             }
+        } else if(method=="studio.humanFacePick") {
+            // Face-region picking in the viewport (Face → Blend): the next
+            // clicks report the head point instead of sculpting.
+            const bool on=params.getBool("enabled");
+            if(on && (!facialPreview_.face() || facialPreview_.face()->meshes.empty()))
+                throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
+            sculpt_.regionPick=on;if(on)sculpt_.armed=false;
+            auto result=Json::object();result.set("enabled",Json::fromBool(on));reply.set("result",std::move(result));
+        } else if(method=="studio.humanPackageList" || method=="studio.humanPackageExport" || method=="studio.humanPackageImport") {
+            // Portable character package (look + picture + built character).
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanPackageList")reply.set("result",listStudioHumanPackages(ws_.project.dir));
+            else if(method=="studio.humanPackageExport")reply.set("result",exportStudioHumanPackage(ws_.project.dir,params.getStr("look"),params.getStr("character")));
+            else reply.set("result",importStudioHumanPackage(ws_.project.dir,params.getStr("name")));
+        } else if(method=="studio.humanPlaceInGame") {
+            // "To the game": the built character becomes an RTS unit type
+            // (view.model) and, when a map is open, one unit is placed.
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string type=params.getStr("type");
+            if(type.empty()||type.size()>48||!std::all_of(type.begin(),type.end(),[](unsigned char c){return std::isalnum(c)||c=='_';})||std::isdigit((unsigned char)type[0]))
+                throw std::invalid_argument("Имя типа: латиница, цифры и _ (до 48 символов)");
+            const std::string asset=params.getStr("path");
+            namespace fs=std::filesystem;
+            const fs::path relative(asset);
+            if(asset.empty()||relative.is_absolute()||asset.find("..")!=std::string::npos||(relative.extension()!=".glb"&&relative.extension()!=".gltf"))
+                throw std::invalid_argument("Нужна модель персонажа .glb из content");
+            const fs::path file=studioContentRoot(ws_.project.dir)/relative;
+            if(!fs::is_regular_file(file))throw std::runtime_error("Модель персонажа не найдена: "+asset);
+            const auto viewPath=fs::relative(file,fs::path(ws_.project.dir)).generic_string();
+            auto view=Json::object();view.set("model",Json::string(viewPath));view.set("height",Json::number(1.8));
+            auto def=Json::object();def.set("view",view);
+            if(ws_.project.rules.findType(type)<0){
+                def.set("name",Json::string(params.getStr("name").empty()?type:params.getStr("name")));
+                auto move=Json::object();move.set("speed",Json::number(3.));def.set("move",move);
+                auto health=Json::object();health.set("max",Json::number(100.));def.set("health",health);
+            }
+            auto value=Json::object();value.set(type,def);
+            auto args=Json::object();args.set("path",Json::string("types"));args.set("value",value);
+            const Json merged=ws_.call("rules_merge",args,"studio");
+            if(merged.has("error"))throw std::runtime_error(merged.getStr("error"));
+            bool placed=false;
+            if(!ws_.project.isFps() && ws_.map.data.w>0) {
+                auto at=Json::object();at.set("type",Json::string(type));
+                at.set("x",Json::number(double(ws_.map.data.w)/2));at.set("z",Json::number(double(ws_.map.data.h)/2));at.set("owner",Json::number(1.));
+                const Json put=ws_.call("entity_place",at,"studio");
+                placed=!put.has("error");
+                if(placed)selectOnly("entity:"+std::to_string(ws_.map.data.entities.size()-1));
+            }
+            auto result=Json::object();result.set("type",Json::string(type));result.set("model",Json::string(viewPath));result.set("placed",Json::fromBool(placed));
+            reply.set("result",std::move(result));
+        } else if(method=="studio.humanTryOn") {
+            // Live wardrobe try-on in the preview; null takes everything off.
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            reply.set("result",facialPreview_.setWardrobe(params["wardrobe"]));
+        } else if(method=="studio.humanClipList" || method=="studio.humanClipAdd" || method=="studio.humanClipRemove") {
+            // External animation clips of the shown character, kept in the
+            // engine's clip sidecar "<model>.clips.json" (bound by bone path).
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(!facialPreview_.bound()||facialPreview_.creatorMode())throw std::runtime_error("Покажите персонажа во вьюпорте");
+            namespace fs=std::filesystem;
+            const fs::path content=studioContentRoot(ws_.project.dir);
+            const fs::path model=content/facialPreview_.path();
+            const fs::path sidecar=model.string()+".clips.json";
+            if(fs::is_symlink(fs::symlink_status(sidecar)))throw std::runtime_error("Clip sidecar cannot be a symlink");
+            Json doc=Json::object();
+            if(fs::is_regular_file(sidecar)){std::ifstream in(sidecar,std::ios::binary);std::string b((std::istreambuf_iterator<char>(in)),{});if(b.size()>256*1024)throw std::runtime_error("Clip sidecar too large");doc=Json::parse(b);}
+            if(!doc.has("format")){doc.set("format",Json::string("aiverse-clips"));doc.set("version",Json::number(int64_t(1)));doc.set("keepSource",Json::fromBool(true));doc.set("clips",Json::array());}
+            auto write=[&]{{std::ofstream out(sidecar.string()+".pending",std::ios::binary|std::ios::trunc);out<<doc.dump(2)<<"\n";if(!out)throw std::runtime_error("Cannot write clip sidecar");}fs::rename(sidecar.string()+".pending",sidecar);facialPreview_.reload();};
+            if(method=="studio.humanClipAdd") {
+                std::string file=params.getStr("file");const std::string name=params.getStr("name");
+                if(!file.empty()&&file.find('/')==std::string::npos&&!fs::is_regular_file(content/file)){ // a GUID from the asset picker
+                    StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();file=StudioFacialPreviewBinding::checkedModelPath(catalog,file);}
+                const fs::path rel(file);
+                if(file.empty()||rel.is_absolute()||file.find("..")!=std::string::npos||!fs::is_regular_file(content/rel))throw std::invalid_argument("Выберите файл анимации из content");
+                if(name.empty()||name.size()>64)throw std::invalid_argument("Имя клипа: 1..64 символа");
+                if(doc["clips"].size()>=64)throw std::runtime_error("Не больше 64 клипов");
+                for(const auto& c:doc["clips"].items())if(c.getStr("name")==name)throw std::runtime_error("Клип «"+name+"» уже есть");
+                auto c=Json::object();c.set("name",Json::string(name));
+                c.set("file",Json::string(fs::relative(content/rel,model.parent_path()).generic_string()));
+                if(!params.getStr("clip").empty())c.set("clip",Json::string(params.getStr("clip")));
+                doc.member("clips").push(c);write();
+            } else if(method=="studio.humanClipRemove") {
+                auto& list=doc.member("clips").itemsMut();const auto before=list.size();
+                std::erase_if(list,[&](const Json& c){return c.getStr("name")==params.getStr("name")&&c.has("file");});
+                if(list.size()==before)throw std::runtime_error("Нет такого внешнего клипа");
+                write();
+            }
+            auto result=Json::object();auto ext=Json::array();
+            for(const auto& c:doc["clips"].items())if(c.has("file")){auto e=Json::object();e.set("name",c["name"]);e.set("file",c["file"]);ext.push(e);}
+            result.set("external",ext);reply.set("result",std::move(result));
+        } else if(method=="studio.humanRuler") {
+            facialPreview_.showRuler=params.getBool("enabled");
+            auto result=Json::object();result.set("enabled",Json::fromBool(facialPreview_.showRuler));reply.set("result",std::move(result));
+        } else if(method=="studio.humanCompare") {
+            // Before/after: show the untouched source model while held.
+            reply.set("result",facialPreview_.setCompareOriginal(params.getBool("original")));
+        } else if(method=="studio.humanCamera") {
+            const auto view=params.getStr("view");
+            if(view!="face"&&view!="torso"&&view!="full")throw std::invalid_argument("Camera view is face, torso or full");
+            facialPreview_.cameraView=view;++facialPreview_.cameraSerial;
+            auto result=Json::object();result.set("view",Json::string(view));reply.set("result",std::move(result));
+        } else if(method=="studio.humanSculpt" || method=="studio.humanSculptStroke" || method=="studio.humanSculptUndo") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanSculpt") {
+                auto next=sculpt_;
+                if(params.has("enabled"))next.armed=params.getBool("enabled");
+                if(params.has("radius")){const double r=params["radius"].toDouble(-1);if(!(r>=.01&&r<=1))throw std::invalid_argument("Brush radius must be 0.01..1");next.radius=float(r);}
+                if(params.has("strength")){const double v=params["strength"].toDouble(-1);if(!(v>0&&v<=.25))throw std::invalid_argument("Brush strength must be 0..0.25");next.strength=float(v);}
+                if(params.has("mode")){const auto m=params.getStr("mode");if(m!="push"&&m!="pull")throw std::invalid_argument("Brush mode is push or pull");next.pull=m=="pull";}
+                if(params.has("symmetry"))next.symmetry=params.getBool("symmetry");
+                if(next.armed && (!facialPreview_.face() || facialPreview_.face()->meshes.empty()))
+                    throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
+                if(next.armed)next.regionPick=false;
+                sculpt_=next;
+            } else if(method=="studio.humanSculptStroke") {
+                // Sent by the native viewport after a hit test on the face meshes.
+                auto vec=[&](const char* key){const auto& a=params[key];
+                    if(!a.isArray()||a.size()!=3||!a[0].isNumber()||!a[1].isNumber()||!a[2].isNumber())throw std::invalid_argument(std::string("Sculpt ")+key+" must be [x,y,z]");
+                    return render::float3{float(a[0].toDouble()),float(a[1].toDouble()),float(a[2].toDouble())};};
+                vivid::HumanFaceHit hit;hit.point=vec("point");hit.normal=vec("normal");
+                const auto stroke=vivid::humanSculptLandmark(hit,sculpt_.radius,sculpt_.pull?-sculpt_.strength:sculpt_.strength);
+                facialPreview_.sculptStroke(stroke);
+                // Symmetric sculpt: the mirrored stroke lands on the other half
+                // (skipped on the centre line, where it would double the push).
+                if(sculpt_.symmetry && std::abs(stroke.from.x-.5f)>.02f)
+                    facialPreview_.sculptStroke(StudioFacialPreviewBinding::mirrored(stroke));
+            } else if(params.getBool("all")) facialPreview_.sculptClear();
+            else facialPreview_.sculptUndo();
+            auto result=Json::object();
+            result.set("armed",Json::fromBool(sculpt_.armed));result.set("radius",Json::number(double(sculpt_.radius),4));
+            result.set("strength",Json::number(double(sculpt_.strength),4));result.set("mode",Json::string(sculpt_.pull?"pull":"push"));
+            result.set("symmetry",Json::fromBool(sculpt_.symmetry));
+            result.set("strokes",Json::number(int64_t(facialPreview_.face()?facialPreview_.face()->landmarks.size():0)));
+            result.set("preview",facialPreview_.describe());
+            reply.set("result",std::move(result));
+        } else if(method.rfind("studio.humanCreator",0)==0) {
+            // Digital Human Creator window (docs/vivid.md § Studio Human Creator).
+            // Every mutation is validated all-or-nothing; the result is always
+            // the full creator state so the window can redraw from one reply.
+            std::string error;bool ok=true;
+            auto creatorNum=[&](const char* key,double lo,double hi)->double {
+                const auto& v=params[key];
+                if(!v.isNumber()||!std::isfinite(v.toDouble())||v.toDouble()<lo||v.toDouble()>hi)
+                    throw std::invalid_argument(std::string("Human Creator: invalid ")+key);
+                return v.toDouble();
+            };
+            const std::string which=params.getStr("target","dna");
+            if(method=="studio.humanCreatorInfo") {
+            } else if(method=="studio.humanCreatorSet") {
+                ok=humanCreator_.set(params.getStr("key"),params["value"],&error);
+            } else if(method=="studio.humanCreatorPreset") {
+                ok=humanCreator_.preset(params.getStr("id"),&error);
+            } else if(method=="studio.humanCreatorUndo" || method=="studio.humanCreatorRedo") {
+                const bool undo=method=="studio.humanCreatorUndo";
+                if(which=="dna")ok=undo?humanCreator_.undo():humanCreator_.redo();
+                else if(which=="rig")ok=undo?humanCreator_.rigUndo():humanCreator_.rigRedo();
+                else if(which=="skin")ok=undo?humanCreator_.skinUndo():humanCreator_.skinRedo();
+                else throw std::invalid_argument("Human Creator: undo target must be dna, rig or skin");
+                if(!ok)error="Nothing to "+std::string(undo?"undo":"redo");
+            } else if(method=="studio.humanCreatorRoute") {
+                const auto index=std::size_t(creatorNum("index",0,256));
+                if(params.getBool("remove"))ok=humanCreator_.removeRoute(index),error=ok?"":"Route index out of range";
+                else ok=humanCreator_.setRoute(index,params.getStr("channel"),params.getStr("target"),creatorNum("gain",0,4),&error);
+            } else if(method=="studio.humanCreatorRig") {
+                const auto& t=params["translation"];
+                if(!t.isArray()||t.size()!=3||!t[0].isNumber()||!t[1].isNumber()||!t[2].isNumber())
+                    throw std::invalid_argument("Human Creator: translation must be [x,y,z]");
+                ok=humanCreator_.setRig(params.getStr("node"),{float(t[0].toDouble()),float(t[1].toDouble()),float(t[2].toDouble())},&error);
+            } else if(method=="studio.humanCreatorSkin") {
+                const auto vertex=std::uint32_t(creatorNum("vertex",0,double(std::numeric_limits<std::uint32_t>::max())));
+                if(params.getBool("erase"))ok=humanCreator_.eraseSkin(vertex),error=ok?"":"No weight edit on that vertex";
+                else ok=humanCreator_.setSkin(vertex,params.getStr("joint"),creatorNum("weight",0,1),&error);
+            } else if(method=="studio.humanCreatorNew") {
+                vivid::HumanCreatorWorkbench fresh;humanCreator_=std::move(fresh);
+            } else if(method=="studio.humanCreatorSave") {
+                if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+                vivid::saveHumanCreator(ws_.project.dir,params.getStr("name"),humanCreator_.toDocument());
+            } else if(method=="studio.humanCreatorLoad") {
+                if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+                ok=humanCreator_.loadDocument(vivid::readHumanCreator(ws_.project.dir,params.getStr("name")),&error);
+            } else if(method=="studio.humanCreatorList") {
+                if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+                reply.set("result",vivid::listHumanCreators(ws_.project.dir));
+                return reply;
+            } else if(method=="studio.humanCreatorPreview") {
+                if(params.getBool("enabled",true)) {
+                    facialPreview_.bindCreator(humanCreator_.toDocument());
+                    previewMaterialName_.clear();refreshMaterialPreview();
+                } else if(facialPreview_.creatorMode()) facialPreview_.reset();
+            } else throw std::invalid_argument("Unknown Human Creator method");
+            if(!ok)throw std::invalid_argument(error.empty()?"Human Creator edit rejected":error);
+            // Live preview follows the document after every accepted edit.
+            if(facialPreview_.creatorMode() && method!="studio.humanCreatorPreview" && method!="studio.humanCreatorInfo")
+                facialPreview_.bindCreator(humanCreator_.toDocument());
+            auto info=humanCreator_.info();
+            info.set("preview",facialPreview_.describe());
+            reply.set("result",std::move(info));
         } else if(method=="studio.humanAppearanceInfo" || method=="studio.humanAppearanceApply" ||
                   method=="studio.humanAppearanceSave" || method=="studio.humanAppearanceLoad" ||
-                  method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
+                  method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset" ||
+                  method=="studio.humanAppearanceThumbnails") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             if(method=="studio.humanAppearanceFromAsset") {
                 StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
@@ -798,6 +1008,8 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 std::string bytes((std::istreambuf_iterator<char>(in)),{});
                 const auto look=vivid::HumanAppearance::fromJson(Json::parse(bytes));
                 auto result=Json::object();result.set("name",Json::string("model profile"));result.set("look",look.toJson());reply.set("result",std::move(result));
+            } else if(method=="studio.humanAppearanceThumbnails") {
+                reply.set("result",readStudioHumanLookThumbnails(ws_.project.dir));
             } else if(method=="studio.humanAppearanceSave") {
                 reply.set("result",saveStudioHumanLook(ws_.project.dir,params.getStr("name"),params["look"]));
             } else if(method=="studio.humanAppearanceLoad") {

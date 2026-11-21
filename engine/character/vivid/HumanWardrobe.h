@@ -4,7 +4,7 @@
 namespace aiverse::vivid {
 // Content-relative asset keys are resolved exclusively by the host FileReader.
 // Recipe v1: hiddenMeshes:string[], items:[{id,asset,slot,enabled,bone,translation,
-// rotation,scale,hideMeshes:string[],masks:[{material,texture}]}].
+// rotation,scale,hideMeshes:string[],masks:[{material,texture}],tint?:[r,g,b]}] (tint multiplies the item colour).
 // Optional sockets:[{name,bone,translation,rotation,scale}]; items may select
 // socket instead of bone and use independentRig + attachmentRule keep_world/snap.
 // Masks: red=visibility (black hides), UV0, multiplied with original alpha.

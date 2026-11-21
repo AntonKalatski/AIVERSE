@@ -47,7 +47,18 @@ public:
     void setWindPreview(const StudioWindState& state) { wind_ = state; }
     Json windStats() const;
     bool facialReady() const noexcept{return facialReady_;}
+    std::vector<std::string> facialClips() const {return facialGpu_.clipNames();}
+    float facialBaseHeight() const {return facialGpu_.baseHeight();}
+    Json alignMakeup(const StudioFacialPreviewBinding& b) const {return facialGpu_.alignMakeup(b);}
     const std::string& facialError() const noexcept{return facialError_;}
+    // Facial preview sculpt pick (normalized head coordinates); false = miss.
+    // Never throws: a rejected pick returns false with the reason in error.
+    bool sculptPick(float x,float y,float width,float height,
+                    const vivid::HumanFaceShape& selection,vivid::HumanFaceHit& hit,
+                    std::string* error=nullptr) const noexcept;
+    // Next shown character frame → square PNG around the head (preset cards).
+    // crop=false: whole viewport (agent snapshots), at most 1280 px wide.
+    void captureFacialThumbnail(std::string path,bool crop=true){thumbnailPath_=std::move(path);thumbnailCrop_=crop;}
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -141,6 +152,10 @@ private:
     std::map<std::string,std::vector<render::Material>> primitiveMaterials_; // per frame, per entity
     render::Model* builtinPrimitive(bool sphere);
     StudioFacialGpuPreview facialGpu_;
+    std::string facialFramedGuid_; // character the camera was last framed on
+    std::string thumbnailPath_;   // pending preset thumbnail capture
+    bool thumbnailCrop_=true;
+    uint64_t facialCameraSerial_=0; // last applied character-editor camera view
     bool facialMode_=false,facialReady_=false;
     std::string facialError_;
     uint64_t materialRevision_ = std::numeric_limits<uint64_t>::max();

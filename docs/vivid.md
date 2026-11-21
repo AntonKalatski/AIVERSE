@@ -1943,3 +1943,101 @@ fixed PCF with bounds fitted to the character instead of a room-sized shadow
 volume. Ordinary game views keep their existing shadow behavior. This is a
 single-map adaptation, not virtual shadow maps. See
 `docs/qa/vivid-adaptive-shadows-2026-11-21.md` for actual verification and limits.
+## Stage 6G — safe live Human Creator publication (2026-11-19)
+
+The existing standalone VIVID Creator now stages a full replacement human before releasing the last-good visible one. Editing HumanDNA, changing eye/skin/hair material parameters, adjusting groom quality or reimporting an authored glTF/FBX/OBJ asset builds a new CPU head and groom, compiles the MotionWeave graph, uploads a replacement GPU model, creates a fresh immutable morph asset and separate actor GPU stream and allocates a presentation World. Only after each step succeeds is the previous instance retired behind a real GPU idle boundary. Failed edits preserve the old preview and report a concrete error; staged GPU allocations are released only after a successful idle barrier. The change preserves imported texture maps through `humanMaterialFromSource` and does not schedule or duplicate any skeletal animation.
+
+Versioned DNA JSON saving on the VIVID base already uses failure-safe atomic rename without deleting the previous file. The `vivid_human_creator` regression now exercises a deliberately nonreplaceable target with a sentinel to ensure an unsuccessful save cannot erase existing user content. An isolated branch, `feature/vivid-human-safe-publication`, keeps these integration hardening changes separate from parallel new appearance and human importer commits.
+
+**Native tests and GUI screenshots on this branch are still NOT RUN.** Current procedural skin/eye/groom is a preview reference, not photorealistic MetaHuman scan quality. HumanCreator and MotionWeave share established runtime modules; no proprietary DNA parser was introduced. Validate the existing 16-test VIVID suite and four real GUI capture modes on the Mac before promoting this branch, and run full AIVERSE regression before merging into main.
+## Stage 6F — Creator transaction and last-good save protection (2026-11-19)
+
+The existing full VIVID Creator (`tools/vivid-creator/main.cpp`, not a second editor) now uses a two-phase publication transaction. DNA edits, imported glTF/FBX material changes and groom-LOD adjustments first generate a complete CPU model, bind its MotionWeave graph, allocate/upload new head and hair GPU geometry and initialize the GPU morph actor. Only after the whole candidate is valid and the GPU has confirmed prior work idle does the Creator release and replace the previous visible character. A failed candidate upload/rig/ShaderGraph initialization leaves the last-good character rendered. Staged GPU resources are cleaned up behind an explicit idle barrier. This is an edit-time barrier only; the normal frame loop remains nonblocking.
+
+The versioned `HumanCreatorSession::saveFile` no longer removes the target DNA recipe when atomic `rename` fails. If a platform cannot replace an existing destination atomically, it reports an error and leaves the previous destination intact; the `.vivid.tmp` staging file remains recoverable. The `vivid_human_creator` regression now verifies that a directory/sentinel destination survives a failed save.
+
+Work is isolated on `feature/vivid-human-creator-ui`, because `feature/vivid-digital-humans` has progressed through other agents' Stage 6A–6E edits. This branch intentionally uses their existing full Creator, HumanDNA/Rig/Materials/Groom/Import, not a duplicate implementation. The macOS native CI workflow `.github/workflows/vivid-human-creator-validation.yml` builds the existing Creator and all 16 VIVID/MotionWeave focused test binaries and runs CTest. `AIVERSE_VIVID_REF=feature/vivid-human-creator-ui` selects this branch in `tools/vivid-validate.sh` (the branch default is changed within this branch only). That script also runs real Renderer3D one/12 actor and procedural/imported human Creator GPU GUI previews on a graphical Mac.
+
+**Status:** changes are committed, but the CI job was pending at last inspection and no user Mac test for this isolated branch has been reported. The earlier 11/11 CTest and one/12 actor GUI passes apply to older Stage 5J source only. Production-grade photorealism still requires authored licensed/scanned geometry, high-quality skin/eye/hair maps, rig corrective authoring, physically evaluated performance/lighting and actual end-to-end visual asset QA. Do not claim MetaHuman parity from the procedural reference.
+
+## Studio Human Creator — Studio window, MCP tools (2026-11-21)
+
+The `tools/vivid-creator` authoring sections are available in the HTML5 Studio as the **Human Creator** window
+(centre dock, panel `human_creator`) and to agents as `aiversemcp` tools. One shared core:
+
+- `engine/character/vivid/HumanCreatorWorkbench.h` — `vivid::HumanCreatorWorkbench`: `HumanCreatorSession` (DNA, undo/redo),
+  `RigAuthoring`, `SkinWeightAuthoring` and facial `ShapeRoute`s as one validated document. `schema()` lists 10 sections
+  (identity, skin, eyes, groom, anatomy, expression = 52 rest channels, routes, rig bone names, rigCorrections,
+  skinWeights) with DNA paths and the same limits as `HumanDNA::validate()`. Every edit is all-or-nothing.
+  `buildModels()` generates the procedural head + groom cards, bakes `expressionRest` through the routes into the CPU
+  vertices (`FaceShapeBinding` + `SparseMorphLibrary::evaluate`) and applies skin weights before upload.
+- Storage: `<project>/humans/<name>.json` `{version:1, dna, rigCorrections, skinWeights, routes}`; exclusive staging +
+  `renameat`, never truncates or deletes the last-good file; names `[A-Za-z0-9_-]{1,64}`, no symlinks.
+- Studio native: `studio.humanCreatorInfo|Set|Preset|Undo|Redo|Route|Rig|Skin|New|Save|Load|List|Preview`
+  (`apps/studio-native/StudioSession.cpp`). `Preview {enabled}` binds `StudioFacialPreviewBinding::bindCreator(document)`;
+  every accepted edit rebinds with a new revision. `StudioFacialGpuPreview` regenerates on the Metal owner thread,
+  publishes head + hair under fresh generation keys (last-good stays drawable until publication), applies rig
+  corrections to node world matrices at submit and draws the hair cards with the head framing.
+- Studio web: `apps/studio-web/src/panels/generated/HumanCreatorPanel.tsx`, helpers `panels/humanCreatorSchema.ts`.
+- MCP: `human_schema`, `human_list`, `human_get`, `human_create`, `human_edit`, `human_validate`
+  (`apps/editor/core/HumanCreatorOps.cpp`, GPU-free). Recipe: `skills/editor/aiverse-human-creator`.
+
+Limits of this stage: the Studio preview is static (no groom simulation; hair follows the head framing, not the
+animated scalp); viewport brush painting, scalp collision meshes and imported glTF/FBX/OBJ packages remain in
+`tools/vivid-creator`; `aiversemcp` cannot capture the Studio viewport.
+
+Tests: `studio_human_creator` (workbench: schema, validated edits, routes, rig/skin, rest bake moves vertices,
+document round trip, atomic storage, traversal rejection) and new `studio.humanCreator*` checks in
+`studio_human_appearance_session`; web `tests/humanCreatorSchema.test.mjs`.
+
+### Character editor (model source) and viewport sculpt — 2026-11-21
+
+The Human Creator window is the single character editor. Source "Модель проекта" edits an imported character
+(e.g. `Ada/model.gltf`) through the existing `studio.humanAppearance*` / face / wardrobe methods, in tabs:
+Тело (body proportions), Лицо (face meshes, jaw/nose/eyes sliders, photo fit, 3D-scan fit, separate head + body
+import), Скульпт, Кожа и волосы (skin, hair, lashes, eyes, material roles), Одежда (wardrobe recipe and bake),
+Поза и свет, Профили (`human-looks/`). Source "VIVID DNA" is the procedural workbench above. Shared state lives in
+`apps/studio-web/src/panels/useHumanLook.ts` (also used by the VIVID Appearance window).
+
+Viewport sculpt: `studio.humanSculpt {enabled, radius 0.01..1, strength 0..0.25, mode push|pull}`,
+`studio.humanSculptStroke {point, normal}` (normalized head coordinates), `studio.humanSculptUndo`. While armed, a Scene
+click in facial mode is a stroke, not a selection: `StudioMetalScene::sculptPick` -> `StudioFacialGpuPreview::sculptRaycast`
+-> `vivid::raycastHumanFace` (selected face meshes, bind pose) -> `vivid::humanSculptLandmark` -> a `HumanFaceShape`
+landmark on the bound character; the native event `human.sculpt` refreshes the window. Strokes are landmarks (max 256),
+baked with the character build. Each stroke re-imports the preview model (seconds on large characters).
+
+### Character Creator — MetaHuman-style workflow (2026-11-21)
+
+- Viewport sculpt: drag paints strokes (one per brush spacing, coalesced while native is busy), a brush circle follows
+  the cursor (`components/ViewportPlaceholder.tsx`, `panels/sculptBrushStore.ts`); up to 1024 landmarks.
+  The Scene keeps the previous character on screen while another one imports.
+- Live sliders: `useHumanLook.live()` applies while dragging without toggling busy; one history step per gesture.
+  One undo/redo history (look + face + sculpt), ⌘Z / ⇧⌘Z in the window.
+- Presets: saved looks get a 256 px picture `human-looks/<name>.png` (`studio.humanLookCapture` -> next facial frame via
+  `Device::captureNextFrame`, `studio.humanAppearanceThumbnails` returns data URLs). Random character with locked parts
+  and an offline Russian description parser (`describeToLook`) plus a copyable agent prompt.
+- Face blend per part: `studio.humanFacePick {enabled}` turns viewport clicks into head points (`human.facePick`
+  event); the picked part (nose, mouth, eyes, brows, jaw, cheeks) gets its own blend handle (`blendFace(..., perRegion)`).
+- Before/after: `studio.humanCompare {original}` draws the untouched source model (edit-in-place path).
+- Test expressions: `HumanPreviewAnimation.expression` (idle smile laugh surprise anger sad disgust talk), ARKit-named
+  morph weights layered over the clip pose (`applyHumanPreviewExpression`); models without those targets are unchanged.
+- Wardrobe: live try-on `studio.humanTryOn {wardrobe|null}` assembles base + outfit on a worker at 256 px textures
+  (nothing written); item `tint` [r,g,b] 0..4 multiplies the item colour; the build reports `lodTriangles` per LOD and
+  `textureSize`; "В игру" = `studio.humanPlaceInGame {type, path}` merges an RTS type with `view.model` and places one unit.
+- Pose & light tab: expression chips, pose segments, light preset cards (8 rigs) applied on click.
+- MCP: `human_look_schema`, `human_look_list`, `human_look_get`, `human_look_save` (`HumanCreatorOps.cpp`).
+- Second pass: agent snapshot handshake (`studio_character_snapshot` writes `.aiverse/agent-requests/character-snapshot.json`,
+  Studio's tick answers with `.aiverse/agent-snapshots/<id>.png`); makeup layers `makeup.*` (UV ellipses in the skin
+  graph, only compiled when used); hairstyle library (models with hair/hairstyle in the path go into the outfit's
+  `hair` slot and hide the model's own hair meshes, shared try-on via `useOutfit`); age control (`ageLook`); crowd
+  variants (N looks, optionally built + placed as unit types); model clips in "Поза и свет" (`HumanPreviewAnimation.clip`,
+  clip list from the GPU preview); index-only LODs for skinned characters at build (`vivid::generateHumanCharacterLods`,
+  shares LOD0 vertices, skips morph meshes); reference photo overlay over the viewport; character packages
+  `packages/<look>.aivchar` (`studio.humanPackage{List,Export,Import}`, import never overwrites); height in cm and a
+  10 cm ruler (`studio.humanRuler`).
+- Gap fixes: `studio.humanMakeupAlign` places makeup from the face geometry (`vivid::humanFaceUvAt`: nearest front skin
+  vertex at lips/cheeks/eyelids/chin of the normalized head box -> UV); hairstyles skin to the character when every
+  hair bone exists on it, otherwise attach to the head bone (`keep_world`); external animation files are added to the
+  engine clip sidecar `<model>.clips.json` (`studio.humanClip{List,Add,Remove}`, bound by bone path like
+  `applyClipSidecar`), and the preview re-imports through `StudioFacialPreviewBinding::reload()`.
+

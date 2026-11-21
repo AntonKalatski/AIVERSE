@@ -65,6 +65,8 @@ int main(){try{
  auto reassembled=vivid::assembleHumanCharacter("optics.glb",reader,Json::parse(R"({"version":1,"items":[],"hiddenMeshes":[]})"),vivid::HumanAppearance{},16);
  check(reassembled->materials[0].shading==ShadingModel::Eye&&reassembled->materials[0].eyeOptics.z>.1f,"assembly rejected or flattened persisted eye optics");
  auto invalid=recipe;invalid.member("items").push(recipe["items"][0]);bool rejected=false;try{vivid::validateHumanWardrobe(invalid);}catch(...){rejected=true;}check(rejected,"duplicate ID accepted");
+ {auto tinted=recipe;tinted.member("items").at(0).set("tint",Json::parse("[0.2,0.4,1.5]"));vivid::validateHumanWardrobe(tinted);
+  tinted.member("items").at(0).set("tint",Json::parse("[0.2,9,1]"));bool badTint=false;try{vivid::validateHumanWardrobe(tinted);}catch(...){badTint=true;}check(badTint,"out-of-range tint accepted");}
  invalid=recipe;invalid.member("items").at(0).set("bone",Json::string("missing"));rejected=false;try{vivid::assembleHumanCharacter("base.glb",reader,invalid,look,16);}catch(...){rejected=true;}check(rejected,"missing socket silently ignored");
  // Independent imported head keeps its skeleton and morphs, even with different names.
  auto headDoc=doc;auto headModel=modeling::build(headDoc);headModel.model->nodes[0].name="headRoot";

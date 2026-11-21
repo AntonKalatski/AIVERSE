@@ -3,7 +3,7 @@ import { shortcutKey } from './keyboard';
 import { ChevronDown, Search, Settings2 } from 'lucide-react';
 import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
 import {
-  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, dockStacks, panelStack, reopenTab
+  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, DOCK_PRESET_EVENT, closeTab, dockStacks, panelStack, reopenTab
 } from './nestedDock';
 import {
   WORKSPACES, WORKSPACE_INFO, legacyWorkspace, readActiveWorkspace, readWorkspaceDock, saveActiveWorkspace,
@@ -101,6 +101,12 @@ export default function App() {
     setWorkspace(next);
     setDock(readWorkspaceDock(next));
   }, [workspace, dock]);
+  // Character Creator "studio layout" button: open the Character workspace.
+  useEffect(() => {
+    const preset = (event: Event) => { if ((event as CustomEvent<string>).detail === 'character') switchWorkspace('character'); };
+    window.addEventListener(DOCK_PRESET_EVENT, preset);
+    return () => window.removeEventListener(DOCK_PRESET_EVENT, preset);
+  }, [switchWorkspace]);
 
   const refresh = useCallback(async () => {
     try {

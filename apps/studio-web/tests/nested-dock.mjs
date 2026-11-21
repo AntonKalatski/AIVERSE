@@ -23,7 +23,7 @@ test('move reorders within a tab stack',()=>{
 test('dragging panels across stacks retains identity',()=>{
   const t=moveTab(defaultDockTree(),'inspector','dock-bottom');
   assert.equal(panelStack(t,'inspector'),'dock-bottom');
-  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','runtime','nereid_flow','human_appearance','wind','history']);
+  assert.deepEqual(findDockStack(t,'dock-right').tabs,['human_creator','lighting','runtime','nereid_flow','human_appearance','wind','history']);
 });
 test('closing and reopening recreates a panel only once',()=>{
   let t=closeTab(defaultDockTree(),'scene');
@@ -96,12 +96,12 @@ test('closing last right panels removes their obsolete split',()=>{
   assert.ok(findDockStack(t,'dock-right'));
   t=closeTab(closeTab(closeTab(t,'lighting'),'runtime'),'nereid_flow');
   assert.ok(findDockStack(t,'dock-right'));
-  t=closeTab(closeTab(closeTab(t,'human_appearance'),'wind'),'history');
+  t=closeTab(closeTab(closeTab(closeTab(t,'human_appearance'),'wind'),'human_creator'),'history');
   assert.equal(findDockStack(t,'dock-right'),null);
   assert.equal(dockStacks(t).length,3);
 });
 test('reopening Inspector restores pruned right-hand dock',()=>{
-  let t=closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow'),'human_appearance'),'wind'),'history');
+  let t=closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow'),'human_appearance'),'wind'),'human_creator'),'history');
   t=reopenTab(t,'inspector','dock-right');
   assert.equal(panelStack(t,'inspector'),'dock-right');
   assert.equal(dockStacks(t).length,4);
@@ -127,4 +127,22 @@ test('old saved empty leaves are compacted upon restoration',()=>{
     first:{kind:'stack',id:'empty',tabs:[],active:null},
     second:{kind:'stack',id:'dock-center',tabs:['scene'],active:'scene'}}});
   assert.equal(t.root.id,'dock-center');
+});
+
+test('character editor never stays over the Scene viewport',async()=>{
+  const {moveCharacterEditorBesideScene}=await import('../src/nestedDock.ts');
+  const covered=moveTab(defaultDockTree(),'human_creator','dock-center');
+  assert.equal(panelStack(covered,'human_creator'),'dock-center');
+  assert.equal(panelStack(moveCharacterEditorBesideScene(covered),'human_creator'),'dock-right');
+  assert.equal(panelStack(defaultDockTree(),'human_creator'),'dock-right');
+});
+
+test('character studio preset: editor left, Scene stage, no bottom dock',async()=>{
+  const {characterDockTree}=await import('../src/nestedDock.ts');
+  const t=normalizeDockTree(characterDockTree());
+  assert.equal(panelStack(t,'human_creator'),'dock-left');
+  assert.equal(findDockStack(t,'dock-left').active,'human_creator');
+  assert.equal(findDockStack(t,'dock-center').active,'scene');
+  assert.equal(findDockStack(t,'dock-bottom'),null);
+  assert.equal(panelStack(t,'assets'),null);
 });

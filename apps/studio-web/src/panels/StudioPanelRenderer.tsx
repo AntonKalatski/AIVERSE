@@ -36,6 +36,8 @@ import NereidFlowPanel from './generated/NereidFlowPanel';
 import WindPanel from './generated/WindPanel';
 import HumanAppearancePanel from './generated/HumanAppearancePanel';
 
+import HumanCreatorPanel from './generated/HumanCreatorPanel';
+
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
@@ -135,6 +137,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'nereid_flow': return <NereidFlowPanel snapshot={snapshot}/>;
       case 'wind': return <WindPanel snapshot={snapshot}/>;
       case 'human_appearance': return <HumanAppearancePanel snapshot={snapshot}/>;
+      case 'human_creator': return <HumanCreatorPanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
       case 'animation':

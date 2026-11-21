@@ -1,5 +1,6 @@
 #include "apps/editor/AuthoringWater.h"
 #include "StudioMetalScene.h"
+#include "engine/render/CameraPng.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include "engine/render/GiModelGeometry.h"
 #include "apps/editor/SceneRenderable.h"
@@ -490,6 +491,22 @@ StudioMetalScene::~StudioMetalScene() {
         antialiasing_.shutdown();
         renderer_.shutdown();
         if(deviceLifetime_)deviceLifetime_->retire();
+    }
+}
+bool StudioMetalScene::sculptPick(float x,float y,float width,float height,
+        const vivid::HumanFaceShape& selection,vivid::HumanFaceHit& hit,std::string* error) const noexcept {
+    try {
+    float3 origin{},direction{};
+    // The facial preview renders with camera_ (no tween/ortho view override).
+    if(!facialMode_ || !cameraInitialized_ ||
+       !camera_.screenRay(x,y,width,height,origin,direction))return false;
+    return facialGpu_.sculptRaycast(origin,direction,selection,hit);
+    } catch(const std::exception& ex) {
+        if(error)*error=ex.what();
+        return false;
+    } catch(...) {
+        if(error)*error="Sculpt pick failed";
+        return false;
     }
 }
 std::string StudioMetalScene::pick(float x, float y, float width, float height,
@@ -1133,6 +1150,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         shadowResolution_={};
         if(facialRequested)renderer_.setShadowQuality(ShadowQuality::High);
         cameraInitialized_=false;
+        facialFramedGuid_.clear();
         // Facial preview overwrites renderer_.lighting; re-apply map lighting after it.
         lightingRevision_=std::numeric_limits<uint64_t>::max();
     }
@@ -1144,19 +1162,36 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     if(facialRequested) {
         renderer_.setModelLodEnabled(facialBinding.previewAnimation.automaticLod);
         std::string reason;
-        if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
+        const bool synced=facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason);
+        const std::string loading=synced?std::string{}:reason;
+        if(synced || facialGpu_.showsCharacter(facialBinding)) {
             // Spans both pose evaluation and the deferred renderer draw list.
             const auto modelRead=facialGpu_.acquireRead();
             if(!modelRead) {
                 facialError_="Facial Model read lease unavailable";
                 return;
             }
-            if(!cameraInitialized_) {
+            // Frame every newly shown character once; later edits of the
+            // same character keep the artist's camera.
+            if(!cameraInitialized_ || (synced && facialFramedGuid_!=facialBinding.guid())) {
                 camera_.target={0,0,0};
                 camera_.distance=4.2f;
-                camera_.pitch=.4f;
-                camera_.yaw=.25f;
+                camera_.pitch=.15f;
+                camera_.yaw=.0f;
+                camera_.ortho=false;
+                tween_.active=false;
                 cameraInitialized_=true;
+                facialFramedGuid_=facialBinding.guid();
+                facialCameraSerial_=facialBinding.cameraSerial;
+            }
+            if(facialCameraSerial_!=facialBinding.cameraSerial) {
+                // The preview normalizes the character to 2 units tall around
+                // the origin: head near +0.85, chest near +0.4.
+                facialCameraSerial_=facialBinding.cameraSerial;
+                const auto& v=facialBinding.cameraView;
+                camera_.target=v=="face"?float3{0,.82f,0}:v=="torso"?float3{0,.4f,0}:float3{0,0,0};
+                camera_.distance=v=="face"?.85f:v=="torso"?2.f:4.2f;
+                camera_.pitch=v=="face"?.05f:.15f;camera_.yaw=0;camera_.ortho=false;tween_.active=false;
             }
             device_->beginFrame(framebufferWidth,framebufferHeight);
             renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
@@ -1171,6 +1206,18 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             vivid::updateHumanStudioShadows(renderer_,shadowResolution_,h,framebufferHeight);
             const auto bg=facialBinding.studioLighting.rig().background;
             if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},kDrawNoCastShadow,0);
+            if(facialBinding.showRuler && extent.y>1e-4f) {
+                // Height ruler beside the character: pole + a tick every
+                // 10 cm (longer every 50 cm), in model units = metres.
+                const float bodyH=facialBinding.appearance()?facialBinding.appearance()->get("body.height"):1.f;
+                const float metres=extent.y*bodyH,x=extent.x*.5f*scale+.12f,t=.006f;
+                const render::float4 ink{.85f,.88f,.95f,1};
+                renderer_.drawMesh(cube_,mat4::translate({x,foot.y+metres*scale*.5f,0})*mat4::scale({t,metres*scale,t}),ink,kDrawNoCastShadow);
+                for(int cm=0;cm<=int(metres*100.f+.5f)&&cm<=400;cm+=10) {
+                    const float len=cm%50==0?.07f:.035f;
+                    renderer_.drawMesh(cube_,mat4::translate({x-len*.5f,foot.y+float(cm)*.01f*scale,0})*mat4::scale({len,t*.8f,t}),ink,kDrawNoCastShadow);
+                }
+            }
 
             const bool submitted=facialGpu_.submit(
                 renderer_,facialBinding,1.f/60.f,reason);
@@ -1182,9 +1229,40 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             renderer_.render(pass,&antialiasing_);
             renderer_.resolvePostFx();
             device_->endPass();
+            if(!thumbnailPath_.empty() && submitted && synced) {
+                // Square crop of the upper middle (the head in the face
+                // camera), box-filtered down to 256 px.
+                device_->captureNextFrame([path=std::move(thumbnailPath_),crop=thumbnailCrop_](int w,int h,std::vector<uint8_t> rgba) {
+                    if(w<=0||h<=0||rgba.size()<size_t(w)*size_t(h)*4)return;
+                    if(!crop) {
+                        // Whole frame, integer box downscale to <= 1280 px wide.
+                        const int f=std::max(1,(w+1279)/1280),ow=w/f,oh=h/f;
+                        std::vector<uint8_t> px(size_t(ow)*oh*4);
+                        for(int y=0;y<oh;++y)for(int x=0;x<ow;++x){unsigned acc[3]{};
+                            for(int sy=0;sy<f;++sy)for(int sx=0;sx<f;++sx){const auto* p=&rgba[(size_t(y*f+sy)*w+x*f+sx)*4];for(int c=0;c<3;++c)acc[c]+=p[c];}
+                            auto* d=&px[(size_t(y)*ow+x)*4];for(int c=0;c<3;++c)d[c]=uint8_t(acc[c]/unsigned(f*f));d[3]=255;}
+                        (void)render::cameraWritePngRgba8(path+".pending.png",ow,oh,px);
+                        std::error_code ec;std::filesystem::rename(path+".pending.png",path,ec);
+                        return;
+                    }
+                    const int side=std::max(1,std::min(w,h)*3/4),x0=(w-side)/2,y0=std::max(0,(h-side)/2-h/10);
+                    const int out=256;std::vector<uint8_t> px(size_t(out)*out*4);
+                    for(int y=0;y<out;++y)for(int x=0;x<out;++x){
+                        const int sx0=x0+x*side/out,sx1=std::max(sx0+1,x0+(x+1)*side/out);
+                        const int sy0=y0+y*side/out,sy1=std::max(sy0+1,y0+(y+1)*side/out);
+                        unsigned acc[4]{};unsigned n=0;
+                        for(int sy=sy0;sy<std::min(sy1,h);++sy)for(int sx=sx0;sx<std::min(sx1,w);++sx){
+                            const auto* p=&rgba[(size_t(sy)*w+sx)*4];for(int c=0;c<4;++c)acc[c]+=p[c];++n;}
+                        auto* d=&px[(size_t(y)*out+x)*4];
+                        for(int c=0;c<3;++c)d[c]=uint8_t(n?acc[c]/n:0);d[3]=255;
+                    }
+                    (void)render::cameraWritePngRgba8(path,out,out,px);
+                });
+                thumbnailPath_.clear();
+            }
             device_->endFrame();
-            facialReady_=submitted;
-            facialError_=submitted?std::string{}:reason;
+            facialReady_=submitted && synced;
+            facialError_=!submitted?reason:loading;
             return;
         }
         // Failed bind never displays stale model from a different GUID.
