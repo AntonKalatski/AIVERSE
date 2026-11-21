@@ -2812,3 +2812,8 @@ SpectraFX architecture/ownership review, not a trivial history reconciliation.
 Trial aborted cleanly to commit this handoff first. Next: review Inspector
 changes, preserve current main, publish only validated integrations without
 force push. Original dirty Studio checkout remains untouched.
+
+
+### 2026-11-21 material-state addition (Terra integration branch)
+
+4f34cfb71 appends default-zero Material.thinTransmission, generic direct diffuse-sheet PBR. Exact GPU material equality/hash, ModelMerge/GeometryScene include the value; static packets inherit value-snapshot checks. Revision-controlled owners must advance revisions on this mutation too. Nine-vec4 U2 layout retained, PBR uv1.w used instead of unused fixed unlit diffuse; shared normal/ICB pack helper. No cache/batching flags or submission semantics changed. Actual Metal conventional path9cases PASS, CPU material distinction/GLB roundtrip PASS; experimental ICB NOT RUN/defaultOFF. NativeEditor/Studio buildPASS. Full evidence/limitations in docs/terrain/AGENT_HANDOFF.md.
