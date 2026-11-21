@@ -214,6 +214,18 @@ void authoredEntityWorkflow() {
            AIVERSE_TEST_CHECK(session.dispatch(request).has("error"));
        }
    }
+   // Asset usage: named content files are used; a file no data names is listed as unused.
+   {
+       std::ofstream(project/"content"/"orphan.png")<<"png";
+       const auto all=call("studio.assetUsage");
+       AIVERSE_TEST_CHECK(!all.has("error"));
+       bool orphan=false,tree=false;
+       for(const auto& p:all["result"]["unused"].items()){orphan|=p.str()=="orphan.png";tree|=p.str()=="tree.gltf";}
+       AIVERSE_TEST_CHECK(orphan && !tree);
+       const auto refs=call("studio.assetUsage",R"({"path":"tree.gltf"})");
+       AIVERSE_TEST_CHECK(!refs.has("error") && refs["result"]["mentions"].size()>=1);
+       AIVERSE_TEST_CHECK(call("studio.assetUsage",R"({"path":"../x"})").has("error"));
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

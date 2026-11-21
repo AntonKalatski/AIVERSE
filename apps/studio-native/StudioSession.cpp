@@ -9,6 +9,7 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/studio-native/StudioAssetReferences.h"
+#include "apps/studio-native/StudioAssetUsage.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
@@ -1388,6 +1389,28 @@ Json StudioSession::dispatchImpl(const Json& request) {
             const Json current = ws_.call("light_list",Json::object(),"studio");
             if (current.has("error")) throw std::runtime_error(current.getStr("error"));
             reply.set("result",current);
+        } else if (method == "studio.assetUsage") {
+            // Find References (path) or every content file no project file names (no path).
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const auto files=studioProjectTextFiles(ws_.project.dir);
+            Json out=Json::object();
+            const std::string path=params.getStr("path");
+            if (!path.empty()) {
+                if (path.size()>500 || path.find("..")!=std::string::npos) throw std::runtime_error("Invalid asset path");
+                out.set("path",str(path));out.set("mentions",studioAssetMentions(files,path));
+            } else {
+                StudioAssetCatalog catalog(ws_.project.dir);
+                catalog.rebuild();
+                const auto named=studioNamedContent(files);
+                Json unused=Json::array();
+                for (const auto& entry:catalog.all()) {
+                    if (entry.directory || named.count(entry.path)) continue;
+                    if (entry.path.size()>5 && entry.path.compare(entry.path.size()-5,5,".meta")==0) continue;
+                    unused.push(str(entry.path));
+                }
+                out.set("unused",unused);out.set("scannedFiles",num(int64_t(files.size())));
+            }
+            reply.set("result",std::move(out));
         } else if (method == "studio.assetReferences") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             StudioAssetCatalog catalog(ws_.project.dir);

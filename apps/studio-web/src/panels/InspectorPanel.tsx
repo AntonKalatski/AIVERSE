@@ -64,6 +64,12 @@ function ComponentCard({ component, entityId, busy, collapsed, onToggle, onChang
         <MoreVertical size={13}/></button>
     </div>
     {!collapsed && <div className="insp-comp__body">
+      {component.id === 'Unit' && typeof component.properties.find(p => p.key === 'type')?.value === 'string' &&
+        <button type="button" className="insp-link" title="Open this unit type in the Rules panel"
+          onClick={() => { const type = String(component.properties.find(p => p.key === 'type')?.value);
+            window.dispatchEvent(new CustomEvent('studio:show-panel', { detail: 'rules' }));
+            window.setTimeout(() => window.dispatchEvent(new CustomEvent('studio:rules-type', { detail: type })), 0); }}>
+          Edit type “{String(component.properties.find(p => p.key === 'type')?.value)}” in Rules →</button>}
       {rows.map(row => <div key={row.label} className="insp-row insp-row--vector"
         title={row.fields.map(({field}) => field.description).filter(Boolean).join('\n') || undefined}>
         <span className="insp-row__label">{row.label}</span>

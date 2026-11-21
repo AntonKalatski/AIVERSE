@@ -11,6 +11,8 @@
 #include <set>
 #include <vector>
 #include <filesystem>
+#include <deque>
+#include <mutex>
 #include <chrono>
 #include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
@@ -59,6 +61,10 @@ public:
     // Next shown character frame → square PNG around the head (preset cards).
     // crop=false: whole viewport (agent snapshots), at most 1280 px wide.
     void captureFacialThumbnail(std::string path,bool crop=true){thumbnailPath_=std::move(path);thumbnailCrop_=crop;}
+    // Assets panel thumbnails: a content model rendered offscreen (one per frame) and written as a PNG.
+    // Finished assets (written or failed) are reported once by takeFinishedThumbnails().
+    void requestThumbnail(const std::string& projectPath, const std::string& asset, const std::string& file);
+    std::vector<std::string> takeFinishedThumbnails();
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -169,6 +175,14 @@ private:
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
     bool pivotSnap_ = false;
+    struct ThumbJob { std::string project, asset, file; };
+    std::deque<ThumbJob> thumbJobs_;
+    struct ThumbShared { std::mutex mutex; std::vector<std::string> done; };
+    std::shared_ptr<ThumbShared> thumbShared_ = std::make_shared<ThumbShared>();
+    gfx::TextureHandle thumbColor_, thumbDepth_;
+    std::map<std::string,std::unique_ptr<render::Model>> thumbModels_; // models not placed in the map
+    void renderThumbnail();
+    std::unique_ptr<render::Model> loadContentModel(const std::string& projectPath, const std::string& asset);
     std::vector<std::pair<std::string,render::float3>> snapPivots_; // proxy centres of the last frame
     // RTS built-in procedural shapes ("view": {"shape": …}) for types without a model file,
     // built once and shared; team-coloured parts take the owner colour.

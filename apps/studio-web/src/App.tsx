@@ -489,6 +489,7 @@ export default function App() {
         if (event.detail === 2) nativeWindowAction('studio.windowZoom');
         else nativeWindowAction('studio.windowDrag');
       }}>
+      <div className="titlebar__side titlebar__side--left">
       <div className="wordmark"><img className="engine-mark" src={engineLogo} alt=""/>
         <strong>AIVERSE</strong></div>
       <StudioMenuBar menus={menus}/>
@@ -497,8 +498,10 @@ export default function App() {
         <b>{snapshot?.project.name ?? 'Loading…'}</b>{snapshot?.project.dirty && <span className="dirty-dot active" aria-label="Unsaved changes"/>}<ChevronDown size={13}/>
       </button>
       <div className="header-drag-space"/>
+      </div>
       <HeaderGameControls enabled={connected && !!snapshot?.project.path} onState={setGame}
         onPlay={()=>showPanel('game')} onError={setError}/>
+      <div className="titlebar__side titlebar__side--right">
       <div className="header-drag-space"/>
       <WorkspaceTabs value={workspace} onChange={switchWorkspace}/>
       <button type="button" className="command-search-button" onClick={() => setPalette('')} aria-label="Search or run a command (⌘K)">
@@ -508,6 +511,7 @@ export default function App() {
       <div className="title-actions">
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
+      </div>
       </div>
     </header>
     {settingsOpen && <section className="studio-editor-settings" aria-label="Editor settings">
