@@ -452,6 +452,13 @@ void GameClient::fitCamera() {
         int n = std::sscanf(e, "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]);
         if (n >= 2) { cam_.target = {v[0], 0, v[1]}; cam_.distance = v[2]; cam_.pitch = v[3] / 57.2958f; cam_.yaw = v[4] / 57.2958f; cam_.minDistance = std::min(cam_.minDistance, v[2]); }
     }
+    if (hasStartCamera_) {   // host "Play from here"
+        hasStartCamera_ = false;
+        const float* v = startCamera_;
+        cam_.target = {v[0], 0, v[1]}; cam_.distance = std::clamp(v[2], 2.0f, cam_.maxDistance);
+        cam_.pitch = std::clamp(v[3], 10.0f, 89.0f) / 57.2958f; cam_.yaw = v[4] / 57.2958f;
+        cam_.minDistance = std::min(cam_.minDistance, cam_.distance);
+    }
     topDownConfigure();   // top-down heroes: follow camera on the own hero (ClientTopDown.cpp)
 }
 

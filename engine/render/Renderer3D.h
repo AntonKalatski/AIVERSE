@@ -2196,9 +2196,10 @@ private:
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
     // One-view borrowed atlas; beginScene drops it before the next view.
-    // U6 (three float4): origin+inverseSpacing, dimensions, ring offset=0.
+    // U6 (nine float4, GiDynamicShaders.h): per cascade origin+1/spacing,
+    // dimensions+probe offset, ring(+cascade count in cascade 0).
     gfx::TextureHandle dynamicGiAtlas_{};
-    std::array<float,12> dynamicGiUniforms_{};
+    std::array<float,36> dynamicGiUniforms_{};
     gfx::PipelineHandle currentPipe_;
     std::string modelError_;
     // baked lighting (Renderer3DBaked.cpp)

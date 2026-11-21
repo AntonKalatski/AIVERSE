@@ -4518,6 +4518,16 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             lighting_gles_admission
             gi_chunked_geometry
             gi_gpu_bvh_validator
+            gi_gpu_bvh_validation
+            gi_gpu_bvh_sparse_upload
+            gi_gpu_chunk_bvh_cache
+            gi_gpu_chunk_bvh_lifetime
+            gi_gpu_paged_bvh
+            gi_gpu_residency_planner
+            gi_world_dirty_accumulator
+            gi_geometry_scene
+            gi_world_geometry_bridge
+            gi_terraweave_resident_bridge
             lumaweave_direct_reference
             gi_dynamic_probe_reference
             gi_cpu_trace_budget
@@ -4525,6 +4535,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_dynamic_probe_texture
             lighting_cpu_gi_bridge
             lighting_gpu_bridge
+            lighting_gi_cascades
             lighting_luma_mobile_fallback
             lighting_model_gi_shader_contract
             lighting_terrain_gi_shader_contract)
@@ -4570,6 +4581,21 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
     add_test(NAME lighting_compute_gi_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_compute_gi_gpu PROPERTIES
         ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+    # Same scene plus a 9000-triangle chunk out of GI reach: residency keeps
+    # the GPU path (no CPU fallback) and the pixels still match the reference.
+    # Three GPU cascades in one atlas; the checked pixel lies in cascade 0.
+    add_test(NAME lighting_compute_gi_gpu_cascades COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_compute_gi_gpu_cascades PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+    add_test(NAME lighting_compute_gi_gpu_far_world COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_compute_gi_gpu_far_world PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_FAR_WORLD=1" LABELS "Lighting;GPU"
         TIMEOUT 120 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
         FAIL_REGULAR_EXPRESSION "FAIL")

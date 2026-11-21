@@ -28,6 +28,12 @@ export default function RulesPanel({ projectPath, onChanged }: { projectPath: st
     return all.map(id => ({ id, s: Math.max(fuzzyScore(query, id), fuzzyScore(query, String((rules!.types[id] as { name?: unknown })?.name ?? ''))) }))
       .filter(x => x.s >= 0).sort((a, b) => b.s - a.s).map(x => x.id);
   }, [rules, query]);
+  // Inspector → "Edit type in Rules" selects that type.
+  useEffect(() => {
+    const pick = (e: Event) => { const id = String((e as CustomEvent<unknown>).detail ?? ''); if (id) { setTypeId(id); setQuery(''); setRaw(null); } };
+    window.addEventListener('studio:rules-type', pick);
+    return () => window.removeEventListener('studio:rules-type', pick);
+  }, []);
   const values = useMemo(() => rules && typeId ? typeValues(typeId, rules.types[typeId], rules.resolved[typeId], rules.resources) : [], [rules, typeId]);
   const write = async (path: string, value: unknown) => {
     setBusy(true); setError('');
@@ -50,7 +56,9 @@ export default function RulesPanel({ projectPath, onChanged }: { projectPath: st
         <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search types" aria-label="Search unit types"/></label>
       <div role="listbox" aria-label="Unit types" className="rules__types">
         {ids.map(id => { const name = String((rules!.types[id] as { name?: unknown })?.name ?? id);
-          return <button key={id} type="button" role="option" aria-selected={id === typeId}
+          return <button key={id} type="button" role="option" aria-selected={id === typeId} draggable
+            title="Drag into the Scene to place a new object of this type"
+            onDragStart={e => { e.dataTransfer.setData('text/plain', 'aiverse-type:' + id); e.dataTransfer.effectAllowed = 'copy'; }}
             className={'rules__type' + (id === typeId ? ' is-active' : '')} onClick={() => { setTypeId(id); setRaw(null); }}>
             <b>{name}</b>{name !== id && <small>{id}</small>}</button>; })}
         {rules && !ids.length && <p className="rules__empty">No types.</p>}

@@ -28,6 +28,8 @@ public:
     void start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets,
                render::RenderDeviceLifetime::Lease deviceLease={}, std::optional<size_t> initialMap={});
     void stop();
+    // "Play from here": the first match camera (see GameClient::setStartCamera); call after start().
+    void setStartCamera(float x, float z, float distance, float pitchDeg, float yawDeg);
     // A stopped hosted client may still own GPU handles referenced by a
     // submitted editor frame. Retire its GPU allocations only when the
     // backend confirms that frame's GPU fence. Never guess CPU frame age.

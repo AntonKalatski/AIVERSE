@@ -17,6 +17,7 @@ StudioGameSurface::~StudioGameSurface() {
 void StudioGameSurface::start(const StudioGameLaunch& plan,const std::string& assets) {
     error_.clear();launch_=plan;assets_=assets;matchObserved_=false;++runtimeEpoch_;
     host_->start(*device_,plan.project,assets,lifetime_->lease(),plan.map);
+    if (plan.camera) { const auto& c=*plan.camera; host_->setStartCamera(c[0],c[1],c[2],c[3],c[4]); }
 }
 void StudioGameSurface::stop() { matchObserved_=false;++runtimeEpoch_; host_->suspendInput();host_->stop();host_->collectGpuRetirements(); }
 void StudioGameSurface::setDevice(const StudioGameDevice& profile) {
