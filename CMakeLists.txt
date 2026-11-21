@@ -2841,6 +2841,24 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
     endif()
 endif()
 
+# Headless Vulkan host of the same HDR / GI scene (Linux, Android device push).
+if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(linux|android)$")
+    add_executable(aiverse_hdr_vulkan tests/render/hdr_vulkan.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_hdr_vulkan PRIVATE aiverse_runtime)
+    if(AIVERSE_BUILD_TESTS)
+        foreach(_case dynamic_gi compute_gi compute_gi_cascades)
+            add_test(NAME lighting_${_case}_vulkan COMMAND aiverse_hdr_vulkan)
+        endforeach()
+        set_tests_properties(lighting_dynamic_gi_vulkan PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1")
+        set_tests_properties(lighting_compute_gi_vulkan PROPERTIES ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1")
+        set_tests_properties(lighting_compute_gi_cascades_vulkan PROPERTIES
+            ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3")
+        set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan
+            PROPERTIES LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
+endif()
+
 # Independently selectable CPU cable geometry; no renderer, physics or GPU link.
 add_library(aiverse_cables STATIC EXCLUDE_FROM_ALL engine/cables/Cables.cpp)
 add_library(AIVERSE::cables ALIAS aiverse_cables)
