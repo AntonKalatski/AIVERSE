@@ -98,7 +98,7 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 | 1 Naming (G7) | built + tested (stage 02): `aiverselib/mechanics`, namespace `aiverse::lib::mechanics` (alias `genre`), forwarders, CMake aliases, docs renamed. Package ids `bots-rts`/`bots-fps`/`genre-bots`/`genre-kits` and test names still old |
 | 2a Capability queries (G2) | built + tested (stage 02): `Project::isFps()` removed, `worldSpaceMaps()` / `actorSessionPlay()` / `actorSessionRules()` / `hostId()` |
 | E One scene document (G2) | not started |
-| A FPS host on ECS only | not started |
+| A FPS host on ECS only | built + tested (stage 03): `modules/fps` ECS only, races ported |
 | B One vehicle system (G5) | not started |
 | C Shared systems out of `modules/rts` (G3) | not started |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
