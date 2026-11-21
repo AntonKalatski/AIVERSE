@@ -567,7 +567,7 @@
         "src": "docs/devlog/media/systems/lens-sponza-dof.jpg",
         "caption": "LENS: объектив 35 мм f/1.4, фокус 4 м на занавесе; во врезке вторая камера той же сцены",
         "captionEn": "LENS: 35 mm f/1.4 lens focused at 4 m on the curtain; the inset is a second camera on the same scene",
-        "approved": false
+        "approved": true
       },
       "coverBrief": "Кинематографичный кадр, снятый LENS: глубина резкости, выверенная композиция, видно, что это работа камеры, а не скриншот редактора.",
       "article": "docs/camera-system.md",
