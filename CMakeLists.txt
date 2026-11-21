@@ -1180,6 +1180,17 @@ add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
 add_library(aiverse_client_runtime STATIC $<TARGET_OBJECTS:aiverse_runtime>)
 target_link_libraries(aiverse_client_runtime PUBLIC
     "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_LIBRARIES>")
+# The archive must carry every usage requirement of the runtime, not only its
+# libraries: Web link flags (-sUSE_WEBGL2, memory growth, idbfs) and public
+# definitions/includes are set on aiverse_runtime later in this file.
+target_link_options(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_OPTIONS>")
+target_compile_definitions(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_COMPILE_DEFINITIONS>")
+target_compile_options(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_COMPILE_OPTIONS>")
+target_include_directories(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_INCLUDE_DIRECTORIES>")
 if(AIVERSE_VULKAN)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
 endif()
