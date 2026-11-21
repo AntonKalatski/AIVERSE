@@ -104,6 +104,19 @@ int main() {
     candidate.reset();
     auto retry=scene.prepareUpdate(input,.1f);
     AIVERSE_TEST_CHECK(std::abs(retry->presentation().get<Player>(retry->presentationEntity(77)).instance->stateTime()-.2f)<.001f);
+    // The parallel path keeps one scheduler (worker threads) across
+    // preparation candidates instead of spawning one per prepared frame.
+    {
+        aiverse::View parallel(1);
+        parallel.setParallelThreshold(1);
+        (void)parallel.update(input,.1f);
+        auto first=parallel.prepareUpdate(input,.1f);
+        AIVERSE_TEST_CHECK(first->sharesAnimationScheduler(parallel));
+        auto second=first->prepareUpdate(input,.1f);
+        AIVERSE_TEST_CHECK(second->sharesAnimationScheduler(parallel));
+        AIVERSE_TEST_CHECK(std::abs(second->presentation().get<Player>(
+            second->presentationEntity(77)).instance->stateTime()-.3f)<.001f);
+    }
     input[0].id=0;bool rejected=false;
     try {auto invalid=scene.prepareUpdate(input,.1f);}catch(const std::invalid_argument&){rejected=true;}
     AIVERSE_TEST_CHECK(rejected && std::abs(original->stateTime()-.1f)<.001f);

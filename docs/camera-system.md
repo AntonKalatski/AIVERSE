@@ -60,14 +60,19 @@ The existing aiversemcp server and native editor share these Workspace operation
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `lens_scene_get` | none; project must be open | scene, exists, validation, normalizedScene, clientEnabled |
+| `lens_scene_get` | none; project must be open | scene, revision, exists, validation, normalizedScene, clientEnabled |
 | `lens_scene_validate` | scene | native loader validation, normalizedScene, count, clientCompatible |
-| `lens_scene_set` | scene, expectedScene | validated complete asset replacement |
-| `lens_camera_set` | camera, expectedScene | create/replace one complete record by stable id |
-| `lens_camera_delete` | id, expectedScene | remove one existing record |
+| `lens_scene_set` | scene, expectedRevision or expectedScene | validated complete asset replacement |
+| `lens_camera_set` | camera, expectedRevision or expectedScene | create/replace one complete record by stable id |
+| `lens_camera_delete` | id, expectedRevision or expectedScene | remove one existing record |
 
-Call open_game first. Pass the last get response's **scene**, not normalizedScene,
-as expectedScene. Stale edits fail; re-read and reconcile before retrying. Writes
+Call open_game first. Pass the last get response's **revision** (an opaque hash of
+the file bytes, `"missing"` without a file) as expectedRevision; successful writes
+return the new revision. expectedScene (the get response's **scene**, not
+normalizedScene) is still accepted and compared by value: member order and number
+spelling (`1` / `1.0`) are ignored. Stale edits fail; re-read and reconcile before
+retrying. The loader also rejects duplicate texture output keys, width xor height
+0 and texture outputs above 64 Mpix in total (`kCameraSceneMaxTexturePixels`). Writes
 save cameras.json immediately with staged replacement; they do not enter editor
 undo. Reload the native LENS window before saving its in-memory state, and restart
 the client. No live camera/GPU resource is destroyed by these tools, and game.json

@@ -298,12 +298,22 @@ private:
         PoolContinuousEmission continuous{};
         float accumulatedRate=0, accumulatedDistance=0, elapsed=0;
         std::vector<fx::FxHandle> cpuHandles;
+        size_t cpuHandlePruneAt=64; // amortized pruning of finished handles
     };
     struct Group {
         std::string key;
         std::unique_ptr<ComputeParticles> particles;
         bool stepOk=false; // never draw stale GPU vertices after a failed step
+        // No binding or active source references the group any more (e.g.
+        // its effect was redefined). Retired groups are never stepped, drawn,
+        // shared or counted toward maxGpuGroups; their GPU resources are
+        // released only after a device retirement token completes, and the
+        // emptied slot (particles == nullptr) is reused by a later group.
+        bool retired=false;
+        uint64_t retireToken=0;
+        bool live() const {return particles && !retired;}
     };
+    void retireUnusedGroups();
     bool defineCompiled(const std::string& name,const fx::EffectDef& effect,
                         const GraphRuntimeOptions& options,
                         const InstanceParameterTable& named);
@@ -340,6 +350,7 @@ private:
     bool particlePressureLatched_=false;
     bool readbackPressureLatched_=false;
     bool initialized_ = false, frameOpen_ = false, stepped_ = false, drawn_ = false;
+    bool groupsDirty_ = false; // bindings/sources changed: rescan group references
     std::string reason_;
 };
 

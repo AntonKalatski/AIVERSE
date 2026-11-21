@@ -7,6 +7,7 @@
 #include "../gfx/Gfx.h"
 #include "CameraExr.h"
 #include "CameraPng.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>

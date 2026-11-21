@@ -144,6 +144,7 @@ PrismaQuality Prisma::defaultQualityFor(const gfx::Device& dev, bool mobile) {
 bool Prisma::init(gfx::Device& dev) {
     checkGpuDevice(dev);
     dev_ = &dev;
+    hdrFailed_ = false; hdrFailedSizes_.clear(); hdrFailedError_.clear();
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
     triangle_ = dev.createBuffer(bd);
@@ -1072,13 +1073,7 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     RuntimeCapabilities out;
     out.deviceHealthy=dev_ && dev_->gpuHealthy() && enabled_ && settings_.enabled;
     out.hdrFormatSupported=dev_ && dev_->supports(gfx::PixelFormat::RGBA16F);
-    HdrMode authoredHdr=settings_.hdr;
-    if (const char* flag=std::getenv("AIVERSE_HDR")) {
-        const std::string mode=flag;
-        if (mode=="off" || mode=="0") authoredHdr=HdrMode::Off;
-        else if (mode=="on" || mode=="1") authoredHdr=HdrMode::On;
-    }
-    out.hdrAuthoredRequested=authoredHdr!=HdrMode::Off;
+    out.hdrAuthoredRequested=hdrModeWithEnv(settings_.hdr)!=HdrMode::Off;
     out.hdrRequested=hdrRequested();
     out.hdrEffectiveLastFrame=hdrFrame_ && stats_.width>0 && sceneReady_;
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
@@ -1115,6 +1110,10 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     else if (!dev_->gpuHealthy()) out.fallbackReason="GPU device lost";
     else if (!enabled_ || !settings_.enabled) out.fallbackReason="Prisma disabled";
     else if (!out.hdrFormatSupported) out.fallbackReason="RGBA16F unavailable";
+    else if (hdrFailed_)
+        out.fallbackReason=hdrFailedError_.empty() ?
+            std::string("HDR target allocation failed") :
+            "HDR target allocation failed: "+hdrFailedError_;
     else if (!out.hdrRequested) out.fallbackReason="HDR disabled or tier insufficient";
     else if (out.temporalRequested && quality_!=PrismaQuality::High)
         out.fallbackReason="Temporal HDR requires High quality";
@@ -1142,14 +1141,17 @@ bool Prisma::canonicalTemporalRequested() const {
 
 bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PrismaQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
-    HdrMode mode = settings_.hdr;
+    return hdrAtQuality(hdrModeWithEnv(settings_.hdr), quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
+}
+
+HdrMode Prisma::hdrModeWithEnv(HdrMode authored) {
     if (const char* e = std::getenv("AIVERSE_HDR")) {
         const std::string v = e;
-        if (v == "off" || v == "0") mode = HdrMode::Off;
-        else if (v == "on" || v == "1") mode = HdrMode::On;
-        else if (v == "auto") mode = HdrMode::Auto;
+        if (v == "off" || v == "0") return HdrMode::Off;
+        if (v == "on" || v == "1") return HdrMode::On;
+        if (v == "auto") return HdrMode::Auto;
     }
-    return hdrAtQuality(mode, quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
+    return authored;
 }
 
 bool Prisma::active() const {
@@ -1279,8 +1281,11 @@ gfx::PipelineHandle Prisma::program(Prog p) {
     return pipes_[p];
 }
 
-gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
-    const std::string key = std::to_string(mask) + (graphData ? graphData->dump(-1) : "");
+gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData,
+                                      const std::string* graphKey) {
+    const std::string graphText = graphData ?
+        (graphKey ? *graphKey : graphData->dump(-1)) : std::string();
+    const std::string key = std::to_string(mask) + graphText;
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
@@ -1299,7 +1304,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (graphData) {
         try {
             graphProgram=graph::compile(*graphData,"postfx");
-            graphPaths_[graphData->dump(-1)]=graphProgram.textures;
+            graphPaths_[graphText]=graphProgram.textures;
             const std::string marker="    RETURN(vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0));";
             std::string macros="\n#define SG_SAMPLE(uv) TEX0(TUV(uv))\n";
             for(size_t i=0;i<graphProgram.textures.size();++i) {
@@ -1409,6 +1414,11 @@ gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
 
 gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     if(dev_)checkGpuDevice(*dev_);
+    // A failed HDR allocation is not retried every frame for the same
+    // size, but a new size gets a fresh attempt (quality changes and
+    // init() forget all failures).
+    hdrFailed_ = std::find(hdrFailedSizes_.begin(), hdrFailedSizes_.end(),
+                           std::pair<int,int>{w, h}) != hdrFailedSizes_.end();
     hdrFrame_ = hdrRequested();
     Sized& s = sized(w, h);
     gfx::PassDesc p = out;
@@ -1418,7 +1428,10 @@ gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     sceneReady_ = p.colorTarget.valid() && p.depthTarget.valid();
     if (!sceneReady_ && hdrFrame_) {
         hdrFailed_ = true; hdrFrame_ = false;
-        std::fprintf(stderr, "[postfx] HDR allocation failed; falling back to RGBA8: %s\n", dev_->lastError().c_str());
+        if (hdrFailedSizes_.size() >= 16) hdrFailedSizes_.erase(hdrFailedSizes_.begin());
+        hdrFailedSizes_.emplace_back(w, h);
+        hdrFailedError_ = dev_ ? dev_->lastError() : std::string{};
+        std::fprintf(stderr, "[postfx] HDR allocation failed; falling back to RGBA8: %s\n", hdrFailedError_.c_str());
         return scenePass(out, w, h);
     }
     if (!sceneReady_) return out;
@@ -2670,6 +2683,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
     }
     const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
+    // Serialize the graph once per frame; every composite() lookup below
+    // reuses this key instead of dumping the JSON again.
+    const std::string graphKey = graphData ? graphData->dump(-1) : std::string();
     std::vector<gfx::TextureHandle> graphImages;
     bool graphInputsReady = true;
     if (graphEffect) {
@@ -2678,8 +2694,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         // Bloom/Grade/LUT to fall all the way back to composite(0).
         // Compile the graph's variant once to populate its texture list;
         // the normal composite cache prevents a repeated GPU build.
-        composite(mask, graphData);
-        const auto it = graphPaths_.find(graphEffect->shaderGraph.dump(-1));
+        composite(mask, graphData, &graphKey);
+        const auto it = graphPaths_.find(graphKey);
         if (it != graphPaths_.end()) {
             for (const auto& path : it->second) {
                 graphImages.push_back(graphTexture(path));
@@ -2700,14 +2716,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         selectedGraph ? graphImages.size() : 0, automaticExposure.valid());
     if (automaticExposure.valid() && authoredLayout.valid)
         mask |= kPfAutoExposure;
-    gfx::PipelineHandle pipe = composite(mask, selectedGraph);
+    gfx::PipelineHandle pipe = composite(mask, selectedGraph, &graphKey);
     if (!pipe.valid() && (mask & kPfUnderwaterDepth)) {
         mask &= ~kPfUnderwaterDepth;
-        pipe = composite(mask, selectedGraph);
+        pipe = composite(mask, selectedGraph, &graphKey);
     }
     if (!pipe.valid() && (mask & kPfAutoExposure)) {
         mask &= ~kPfAutoExposure;
-        pipe = composite(mask, selectedGraph);
+        pipe = composite(mask, selectedGraph, &graphKey);
     }
     if (!pipe.valid() && selectedGraph) {
         selectedGraph = nullptr;

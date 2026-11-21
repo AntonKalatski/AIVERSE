@@ -317,6 +317,10 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     // catch path can then retain the failed staging scene without allocating.
     failedStages_.reserve(failedStages_.size()+1);
     auto staged=std::make_unique<GeometryScene>();
+    // The staging owner must build with the live scene's STRATA policy;
+    // a default-constructed scene has every STRATA path disabled and a
+    // transactional reload would otherwise silently turn STRATA off.
+    staged->copyStrataConfigFrom(*this);
     try {
         staged->loadImpl(dev,json,read,{},2000000);
     } catch (...) {
@@ -342,8 +346,62 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     errorPixels_=staged->errorPixels_;
     maxPixels_=staged->maxPixels_;
     proxyVertices_=staged->proxyVertices_;
+    // STRATA sidecars are keyed by Model*/Instance* addresses that stay
+    // stable across the container moves above (unique_ptr / vector moves).
+    // retireResident() already released the old live STRATA resources.
+    strataStaging_=std::move(staged->strataStaging_);
+    strataGpuMetadata_=std::move(staged->strataGpuMetadata_);
+    strataGpuCulling_=std::move(staged->strataGpuCulling_);
+    strataPortableSources_=std::move(staged->strataPortableSources_);
+    strataGlobalIndexLeases_=std::move(staged->strataGlobalIndexLeases_);
+    strataPortableDrawModels_=std::move(staged->strataPortableDrawModels_);
+    strataPortableLodHistories_=std::move(staged->strataPortableLodHistories_);
+    strataDebugGeometry_=std::move(staged->strataDebugGeometry_);
+    strataGpuDevice_=staged->strataGpuDevice_;
+    strataPortableDevice_=staged->strataPortableDevice_;
+    strataStreamingFrameSerial_=staged->strataStreamingFrameSerial_;
+    strataStreamingFrameBudgetLeft_=staged->strataStreamingFrameBudgetLeft_;
+    strataStreamingSourceCursor_=staged->strataStreamingSourceCursor_;
+    staged->strataStaging_.reset();
+    staged->strataGpuMetadata_.reset();
+    staged->strataGpuCulling_.reset();
+    staged->strataPortableSources_.clear();
+    staged->strataGlobalIndexLeases_.clear();
+    staged->strataPortableDrawModels_.clear();
+    staged->strataPortableLodHistories_.clear();
+    staged->strataDebugGeometry_.clear();
+    staged->strataGpuDevice_=nullptr;
+    staged->strataPortableDevice_=nullptr;
     staged->stats_={};
     staged->proxyVertices_=0;
+}
+void GeometryScene::copyStrataConfigFrom(const GeometryScene& o) {
+    strataStagingEnabled_=o.strataStagingEnabled_;
+    strataGpuMetadataEnabled_=o.strataGpuMetadataEnabled_;
+    strataGpuCullingEnabled_=o.strataGpuCullingEnabled_;
+    strataRenderPreviewEnabled_=o.strataRenderPreviewEnabled_;
+    strataPortableRenderingEnabled_=o.strataPortableRenderingEnabled_;
+    strataLodHysteresisFraction_=o.strataLodHysteresisFraction_;
+    // Debug view options decide per-source capture during load.
+    strataDebugView_=o.strataDebugView_;
+    strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
+    strataGpuLodPolicyEpoch_=o.strataGpuLodPolicyEpoch_;
+    strataVulkanGpuIndirectEnabled_=o.strataVulkanGpuIndirectEnabled_;
+    strataVulkanGpuSelectionParityVerified_=o.strataVulkanGpuSelectionParityVerified_;
+    strataVulkanGpuRasterParityVerified_=o.strataVulkanGpuRasterParityVerified_;
+    strataGpuTemporalParityVerified_=o.strataGpuTemporalParityVerified_;
+    strataVulkanGpuSunShadowParityVerified_=o.strataVulkanGpuSunShadowParityVerified_;
+    strataVulkanGpuSpotShadowParityVerified_=o.strataVulkanGpuSpotShadowParityVerified_;
+    strataVulkanGpuReflectionParityVerified_=o.strataVulkanGpuReflectionParityVerified_;
+    strataStreamingIndexBudgetBytes_=o.strataStreamingIndexBudgetBytes_;
+    strataStreamingSceneBudgetBytes_=o.strataStreamingSceneBudgetBytes_;
+    strataGlobalIndexBudgetBytes_=o.strataGlobalIndexBudgetBytes_;
+    strataGlobalFrameUploadBudgetBytes_=o.strataGlobalFrameUploadBudgetBytes_;
+    strataIncrementalIndexStreamingEnabled_=o.strataIncrementalIndexStreamingEnabled_;
+    strataStreamingUploadBudgetBytes_=o.strataStreamingUploadBudgetBytes_;
+    strataStreamingFrameUploadBudgetBytes_=o.strataStreamingFrameUploadBudgetBytes_;
+    strataDiskPageDirectory_=o.strataDiskPageDirectory_;
+    strataDropArchivedCpuIndicesEnabled_=o.strataDropArchivedCpuIndicesEnabled_;
 }
 
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}
