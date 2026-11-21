@@ -136,7 +136,7 @@ void grassOverlay() {
     CHECK(legacy && legacy->meshes.size() == 1 && legacy->meshes[0].primitives.size() == 1);
     // Empty overlay object (no fire, no sway) is bit-identical to legacy.
     terraweave::GrassPresentationOptions none;
-    const auto same = terraweave::makeGrassPatchModel(patch, flat, q, &none);
+    const auto same = terraweave::makeGrassPatchModel(patch, flat, q, {}, &none);
     CHECK(same && same->vertices.size() == legacy->vertices.size());
     bool identical = same && same->vertices.size() == legacy->vertices.size();
     for (std::size_t i = 0; identical && i < legacy->vertices.size(); ++i)
@@ -151,7 +151,7 @@ void grassOverlay() {
         if (x < 800) s.charPermille = 1000; else { s.firePermille = 900; s.charPermille = 200; }
         return s;
     };
-    const auto m = terraweave::makeGrassPatchModel(patch, flat, q, &burn);
+    const auto m = terraweave::makeGrassPatchModel(patch, flat, q, {}, &burn);
     CHECK(m && m->materials.size() == 2);
     CHECK(m->materials[0].shaderGraph != nullptr);
     CHECK(m->meshes[0].primitives.size() == 2);
@@ -161,7 +161,9 @@ void grassOverlay() {
     float maxLeft = 0, maxRight = 0, legacyMax = 0;
     for (const auto& v : legacy->vertices) legacyMax = std::max(legacyMax, v.pos.y);
     for (const auto& v : m->vertices) {
-        (v.pos.x < 8.f ? maxLeft : maxRight) = std::max(v.pos.x < 8.f ? maxLeft : maxRight, v.pos.y);
+        // Classify away from the x = 8 m burn line (blades bend a few cm).
+        if (v.pos.x < 7.5f) maxLeft = std::max(maxLeft, v.pos.y);
+        else if (v.pos.x > 8.5f) maxRight = std::max(maxRight, v.pos.y);
         const bool top = v.uv.y > 0.5f;
         CHECK(((v.color >> 24) == 0xffu) == top);   // sway weight root->tip
     }

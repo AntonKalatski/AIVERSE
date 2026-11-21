@@ -10,7 +10,7 @@
 namespace aiverse::render {
 
 namespace {
-struct DrawUniformsR { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; };   // = DrawUniforms (Renderer3D.cpp)
+struct DrawUniformsR { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; float waterFlowRect[4]; };   // = DrawUniforms (Renderer3D.cpp)
 } // namespace
 
 void Renderer3D::renderReflection() {
@@ -62,6 +62,7 @@ void Renderer3D::renderReflection() {
         dev_->setTexture(0, shadowMap_);
         lights.bind(2, 1, 2);   // not ready yet: binds black for the reflection slot
         bindTraceTextures();    // height field (terrain shadows in the mirror image), scene placeholders
+        dev_->setTexture(6,white_);
         for (const auto& it : items_) {
             if (it.color.w < 0.99f) continue;
             // Kingston: ground decals are visible through water, never mirrored.

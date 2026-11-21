@@ -177,6 +177,17 @@ Imported materials keep their PBR values. Overrides per material name, `"*"` for
 | `color` | base colour factor `[r,g,b(,a)]` (linear) |
 | `metallic`, `roughness` | factors (multiplied with the metallic-roughness texture) |
 | `shadowDiffusion` | Extra received sun-shadow blur radius, 0..1 world units; default 0. Medium/High shadow tiers only; independent of roughness. |
+| `thinTransmission` | Direct diffuse transmission for thin PBR leaves/cloth, 0..1; default 0. Independent of artistic SSS. |
+| `sssStrength` | Artistic subsurface diffuse response, 0..1; default 0 (disabled). |
+| `sssColor` | Linear RGB scattering tint; default [1,1,1]. |
+| `sssScale` | Wrap width and backlight falloff, 0..1; default 0.5. |
+
+SSS in this stage is an opt-in, single-pass PBR approximation. It adds tinted
+diffuse light near the sun-facing silhouette and on the backlit side; specular
+lighting remains unchanged. It does not measure mesh thickness, diffuse light
+through the volume, or sample a thickness map. `sssStrength: 0` preserves
+the previous shader result. Studio Materials accepts `sssColor` as three
+comma-separated linear RGB values and saves the array in `materials.json`.
 | `emissive`, `emissiveStrength` | glow (linear colour × strength) |
 | `alpha` | `opaque`, `mask` (alpha test, `cutoff`), `blend` (sorted, no shadow) |
 | `doubleSided`, `unlit`, `castShadow`, `receiveShadow`, `vertexColors` | switches |

@@ -412,6 +412,29 @@ public:
                                    size_t size, size_t offset) override {
         return uploadSharedStorage(h, data, size, offset);
     }
+    bool updateStorageBufferChecked(BufferHandle h,const void* data,
+                                    size_t size,size_t offset=0) override {
+        auto* b=buffers_.get(h.id);
+        if(!b || !b->storage || !cmd_ || enc_ || compute_ ||
+           gpuIcbEncoder_ || !gpuHealthy_->load() || !data || size==0 ||
+           offset>b->size || size>b->size-offset)return false;
+        id<MTLBuffer> upload=[device_ newBufferWithBytes:data length:size
+                                               options:MTLResourceStorageModeShared];
+        if(!upload) {
+            error_="checked SpectraFX storage upload allocation failed";
+            gpuHealthy_->store(false);
+            return false;
+        }
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit) {
+            error_="checked SpectraFX storage upload blit encoder unavailable";
+            return false;
+        }
+        [blit copyFromBuffer:upload sourceOffset:0
+                   toBuffer:b->bufs[0] destinationOffset:offset size:size];
+        [blit endEncoding];
+        return true;
+    }
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override {
         auto* b = buffers_.get(h.id);
         if (!b) return;
@@ -764,6 +787,31 @@ public:
             read->ready.store(true,std::memory_order_release);
         }];
         bufferReads_.push_back(std::move(read));return true;
+    }
+    bool readBufferRangeAsync(BufferHandle h,size_t offset,size_t size,
+                              BufferReadFn callback) override {
+        auto* b=buffers_.get(h.id);
+        if(!cmd_||enc_||compute_||gpuIcbEncoder_||!gpuHealthy_->load()||!b||!size||offset>b->size||
+           size>b->size-offset||size>65536||!callback||
+           bufferReads_.size()>=32)return false;
+        id<MTLBuffer> dst=[device_ newBufferWithLength:size
+                             options:MTLResourceStorageModeShared];
+        if(!dst)return false;
+        auto read=std::make_shared<BufferRead>();
+        read->bytes.resize(size);
+        read->callback=std::move(callback);
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit)return false;
+        [blit copyFromBuffer:current(*b) sourceOffset:offset
+                  toBuffer:dst destinationOffset:0 size:size];
+        [blit endEncoding];
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> cb){
+            if(cb.status!=MTLCommandBufferStatusCompleted)read->bytes.clear();
+            else memcpy(read->bytes.data(),dst.contents,size);
+            read->ready.store(true,std::memory_order_release);
+        }];
+        bufferReads_.push_back(std::move(read));
+        return true;
     }
     void deliverBufferReads(){
         // Move ready entries before callbacks, allowing callbacks to enqueue other work.
@@ -3178,6 +3226,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         if (usePbrVariant)
             [enc_ setRenderPipelineState:pipeline->state];
         return true;
+    }
+    bool supportsGpuAuthoredIndirectDraw() const override {
+        // This is the plain Metal indirect-buffer path, not GPU-encoded ICB.
+        // No unstable ICB feature flags or render-pass inheritance required.
+        return supportsCompute();
     }
     bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override {
         if (!enc_ || !pipelines_.get(pipelineId_) || !buffers_.get(ibId_)) return false;

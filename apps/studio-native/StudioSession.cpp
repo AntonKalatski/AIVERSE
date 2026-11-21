@@ -1,4 +1,13 @@
+#include "apps/editor/AuthoringWater.h"
 #include "StudioSession.h"
+#include "engine/world/NereidFlowAuthoring.h"
+#include "apps/editor/core/ProjectFile.h"
+#include "modules/rts/RtsMap.h"
+#include "apps/editor/EditorWorldEdit.h"
+#include "apps/studio-native/StudioContentDirectory.h"
+#include "apps/studio-native/StudioAssetCatalog.h"
+#include "apps/studio-native/StudioAssetReferences.h"
+#include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
@@ -7,11 +16,15 @@
 #include "apps/studio-native/StudioMaterialValidation.h"
 #include "apps/studio-native/StudioShaderGraphValidation.h"
 #include "apps/studio-native/StudioShaderGraphDraft.h"
+#include "apps/studio-native/StudioFacialRigDocument.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <filesystem>
+#include <map>
 #include <stdexcept>
 #include <utility>
 #include <tuple>
@@ -37,28 +50,81 @@ Json numericProp(const char* key, const char* label, Json value, bool integer = 
     if (integer) r.set("integer", Json::fromBool(true));
     return r;
 }
-std::string nodeId(const editor::MapDoc& map,const editor::DocumentEntityRef& ref) { return studioDocumentId(map,ref); }
+std::string nodeId(const editor::DocumentEntityRef& ref,const editor::MapDoc& map) { return studioDocumentId(ref,map); }
+// Resolve native picker/CLI inputs before locating the project-local journal.
+// Workspace supports directories, manifest/project files and sample template IDs.
+std::string recoveredProjectDir(const editor::Workspace& ws,const std::string& input) {
+    std::string error;
+    std::string directory=editor::resolveProjectDir(input,&error);
+    if (directory.empty() && !editor::isProjectFilePath(input)) {
+        const auto sample=std::filesystem::path(ws.gamesDir())/input;
+        if (std::filesystem::exists(sample/"game.json")) directory=sample.string();
+    }
+    if (directory.empty()) throw std::runtime_error(error.empty()?"Cannot resolve project":error);
+    directory=std::filesystem::weakly_canonical(directory).string();
+    StudioMoveJournal::recover(directory);
+    return directory;
+}
+
 }
 StudioSession::StudioSession(const std::string& engineRoot, const std::string& project) {
     ws_.engineDir = engineRoot;
     if (!project.empty()) {
+        const auto directory=recoveredProjectDir(ws_,project);
         std::string error;
-        if (!ws_.openGame(project, &error)) throw std::runtime_error(error.empty() ? "Cannot open project" : error);
+        if (!ws_.openGame(directory, &error)) throw std::runtime_error(error.empty() ? "Cannot open project" : error);
+        // A project opened from the CLI follows the same content policy as
+        // projects chosen through the native Open Project panel.
+        (void)studioContentRoot(ws_.project.dir);
     }
 }
 int StudioSession::indexFor(const std::string& id) const {
-    if (id.compare(0, 7, "entity:") != 0 || id.size() == 7) throw std::runtime_error("Invalid entity ID");
-    uint64_t n = 0;
-    for (size_t i = 7; i < id.size(); ++i) {
-        unsigned char c = static_cast<unsigned char>(id[i]);
-        if (!std::isdigit(c)) throw std::runtime_error("Invalid entity ID");
-        const uint64_t digit = uint64_t(c - '0');
-        const uint64_t limit = uint64_t(std::numeric_limits<int>::max());
-        if (n > (limit - digit) / 10) throw std::runtime_error("Entity index overflow");
-        n = n * 10 + digit;
+    const int index=studioMapEntityIndex(id,ws_.map);
+   if(index<0)throw std::runtime_error("Invalid or missing entity ID");
+   return index;
+}
+Json StudioSession::propertiesFor(const std::string& entityId) const {
+    if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
+    Json fields = Json::array();
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
+        if (nodeId(node.ref,ws_.map) != entityId) continue;
+        if(node.ref.isLight()) {
+                const auto& light=*editor::documentLight(ws_.map,node.ref);
+                fields.push(prop("name","Name","text",str(light.getStr("name"))));
+                auto type=prop("type","Light type","text",str(light.getStr("type","point")));
+                type.set("options",Json::parse(R"([{"label":"Point","value":"point"},{"label":"Spot","value":"spot"}])"));fields.push(type);
+                for(const auto& [key,label,def,lo,hi]:std::vector<std::tuple<const char*,const char*,double,double,double>>{
+                    {"x","Position X",0,-1000000,1000000},
+                    {"height",ws_.project.isFps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
+                    auto field=numericProp(key,label,Json::number(light[key].toDouble(def),3));
+                    field.set("min",Json::number(lo));field.set("max",Json::number(hi));fields.push(field);
+                }
+                fields.push(prop("nightOnly","Night only","boolean",Json::fromBool(light.getBool("nightOnly"))));
+                fields.push(prop("electric","Electric","boolean",Json::fromBool(light.getBool("electric"))));
+            return fields;
+        } else if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
+            const auto& e = ws_.map.data.entities.at(node.ref.index);
+            fields.push(prop("type", "Type", "text", str(e.type)));
+            fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
+            fields.push(numericProp("z", "Position Z", Json::number(double(e.z), 4)));
+            fields.push(numericProp("owner", "Owner", num(int64_t(e.owner)), true));
+           if(editor::authoredEntity(e)) {
+               const auto& transform=e.extra["components"]["Transform"];
+               fields.push(numericProp("y","Position Y",transform.has("y")?transform["y"]:Json::number(0.0)));
+               if(!e.extra["components"].has("NereidWater")) {
+                   fields.push(numericProp("yaw","Rotation Y",transform.has("yaw")?transform["yaw"]:Json::number(0.0)));
+                   auto scale=numericProp("scale","Uniform scale",transform.has("scale")?transform["scale"]:Json::number(1.0));scale.set("min",Json::number(.001));scale.set("max",Json::number(10000.0));fields.push(scale);
+               }
+               fields.push(prop("asset","Model","text",str(editor::authoredModelAsset(e)),false));
+           }
+        } else if (node.hasPosition) {
+            fields.push(numericProp("x", "Position X", Json::number(node.position.x, 3)));
+            fields.push(numericProp("y", "Position Y", Json::number(node.position.y, 3)));
+            fields.push(numericProp("z", "Position Z", Json::number(node.position.z, 3)));
+        }
+        return fields;
     }
-    if (n >= ws_.map.data.entities.size()) throw std::runtime_error("Entity does not exist");
-    return int(n);
+    throw std::runtime_error("Unknown document object");
 }
 Json StudioSession::snapshot() const {
     Json result = Json::object();
@@ -73,7 +139,7 @@ Json StudioSession::snapshot() const {
     const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps());
     for (const auto& node : nodes) {
         Json row = Json::object();
-        row.set("id", str(nodeId(ws_.map,node.ref)));
+        row.set("id", str(nodeId(node.ref,ws_.map)));
         row.set("name", str(node.label));
         // UI receives only generic display kind; document source names remain native.
         row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
@@ -88,7 +154,7 @@ Json StudioSession::snapshot() const {
     bool valid = false;
     if (!selected_.empty()) {
         for (const auto& node : nodes) {
-            if (nodeId(ws_.map,node.ref) != selected_) continue;
+            if (nodeId(node.ref,ws_.map) != selected_) continue;
             valid = true;
             if(node.ref.isLight()) {
                 const auto& light=*editor::documentLight(ws_.map,node.ref);
@@ -116,11 +182,7 @@ Json StudioSession::snapshot() const {
                 }
                 entityFields.push(fields[0]);fields=Json::array();
             } else if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
-                const auto& e = ws_.map.data.entities.at(node.ref.index);
-                fields.push(prop("type", "Type", "text", str(e.type)));
-                fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
-                fields.push(numericProp("z", "Position Z", Json::number(double(e.z), 4)));
-                fields.push(numericProp("owner", "Owner", num(int64_t(e.owner)), true));
+                fields=propertiesFor(selected_);
             } else if (node.hasPosition) {
                 // Show authoritative collider/spawn coordinates, but don't pretend
                 // unsupported authoring operations are writable yet.
@@ -168,15 +230,40 @@ void StudioSession::refreshMaterialPreview() {
     previewMaterialFactors_=resolved;
     ++previewMaterialRevision_;
 }
+Json StudioSession::saveMapAs(const std::string& path) {
+    if (ws_.project.dir.empty() || path.empty()) throw std::runtime_error("Open a project and choose a map file");
+    namespace fs=std::filesystem;
+    const auto root=fs::weakly_canonical(ws_.project.dir);
+    const auto target=fs::weakly_canonical(path);
+    const auto relative=target.lexically_relative(root);
+    if (relative.empty() || relative.is_absolute() || *relative.begin()!="maps" || target.extension()!=".json")
+        throw std::runtime_error("Choose a .json map inside the current project maps folder");
+    Json args=Json::object();args.set("file",str(target.string()));args.set("addToGame",Json::fromBool(true));
+    const auto result=ws_.call("map_save",args,"studio");
+    if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+    std::string error;
+    if (ws_.project.rulesDirty && !ws_.project.saveRules(&error)) throw std::runtime_error(error);
+    if (ws_.project.manifestDirty && !ws_.project.saveManifest(&error)) throw std::runtime_error(error);
+    return snapshot();
+}
 Json StudioSession::openProject(const std::string& path) {
     if (path.empty()) throw std::runtime_error("Project path is empty");
+    const auto directory=recoveredProjectDir(ws_,path);
     std::string error;
-    if (!ws_.openGame(path, &error))
+    if (!ws_.openGame(directory, &error))
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
+    (void)studioContentRoot(ws_.project.dir);
+    pendingAssetTransfer_.reset();
     selected_.clear();
     previewMaterialName_.clear();
     refreshMaterialPreview();
     return snapshot();
+}
+Json StudioSession::previewExternalAssets(const std::vector<std::filesystem::path>& files,
+                                          const std::string& destination) {
+    if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+    pendingAssetTransfer_=StudioTransferPlan::external(ws_.project.dir,destination,files);
+    return pendingAssetTransfer_->describe();
 }
 int StudioSession::selectedEntityIndex() const {
     if (selected_.empty()) return -1;
@@ -194,13 +281,46 @@ Json StudioSession::dispatch(const Json& request) {
             if(!params["entityId"].isString())throw std::runtime_error("Invalid light entity ID");
             bool found=false;
             for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
-                if(node.ref.isLight() && nodeId(ws_.map,node.ref)==params.getStr("entityId")) {
+                if(node.ref.isLight() && nodeId(node.ref,ws_.map)==params.getStr("entityId")) {
                     params.set("index",num(int64_t(node.ref.index)));found=true;break;
                 }
             if(!found)throw std::runtime_error("Light entity no longer exists");
         }
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.facialRigList" ||
+                   method == "studio.facialRigGet" ||
+                   method == "studio.facialRigValidate" ||
+                   method == "studio.facialRigSave") {
+            // Project-bound authoring only. Native side is the sole owner of
+            // filesystem access; browser controls pass a bounded simple name,
+            // never arbitrary source/destination paths.
+            if(method!="studio.facialRigValidate" && ws_.project.dir.empty())
+                throw std::runtime_error("Open a project first");
+            if(method=="studio.facialRigList") {
+                reply.set("result",listStudioFacialRigs(ws_.project.dir));
+            } else if(method=="studio.facialRigGet") {
+                const std::string name=params.getStr("name");
+                reply.set("result",readStudioFacialRig(ws_.project.dir,name));
+            } else {
+                const Json& doc=params["rig"];
+                std::string reason;
+                if(!validStudioFacialRigDraft(doc,&reason))
+                    throw std::runtime_error(reason);
+                if(method=="studio.facialRigValidate") {
+                    Json validated=Json::object();
+                    validated.set("valid",Json::fromBool(true));
+                    validated.set("morphs",Json::number(int64_t(doc["morphs"].size())));
+                    validated.set("ikUnits",Json::number(int64_t(doc["rig"].size())));
+                    // This is schema validation only, not model channel or
+                    // native MotionWeave compiler verification.
+                    validated.set("runtimeVerified",Json::fromBool(false));
+                    reply.set("result",std::move(validated));
+                } else {
+                    const std::string name=params.getStr("name");
+                    reply.set("result",saveStudioFacialRig(ws_.project.dir,name,doc));
+                }
+            }
         } else if (method == "studio.shaderGraphs" || method == "studio.shaderGraphGet" ||
                    method == "studio.shaderGraphValidate" || method == "studio.shaderGraphSave" ||
                    method == "studio.shaderGraphCatalog") {
@@ -319,12 +439,43 @@ Json StudioSession::dispatch(const Json& request) {
                 if (!validStudioMaterialName(name))
                     throw std::runtime_error("Invalid material name");
                 const Json& patch=params["patch"];
-                if (!patch.isObject() || patch.size()==0 || patch.size()>15)
-                    throw std::runtime_error("Material patch requires 1..15 safe fields");
+                if (!patch.isObject() || patch.size()==0 || patch.size()>24)
+                    throw std::runtime_error("Material patch requires 1..24 safe fields");
                 const Json library=editor::loadMaterialLibrary(ws_);
                 if (!library[name].isObject())
                     throw std::runtime_error("Only existing library materials can be edited");
+                Json validatedPatch = Json::object();
+                // Runtime materials.json stores project-relative texture paths.
+                // The HTML5 picker sends immutable GUIDs; resolve/validate them
+                // at the native trust boundary, never accept an arbitrary path.
                 for(const auto& [key,value]:patch.members()) {
+                    if (key=="sssColor") {
+                        if(!value.isString())throw std::runtime_error("SSS color must be linear RGB");
+                        const auto rgb=parseStudioSssColor(value.str());
+                        if(!rgb)throw std::runtime_error("SSS color requires three values from 0 to 1");
+                        Json color=Json::array();
+                        for(double channel:*rgb)color.push(Json::number(channel));
+                        validatedPatch.set(key,std::move(color));
+                        continue;
+                    }
+                    if (studioMaterialTextureKey(key)) {
+                        if (!value.isString())
+                            throw std::runtime_error("Texture reference must be an asset GUID");
+                        if (value.str().empty()) {
+                            validatedPatch.set(key, str(""));
+                            continue;
+                        }
+                        if (!studioValidGuid(value.str()))
+                            throw std::runtime_error("Texture reference requires a valid asset GUID");
+                        StudioAssetCatalog catalog(ws_.project.dir);
+                        catalog.rebuild();
+                        const auto asset = catalog.byGuid(value.str());
+                        if (!asset || asset->directory || asset->importer != "texture")
+                            throw std::runtime_error("Texture GUID not found or is not a texture");
+                        validatedPatch.set(key, str("content/" + asset->path));
+                        continue;
+                    }
+                    validatedPatch.set(key, value);
                     if (value.isNumber()) {
                         if (!validStudioMaterialNumber(key,value.toDouble()))
                             throw std::runtime_error("Unsupported material number: "+key);
@@ -338,7 +489,7 @@ Json StudioSession::dispatch(const Json& request) {
                 }
                 Json request=Json::object();
                 request.set("name",str(name));
-                request.set("material",patch);
+                request.set("material",std::move(validatedPatch));
                 request.set("merge",Json::fromBool(true));
                 // material_set validates keys/base and writes materials.json atomically.
                 // Unlike MapDoc edits this is immediate disk save without Undo:
@@ -377,6 +528,14 @@ Json StudioSession::dispatch(const Json& request) {
                 }
             }
             reply.set("result",settings);
+        } else if(method=="studio.nereidFlow"||method=="studio.nereidFlowSet"){
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(ws_.project.isFps())throw std::runtime_error("NEREID authoring currently requires a flat map");
+            if(method=="studio.nereidFlowSet"){
+                if(!params["mode"].isString())throw std::runtime_error("Choose current mode");
+                editor::editAuthoredWaterFlow(ws_.map,params);
+            }
+            reply.set("result",world::nereidFlowState(editor::authoredWaterDocument(ws_.map)));
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
@@ -448,13 +607,164 @@ Json StudioSession::dispatch(const Json& request) {
             const Json current = ws_.call("light_list",Json::object(),"studio");
             if (current.has("error")) throw std::runtime_error(current.getStr("error"));
             reply.set("result",current);
+        } else if (method == "studio.assetReferences") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            catalog.rebuild();
+            const auto entries=catalog.all();
+            reply.set("result",studioReferenceGraphJson(studioCollectAssetReferences(
+                editor::loadMaterialLibrary(ws_),ws_.project.rulesJson,entries)));
         } else if (method == "studio.assets") {
-            // Never accept a browser-selected directory. The existing Workspace
-            // operation is called with an empty argument object, restricting this
-            // read-only listing to the project's own root.
-            const Json r = ws_.call("asset_list", Json::object(), "studio");
-            if (r.has("error")) throw std::runtime_error(r.getStr("error"));
-            reply.set("result", r);
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            // Browser input cannot specify a filesystem directory. This scan
+            // sees ONLY regular files beneath project/content (no symlinks).
+            // Return content-relative paths, so the UI's root is "content".
+            StudioAssetCatalog catalog(ws_.project.dir);
+            catalog.rebuild(); // .meta is source of truth, index is disposable
+            Json r = Json::object();
+            r.set("root", str("content"));
+            Json entries = Json::array(), folders = Json::array();
+            for (const auto& asset : catalog.all()) {
+                Json item = Json::object();
+                item.set("path", str(asset.path));
+                item.set("guid", str(asset.guid));
+                item.set("importer",str(asset.importer));
+                item.set("bytes", Json::number(asset.bytes));
+                if(asset.directory)folders.push(std::move(item));
+                else entries.push(std::move(item));
+            }
+            r.set("files",std::move(entries));
+            r.set("folders",std::move(folders));
+            reply.set("result", std::move(r));
+        } else if (method == "studio.assetMetaPatch") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string guid=params.getStr("guid");
+            const std::string key=params.getStr("key");
+            if(!studioValidGuid(guid)||key.size()>40||!params.has("value"))
+                throw std::runtime_error("Invalid asset import setting request");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            const auto updated=catalog.patchSettings(guid,key,params["value"]);
+            Json detail=Json::object();
+            detail.set("guid",str(updated.guid));
+            detail.set("path",str(updated.path));
+            detail.set("importer",str(updated.importer));
+            detail.set("directory",Json::fromBool(updated.directory));
+            detail.set("bytes",Json::number(updated.bytes));
+            detail.set("settings",updated.settings);
+            reply.set("result",std::move(detail));
+        } else if (method == "studio.assetFolderCreate") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string path=studioCreateContentFolder(ws_.project.dir,
+                params.getStr("parent"),params.getStr("name"));
+            Json r=Json::object();
+            r.set("path",str(path));reply.set("result",std::move(r));
+        } else if (method == "studio.assetMovePreview") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const Json& paths=params["paths"];
+            if(!paths.isArray()||paths.size()<1||paths.size()>64)
+                throw std::runtime_error("Select between 1 and 64 assets");
+            std::vector<std::string> sources;
+            for(const Json& path:paths.items()){
+                if(!path.isString())throw std::runtime_error("Invalid source path");
+                sources.push_back(path.str());
+            }
+            pendingAssetTransfer_=StudioTransferPlan::internal(ws_.project.dir,
+                params.getStr("destination"),sources);
+            Json preview=pendingAssetTransfer_->describe();
+            StudioAssetCatalog catalog(ws_.project.dir);
+            catalog.rebuild();
+            const auto dependencies=studioCollectAssetReferences(
+                editor::loadMaterialLibrary(ws_),ws_.project.rulesJson,catalog.all());
+            preview.set("references",studioMoveReferenceImpact(preview,dependencies));
+            reply.set("result",std::move(preview));
+        } else if (method == "studio.assetTransferCommit") {
+            if(!pendingAssetTransfer_)throw std::runtime_error("No active asset transfer preview");
+            const auto token=params.getStr("token");
+            const Json& raw=params["decisions"];
+            if(!raw.isArray()||raw.size()>64)throw std::runtime_error("Invalid conflict decisions");
+            std::vector<StudioTransferDecision> decisions;
+            for(const Json& d:raw.items()){
+                if(!d.isObject()||!d["id"].isNumber()||!d["action"].isString())
+                    throw std::runtime_error("Invalid conflict decision");
+                decisions.push_back({int(d["id"].integer()),d.getStr("action")});
+            }
+            // Server-side safeguard: a browser can change decision values
+            // after preview. Never move a rules model reference that the
+            // reference graph cannot rewrite safely across included rules files.
+            Json currentPlan=pendingAssetTransfer_->describe();
+            if (currentPlan.getStr("source")=="internal") {
+                StudioAssetCatalog dependencyCatalog(ws_.project.dir);
+                dependencyCatalog.rebuild();
+                const auto dependencies=studioCollectAssetReferences(
+                    editor::loadMaterialLibrary(ws_),ws_.project.rulesJson,
+                    dependencyCatalog.all());
+                const Json impacted=studioMoveReferenceImpact(currentPlan,dependencies);
+                for (const auto& reference:impacted.items()) {
+                    if (reference.getBool("writable")) continue;
+                    const int id=int(reference["id"].integer());
+                    std::string action;
+                    for (const auto& item:currentPlan["items"].items())
+                        if (int(item["id"].integer())==id)
+                            action=item.getStr("conflict").empty()?"import":"skip";
+                    for (const auto& decision:decisions)
+                        if (decision.id==id) action=decision.action;
+                    if (action!="skip")
+                        throw std::runtime_error("Asset move blocked: rules model reference "+
+                            reference.getStr("owner")+" / "+reference.getStr("field")+
+                            " cannot yet be rewritten safely. Skip the item or edit its rules origin first.");
+                }
+            }
+            // Preload material document before touching assets, so malformed
+            // JSON cannot trigger a partially completed internal move.
+            const bool internal=currentPlan.getStr("source")=="internal";
+            Json library=internal ? editor::loadMaterialLibrary(ws_) : Json::object();
+            std::map<std::string,std::string> oldPathByGuid;
+            if (internal) {
+                StudioAssetCatalog beforeCatalog(ws_.project.dir);
+                beforeCatalog.rebuild();
+                for (const auto& asset:beforeCatalog.all())
+                    if (!asset.directory) oldPathByGuid.emplace(asset.guid,asset.path);
+            }
+            std::size_t repaired=0;
+            // This hook executes while internal file/.meta moves are still
+            // reversible. If the material write throws, apply() reverses
+            // every completed rename before returning an error.
+            const auto repair=[&]() {
+                StudioAssetCatalog afterCatalog(ws_.project.dir);
+                afterCatalog.rebuild();
+                std::map<std::string,std::string> relocated;
+                for (const auto& asset:afterCatalog.all()) {
+                    if (asset.directory) continue;
+                    const auto found=oldPathByGuid.find(asset.guid);
+                    if (found!=oldPathByGuid.end() && found->second!=asset.path)
+                        relocated.emplace("content/"+found->second,"content/"+asset.path);
+                }
+                const std::size_t updates=studioRemapMaterialReferences(library,relocated);
+                if (updates) editor::saveMaterialLibrary(ws_,library,
+                    "Studio Assets: repair material paths after move");
+                repaired=updates;
+            };
+            const std::function<void()> commitHook =
+                internal ? std::function<void()>(repair) : std::function<void()>{};
+            Json result=pendingAssetTransfer_->apply(token,decisions,commitHook);
+            pendingAssetTransfer_.reset();
+            if (internal) result.set("repairedMaterialReferences",num(int64_t(repaired)));
+            reply.set("result",std::move(result));
+        } else if (method == "studio.assetByGuid") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string guid=params.getStr("guid");
+            if(!studioValidGuid(guid))throw std::runtime_error("Invalid asset GUID");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            const auto entry=catalog.byGuid(guid);
+            if(!entry)throw std::runtime_error("Asset GUID not found; refresh Assets");
+            Json item=Json::object();
+            item.set("guid",str(entry->guid));
+            item.set("path",str(entry->path));
+            item.set("importer",str(entry->importer));
+            item.set("directory",Json::fromBool(entry->directory));
+            item.set("bytes",Json::number(entry->bytes));
+            item.set("settings",entry->settings);
+            reply.set("result",std::move(item));
         } else if (method == "studio.select") {
             const Json& id = params["id"];
             if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
@@ -462,33 +772,134 @@ Json StudioSession::dispatch(const Json& request) {
             if (!next.empty()) {
                 bool found = false;
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-                    if (nodeId(ws_.map,node.ref) == next) { found = true; break; }
+                    if (nodeId(node.ref,ws_.map) == next) { found = true; break; }
                 }
                 if (!found) throw std::runtime_error("Selection refers to an unknown document entity");
             }
             selected_ = next;
             reply.set("result", snapshot());
+        } else if (method == "studio.project") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            Json state=Json::object(),maps=Json::array();
+            for (const auto& item:ws_.project.manifest["maps"].items()) {
+                Json row=Json::object();row.set("file",str(item.getStr("file")));
+                row.set("title",str(item.getStr("title",item.getStr("file"))));maps.push(std::move(row));
+            }
+            state.set("maps",std::move(maps));state.set("currentMap",str(ws_.map.path.empty()?"":ws_.relative(ws_.map.path)));
+            state.set("canCreateMap",Json::fromBool(!ws_.project.isFps()));
+            state.set("maxMapSize",num(game::kMaxMapSize));reply.set("result",std::move(state));
+        } else if (method == "studio.openMap" || method == "studio.newMap") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.openMap") {
+                const auto file=params.getStr("file");bool listed=false;
+                for (const auto& item:ws_.project.manifest["maps"].items()) listed|=item.getStr("file")==file;
+                if (file.empty() || !listed) throw std::runtime_error("Choose a map from the current project");
+                namespace fs=std::filesystem;
+                const auto root=fs::weakly_canonical(ws_.project.dir);
+                const auto path=fs::weakly_canonical(root/file);
+                const auto relative=path.lexically_relative(root);
+                if (relative.empty() || relative.is_absolute() || *relative.begin()=="..")
+                    throw std::runtime_error("Map path escapes the project");
+                editor::MapDoc draft;std::string error;
+                if (!draft.load(path.string(),&error)) throw std::runtime_error(error);
+                if (ws_.project.isFps()!=draft.data.fps.isObject()) throw std::runtime_error("Map format does not match the project");
+                draft.revision=ws_.map.revision+1;
+                ws_.map=std::move(draft);
+                ws_.note({editor::Change::Map,0,0,-1,-1,-1,"Opened map"});
+            } else {
+                if (ws_.project.isFps()) throw std::runtime_error("FPS map creation requires an FPS document template");
+                for (const char* key:{"width","height"}) {
+                    const double value=params[key].toDouble();
+                    if (!params[key].isNumber() || !std::isfinite(value) || value!=std::floor(value) || value<8 || value>game::kMaxMapSize)
+                        throw std::runtime_error("Invalid map dimensions");
+                }
+                const auto name=params.getStr("name");
+                if (name.empty() || name.size()>256) throw std::runtime_error("Map name is required (maximum 256 bytes)");
+                Json args=Json::object();for (const char* key:{"width","height","name"})args.set(key,params[key]);
+                const auto result=ws_.call("map_new",args,"studio");
+                if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                ws_.map.touched();
+            }
+            selected_.clear();previewMaterialName_.clear();refreshMaterialPreview();
+            reply.set("result",snapshot());
+        } else if (method == "studio.entityCatalog") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            Json catalog=Json::object(), types=Json::array();
+            for (const auto& type : ws_.project.rules.types) {
+                Json row=Json::object(); row.set("id",str(type.id)); row.set("name",str(type.name));
+                types.push(std::move(row));
+            }
+            catalog.set("types",std::move(types));
+            catalog.set("mapEntities",Json::fromBool(!ws_.project.isFps()));
+            reply.set("result",std::move(catalog));
+        } else if (method == "studio.entityCreate" || method == "studio.entityDelete" ||
+                   method == "studio.entityDuplicate") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            if (method == "studio.entityCreate") {
+                const std::string type=params.getStr("type");
+                if (ws_.project.rules.findType(type)<0) throw std::runtime_error("Unknown entity type");
+                for (const char* key : {"x","z","owner"}) {
+                    if (!params[key].isNumber()) throw std::runtime_error("Expected numeric entity field");
+                    const double value=params[key].toDouble();
+                    if (!std::isfinite(value) || value < -1000000 || value > 1000000)
+                        throw std::runtime_error("Entity field out of range");
+                }
+                const double owner=params["owner"].toDouble();
+                if (owner!=std::floor(owner) || owner < -1 || owner > 10000)
+                    throw std::runtime_error("Invalid owner");
+                Json args=Json::object();
+                for (const char* key : {"type","x","z","owner"}) args.set(key,params[key]);
+                const Json result=ws_.call("entity_place",args,"studio");
+                if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                selected_="entity:"+std::to_string(ws_.map.data.entities.size()-1);
+            } else {
+                const std::string id=params.getStr("entityId");
+                if (selected_.empty() || id!=selected_) throw std::runtime_error("Selection changed while editing");
+                const int index=indexFor(id);
+                if (method == "studio.entityDelete") {
+                    Json args=Json::object(); args.set("index",num(index));
+                    const Json result=ws_.call("entity_delete",args,"studio");
+                    if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                    selected_.clear();
+                } else {
+                    const auto copies=editor::worldedit::duplicate(ws_.map,{index});
+                    if (copies.empty()) throw std::runtime_error("Unable to duplicate entity");
+                    selected_=studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(copies.front())),ws_.map);
+                }
+            }
+            reply.set("result",snapshot());
         } else if (method == "studio.save") {
             const Json r = ws_.call("map_save", Json::object(), "studio");
             if (r.has("error")) throw std::runtime_error(r.getStr("error"));
+            std::string error;
+            if (ws_.project.rulesDirty && !ws_.project.saveRules(&error)) throw std::runtime_error(error);
+            if (ws_.project.manifestDirty && !ws_.project.saveManifest(&error)) throw std::runtime_error(error);
             reply.set("result", snapshot());
         } else if (method == "studio.undo") {
             if (!ws_.map.canUndo()) throw std::runtime_error("Nothing to undo");
             ws_.map.undo();
+            selected_.clear();
             reply.set("result", snapshot());
         } else if (method == "studio.redo") {
             if (!ws_.map.canRedo()) throw std::runtime_error("Nothing to redo");
             ws_.map.redo();
+            selected_.clear();
             reply.set("result", snapshot());
+        } else if (method == "studio.propertiesFor") {
+            reply.set("result", propertiesFor(params.getStr("entityId")));
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
-            if (selected_.empty() || selected_ != entityId) throw std::runtime_error("Selection changed while editing");
+            // A pinned Inspector may edit its own explicitly addressed entity while
+            // the global selection points elsewhere. Both document branches below
+            // validate the target ID against the current project before writing.
+            if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
             const std::string key = params.getStr("key");
             const Json& value = params["value"];
             if(entityId.compare(0,6,"light:")==0) {
                 bool found=false;size_t index=0;
                 for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
-                    if(node.ref.isLight() && nodeId(ws_.map,node.ref)==entityId){index=node.ref.index;found=true;break;}
+                    if(node.ref.isLight() && nodeId(node.ref,ws_.map)==entityId){index=node.ref.index;found=true;break;}
                 if(!found)throw std::runtime_error("Light entity no longer exists");
                 const std::string owner=key=="name"?"Entity":
                     (key=="x" || key=="z" || key=="height")?"Transform":"Light";
@@ -542,7 +953,7 @@ Json StudioSession::dispatch(const Json& request) {
                 editor::DocumentEntityRef ref;
                 editor::DocumentTransform target{};
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, true)) {
-                    if (nodeId(ws_.map,node.ref) != entityId) continue;
+                    if (nodeId(node.ref,ws_.map) != entityId) continue;
                     if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity ||
                         !node.hasPosition)
                         throw std::runtime_error("Document position is unavailable");
@@ -577,7 +988,12 @@ Json StudioSession::dispatch(const Json& request) {
                 return reply;
             }
             const int index = indexFor(entityId);
-            if (key == "type") {
+            if((key=="y"||key=="yaw"||key=="scale")&&editor::authoredEntity(ws_.map.data.entities[size_t(index)])) {
+               auto candidate=editor::editAuthoredPlacement(ws_.map.data.entities[size_t(index)],key,value);
+               if(candidate.extra!=ws_.map.data.entities[size_t(index)].extra){ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();}
+               reply.set("result",snapshot());return reply;
+           }
+           if (key == "type") {
                 if (!value.isString() || value.str().empty()) throw std::runtime_error("Invalid type");
             } else if (key == "x" || key == "z" || key == "owner") {
                 if (!value.isNumber()) throw std::runtime_error("Expected number");

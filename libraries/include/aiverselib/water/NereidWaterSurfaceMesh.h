@@ -3,6 +3,7 @@
 // are PRESENTATION ONLY and must never feed deterministic ECS/physics.
 #pragma once
 #include <aiverselib/water/NereidGeometry.h>
+#include <aiverselib/water/NereidRiverGrade.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -33,6 +34,8 @@ struct WaterSurfaceMeshOptions {
     uint32_t maxVertices=65536;
     // Opt-in static tile ranges for large ocean/box surfaces. 1 = legacy.
     uint8_t rippleTileGrid=1; // N x N tiles, N<=8 (max 64 indexed draws)
+    WaterRiverGradeComponent grade{};
+    bool useGrade=false;
 };
 struct WaterSurfaceVertex {
     float x=0,y=0,z=0,u=0,v=0,shore=0;
@@ -47,6 +50,7 @@ struct WaterSurfaceMesh {
     std::vector<uint32_t> indices;
     bool infinite=false;
     std::vector<WaterTileRange> tiles; // optional non-overlapping index partitions
+    float normalX=0,normalZ=0;
     bool empty()const{return indices.empty();}
     size_t triangleCount()const{return indices.size()/3;}
 };
@@ -390,6 +394,11 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
     // tinting an entire far-away water surface white.
     if(options.lod!=WaterSurfaceLod::Far)
         foam(mesh,boundary,options.foamWidth,options.originX,options.originZ);
+    if(options.useGrade){
+        if(!validWaterRiverGrade(options.grade))return {};
+        mesh.normalX=-float(options.grade.risePerMetre.x.toDouble());mesh.normalZ=-float(options.grade.risePerMetre.y.toDouble());
+        for(auto& v:mesh.vertices){const Vec3 position{Fixed::fromRaw(int64_t(std::llround((double(v.x)+options.originX)*Fixed::kOne))),{},Fixed::fromRaw(int64_t(std::llround((double(v.z)+options.originZ)*Fixed::kOne)))};v.y+=float(waterGradeOffset(options.grade,position).toDouble());}
+    }
     return mesh;
 }
 

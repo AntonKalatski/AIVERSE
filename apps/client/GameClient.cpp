@@ -238,6 +238,7 @@ void GameClient::updateAudio(double dt) {
 }
 
 void GameClient::toMenu() {
+    hostPaused_ = hostStep_ = false;
     mapLoading_ = false; loadingTypes_.clear(); loadingSplash_.shutdown();
     sound_.detach();
     fx_.stopMatch();
@@ -321,6 +322,7 @@ void GameClient::configurePrisma(const Json& map) {
 }
 
 void GameClient::startMatch(size_t idx, const Json& initialVars) {
+    hostPaused_ = hostStep_ = false;
     if (idx >= maps_.size() || netMatch_) return;
     // A new map/game is a camera cut. Retire the old view's private
     // exposure + motion history without releasing shared render sizes.
@@ -1014,7 +1016,7 @@ void GameClient::runViewScripts(float dt) {
     scriptUiFrame();
     for (auto& r : viewScripts_.takeRequests()) {
         if (r.kind == game::ViewRequest::Notice) notice(r.text);
-        else if (r.kind == game::ViewRequest::Effect) fx_.particles().play(r.text, {r.x, r.y, r.z});
+        else if (r.kind == game::ViewRequest::Effect) fx_.playEffect(r.text, r.x, r.y, r.z);
         else {
             audio::PlayParams pp;
             pp.positional = r.positioned; pp.x = r.x; pp.z = r.z;
@@ -1023,8 +1025,34 @@ void GameClient::runViewScripts(float dt) {
     }
 }
 
+bool GameClient::hostCanControl() const {
+    return !mapLoading_ && sim_ && !netMatch_ && !city_ &&
+        (screen_ == Screen::Playing || screen_ == Screen::Paused);
+}
+bool GameClient::hostPaused() const {
+    return hostCanControl() && (hostPaused_ || screen_ == Screen::Paused || topDownPaused());
+}
+bool GameClient::hostCanStep() const {
+    return hostCanControl() && hostPaused_ && screen_ == Screen::Playing && !topDownPaused();
+}
+bool GameClient::setHostPaused(bool paused) {
+    if (!hostCanControl()) return false;
+    hostPaused_ = paused; hostStep_ = false;
+    if (!paused && screen_ == Screen::Paused) setScreen(Screen::Playing);
+    return true;
+}
+bool GameClient::requestHostStep() {
+    if (!hostCanStep()) return false;
+    hostStep_ = true;
+    return true;
+}
+
 void GameClient::frame(gfx::Device& dev, double dt) {
     lensCameras_.collectRetiredTargets();
+    const bool hostFrozen = hostCanControl() && hostPaused_;
+    const bool singleStep = hostFrozen && hostCanStep() && hostStep_;
+    hostStep_ = false;
+    if (hostFrozen) dt = 0;
     // Even on menus/loading screens there may be previous per-view motion
     // textures awaiting the GPU completion fence from an old match.
     prisma_.collectGpuRetirements();
@@ -1139,13 +1167,16 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 prisma_.setQuality(render::PrismaQuality(std::max(1, int(prismaBase_) - quality_.stepsDown())));
         }
 
-        steerPossessed();
-        topDownFrame(dt);
+        if (!hostFrozen || singleStep) {
+            steerPossessed();
+            topDownFrame(singleStep ? 1.0 / sim_->tickRate() : dt);
+        }
         if (city_) alpha = cityFrame(dt);   // the city runs on a server: nothing is stepped here
-        else if (!netMatch_ && !topDownPaused()) {   // single player: the escape preview pauses the match
+        else if (!netMatch_ && !topDownPaused() && (!hostFrozen || singleStep)) {   // single player: the escape preview pauses the match
             for (auto& b : bots_) b.update(*sim_);
             static const double simSpeed = [] { const char* v = std::getenv("AIVERSE_SIM_SPEED"); return v ? std::clamp(std::atof(v), 0.1, 16.0) : 1.0; }();
-            if (simSpeed == 1.0) sim_->advance(dt);
+            if (singleStep) sim_->step();
+            else if (simSpeed == 1.0) sim_->advance(dt);
             else sim_->advance(dt * simSpeed, int(8 * simSpeed + .5));   // testing: match time faster than real time
             alpha = float(sim_->alpha());
             processEvents();
@@ -1278,7 +1309,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             view_.setCameraPreparedCapture(&lensModelSnapshot_);
         }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
-        for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
+        for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)
@@ -1314,10 +1345,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         // PRISMA: current-frame particle alpha/depth coverage for MotionBlur.
         // Callback runs only when the HDR motion/reactive pass is active;
         // it reuses particle geometry already submitted by fx_.render().
-        if (fx_.particles().hasReactiveGeometry())
+        if (fx_.hasReactiveGeometry())
             r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
                     gfx::TextureHandle sceneDepth, int width, int height) {
-                fx_.particles().renderReactive(gpu,sceneDepth,width,height);
+                fx_.renderReactive(gpu,sceneDepth,width,height);
             });
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD

@@ -50,6 +50,7 @@ int main() {
         auto b = build(doc);
         check(b.model->nodes.size() == 34, "robot hierarchy");
         check(b.model->clips.size() == 4, "robot clips");
+        b.model->materials[0].thinTransmission=.375f;
         auto bytes = exportGlb(*b.model);
         std::vector<std::string> warnings;
         auto loaded = loadModel(
@@ -59,6 +60,7 @@ int main() {
                 return true;
             },
             &warnings);
+        check(loaded->materials[0].thinTransmission==.375f,"thin PBR GLB roundtrip");
         check(loaded->nodes.size() == b.model->nodes.size(), "GLB hierarchy roundtrip");
         check(loaded->clips.size() == 4, "GLB clips roundtrip");
         check(loaded->indices.size() == b.model->indices.size(), "GLB mesh roundtrip");

@@ -716,7 +716,14 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             static_cast<int64_t>(std::llround(xCm)),
             static_cast<int64_t>(std::llround(zCm))});
     }
-    nereidWater_.update(device,observers.empty()?nullptr:&observers.front());
+    std::function<Vec3(uint64_t,Vec3,Vec3)> resolveFlow;
+    if(confluences_.count()||cascades_.count()||!nereidFlowObstructions_.empty())
+        resolveFlow=[this](uint64_t stableWaterId,Vec3 position,Vec3 ordinary) {
+            const Vec3 joined=confluences_.flowForWater(stableWaterId,position,ordinary,nereidWater_);
+            const Vec3 current=cascades_.flowAtConnection(stableWaterId,position,joined,nereidWater_);
+            return resolveNereidFlowObstructions(stableWaterId,position,current);
+        };
+    nereidWater_.update(device,observers.empty()?nullptr:&observers.front(),resolveFlow);
     floodVisual_.update(device);
     cascades_.update(device,&nereidWater_);
     if(textures_)textures_->trim(device);
@@ -737,15 +744,14 @@ render::GpuOwnedMemoryStats WorldScene::ownedGpuMemoryStats(
 }
 
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
-    nereidWater_.draw(renderer,origin,size,&ripples_,&windField_,
-        [this](uint64_t stableWaterId,Vec3 position,Vec3 ordinary) {
-            const Vec3 joined=confluences_.flowForWater(
-                stableWaterId,position,ordinary,nereidWater_);
-            const Vec3 current=cascades_.flowAtConnection(
-                stableWaterId,position,joined,nereidWater_);
-            return resolveNereidFlowObstructions(
-                stableWaterId,position,current);
-        });
+    std::function<Vec3(uint64_t,Vec3,Vec3)> resolveFlow;
+    if(confluences_.count()||cascades_.count()||!nereidFlowObstructions_.empty())
+        resolveFlow=[this](uint64_t stableWaterId,Vec3 position,Vec3 ordinary) {
+            const Vec3 joined=confluences_.flowForWater(stableWaterId,position,ordinary,nereidWater_);
+            const Vec3 current=cascades_.flowAtConnection(stableWaterId,position,joined,nereidWater_);
+            return resolveNereidFlowObstructions(stableWaterId,position,current);
+        };
+    nereidWater_.draw(renderer,origin,size,&ripples_,&windField_,resolveFlow);
     cascades_.draw(renderer,origin,size);
     const int64_t floodOriginCm=int64_t(size)*100;
     floodVisual_.draw(renderer,

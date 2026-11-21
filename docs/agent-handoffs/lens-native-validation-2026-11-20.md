@@ -779,3 +779,8 @@ Next: ordinary push HEAD to main and verify exact remote SHA. Restart/reconnect
 rebuilt native editor and aiversemcp to expose new tools; read the two LENS
 skills from the engine catalog. Preserve this integrated registration if a
 newer main requires another merge. No primary checkout changes.
+
+
+## 2026-11-21 captured NEREID flow texture lease
+
+Codeff84b6648bd3825eea62471614611fced9f196fc adds optional NereidFlowBinding to CameraGeometryCommand/DrawItem; CameraModelSnapshot forwards the field and rejects revoked water packets BEFORE mesh dereference. Cache pins old texture for CPU replay leases, then GPU fence retirement; shutdown revokes before idle drain/quarantine. Native aiverse_tests rebuildPASS and lens_440checks0failed (KINGSTONflow-lens-build/tests.log); signed-half/lease/fence/revocation/version-cap CPU testsPASS. Actual Metal+GL primary water pixelsPASS, retained-camera GPU capture parity NOTRUN this stage. Full bounds/API/source/evidence/risks in docs/nereid/HANDOFF.md latest entry. No gameplay/save schema or renderer batching flag changes.

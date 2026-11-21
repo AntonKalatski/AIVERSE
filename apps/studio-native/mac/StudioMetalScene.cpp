@@ -1,12 +1,21 @@
+#include "apps/editor/AuthoringWater.h"
 #include "StudioMetalScene.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include "engine/render/GiModelGeometry.h"
 #include "apps/editor/SceneRenderable.h"
+#include "apps/studio-native/StudioVisualPicking.h"
 #include "apps/studio-native/StudioTerrainGeometry.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <set>
 #include <cmath>
 #include <stdexcept>
 
@@ -23,6 +32,8 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     if (!post_.init(*device_)) throw std::runtime_error("Studio HDR init failed");
     PrismaSettings postSettings;postSettings.hdr=HdrMode::On;
     post_.setSettings(postSettings);post_.setQuality(PrismaQuality::High);
+    lodDiagnostics_=std::getenv("AIVERSE_LOD_DIAGNOSTICS")!=nullptr;
+    renderer_.setLodDiagnosticsEnabled(lodDiagnostics_);
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
     builder.color(rgba(255,255,255));
@@ -32,9 +43,170 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     camera_.pitch = 0.85f;
     camera_.yaw = 0.55f;
 }
+void StudioMetalScene::releasePreviewModel(render::Model& model) {
+    // Retire CPU packets/layouts before the Model and its geometry disappear.
+    renderer_.invalidateModelCachesFor(&model);
+    render::releaseModel(*device_,model);
+}
+void StudioMetalScene::clearDocumentModels() {
+    if (device_) for (auto& [path,model]:documentModels_)
+        if (model) releasePreviewModel(*model);
+    modelInstances_.clear();
+    documentModels_.clear();
+    rejectedDocumentModels_.clear();
+    documentModelTimes_.clear();
+}
+
+void StudioMetalScene::syncDocumentModels(
+    const editor::MapDoc& doc,const std::string& projectPath,
+    const Json& rules,const std::vector<StudioDocumentProxy>& proxies) {
+    modelInstances_.clear();
+    if (projectPath.empty()) return;
+    namespace fs=std::filesystem;
+    const fs::path project=projectPath;
+    const fs::path root=project/"content";
+    if (!fs::is_directory(root) || fs::is_symlink(fs::symlink_status(root))) return;
+    // The proxy list is the authoritative list of actual document objects.
+    // Only existing, explicitly authored content/ model paths are accepted.
+    const auto& entities=doc.data.entities;
+    std::set<std::string> active;
+    for (const auto& proxy:proxies) {
+        if (proxy.id.rfind("entity:",0)!=0) continue;
+        const int index=studioMapEntityIndex(proxy.id,doc);
+       if(index<0)continue;
+       const auto& entity=entities[size_t(index)];
+       if(entity.extra["components"].has("NereidWater"))continue;
+       const auto& view=rules["types"][entity.type]["view"];
+       const Json& raw=view["model"];
+       std::string path=editor::authoredModelAsset(entity);
+       if(path.empty()) {
+           if(raw.isString())path=raw.str();
+           else if(raw.isArray()&&raw.size()){const auto& first=raw[size_t(0)];path=first.isString()?first.str():first.getStr("file");}
+       }
+        // Never load project-root arbitrary files or external paths.
+        if (path.rfind("content/",0)!=0 || path.size()>512) continue;
+        const std::string relative=path.substr(8);
+        const fs::path relativePath(relative);
+        if (relativePath.empty() || relativePath.is_absolute()) continue;
+        bool allowed=true;
+        fs::path current=root;
+        for (const auto& segment:relativePath) {
+            if (segment.empty() || segment=="." || segment=="..") {allowed=false;break;}
+            current/=segment;
+            std::error_code ec;
+            const auto status=fs::symlink_status(current,ec);
+            if (ec || fs::is_symlink(status)) {allowed=false;break;}
+        }
+        if (!allowed || !fs::is_regular_file(current)) continue;
+        if (modelInstances_.size()>=2000) break;
+        active.insert(path);
+        std::error_code modifiedError;
+        const auto modified=fs::last_write_time(current,modifiedError);
+        if (modifiedError) continue;
+        const auto previousTime=documentModelTimes_.find(path);
+        if (previousTime!=documentModelTimes_.end() &&
+            previousTime->second!=modified) {
+            auto old=documentModels_.find(path);
+            if (old!=documentModels_.end()) {
+                releasePreviewModel(*old->second);
+                documentModels_.erase(old);
+            }
+            rejectedDocumentModels_.erase(path);
+        }
+        documentModelTimes_[path]=modified;
+        if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
+            if (documentModels_.size()>=512) continue;
+            // Model loaders may request .bin, textures, MTL beside the model.
+            // Resolve each request with the same root/symlink checks.
+            auto read=[root](const std::string& name,std::string& out)->bool {
+                if (name.rfind("content/",0)!=0 || name.size()>512) return false;
+                const fs::path rel(name.substr(8));
+                if (rel.empty() || rel.is_absolute()) return false;
+                fs::path file=root;
+                for(const auto& part:rel) {
+                    if(part.empty()||part=="."||part=="..") return false;
+                    file/=part;
+                    std::error_code ec;
+                    const auto st=fs::symlink_status(file,ec);
+                    if(ec || fs::is_symlink(st)) return false;
+                }
+                if (!fs::is_regular_file(file)) return false;
+                std::error_code sizeError;
+                const auto bytes=fs::file_size(file,sizeError);
+                if (sizeError || bytes>256ull*1024ull*1024ull) return false;
+                std::ifstream input(file,std::ios::binary);
+                if (!input) return false;
+                out.assign(std::istreambuf_iterator<char>(input),
+                           std::istreambuf_iterator<char>());
+                return bool(input) || input.eof();
+            };
+            try {
+                auto model=render::loadModel(path,read);
+                if (!model || model->skinned() || model->vertices.empty() ||
+                    model->indices.empty()) {
+                    rejectedDocumentModels_.insert(path);
+                    continue;
+                }
+                bool deformable=false;
+                for (const auto& mesh:model->meshes) deformable |= mesh.deformable;
+                // Rigid opaque/masked models render with their authored LODs.
+                // CPU picking uses base geometry; alpha holes/LOD silhouette
+                // are approximate until GPU ID/depth picking is available.
+                bool nonOpaque=false;
+                for(const auto& material:model->materials)
+                    nonOpaque |= material.alpha==render::AlphaMode::Blend ||
+                                 material.transparent || material.baseColor.w<.999f;
+                if (deformable || nonOpaque ||
+                    model->vertices.size()>1000000 || model->indices.size()>3000000) {
+                    rejectedDocumentModels_.insert(path);
+                    continue;
+                }
+                model->batching.autoLod=false;
+                model->batching.mergeRigid=false;
+                model->batching.allowGeometryPool=false;
+                render::prepareModelUpload(*model);
+                if (!render::uploadModel(*device_,*model,true)) {
+                    releasePreviewModel(*model);
+                    rejectedDocumentModels_.insert(path);
+                    continue;
+                }
+                documentModels_.emplace(path,std::move(model));
+            } catch (const std::exception&) {
+                // Invalid resource stays a visible proxy rather than hiding
+                // the map object or pretending a model was rendered.
+                rejectedDocumentModels_.insert(path);
+                continue;
+            }
+        }
+        auto found=documentModels_.find(path);
+        if (found==documentModels_.end()) continue;
+        // Anchor model to the same authored entity location as its proxy.
+        // The source file's own node transforms are applied by drawModel and picker.
+        modelInstances_.push_back({proxy.id,found->second.get(),
+           editor::authoredEntity(entity)?editor::authoredModelMatrix(entity):
+           render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
+           render::mat4::rotateY(proxy.yaw)});
+    }
+    for (auto it=documentModelTimes_.begin();it!=documentModelTimes_.end();) {
+        if (!active.count(it->first)) it=documentModelTimes_.erase(it);
+        else ++it;
+    }
+    for (auto it=rejectedDocumentModels_.begin();it!=rejectedDocumentModels_.end();) {
+        if (!active.count(*it)) it=rejectedDocumentModels_.erase(it);
+        else ++it;
+    }
+    for (auto it=documentModels_.begin();it!=documentModels_.end();) {
+        if (!active.count(it->first)) {
+            releasePreviewModel(*it->second);
+            it=documentModels_.erase(it);
+        } else ++it;
+    }
+}
+
 StudioMetalScene::~StudioMetalScene() {
     if (device_) {
         device_->waitForResourceIdle();
+        clearDocumentModels();
         lightingRuntime_.shutdown(*device_,renderer_);
         if(lightingModel_) {
             renderer_.invalidateModelCachesFor(lightingModel_.get());
@@ -44,12 +216,12 @@ StudioMetalScene::~StudioMetalScene() {
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
-            renderer_.invalidateModelCachesFor(materialSphere_.get());
-            render::releaseModel(*device_,*materialSphere_);
+            releasePreviewModel(*materialSphere_);
             materialSphere_.reset();
         }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
+        nereid_.shutdown(*device_);
         renderer_.shutdown();
     }
 }
@@ -58,31 +230,93 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     float3 origin{}, direction{};
     if (materialMode_ || !cameraInitialized_ ||
         !camera_.screenRay(x,y,width,height,origin,direction)) return {};
-    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
-    std::vector<editor::SceneRenderable> candidates;
-    candidates.reserve(proxies.size());
-    for(size_t i=0;i<proxies.size();++i) {
-        editor::SceneRenderable candidate;
-        candidate.entity=uint64_t(i)+1;
-        candidate.boundsMin=proxies[i].boundsMin;
-        candidate.boundsMax=proxies[i].boundsMax;
-        candidate.pickable=true;
-        candidates.push_back(candidate);
-    }
-    const int hit=editor::pickSceneRenderable(candidates,origin,direction);
-    return hit<0 ? std::string() : proxies[size_t(hit)].id;
+    // Pick the oriented cube mesh that Renderer3D actually draws, not its
+    // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
+    auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    proxies.erase(std::remove_if(proxies.begin(),proxies.end(),[&](const auto& proxy){
+        const int index=studioMapEntityIndex(proxy.id,map);
+        return index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater");
+    }),proxies.end());
+    // These are the exact model instances submitted by the previous frame.
+    return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
-    camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, 0.18f, 1.45f);
+    camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, -1.52f, 1.52f);
 }
 void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
 }
+void StudioMetalScene::look(float dx, float dy) {
+    // First-person free look preserves the camera's world-space eye instead
+    // of orbiting around its target. WASD movement then translates the eye.
+    const float3 position=camera_.eye();
+    camera_.yaw += dx*0.007f;
+    camera_.pitch=std::clamp(camera_.pitch-dy*0.007f,-1.52f,1.52f);
+    const float cp=std::cos(camera_.pitch),sp=std::sin(camera_.pitch);
+    const float3 fromTarget{std::sin(camera_.yaw)*cp,sp,std::cos(camera_.yaw)*cp};
+    camera_.target=position-fromTarget*camera_.distance;
+}
+void StudioMetalScene::pan(float dx, float dy) {
+    // Editor navigation follows camera orientation, not RTS ground-plane input.
+    const float speed=std::max(0.005f,camera_.distance*0.0018f);
+    const float yaw=camera_.yaw;
+    const float3 right{std::cos(yaw),0,-std::sin(yaw)};
+    const float3 up{-std::sin(yaw)*std::sin(camera_.pitch),
+                    std::cos(camera_.pitch),
+                    -std::cos(yaw)*std::sin(camera_.pitch)};
+    camera_.target += right*(-dx*speed) + up*(dy*speed);
+}
+void StudioMetalScene::move(float right, float up, float forward) {
+    const float speed=std::max(0.025f,camera_.distance*0.045f);
+    const float yaw=camera_.yaw;
+    const float3 side{std::cos(yaw),0,-std::sin(yaw)};
+    const float3 ahead{-std::sin(yaw)*std::cos(camera_.pitch),
+                       -std::sin(camera_.pitch),
+                       -std::cos(yaw)*std::cos(camera_.pitch)};
+    camera_.target += (side*right + float3{0,1,0}*up + ahead*forward)*speed;
+}
+void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
+                                      const std::string& selectedId) {
+    for (const auto& instance:modelInstances_) {
+        if (instance.id!=selectedId || !instance.model) continue;
+        const auto lo=instance.model->boundsMin,hi=instance.model->boundsMax;
+        float3 worldMin{1e30f,1e30f,1e30f},worldMax{-1e30f,-1e30f,-1e30f};
+        for (int corner=0;corner<8;++corner) {
+            const float3 local{corner&1?hi.x:lo.x,corner&2?hi.y:lo.y,corner&4?hi.z:lo.z};
+            const auto p=instance.world.transformPoint(local);
+            worldMin={std::min(worldMin.x,p.x),std::min(worldMin.y,p.y),std::min(worldMin.z,p.z)};
+            worldMax={std::max(worldMax.x,p.x),std::max(worldMax.y,p.y),std::max(worldMax.z,p.z)};
+        }
+        camera_.target=(worldMin+worldMax)*.5f;
+        const auto size=worldMax-worldMin;
+        camera_.distance=std::clamp(std::max({size.x,size.y,size.z,1.0f})*2.5f,2.0f,100000.0f);
+        return;
+    }
+    auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    proxies.erase(std::remove_if(proxies.begin(),proxies.end(),[&](const auto& proxy){
+        const int index=studioMapEntityIndex(proxy.id,map);
+        return index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater");
+    }),proxies.end());
+    for (const auto& proxy:proxies) {
+        if (proxy.id != selectedId) continue;
+        camera_.target=(proxy.boundsMin+proxy.boundsMax)*0.5f;
+        const float3 extent=proxy.boundsMax-proxy.boundsMin;
+        const float size=std::max({extent.x,extent.y,extent.z,0.5f});
+        camera_.distance=std::clamp(size*3.0f,2.0f,100000.0f);
+        return;
+    }
+}
+void StudioMetalScene::resetView() {
+    cameraInitialized_=false;
+    camera_.pitch=0.85f;
+    camera_.yaw=0.55f;
+}
 void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                              bool fpsProject, const std::string& selectedId,
                              const std::string& previewName, const Json& previewFactors,
-                             uint64_t previewRevision, float levelHeight) {
+                             uint64_t previewRevision, float levelHeight,
+               const std::string& projectPath,const Json& rules) {
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
     if (materialRevision_ != previewRevision) {
@@ -147,13 +381,16 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         return;
     }
     const auto& map = doc.data;
-    if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight) {
+    const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
+    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    syncDocumentModels(doc,projectPath,rules,proxies);
+
+    if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {
         lightingRevision_=std::numeric_limits<uint64_t>::max();
         terrainLevelHeight_ = levelHeight;
         MeshBuilder source;
-        const auto stats = buildTerrainPreview(map, source, levelHeight);
         Mesh replacement;
-        if (stats.quads) replacement = source.upload(*device_);
+        if(showTerrain){const auto stats=buildTerrainPreview(map,source,levelHeight);if(stats.quads)replacement=source.upload(*device_);}
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         terrain_ = replacement;
@@ -179,14 +416,34 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         lightingRevision_=doc.revision;
         lightingStatus_="Preview geometry · GI: off · Direct: standard";
         if(useLighting || fpsProject) {
-            lightingModel_=studioLightingPreview(doc,fpsProject,levelHeight);
-            if(!lightingModel_)throw std::runtime_error("Studio lighting geometry missing");
-            prepareModelUpload(*lightingModel_);
-            const auto geometry=giModelGeometry(*lightingModel_);
-            if(!uploadModel(*device_,*lightingModel_,true))throw std::runtime_error("Studio lighting upload failed");
-            const float3 center{(lightingModel_->boundsMin.x+lightingModel_->boundsMax.x)*.5f,
-                lightingModel_->boundsMin.y+.25f,(lightingModel_->boundsMin.z+lightingModel_->boundsMax.z)*.5f};
+            std::set<std::string> modelIds;
+            for(const auto& instance:modelInstances_)modelIds.insert(instance.id);
+            lightingModel_=studioLightingPreview(doc,fpsProject,levelHeight,modelIds);
+            StaticShadowGeometry geometry;
+            if(lightingModel_) {
+                prepareModelUpload(*lightingModel_);
+                geometry=giModelGeometry(*lightingModel_);
+                if(!uploadModel(*device_,*lightingModel_,true))throw std::runtime_error("Studio lighting upload failed");
+            }
+            const float3 center=lightingModel_?float3{(lightingModel_->boundsMin.x+lightingModel_->boundsMax.x)*.5f,
+                lightingModel_->boundsMin.y+.25f,(lightingModel_->boundsMin.z+lightingModel_->boundsMax.z)*.5f}:float3{map.w*.5f,.25f,map.h*.5f};
             try {
+                // Reuse the shared immutable opaque-geometry snapshot for real
+                // assets. Reject an oversized snapshot explicitly; never crop it
+                // to a misleading subset or substitute proxy geometry silently.
+                if(useLighting)for(const auto& instance:modelInstances_) {
+                    size_t faces=0;
+                    for(const auto& node:instance.model->nodes)if(node.mesh>=0)
+                        for(const auto& p:instance.model->meshes[size_t(node.mesh)].primitives) {
+                            const auto& material=instance.model->materials[size_t(p.material)];
+                            if(material.castShadow&&material.alpha==AlphaMode::Opaque&&!material.transparent)faces+=p.indexCount/3;
+                        }
+                    if(faces>1000000 || geometry.triangles.size()>1000000-faces)throw std::runtime_error("Studio GI snapshot exceeds one million opaque triangles");
+                    auto source=giModelGeometry(*instance.model,instance.world);
+                    const auto offset=uint32_t(geometry.albedos.size());
+                    geometry.albedos.insert(geometry.albedos.end(),source.albedos.begin(),source.albedos.end());
+                    for(auto triangle:source.triangles){triangle.surface+=offset;geometry.triangles.push_back(triangle);}
+                }
                 if(useLighting)lightingRuntime_.initialize(*device_,renderer_,post_,settings,geometry,activeLights,center,environment);
             } catch(const std::exception& e) {
                 const std::string reason=e.what();
@@ -209,7 +466,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     device_->beginFrame(framebufferWidth, framebufferHeight);
     StudioFrameScope scope{*device_};
+    nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
+    nereid_.prepare(*device_,camera_.eye());
+    const double opticalNow=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
+    underwaterFrameTime_=opticalNow;
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
+    renderer_.setSceneSelectionOutline(true);
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {
         renderer_.lights.setNightGlow(day.night*1.5f);
@@ -226,7 +489,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const float h = float(std::max(map.h, 1));
     if(lightingModel_) {
         ModelDraw draw;draw.model=lightingModel_.get();renderer_.drawModel(draw);
-    } else if (terrain_.vb.valid() && terrain_.ib.valid()) {
+    }
+    if(showTerrain && !lightingModel_){
+    if (terrain_.vb.valid() && terrain_.ib.valid()) {
         renderer_.drawMesh(terrain_, mat4{}, {1,1,1,1}, kDrawNoCastShadow);
     } else {
         // Unsupported planet maps or empty terrain: basic plane only.
@@ -241,22 +506,29 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     for (int z=0; !fpsProject && z<=map.h; z+=zStep)
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
-    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    } // external/Terra surface suppresses the default plane and grid
+
     for(const auto& entity:proxies) {
-        if(!lightingModel_ && !entity.light)renderer_.drawMesh(cube_,
-            mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
-            mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
-        if(entity.id==selectedId) {
-            const auto lo=entity.boundsMin,hi=entity.boundsMax;
-            const float3 p[8]={{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},
-                {hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,lo.z},
-                {hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}};
-            constexpr int edges[12][2]={{0,1},{1,2},{2,3},{3,0},
-                {4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-            for(const auto& edge:edges)
-                renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
+        const int sourceIndex=studioMapEntityIndex(entity.id,doc);
+        if(sourceIndex>=0 && doc.data.entities[size_t(sourceIndex)].extra["components"].has("NereidWater"))continue;
+        bool hasModel=false;
+        for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
+        if (hasModel) continue;
+        if(!lightingModel_&&!entity.light){
+            const auto transform=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+            if(entity.id==selectedId)renderer_.drawSelectionMesh(cube_,transform,entity.color,{.25f,.62f,1.f,1.f});
+            else renderer_.drawMesh(cube_,transform,entity.color,kDrawNoCastShadow);
         }
+
     }
+    for(const auto& instance:modelInstances_) {
+        render::ModelDraw draw;
+        draw.model=instance.model;
+        draw.world=instance.world;
+        if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
+        renderer_.drawModel(draw);
+    }
+    nereid_.draw(renderer_);
     // Editor gizmos for authored lights; actual light contribution is passed through
     // Renderer3D::lights, not faked with an overlay screenshot.
     for(const auto& light:activeLights) {
@@ -270,9 +542,16 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
-    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):nullptr);
+    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):static_cast<PostProcess*>(&post_));
     renderer_.resolvePrisma();
     lightingRuntime_.presented();
 
+    if(lodDiagnostics_&&++diagnosticFrames_%120==0){
+        const auto& stats=renderer_.modelStats();
+        std::fprintf(stderr,"[studio-lod] instances=%zu assets=%zu cameraTriangles=%llu shadowTriangles=%u lod=%llu/%llu/%llu/%llu chains=%llu blocked=%llu shadowLimited=%llu\n",
+            modelInstances_.size(),documentModels_.size(),(unsigned long long)renderer_.profile().cameraModelTriangles,renderer_.profile().triangles[0],
+            (unsigned long long)stats.cameraLodNodes[0],(unsigned long long)stats.cameraLodNodes[1],(unsigned long long)stats.cameraLodNodes[2],(unsigned long long)stats.cameraLodNodes[3],
+            (unsigned long long)stats.cameraLodChains,(unsigned long long)stats.cameraLodBlocked,(unsigned long long)stats.cameraShadowLimitedLod);
+    }
 }
 }

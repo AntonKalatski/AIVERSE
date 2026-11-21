@@ -1357,3 +1357,15 @@ No merge to main/base without explicit user permission.
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
 After **each** bounded code stage, commit `docs/handoffs/prisma-stage-66.md` on the same branch: exact SHA, architecture and API, all changed paths, actual tests/results, limitations, and the next actionable step. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+
+
+## Optional draining water on lens
+
+Use the independent `lensWater` effect; see `docs/prisma-lens-water.md`. It is
+OFF when absent, supports enabled/amount plus dropSize, density, distortion,
+flowSpeed, dryTime and film, and must not be coupled to underwater absorption.
+NEREID supplies camera immersion; PRISMA owns per-view wetness and composite.
+Update setUnderwater every frame after setViewId/profile resolution and retire
+the view when destroying a camera. Do not implement lens droplets in NEREID,
+Terra, SpectraFX or a scene-specific shader. Verify actual encoded pixels plus
+on/off, dry camera and exit/dry-time behavior; compilation alone is insufficient.

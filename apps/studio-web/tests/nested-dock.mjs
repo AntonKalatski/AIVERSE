@@ -11,16 +11,19 @@ test('default tree has 4 nested stacks and exactly one copy of each panel',()=>{
   assert.equal(s.length,4);
   assert.deepEqual(s.flatMap(x=>x.tabs).sort(),[...STUDIO_PANELS].sort());
   assert.equal(panelStack(t,'scene'),'dock-center');
+  assert.equal(panelStack(t,'assets'),'dock-bottom');
+  assert.deepEqual(findDockStack(t,'dock-left')?.tabs,['hierarchy','project']);
+  assert.deepEqual(findDockStack(t,'dock-bottom')?.tabs,['assets','console']);
 });
 test('move reorders within a tab stack',()=>{
   const t=moveTab(defaultDockTree(),'animation','dock-center','scene');
-  assert.deepEqual(findDockStack(t,'dock-center').tabs,['animation','scene','game','materials','shader_graph']);
+  assert.deepEqual(findDockStack(t,'dock-center').tabs,['animation','scene','game','materials','facial_rig','shader_graph']);
   assert.equal(findDockStack(t,'dock-center').active,'animation');
 });
 test('dragging panels across stacks retains identity',()=>{
   const t=moveTab(defaultDockTree(),'inspector','dock-bottom');
   assert.equal(panelStack(t,'inspector'),'dock-bottom');
-  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting']);
+  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','runtime','nereid_flow']);
 });
 test('closing and reopening recreates a panel only once',()=>{
   let t=closeTab(defaultDockTree(),'scene');
@@ -35,8 +38,9 @@ test('nested split adds a stack to left edge and preserves panels',()=>{
   assert.equal(panelStack(base,'inspector'),'dock-right');
 });
 test('cannot split away sole tab from its own stack',()=>{
-  const t=splitDockStack(defaultDockTree(),'console','dock-bottom','bottom');
-  assert.deepEqual(t,defaultDockTree());
+  const base=closeTab(defaultDockTree(),'assets');
+  const t=splitDockStack(base,'console','dock-bottom','bottom');
+  assert.deepEqual(t,base);
 });
 test('split every direction and preserve first stack',()=>{
   for(const side of ['left','right','top','bottom']) {
@@ -54,8 +58,8 @@ test('resize ratio clamps and ignores nonfinite',()=>{
 test('activate tab does not create a ghost panel',()=>{
   let t=activateTab(defaultDockTree(),'dock-left','scene');
   assert.equal(findDockStack(t,'dock-left').active,'hierarchy');
-  t=activateTab(t,'dock-left','assets');
-  assert.equal(findDockStack(t,'dock-left').active,'assets');
+  t=activateTab(t,'dock-left','project');
+  assert.equal(findDockStack(t,'dock-left').active,'project');
 });
 test('normalization guards malformed nodes, dup tabs and invalid ratios',()=>{
   const t=normalizeDockTree({root:{kind:'split',id:'root',axis:'horizontal',ratio:Infinity,
@@ -72,11 +76,53 @@ test('migration from v2 preserves tabs and active',()=>{
     active:{left:'assets',center:'scene',right:'inspector'},leftSize:300,rightSize:280,bottomSize:220});
   assert.equal(findDockStack(layout,'dock-left').active,'assets');
   assert.equal(findDockStack(layout,'dock-center').active,'scene');
-  assert.equal(findDockStack(layout,'dock-bottom').active,null);
+  assert.equal(findDockStack(layout,'dock-bottom'),null);
 });
 
 test('AI panel registry metadata matches every registered panel',()=>{
   assert.deepEqual(Object.keys(STUDIO_PANEL_TITLES).sort(),[...STUDIO_PANELS].sort());
   assert.deepEqual(Object.keys(STUDIO_PANEL_HOME).sort(),[...STUDIO_PANELS].sort());
   assert.equal(STUDIO_PANEL_HOME.scene,'dock-center');
+});
+
+test('moving a last tab prunes the source split and expands its neighbor',()=>{
+  const t=moveTab(closeTab(defaultDockTree(),'project'),'hierarchy','dock-center');
+  assert.equal(findDockStack(t,'dock-left'),null);
+  assert.equal(dockStacks(t).length,3);
+  assert.equal(t.root.first.id,'split-body-right');
+});
+test('closing last right panels removes their obsolete split',()=>{
+  let t=closeTab(defaultDockTree(),'inspector');
+  assert.ok(findDockStack(t,'dock-right'));
+  t=closeTab(closeTab(closeTab(t,'lighting'),'runtime'),'nereid_flow');
+  assert.equal(findDockStack(t,'dock-right'),null);
+  assert.equal(dockStacks(t).length,3);
+});
+test('reopening Inspector restores pruned right-hand dock',()=>{
+  let t=closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow');
+  t=reopenTab(t,'inspector','dock-right');
+  assert.equal(panelStack(t,'inspector'),'dock-right');
+  assert.equal(dockStacks(t).length,4);
+});
+test('reopening Assets restores pruned bottom dock',()=>{
+  let t=closeTab(closeTab(defaultDockTree(),'assets'),'console');
+  assert.equal(findDockStack(t,'dock-bottom'),null);
+  t=reopenTab(t,'assets','dock-bottom');
+  assert.equal(panelStack(t,'assets'),'dock-bottom');
+  assert.equal(t.root.axis,'vertical');
+  assert.equal(t.root.second.id,'dock-bottom');
+});
+test('when all tabs closed a single empty center stack allows reopening',()=>{
+  let t=defaultDockTree();
+  for(const name of STUDIO_PANELS)t=closeTab(t,name);
+  assert.equal(dockStacks(t).length,1);
+  assert.deepEqual(dockStacks(t)[0].tabs,[]);
+  t=reopenTab(t,'scene','dock-center');
+  assert.equal(panelStack(t,'scene'),'dock-center');
+});
+test('old saved empty leaves are compacted upon restoration',()=>{
+  const t=normalizeDockTree({root:{kind:'split',id:'outer',axis:'horizontal',ratio:.3,
+    first:{kind:'stack',id:'empty',tabs:[],active:null},
+    second:{kind:'stack',id:'dock-center',tabs:['scene'],active:'scene'}}});
+  assert.equal(t.root.id,'dock-center');
 });

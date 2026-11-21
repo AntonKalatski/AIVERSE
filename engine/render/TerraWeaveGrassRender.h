@@ -29,12 +29,26 @@ struct GrassRenderQuality {
     bool crossedBlades=true;         // 2 triangles instead of 1 per blade
     uint32_t maxGpuPatches=128;      // 1..256
     uint32_t maxUploadsPerFrame=2;   // 1..8
+    uint32_t bladeSegments=1;       // 1..4; 2+ uses bent tapered ribbons
+    uint32_t bladeHeightCm=26;      // 4..150
+    uint32_t bladeHalfWidthCm=3;    // 1..12
+    uint32_t bladesPerTuft=1;      // 1..32, stable shared centre
+    uint32_t tuftRadiusCm=18;      // 1..100
+    uint32_t sourceSamples=0;      // 0=own cap; LOD source sampling budget, <=8192
+    uint32_t sampleStride=1;      // 1..8; LOD keeps seeded tuft centres
+    uint32_t heightVariationPermille=250; // 0..600, symmetric size variation
+    bool naturalBlades=false; // seeded pigment, narrow shoulder and varied sweep; no extra geometry
 };
 
 inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
     if(!q.maxBladesPerPatch || q.maxBladesPerPatch>8192 ||
        !q.maxGpuPatches || q.maxGpuPatches>256 ||
-       !q.maxUploadsPerFrame || q.maxUploadsPerFrame>8)
+       !q.maxUploadsPerFrame || q.maxUploadsPerFrame>8 ||
+       q.bladeSegments<1 || q.bladeSegments>4 ||
+       q.bladeHeightCm<4 || q.bladeHeightCm>150 ||
+       q.bladeHalfWidthCm<1 || q.bladeHalfWidthCm>12 ||
+       q.bladesPerTuft<1 || q.bladesPerTuft>32 || q.tuftRadiusCm<1 || q.tuftRadiusCm>100 ||
+       q.sourceSamples>8192 || q.sampleStride<1 || q.sampleStride>8 || q.heightVariationPermille>600)
         throw std::invalid_argument("TerraWeave grass RHI quality");
 }
 
@@ -48,6 +62,7 @@ inline bool sameGrassPresentation(const GrassPatch& a,const GrassPatch& b) {
 }
 
 using GrassSoilHeight=std::function<int32_t(int64_t,int64_t)>;
+using GrassPlacementFilter=std::function<bool(int64_t,int64_t)>;
 
 // Optional host-supplied presentation overlay (2026-11-21). TerraWeave keeps
 // owning grass coverage; a host (e.g. engine/world/PhysisNatureGrass.h for
@@ -60,19 +75,19 @@ struct GrassFireSample {
 using GrassFireSampler=std::function<GrassFireSample(int64_t xCm,int64_t zCm)>;
 struct GrassPresentationOptions {
     GrassFireSampler fire;     // empty: unchanged legacy appearance
-    bool windSway=false;       // root->tip vertex weights + canopyWindGraph
+    bool windSway=false;       // root->tip vertex alpha weights + canopyWindGraph
 };
 // Burning blades glow through a second, emissive primitive. Bloom of that
 // emission belongs to PRISMA; actual flames/smoke to SpectraFX.
 inline constexpr uint16_t kGrassBurningFirePermille=140;
 
-// Pure CPU model generation; only one or two opaque slender triangles per
+// Pure CPU model generation; bounded indexed opaque ribbons per
 // sampled blade. No per-patch alpha textures or unique shader variants.
 // The sparse, stable stratified sample reacts to coverage/light/age without
 // scanning a 262144-blade patch or allocating persistent blade arrays.
 inline std::unique_ptr<render::Model> makeGrassPatchModel(
         const GrassPatch& patch,const GrassSoilHeight& ground,
-        GrassRenderQuality quality={},
+        GrassRenderQuality quality={}, const GrassPlacementFilter& allows={},
         const GrassPresentationOptions* presentation=nullptr) {
     validateGrassRenderQuality(quality);
     const bool sway=presentation && presentation->windSway;
@@ -116,56 +131,84 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
         appearance.foliagePermille/1000u);
     if(candidates) {
         model->vertices.reserve(size_t(candidates)*
-            (quality.crossedBlades?6u:3u));
+            (quality.crossedBlades?2u:1u)*(2*quality.bladeSegments+1));
         model->indices.reserve(size_t(candidates)*
-            (quality.crossedBlades?6u:3u));
+            (quality.crossedBlades?2u:1u)*3*(2*quality.bladeSegments-1));
     }
     const int64_t spanX=patch.bounds.maxX-patch.bounds.minX;
     const int64_t spanZ=patch.bounds.maxZ-patch.bounds.minZ;
-    const int32_t baseWidthCm=6;
-    const int32_t baseHeightCm=26;
+    const int32_t baseWidthCm=int32_t(quality.bladeHalfWidthCm);
+    const int32_t baseHeightCm=int32_t(quality.bladeHeightCm);
     const uint32_t light=patch.environment.lightPermille;
     const auto rgba=[](uint32_t r,uint32_t g,uint32_t b){
         return (0xffu<<24) | (b<<16) | (g<<8) | r;
     };
-    bool burningBlade=false;
-    const auto emitTriangle=[&](render::float3 a,render::float3 b,
-                                render::float3 tip,uint32_t color){
-        const auto normal=render::normalize(
-            render::cross(b-a,tip-a));
-        for(const auto& p:{a,b,tip}) {
-            const bool top=p.y>std::max(a.y,b.y);
-            render::ModelVertex v;
-            v.pos=p;
-            v.nrm=normal;
-            // Wind sway: alpha = root(0)..tip(1) weight for canopyWindGraph.
-            v.color=sway ? ((color&0x00ffffffu)|(top?0xff000000u:0u)) : color;
-            v.uv={top?0.5f:0.0f,top?1.0f:0.0f};
-            (burningBlade?burningIndices:model->indices).push_back(
-                static_cast<uint32_t>(model->vertices.size()));
-            model->vertices.push_back(v);
-        }
-    };
     for(uint32_t slot=0;slot<candidates;++slot) {
         // Stable stratification of a large logical grass population:
         // changing coverage does not move the survivors.
-        const uint32_t logicalIndex=uint32_t(
-            uint64_t(slot)*patch.maximumBlades/candidates);
+        const uint32_t perTuft=(quality.bladesPerTuft+quality.sampleStride-1)/quality.sampleStride;
+        const uint32_t sampleIndex=quality.bladesPerTuft==1
+            ? slot*quality.sampleStride
+            : (slot/perTuft)*quality.bladesPerTuft+(slot%perTuft)*quality.sampleStride;
+        const uint32_t sourceSamples=quality.sourceSamples?quality.sourceSamples:candidates;
+        if(sampleIndex>=sourceSamples)continue;
+        const uint32_t logicalIndex=uint32_t(uint64_t(sampleIndex)*patch.maximumBlades/sourceSamples);
         const uint64_t h=detail::mix64(
             patch.seed^patch.key^
             (uint64_t(logicalIndex)*0x9e3779b97f4a7c15ULL));
         if(h%1000u>=keep)continue;
-        const int64_t x=patch.bounds.minX+
+        int64_t x=patch.bounds.minX+
             int64_t((h>>13)%uint64_t(spanX));
-        const int64_t z=patch.bounds.minZ+
+        int64_t z=patch.bounds.minZ+
             int64_t((h>>35)%uint64_t(spanZ));
+        if(quality.bladesPerTuft>1){
+            const auto centre=detail::mix64(patch.seed^patch.key^(uint64_t(sampleIndex/quality.bladesPerTuft)*0x9e3779b97f4a7c15ULL));
+            const int64_t radius=std::min<int64_t>(quality.tuftRadiusCm,std::min(spanX,spanZ)/4);
+            x=patch.bounds.minX+radius+int64_t((centre>>13)%uint64_t(std::max<int64_t>(1,spanX-2*radius)));
+            z=patch.bounds.minZ+radius+int64_t((centre>>35)%uint64_t(std::max<int64_t>(1,spanZ-2*radius)));
+            x+=int64_t((h>>20)%uint64_t(2*radius+1))-radius;
+            z+=int64_t((h>>44)%uint64_t(2*radius+1))-radius;
+        }
+        if(allows && !allows(x,z))continue;
         const int32_t y=ground(x,z);
         if(y< -1000000 || y>1000000)
             throw std::out_of_range("TerraWeave grass soil height");
         const int32_t visualSize=std::max<int32_t>(
             1,int32_t(appearance.sizePermille)*
-            (750+int32_t((h>>20)%501u))/1000);
+            (1000-int32_t(quality.heightVariationPermille)+int32_t((h>>20)%(2*quality.heightVariationPermille+1)))/1000);
         float bladeHeight=float(baseHeightCm)*visualSize*0.00001f;
+        // Host burn overlay: charred blades shrink to ash stubble with a
+        // ragged per-blade edge; burning blades move to the emissive primitive.
+        uint32_t charred=0, fire=0;
+        bool burningBlade=false;
+        if(fireSampler) {
+            const auto burn=(*fireSampler)(x,z);
+            const uint32_t c=std::min<uint32_t>(burn.charPermille,1000u);
+            const uint32_t edge=uint32_t((h>>40)%200u);
+            charred=c>edge ? std::min<uint32_t>(1000u,(c-edge)*1000u/(1000u-edge)) : 0u;
+            fire=std::min<uint32_t>(burn.firePermille,1000u);
+            bladeHeight*=float(1000u-charred*82u/100u)/1000.0f;
+            burningBlade=fire>=kGrassBurningFirePermille && charred<950u;
+        }
+        const uint32_t ash=uint32_t(26+(h>>51)%22u);
+        const auto finishColor=[&](uint32_t base,float t)->uint32_t{
+            uint32_t out=base|0xff000000u;
+            if(fireSampler) {
+                const auto mixc=[&](uint32_t from,uint32_t to){
+                    return (from*(1000u-charred)+to*charred)/1000u;
+                };
+                const uint32_t r=out&255u,g=(out>>8)&255u,b=(out>>16)&255u;
+                out=rgba(mixc(r,ash+6u),mixc(g,ash+2u),mixc(b,ash));
+                if(burningBlade) {
+                    const uint32_t hot=std::min<uint32_t>(255u,150u+fire*105u/1000u);
+                    out=rgba(255u,hot*2u/3u,hot/5u);
+                }
+            }
+            // Wind sway weight for canopyWindGraph: 0 at the root, 1 at the tip.
+            if(sway)out=(out&0x00ffffffu)|(uint32_t(std::lround(std::clamp(t,0.f,1.f)*255.f))<<24);
+            return out;
+        };
+        auto& targetIndices=burningBlade?burningIndices:model->indices;
         const float bladeWidth=float(baseWidthCm)*
             (850+float((h>>46)%301u))/100000.f;
         const float mx=float(x-patch.bounds.minX)*0.01f;
@@ -174,40 +217,52 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
         const float bias=(float(int32_t((h>>48)%101u)-50))*0.0003f;
         const uint32_t shade=uint32_t(std::clamp<int>(
             int(light*220u/1000u)+int((h>>29)%36u),70,255));
-        uint32_t color=rgba(shade,shade,
+        const uint32_t color=rgba(shade,shade,
             uint32_t(std::max(1u,shade*3u/4u)));
-        burningBlade=false;
-        if(fireSampler) {
-            const auto burn=(*fireSampler)(x,z);
-            const uint32_t charred=std::min<uint32_t>(burn.charPermille,1000u);
-            const uint32_t fire=std::min<uint32_t>(burn.firePermille,1000u);
-            // Burned blades shrink to stubble and turn to ash; a per-blade
-            // threshold keeps the front ragged instead of a hard line.
-            const uint32_t edge=uint32_t((h>>40)%200u);
-            const uint32_t c=charred>edge ? std::min<uint32_t>(1000u,
-                (charred-edge)*1000u/std::max<uint32_t>(1u,1000u-edge)) : 0u;
-            bladeHeight*=float(1000u-c*82u/100u)/1000.0f;
-            const auto mixc=[&](uint32_t from,uint32_t to,uint32_t t){
-                return (from*(1000u-t)+to*t)/1000u;
-            };
-            const uint32_t ash=uint32_t(26+(h>>51)%22u);
-            const uint32_t r=mixc(shade,ash+6u,c);
-            const uint32_t g=mixc(shade,ash+2u,c);
-            const uint32_t b=mixc(std::max(1u,shade*3u/4u),ash,c);
-            color=rgba(r,g,b);
-            if(fire>=kGrassBurningFirePermille && c<950u) {
-                burningBlade=true;
-                const uint32_t hot=std::min<uint32_t>(255u,150u+fire*105u/1000u);
-                color=rgba(255u,hot*2u/3u,hot/5u);
+        const auto pigmentSeed=detail::mix64(patch.seed^patch.key^
+            (uint64_t(sampleIndex/quality.bladesPerTuft)*0xd6e8feb86659fd93ULL));
+        const bool straw=quality.naturalBlades && pigmentSeed%100u<8u;
+        const float pigment=.82f+float((pigmentSeed>>17)%301u)*.001f;
+        const float widthVariation=quality.naturalBlades?.55f+float((h>>7)%551u)*.001f:1.f;
+        const float sweep=quality.naturalBlades?.16f+float((h>>33)%501u)*.001f:.36f;
+        const float yaw=float((h>>10)%62832)*.0001f;
+        for(uint32_t plane=0;plane<(quality.crossedBlades?2u:1u);++plane){
+            const float a=yaw+float(plane)*1.57079633f;
+            const render::float3 side{std::cos(a)*bladeWidth*widthVariation,0,std::sin(a)*bladeWidth*widthVariation};
+            const render::float3 bend{-std::sin(a)*bladeHeight*sweep,0,std::cos(a)*bladeHeight*sweep};
+            const uint32_t base=uint32_t(model->vertices.size());
+            for(uint32_t seg=0;seg<=quality.bladeSegments;++seg){
+                const float t=float(seg)/quality.bladeSegments;
+                const render::float3 root{mx,my,mz};
+                const auto center=root+render::float3{bias*t,bladeHeight*t,0}+bend*(t*t);
+                const auto direction=render::float3{bias,bladeHeight,0}+bend*(2*t);
+                const auto normal=render::normalize(render::cross(side,direction));
+                for(uint32_t edge=0;edge<(seg==quality.bladeSegments?1u:2u);++edge){
+                    render::ModelVertex vertex;
+                    // A narrow root opens into a shoulder, then tapers to a point.
+                    // Folded edge normals catch light without doubling the mesh.
+                    const float width=(1-t)*(quality.naturalBlades?(.60f+1.20f*t):1.f);
+                    vertex.pos=center+side*((edge?1.f:-1.f)*width);vertex.nrm=normal;
+                    vertex.uv={seg==quality.bladeSegments?.5f:float(edge),t};vertex.color=color;
+                    if(quality.naturalBlades){
+                        const auto across=render::normalize(side);
+                        vertex.nrm=render::normalize(normal+across*(edge?.24f:-.24f));
+                        const float brightness=float(shade)*pigment;
+                        const auto channel=[&](float gain){return uint32_t(std::clamp(std::lround(brightness*gain),1l,255l));};
+                        const float root=.42f+.58f*std::sqrt(t);
+                        vertex.color=straw?rgba(channel(root*1.23f),channel(root*.91f),channel(root*.65f)):
+                            rgba(channel(root*(.78f+.30f*t)),channel(root),channel(root*(.55f+.22f*t)));
+                    }
+                    if(fireSampler||sway)vertex.color=finishColor(vertex.color,t);
+                    model->vertices.push_back(vertex);
+                }
+                if(seg<quality.bladeSegments){
+                    const uint32_t lo=base+seg*2, hi=lo+2;
+                    targetIndices.insert(targetIndices.end(),{lo,lo+1,hi});
+                    if(seg+1<quality.bladeSegments)targetIndices.insert(targetIndices.end(),{lo+1,hi+1,hi});
+                }
             }
         }
-        emitTriangle({mx-bladeWidth,my,mz},
-                     {mx+bladeWidth,my,mz},
-                     {mx+bias,my+bladeHeight,mz+bias},color);
-        if(quality.crossedBlades)
-            emitTriangle({mx,my,mz-bladeWidth},
-                         {mx,my,mz+bladeWidth},
-                         {mx-bias,my+bladeHeight,mz+bias},color);
     }
     primitive.firstVertex=0;
     primitive.vertexCount=static_cast<uint32_t>(model->vertices.size());
@@ -234,6 +289,36 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     return model;
 }
 
+// One shared authored density chain for both resident native patches and
+// offline export. CPU generation happens only on patch upload/rebuild.
+inline std::unique_ptr<render::Model> makeGrassPatchLodModel(
+        const GrassPatch& patch,const GrassSoilHeight& ground,
+        GrassRenderQuality quality={},const GrassPlacementFilter& allows={},
+        const GrassPresentationOptions* presentation=nullptr) {
+    auto model=makeGrassPatchModel(patch,ground,quality,allows,presentation);
+    if(!model)return {};
+    const auto maximum=std::min(quality.maxBladesPerPatch,patch.maximumBlades);
+    for(uint32_t divisor:{3u,8u}) {
+        auto tier=quality;
+        tier.sampleStride=divisor;tier.sourceSamples=maximum;
+        const auto tuftCount=(maximum+quality.bladesPerTuft-1)/quality.bladesPerTuft;
+        tier.maxBladesPerPatch=std::min(maximum,tuftCount*((quality.bladesPerTuft+divisor-1)/divisor));
+        tier.bladeSegments=std::max(1u,quality.bladeSegments/(divisor==3?2u:3u));
+        tier.bladeHalfWidthCm=std::min(12u,uint32_t(std::ceil(quality.bladeHalfWidthCm*std::sqrt(float(divisor)))));
+        auto lod=makeGrassPatchModel(patch,ground,tier,allows,presentation);
+        if(!lod)continue;
+        const auto vo=uint32_t(model->vertices.size()),io=uint32_t(model->indices.size());
+        model->vertices.insert(model->vertices.end(),lod->vertices.begin(),lod->vertices.end());
+        for(auto index:lod->indices)model->indices.push_back(index+vo);
+        auto mesh=lod->meshes[0];
+        for(auto& primitive:mesh.primitives){primitive.firstVertex+=vo;primitive.firstIndex+=io;}
+        model->meshes[0].lods.push_back({int(model->meshes.size()),divisor==3?220.f:90.f});
+        model->meshes.push_back(std::move(mesh));
+    }
+    model->batching.independentShadowLod=true;
+    model->finalize();return model;
+}
+
 // Device-owned residency/culling. Caller publishes new patch snapshots after
 // one ECS tick and provides a terrain sampler valid on the current owner
 // thread only. No worker captures mutable Earthworks or runs gameplay code.
@@ -246,7 +331,12 @@ public:
     void setQuality(GrassRenderQuality quality) {
         validateGrassRenderQuality(quality);
         if(quality.maxBladesPerPatch!=quality_.maxBladesPerPatch ||
-           quality.crossedBlades!=quality_.crossedBlades)
+           quality.crossedBlades!=quality_.crossedBlades ||
+           quality.bladesPerTuft!=quality_.bladesPerTuft || quality.tuftRadiusCm!=quality_.tuftRadiusCm ||
+           quality.sourceSamples!=quality_.sourceSamples || quality.sampleStride!=quality_.sampleStride || quality.heightVariationPermille!=quality_.heightVariationPermille || quality.naturalBlades!=quality_.naturalBlades ||
+           quality.bladeSegments!=quality_.bladeSegments ||
+           quality.bladeHeightCm!=quality_.bladeHeightCm ||
+           quality.bladeHalfWidthCm!=quality_.bladeHalfWidthCm)
             for(const auto& [key,entry]:resident_){
                 (void)entry;dirty_.insert(key);
             }
@@ -328,8 +418,8 @@ public:
                 continue;
             if(uploaded>=quality_.maxUploadsPerFrame)break;
             const bool overlay=presentation_.windSway||bool(presentation_.fire);
-            auto candidate=makeGrassPatchModel(patch,ground,quality_,
-                                               overlay?&presentation_:nullptr);
+            auto candidate=makeGrassPatchLodModel(patch,ground,quality_,{},
+                                                  overlay?&presentation_:nullptr);
             if(candidate) {
                 render::prepareModelUpload(*candidate);
                 if(!render::uploadModel(device,*candidate) ||
@@ -382,7 +472,7 @@ public:
             draw.flags=render::kDrawStatic|render::kDrawNoCastShadow;
             if(presentation_.windSway) {
                 draw.useVertexParameters=true;
-                draw.vertexParameters={wind_.x,wind_.y,wind_.z,wind_.w};
+                draw.vertexParameters=wind_;
                 draw.maxVertexOffsetMetres=0.25f;
             }
             renderer.drawModel(draw);
@@ -407,12 +497,12 @@ private:
     GrassPresentationOptions presentation_;
     std::function<uint64_t(const RectCm&)> signature_;
     std::function<void(std::unique_ptr<render::Model>&)> retire_;
+    render::float4 wind_{0,0,0,0};
     void retire(gfx::Device& device,std::unique_ptr<render::Model>& model){
         if(!model)return;
         if(retire_)retire_(model);
         else render::releaseModel(device,*model);
     }
-    render::float4 wind_{0,0,0,0};
     std::map<uint64_t,Resident> resident_;
     std::set<uint64_t> dirty_;
 };

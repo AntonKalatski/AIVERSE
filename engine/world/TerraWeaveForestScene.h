@@ -123,14 +123,14 @@ public:
 
     void addSpecies(const TreeProfile& profile,
                     const FoliageSpecies& placement,
-                    uint64_t prototypeSeed) {
+                    uint64_t prototypeSeed,ArborMeshSettings mesh = {8,true}) {
         if (residentStarted_ || gpuUploaded_)
             throw std::logic_error("TerraWeave species registry already in use");
         if (placement.id != profile.speciesId || placement.id == 0)
             throw std::invalid_argument("TerraWeave forest species ids");
         // Validates profile before insertion and prepares shared geometry/
         // impostor atlas once per species, rather than once per tree.
-        adapter_.addPrototype(profile, prototypeSeed);
+        adapter_.addPrototype(profile, prototypeSeed,mesh);
         adapter_.setRootProfile(profile.speciesId,
             defaultRootProfile(placement.habit));
         species_.push_back(placement);
