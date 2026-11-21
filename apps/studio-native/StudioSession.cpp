@@ -1,3 +1,4 @@
+#include <regex>
 #include "apps/editor/AuthoringWater.h"
 #include "StudioSession.h"
 #include "engine/world/NereidFlowAuthoring.h"
@@ -1239,6 +1240,29 @@ Json StudioSession::dispatch(const Json& request) {
             reply.set("result", propertiesFor(params.getStr("entityId")));
         } else if (method == "studio.inspect") {
             reply.set("result", inspectorFor(params.getStr("entityId")));
+        } else if (method == "studio.rules" || method == "studio.rulesSet") {
+            // Rules form: unit types as written (own fields) and resolved (with "extends").
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.rulesSet") {
+                const std::string path=params.getStr("path");
+                static const std::regex allowed(R"(^types\.[A-Za-z0-9_\-]+((\.[A-Za-z0-9_]+)|(\[[0-9]{1,4}\])){0,6}$)");
+                if (path.size()>200 || !std::regex_match(path,allowed)) throw std::runtime_error("Only unit type fields can be edited here");
+                Json args=Json::object();args.set("path",str(path));
+                const bool erase=params["value"].isNull();
+                if (!erase) args.set("value",params["value"]);
+                const Json changed=ws_.call(erase?"rules_delete":"rules_set",args,"studio");
+                if (changed.has("error")) throw std::runtime_error(changed.getStr("error"));
+            }
+            Json own=Json::object(),resolvedArgs=Json::object();own.set("path",str("types"));
+            resolvedArgs.set("path",str("types"));resolvedArgs.set("resolved",Json::fromBool(true));
+            const Json types=ws_.call("rules_get",own,"studio"), resolved=ws_.call("rules_get",resolvedArgs,"studio"),
+                       list=ws_.call("rules_list",Json::object(),"studio");
+            for (const auto* r:{&types,&resolved,&list}) if (r->has("error")) throw std::runtime_error(r->getStr("error"));
+            Json out=Json::object();
+            out.set("types",types["value"]);out.set("resolved",resolved["value"]);
+            out.set("resources",list["resources"]);out.set("summary",list["types"]);
+            out.set("dirty",Json::fromBool(ws_.project.rulesDirty));
+            reply.set("result",std::move(out));
         } else if (method == "studio.componentCatalog") {
             reply.set("result", componentCatalog(params.getStr("entityId")));
         } else if (method == "studio.componentAdd" || method == "studio.componentRemove") {

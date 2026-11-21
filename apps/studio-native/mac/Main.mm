@@ -1229,7 +1229,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate" || method=="studio.setProperties" ||
              method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove" ||
-             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags")) {
+             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet")) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

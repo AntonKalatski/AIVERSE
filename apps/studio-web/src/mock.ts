@@ -117,6 +117,10 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.
   }
+  if (method === 'studio.rules') return { types: { soldier: { name: 'Soldier', health: { max: 60 }, move: { speed: 2.5 }, sight: 7, cost: { gold: 50, time: 10 }, weapons: [{ id: 'sword', damage: 6, range: 1, cooldown: 1 }] } },
+    resolved: { soldier: { name: 'Soldier', health: { max: 60 }, move: { speed: 2.5, radius: 0.4 }, sight: 7, cost: { gold: 50, time: 10 }, weapons: [{ id: 'sword', damage: 6, range: 1, cooldown: 1 }] } },
+    resources: ['gold'], summary: [], dirty: false } as StudioResult['studio.rules'];
+  if (method === 'studio.rulesSet') throw new Error('Open the native Studio to edit rules');
   if (method === 'studio.componentCatalog') return [
     { id: 'MeshRenderer', title: 'Mesh Renderer', group: 'Rendering', hint: 'Model and material slots', action: 'native', available: false, reason: 'Already on this entity' },
     { id: 'Light', title: 'Point Light', group: 'Rendering', hint: 'Adds a light entity at this position', action: 'light', available: true },

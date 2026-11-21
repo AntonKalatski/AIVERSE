@@ -11,6 +11,7 @@ import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
 import SceneToolbar from '../components/SceneToolbar';
+import RulesPanel from './RulesPanel';
 import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
@@ -62,6 +63,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return <InspectorPanel {...ctx}/>;
+      case 'rules':
+        return <RulesPanel projectPath={snapshot?.project.path ?? ''} onChanged={() => void invoke('studio.snapshot', {}).then(ctx.commitSnapshot).catch(() => {})}/>;
       case 'scene':
         return <>
           <div className="viewport-toolbar">

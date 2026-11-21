@@ -14,7 +14,7 @@ export const LEGACY_WINDOWS_NOT_MIGRATED: ReadonlyArray<{ id: string; title: str
   { id: 'models', title: 'Models' }, { id: 'ModelingWindow', title: 'Modeling' },
   { id: 'overlays', title: 'Overlays' }, { id: 'physis', title: 'PHYSIS' }, { id: 'postfx', title: 'PRISMA Post FX' },
   { id: 'project_import', title: 'Import Project' }, { id: 'studio_asset_audit', title: 'Project Audit' },
-  { id: 'raid', title: 'Raid' }, { id: 'roads', title: 'Roads' }, { id: 'rules', title: 'Rules' },
+  { id: 'raid', title: 'Raid' }, { id: 'roads', title: 'Roads' },
   { id: 'scripts', title: 'Scripts' }, { id: 'spectrafx_gpu_assets', title: 'SpectraFX GPU Assets' },
   { id: 'spectrafx_graph', title: 'SpectraFX Graph' }, { id: 'stats', title: 'Statistics' },
   { id: 'studio_camera_bookmarks', title: 'Camera Bookmarks' }, { id: 'studio_extensions', title: 'Extensions' },

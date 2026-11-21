@@ -160,6 +160,17 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(call("studio.assetPlace",R"({"asset":"content/missing.glb","x":5,"z":6})").has("error") && map.data.entities.size()==before+1);
        AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
    }
+   // Rules form: read own + resolved types, edit a type field (validated and saved), reject other paths.
+   {
+       auto rules=call("studio.rules");
+       AIVERSE_TEST_CHECK(!rules.has("error") && rules["result"]["types"].has("tree"));
+       AIVERSE_TEST_CHECK(!call("studio.rulesSet",R"({"path":"types.tree.health.max","value":150})").has("error"));
+       rules=call("studio.rules");
+       AIVERSE_TEST_CHECK(rules["result"]["resolved"]["tree"]["health"]["max"].integer()==150);
+       AIVERSE_TEST_CHECK(call("studio.rulesSet",R"({"path":"resources.gold","value":1})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.rulesSet",R"({"path":"types.tree.health.max","value":null})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.rules")["result"]["types"]["tree"]["health"].has("max"));
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;
