@@ -40,3 +40,14 @@ Commit 09c136ed6 already applied the whole `main...feature/aiv20261121_no-genre`
 move. When no-genre merges after this branch: resolve AGENTS.md with this branch's version, then re-apply
 only no-genre AGENTS.md edits made after 2026-11-21 15:35 MSK to the file that now holds that section
 (`grep -rl '<heading>' AGENTS.md docs/agents`).
+
+## Merge note for no-genre (2026-11-21 17:10) — registry, tests, compatibility headers
+- This branch rewrites `docs/genre-implementation.json` to schema 2 (core/partial/planned, `tests`, `gameReady`)
+  and checks it with `tools/genre/check_registry.py` (CTest `genre_registry`). no-genre renames the file to
+  `docs/capability-status.json` (2c4ffe591): after merging this branch, `git mv` the schema-2 file, update the
+  path in `tools/genre/check_registry.py`, the aiverse-capability-audit skill and `tools/skills/catalog.py`.
+- New root CTests here reference `tests/libraries/genre_*_tests.cpp` and `examples/libraries/genre/*`; if no-genre
+  renames those folders, update the root CMake block "Genre library suites" in the same commit.
+- Owner rule (origin/main e0713339c): no compatibility headers. This branch removed its 43; no-genre stage 1 adds
+  forwarding headers for `genre/` -> `mechanics/` and CMake aliases — they must be dropped the same way (move,
+  update every user, delete the old files).
