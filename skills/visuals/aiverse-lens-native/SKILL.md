@@ -33,11 +33,21 @@ manager, genre-specific renderer or new simulation world.
 - Use `engine/render/CameraFrameRecorder.h` for asynchronous readback and PNG.
   Check pending/error state and retain callback owners through completion.
   Native Studio's working example is
-  `apps/editor/windows/StudioCamerasWindow.cpp`. Do not promise EXR/video output,
-  physical exposure/DOF or stereo from this recorder.
+  `apps/editor/windows/StudioCamerasWindow.cpp`. `CameraHdrFrameRecorder` in the
+  same header records an RGBA16F target into linear EXR (`engine/render/CameraExr.h`,
+  half, uncompressed, no external library) through `Device::readTextureAsync`;
+  backends without RGBA16F readback (GL/WebGL today) reject instead of writing
+  8-bit data. Video encoding is not provided.
+- Physical lens: `engine/render/CameraLensPhysics.h` (EV100, exposure stops,
+  thin-lens DoF). `CameraPostFxPool` applies `CameraLensComponent` drives per
+  camera through PRISMA `setViewManualExposure` / `setViewDepthOfField`, only on
+  change, so TAA/motion history is not reset. Cinematic rails and shake:
+  `engine/render/CameraRailPath.h`, evaluated by `CameraRigEvaluator` from
+  absolute presentation seconds (seekable).
 
 Verification uses the existing CMake build, no new library target. Build and
-run camera_scene_asset, camera_scheduler, camera_model_snapshot and lens_ops.
+run camera_scene_asset, camera_scheduler, camera_model_snapshot, lens_ops,
+camera_lens_physics, camera_rail_path, camera_exr and `aiverse_tests lens_`.
 For actual Metal acceptance build aiverse_lens_metal_frame and run:
 
 ```sh
