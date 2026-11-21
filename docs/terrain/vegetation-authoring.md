@@ -205,7 +205,7 @@ PBR graphs and two shared1024px sources per family. Albedo alpha stores aligned
 height, never opacity; graph color stays opaque. Object-space smooth three-axis
 projection preserves local detail under rigid instance yaw/scale, with world-space
 surface-gradient bump, projected roughness and AO, metallic0. Six texture samples,
-two image slots,73nodes; fits the ordinary eight-sample budget and16-slot RHI
+two image slots,92nodes; fits the ordinary eight-sample budget and16-slot RHI
 admission even with dynamic GI (source slots14/15). Source repeat is1.5m, from
 the bark catalog; terrain's1K/4m setting is separate. Height remains authored, not
 a measured scan. Quality/cost on mobile needs device validation.
@@ -233,3 +233,12 @@ than3: seeded sweep/width variation, folded lighting normals, root-to-tip pigmen
 and8% dry-tuft palette. No additional vertices/textures/materials/draw calls;
 ordinary dielectric PBR and resident/exported shared LOD remain in use. Explicit
 width overrides still apply. This is not a textured species atlas or live wind.
+
+
+Projected bark weights use the interpolated smooth normal recovered into object
+space from corresponding world/object derivative frames. Native uniform scale
+and rotation preserve the shared material; nonuniform scale and deformed branch
+poses need separate acceptance checks. Six samples/two textures remain unchanged.
+Organic branch geometry is opt-in through botanicalArborMeshSettings; wood, cards,
+LOD attachments and native wind pivots share the rendered centreline. Collars
+intersect beneath bark; this is not a welded mesh or slope-fitted root system.

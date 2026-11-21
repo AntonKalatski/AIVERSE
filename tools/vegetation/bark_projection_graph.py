@@ -38,9 +38,21 @@ def material_graph(height_color, orm_path, metres=1.5, height_metres=.01225):
     normal = n("normalize3", n("normal"))
     # The generic normalize guard is absolute. Scale the derivative cross
     # before normalization so centimetre-close cameras do not darken weights.
-    obj_cross = n("cross", n("ddx", obj), n("ddy", obj))
+    odx, ody = n("ddx", obj), n("ddy", obj)
+    dpdx, dpdy = n("ddx", world), n("ddy", world)
+    obj_cross = n("cross", odx, ody)
     obj_normal = n("normalize3", n("multiply", obj_cross, c(1000000)))
-    weights = n("add", n("pow", n("abs", obj_normal), c(4)), c(.00001))
+    # Recover the smooth object-space shading normal through corresponding
+    # derivative frames. Uniformly scaled/rotated native tree instances share
+    # one graph; geometric face normals caused visible triangular colour bands.
+    def unit(v):
+        return n("normalize3", n("multiply", v, c(1000000)))
+    ot, wt = unit(odx), unit(dpdx)
+    wf = unit(n("cross", dpdx, dpdy))
+    ob, wb = n("cross", obj_normal, ot), n("cross", wf, wt)
+    smooth = unit(total([n("multiply", basis, n("dot3", normal, w_basis))
+                        for basis, w_basis in ((ot, wt), (ob, wb), (obj_normal, wf))]))
+    weights = n("add", n("pow", n("abs", smooth), c(4)), c(.00001))
     axes = [n(channel, weights) for channel in ("red", "green", "blue")]
     divisor = n("max", total(axes), c(.00001))
     axes = [n("divide", a, divisor) for a in axes]
@@ -52,7 +64,6 @@ def material_graph(height_color, orm_path, metres=1.5, height_metres=.01225):
         orms.append(n("multiply", n("sampleTexture", uv, texture=orm_path), axes[axis]))
     color, orm = total(colors), total(orms)
     height = n("multiply", n("alpha", color), c(height_metres))
-    dpdx, dpdy = n("ddx", world), n("ddy", world)
     r1, r2 = n("cross", dpdy, normal), n("cross", normal, dpdx)
     det = n("dot3", dpdx, r1)
     gradient = n("multiply", n("sign", det), n("add",

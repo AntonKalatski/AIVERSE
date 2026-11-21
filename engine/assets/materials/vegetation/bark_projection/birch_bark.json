@@ -38,6 +38,20 @@
     },
     {
       "id": "n6",
+      "op": "ddx",
+      "inputs": [
+        "n1"
+      ]
+    },
+    {
+      "id": "n7",
+      "op": "ddy",
+      "inputs": [
+        "n1"
+      ]
+    },
+    {
+      "id": "n8",
       "op": "cross",
       "inputs": [
         "n4",
@@ -45,129 +59,277 @@
       ]
     },
     {
-      "id": "n7",
+      "id": "n9",
       "op": "constant",
       "value": 1000000
     },
     {
-      "id": "n8",
+      "id": "n10",
       "op": "multiply",
       "inputs": [
-        "n6",
-        "n7"
-      ]
-    },
-    {
-      "id": "n9",
-      "op": "normalize3",
-      "inputs": [
-        "n8"
-      ]
-    },
-    {
-      "id": "n10",
-      "op": "abs",
-      "inputs": [
+        "n8",
         "n9"
       ]
     },
     {
       "id": "n11",
-      "op": "constant",
-      "value": 4
+      "op": "normalize3",
+      "inputs": [
+        "n10"
+      ]
     },
     {
       "id": "n12",
-      "op": "pow",
+      "op": "multiply",
       "inputs": [
-        "n10",
-        "n11"
+        "n4",
+        "n9"
       ]
     },
     {
       "id": "n13",
-      "op": "constant",
-      "value": 1e-05
+      "op": "normalize3",
+      "inputs": [
+        "n12"
+      ]
     },
     {
       "id": "n14",
-      "op": "add",
+      "op": "multiply",
       "inputs": [
-        "n12",
-        "n13"
+        "n6",
+        "n9"
       ]
     },
     {
       "id": "n15",
-      "op": "red",
+      "op": "normalize3",
       "inputs": [
         "n14"
       ]
     },
     {
       "id": "n16",
-      "op": "green",
+      "op": "cross",
       "inputs": [
-        "n14"
+        "n6",
+        "n7"
       ]
     },
     {
       "id": "n17",
-      "op": "blue",
+      "op": "multiply",
       "inputs": [
-        "n14"
+        "n16",
+        "n9"
       ]
     },
     {
       "id": "n18",
-      "op": "add",
+      "op": "normalize3",
       "inputs": [
-        "n15",
-        "n16"
-      ]
-    },
-    {
-      "id": "n19",
-      "op": "add",
-      "inputs": [
-        "n18",
         "n17"
       ]
     },
     {
-      "id": "n20",
-      "op": "max",
+      "id": "n19",
+      "op": "cross",
       "inputs": [
-        "n19",
+        "n11",
         "n13"
       ]
     },
     {
-      "id": "n21",
-      "op": "divide",
+      "id": "n20",
+      "op": "cross",
       "inputs": [
-        "n15",
-        "n20"
+        "n18",
+        "n15"
+      ]
+    },
+    {
+      "id": "n21",
+      "op": "dot3",
+      "inputs": [
+        "n3",
+        "n15"
       ]
     },
     {
       "id": "n22",
-      "op": "divide",
+      "op": "multiply",
       "inputs": [
-        "n16",
-        "n20"
+        "n13",
+        "n21"
       ]
     },
     {
       "id": "n23",
-      "op": "divide",
+      "op": "dot3",
       "inputs": [
-        "n17",
+        "n3",
         "n20"
       ]
     },
     {
       "id": "n24",
+      "op": "multiply",
+      "inputs": [
+        "n19",
+        "n23"
+      ]
+    },
+    {
+      "id": "n25",
+      "op": "dot3",
+      "inputs": [
+        "n3",
+        "n18"
+      ]
+    },
+    {
+      "id": "n26",
+      "op": "multiply",
+      "inputs": [
+        "n11",
+        "n25"
+      ]
+    },
+    {
+      "id": "n27",
+      "op": "add",
+      "inputs": [
+        "n22",
+        "n24"
+      ]
+    },
+    {
+      "id": "n28",
+      "op": "add",
+      "inputs": [
+        "n27",
+        "n26"
+      ]
+    },
+    {
+      "id": "n29",
+      "op": "multiply",
+      "inputs": [
+        "n28",
+        "n9"
+      ]
+    },
+    {
+      "id": "n30",
+      "op": "normalize3",
+      "inputs": [
+        "n29"
+      ]
+    },
+    {
+      "id": "n31",
+      "op": "abs",
+      "inputs": [
+        "n30"
+      ]
+    },
+    {
+      "id": "n32",
+      "op": "constant",
+      "value": 4
+    },
+    {
+      "id": "n33",
+      "op": "pow",
+      "inputs": [
+        "n31",
+        "n32"
+      ]
+    },
+    {
+      "id": "n34",
+      "op": "constant",
+      "value": 1e-05
+    },
+    {
+      "id": "n35",
+      "op": "add",
+      "inputs": [
+        "n33",
+        "n34"
+      ]
+    },
+    {
+      "id": "n36",
+      "op": "red",
+      "inputs": [
+        "n35"
+      ]
+    },
+    {
+      "id": "n37",
+      "op": "green",
+      "inputs": [
+        "n35"
+      ]
+    },
+    {
+      "id": "n38",
+      "op": "blue",
+      "inputs": [
+        "n35"
+      ]
+    },
+    {
+      "id": "n39",
+      "op": "add",
+      "inputs": [
+        "n36",
+        "n37"
+      ]
+    },
+    {
+      "id": "n40",
+      "op": "add",
+      "inputs": [
+        "n39",
+        "n38"
+      ]
+    },
+    {
+      "id": "n41",
+      "op": "max",
+      "inputs": [
+        "n40",
+        "n34"
+      ]
+    },
+    {
+      "id": "n42",
+      "op": "divide",
+      "inputs": [
+        "n36",
+        "n41"
+      ]
+    },
+    {
+      "id": "n43",
+      "op": "divide",
+      "inputs": [
+        "n37",
+        "n41"
+      ]
+    },
+    {
+      "id": "n44",
+      "op": "divide",
+      "inputs": [
+        "n38",
+        "n41"
+      ]
+    },
+    {
+      "id": "n45",
       "op": "swizzle",
       "mask": "bgra",
       "inputs": [
@@ -175,7 +337,7 @@
       ]
     },
     {
-      "id": "n25",
+      "id": "n46",
       "op": "constant",
       "value": [
         0.6666666666666666,
@@ -185,48 +347,48 @@
       ]
     },
     {
-      "id": "n26",
+      "id": "n47",
       "op": "multiply",
       "inputs": [
-        "n24",
-        "n25"
+        "n45",
+        "n46"
       ]
     },
     {
-      "id": "n27",
+      "id": "n48",
       "op": "sampleTexture",
       "texture": "materials/vegetation/bark_projection/birch_bark_heightcolor.png",
       "srgb": true,
       "inputs": [
-        "n26"
+        "n47"
       ]
     },
     {
-      "id": "n28",
+      "id": "n49",
       "op": "multiply",
       "inputs": [
-        "n27",
-        "n21"
+        "n48",
+        "n42"
       ]
     },
     {
-      "id": "n29",
+      "id": "n50",
       "op": "sampleTexture",
       "texture": "materials/vegetation/bark_projection/birch_bark_orm.png",
       "inputs": [
-        "n26"
+        "n47"
       ]
     },
     {
-      "id": "n30",
+      "id": "n51",
       "op": "multiply",
       "inputs": [
-        "n29",
-        "n21"
+        "n50",
+        "n42"
       ]
     },
     {
-      "id": "n31",
+      "id": "n52",
       "op": "swizzle",
       "mask": "rbra",
       "inputs": [
@@ -234,7 +396,7 @@
       ]
     },
     {
-      "id": "n32",
+      "id": "n53",
       "op": "constant",
       "value": [
         0.6666666666666666,
@@ -244,197 +406,36 @@
       ]
     },
     {
-      "id": "n33",
+      "id": "n54",
       "op": "multiply",
-      "inputs": [
-        "n31",
-        "n32"
-      ]
-    },
-    {
-      "id": "n34",
-      "op": "sampleTexture",
-      "texture": "materials/vegetation/bark_projection/birch_bark_heightcolor.png",
-      "srgb": true,
-      "inputs": [
-        "n33"
-      ]
-    },
-    {
-      "id": "n35",
-      "op": "multiply",
-      "inputs": [
-        "n34",
-        "n22"
-      ]
-    },
-    {
-      "id": "n36",
-      "op": "sampleTexture",
-      "texture": "materials/vegetation/bark_projection/birch_bark_orm.png",
-      "inputs": [
-        "n33"
-      ]
-    },
-    {
-      "id": "n37",
-      "op": "multiply",
-      "inputs": [
-        "n36",
-        "n22"
-      ]
-    },
-    {
-      "id": "n38",
-      "op": "swizzle",
-      "mask": "rgra",
-      "inputs": [
-        "n0"
-      ]
-    },
-    {
-      "id": "n39",
-      "op": "multiply",
-      "inputs": [
-        "n38",
-        "n25"
-      ]
-    },
-    {
-      "id": "n40",
-      "op": "sampleTexture",
-      "texture": "materials/vegetation/bark_projection/birch_bark_heightcolor.png",
-      "srgb": true,
-      "inputs": [
-        "n39"
-      ]
-    },
-    {
-      "id": "n41",
-      "op": "multiply",
-      "inputs": [
-        "n40",
-        "n23"
-      ]
-    },
-    {
-      "id": "n42",
-      "op": "sampleTexture",
-      "texture": "materials/vegetation/bark_projection/birch_bark_orm.png",
-      "inputs": [
-        "n39"
-      ]
-    },
-    {
-      "id": "n43",
-      "op": "multiply",
-      "inputs": [
-        "n42",
-        "n23"
-      ]
-    },
-    {
-      "id": "n44",
-      "op": "add",
-      "inputs": [
-        "n28",
-        "n35"
-      ]
-    },
-    {
-      "id": "n45",
-      "op": "add",
-      "inputs": [
-        "n44",
-        "n41"
-      ]
-    },
-    {
-      "id": "n46",
-      "op": "add",
-      "inputs": [
-        "n30",
-        "n37"
-      ]
-    },
-    {
-      "id": "n47",
-      "op": "add",
-      "inputs": [
-        "n46",
-        "n43"
-      ]
-    },
-    {
-      "id": "n48",
-      "op": "alpha",
-      "inputs": [
-        "n45"
-      ]
-    },
-    {
-      "id": "n49",
-      "op": "constant",
-      "value": 0.0014
-    },
-    {
-      "id": "n50",
-      "op": "multiply",
-      "inputs": [
-        "n48",
-        "n49"
-      ]
-    },
-    {
-      "id": "n51",
-      "op": "ddx",
-      "inputs": [
-        "n1"
-      ]
-    },
-    {
-      "id": "n52",
-      "op": "ddy",
-      "inputs": [
-        "n1"
-      ]
-    },
-    {
-      "id": "n53",
-      "op": "cross",
       "inputs": [
         "n52",
-        "n3"
-      ]
-    },
-    {
-      "id": "n54",
-      "op": "cross",
-      "inputs": [
-        "n3",
-        "n51"
-      ]
-    },
-    {
-      "id": "n55",
-      "op": "dot3",
-      "inputs": [
-        "n51",
         "n53"
       ]
     },
     {
-      "id": "n56",
-      "op": "sign",
+      "id": "n55",
+      "op": "sampleTexture",
+      "texture": "materials/vegetation/bark_projection/birch_bark_heightcolor.png",
+      "srgb": true,
       "inputs": [
-        "n55"
+        "n54"
+      ]
+    },
+    {
+      "id": "n56",
+      "op": "multiply",
+      "inputs": [
+        "n55",
+        "n43"
       ]
     },
     {
       "id": "n57",
-      "op": "ddx",
+      "op": "sampleTexture",
+      "texture": "materials/vegetation/bark_projection/birch_bark_orm.png",
       "inputs": [
-        "n50"
+        "n54"
       ]
     },
     {
@@ -442,14 +443,15 @@
       "op": "multiply",
       "inputs": [
         "n57",
-        "n53"
+        "n43"
       ]
     },
     {
       "id": "n59",
-      "op": "ddy",
+      "op": "swizzle",
+      "mask": "rgra",
       "inputs": [
-        "n50"
+        "n0"
       ]
     },
     {
@@ -457,14 +459,15 @@
       "op": "multiply",
       "inputs": [
         "n59",
-        "n54"
+        "n46"
       ]
     },
     {
       "id": "n61",
-      "op": "add",
+      "op": "sampleTexture",
+      "texture": "materials/vegetation/bark_projection/birch_bark_heightcolor.png",
+      "srgb": true,
       "inputs": [
-        "n58",
         "n60"
       ]
     },
@@ -472,15 +475,16 @@
       "id": "n62",
       "op": "multiply",
       "inputs": [
-        "n56",
-        "n61"
+        "n61",
+        "n44"
       ]
     },
     {
       "id": "n63",
-      "op": "abs",
+      "op": "sampleTexture",
+      "texture": "materials/vegetation/bark_projection/birch_bark_orm.png",
       "inputs": [
-        "n55"
+        "n60"
       ]
     },
     {
@@ -488,70 +492,214 @@
       "op": "multiply",
       "inputs": [
         "n63",
-        "n3"
+        "n44"
       ]
     },
     {
       "id": "n65",
-      "op": "subtract",
+      "op": "add",
       "inputs": [
-        "n64",
-        "n62"
+        "n49",
+        "n56"
       ]
     },
     {
       "id": "n66",
-      "op": "multiply",
+      "op": "add",
       "inputs": [
         "n65",
-        "n7"
+        "n62"
       ]
     },
     {
       "id": "n67",
-      "op": "normalize3",
+      "op": "add",
+      "inputs": [
+        "n51",
+        "n58"
+      ]
+    },
+    {
+      "id": "n68",
+      "op": "add",
+      "inputs": [
+        "n67",
+        "n64"
+      ]
+    },
+    {
+      "id": "n69",
+      "op": "alpha",
       "inputs": [
         "n66"
       ]
     },
     {
-      "id": "n68",
-      "op": "constant",
-      "value": 1
-    },
-    {
-      "id": "n69",
-      "op": "setAlpha",
-      "inputs": [
-        "n45",
-        "n68"
-      ]
-    },
-    {
       "id": "n70",
-      "op": "green",
-      "inputs": [
-        "n47"
-      ]
+      "op": "constant",
+      "value": 0.0014
     },
     {
       "id": "n71",
-      "op": "red",
+      "op": "multiply",
       "inputs": [
-        "n47"
+        "n69",
+        "n70"
       ]
     },
     {
       "id": "n72",
+      "op": "cross",
+      "inputs": [
+        "n7",
+        "n3"
+      ]
+    },
+    {
+      "id": "n73",
+      "op": "cross",
+      "inputs": [
+        "n3",
+        "n6"
+      ]
+    },
+    {
+      "id": "n74",
+      "op": "dot3",
+      "inputs": [
+        "n6",
+        "n72"
+      ]
+    },
+    {
+      "id": "n75",
+      "op": "sign",
+      "inputs": [
+        "n74"
+      ]
+    },
+    {
+      "id": "n76",
+      "op": "ddx",
+      "inputs": [
+        "n71"
+      ]
+    },
+    {
+      "id": "n77",
+      "op": "multiply",
+      "inputs": [
+        "n76",
+        "n72"
+      ]
+    },
+    {
+      "id": "n78",
+      "op": "ddy",
+      "inputs": [
+        "n71"
+      ]
+    },
+    {
+      "id": "n79",
+      "op": "multiply",
+      "inputs": [
+        "n78",
+        "n73"
+      ]
+    },
+    {
+      "id": "n80",
+      "op": "add",
+      "inputs": [
+        "n77",
+        "n79"
+      ]
+    },
+    {
+      "id": "n81",
+      "op": "multiply",
+      "inputs": [
+        "n75",
+        "n80"
+      ]
+    },
+    {
+      "id": "n82",
+      "op": "abs",
+      "inputs": [
+        "n74"
+      ]
+    },
+    {
+      "id": "n83",
+      "op": "multiply",
+      "inputs": [
+        "n82",
+        "n3"
+      ]
+    },
+    {
+      "id": "n84",
+      "op": "subtract",
+      "inputs": [
+        "n83",
+        "n81"
+      ]
+    },
+    {
+      "id": "n85",
+      "op": "multiply",
+      "inputs": [
+        "n84",
+        "n9"
+      ]
+    },
+    {
+      "id": "n86",
+      "op": "normalize3",
+      "inputs": [
+        "n85"
+      ]
+    },
+    {
+      "id": "n87",
+      "op": "constant",
+      "value": 1
+    },
+    {
+      "id": "n88",
+      "op": "setAlpha",
+      "inputs": [
+        "n66",
+        "n87"
+      ]
+    },
+    {
+      "id": "n89",
+      "op": "green",
+      "inputs": [
+        "n68"
+      ]
+    },
+    {
+      "id": "n90",
+      "op": "red",
+      "inputs": [
+        "n68"
+      ]
+    },
+    {
+      "id": "n91",
       "op": "constant",
       "value": 0
     }
   ],
   "outputs": {
-    "color": "n69",
-    "normal": "n67",
-    "roughness": "n70",
-    "occlusion": "n71",
-    "metallic": "n72"
+    "color": "n88",
+    "normal": "n86",
+    "roughness": "n89",
+    "occlusion": "n90",
+    "metallic": "n91"
   }
 }

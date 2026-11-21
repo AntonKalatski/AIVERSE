@@ -82,7 +82,7 @@ For close native bark, prefer the bundled opt-in `*_bark_projected` materials
 from `materials/vegetation/bark_projection`, assigned ONLY to TerraWeave Bark.
 Read vegetation-authoring.md before installation; merge both material libraries.
 They share family textures across prototypes; do not bake a huge unique atlas
-for every tree by default. Graph73nodes/sixsamples, rigid Metal High/Low/yaw/macro
+for every tree by default. Graph92nodes/sixsamples, rigid Metal High/Low/yaw/macro
 verified, mobile performance/animated poses not established. Botanical exporter
 now enables continuous seeded basal root skin; conditional erosion-exposed roots
 and soil/fall simulation remain separate owners. Branch junction anatomy and
