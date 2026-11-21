@@ -1,38 +1,32 @@
 ---
 name: aiverse-racing
-description: Make or change an AIVERSE racing game - lap races with a grid and countdown, ordered checkpoints, standings, wrong way and respawn, race bots, chase camera and race HUD - on the FPS module (fps.mode "race") with the vehicle-controllers race session, and check it.
+description: Add or change a race in any AIVERSE project - map and rules "race" (grid, countdown, ordered checkpoints, laps, standings, wrong way, respawn, race bots, shared HUD and chase camera) - and check it. No genre or module switch.
 ---
 
-# racing
+# races
 
-Behaviour and format: `docs/fps.md` § Races. Simulation: `modules/fps/FpsRace.cpp` over the host-independent race
-session `libraries/include/aiverselib/genre/RaceSession.h` (dynamics, checkpoints and the race bot: skill
-`skills/gameplay/aiverse-vehicle-controllers`). Client: `apps/fps/RaceHud.h` (chase camera, HUD). Sample game:
-`templates/racing` (Oval Sprint).
+A race is a capability of any project with cars, never a genre mode. Format and behaviour: `docs/races.md`.
+Simulation: `libraries/include/aiverselib/genre/RaceSession.h` (data: `genre/RaceSessionData.h`; dynamics and the race
+bot: `skills/gameplay/aiverse-vehicle-controllers`). Presentation: `engine/ui/RaceHud.h`, `engine/render/ChaseCamera.h`.
 
-1. Start from the sample: copy `templates/racing` into the game folder (games live outside the engine repository), or
-   generate a new oval with `python3 templates/_tools/racegen.py --out <game> [--racers N --bots B --straight M
-   --radius M --width M --laps N]`. It writes `rules/race.json` (car, track, race knobs) and `maps/start.json`
-   (ground, walls, one typed car per racer); add `game.json` / `rules.json` like the sample (`module` `fps`,
-   `fps.mode` `"race"`, `mechanics.enabled`).
-2. Track (`fps.vehicleTypes.tracks[]`, milli-units): `checkpoints` in driving order with `centerMilli`, `normalMilli`
-   (crossing direction), `radiusMilli` (half the gate width), `respawnMilli` / `respawnYawMilli`; the last checkpoint
-   is the finish line and the `grid` lies just after it (one slot per player); `line` = closed racing line for the
-   bots (points every ~5 m along the ideal path). Walls are map colliders (boxes; rotated boxes with `yaw` in bends).
-3. Cars: `fps.vehicleTypes.vehicles[]` (`kind` wheeled / tracked / hover / flight with a driver seat); map
-   `vehicles[i]` with `"type"` is the car of player `i + 1`. Handling numbers: vehicle-controllers skill.
-4. Race knobs `fps.race`: `track`, `laps`, `countdownTicks`, `finishGraceTicks`, `timeoutTicks`, `crashDamage`,
-   `vehicles` (generated settings section: `wrongWayTicks`, `respawnWrongWayTicks`, `stuckTicks`, `stuckSpeedMilli`,
-   bot `botMaxSpeedMilli`, `botCornerAccelMilli`, `botSkillMilli`, `botRubberBandMilli`, ...). Players with
-   `"bot": true` race with the race bot (needs `line`).
-5. A host other than FPS (top-down, native module): call `makeRaceSession`, then per tick `raceSessionInputs` before
-   the vehicles step and `stepRaceSession` after the collisions; teleport `report.race.respawns` with
-   `respawnVehicle`; persist the session (record kind 128) and fold `vehicleHash(session)` into the checksum.
+1. The project needs cars its host already steps: typed map vehicles (`fps.vehicleTypes` + map `vehicles` with
+   `"type"`) on a metre map, or rules `driving` vehicles on a grid map. Racer `i` = the `i`-th car = player `i + 1`.
+2. Map `"race"` in the map's own units: `checkpoints` in driving order (`x`, `z`, `yaw` = direction of travel in
+   turns, `width`; the last one is the finish), optional `grid` (one slot per racer), `line` (closed racing line;
+   required when a racer is a bot). Players with `"bot": true` race with the race bot.
+3. Rules `"race"` (optional): `countdownTicks`, `finishGraceTicks`, `timeoutTicks`, `laps`, `crashDamage`, `vehicles`
+   (generated settings: `wrongWayTicks`, `respawnWrongWayTicks`, `stuckTicks`, `stuckSpeedMilli`, `bot*`).
+4. A ready oval for a metre map: `python3 templates/_tools/racegen.py --out <game> [--racers N --bots B --straight M
+   --radius M --width M --laps N]` (walls, cars, the map race block, the car and the knobs); sample `templates/racing`.
+5. A new host for cars: `readRaceRules` / `readRaceTrack` at setup, `makeRaceSession` at the start, per tick
+   `raceSessionInputs` before the vehicles step and `stepRaceSession` after the collisions, teleport
+   `report.race.respawns` with `respawnVehicle`, `raceView` for the HUD, persist the session (record kind 128) and hash
+   it. Keep the host a thin adapter: no rules of its own (`docs/races.md` § Hosts).
 6. Check: `aiverse_headless --project <game> --seed 3 --verify-restore-at 30 --verify-restore-ticks 600` ends with a
-   winner (a bot when player 1 idles); `aiverse_fps_tests` (`raceMode`) and the vehicle library tests
-   (`raceSession`); a screenshot at the wheel: `AIVERSE_SCREENSHOT=/tmp/race.ppm AIVERSE_EXIT_AFTER_FRAMES=400
-   aiverse_fps_client --project <game>` (Linux: under Xvfb). Tune bot pace until bots finish without respawns.
+   winner; `aiverse_fps_tests` (`raceMode`), `aiverse_tests driving_race_`, the vehicle library tests (`raceSession`);
+   a screenshot at the wheel under Xvfb. Tune bot pace until bots finish without respawns.
 
-Not available yet: car-to-car collisions, car models / engine sounds, pits, penalties, flags, ghosts, track editor.
+Not available yet: car-to-car collisions on metre maps, one shared vehicle system for both hosts, spline roads drawn
+by every client, pits, penalties, flags, ghosts, a track editor.
 
-Runtime library: none of its own (FPS module + `AIVERSE::lib_vehicle_controllers`).
+Runtime library: none of its own (hosts + `AIVERSE::lib_vehicle_controllers`).

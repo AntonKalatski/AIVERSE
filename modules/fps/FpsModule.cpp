@@ -49,7 +49,6 @@ void stateIo(Archive& a,State& s,bool programs=false,bool melee=false) {
     if(melee){for(auto& actor:s.actors)meleeIo(a,actor);for(auto& frame:s.history)for(auto& actor:frame.actors)meleeIo(a,actor);}
 }
 }
-RaceRules readRace(const Json&,const lib::genre::VehicleDefinitions&,uint32_t tickRate);   // FpsRace.cpp
 Config readConfig(const Json& root) {
     const auto& j=root["fps"];if(!j.isObject())throw JsonError("rules.fps: expected object");
     Config c;
@@ -62,7 +61,7 @@ Config readConfig(const Json& root) {
     c.interestRadius=number(j,"interestRadius",250_fx,10_fx,10000_fx);
     c.worldLimit=number(j,"worldLimit",100000_fx,10_fx,100000_fx);
     c.mode=j.getStr("mode","deathmatch");
-    if(c.mode!="deathmatch"&&c.mode!="elimination"&&c.mode!="battleRoyale"&&c.mode!="bomb"&&c.mode!="race")throw JsonError("fps.mode: unknown mode");
+    if(c.mode!="deathmatch"&&c.mode!="elimination"&&c.mode!="battleRoyale"&&c.mode!="bomb")throw JsonError("fps.mode: unknown mode");
     c.friendlyFire=j.getBool("friendlyFire",false);
     c.roundTicks=uint32_t(integer(j,"roundTicks",7200,1,10000000));
     c.respawnTicks=uint32_t(integer(j,"respawnTicks",180,1,100000));
@@ -158,12 +157,6 @@ Config readConfig(const Json& root) {
         if(!c.systems.enabled)throw JsonError("fps.vehicleTypes: requires mechanics.enabled");
         c.vehicleTypes=lib::genre::readVehicleDefinitions(j["vehicleTypes"]);
         for(const auto& [id,d]:c.vehicleTypes->vehicles)if(d.seats.seats.empty())throw JsonError("fps.vehicleTypes: vehicle "+std::to_string(id)+" needs seats");
-    }
-    if(j.has("race")||c.mode=="race"){
-        if(c.mode!="race")throw JsonError("fps.race: requires fps.mode \"race\"");
-        if(!j["race"].isObject())throw JsonError("fps.mode race: requires an fps.race object");
-        if(!c.vehicleTypes)throw JsonError("fps.race: requires fps.vehicleTypes");
-        c.race=readRace(j["race"],*c.vehicleTypes,c.tickRate);
     }
     const auto& melee=j["melee"];auto& mel=c.melee;
     if(!melee.isNull()&&!melee.isObject())throw JsonError("fps.melee: expected object");
@@ -497,7 +490,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     setupRoyale(sim,map,s);
     if(!config_.gear.empty())s.gear.assign(s.actors.size(),{});
     setupVehicles(sim,map,s);
-    setupRace(sim,map,s);
+    setupRace(sim,rules,map,s);
     setupBots(sim,map,s);
     meleeAttacks_.clear();
     if(config_.melee.enabled){
@@ -1017,8 +1010,8 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
     for(const auto& b:s.botStates)hash.str(b);
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
-    // Version 10 only adds the race run; games without fps.race keep writing version 9 byte for byte.
-    uint32_t version=config_.race?10:9;uint64_t content=contentHash_;archive(version,content);
+    // Version 10 only adds the race run; maps without a race keep writing version 9 byte for byte.
+    uint32_t version=raceRules_?10:9;uint64_t content=contentHash_;archive(version,content);
     if((version!=3&&version<6)||version>10||content!=contentHash_)return false;
     // On load, Simulation has already restored the saved Entity allocator;
     // old v9 saves may not have any ECS actor identities yet. Only writing
@@ -1030,7 +1023,7 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     if(version>=9)ioVehicleRuns(archive,copy.vehicleRuns);else copy.vehicleRuns.clear();
     if(version>=9){archive(copy.botStates);if(copy.botStates.size()>256)return false;}else copy.botStates.clear();
     if(version>=10)raceIo(archive,copy.race);else copy.race=RaceRun{};
-    if(copy.race.enabled!=bool(config_.race))return false;
+    if(copy.race.enabled!=bool(raceRules_))return false;
     if(copy.race.enabled&&!validRace(copy))return false;
     if(copy.botStates.size()!=(botHost_?spawns_.size():0))return false;
     for(const auto& r:copy.vehicleRuns){

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate an oval race track for an FPS-module race game (fps.mode "race", docs/fps.md § Races).
+"""Generate an oval race track for a metre map with box colliders (docs/races.md: rules "race" + map "race").
 
 Writes into --out (default: templates/racing next to this script):
-  rules/race.json   fps.vehicleTypes (one wheeled car with a driver seat, one track: checkpoints, grid, racing line)
-                    and fps.race (laps, countdown, bot knobs)
-  maps/start.json   ground, inner / outer walls (straights as boxes, bends as rotated boxes), one car per racer
+  rules/race.json   the car (fps.vehicleTypes: one wheeled car with a driver seat) and the race knobs (rules "race")
+  maps/start.json   ground, inner / outer walls (straights as boxes, bends as rotated boxes), one car per racer, and
+                    the track (map "race": checkpoints, grid, racing line)
 Units: metres in the map, milli-units in the vehicle-controllers JSON. Track: two straights along Z joined by
 half circles; racers drive up the right straight (+Z) first; the finish line lies on the right straight.
 
@@ -14,7 +14,6 @@ half circles; racers drive up the right straight (+Z) first; the finish line lie
 import argparse, json, math, os
 
 def milli(v): return int(round(v * 1000))
-def p3(x, z, y=0.0): return [milli(x), milli(y), milli(z)]
 def yaw_turns(dx, dz): return math.atan2(dx, dz) / (2 * math.pi)
 
 def centerline(L, R, step):
@@ -64,12 +63,12 @@ def main():
     gate = W / 2 + 1.0
     # Checkpoints (gate centre, crossing direction): right straight, top, left straight, bottom, finish line last.
     cps = [((R, L / 3), (0, 1)), ((0, L + R), (-1, 0)), ((-R, 0), (0, -1)), ((0, -L - R), (1, 0)), ((R, -L / 3), (0, 1))]
-    checkpoints = [{"centerMilli": p3(x, z), "normalMilli": [milli(nx), 0, milli(nz)], "radiusMilli": milli(gate),
-                    "respawnMilli": p3(x, z, 0.05), "respawnYawMilli": milli(yaw_turns(nx, nz))} for (x, z), (nx, nz) in cps]
+    r3 = lambda v: round(v, 3)
+    checkpoints = [{"x": r3(x), "z": r3(z), "yaw": r3(yaw_turns(nx, nz)), "width": r3(2 * gate)} for (x, z), (nx, nz) in cps]
     # Grid: two columns just after the finish line, 7 m between rows.
     finish_z = -L / 3
-    grid = [{"positionMilli": p3(R + (-2.2 if i % 2 == 0 else 2.2), finish_z + 6 + 7 * (n - 1 - i), 0.05)} for i in range(n)]
-    line = [p3(x, z) for x, z in centerline(L, R, 5.0)]
+    grid = [{"x": r3(R + (-2.2 if i % 2 == 0 else 2.2)), "z": r3(finish_z + 6 + 7 * (n - 1 - i)), "yaw": 0} for i in range(n)]
+    line = [[r3(x), r3(z)] for x, z in centerline(L, R, 5.0)]
     car = {
         "id": 1, "kind": "wheeled",
         "wheeled": {"massMilli": 1100000, "torque": [[900, 190], [4500, 290], [7000, 230]], "idleRpm": 900, "redlineRpm": 7000,
@@ -81,13 +80,11 @@ def main():
                                {"offsetMilli": [800, 0, -1300], "driven": True, "handbrake": True}]},
         "seats": [{"id": 1, "role": "driver", "entryMilli": [-400, 0, 200], "enterRadiusMilli": 1500, "exitsMilli": [[-2000, 0, 200], [2000, 0, 200]]}],
     }
-    race = {"fps": {
-        "vehicleTypes": {"vehicles": [car], "tracks": [{"id": 1, "laps": a.laps, "checkpoints": checkpoints, "grid": grid, "line": line}]},
-        "race": {"track": 1, "countdownTicks": 180, "finishGraceTicks": 900,
-                 "vehicles": {"wrongWayTicks": 60, "respawnWrongWayTicks": 240, "stuckSpeedMilli": 500, "stuckTicks": 300,
-                              "botMaxSpeedMilli": 38000, "botCornerAccelMilli": 8400, "botBrakeDecelMilli": 8000,
-                              "botLaneOffsetMilli": 2500, "botOvertakeDistanceMilli": 14000, "botSkillMilli": 1000, "botRubberBandMilli": 40}},
-    }}
+    race = {"fps": {"vehicleTypes": {"vehicles": [car]}},
+            "race": {"countdownTicks": 180, "finishGraceTicks": 900,
+                     "vehicles": {"wrongWayTicks": 60, "respawnWrongWayTicks": 240, "stuckSpeedMilli": 500, "stuckTicks": 300,
+                                  "botMaxSpeedMilli": 38000, "botCornerAccelMilli": 8400, "botBrakeDecelMilli": 8000,
+                                  "botLaneOffsetMilli": 2500, "botOvertakeDistanceMilli": 14000, "botSkillMilli": 1000, "botRubberBandMilli": 40}}}
     ground = {"id": 1, "min": [round(-R - W - 20, 3), -2, round(-L - R - W - 20, 3)], "max": [round(R + W + 20, 3), 0, round(L + R + W + 20, 3)]}
     players = []
     for i in range(n):
@@ -95,8 +92,9 @@ def main():
         if i >= n - a.bots: p["bot"] = True
         players.append(p)
     spawns = [[round(-6 + 4 * i, 3), 0.01, 0] for i in range(n)]                  # infield; racers start in their cars
-    vehicles = [{"pos": [g["positionMilli"][0] / 1000, 0.05, g["positionMilli"][2] / 1000], "type": 1} for g in grid]
-    world = {"players": players, "spawns": spawns, "colliders": [ground] + walls(L, R, W), "vehicles": vehicles, "name": "Oval"}
+    vehicles = [{"pos": [g["x"], 0.05, g["z"]], "type": 1} for g in grid]
+    world = {"players": players, "spawns": spawns, "colliders": [ground] + walls(L, R, W), "vehicles": vehicles, "name": "Oval",
+             "race": {"laps": a.laps, "checkpoints": checkpoints, "grid": grid, "line": line}}
     os.makedirs(os.path.join(a.out, "rules"), exist_ok=True); os.makedirs(os.path.join(a.out, "maps"), exist_ok=True)
     with open(os.path.join(a.out, "rules", "race.json"), "w") as f: json.dump(race, f, indent=1); f.write("\n")
     with open(os.path.join(a.out, "maps", "start.json"), "w") as f: json.dump(world, f, indent=1); f.write("\n")

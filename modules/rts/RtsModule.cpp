@@ -68,6 +68,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     fieldOps_ = std::make_unique<FieldOps>();   // repair / reclaim / stockpiles / ambient income ... ; nothing without the blocks
     fieldOps_->setup(sim, *this, rulesJson, mapIn);
     driving_->loadMap(sim, mapIn, rulesJson["roadTypes"]);   // bridges and tunnels as second levels (map "decks", spline roads)
+    driving_->loadRace(sim, rulesJson, mapIn);   // rules "race" + map "race": the map's cars race (docs/races.md)
     arsenal_ = std::make_unique<Arsenal>();   // the hero's weapon slots, ammo, crates and money (rules "arsenal"); nothing without the block
     arsenal_->setup(sim, *this, rulesJson);
     traffic_ = std::make_unique<Traffic>();   // city traffic (rules "traffic"); nothing without the block

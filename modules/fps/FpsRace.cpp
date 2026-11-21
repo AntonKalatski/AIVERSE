@@ -1,8 +1,9 @@
-// FPS races (`fps.mode` "race" + `fps.race`) over the vehicle-controllers race session (genre/RaceSession.h): every
-// player starts as the driver of the typed map vehicle with its index, on the grid of the `fps.vehicleTypes` track;
-// the countdown holds the brakes, bots drive with the race bot along the track's racing line, the session counts
-// checkpoints / laps, standings, wrong way and respawns, and the round ends with the race (winner = team of place 1).
-// The FPS host owns the cars (controller step, static collision) exactly as for other typed vehicles.
+// The FPS host's adapter for races (rules "race" + map "race": the shared format of genre/RaceSessionData.h, the same
+// in every project; docs/races.md) over the vehicle-controllers race session (genre/RaceSession.h): player i starts as
+// the driver of the i-th typed map vehicle (on the map's grid, else where the car stands); the countdown holds the
+// brakes, bots (map players "bot": true) drive with the race bot along the racing line, the session counts checkpoints,
+// laps, standings, wrong way and respawns, and the round ends with the race (winner = team of place 1). The FPS host
+// owns the cars (controller step, static collision) exactly as for other typed vehicles.
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/genre/VehiclePersistence.h"
 #include "libraries/include/aiverselib/genre/VehicleConfigured.h"
@@ -13,40 +14,7 @@ using namespace lib::genre;
 namespace gameplay=lib::gameplay;
 namespace bots=lib::bots;
 namespace {
-uint32_t raceTicks(const Json& j,const char* key,uint32_t fallback){
-    if(!j.has(key))return fallback;
-    auto v=j[key];if(!v.isNumber())throw JsonError(std::string("fps.race.")+key+": expected ticks");
-    auto x=v.fx();if(x.raw%Fixed::kOne||x<Fixed{}||x>Fixed::fromInt(kRaceSessionMaxTicks))throw JsonError(std::string("fps.race.")+key+": expected 0.."+std::to_string(kRaceSessionMaxTicks)+" ticks");
-    return uint32_t(x.floorInt());
-}
 const VehicleSeatDef* driverSeat(const VehicleDefinition& d){for(const auto& seat:d.seats.seats)if(seat.role==VehicleSeatRole::Driver)return &seat;return nullptr;}
-}
-RaceRules readRace(const Json& j,const VehicleDefinitions& defs,uint32_t tickRate){
-    for(const auto& [key,value]:j.members()){(void)value;
-        if(key!="track"&&key!="laps"&&key!="countdownTicks"&&key!="finishGraceTicks"&&key!="timeoutTicks"&&key!="crashDamage"&&key!="vehicles")
-            throw JsonError("fps.race."+key+": unknown key");}
-    RaceRules r;
-    if(!j["track"].isNumber())throw JsonError("fps.race.track: expected the id of a fps.vehicleTypes track");
-    r.track=j.getInt("track");auto track=defs.tracks.find(r.track);
-    if(track==defs.tracks.end())throw JsonError("fps.race.track: unknown track "+std::to_string(r.track));
-    r.course=track->second.course;r.line=track->second.line;
-    if(j.has("laps")){auto laps=raceTicks(j,"laps",3);if(laps<1||laps>1000)throw JsonError("fps.race.laps: expected 1..1000");r.course.laps=laps;}
-    r.session.countdownTicks=raceTicks(j,"countdownTicks",3*tickRate);
-    r.session.finishGraceTicks=raceTicks(j,"finishGraceTicks",10*tickRate);
-    r.session.timeoutTicks=raceTicks(j,"timeoutTicks",0);
-    if(j.has("crashDamage")){if(j["crashDamage"].type()!=Json::Type::Bool)throw JsonError("fps.race.crashDamage: expected boolean");r.crashDamage=j["crashDamage"].boolean();}
-    if(j.has("vehicles")){
-        // The generated `vehicles` settings section (wrong way, stuck respawn, race bot knobs).
-        Json root=Json::object();root.set("schemaVersion",Json::number(int64_t(1)));root.set("vehicles",j["vehicles"]);
-        auto settings=gameplay::readGameplaySettings(root);
-        if(!settings.value)throw JsonError("fps.race."+(settings.errors.empty()?std::string("vehicles: invalid"):settings.errors.front()));
-        auto errors=vehicleSettingsErrors(*settings.value);if(!errors.empty())throw JsonError("fps.race."+errors.front());
-        r.session.race=vehicleRaceConfig(*settings.value);r.session.bot=bots::raceBotConfig(*settings.value);
-        if(j["vehicles"].has("raceLaps")&&!j.has("laps"))r.course.laps=vehicleRaceLaps(*settings.value);
-    }
-    if(!valid(r.course)||!valid(r.session))throw JsonError("fps.race: invalid track or race settings");
-    if(!r.line.empty()&&!bots::makeRaceLine(r.line))throw JsonError("fps.race.track: invalid racing line (closed loop of at least 3 distinct points)");
-    return r;
 }
 void raceIo(Archive& a,RaceRun& r){
     a(r.enabled);if(!r.enabled)return;
@@ -54,37 +22,36 @@ void raceIo(Archive& a,RaceRun& r){
     uint32_t n=a.count(r.vehicleOf.size());if(n>kRaceMaxRacers){a.fail();return;}if(!a.writing())r.vehicleOf.resize(n);
     for(auto& v:r.vehicleOf)a(v);
 }
-void io(Archive& a,RaceView& v){
-    a(v.enabled);if(!v.enabled)return;
-    a(v.phase,v.place,v.racers,v.lap,v.laps,v.checkpoint,v.checkpoints,v.countdownTicks,v.wrongWay,v.finished,v.winner);
-    uint32_t n=a.count(v.order.size());if(n>kRaceMaxRacers){a.fail();return;}if(!a.writing())v.order.resize(n);for(auto& x:v.order)a(x);
-}
-void Module::setupRace(Simulation& sim,const Json&,State& s){
-    s.race=RaceRun{};raceLine_.reset();
-    if(!config_.race)return;
-    const auto& r=*config_.race;const auto n=s.actors.size();
-    if(s.vehicleRuns.size()<n)throw JsonError("fps.race: one typed map vehicle (\"type\") per player required");
-    if(r.course.grid.size()<n)throw JsonError("fps.race: the track grid needs one slot per player");
+void Module::setupRace(Simulation& sim,const Json& rules,const Json& map,State& s){
+    s.race=RaceRun{};raceLine_.reset();raceRules_.reset();raceTrack_={};
+    if(!map.has("race")){if(rules.has("race")&&!rules["race"].isObject())throw JsonError("race: expected an object");return;}
+    if(!config_.vehicleTypes)throw JsonError("map race: the cars are typed vehicles (fps.vehicleTypes)");
+    raceRules_=readRaceRules(rules["race"],"race",config_.tickRate);
+    raceTrack_=readRaceTrack(map["race"],"map race",1_fx);   // metre map
+    if(raceRules_->laps)raceTrack_.course.laps=raceRules_->laps;
+    const auto& r=*raceRules_;const auto n=s.actors.size();
+    if(s.vehicleRuns.size()<n)throw JsonError("map race: one typed map vehicle (\"type\") per player required");
+    if(raceTrack_.grid&&raceTrack_.course.grid.size()<n)throw JsonError("map race.grid: one slot per player");
     std::vector<RaceSessionRacer> racers;
     for(size_t i=0;i<n;++i){
         auto& run=s.vehicleRuns[i];auto& a=s.actors[i];
         Vehicle* v=nullptr;for(auto& x:s.vehicles)if(x.id==run.vehicle)v=&x;
         const auto& def=config_.vehicleTypes->vehicles.at(run.type);auto* seat=driverSeat(def);
         if(!v||!seat)throw JsonError("fps.race: vehicle type "+std::to_string(run.type)+" needs a driver seat");
-        const auto& slot=r.course.grid[i];
-        run.controller=makeVehicleState(def.controller,slot.position,slot.yaw);
-        v->pos=slot.position;v->yaw=slot.yaw;v->velocity={};
+        if(raceTrack_.grid){const auto& slot=raceTrack_.course.grid[i];run.controller=makeVehicleState(def.controller,slot.position,slot.yaw);}
+        else raceTrack_.course.grid.push_back({run.controller.position,run.controller.yaw});   // the car's own pose
+        v->pos=run.controller.position;v->yaw=run.controller.yaw;v->velocity={};
         run.seats.occupants[seat->id]=a.slot;run.seats.team=a.team;run.seats.locked=true;
         a.vehicle=v->id;a.velocity={};a.pos=vehicleWorldPoint(run.controller,seat->entry)+Vec3{{},Fixed::fromRatio(1,2),{}};v->driver=a.slot;
         s.race.vehicleOf.push_back(v->id);racers.push_back({int64_t(a.slot),bool(bots_[i])});
     }
-    if(!r.line.empty())raceLine_=bots::makeRaceLine(r.line);
-    auto session=makeRaceSession(r.course,r.session,racers,raceLine_?&*raceLine_:nullptr,sim.tick());
-    if(!session)throw JsonError(raceLine_?"fps.race: invalid race":"fps.race: bots need the track's racing line (\"line\")");
+    if(!raceTrack_.line.empty())raceLine_=bots::makeRaceLine(raceTrack_.line);
+    auto session=makeRaceSession(raceTrack_.course,r.session,racers,raceLine_?&*raceLine_:nullptr,sim.tick());
+    if(!session)throw JsonError(raceLine_?"map race: invalid race":"map race: bots need a racing line (\"line\")");
     s.race.enabled=true;s.race.session=std::move(*session);
 }
 void Module::tickRace(Simulation& sim){
-    auto& s=state(sim);const auto& r=*config_.race;auto now=sim.tick();
+    auto& s=state(sim);const auto& r=*raceRules_;const auto& course=raceTrack_.course;auto now=sim.tick();
     auto runOf=[&](size_t i)->VehicleRun*{return i<s.race.vehicleOf.size()?vehicleRun(s,s.race.vehicleOf[i]):nullptr;};
     auto vehicleOf=[&](uint32_t id)->Vehicle*{for(auto& v:s.vehicles)if(v.id==id)return &v;return nullptr;};
     // 1. Pedals: countdown brakes, race bots, players' own input.
@@ -103,7 +70,7 @@ void Module::tickRace(Simulation& sim){
         samples.push_back({int64_t(i+1),run->controller.position,run->controller.velocity});
         auto* v=vehicleOf(run->vehicle);if((v&&v->health<=0)||run->controller.position.y< -50_fx)requests.push_back(int64_t(i+1));
     }
-    if(auto report=stepRaceSession(r.course,r.session,s.race.session,now,samples,requests)){
+    if(auto report=stepRaceSession(course,r.session,s.race.session,now,samples,requests)){
         for(const auto& spot:report->race.respawns){
             auto* run=runOf(size_t(spot.racer-1));if(!run)continue;auto* v=vehicleOf(run->vehicle);
             const auto& def=config_.vehicleTypes->vehicles.at(run->type);
@@ -130,14 +97,7 @@ bool Module::validRace(const State& c) const {
     return true;
 }
 RaceView Module::raceView(Simulation& sim,uint8_t slot) const {
-    RaceView v;const auto* s=sim.world().resourceConst<State>();if(!s||!s->race.enabled||!config_.race)return v;
-    const auto& session=s->race.session;v.enabled=true;v.phase=uint8_t(session.phase);
-    v.racers=uint16_t(session.race.racers.size());v.laps=uint16_t(config_.race->course.laps);v.checkpoints=uint16_t(config_.race->course.checkpoints.size());
-    v.countdownTicks=raceSessionCountdown(session,sim.tick());v.winner=uint8_t(std::max<int64_t>(0,raceSessionWinner(session)));
-    for(const auto& st:session.standings){
-        v.order.push_back(uint8_t(st.racer));
-        if(st.racer==slot){v.place=uint16_t(st.place);v.lap=uint16_t(std::min<uint32_t>(st.lap+(st.finished?0:1),config_.race->course.laps));v.checkpoint=uint16_t(st.nextCheckpoint);v.wrongWay=st.wrongWay;v.finished=st.finished;}
-    }
-    return v;
+    const auto* s=sim.world().resourceConst<State>();if(!s||!s->race.enabled||!raceRules_)return {};
+    return lib::genre::raceView(raceTrack_.course,s->race.session,slot,sim.tick());
 }
 }

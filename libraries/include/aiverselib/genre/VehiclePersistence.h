@@ -72,6 +72,11 @@ inline void io(Archive& a,RaceSessionState& s){
     a(s.phase,s.goTick,s.firstFinishTick,s.endTick,s.lastInputTick,s.lastTick,s.race,s.bots,s.standings);
     a(s.firstFinished,s.inputsInitialized,s.initialized);
 }
+inline void io(Archive& a,RaceView& v){
+    a(v.enabled);if(!v.enabled)return;
+    a(v.phase,v.racer,v.place,v.racers,v.lap,v.laps,v.checkpoint,v.checkpoints,v.countdownTicks,v.wrongWay,v.finished,v.winner);
+    uint32_t n=a.count(v.order.size());if(n>kRaceMaxRacers){a.fail();return;}if(!a.writing())v.order.resize(n);for(auto& x:v.order)a(x);
+}
 inline void io(Archive& a,RaceSessionConfig& c){a(c.countdownTicks,c.finishGraceTicks,c.timeoutTicks,c.race);}
 inline uint16_t stateKind(const RaceSessionState&){return 128;}
 }

@@ -97,7 +97,7 @@ void Module::tickVehicles(Simulation& sim,std::span<const std::pair<uint32_t,Veh
             if(sweep.hit&&sweep.normal.y<Fixed::fromRatio(1,2)){
                 auto stop=before+Vec3{delta.x,{},delta.z}*fxMax(Fixed{},sweep.fraction-Fixed::fromRatio(1,100));stop.y=run.controller.position.y;
                 auto impulse=vehicleResolveCollision(run.controller,stop,sweep.normal);
-                if(impulse>8_fx&&(!config_.race||config_.race->crashDamage))v->health=std::max(0,v->health-int32_t((impulse-8_fx).toInt()*10));   // hard crash
+                if(impulse>8_fx&&(!raceRules_||raceRules_->crashDamage))v->health=std::max(0,v->health-int32_t((impulse-8_fx).toInt()*10));   // hard crash
             }
             auto& p=run.controller.position;p.x=fxClamp(p.x,-config_.worldLimit,config_.worldLimit);p.z=fxClamp(p.z,-config_.worldLimit,config_.worldLimit);
         }

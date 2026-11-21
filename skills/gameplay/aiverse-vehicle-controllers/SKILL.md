@@ -37,7 +37,7 @@ Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D au
    then per tick `raceSessionInputs(config, &line, session, tick, drivers)` before the vehicles step (countdown and
    finished racers hold the brakes, bots get `stepRaceBot`, players keep their pedals) and `stepRaceSession(course,
    config, session, tick, samples, respawnRequests)` after the collisions (stepRace + phase Countdown -> Running ->
-   Finished; `finishGraceTicks`, `timeoutTicks`); `raceSessionWinner`. FPS games use it through `fps.mode` `"race"`
+   Finished; `finishGraceTicks`, `timeoutTicks`); `raceSessionWinner`. Projects use it through rules / map `"race"` (docs/races.md)
    (`skills/genres/aiverse-racing`, `modules/fps/FpsRace.cpp`).
 8. Persist kinds 88 VehicleState, 89 VehicleDamageState, 90 VehicleSeatState, 91 RaceState, 94 RaceBotState, 128 RaceSessionState
    (`genre/VehiclePersistence.h`; 88..95 shared with sports-rules) in dedicated NativeState keys; fold

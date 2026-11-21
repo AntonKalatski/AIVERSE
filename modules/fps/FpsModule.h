@@ -11,7 +11,7 @@
 #include "libraries/include/aiverselib/systems/Gear.h"
 #include "libraries/include/aiverselib/systems/BuildingGen.h"
 #include "libraries/include/aiverselib/genre/VehicleData.h"
-#include "libraries/include/aiverselib/genre/RaceSession.h"
+#include "libraries/include/aiverselib/genre/RaceSessionData.h"
 #include <optional>
 
 namespace aiverse::fps {
@@ -51,20 +51,12 @@ struct MeleeConfig {
     uint32_t windup=6,active=4,recovery=12,bufferTicks=8,parryTicks=8,staggerTicks=30;
     Fixed range=2_fx,radius=Fixed::fromRatio(3,10),guardTurns=Fixed::fromRatio(1,8),lockRange=8_fx;
 };
-// Opt-in `fps.race` (mode "race", vehicle-controllers race session): every player starts as the driver of the
-// typed map vehicle with its index, on the grid of `fps.vehicleTypes` track `track`; bots race with the race bot.
-struct RaceRules {
-    int64_t track=0;
-    lib::genre::RaceCourse course;std::vector<Vec3> line;
-    lib::genre::RaceSessionConfig session;
-    bool crashDamage=false;   // hard crashes damage the cars (off: a race is never decided by a wreck)
-};
 struct Config {
     uint32_t tickRate=60,snapshotRate=20,maxPlayers=100,rewindTicks=12,inputTimeout=15;
     Fixed interestRadius=250_fx,worldLimit=100000_fx;
     MotorConfig motor; WeaponConfig weapon;SystemsConfig systems;MeleeConfig melee;
     std::vector<WeaponConfig> weapons;
-    std::string mode="deathmatch"; // deathmatch / elimination / battleRoyale / bomb / race
+    std::string mode="deathmatch"; // deathmatch / elimination / battleRoyale / bomb (a map "race" decides the round itself)
     uint32_t respawnTicks=180,roundTicks=7200,zoneStart=1800,zoneDuration=7200;
     Vec3 zoneCenter{};Fixed zoneRadius=2000_fx,zoneEndRadius=10_fx;
     int32_t zoneDamage=5;
@@ -78,7 +70,6 @@ struct Config {
     // Opt-in `fps.vehicleTypes` (vehicle-controllers JSON): map vehicles with a `type` drive with the package's
     // controller and seats (driver, passengers, gunners); vehicles without one keep the legacy arcade car.
     std::optional<lib::genre::VehicleDefinitions> vehicleTypes;
-    std::optional<RaceRules> race;
     // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
     // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
     Json bots;
@@ -127,21 +118,13 @@ struct RoyaleView {
 };
 void io(Archive&,RoyaleView&);
 // One typed vehicle (FPS save version 9): controller and seat state of the vehicle with id `vehicle`.
-// Race run (FPS save version 10; disabled without fps.race): the session plus the vehicle each slot drives.
+// Race run (FPS save version 10; disabled without a map "race"): the session plus the vehicle each slot drives.
 struct RaceRun {
     bool enabled=false;
     lib::genre::RaceSessionState session;
     std::vector<uint32_t> vehicleOf;   // slot i+1 -> vehicle id
     bool operator==(const RaceRun&)const=default;
 };
-// What one client needs to draw the race (place, lap, countdown, wrong way, results).
-struct RaceView {
-    bool enabled=false;uint8_t phase=0;uint16_t place=0,racers=0,lap=0,laps=0,checkpoint=0,checkpoints=0;
-    uint32_t countdownTicks=0;bool wrongWay=false,finished=false;uint8_t winner=0;
-    std::vector<uint8_t> order;   // slots by place
-    bool operator==(const RaceView&)const=default;
-};
-void io(Archive&,RaceView&);
 struct VehicleRun {
     uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
     std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
@@ -256,7 +239,8 @@ public:
     void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
     State authoritativeStateCopy(Simulation& sim) const; // v9 save/hash assembled from ECS payloads
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
-    RaceView raceView(Simulation&,uint8_t slot) const;
+    lib::genre::RaceView raceView(Simulation&,uint8_t slot) const;   // racer id = slot
+    bool racing() const { return raceRules_.has_value(); }   // this map has a race (map "race")
 private:
     void tick(Simulation&);
     void moveActorEcs(Simulation&,Actor&,const Input&); // direct ECS motor, legacy workspace updated for other systems
@@ -286,7 +270,7 @@ private:
     void setupVehicles(Simulation&,const Json&,State&);
     void tickVehicles(Simulation&,std::span<const std::pair<uint32_t,lib::genre::VehicleInput>> drive={});
     lib::genre::VehicleInput driverInput(const Actor&,uint32_t now) const;
-    void setupRace(Simulation&,const Json&,State&);
+    void setupRace(Simulation&,const Json& rules,const Json& map,State&);
     void tickRace(Simulation&);
     bool validRace(const State&) const;
     bool vehicleInteract(Simulation&,Actor&);
@@ -295,7 +279,9 @@ private:
     void setupBots(Simulation&,const Json&,State&);
     bool thinkBot(Simulation&,Actor&);
     std::shared_ptr<BotHost> botHost_;
-    std::optional<lib::bots::RaceLine> raceLine_;   // derived from fps.race (never saved)
+    // Races (rules "race" + map "race", shared format: genre/RaceSessionData.h, docs/races.md); derived, never saved.
+    std::optional<lib::genre::RaceRules> raceRules_;lib::genre::RaceTrack raceTrack_;
+    std::optional<lib::bots::RaceLine> raceLine_;
     struct BuildingRegion{world::Bounds bounds;Vec3 door{};std::vector<std::pair<Vec3,Vec3>> stairs,halls;};
     std::vector<BuildingRegion> buildingRegions_;   // generated buildings: footprint (+margin), door, stair flights
     std::vector<world::Bounds> ladders_,sites_;

@@ -1,4 +1,5 @@
 #include "Session.h"
+#include "libraries/include/aiverselib/genre/VehiclePersistence.h"
 #include <algorithm>
 
 namespace aiverse::net::authority {

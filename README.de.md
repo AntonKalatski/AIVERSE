@@ -106,7 +106,7 @@ validierbarer Konfiguration.
 | **Roguelikes** | `run-graph`: Runs mit Seed und Begegnungsbudgets; `loot-tables` mit garantiertem seltenem Drop |
 | **Idle, Fabrik, Kolonie** | `big-numbers`, `offline-production` (exakter Offline-Fortschritt), `production-networks`, `logistics`, `tasks` |
 | **Rhythmusspiele** | `rhythm-timing`: Tempokarten und bildratenunabhängige Trefferbewertung |
-| **Rennspiele, Fahrzeuge** | `vehicle-controllers`: Autos (Drehmoment, Gänge, Traktion, Drift), Panzer, Hovercrafts, Flugzeuge, Sitze, Schadenszonen; Rennsitzung: Startaufstellung, Countdown, Checkpoints in Reihenfolge, Runden, Platzierungen, Falschfahrt, Renn-Bots; `fps`-Modus `race` mit Verfolgerkamera, 1 Vorlage |
+| **Rennspiele, Fahrzeuge** | `vehicle-controllers`: Autos (Drehmoment, Gänge, Traktion, Drift), Panzer, Hovercrafts, Flugzeuge, Sitze, Schadenszonen; Rennsitzung: Startaufstellung, Countdown, Checkpoints in Reihenfolge, Runden, Platzierungen, Falschfahrt, Renn-Bots; `race`-Block der Karte in jedem Projekt, gemeinsames HUD und Verfolgerkamera, 1 Vorlage |
 | **Jedes Mobile-Spiel** | `aiverse::meta` und LiveOps, Tutorials, UI-Bildschirme, Store- und Werbe-Plugins |
 
 Sportspiele, Boote, Boxenstopps und Strafen stehen noch auf der [Roadmap](docs/genre-mechanics-roadmap.md). Vollständige

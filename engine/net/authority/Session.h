@@ -13,7 +13,7 @@ struct Snapshot {
     std::vector<fps::Projectile> projectiles;std::vector<fps::Loot> loot;std::vector<fps::Vehicle> vehicles;fps::RoundState match;uint32_t round=1;
     fps::RoyaleView royale;
     lib::systems::GearLoadout gear;   // own gear (fps.gear)
-    fps::RaceView race;               // own race standing (fps.race)
+    lib::genre::RaceView race;        // own race standing (map "race")
 };
 Bytes encodeSnapshot(const Snapshot& snapshot);
 bool decodeSnapshot(const Bytes&,Snapshot& out);

@@ -155,7 +155,7 @@ WORKFLOWS=[
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
  ('aiverse-driving','Top-down hero at the wheel: rules driving, handling table, steering wheels, decks, autopilot','docs/driving.md'),
- ('aiverse-racing','Racing games: fps.mode race over the race session (grid, countdown, checkpoints, laps, standings, wrong way, respawn, race bots, chase camera, HUD), racegen tracks','docs/fps.md'),
+ ('aiverse-racing','Races in any project: rules and map "race" (grid, countdown, ordered checkpoints, laps, standings, wrong way, respawn, race bots, shared HUD and chase camera), racegen tracks','docs/races.md'),
  ('aiverse-city-server','Persistent city server: near-hero snapshots, tickets, seats, accounts, client mirror','docs/city-server.md'),
  ('aiverse-replica','Generic server-authoritative replication: schema, delta snapshots, interest, budget, prediction, clock','docs/replica.md'),
  ('aiverse-place-server','Server-authoritative place hosting: tickets, encrypted UDP, WebSocket gate, reconnect, bots','docs/replica.md'),

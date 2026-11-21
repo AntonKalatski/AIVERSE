@@ -1241,7 +1241,7 @@ their place and every other racer as an opponent; players keep their own pedals)
 state, tick, samples, respawnRequests)` after the host's collisions (stepRace, respawns, phase). Phases: Countdown for
 `countdownTicks` (stuck / wrong-way counters start with the race) -> Running -> Finished when everybody finished,
 `finishGraceTicks` after the first finisher or `timeoutTicks` after the start; `raceSessionWinner` = place 1. Record kind
-128. Hosts: FPS `fps.race` (docs/fps.md § Races).
+128. Data for every project: rules / map `"race"` (`genre/RaceSessionData.h`: `readRaceRules`, `readRaceTrack`), see docs/races.md.
 
 **Configuration.** Optional generated `vehicles` section (configuration 0.3.5): seat speed limits, `raceLaps`,
 wrong-way/stuck/respawn rules and race-bot knobs (`bot*`). `vehicleSettingsErrors` rejects a respawn delay shorter

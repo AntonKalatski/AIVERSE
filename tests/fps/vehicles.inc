@@ -28,7 +28,7 @@ void typedVehicles(const std::string& root) {
     send(1,enter);step(1);CHECK(s.actors[0].vehicle==0&&(s.actors[0].pos-s.vehicles[0].pos).length()<4_fx);
     CHECK(s.vehicles[0].driver==0||s.vehicles[0].driver==2);
 }
-// fps.mode "race" (templates/racing): grid + countdown, race bots drive the typed cars over the race session, the race
+// A map "race" (templates/racing, shared format docs/races.md): grid + countdown, race bots drive the typed cars over the race session, the race
 // decides the round; twins stay bit-identical and a mid-race save restores into the same continuation.
 void raceMode(const std::string& root) {
     auto dir=root+"/../../../templates/racing/";
@@ -64,9 +64,10 @@ void raceMode(const std::string& root) {
     const auto& top=s.race.session.standings.front();CHECK(top.finished&&int32_t(top.racer)==s.winner);
     CHECK(sim->tick()<20000&&sim->checksum()==twin->checksum());
     CHECK(s.vehicles[0].pos.z>grid.z+5_fx||(s.vehicles[0].pos-grid).length()>5_fx);    // player 1 did drive off the grid
-    // Rules errors.
-    auto bad=rules;bad.member("fps").member("race").set("track",Json::number(int64_t(9)));
-    try{fps::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.race.track: unknown track 9")!=std::string::npos);}
-    auto noMode=rules;noMode.member("fps").set("mode",Json::string("deathmatch"));
-    try{fps::readConfig(noMode);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("requires fps.mode")!=std::string::npos);}
+    // Data errors (shared race format, docs/races.md) and a map without a race keeping the old save version.
+    auto bad=map;bad.member("race").member("checkpoints").at(0).set("width",Json::number(int64_t(0)));
+    try{simulation(rules,bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("map race.checkpoints[0].width: must be positive")!=std::string::npos);}
+    auto knobs=rules;knobs.member("race").set("pits",Json::fromBool(true));
+    try{simulation(knobs,map);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("race.pits: unknown key")!=std::string::npos);}
+    auto plain=map;plain.erase("race");auto free=simulation(rules,plain);CHECK(!state(*free).race.enabled&&!static_cast<fps::Module&>(free->module()).racing());
 }

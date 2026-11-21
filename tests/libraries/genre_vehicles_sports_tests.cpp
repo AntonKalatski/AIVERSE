@@ -3,6 +3,7 @@
 #include <aiverselib/genre/VehicleConfigured.h>
 #include <aiverselib/genre/VehicleData.h>
 #include <aiverselib/genre/VehiclePersistence.h>
+#include <aiverselib/genre/RaceSessionData.h>
 #include <aiverselib/genre/SportsConfigured.h>
 #include <aiverselib/genre/SportsData.h>
 #include <aiverselib/genre/SportsPersistence.h>
@@ -226,6 +227,18 @@ void raceSession(const std::string& root){
     // No countdown: running at once; a racer missing from the race is rejected.
     cfg.countdownTicks=0;auto s=makeRaceSession(course,cfg,one,nullptr,5);CHECK(s&&s->phase==RacePhase::Running&&raceSessionRunning(*s,5));
     std::vector<RaceDriver> stranger{{9}};CHECK(!raceSessionInputs(cfg,nullptr,*s,5,stranger));
+    // Shared data (rules / map "race", docs/races.md): units scale to metres, gates face their yaw, errors name the key.
+    auto track=readRaceTrack(Json::parse(R"({"laps":2,"checkpoints":[{"x":10,"z":0,"yaw":0.25,"width":4},{"x":0,"z":5,"yaw":0,"width":3,"respawn":[1,4]}],
+        "grid":[{"x":1,"z":1,"yaw":0.5}],"line":[[0,0],[10,0],[10,10],[0,10]]})"),"map race",4_fx);
+    CHECK(track.grid&&track.course.laps==2&&track.course.checkpoints[0].gate.center.x==40_fx&&track.course.checkpoints[0].gate.radius==8_fx);
+    CHECK(track.course.checkpoints[0].gate.normal.x==1_fx&&track.course.checkpoints[1].respawn.z==16_fx&&track.line.size()==4&&track.course.grid[0].yaw==Fixed::fromRatio(1,2));
+    throwsWith([]{readRaceTrack(Json::parse(R"({"checkpoints":[{"x":0,"z":0,"width":1}]})"),"map race",1_fx);},"map race.checkpoints: expected 2..");
+    throwsWith([]{readRaceTrack(Json::parse(R"({"checkpoints":[{"x":0,"z":0},{"x":1,"z":0,"width":1}]})"),"map race",1_fx);},"map race.checkpoints[0].width: required");
+    throwsWith([]{readRaceTrack(Json::parse(R"({"checkpoints":[{"x":0,"z":0,"width":1},{"x":1,"z":0,"width":1}],"line":[[0,0],[0,0],[1,1]]})"),"map race",1_fx);},"map race.line: a closed loop");
+    auto rules=readRaceRules(Json::parse(R"({"countdownTicks":30,"laps":5,"crashDamage":true,"vehicles":{"stuckTicks":200}})"),"race",60);
+    CHECK(rules.session.countdownTicks==30&&rules.session.finishGraceTicks==600&&rules.laps==5&&rules.crashDamage&&rules.session.race.stuckTicks==200);
+    CHECK(readRaceRules(Json(),"race",30).session.countdownTicks==90);
+    throwsWith([]{readRaceRules(Json::parse(R"({"pits":1})"),"race",60);},"race.pits: unknown key");
 }
 
 // ---- Sports ----

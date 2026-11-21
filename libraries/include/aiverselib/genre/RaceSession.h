@@ -75,6 +75,23 @@ inline bool raceSessionRunning(const RaceSessionState& s,uint32_t tick){return s
 inline uint32_t raceSessionCountdown(const RaceSessionState& s,uint32_t tick){return tick>=s.goTick?0:s.goTick-tick;}
 inline int64_t raceSessionWinner(const RaceSessionState& s){return raceWinner(s.race);}
 inline const RaceStanding* raceSessionStanding(const RaceSessionState& s,int64_t racer){for(const auto& st:s.standings)if(st.racer==racer)return &st;return nullptr;}
+// What a HUD shows to one racer (every host and client draws the same thing; racer 0 = a spectator).
+struct RaceView{
+    bool enabled=false;uint8_t phase=0;int64_t racer=0;uint16_t place=0,racers=0,lap=0,laps=0,checkpoint=0,checkpoints=0;
+    uint32_t countdownTicks=0;bool wrongWay=false,finished=false;int64_t winner=0;
+    std::vector<int64_t> order;   // racer ids by place
+    bool operator==(const RaceView&)const=default;
+};
+inline RaceView raceView(const RaceCourse& c,const RaceSessionState& s,int64_t racer,uint32_t tick){
+    RaceView v;v.enabled=true;v.phase=uint8_t(s.phase);v.racer=racer;v.racers=uint16_t(s.race.racers.size());v.laps=uint16_t(c.laps);
+    v.checkpoints=uint16_t(c.checkpoints.size());v.countdownTicks=raceSessionCountdown(s,tick);v.winner=raceSessionWinner(s);
+    for(const auto& st:s.standings){
+        v.order.push_back(st.racer);
+        if(st.racer==racer){v.place=uint16_t(st.place);v.lap=uint16_t(std::min<uint32_t>(st.lap+(st.finished?0:1),c.laps));
+            v.checkpoint=uint16_t(st.nextCheckpoint);v.wrongWay=st.wrongWay;v.finished=st.finished;}
+    }
+    return v;
+}
 
 // Phase 1 (before the vehicles step). drivers: one entry per racer that has a vehicle this tick (any order);
 // racers without an entry are skipped. Returns the pedals per racer in ascending racer order, nullopt (state

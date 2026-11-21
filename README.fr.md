@@ -107,7 +107,7 @@ configuration validable.
 | **Roguelikes** | `run-graph` : runs à graine et budgets de rencontres ; `loot-tables` avec objet rare garanti |
 | **Idle, usine, colonie** | `big-numbers`, `offline-production` (progression hors ligne exacte), `production-networks`, `logistics`, `tasks` |
 | **Jeux de rythme** | `rhythm-timing` : cartes de tempo et jugement des frappes indépendant de la fréquence d’images |
-| **Course, véhicules** | `vehicle-controllers` : voitures (couple, rapports, adhérence, drift), chars, aéroglisseurs, avions, sièges, zones de dégâts ; session de course : grille, compte à rebours, points de passage dans l’ordre, tours, classement, contresens, bots de course ; mode `race` du module `fps` avec caméra de poursuite, 1 modèle |
+| **Course, véhicules** | `vehicle-controllers` : voitures (couple, rapports, adhérence, drift), chars, aéroglisseurs, avions, sièges, zones de dégâts ; session de course : grille, compte à rebours, points de passage dans l’ordre, tours, classement, contresens, bots de course ; bloc `race` de la carte dans tout projet, HUD commun et caméra de poursuite, 1 modèle |
 | **Tout jeu mobile** | `aiverse::meta` et LiveOps, tutoriels, écrans d’interface, plugins de stores et de publicité |
 
 Les jeux de sport, les bateaux, les arrêts au stand et les pénalités sont encore dans la [feuille de route](docs/genre-mechanics-roadmap.md). Liste
