@@ -59,6 +59,14 @@ and particles ignore them); HLOD scenes reject non-default layers. No OpenXR run
 is linked: swapchain import, frame submission and reprojection stay with an XR host.
 Status: [LENS P3 handoff](agent-handoffs/lens-p3-2026-11-22.md).
 
+Cube captures share one sun shadow map: `makeCubemapCameraViews(..., shadowRadius=40)`
+marks every face with the same light-frustum box around the capture point
+(`CameraCaptureView::shadowBounds/shadowMin/shadowMax`); `CameraRenderPipeline::renderCaptures`
+applies it with `Renderer3D::setShadowBounds` and restores the host's previous bounds
+(`shadowBoundsState/restoreShadowBounds`). Without it each face fitted its own map and
+shadows broke at the face seams of the panorama. `shadowRadius=0` keeps the old
+per-face fit. [Handoff](agent-handoffs/lens-cube-shadows-2026-11-22.md).
+
 The sections below retain the original design and staged implementation
 history. Their older “planned / NOT RUN” labels describe those checkpoints;
 use the dated validation handoff for the current tested status.
