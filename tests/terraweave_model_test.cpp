@@ -1,4 +1,8 @@
 #include "engine/render/TerraWeaveGrassRender.h"
+#include "engine/render/TerraWeaveTerrainPatchRender.h"
+#include "engine/render/TerraWeaveTerrainLod.h"
+#include <map>
+#include <set>
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include "engine/world/TerraWeaveTreePresets.h"
@@ -10,6 +14,76 @@
 using namespace aiverse::terraweave;
 
 int main() {
+    {
+        EarthworksLayer ground(50,[](int64_t x,int64_t z){return int32_t(1000+x/5+z/10);});
+        const auto patch=bakeEarthworksTerrainPatch(ground,{0,0,0},64,129);
+        auto model=makeEarthworksTerrainModel(patch);
+        const auto normal=aiverse::render::normalize(aiverse::render::float3{-.2f,1,-.1f});
+        for(auto& v:model->vertices)v.nrm=normal;
+        const auto indices=model->indices;const auto vertices=model->vertices;
+        const auto levels=appendTerrainPatchLods(*model,patch);
+        assert(levels.size()==3&&model->meshes[0].lods.size()==3);
+        assert(std::equal(indices.begin(),indices.end(),model->indices.begin()));
+        for(size_t i=0;i<vertices.size();++i) {
+            const auto& a=vertices[i];const auto& b=model->vertices[i];
+            assert(a.pos.x==b.pos.x&&a.pos.y==b.pos.y&&a.pos.z==b.pos.z);
+            assert(a.nrm.x==b.nrm.x&&a.uv.x==b.uv.x&&a.uv.y==b.uv.y);
+        }
+        std::set<std::pair<uint32_t,uint32_t>> originalBorder;
+        for(size_t level=0;level<3;++level) {
+            assert((levels[level].triangles==std::array<uint32_t,3>{8952,2680,1080}[level]));
+            assert(levels[level].errorMetres<.0001f);
+            assert((levels[level].maxPixels==std::array<float,3>{512,256,128}[level]));
+            const auto& p=model->meshes[level+1].primitives[0];
+            std::map<std::pair<uint32_t,uint32_t>,uint32_t> edges;
+            double area=0;
+            const auto key=[&](uint32_t i){const auto& v=model->vertices[i];return uint32_t(std::lround(v.pos.z*2))*129+uint32_t(std::lround(v.pos.x*2));};
+            for(uint32_t i=p.firstIndex;i<p.firstIndex+p.indexCount;i+=3) {
+                const auto& a=model->vertices[model->indices[i]].pos;
+                const auto& b=model->vertices[model->indices[i+1]].pos;
+                const auto& c=model->vertices[model->indices[i+2]].pos;
+                const double cross=(b.z-a.z)*(c.x-a.x)-(b.x-a.x)*(c.z-a.z);
+                assert(cross>0);area+=cross*.5;
+                for(uint32_t e=0;e<3;++e){auto x=key(model->indices[i+e]),y=key(model->indices[i+(e+1)%3]);if(x>y)std::swap(x,y);++edges[{x,y}];}
+            }
+            assert(std::abs(area-4096)<.00001);
+            std::set<std::pair<uint32_t,uint32_t>> border;
+            for(const auto& [edge,count]:edges) {
+                assert(count==1||count==2);
+                if(count!=1)continue;
+                const auto [a,b]=edge;const auto ax=a%129,az=a/129,bx=b%129,bz=b/129;
+                assert((ax==0&&bx==0)||(ax==128&&bx==128)||(az==0&&bz==0)||(az==128&&bz==128));
+                assert(std::abs(int(ax)-int(bx))+std::abs(int(az)-int(bz))==1);
+                border.insert(edge);
+            }
+            assert(border.size()==512);
+            if(level==0)originalBorder=border;else assert(originalBorder==border);
+        }
+        // Existing LODs reject transactionally, preserving source values.
+        const auto nv=model->vertices.size(),ni=model->indices.size();bool rejected=false;
+        try{(void)appendTerrainPatchLods(*model,patch);}catch(const std::invalid_argument&){rejected=true;}
+        assert(rejected&&model->vertices.size()==nv&&model->indices.size()==ni);
+        auto mismatched=makeEarthworksTerrainModel(patch);
+        for(auto& v:mismatched->vertices)v.nrm=normal;
+        mismatched->meshes[0].primitives[0].lightmapUv=true;
+        rejected=false;try{(void)appendTerrainPatchLods(*mismatched,patch);}catch(const std::invalid_argument&){rejected=true;}
+        assert(rejected&&mismatched->meshes.size()==1&&mismatched->vertices.size()==vertices.size());
+        mismatched->meshes[0].primitives[0].lightmapUv=false;
+        mismatched->vertices[0].pos.y+=1;
+        const auto revision=mismatched->geometryRevision;
+        rejected=false;try{(void)appendTerrainPatchLods(*mismatched,patch);}catch(const std::invalid_argument&){rejected=true;}
+        assert(rejected&&mismatched->meshes.size()==1&&mismatched->indices==indices&&mismatched->geometryRevision==revision);
+        EarthworksLayer spike(50,[](int64_t x,int64_t z){return x==3200&&z==3200?3000:0;});
+        const auto rough=bakeEarthworksTerrainPatch(spike,{0,0,0},64,129);auto steep=makeEarthworksTerrainModel(rough);
+        for(auto& v:steep->vertices)v.nrm={0,1,0};
+        const auto errors=appendTerrainPatchLods(*steep,rough);
+        for(size_t i=0;i<errors.size();++i) {
+            assert(std::abs(errors[i].errorMetres-30.f*(1.f-1.f/errors[i].stride))<.0001f);
+            assert(errors[i].maxPixels<10);
+            assert(errors[i].errorMetres*errors[i].maxPixels/std::sqrt(64.f*64*2+30.f*30)<=1.5001f);
+        }
+    }
+
     // Opt-in conifer foliage keeps structural endpoints identical across LODs.
     TreeProfile conifer;conifer.shape=CrownShape::Conifer;conifer.primaryBranches=120;
     ArborMeshSettings sprays;sprays.naturalConifer=true;sprays.doubleSidedLeaves=false;

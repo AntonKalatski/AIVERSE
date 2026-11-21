@@ -6,6 +6,7 @@
 #include <aiverselib/water/NereidFootprintDistance.h>
 #include "engine/render/TerraWeaveRockModel.h"
 #include "engine/render/TerraWeaveTerrainPatchRender.h"
+#include "engine/render/TerraWeaveTerrainLod.h"
 #include "engine/world/NereidWaterManifest.h"
 #include "tools/terrain/ExportModel.h"
 #include <iostream>
@@ -59,7 +60,8 @@ int main(int argc,char** argv){try{
             v.nrm=render::normalize(render::float3{-dx,1,-dz});v.uv={v.pos.x/64,1-v.pos.z/64};
         }
         render::generateTangents(model->vertices,model->indices,0,uint32_t(model->indices.size()));
-        const std::string name="terrain-"+std::to_string(x)+"-"+std::to_string(z);save(out,name,*model,{name},true);auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(x*6400));e.set("zCm",Json::number(z*6400));tiles.push(e);
+        const auto terrainLods=appendTerrainPatchLods(*model,patch);
+        const std::string name="terrain-"+std::to_string(x)+"-"+std::to_string(z);save(out,name,*model,{name},true);auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(x*6400));e.set("zCm",Json::number(z*6400));auto levels=Json::array();for(const auto& level:terrainLods){auto entry=Json::object();entry.set("stride",Json::number(int64_t(level.stride)));entry.set("triangles",Json::number(int64_t(level.triangles)));entry.set("errorMetres",Json::number(double(level.errorMetres),6));entry.set("maxPixels",Json::number(double(level.maxPixels),6));levels.push(entry);}e.set("lods",levels);tiles.push(e);
     }
     // Same surface snapshot for vegetation and asset placement; no second noise.
     auto heights=Json::array(),waterHeights=Json::array(),cover=Json::array(),sand=Json::array(),wetness=Json::array(),ground=Json::object(),grass=Json::array();

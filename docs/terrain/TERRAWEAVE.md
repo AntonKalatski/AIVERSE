@@ -3142,3 +3142,37 @@ Rebake material masks and vegetation from the new `ground.json`; retain planted
 root depth when moving existing trees/rocks to the new surface. A static export
 is not the live erosion/fall host. The example's full visual acceptance and
 renderer budget remain separate from source/seam correctness.
+
+## Immutable terrain patch LOD
+
+`engine/render/TerraWeaveTerrainLod.h` provides
+`appendTerrainPatchLods(model, patch, targetErrorPixels=1.5f)` for a CPU model
+before upload. The native landscape exporter calls it after world-space normal
+smoothing and tangent generation. The live mutable `makeEarthworksTerrainModel`
+path retains its original full-resolution surface and collision by default.
+
+Input must be the complete original patch triangulation on a power-of-two grid
+(8..128 cells), with matching heights and consistent shared normals/UVs/colors.
+Skins, animation, morphs, baked-lightmap UVs, uploaded buffers and existing LODs reject. Invalid
+source input preserves model values. LOD0 vertices/attributes/indices stay exact;
+three appended alternatives use strides 2, 4 and 8. Each retains all original
+outer edge segments, so neighbouring tiers join without skirts or edge cracks.
+For a 129-sample tile the four triangle counts are 32768/8952/2680/1080.
+Only used vertices are appended for each tier; this adds CPU/GPU asset storage.
+
+Each tier measures maximum vertical deviation against the original piecewise
+linear surface, including coarse edges crossing fine-grid X, Z and diagonal
+edges. Its maximum pixel threshold targets the requested error through the
+shared renderer's conservative projected-size metric, with descending caps
+512/256/128. This is a presentation budget, not a collision simplification or a
+universal guarantee for vertex-displaced geometry. The existing renderer owns
+camera/shadow selection and opaque spatial crossfade. Both meshes render inside
+a crossfade band; waiting more frames does not remove that spatial overlap.
+
+Exports retain the existing glTF `rtsLods` representation and independent shadow
+LOD policy; catalog tile entries append `lods` (stride/triangles/errorMetres/
+maxPixels). Old readers can ignore these fields. Check `terraweave_model`, the
+shared-height export audit, actual per-frame submitted triangles and near/far
+pixel comparisons. Metal fixture verification does not establish mobile/Vulkan
+parity or an FPS gain. CPU visual picking/deformed object parity remains a
+separate editor acceptance task.

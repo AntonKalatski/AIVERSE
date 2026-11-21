@@ -1444,3 +1444,20 @@ conservative visual approximation, not collision or authority. Native source
 uses no new renderer. `aiverse_terraweave_rocks` exports the same generated models
 with existing glTF rtsLods and four shared PBR maps, refusing existing output dirs.
 Test `terraweave_rocks` and inspect real captures before visual acceptance.
+
+## Immutable exported terrain LOD
+
+For baked terrain assets use `engine/render/TerraWeaveTerrainLod.h` and
+`appendTerrainPatchLods` after smoothing shared source normals/UVs, before GPU
+upload. The landscape exporter already does this. It preserves exact LOD0 and
+all outer edge vertices while appending three error-budgeted alternatives.
+Keep the original TerrainPatch collision; live mutable patches and Horizon
+retain their existing owners. Read the immutable terrain LOD section of
+`docs/terrain/TERRAWEAVE.md` for input restrictions and storage costs.
+
+Inspect actual camera/shadow submitted triangle counters and captures.
+Renderer3D crossfade is spatial: a parked camera inside a transition band keeps
+both tiers, so choose outside-band views to measure one tier. Do not infer a
+broken LOD or FPS gain from summed asset triangles. Check `terraweave_model` and
+`tests/terrain/check_landscape_export.py`; backend and editor picking parity
+still need their own verification.
