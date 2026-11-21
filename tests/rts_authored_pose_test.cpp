@@ -86,4 +86,5 @@ int aiverseMain(int, char**) {
     const render::mat4 id = g::authoredPoseFrame(plain, 1.0f, p), ident{};
     for (int i = 0; i < 16; ++i) check(id.m[i] == ident.m[i], "unposed object frame not identity");
     std::cout << "PASS RTS authored Transform: facing, Y, X/Z tilt, scale, save/reload, view frame\n";
+    return 0;
 }
