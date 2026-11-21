@@ -267,7 +267,8 @@ public:
     }
     bool updateFrame(float3 focus,size_t maxProbes=32) {
         poll();
-        if(!ready() || !scene_ || !geometryCurrent_ || !lightsCurrent_ || !environmentCurrent_ || blocked_ || !canMutate())return false;
+        if(!ready() || !scene_ || !geometryCurrent_ || !lightsCurrent_ || !environmentCurrent_ || blocked_ ||
+           !canMutate(config_.scroll))return false;
         if(config_.scroll && !recenter(focus))return false;
         int level=-1;
         for(int k=0;k<levelCount_;++k)if(levels_[size_t(k)].pending()){level=k;break;}
@@ -328,10 +329,15 @@ private:
     void invalidateAll(GiDirtyReason reason) {
         for(int k=0;k<levelCount_;++k)levels_[size_t(k)].invalidateAll(reason);
     }
-    bool canMutate() {
+    // gpuWritesOnly: the caller only changes the atlas from GPU compute
+    // (clear / trace dispatches), which the queue orders after every earlier
+    // draw that sampled it. Scrolling presents every frame, so waiting for the
+    // sampling fence there would starve updates with frames in flight. CPU
+    // writes (job / geometry buffers) still wait for the compute fence.
+    bool canMutate(bool gpuWritesOnly=false) {
         poll();
         if(!ready() || !device_->gpuHealthy() || !device_->gpuSubmissionFence())return false;
-        if(pendingFence_ || (sampledFence_ && device_->gpuCompletedFence()<sampledFence_)) {
+        if(pendingFence_ || (!gpuWritesOnly && sampledFence_ && device_->gpuCompletedFence()<sampledFence_)) {
             diagnostic_="GI waiting for prior GPU users";return false;
         }
         return true;

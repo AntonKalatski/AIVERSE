@@ -23,6 +23,14 @@ Branch `feature/aiv20261121_vulkan_gi_android` (base: `feature/aiv20261121_fix_r
 - Renderer U6 ring.xyz from `cascadeRing`.
 - User decision: recycled probes are zeroed (option 3), not kept stale or blanked.
 
+- `updateFrame` in scroll mode waits only for the compute fence, not for the
+  fence of views that sampled the atlas: the atlas changes only through GPU
+  dispatches, which the queue orders after those draws. Without this a view
+  presenting every frame with frames in flight starved the updates.
+- Android (Vulkan, Adreno 610) first run: the return scroll came a frame or more
+  after the away probes finished, the test sampled before it; the test now waits
+  for every cascade to be back at its home lattice.
+
 ## Tests
 
 - `lighting_gi_scrolling` (CPU, fake device): scheduler ring, recycled faces,

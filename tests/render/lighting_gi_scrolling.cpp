@@ -96,6 +96,13 @@ int main() {
     }
     AIVERSE_TEST_CHECK(!bridge.pendingProbes() && bridge.canPresent());
 
+    // A view sampling the atlas this frame does not hold back the next GPU
+    // update (queue order covers it); only the compute fence does.
+    AIVERSE_TEST_CHECK(bridge.borrowForFrame().valid());
+    ++d.submitted;                                   // the sampling frame is still in flight
+    const size_t scrollsBefore=bridge.scrollStats().scrolls;
+    AIVERSE_TEST_CHECK(bridge.updateFrame({2.4f,0,0}) && bridge.scrollStats().scrolls>scrollsBefore);
+    ++d.submitted;d.completed=d.submitted;bridge.poll();
     // Moving far: the outer cascade leaves the planned box, the resident set is
     // re-planned around it: the two-triangle chunk at x=40 becomes resident
     // and the one near the start is left behind.
