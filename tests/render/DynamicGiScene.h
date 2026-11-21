@@ -33,7 +33,12 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
             gpuBuilder.replace(2,std::move(far),{{1,1,1}});
             gpuScene=std::make_shared<GiChunkedGeometrySnapshot>(gpuBuilder.publish());
         }
-        if(s.computeGiVerify && (!s.computeGi.initialize(d,cfg) ||
+        // AIVERSE_COMPUTE_GI_CASCADES=2|3: the GPU side runs nested cascades in
+        // one atlas; the sampled point is inside cascade 0, so the pixel must
+        // still match the single-lattice CPU reference.
+        auto gpuCfg=cfg;
+        if(const char* c=std::getenv("AIVERSE_COMPUTE_GI_CASCADES"))gpuCfg.cascades=std::atoi(c);
+        if(s.computeGiVerify && (!s.computeGi.initialize(d,gpuCfg) ||
            !s.computeGi.publishGeometry(gpuScene,1))) {
             std::fprintf(stderr,"GI compute setup FAIL: %s / %s\n",d.lastError().c_str(),s.computeGi.diagnostic());
             s.failed=true;return;}

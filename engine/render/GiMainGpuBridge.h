@@ -5,6 +5,7 @@
 #include "GiGpuPagedBvhArena.h"
 #include "GiGpuResidencyPlanner.h"
 #include <algorithm>
+#include <array>
 #include <exception>
 
 namespace aiverse::render {
@@ -18,31 +19,69 @@ namespace aiverse::render {
 // publication is refused; a relevant occluder is never dropped. Resident
 // chunks keep stable addresses in the GPU streams (GiGpuPagedBvhArena), so an
 // edit uploads only the changed BLAS pages and the small TLAS prefix.
+//
+// Cascades (config.cascades 1..3): nested lattices around one center, cascade
+// k with spacing * 2^k and rays traceDistance * 2^k long. All of them live in
+// one atlas (probe offsets); each frame dispatches one cascade (finest first)
+// so the one job buffer is never rewritten while the GPU still reads it.
 class GiMainGpuBridge {
 public:
     static constexpr float kDefaultLightReach=64;
+    static constexpr int kMaxCascades=3;
+    // Lattice of cascade `level` for a base configuration.
+    static GiMainCpuConfig cascadeConfig(const GiMainCpuConfig& base,int level) {
+        GiMainCpuConfig out=base;
+        const float scale=float(1<<level);
+        const float3 extent{base.spacing*float(base.nx),base.spacing*float(base.ny),base.spacing*float(base.nz)};
+        const float3 center=base.origin+extent*0.5f;
+        out.spacing=base.spacing*scale;
+        out.traceDistance=base.traceDistance*scale;
+        out.origin=center-extent*(0.5f*scale);
+        out.cascades=1;
+        return out;
+    }
     // lightReach: largest point/spot radius the resident set must cover.
     bool initialize(gfx::Device& device,GiMainCpuConfig config,float lightReach=kDefaultLightReach) {
         if(device_ || config.samples<8 || config.samples>GiGpuSmallScene::kMaxSamples ||
-           !std::isfinite(config.traceDistance) || config.traceDistance<=0 || config.traceDistance>1000 ||
+           config.cascades<1 || config.cascades>kMaxCascades ||
+           !std::isfinite(config.traceDistance) || config.traceDistance<=0 ||
+           config.traceDistance*float(1<<(config.cascades-1))>1000 ||
            !std::isfinite(lightReach) || lightReach<0)
             return false;
-        scheduler_.configure(config.origin,config.spacing,config.nx,config.ny,config.nz);
-        if(!gpu_.initialize(device,scheduler_.size()))return false;
+        size_t total=0;
+        try {
+            for(int k=0;k<config.cascades;++k) {
+                const auto c=cascadeConfig(config,k);
+                levels_[size_t(k)].configure(c.origin,c.spacing,c.nx,c.ny,c.nz);
+                offsets_[size_t(k)]=uint32_t(total);
+                total+=levels_[size_t(k)].size();
+            }
+        } catch(const std::invalid_argument&) {levels_={};return false;}
+        if(!gpu_.initialize(device,total)) {levels_={};return false;}
+        levelCount_=config.cascades;
         device_=&device;config_=config;lightReach_=lightReach;return true;
     }
+    int cascadeCount() const {return levelCount_;}
+    GiMainCpuConfig cascade(int level) const {return cascadeConfig(config_,level);}
+    uint32_t cascadeProbeOffset(int level) const {return offsets_.at(size_t(level));}
     // Same selection the bridge applies to a published scene; hosts use it to
     // decide between this GPU path and the CPU fallback before initialization.
     static GiGpuResidencyPlan planResidency(const GiChunkedGeometrySnapshot& scene,
                                             const GiMainCpuConfig& config,
                                             float lightReach=kDefaultLightReach) {
-        return GiGpuResidencyPlanner::plan(scene,config.origin,config.spacing,
-            config.nx,config.ny,config.nz,config.traceDistance,lightReach);
+        // The outermost cascade covers every inner one and has the longest rays.
+        const auto outer=cascadeConfig(config,std::clamp(config.cascades,1,kMaxCascades)-1);
+        return GiGpuResidencyPlanner::plan(scene,outer.origin,outer.spacing,
+            outer.nx,outer.ny,outer.nz,outer.traceDistance,lightReach);
     }
     const GiMainCpuConfig& config() const {return config_;}
     const gfx::Device* device() const {return device_;}
     bool ready() const {return device_ && gpu_.ready();}
-    size_t pendingProbes() const {return scheduler_.pending();}
+    size_t pendingProbes() const {
+        size_t n=0;
+        for(int k=0;k<levelCount_;++k)n+=levels_[size_t(k)].pending();
+        return n;
+    }
     bool busy() const {return pendingFence_!=0;}
     const char* diagnostic() const {return diagnostic_;}
 
@@ -91,8 +130,11 @@ private:
             diagnostic_="GI GPU geometry capacity or upload rejected";return false;
         }
         scene_=std::move(scene);revision_=revision;geometryCurrent_=true;
-        if(region)scheduler_.invalidate(*region,GiDirtyReason::Geometry,config_.traceDistance+lightRadius_);
-        else scheduler_.invalidateAll(GiDirtyReason::Geometry);
+        for(int k=0;k<levelCount_;++k) {
+            if(region)levels_[size_t(k)].invalidate(*region,GiDirtyReason::Geometry,
+                                                    cascade(k).traceDistance+lightRadius_);
+            else levels_[size_t(k)].invalidateAll(GiDirtyReason::Geometry);
+        }
         blocked_=false;diagnostic_="";return true;
     }
 public:
@@ -112,14 +154,14 @@ public:
             diagnostic_="GI GPU light capacity or source rejected";return false;
         }
         lightRadius_=reach;lightsCurrent_=true;
-        scheduler_.invalidateAll(GiDirtyReason::Lighting);
+        invalidateAll(GiDirtyReason::Lighting);
         blocked_=false;diagnostic_="";return true;
     }
     bool publishEnvironment(GiEnvironmentLight environment) {
         blocked_=true;environmentCurrent_=false;
         if(!canMutate() || !gpu_.setEnvironment(environment))return false;
         environmentCurrent_=true;
-        scheduler_.invalidateAll(GiDirtyReason::Environment);
+        invalidateAll(GiDirtyReason::Environment);
         blocked_=false;diagnostic_="";return true;
     }
     // Poll even when a newer source was deferred. Completion of old tickets
@@ -129,32 +171,37 @@ public:
         gpu_.collectRetirements();
         if(!pendingFence_)return;
         if(!device_->gpuHealthy()) {
-            for(const auto& job:inFlight_)scheduler_.abort(job);
+            for(const auto& job:inFlight_)levels_[inFlightLevel_].abort(job);
             inFlight_.clear();pendingFence_=0;blocked_=true;
             diagnostic_="GI GPU device lost";return;
         }
         if(device_->gpuCompletedFence()<pendingFence_)return;
-        for(const auto& job:inFlight_)scheduler_.complete(job);
+        for(const auto& job:inFlight_)levels_[inFlightLevel_].complete(job);
         inFlight_.clear();pendingFence_=0;
     }
     bool updateFrame(float3 focus,size_t maxProbes=32) {
         poll();
         if(!ready() || !scene_ || !geometryCurrent_ || !lightsCurrent_ || !environmentCurrent_ || blocked_ || !canMutate())return false;
-        if(!scheduler_.pending())return true;
-        auto jobs=scheduler_.claim(std::min(maxProbes,GiGpuSmallScene::kMaxJobs),focus);
+        int level=-1;
+        for(int k=0;k<levelCount_;++k)if(levels_[size_t(k)].pending()){level=k;break;}
+        if(level<0)return true;
+        auto& scheduler=levels_[size_t(level)];
+        auto jobs=scheduler.claim(std::min(maxProbes,GiGpuSmallScene::kMaxJobs),focus);
         if(jobs.empty())return false;
+        auto atlasJobs=jobs;
+        for(auto& job:atlasJobs)job.index+=offsets_[size_t(level)];
         const uint64_t fence=device_->gpuSubmissionFence();
         bool submitted=false;
-        try {submitted=gpu_.dispatch(jobs,uint32_t(config_.samples),config_.traceDistance).submitted;}
+        try {submitted=gpu_.dispatch(atlasJobs,uint32_t(config_.samples),cascade(level).traceDistance).submitted;}
         catch(...) {
-            for(const auto& job:jobs)scheduler_.abort(job);
+            for(const auto& job:jobs)scheduler.abort(job);
             blocked_=true;throw;
         }
         if(!submitted) {
-            for(const auto& job:jobs)scheduler_.abort(job);
+            for(const auto& job:jobs)scheduler.abort(job);
             blocked_=true;diagnostic_="GI GPU dispatch rejected";return false;
         }
-        pendingFence_=fence;inFlight_=std::move(jobs);
+        pendingFence_=fence;inFlight_=std::move(jobs);inFlightLevel_=size_t(level);
         return true;
     }
     // Last geometry selection (selected snapshot dropped) and page churn.
@@ -162,7 +209,7 @@ public:
     const GiGpuPagedBvhArena::Stats& pageStats() const {return pageStats_;}
     bool canPresent() const {
         return ready() && scene_ && geometryCurrent_ && lightsCurrent_ && environmentCurrent_ && !blocked_ && !pendingFence_ &&
-            !scheduler_.pending() && device_->gpuHealthy();
+            !pendingProbes() && device_->gpuHealthy();
     }
     // Called by renderer admission; its token covers every later draw in this
     // GPU frame, including other cameras. The host keeps this owner alive.
@@ -177,12 +224,15 @@ public:
     bool shutdownAfterGpuIdle() {
         blocked_=true;
         if(!gpu_.shutdownAfterGpuIdle())return false;
-        scene_.reset();inFlight_.clear();scheduler_={};
+        scene_.reset();inFlight_.clear();levels_={};levelCount_=1;offsets_={};inFlightLevel_=0;
         chunkCache_={};pages_=GiGpuPagedBvhArena{};residency_={};pageStats_={};
         residentReach_=requestedLightReach_=lightRadius_=0;
         pendingFence_=sampledFence_=revision_=0;device_=nullptr;return true;
     }
 private:
+    void invalidateAll(GiDirtyReason reason) {
+        for(int k=0;k<levelCount_;++k)levels_[size_t(k)].invalidateAll(reason);
+    }
     bool canMutate() {
         poll();
         if(!ready() || !device_->gpuHealthy() || !device_->gpuSubmissionFence())return false;
@@ -197,7 +247,10 @@ private:
     GiGpuResidencyPlan residency_{};
     GiGpuPagedBvhArena::Stats pageStats_{};
     float lightReach_=kDefaultLightReach,residentReach_=0,requestedLightReach_=0,lightRadius_=0;
-    GiUpdateScheduler scheduler_;
+    std::array<GiUpdateScheduler,kMaxCascades> levels_{};
+    std::array<uint32_t,kMaxCascades> offsets_{};
+    int levelCount_=1;
+    size_t inFlightLevel_=0;
     GiMainCpuConfig config_{};
     gfx::Device* device_=nullptr;
     std::shared_ptr<const GiChunkedGeometrySnapshot> scene_;

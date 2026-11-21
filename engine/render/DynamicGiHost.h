@@ -38,6 +38,10 @@ struct DynamicGiHost {
         if(!std::isfinite(samples)||samples<8||samples>128||samples!=std::floor(samples))throw std::runtime_error("dynamicGI samples must be integer 8..128");
         cfg.samples=int(samples);cfg.traceDistance=float(settings["distance"].toDouble(12));
         cfg.cpuBudgetMs=settings["cpuBudgetMs"].toDouble(2);
+        const double cascades=settings["cascades"].toDouble(1);
+        if(!std::isfinite(cascades)||cascades<1||cascades>GiMainGpuBridge::kMaxCascades||cascades!=std::floor(cascades))
+            throw std::runtime_error("dynamicGI cascades must be integer 1..3");
+        cfg.cascades=int(cascades);
         // Spatial chunks (one per occupied cell of about one trace distance):
         // the GPU bridge keeps only cells a GI ray can reach resident, so a
         // world larger than the GPU triangle budget can still run on the GPU.
@@ -80,7 +84,11 @@ struct DynamicGiHost {
             else if(!(useGpu=gpu.initialize(d,cfg,lightReach)))fallback="GPU initialization rejected; using CPU";
             if(!useGpu && backend=="gpu")throw std::runtime_error(fallback);
         }
-        if(!useGpu && !cpu.initialize(d,cfg))throw std::runtime_error("dynamicGI CPU initialization failed");
+        if(!useGpu) {
+            if(cfg.cascades!=1)fallback+=(fallback.empty()?"":"; ")+std::string("CPU GI uses one cascade");
+            cfg.cascades=1;
+            if(!cpu.initialize(d,cfg))throw std::runtime_error("dynamicGI CPU initialization failed");
+        }
         enabled=true;
     }
     void replaceGeometry(gfx::Device& d,std::shared_ptr<const render::GiChunkedGeometrySnapshot> next,uint64_t revision) {

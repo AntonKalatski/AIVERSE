@@ -22,6 +22,10 @@ struct GiMainCpuConfig {
     float traceDistance=12;
     double cpuBudgetMs=GiCpuTraceBudget::kDefaultTargetMs;
     size_t maxProbesPerFrame=GiCpuTraceBudget::kDefaultMaxProbes;
+    // GPU bridge only: 1..3 nested probe cascades around the same center.
+    // Cascade k has spacing * 2^k and traces rays traceDistance * 2^k long.
+    // All cascades share one atlas; the CPU bridge supports one cascade.
+    int cascades=1;
 };
 class GiMainCpuBridge {
 public:
@@ -37,7 +41,7 @@ public:
     // Explicit opt-in. Changing device or lattice requires full GPU-idle
     // shutdown and all borrowed render samplers must be detached first.
     bool initialize(gfx::Device& device,GiMainCpuConfig config) {
-        if(ready_)return false;
+        if(ready_ || config.cascades!=1)return false;
         cpu_.configure(config.origin,config.spacing,config.nx,config.ny,
                        config.nz,config.samples,config.traceDistance);
         budget_.configure(config.cpuBudgetMs,config.maxProbesPerFrame);
