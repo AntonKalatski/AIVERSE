@@ -66,7 +66,7 @@ if [ $BUILD = 2 ]; then
   # files added since the export (the content sync above only updates existing ones): copy them when
   # their folder is part of the exported tree
   BASE="$(cat "$GP/.aiverse-export-commit" 2>/dev/null || echo f53826ef9)"
-  git -C "$ROOT" diff --name-only --diff-filter=A "$BASE" -- . 2>/dev/null | while read -r f; do
+  git -C "$ROOT" diff --no-renames --name-only --diff-filter=A "$BASE" -- . 2>/dev/null | while read -r f; do
     [ -d "$GP/app/src/main/cpp/$(dirname "$f")" ] && cp "$ROOT/$f" "$GP/app/src/main/cpp/$f" && echo "fast: + $f"; done
   sed -i.bak "s/abiFilters 'arm64-v8a', 'x86_64'/abiFilters 'arm64-v8a'/" "$GP/app/build.gradle"
   # profiling over adb (simpleperf --app) without making the APK debuggable; bench builds only
