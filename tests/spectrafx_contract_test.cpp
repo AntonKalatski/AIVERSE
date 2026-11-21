@@ -126,6 +126,30 @@ int main() {
         return true;
     });
     expect(killed==1,"bounded inbox drains lifecycle action");
+    {
+        // A queue saturated with other keys' Stop/Kill must still accept a
+        // Stop for a looping effect (reserve), and coalesce same-key stops.
+        SpectraFxCueInbox lifecycle(2);
+        const auto e=lifecycle.epoch();
+        SpectraFxCue stop{};stop.id=7;stop.action=SpectraFxCue::Action::Stop;
+        stop.key=1; expect(lifecycle.submit(stop,true,e),"stop 1 queued");
+        stop.key=2; expect(lifecycle.submit(stop,true,e),"stop 2 queued");
+        stop.key=3; expect(lifecycle.submit(stop,true,e),"stop beyond capacity reserved");
+        SpectraFxCue killOne=stop;killOne.key=1;killOne.action=SpectraFxCue::Action::Kill;
+        expect(lifecycle.submit(killOne,true,e) && lifecycle.stats().coalescedStops==1,
+               "same-key Kill coalesces into pending Stop");
+        stop.key=4; expect(lifecycle.submit(stop,true,e),"reserve holds up to 2x capacity");
+        stop.key=5; expect(!lifecycle.submit(stop,true,e),"lifecycle reserve is bounded");
+        SpectraFxCue loop=stop;loop.action=SpectraFxCue::Action::Play;loop.key=9;
+        expect(!lifecycle.submit(loop,true,e),"Play never uses the lifecycle reserve");
+        int kills=0,stops=0;
+        lifecycle.drain([&](const SpectraFxCue& c) {
+            if(c.action==SpectraFxCue::Action::Kill && c.key==1) ++kills;
+            if(c.action==SpectraFxCue::Action::Stop) ++stops;
+            return true;
+        });
+        expect(kills==1 && stops==3,"upgraded Kill and reserved Stops drained");
+    }
     inbox.reset();
     expect(!inbox.submit(play,true,epoch) && inbox.stats().stale==1,
            "old scene generation rejected");
