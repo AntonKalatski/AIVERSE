@@ -306,3 +306,87 @@ def localized_entries(entries, ctx):
                 e2.pop(k)
         out.append(e2)
     return out
+
+
+# ---------------------------------------------------------------- releases
+
+def release_chip(releases, ctx):
+    if not releases:
+        return ''
+    r = releases[0]
+    return f'<a class="chip chip-link" href="releases.html">{ctx.T["relChip"].format(v=esc(r["version"]))}</a>'
+
+
+def releases_page(data, entries, systems, ctx, repo):
+    rels = data['releases']
+    builds = data['builds']
+    latest = rels[0] if rels else None
+    since = latest['date'] if latest else '0000-00-00'
+    names = {s['id']: ctx.loc(s, 'name') for s in systems}
+    pages = {s['id'] for s in systems if s.get('flagship')}
+
+    def sys_tag(sid):
+        label = esc(names.get(sid, sid))
+        if sid in pages:
+            return f'<a class="rm-sys" href="system-{esc(sid)}.html">{label}</a>'
+        return f'<span class="rm-sys">{label}</span>'
+    fresh = [e for e in entries if e['date'] > since]
+    head = (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["relEyebrow"]}</p><h1>{ctx.T["relTitle"]}</h1>'
+            f'<p>{ctx.T["relLead"]}</p></div>'
+            f'<div class="dl-stats"><div><strong>{esc(latest["version"]) if latest else "—"}</strong><span>{ctx.T["relLatest"]}</span></div>'
+            f'<div><strong>{len(rels)}</strong><span>{ctx.T["relCount"]}</span></div></div></section>')
+    nxt = ''
+    if latest:
+        items = ''.join(
+            f'<li><span class="rm-meta"><span>{ctx.fmt_date(e["date"])}</span>'
+            f'{sys_tag(e["system"])}</span>'
+            f'<a href="devlog.html#{esc(e["id"])}">{esc(e["title"])}</a></li>'
+            for e in fresh[:12])
+        body = (f'<ul class="rel-next-list">{items}</ul>' if items else f'<p>{ctx.T["relNextEmpty"]}</p>')
+        more = (f'<a class="rel-more" href="devlog.html">{ctx.T["relNextAll"].format(n=len(fresh))}</a>'
+                if len(fresh) > 12 else '')
+        nxt = (f'<section class="rel-next"><div class="rel-next-head"><h2>{ctx.T["relNextTitle"]}</h2>'
+               f'<p>{ctx.T["relNextLead"].format(v=esc(latest["version"]), d=ctx.fmt_date(latest["date"]))}</p></div>'
+               f'{body}{more}</section>')
+    cards = []
+    for i, r in enumerate(rels):
+        hl = ''.join(f'<li><h3>{esc(ctx.loc(h, "title"))}</h3><p>{esc(ctx.loc(h, "text"))}</p></li>'
+                     for h in r.get('highlights') or [])
+        ver = ctx.loc(r, 'verified')
+        notes = f'{repo}/releases/tag/{r["tag"]}'
+        cards.append(
+            f'<article class="rel-card{" rel-latest" if i == 0 else ""}" id="v{esc(r["version"])}">'
+            f'<div class="rel-side"><span class="rel-ver">{esc(r["version"])}</span>'
+            f'<span class="rel-date">{ctx.fmt_date(r["date"])}</span>'
+            + (f'<span class="rel-badge">{ctx.T["relLatestBadge"]}</span>' if i == 0 else '') +
+            f'<a class="rel-commit" href="{repo}/commit/{esc(r["commit"])}"><code>{esc(r["commit"][:9])}</code></a></div>'
+            f'<div class="rel-main"><h2>{esc(ctx.loc(r, "title"))}</h2><p class="rel-summary">{esc(ctx.loc(r, "summary"))}</p>'
+            + (f'<ul class="rel-hl">{hl}</ul>' if hl else '')
+            + (f'<p class="rel-verified"><b>{ctx.T["relVerified"]}</b> {esc(ver)}</p>' if ver else '') +
+            f'<div class="rel-dl" data-version="{esc(r["version"])}"><span class="rel-dl-title">{ctx.T["relDownloads"]}</span>'
+            f'<div class="rel-dl-list"><a class="btn btn-line btn-sm" href="{esc(builds["branch"])}">{ctx.T["relBuildsBranch"]}</a></div></div>'
+            f'<a class="rel-notes" href="{notes}">{ctx.T["relNotes"]}</a></div></article>')
+    other = (f'<section class="rel-other" hidden><h2>{ctx.T["relOtherTitle"]}</h2><p>{ctx.T["relOtherLead"]}</p>'
+             f'<div class="rel-other-list"></div></section>')
+    return head + nxt + f'<div class="rel-list">{"".join(cards)}</div>' + other
+
+
+RELEASES_JS = """<script>
+(function(){var cfg=window.REL_CFG;if(!cfg)return;
+function mb(n){return (n/1048576).toFixed(0)+' MB';}
+function btn(p){var a=document.createElement('a');a.className='btn btn-ink btn-sm rel-pkg';a.href=p.url;
+a.textContent=(cfg.os[p.platform]||p.platform)+' · '+mb(p.size);a.title='sha256 '+p.sha256+' · '+p.commit;return a;}
+fetch(cfg.index,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(d){
+var pk=d.packages||[],known={},other=[];
+document.querySelectorAll('.rel-dl').forEach(function(el){known[el.dataset.version]=el;});
+var used={};pk.forEach(function(p){var el=known[p.version];
+if(el&&!used[p.version+p.platform]){used[p.version+p.platform]=1;var l=el.querySelector('.rel-dl-list');
+if(!el.dataset.filled){l.textContent='';el.dataset.filled='1';}l.appendChild(btn(p));}else if(!el)other.push(p);});
+document.querySelectorAll('.rel-dl:not([data-filled])').forEach(function(el){var s=document.createElement('span');
+s.className='rel-dl-none';s.textContent=cfg.none;el.querySelector('.rel-dl-list').prepend(s);});
+if(other.length){var box=document.querySelector('.rel-other'),list=box.querySelector('.rel-other-list'),g={};
+other.forEach(function(p){var k=p.version+' · '+p.commit;(g[k]=g[k]||[]).push(p);});
+Object.keys(g).forEach(function(k){var row=document.createElement('div');row.className='rel-other-row';
+var c=document.createElement('code');c.textContent=k;row.appendChild(c);g[k].forEach(function(p){row.appendChild(btn(p));});list.appendChild(row);});
+box.hidden=false;}}).catch(function(){});})();
+</script>"""

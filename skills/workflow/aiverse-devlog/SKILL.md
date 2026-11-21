@@ -47,6 +47,12 @@ handoff as `planned` with `"target": null` unless the user gave a date, and keep
 If your stage adds or rewrites a document game developers need (a system guide, a format, an
 API), list it in `site/docs.json` under the right section (`{id, source, title, titleEn, lead, leadEn}`).
 
+## Releases
+
+When you tag a release (integrator only), add it to the top of `docs/devlog/releases.json` with
+Russian and English text (format: docs/devlog/README.md § Releases). Do not copy download links:
+the page reads the `builds` branch index itself.
+
 ## System cover (main page, "Системы движка")
 
 Flagship systems in `docs/devlog/systems.json` each have one cover frame and a `coverBrief`

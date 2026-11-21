@@ -42,6 +42,11 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 - Раздел «Документация» сайта — страницы из Markdown-документов репозитория по списку
   `site/docs.json` (разделы и страницы `{id, source, title, titleEn, lead, leadEn}`). Новый документ системы,
   который нужен разработчикам игр, агент добавляет туда сам; `build.py check` проверяет пути.
+- Страница «Релизы» (`releases.html`) берёт версии из `docs/devlog/releases.json`, а ссылки на
+  сборки — из `index.json` ветки `builds` прямо в браузере. Выпуская релиз (тег + GitHub release,
+  §8), интегратор добавляет запись в начало `releases.json`: версия, тег, дата, коммит, заголовок,
+  описание и главное на русском и английском; `verified` — только реально проверенное.
+  «В следующем релизе» собирается само из записей хода разработки после даты последнего релиза.
 - Вёрстку сайта менять в `site/` в визуальном языке дизайна сайта (бумага #F3EFE8, чернила
   #141210, ромб #E9C3A4; Unbounded / Onest / JetBrains Mono).
 ## NO GENRE SPLIT — EVER (owner rule, 2026-11-21, highest priority for every agent)
@@ -2181,6 +2186,9 @@ themselves (`engine/platform/EngineDir.h`), so the unpacked folder runs anywhere
    It also writes `index.json` (platform, arch, url, size, sha256, aiversemcp path per zip) that other apps
    download from: keep its fields backward compatible (README § Готовые сборки движка).
    Linux is optional: `package_engine.py --platform linux --bin build/linux-release` (tools only is fine).
+
+When a version is tagged as a GitHub release, also add it to the top of `docs/devlog/releases.json`
+(website page `releases.html`, rules in the site section at the top of this file).
 
 The version is `project(AIVERSE VERSION x.y.z)` in CMakeLists.txt + the short commit hash; bump the
 version for releases worth naming. Only publish builds whose tests and template matches passed.

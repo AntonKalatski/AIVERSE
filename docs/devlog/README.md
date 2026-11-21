@@ -62,6 +62,19 @@ or `null` — shown as "срок не назначен". Targets come from the u
 `coverBrief` says what the frame must show; the owning agent renders it and, if it has no cover
 yet, may set `cover` with `"approved": false`. Replacing an existing cover needs the user.
 
+## Releases: `docs/devlog/releases.json`
+
+`releases.html` lists engine releases newest first. Each entry: `version`, `tag` (the git tag of the
+GitHub release), `date` (YYYY-MM-DD), `commit` (hex SHA of the tag), `title`, `summary`,
+`highlights` (`[{"title", "text"}]`, may be empty), optional `verified` — each text field with its
+`En` twin. The integrator adds the entry when a release is tagged (AGENTS.md §8).
+
+Download buttons are not stored here: the page reads `builds.index` (the `index.json` of the
+`builds` branch written by `tools/release/publish_builds.py`) in the browser and attaches each
+package to the release with the same `version`. Packages without a release appear under
+"Intermediate builds"; a release without packages shows a link to the `builds` branch.
+"In the next release" lists devlog entries dated after the latest release, so it needs no edits.
+
 ## Languages
 
 The site is Russian at the root and English under `en/` (switch in the header). Every text field

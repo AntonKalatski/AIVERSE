@@ -24,6 +24,7 @@ ENTRIES = DEVLOG / 'entries'
 MEDIA = DEVLOG / 'media'
 SYSTEMS = DEVLOG / 'systems.json'
 SHOWCASE = DEVLOG / 'showcase.json'
+RELEASES = DEVLOG / 'releases.json'
 SITE = ROOT / 'site'
 
 STATUSES = ('done', 'in-progress', 'experimental')
@@ -260,11 +261,52 @@ def check():
         if path.suffix != '.json':
             errors.append(f'entries/{path.name}: only <id>.json files belong here; media go to docs/devlog/media/<id>/')
     errors += check_showcase(systems, ids)
+    errors += check_releases()
     return entries, errors
 
 
-from render import (Ctx, MARK_LIGHT, ROADMAP_JS, docs_index, doc_page, esc, localized_entries,  # noqa: E402
-                    render_page, roadmap_page, showcase_html, system_page, systems_html, fill_tokens)
+def load_releases():
+    if not RELEASES.is_file():
+        return {'releases': [], 'builds': {'index': '', 'branch': ''}}
+    return json.loads(RELEASES.read_text(encoding='utf-8'))
+
+
+def check_releases():
+    p = 'releases.json'
+    try:
+        data = load_releases()
+    except ValueError as err:
+        return [f'{p}: {err}']
+    errors = []
+    b = data.get('builds') or {}
+    for k in ('index', 'branch'):
+        if not str(b.get(k, '')).startswith('https://'):
+            errors.append(f'{p}: builds.{k} must be an https:// URL')
+    seen, prev = set(), None
+    for i, r in enumerate(data.get('releases') or []):
+        q = f'{p} releases[{i}]'
+        for k in ('version', 'tag', 'date', 'commit', 'title', 'summary'):
+            if not isinstance(r.get(k), str) or not r[k].strip():
+                errors.append(f'{q}: "{k}" is required')
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(r.get('date', ''))):
+            errors.append(f'{q}: date must be YYYY-MM-DD')
+        if not re.match(r'^[0-9a-f]{7,40}$', str(r.get('commit', ''))):
+            errors.append(f'{q}: commit must be a hex SHA')
+        if r.get('version') in seen:
+            errors.append(f'{q}: duplicate version {r.get("version")}')
+        seen.add(r.get('version'))
+        if prev and str(r.get('date', '')) > prev:
+            errors.append(f'{q}: releases go newest first')
+        prev = str(r.get('date', ''))
+        for j, h in enumerate(r.get('highlights') or []):
+            if not h.get('title') or not h.get('text'):
+                errors.append(f'{q} highlights[{j}]: "title" and "text" are required')
+    return errors
+
+
+from render import (Ctx, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+                    release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
+                    systems_html, fill_tokens)
 
 LANGS = ('ru', 'en')
 DOCS_MANIFEST = SITE / 'docs.json'
@@ -383,6 +425,7 @@ def cmd_build(args):
             if not link['href'].startswith('https://'):
                 link['href'] = f'{manifest["repoBlob"]}/{link["href"]}'
     layout = (SITE / '_layout.html').read_text(encoding='utf-8')
+    rel_data = load_releases()
     doc_pages = {p['source']: p['id'] for sec in manifest_docs['sections'] for p in sec['pages']}
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
     pages = 0
@@ -404,6 +447,7 @@ def cmd_build(args):
                         sys.exit(f'{lang}/index.html lost the {mark} placeholder')
                 text = text.replace('<!--SHOWCASE-->', showcase_html(frame, by_id, ctx))
                 text = text.replace('<!--SYSTEMS-->', systems_html(systems, ctx))
+                text = text.replace('<!--RELEASE_CHIP-->', release_chip(rel_data['releases'], ctx))
             f.write_text(text, encoding='utf-8')
         for s in flagships:
             body = system_page(s, flagships, loc_entries, ctx, manifest['repoBlob'], doc_pages)
@@ -414,6 +458,13 @@ def cmd_build(args):
         (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
                                                     roadmap_page(flagships, ctx), nav='roadmap', script=ROADMAP_JS),
                                         encoding='utf-8')
+        rel_cfg = {'index': rel_data['builds']['index'], 'none': T['relDlNone'],
+                   'os': {'windows': 'Windows', 'macos': 'macOS', 'linux': 'Linux'}}
+        rel_script = f'<script>window.REL_CFG={json.dumps(rel_cfg, ensure_ascii=False)};</script>' + RELEASES_JS
+        (d / 'releases.html').write_text(render_page(
+            layout, ctx, 'releases.html', T['relPageTitle'], T['relLead'],
+            releases_page(rel_data, loc_entries, systems, ctx, manifest['repo']), nav='releases', script=rel_script),
+            encoding='utf-8')
         (d / 'docs.html').write_text(render_page(layout, ctx, 'docs.html', T['docsPageTitle'], T['docsLead'],
                                                  docs_index(manifest_docs, ctx), nav='docs'), encoding='utf-8')
         for sec in manifest_docs['sections']:
@@ -428,7 +479,7 @@ def cmd_build(args):
         data = {'generated': generated, 'lang': lang, 'repo': manifest['repo'], 'systems': public,
                 'entries': loc_entries}
         (d / 'devlog.json').write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
-        pages += 5
+        pages += 6
     (out / '.nojekyll').write_text('', encoding='utf-8')
     print(f'{out}: {len(LANGS)} languages, {pages} pages, {len(entries)} entries, {len(copied)} media files')
     return 0
