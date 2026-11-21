@@ -1,4 +1,4 @@
-#include "StudioFacialGpuPreview.h"
+#include "apps/studio-native/StudioFacialGpuPreview.h"
 #include "apps/studio-native/StudioHumanCharacterBuild.h"
 #include <chrono>
 #include "apps/studio-native/StudioContentDirectory.h"

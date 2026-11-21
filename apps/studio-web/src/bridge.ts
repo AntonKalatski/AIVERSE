@@ -69,10 +69,13 @@ export async function invoke<M extends StudioMethod>(method: M, params: StudioPa
     const id = nextId++;
     // Interactive native sheets wait for a person, including dirty-document prompts.
     const interactive = ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save','studio.assetImportPreview'].includes(method);
+    // No RPC timeout: the host answers every request (with an error if it fails), and long operations
+    // (generation, builds, a busy main thread while a project streams in) are legitimate. A very slow reply
+    // only leaves a note in the host log; the call keeps waiting and resolves when the answer comes.
     const timer = interactive ? null : setTimeout(() => {
-      pending.delete(id);
-      reject(new Error('Native bridge timeout: ' + method));
-    }, 8000);
+      try { native.postMessage({ id: 0, method: 'studio.webDiagnostic', params: { message: `slow native reply (>30 s): ${method}` } }); }
+      catch { /* diagnostics only */ }
+    }, 30000);
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
     try { native.postMessage({ id, method, params }); }
     catch (error) { if (timer !== null) clearTimeout(timer); pending.delete(id); reject(error); }

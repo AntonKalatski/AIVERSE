@@ -28,15 +28,16 @@
 #include "engine/render/PostFx.h"
 #include "engine/render/AdaptiveShadowResolution.h"
 #include "engine/render/RenderDeviceLifetime.h"
-#include "apps/studio-native/mac/StudioFacialGpuPreview.h"
+#include "apps/studio-native/StudioFacialGpuPreview.h"
 
 namespace aiverse::studio {
-class StudioMetalScene final {
+class StudioScene final {
 public:
-    explicit StudioMetalScene(void* metalLayer);
-    ~StudioMetalScene();
-    StudioMetalScene(const StudioMetalScene&) = delete;
-    StudioMetalScene& operator=(const StudioMetalScene&) = delete;
+    // The host makes the device for its native surface (Metal: CAMetalLayer; Vulkan: an HWND).
+    explicit StudioScene(std::unique_ptr<gfx::Device> device);
+    ~StudioScene();
+    StudioScene(const StudioScene&) = delete;
+    StudioScene& operator=(const StudioScene&) = delete;
     void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                bool fpsProject, const std::string& selectedId,
                const std::string& previewName, const Json& previewFactors,
@@ -91,7 +92,7 @@ public:
     // Transform tools on the selected object (Unity Q/W/E/R). Coordinates in the
     // caller's view units (points) with the view size; same as pick().
     enum class TransformTool { View = 0, Move = 1, Rotate = 2, Scale = 3 };
-    void setTransformTool(TransformTool tool) { tool_ = tool; drag_ = {}; }
+    void setTransformTool(TransformTool tool);
     TransformTool transformTool() const { return tool_; }
     void setLocalSpace(bool local) { localSpace_ = local; }
     bool localSpace() const { return localSpace_; }
@@ -111,7 +112,7 @@ public:
         render::float3 move{}; float degrees = 0; float factor = 1; };
     std::optional<TransformCommit> endTransformDrag();
     bool transformDragActive() const { return drag_.axis >= 0; }
-    void clearTransformPreview() { drag_ = {}; }
+    void clearTransformPreview();
     std::string transformCaption() const; // "Move X +1.25" while dragging, else empty
     // Scene model streaming after a project/map opens: models load within a per-frame
     // budget so the editor stays responsive; the host reports this as load progress.

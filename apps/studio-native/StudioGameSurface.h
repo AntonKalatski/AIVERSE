@@ -9,7 +9,7 @@ namespace aiverse::studio {
 // Independent native surface; the authoring Scene keeps its own device/epoch.
 class StudioGameSurface final {
 public:
-    explicit StudioGameSurface(void* layer);
+    explicit StudioGameSurface(std::unique_ptr<gfx::Device> device);
     ~StudioGameSurface();
     void start(const StudioGameLaunch& plan,const std::string& engineAssets);
     void stop();

@@ -1,6 +1,6 @@
 #include "apps/editor/AuthoringWater.h"
-#include "StudioMetalScene.h"
-#include "StudioFont6x11.h"
+#include "apps/studio-native/StudioScene.h"
+#include "apps/studio-native/StudioFont6x11.h"
 #include "engine/render/CameraPng.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include "engine/render/GiModelGeometry.h"
@@ -165,9 +165,9 @@ bool axisParameter(float3 pivot,float3 a,float3 o,float3 d,float& t){
     t=(b*ew-dw)/denom; return std::isfinite(t);
 }
 }
-StudioMetalScene::StudioMetalScene(void* metalLayer)
-    : device_(gfx::createMetalDevice(metalLayer)) {
-    if (!device_) throw std::runtime_error("Metal device unavailable");
+StudioScene::StudioScene(std::unique_ptr<gfx::Device> device)
+    : device_(std::move(device)) {
+    if (!device_) throw std::runtime_error("Scene GPU device unavailable");
     deviceLifetime_=std::make_unique<render::RenderDeviceLifetime>(*device_);
     facialGpu_.setDeviceLease(deviceLifetime_->lease());
     renderer_.setGpuDeviceLease(deviceLifetime_->lease());
@@ -196,13 +196,15 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     camera_.pitch = 0.85f;
     camera_.yaw = 0.55f;
 }
-void StudioMetalScene::releasePreviewModel(render::Model& model) {
+void StudioScene::setTransformTool(TransformTool tool) { tool_ = tool; drag_ = TransformDrag{}; }
+void StudioScene::clearTransformPreview() { drag_ = TransformDrag{}; }
+void StudioScene::releasePreviewModel(render::Model& model) {
     // Retire CPU packets/layouts before the Model and its geometry disappear.
     renderer_.invalidateModelCachesFor(&model);
     windRigs_.erase(&model);
     render::releaseModel(*device_,model);
 }
-const render::Model* StudioMetalScene::rtsShapeModel(const Json& type) {
+const render::Model* StudioScene::rtsShapeModel(const Json& type) {
     if (!shapesBuilt_ && device_) {
         shapesBuilt_=true;
         for (auto& [name,model]:game::buildRtsShapeModels()) {
@@ -217,16 +219,16 @@ const render::Model* StudioMetalScene::rtsShapeModel(const Json& type) {
     if (found==shapeModels_.end()) found=shapeModels_.find(structure ? "structure" : "generic");
     return found==shapeModels_.end() ? nullptr : found->second.get();
 }
-void StudioMetalScene::requestThumbnail(const std::string& projectPath,const std::string& asset,const std::string& file) {
+void StudioScene::requestThumbnail(const std::string& projectPath,const std::string& asset,const std::string& file) {
     for(const auto& j:thumbJobs_)if(j.asset==asset && j.project==projectPath)return;
     if(thumbJobs_.size()>=256)return;
     thumbJobs_.push_back({projectPath,asset,file});
 }
-std::vector<std::string> StudioMetalScene::takeFinishedThumbnails() {
+std::vector<std::string> StudioScene::takeFinishedThumbnails() {
     std::lock_guard<std::mutex> lock(thumbShared_->mutex);
     return std::exchange(thumbShared_->done,{});
 }
-std::unique_ptr<render::Model> StudioMetalScene::loadContentModel(const std::string& projectPath,const std::string& asset) {
+std::unique_ptr<render::Model> StudioScene::loadContentModel(const std::string& projectPath,const std::string& asset) {
     namespace fs=std::filesystem;
     if(asset.rfind("content/",0)!=0 || asset.size()>512 || projectPath.empty())return nullptr;
     const fs::path root=fs::path(projectPath)/"content";
@@ -255,7 +257,7 @@ std::unique_ptr<render::Model> StudioMetalScene::loadContentModel(const std::str
         return model;
     } catch(const std::exception&) { return nullptr; }
 }
-void StudioMetalScene::renderThumbnail() {
+void StudioScene::renderThumbnail() {
     if(thumbJobs_.empty())return;
     const ThumbJob job=thumbJobs_.front();thumbJobs_.pop_front();
     auto shared=thumbShared_;
@@ -307,7 +309,7 @@ void StudioMetalScene::renderThumbnail() {
     });
     if(!queued)finish(asset);
 }
-void StudioMetalScene::clearDocumentModels() {
+void StudioScene::clearDocumentModels() {
     if (device_) for (auto& [name,model]:thumbModels_) if (model) releasePreviewModel(*model);
     thumbModels_.clear();
     if (device_) for (auto& [path,model]:documentModels_)
@@ -322,7 +324,7 @@ void StudioMetalScene::clearDocumentModels() {
     instanceMaterials_.clear();
 }
 
-void StudioMetalScene::syncDocumentModels(
+void StudioScene::syncDocumentModels(
     const editor::MapDoc& doc,const std::string& projectPath,
     const Json& rules,const std::vector<StudioDocumentProxy>& proxies) {
     modelInstances_.clear();
@@ -557,7 +559,7 @@ void StudioMetalScene::syncDocumentModels(
     }
 }
 
-StudioMetalScene::~StudioMetalScene() {
+StudioScene::~StudioScene() {
     if (device_) {
         device_->waitForResourceIdle();
         clearDocumentModels();
@@ -588,7 +590,7 @@ StudioMetalScene::~StudioMetalScene() {
         if(deviceLifetime_)deviceLifetime_->retire();
     }
 }
-bool StudioMetalScene::sculptPick(float x,float y,float width,float height,
+bool StudioScene::sculptPick(float x,float y,float width,float height,
         const vivid::HumanFaceShape& selection,vivid::HumanFaceHit& hit,std::string* error) const noexcept {
     try {
     float3 origin{},direction{};
@@ -604,7 +606,7 @@ bool StudioMetalScene::sculptPick(float x,float y,float width,float height,
         return false;
     }
 }
-std::string StudioMetalScene::pick(float x, float y, float width, float height,
+std::string StudioScene::pick(float x, float y, float width, float height,
                                    const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
     // Facial preview is an imported Model, not an object in the active map.
@@ -625,7 +627,7 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     for(const auto& instance:modelInstances_)if(!hidden_.count(instance.id)&&!locked_.count(instance.id))instances.push_back(instance);
     return studioPickSceneSurfaces(instances,proxies,origin,direction);
 }
-std::vector<std::string> StudioMetalScene::idsInRect(float x0,float y0,float x1,float y1,float width,float height,
+std::vector<std::string> StudioScene::idsInRect(float x0,float y0,float x1,float y1,float width,float height,
                                                      const editor::MapDoc& map,bool fpsProject) const {
     std::vector<std::string> out;
     if(materialMode_||!cameraInitialized_||width<2||height<2)return out;
@@ -640,13 +642,13 @@ std::vector<std::string> StudioMetalScene::idsInRect(float x0,float y0,float x1,
     }
     return out;
 }
-bool StudioMetalScene::groundPoint(float x,float y,float width,float height,float3& out) const {
+bool StudioScene::groundPoint(float x,float y,float width,float height,float3& out) const {
     float3 o,d;
     if(!cameraInitialized_||!viewCamera().screenRay(x,y,width,height,o,d)||std::fabs(d.y)<1e-5f)return false;
     const float t=-o.y/d.y; if(!(t>0)||!std::isfinite(t))return false;
     out=o+d*t; return true;
 }
-void StudioMetalScene::frameAll(const editor::MapDoc& map,bool fpsProject) {
+void StudioScene::frameAll(const editor::MapDoc& map,bool fpsProject) {
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     float3 lo{1e30f,1e30f,1e30f},hi{-1e30f,-1e30f,-1e30f};
     for(const auto& p:proxies){lo={std::min(lo.x,p.boundsMin.x),std::min(lo.y,p.boundsMin.y),std::min(lo.z,p.boundsMin.z)};
@@ -655,7 +657,7 @@ void StudioMetalScene::frameAll(const editor::MapDoc& map,bool fpsProject) {
     const float3 size=hi-lo;
     startTween((lo+hi)*.5f,std::clamp(std::max({size.x,size.y,size.z,1.0f})*1.2f,2.0f,100000.0f),camera_.yaw,camera_.pitch);
 }
-render::RTSCamera StudioMetalScene::viewCamera() const {
+render::RTSCamera StudioScene::viewCamera() const {
     render::RTSCamera view=camera_;
     view.zNear=std::clamp(camera_.distance*0.002f,0.05f,0.5f);
     view.zFar=std::max(1000.0f,camera_.distance*6.0f);
@@ -665,7 +667,7 @@ render::RTSCamera StudioMetalScene::viewCamera() const {
     }
     return view;
 }
-void StudioMetalScene::startTween(render::float3 target,float distance,float yaw,float pitch) {
+void StudioScene::startTween(render::float3 target,float distance,float yaw,float pitch) {
     tween_.active=true;
     tween_.fromTarget=camera_.target;tween_.toTarget=target;
     tween_.fromDistance=camera_.distance;tween_.toDistance=distance;
@@ -675,7 +677,7 @@ void StudioMetalScene::startTween(render::float3 target,float distance,float yaw
     tween_.fromPitch=camera_.pitch;tween_.toPitch=pitch;
     tween_.start=std::chrono::steady_clock::now();
 }
-void StudioMetalScene::stepTween() {
+void StudioScene::stepTween() {
     if(!tween_.active)return;
     const float seconds=std::chrono::duration<float>(std::chrono::steady_clock::now()-tween_.start).count();
     const float t=std::clamp(seconds/0.24f,0.0f,1.0f);
@@ -686,17 +688,17 @@ void StudioMetalScene::stepTween() {
     camera_.pitch=tween_.fromPitch+(tween_.toPitch-tween_.fromPitch)*k;
     if(t>=1.0f)tween_.active=false;
 }
-void StudioMetalScene::setOrientation(float yaw,float pitch) {
+void StudioScene::setOrientation(float yaw,float pitch) {
     if(!std::isfinite(yaw)||!std::isfinite(pitch))return;
     startTween(camera_.target,camera_.distance,yaw,std::clamp(pitch,-1.5707963f,1.5707963f));
 }
-void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; autoIso_=false; }
-void StudioMetalScene::captureSelectedBox(const mat4& world,float3 lo,float3 hi) {
+void StudioScene::setOrthographic(bool ortho) { camera_.ortho=ortho; autoIso_=false; }
+void StudioScene::captureSelectedBox(const mat4& world,float3 lo,float3 hi) {
     for(int i=0;i<8;++i)
         selectedBox_[i]=world.transformPoint({i&1?hi.x:lo.x,i&2?hi.y:lo.y,i&4?hi.z:lo.z});
     selectedBoxValid_=true;
 }
-void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int height) {
+void StudioScene::drawSelectionBox(const RTSCamera& view,int width,int height) {
     if(!selectedBoxValid_)return;
     const float W=float(width),H=float(height);
     float2 p[8];
@@ -706,10 +708,10 @@ void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int heig
     constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
     for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
 }
-bool StudioMetalScene::projectPoint(float3 world,float width,float height,float2& out) const {
+bool StudioScene::projectPoint(float3 world,float width,float height,float2& out) const {
     return viewCamera().worldToScreen(world,width,height,out);
 }
-Json StudioMetalScene::textureResources() const {
+Json StudioScene::textureResources() const {
     static const char* formats[]={"RGBA8","R8","Depth","RGBA32F","ETC2_RGB8","ETC2_RGBA8","BC1","BC3","BC7","ASTC_4x4","ASTC_6x6",
         "RGBA8_sRGB","RGBA16F","BC4","BC5","EAC_R11","RG8","R16F","RG16F","R32F","RG32F","BC6H_UFloat","BC6H_SFloat",
         "BC1_sRGB","BC3_sRGB","BC7_sRGB","ETC2_RGB8_sRGB","ETC2_RGBA8_sRGB","ASTC_4x4_sRGB","ASTC_6x6_sRGB"};
@@ -731,7 +733,7 @@ Json StudioMetalScene::textureResources() const {
     out.set("textures",list);out.set("totalBytes",Json::number(int64_t(total)));
     return out;
 }
-void StudioMetalScene::drawBrushCursor(const RTSCamera& view,int width,int height) {
+void StudioScene::drawBrushCursor(const RTSCamera& view,int width,int height) {
     const float W=float(width),H=float(height);
     Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.6f};
     const float px=std::max(1.0f,std::min(W,H)/800.0f);   // points → framebuffer pixels (approx.)
@@ -784,19 +786,19 @@ void StudioMetalScene::drawBrushCursor(const RTSCamera& view,int width,int heigh
     float2 c;
     if(brushVisible_&&view.worldToScreen(brushCenter_,W,H,c)){o.segment(c.x-4,c.y,c.x+4,c.y,w,rgba(120,200,255,220));o.segment(c.x,c.y-4,c.x,c.y+4,w,rgba(120,200,255,220));}
 }
-void StudioMetalScene::setSnap(bool enabled,float move,float rotate,float scale) {
+void StudioScene::setSnap(bool enabled,float move,float rotate,float scale) {
     snapEnabled_=enabled;
     if(std::isfinite(move)&&move>0)snapMove_=std::clamp(move,0.001f,1000.0f);
     if(std::isfinite(rotate)&&rotate>0)snapRotate_=std::clamp(rotate,0.1f,180.0f);
     if(std::isfinite(scale)&&scale>0)snapScale_=std::clamp(scale,0.001f,10.0f);
 }
-void StudioMetalScene::handleAxes(float3 out[3]) const {
+void StudioScene::handleAxes(float3 out[3]) const {
     // Scale always uses the object's own axes (a world-axis scale of a rotated
     // object would shear); Move/Rotate follow the Global/Local toggle.
     const bool local=(tool_==TransformTool::Scale||localSpace_)&&selectedAxesValid_;
     for(int a=0;a<3;++a)out[a]=local?selectedAxes_[a]:float3{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};
 }
-int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height) const {
+int StudioScene::transformGizmoHit(float x,float y,float width,float height) const {
     if(materialMode_||!gizmosVisible_||tool_==TransformTool::View||!selectedPivotValid_||width<4||height<4)return -1;
     if(selectedIsLight_&&tool_!=TransformTool::Move)return -1;
     const auto view=viewCamera();
@@ -827,7 +829,7 @@ int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height
     if(tool_==TransformTool::Scale && std::hypot(x-h.px,y-h.py)<h.pick*1.4f)best=3; // centre: uniform
     return best;
 }
-bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float height) {
+bool StudioScene::beginTransformDrag(float x,float y,float width,float height) {
     const int axis=transformGizmoHit(x,y,width,height);
     if(axis<0)return false;
     const auto view=viewCamera();
@@ -858,7 +860,7 @@ bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float heig
     drag_=d;
     return true;
 }
-void StudioMetalScene::updateTransformDrag(float x,float y,float width,float height,bool invertSnap) {
+void StudioScene::updateTransformDrag(float x,float y,float width,float height,bool invertSnap) {
     if(drag_.axis<0)return;
     const bool snap=snapEnabled_!=invertSnap;
     drag_.snapping=snap;
@@ -926,7 +928,7 @@ void StudioMetalScene::updateTransformDrag(float x,float y,float width,float hei
         drag_.value=std::clamp(f,0.01f,100.0f);
     }
 }
-render::mat4 StudioMetalScene::dragPreview() const {
+render::mat4 StudioScene::dragPreview() const {
     if(drag_.axis<0)return mat4{};
     const float3 p=drag_.pivot;
     if(drag_.tool==TransformTool::Move)return mat4::translate(drag_.moveOffset);
@@ -941,7 +943,7 @@ render::mat4 StudioMetalScene::dragPreview() const {
     const float3 k{on(0)?f:1.f,on(1)?f:1.f,on(2)?f:1.f};
     return mat4::translate(p)*basis*mat4::scale(k)*basisT*mat4::translate(p*-1.0f);
 }
-std::string StudioMetalScene::transformCaption() const {
+std::string StudioScene::transformCaption() const {
     if(drag_.axis<0)return {};
     static const char* names[7]={"X","Y","Z","XYZ","YZ","XZ","XY"};
     char text[96];
@@ -953,7 +955,7 @@ std::string StudioMetalScene::transformCaption() const {
     else std::snprintf(text,sizeof text,"Scale %s ×%.3g",names[drag_.axis],double(drag_.value));
     return text;
 }
-std::optional<StudioMetalScene::TransformCommit> StudioMetalScene::endTransformDrag() {
+std::optional<StudioScene::TransformCommit> StudioScene::endTransformDrag() {
     if(drag_.axis<0)return std::nullopt;
     TransformCommit c;c.id=drag_.id;c.tool=drag_.tool;c.axis=drag_.axis;
     if(drag_.tool==TransformTool::Move)c.move=drag_.moveOffset;
@@ -963,7 +965,7 @@ std::optional<StudioMetalScene::TransformCommit> StudioMetalScene::endTransformD
     drag_.axis=-1;
     return c;
 }
-void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int width,int height) {
+void StudioScene::drawTransformGizmo(const render::RTSCamera& view,int width,int height) {
     if(!selectedPivotValid_||!gizmosVisible_||tool_==TransformTool::View)return;
     if(selectedIsLight_&&tool_!=TransformTool::Move)return;
     const float W=float(width),H=float(height);
@@ -1090,7 +1092,7 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
         }
     }
 }
-render::Model* StudioMetalScene::builtinPrimitive(bool sphere) {
+render::Model* StudioScene::builtinPrimitive(bool sphere) {
     auto& slot=sphere?builtinSphere_:builtinCube_;
     if(slot)return slot.get();
     render::MeshBuilder mesh;
@@ -1105,7 +1107,7 @@ render::Model* StudioMetalScene::builtinPrimitive(bool sphere) {
     if(!render::uploadModel(*device_,*slot)){releasePreviewModel(*slot);slot.reset();return nullptr;}
     return slot.get();
 }
-std::vector<std::string> StudioMetalScene::modelMaterialSlots(const std::string& asset) const {
+std::vector<std::string> StudioScene::modelMaterialSlots(const std::string& asset) const {
     std::vector<std::string> names;
     const auto found=documentModels_.find(asset);
     if(found==documentModels_.end() || !found->second)return names;
@@ -1114,7 +1116,7 @@ std::vector<std::string> StudioMetalScene::modelMaterialSlots(const std::string&
             names.push_back(material.name);
     return names;
 }
-int StudioMetalScene::orientationGizmoHit(float x,float y,float width,float height) const {
+int StudioScene::orientationGizmoHit(float x,float y,float width,float height) const {
     if(!orientationGizmo_ || materialMode_ || width<4 || height<4)return -1;
     const auto g=gizmoLayout(width,height);
     if(std::hypot(x-g.cx,y-g.cy)>g.r*1.45f)return -1;
@@ -1131,7 +1133,7 @@ int StudioMetalScene::orientationGizmoHit(float x,float y,float width,float heig
     }
     return best;
 }
-void StudioMetalScene::activateOrientationGizmo(int hit) {
+void StudioScene::activateOrientationGizmo(int hit) {
     if(hit==6){setOrthographic(!camera_.ortho);return;}
     if(hit<0 || hit>5)return;
     const float sign=(hit&1)?-1.0f:1.0f;
@@ -1142,7 +1144,7 @@ void StudioMetalScene::activateOrientationGizmo(int hit) {
     else setOrientation(sign>0?0.0f:3.14159265f,0);
     if(!camera_.ortho){camera_.ortho=true;autoIso_=true;}
 }
-void StudioMetalScene::drawOrientationGizmo(const render::RTSCamera& view,int width,int height) {
+void StudioScene::drawOrientationGizmo(const render::RTSCamera& view,int width,int height) {
     // Drawn flat in screen space (like the HTML gizmo): every vertex is a pixel
     // position unprojected onto a plane just beyond the near plane, so the corner
     // placement never adds perspective skew. Overlays are depth-tested without
@@ -1207,14 +1209,14 @@ void StudioMetalScene::drawOrientationGizmo(const render::RTSCamera& view,int wi
          view.ortho?rgba(130,181,255):rgba(214,224,240));
 }
 
-void StudioMetalScene::orbit(float dx, float dy) {
+void StudioScene::orbit(float dx, float dy) {
     tween_.active=false;
     if(autoIso_){camera_.ortho=false;autoIso_=false;}
     // Unity: drag right turns the view right, drag up looks up (pivot stays centred).
     camera_.yaw -= dx * 0.007f;
     camera_.pitch = std::clamp(camera_.pitch + dy * 0.007f, -1.52f, 1.52f);
 }
-void StudioMetalScene::zoom(float wheel) {
+void StudioScene::zoom(float wheel) {
     tween_.active=false;
     // Unity-like dolly: zoom toward the pivot; at the minimum distance keep
     // moving forward by pushing the pivot instead of stopping.
@@ -1229,7 +1231,7 @@ void StudioMetalScene::zoom(float wheel) {
     }
     camera_.distance = std::clamp(next, kMinDistance, 100000.0f);
 }
-void StudioMetalScene::look(float dx, float dy) {
+void StudioScene::look(float dx, float dy) {
     // First-person free look preserves the camera's world-space eye instead
     // of orbiting around its target. WASD movement then translates the eye.
     tween_.active=false;
@@ -1241,7 +1243,7 @@ void StudioMetalScene::look(float dx, float dy) {
     const float3 fromTarget{std::sin(camera_.yaw)*cp,sp,std::cos(camera_.yaw)*cp};
     camera_.target=position-fromTarget*camera_.distance;
 }
-void StudioMetalScene::pan(float dx, float dy) {
+void StudioScene::pan(float dx, float dy) {
     // Editor navigation follows camera orientation, not RTS ground-plane input.
     tween_.active=false;
     const float speed=std::max(0.005f,camera_.distance*0.0018f);
@@ -1252,7 +1254,7 @@ void StudioMetalScene::pan(float dx, float dy) {
                     -std::cos(yaw)*std::sin(camera_.pitch)};
     camera_.target += right*(-dx*speed) + up*(dy*speed);
 }
-void StudioMetalScene::move(float right, float up, float forward) {
+void StudioScene::move(float right, float up, float forward) {
     tween_.active=false;
     const float speed=std::max(0.025f,camera_.distance*0.045f);
     const float yaw=camera_.yaw;
@@ -1262,7 +1264,7 @@ void StudioMetalScene::move(float right, float up, float forward) {
                        -std::cos(yaw)*std::cos(camera_.pitch)};
     camera_.target += (side*right + float3{0,1,0}*up + ahead*forward)*speed;
 }
-void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
+void StudioScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
                                       const std::string& selectedId) {
     for (const auto& instance:modelInstances_) {
         if (instance.id!=selectedId || !instance.model) continue;
@@ -1293,14 +1295,14 @@ void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
         return;
     }
 }
-void StudioMetalScene::resetView() {
+void StudioScene::resetView() {
     tween_.active=false;
     camera_.ortho=false;
     cameraInitialized_=false;
     camera_.pitch=0.85f;
     camera_.yaw=0.55f;
 }
-void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
+void StudioScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                              bool fpsProject, const std::string& selectedId,
                              const std::string& previewName, const Json& previewFactors,
                              uint64_t previewRevision, float levelHeight,
@@ -1816,7 +1818,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     // StudioFrameScope ends the pass and frame, including on exceptions.
 }
-Json StudioMetalScene::windStats() const {
+Json StudioScene::windStats() const {
     Json j=Json::object();
     j.set("riggedInstances",Json::number(int64_t(riggedInstances_)));
     j.set("riggedParts",Json::number(int64_t(riggedParts_)));

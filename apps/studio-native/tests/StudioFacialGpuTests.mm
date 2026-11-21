@@ -3,7 +3,7 @@
 #import <Foundation/Foundation.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <Metal/Metal.h>
-#include "apps/studio-native/mac/StudioFacialGpuPreview.h"
+#include "apps/studio-native/StudioFacialGpuPreview.h"
 #include "tests/AlwaysCheck.h"
 #include <chrono>
 #include <filesystem>

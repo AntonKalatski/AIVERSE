@@ -1,6 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CAMetalLayer.h>
-#include "apps/studio-native/mac/StudioMetalScene.h"
+#include "apps/studio-native/StudioScene.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include <filesystem>
 #include <fstream>
@@ -18,7 +18,7 @@ int aiverseMain(int argc,char** argv) { @autoreleasepool {
         CAMetalLayer* layer=[CAMetalLayer layer];layer.framebufferOnly=NO;
         window.contentView.wantsLayer=YES;window.contentView.layer=layer;
         [window orderFront:nil];
-        studio::StudioMetalScene scene((__bridge void*)layer);
+        studio::StudioScene scene(gfx::createMetalDevice((__bridge void*)layer));
         editor::MapDoc doc;doc.reset(8,8);
         // This GPU fixture explicitly authors a legacy terrain receiver.
         doc.data.extra.set("terrainPresentation",Json::string("legacy"));

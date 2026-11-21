@@ -2,42 +2,52 @@
 # OBJCXX was enabled by the root CMakeLists before creating targets.
 # The sidecar metadata files are authoritative. This SQLite database is a
 # regenerable local GUID index; no data is migrated into the game runtime.
-find_package(SQLite3 REQUIRED)
-add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp mac/StudioGameSurface.cpp mac/StudioFacialGpuPreview.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
-target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
-target_link_libraries(aiverse_studio PRIVATE aiverse_hosted_client SQLite::SQLite3 aiverse_lua aiverse_editor_core aiverse_runtime aiverse_game_view AIVERSE::vivid_human AIVERSE::libraries "-framework Cocoa" "-framework WebKit")
-target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
-target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
-# Publish / Build panel: the packager built next to Studio.
-if(TARGET aiversebuild)
-    add_dependencies(aiverse_studio aiversebuild)
-    target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_BUILD_TOOL="$<TARGET_FILE:aiversebuild>")
-endif()
-# Agent panel: the MCP server the in-editor Claude Code run talks to (forwards to this Studio's port).
-if(TARGET aiversemcp)
-    add_dependencies(aiverse_studio aiversemcp)
-    target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_MCP_TOOL="$<TARGET_FILE:aiversemcp>")
-endif()
-set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-set_target_properties(aiverse_studio PROPERTIES
-    OUTPUT_NAME AiverseStudioHTML5
-    MACOSX_BUNDLE_GUI_IDENTIFIER com.aiverse.studio.html5)
+# Shared host (StudioHost) + one thin shell per OS: mac/ (Cocoa, WKWebView, Metal), win/ (Win32, WebView2, Vulkan).
+set(AIVERSE_STUDIO_SOURCES StudioHost.cpp StudioScene.cpp StudioGameSurface.cpp StudioFacialGpuPreview.cpp
+    StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
 set(AIVERSE_STUDIO_WEB_DIST "${PROJECT_SOURCE_DIR}/apps/studio-web/dist" CACHE PATH "Built Studio web assets")
-if(EXISTS "${AIVERSE_STUDIO_WEB_DIST}/index.html")
-    # Run even when only frontend assets changed. CMake 3.22 uses CMP0112
-    # NEW, so TARGET_BUNDLE_CONTENT_DIR does not introduce a reverse dependency.
-    add_custom_target(aiverse_studio_web_assets
-        DEPENDS "${AIVERSE_STUDIO_WEB_DIST}/index.html"
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory
-            "${AIVERSE_STUDIO_WEB_DIST}"
-            "$<TARGET_BUNDLE_CONTENT_DIR:aiverse_studio>/Resources/studio-web"
-        VERBATIM)
-    add_dependencies(aiverse_studio aiverse_studio_web_assets)
-else()
-    message(FATAL_ERROR "HTML5 bundle missing: build on KINGSTON and set AIVERSE_STUDIO_WEB_DIST")
+if(NOT EXISTS "${AIVERSE_STUDIO_WEB_DIST}/index.html")
+    message(FATAL_ERROR "HTML5 bundle missing: build apps/studio-web (npm run build) or set AIVERSE_STUDIO_WEB_DIST")
 endif()
-if(AIVERSE_BUILD_TESTS)
-    add_executable(aiverse_studio_metal_lighting_tests tests/StudioMetalLightingTests.mm mac/StudioMetalScene.cpp mac/StudioFacialGpuPreview.cpp StudioAssetCatalog.cpp)
+if(WIN32)
+    include(win/StudioWindows.cmake)
+else()
+    find_package(SQLite3 REQUIRED)
+    add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm ${AIVERSE_STUDIO_SOURCES})
+    target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio PRIVATE aiverse_hosted_client SQLite::SQLite3 aiverse_lua aiverse_editor_core aiverse_runtime aiverse_game_view AIVERSE::vivid_human AIVERSE::libraries "-framework Cocoa" "-framework WebKit")
+    target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
+    target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    # Publish / Build panel: the packager built next to Studio.
+    if(TARGET aiversebuild)
+        add_dependencies(aiverse_studio aiversebuild)
+        target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_BUILD_TOOL="$<TARGET_FILE:aiversebuild>")
+    endif()
+    # Agent panel: the MCP server the in-editor Claude Code run talks to (forwards to this Studio's port).
+    if(TARGET aiversemcp)
+        add_dependencies(aiverse_studio aiversemcp)
+        target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_MCP_TOOL="$<TARGET_FILE:aiversemcp>")
+    endif()
+    set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    set_target_properties(aiverse_studio PROPERTIES
+        OUTPUT_NAME AiverseStudioHTML5
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.aiverse.studio.html5)
+    if(EXISTS "${AIVERSE_STUDIO_WEB_DIST}/index.html")
+        # Run even when only frontend assets changed. CMake 3.22 uses CMP0112
+        # NEW, so TARGET_BUNDLE_CONTENT_DIR does not introduce a reverse dependency.
+        add_custom_target(aiverse_studio_web_assets
+            DEPENDS "${AIVERSE_STUDIO_WEB_DIST}/index.html"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${AIVERSE_STUDIO_WEB_DIST}"
+                "$<TARGET_BUNDLE_CONTENT_DIR:aiverse_studio>/Resources/studio-web"
+            VERBATIM)
+        add_dependencies(aiverse_studio aiverse_studio_web_assets)
+    else()
+        message(FATAL_ERROR "HTML5 bundle missing: build on KINGSTON and set AIVERSE_STUDIO_WEB_DIST")
+    endif()
+endif()
+if(AIVERSE_BUILD_TESTS AND APPLE)
+    add_executable(aiverse_studio_metal_lighting_tests tests/StudioMetalLightingTests.mm StudioScene.cpp StudioFacialGpuPreview.cpp StudioAssetCatalog.cpp)
     target_include_directories(aiverse_studio_metal_lighting_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_metal_lighting_tests PRIVATE SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view AIVERSE::libraries "-framework Cocoa")
     target_sources(aiverse_studio_metal_lighting_tests PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
@@ -128,7 +138,7 @@ if(AIVERSE_BUILD_TESTS)
     set_tests_properties(studio_facial_runtime PROPERTIES LABELS "EDITOR")
 
     add_executable(aiverse_studio_facial_gpu_tests
-        tests/StudioFacialGpuTests.mm mac/StudioFacialGpuPreview.cpp StudioAssetCatalog.cpp)
+        tests/StudioFacialGpuTests.mm StudioFacialGpuPreview.cpp StudioAssetCatalog.cpp)
     target_include_directories(aiverse_studio_facial_gpu_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_facial_gpu_tests PRIVATE
         SQLite::SQLite3 aiverse_editor_core aiverse_runtime AIVERSE::vivid_human AIVERSE::libraries
@@ -207,6 +217,8 @@ foreach(target aiverse_studio aiverse_studio_session_tests aiverse_studio_human_
         target_link_libraries(${target} PRIVATE aiverse_vivid_human aiverse_modeling)
     endif()
 endforeach()
-add_executable(aiverse_vivid_assemble ../../tools/vivid-creator/assemble.cpp)
-target_include_directories(aiverse_vivid_assemble PRIVATE "${PROJECT_SOURCE_DIR}")
-target_link_libraries(aiverse_vivid_assemble PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)
+if(APPLE)
+    add_executable(aiverse_vivid_assemble ../../tools/vivid-creator/assemble.cpp)
+    target_include_directories(aiverse_vivid_assemble PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_vivid_assemble PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)
+endif()

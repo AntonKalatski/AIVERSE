@@ -1,4 +1,4 @@
-#include "StudioGameSurface.h"
+#include "apps/studio-native/StudioGameSurface.h"
 #include "engine/sim/Simulation.h"
 #include "engine/sim/CommonComponents.h"
 #include "modules/rts/RtsModule.h"
@@ -6,8 +6,8 @@
 #include <stdexcept>
 
 namespace aiverse::studio {
-StudioGameSurface::StudioGameSurface(void* layer):device_(gfx::createMetalDevice(layer)) {
-    if (!device_) throw std::runtime_error("Game Metal device unavailable");
+StudioGameSurface::StudioGameSurface(std::unique_ptr<gfx::Device> device):device_(std::move(device)) {
+    if (!device_) throw std::runtime_error("Game GPU device unavailable");
     lifetime_=std::make_unique<render::RenderDeviceLifetime>(*device_);
     host_=std::make_unique<client::HostedClient>();
 }
