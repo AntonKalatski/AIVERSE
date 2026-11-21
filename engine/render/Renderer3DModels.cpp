@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1301,6 +1302,62 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         ++modelStats_.nodes;
         const MeshDef& baseMesh = m->meshes[size_t(node.mesh)];
         const bool rigid = node.skin < 0 && !baseMesh.deformable && !unboundedDisplacement;
+        // Facial morphing is a deformation even without bones. Permit
+        // explicitly authored morph-aware LODs for such models; the current
+        // draw packet still has the only parent/child pose writer.
+        const bool baseHasMorph=std::any_of(
+            baseMesh.primitives.begin(),baseMesh.primitives.end(),
+            [](const Primitive& p){return p.morphTargets>0;});
+        // The Model's import-time expanded bounds cover every independent
+        // channel at normalized weights in [0,1]. If an additive/authoring
+        // Graph sends negative or >1 weights, stay at LOD0 rather than
+        // choosing a coarse LOD with unbounded screen-size estimates.
+        bool morphWeightsBounded=true;
+        bool morphMappingsReady=true;
+        if(baseHasMorph) {
+            int maxChannels=0;
+            for(const auto& p:baseMesh.primitives)
+                maxChannels=std::max(maxChannels,p.morphTargets);
+            if(maxChannels>kMaxMorphTargets) {
+                // Native Models may bypass importer upload preflight.
+                // Never read beyond NodePose::w for such invalid assets.
+                morphWeightsBounded=false;
+                morphMappingsReady=false;
+            }else {
+                const float* weights=usePose
+                    ? (*d.pose)[size_t(n)].w:node.weights;
+                for(int k=0;k<maxChannels;++k)
+                    if(!std::isfinite(weights[k]) ||
+                       weights[k]<0.f || weights[k]>1.f) {
+                        morphWeightsBounded=false;break;
+                    }
+            }
+            // Native hosts may author ModelLod directly. If their morph
+            // remap is absent/incomplete, fall back to LOD0 instead of
+            // displaying a bind-face or mismatched expression on LOD1.
+            for(const auto& lod:baseMesh.lods) {
+                if(lod.mesh<0 || size_t(lod.mesh)>=m->meshes.size()) {
+                    morphMappingsReady=false;break;
+                }
+                int targetCount=0;
+                for(const auto& p:m->meshes[size_t(lod.mesh)].primitives)
+                    targetCount=std::max(targetCount,p.morphTargets);
+                if(targetCount<=0 ||
+                   lod.morphSourceForTarget.size()<size_t(targetCount)) {
+                    morphMappingsReady=false;break;
+                }
+                for(int k=0;k<targetCount;++k) {
+                    const int src=lod.morphSourceForTarget[size_t(k)];
+                    if(src<0 || src>=maxChannels) {
+                        morphMappingsReady=false;break;
+                    }
+                }
+                if(!morphMappingsReady)break;
+            }
+        }
+        const bool morphLod=node.skin<0 && !unboundedDisplacement &&
+                            baseHasMorph && morphWeightsBounded &&
+                            morphMappingsReady;
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
@@ -1312,8 +1369,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         ModelLodBlend lodBlend{node.mesh};
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
-        const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
-        const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
+        const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose &&
+            !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size() &&
+            (!baseHasMorph || (morphWeightsBounded && morphMappingsReady));
+        const bool lodEligible = (rigid || skinLod || morphLod) &&
+                                 !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
         // CPU-owned rigid scenery only. GPU-authored packets retain their own
         // mesh/primitive identities and never borrow a second shadow LOD.
@@ -1395,6 +1455,13 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool shadowOnly=part==cameraParts;
         meshIndex=shadowOnly?shadowLodMesh:(part?lodBlend.incoming:lodBlend.mesh);
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
+        // The authored LOD edge owns the mapping. A visual LOD can have
+        // fewer/reordered expression channels than the original source mesh.
+        // Never use target slot indices to read source NodePose weights.
+        const ModelLod* morphMapping=nullptr;
+        if(meshIndex!=node.mesh)
+            for(const auto& lod:baseMesh.lods)
+                if(lod.mesh==meshIndex) {morphMapping=&lod;break;}
         // A GPU-indexed source has separate GPU command packets for each
         // original primitive. Never replace those originals with the CPU
         // shadow/material batch proxy: one ModelItem must own one material.
@@ -1534,13 +1601,43 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             } else {
                 it.world = cache?cache->transforms[size_t(n)]:d.world * world[size_t(n)];
             }
-            if (p.morphTargets > 0 && m->morphTex.valid()) {
-                const float* w = usePose ? (*d.pose)[size_t(n)].w : node.weights;
-                bool any = false;
-                for (int k = 0; k < p.morphTargets; ++k) any |= w[k] != 0;
-                if (any) {
-                    it.morph = int32_t(morphData_.size());
-                    morphData_.insert(morphData_.end(), w, w + kMaxMorphTargets);
+            if (p.morphTargets > 0 &&
+                p.morphTargets <= kMaxMorphTargets && m->morphTex.valid()) {
+                const float* weights = usePose
+                    ? (*d.pose)[size_t(n)].w : node.weights;
+                const auto sourceChannelFor=[&](int target)->int {
+                    if(!morphMapping)return target; // original LOD0 order
+                    const auto& map=morphMapping->morphSourceForTarget;
+                    return size_t(target)<map.size()?map[size_t(target)]:-1;
+                };
+                // Sparse palette indexes TARGET morph texture slots, while
+                // values come from the exact mapped SOURCE NodePose channel.
+                // Invalid/unmapped source indices or NaNs cannot enter GPU.
+                bool valid=true;
+                int active=0;
+                for(int channel=0;channel<p.morphTargets;++channel) {
+                    const int source=sourceChannelFor(channel);
+                    if(source<0 || source>=kMaxMorphTargets ||
+                       !std::isfinite(weights[source])) {
+                        valid=false;break;
+                    }
+                    active+=weights[source]!=0.f;
+                }
+                if(valid && active>0) {
+                    it.morph=int32_t(morphData_.size());
+                    const size_t off=morphData_.size();
+                    morphData_.resize(
+                        off+2u*size_t(kMaxMorphTargets)+1u,0.f);
+                    int slot=0;
+                    for(int channel=0;channel<p.morphTargets;++channel) {
+                        const float value=weights[sourceChannelFor(channel)];
+                        if(value==0.f)continue;
+                        morphData_[off+size_t(slot)]=value;
+                        morphData_[off+size_t(kMaxMorphTargets)+size_t(slot)]=
+                            float(channel);
+                        ++slot;
+                    }
+                    morphData_[off+2u*size_t(kMaxMorphTargets)]=float(slot);
                 }
             }
             float3 wc = it.world.transformPoint((p.boundsMin + p.boundsMax) * 0.5f);
@@ -1854,11 +1951,21 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(3, pal, sizeof pal);
     }
     if (it.morph >= 0) {
-        float mo[16] = {};
-        std::memcpy(mo, morphData_.data() + it.morph, 8 * sizeof(float));
-        mo[8] = float(it.prim->morphTexel); mo[9] = float(it.prim->firstVertex); mo[10] = float(it.prim->vertexCount); mo[11] = float(it.prim->morphTargets);
-        mo[12] = float(it.model->morphTexWidth);
-        dev_->setUniforms(4, mo, sizeof mo);
+        // U4 std140/MSL: 64 sparse weights, 64 source channel IDs,
+        // then two vec4 metadata records (136 floats / 544 bytes).
+        static_assert(kMaxMorphTargets==64,
+            "Update Metal/GLSL morph palette when changing CPU capacity");
+        constexpr size_t kSlots=size_t(kMaxMorphTargets);
+        float mo[2*kMaxMorphTargets+8] = {};
+        std::memcpy(mo,morphData_.data()+it.morph,
+                    2*kSlots*sizeof(float));
+        mo[2*kSlots+0]=float(it.prim->morphTexel);
+        mo[2*kSlots+1]=float(it.prim->firstVertex);
+        mo[2*kSlots+2]=float(it.prim->vertexCount);
+        mo[2*kSlots+3]=float(it.prim->morphTargets);
+        mo[2*kSlots+4]=float(it.model->morphTexWidth);
+        mo[2*kSlots+5]=morphData_[size_t(it.morph)+2*kSlots];
+        dev_->setUniforms(4,mo,sizeof mo);
     }
     dev_->setVertexBuffer(it.model->vb);
     dev_->setIndexBuffer(it.model->ib);

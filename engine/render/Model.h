@@ -121,7 +121,10 @@ struct ModelVertex {
 static_assert(sizeof(ModelVertex) == 60, "ModelVertex layout is shared with the shaders");
 
 constexpr int kMaxPaletteJoints = 80;  // joint matrices per draw (3 x vec4 each, fits a 4 KB uniform block)
-constexpr int kMaxMorphTargets = 8;    // morph targets applied on the GPU per primitive
+// Runtime facial-morph budget: >=52 ARKit-style channels plus spare slots.
+// The renderer uploads a per-draw SPARSE list, so GPU vertex work scales with
+// nonzero expressions rather than this maximum. GLSL/MSL U4 owns the same cap.
+constexpr int kMaxMorphTargets = 64;
 
 struct Primitive {
     uint32_t firstIndex = 0, indexCount = 0;
@@ -133,6 +136,10 @@ struct Primitive {
     int morphTargets = 0;                // 0..kMaxMorphTargets
     uint32_t morphTexel = 0;             // first texel of its deltas in Model::morphTex
     std::vector<float> morphDeltas;      // CPU: [target][vertex] position xyz, normal xyz (released after upload)
+    // Generated index-only morph LODs borrow the EXACT source primitive's
+    // vertex span and GPU morph texture allocation (no second upload).
+    // Both remain -1 for independently authored/imported morph primitives.
+    int morphAliasMesh = -1, morphAliasPrimitive = -1;
     bool lightmapUv = false;             // vertices carry lightmap UVs in `joints` (unskinned only, see ModelVertex)
     bool shadowBatched = false;          // cast through MeshDef::shadowBatch instead of its own shadow draw
 };
@@ -144,12 +151,22 @@ struct MaterialBatch {
     std::vector<size_t> parts;
 };
 
-struct ModelLod { int mesh = -1; float maxPixels = 0; };
+struct ModelLod {
+    int mesh = -1;
+    float maxPixels = 0;
+    // Authored visual LOD mesh-local morph slot -> source node morph slot.
+    // Compiled by an importer from exact semantic channel names; empty only
+    // for morph-free LODs. Never infer channel equivalence by index.
+    std::vector<int> morphSourceForTarget{};
+};
 
 struct MeshDef {
     std::string name;
     std::vector<Primitive> primitives;
     std::vector<float> weights;          // default morph weights
+    // Ordered mesh-local semantic morph names supplied by an importer.
+    // Empty means unavailable: never invent channel names from indices.
+    std::vector<std::string> morphTargetNames;
     std::vector<ModelLod> lods;          // coarse alternatives, descending maximum projected diameter
     // One index range covering the shadowBatched primitives (contiguous, opaque, same culling):
     // drawn once in shadow passes instead of each part. Not part of `primitives`. indexCount 0 = none.

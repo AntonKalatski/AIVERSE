@@ -9,6 +9,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <map>
+#include <set>
+#include <stdexcept>
+#include <string>
 #include <span>
 #include <utility>
 #include <vector>
@@ -40,6 +44,112 @@ inline ModelPoseRetarget makeNamedModelPoseRetarget(
     for(const auto& node:visual.nodes)
         map.sourceNodeForVisual.push_back(source.findNode(node.name));
     return map;
+}
+
+inline bool validModelPoseRetarget(const render::Model& source,
+                                  const render::Model& visual,
+                                  const ModelPoseRetarget& map);
+
+// Explicit semantic morph names authored by the import pipeline. Indexed by
+// Model node and then that node's *local* morph channel. Names are NOT inferred
+// from different meshes, arbitrary index orders, or a source animation state.
+using ModelMorphChannelNames=std::vector<std::vector<std::string>>;
+
+// Read only importer-originated semantic metadata. This deliberately does
+// NOT synthesize names for FBX/OBJ or unnamed glTF morph channels. Models
+// with incomplete names will fail closed in compileNamedModelMorphRetarget.
+inline ModelMorphChannelNames importedModelMorphChannelNames(
+        const render::Model& model) {
+    ModelMorphChannelNames result(model.nodes.size());
+    for(size_t i=0;i<model.nodes.size();++i) {
+        const int mesh=model.nodes[i].mesh;
+        if(mesh>=0 && size_t(mesh)<model.meshes.size())
+            result[i]=model.meshes[size_t(mesh)].morphTargetNames;
+    }
+    return result;
+}
+
+// One-time asset-publication helper. It compiles a name-based semantic map
+// into the existing compact integer channel indices consumed by the cached
+// CompiledModelPoseRetarget. Unknown target names preserve target bind weight.
+// Fail on ambiguous names, incomplete source/target descriptions or invalid
+// Model morph capacities instead of silently applying wrong expressions.
+// The caller must pass the complete per-node channel names for every
+// morph-bearing mapped source/target node; zero-channel nodes use {}.
+inline bool compileNamedModelMorphRetarget(
+        const render::Model& source,const render::Model& visual,
+        const ModelMorphChannelNames& sourceNames,
+        const ModelMorphChannelNames& visualNames,
+        ModelPoseRetarget& inOut,std::string* error=nullptr) {
+    if(error)error->clear();
+    try {
+        if(sourceNames.size()!=source.nodes.size() ||
+           visualNames.size()!=visual.nodes.size() ||
+           inOut.sourceNodeForVisual.size()!=visual.nodes.size())
+            throw std::invalid_argument("morph name table / rig mapping size mismatch");
+        const auto count=[](const render::Model& model,size_t node) {
+            int result=0;
+            const int mesh=model.nodes[node].mesh;
+            if(mesh>=0 && size_t(mesh)<model.meshes.size())
+                for(const auto& primitive:model.meshes[size_t(mesh)].primitives)
+                    result=std::max(result,primitive.morphTargets);
+            return result;
+        };
+        // Transactional: never corrupt the previously authored mapping.
+        std::vector<std::array<int,render::kMaxMorphTargets>> compiled(
+            visual.nodes.size());
+        for(auto& channels:compiled)channels.fill(-1);
+        for(size_t target=0;target<visual.nodes.size();++target) {
+            const int sourceIndex=inOut.sourceNodeForVisual[target];
+            if(sourceIndex< -1 ||
+               (sourceIndex>=0 && size_t(sourceIndex)>=source.nodes.size()))
+                throw std::invalid_argument("invalid mapped morph source node");
+            if(sourceIndex<0)continue;
+            const size_t src=size_t(sourceIndex);
+            const int sourceCount=count(source,src);
+            const int targetCount=count(visual,target);
+            if(sourceCount<0 || targetCount<0 ||
+               sourceCount>render::kMaxMorphTargets ||
+               targetCount>render::kMaxMorphTargets ||
+               sourceNames[src].size()!=size_t(sourceCount) ||
+               visualNames[target].size()!=size_t(targetCount))
+                throw std::invalid_argument("incomplete morph names or channel count exceeds limit");
+            std::map<std::string,int> sourceChannel;
+            for(size_t k=0;k<sourceNames[src].size();++k) {
+                const auto& name=sourceNames[src][k];
+                if(name.empty() || !sourceChannel.emplace(name,int(k)).second)
+                    throw std::invalid_argument("empty or ambiguous source morph name");
+            }
+            std::set<std::string> seenTarget;
+            for(size_t k=0;k<visualNames[target].size();++k) {
+                const auto& name=visualNames[target][k];
+                if(name.empty() || !seenTarget.insert(name).second)
+                    throw std::invalid_argument("empty or ambiguous target morph name");
+                const auto found=sourceChannel.find(name);
+                if(found!=sourceChannel.end())
+                    compiled[target][k]=found->second;
+            }
+        }
+        ModelPoseRetarget candidate=inOut;
+        candidate.sourceMorphForVisual=std::move(compiled);
+        if(!validModelPoseRetarget(source,visual,candidate))
+            throw std::invalid_argument("semantic morph channels incompatible with rig");
+        inOut=std::move(candidate);
+        return true;
+    }catch(const std::exception& ex) {
+        if(error)*error=ex.what();
+        return false;
+    }
+}
+
+// Convenience for models carrying real glTF extras.targetNames. No
+// importer-specific JSON headers leak into the universal visual LOD API.
+inline bool compileImportedModelMorphRetarget(
+        const render::Model& source,const render::Model& visual,
+        ModelPoseRetarget& inOut,std::string* error=nullptr) {
+    return compileNamedModelMorphRetarget(
+        source,visual,importedModelMorphChannelNames(source),
+        importedModelMorphChannelNames(visual),inOut,error);
 }
 
 inline bool validModelPoseRetarget(const render::Model& source,
@@ -213,12 +323,17 @@ inline const char* compiledRetargetStatusName(
 
 struct CompiledModelPoseRetarget final {
     struct NodeStep {
+        struct MorphTransfer { int target=-1,source=-1; };
         int source=-1;
         render::float3 sourceBindT{},sourceBindS{1,1,1};
         render::quat inverseSourceBind{};
         render::float3 targetBindT{},targetBindS{1,1,1};
         render::quat targetBindR{};
         std::array<int,render::kMaxMorphTargets> morph{};
+        // Compiled sparse channel remap: no 0..kMaxMorphTargets scan per
+        // node, per actor, per draw for absent expressions.
+        std::array<MorphTransfer,render::kMaxMorphTargets> morphTransfers{};
+        size_t morphTransferCount=0;
     };
     const render::Model* sourceModel=nullptr; // identity only, never dereference until generation check
     const render::Model* visualModel=nullptr;
@@ -301,8 +416,13 @@ compileModelPoseRetarget(const render::Model& source,
         step.sourceBindS=src.s;
         const render::quat rotation=render::qnormalize(src.r);
         step.inverseSourceBind={-rotation.x,-rotation.y,-rotation.z,rotation.w};
-        if(!map.sourceMorphForVisual.empty())
+        if(!map.sourceMorphForVisual.empty()) {
             step.morph=map.sourceMorphForVisual[i];
+            for(size_t k=0;k<step.morph.size();++k)
+                if(step.morph[k]>=0)
+                    step.morphTransfers[step.morphTransferCount++]={
+                        int(k),step.morph[k]};
+        }
         ++compiled->mappedNodes;
     }
     return compiled;
@@ -486,9 +606,12 @@ inline bool retargetCompiledModelPose(
                      pose.r.x,pose.r.y,pose.r.z,pose.r.w,
                      pose.s.x,pose.s.y,pose.s.z})
             if(!std::isfinite(f))return false;
-        for(int from:step.morph)
-            if(from>=0 && (from>=render::kMaxMorphTargets ||
-                           !std::isfinite(pose.w[from])))return false;
+        for(size_t k=0;k<step.morphTransferCount;++k) {
+            const auto mapping=step.morphTransfers[k];
+            if(mapping.source<0 ||
+               mapping.source>=render::kMaxMorphTargets ||
+               !std::isfinite(pose.w[mapping.source]))return false;
+        }
     }
     // Assignment reuses the output's vector capacity from earlier draws.
     // Renderer3D consumes it before the next synchronous submitModel.
@@ -508,13 +631,9 @@ inline bool retargetCompiledModelPose(
             step.targetBindS.z*(pose.s.z/step.sourceBindS.z)};
         for(float f:{dst.t.x,dst.t.y,dst.t.z,dst.s.x,dst.s.y,dst.s.z})
             if(!std::isfinite(f))return false;
-        for(size_t k=0;k<step.morph.size();++k) {
-            const int from=step.morph[k];
-            if(from<0)continue;
-            if(from>=render::kMaxMorphTargets)return false;
-            const float value=pose.w[from];
-            if(!std::isfinite(value))return false;
-            dst.w[k]=value;
+        for(size_t k=0;k<step.morphTransferCount;++k) {
+            const auto mapping=step.morphTransfers[k];
+            dst.w[mapping.target]=pose.w[mapping.source];
         }
     }
     // worldMatrices resizes in place, preserving matrix capacity as well.

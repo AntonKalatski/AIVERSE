@@ -664,3 +664,75 @@ Real C++/CTest/GPU/visual/sanitizer/benchmark verification remains **NOT RUN**.
 Stage 157 adds a ModelView example **complete on-disk source generation replacement** while leaving the common genre-independent MotionWeave/AnimationGraph/ECS/View code unchanged. A staged native ModelAssetProvider owns all newly imported parent+child Models; the host creates new Animators bound to those Models and fresh compiled sockets against newly published source/child appearance snapshots. Valid compatible named clips preserve normalized phase via the existing `Animator::seek` API. Only after all imports/compilers succeed does ModelView publish the new scene. Failed candidates are held in a GPU-safe old-owner queue pending definitive completion. The Viewer emits precomputed poses through the same single-writer generic View pipeline.
 
 User controls: ModelView **Reload model files** (full new GPU/CPU asset generation), cached-only **Rebuild**, opt-in `--watch-model-files` / **Watch source files** polling. Retired Animator/Model/attachment owners are retained until a full GPU idle check at an advisory queue cap of eight or shutdown; not a GPU token-based asynchronous retirement API, and peak resource use can increase. Studio's Stage 156 3D preview remains separate. See [Stage 157 handoff](agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md). Native compiler/CMake/CTest/GPU Metal-Vulkan-GLES/ASan-TSan/benchmarks **NOT RUN**, per requested feature-first workflow.
+
+
+
+## Stage 158 — universal authored attachment layout shared by Studio and ModelView
+
+`view::AttachmentLayoutCodec` now supplies one genre-neutral attachment document format for parent path, real imported static child Model/socket/visibility and both full affine transforms. Legacy JSON (no matrices) uses identity; invalid or non-affine transforms reject transactionally. Both Studio and native ModelView use the shared parser/writer and `ImportedAttachmentAuthoring::childFromLayout` for identical runtime placement. Studio supports editing 3x3 basis axes and child offsets; ModelView supports per-socket position and can open its parent directly from saved JSON. The parent Animator remains the only graph/pose writer for static attachments.
+ 
+These documents are **ready for future scene/prefab serialization**, but do not yet connect to live ECS entity creation/destruction or gameplay scenes. Stage 158 GPU audit also confirms true token-complete provider retirement is unfinished: existing ModelResourceCache and image rollback shutdown depend on full device GPU idle; no arbitrary token is sufficient proof to skip that. See [Stage 158 handoff](agent-handoffs/animation-stage158-universal-attachment-layout-transform-2026-11-20.md). Native compiler/CTest, real Studio/ModelView/Metal-Vulkan-GLES, sanitizer and benchmarks **NOT RUN**.
+
+
+## Stage 159 — real presentation ECS attachment scene/prefab bridge
+
+`view::EcsAttachmentScene` provides a genre-independent authoring-to-runtime bridge from pointer-free `AttachmentLayout` JSON to actual child Entities of an **isolated presentation** `aiverse::World`. Parent remains externally owned; Root and Child components record unique instance revision, generation-aware parent Entity, published source Model epoch, slot ordering, Model path, socket and full local/child transforms. `publish` compiles all published child Model sockets and validates CPU leases BEFORE world structure changes; replacement removes only old owned child handles. `restore` rehydrates fresh child Entities, `save` preserves only authored data, `forget` releases exact owned children and `valid/prepare` fail closed on stale ECS handles. The renderer continues using ONE host-computed parent pose plus existing static attachment composition; no duplicate graph writer.
+
+Studio now uses this ECS World/bridge directly in its native attachment 3D preview and staged reimport, rather than only keeping a plain compiled vector. Full SceneLoadCoordinator/game-scene/prefab activation integration is still missing because `engine/scene` is absent from this divergent feature branch; review the peer scene agent's API before integrating. Animated child graphs, true ModelAssetProvider GPU token shutdown and advanced morph retarget remain open. See [Stage 159 handoff](agent-handoffs/animation-stage159-presentation-ecs-attachment-prefab-restore-2026-11-20.md). Native C++/CTest/Metal-Vulkan-GLES/sanitizer/failure injection **NOT RUN**.
+
+
+
+## Stage 160 — source-neutral stable child IDs and presentation scene ownership
+
+AIVERSE attachments now support optional explicit stable prefab child IDs in the shared `AttachmentLayout` JSON document (<=128 characters, unique per parent); old ordinal-only documents remain valid. Runtime ECS `SceneAttachmentChildComponent` records the authored ID, and `EcsAttachmentScene::resolveChild` revalidates parent/child generation/revision on each lookup instead of exposing a stale saved Entity index.
+
+`SceneAttachmentHost` maps native `sceneId + prefabObjectKey` to independent cosmetic presentation ECS attachment instances. It handles activation, replacement, exact owned-child removal, unload of a complete scene and pointer-free per-scene export; `prepare` still returns a HostPrecomputed graphless pose packet and ModelReadLeases. Studio reuses the adapter for its 3D preview, and ModelView retains stable IDs through JSON Save/Load. Genre-specific simulated ECS, damage and networking remain outside MotionWeave.
+
+A reviewed integration with the peer scene loader `SceneLoadCoordinator::SpawnPrefab` (branches `feature/scene-runtime-multiworld` / `feature/ecs-static-prefab-scene-integration`) is still required and NOT implemented in this animation branch. Independent animated child sources, true ModelAssetProvider GPU-token shutdown and advanced morph/retarget remain pending. [Stage 160 handoff](agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md) / [host API guide](scene-attachment-host.md). Native compiler/CTest/Metal-Vulkan-GLES/ASan-TSan/performance **NOT RUN**.
+
+
+
+## Stage 161 — independent child MotionWeave graphs, one player per source
+
+The stage implements a genre-neutral `AnimatedSceneAttachmentSources` service over the existing `MotionWeaveSourceBridge` and `stepAnimationPresentation`. Its own presentation World owns one GraphInstance for EACH animated child stable `scene/object/childId` identity. Static children remain compiled socket draws using their parent's already computed pose; an authored `animated=true` child is excluded from that static packet and requires a published external `animationGraph` and stable nonempty child `id`. All child source Model/Graph/epoch validations and parent named socket compilation run before the independent child evaluator is advanced.
+ 
+The parent pose and bone matrices place the independent child's world transform; the child supplies its own evaluated local Pose, and the returned `View::Object.graph` is reset so a generic View never evaluates it a second time. Studio's real attachment preview imports/compiles child Graph assets and steps them once in pre-draw owner update before graphless render submission. ModelView retains authoring fields but does not yet support an independent child player; it fails closed. Full native scene-loader integration, tokenized provider shutdown, advanced morph/LOD parity and actual Metal/Vulkan/GLES/CMake/CTest/ASan-TSan testing remain outstanding. [Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+
+## Stage 180 — generic compiled facial Control Rig and native IK
+
+The opt-in `<aiverselib/animation/FacialControlRig.h>` /
+`AnimationFacialControlComponent` maps exact importer-authored
+mesh-local 64-channel morph names to named expression controls, applies
+per-character half-life smoothing, and executes existing
+`render::AnimationRig` Aim/AngularLimit/IK AFTER one Graph/Animator
+pose evaluation, BEFORE final matrices. Facial controls are a separate
+presentation ECS component (do not require changing existing Graph
+parameter layouts). Invalid/re-imported rig metadata and missing
+controls fail without mutating the incoming pose. Morph-only sources
+may use MotionWeave workers; any native face IK or host callbacks are
+routed through the serial owner-thread barrier.
+
+See [facial authoring and runtime](motionweave-facial-control-rig.md) and
+[Stage 180 handoff](agent-handoffs/animation-stage180-facial-control-rig-2026-11-20.md).
+This is source implementation only: CMake/CTest, real face/glTF/FBX
+assets, Metal/Vulkan/GLES GPU parity and performance **NOT RUN**.
+
+
+## Stage 183 — native facial preview from Studio-authored JSON (source-only)
+
+`<aiverselib/animation/FacialPreviewSession.h>` exposes a reusable
+host-facing compiled expression/IK session that consumes **real**
+imported Model morph/rig signatures and the existing HTML5 Studio
+`facial-rigs/<name>.json` v1 schema. It applies after a single parent
+Animator/Graph pose and before final matrices; invalid presets or
+model revisions retain the last-good cosmetic rig or fail closed.
+`apps/modelview/main.cpp` now supports `--facial-rig <path>`,
+`--face jawOpen=0.8` and `--face-vector lookAt=2,1,3` for native
+GPU ModelView preview and project-saved-JSON hot reload.
+
+**Not yet** integrated into the embedded HTML5 Studio Scene viewport:
+`feature/studio-html5` is still separate, and the native IPC and
+Model/GPU lifetime coupling are Stage 184 work. Details:
+[Stage 183 native preview](motionweave-facial-native-preview.md) and
+[Stage 183 handoff](agent-handoffs/animation-stage183-studio-facial-native-preview-2026-11-20.md).
+No native CMake/CTest/Metal/Vulkan/GLES validation has been run.

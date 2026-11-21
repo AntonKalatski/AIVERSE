@@ -66,6 +66,7 @@ public:
             const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
             const auto* input=read.tryGetConst<AnimationInputsComponent>(e);
             const auto* hint=read.tryGetConst<AnimationWorkHintComponent>(e);
+            const auto* face=read.tryGetConst<AnimationFacialControlComponent>(e);
             GraphPlan plan{};
             if(asset && asset->graph) {
                 const auto* compiled=asset->graph.get();
@@ -76,7 +77,14 @@ public:
                 }
                 plan=it->second;
             }
-            const bool workerSafe=plan.safe &&
+            // Facial morph-only layers contain no callbacks and may run
+            // parallel. An opt-in facial IK program can invoke native
+            // AnimationRig contacts/host environment, so route it through
+            // the same serial owner-thread barrier as other callback rigs.
+            const bool facialWorkerSafe=!face || !face->enabled ||
+                !face->rig ||
+                (!face->rig->hasIk() && !face->controls.environment);
+            const bool workerSafe=plan.safe && facialWorkerSafe &&
                 (!input || !input->overrides.environment) &&
                 (!hint || !hint->mainThread);
             if(!workerSafe){unsafe_.push_back(i);continue;}

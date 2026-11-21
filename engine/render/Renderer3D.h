@@ -1519,7 +1519,7 @@ private:
         float dissolve, teamGlow;
         float lodThreshold=1; bool lodInvert=false;
         float4 outline;
-        int32_t morph;      // offset into morphData_ (8 weights), -1 = none
+        int32_t morph;      // offset into morphData_ (sparse weights + channels + count), -1 = none
         int16_t lmPage = -1;  // baked lightmap page (anim = uv2 scale / offset), -1 = none
         uint8_t gi = 0;       // 0 realtime ambient, 1 lightmap, 2 light probes
         const std::vector<Material>* paletteMaterials = nullptr;

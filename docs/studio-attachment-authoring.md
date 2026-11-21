@@ -100,3 +100,68 @@ Models/textures can temporarily occupy VRAM. `ModelAssetProvider::shutdown`
 itself still waits for GPU idle. Preview and retirement have NOT yet been
 compiled or run on Metal, Vulkan or GLES; see
 [Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
+
+
+
+## Stage 158: common attachment document with affine transforms
+
+Studio Attachments now shares exactly the same `AttachmentLayoutCodec` JSON
+format as native ModelView, including full column-major affine `local`
+(socket offset/rotation/scale) and `childWorld` (child model-local placement).
+Existing files without matrices remain valid with identity transforms. The
+editor exposes basic **Socket offset** X/Y/Z and an **Advanced affine
+transforms** section for the 3x3 basis of both local/child matrices and child
+translation. On publishing the layout, these matrices are applied through
+the generic `ImportedAttachmentAuthoring::childFromLayout`, not just
+serialized as notes. Invalid/non-affine values fail before replacing the
+last-good authored document. See [the shared attachment JSON format](attachment-layout.md)
+and [Stage 158 handoff](agent-handoffs/animation-stage158-universal-attachment-layout-transform-2026-11-20.md).
+Actual Studio GUI, native compile/CTest and GPU visual/lifetime checks **NOT RUN**.
+
+
+
+## Stage 160 — stable child IDs and scene lifecycle preview
+
+Studio attachments now let authors edit an optional **Prefab child ID**
+alongside child source and named socket. It is saved/loaded through the
+shared `AttachmentLayoutCodec`; duplicates are rejected. Each Studio
+preview session uses the real genre-neutral `SceneAttachmentHost`
+bound to an independent cosmetic ECS World, with stable preview key
+`{1,"preview"}`. The preview prepares visual children only after
+validating the current ECS root/child generations. Old session teardown
+calls the host's `clear()` before retiring provider-owned Models.
+
+The same host API is ready for adapter use at scene activation/unload
+barriers, but it is NOT yet bound to `SceneLoadCoordinator` from other
+development branches and does NOT mutate authoritative game ECS state.
+See [SceneAttachmentHost guide](scene-attachment-host.md) and
+[Stage 160 handoff](agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md).
+Native Studio/Metal/Vulkan/GLES compiler and renderer validation NOT RUN.
+
+
+
+## Stage 161 — independent child Graph authoring in Studio
+
+For any child use **Independent animation** to switch from a static
+parent-socket Model draw to a separately evaluated MotionWeave child.
+Provide a unique **Prefab child ID**, the actual imported **Child Model**
+path, its named source **Socket**, and **Child AnimationGraph file**
+(project-relative). Studio's explicit Reimport & Publish stages the
+imported child Model and compiles its Graph through the shared
+AppearanceAssetRegistry. Invalid Graph assets reject the staged
+session, leaving the prior published configuration intact.
+
+The child is still a real presentation ECS Entity but NOT included
+in its parent's static socket draw. On every preview frame the Studio's
+`EditorWindow::update` advances its independent child MotionWeave
+Graph once, then the offscreen Viewport submits graphless precomputed
+child skinning poses placed on the parent's animated bone. The parent
+has its own separate Animator/clip sampler. This is not a new gameplay
+ECS world or a second writer of the same Graph.
+
+ModelView currently keeps these fields in JSON but cannot display
+independently animated children; it rejects them. Rich child graph
+timeline/montage/IK/morph authoring and GPU-fence-safe full provider
+shutdown remain unfinished. See [animated child guide](animated-scene-attachments.md)
+and [Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+Native compiler/CTest/real Metal/Vulkan/GLES previews NOT RUN.

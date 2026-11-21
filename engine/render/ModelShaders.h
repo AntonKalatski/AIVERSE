@@ -29,8 +29,9 @@
 //                 vec4 light (PBR: SSS color.rgb, thin transmission.w; unlit: fixed light direction.xyz and enabled.w);
 //   U3 skin:      SKINNED vec4 joints[240] (3 rows of a 3x4 matrix per joint);
 //                 BAKED   vec4 palette[20] (palette slot -> skin joint, 4 per vec4)
-//   U4 morph:     vec4 w[2] (8 weights); vec4 info (first texel, first vertex, vertex count, targets);
-//                 vec4 info2 (texture width)
+//   U4 morph:     vec4 w[16] (up to 64 active weights), vec4 channel[16] (source IDs);
+//                 vec4 info (first texel, first vertex, vertex count, original targets);
+//                 vec4 info2 (texture width, active channels, unused, unused)
 // Textures: tex0 shadow map, tex1 base colour (sRGB), tex2 metallic-roughness (G rough, B metal),
 //           tex3 normal, tex4 occlusion (R), tex5 emissive (sRGB), tex6 team mask (R),
 //           tex7 baked joints (RGBA32F), tex8 morph deltas (RGBA32F)
@@ -56,7 +57,7 @@ namespace aiverse::render::shaders {
     "layout(std140) uniform U3 { vec4 u_materials[128]; };\n" \
     "#endif\n" \
     "#if defined(MORPH)\n" \
-    "layout(std140) uniform U4 { vec4 u_morphW[2]; vec4 u_morphInfo; vec4 u_morphInfo2; };\n" \
+    "layout(std140) uniform U4 { vec4 u_morphW[16]; vec4 u_morphChannel[16]; vec4 u_morphInfo; vec4 u_morphInfo2; };\n" \
     "#elif defined(LIGHTMAP) || defined(PROBES)\n" \
     AIVERSE_GLSL_GI_BLOCK \
     "#endif\n"
@@ -74,11 +75,13 @@ namespace aiverse::render::shaders {
     "void deform(Inst I, inout vec4 p, inout vec3 n, inout vec3 t) {\n" \
     "#if defined(MORPH)\n" \
     "    int vid = gl_VertexID - int(u_morphInfo.y), cnt = int(u_morphInfo.z), nt = int(u_morphInfo.w), base = int(u_morphInfo.x);\n" \
-    "    for (int k = 0; k < 8; ++k) {\n" \
-    "        if (k >= nt) break;\n" \
+    "    for (int k = 0; k < 64; ++k) {\n" \
+    "        if (k >= int(u_morphInfo2.y)) break;\n" \
     "        float wt = u_morphW[k / 4][k % 4];\n" \
+    "        int channel = int(u_morphChannel[k / 4][k % 4] + 0.5);\n" \
+    "        if (channel < 0 || channel >= nt) continue;\n" \
     "        if (wt == 0.0) continue;\n" \
-    "        int i = base + (k * cnt + vid) * 2;\n" \
+    "        int i = base + (channel * cnt + vid) * 2;\n" \
     "        p.xyz += wt * morphTexel(i).xyz;\n" \
     "        n += wt * morphTexel(i + 1).xyz;\n" \
     "    }\n" \
@@ -530,7 +533,7 @@ void main() {
     AIVERSE_MSL_FRAME \
     "struct MU2 { float4 base; float4 emissive; float4 pbr; float4 misc; float4 uv0; float4 uv1; float4 light; float4 reveal; float4 revealAxis; };\n" \
     "struct MU3 { float4 v[240]; };\n" \
-    "struct MU4 { float4 w[2]; float4 info; float4 info2; };\n" \
+    "struct MU4 { float4 w[16]; float4 channel[16]; float4 info; float4 info2; };\n" \
     AIVERSE_MSL_GI_BLOCK
 
 // Vertex inputs, argument list and deformation shared by the colour and shadow vertex functions.
@@ -580,11 +583,13 @@ void main() {
     "#if defined(MORPH)\n" \
     "    int w = int(mo.info2.x), cnt = int(mo.info.z), nt = int(mo.info.w), base = int(mo.info.x);\n" \
     "    int lv = int(vid) - int(mo.info.y);\n" \
-    "    for (int k = 0; k < 8; ++k) {\n" \
-    "        if (k >= nt) break;\n" \
+    "    for (int k = 0; k < 64; ++k) {\n" \
+    "        if (k >= int(mo.info2.y)) break;\n" \
     "        float wt = mo.w[k / 4][k % 4];\n" \
+    "        int channel = int(mo.channel[k / 4][k % 4] + 0.5);\n" \
+    "        if (channel < 0 || channel >= nt) continue;\n" \
     "        if (wt == 0.0) continue;\n" \
-    "        int i = base + (k * cnt + lv) * 2;\n" \
+    "        int i = base + (channel * cnt + lv) * 2;\n" \
     "        d.p.xyz += wt * tex8.read(uint2(i % w, i / w)).xyz;\n" \
     "        d.n += wt * tex8.read(uint2((i + 1) % w, (i + 1) / w)).xyz;\n" \
     "    }\n" \
