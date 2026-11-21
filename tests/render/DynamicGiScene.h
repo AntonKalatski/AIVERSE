@@ -123,8 +123,17 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
         float3 focus{0,0,0};
         if(s.computeGi.config().scroll && scrollAway<40){focus={away,0,0};++scrollAway;}
         s.computeGi.updateFrame(focus);
-        // Scrolling presents while probes update; the pixel check needs them traced.
-        if(!s.computeGi.canPresent() || s.computeGi.pendingProbes() || (scrollAway<40 && s.computeGi.config().scroll)){
+        // Scrolling presents while probes update; the pixel check needs them
+        // traced and every cascade back at its home lattice (the return scroll
+        // waits for the GPU to finish with the atlas, a frame or more later).
+        bool home=true;
+        for(int k=0;k<s.computeGi.cascadeCount();++k) {
+            const auto now=s.computeGi.cascade(k).origin;
+            const auto want=GiMainGpuBridge::cascadeConfig(s.computeGi.config(),k).origin;
+            home &= now.x==want.x && now.y==want.y && now.z==want.z;
+        }
+        if(!s.computeGi.canPresent() || s.computeGi.pendingProbes() || !home ||
+           (scrollAway<40 && s.computeGi.config().scroll)){
             waitFrame();return;}
         if(s.computeGi.config().scroll && s.gridProbe==test && s.frame==0) {
             const auto st=s.computeGi.scrollStats();
