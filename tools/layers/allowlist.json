@@ -1,7 +1,4 @@
 {
- "engine/meta/LiveOpsData.cpp -> libraries/include/aiverselib/Graphs.h": "L1",
- "engine/meta/PolicyLoot.cpp -> libraries/include/aiverselib/systems/Loot.h": "L1",
- "engine/net/authority/Session.h -> libraries/include/aiverselib/net/SnapshotDelta.h": "L1",
  "engine/net/authority/Session.h -> modules/fps/FpsModule.h": "G4",
  "engine/net/city/CityMirror.cpp -> modules/rts/RtsCommerce.h": "G3",
  "engine/net/city/CityMirror.cpp -> modules/rts/RtsModule.h": "G3",
@@ -13,7 +10,6 @@
  "engine/net/city/CityNet.cpp -> modules/rts/RtsTopDown.h": "G3",
  "engine/net/city/CityNet.cpp -> modules/rts/RtsTraffic.h": "G3",
  "engine/render/NereidWaterRenderer.h -> libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h": "L1",
- "engine/render/graph/ShaderGraph.cpp -> libraries/include/aiverselib/Graphs.h": "L1",
  "engine/view/View.h -> libraries/include/aiverselib/animation/AnimationBudgetPolicy.h": "L1",
  "engine/view/View.h -> libraries/include/aiverselib/animation/MotionWeaveSourceBridge.h": "L1",
  "engine/view/View.h -> libraries/include/aiverselib/motionweave/MotionWeave.h": "L1",
