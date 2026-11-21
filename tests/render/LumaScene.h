@@ -16,7 +16,15 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
         std::vector<LumaLight> lights;
         if(test!=2) for(uint64_t i=1;i<=128;++i) {
             LumaLight light;light.key=i;light.position={0,0,1};light.radius=2;
-            light.intensity=4.0f/128;light.color={1,.5f,.25f};lights.push_back(light);
+            light.intensity=4.0f/128;light.color={1,.5f,.25f};
+            // Case 10: sphere light whose emitter (r=1.2) contains the receiver:
+            // falloff evaluated at the source radius, not the centre distance.
+            if(test==10){light.kind=LumaLightKind::Sphere;light.sourceRadius=1.2f;}
+            // Case 11: tube along X centred 3 m away; only its closest axis
+            // point (0,0,1) is in range, so a point light there would be black.
+            if(test==11){light.kind=LumaLightKind::Tube;light.position={3,0,1};
+                         light.direction={1,0,0};light.halfLength=3;}
+            lights.push_back(light);
         }
         s.lumaSources.publish(std::move(lights));
         LumaClusterConfig config;config.origin={-4,-4,-4};config.nx=config.ny=config.nz=1;
@@ -62,7 +70,9 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
         // At N=L=V, radius=2, distance=1: attenuation=.28125.
         // Balanced Lambert reflectance = incident/pi. GGX roughness=1:
         // diffuse=(1-F0)/pi, specular=F0/(4*pi), F0=.04.
-        const float energy=((test==0||test==7||test==9)?1.0f:test==5?.97f:test==8?.25f:0.0f)*4*.28125f/3.14159265358979323846f;
+        // Case 10: d2 clamped to 1.2^2: (1-1.44/4)^2/(1+1.44) instead of .28125.
+        const float atten=test==10?.4096f/2.44f:.28125f;
+        const float energy=((test==0||test==7||test==9||test==10||test==11)?1.0f:test==5?.97f:test==8?.25f:0.0f)*4*atten/3.14159265358979323846f;
         auto encode=[](float v){return v<=.0031308f?12.92f*v:1.055f*std::pow(v,1/2.4f)-.055f;};
         const float3 expected={encode(energy),encode(energy*.5f),encode(energy*.25f)};
         auto receive=[&s,test,expected,stateOk](int cw,int ch,std::vector<uint8_t> px) {
@@ -79,7 +89,7 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
             bool ok=stateOk;for(int c=0;c<3;++c)ok &= std::abs(actual[c]-target[c])<5/255.0f;
             std::printf("Luma GPU %d: RGB %.5f %.5f %.5f expected %.5f %.5f %.5f state=%d %s\n",
                 test,actual[0],actual[1],actual[2],target[0],target[1],target[2],stateOk,ok?"PASS":"FAIL");
-            s.failed |= !ok;++s.probeIndex;s.frame=0;if(s.probeIndex==10)s.captured=true;
+            s.failed |= !ok;++s.probeIndex;s.frame=0;if(s.probeIndex==12)s.captured=true;
         };
         if(s.readOutput)s.readOutput(receive);else d.captureNextFrame(receive);
     }

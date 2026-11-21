@@ -66,13 +66,23 @@ uint candidate(uint k) {
     uint index=p.dims.x*p.dims.y*p.dims.z+k/4u;
     return cellData[index][k%4u];
 }
+// Kinds 0 point, 1 spot, 2 sphere, 3 tube (same as LumaWeaveMetalCommon.h).
+vec3 lumaLightPoint(LumaLight l,vec3 receiver) {
+    vec3 c=l.positionRadius.xyz;
+    if(l.identity.z!=3u)return c;
+    float h=l.directionCone.w;
+    return c+l.directionCone.xyz*clamp(dot(receiver-c,l.directionCone.xyz),-h,h);
+}
+float lumaSourceRadius(LumaLight l) { return l.identity.z>=2u?l.settings.w:0.0; }
 vec3 directUnshadowed(LumaLight l,vec3 receiver,vec3 normal) {
-    vec3 toLight=l.positionRadius.xyz-receiver;
+    vec3 toLight=lumaLightPoint(l,receiver)-receiver;
     float d2=dot(toLight,toLight);
     float radius=l.positionRadius.w;
     if(d2<=0.0001 || d2>=radius*radius || l.colorIntensity.w<=0.0)return vec3(0.0);
     float d=sqrt(d2);
     vec3 L=toLight/d;
+    float sr=lumaSourceRadius(l);
+    d2=max(d2,sr*sr);
     float ndl=max(0.0,dot(normal,L));
     if(ndl==0.0)return vec3(0.0);
     float angular=1.0;
@@ -174,7 +184,7 @@ layout(set=0,binding=7) uniform sampler2D receiverDepth;
 vec3 lumaPbrReflected(LumaLight l,vec3 q,vec3 n,vec3 v,vec3 base,float metallic,float rough) {
     vec3 cosineRadiance=directUnshadowed(l,q,n);
     if(all(lessThanEqual(cosineRadiance,vec3(0.0))))return vec3(0.0);
-    vec3 toLight=l.positionRadius.xyz-q;
+    vec3 toLight=lumaLightPoint(l,q)-q;
     float dist2=dot(toLight,toLight);
     if(dist2<=0.0001)return vec3(0.0);
     vec3 L=toLight*inversesqrt(dist2);
@@ -186,9 +196,14 @@ vec3 lumaPbrReflected(LumaLight l,vec3 q,vec3 n,vec3 v,vec3 base,float metallic,
     vec3 H=halfVector*inversesqrt(h2);
     float ndh=max(dot(n,H),0.0),vdh=max(dot(v,H),0.0);
     float alpha=max(0.045,rough);
+    // Area source: widen the lobe by its angular size and keep its energy.
+    float sr=lumaSourceRadius(l);
+    float widened=clamp(alpha+sr*inversesqrt(dist2)*0.5,0.045,1.0);
+    float energy=(alpha*alpha)/(widened*widened);
+    alpha=widened;
     float a=alpha*alpha,a2=a*a;
     float d=ndh*ndh*(a2-1.0)+1.0;
-    float D=a2/(3.141592653589793*d*d);
+    float D=energy*a2/(3.141592653589793*d*d);
     float k=(alpha+1.0)*(alpha+1.0)*0.125;
     float G=(ndl/(ndl*(1.0-k)+k))*(ndv/(ndv*(1.0-k)+k));
     vec3 F0=mix(vec3(0.04),base,metallic);
@@ -261,7 +276,7 @@ void main() {
         bool blocked=false;
         if(selected.settings.z>0.5 && p.control.x!=0u) {
             vec3 start=world+normal*0.02;
-            vec3 ray=selected.positionRadius.xyz-start;
+            vec3 ray=lumaLightPoint(selected,start)-start;
             float distance=length(ray);
             if(distance>0.05) {
                 float limit=distance-0.03;

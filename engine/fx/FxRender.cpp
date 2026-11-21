@@ -598,6 +598,7 @@ void ParticleSystem::collectLights(std::vector<FxPointLight>& out, int maxLights
         float4 pc = I.colorNow(p);
         FxPointLight fl;
         fl.pos = p.pos;
+        fl.uid = p.uid;
         fl.color = l.useParticleColor ? float3{l.color.x * pc.x, l.color.y * pc.y, l.color.z * pc.z} : float3{l.color.x, l.color.y, l.color.z};
         fl.radius = l.radius * p.scale * (l.sizeAffectsRadius ? p.size * er.size[li] / p.scale : 1.0f);
         fl.intensity = l.intensity * (l.alphaAffectsIntensity ? pc.w : 1.0f);

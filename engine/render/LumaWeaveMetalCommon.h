@@ -16,14 +16,29 @@
     "    uint4 limits;  // sources, fast references, receiver count, samples per receiver\n" \
     "    uint4 control; // BVH node count, RNG frame seed, texture width, reserved\n" \
     "};\n" \
+    "// Kinds 0 point, 1 spot, 2 sphere, 3 tube. Area lights use the\n" \
+    "// representative point: the tube's closest axis point (a sphere's\n" \
+    "// diffuse irradiance equals its centre's); settings.w = source radius\n" \
+    "// keeps the falloff finite inside the emitter.\n" \
+    "static float3 lumaLightPoint(LumaLight l,float3 receiver) {\n" \
+    "    float3 c=l.positionRadius.xyz;\n" \
+    "    if(l.identity.z!=3u)return c;\n" \
+    "    float h=l.directionCone.w;\n" \
+    "    return c+l.directionCone.xyz*clamp(dot(receiver-c,l.directionCone.xyz),-h,h);\n" \
+    "}\n" \
+    "static float lumaSourceRadius(LumaLight l) {\n" \
+    "    return l.identity.z>=2u?l.settings.w:0.0f;\n" \
+    "}\n" \
     "static float3 directUnshadowed(LumaLight l,float3 receiver,float3 normal) {\n" \
-    "    float3 toLight=l.positionRadius.xyz-receiver;\n" \
+    "    float3 toLight=lumaLightPoint(l,receiver)-receiver;\n" \
     "    float d2=dot(toLight,toLight);\n" \
     "    float radius=l.positionRadius.w;\n" \
     "    if(d2<=.0001f || d2>=radius*radius || l.colorIntensity.w<=0.0f)\n" \
     "        return float3(0.0);\n" \
     "    float d=sqrt(d2);\n" \
     "    float3 L=toLight/d;\n" \
+    "    float sr=lumaSourceRadius(l);\n" \
+    "    d2=max(d2,sr*sr);\n" \
     "    float ndl=max(0.0f,dot(normal,L));\n" \
     "    if(ndl==0.0f)return float3(0.0);\n" \
     "    float angular=1.0f;\n" \

@@ -42,6 +42,11 @@ struct RenderLightingRuntime {
             if(!indirect->attach(renderer))throw std::runtime_error("GI viewport binding rejected");
         }
     }
+    // Per-frame dynamic direct sources (particles, effects; fx/FxLumaBridge.h).
+    // False when Luma is not shading: keep adding them to the LightSystem.
+    bool setDynamicLights(std::vector<LumaLight> lights) {
+        return direct && direct->setDynamicLights(std::move(lights));
+    }
     PostProcess* pipeline(PostProcess& downstream) {
         return direct && direct->enabled ? direct->pipeline.get() : &downstream;
     }
