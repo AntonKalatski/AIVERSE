@@ -87,7 +87,8 @@ if [ $BUILD = 2 ]; then
   for c in "$HOME/.aiverse/toolchains/android-sdk" "$HOME/Library/Android/sdk"; do
     [ -z "$ADB" ] && [ -x "$c/platform-tools/adb" ] && { SDK="$c"; ADB="$c/platform-tools/adb"; }; done
 else
-  APK="$(find "$APK_DIR" -maxdepth 3 -name '*-release.apk' -not -path '*/.temp/*' | head -1)"
+  # the newest APK: the full build's, or the --fast one when it was built later
+  APK="$(ls -t "$APK_DIR"/android/*-release.apk "$GP"app/build/outputs/apk/release/app-release.apk 2>/dev/null | head -1)"
 fi
 [ -n "$APK" ] || { say "FAIL: нет APK в $APK_DIR"; exit 1; }
 [ -x "$ADB" ] || { say "FAIL: adb не найден"; exit 1; }
@@ -126,6 +127,7 @@ run() {
   local th0="$(thermal)" bt0="$(battemp)"
   A logcat -c; A shell am start -W -n "$ACT" > /dev/null
   local t=0 res=""
+  [ -f "$OUT/abort" ] && { rm -f "$OUT/abort"; say "aborted"; A shell am force-stop "$PKG"; clearprops; exit 3; }
   while [ $t -lt $((FRAMES/20 + 150)) ]; do
     sleep 2; t=$((t+2))
     res="$(A logcat -d -s AIVERSE:I | grep -m1 '\[perf\] summary')"
