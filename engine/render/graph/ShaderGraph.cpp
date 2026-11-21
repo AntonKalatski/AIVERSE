@@ -72,8 +72,18 @@ Program compile(const Json& g, const std::string& expected) {
             }
         }
     }
+    // Default 128 nodes. Layered material graphs (Terra detail with
+    // anti-tiling) may opt into up to 192, like the material sampleBudget.
+    size_t nodeBudget=128;
+    if(g.has("nodeBudget")) {
+        const auto& budget=g["nodeBudget"];
+        if(p.domain!="material" || !budget.isNumber() ||
+           budget.toDouble()!=budget.integer() || budget.integer()<1 || budget.integer()>192)
+            fail("nodeBudget must be an integer 1..192 for material graphs only");
+        nodeBudget=size_t(budget.integer());
+    }
     const auto& ns = g["nodes"];
-    if (!ns.isArray() || ns.size() == 0 || ns.size() > 128) fail("expected 1..128 nodes");
+    if (!ns.isArray() || ns.size() == 0 || ns.size() > nodeBudget) fail("expected 1.."+std::to_string(nodeBudget)+" nodes");
     std::map<std::string,size_t> ids;
     for (size_t i=0;i<ns.size();++i) {
         const auto& n=ns[i]; const auto id=n.getStr("id");

@@ -93,6 +93,15 @@ layer below the opaque texture;0 disables its influence. Actual surface alpha1.
 No height/erosion authority changes. World-space lattice noise replaces broad
 sinusoidal cosmetic bands in the offline bake.
 
+Anti-tiling (default on): grass and sand take a second detail lookup rotated
+~53 degrees and scaled 1.37x, mixed by world gradient noise (period 1.7x the
+detail size), so the 4m repeat never lines up; a two-octave world brightness
+variation (23m/7m, `macro` 0..0.5, default 0.18) breaks the large-scale
+uniformity. Both are procedural: at most 16 samples, extra lookups only while
+the budget allows (secondary sand graphs get one). Material graphs may now set
+`nodeBudget` 1..192 (default 128; postfx/particle cannot); the builder emits
+it. Layer weights stay bilinear from the weight mask.
+
 Generated material uses existing native Shader Graph: four independent texture
 bindings and13 samples, <=128nodes. New explicit material-only sampleBudget1..16
 keeps the default limit8 unchanged; postfx/particle cannot opt into this budget.

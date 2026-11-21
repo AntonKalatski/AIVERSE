@@ -31,6 +31,17 @@ else()
 endif()
 message(STATUS "AIVERSE platform: ${AIVERSE_PLATFORM}")
 
+# Web Release / MinSizeRel: optimize for download size and link-time code removal across all libraries.
+# Measured on skirmish (2026-11-21): index.wasm 14.95 MB -> 8.34 MB (brotli 3.50 -> 2.41 MB). Applied before
+# any target so engine, third-party and client objects share the LTO format. OFF restores -O3 without LTO.
+if(EMSCRIPTEN)
+    option(AIVERSE_WEB_OPTIMIZE_SIZE "Web Release: -Oz and LTO" ON)
+    if(AIVERSE_WEB_OPTIMIZE_SIZE)
+        add_compile_options("$<$<CONFIG:Release,MinSizeRel>:-Oz>" "$<$<CONFIG:Release,MinSizeRel>:-flto>")
+        add_link_options("$<$<CONFIG:Release,MinSizeRel>:-Oz>" "$<$<CONFIG:Release,MinSizeRel>:-flto>")
+    endif()
+endif()
+
 set(AIVERSE_DESKTOP OFF)
 if(AIVERSE_PLATFORM MATCHES "^(macos|windows|linux)$")
     set(AIVERSE_DESKTOP ON)
@@ -265,9 +276,30 @@ include(modules/rts/native/Build.cmake)
 file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsMech*.cpp)
 target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} modules/rts/RtsSave.cpp modules/rts/RtsCampaign.cpp   # + save states, campaigns
     modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on RtsModule
+# Optional simulation systems of packaged clients (packaging.engineModules, tools/aiversebuild).
+# A system that runs only when its rules block is present can be left out: OFF compiles the adapter
+# `stub` (modules/rts/disabled/) instead of its sources; the adapter keeps the system inactive and
+# makes rules that need it fail with a readable error. Packaged clients only - the editor, tests,
+# headless runner, servers and HTML5 Studio always build every system.
+function(aiverse_game_module var description stub)
+    option(${var} "${description}" ON)
+    if(${var})
+        target_sources(aiverse_game PRIVATE ${ARGN})
+    else()
+        if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_HEADLESS OR AIVERSE_BUILD_SERVER OR AIVERSE_BUILD_STUDIO_HTML5)
+            message(FATAL_ERROR "${var}=OFF is for packaged clients only; turn off the editor, tests, headless runner, server and HTML5 Studio")
+        endif()
+        target_sources(aiverse_game PRIVATE ${stub})
+    endif()
+endfunction()
+
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
-target_sources(aiverse_game PRIVATE ${AIVERSE_BWAI_SOURCES})
+# RtsBwAISim.cpp is simulation code every game runs (hypnotised sends, per point counters).
+list(FILTER AIVERSE_BWAI_SOURCES EXCLUDE REGEX "RtsBwAISim\\.cpp$")
+target_sources(aiverse_game PRIVATE modules/rts/RtsBwAISim.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
+    modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
 # Localization: string tables, plurals, language choice (presentation only, no sim dependency).
 # RtsLocalize maps RTS data (types, resources, maps...) to string keys.
@@ -1447,12 +1479,15 @@ function(aiverse_package_app target)
         set_target_properties(${target} PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
         if(AIVERSE_CONTENT_PACK)
             target_link_options(${target} PRIVATE "--preload-file=${AIVERSE_CONTENT_PACK}@/content/content.rpak")
+            # index.data is written at link time: relink when only the content pack changed.
+            set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${AIVERSE_CONTENT_PACK}")
         else()
             target_link_options(${target} PRIVATE
                 "--preload-file=${AIVERSE_CONTENT_DIR}@/content"
                 "--preload-file=${AIVERSE_ENGINE_ASSETS}@/content/engine")
         endif()
         target_link_options(${target} PRIVATE "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/platform/web/shell.html")
+        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/platform/web/shell.html")
     elseif(AIVERSE_PLATFORM STREQUAL "windows" OR AIVERSE_PLATFORM STREQUAL "linux")
         set_target_properties(${target} PROPERTIES OUTPUT_NAME "${AIVERSE_GAME_EXECUTABLE}")
         if(WIN32)
@@ -1473,8 +1508,34 @@ function(aiverse_package_app target)
     endif()
 endfunction()
 
+# AIVERSE_SCENE_CLIENT=ON (aiversebuild: game.json "module": "scene" or no "module"): the packaged
+# client is apps/client/SceneMain.cpp on the platform runtime only - no simulation, renderer, UI,
+# scripting or audio. AIVERSE_GAME_CLIENT_TARGETS lists the targets that receive the GameClient
+# sources and libraries below; it is empty for the scene client.
+option(AIVERSE_SCENE_CLIENT "Package the minimal scene client instead of the game client" OFF)
+if(AIVERSE_SCENE_CLIENT AND (AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_STUDIO_HTML5))
+    message(FATAL_ERROR "AIVERSE_SCENE_CLIENT=ON is for packaged clients only; turn off the editor, tests and HTML5 Studio")
+endif()
+if(AIVERSE_SCENE_CLIENT)
+    set(AIVERSE_GAME_CLIENT_TARGETS "")
+    set(_aiverse_client_entry apps/client/SceneMain.cpp)
+else()
+    set(AIVERSE_GAME_CLIENT_TARGETS aiverse_client main)
+    set(_aiverse_client_entry apps/client/main.cpp)
+endif()
 if(AIVERSE_BUILD_CLIENT)
-    if(AIVERSE_PLATFORM STREQUAL "android")
+    if(AIVERSE_SCENE_CLIENT AND AIVERSE_PLATFORM STREQUAL "android")
+        add_library(main SHARED ${_aiverse_client_entry})
+        target_link_libraries(main PRIVATE aiverse_client_runtime)
+        set_target_properties(main PROPERTIES LINK_FLAGS "-u ANativeActivity_onCreate")
+        aiverse_package_notices(main)
+        set(AIVERSE_CLIENT_TARGET main)
+    elseif(AIVERSE_SCENE_CLIENT)
+        add_executable(aiverse_client ${_aiverse_client_entry})
+        target_link_libraries(aiverse_client PRIVATE aiverse_client_runtime)
+        aiverse_package_app(aiverse_client)
+        set(AIVERSE_CLIENT_TARGET aiverse_client)
+    elseif(AIVERSE_PLATFORM STREQUAL "android")
         add_library(main SHARED apps/client/main.cpp)
         target_link_libraries(main PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
         target_link_libraries(main PRIVATE aiverse_game_audio)
@@ -1559,6 +1620,7 @@ if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
     apps/editor/core/SimTools.cpp apps/editor/core/ScenarioOps.cpp apps/editor/core/SchemaOps.cpp apps/editor/core/PruneOps.cpp apps/editor/core/CampaignOps.cpp apps/editor/core/StrategicOps.cpp
     apps/editor/core/ToolchainOps.cpp apps/editor/core/WorldInspect.cpp)   # scenario_run, rules_lint, rules_schema keys
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_game)
+    target_link_libraries(aiverse_editor_core PUBLIC AIVERSE::lib_nereid_water)   # erosion zone ops (NereidErosion soils)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_i18n)   # editor messages (editorText)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_postfx_data)   # postfx_* ops (postfx agent)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PrismaOps.cpp)
@@ -1905,7 +1967,7 @@ add_library(aiverse_ui STATIC engine/ui/UiLayer.cpp engine/ui/UiRender.cpp engin
 target_include_directories(aiverse_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
 target_link_libraries(aiverse_ui PUBLIC aiverse_rmlui aiverse_rmlui_lua aiverse_lua aiverse_engine)
 option(AIVERSE_CLIENT_WITH_FX "Include SpectraFX particles in packaged clients" ON)
-foreach(t aiverse_client main)
+foreach(t ${AIVERSE_GAME_CLIENT_TARGETS})
     if(TARGET ${t})
         target_sources(${t} PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
         target_link_libraries(${t} PRIVATE aiverse_ui aiverse_net)
@@ -1924,7 +1986,9 @@ endforeach()
 # ---------------------------------------------------------------------------
 target_sources(aiverse_game PRIVATE modules/rts/RtsTiles.cpp)
 # terrain / map generator (agent-terrain-gen): integer noise, erosion, biomes, fair starts, presets, planets
-target_sources(aiverse_game PRIVATE modules/rts/gen/GenNoise.cpp modules/rts/gen/GenField.cpp modules/rts/gen/GenTerrain.cpp
+aiverse_game_module(AIVERSE_GAME_WITH_MAPGEN "Include the map generator (map \"generate\" blocks)"
+    modules/rts/disabled/MapGen.cpp
+    modules/rts/gen/GenNoise.cpp modules/rts/gen/GenField.cpp modules/rts/gen/GenTerrain.cpp
     modules/rts/gen/GenContent.cpp modules/rts/gen/GenCity.cpp modules/rts/gen/GenPlanet.cpp modules/rts/gen/GenWorld.cpp modules/rts/gen/MapGen.cpp)
 add_library(aiverse_render2d STATIC engine/render/SpriteBatch.cpp engine/render/TextureCache.cpp)
 target_include_directories(aiverse_render2d PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
@@ -1944,7 +2008,7 @@ endif()
 add_library(aiverse_atlas STATIC engine/atlas/AtlasFormat.cpp engine/atlas/ImageDecode.cpp engine/atlas/TextureLibrary.cpp)
 target_include_directories(aiverse_atlas PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
 target_link_libraries(aiverse_atlas PUBLIC aiverse_engine)
-foreach(t aiverse_client main)
+foreach(t ${AIVERSE_GAME_CLIENT_TARGETS})
     if(TARGET ${t})
         target_link_libraries(${t} PRIVATE aiverse_atlas)
     endif()
@@ -2022,7 +2086,7 @@ target_include_directories(aiverse_splash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_splash PUBLIC aiverse_engine aiverse_atlas)
 # aiversebuild: window colour before the first frame (0xRRGGBB from game.json splash.background)
 set(AIVERSE_SPLASH_BACKGROUND "" CACHE STRING "Window background before the first frame, 0xRRGGBB (set by aiversebuild)")
-foreach(t aiverse_client main)
+foreach(t ${AIVERSE_GAME_CLIENT_TARGETS})
     if(TARGET ${t})
         target_sources(${t} PRIVATE apps/client/ClientSplash.cpp apps/client/ClientLoading.cpp)
         target_link_libraries(${t} PRIVATE aiverse_splash)
@@ -2123,14 +2187,19 @@ endif()
 target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
 target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp modules/rts/RtsDrivingApi.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
+target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
+aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
+    modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
+    modules/rts/disabled/Career.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsSensors.cpp modules/rts/RtsFieldOps.cpp)   # radar / sonar / jammers, field operations
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsProgression.cpp modules/rts/RtsProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
 # boss encounters (agent-df-encounters-glue): rules "encounters" over the boss-encounters library package (docs/encounters.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules \"encounters\")"
+    modules/rts/disabled/Encounters.cpp modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsMapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
@@ -2140,20 +2209,12 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsEnv.cpp modules/rts/RtsEnvDat
 target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
+aiverse_game_module(AIVERSE_GAME_WITH_ARSENAL "Include hero weapons (rules \"arsenal\")"
+    modules/rts/disabled/Arsenal.cpp modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
-# AIVERSE_GAME_WITH_TRAFFIC=OFF (packaging.engineModules without "traffic") compiles a small adapter instead:
-# rules with an enabled "traffic" block then fail at match start with a readable error. Packaged clients only:
-# the editor, tests, headless runner and servers keep the full simulation.
-option(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation" ON)
-if(AIVERSE_GAME_WITH_TRAFFIC)
-    target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
-else()
-    if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_HEADLESS OR AIVERSE_BUILD_SERVER OR AIVERSE_BUILD_STUDIO_HTML5)
-        message(FATAL_ERROR "AIVERSE_GAME_WITH_TRAFFIC=OFF is for packaged clients only; turn off the editor, tests, headless runner and server")
-    endif()
-    target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficDisabled.cpp)
-endif()
+aiverse_game_module(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation"
+    modules/rts/disabled/Traffic.cpp
+    modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficRoads.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_roads)
@@ -2178,7 +2239,7 @@ target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp modules
 
 # Shared region gesture input; gameplay remains in project Lua ability effects.
 option(AIVERSE_CLIENT_WITH_CITY "Include persistent city server client in packaged clients" ON)
-foreach(t aiverse_client main)
+foreach(t ${AIVERSE_GAME_CLIENT_TARGETS})
     if(TARGET ${t})
         target_sources(${t} PRIVATE apps/client/ClientRegionInput.cpp)
         target_sources(${t} PRIVATE apps/client/ClientTopDown.cpp)   # top-down heroes (agent-topdown-control)
@@ -2302,7 +2363,7 @@ set(AIVERSE_CLIENT_CORE_SOURCES apps/client/ClientLoading.cpp apps/client/GameCl
     apps/client/ClientBaked.cpp   # ClientBaked: the map's baked lighting (agent-lightbake)
     apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp
     apps/client/ClientGameActionsLua.cpp)   # shared sendPercent/useAbility UI Lua; independent of gamepad
-foreach(t aiverse_client main)
+foreach(t ${AIVERSE_GAME_CLIENT_TARGETS})
     if(TARGET ${t})
         target_link_libraries(${t} PRIVATE aiverse_content_reader)   # streamed world: worker-thread project reader
         target_sources(${t} PRIVATE apps/client/GameClient.cpp)
@@ -3317,7 +3378,7 @@ target_include_directories(aiverse_spine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_spine PUBLIC aiverse_engine)
 option(AIVERSE_CLIENT_WITH_SPINE "Include Spine UI animation in packaged clients" ON)
 option(AIVERSE_CLIENT_WITH_GAMEPAD "Include gamepad controls in packaged clients" ON)
-foreach(t aiverse_client main aiverse_hosted_client)
+foreach(t ${AIVERSE_GAME_CLIENT_TARGETS} aiverse_hosted_client)
     if(TARGET ${t})
         if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_SPINE)
             target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp)
@@ -4116,6 +4177,19 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_presentation_test PRIVATE aiverse_engine)
     add_test(NAME physis_presentation COMMAND aiverse_physis_presentation_test)
     set_tests_properties(physis_presentation PROPERTIES LABELS "PHYSIS")
+    add_executable(aiverse_physis_nature_presentation_test tests/physis_nature_presentation_test.cpp)
+    target_link_libraries(aiverse_physis_nature_presentation_test PRIVATE aiverse_engine)
+    add_test(NAME physis_nature_presentation COMMAND aiverse_physis_nature_presentation_test)
+    set_tests_properties(physis_nature_presentation PROPERTIES LABELS "PHYSIS")
+    if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
+        # PHYSIS -> SpectraFX / audio planners and TerraWeave grass overlay
+        # (CPU only; no device, no audio hardware).
+        add_executable(aiverse_physis_nature_cues_test tests/physis_nature_cues_test.cpp)
+        target_link_libraries(aiverse_physis_nature_cues_test PRIVATE
+            aiverse_engine aiverse_fx aiverse_audio aiverse_models aiverse_zstd_dec)
+        add_test(NAME physis_nature_cues COMMAND aiverse_physis_nature_cues_test)
+        set_tests_properties(physis_nature_cues PROPERTIES LABELS "PHYSIS;TERRAWEAVE;VFX;AUDIO")
+    endif()
 endif()
 
 # PHYSIS Stage 14: genre-neutral read-only diagnostics for editor/host overlays.
@@ -4160,6 +4234,14 @@ if(AIVERSE_BUILD_TESTS)
         target_link_libraries(aiverse_physis_authoring_test PRIVATE aiverse_editor_core)
         add_test(NAME physis_authoring COMMAND aiverse_physis_authoring_test)
         set_tests_properties(physis_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
+        if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
+            # Editor «Живая природа»: private preview World, ignition, live read-only.
+            add_executable(aiverse_physis_nature_preview_test tests/physis_nature_preview_test.cpp)
+            target_link_libraries(aiverse_physis_nature_preview_test PRIVATE
+                aiverse_editor_core aiverse_fx aiverse_audio aiverse_models aiverse_zstd_dec)
+            add_test(NAME physis_nature_preview COMMAND aiverse_physis_nature_preview_test)
+            set_tests_properties(physis_nature_preview PROPERTIES LABELS "PHYSIS;EDITOR;VFX")
+        endif()
         if(TARGET aiversemcp AND Python3_Interpreter_FOUND)
             add_test(NAME physis_mcp COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/physis_mcp_smoke.py
@@ -4301,6 +4383,19 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_flora_test PRIVATE aiverse_engine Threads::Threads)
     aiverse_keep_test_asserts(aiverse_terraweave_flora_test)
     add_test(NAME terraweave_flora COMMAND aiverse_terraweave_flora_test)
+    # Hierarchical wind masks: library reuse, rig packing, reference evaluation,
+    # node-tree rigs, sidecars and TerraWeave Arbor rigs (CPU, no device).
+    add_executable(aiverse_wind_rig_test tests/wind_rig_test.cpp)
+    target_link_libraries(aiverse_wind_rig_test PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME wind_rig COMMAND aiverse_wind_rig_test)
+    set_tests_properties(wind_rig PROPERTIES LABELS "RENDER;TERRAWEAVE;WIND")
+    if(TARGET aiverse_glslang)
+        add_executable(aiverse_wind_rig_glsl_test tests/wind_rig_glsl_test.cpp)
+        target_include_directories(aiverse_wind_rig_glsl_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(aiverse_wind_rig_glsl_test PRIVATE aiverse_glslang aiverse_engine)
+        add_test(NAME wind_rig_glsl COMMAND aiverse_wind_rig_glsl_test)
+        set_tests_properties(wind_rig_glsl PROPERTIES LABELS "RENDER;WIND;SHADERS")
+    endif()
     add_executable(aiverse_terraweave_model_test tests/terraweave_model_test.cpp)
     target_link_libraries(aiverse_terraweave_model_test PRIVATE aiverse_models aiverse_zstd_dec)
     aiverse_keep_test_asserts(aiverse_terraweave_model_test)
@@ -4317,6 +4412,10 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_preview_test PRIVATE aiverse_models aiverse_zstd_dec)
     aiverse_keep_test_asserts(aiverse_terraweave_preview_test)
     add_test(NAME terraweave_preview COMMAND aiverse_terraweave_preview_test)
+    add_executable(aiverse_terraweave_erosion_zones_test tests/terraweave_erosion_zones_test.cpp)
+    target_link_libraries(aiverse_terraweave_erosion_zones_test PRIVATE aiverse_models aiverse_zstd_dec AIVERSE::lib_nereid_water)
+    target_compile_options(aiverse_terraweave_erosion_zones_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_erosion_zones COMMAND aiverse_terraweave_erosion_zones_test)
     add_executable(aiverse_terraweave_forest_scene_test tests/terraweave_forest_scene_test.cpp)
     target_link_libraries(aiverse_terraweave_forest_scene_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec)
     aiverse_keep_test_asserts(aiverse_terraweave_forest_scene_test)

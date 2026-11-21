@@ -26,7 +26,7 @@
 //                 vec4 pbr (metallic, roughness, normalScale, occlusionStrength);
 //                 vec4 misc (alphaCutoff, teamMode, teamStrength, flags: bit0 vertex RGB/alpha, bit1 alpha is local AO);
 //                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, SSS strength/scale for PBR or fixed shade ambient/diffuse for unlit);
-//                 vec4 light (PBR: SSS color.rgb, thin transmission.w; unlit: fixed light direction.xyz and enabled.w);
+//                 vec4 light (PBR: SSS color.rgb, w = floor: thin transmission*255, fract: SSS max transmitted world depth; unlit: fixed light direction.xyz and enabled.w);
 //   U3 skin:      SKINNED vec4 joints[240] (3 rows of a 3x4 matrix per joint);
 //                 BAKED   vec4 palette[20] (palette slot -> skin joint, 4 per vec4)
 //   U4 morph:     vec4 w[16] (up to 64 active weights), vec4 channel[16] (source IDs);
@@ -399,7 +399,8 @@ void main() {
     float ndv = max(dot(n, V), 1e-4);
     // Optional thin diffuse sheet: split incident diffuse energy between
     // reflection and opposite-hemisphere transmission. No emissive shortcut.
-    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(m_light.w,0.0,1.0)*(1.0-metallic);
+    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(floor(m_light.w)/255.0,0.0,1.0)*(1.0-metallic);
+    float sssDepth = fract(m_light.w);
     float backNdl = max(-dot(n,L),0.0);
     if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
     float sh = ((ndl > 0.0 || thin*backNdl>0.0) && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
@@ -466,7 +467,25 @@ void main() {
         float wrap = clamp(m_uv1.w, 0.0, 1.0);
         float wrapped = max((dot(n, L) + wrap) / (1.0 + wrap), 0.0);
         float back = pow(max(dot(-n, L), 0.0), mix(8.0, 2.0, wrap));
-        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5) * m_uv1.z;
+        float transmission = 1.0;
+        if (sssDepth > 0.0) {
+            transmission = 0.0;
+            if (back > 0.0 && v_draw.x > 0.5 && u_quality.y > 0.5) {
+                vec4 lp = u_lightViewProj * vec4(v_wpos, 1.0);
+                vec3 p = lp.xyz / lp.w;
+                vec2 uv = p.xy * 0.5 + 0.5;
+                if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;
+                float d = p.z * u_shadow.y + u_shadow.z;
+                if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && d > 0.0 && d < 1.0) {
+                    float entry = sunDepth(uv);
+                    float depthPerWorld = length(vec3(u_lightViewProj[0].z, u_lightViewProj[1].z, u_lightViewProj[2].z)) * u_shadow.y;
+                    float path = (d - entry) / max(depthPerWorld, 1e-6);
+                    if (entry < 0.9999 && path > 0.0001 && path < sssDepth)
+                        transmission = exp(-3.0 * path / sssDepth);
+                }
+            }
+        }
+        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5 * transmission) * m_uv1.z;
         col += diff * m_light.rgb * sun * scatter * ao;
     }
 #if AIVERSE_HDR && AIVERSE_Q > 0
@@ -1058,7 +1077,8 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float ndv = max(dot(n, V), 1e-4);
     // Optional thin diffuse sheet: split incident diffuse energy between
     // reflection and opposite-hemisphere transmission. No emissive shortcut.
-    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(m.light.w,0.0,1.0)*(1.0-metallic);
+    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(floor(m.light.w)/255.0f,0.0f,1.0f)*(1.0f-metallic);
+    float sssDepth = fract(m.light.w);
     float backNdl = max(-dot(n,L),0.0);
     if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
     float sh = ((ndl > 0.0 || thin*backNdl>0.0) && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
@@ -1124,7 +1144,25 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         float wrap = clamp(m.uv1.w, 0.0f, 1.0f);
         float wrapped = max((dot(n, L) + wrap) / (1.0f + wrap), 0.0f);
         float back = pow(max(dot(-n, L), 0.0f), mix(8.0f, 2.0f, wrap));
-        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f) * m.uv1.z;
+        float transmission = 1.0f;
+        if (sssDepth > 0.0f) {
+            transmission = 0.0f;
+            if (back > 0.0f && in.draw.x > 0.5f && f.quality.y > 0.5f) {
+                float4 lp = f.lightViewProj * float4(in.wpos, 1.0f);
+                float3 p = lp.xyz / lp.w;
+                float2 uv = p.xy * 0.5f + 0.5f;
+                if (f.shadow.x > 0.5f) uv.y = 1.0f - uv.y;
+                float d = p.z * f.shadow.y + f.shadow.z;
+                if (uv.x > 0.0f && uv.x < 1.0f && uv.y > 0.0f && uv.y < 1.0f && d > 0.0f && d < 1.0f) {
+                    float entry = sunDepth(tex0, uv);
+                    float depthPerWorld = length(float3(f.lightViewProj[0].z, f.lightViewProj[1].z, f.lightViewProj[2].z)) * f.shadow.y;
+                    float path = (d - entry) / max(depthPerWorld, 1e-6f);
+                    if (entry < 0.9999f && path > 0.0001f && path < sssDepth)
+                        transmission = exp(-3.0f * path / sssDepth);
+                }
+            }
+        }
+        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f * transmission) * m.uv1.z;
         col += diff * m.light.rgb * sun * scatter * ao;
     }
 #if AIVERSE_HDR && AIVERSE_Q > 0

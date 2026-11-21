@@ -4433,3 +4433,28 @@ namespaces, CMake targets `AIVERSE::lib_nereid_*` and catalog ids). No compatibi
 user includes `engine/world/nereid/X.h`; `<aiverselib/water/X.h>` no longer exists. Reason: `engine/world` bridges
 and `engine/render` include NEREID, and the core depends only on `engine/sim`/`engine/core`
 (docs/architecture-layers.md, L1).
+
+
+## Turbidity (`style.turbidity`, `style.siltColor`)
+
+One authored value for suspended silt, 0..1 (default 0 = legacy optics).
+`lib::nereid::resolvedWaterOptics(style)` derives the effective optics and is
+the single source for both views:
+
+- surface shader (outside): extinction `absorption + 1.6*t` (capped 4/m; t=1 sees ~2 m),
+  deep colour milked toward `siltColor` by `0.75*t`, depth tint toward 1,
+  refraction strength halved at t=1 - the bed fades sooner and the body
+  turns milky;
+- `NereidUnderwaterView` (diving): the same extinction, tint and
+  `underwaterScattering >= 0.85*t` - visibility shrinks, the haze takes the
+  silt colour. `view.silt` reports the authored value.
+
+`siltColor` default `[0.42,0.43,0.31]` (linear). Both fields are parsed for
+surfaces, entity water (`NereidWater` component) and cascades, validated,
+and part of cache/change keys. No uniform or layout change. Contract test:
+`ecs_nereid_renderer_contract_test` (turbidity block).
+
+```json
+"style": {"deepColor":[0.03,0.2,0.26], "absorption":0.5, "depthTint":0.85,
+          "turbidity":0.22, "siltColor":[0.36,0.42,0.33]}
+```

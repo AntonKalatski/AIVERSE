@@ -52,3 +52,16 @@ test('browser demo never simulates native gameplay', async () => {
   await assert.rejects(mockInvoke('studio.gameStart',{entry:'map'}),/native AIVERSE/);
   await assert.rejects(mockInvoke('studio.gameStop',{}),/native AIVERSE/);
 });
+
+test('demo inspector groups entity fields into components and reorder keeps entities', async () => {
+  const { mockInvoke } = await import('../src/mock.ts');
+  const inspector = await mockInvoke('studio.inspect', { entityId: 'player' });
+  assert.equal(inspector.id, 'player');
+  assert.ok(inspector.components.some(component => component.id === 'Transform'));
+  const before = (await mockInvoke('studio.snapshot', {})).scene.entities.map(e => e.id);
+  const moved = await mockInvoke('studio.entityMove', { entityId: 'player', targetId: 'root', placement: 'before' });
+  const after = moved.scene.entities.map(e => e.id);
+  assert.equal(after[0], 'player');
+  assert.deepEqual([...after].sort(), [...before].sort());
+  assert.equal(moved.inspector?.id, 'player');
+});
