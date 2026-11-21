@@ -107,8 +107,16 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         const V3 tangent = normalize(cross(axis, helper));
         const V3 bitangent = normalize(cross(axis, tangent));
         const uint32_t base = static_cast<uint32_t>(out.vertices.size());
-        const uint32_t side = settings.radialSegments + 1u;
-        const uint32_t rings = (settings.naturalConifer||settings.naturalBroadleaf) ? settings.longitudinalSegments : 1;
+        // Broadleaf nontrunk tubes have a straight, linearly tapered centreline:
+        // extra longitudinal rings only subdivide the same planar surface.
+        // Thin twigs also do not need a trunk-sized circular cross section.
+        const bool straightTwig=settings.naturalBroadleaf&&b.parent>=0;
+        const int32_t thick=std::max(b.startRadiusCm,b.endRadiusCm);
+        const uint32_t radial=straightTwig?std::min(settings.radialSegments,
+            thick<=2?3u:thick<=5?4u:thick<=12?5u:8u):settings.radialSegments;
+        const uint32_t side = radial + 1u;
+        const uint32_t rings = straightTwig?1u:
+            (settings.naturalConifer||settings.naturalBroadleaf) ? settings.longitudinalSegments : 1;
         for (uint32_t ring = 0; ring <= rings; ++ring) {
             const float step = float(ring) / rings;
             const float t = (settings.compactConifer||settings.naturalBroadleaf)&&b.parent<0?step*step*step:step;
@@ -118,18 +126,18 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
             const V3 center = start + delta*t + V3{0,-sag*std::sin(kTau*.5f*t)-15.f*root,0};
             const float radius = (float(b.startRadiusCm)*(1-t) + float(b.endRadiusCm)*t) *
                 (settings.naturalConifer && std::fabs(axis.y)<.95f ? .30f : 1.f)*(1.f+.65f*root);
-            for (uint32_t seg = 0; seg <= settings.radialSegments; ++seg) {
-                const float angle = kTau * float(seg) / float(settings.radialSegments);
+            for (uint32_t seg = 0; seg <= radial; ++seg) {
+                const float angle = kTau * float(seg) / float(radial);
                 const V3 normal = tangent * std::cos(angle) + bitangent * std::sin(angle);
                 const V3 at = center + normal * radius;
                 out.vertices.push_back({at.x, at.y, at.z,
                                         normal.x, normal.y, normal.z,
-                                        float(seg) / float(settings.radialSegments),
+                                        float(seg) / float(radial),
                                         t * length / 100.0f, 0});
             }
         }
         for (uint32_t ring=0; ring<rings; ++ring)
-        for (uint32_t seg = 0; seg < settings.radialSegments; ++seg) {
+        for (uint32_t seg = 0; seg < radial; ++seg) {
             const uint32_t a = base + ring*side + seg, b0 = a + 1u;
             const uint32_t c = a + side, d = c + 1u;
             addTriangle(out, a, c, b0);

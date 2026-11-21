@@ -116,7 +116,8 @@ inline std::unique_ptr<render::Model> makeArborModel(
     }
     // Renderer3D uses screen-size LOD selection with its existing fade policy.
     // Future billboard atlas should be added as LOD3, not a naked empty mesh.
-    if(meshSettings.compactConifer)model->meshes[0].lods={{1,180.f},{2,48.f}};
+    if(meshSettings.naturalBroadleaf)model->meshes[0].lods={{1,180.f},{2,64.f}};
+    else if(meshSettings.compactConifer)model->meshes[0].lods={{1,180.f},{2,48.f}};
     else model->meshes[0].lods={{1,128.f},{2,32.f}};
     render::Node node;
     node.name = "TerraWeave Arbor";
