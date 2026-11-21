@@ -137,6 +137,9 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method.startsWith('studio.build')) throw new Error('Builds run in the native Studio');
   if (method === 'studio.assetThumbnail') return { none: true } as StudioResult['studio.assetThumbnail'];
   if (method === 'studio.assetUsage') return { unused: [], mentions: [] } as StudioResult['studio.assetUsage'];
+  if (method === 'studio.ops') return { panel: String((params as { panel?: string })?.panel ?? ''), ops: [] } as StudioResult['studio.ops'];
+  if (method === 'studio.op' || method === 'studio.inputGet' || method === 'studio.inputSet' || method === 'studio.assetAudit')
+    throw new Error('Open the native Studio');
   if (method === 'studio.history') return { steps: [], position: 0 } as StudioResult['studio.history'];
   if (method === 'studio.historyJump' || method === 'studio.entitiesAlign') throw new Error('Open the native Studio');
   if (method === 'studio.componentCatalog') return [

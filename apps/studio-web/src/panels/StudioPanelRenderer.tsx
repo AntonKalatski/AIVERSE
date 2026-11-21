@@ -27,6 +27,8 @@ import ProjectPanel from './generated/ProjectPanel';
 import RuntimePanel from './generated/RuntimePanel';
 import BuildPanel from './BuildPanel';
 import ConsolePanel from './ConsolePanel';
+import ToolPanel from './ToolPanel';
+import { AuditPanel, FogPanel, InputPanel, ScriptsPanel } from './ProjectToolPanels';
 import HistoryPanel from './HistoryPanel';
 import { LiveHierarchy, LiveInspector, LiveSwitch } from './LivePanels';
 import { useLivePlay } from './livePlay';
@@ -84,6 +86,13 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return ctx.playing ? <PlayInspector ctx={ctx}/> : <InspectorPanel {...ctx}/>;
+      case 'terrain': case 'water': case 'roads': case 'tiles': case 'generate': case 'postfx':
+      case 'effects': case 'lightbake': case 'models': case 'overlays': case 'branding':
+        return <ToolPanel panel={panel} snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'fog': return <FogPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'scripts': return <ScriptsPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'input': return <InputPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'asset_audit': return <AuditPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'history':
         return <HistoryPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'build':

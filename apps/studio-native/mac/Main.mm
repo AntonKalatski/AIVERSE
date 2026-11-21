@@ -2006,7 +2006,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate" || method=="studio.setProperties" ||
              method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove" ||
-             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet" || method=="studio.entitiesAlign" || method=="studio.historyJump")) {
+             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet" || method=="studio.entitiesAlign" || method=="studio.historyJump" ||
+             (method=="studio.op" && reply["result"].getBool("changed")))) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

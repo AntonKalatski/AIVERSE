@@ -226,6 +226,31 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(!refs.has("error") && refs["result"]["mentions"].size()>=1);
        AIVERSE_TEST_CHECK(call("studio.assetUsage",R"({"path":"../x"})").has("error"));
    }
+   // Tool panels: op lists carry schemas, only allowlisted ops run, edits count as History steps.
+   {
+       const auto ops=call("studio.ops",R"({"panel":"terrain"})");
+       AIVERSE_TEST_CHECK(!ops.has("error") && ops["result"]["ops"].size()>=5);
+       AIVERSE_TEST_CHECK(call("studio.ops",R"({"panel":"nope"})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.op",R"({"op":"map_new","params":{}})").has("error"));
+       const auto info=call("studio.op",R"({"op":"map_info","params":{}})");
+       AIVERSE_TEST_CHECK(!info.has("error") && !info["result"].getBool("changed"));
+       const auto merged=call("studio.op",R"({"op":"rules_merge","params":{"path":"fogOfWar","value":{"mode":"explored"}}})");
+       AIVERSE_TEST_CHECK(!merged.has("error") && merged["result"].getBool("changed"));
+       const auto fog=call("studio.op",R"({"op":"rules_get","params":{"path":"fogOfWar"}})");
+       AIVERSE_TEST_CHECK(fog["result"]["result"]["value"].getStr("mode")=="explored");
+       const auto input=call("studio.inputGet");
+       AIVERSE_TEST_CHECK(!input.has("error") && input["result"]["keys"].size()>20 && !input["result"].getBool("exists"));
+       const auto bad=call("studio.inputSet",R"({"asset":{"version":1,"actions":[{"name":"Jump","type":"nope"}],"contexts":[]}})");
+       AIVERSE_TEST_CHECK(bad.has("error"));
+       const auto saved=call("studio.inputSet",R"({"asset":{"version":1,"actions":[{"name":"Jump","type":"bool"}],
+           "contexts":[{"name":"Play","priority":0,"active":true,"mappings":[{"id":1,"action":"Jump","control":{"device":"keyboard","code":"Space"},"consume":false}]}]}})");
+       AIVERSE_TEST_CHECK(!saved.has("error") && saved["result"].getBool("exists") && saved["result"]["asset"]["contexts"].size()==1);
+       std::ofstream(project/"ui.json")<<R"({"icon":"content/missing_icon.png"})";
+       const auto audit=call("studio.assetAudit");
+       bool found=false;
+       for(const auto& r:audit["result"]["missing"].items())found|=r.getStr("reference")=="content/missing_icon.png";
+       AIVERSE_TEST_CHECK(!audit.has("error") && found);
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

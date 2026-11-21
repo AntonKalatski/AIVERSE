@@ -10,6 +10,7 @@
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/studio-native/StudioAssetReferences.h"
 #include "apps/studio-native/StudioAssetUsage.h"
+#include "apps/studio-native/StudioTools.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
@@ -645,6 +646,7 @@ std::string StudioSession::historyLabel(const std::string& method, const Json& p
         {"studio.lightingSet","Edit lighting"},{"studio.renderLightingSet","Edit render lighting"},
         {"studio.nereidFlowSet","Edit water"},{"studio.entitiesAlign","Align"},{"studio.newMap","New map"}};
     for(const auto& [m,label]:names)if(method==m)return label;
+    if(method=="studio.op")return studioToolLabel(params.getStr("op"));
     return "Edit";
 }
 void StudioSession::syncHistoryLabels() {
@@ -1389,6 +1391,63 @@ Json StudioSession::dispatchImpl(const Json& request) {
             const Json current = ws_.call("light_list",Json::object(),"studio");
             if (current.has("error")) throw std::runtime_error(current.getStr("error"));
             reply.set("result",current);
+        } else if (method == "studio.ops") {
+            // Tool panel (Terrain, Roads, PostFX, ...): its Workspace ops with their JSON schemas.
+            const StudioToolGroup* group=studioToolGroup(params.getStr("panel"));
+            if (!group) throw std::runtime_error("Unknown tool panel");
+            Json ops=Json::array();
+            for (const char* name:group->ops)
+                for (const auto& op:ws_.ops())
+                    if (op.name==name) {
+                        Json o=Json::object();
+                        o.set("name",str(op.name));o.set("description",str(op.description));
+                        o.set("schema",op.schema);o.set("readOnly",Json::fromBool(studioToolReadOnly(op.name)));
+                        ops.push(std::move(o));
+                    }
+            Json out=Json::object();out.set("panel",str(group->panel));out.set("ops",ops);
+            reply.set("result",std::move(out));
+        } else if (method == "studio.op") {
+            const std::string op=params.getStr("op");
+            if (!studioToolAllowed(op)) throw std::runtime_error("This operation is not available in Studio panels: "+op);
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const Json input=params["params"].isObject()?params["params"]:Json::object();
+            const bool wasDirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
+            const size_t depth=ws_.map.undoDepth(),entityCount=ws_.map.data.entities.size();
+            const Json result=ws_.call(op,input,"studio");
+            if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+            const bool dirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
+            const bool changed=!studioToolReadOnly(op)||ws_.map.undoDepth()!=depth||dirty!=wasDirty;
+            if (ws_.map.data.entities.size()!=entityCount) { clearSelection(); dropOrdinalFlags(); }
+            Json out=Json::object();
+            out.set("op",str(op));out.set("result",result);out.set("changed",Json::fromBool(changed));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.inputGet" || method == "studio.inputSet") {
+            // Input actions and contexts (input/actions.json, InputFlow asset); presentation only, never the simulation.
+            namespace ecfg=platform::enhanced_config;
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const std::filesystem::path file=std::filesystem::path(ws_.project.dir)/"input"/"actions.json";
+            std::string error;
+            if (method=="studio.inputSet") {
+                ecfg::Asset asset;
+                if (!ecfg::readAsset(params["asset"],asset,&error)) throw std::runtime_error(error);
+                if (!ecfg::saveAssetFile(file,asset,&error)) throw std::runtime_error(error);
+            }
+            Json out=studioInputNames();
+            std::error_code ec;
+            const bool exists=std::filesystem::exists(file,ec);
+            ecfg::Asset asset;
+            if (exists && !ecfg::loadAssetFile(file,asset,&error)) out.set("error",str(error));
+            out.set("asset",ecfg::writeAsset(asset));
+            out.set("exists",Json::fromBool(exists));out.set("path",str("input/actions.json"));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.assetAudit") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const auto audit=studioAssetAudit(ws_.project.dir,ws_.engineDir);
+            Json rows=Json::array();
+            for (const auto& r:audit.rows){Json o=Json::object();o.set("source",str(r.source));o.set("reference",str(r.reference));rows.push(std::move(o));}
+            Json out=Json::object();
+            out.set("missing",rows);out.set("scanned",num(int64_t(audit.scanned)));out.set("truncated",Json::fromBool(audit.truncated));
+            reply.set("result",std::move(out));
         } else if (method == "studio.assetUsage") {
             // Find References (path) or every content file no project file names (no path).
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
