@@ -26,7 +26,7 @@ static Entity findAt(Simulation& sim, float x, float z) {
     });
     return found;
 }
-int main() {
+int aiverseMain(int, char**) {   // aiverse_runtime provides the platform main()
     const std::string base = std::string(AIVERSE_SOURCE_DIR) + "/templates/mushrooms/";
     // Plain map: no pose component registered, save format unchanged (v9).
     {
