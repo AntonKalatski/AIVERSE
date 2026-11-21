@@ -9,7 +9,7 @@ LOGS="$ROOT/logs/perf-verify"
 mkdir -p "$LOGS"
 exec > >(tee "$LOGS/run.log") 2>&1
 echo "== start $(date) root=$ROOT commit=$(git -C "$ROOT" log -1 --format=%h)"
-OUT=/Volumes/KINGSTON/AIVERSE-builds/perf-verify
+OUT=/Volumes/KINGSTON/AIVERSE-builds/perf-verify-$(basename "$ROOT")   # one build tree per source tree
 if [[ ! -d /Volumes/KINGSTON || ! -w /Volumes/KINGSTON ]]; then OUT="$ROOT/build/perf-verify"; fi
 mkdir -p "$OUT"
 JOBS=$(sysctl -n hw.ncpu)
