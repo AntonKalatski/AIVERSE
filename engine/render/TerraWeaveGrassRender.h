@@ -266,6 +266,11 @@ public:
         if(layout)invalidateAll();
     }
     void clearPresentation(){setPresentation({}, {});}
+    // Optional deferred GPU retirement (editor: Editor::retirePreviewModel).
+    // Without it replaced models are released immediately, as before.
+    void setModelRetirement(std::function<void(std::unique_ptr<render::Model>&)> retire){
+        retire_=std::move(retire);
+    }
     // Per-frame wind for windSway (world m/s, x/z), animation phase radians
     // and gust 0..1. Bounded tip lean 0.14 m at >= 16 m/s.
     void setWind(float xMetresPerSecond,float zMetresPerSecond,
@@ -335,8 +340,7 @@ public:
             }
             Resident next{patch,std::move(candidate),look};
             if(old!=resident_.end()){
-                if(old->second.model)
-                    render::releaseModel(device,*old->second.model);
+                retire(device,old->second.model);
                 old->second=std::move(next);
             } else resident_.emplace(id,std::move(next));
             dirty_.erase(id);
@@ -355,8 +359,7 @@ public:
         if(complete)
             for(auto it=resident_.begin();it!=resident_.end();){
                 if(!requested.contains(it->first)){
-                    if(it->second.model)
-                        render::releaseModel(device,*it->second.model);
+                    retire(device,it->second.model);
                     dirty_.erase(it->first);
                     it=resident_.erase(it);
                 }else ++it;
@@ -389,7 +392,7 @@ public:
     void shutdown(gfx::Device& device){
         for(auto& [id,entry]:resident_) {
             (void)id;
-            if(entry.model)render::releaseModel(device,*entry.model);
+            retire(device,entry.model);
         }
         resident_.clear();
         dirty_.clear();
@@ -403,6 +406,12 @@ private:
     GrassRenderQuality quality_;
     GrassPresentationOptions presentation_;
     std::function<uint64_t(const RectCm&)> signature_;
+    std::function<void(std::unique_ptr<render::Model>&)> retire_;
+    void retire(gfx::Device& device,std::unique_ptr<render::Model>& model){
+        if(!model)return;
+        if(retire_)retire_(model);
+        else render::releaseModel(device,*model);
+    }
     render::float4 wind_{0,0,0,0};
     std::map<uint64_t,Resident> resident_;
     std::set<uint64_t> dirty_;

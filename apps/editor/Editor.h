@@ -21,6 +21,7 @@
 #include "modules/rts/view/RtsViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
+#include "PhysisNaturePreview.h"
 #include "core/FileAssoc.h"
 #include "core/Net.h"
 #include "core/Workspace.h"
@@ -158,6 +159,8 @@ public:
         terraWeaveForestPreview_.setEnabled(enabled);
     }
     size_t terraWeaveForestPreviewCount() const { return terraWeaveForestPreview_.visibleInstances(); }
+    // PHYSIS «Живая природа» Scene preview (PhysisWindow, physis_nature_preview op).
+    PhysisNaturePreview& physisNaturePreview() { return physisNaturePreview_; }
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
     // Pin a type that an editor panel or preview uses (also loads it lazily).
@@ -399,6 +402,7 @@ private:
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
     TerraWeaveForestPreview terraWeaveForestPreview_;
+    PhysisNaturePreview physisNaturePreview_;
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;

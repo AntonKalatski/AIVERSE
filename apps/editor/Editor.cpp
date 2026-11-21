@@ -251,6 +251,9 @@ void Editor::shutdown() {
     else if (!dev_->gpuHealthy())
         clientHost_.abandonOnDeviceLoss();
     gameFxBridge_.detach();
+    // Nature preview retires grass Models through previewModelRetirement_
+    // and stops its particles while gameFx_ is still alive.
+    physisNaturePreview_.release(*dev_, gameFx_);
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
@@ -318,6 +321,7 @@ void Editor::openGame(const std::string& idOrDir) {
     ws_.changes.clear();
     if (dev_) terraWeaveForestPreview_.release(*dev_);
     terraWeaveForestPreview_.setEnabled(false);
+    if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
     reloadRules();
     selection = {};
     showPicker_ = false;
@@ -597,6 +601,7 @@ void Editor::reclaimEditorAssets(bool force) {
 void Editor::newMap(int w, int h) {
     if (dev_) terraWeaveForestPreview_.release(*dev_);
     terraWeaveForestPreview_.setEnabled(false);
+    if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
     doc().reset(w, h);
     selection = {};
     syncGrid();
@@ -611,6 +616,7 @@ void Editor::openMap(const std::string& file) {
     if (doc().load(ec ? file : norm, &err)) {
         if (dev_) terraWeaveForestPreview_.release(*dev_);
         terraWeaveForestPreview_.setEnabled(false);
+        if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
         status = "Открыто: " + ws_.relative(doc().path);
         selection = {};
         syncGrid();
@@ -1223,6 +1229,21 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
             terraWeaveForestPreview_.setEnabled(false);
         }
     }
+    // PHYSIS «Живая природа»: wildfire on TerraWeave grass, wind, smoke and
+    // sound without a play-test (private preview World or read-only live sim).
+    if (!planets && !ws_.project.isFps() && physisNaturePreview_.settings.enabled) {
+        try {
+            physisNaturePreview_.draw(*dev_, r3d_, gameFx_, projectReader(ws_.project.dir), doc(),
+                sim_ ? &sim_->world() : nullptr, useCam, time_,
+                [this](float x, float z) { return view_.heightAt(grid_, x, z); },
+                [this](std::unique_ptr<render::Model>& model) { retirePreviewModel(model); });
+        } catch (const std::exception& e) {
+            status = std::string("PHYSIS природа: ") + e.what();
+            physisNaturePreview_.settings.enabled = false;
+            physisNaturePreview_.release(*dev_, gameFx_);
+        }
+    } else if (physisNaturePreview_.hasPreviewWorld() || physisNaturePreview_.flames())
+        physisNaturePreview_.release(*dev_, gameFx_);
     if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;

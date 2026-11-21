@@ -3860,6 +3860,14 @@ if(AIVERSE_BUILD_TESTS)
         target_link_libraries(aiverse_physis_authoring_test PRIVATE aiverse_editor_core)
         add_test(NAME physis_authoring COMMAND aiverse_physis_authoring_test)
         set_tests_properties(physis_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
+        if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
+            # Editor «Живая природа»: private preview World, ignition, live read-only.
+            add_executable(aiverse_physis_nature_preview_test tests/physis_nature_preview_test.cpp)
+            target_link_libraries(aiverse_physis_nature_preview_test PRIVATE
+                aiverse_editor_core aiverse_fx aiverse_audio aiverse_models aiverse_zstd_dec)
+            add_test(NAME physis_nature_preview COMMAND aiverse_physis_nature_preview_test)
+            set_tests_properties(physis_nature_preview PROPERTIES LABELS "PHYSIS;EDITOR;VFX")
+        endif()
         if(TARGET aiversemcp AND Python3_Interpreter_FOUND)
             add_test(NAME physis_mcp COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/physis_mcp_smoke.py

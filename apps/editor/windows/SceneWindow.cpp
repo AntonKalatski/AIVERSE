@@ -249,7 +249,26 @@ public:
         }
         // PHYSIS authored markers capture only explicit marker clicks/drags.
         // Ordinary FPS/RTS/other selection paths remain untouched otherwise.
-        const bool physisMarkerInput = processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
+        // «Живая природа»: in ignite mode a LMB click on the ground starts a
+        // fire in the PRIVATE preview World (never the live game).
+        bool natureIgnite = false;
+        {
+            auto& nature = ed.physisNaturePreview();
+            ImGuiIO& io = ImGui::GetIO();
+            if (nature.settings.enabled && nature.settings.igniteOnClick && !ed.playing() &&
+                vp_.hovered && !io.KeyAlt) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    natureIgnite = true;   // only the click; RMB/MMB navigation stays
+                    float gx = 0, gz = 0;
+                    std::string why;
+                    if (ed.groundAt(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y, gx, gz))
+                        ed.status = nature.ignite(gx, gz, &why)
+                            ? "PHYSIS: подожжено" : "PHYSIS: " + why;
+                }
+            }
+        }
+        const bool physisMarkerInput = natureIgnite || processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
         if(ed.ws().project.isFps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
