@@ -130,6 +130,9 @@ bool VulkanDevice::pickDevice(std::string& error) {
     enable.multiDrawIndirect = have.multiDrawIndirect;
     enable.drawIndirectFirstInstance = have.drawIndirectFirstInstance;
     multiDrawIndirect_ = have.multiDrawIndirect && have.drawIndirectFirstInstance;
+    // A single GPU-authored indirect draw needs no multiDrawIndirect, but
+    // its untrusted firstInstance still requires drawIndirectFirstInstance.
+    drawIndirectFirstInstance_ = have.drawIndirectFirstInstance;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
     enable.imageCubeArray = have.imageCubeArray;

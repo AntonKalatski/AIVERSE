@@ -244,9 +244,17 @@ public:
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
 
+    // Single compute-authored draw: Indirect or Storage argument buffers
+    // (both carry INDIRECT + STORAGE usage), no multiDrawIndirect needed.
+    bool supportsGpuAuthoredIndirectDraw() const override {
+        return drawIndirectFirstInstance_ && supportsCompute();
+    }
     bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override;
 
 private:
+    // Shared encoder of validated indexed-indirect draws (VkDraw.cpp).
+    bool encodeIndexedIndirect(BufferHandle commands, size_t offset,
+                               uint32_t drawCount, uint32_t stride);
     // GfxVulkan.cpp
     bool createInstance(bool wantSurface, std::string& error);
     bool pickDevice(std::string& error);
@@ -303,6 +311,7 @@ private:
     DeviceInfo info_;
     std::string error_;
     bool multiDrawIndirect_ = false;
+    bool drawIndirectFirstInstance_ = false;
     bool cubeArray_ = false;
     bool computeQueue_ = false;
     bool samplerAnisotropy_ = false;

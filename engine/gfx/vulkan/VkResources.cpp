@@ -223,9 +223,12 @@ VkBufferUsageFlags VulkanDevice::bufferUsage(BufferType t) const {
     if (t == BufferType::Vertex) u |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     // GlobalGeometryPool uses ONE Storage page as vertex AND index input.
     // Do not regress that existing pooled-geometry addressing contract.
+    // Storage also carries INDIRECT usage: compute-authored draw arguments
+    // may live in a Storage buffer (drawIndexedGpuIndirect, as on Metal).
     if (t == BufferType::Storage) u |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+                                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                      VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
     if (t == BufferType::Indirect) u |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     return u;
