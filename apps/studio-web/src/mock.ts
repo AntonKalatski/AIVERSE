@@ -40,6 +40,14 @@ const fieldsFor = (id: string): StudioSnapshot['properties'] => {
   entityFields.set(id, fields);
   return fields;
 };
+// DEMO inspector: the demo has no document components, only these fields.
+const demoInspector = (id: string): NonNullable<StudioSnapshot['inspector']> => {
+  const entity = snapshot.scene.entities.find(item => item.id === id);
+  if (!entity) throw Error('Unknown entity: ' + id);
+  const fields = structuredClone(fieldsFor(id)).filter(field => field.key !== 'name');
+  return { id, name: entity.name, kind: entity.kind, nameEditable: true,
+    components: [{ id: 'Transform', title: 'Transform', note: 'Browser DEMO data, not a project document.', properties: fields }] };
+};
 const undoStack: StudioSnapshot[] = [];
 const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
@@ -109,6 +117,9 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.
   }
+  if (method === 'studio.inspect') {
+    return demoInspector((params as StudioParams['studio.inspect']).entityId);
+  }
   if (method === 'studio.propertiesFor') {
     const id = (params as StudioParams['studio.propertiesFor']).entityId;
     return structuredClone(fieldsFor(id));
@@ -150,8 +161,21 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
       if (entity) entity.name = String(value);
     }
     snapshot.project.dirty = true;
+  } else if (method === 'studio.entityMove') {
+    const { entityId, targetId, placement } = params as StudioParams['studio.entityMove'];
+    const list = snapshot.scene.entities;
+    const from = list.findIndex(e => e.id === entityId);
+    if (from < 0) throw Error('Unknown entity: ' + entityId);
+    undoStack.push(clone()); redoStack.length = 0;
+    const [moved] = list.splice(from, 1);
+    let to = targetId ? list.findIndex(e => e.id === targetId) : list.length;
+    if (to < 0) to = list.length; else if (targetId && placement === 'after') to += 1;
+    list.splice(to, 0, moved);
+    snapshot.selectedId = entityId;
   } else if (method !== 'studio.snapshot') {
     throw Error('Unsupported operation');
   }
-  return clone();
+  const result = clone();
+  if (result.selectedId) result.inspector = demoInspector(result.selectedId);
+  return result;
 }

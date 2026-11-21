@@ -8,6 +8,7 @@
 #include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
+#include "engine/view/AppearanceChoiceAuthoring.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -87,6 +88,7 @@ void StudioMetalScene::clearDocumentModels() {
     documentModels_.clear();
     rejectedDocumentModels_.clear();
     documentModelTimes_.clear();
+    instanceMaterials_.clear();
 }
 
 void StudioMetalScene::syncDocumentModels(
@@ -102,6 +104,25 @@ void StudioMetalScene::syncDocumentModels(
     // Only existing, explicitly authored content/ model paths are accepted.
     const auto& entities=doc.data.entities;
     std::set<std::string> active;
+    {
+        // materials.json drives Mesh Renderer material overrides in the preview.
+        const fs::path libraryPath=project/"materials.json";
+        std::error_code timeError;
+        const auto modified=fs::last_write_time(libraryPath,timeError);
+        if(libraryPath.string()!=materialLibraryPath_ || (!timeError && modified!=materialLibraryTime_)) {
+            materialLibraryPath_=libraryPath.string();
+            materialLibraryTime_=timeError?fs::file_time_type{}:modified;
+            materialLibrary_=Json::object();
+            std::ifstream input(libraryPath,std::ios::binary);
+            if(input) {
+                const std::string text((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+                try { const Json parsed=Json::parse(text)["materials"]; if(parsed.isObject())materialLibrary_=parsed; }
+                catch(const std::exception&) {}
+            }
+            instanceMaterials_.clear();
+        }
+    }
+    std::set<std::string> overridden;
     for (const auto& proxy:proxies) {
         if (proxy.id.rfind("entity:",0)!=0) continue;
         const int index=studioMapEntityIndex(proxy.id,doc);
@@ -214,10 +235,30 @@ void StudioMetalScene::syncDocumentModels(
         if (found==documentModels_.end()) continue;
         // Anchor model to the same authored entity location as its proxy.
         // The source file's own node transforms are applied by drawModel and picker.
+        const Json& overrides=entity.extra["components"]["StaticModel"]["materials"];
+        if(overrides.isObject() && overrides.size()) {
+            // Model pointer: a hot-reloaded file gets a new Model and must re-resolve.
+            const std::string signature=path+"|"+std::to_string(reinterpret_cast<uintptr_t>(found->second.get()))+"|"+overrides.dump(-1);
+            auto& cached=instanceMaterials_[proxy.id];
+            if(cached.signature!=signature || cached.materials.size()<found->second->materials.size()) {
+                cached.signature=signature;
+                cached.materials=found->second->materials;
+                Json authored=Json::object();authored.set("materials",overrides);
+                const auto plan=view::AppearanceChoiceAuthoring::resolve(*found->second,authored);
+                for(size_t i=0;i<plan.materialLayers.size() && i<cached.materials.size();++i)
+                    for(const auto& layer:plan.materialLayers[i])
+                        view::AppearanceAuthoringService::applyMaterial(cached.materials[i],materialLibrary_,layer);
+            }
+            overridden.insert(proxy.id);
+        }
         modelInstances_.push_back({proxy.id,found->second.get(),
            editor::authoredEntity(entity)?editor::authoredModelMatrix(entity):
            render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
            render::mat4::rotateY(proxy.yaw)});
+    }
+    for (auto it=instanceMaterials_.begin();it!=instanceMaterials_.end();) {
+        if (!overridden.count(it->first)) it=instanceMaterials_.erase(it);
+        else ++it;
     }
     for (auto it=documentModelTimes_.begin();it!=documentModelTimes_.end();) {
         if (!active.count(it->first)) it=documentModelTimes_.erase(it);
@@ -315,6 +356,15 @@ void StudioMetalScene::setOrientation(float yaw,float pitch) {
     startTween(camera_.target,camera_.distance,yaw,std::clamp(pitch,-1.5707963f,1.5707963f));
 }
 void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; autoIso_=false; }
+std::vector<std::string> StudioMetalScene::modelMaterialSlots(const std::string& asset) const {
+    std::vector<std::string> names;
+    const auto found=documentModels_.find(asset);
+    if(found==documentModels_.end() || !found->second)return names;
+    for(const auto& material:found->second->materials)
+        if(!material.name.empty() && std::find(names.begin(),names.end(),material.name)==names.end())
+            names.push_back(material.name);
+    return names;
+}
 int StudioMetalScene::orientationGizmoHit(float x,float y,float width,float height) const {
     if(!orientationGizmo_ || materialMode_ || width<4 || height<4)return -1;
     const auto g=gizmoLayout(width,height);
@@ -797,6 +847,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         render::ModelDraw draw;
         draw.model=instance.model;
         draw.world=instance.world;
+        if(auto custom=instanceMaterials_.find(instance.id);custom!=instanceMaterials_.end())
+            draw.materials=&custom->second.materials;
         if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
         renderer_.drawModel(draw);
     }

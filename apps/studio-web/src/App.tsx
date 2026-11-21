@@ -8,7 +8,7 @@ import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
 } from './nestedDock';
 import type { StudioPanel } from './nestedDock';
-import type { StudioEntity, StudioProperty, StudioSnapshot } from './types';
+import type { StudioEntity, StudioInspector, StudioSnapshot } from './types';
 import HeaderGameControls from './components/HeaderGameControls';
 import engineLogo from '../../../engine/assets/branding/mark.png';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
@@ -33,7 +33,7 @@ export default function App() {
     return Number.isFinite(stored) && stored >= 0.75 && stored <= 2 ? stored : 1;
   });
   const [inspectorPin, setInspectorPin] = useState<{
-    entity: StudioEntity; properties: StudioProperty[];
+    entity: StudioEntity; inspector: StudioInspector | null;
   } | null>(null);
   useEffect(() => {
     // CSS zoom scales the entire web layout, including dialogs and dock tabs.
@@ -123,11 +123,8 @@ export default function App() {
     if (!entityId) return;
     setBusy(true);
     try {
-      const result = await invoke('studio.setProperty', { entityId, componentId, key, value });
-      setSnapshot(result);
-      if (inspectorPin) setInspectorPin(current => current && current.entity.id === entityId
-        ? { ...current, properties: current.properties.map(property =>
-            property.key === key ? {...property, value} : property) } : current);
+      // The pinned Inspector re-reads its entity after every snapshot change.
+      setSnapshot(await invoke('studio.setProperty', { entityId, componentId, key, value }));
       setError('');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -138,9 +135,9 @@ export default function App() {
     const entityId = inspectorPin?.entity.id;
     if (!entityId || !snapshot?.project.path) return;
     let active = true;
-    void invoke('studio.propertiesFor', {entityId}).then(properties => {
+    void invoke('studio.inspect', {entityId}).then(inspector => {
       if (active) setInspectorPin(current => current?.entity.id === entityId
-        ? {...current, properties} : current);
+        ? {...current, inspector} : current);
     }).catch(() => {
       // The pinned object may have been removed by undo or another editor.
       if (active) setInspectorPin(current => current?.entity.id === entityId ? null : current);
@@ -153,13 +150,13 @@ export default function App() {
   const rows = useMemo(() => hierarchyRows(snapshot?.scene.entities ?? []), [snapshot]);
   const selected = inspectorPin?.entity ??
     snapshot?.scene.entities.find(entity => entity.id === snapshot.selectedId);
-  const inspectorProperties = inspectorPin?.properties ?? snapshot?.properties ?? [];
+  const inspector = inspectorPin ? inspectorPin.inspector : snapshot?.inspector ?? null;
   const toggleInspectorPin = () => setInspectorPin(current => current ? null :
-    selected ? {entity: {...selected}, properties: (snapshot?.properties ?? []).map(p => ({...p}))} : null);
+    selected ? {entity: {...selected}, inspector: snapshot?.inspector ? structuredClone(snapshot.inspector) : null} : null);
   const consoleOpen = panelStack(dock, 'console') !== null;
   const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
     snapshot, busy, connected, search, setSearch, rows, selected,
-    inspectorProperties, inspectorPinned: !!inspectorPin, toggleInspectorPin,
+    inspector, inspectorPinned: !!inspectorPin, toggleInspectorPin,
     select, changeProperty, openProject, updateSnapshot: value => {
       setInspectorPin(null); // create/delete/duplicate or map replacement invalidates positional pins
       setSnapshot(value);

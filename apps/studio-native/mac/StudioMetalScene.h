@@ -63,6 +63,8 @@ public:
     int orientationGizmoHit(float x, float y, float width, float height) const;
     // Applies a hit: snaps to the axis view (auto Iso) or toggles the projection.
     void activateOrientationGizmo(int hit);
+    // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
+    std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
@@ -92,6 +94,12 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    // Per-entity StaticModel.materials overrides resolved against materials.json.
+    struct InstanceMaterials { std::string signature; std::vector<render::Material> materials; };
+    std::map<std::string,InstanceMaterials> instanceMaterials_;
+    Json materialLibrary_ = Json::object();
+    std::filesystem::file_time_type materialLibraryTime_{};
+    std::string materialLibraryPath_;
     void releasePreviewModel(render::Model& model);
     void clearDocumentModels();
     void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,

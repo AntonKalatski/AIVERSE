@@ -6,6 +6,7 @@
 #include "apps/studio-native/StudioRuntimeInspect.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
+#include <set>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
@@ -66,6 +67,38 @@ void authoredEntityWorkflow() {
    AIVERSE_TEST_CHECK(session.selectedObjectId().rfind("entity:@",0)==0 && session.selectedObjectId()!="entity:@second");
    AIVERSE_TEST_CHECK(!call("studio.save").has("error"));session.openProject(project.string());
    AIVERSE_TEST_CHECK(session.workspace().map.data.entities[1].extra["components"]["StaticModel"].getStr("asset")=="content/tree.gltf");
+   // Inspector exposes entity components; Mesh Renderer edits StaticModel with undo.
+   fs::create_directories(project/"content");std::ofstream(project/"content/rock.glb")<<"glb";
+   std::ofstream(project/"materials.json")<<R"({"materials":{"stone":{"color":[0.5,0.5,0.5]}}})";
+   auto inspect=call("studio.inspect",R"({"entityId":"entity:@second"})");
+   AIVERSE_TEST_CHECK(!inspect.has("error"));
+   bool mesh=false,transform=false;
+   for(const auto& c:inspect["result"]["components"].items()){mesh|=c.getStr("id")=="MeshRenderer";transform|=c.getStr("id")=="Transform";}
+   AIVERSE_TEST_CHECK(mesh && transform);
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"content/rock.glb"})").has("error"));
+   AIVERSE_TEST_CHECK(call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"content/missing.glb"})").has("error"));
+   AIVERSE_TEST_CHECK(call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"../rules.json"})").has("error"));
+   AIVERSE_TEST_CHECK(call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"material:*","value":"nope"})").has("error"));
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"material:*","value":"stone"})").has("error"));
+   {
+       const int second=session.workspace().map.findEntity("second");
+       const auto& model=session.workspace().map.data.entities[size_t(second)].extra["components"]["StaticModel"];
+       AIVERSE_TEST_CHECK(model.getStr("asset")=="content/rock.glb" && model["materials"].getStr("*")=="stone");
+   }
+   AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+   AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))].extra["components"]["StaticModel"].has("materials"));
+   // Hierarchy reorder keeps road endpoints attached to the same entities.
+   {
+       auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;
+       doc.data.roads={{0,1}};
+       const std::string a=doc.data.entities[0].id,b=doc.data.entities[1].id;
+       auto params=Json::object();params.set("entityId",Json::string("entity:@"+a));
+       auto request=Json::object();request.set("id",Json::number(int64_t(1)));request.set("method",Json::string("studio.entityMove"));request.set("params",params);
+       AIVERSE_TEST_CHECK(!session.dispatch(request).has("error"));
+       AIVERSE_TEST_CHECK(doc.data.entities[0].id==b && doc.data.entities[1].id==a);
+       AIVERSE_TEST_CHECK(doc.data.roads.size()==1 && doc.data.entities[size_t(doc.data.roads[0].first)].id==a &&
+                          doc.data.entities[size_t(doc.data.roads[0].second)].id==b);
+   }
    fs::remove_all(root);
 }
 void entityWorkflow() {
@@ -92,6 +125,22 @@ void entityWorkflow() {
             request.set("method",Json::string(method));request.set("params",std::move(params));
             return session.dispatch(request);
         };
+        {
+            // Legacy map entities expose a full Transform: X/Y(terrain)/Z, Rotation (facing), Scale.
+            auto params=Json::object();params.set("entityId",Json::string("entity:0"));
+            auto inspect=call("studio.inspect",params);
+            AIVERSE_TEST_CHECK(!inspect.has("error"));
+            std::set<std::string> keys;
+            for(const auto& c:inspect["result"]["components"].items())
+                if(c.getStr("id")=="Transform")for(const auto& f:c["properties"].items())keys.insert(f.getStr("key"));
+            AIVERSE_TEST_CHECK(keys.count("x")&&keys.count("y")&&keys.count("z")&&keys.count("facing")&&keys.count("scale"));
+            auto set=Json::parse(R"({"entityId":"entity:0","componentId":"Transform","key":"facing","value":90})");
+            AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
+            AIVERSE_TEST_CHECK(session.workspace().map.data.entities[0].extra["facing"].toDouble()==90);
+            set.set("value",Json::number(int64_t(400)));AIVERSE_TEST_CHECK(call("studio.setProperty",set).has("error"));
+            AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[0].extra.has("facing"));
+        }
         {
             auto state=call("studio.nereidFlow");AIVERSE_TEST_CHECK(!state.has("error")&&state["result"]["surfaces"].size()==1);
             auto input=Json::parse(R"({"id":7,"mode":"automatic","slopeDegrees":1,"downhillHeadingDegrees":180})");

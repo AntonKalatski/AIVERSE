@@ -50,6 +50,9 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
             if(!source || !source->at.isNull())continue; // planet coordinate needs a planet adapter
             p.center.y=terrainPreviewHeight(map.data,p.center.x,p.center.z,levelHeight)+.6f;
             p.half={.5f,.6f,.5f};
+           // Runtime "facing": degrees clockwise from north, viewed from above.
+           if(source->extra["facing"].isNumber() && std::isfinite(source->extra["facing"].toDouble()))
+               p.yaw=float(-source->extra["facing"].toDouble()*3.141592653589793/180.0);
            if(editor::authoredEntity(*source)) {
                const auto t=editor::authoredLocalTransform(*source);
                p.center.y=float(t.position.y.toDouble())+.6f;

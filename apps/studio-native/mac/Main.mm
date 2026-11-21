@@ -85,6 +85,7 @@
 - (void)focusSceneSelection;
 - (void)resetSceneView;
 - (void)publishSceneCamera;
+- (std::vector<std::string>)materialSlotsFor:(const std::string&)asset;
 - (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
@@ -290,6 +291,10 @@
         htmlComposite_=composite;
         std::string root=AIVERSE_STUDIO_SOURCE_DIR;
         session_=std::make_unique<aiverse::studio::StudioSession>(root,project);
+        __unsafe_unretained StudioHost* host=self;
+        session_->setMaterialSlotProvider([host](const std::string& asset) {
+            return [host materialSlotsFor:asset];
+        });
         NSURL* bundled=[[NSBundle mainBundle] URLForResource:@"index" withExtension:@"html" subdirectory:@"studio-web"];
         dist_=bundled ? [[[bundled URLByDeletingLastPathComponent] path] stringByStandardizingPath]
                       : [[NSString stringWithUTF8String:(root+"/apps/studio-web/dist").c_str()] stringByStandardizingPath];
@@ -475,6 +480,9 @@
     if (hit<0) return NO;
     preview_->activateOrientationGizmo(hit);
     return YES;
+}
+- (std::vector<std::string>)materialSlotsFor:(const std::string&)asset {
+    return preview_ ? preview_->modelMaterialSlots(asset) : std::vector<std::string>{};
 }
 - (void)publishSceneCamera {
     if (!preview_ || !htmlComposite_) return;

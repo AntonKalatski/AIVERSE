@@ -19,6 +19,9 @@ export interface StudioFacialPreviewBinding {
 }
 
 export type StudioProperty = import('./propertyLogic').FieldDescriptor;
+export interface StudioInspectorComponent { id: string; title: string; note?: string; properties: StudioProperty[] }
+/** Entity header + its document components (Transform, Mesh Renderer, Light…). */
+export interface StudioInspector { id: string; name: string; kind: string; nameEditable?: boolean; components: StudioInspectorComponent[] }
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
 export interface StudioAsset {
@@ -70,6 +73,7 @@ export interface StudioSnapshot {
   properties: StudioProperty[];
   entityProperties?: StudioProperty[];
   components?: Array<{ id: string; title: string; properties: StudioProperty[] }>;
+  inspector?: StudioInspector;
   logs: StudioLog[];
   mode: 'edit' | 'play';
   previewMaterial?: string | null;
@@ -84,7 +88,7 @@ export interface StudioRuntimeEntity {ref:string; epoch:string; tick:number; com
 export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boolean; width:number; height:number; touch:boolean }
 export interface StudioGameDeviceOption { id:string; name:string; group:string }
 export interface StudioGameState { device:StudioGameDevice; paused: boolean; canControl: boolean; canStep: boolean; active: boolean; loading: boolean; progress: number; inMatch: boolean; tick: number; error: string }
-export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
+export type StudioMethod = 'studio.renderLighting' | 'studio.inspect' | 'studio.entityMove' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
   'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanPreviewAnimation' | 'studio.humanStudioLighting' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus';
 export interface HumanLook { version: 1; values: Record<string,number>; materials: Record<string,string> }
 export interface HumanLookField { key:string; label:string; min:number; max:number; initial:number }
@@ -128,6 +132,8 @@ export interface StudioParams {
   'studio.humanAppearanceFromAsset': {guid:string};
   'studio.snapshot': Record<string, never>;
   'studio.propertiesFor': { entityId: string };
+  'studio.inspect': { entityId: string };
+  'studio.entityMove': { entityId: string; targetId?: string | null; placement?: 'before' | 'after' };
   'studio.save': Record<string, never>;
   'studio.undo': Record<string, never>;
   'studio.redo': Record<string, never>;
@@ -203,6 +209,8 @@ export interface StudioResult {
   'studio.humanAppearanceFromAsset': {name:string;look:HumanLook};
   'studio.snapshot': StudioSnapshot;
   'studio.propertiesFor': StudioProperty[];
+  'studio.inspect': StudioInspector;
+  'studio.entityMove': StudioSnapshot;
   'studio.save': StudioSnapshot;
   'studio.undo': StudioSnapshot;
   'studio.redo': StudioSnapshot;

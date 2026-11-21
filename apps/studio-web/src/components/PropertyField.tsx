@@ -7,10 +7,12 @@ interface PropertyFieldProps {
   property: StudioProperty;
   disabled: boolean;
   onChange: (value: string | number | boolean) => void;
+  /** 'axis': compact single-letter label for X/Y/Z vector rows. */
+  variant?: 'row' | 'axis';
 }
 
 /** Controlled, schema-driven property editor; writes happen only after validation. */
-export default function PropertyField({ property, disabled, onChange }: PropertyFieldProps) {
+export default function PropertyField({ property, disabled, onChange, variant = 'row' }: PropertyFieldProps) {
   const [draft, setDraft] = useState(String(property.value));
   const [error, setError] = useState('');
   const skipBlur = useRef(false);
@@ -51,7 +53,7 @@ export default function PropertyField({ property, disabled, onChange }: Property
     </label>;
   }
 
-  return <label className="property-row">
+  return <label className={'property-row' + (variant === 'axis' ? ' property-row--axis' : '')}>
     <span>{property.label}</span>
     {property.options?.length ?
       <select className="au-select" disabled={locked} value={String(property.value)}

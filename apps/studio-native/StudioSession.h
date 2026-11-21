@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 #include <filesystem>
+#include <functional>
 #include "apps/studio-native/StudioAssetTransfers.h"
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
 #include "apps/editor/core/Workspace.h"
@@ -27,11 +28,18 @@ public:
         facialPreview_.setGpuStatus(rendered,reason);
     }
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
+    // Host-provided material slot names of a loaded content model (the native
+    // Scene owns model loading). Without it, slots come from authored overrides.
+    using MaterialSlotProvider=std::function<std::vector<std::string>(const std::string& asset)>;
+    void setMaterialSlotProvider(MaterialSlotProvider provider) { materialSlots_=std::move(provider); }
     Json previewExternalAssets(const std::vector<std::filesystem::path>& files,
                                const std::string& destination); // native picker ONLY
 private:
     Json snapshot() const;
     Json propertiesFor(const std::string& entityId) const;
+    Json inspectorFor(const std::string& entityId) const; // entity header + components
+    Json setMeshRenderer(int index, const std::string& key, const Json& value);
+    MaterialSlotProvider materialSlots_;
     int indexFor(const std::string& id) const;
     editor::Workspace ws_;
     std::string selected_;

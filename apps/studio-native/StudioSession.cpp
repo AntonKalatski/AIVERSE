@@ -11,6 +11,7 @@
 #include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
+#include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/studio-native/StudioLightingValidation.h"
 #include "engine/render/RenderLightingSettings.h"
 #include "apps/studio-native/StudioFpsLightingDocument.h"
@@ -128,6 +129,199 @@ Json StudioSession::propertiesFor(const std::string& entityId) const {
     }
     throw std::runtime_error("Unknown document object");
 }
+
+namespace {
+Json component(const char* id,const char* title,Json properties,const char* note="") {
+    Json c=Json::object();
+    c.set("id",str(id));c.set("title",str(title));c.set("properties",std::move(properties));
+    if(*note)c.set("note",str(note));
+    return c;
+}
+Json readOnly(Json field){field.set("editable",Json::fromBool(false));return field;}
+// Read-only display of an arbitrary authored component value.
+Json genericField(const std::string& key,const Json& value) {
+    Json r=Json::object();
+    r.set("key",str(key));r.set("label",str(key));r.set("editable",Json::fromBool(false));
+    if(value.isNumber()){r.set("type",str("number"));r.set("value",value);}
+    else if(value.isString()){r.set("type",str("text"));r.set("value",value);}
+    else if(value.boolean(false)==value.boolean(true)){r.set("type",str("boolean"));r.set("value",value);}
+    else {r.set("type",str("text"));r.set("value",str(value.dump(-1)));}
+    return r;
+}
+bool studioModelAssetPath(const std::string& path) {
+    if(path.rfind("content/",0)!=0 || path.size()>512 || path.find("..")!=std::string::npos || path.find('\\')!=std::string::npos)
+        return false;
+    std::string ext=std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return char(std::tolower(c));});
+    return ext==".glb" || ext==".gltf" || ext==".obj";
+}
+}
+Json StudioSession::inspectorFor(const std::string& entityId) const {
+    if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
+        if (nodeId(ws_.map,node.ref) != entityId) continue;
+        Json result=Json::object(),components=Json::array();
+        result.set("id",str(entityId));result.set("name",str(node.label));
+        if(node.ref.isLight()) {
+            const auto& light=*editor::documentLight(ws_.map,node.ref);
+            result.set("kind",str("Light"));
+            Json transform=Json::array(),lightFields=Json::array();
+            for(const auto& field:propertiesFor(entityId).items()) {
+                const auto key=field.getStr("key");
+                if(key=="name")continue;
+                if(key=="x"||key=="z"||key=="height")transform.push(field); else lightFields.push(field);
+            }
+            components.push(component("Transform","Transform",transform));
+            components.push(component("Light","Light",lightFields));
+            result.set("nameEditable",Json::fromBool(true));
+            (void)light;
+        } else if(node.ref.source==editor::DocumentEntityRef::Source::MapEntity) {
+            const auto& e=ws_.map.data.entities.at(node.ref.index);
+            const bool authored=editor::authoredEntity(e);
+            result.set("kind",str(e.type));
+            const auto& comps=e.extra["components"];
+            Json transform=Json::array();
+            transform.push(numericProp("x","Position X",Json::number(double(e.x),4)));
+            if(authored) {
+                const auto& t=comps["Transform"];
+                transform.push(numericProp("y","Position Y",t.has("y")?t["y"]:Json::number(0.0)));
+            } else {
+                // Map units stand on the terrain: Y is the ground height the Scene uses.
+                const double ground=e.at.isNull()?terrainPreviewHeight(ws_.map.data,e.x,e.z,
+                    float(ws_.project.rules.levelHeight.toDouble())):0.0;
+                auto y=readOnly(numericProp("y","Position Y",Json::number(ground,3)));
+                y.set("description",str("Terrain height: map units are placed on the ground."));
+                transform.push(y);
+            }
+            transform.push(numericProp("z","Position Z",Json::number(double(e.z),4)));
+            if(authored && !comps.has("NereidWater")) {
+                const auto& t=comps["Transform"];
+                transform.push(numericProp("yaw","Rotation Y",t.has("yaw")?t["yaw"]:Json::number(0.0)));
+                auto scale=numericProp("scale","Scale",t.has("scale")?t["scale"]:Json::number(1.0));
+                scale.set("min",Json::number(.001));scale.set("max",Json::number(10000.0));transform.push(scale);
+            } else if(!authored) {
+                // Runtime reads map "facing" (degrees, clockwise from north) for initial rotation.
+                auto facing=numericProp("facing","Rotation Y",Json::number(e.extra["facing"].toDouble(0),3));
+                facing.set("min",Json::number(int64_t(0)));facing.set("max",Json::number(int64_t(360)));facing.set("step",Json::number(int64_t(1)));
+                transform.push(facing);
+                auto scale=readOnly(numericProp("scale","Scale",Json::number(1.0)));
+                scale.set("description",str("Map units use their type's scale; per-instance scale is not supported by the RTS runtime yet."));
+                transform.push(scale);
+            }
+            components.push(component("Transform","Transform",transform));
+            // Mesh Renderer: authored StaticModel (editable) or the type's view (read-only).
+            const Json& view=ws_.project.rulesJson["types"][e.type]["view"];
+            Json mesh=Json::array();
+            const Json library=editor::loadMaterialLibrary(ws_);
+            Json options=Json::array();
+            {Json none=Json::object();none.set("label",str("(model default)"));none.set("value",str(""));options.push(none);}
+            for(const auto& [name,value]:library.members()){(void)value;Json o=Json::object();o.set("label",str(name));o.set("value",str(name));options.push(o);}
+            if(comps.has("StaticModel") || authored) {
+                const std::string asset=editor::authoredModelAsset(e);
+                Json field=prop("asset","Mesh","asset",str(asset),authored);
+                Json kinds=Json::array();kinds.push(str("model"));field.set("assetKinds",kinds);
+                mesh.push(field);
+                const Json& overrides=comps["StaticModel"]["materials"];
+                std::vector<std::string> slots;
+                if(materialSlots_ && !asset.empty())slots=materialSlots_(asset);
+                if(slots.empty())slots.push_back("*");
+                for(const auto& [name,value]:overrides.members())
+                    if(std::find(slots.begin(),slots.end(),name)==slots.end())slots.push_back(name);
+                for(const auto& slot:slots) {
+                    const std::string key="material:"+slot;
+                    const std::string label=slot=="*"?"Material (all slots)":"Material · "+slot;
+                    Json f=prop(key.c_str(),label.c_str(),"text",str(overrides[slot].isString()?overrides[slot].str():""),authored);
+                    f.set("options",options);mesh.push(f);
+                }
+                components.push(component("MeshRenderer","Mesh Renderer",mesh,
+                    asset.empty()?"No mesh assigned: the Scene shows a proxy box.":""));
+            } else {
+                const Json& model=view["model"];
+                std::string path=model.isString()?model.str():model.isArray()&&model.size()?
+                    (model[size_t(0)].isString()?model[size_t(0)].str():model[size_t(0)].getStr("file")):"";
+                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"(none)":path))));
+                for(const auto& [slot,ref]:view["materials"].members())
+                    mesh.push(readOnly(prop(("material:"+slot).c_str(),(slot=="*"?std::string("Material (all slots)"):"Material · "+slot).c_str(),
+                        "text",str(ref.isString()?ref.str():ref.dump(-1)))));
+                components.push(component("MeshRenderer","Mesh Renderer",mesh,
+                    ("Defined by entity type '"+e.type+"' in rules.json.").c_str()));
+            }
+            Json unit=Json::array();
+            unit.push(readOnly(prop("type","Type","text",str(e.type))));
+            unit.push(numericProp("owner","Owner",num(int64_t(e.owner)),true));
+            components.push(component("Unit","Unit",unit));
+            for(const auto& [name,value]:comps.members()) {
+                if(name=="Transform"||name=="StaticModel")continue;
+                Json fields=Json::array();
+                if(value.isObject())for(const auto& [key,item]:value.members())fields.push(genericField(key,item));
+                else fields.push(genericField("value",value));
+                components.push(component(name.c_str(),name.c_str(),fields,"Read-only in Studio."));
+            }
+        } else {
+            result.set("kind",str(node.ref.source==editor::DocumentEntityRef::Source::FpsCollider?"Collider":"Spawn"));
+            Json transform=Json::array();
+            if(node.hasPosition) {
+                transform.push(numericProp("x","Position X",Json::number(node.position.x,3)));
+                transform.push(numericProp("y","Position Y",Json::number(node.position.y,3)));
+                transform.push(numericProp("z","Position Z",Json::number(node.position.z,3)));
+            }
+            components.push(component("Transform","Transform",transform));
+            for(const auto& descriptor:editor::documentComponents(ws_.map,node.ref)) {
+                if(descriptor.kind==editor::DocumentComponentKind::Transform)continue;
+                Json data,fields=Json::array();
+                if(editor::readDocumentComponent(ws_.map,node.ref,descriptor.kind,data))
+                    for(const auto& [key,item]:data.members())fields.push(genericField(key,item));
+                components.push(component(descriptor.id,descriptor.title,fields,"Read-only in Studio."));
+            }
+        }
+        result.set("components",components);
+        return result;
+    }
+    throw std::runtime_error("Unknown document object");
+}
+Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json& value) {
+    if(index<0)throw std::runtime_error("Unknown document object");
+    const auto& source=ws_.map.data.entities[size_t(index)];
+    if(!editor::authoredEntity(source))
+        throw std::runtime_error("This entity's mesh is defined by its type in rules.json");
+    if(!value.isString())throw std::runtime_error("Mesh Renderer values are text");
+    auto candidate=source;
+    Json components=candidate.extra["components"];
+    Json model=components["StaticModel"].isObject()?components["StaticModel"]:Json::object();
+    if(key=="asset") {
+        std::string path=value.str();
+        if(!path.empty() && path.rfind("content/",0)!=0) {
+            // The shared asset picker returns stable GUIDs; documents keep content paths.
+            if(!studioValidGuid(path))throw std::runtime_error("Mesh must be a content/ path or asset GUID");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            const auto entry=catalog.byGuid(path);
+            if(!entry || entry->directory)throw std::runtime_error("Asset GUID not found; refresh Assets");
+            path="content/"+entry->path;
+        }
+        if(!path.empty()) {
+            if(!studioModelAssetPath(path))throw std::runtime_error("Mesh must be a .glb, .gltf or .obj file in content/");
+            if(!std::filesystem::is_regular_file(std::filesystem::path(ws_.project.dir)/path))
+                throw std::runtime_error("Mesh file does not exist: "+path);
+            model.set("asset",str(path));
+        } else model.erase("asset");
+    } else if(key.rfind("material:",0)==0 && key.size()>9 && key.size()<=200) {
+        const std::string slot=key.substr(9);
+        Json materials=model["materials"].isObject()?model["materials"]:Json::object();
+        if(value.str().empty())materials.erase(slot);
+        else {
+            if(!editor::loadMaterialLibrary(ws_).has(value.str()))
+                throw std::runtime_error("Unknown material: "+value.str());
+            materials.set(slot,value);
+        }
+        if(materials.size())model.set("materials",materials); else model.erase("materials");
+    } else throw std::runtime_error("Unknown Mesh Renderer property");
+    if(model.size())components.set("StaticModel",model); else components.erase("StaticModel");
+    candidate.extra.set("components",components);
+    if(candidate.extra!=source.extra) {
+        ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
+    }
+    return snapshot();
+}
 Json StudioSession::snapshot() const {
     Json result = Json::object();
     Json project = Json::object();
@@ -199,6 +393,7 @@ Json StudioSession::snapshot() const {
     result.set("properties", std::move(fields));
     result.set("components",std::move(componentViews));
     result.set("entityProperties",std::move(entityFields));
+    if(valid) { try { result.set("inspector",inspectorFor(selected_)); } catch(const std::exception&) {} }
     Json logs = Json::array();
     const auto& activity = ws_.activity;
     for (size_t i = activity.size() > 100 ? activity.size() - 100 : 0; i < activity.size(); ++i) {
@@ -1012,6 +1207,34 @@ Json StudioSession::dispatch(const Json& request) {
                 }
             }
             reply.set("result",snapshot());
+        } else if (method == "studio.entityMove") {
+            // Hierarchy drag: reorder authored map entities (document order), undoable.
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            const int from=indexFor(params.getStr("entityId"));
+            auto& entities=ws_.map.data.entities;
+            int to=int(entities.size());
+            if (params["targetId"].isString()) {
+                to=indexFor(params.getStr("targetId"));
+                if (params.getStr("placement")=="after") ++to;
+            }
+            if (to!=from && to!=from+1) {
+                ws_.map.beginEdit();
+                // Roads reference entities by index: remap them with the permutation.
+                std::vector<int> order(entities.size());
+                for (size_t i=0;i<order.size();++i) order[i]=int(i);
+                order.erase(order.begin()+from);
+                if (to>from) --to;
+                order.insert(order.begin()+to,from);
+                std::vector<int> newIndex(order.size());
+                decltype(ws_.map.data.entities) reordered;reordered.reserve(entities.size());
+                for (size_t k=0;k<order.size();++k){newIndex[size_t(order[k])]=int(k);reordered.push_back(std::move(entities[size_t(order[k])]));}
+                entities=std::move(reordered);
+                for (auto& [a,b]:ws_.map.data.roads){a=newIndex[size_t(a)];b=newIndex[size_t(b)];}
+                ws_.map.touched();
+                selected_=studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(to)));
+            }
+            reply.set("result",snapshot());
         } else if (method == "studio.save") {
             const Json r = ws_.call("map_save", Json::object(), "studio");
             if (r.has("error")) throw std::runtime_error(r.getStr("error"));
@@ -1031,6 +1254,8 @@ Json StudioSession::dispatch(const Json& request) {
             reply.set("result", snapshot());
         } else if (method == "studio.propertiesFor") {
             reply.set("result", propertiesFor(params.getStr("entityId")));
+        } else if (method == "studio.inspect") {
+            reply.set("result", inspectorFor(params.getStr("entityId")));
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
             // A pinned Inspector may edit its own explicitly addressed entity while
@@ -1039,6 +1264,10 @@ Json StudioSession::dispatch(const Json& request) {
             if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
             const std::string key = params.getStr("key");
             const Json& value = params["value"];
+            if(params.getStr("componentId")=="MeshRenderer") {
+                reply.set("result",setMeshRenderer(indexFor(entityId),key,value));
+                return reply;
+            }
             if(entityId.compare(0,6,"light:")==0) {
                 bool found=false;size_t index=0;
                 for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
@@ -1138,6 +1367,9 @@ Json StudioSession::dispatch(const Json& request) {
            }
            if (key == "type") {
                 if (!value.isString() || value.str().empty()) throw std::runtime_error("Invalid type");
+            } else if (key == "facing") {
+                if (!value.isNumber() || !std::isfinite(value.toDouble()) ||
+                    value.toDouble() < 0 || value.toDouble() > 360) throw std::runtime_error("Rotation must be 0..360 degrees");
             } else if (key == "x" || key == "z" || key == "owner") {
                 if (!value.isNumber()) throw std::runtime_error("Expected number");
                 const double v = value.toDouble();
