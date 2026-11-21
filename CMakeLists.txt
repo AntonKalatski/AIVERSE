@@ -2086,8 +2086,10 @@ if(AIVERSE_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
         add_test(NAME unity_vfx_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/unity_vfx/test_import.py)
-        add_test(NAME unity_anim_importer COMMAND ${CMAKE_COMMAND} -E env AIVERSE_CLIPINFO=$<TARGET_FILE:aiverse_clipinfo>
-                 ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/unity_anim/test_unity_anim.py)
+        if(TARGET aiverse_clipinfo)   # host tool: not built for Android / iOS / web
+            add_test(NAME unity_anim_importer COMMAND ${CMAKE_COMMAND} -E env AIVERSE_CLIPINFO=$<TARGET_FILE:aiverse_clipinfo>
+                     ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/unity_anim/test_unity_anim.py)
+        endif()
     endif()
 endif()
 if(TARGET aiverse_editor_core)
