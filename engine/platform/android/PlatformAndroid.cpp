@@ -617,7 +617,7 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
         g_device->beginFrame(S.fbW, S.fbH);
         if (S.cb.frame) S.cb.frame(*g_device, dt);
         g_device->endFrame();
-        if (S.cb.afterFrame) S.cb.afterFrame(*device);
+        if (S.cb.afterFrame) S.cb.afterFrame(*g_device);
         if (!g_vulkan) eglSwapBuffers(g_dpy, g_surf);
         const double frameEnd = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
         if (g_perf.frame(frameStart, (frameEnd - frameStart) * 1000.0)) S.quit = true;
