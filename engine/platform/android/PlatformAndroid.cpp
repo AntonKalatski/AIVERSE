@@ -15,6 +15,7 @@
 #include <android/input.h>
 #include <android/keycodes.h>
 #include <android/log.h>
+#include <sched.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <android_native_app_glue.h>
@@ -674,6 +675,30 @@ void redirectStdioToLogcat() {
         }
     }).detach();
 }
+// The game thread (simulation + view + RHI submission) on the fastest cores. big.LITTLE schedulers
+// often leave a busy thread on a little core for long stretches (Galaxy A05s: 4x A53 1.9 GHz +
+// 4x A73 2.4 GHz). AIVERSE_BIG_CORES=0 leaves the choice to the scheduler.
+void pinToBigCores() {
+    if (const char* e = std::getenv("AIVERSE_BIG_CORES"); e && *e == '0') return;
+    long best = 0, freq[64] = {};
+    int n = 0;
+    for (; n < 64; ++n) {
+        char path[96];
+        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", n);
+        FILE* f = std::fopen(path, "r");
+        if (!f) break;
+        if (std::fscanf(f, "%ld", &freq[n]) != 1) freq[n] = 0;
+        std::fclose(f);
+        best = std::max(best, freq[n]);
+    }
+    if (n < 2 || best <= 0) return;
+    cpu_set_t set; CPU_ZERO(&set);
+    int count = 0;
+    for (int i = 0; i < n; ++i) if (freq[i] == best) { CPU_SET(i, &set); ++count; }
+    if (count == n) return;   // all cores alike
+    const int r = sched_setaffinity(0, sizeof set, &set);
+    __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[cpu] game thread on %d of %d cores (max %ld kHz)%s", count, n, best, r == 0 ? "" : " - refused");
+}
 std::string systemProperty(const char* name) {
     char v[PROP_VALUE_MAX] = {};
     return __system_property_get(name, v) > 0 ? std::string(v) : std::string();
@@ -703,6 +728,7 @@ void android_main(android_app* app) {
         }
         if (args.size() > 1) __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[adb] args: %s", a.c_str());
     }
+    pinToBigCores();
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);

@@ -177,6 +177,11 @@ cases_ubo() {
   run pool gl $U; run ring gl $U AIVERSE_GL_UBO=ring; run base vulkan $U
   run pool_s050 gl $U AIVERSE_RENDER_SCALE=0.5; run vsync gl; run vsync vulkan
 }
+# CPU placement + render scale on the current defaults
+cases_cpu() {
+  run big gl $U; run nobig gl $U AIVERSE_BIG_CORES=0; run big_s050 gl $U AIVERSE_RENDER_SCALE=0.5
+  run big vulkan $U; run nobig vulkan $U AIVERSE_BIG_CORES=0
+}
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
