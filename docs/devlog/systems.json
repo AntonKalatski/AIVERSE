@@ -679,7 +679,7 @@
       "flagship": true,
       "where": "main",
       "tagline": "Цифровые люди",
-      "essence": "Лицевой контроллер и морфы на GPU поверх анимации MotionWeave: мимика, моргание, глаза, LOD для персонажей.",
+      "essence": "Цифровые люди: лицевой контроллер и морфы на GPU поверх анимации MotionWeave, редактор внешности Character Creator в Studio и адаптер для экспорта MetaHuman.",
       "cover": {
         "src": "docs/devlog/media/systems/vivid-portrait.jpg",
         "caption": "VIVID: портрет в студийном свете, нативный кадр Metal",
@@ -688,7 +688,7 @@
         "captionEn": "VIVID: portrait in studio light, native Metal frame"
       },
       "coverBrief": "Портрет цифрового человека крупным планом в студийном свете: кожа, глаза и живая мимика.",
-      "article": "https://github.com/chromealex/AIVERSE/blob/feature/vivid-digital-humans/docs/vivid.md",
+      "article": "docs/vivid-creator.md",
       "started": "2026-11-19",
       "includes": [
         {
@@ -722,16 +722,24 @@
           "textEn": "Named sockets and independent skinned models."
         },
         {
-          "name": "Creator и Studio",
-          "text": "Панель внешности в Studio, студийный свет с адаптивными мягкими тенями.",
-          "nameEn": "Creator and Studio",
-          "textEn": "An appearance panel in Studio, studio lighting with adaptive soft shadows."
+          "name": "Character Creator",
+          "text": "Редактор в Studio: смешивание лица по частям, лепка кистью, кожа, макияж, глаза, волосы, тело, одежда и причёски с примеркой, мимика и свет, пресеты, толпа, сборка с LOD и «В игру».",
+          "nameEn": "Character Creator",
+          "textEn": "An editor in Studio: per-part face blending, brush sculpting, skin, makeup, eyes, hair, body, outfit and hairstyle try-on, expressions and light, presets, crowds, LOD build and “To the game”."
+        },
+        {
+          "name": "Адаптер MetaHuman",
+          "text": "Экспорт MetaHuman без Unreal в рантайме: роли материалов, меши лица, покрытие ARKit, драйверы суставов-корректоров, челюсти и глаз.",
+          "nameEn": "MetaHuman adapter",
+          "textEn": "MetaHuman exports with no Unreal at runtime: material roles, face meshes, ARKit coverage, corrective joint, jaw and eye drivers."
         }
       ],
       "enables": [
         "Делать цифровых людей для любого жанра: кат-сцены, NPC, аватары, портреты в диалогах.",
         "Оживлять лицо мимикой, морганием и взглядом поверх любой анимации тела.",
-        "Показывать персонажа крупным планом без ступенчатых теней."
+        "Показывать персонажа крупным планом без ступенчатых теней.",
+        "Собирать персонажей в редакторе без DCC: от пресета до юнита в игре за несколько минут.",
+        "Брать готовых персонажей MetaHuman и сразу настраивать их внешность в Studio."
       ],
       "roadmap": [
         {
@@ -782,28 +790,30 @@
         },
         {
           "status": "done",
-          "date": "2026-11-22",
-          "title": "Совместимость с MetaHuman через проверенный адаптер",
-          "text": "Без Unreal в рантайме: экспорт MetaHuman распознаётся и настраивается в Creator, проверено на Ada и Bruce. Суставы-корректоры, челюсть и глаза ведутся по ARKit-каналам; GLB с Draco распаковывается офлайн. Полный RigLogic и strand-грум пока не поддерживаются.",
-          "titleEn": "MetaHuman compatibility through an audited adapter",
-          "textEn": "No Unreal at runtime: MetaHuman exports are detected and set up in Creator, verified on Ada and Bruce. Corrective joints, jaw and eyes follow ARKit channels; Draco GLB is decoded offline. Full RigLogic and strand groom are not supported yet."
-        },
-        {
-          "status": "done",
           "date": "2026-11-21",
           "title": "VIVID Creator: редактор внешности",
           "text": "В Studio: смешивание лица, лепка, кожа, макияж, волосы, тело, одежда с примеркой, сборка в игру.",
           "titleEn": "VIVID Creator: appearance editor",
           "textEn": "In Studio: face blending, sculpting, skin, makeup, hair, body, outfit try-on, build to game."
+        },
+        {
+          "status": "done",
+          "date": "2026-11-22",
+          "title": "Совместимость с MetaHuman через проверенный адаптер",
+          "text": "Без Unreal в рантайме: экспорт MetaHuman распознаётся и настраивается в Creator, проверено на Ada и Bruce. Суставы-корректоры, челюсть и глаза ведутся по ARKit-каналам; GLB с Draco распаковывается офлайн. Полный RigLogic и strand-грум пока не поддерживаются.",
+          "titleEn": "MetaHuman compatibility through an audited adapter",
+          "textEn": "No Unreal at runtime: MetaHuman exports are detected and set up in Creator, verified on Ada and Bruce. Corrective joints, jaw and eyes follow ARKit channels; Draco GLB is decoded offline. Full RigLogic and strand groom are not supported yet."
         }
       ],
       "taglineEn": "Digital humans",
-      "essenceEn": "A facial controller and GPU morphs on top of MotionWeave animation: expressions, blinking, eyes and LODs for characters.",
+      "essenceEn": "Digital humans: a facial controller and GPU morphs on top of MotionWeave animation, the Character Creator appearance editor in Studio and an adapter for MetaHuman exports.",
       "coverBriefEn": "A close-up portrait of a digital human in studio light: skin, eyes and lively expressions.",
       "enablesEn": [
         "Build digital humans for any genre: cutscenes, NPCs, avatars, dialogue portraits.",
         "Bring faces to life with expressions, blinking and gaze on top of any body animation.",
-        "Show characters in close-up without stepped shadows."
+        "Show characters in close-up without stepped shadows.",
+        "Build characters in the editor without a DCC: from a preset to a unit in the game in minutes.",
+        "Take ready MetaHuman characters and adjust their look in Studio right away."
       ]
     },
     {
