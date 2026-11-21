@@ -706,6 +706,17 @@ AutoModuleEvidence detectAutoModules(const Options& o) {
     return found;
 }
 
+// Rules "traffic" switched on (an object without "enabled": false) in the project's composed rules.
+bool rulesUseTraffic(const Options& o) {
+    try {
+        const Json rules = aiverse::readComposedJson((o.project / o.gameJson.getStr("rules", "rules.json")).string(), aiverse::fileReader());
+        const Json& t = rules["traffic"];
+        return t.isObject() && t.getBool("enabled", true);
+    } catch (const std::exception&) {
+        return false;   // unreadable rules fail later with their own error
+    }
+}
+
 // Explicit optional engine modules for packaged clients. Without a declaration
 // preserve the historical CMake defaults; an empty array selects none.
 std::string engineModuleVars(const Options& o) {
@@ -714,7 +725,7 @@ std::string engineModuleVars(const Options& o) {
     const Json& modules = perTarget.has("engineModules") ? perTarget["engineModules"] : packaging["engineModules"];
     if (modules.isNull()) return "";
     if (!modules.isArray()) die("packaging.engineModules: ожидается массив имён модулей");
-    bool strata = false, autolod = false, vulkan = false, spine = false, gamepad = false, fx = false, fbx = false, legacyModels = false, obj = false, blp = false, city = false;
+    bool strata = false, autolod = false, vulkan = false, spine = false, gamepad = false, fx = false, fbx = false, legacyModels = false, obj = false, blp = false, city = false, traffic = false;
     bool automatic = false;
     for (const auto& item : modules.items()) {
         if (!item.isString()) die("packaging.engineModules: каждое имя должно быть строкой");
@@ -731,6 +742,7 @@ std::string engineModuleVars(const Options& o) {
         else if (name == "obj") obj = true;
         else if (name == "blp") blp = true;
         else if (name == "city-client") city = true;
+        else if (name == "traffic") traffic = true;
         else die("packaging.engineModules: неизвестный модуль " + name);
     }
     if (automatic) {
@@ -742,6 +754,7 @@ std::string engineModuleVars(const Options& o) {
         legacyModels |= found.legacyModels;
         obj |= found.obj;
         blp |= found.blp;
+        traffic |= rulesUseTraffic(o);
     }
     if (vulkan && o.profile != "windows" && o.profile != "linux" && o.profile != "android")
         die("packaging.engineModules: vulkan недоступен для " + o.profile);
@@ -752,9 +765,11 @@ std::string engineModuleVars(const Options& o) {
     if (!fx && (fs::exists(o.project / "fx" / "fx.json") || fs::exists(o.project / "fx" / "gpu" / "routes.json") ||
                 fs::exists(o.project / "fx" / "graphs")))
         die("packaging.engineModules: проект содержит FX-ресурсы; добавьте модуль fx");
+    if (!traffic && rulesUseTraffic(o))
+        die("packaging.engineModules: правила включают traffic; добавьте модуль traffic");
     std::string selected = std::string(strata ? "strata " : "") + (autolod ? "runtime-autolod " : "") +
-         (vulkan ? "vulkan " : "") + (spine ? "spine " : "") + (gamepad ? "gamepad " : "") + (fx ? "fx " : "") + (fbx ? "fbx " : "") + (legacyModels ? "legacy-models " : "") + (obj ? "obj " : "") + (blp ? "blp " : "") + (city ? "city-client" : "") +
-         (!strata && !autolod && !vulkan && !spine && !gamepad && !fx && !fbx && !legacyModels && !obj && !blp && !city ? "нет дополнительных" : "");
+         (vulkan ? "vulkan " : "") + (spine ? "spine " : "") + (gamepad ? "gamepad " : "") + (fx ? "fx " : "") + (fbx ? "fbx " : "") + (legacyModels ? "legacy-models " : "") + (obj ? "obj " : "") + (blp ? "blp " : "") + (city ? "city-client " : "") + (traffic ? "traffic" : "") +
+         (!strata && !autolod && !vulkan && !spine && !gamepad && !fx && !fbx && !legacyModels && !obj && !blp && !city && !traffic ? "нет дополнительных" : "");
     if (!selected.empty() && selected.back() == ' ') selected.pop_back();
     info("модули движка: " + selected);
     return std::string(" -DAIVERSE_BUILD_STRATA=") + (strata ? "ON" : "OFF") +
@@ -767,7 +782,8 @@ std::string engineModuleVars(const Options& o) {
            " -DAIVERSE_LEGACY_MODELS=" + (legacyModels ? "ON" : "OFF") +
            " -DAIVERSE_OBJ=" + (obj ? "ON" : "OFF") +
            " -DAIVERSE_BLP=" + (blp ? "ON" : "OFF") +
-           " -DAIVERSE_CLIENT_WITH_CITY=" + (city ? "ON" : "OFF");
+           " -DAIVERSE_CLIENT_WITH_CITY=" + (city ? "ON" : "OFF") +
+           " -DAIVERSE_GAME_WITH_TRAFFIC=" + (traffic ? "ON" : "OFF");
 }
 
 std::string cmakeVars(const Game& g, const Options& o, const fs::path& content, const fs::path& gen) {

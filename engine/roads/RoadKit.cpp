@@ -1,11 +1,11 @@
-#include "RtsRoadKit.h"
-#include "RtsRoadView.h"
+#include "RoadKit.h"
+#include "RoadView.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 
-namespace aiverse::game::roadkit {
+namespace aiverse::roads::roadkit {
 
 using namespace render;
 
@@ -44,7 +44,7 @@ Rgb mix(Rgb a, Rgb b, float t) { return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g
 
 Image texture(int mat, int size) {
     Image img;
-    using V = RtsRoadView;
+    using V = RoadView;
     if (mat != V::kAsphalt && mat != V::kConcrete && mat != V::kCobble && mat != V::kPaving && mat != V::kGravel && mat != V::kDirt &&
         mat != V::kGrass && mat != V::kCurb && mat != V::kBridge && mat != V::kSoil && mat != V::kAsphaltWorn) return img;
     img.name = "#road-kit-" + std::to_string(mat);
@@ -552,7 +552,7 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
 }
 
 Material material(int mat) {
-    using V = RtsRoadView;
+    using V = RoadView;
     Material m;
     m.vertexColors = false;
     m.roughness = 0.9f;
@@ -628,7 +628,7 @@ void sphere(std::vector<Tri>& out, int mat, float3 c, float3 r, int rings = 5, i
 } // namespace
 
 void shape(const std::string& id, float s, std::vector<Tri>& out) {
-    using V = RtsRoadView;
+    using V = RoadView;
     if (id == "lamp") {   // 8 m pole, arm toward the road (-z in the prop frame: the road side), lamp head
         cylinder(out, V::kMetal, {0, 0, 0}, 0.11f * s, 0.07f * s, 8.0f * s, 8, false);
         box(out, V::kMetal, {-0.05f * s, 7.7f * s, -1.6f * s}, {0.05f * s, 7.85f * s, 0.0f});
@@ -690,4 +690,4 @@ void shape(const std::string& id, float s, std::vector<Tri>& out) {
     }
 }
 
-} // namespace aiverse::game::roadkit
+} // namespace aiverse::roads::roadkit
