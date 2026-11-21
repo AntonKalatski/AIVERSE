@@ -2877,6 +2877,12 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3")
         set_tests_properties(lighting_compute_gi_scroll_vulkan PROPERTIES
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1")
+        foreach(_fx dof motion)
+            add_test(NAME prisma_${_fx}_vulkan COMMAND aiverse_hdr_vulkan)
+            set_tests_properties(prisma_${_fx}_vulkan PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
+                LABELS "Lighting;GPU;Vulkan;Prisma" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+        endforeach()
         add_test(NAME lighting_luma_vulkan COMMAND aiverse_hdr_vulkan)
         set_tests_properties(lighting_luma_vulkan PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
             LABELS "Lighting;GPU;Vulkan" TIMEOUT 180 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
@@ -4701,6 +4707,19 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
 endif()
 
 if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    # PRISMA Depth of Field and Motion Blur: regular effects (no opt-in flag).
+    foreach(_fx dof motion)
+        add_test(NAME prisma_${_fx}_gpu COMMAND aiverse_hdr_scene)
+        set_tests_properties(prisma_${_fx}_gpu PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
+            LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
+            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        if(TARGET aiverse_hdr_gl)
+            add_test(NAME prisma_${_fx}_gl COMMAND aiverse_hdr_gl)
+            set_tests_properties(prisma_${_fx}_gl PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
+                LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        endif()
+    endforeach()
     add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE

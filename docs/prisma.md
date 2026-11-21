@@ -4212,8 +4212,8 @@ same way `setViewManualExposure` overrides the authored exposure. The override
 forces the metric (camera-linear) branch and keeps the effect's `intensity` and
 `occlusionToleranceMeters`. `enabled=false` switches defocus off for that view.
 Values are clamped to the catalog bounds on ingress; `clearViewDepthOfField` and
-`retireView` remove the override. It still requires the authored effect and
-`AIVERSE_PRISMA_DOF=1`; nothing is added to the profile implicitly.
+`retireView` remove the override. It still requires the authored effect; nothing is added to the profile
+implicitly.
 
 LENS drives it from `CameraLensComponent::driveDepthOfField` through
 `CameraPostFxPool`: the thin-lens sharp interval `[near, far]` becomes
@@ -4221,3 +4221,20 @@ LENS drives it from `CameraLensComponent::driveDepthOfField` through
 is capped at 500 m) and `maxBlur` = background disc radius at infinity in render
 pixels (clamped to 16). This is the same 8-tap screen-space defocus, not a physical
 bokeh. See `docs/handoffs/prisma-stage-96-lens-physical-dof.md`.
+
+## Stage 67 — Depth of Field and Motion Blur as regular effects (2026-11-21)
+
+`depthOfField` and `motionBlur` no longer need `AIVERSE_PRISMA_DOF=1` /
+`AIVERSE_PRISMA_MOTION_BLUR=1`: they run whenever a camera profile lists them
+(enabled, quality at least the effect's `minQuality`, which defaults to High;
+Motion Blur still needs an HDR scene). The variables remain as kill switches:
+`=0` turns the pass off. One helper (`prismaOptIn` in `Prisma.cpp`) decides this
+for the render passes, the object-velocity request and the effect report.
+Temporal resolve, auto exposure and the graph passes keep their `=1` opt-ins.
+
+GPU acceptance on the real backends: `prisma_dof_gpu` / `prisma_motion_gpu`
+(Metal), `_gl` (macOS GL), `_vulkan` (headless Vulkan host). The test renders the
+default HDR scene and measures frame sharpness: DoF focused on the scene keeps it,
+focus near the camera softens it by at least 25%; a turning camera with motion blur
+is at least 20% softer than without, a still camera with blur stays sharp; every
+effect phase must report `encoded`. Handoff: `docs/handoffs/prisma-stage-67.md`.
