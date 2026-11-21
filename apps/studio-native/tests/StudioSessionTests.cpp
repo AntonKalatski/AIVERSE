@@ -342,7 +342,7 @@ void authoredEntityWorkflow() {
    {
        AIVERSE_TEST_CHECK(!call("studio.extensions")["result"].getBool("exists"));
        const auto made=call("studio.extensionCreate");
-       AIVERSE_TEST_CHECK(!made.has("error") && made["result"]["widgets"].size()==4 && made["result"]["gizmos"].size()==1);
+       AIVERSE_TEST_CHECK(!made.has("error") && made["result"]["widgets"].size()==4 && made["result"]["gizmos"].size()==2);
        AIVERSE_TEST_CHECK(call("studio.extensionCreate").has("error"));
        AIVERSE_TEST_CHECK(call("studio.extensionAction",R"({"id":"inspector"})")["result"]["command"].getStr("id")=="inspector");
        AIVERSE_TEST_CHECK(call("studio.extensionAction",R"({"id":"radius","value":25})")["result"]["command"].getStr("command")=="status");
@@ -355,6 +355,33 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(call("studio.attachmentsGet",R"({"path":"../x.json"})").has("error"));
        const auto saved=call("studio.attachmentsSet",R"({"document":{"parent":"content/a.glb","attachments":[{"model":"content/b.glb","socket":"hand_r","id":"sword"}]}})");
        AIVERSE_TEST_CHECK(!saved.has("error") && saved["result"].getBool("exists") && saved["result"]["document"]["attachments"][0].getStr("socket")=="hand_r");
+   }
+   // Spline editing: a river's point moves by handle id as one History step.
+   {
+       const auto river=call("studio.op",R"({"op":"water_set","params":{"body":{"id":7,"kind":"river","points":[[2,2,6],[10,8,6],[20,10,6]]}}})");
+       if(!river.has("error")){
+           const auto handles=call("studio.splineEdit",R"({"kind":"river"})");
+           AIVERSE_TEST_CHECK(handles["result"]["handles"].size()==3 && handles["result"]["segments"].size()==2);
+           std::string err;
+           const size_t depth=session.workspace().map.undoDepth();
+           const bool movedRiver=session.splineMove("water:7:1",12,9,&err);
+           if(!movedRiver)std::cerr<<"splineMove: "<<err<<"\n";
+           AIVERSE_TEST_CHECK(movedRiver);
+           AIVERSE_TEST_CHECK(session.workspace().map.undoDepth()==depth+1);
+           const auto after=call("studio.splineEdit",R"({"kind":"river"})");
+           AIVERSE_TEST_CHECK(after["result"]["handles"][1]["x"].toDouble()==12);
+           const auto steps=call("studio.history")["result"]["steps"];
+           AIVERSE_TEST_CHECK(steps[steps.size()-1].getStr("label")=="Move river point");
+           AIVERSE_TEST_CHECK(!session.splineMove("water:nope:0",1,1,&err));
+           call("studio.undo");call("studio.undo");
+       } else std::cerr<<"water_set unavailable in the test project: "<<river.getStr("error")<<"\n";
+       call("studio.splineEdit",R"({"kind":""})");
+   }
+   // Project hub: templates start with "empty"; recent projects come from the shared registry.
+   {
+       const auto hub=call("studio.hub");
+       AIVERSE_TEST_CHECK(!hub.has("error") && hub["result"]["templates"].size()>=1 && hub["result"]["templates"][0].getStr("id")=="empty");
+       AIVERSE_TEST_CHECK(hub["result"]["recent"].isArray() && !hub["result"].getStr("defaultLocation").empty());
    }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {

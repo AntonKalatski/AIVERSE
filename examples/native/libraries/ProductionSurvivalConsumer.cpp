@@ -1,9 +1,9 @@
 // settlement-production + survival-ecology native consumer: validated settings sections, colony/power/ecology JSON,
 // two authoritative ticks in the owner order (power -> planner commands -> colony -> bodies -> ecology), versioned
 // records (kinds 104..110) in NativeState and definition hashes for the save envelope. The full 20-day example is
-// examples/libraries/genre/production-survival.
-#include <aiverselib/genre/Colony.h>
-#include <aiverselib/genre/SurvivalEcology.h>
+// examples/libraries/mechanics/production-survival.
+#include <aiverselib/mechanics/Colony.h>
+#include <aiverselib/mechanics/SurvivalEcology.h>
 #include <aiverselib/bots/ColonyPlannerData.h>
 #include "modules/rts/RtsNative.h"
 #include <string>

@@ -192,8 +192,8 @@ inline mat4 mat4::inverse() const {
     return r;
 }
 
-// Generic target-orbit camera: usable for strategy, FPS spectator, orbit,
-// editor and scene previews. The old RTSCamera name stays as an alias.
+// Generic target-orbit camera: overhead, spectator, orbit,
+// editor and scene previews.
 // LENS camera extends the original orbit API without genre coupling.
 struct Camera {
     float3 target{0, 0, 0};
@@ -325,6 +325,5 @@ struct Camera {
 };
 // Compatibility names kept for existing MotionWeave/RTS callers.
 using Camera3D = Camera;
-using RTSCamera = Camera;
 
 } // namespace aiverse::render

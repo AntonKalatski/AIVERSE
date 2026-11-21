@@ -14,12 +14,17 @@
 #include <cmath>
 #include <cstdint>
 #include <fcntl.h>
+#ifdef _WIN32
+#include "engine/platform/StagedWrite.h"
+#endif
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <vector>
 
 namespace aiverse::vivid {
@@ -379,6 +384,9 @@ inline void saveHumanCreator(const std::string& projectRoot,const std::string& n
     if(!validHumanCreatorName(name))throw std::invalid_argument("Invalid human name");
     const auto folder=humanCreatorFolder(projectRoot,true);
     const std::string filename=name+".json",pending=filename+".pending";
+#ifdef _WIN32
+    platform::stagedWrite(folder,filename,pending,doc.dump(2)+"\n","human");
+#else
     const int dir=::open(folder.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
     if(dir<0)throw std::runtime_error("Cannot open humans folder");
     int fd=-1;
@@ -402,6 +410,7 @@ inline void saveHumanCreator(const std::string& projectRoot,const std::string& n
         (void)::unlinkat(dir,pending.c_str(),0);(void)::close(dir);
         throw;
     }
+#endif
 }
 
 } // namespace aiverse::vivid

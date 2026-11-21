@@ -399,7 +399,7 @@ private:
     fx::ParticleSystem preview_;
     render::TextureCache textures_;
     Viewport vp_;
-    render::RTSCamera cam_{{0, 0.8f, 0}, 9.0f, 0.45f, 0.7f};
+    render::Camera cam_{{0, 0.8f, 0}, 9.0f, 0.45f, 0.7f};
     std::string project_, sel_, pendingSelect_, newName_, jsonText_, bindingsText_, bindingsError_;
     std::vector<std::string> names_, errors_;
     EffectDef def_;

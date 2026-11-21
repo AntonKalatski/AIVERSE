@@ -80,7 +80,7 @@ int main() {
         require(!moved["pos"].isArray());
     }
 
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target = {0, 0, 0};
     camera.distance = 18;
     camera.pitch = 0.9f;

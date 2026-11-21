@@ -1,8 +1,6 @@
 // Unified *view* of runtime objects for the editor, irrespective of genre.
-// Runtime RTS rows and FPS Actor/Projectile/Loot/Vehicle previews now expose
-// real ECS entity components. In the optional FPS ecsAuthority mode full ECS
-// Actor/Projectile/Loot/Vehicle runtime pools are canonical between ticks;
-// lightweight inspector projections remain available in both modes.
+// Runtime RTS rows and FPS characters / projectiles / loot / vehicles are real
+// ECS entities; the rows show their components (the FPS host is ECS-only).
 #pragma once
 #include "Editor.h"
 #include <string>
@@ -23,7 +21,7 @@ struct EditorRuntimeEntity {
 
 inline std::vector<EditorRuntimeEntity> enumerateEditorRuntimeEntities(Editor& ed) {
     std::vector<EditorRuntimeEntity> result;
-    if (ed.ws().project.isFps()) {
+    if (ed.ws().project.actorSessionPlay()) {
         const Json& runtime = ed.fpsRuntimeSnapshot();
         const Json& actors = runtime["actors"];
         if (!actors.isArray()) return result;

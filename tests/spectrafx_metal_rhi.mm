@@ -504,6 +504,75 @@ fragment half4 fs_main(VOut i [[stage_in]],
         }
         impactSlots.shutdown();
 
+        // Batched slot writes: a frame of emits/kills goes up as contiguous
+        // ranges at the next step, never over slots it did not write, and the
+        // GPU state matches per-slot results (read back from the real buffer).
+        {
+            aiverse::fx::SpectraFxGpuParticleSlots batch;
+            check(batch.init(*device,64,false,sharedCompute),"batched slots allocated");
+            aiverse::fx::SpectraFxGpuEnvironment still{};
+            still.acceleration={0,0,0};still.damping=1;
+            std::vector<aiverse::fx::SpectraFxGpuParticleHandle> handles;
+            device->beginFrame(kWidth,kHeight);
+            for(int i=0;i<32;++i) {
+                aiverse::fx::SpectraFxGpuSeed seed;
+                seed.position={float(i),1.f,0.f};seed.velocity={0,0,0};
+                seed.age=0;seed.lifetime=10;
+                handles.push_back(batch.emit(seed));
+            }
+            const uint64_t before=batch.evolution().uploadRanges();
+            check(batch.evolution().pendingWrites()==32,"32 slot writes queued");
+            check(batch.step(0.01f,still),"batched step");
+            check(batch.evolution().uploadRanges()-before==1,
+                  "32 consecutive emits upload as ONE range per buffer");
+            device->endFrame();
+            // Kill every other particle and re-emit into the freed slots in
+            // one frame: writes are scattered, untouched live slots in between
+            // must keep their GPU-evolved age.
+            device->beginFrame(kWidth,kHeight);
+            for(int i=0;i<32;i+=2) batch.kill(handles[size_t(i)]);
+            for(int i=0;i<16;++i) {
+                aiverse::fx::SpectraFxGpuSeed seed;
+                seed.position={100.f+float(i),2.f,0.f};seed.velocity={0,0,0};
+                seed.age=0;seed.lifetime=10;
+                check(batch.emit(seed).valid(),"re-emit into a freed slot");
+            }
+            check(batch.step(0.01f,still),"scattered step");
+            auto bytes=std::make_shared<std::vector<uint8_t>>();
+            auto done=std::make_shared<bool>(false);
+            check(device->readBufferRangeAsync(batch.evolution().positionBuffer(),0,
+                      32*sizeof(aiverse::render::float4),
+                      [bytes,done](auto data){*bytes=std::move(data);*done=true;}),
+                  "batched position readback queued");
+            device->endFrame();
+            check(device->waitIdle(),"batched readback idle barrier");
+            device->beginFrame(kWidth,kHeight);
+            device->endFrame();
+            bool agesOk=*done && bytes->size()==32*sizeof(aiverse::render::float4);
+            int reemitted=0;
+            if(agesOk) {
+                const auto* p=reinterpret_cast<const aiverse::render::float4*>(bytes->data());
+                for(int i=0;i<32;++i) {
+                    const bool odd=i%2==1;
+                    if(odd) agesOk=agesOk && std::fabs(p[i].x-float(i))<1e-4f &&
+                                   std::fabs(p[i].w-0.02f)<1e-4f;
+                    else {
+                        agesOk=agesOk && p[i].x>=100.f && std::fabs(p[i].w-0.01f)<1e-4f;
+                        ++reemitted;
+                    }
+                }
+            }
+            check(agesOk && reemitted==16,
+                  "scattered batched writes keep untouched slots' GPU state");
+            std::printf("[spectrafx-metal-rhi] batched_slot_ranges=%llu\n",
+                        static_cast<unsigned long long>(batch.evolution().uploadRanges()));
+            for(int frame=0;frame<4;++frame) {
+                device->beginFrame(kWidth,kHeight);
+                device->endFrame();
+            }
+            batch.shutdown();
+        }
+
         // Teardown order: the standalone RHI device outlives all dependent
         // particle textures, shaders, render targets and shared compute state.
         renderer.release();
