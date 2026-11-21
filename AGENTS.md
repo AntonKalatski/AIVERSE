@@ -1125,3 +1125,5 @@ Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping
 
 Текущий контракт, список модулей и ограничения `auto`: `docs/overview.md`
 и `docs/agent-handoffs/client-binary-module-selection-2026-11-21.md`.
+
+

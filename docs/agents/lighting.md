@@ -108,3 +108,14 @@ semantics. World-Y height does not imply terrain following. Noise is a periodic
 structure; validate new fields transactionally. `Prisma::setLocalFogTime` controls
 presentation only. Structured 48/96-step budgets are separate from uniform 32/64.
 
+## LENS P2: physical lens, rails/shake, HDR EXR (2026-11-21)
+
+`CameraLensComponent::driveExposure/driveDepthOfField` feed per-camera PRISMA
+manual EV and `Prisma::setViewDepthOfField` through `CameraPostFxPool` (only on
+change; never add PRISMA effects implicitly). Rails/shake live in
+`engine/render/CameraRailPath.h` (pure functions of presentation seconds; linear
+rail and sine shake keep the old formulas). `CameraExr.h` +
+`CameraHdrFrameRecorder` write linear EXR from RGBA16F readback and must reject,
+not down-convert, 8-bit results. Do not reintroduce multi-line raw strings inside
+`#define` (GCC rejects them). Handoff: `docs/agent-handoffs/lens-p2-2026-11-21.md`.
+

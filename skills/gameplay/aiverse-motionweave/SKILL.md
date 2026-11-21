@@ -74,3 +74,53 @@ a revision/generation and arbitrary named counters and flags. FPS-only
 `modules/fps/view/FpsAnimationEvents.h`, not in the MotionWeave library.
 Use a different host adapter for every other game's own data layout,
 without duplicating generic event/animation algorithms.
+
+## Stage 180: semantic facial rig and existing IK (source-only)
+
+Use `"engine/animation/FacialControlRig.h"` and
+`FacialControlRig::compile(model, authoredV1, declaredParameters)`.
+This compiles explicit importer-authored **mesh-local morph names** and
+optional existing native `render::AnimationRig` `rig` operators
+(`aim`, `angularLimit`, `twoBoneIK`, `fullBodyIK`,
+`transform`). Never infer a morph channel from its index on a different
+mesh. Bind per-actor `FacialControlState`; call `apply()` AFTER the
+single Graph/Animator pose evaluation and BEFORE final matrices.
+Failure leaves source pose and facial state unchanged. On asset reimport,
+recompile and reset state; the runtime rejects stale node/bind/morph
+signatures. See `docs/motionweave-facial-control-rig.md`.
+
+For ECS projects add the optional
+`AnimationFacialControlComponent{rig,controls,state,weight,enabled}`
+to the **presentation World**. `MotionWeave::update()` integrates it
+after Graph/Montage/physics/recovery; controls need not be declared by
+the parent Graph. The scheduler allows worker-safe **morph-only** rigs;
+any facial rig with native IK or a host environment runs on the **owner
+thread** alongside other callback-sensitive Graphs. No duplicate
+Animator, gameplay authority or network checksums.
+
+Deferred executable/CTest:
+`aiverse_animation_facial_control_rig_tests` /
+`animation_facial_control_rig`. **NOT RUN**; no native compile/Metal/
+Vulkan/GLES, QA or crowd benchmark pass was claimed.
+
+
+## Stage 183: reusable facial preview session for native hosts (source-only)
+
+For an artist-generated `facial-rigs/*.json` document from the HTML5 Studio
+branch, use `<aiverselib/animation/FacialPreviewSession.h>` and
+`aiverse::lib::animation::FacialPreviewSession`. Compile a new session
+transactionally from the real imported `render::Model`, JSON v1 and typed
+named float/vector overrides. Use `scalar()/vector()` for live expression
+changes; `apply(model,alreadyEvaluatedPose,dt,error)` goes AFTER one
+Animator/Graph evaluation and BEFORE `worldMatrices`. The per-instance
+session owns its own smoothing; it does NOT own the Model or GPU lifetime.
+Do not reimplement expressions, IK or Graph evaluation in Studio.
+
+The native ModelView host demonstrates `--facial-rig project/facial-rigs/name.json`,
+`--face jawOpen=.8` and `--face-vector lookAt=2,1,3` with read-only saved
+JSON hot reload; unknown Model nodes/channels reject. The native
+`aiverse_modelview` window is NOT the HTML5 Studio embedded GPU viewport.
+Studio still needs a separate typed IPC/real asset-selection integration
+after branches can be safely combined. Docs:
+`docs/motionweave-facial-native-preview.md`, Stage 183 handoff. The
+extended `animation_facial_control_rig` source fixture is **NOT RUN**.
