@@ -660,20 +660,20 @@
           "textEn": "P1."
         },
         {
-          "status": "in-progress",
-          "target": null,
+          "status": "done",
           "title": "Физическая линза и глубина резкости",
           "text": "Экспозиция и DoF из параметров объектива для каждой камеры в PRISMA; проверено на Mac (Metal). Кубмапы и панорамы — позже.",
           "titleEn": "Physical lens and depth of field",
-          "textEn": "Per-camera exposure and DoF from lens parameters through PRISMA; checked on Mac (Metal). Cubemaps and panoramas later."
+          "textEn": "Per-camera exposure and DoF from lens parameters through PRISMA; checked on Mac (Metal). Cubemaps and panoramas later.",
+          "date": "2026-11-21"
         },
         {
-          "status": "in-progress",
-          "target": null,
+          "status": "done",
           "title": "HDR/EXR-последовательности, тряска и рельсы камеры",
-          "text": "EXR-запись, сплайновые рельсы и шумовая тряска в ветке P2; зеркала и порталы — позже.",
+          "text": "EXR-запись, сплайновые рельсы и шумовая тряска; зеркала и порталы — позже.",
           "titleEn": "HDR/EXR sequences, camera shake and rails",
-          "textEn": "EXR recording, spline rails and noise shake on the P2 branch; mirrors and portals later."
+          "textEn": "EXR recording, spline rails and noise shake; mirrors and portals later.",
+          "date": "2026-11-21"
         },
         {
           "status": "planned",
