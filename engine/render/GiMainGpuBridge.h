@@ -1,20 +1,43 @@
 #pragma once
 #include "GiMainCpuBridge.h"
 #include "GiGpuSmallScene.h"
+#include "GiGpuChunkBvhCache.h"
+#include "GiGpuPagedBvhArena.h"
+#include "GiGpuResidencyPlanner.h"
+#include <algorithm>
+#include <exception>
 
 namespace aiverse::render {
 // Render-owner-thread bridge. Publish/update only inside a Device frame and
 // outside passes. Never reuse compute inputs or mutate a sampled atlas until
 // the real queue fence covering its last use completes.
+//
+// Large worlds: only chunks whose bounds a probe ray, its sun/sky shadow ray or
+// a point/spot shadow ray (radius <= lightReach) can reach are made resident
+// (GiGpuResidencyPlanner). If those still exceed the GPU triangle budget the
+// publication is refused; a relevant occluder is never dropped. Resident
+// chunks keep stable addresses in the GPU streams (GiGpuPagedBvhArena), so an
+// edit uploads only the changed BLAS pages and the small TLAS prefix.
 class GiMainGpuBridge {
 public:
-    bool initialize(gfx::Device& device,GiMainCpuConfig config) {
+    static constexpr float kDefaultLightReach=64;
+    // lightReach: largest point/spot radius the resident set must cover.
+    bool initialize(gfx::Device& device,GiMainCpuConfig config,float lightReach=kDefaultLightReach) {
         if(device_ || config.samples<8 || config.samples>GiGpuSmallScene::kMaxSamples ||
-           !std::isfinite(config.traceDistance) || config.traceDistance<=0 || config.traceDistance>1000)
+           !std::isfinite(config.traceDistance) || config.traceDistance<=0 || config.traceDistance>1000 ||
+           !std::isfinite(lightReach) || lightReach<0)
             return false;
         scheduler_.configure(config.origin,config.spacing,config.nx,config.ny,config.nz);
         if(!gpu_.initialize(device,scheduler_.size()))return false;
-        device_=&device;config_=config;return true;
+        device_=&device;config_=config;lightReach_=lightReach;return true;
+    }
+    // Same selection the bridge applies to a published scene; hosts use it to
+    // decide between this GPU path and the CPU fallback before initialization.
+    static GiGpuResidencyPlan planResidency(const GiChunkedGeometrySnapshot& scene,
+                                            const GiMainCpuConfig& config,
+                                            float lightReach=kDefaultLightReach) {
+        return GiGpuResidencyPlanner::plan(scene,config.origin,config.spacing,
+            config.nx,config.ny,config.nz,config.traceDistance,lightReach);
     }
     const GiMainCpuConfig& config() const {return config_;}
     const gfx::Device* device() const {return device_;}
@@ -29,7 +52,25 @@ public:
             diagnostic_="GI geometry revision rejected";return false;
         }
         if(!canMutate())return false;
-        if(!gpu_.setGeometry(*scene,revision)) {
+        try {
+            const float reach=std::max(lightReach_,requestedLightReach_);
+            auto plan=planResidency(*scene,config_,reach);
+            residency_=plan;residency_.selected.reset();
+            if(!plan.admitted) {
+                diagnostic_="GI GPU resident geometry exceeds the triangle budget";return false;
+            }
+            if(plan.selected->chunkCount()>GiGpuPagedBvhArena::kMaxChunks) {
+                diagnostic_="GI GPU resident chunk count exceeds the page table";return false;
+            }
+            chunkCache_.refresh(*plan.selected);
+            auto pages=pages_.plan(*plan.selected,chunkCache_);
+            if(!pages.accepted || !gpu_.setPackedGeometry(pages.packet,revision)) {
+                diagnostic_="GI GPU geometry capacity or upload rejected";return false;
+            }
+            pageStats_=pages.stats;
+            pages_.commit(std::move(pages));
+            residentReach_=reach;
+        } catch(const std::exception&) {
             diagnostic_="GI GPU geometry capacity or upload rejected";return false;
         }
         scene_=std::move(scene);revision_=revision;geometryCurrent_=true;
@@ -38,6 +79,15 @@ public:
     }
     bool publishLights(std::vector<GiMovingLight> lights) {
         blocked_=true;lightsCurrent_=false;
+        float reach=0;
+        for(const auto& light:lights)
+            if(std::isfinite(light.radius))reach=std::max(reach,light.radius);
+        requestedLightReach_=reach;
+        // A light reaching past the resident set would miss excluded occluders
+        // (light leaks). Republish geometry: it then plans with this reach.
+        if(scene_ && residency_.excludedRemoteChunks && reach>residentReach_) {
+            diagnostic_="GI light radius exceeds the GPU resident geometry reach";return false;
+        }
         if(!canMutate())return false;
         if(!gpu_.setLights(std::move(lights))) {
             diagnostic_="GI GPU light capacity or source rejected";return false;
@@ -88,6 +138,9 @@ public:
         pendingFence_=fence;inFlight_=std::move(jobs);
         return true;
     }
+    // Last geometry selection (selected snapshot dropped) and page churn.
+    const GiGpuResidencyPlan& residency() const {return residency_;}
+    const GiGpuPagedBvhArena::Stats& pageStats() const {return pageStats_;}
     bool canPresent() const {
         return ready() && scene_ && geometryCurrent_ && lightsCurrent_ && environmentCurrent_ && !blocked_ && !pendingFence_ &&
             !scheduler_.pending() && device_->gpuHealthy();
@@ -106,6 +159,8 @@ public:
         blocked_=true;
         if(!gpu_.shutdownAfterGpuIdle())return false;
         scene_.reset();inFlight_.clear();scheduler_={};
+        chunkCache_={};pages_=GiGpuPagedBvhArena{};residency_={};pageStats_={};
+        residentReach_=requestedLightReach_=0;
         pendingFence_=sampledFence_=revision_=0;device_=nullptr;return true;
     }
 private:
@@ -118,6 +173,11 @@ private:
         return true;
     }
     GiGpuSmallScene gpu_;
+    GiGpuChunkBvhCache chunkCache_;
+    GiGpuPagedBvhArena pages_;
+    GiGpuResidencyPlan residency_{};
+    GiGpuPagedBvhArena::Stats pageStats_{};
+    float lightReach_=kDefaultLightReach,residentReach_=0,requestedLightReach_=0;
     GiUpdateScheduler scheduler_;
     GiMainCpuConfig config_{};
     gfx::Device* device_=nullptr;

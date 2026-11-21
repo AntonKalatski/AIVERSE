@@ -3,7 +3,9 @@
 #include "engine/render/GiMainCpuBridge.h"
 #include "engine/render/GiMainGpuBridge.h"
 #include "engine/render/Renderer3D.h"
+#include <algorithm>
 #include <chrono>
+#include <map>
 namespace aiverse::render {
 // Native host example: immutable opaque geometry captured BEFORE GPU upload,
 // explicit indirect-only sources, bounded work before render, per-view binding.
@@ -36,13 +38,22 @@ struct DynamicGiHost {
         if(!std::isfinite(samples)||samples<8||samples>128||samples!=std::floor(samples))throw std::runtime_error("dynamicGI samples must be integer 8..128");
         cfg.samples=int(samples);cfg.traceDistance=float(settings["distance"].toDouble(12));
         cfg.cpuBudgetMs=settings["cpuBudgetMs"].toDouble(2);
-        GiChunkedGeometryBuilder builder;
-        constexpr size_t chunkSize=65536;
-        for(size_t first=0;first<geometry.triangles.size();first+=chunkSize) {
-            const size_t end=std::min(first+chunkSize,geometry.triangles.size());
-            std::vector<StaticShadowGeometry::Triangle> chunk(geometry.triangles.begin()+first,geometry.triangles.begin()+end);
-            builder.replace(first/chunkSize+1,std::move(chunk),geometry.albedos);
+        // Spatial chunks (one per occupied cell of about one trace distance):
+        // the GPU bridge keeps only cells a GI ray can reach resident, so a
+        // world larger than the GPU triangle budget can still run on the GPU.
+        const float cell=std::max(cfg.traceDistance,cfg.spacing);
+        if(!std::isfinite(cell) || cell<=0)throw std::runtime_error("dynamicGI distance/spacing must be positive");
+        std::map<uint64_t,std::vector<StaticShadowGeometry::Triangle>> cells;
+        for(const auto& t:geometry.triangles) {
+            const float3 c=(t.a+t.b+t.c)*(1.0f/3.0f);
+            auto axis=[&](float v)->uint64_t {
+                const double k=std::floor(double(v)/double(cell));
+                return uint64_t(int64_t(std::clamp(std::isfinite(k)?k:0.0,-1048575.0,1048575.0))+1048576)&0x1FFFFF;
+            };
+            cells[(axis(c.x)<<42)|(axis(c.y)<<21)|axis(c.z)].push_back(t);
         }
+        GiChunkedGeometryBuilder builder;
+        for(auto& [key,chunk]:cells)builder.replace(key+1,std::move(chunk),geometry.albedos);
         scene=std::make_shared<GiChunkedGeometrySnapshot>(builder.publish());
         auto decode=[](float v){return v<=.04045f?v/12.92f:std::pow((v+.055f)/1.055f,2.4f);};
         for(const auto& source:sources) {
@@ -58,11 +69,15 @@ struct DynamicGiHost {
         if(!environment.valid())throw std::runtime_error("invalid dynamicGI indirect environment");
         const auto backend=settings.getStr("backend","auto");
         if(backend!="auto"&&backend!="cpu"&&backend!="gpu")throw std::runtime_error("dynamicGI backend must be auto, cpu or gpu");
-        const bool fits=scene->triangleCount()<=GiGpuSmallScene::kMaxTriangles && lights.size()<=GiGpuSmallScene::kMaxLights && cfg.samples<=GiGpuSmallScene::kMaxSamples;
+        float lightReach=GiMainGpuBridge::kDefaultLightReach;
+        for(const auto& l:lights)if(std::isfinite(l.radius))lightReach=std::max(lightReach,l.radius);
+        // Only geometry a GI ray can reach must fit the GPU budget (residency).
+        const bool fits=GiMainGpuBridge::planResidency(*scene,cfg,lightReach).admitted &&
+            lights.size()<=GiGpuSmallScene::kMaxLights && cfg.samples<=GiGpuSmallScene::kMaxSamples;
         if(backend!="cpu") {
-            if(!fits)fallback="bounded GPU capacity exceeded; full scene retained on CPU";
+            if(!fits)fallback="GPU capacity exceeded by geometry within GI reach or by lights; full scene retained on CPU";
             else if(!d.supportsCompute())fallback="device has no compute; using CPU";
-            else if(!(useGpu=gpu.initialize(d,cfg)))fallback="GPU initialization rejected; using CPU";
+            else if(!(useGpu=gpu.initialize(d,cfg,lightReach)))fallback="GPU initialization rejected; using CPU";
             if(!useGpu && backend=="gpu")throw std::runtime_error(fallback);
         }
         if(!useGpu && !cpu.initialize(d,cfg))throw std::runtime_error("dynamicGI CPU initialization failed");
