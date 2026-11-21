@@ -218,6 +218,9 @@ earlier switches off 15.43 MB (brotli 3.62 MB); `[]` including `traffic` off
 14.00 MB (brotli 3.27 MB). With the default `-Oz` + LTO (`AIVERSE_WEB_OPTIMIZE_SIZE`):
 traffic off 8.34 MB (brotli 2.41 MB), every module off 7.99 MB (brotli 2.29 MB).
 A `"module": "scene"` project (docs/game-format.md) ships about 150 KB.
+The content pack leaves out `engine/roads/markings.png` (328 KB, stored
+uncompressed) when the project has no `roads/` folder, rules `roadTypes` or map
+`roadNetwork`; the road view then draws its generated paint atlas.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

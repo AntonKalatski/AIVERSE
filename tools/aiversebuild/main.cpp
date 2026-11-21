@@ -122,6 +122,24 @@ struct Options {
 // (apps/client/SceneMain.cpp, CMake AIVERSE_SCENE_CLIENT) and only its own files, no engine/assets.
 bool sceneClient(const Options& o) { return o.gameJson.getStr("module", "") == "scene"; }
 
+// Spline roads anywhere in the project: a roads/ folder, rules "roadTypes", or a map "roadNetwork".
+bool projectUsesRoads(const Options& o) {
+    std::error_code ec;
+    if (fs::is_directory(o.project / "roads", ec)) return true;
+    try {
+        const Json rules = aiverse::readComposedJson((o.project / o.gameJson.getStr("rules", "rules.json")).string(), aiverse::fileReader());
+        if (!rules["roadTypes"].isNull()) return true;
+    } catch (const std::exception&) { return true; }   // unreadable rules: keep everything
+    for (auto it = fs::recursive_directory_iterator(o.project / "maps", ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (!it->is_regular_file(ec) || it->path().extension() != ".json") continue;
+        try {
+            const Json m = Json::parseFile(it->path().string());
+            if (!m["roadNetwork"].isNull() || !m["rules"]["roadTypes"].isNull()) return true;
+        } catch (const std::exception&) { return true; }
+    }
+    return false;
+}
+
 struct Game {
     std::string name = "Game", id = "com.example.game", version = "0.1.0", orientation = "landscape";
     int build = 1;
@@ -460,8 +478,11 @@ fs::path contentPack(Options& o) {
         if (Json::parseFile((o.project / "game.json").string()).getBool("external")) w.markExternal();
     } catch (const std::exception&) {}
     std::string err;
+    // Engine assets only some games need: the road paint atlas (RoadView draws a generated one without it).
+    aiverse::pack::IgnoreRules engineRules;
+    if (!projectUsesRoads(o)) engineRules.add("roads/markings.png");
     if (w.addDirectory(game.string(), "", rules, &err) < 0 ||
-        (!sceneClient(o) && w.addDirectory((o.engine / "engine" / "assets").string(), "engine", aiverse::pack::IgnoreRules{}, &err) < 0))
+        (!sceneClient(o) && w.addDirectory((o.engine / "engine" / "assets").string(), "engine", engineRules, &err) < 0))
         die(err);
     // models in formats the runtime doesn't read (.blend, .lwo, .x, ...) ship as glTF sidecars
     // (tools/models/ModelConvert.h); their sources stay out of the pack

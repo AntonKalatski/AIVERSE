@@ -576,3 +576,17 @@ rebuild. NOT RUN: aiversebuild end-to-end with the option, native/mobile, CI.
 
 Remaining for an RTS project: index.data (engine/assets) ~0.63 MB brotli, mostly
 `engine/roads/markings.png` (only roads use it) and `engine/fonts/ui.ttf`.
+
+## 2026-11-21 continuation: road paint atlas only for road projects
+
+`aiversebuild` packs `engine/assets` with `IgnoreRules` "roads/markings.png"
+unless `projectUsesRoads()` (a `roads/` folder, rules `roadTypes`, a map
+`roadNetwork` or map `rules.roadTypes`; unreadable data keeps the file).
+`RoadView` already falls back to `roadkit::markingAtlas`. `--estimate` on the
+minimal RTS project: pack 655.8 KB → 327.8 KB (51 files); adding `roads/`
+restores the file. Visual difference between the PNG and the generated atlas
+was NOT compared.
+
+Merged `origin/main` efa96dd25 (clean, AGENTS.md and CMakeLists.txt touched by
+both). After the merge the all-modules-off LTO client compiled and linked;
+index.wasm 8,042,095 B (brotli 2,302,463); smoke unchanged (2517 colours).
