@@ -1036,9 +1036,9 @@
       "tagline": "Эффекты частиц",
       "essence": "Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.",
       "cover": {
-        "src": "docs/devlog/media/systems/spectrafx-explosion.jpg",
-        "caption": "SpectraFX: большой взрыв и огонь с дымом из JSON-эффектов, CPU-бэкенд частиц",
-        "captionEn": "SpectraFX: a big explosion and fire with smoke from JSON effects, CPU particle backend",
+        "src": "docs/devlog/media/2026-11-21-spectrafx-scenes/sponza-night.jpg",
+        "caption": "SpectraFX: костры, портал, светлячки и туман в Sponza ночью",
+        "captionEn": "SpectraFX: campfires, a portal, fireflies and fog in Sponza at night",
         "approved": false
       },
       "coverBrief": "Эффектный момент в игровой сцене: взрыв, магия или огонь с дымом и светом, а не тестовый эмиттер на пустом поле.",
