@@ -90,7 +90,10 @@ struct Host {
         r3d.init(d);
         r3d.setShadowQuality(ShadowQuality::High);
         r3d.setMaterialQuality(MaterialQuality::High);
-        const int w = d.framebufferWidth(), h = d.framebufferHeight();
+        // The Mac window may not report its drawable size during init: size the
+        // camera targets from the requested frame instead.
+        int w = d.framebufferWidth(), h = d.framebufferHeight();
+        if (w <= 0 || h <= 0) { w = std::atoi(env("LENS_W", "1920")); h = std::atoi(env("LENS_H", "1080")); }
         pool.init(d);
         if (const char* file = std::getenv("LENS_POST")) {
             std::string text;
@@ -178,6 +181,7 @@ struct Host {
         compositor.composite(layers, mainTarget.w, mainTarget.h);
         if (++frame == 3) {
             const auto s = pool.lensState(mainCam);
+            std::fprintf(stderr, "[lens-showcase] post=%d pip=%d\n", pool.get(mainCam) ? 1 : 0, pipTarget.color.valid() ? 1 : 0);
             std::fprintf(stderr, "[lens-showcase] lens EV %+.2f, dof %d focus %.2f m range %.2f m blur %.1f px\n",
                          s.ev, s.depthOfField ? 1 : 0, s.dof.focusDistance, s.dof.focusRangeMeters, s.dof.maxBlur);
         }
