@@ -28,7 +28,15 @@ def bake(root,materials,size,part=0,parts=1,detail=False):
  if size<256 or size>4096:raise ValueError('size 256..4096')
  ground=json.loads((root/'ground.json').read_text());cat=json.loads((root/'catalog.json').read_text())
  h=np.array(ground['heightCm'],dtype=np.float32).reshape(ground['rows'],ground['columns'])*.01
- dz,dx=np.gradient(h,ground['stepCm']*.01);grid=np.stack([h,dx,dz],2)
+ dz,dx=np.gradient(h,ground['stepCm']*.01)
+ native_shore=ground.get('grassMaskSource')=='terra-nereid-shore-v1'
+ fields=[h,dx,dz]
+ if native_shore:
+  for key in ['sandPermille','wetPermille']:
+   field=np.asarray(ground[key],dtype=np.float32)
+   if field.size!=h.size or not np.isfinite(field).all() or field.min()<0 or field.max()>1000:raise ValueError('invalid native shore mask: '+key)
+   fields.append(field.reshape(h.shape)*.001)
+ grid=np.stack(fields,2)
  maps={}
  names=['grass','sand','rock','gravel_soil','soil','snow']
  for n in names:
@@ -48,12 +56,21 @@ def bake(root,materials,size,part=0,parts=1,detail=False):
    q=(grid[iz,ix]*(1-fx)+grid[iz,ix+1]*fx)*(1-fz)+(grid[iz+1,ix]*(1-fx)+grid[iz+1,ix+1]*fx)*fz
    H=q[...,0];ny=1/np.sqrt(1+q[...,1]**2+q[...,2]**2)
    variation=world_noise(X,Z)*2-1
-   water=cat.get('nereidWater',{}).get('surfaces',[{}])[0]
-   grade=water.get('grade',{});origin=grade.get('origin',[0,0]);rise=grade.get('risePerMetre',[0,0])
-   if 'slopeDegrees' in grade:
-    heading=np.deg2rad(grade.get('downhillHeadingDegrees',0));slope=np.tan(np.deg2rad(grade['slopeDegrees']));rise=[-np.sin(heading)*slope,-np.cos(heading)*slope]
-   surface=water.get('surfaceY',0)+(X-origin[0])*rise[0]+(Z-origin[1])*rise[1]
-   shore=1-smooth(.35,2.5,H-surface+variation*.20)
+   if native_shore:
+    # One native mask owns both beach paint and grass exclusion. No infinite
+    # water-plane beach appears on low ground far outside a finite river.
+    shore=np.clip(q[...,3],0,1);wet=np.clip(q[...,4],0,1)
+   else:
+    surfaces=cat.get('nereidWater',{}).get('surfaces',[])
+    water=surfaces[0] if surfaces else None
+    if water:
+     grade=water.get('grade',{});origin=grade.get('origin',[0,0]);rise=grade.get('risePerMetre',[0,0])
+     if 'slopeDegrees' in grade:
+      heading=np.deg2rad(grade.get('downhillHeadingDegrees',0));slope=np.tan(np.deg2rad(grade['slopeDegrees']));rise=[-np.sin(heading)*slope,-np.cos(heading)*slope]
+     surface=water.get('surfaceY',0)+(X-origin[0])*rise[0]+(Z-origin[1])*rise[1]
+     shore=1-smooth(.35,2.5,H-surface+variation*.20);wet=1-smooth(.05,.45,H-surface)
+    else:
+     shore=np.zeros_like(H);wet=np.zeros_like(H)
    stone=np.maximum(1-smooth(.55,.91,ny),smooth(18,48,H))
    scree=smooth(.62,.9,ny)*(.3+.20*variation)
    snow=smooth(100,155,H+variation*8)*smooth(.52,.88,ny)
@@ -79,7 +96,6 @@ def bake(root,materials,size,part=0,parts=1,detail=False):
      if k=='normal':value=value*2-1
      out[k]+=value*w[...,None]
    out['basecolor']=np.maximum(out['basecolor'],0)**(1/2.2)
-   wet=1-smooth(.05,.45,H-surface)
    out['basecolor']*=1-.35*wet[...,None]
    out['orm'][...,1]*=1-.25*wet
    out['normal']/=np.maximum(np.linalg.norm(out['normal'],axis=2,keepdims=True),1e-6);out['normal']=out['normal']*.5+.5

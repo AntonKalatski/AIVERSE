@@ -102,3 +102,29 @@ uses unwrapped derivatives; mip is capped4 to keep atlas gutters isolated. This
 can shimmer at very long distance; distant-detail fading/anisotropic validation
 and full terrain performance remain pending. Per-tile normal/ORM/AO fallback
 still exists. Do not claim the offline installer enables live Terra ecology.
+
+## Native shore/grass mask snapshot v2
+
+The native landscape exporter now writes `ground.json` version2 with
+`grassMaskSource: terra-nereid-shore-v1`, `sandPermille`, `wetPermille` and
+`grassSandLimitPermille`, alongside unchanged height/water-height/cover fields.
+Sand and wetness derive from the actual NEREID footprint clearance AND local
+graded surface height. A finite river does not paint beaches or suppress grass
+across every low point of its infinite height plane. Multiple footprints combine
+conservatively for authoring; this is not authoritative water priority selection.
+
+Recipe controls: `bankWidthCm`100..10000(default600),
+`grassSandLimitPermille`0..1000(default50), `grassMaxElevationCm`±1000000(default2500).
+The same bank width drives Terra riverbed carving. PBR bake consumes the native
+masks with continuous bilinear interpolation; grass checks the same sand sample
+before placing each tuft/blade root. Older ground snapshots keep their legacy
+water-plane filter. No automatic change to existing exported maps or game saves.
+
+`<aiverselib/water/NereidFootprintDistance.h>` exposes optional signed horizontal
+clearance for native authoring. Negative inside, positive outside; invalid or
+disabled water returns no value. Polygon/box/disc use boundary distance; tapered
+rivers use the existing centreline projection/half-width margin, not a certified
+Euclidean SDF. Existing authoritative membership/contact sampling is unchanged.
+Do not replace it with this rounded Fixed-distance result. Terrain mask math is
+shared in `engine/world/TerraWeaveShoreCover.h`. These are authoring/presentation
+masks, not live soil moisture, erosion or exposed-root physics integration.

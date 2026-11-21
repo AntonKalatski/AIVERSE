@@ -1,5 +1,7 @@
 #include "engine/world/TerraWeaveRiverbed.h"
 #include "engine/world/TerraWeaveAlpine.h"
+#include "engine/world/TerraWeaveShoreCover.h"
+#include <aiverselib/water/NereidFootprintDistance.h>
 #include "engine/world/NereidManifestHost.h"
 #include "engine/world/NereidFlowAuthoring.h"
 #include <aiverselib/water/NereidQueryIndex.h>
@@ -19,6 +21,14 @@ int main(){
     lib::nereid::WaterBodyComponent body;body.surfaceY=0_fx;body.bottomY=-2_fx;
     lib::nereid::WaterGeometryComponent river;river.kind=lib::nereid::WaterGeometryKind::RiverSpline;
     river.points={{0_fx,-20_fx,3_fx},{0_fx,20_fx,3_fx}};
+    const auto near=shoreCover(*lib::nereid::waterFootprintDistance(body,&river,{4_fx,0_fx}),Fixed::fromRatio(5,10));
+    const auto far=shoreCover(*lib::nereid::waterFootprintDistance(body,&river,{20_fx,0_fx}),Fixed::fromRatio(5,10));
+    assert(near.sandPermille>500&&far.sandPermille==0&&far.wetPermille==0);
+    const auto submerged=shoreCover(-1_fx,-1_fx);assert(submerged.sandPermille==1000&&submerged.wetPermille==1000);
+    const auto island=shoreCover(-100_fx,3_fx);assert(island.sandPermille==0&&island.wetPermille==0);
+    uint32_t previous=1000;
+    for(int cm=0;cm<=600;cm+=10){const auto mask=shoreCover(Fixed::fromRatio(cm,100),0_fx);assert(mask.sandPermille<=previous);previous=mask.sandPermille;}
+    assert(previous==0);
     EarthworksLayer whole(100,[](auto,auto){return 300;});
     EarthworksLayer split(100,[](auto,auto){return 300;});
     carveNereidRiverbed(whole,body,river,{-1000,-1000,1000,1000},500);

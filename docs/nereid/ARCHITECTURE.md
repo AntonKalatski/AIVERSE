@@ -401,3 +401,16 @@ that branch's stage handoff. Changing water grade does not rebuild an already
 exported terrain: rebuild from the Terra recipe using alignRiverGrade=true.
 Water animation uses render seconds; its velocity/direction come from NEREID
 configuration, independently of clouds/wind and foam intensity.
+
+## Read-only footprint clearance for Terra authoring
+
+`NereidFootprintDistance.h` provides `waterFootprintDistance(body,geometry,point)`
+as an optional signed Fixed horizontal margin. Enabled invalid geometry fails
+closed; a disabled override uses the original body footprint. Infinite water
+uses a bounded negative sentinel. Tapered rivers use projected centreline margin,
+not an exact Euclidean distance to their variable-width boundary. This helper
+has no state, RNG, persistence/schema or contact-selection changes. Existing
+`coversWaterBody`, linear/indexed sampling, priorities and save checksums retain
+their original algorithms; do not replace membership tests with rounded distance.
+Terra authoring combines clearance with graded height for one sand/wetness/grass
+snapshot. It does not install a live hydraulic or erosion solver.

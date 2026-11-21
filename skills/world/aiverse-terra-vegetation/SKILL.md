@@ -87,3 +87,9 @@ verified, mobile performance/animated poses not established. Botanical exporter
 now enables continuous seeded basal root skin; conditional erosion-exposed roots
 and soil/fall simulation remain separate owners. Branch junction anatomy and
 arbitrary-slope root fitting still require work.
+
+For native exported ground v2, preserve `grassMaskSource`, sand/wet masks and the
+configured sand threshold. The native PBR baker and vegetation exporter use the
+same NEREID-footprint/graded-height shore mask. Do not add a global water-plane
+height rejection on top: it incorrectly removes lowland grass far from rivers.
+Legacy v1 snapshots keep their old behavior until deliberately re-exported.

@@ -730,3 +730,10 @@ Read the current river-grade section of docs/nereid/ARCHITECTURE.md. Native
 sampling and presentation consume the same grade. Editor typed operations
 nereid_water_state / nereid_flow_set are Undoable; HTML5 controls belong to Studio.
 Rebuild Terra bank/vegetation masks when changing an exported river's grade.
+
+Native authoring may use `<aiverselib/water/NereidFootprintDistance.h>` for an
+optional signed horizontal clearance (invalid/disabled water => no value).
+Use it with local graded height for terrain sand/wetness/grass masks, as Terra's
+native exporter does. It does not change authoritative footprint membership,
+current sampling or persistence. Tapered-river margins are not an exact SDF;
+do not replace contact tests or claim a live erosion solver from this helper.
