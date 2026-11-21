@@ -251,6 +251,36 @@ void authoredEntityWorkflow() {
        for(const auto& r:audit["result"]["missing"].items())found|=r.getStr("reference")=="content/missing_icon.png";
        AIVERSE_TEST_CHECK(!audit.has("error") && found);
    }
+   // Agent link: aiversemcp's protocol (hello + token, then calls); an edit is a History step "Agent · …" and a change.
+   {
+       const auto info=call("studio.agentInfo");
+       AIVERSE_TEST_CHECK(!info.has("error") && info["result"]["port"].integer()>0);
+       const int port=int(info["result"]["port"].integer());
+       std::string token;
+       AIVERSE_TEST_CHECK(editor::net::readAgentToken(port,token));
+       editor::net::LineClient client;
+       AIVERSE_TEST_CHECK(client.connect(port,1000));
+       auto roundTrip=[&](const std::string& line){
+           client.send(line);std::string answer;
+           for(int i=0;i<200 && answer.empty();++i){session.pollAgentLink();client.recv(answer,10);}
+           return answer.empty()?Json():Json::parse(answer);
+       };
+       AIVERSE_TEST_CHECK(roundTrip(R"({"id":1,"method":"hello","token":")"+token+R"("})")["result"].getBool("ok"));
+       const size_t before=session.workspace().map.data.entities.size();
+       const auto placed=roundTrip(R"({"id":2,"method":"call","params":{"name":"entity_place","arguments":{"type":"tree","x":3,"y":3}}})");
+       AIVERSE_TEST_CHECK(placed.has("result"));
+       const auto after=call("studio.agentInfo");
+       const auto history=call("studio.history");
+       if(!placed["result"].has("error")) {
+           AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==before+1);
+           AIVERSE_TEST_CHECK(after["result"]["changes"].size()==1 && after["result"]["changes"][0].getBool("undoable"));
+           const auto& steps=history["result"]["steps"];
+           AIVERSE_TEST_CHECK(steps.size()>0 && steps[steps.size()-1].getStr("label")=="Agent · Entity place");
+           AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.data.entities.size()==before);
+       } else AIVERSE_TEST_CHECK(after["result"]["changes"].size()==1 && !after["result"]["changes"][0].getBool("ok"));
+       client.close();
+       AIVERSE_TEST_CHECK(call("studio.agentStart",R"({"prompt":""})").has("error"));
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

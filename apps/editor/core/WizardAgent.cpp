@@ -158,10 +158,11 @@ AgentRun::~AgentRun() {
     if (thread_.joinable()) thread_.join();
 }
 
-bool AgentRun::start(const std::string& clientId, const std::string& dir, const std::string& taskFile, const std::string& logFile, std::string* err) {
+bool AgentRun::start(const std::string& clientId, const std::string& dir, const std::string& taskFile, const std::string& logFile, std::string* err,
+                     const std::string& extraArgs) {
 #if defined(_WIN32)
     if (err) *err = "запуск агента из редактора на Windows пока не поддержан: скопируйте задание в клиент";
-    (void)clientId; (void)dir; (void)taskFile; (void)logFile;
+    (void)clientId; (void)dir; (void)taskFile; (void)logFile; (void)extraArgs;
     return false;
 #else
     if (running_) { if (err) *err = "агент уже работает"; return false; }
@@ -172,7 +173,7 @@ bool AgentRun::start(const std::string& clientId, const std::string& dir, const 
     const std::string pathPrefix = "PATH=" + q(fs::path(cli).parent_path().string()) + ":\"$PATH\" ";
     std::string inner;
     if (clientId == "claude-code")
-        inner = pathPrefix + q(cli) + " -p --output-format stream-json --verbose --allowedTools mcp__aiverse --max-turns 400 < " + q(taskFile);
+        inner = pathPrefix + q(cli) + " -p --output-format stream-json --verbose --allowedTools mcp__aiverse --max-turns 400 " + extraArgs + " < " + q(taskFile);
     else if (clientId == "codex")
         inner = pathPrefix + q(cli) + " exec --full-auto - < " + q(taskFile);
     else { if (err) *err = "этот клиент нельзя запустить из редактора: скопируйте задание"; return false; }
@@ -215,6 +216,7 @@ void AgentRun::reader(std::string cmd, std::string logFile) {
             try {
                 Json j = Json::parse(line);
                 const std::string type = j.getStr("type");
+                if (!j.getStr("session_id").empty()) { std::lock_guard<std::mutex> lk(m_); session_ = j.getStr("session_id"); }
                 if (type == "assistant") {
                     for (auto& c : j["message"]["content"].items()) {
                         if (c.getStr("type") == "text" && !c.getStr("text").empty()) add(clip(c.getStr("text"), 300));
@@ -269,5 +271,6 @@ std::vector<std::string> AgentRun::lastLines(size_t n) {
 }
 
 std::string AgentRun::result() { std::lock_guard<std::mutex> lk(m_); return result_; }
+std::string AgentRun::sessionId() { std::lock_guard<std::mutex> lk(m_); return session_; }
 
 } // namespace aiverse::editor

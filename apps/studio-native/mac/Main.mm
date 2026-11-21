@@ -529,6 +529,11 @@ struct WindShotRunner {
         session_->setBuildTool(aiverse::editor::findBuildTool(
             [[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent].UTF8String,root));
 #endif
+#ifdef AIVERSE_STUDIO_MCP_TOOL
+        session_->setMcpTool(AIVERSE_STUDIO_MCP_TOOL);
+#else
+        session_->setMcpTool(std::string([[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent].UTF8String)+"/aiversemcp");
+#endif
         pendingProject_=project;
         __unsafe_unretained StudioHost* host=self;
         session_->setMaterialSlotProvider([host](const std::string& asset) {
@@ -787,6 +792,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
+    // Agent panel: tool calls from aiversemcp run here, on the main thread, between frames.
+    if (session_->pollAgentLink()) {
+        [self sendStudioEvent:"document.changed" message:""];
+        [self sendStudioEvent:"agent.changed" message:""];
+    }
     [self runWindShots];
     [self pollAgentRequests];
     NSWindow* sceneWindow=viewport_.window ?: window_;

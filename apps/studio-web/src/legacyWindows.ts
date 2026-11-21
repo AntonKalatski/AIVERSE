@@ -4,7 +4,7 @@
  * so the gap is visible; remove an entry when its HTML5 panel ships.
  */
 export const LEGACY_WINDOWS_NOT_MIGRATED: ReadonlyArray<{ id: string; title: string }> = [
-  { id: 'agent', title: 'AI Agent' }, { id: 'animation_assets', title: 'Animation Assets' },
+  { id: 'animation_assets', title: 'Animation Assets' },
   { id: 'animation_graph', title: 'Animation Graph' }, { id: 'animation_rig', title: 'Animation Rig' },
   { id: 'animation_attachments', title: 'Attachments' }, { id: 'AnimationWindow', title: 'Model Animation' },
   { id: 'fields', title: 'Fields' }, { id: 'FpsWindow', title: 'FPS Authoring' },

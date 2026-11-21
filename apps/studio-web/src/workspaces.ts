@@ -19,7 +19,7 @@ export interface WorkspaceInfo {
 
 export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
   scene: { id: 'scene', title: 'Scene', purpose: 'Place and test', key: '1',
-    left: ['hierarchy', 'project'], center: ['scene', 'game'], right: ['inspector', 'history'], bottom: ['assets', 'console'],
+    left: ['hierarchy', 'project'], center: ['scene', 'game'], right: ['inspector', 'history'], bottom: ['assets', 'console', 'agent'],
     legacy: ['tools', 'studio_camera_bookmarks'] },
   world: { id: 'world', title: 'World', purpose: 'Terrain, water, roads', key: '2',
     left: ['hierarchy'], center: ['scene', 'game'], right: ['inspector', 'terrain', 'water', 'roads', 'tiles', 'fog', 'generate', 'nereid_flow'], bottom: ['assets', 'console'],
@@ -34,8 +34,8 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     left: ['human_creator'], center: ['scene', 'facial_rig'], right: ['inspector', 'human_appearance'], bottom: ['assets', 'console'],
     legacy: [] },
   logic: { id: 'logic', title: 'Logic', purpose: 'Rules, scripts, runtime', key: '5',
-    left: ['hierarchy'], center: ['rules', 'scripts', 'game', 'scene'], right: ['runtime', 'inspector', 'input', 'overlays'], bottom: ['console', 'assets'],
-    legacy: ['FpsWindow', 'raid', 'agent', 'stats'] },
+    left: ['hierarchy'], center: ['rules', 'scripts', 'game', 'scene'], right: ['runtime', 'inspector', 'input', 'overlays'], bottom: ['console', 'assets', 'agent'],
+    legacy: ['FpsWindow', 'raid', 'stats'] },
   publish: { id: 'publish', title: 'Publish', purpose: 'Build and audit', key: '6',
     left: ['project', 'hierarchy'], center: ['build', 'game', 'scene'], right: ['inspector', 'branding', 'asset_audit'], bottom: ['console', 'assets'],
     legacy: ['project_import', 'studio_extensions', 'studio_frame_capture', 'studio_snapshot_diff'] },
@@ -86,8 +86,8 @@ export function saveActiveWorkspace(id: StudioWorkspace, store: Storage | null =
   try { store?.setItem(ACTIVE_KEY, id); } catch { /* private mode */ }
 }
 const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = {
-  publish: ['build', 'branding', 'asset_audit'], look: ['wind', 'postfx', 'effects', 'lightbake', 'models'], scene: ['history'],
-  world: ['terrain', 'water', 'roads', 'tiles', 'fog', 'generate'], logic: ['scripts', 'input', 'overlays'],
+  publish: ['build', 'branding', 'asset_audit'], look: ['wind', 'postfx', 'effects', 'lightbake', 'models'], scene: ['history', 'agent'],
+  world: ['terrain', 'water', 'roads', 'tiles', 'fog', 'generate'], logic: ['scripts', 'input', 'overlays', 'agent'],
 };
 /** Saved layout of a workspace; the Scene workspace inherits the pre-workspace layout once. */
 export function readWorkspaceDock(id: StudioWorkspace, store: Storage | null = storage()): DockTree {

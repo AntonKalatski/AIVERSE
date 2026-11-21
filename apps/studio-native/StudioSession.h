@@ -13,6 +13,8 @@
 #include "engine/character/vivid/HumanCreatorWorkbench.h"
 #include "apps/editor/core/Workspace.h"
 #include "apps/studio-native/StudioWindPreview.h"
+#include "apps/editor/core/Net.h"
+#include "apps/editor/core/WizardAgent.h"
 namespace aiverse::studio {
 class StudioSession {
 public:
@@ -49,6 +51,11 @@ public:
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
     // aiversebuild used by the Build panel (resolved by the native host next to Studio).
     void setBuildTool(const std::string& path) { ws_.buildTool = path; }
+    // Agent panel: aiversemcp built next to Studio (the in-editor agent reaches this session through it).
+    void setMcpTool(const std::string& path) { mcpTool_ = path; }
+    // Agent link (docs/mcp-agent-link.md): serves MCP tool calls from aiversemcp; call every frame.
+    // True when an agent edit changed the document (the host then refreshes the Scene and panels).
+    bool pollAgentLink();
     // Host-provided material slot names of a loaded content model (the native
     // Scene owns model loading). Without it, slots come from authored overrides.
     using MaterialSlotProvider=std::function<std::vector<std::string>(const std::string& asset)>;
@@ -93,5 +100,13 @@ private:
     std::optional<StudioTransferPlan> pendingAssetTransfer_;
     StudioWindState wind_;
     Json windSceneStats_;
+    // Agent panel (studio.agent*): link server, the Claude Code run, its transcript and change list.
+    editor::net::LineServer agentServer_{editor::net::LineServer::Token::Publish};
+    editor::AgentRun agentRun_;
+    std::string mcpTool_, agentSession_;
+    std::vector<std::string> agentLines_;
+    Json agentChanges_=Json::array();
+    int64_t agentRunStart_=-1;   // History position when the current conversation started (Undo all)
+    Json agentRequest(const std::string& method, const Json& params);
 };
 }

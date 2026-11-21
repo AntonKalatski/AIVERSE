@@ -28,6 +28,7 @@ import RuntimePanel from './generated/RuntimePanel';
 import BuildPanel from './BuildPanel';
 import ConsolePanel from './ConsolePanel';
 import ToolPanel from './ToolPanel';
+import AgentPanel from './AgentPanel';
 import { AuditPanel, FogPanel, InputPanel, ScriptsPanel } from './ProjectToolPanels';
 import HistoryPanel from './HistoryPanel';
 import { LiveHierarchy, LiveInspector, LiveSwitch } from './LivePanels';
@@ -92,6 +93,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'fog': return <FogPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'scripts': return <ScriptsPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'input': return <InputPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'agent': return <AgentPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'asset_audit': return <AuditPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'history':
         return <HistoryPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;

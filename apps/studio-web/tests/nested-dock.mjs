@@ -13,7 +13,7 @@ test('default tree has 4 nested stacks and exactly one copy of each panel',()=>{
   assert.equal(panelStack(t,'scene'),'dock-center');
   assert.equal(panelStack(t,'assets'),'dock-bottom');
   assert.deepEqual(findDockStack(t,'dock-left')?.tabs,['hierarchy','project']);
-  assert.deepEqual(findDockStack(t,'dock-bottom')?.tabs,['assets','console']);
+  assert.deepEqual(findDockStack(t,'dock-bottom')?.tabs,['assets','console','agent']);
 });
 test('move reorders within a tab stack',()=>{
   const t=moveTab(defaultDockTree(),'animation','dock-center','scene');
@@ -38,7 +38,7 @@ test('nested split adds a stack to left edge and preserves panels',()=>{
   assert.equal(panelStack(base,'inspector'),'dock-right');
 });
 test('cannot split away sole tab from its own stack',()=>{
-  const base=closeTab(defaultDockTree(),'assets');
+  const base=closeTab(closeTab(defaultDockTree(),'assets'),'agent');
   const t=splitDockStack(base,'console','dock-bottom','bottom');
   assert.deepEqual(t,base);
 });
@@ -109,7 +109,7 @@ test('reopening Inspector restores pruned right-hand dock',()=>{
   assert.equal(dockStacks(t).length,4);
 });
 test('reopening Assets restores pruned bottom dock',()=>{
-  let t=closeTab(closeTab(defaultDockTree(),'assets'),'console');
+  let t=closeTab(closeTab(closeTab(defaultDockTree(),'assets'),'console'),'agent');
   assert.equal(findDockStack(t,'dock-bottom'),null);
   t=reopenTab(t,'assets','dock-bottom');
   assert.equal(panelStack(t,'assets'),'dock-bottom');

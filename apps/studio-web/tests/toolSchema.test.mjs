@@ -47,3 +47,11 @@ test('choice fields start on their first option', () => {
   const [q] = schemaFields({ properties: { minQuality: { type: 'string', enum: ['low', 'high'] } } });
   assert.equal(fieldDraft(q), '');
 });
+import { agentLineKind } from '../src/panels/agentLogic.ts';
+test('agent transcript line kinds', () => {
+  assert.equal(agentLineKind('› make a river'), 'user');
+  assert.equal(agentLineKind('→ water_set {"id":1}'), 'tool');
+  assert.equal(agentLineKind('агент закончил'), 'done');
+  assert.equal(agentLineKind('агент остановлен (код 1)'), 'error');
+  assert.equal(agentLineKind('I added two mines.'), 'text');
+});
