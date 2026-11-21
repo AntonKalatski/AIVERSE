@@ -1,6 +1,6 @@
 #include "RtsShoreView.h"
-#include "RtsRoadKit.h"
-#include "RtsRoadView.h"
+#include "../../../engine/roads/RoadKit.h"
+#include "../../../engine/roads/RoadView.h"
 #include "../../../engine/render/FailedModelUpload.h"
 #include <algorithm>
 #include <cmath>
@@ -18,7 +18,7 @@ namespace {
 
 constexpr int kChunk = 32;
 constexpr float kPi = 3.14159265f;
-using RV = RtsRoadView;
+using RV = roads::RoadView;
 
 struct Acc {
     std::vector<std::vector<ModelVertex>> v;
@@ -613,9 +613,9 @@ std::unique_ptr<Model> toModel(const std::string& name, Acc& a, const std::vecto
     return m;
 }
 
-void addShape(Acc& a, const std::string& shape, const mat4& xf, float worldPerMetre, std::map<std::string, std::vector<roadkit::Tri>>& cache) {
+void addShape(Acc& a, const std::string& shape, const mat4& xf, float worldPerMetre, std::map<std::string, std::vector<roads::roadkit::Tri>>& cache) {
     auto it = cache.find(shape);
-    if (it == cache.end()) { std::vector<roadkit::Tri> tris; roadkit::shape(shape, worldPerMetre, tris); it = cache.emplace(shape, std::move(tris)).first; }
+    if (it == cache.end()) { std::vector<roads::roadkit::Tri> tris; roads::roadkit::shape(shape, worldPerMetre, tris); it = cache.emplace(shape, std::move(tris)).first; }
     for (auto& t : it->second) {
         float3 p[3] = {xf.transformPoint(t.a), xf.transformPoint(t.b), xf.transformPoint(t.c)};
         const float3 n = normalize(cross(p[1] - p[0], p[2] - p[0]));
@@ -655,12 +655,12 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
             if (read_ && read_(it->second, bytes) && decodeImage(bytes, img)) { img.repeat = true; img.name = it->second; }
             else { warnings_.push_back("shore texture '" + it->second + "': cannot read"); img = Image{}; }
         }
-        if (img.rgba.empty() && !img.compressed) img = m < RV::kMatCount ? roadkit::texture(m) : (m == kStone || m == kRock || m == kSand || m == kFoam ? texture(m, m == kRock ? 512 : 256) : Image{});
+        if (img.rgba.empty() && !img.compressed) img = m < RV::kMatCount ? roads::roadkit::texture(m) : (m == kStone || m == kRock || m == kSand || m == kFoam ? texture(m, m == kRock ? 512 : 256) : Image{});
         const bool upload=!img.rgba.empty() || img.compressed;
         const int tex=upload?addImage(dev,*buildingKit_,std::move(img)):-1;
         if(upload && tex<0)
             throw std::runtime_error("shore View: GPU kit texture allocation failed");
-        Material mt = m < RV::kMatCount ? roadkit::material(m) : material(m);
+        Material mt = m < RV::kMatCount ? roads::roadkit::material(m) : material(m);
         if (m != kFoam) { mt.alpha = AlphaMode::Opaque; mt.transparent = false; }   // the road kit's verge grass is blended; shores are solid
         if (custom.count(m)) mt.baseColor = {1, 1, 1, mt.baseColor.w};
         mt.baseTex = tex;
@@ -764,7 +764,7 @@ void RtsShoreView::buildUnpublished(gfx::Device& dev, const std::function<float(
     for (auto& i : geom.issues) warnings_.push_back(i);
     Mesher mesh(types_, net_, geom, heightAt, waterY);
     mesh.build();
-    std::map<std::string, std::vector<roadkit::Tri>> shapes;
+    std::map<std::string, std::vector<roads::roadkit::Tri>> shapes;
     for (auto& p : mesh.props) {
         if (!p.model.empty()) { const int k = propModel(dev, p.model); if (k >= 0) props_.push_back({k, p.xf}); continue; }
         const float3 at = p.xf.transformPoint({0, 0, 0});

@@ -1,5 +1,5 @@
 // Transactional cross-genre inventory in ECS (RTS store + FPS backpack).
-#include <aiverselib/genre/EcsInventorySystems.h>
+#include <aiverselib/mechanics/EcsInventorySystems.h>
 #include <cstdint>
 #include <iostream>
 #include <memory>

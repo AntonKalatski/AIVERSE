@@ -5,7 +5,7 @@
 namespace aiverse::fps {
 namespace {
 // Inside the defender's guard arc: the attacker is within guardTurns of where the defender faces.
-bool guarded(const Actor& target,const Actor& attacker,Fixed guardTurns) {
+bool guarded(const CharacterRef& target,const CharacterRef& attacker,Fixed guardTurns) {
     auto toAttacker=(attacker.pos-target.pos).xz();
     if(toAttacker.lengthSq()==Fixed{})return true;
     return direction(target.yaw,{}).xz().dot(toAttacker)>=toAttacker.length()*fxCosTurns(guardTurns);
@@ -14,8 +14,8 @@ bool guarded(const Actor& target,const Actor& attacker,Fixed guardTurns) {
 
 // SimEvents: 3 = swing started (value = attack id), 4 = melee contact
 // (value = target slot | MeleeContact << 8, pos = contact point).
-void Module::tickMelee(Simulation& sim,Actor& actor,const Input& input) {
-    auto& actors=state(sim).actors;const auto now=sim.tick();const auto& m=config_.melee;
+void Module::tickMelee(Simulation& sim,CharacterRef actor,const Input& input) {
+    const size_t count=characterCount(sim);const auto now=sim.tick();const auto& m=config_.melee;
     const bool alive=actor.health>0&&!actor.downed;
     const bool block=alive&&!actor.vehicle&&(input.buttons&Block)!=0;
     // The parry window opens on the press edge, not while holding the guard.
@@ -23,13 +23,15 @@ void Module::tickMelee(Simulation& sim,Actor& actor,const Input& input) {
     actor.blockHeld=block;
     if(alive&&(input.buttons&LockOn)!=0) {
         actor.lockTarget=0;Fixed best=m.lockRange*m.lockRange;
-        for(const auto& candidate:actors)if(candidate.health>0&&!candidate.downed&&candidate.team!=actor.team) {
+        for(size_t k=1;k<=count;++k){
+            const auto candidate=character(sim,uint8_t(k));
+            if(candidate.health<=0||candidate.downed||candidate.team==actor.team)continue;
             auto distance=(candidate.pos-actor.pos).lengthSq();
             if(distance<best){best=distance;actor.lockTarget=candidate.slot;}
         }
     }
     if(actor.lockTarget) {
-        const auto& target=actors[actor.lockTarget-1];
+        const auto target=character(sim,actor.lockTarget);
         if(!alive||target.health<=0||target.downed||target.team==actor.team||(target.pos-actor.pos).lengthSq()>m.lockRange*m.lockRange*4)actor.lockTarget=0;
         else {auto delta=target.pos-actor.pos;actor.yaw=fxAtan2Turns(delta.x,delta.z);if(actor.yaw<Fixed{})actor.yaw+=1_fx;}
     }
@@ -43,7 +45,8 @@ void Module::tickMelee(Simulation& sim,Actor& actor,const Input& input) {
     auto shoulder=actor.pos+Vec3{{},stanceHeight(actor,config_.motor)*Fixed::fromRatio(3,4),{}};
     auto tip=shoulder+direction(actor.yaw,{})*m.range;
     auto start=actor.meleeHasTip?actor.meleeTip:shoulder;auto delta=tip-start;actor.meleeTip=tip;actor.meleeHasTip=true;
-    for(auto& target:actors) {
+    for(size_t k=1;k<=count;++k) {
+        auto target=character(sim,uint8_t(k));
         if(target.slot==actor.slot||target.health<=0||target.downed||(target.team==actor.team&&!config_.friendlyFire))continue;
         auto bounds=actorBounds(target,config_.motor);
         bounds.min=bounds.min-Vec3{m.radius,m.radius,m.radius};bounds.max=bounds.max+Vec3{m.radius,m.radius,m.radius};

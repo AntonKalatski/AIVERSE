@@ -12,15 +12,15 @@ Not a cutscene renderer, audio/animation player or camera system: presentation p
 progress back. Animation clips/markers come from the existing animation system (`docs/animation-graphs.md`);
 this package only references their IDs. Music-synced judgement belongs to `rhythm-timing`.
 
-1. Read `docs/genre-packages.md` (cinematic-gameplay section: determinism model) and the catalog entry. Inspect
-   `libraries/include/aiverselib/genre/Cinematic*.h` for exact behaviour.
+1. Read `docs/mechanics-packages.md` (cinematic-gameplay section: determinism model) and the catalog entry. Inspect
+   `libraries/include/aiverselib/mechanics/Cinematic*.h` for exact behaviour.
 2. Authority split. Authoritative (save, hash, identical on every peer): `TimeState` (requests, accumulators),
    `SceneState` (timeline position, emitted cues, wait/QTE outcomes, staging, input locks, queue). Host only:
    audio/animation/camera playback progress, navigation, teleport execution. The host reports
    `LineReport{cue,tick}`, `MarkerReport{cue,marker,tick}`, `ParticipantPose`/`arrived` and `QteInput{tick,button,down}`
    with authoritative ticks; reports outside (emission tick, current tick] are ignored (`ReportIgnored`).
 3. Data: scene library JSON via `readSceneLibrary(json)` (`genre/CinematicData.h`, example
-   `examples/libraries/genre/scene.json`): optional `domains`, `timePresets`, `scenes` with `marks`, `participants`,
+   `examples/libraries/mechanics/scene.json`): optional `domains`, `timePresets`, `scenes` with `marks`, `participants`,
    `cues`, `syncs` (`wait`: lineFinished / marker / inPosition, `timeout` required >= 1), `qtes`. Errors are
    path-qualified `JsonError`s (`cinematic.scenes[0].cues[2].kind: ...`, `cinematic.scene 10.sync 1.wait[0].cue: ...`).
    Scalars live in the optional generated `cinematic` settings section (`qteOptions`, `hitStopRequest`,

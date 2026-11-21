@@ -29,7 +29,7 @@ void drawZoneWall(render::Renderer3D& renderer,const render::Mesh& cube,const Ro
 }
 inline ImVec2 add(ImVec2 a,float x,float y){return {a.x+x,a.y+y};}
 inline std::string clock(uint32_t ticks,uint32_t rate){auto s=ticks/std::max(1u,rate);char b[16];std::snprintf(b,sizeof b,"%u:%02u",s/60,s%60);return b;}
-inline void drawRoyaleHud(const i18n::Localization& lang,const net::authority::Snapshot& snap,const Actor& self,const Config& config){
+inline void drawRoyaleHud(const i18n::Localization& lang,const net::authority::Snapshot& snap,const CharacterSnapshot& self,const Config& config){
     const auto& v=snap.royale;if(!v.enabled||!config.royale)return;
     auto* draw=ImGui::GetForegroundDrawList();auto size=ImGui::GetIO().DisplaySize;float w=size.x,h=size.y;
     // Minimap (top right): the playable bounds scaled into a square.

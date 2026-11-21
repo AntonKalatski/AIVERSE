@@ -72,7 +72,7 @@ int aiverseMain(int,char**) {
                 auto read=preview.acquireRead();
                 AIVERSE_TEST_CHECK(bool(read));
                 device->beginFrame(64,64);
-                render::RTSCamera camera;
+                render::Camera camera;
                 camera.distance=4.f;
                 renderer.beginScene(camera,64,64);
                 AIVERSE_TEST_CHECK(preview.submit(renderer,binding,1.f/60.f,error));
@@ -102,7 +102,7 @@ int aiverseMain(int,char**) {
             AIVERSE_TEST_CHECK(preview.model()->materials.front().roughness>.8f);
             {
                 auto read=preview.acquireRead();
-                device->beginFrame(64,64);render::RTSCamera camera;camera.distance=4.f;
+                device->beginFrame(64,64);render::Camera camera;camera.distance=4.f;
                 renderer.beginScene(camera,64,64);
                 AIVERSE_TEST_CHECK(preview.submit(renderer,binding,1.f/60.f,error));
                 renderer.render(gfx::PassDesc{});device->endPass();device->endFrame();

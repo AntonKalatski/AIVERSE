@@ -247,7 +247,7 @@ Enable mouse marker editing for W/S/G field assets and optionally enable
 rectangle selection starting from empty Scene space. Ctrl/Shift adds
 projected centre markers. Pivot modes: Active, Average, Bounds Centre,
 World Origin or Custom XYZ. The world X/Y/Z handles are projected for
-hit testing but position changes use RTSCamera::screenRay and exact
+hit testing but position changes use Camera::screenRay and exact
 closestRayAxisParameter. Degenerate rays must not move fields.
 
 Rotate Y and Uniform Scale each have a horizontal projected ring.

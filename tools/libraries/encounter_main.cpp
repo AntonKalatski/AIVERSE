@@ -2,7 +2,7 @@
 //   aiverse_encounter validate <encounter.json> [--json]
 //   aiverse_encounter simulate <encounter.json> [--boss ID] [--seed N] [--ticks N] [--reaction N] [--json] [--quiet]
 // Exit codes: 0 ok (simulate: boss defeated), 1 invalid data / usage, 2 fight lost or timed out.
-#include <aiverselib/genre/EncounterScenario.h>
+#include <aiverselib/mechanics/EncounterScenario.h>
 #include "engine/data/Json.h"
 #include <cstdlib>
 #include <iostream>

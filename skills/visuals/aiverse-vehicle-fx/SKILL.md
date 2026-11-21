@@ -5,7 +5,7 @@ description: Light up an AIVERSE vehicle's lamps (headlights, brake lamps with h
 
 # vehicle-fx
 
-Headers: `libraries/include/aiverselib/genre/vehicle-fx/VehicleLights.h`, `libraries/include/aiverselib/genre/vehicle-fx/TyreTrails.h` (`AIVERSE::lib_vehicle_fx`). Tests: `tests/libraries/city_tests.cpp`. Vehicle state comes from driving (`docs/driving.md`, `VehicleState`) and traffic (`game.traffic_kind` for sirens).
+Headers: `libraries/include/aiverselib/mechanics/vehicle-fx/VehicleLights.h`, `libraries/include/aiverselib/mechanics/vehicle-fx/TyreTrails.h` (`AIVERSE::lib_vehicle_fx`). Tests: `tests/libraries/city_tests.cpp`. Vehicle state comes from driving (`docs/driving.md`, `VehicleState`) and traffic (`game.traffic_kind` for sirens).
 
 ## Lamps
 1. Name emissive parts of the model by channel: `headlight`, `tail`, `brake`, `reverse`, `indicator*`, `beacon*` / `strobe`, `roof_sign` (alias `taxi_available`), `destination`. `vehicleLampOf(name)` maps a part name once at load.

@@ -1,8 +1,8 @@
 // A real schedulable ECS hitscan resolution system in two unrelated hosts.
 // Covers invalid and blocked fire intents, deterministic event ordering,
 // one-shot consumption and deep/COW snapshot replay.
-#include <aiverselib/genre/EcsHitscanResolutionSystems.h>
-#include <aiverselib/genre/EcsDamageSystems.h>
+#include <aiverselib/mechanics/EcsHitscanResolutionSystems.h>
+#include <aiverselib/mechanics/EcsDamageSystems.h>
 #include <cstdint>
 #include <iostream>
 #include <memory>

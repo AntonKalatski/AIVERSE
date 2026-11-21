@@ -43,7 +43,7 @@ void destroyTarget(aiverse::gfx::Device& d,Target& t) {
     if(t.depth.valid())d.destroyTexture(t.depth);
     t={};
 }
-aiverse::fx::SpectraFxView viewOf(const aiverse::render::RTSCamera& camera,
+aiverse::fx::SpectraFxView viewOf(const aiverse::render::Camera& camera,
                                  const aiverse::gfx::Device& device) {
     const auto vp=camera.proj(1.0f,device.info().clipDepthZeroToOne)*camera.view();
     return aiverse::fx::SpectraFxView::fromCamera(camera,vp,kSide,kSide);
@@ -191,7 +191,7 @@ int aiverseMain(int,char**) {
             return 1;
         }
 
-        aiverse::render::RTSCamera cameraA;
+        aiverse::render::Camera cameraA;
         cameraA.target={0,0,0};
         cameraA.distance=5;
         cameraA.pitch=0;
@@ -207,7 +207,7 @@ int aiverseMain(int,char**) {
 
         // Simple opaque blue box is deliberately placed between eye
         // (z=5) and the particle center (z=0) to test hardware depth.
-        const auto renderView=[&](const aiverse::render::RTSCamera& camera,
+        const auto renderView=[&](const aiverse::render::Camera& camera,
                                   const aiverse::fx::SpectraFxView& view,
                                   Target target,bool includeFx) {
             if(includeFx)

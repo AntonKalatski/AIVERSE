@@ -31,8 +31,8 @@ int main(int argc,char** argv){try{
         nc.radius=m.config().motor.radius;nc.height=m.config().motor.height;nc.stepHeight=m.config().motor.stepHeight;
         if(spec.has("navmesh"))nc=readNavConfig(spec["navmesh"],nc.radius,nc.height,nc.stepHeight);
         else {
-            auto first=m.state(sim).actors.front().pos;nc.bounds={first,first};
-            for(const auto& a:m.state(sim).actors){nc.bounds.min.x=fxMin(nc.bounds.min.x,a.pos.x);nc.bounds.min.y=fxMin(nc.bounds.min.y,a.pos.y);nc.bounds.min.z=fxMin(nc.bounds.min.z,a.pos.z);nc.bounds.max.x=fxMax(nc.bounds.max.x,a.pos.x);nc.bounds.max.y=fxMax(nc.bounds.max.y,a.pos.y);nc.bounds.max.z=fxMax(nc.bounds.max.z,a.pos.z);}
+            const auto characters=m.snapshots(sim);auto first=characters.front().pos;nc.bounds={first,first};
+            for(const auto& a:characters){nc.bounds.min.x=fxMin(nc.bounds.min.x,a.pos.x);nc.bounds.min.y=fxMin(nc.bounds.min.y,a.pos.y);nc.bounds.min.z=fxMin(nc.bounds.min.z,a.pos.z);nc.bounds.max.x=fxMax(nc.bounds.max.x,a.pos.x);nc.bounds.max.y=fxMax(nc.bounds.max.y,a.pos.y);nc.bounds.max.z=fxMax(nc.bounds.max.z,a.pos.z);}
             nc.bounds.min=nc.bounds.min-Vec3{16_fx,4_fx,16_fx};nc.bounds.max+=Vec3{16_fx,8_fx,16_fx};
         }
         auto built=buildNavMesh(m.collision(),nc);if(!built.mesh)throw std::runtime_error(built.error);navigation=std::move(built.mesh);

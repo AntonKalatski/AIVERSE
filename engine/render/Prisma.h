@@ -331,7 +331,7 @@ public:
     // retain the original camera for gameplay picking and 2D overlays.
     // Active only with HDR temporalResolve + AIVERSE_PRISMA_JITTER=1.
     // Pass the INTERNAL render resolution, not the final display dimensions.
-    RTSCamera jitteredCamera(RTSCamera camera, int width, int height);
+    Camera jitteredCamera(Camera camera, int width, int height);
     // Host query BEFORE beginScene(): returns internal 3D resolution while
     // leaving the output texture/UI at the caller's full output resolution.
     // The host must call it every rendered frame for offscreen output metadata.
