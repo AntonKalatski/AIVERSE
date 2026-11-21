@@ -268,7 +268,7 @@ public:
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
     void enqueueFpsSceneGeometry(const render::RTSCamera&, bool editOverlays=true);
-    const Json& fpsRuntimeSnapshot(); // FPS World resource actors; cached by document/rules revision
+    const Json& fpsRuntimeSnapshot(); // FPS character / projectile / loot / vehicle entities; cached by document/rules revision
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
     bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;

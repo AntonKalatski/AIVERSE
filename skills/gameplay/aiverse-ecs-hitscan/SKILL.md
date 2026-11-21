@@ -24,7 +24,7 @@ Include `<aiverselib/mechanics/EcsHitscanSystems.h>` and use
    compare their fractions against the current nearest candidate, preserving
    the legacy query order.
 4. Dispatch hits into `EcsOrderedImpactSystems.h` and the game's damage
-   policy, which may use ECS `ActorRuntime` (FPS), ECS RTS `Unit`, or a
+   policy, which may use the FPS `CharacterHealth` component, ECS RTS `Unit`, or a
    custom health/status component. Do not rewrite gear, shields, headshots,
    faction checks or on-hit event sequencing.
 

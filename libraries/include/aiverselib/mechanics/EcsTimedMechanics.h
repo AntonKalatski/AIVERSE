@@ -24,8 +24,8 @@ struct WeaponReloadComponent {
 struct ReloadIntentComponent {bool requested=false;};
 
 // Deterministic shared one-tick reload policy, also usable from transitional
-// legacy host adapters. The native FPS adapter feeds the canonical ActorRuntime
-// values without introducing a second mutable weapon state.
+// legacy host adapters. The native FPS adapter feeds the CharacterWeapons
+// component values without introducing a second mutable weapon state.
 inline void stepWeaponReload(WeaponStateComponent& weapon,
                              WeaponReloadComponent& reload,
                              uint32_t tick,bool requested) {

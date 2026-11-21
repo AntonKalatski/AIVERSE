@@ -9,14 +9,14 @@ constexpr uint32_t kProtocol=5;
 uint64_t contentId(const Json& rules,const Json& map);
 struct Snapshot {
     uint32_t tick=0,ack=0;uint8_t localSlot=0;int32_t winner=0;
-    std::vector<fps::Actor> actors;
+    std::vector<fps::CharacterSnapshot> characters;
     std::vector<fps::Projectile> projectiles;std::vector<fps::Loot> loot;std::vector<fps::Vehicle> vehicles;fps::RoundState match;uint32_t round=1;
     fps::RoyaleView royale;
     lib::systems::GearLoadout gear;   // own gear (fps.gear)
 };
 Bytes encodeSnapshot(const Snapshot& snapshot);
 bool decodeSnapshot(const Bytes&,Snapshot& out);
-// Snapshot <-> stable records (0 = globals, kind << 28 | id: actors by slot, projectiles / loot / vehicles by id)
+// Snapshot <-> stable records (0 = globals, kind << 28 | id: characters by slot, projectiles / loot / vehicles by id)
 // for snapshot-delta. Servers send deltas against the newest snapshot the client acknowledged (its input viewTick).
 lib::delta::RecordSet snapshotRecords(const Snapshot& snapshot);
 bool recordsSnapshot(const lib::delta::RecordSet& records,Snapshot& out);
@@ -50,7 +50,7 @@ public:
     void poll(uint64_t now);
     bool submit(fps::Input input);
     const Snapshot& snapshot()const{return latest_;}
-    const fps::Actor& predicted()const{return predicted_;}
+    const fps::CharacterSnapshot& predicted()const{return predicted_;}
     bool ready()const{return ready_;}
     bool connected()const{return conn_->state()!=ConnState::Closed;}
     uint32_t nextSequence()const{return sequence_+1;}
@@ -60,7 +60,7 @@ private:
     world::SpatialWorld collision_;
     std::unique_ptr<Conn> conn_;
     Snapshot latest_;
-    fps::Actor predicted_;
+    fps::CharacterSnapshot predicted_;
     std::deque<fps::Input> pending_;
     uint32_t sequence_=0;
     bool ready_=false,sentHello_=false;

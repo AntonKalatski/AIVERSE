@@ -23,7 +23,7 @@ std::string quote(const std::string& s) {
 }
 render::float3 point(const Json& j){return {float(j[0].toDouble()),float(j[1].toDouble()),float(j[2].toDouble())};}
 }
-// FPS exposes real ECS runtime components; an opt-in mode stores full authoritative payloads.
+// The FPS host stores characters, projectiles, loot and vehicles as ECS entities (FpsComponents.h).
 // Expose a typed, read-only snapshot without pretending they are DocEntity or
 // RTS World rows. This uses the same fps::Module::setup as the FPS client.
 const Json& Editor::fpsRuntimeSnapshot() {
@@ -54,163 +54,123 @@ const Json& Editor::fpsRuntimeSnapshot() {
         preview.setup(ws_.project.rulesJson, doc().toJson());
         auto* module = dynamic_cast<fps::Module*>(&preview.module());
         if (!module) throw std::runtime_error("FPS module missing");
-        // Runtime actors now have real ECS identities and typed component
-        // pools, which the editor inspects directly. State::actors remains
-        // the authoritative compatibility storage until gameplay migration.
-        World& world = preview.world();
-        for (size_t i = 0; i < preview.players().size(); ++i) {
-            const Entity entity = module->actorEntity(preview, uint8_t(i + 1));
+        // Characters and dynamic objects are ECS entities; the editor shows their real components
+        // (CharacterId / CharacterBody / CharacterHealth / CharacterWeapons, Projectile / Loot / Vehicle).
+        const World& world = preview.world();
+        auto vec = [](Vec3 v) {
+            Json out = Json::array();
+            for (const Fixed value : {v.x, v.y, v.z}) out.push(Json::number(value.toDouble(), 3));
+            return out;
+        };
+        const size_t characters = module->characterCount(preview);
+        for (size_t slot = 1; slot <= characters; ++slot) {
+            const Entity entity = module->characterEntity(preview, uint8_t(slot));
             if (!world.alive(entity)) continue;
-            const auto* identity = world.tryGet<fps::ActorEntityIdentity>(entity);
-            const auto* transform = world.tryGet<fps::ActorEntityTransform>(entity);
-            const auto* vitals = world.tryGet<fps::ActorEntityVitals>(entity);
-            if (!identity || !transform || !vitals) continue;
+            const auto* id = world.tryGetConst<fps::CharacterId>(entity);
+            const auto* body = world.tryGetConst<fps::CharacterBody>(entity);
+            const auto* health = world.tryGetConst<fps::CharacterHealth>(entity);
+            const auto* weapons = world.tryGetConst<fps::CharacterWeapons>(entity);
+            if (!id || !body || !health || !weapons) continue;
+            const Json position = vec(body->pos), velocity = vec(body->velocity);
             Json data = Json::object();
-            data.set("slot", Json::number(int64_t(identity->slot)));
-            data.set("team", Json::number(int64_t(identity->team)));
-            data.set("life", Json::number(int64_t(identity->life)));
+            data.set("slot", Json::number(int64_t(id->slot)));
+            data.set("team", Json::number(int64_t(id->team)));
+            data.set("life", Json::number(int64_t(id->life)));
             data.set("ecsEntity", Json::number(int64_t(entity.packed())));
-            Json position = Json::array(), velocity = Json::array();
-            for (const Fixed value : {transform->position.x, transform->position.y,
-                                      transform->position.z})
-                position.push(Json::number(value.toDouble(), 3));
-            for (const Fixed value : {transform->velocity.x, transform->velocity.y,
-                                      transform->velocity.z})
-                velocity.push(Json::number(value.toDouble(), 3));
             data.set("position", position);
             data.set("velocity", velocity);
-            data.set("yaw", Json::number(transform->yaw.toDouble(), 3));
-            data.set("pitch", Json::number(transform->pitch.toDouble(), 3));
-            data.set("health", Json::number(int64_t(vitals->health)));
-            data.set("armor", Json::number(int64_t(vitals->armor)));
-            data.set("ammo", Json::number(int64_t(vitals->ammo)));
-            data.set("reserve", Json::number(int64_t(vitals->reserve)));
+            data.set("yaw", Json::number(body->yaw.toDouble(), 3));
+            data.set("pitch", Json::number(body->pitch.toDouble(), 3));
+            data.set("health", Json::number(int64_t(health->health)));
+            data.set("armor", Json::number(int64_t(health->armor)));
+            data.set("ammo", Json::number(int64_t(weapons->ammo)));
+            data.set("reserve", Json::number(int64_t(weapons->reserve)));
             Json components = Json::object();
-            Json identityFields = Json::object();
-            identityFields.set("slot", Json::number(int64_t(identity->slot)));
-            identityFields.set("team", Json::number(int64_t(identity->team)));
-            identityFields.set("life", Json::number(int64_t(identity->life)));
-            components.set("ActorEntityIdentity", identityFields);
-            Json transformFields = Json::object();
-            transformFields.set("position", position);
-            transformFields.set("velocity", velocity);
-            transformFields.set("yaw", Json::number(transform->yaw.toDouble(), 3));
-            transformFields.set("pitch", Json::number(transform->pitch.toDouble(), 3));
-            components.set("ActorEntityTransform", transformFields);
-            Json vitalsFields = Json::object();
-            vitalsFields.set("health", Json::number(int64_t(vitals->health)));
-            vitalsFields.set("armor", Json::number(int64_t(vitals->armor)));
-            vitalsFields.set("ammo", Json::number(int64_t(vitals->ammo)));
-            vitalsFields.set("reserve", Json::number(int64_t(vitals->reserve)));
-            vitalsFields.set("downed", Json::fromBool(vitals->downed));
-            vitalsFields.set("crouched", Json::fromBool(vitals->crouched));
-            vitalsFields.set("prone", Json::fromBool(vitals->prone));
-            components.set("ActorEntityVitals", vitalsFields);
-            if(const auto* full=world.tryGetConst<fps::ActorRuntime>(entity)) {
-                const auto& a=full->value;
-                Json runtime=Json::object();
-                runtime.set("slot",Json::number(int64_t(a.slot)));
-                runtime.set("team",Json::number(int64_t(a.team)));
-                runtime.set("life",Json::number(int64_t(a.life)));
-                runtime.set("health",Json::number(int64_t(a.health)));
-                runtime.set("kills",Json::number(int64_t(a.kills)));
-                runtime.set("shots",Json::number(int64_t(a.shots)));
-                runtime.set("hits",Json::number(int64_t(a.hits)));
-                runtime.set("weaponIndex",Json::number(int64_t(a.weaponIndex)));
-                runtime.set("reloadUntil",Json::number(int64_t(a.reloadUntil)));
-                runtime.set("nextFire",Json::number(int64_t(a.nextFire)));
-                runtime.set("lastSequence",Json::number(int64_t(a.lastSequence)));
-                runtime.set("grounded",Json::fromBool(a.grounded));
-                runtime.set("vehicle",Json::number(int64_t(a.vehicle)));
-                components.set("ActorRuntime",std::move(runtime));
-            }
+            Json idFields = Json::object();
+            idFields.set("slot", Json::number(int64_t(id->slot)));
+            idFields.set("team", Json::number(int64_t(id->team)));
+            idFields.set("life", Json::number(int64_t(id->life)));
+            idFields.set("kills", Json::number(int64_t(id->kills)));
+            components.set("CharacterId", idFields);
+            Json bodyFields = Json::object();
+            bodyFields.set("position", position);
+            bodyFields.set("velocity", velocity);
+            bodyFields.set("yaw", Json::number(body->yaw.toDouble(), 3));
+            bodyFields.set("pitch", Json::number(body->pitch.toDouble(), 3));
+            bodyFields.set("grounded", Json::fromBool(body->grounded));
+            bodyFields.set("crouched", Json::fromBool(body->crouched));
+            bodyFields.set("prone", Json::fromBool(body->prone));
+            bodyFields.set("vehicle", Json::number(int64_t(body->vehicle)));
+            components.set("CharacterBody", bodyFields);
+            Json healthFields = Json::object();
+            healthFields.set("health", Json::number(int64_t(health->health)));
+            healthFields.set("armor", Json::number(int64_t(health->armor)));
+            healthFields.set("downed", Json::fromBool(health->downed));
+            healthFields.set("respawnAt", Json::number(int64_t(health->respawnAt)));
+            components.set("CharacterHealth", healthFields);
+            Json weaponFields = Json::object();
+            weaponFields.set("weaponIndex", Json::number(int64_t(weapons->weaponIndex)));
+            weaponFields.set("ammo", Json::number(int64_t(weapons->ammo)));
+            weaponFields.set("reserve", Json::number(int64_t(weapons->reserve)));
+            weaponFields.set("shots", Json::number(int64_t(weapons->shots)));
+            weaponFields.set("hits", Json::number(int64_t(weapons->hits)));
+            weaponFields.set("reloadUntil", Json::number(int64_t(weapons->reloadUntil)));
+            weaponFields.set("nextFire", Json::number(int64_t(weapons->nextFire)));
+            components.set("CharacterWeapons", weaponFields);
             data.set("components", components);
             actors.push(std::move(data));
         }
+        // Dynamic objects keyed by kind << 32 | id (1 projectile, 2 loot, 3 vehicle), ascending id per kind.
         Json objects = Json::array();
-        if (const auto* dynamic = world.resource<fps::DynamicEntityIndex>()) {
-            for (const auto& [key, entity] : dynamic->byKey) {
-                if (!world.alive(entity)) continue;
-                const uint8_t kind = uint8_t(key >> 32);
-                Json data = Json::object();
-                data.set("key", Json::number(int64_t(key)));
-                data.set("ecsEntity", Json::number(int64_t(entity.packed())));
-                data.set("kind", Json::number(int64_t(kind)));
-                Json components = Json::object();
-                Vec3 position{};
-                if (kind == 1) {
-                    const auto* projectile = world.tryGet<fps::ProjectileEntity>(entity);
-                    if (!projectile) continue;
-                    position = projectile->position;
-                    Json fields = Json::object();
-                    fields.set("id", Json::number(int64_t(projectile->id)));
-                    fields.set("owner", Json::number(int64_t(projectile->owner)));
-                    fields.set("kind", Json::number(int64_t(projectile->kind)));
-                    fields.set("damage", Json::number(int64_t(projectile->damage)));
-                    components.set("ProjectileEntity", fields);
-                    if(const auto* full=world.tryGetConst<fps::ProjectileRuntime>(entity)) {
-                        Json runtime=Json::object();
-                        runtime.set("id",Json::number(int64_t(full->value.id)));
-                        runtime.set("order",Json::number(int64_t(full->order)));
-                        runtime.set("expires",Json::number(int64_t(full->value.expires)));
-                        runtime.set("owner",Json::number(int64_t(full->value.owner)));
-                        runtime.set("damage",Json::number(int64_t(full->value.damage)));
-                        runtime.set("programEnabled",Json::fromBool(full->value.program.enabled));
-                        components.set("ProjectileRuntime",std::move(runtime));
-                    }
-                    data.set("title", Json::string("Projectile #" +
-                        std::to_string(projectile->id)));
-                } else if (kind == 2) {
-                    const auto* loot = world.tryGet<fps::LootEntity>(entity);
-                    if (!loot) continue;
-                    position = loot->position;
-                    Json fields = Json::object();
-                    fields.set("id", Json::number(int64_t(loot->id)));
-                    fields.set("type", Json::number(int64_t(loot->type)));
-                    fields.set("count", Json::number(int64_t(loot->count)));
-                    components.set("LootEntity", fields);
-                    if(const auto* full=world.tryGetConst<fps::LootRuntime>(entity)) {
-                        Json runtime=Json::object();
-                        runtime.set("id",Json::number(int64_t(full->value.id)));
-                        runtime.set("order",Json::number(int64_t(full->order)));
-                        runtime.set("count",Json::number(int64_t(full->value.count)));
-                        runtime.set("ammo",Json::number(int64_t(full->value.ammo)));
-                        runtime.set("reserve",Json::number(int64_t(full->value.reserve)));
-                        components.set("LootRuntime",std::move(runtime));
-                    }
-                    data.set("title", Json::string("Loot #" +
-                        std::to_string(loot->id)));
-                } else if (kind == 3) {
-                    const auto* vehicle = world.tryGet<fps::VehicleEntity>(entity);
-                    if (!vehicle) continue;
-                    position = vehicle->position;
-                    Json fields = Json::object();
-                    fields.set("id", Json::number(int64_t(vehicle->id)));
-                    fields.set("health", Json::number(int64_t(vehicle->health)));
-                    fields.set("driver", Json::number(int64_t(vehicle->driver)));
-                    fields.set("yaw", Json::number(vehicle->yaw.toDouble(), 3));
-                    components.set("VehicleEntity", fields);
-                    if(const auto* full=world.tryGetConst<fps::VehicleRuntime>(entity)) {
-                        Json runtime=Json::object();
-                        runtime.set("id",Json::number(int64_t(full->value.id)));
-                        runtime.set("order",Json::number(int64_t(full->order)));
-                        runtime.set("health",Json::number(int64_t(full->value.health)));
-                        runtime.set("driver",Json::number(int64_t(full->value.driver)));
-                        runtime.set("speed",Json::number(full->value.speed.toDouble(),3));
-                        components.set("VehicleRuntime",std::move(runtime));
-                    }
-                    data.set("title", Json::string("Vehicle #" +
-                        std::to_string(vehicle->id)));
-                } else continue;
-                Json pos = Json::array();
-                for (const Fixed coordinate : {position.x, position.y, position.z})
-                    pos.push(Json::number(coordinate.toDouble(), 3));
-                data.set("position", pos);
-                for (const auto& [name, entry] : components.members())
-                    components.member(name).set("position", pos);
-                data.set("components", components);
-                objects.push(std::move(data));
-            }
+        auto addObject = [&](uint8_t kind, uint32_t objectId, Entity entity, Vec3 position,
+                             const char* component, Json fields, const std::string& title) {
+            const uint64_t key = (uint64_t(kind) << 32) | objectId;
+            const Json pos = vec(position);
+            fields.set("position", pos);
+            Json components = Json::object();
+            components.set(component, std::move(fields));
+            Json data = Json::object();
+            data.set("key", Json::number(int64_t(key)));
+            data.set("ecsEntity", Json::number(int64_t(entity.packed())));
+            data.set("kind", Json::number(int64_t(kind)));
+            data.set("title", Json::string(title));
+            data.set("position", pos);
+            data.set("components", components);
+            objects.push(std::move(data));
+        };
+        for (const Entity entity : module->projectileEntities(preview)) {
+            const auto* p = world.tryGetConst<fps::Projectile>(entity);
+            if (!p) continue;
+            Json fields = Json::object();
+            fields.set("id", Json::number(int64_t(p->id)));
+            fields.set("owner", Json::number(int64_t(p->owner)));
+            fields.set("kind", Json::number(int64_t(p->kind)));
+            fields.set("damage", Json::number(int64_t(p->damage)));
+            fields.set("expires", Json::number(int64_t(p->expires)));
+            fields.set("programEnabled", Json::fromBool(p->program.enabled));
+            addObject(1, p->id, entity, p->pos, "Projectile", std::move(fields), "Projectile #" + std::to_string(p->id));
+        }
+        for (const Entity entity : module->lootEntities(preview)) {
+            const auto* l = world.tryGetConst<fps::Loot>(entity);
+            if (!l) continue;
+            Json fields = Json::object();
+            fields.set("id", Json::number(int64_t(l->id)));
+            fields.set("type", Json::number(int64_t(l->type)));
+            fields.set("count", Json::number(int64_t(l->count)));
+            fields.set("ammo", Json::number(int64_t(l->ammo)));
+            fields.set("reserve", Json::number(int64_t(l->reserve)));
+            addObject(2, l->id, entity, l->pos, "Loot", std::move(fields), "Loot #" + std::to_string(l->id));
+        }
+        for (const Entity entity : module->vehicleEntities(preview)) {
+            const auto* v = world.tryGetConst<fps::Vehicle>(entity);
+            if (!v) continue;
+            Json fields = Json::object();
+            fields.set("id", Json::number(int64_t(v->id)));
+            fields.set("health", Json::number(int64_t(v->health)));
+            fields.set("driver", Json::number(int64_t(v->driver)));
+            fields.set("yaw", Json::number(v->yaw.toDouble(), 3));
+            fields.set("speed", Json::number(v->speed.toDouble(), 3));
+            addObject(3, v->id, entity, v->pos, "Vehicle", std::move(fields), "Vehicle #" + std::to_string(v->id));
         }
         fpsRuntimeCache_.set("objects", objects);
     } catch (const std::exception& e) {

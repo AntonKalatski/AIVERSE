@@ -446,7 +446,7 @@ struct App {
             characterMontages.clear();
         }
     }
-    bool showRemoteDeathMontage(const fps::Actor& remote) const {
+    bool showRemoteDeathMontage(const fps::CharacterSnapshot& remote) const {
         if(characterBakedCrowd || remote.health>0 || !characterModel)return false;
         const auto death=characterMontages.find("death");
         const auto actor=characterEntities.find(remote.slot);
@@ -458,9 +458,9 @@ struct App {
             if(player.active() && player.slot()==death->second->slot)return true;
         return false;
     }
-    void updateCharacterAnimations(double dt,const fps::Actor& local) {
+    void updateCharacterAnimations(double dt,const fps::CharacterSnapshot& local) {
         if (!characterModel || !characterGraph) return;
-        const auto& actors=client->snapshot().actors;
+        const auto& actors=client->snapshot().characters;
         size_t remoteCount=0;
         for(const auto& remote:actors)
             if(remote.slot!=local.slot && remote.health>0)++remoteCount;
@@ -651,7 +651,7 @@ struct App {
                         return; // weapon hits/reloads remain server-authoritative
                     for(const auto& [slot,entity]:characterEntities)
                         if(entity==cue.entity) {
-                            for(const auto& remote:client->snapshot().actors)
+                            for(const auto& remote:client->snapshot().characters)
                                 if(remote.slot==slot && remote.health>0) {
                                     audio::PlayParams params;params.positional=true;
                                     params.x=float(remote.pos.x.toDouble());
@@ -827,7 +827,7 @@ struct App {
         lastReload=actor.reloadUntil;
         stepSound+=dt;
         if(actor.grounded&&actor.health>0&&!actor.prone&&!actor.vehicle&&actor.velocity.xz().lengthSq()>1_fx&&stepSound>0.38){audio.play("step");stepSound=0;}
-        for(const auto& remote:client->snapshot().actors){
+        for(const auto& remote:client->snapshot().characters){
             auto it=heardShots.find(remote.slot);
             if(it!=heardShots.end()&&it->second.first==remote.life&&remote.shots>it->second.second){
                 audio::PlayParams params;params.positional=remote.slot!=actor.slot;params.x=float(remote.pos.x.toDouble());params.y=float(remote.pos.y.toDouble());params.z=float(remote.pos.z.toDouble());
@@ -913,12 +913,12 @@ struct App {
         // Maintain prepared-packet LOD state without duplicating ECS clocks.
         genericSceneView.beginPreparedFrame();
         ::aiverse::view::ScenePacketBatch remotePackets;
-        remotePackets.reserve(client->snapshot().actors.size());
-        for(const auto& remote:client->snapshot().actors)
+        remotePackets.reserve(client->snapshot().characters.size());
+        for(const auto& remote:client->snapshot().characters)
             if(remote.slot!=actor.slot &&
                (remote.health>0 || showRemoteDeathMontage(remote))) {
             auto position=visual(world::relativeTo(remote.pos,origin,32));
-            for(const auto& old:previousSnapshot.actors)if(old.slot==remote.slot&&old.life==remote.life&&old.health>0) {
+            for(const auto& old:previousSnapshot.characters)if(old.slot==remote.slot&&old.life==remote.life&&old.health>0) {
                 auto before=visual(world::relativeTo(old.pos,origin,32));position=before+(position-before)*interpolation;break;
             }
             bool animated=false;

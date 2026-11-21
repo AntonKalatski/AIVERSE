@@ -1094,7 +1094,7 @@
       "source": "libraries/include/aiverselib/bots/Fps.h",
       "skill": "skills/ai/aiverse-bots-combatant/SKILL.md",
       "summary": "Command-driven FPS bots with perception, reaction, aiming, reload, retreat, zone and patrol",
-      "notes": "Run on one authoritative host with map bot:false for owned slots. Use fpsCommand then sim.submit; never mutate actors. Persist FpsState with the simulation. Supply generated navmesh or authored waypoint graph; no bomb, loot or vehicle mechanics are implied. 0.1.4: with fps.royale the zone goal is the announced battle-royale circle (Module::royaleView); FPS rules fps.bots host this controller inside the module for map bots (docs/fps.md § Library bots).",
+      "notes": "Run on one authoritative host with map bot:false for owned slots. Use fpsCommand then sim.submit; never mutate character components. Persist FpsState with the simulation. Supply generated navmesh or authored waypoint graph; no bomb, loot or vehicle mechanics are implied. 0.1.4: with fps.royale the zone goal is the announced battle-royale circle (Module::royaleView); FPS rules fps.bots host this controller inside the module for map bots (docs/fps.md § Library bots).",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_bots_fps",
       "dependencies": [
@@ -2412,7 +2412,7 @@
       "source": "libraries/include/aiverselib/mechanics/EcsHitscanSystems.h",
       "skill": "skills/gameplay/aiverse-ecs-hitscan/SKILL.md",
       "summary": "Shared deterministic hitscan candidate ray intersection with eligibility, immutable rewind poses and nearest-hit tie consistency for FPS, RTS and native games",
-      "notes": "Live FPS traceShot uses this policy over lag-compensated Actor snapshots. The policy chooses nearest candidate only; environment/vehicle obstruction and downstream damage remain host-specific. C++ native builds and replay parity remain unverified.",
+      "notes": "Live FPS traceShot uses this policy over lag-compensated CharacterSnapshot rewind frames. The policy chooses nearest candidate only; environment/vehicle obstruction and downstream damage remain host-specific. C++ native builds and replay parity remain unverified.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_ecs_hitscan",
       "dependencies": [

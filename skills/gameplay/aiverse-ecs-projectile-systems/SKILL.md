@@ -89,18 +89,11 @@ It **does not** expire or damage the entity. Its default (gravity=10,
 half-extent=0.1, contact fraction inset=0.01, divisor=2) reproduces the
 pre-ECS FPS grenade bounce arithmetic exactly.
 
-The live FPS ordinary projectile stage is now registered as
-`fps.compat.ordinaryProjectiles`, after
-`fps.compat.projectilePrograms` and before `fps` (round/actor).
-In `fps.ecsAuthority` mode it advances actual `ProjectileRuntime` ECS
-components in saved `order,id` order, emits the original immediate hit
-effects and rebuilds `State::projectiles` only as a compatibility projection.
-With authority OFF, the *same* per-projectile solver advances the old State
-vector. The native FPS regressions
-`ecsOrdinaryProjectileAuthorityParity` and
-`ecsProjectileProgramStageParity` cover both storage modes, mixed projectiles,
-deep/COW snapshots and v9 cross-loading; their native results are not yet
-verified. The cross-genre `ecs_projectile_composition_test` also compares
+The live FPS ordinary projectile stage is registered as
+`fps.ordinaryProjectiles`, after `fps.projectilePrograms` and before `fps`
+(round / character tick). It advances the `Projectile` components of the
+projectile entities in ascending `id` order and emits the original immediate
+hit effects; the cross-genre `ecs_projectile_composition_test` compares
 bouncing physics against the exact former FPS formula on multiple contacts.
 
 This policy is **physical collision**. RTS hitscan or kinematic missiles do not
@@ -111,105 +104,31 @@ When implementing another mechanic, repeat the same decomposition:
 **components + reusable systems + pure policies + thin project adapters**.
 
 
-## Built-in FPS direct runtime ownership (2026-11-18)
+## Built-in FPS projectile ownership
 
-The live `fps.compat.projectilePrograms` stage in
-`modules/fps/FpsModule.cpp` now advances programmed projectile flight
-**directly on canonical ECS `ProjectileRuntime` components** when
-`fps.ecsAuthority=true`. The source `Module::stepProgrammedProjectile`
-in `modules/fps/FpsProjectiles.cpp` is shared with legacy
-`State::projectiles` mode, and composes the existing projectile modifier
-policy with `selectSweptProjectileContact`. No second or forked physical
-solver is allowed. Source order is taken from runtime `order` and legacy
-projectile ID, not incidental ECS dense order. Collision, damage,
-on-hit/loot side effects and branching still happen synchronously while
-the source projectile is stepped. ECS Entity destroys/spawns happen only
-after the ordered loop, with stable `DynamicEntityIndex` keys.
+The FPS host is ECS-only (`modules/fps/FpsComponents.h`): every projectile,
+loot item and vehicle is an entity with a `Projectile` / `Loot` / `Vehicle`
+component; there is no `State::projectiles` vector, mirror stage or
+`fps.ecsAuthority` switch. Deterministic order is ascending `id`
+(`fps::State::nextObject`), read through `Module::projectileEntities` or the
+`Module::projectiles` copies.
 
-The EOS compatibility view `State::projectiles` is still rebuilt from
-`ProjectileRuntime` because unrelated grenade, weapon spawn and round
-logic in the **following** main FPS tick need it. Those consumers may
-still modify the vector and are reconciled by `fps.ecsMirror` (an
-explicitly temporary two-stage ownership handoff). Future code should
-migrate those consumers to direct ECS updates, then remove the writeback.
-Do NOT turn the independently queued impact resolver on for built-in
-FPS without proving identical same-tick effects.
+* `fps.projectilePrograms` (`Module::stepProgrammedProjectile` in
+  `modules/fps/FpsProjectiles.cpp`) composes the projectile modifier policy
+  with `selectSweptProjectileContact`; no second physical solver. Collision,
+  damage, on-hit / loot side effects and branching happen synchronously while
+  the source projectile is stepped; entity destroys / spawns happen after the
+  ordered loop.
+* Weapon bullets and `Action::Frag` / `Smoke` / `Flash` throwables go through
+  the private `Module::spawnProjectile` (bounded by `kMaxProjectiles`); the
+  bomb-round reset `Module::clearProjectiles` destroys projectile entities in
+  `id` order.
+* New weapon / missile / throwable producers call the spawn adapter (or a
+  future shared `ProjectileSpawnQueue` integration after order parity). Keep
+  impact callbacks synchronous where the game uses same-tick damage; do not
+  turn the independently queued impact resolver on for built-in FPS without
+  proving identical same-tick effects, and do not conflate nonphysical RTS
+  kinematics with FPS physical grenade motion.
 
-Regression entrypoints `ecsProjectileProgramStageParity` and
-`ecsProjectileBranchAuthorityParity` in `tests/fps/projectiles.inc`
-are registered in `aiverse_fps_tests`; they cover COW/deep rollback,
-direct `ProjectileRuntime` edits overriding stale State projections,
-branch allocation, passive nonprogrammed projectiles, stable ECS
-identities/orders, v9 cross-save and per-tick legacy parity. All remain
-**unverified by native execution**; do not claim passes until compiled
-and run.
-
-
-## Native FPS projectile producer and round-reset cutover
-
-The production FPS engine now uses one private `Module::spawnProjectile`
-adapter for accepted weapon bullets and `Action::Frag` / `Smoke` /
-`Flash` throwable projectiles. When `fps.ecsAuthority=true`, the helper
-creates a full canonical `ProjectileRuntime` ECS Entity *at the same tick
-and code location as the original spawn*, inserts the stable
-`DynamicEntityIndex` kind/ID key and publishes its editor
-`ProjectileEntity` projection. It also updates `State::projectiles`
-only as a same-tick compatibility view for consumers that have not yet
-migrated. Default FPS mode keeps the unchanged legacy vector path.
-
-At bomb-round reset, `Module::clearProjectiles` retires all existing
-`ProjectileRuntime` entities in source-ID order and clears projectile
-index keys at the actual reset barrier, instead of deferring all ECS
-cleanup until `fps.ecsMirror`. Loot/vehicle ECS indices are preserved.
-Gameplay Entity allocator order can be affected by this earlier
-retirement, so verify rollback and native multiplayer determinism.
-
-Tests: `tests/fps/projectile_spawn.inc` exposes
-`ecsProjectileSpawnAuthorityParity` (real accepted bullet and
-Frag/Smoke/Flash input Commands) and
-`ecsProjectileRoundResetParity` (real bomb-mode reset after grenade
-spawn). Both are run by `aiverse_fps_tests`, compare legacy and ECS
-authority simulation checksums, generation-safe Runtime/index
-presence/order, save v9 cross-load, deep and COW snapshot replay and
-post-reset projectile creation. These are **source-level fixtures not
-yet observed to pass natively**.
-
-Do not add new FPS projectile insertion directly to
-`State::projectiles` in the authoritative path. New weapon/missile/
-throwable producers should call the canonical spawn adapter or a
-future shared `ProjectileSpawnQueue` integration after order parity.
-Keep impact callbacks synchronous where the existing FPS/RTS game uses
-same-tick damage, and do not conflate nonphysical RTS kinematics with
-FPS physical grenade motion.
-
-
-## One-way live FPS projectile mirror and legacy restore
-
-After the weapon/throwable/flight/round cleanup migrations,
-`fps.ecsAuthority=true` now treats `ProjectileRuntime` as the **only
-live projectile source of truth, even at the `fps.ecsMirror` barrier**.
-The end-of-tick registered system calls
-`Module::syncDynamicEntities(sim,true)`, enumerates Runtime Entity
-payloads in stable saved order, checks nonzero unique projectile IDs
-and generation-safe `DynamicEntityIndex` mappings, then derives
-`State::projectiles` and `ProjectileEntity` editor projections.
-It **does not** mirror State values back onto Runtime.
-
-The historical native method `Module::syncDynamicEntities(sim)`
-retains its original one-argument ABI, and intentionally imports
-`State::projectiles` into ECS for legacy setup and v9
-deserialization. These are separate ownership barriers. Never invoke
-the import overload as the authoritative end-of-tick mirror.
-
-The production fixture `tests/fps/projectile_spawn.inc` writes
-canonical Runtime damage 17, deliberately poisons State damage to 777
-and invokes the ECS projection overload; it asserts the Runtime wins
-and that the view is corrected. Additional fixtures cover actual
-weapon and throwable spawns, bomb round reset, deep/COW snapshots,
-rollback and v9 cross-mode load. **All are committed but native
-compile/runtime outcomes are not yet verified.**
-
-Remaining unrelated FPS domains (ActorRuntime, loot/vehicles, game
-mode state, network prediction) still have compatibility writes and
-their own migration backlog; the FPS projectile cutover does not
-constitute completion of the whole engine-wide ECS migration.
+Verify with the FPS checksum / save / rollback tests in `aiverse_fps_tests`;
+do not claim passes until they are compiled and run natively.
