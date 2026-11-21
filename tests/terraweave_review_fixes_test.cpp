@@ -7,6 +7,7 @@
 //  - forest canopy index never throws on an overcrowded bucket;
 //  - forest ecology cursor / first-seen tick are stable across recruitment.
 #include "engine/world/TerraWeaveTerrainRuntime.h"
+#include "engine/world/GiTerraWeaveResidentBridge.h"
 #include "engine/world/TerraWeaveForestEcology.h"
 #include "engine/render/TerraWeaveHorizonWindPatch.h"
 #include "tests/AlwaysCheck.h"
@@ -249,6 +250,54 @@ void ecologyFirstSeenAndCursor() {
 }
 } // namespace
 
+// The coordinator's patch listener feeds committed tiles into dynamic GI
+// geometry (GiTerraWeaveResidentBridge -> GiGeometryScene -> a GI target):
+// publish, re-publish after a dig, unload when the tile leaves residency.
+struct GiTarget {
+    bool refuse=false;
+    std::shared_ptr<const render::GiChunkedGeometrySnapshot> scene;
+    uint32_t full=0,regional=0;
+    bool publishGeometry(std::shared_ptr<const render::GiChunkedGeometrySnapshot> s,uint64_t) {
+        if(refuse)return false;scene=std::move(s);++full;return true;
+    }
+    bool publishGeometryRegion(std::shared_ptr<const render::GiChunkedGeometrySnapshot> s,uint64_t,render::GiBounds) {
+        if(refuse)return false;scene=std::move(s);++regional;return true;
+    }
+};
+void terrainTilesFeedDynamicGi() {
+    EarthworksLayer earth(100,[](int64_t,int64_t){return int32_t(0);});
+    TerrainMutationCoordinator terrain(earth,kTileMetres,3);
+    Device device;
+    world::SpatialWorld spatial;
+    render::GiGeometryScene giScene;
+    world::GiTerraWeaveResidentBridge gi;
+    GiTarget target;
+    gi.attach(terrain,giScene,target);
+    const world::Cell a{0,0,0},b{3,0,0};
+    std::vector<world::Cell> visible{a};
+    CHECK(terrain.publishVisible(device,spatial,visible,1,ids)==1);
+    CHECK(target.full==1 && target.scene && target.scene->chunkCount()==1);
+    CHECK(gi.safeToBind() && gi.committedCount()==1);
+    // A dig republishes the tile; GI gets a regional update.
+    EarthworkBrush brush;
+    brush.centerXcm=800;brush.centerZcm=800;brush.radiusCm=300;brush.depthCm=150;
+    (void)terrain.excavate(brush,10);
+    target.refuse=true; // GPU still busy: staged, renderer must unbind
+    CHECK(terrain.publishVisible(device,spatial,visible,1,ids)==1);
+    CHECK(!gi.safeToBind());
+    target.refuse=false;
+    CHECK(gi.retry(giScene,target).published && gi.safeToBind());
+    CHECK(target.regional==1);
+    // Moving away retires tile A once B is resident.
+    visible={b};
+    CHECK(terrain.publishVisible(device,spatial,visible,1,ids)==1);
+    CHECK(terrain.residentTiles()==1 && gi.committedCount()==1);
+    CHECK(target.scene->chunkCount()==1);
+    CHECK(gi.listenerErrors()==0);
+    terrain.shutdown(device,spatial);
+    CHECK(gi.committedCount()==0 && target.scene->chunkCount()==0);
+}
+
 int main() {
     try {
         residentTileRequeuedAfterBriefAbsence();
@@ -257,6 +306,7 @@ int main() {
         windOverlayNeedsCheckedWrites();
         canopyBucketOvercrowdingDoesNotThrow();
         ecologyFirstSeenAndCursor();
+        terrainTilesFeedDynamicGi();
     } catch(const std::exception& e) {
         std::printf("TerraWeave review fixes: FAIL %s\n",e.what());
         return 1;
