@@ -12,22 +12,37 @@ import xatlas
 
 
 def bake_bark_atlas(part, output, name, resolution=2048, material="oak_bark"):
-    positions, normals, _, faces = part
-    # The previous exporter splits triangles at cylindrical seams. Weld by
-    # geometric position before asking xatlas to find connected charts.
-    points, first, inverse = np.unique(positions, axis=0, return_index=True,
-                                      return_inverse=True)
-    normals = normals[first]
-    triangles = inverse[faces]
+    return bake_bark_atlas_parts([part], output, name, resolution, material)[0]
+
+
+def bake_bark_atlas_parts(parts, output, name, resolution=2048, material="oak_bark"):
+    """Pack rigid LOD surfaces into one shared PBR image set, without remeshing."""
+    if not parts or resolution < 256 or resolution > 4096:
+        raise ValueError("bounded bark parts/resolution required")
     atlas = xatlas.Atlas()
-    atlas.add_mesh(points.astype(np.float32), triangles.astype(np.uint32))
+    sources = []
+    for positions, normals, _, faces in parts:
+        points, first, inverse = np.unique(positions, axis=0, return_index=True,
+                                          return_inverse=True)
+        n = normals[first]
+        triangles = inverse[faces]
+        atlas.add_mesh(points.astype(np.float32), triangles.astype(np.uint32))
+        sources.append((points, n))
     pack = xatlas.PackOptions()
     pack.resolution = resolution
     pack.padding = 8
     atlas.generate(pack_options=pack)
-    mapping, indices, uv = atlas[0]
-    p = points[mapping]
-    n = normals[mapping]
+    result, positions, normals, coordinates, triangles = [], [], [], [], []
+    offset = 0
+    for i, (points, source_normals) in enumerate(sources):
+        mapping, indices, uv = atlas[i]
+        p, n = points[mapping], source_normals[mapping]
+        result.append((p, n, uv, indices))
+        positions.append(p); normals.append(n); coordinates.append(uv)
+        triangles.append(indices + offset)
+        offset += len(p)
+    p, n, uv = np.vstack(positions), np.vstack(normals), np.vstack(coordinates)
+    indices = np.vstack(triangles)
     source = Path(__file__).resolve().parents[2] / 'engine/assets/materials/vegetation/textures'
     catalog=json.loads((source.parent/'catalog.json').read_text())
     entry=next(m for m in catalog['materials'] if m['id']==material and m['layout']=='repeat')
@@ -102,4 +117,4 @@ def bake_bark_atlas(part, output, name, resolution=2048, material="oak_bark"):
     for suffix, data in [('basecolor', color), ('normal', normal_map), ('orm', orm)]:
         data[~covered] = data[nearest[0][~covered], nearest[1][~covered]]
         Image.fromarray(np.rint(np.clip(data, 0, 1)*255).astype('uint8')).save(output / (name+'_bark_'+suffix+'.png'))
-    return p, n, uv, indices
+    return result

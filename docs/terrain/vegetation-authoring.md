@@ -179,3 +179,20 @@ shape. This is cosmetic basal anatomy, separate from conditional exposed-root
 models and deterministic soil support/erosion/fall ownership. It does not fit
 arbitrary terrain slopes per instance. Root UV stretch and junction finishing
 still need authoring QA; an organic skin alone is not final art acceptance.
+
+### Optional native bark UV authoring
+
+`python3 tools/vegetation/bake_native_bark.py --input PACK/tree-16.gltf
+--out NEW_DIR --material oak_bark --resolution 2048` reuses the existing
+object-space triplanar sample/xatlas baker. Dependencies: Python3.9+, numpy,
+scipy, Pillow, xatlas. All woody LOD charts share one albedo/normal/ORM atlas;
+foliage primitives and LOD references remain intact. Exact native triangle
+positions/order are checked before writing. New UVs require native tangent
+regeneration. It refuses an existing destination and unsupported animated or
+non-native assets; failures can leave a partial new output directory.
+
+This is an optional authoring fallback, not a new tree generator. At2048px,
+packing three whole-tree LOD surfaces reduces texel density: close roots still
+look softer than shared repeating source maps. Do not bake40large unique atlases
+by default or claim1K/4m from the image dimensions alone. Prefer a bounded shared
+object-space material projection for close bark once visually verified.
