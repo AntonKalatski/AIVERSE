@@ -1085,13 +1085,20 @@ Json StudioSession::dispatchImpl(const Json& request) {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
             const auto relative=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
-            const auto reader=humanCharacterReader(studioContentRoot(ws_.project.dir));
-            auto model=render::loadModel(relative,reader);
-            if(!model)throw std::runtime_error("Не удалось загрузить модель "+relative);
-            const auto report=vivid::adaptMetaHuman(*model);
-            auto result=report.toJson();result.set("look",report.look());result.set("face",report.face());
-            result.set("rig",vivid::buildMetaHumanRig(*model).toJson());
-            reply.set("result",std::move(result));
+            const auto key=ws_.project.dir+"|"+relative;
+            if(metaHumanKey_!=key){metaHumanKey_=key;metaHumanResult_=Json();
+                const auto content=studioContentRoot(ws_.project.dir);
+                metaHumanJob_=std::async(std::launch::async,[content,relative]{
+                    auto model=render::loadModel(relative,humanCharacterReader(content));
+                    if(!model)throw std::runtime_error("Не удалось загрузить модель "+relative);
+                    const auto report=vivid::adaptMetaHuman(*model);
+                    auto result=report.toJson();result.set("look",report.look());result.set("face",report.face());
+                    result.set("rig",vivid::buildMetaHumanRig(*model).toJson());
+                    return result;});}
+            if(metaHumanResult_.isNull()&&metaHumanJob_.valid()&&metaHumanJob_.wait_for(std::chrono::seconds(0))==std::future_status::ready){
+                try{metaHumanResult_=metaHumanJob_.get();}catch(...){metaHumanKey_.clear();throw;}}
+            if(metaHumanResult_.isNull()){auto pending=Json::object();pending.set("pending",Json::fromBool(true));reply.set("result",std::move(pending));}
+            else reply.set("result",metaHumanResult_);
         } else if(method=="studio.humanPlaceInGame") {
             // "To the game": the built character becomes an RTS unit type
             // (view.model) and, when a map is open, one unit is placed.
