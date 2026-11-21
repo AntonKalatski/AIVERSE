@@ -1,0 +1,54 @@
+{
+  "id": "2026-11-22-prisma-dof-motion-blur",
+  "date": "2026-11-22",
+  "system": "prisma",
+  "title": "Глубина резкости и motion blur — обычные эффекты",
+  "summary": "Глубина резкости и размытие движения больше не экспериментальные: достаточно добавить эффект в профиль камеры, и он работает на Metal, OpenGL и Vulkan.",
+  "body": [
+    "Раньше оба эффекта включались только переменной окружения. Теперь `depthOfField` и `motionBlur` в `postfx` проекта или в профиле камеры работают сразу, как bloom или цветокоррекция. По умолчанию они идут на качестве High, motion blur — в HDR-кадре. Переменные `AIVERSE_PRISMA_DOF=0` и `AIVERSE_PRISMA_MOTION_BLUR=0` остались, чтобы выключить эффект.",
+    "Глубина резкости работает и по аппаратной глубине, и по расстоянию в метрах вдоль камеры (`metricFocus`); LENS задаёт фокус по параметрам объектива. Motion blur размывает по скорости камеры и по векторам скорости движущихся объектов."
+  ],
+  "status": "done",
+  "verified": "Одна и та же HDR-сцена на Metal и OpenGL (Mac) и на Vulkan (Android, Adreno 610): с фокусом на сцене кадр остаётся резким, с фокусом у камеры заметно размывается; при повороте камеры motion blur смазывает кадр, при неподвижной — не трогает. Каждый эффект отмечен в отчёте PRISMA как отрисованный.",
+  "limits": "Это аппроксимация, а не физическая модель объектива: без шестиугольного боке и разделения на слои по глубине. На слабых мобильных GPU оба эффекта по умолчанию выключены качеством ниже High.",
+  "branch": "main",
+  "commit": "d677f8a2f",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-prisma-dof-motion-blur/01.jpg",
+      "caption": "Без глубины резкости, Metal",
+      "captionEn": "Without depth of field, Metal"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-prisma-dof-motion-blur/02.jpg",
+      "caption": "Фокус у камеры: вся сцена мягкая, Metal",
+      "captionEn": "Focus near the camera: the whole scene is soft, Metal"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-prisma-dof-motion-blur/03.jpg",
+      "caption": "Поворот камеры без motion blur, Metal",
+      "captionEn": "Camera turning without motion blur, Metal"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-prisma-dof-motion-blur/04.jpg",
+      "caption": "Тот же поворот с motion blur, Metal",
+      "captionEn": "The same turn with motion blur, Metal"
+    }
+  ],
+  "links": [
+    {
+      "title": "Документация PRISMA",
+      "titleEn": "PRISMA documentation",
+      "href": "docs/prisma.md"
+    }
+  ],
+  "author": "prisma",
+  "titleEn": "Depth of field and motion blur are regular effects",
+  "summaryEn": "Depth of field and motion blur are no longer experimental: add the effect to a camera profile and it works on Metal, OpenGL and Vulkan.",
+  "bodyEn": [
+    "Both effects used to need an environment variable. Now `depthOfField` and `motionBlur` in a project's `postfx` or a camera profile work right away, like bloom or colour grading. They default to the High quality tier, motion blur needs an HDR frame. `AIVERSE_PRISMA_DOF=0` and `AIVERSE_PRISMA_MOTION_BLUR=0` remain to turn them off.",
+    "Depth of field works from hardware depth or from distance in metres along the camera (`metricFocus`); LENS sets the focus from lens parameters. Motion blur follows camera motion and the velocity of moving objects."
+  ],
+  "verifiedEn": "The same HDR scene on Metal and OpenGL (Mac) and on Vulkan (Android, Adreno 610): focused on the scene the frame stays sharp, focused near the camera it blurs clearly; a turning camera with motion blur smears the frame, a still one is left alone. PRISMA's report marks each effect as drawn.",
+  "limitsEn": "An approximation, not a physical lens model: no hexagonal bokeh or depth layer separation. On weak mobile GPUs both stay off by default below the High tier."
+}

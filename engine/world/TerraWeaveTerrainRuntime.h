@@ -47,6 +47,16 @@ public:
            resolution_<2 || resolution_>129)
             throw std::invalid_argument("TerraWeave runtime terrain tile geometry");
     }
+    // Optional observer of committed tiles, e.g. dynamic GI geometry
+    // (world::GiTerraWeaveResidentBridge). `published` runs after a tile's
+    // model and collision were swapped in (patch = what was published);
+    // `retired` after a tile left residency. Called on the Device thread,
+    // must not throw.
+    struct PatchListener {
+        std::function<void(const TerrainPatchResident&,const TerrainPatch&)> published;
+        std::function<void(world::Cell)> retired;
+    };
+    void setPatchListener(PatchListener listener){listener_=std::move(listener);}
     NereidEarthworksBridge& waterBridge(){return water_;}
     const NereidEarthworksBridge& waterBridge()const{return water_;}
     size_t pendingTiles()const{return pending_.size();}
@@ -224,6 +234,7 @@ public:
             }
             pending_.erase(it);
             ++published;
+            if(listener_.published)listener_.published(slot->second,patch);
         }
         bool complete=true;
         for(const auto& tile:needed)
@@ -233,7 +244,9 @@ public:
                 if(!needed.contains(it->first)){
                     retire(it->second.shutdown(device,spatial,colliders_));
                     deferred_.erase(it->first);
+                    const world::Cell gone=it->first;
                     it=residents_.erase(it);
+                    if(listener_.retired)listener_.retired(gone);
                 }else ++it;
             }
         return published;
@@ -329,7 +342,8 @@ public:
 
     void shutdown(gfx::Device& device,world::SpatialWorld& spatial){
         for(auto& [cell,resident]:residents_){
-            (void)cell;retire(resident.shutdown(device,spatial,colliders_));
+            retire(resident.shutdown(device,spatial,colliders_));
+            if(listener_.retired)listener_.retired(cell);
         }
         residents_.clear();
         deferred_.clear();
@@ -338,6 +352,7 @@ public:
     }
 
 private:
+    PatchListener listener_;
     // Undelivered dirty records of an unloaded tile stay visible to
     // listeners until takeTerrainDirty(); coalesced per tile rectangle.
     void retire(std::vector<TerrainPatchDirtyRegion> regions){

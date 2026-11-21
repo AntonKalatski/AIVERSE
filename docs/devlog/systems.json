@@ -869,15 +869,15 @@
         },
         {
           "name": "Динамический GI",
-          "text": "Один отскок непрямого света: CPU- и GPU-мосты на Metal и Vulkan.",
+          "text": "Один отскок непрямого света: CPU- и GPU-мосты на Metal и Vulkan, до трёх каскадов за камерой.",
           "nameEn": "Dynamic GI",
-          "textEn": "One bounce of indirect light: CPU and GPU bridges on Metal and Vulkan."
+          "textEn": "One bounce of indirect light: CPU and GPU bridges on Metal and Vulkan, up to three cascades following the camera."
         },
         {
           "name": "Luma",
-          "text": "Нативное прямое освещение для тысяч источников перед тонмаппингом PRISMA.",
+          "text": "Нативное прямое освещение для тысяч источников перед тонмаппингом PRISMA, на Metal и Vulkan.",
           "nameEn": "Luma",
-          "textEn": "Native direct lighting for thousands of lights before PRISMA tone mapping."
+          "textEn": "Native direct lighting for thousands of lights before PRISMA tone mapping, on Metal and Vulkan."
         },
         {
           "name": "Свет как сущность",
@@ -923,12 +923,24 @@
           "titleEn": "Lighting, entity components and MCP merged into main"
         },
         {
+          "status": "done",
+          "date": "2026-11-22",
+          "title": "Luma и динамический GI на Vulkan и Android",
+          "titleEn": "Luma and dynamic GI on Vulkan and Android"
+        },
+        {
+          "status": "done",
+          "date": "2026-11-22",
+          "title": "Каскады GI следуют за камерой",
+          "titleEn": "GI cascades follow the camera"
+        },
+        {
           "status": "planned",
           "target": null,
-          "title": "Проверка на Metal-захватах, MSL и Android",
-          "text": "Эти пути для проб GI ещё не проверены.",
-          "titleEn": "Verification of Metal captures, MSL and Android",
-          "textEn": "Per the probe GI docs, these paths are unverified."
+          "title": "Запечённое освещение на Vulkan и Android",
+          "text": "Динамический GI и Luma уже работают на Vulkan и Android; запечённые лайтмапы и пробы там ещё не проверены.",
+          "titleEn": "Baked lighting on Vulkan and Android",
+          "textEn": "Dynamic GI and Luma already run on Vulkan and Android; baked lightmaps and probes are not verified there yet."
         }
       ],
       "taglineEn": "Lighting and global illumination",
@@ -1034,10 +1046,10 @@
           "titleEn": "Wind-driven fog banks and ground mist"
         },
         {
-          "status": "in-progress",
-          "target": null,
+          "status": "done",
           "title": "Глубина резкости и motion blur вне экспериментального режима",
-          "titleEn": "Depth of field and motion blur out of experimental mode"
+          "titleEn": "Depth of field and motion blur out of experimental mode",
+          "date": "2026-11-22"
         }
       ],
       "taglineEn": "Post-processing and atmosphere",

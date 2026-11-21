@@ -474,12 +474,17 @@ def docs_nav(manifest, ctx, current=None):
 
 def doc_page(page, manifest, ctx, root, repo, doc_pages):
     src = page['source']
-    if ctx.lang != 'en' and src.startswith('docs/'):
-        # A translation in docs/<lang>/ replaces the English source on that language's site
+    translated = False
+    text_path = src
+    if src.startswith('docs/'):
+        # A translation in docs/<lang>/ replaces the source on that language's site;
+        # links and images still resolve against the original's folder, so the translation
+        # can keep every link target unchanged.
         alt = f'docs/{ctx.lang}/{src[5:]}'
         if (root / alt).is_file():
-            src = alt
-    text = (root / src).read_text(encoding='utf-8')
+            text_path = alt
+            translated = True
+    text = (root / text_path).read_text(encoding='utf-8')
     base_dir = posixpath.dirname(src)
     raw = repo.replace('https://github.com/', 'https://raw.githubusercontent.com/') + '/main/'
 
@@ -504,11 +509,16 @@ def doc_page(page, manifest, ctx, root, repo, doc_pages):
     body = conv.convert(text)
     toc = ''.join(f'<a class="toc-{lvl}" href="#{hid}">{esc(t[:90])}</a>'
                   for lvl, hid, t in conv.headings if lvl in (2, 3))[:20000]
+    if translated:
+        orig = f'{repo}/blob/main/{src}'
+        note_html_tr = f'<p class="doc-note">{ctx.T["docsTranslated"].format(href=esc(orig))}</p>'
     note_key = 'docsLangNoteRu' if is_russian(text) else 'docsLangNote'
     note = ctx.T.get(note_key) or ''
     if note_key == 'docsLangNoteRu' and ctx.lang == 'ru':
         note = ''
     note_html = f'<p class="doc-note">{esc(note)}</p>' if note else ''
+    if translated:
+        note_html = note_html_tr
     return (f'<div class="docs-layout">{docs_nav(manifest, ctx, page["id"])}'
             f'<article class="doc" lang="{"ru" if is_russian(text) else "en"}">{note_html}{body}'
             f'<p class="doc-src"><a href="{esc(repo)}/blob/main/{esc(src)}">{ctx.T["docsSource"]}: {esc(src)}</a></p></article>'

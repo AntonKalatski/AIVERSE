@@ -129,5 +129,6 @@
  "nnLast": "latest",
  "nnDone": "Done",
  "nnNext": "Next",
- "nnSystem": "System"
+ "nnSystem": "System",
+ "docsTranslated": "Translated. The original may be newer: <a href=\"{href}\">source document</a>."
 }

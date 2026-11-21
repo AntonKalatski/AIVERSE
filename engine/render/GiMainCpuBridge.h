@@ -26,6 +26,10 @@ struct GiMainCpuConfig {
     // Cascade k has spacing * 2^k and traces rays traceDistance * 2^k long.
     // All cascades share one atlas; the CPU bridge supports one cascade.
     int cascades=1;
+    // GPU bridge only: the cascades follow the updateFrame focus (scrolling
+    // lattices); recycled probes are zeroed and re-traced, the rest keep their
+    // light. Once converged the GI stays presented while probes update.
+    bool scroll=false;
 };
 class GiMainCpuBridge {
 public:
@@ -41,7 +45,7 @@ public:
     // Explicit opt-in. Changing device or lattice requires full GPU-idle
     // shutdown and all borrowed render samplers must be detached first.
     bool initialize(gfx::Device& device,GiMainCpuConfig config) {
-        if(ready_ || config.cascades!=1)return false;
+        if(ready_ || config.cascades!=1 || config.scroll)return false;
         cpu_.configure(config.origin,config.spacing,config.nx,config.ny,
                        config.nz,config.samples,config.traceDistance);
         budget_.configure(config.cpuBudgetMs,config.maxProbesPerFrame);
