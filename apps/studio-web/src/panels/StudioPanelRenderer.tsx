@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import type { StudioEntity, StudioInspector, StudioSnapshot } from '../types';
 import { invoke } from '../bridge';
-import type { StudioPanel } from '../nestedDock';
+import { STUDIO_PANEL_TITLES, type StudioPanel } from '../nestedDock';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
 import SceneToolbar from '../components/SceneToolbar';
 import RulesPanel from './RulesPanel';
@@ -26,6 +26,14 @@ import ProjectPanel from './generated/ProjectPanel';
 
 import RuntimePanel from './generated/RuntimePanel';
 import BuildPanel from './BuildPanel';
+import ConsolePanel from './ConsolePanel';
+import ToolPanel from './ToolPanel';
+import AgentPanel from './AgentPanel';
+import { SnapshotDiffPanel, StatsPanel } from './InsightPanels';
+import { AuditPanel, FogPanel, InputPanel, ScriptsPanel } from './ProjectToolPanels';
+import HistoryPanel from './HistoryPanel';
+import { LiveHierarchy, LiveInspector, LiveSwitch } from './LivePanels';
+import { useLivePlay } from './livePlay';
 
 import NereidFlowPanel from './generated/NereidFlowPanel';
 
@@ -55,8 +63,19 @@ export interface StudioPanelContext {
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
   /** Apply a snapshot from an Inspector action without dropping the Inspector pin. */
   commitSnapshot: (value: StudioSnapshot) => void;
+  /** A game runs in the Game panel: Hierarchy / Inspector offer the live view. */
+  playing?: boolean;
   showPanel: (panel: StudioPanel) => void;
   reportError: (message: string) => void;
+}
+
+function PlayHierarchy({ ctx }: { ctx: StudioPanelContext }) {
+  const { showLive } = useLivePlay();
+  return <LiveSwitch>{showLive ? <LiveHierarchy/> : <HierarchyPanel {...ctx}/>}</LiveSwitch>;
+}
+function PlayInspector({ ctx }: { ctx: StudioPanelContext }) {
+  const { showLive } = useLivePlay();
+  return <LiveSwitch>{showLive ? <LiveInspector/> : <InspectorPanel {...ctx}/>}</LiveSwitch>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
@@ -64,11 +83,25 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
-        return <HierarchyPanel {...ctx}/>;
+        return ctx.playing ? <PlayHierarchy ctx={ctx}/> : <HierarchyPanel {...ctx}/>;
       case 'assets':
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
-        return <InspectorPanel {...ctx}/>;
+        return ctx.playing ? <PlayInspector ctx={ctx}/> : <InspectorPanel {...ctx}/>;
+      case 'terrain': case 'water': case 'roads': case 'tiles': case 'generate': case 'postfx':
+      case 'effects': case 'lightbake': case 'models': case 'overlays': case 'branding':
+      case 'fields': case 'physis': case 'fps': case 'raid': case 'balance': case 'fx_graph': case 'fx_functions': case 'modeling':
+      case 'anim_assets': case 'anim_graph': case 'anim_rig': case 'model_anim': case 'project_import':
+        return <ToolPanel panel={panel} snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'fog': return <FogPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'scripts': return <ScriptsPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'input': return <InputPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'stats': return <StatsPanel snapshot={snapshot}/>;
+      case 'snapshot_diff': return <SnapshotDiffPanel snapshot={snapshot}/>;
+      case 'agent': return <AgentPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'asset_audit': return <AuditPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'history':
+        return <HistoryPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'build':
         return <BuildPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'rules':
@@ -77,7 +110,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <>
           <div className="viewport-toolbar">
             <div className="viewport-tools">
-              <SceneToolbar enabled={connected && sceneMode !== 'welcome'}/>
+              <SceneToolbar enabled={connected && sceneMode !== 'welcome'} projectPath={snapshot?.project.path ?? ''}/>
               <span className="toolbar-divider"/>
               <button type="button" className="viewport-control" title="Focus selected object (F)"
                 aria-label="Focus selected Scene object" disabled={!connected || !selected}
@@ -105,12 +138,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             <ViewportPlaceholder title="Scene viewport" active/>}
         </>;
       case 'console':
-        return <div className="log-list">
-          {snapshot?.logs.map((line, i) =>
-            <div className={'log-row log-' + line.level} key={i}>
-              <span>{line.time}</span>{line.text}
-            </div>)}
-        </div>;
+        return <ConsolePanel logs={snapshot?.logs ?? []} select={id => select(id)}/>;
       case 'lighting':
         return <LightingPanel projectPath={snapshot?.project.path ?? ''} selectedId={snapshot?.selectedId ?? null} onSelect={select}/>;
       case 'materials':
@@ -132,7 +160,11 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <div className="dock-unported" role="status">
           <Box size={28}/>
           <strong>{panel.charAt(0).toUpperCase() + panel.slice(1)} editor</strong>
-          <p>HTML5 panel migration is pending. The legacy native editor remains available.</p>
+          <p>Clips, state graphs, rigs and model animation are edited in their panels. The timeline view is not ported yet.</p>
+          <div className="dock-unported-links">
+            {(['anim_assets', 'anim_graph', 'anim_rig', 'model_anim'] as const).map(p =>
+              <button key={p} type="button" className="au-button au-button--sm" onClick={() => ctx.showPanel(p)}>{STUDIO_PANEL_TITLES[p]}</button>)}
+          </div>
         </div>;
     }
 }

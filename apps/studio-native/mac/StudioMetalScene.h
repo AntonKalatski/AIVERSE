@@ -11,6 +11,8 @@
 #include <set>
 #include <vector>
 #include <filesystem>
+#include <deque>
+#include <mutex>
 #include <chrono>
 #include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
@@ -59,6 +61,10 @@ public:
     // Next shown character frame → square PNG around the head (preset cards).
     // crop=false: whole viewport (agent snapshots), at most 1280 px wide.
     void captureFacialThumbnail(std::string path,bool crop=true){thumbnailPath_=std::move(path);thumbnailCrop_=crop;}
+    // Assets panel thumbnails: a content model rendered offscreen (one per frame) and written as a PNG.
+    // Finished assets (written or failed) are reported once by takeFinishedThumbnails().
+    void requestThumbnail(const std::string& projectPath, const std::string& asset, const std::string& file);
+    std::vector<std::string> takeFinishedThumbnails();
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -72,8 +78,8 @@ public:
     // Persp/Iso toggle. Orientation/projection are editor camera state only.
     void setOrientation(float yaw, float pitch);
     void setOrthographic(bool ortho);
-    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; };
-    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho}; }
+    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; render::float3 target{}; };
+    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho, camera_.target}; }
     // Corner orientation gizmo rendered by Renderer3D, for the default host where
     // the Metal view covers the WebView (the HTML gizmo is used in composite mode).
     void setOrientationGizmo(bool enabled) { orientationGizmo_ = enabled; }
@@ -91,6 +97,11 @@ public:
     bool localSpace() const { return localSpace_; }
     void setSnap(bool enabled, float move, float rotate, float scale);
     void setGizmosVisible(bool visible) { gizmosVisible_ = visible; }
+    // Hold V while moving: the object's pivot snaps to the nearest other object's pivot on screen.
+    void setPivotSnap(bool on) { pivotSnap_ = on; }
+    // ⇧F: fit every document object into the view.
+    void frameAll(const editor::MapDoc& map, bool fpsProject);
+    void tweenCamera(render::float3 target, float distance, float yaw, float pitch) { startTween(target, distance, yaw, pitch); }
     // -1 none, 0..2 axis, 3 centre (uniform scale), 4..6 Move plane (normal X, Y, Z: YZ, XZ, XY).
     int transformGizmoHit(float x, float y, float width, float height) const;
     bool beginTransformDrag(float x, float y, float width, float height);
@@ -163,6 +174,16 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    bool pivotSnap_ = false;
+    struct ThumbJob { std::string project, asset, file; };
+    std::deque<ThumbJob> thumbJobs_;
+    struct ThumbShared { std::mutex mutex; std::vector<std::string> done; };
+    std::shared_ptr<ThumbShared> thumbShared_ = std::make_shared<ThumbShared>();
+    gfx::TextureHandle thumbColor_, thumbDepth_;
+    std::map<std::string,std::unique_ptr<render::Model>> thumbModels_; // models not placed in the map
+    void renderThumbnail();
+    std::unique_ptr<render::Model> loadContentModel(const std::string& projectPath, const std::string& asset);
+    std::vector<std::pair<std::string,render::float3>> snapPivots_; // proxy centres of the last frame
     // RTS built-in procedural shapes ("view": {"shape": …}) for types without a model file,
     // built once and shared; team-coloured parts take the owner colour.
     std::map<std::string,std::unique_ptr<render::Model>> shapeModels_;

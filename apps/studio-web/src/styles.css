@@ -672,6 +672,7 @@ html.native-composite .viewport { touch-action: none; }
 /* DockWorkspace controls real panel placements. Preserve GPU rectangle measurement. */
 .dock-unported{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:22px;color:#829bb9;font-size:12px}
 .dock-unported strong{color:#ccdef0;font-size:14px}
+.dock-unported-links{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .dock-unported p{max-width:330px;line-height:1.6;margin:0}
 .dock-body .log-list{flex:1;min-height:0}
 .dock-body .search-box{flex:none}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, Pause, Square, StepForward } from 'lucide-react';
+import { LocateFixed, Play, Pause, Square, StepForward } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioGameState } from '../types';
 
@@ -21,10 +21,10 @@ export default function HeaderGameControls({enabled,onPlay,onError,onState}:{
     void refresh();const timer=window.setInterval(refresh,500);
     return ()=>{live=false;window.clearInterval(timer);};
   },[enabled]);
-  const action=async(kind:'play'|'pause'|'step'|'stop')=>{
+  const action=async(kind:'play'|'here'|'pause'|'step'|'stop')=>{
     setPending(true);
     try {
-      if(kind==='play') {onPlay();setState(await invoke('studio.gameStart',{entry:'map'}));}
+      if(kind==='play'||kind==='here') {onPlay();setState(await invoke('studio.gameStart',{entry:'map',fromScene:kind==='here'}));}
       else if(kind==='stop')setState(await invoke('studio.gameStop',{}));
       else if(kind==='step')setState(await invoke('studio.gameControl',{action:'step'}));
       else setState(await invoke('studio.gameControl',{action:state?.paused?'resume':'pause'}));
@@ -48,8 +48,10 @@ export default function HeaderGameControls({enabled,onPlay,onError,onState}:{
     {playing
       ? <button className="icon-button is-on" aria-label="Stop" title="Stop (⌘P)" disabled={pending}
           onClick={()=>void action('stop')}><Square size={14}/></button>
-      : <button className="icon-button" aria-label="Play" title="Play saved map (⌘P)" disabled={!enabled||pending}
-          onClick={()=>void action('play')}><Play size={16}/></button>}
+      : <button className="icon-button" aria-label="Play" title="Play saved map (⌘P) · ⌥-click: from the Scene view" disabled={!enabled||pending}
+          onClick={e=>void action(e.altKey?'here':'play')}><Play size={16}/></button>}
+    {!playing && <button className="icon-button" aria-label="Play from here" title="Play from here: start with the Scene view's camera"
+      disabled={!enabled||pending} onClick={()=>void action('here')}><LocateFixed size={15}/></button>}
     <button className={'icon-button'+(state?.paused?' is-on':'')} aria-label={state?.paused?'Resume':'Pause'} aria-pressed={!!state?.paused}
       title="Pause (⇧⌘P)" disabled={!state?.canControl||pending} onClick={()=>void action('pause')}><Pause size={16}/></button>
     <button className="icon-button" aria-label="Step one tick" title="Step one tick (⌥⌘P)"
