@@ -1,12 +1,14 @@
 // UI-independent editor API for native HTML5 hosts; intentionally no ImGui.
 #pragma once
 #include <string>
+#include <future>
 #include <optional>
 #include <set>
 #include <vector>
 #include <filesystem>
 #include <functional>
 #include "apps/studio-native/StudioAssetTransfers.h"
+#include "apps/studio-native/StudioFacialPreviewBinding.h"
 #include "apps/editor/core/Workspace.h"
 namespace aiverse::studio {
 class StudioSession {
@@ -25,6 +27,12 @@ public:
     const Json& previewMaterialFactors() const { return previewMaterialFactors_; }
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
     Json saveMapAs(const std::string& path); // trusted native Save panel only
+    const StudioFacialPreviewBinding& facialPreviewBinding() const noexcept {
+        return facialPreview_;
+    }
+    void setFacialPreviewGpuStatus(bool rendered,const std::string& reason) {
+        facialPreview_.setGpuStatus(rendered,reason);
+    }
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
     // Host-provided material slot names of a loaded content model (the native
     // Scene owns model loading). Without it, slots come from authored overrides.
@@ -49,6 +57,10 @@ private:
     void clearSelection() { selected_.clear(); selection_.clear(); }
     bool documentHas(const std::string& id) const;
     void dropOrdinalFlags(); // positional ids shift after structural edits
+    StudioFacialPreviewBinding facialPreview_;
+    std::future<Json> humanBuild_;
+    Json humanBuildResult_=Json::object();
+    std::string humanBuildProject_;
     std::string previewMaterialName_;
     Json previewMaterialFactors_;
     uint64_t previewMaterialRevision_ = 0;

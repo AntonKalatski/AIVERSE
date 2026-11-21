@@ -688,7 +688,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
     NSWindow* sceneWindow=viewport_.window ?: window_;
-    if (!placement_.visible || viewport_.hidden || sceneWindow.isMiniaturized || !sceneWindow.visible) return;
+    if (!placement_.visible || viewport_.hidden || sceneWindow.isMiniaturized || !sceneWindow.visible) {
+        session_->setFacialPreviewGpuStatus(
+            false,"Native Scene viewport hidden or not drawable");
+        return;
+    }
     @autoreleasepool {
         try {
             if (!preview_) {
@@ -708,7 +712,10 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 session_->previewMaterialRevision(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()),
                 session_->workspace().project.dir,
-                session_->workspace().project.rulesJson);
+                session_->workspace().project.rulesJson,
+                &session_->facialPreviewBinding());
+            session_->setFacialPreviewGpuStatus(
+                preview_->facialReady(),preview_->facialError());
             if((lightingStatusTicks_++ % 60)==0)
                 [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             {

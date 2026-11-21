@@ -17,6 +17,12 @@ int main() {
     b.nodes[1].name="weaponArm";b.nodes[1].parent=0;b.nodes[1].t={0,2,0};
     b.nodes[2].name="unused";b.nodes[2].parent=0;
     b.nodes[1].r=quat::axisAngle({0,1,0},.5f);
+    // Morph transfer copies only channels declared by both node meshes
+    // (Stage 165 safety); give both mapped arms one morph channel.
+    for(Model* m:{&a,&b}) {
+        m->meshes.resize(1);m->meshes[0].primitives.resize(1);
+        m->meshes[0].primitives[0].morphTargets=1;m->nodes[1].mesh=0;
+    }
     auto map=GenericRetargetMap::compile(a,b,{{"root/arm","root/weaponArm"}});
     require(map.pairs().size()==2,"root + alias mapping");
     Pose src,dst;bindPose(a,src);

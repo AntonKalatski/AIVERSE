@@ -1,5 +1,5 @@
 /** Persistable nested docking geometry; no React, renderer or genre dependencies. */
-export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules'] as const;
+export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules','human_appearance'] as const;
 export type StudioPanel = typeof STUDIO_PANELS[number];
 /** Single metadata source for the UI shell and AI-authored panel integrations. */
 export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
@@ -7,14 +7,16 @@ export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   materials: 'Materials', animation: 'Animation', facial_rig: 'Facial Rig', inspector: 'Inspector', console: 'Console', lighting: 'Lighting', shader_graph: 'Shader Graph', project: 'Project',
   runtime: "Runtime",
   nereid_flow: "NEREID Water",
-  rules: "Rules"
+  rules: "Rules",
+  human_appearance: "VIVID Appearance"
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   hierarchy: 'dock-left', assets: 'dock-bottom', scene: 'dock-center', game: 'dock-center',
   materials: 'dock-center', animation: 'dock-center', facial_rig: 'dock-center', inspector: 'dock-right', console: 'dock-bottom', lighting: 'dock-right', shader_graph: 'dock-center', project: 'dock-left',
   runtime: "dock-right",
   nereid_flow: "dock-right",
-  rules: "dock-center"
+  rules: "dock-center",
+  human_appearance: "dock-right"
 };
 
 export type DockAxis = 'horizontal' | 'vertical';
@@ -48,7 +50,7 @@ export function defaultDockTree(): DockTree {
       stack('dock-left',['hierarchy','project'],'hierarchy'),
       split('split-body-right','horizontal',.72,
         stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph','rules'],'scene'),
-        stack('dock-right',['inspector','lighting','runtime','nereid_flow'],'inspector'))),
+        stack('dock-right',['inspector','lighting','runtime','nereid_flow','human_appearance'],'inspector'))),
     stack('dock-bottom',['assets','console'],'assets')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {

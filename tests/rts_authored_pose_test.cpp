@@ -19,16 +19,19 @@ static std::unique_ptr<Simulation> make(const Json& map, const std::string& base
     sim->setup(rules, map);
     return sim;
 }
-// Structures snap to their footprint on spawn: take the nearest unit within 2 cells.
+// Buildings snap to their footprint at spawn (RtsModule::spawn), so the map
+// position is only close to the entity's: take the nearest one within a cell.
 static Entity findAt(Simulation& sim, float x, float z) {
-    Entity found; double best = 4.0;
-    sim.world().each<Transform, g::Unit>([&](Entity e, Transform& t, g::Unit&) {
-        const double dx = t.pos.x.toDouble() - x, dz = t.pos.z.toDouble() - z, d = dx * dx + dz * dz;
+    Entity found;
+    double best = 1.0;
+    sim.world().each<Transform>([&](Entity e, Transform& t) {
+        const double dx = t.pos.x.toDouble() - x, dz = t.pos.z.toDouble() - z, d = std::sqrt(dx * dx + dz * dz);
         if (d < best) { best = d; found = e; }
     });
     return found;
 }
-int main() {
+// aiverse_runtime (renderer, platform) supplies main() and calls aiverseMain, like tests/deferred_loading.cpp.
+int aiverseMain(int, char**) {
     const std::string base = std::string(AIVERSE_SOURCE_DIR) + "/templates/mushrooms/";
     // Plain map: no pose component registered, save format unchanged (v9).
     {
@@ -83,4 +86,5 @@ int main() {
     const render::mat4 id = g::authoredPoseFrame(plain, 1.0f, p), ident{};
     for (int i = 0; i < 16; ++i) check(id.m[i] == ident.m[i], "unposed object frame not identity");
     std::cout << "PASS RTS authored Transform: facing, Y, X/Z tilt, scale, save/reload, view frame\n";
+    return 0;
 }
