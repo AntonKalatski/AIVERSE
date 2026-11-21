@@ -1719,7 +1719,7 @@ uint64_t StudioMetalScene::frameSignature(int width,int height,const editor::Map
     const auto text=[&](const std::string& v){value(v.size());bytes(v.data(),v.size());};
     const auto ids=[&](const std::set<std::string>& set){value(set.size());for(const auto& id:set)text(id);};
     const auto vec=[&](const float3& v){value(v.x);value(v.y);value(v.z);};
-    value(width);value(height);value(&doc);value(doc.revision);value(fpsProject);text(selectedId);
+    value(width);value(height);value(doc.revision);value(fpsProject);text(selectedId);
     vec(camera_.target);value(camera_.distance);value(camera_.pitch);value(camera_.yaw);value(camera_.fovY);
     value(camera_.ortho);value(autoIso_);value(tween_.active);
     ids(selection_);ids(hidden_);text(hover_);

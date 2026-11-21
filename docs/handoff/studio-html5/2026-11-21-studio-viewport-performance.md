@@ -60,3 +60,28 @@ The `feature/studio-html5` working tree has uncommitted Assets thumbnails that c
 `renderThumbnail()` inside `StudioMetalScene::frame` after `beginFrame`. With idle frame
 skipping, thumbnails would wait for the next drawn frame: when merging, treat pending
 thumbnail jobs as "animated" (add `!thumbJobs_.empty()` to the `animated` condition).
+
+## Render thread (second step)
+
+`apps/studio-native/StudioRenderThread.h` (portable, test `studio_render_thread`, also
+clean under ThreadSanitizer on Linux) gives the Scene its own thread, like the Unreal
+render thread. The engine's model caches bind GPU resources to one owner thread, so the
+worker is the only thread that creates, uses and destroys `StudioMetalScene`:
+
+- map frames: the main thread snapshots the document (`MapDoc` data copied on revision
+  change and once a second), rules (copied when their dump changes, checked once a
+  second) and editor state, then `kick()`s; the frame runs on the worker and the main
+  thread publishes the results of the last finished frame (lighting status, model
+  streaming toast, viewport.ready, HTML gizmo camera) without waiting;
+- every other Scene call (pick, camera, gizmos, marquee, sculpt pick, captures,
+  resets) runs on the worker through `studioOnScene` → `invoke()` and the main thread
+  waits for the result, between frames;
+- character and material previews read live session state and are rendered through
+  `invoke()` too (the main thread waits, as before);
+- layer changes made on the worker are wrapped in an explicit `CATransaction`;
+  Scene drawable resizes go through `invoke()`;
+- `applicationWillTerminate` releases the Scene on the worker, then joins it;
+- `AIVERSE_STUDIO_RENDER_THREAD=0` runs everything on the main thread (diagnostics).
+
+Not compiled here (Objective-C++, macOS only). Check on the Mac: build, open a project,
+orbit/pick/move, Character Creator and material preview, resize, close the window.
