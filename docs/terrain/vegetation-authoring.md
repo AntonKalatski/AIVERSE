@@ -285,5 +285,20 @@ Terrain library includes river_sand and pebble_sand PBR at1K/4m (original dune
 sand remains available). Detail atlas builder --sand-layer sand|river_sand|
 pebble_sand chooses the family for the shore channel, retaining four layers,
 13samples/4textures, previous geometry/continuous masks and noise underlay.
-This explicit authoring selection does not claim world-space blending of
-multiple sand families in a single tile.
+Add --secondary-sand pebble_sand (different from the primary) for continuous
+world-mask sand-family mixing across each tile.
+
+
+Five-layer detail mode retains the same native RGB ground masks and their alpha
+grayscale world noise. Alpha splits ONLY the shore sand weight between primary
+and secondary families; their sum remains the original sand weight, preserving
+grass exclusion and terrain geometry. The same noise remains the0..20% grey
+underlay. The optional atlas becomes3x2 cells with a zero-filled unused cell,
+32px wrap gutters and explicit mip selection. PBR color, normal, roughness and
+AO all use the same normalized family weights. There are128nodes,16samples and
+four source images: existing compiler limits unchanged, with more sampling and
+50%larger atlas storage than the four-layer mode. No mobile performance claim.
+Five-layer normal projection uses a surface gradient projected onto the shading
+tangent plane; do not normalize projected UV axes independently on a slope.
+Legacy four-layer mode retains the earlier basis. Projection still chooses a
+dominant axis, not a smooth three-axis blend; cliffs need visual acceptance.

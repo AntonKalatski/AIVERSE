@@ -8,7 +8,7 @@ import json
 
 
 def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
-                   noise_underlay=True, resolution=1024, gutter=32, mask_resolution=1024):
+                   noise_underlay=True, resolution=1024, gutter=32, mask_resolution=1024, secondary_sand=False):
     if not math.isfinite(metres) or not 0.25 <= metres <= 64:
         raise ValueError('detail metres 0.25..64')
     if not math.isfinite(transparency) or not 0 <= transparency <= .2:
@@ -47,6 +47,11 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     # Quantized RGB may total slightly over one; keep energy normalized.
     total = add_many(weights)
     weights = [n('divide', weight, total) for weight in weights]
+    gray = n('alpha', mask)
+    if secondary_sand:
+        grass, sand, rock, snow = weights
+        weights = [grass, n('multiply', sand, n('oneMinus', gray)),
+                   n('multiply', sand, gray), rock, snow]
     world = n('worldPosition')
     normal = n('normal')
     # Dominant-axis projection also covers steep cliffs. Base normal is world
@@ -66,12 +71,13 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     lod = n('clampRange', n('log2', n('multiply', footprint, c(resolution))), c(0), c(4))
     wrapped = n('fract', tiled)
     cell = resolution + 2 * gutter
-    atlas_size = 2 * cell
+    columns = 3 if secondary_sand else 2
+    atlas_size = [columns * cell, 2 * cell]
     colors, normals, roughness = [], [], []
     for i, weight in enumerate(weights):
-        offset = [(i % 2 * cell + gutter) / atlas_size,
-                  (i // 2 * cell + gutter) / atlas_size, 0, 0]
-        coordinate = n('add', n('multiply', wrapped, c(resolution / atlas_size)), c(offset))
+        offset = [(i % columns * cell + gutter) / atlas_size[0],
+                  (i // columns * cell + gutter) / atlas_size[1], 0, 0]
+        coordinate = n('add', n('multiply', wrapped, c([resolution / atlas_size[0], resolution / atlas_size[1], 0, 0])), c(offset))
         color = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['basecolor'], srgb=True)
         detail_normal = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['normal'])
         orm = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['orm'])
@@ -82,21 +88,38 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     if noise_underlay:
         # Grayscale texture is packed in mask alpha, independent of PBR alpha.
         gray = n('alpha', mask)
-        underlay = n('mix', c(.06), c(.30), gray)
+        underlay = n('mix', c([.06,.06,.06,1]) if secondary_sand else c(.06),
+                     c([.30,.30,.30,1]) if secondary_sand else c(.30), gray)
         color = n('mix', color, underlay, c(transparency))
-    color = n('setAlpha', color, c(1))
+    # Normalized layer weights and opaque underlay already preserve alpha1.
+    if not secondary_sand:
+        color = n('setAlpha', color, c(1))
     detail = n('normalUnpack', add_many(normals))
     # Projected UV basis vectors; remove the component along the geometric N.
-    tangent = n('mix', c([1, 0, 0, 0]), c([0, 0, 1, 0]), on_x)
-    bitangent = n('mix', c([0, 0, 1, 0]), c([0, 1, 0, 0]), n('max', on_x, on_z))
-    tangent = n('normalize3', n('subtract', tangent, n('multiply', normal, n('dot3', tangent, normal))))
-    bitangent = n('normalize3', n('subtract', bitangent, n('multiply', normal, n('dot3', bitangent, normal))))
-    perturb = n('add', n('multiply', tangent, n('red', detail)), n('multiply', bitangent, n('green', detail)))
-    final_normal = n('normalize3', n('add', n('multiply', normal, n('blue', detail)), perturb))
-    roughness_output = n('green', add_many(roughness))
+    if secondary_sand:
+        # Surface gradient for world-axis projection: project the encoded
+        # gradient onto the shading tangent plane. Normalizing each projected
+        # axis separately incorrectly boosts detail on tilted banks.
+        perturb = n('mix', n('mix', n('swizzle', detail, mask='raga'),
+                    n('swizzle', detail, mask='agra'), on_x),
+                    n('swizzle', detail, mask='rgaa'), on_z)
+        perturb = n('subtract', perturb, n('multiply', normal, n('dot3', normal, perturb)))
+        final_normal = n('normalize3', n('add', n('multiply', normal, n('blue', detail)), perturb))
+    else:
+        tangent = n('mix', c([1, 0, 0, 0]), c([0, 0, 1, 0]), on_x)
+        bitangent = n('mix', c([0, 0, 1, 0]), c([0, 1, 0, 0]), n('max', on_x, on_z))
+        tangent = n('normalize3', n('subtract', tangent, n('multiply', normal, n('dot3', tangent, normal))))
+        bitangent = n('normalize3', n('subtract', bitangent, n('multiply', normal, n('dot3', bitangent, normal))))
+        perturb = n('add', n('multiply', tangent, n('red', detail)), n('multiply', bitangent, n('green', detail)))
+        final_normal = n('normalize3', n('add', n('multiply', normal, n('blue', detail)), perturb))
+    surface_orm = add_many(roughness)
+    roughness_output = n('green', surface_orm)
+    occlusion_output = n('red', surface_orm) if secondary_sand else None
     metallic_output = c(0)
     if len(nodes) > 128:
         raise ValueError('terrain graph exceeds native node budget')
+    outputs=dict(color=color, normal=final_normal, roughness=roughness_output, metallic=metallic_output)
+    if secondary_sand:
+        outputs['occlusion']=occlusion_output
     return dict(version=1, domain='material', minQuality='low', sampleBudget=16,
-                nodes=nodes, outputs=dict(color=color, normal=final_normal,
-                                         roughness=roughness_output, metallic=metallic_output))
+                nodes=nodes, outputs=outputs)
