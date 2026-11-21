@@ -3113,3 +3113,32 @@ physics/colliders/replication are not yet connected; nor are Earthworks
 edits applied automatically to live streamed world colliders and navmesh.
 These are separate features, not a passing QA statement. Source changes
 only; no compile/CTest/GPU run on this feature revision. Keep PR Draft.
+
+## Native alpine source: optional ridged massifs
+
+`TerraWeaveAlpine.h` accepts an appended `AlpinePeak::morphology` field.
+`LegacyCone` remains the default: existing six-field initializers and old
+landscape recipes retain their exact old source. `RidgedMassif` combines a
+zero-slope elliptical support, seeded domain warp and five ridged octaves with
+feedback. Samples use signed integer centimetres and Q16 arithmetic. It is a
+stateless generation profile, not a hydraulic erosion or rock-physics solver.
+Peak support, shear, height and valley protection retain their existing bounds.
+
+The native `aiverse_terraweave_landscape` exporter accepts each peak's
+`"morphology":"ridged_massif"` (or `"legacy"`). Unknown names reject.
+[The alpine valley recipe](../../examples/terraweave/alpine-valley.json) places
+its broad mountain range behind the forest area, with 128 terrain tiles and an
+explicit NEREID river. Export to a new directory on the external build drive:
+
+```sh
+aiverse_terraweave_landscape --recipe examples/terraweave/alpine-valley.json \
+  --out NEW_PACK --materials engine/assets/materials/terrain/textures
+python3 tests/terrain/check_landscape_export.py NEW_PACK
+```
+
+The export audit compares actual neighbouring glTF edge heights/normals and
+checks render vertices against the shared integer planting-height grid.
+Rebake material masks and vegetation from the new `ground.json`; retain planted
+root depth when moving existing trees/rocks to the new surface. A static export
+is not the live erosion/fall host. The example's full visual acceptance and
+renderer budget remain separate from source/seam correctness.

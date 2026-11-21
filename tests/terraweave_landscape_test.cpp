@@ -18,6 +18,30 @@ int main(){
     assert(varied);
     bool badPeak=false;try{alpineHeightCm(base,{{0,0,0,1000,1000,0}},0,0);}catch(const std::invalid_argument&){badPeak=true;}assert(badPeak);
 
+    {
+        auto massif=peaks;massif[0].shearPermille=0;
+        massif[0].morphology=AlpineMorphology::RidgedMassif;
+        auto alternate=base;alternate.seed+=1;
+        bool changed=false;int32_t highest=0;
+        for(int z=-14000;z<=14000;z+=500)for(int x=-9000;x<=9000;x+=500) {
+            const auto h=alpineHeightCm(base,massif,x,z);
+            assert(h==alpineHeightCm(base,massif,x,z));
+            assert(h>=heightAtCm(base,x,z)&&h<=heightAtCm(base,x,z)+18000);
+            highest=std::max(highest,h-heightAtCm(base,x,z));
+            changed|=h!=alpineHeightCm(alternate,massif,x,z);
+        }
+        assert(changed&&highest>5000);
+        // Exact support boundary, including a vanishing outer slope. This
+        // prevents a truncated pedestal at neighbouring tile boundaries.
+        assert(alpineHeightCm(base,massif,10000,0)==heightAtCm(base,10000,0));
+        assert(alpineHeightCm(base,massif,9999,0)-heightAtCm(base,9999,0)<=1);
+        assert(alpineHeightCm(base,massif,-10000,0)==heightAtCm(base,-10000,0));
+        assert(alpineHeightCm(base,massif,0,0,3500,9000)==heightAtCm(base,0,0));
+        massif[0].morphology=static_cast<AlpineMorphology>(9);
+        bool bad=false;try{(void)alpineHeightCm(base,massif,0,0);}catch(const std::invalid_argument&){bad=true;}
+        assert(bad);
+    }
+
     lib::nereid::WaterBodyComponent body;body.surfaceY=0_fx;body.bottomY=-2_fx;
     lib::nereid::WaterGeometryComponent river;river.kind=lib::nereid::WaterGeometryKind::RiverSpline;
     river.points={{0_fx,-20_fx,3_fx},{0_fx,20_fx,3_fx}};
