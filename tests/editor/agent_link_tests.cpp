@@ -89,22 +89,31 @@ int main() {
     {   // a line beyond kMaxLineBytes drops the client and is never delivered
         LineClient ok;
         CHECK(ok.connect(port));
-        CHECK(ok.send(std::string(size_t(1) << 20, 'x')));   // 1 MiB lines are fine
+        // Send from another thread while the server polls: a 1 MiB line does
+        // not fit loopback socket buffers on every OS (macOS keeps them small),
+        // so a single-threaded send would block until sendAll gives up.
+        bool okSent = false;
+        std::thread okWriter([&] { okSent = ok.send(std::string(size_t(1) << 20, 'x')); });   // 1 MiB lines are fine
         bool gotOk = false;
-        const auto okDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        const auto okDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while (!gotOk && std::chrono::steady_clock::now() < okDeadline)
             for (auto& m : server.poll()) if (m.line.size() == (size_t(1) << 20)) gotOk = true;
+        okWriter.join();
+        CHECK(okSent);
         CHECK(gotOk);
         CHECK(server.clients() == 1);
         LineClient big;
         CHECK(big.connect(port));
-        big.send(std::string(kMaxLineBytes + 1024, 'z'));
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        // The send may fail once the server drops the connection; only the
+        // server side matters here.
+        std::thread bigWriter([&] { big.send(std::string(kMaxLineBytes + 1024, 'z')); });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         bool gotHuge = false;
         while (std::chrono::steady_clock::now() < deadline && server.clients() != 1) {
             for (auto& m : server.poll()) if (m.line.size() > kMaxLineBytes) gotHuge = true;
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
+        bigWriter.join();
         settle(server, 100);
         CHECK(!gotHuge);
         CHECK(server.clients() == 1);   // only `ok` is left
