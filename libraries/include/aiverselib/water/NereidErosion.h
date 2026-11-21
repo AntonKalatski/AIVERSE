@@ -120,6 +120,10 @@ inline ShoreErosionResult erodeShore(const ShoreErosionCell& source,
     ShoreErosionResult out;
     out.cell=source;
     if(forcing.wetContactPermille==0)return out;
+    // Rock is the documented non-erodible boundary: it neither loses material
+    // to wave/slope shock nor accepts deposition (its critical speed is a
+    // sentinel, not a real threshold). Carries are left untouched.
+    if(source.soil==ShoreSoil::Rock)return out;
 
     const uint32_t speed=shoreFlowSpeedCmPerSec(forcing.flow);
     const uint32_t critical=shoreCriticalSpeedCmPerSec(source.soil);
