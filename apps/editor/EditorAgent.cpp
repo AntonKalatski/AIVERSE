@@ -61,11 +61,42 @@ float cameraNumber(const Json& args,const char* key,float fallback) {
 
 void Editor::pollAgentLink() {
     if (!server_.listening()) return;
+    // Protocol 2 (docs/mcp-agent-link.md): the first message of a connection must be
+    // {"method":"hello","token":<contents of net::agentTokenPath(port)>}. Anything that is
+    // not JSON, an unknown first message or a wrong token closes the connection, so a
+    // browser page (no-cors POST to 127.0.0.1) or another local user cannot run tools.
+    std::vector<int> dropped;
+    auto isDropped = [&](int c) { return std::find(dropped.begin(), dropped.end(), c) != dropped.end(); };
+    auto reject = [&](int c, const Json& id, const std::string& why) {
+        Json err = Json::object();
+        err.set("error", Json::string(why));
+        server_.send(c, reply(id, err).dump(-1));
+        server_.drop(c);
+        dropped.push_back(c);
+    };
     for (auto& m : server_.poll()) {
+        if (isDropped(m.client)) continue;
         Json msg;
-        try { msg = Json::parse(m.line); } catch (...) { continue; }
+        try { msg = Json::parse(m.line); } catch (...) { server_.drop(m.client); dropped.push_back(m.client); continue; }
+        if (!msg.isObject()) { server_.drop(m.client); dropped.push_back(m.client); continue; }
         const Json& id = msg["id"];
-        if (msg.getStr("method") != "call") { server_.send(m.client, reply(id, Json::parse(R"({"error": "unknown method"})")).dump(-1)); continue; }
+        const std::string method = msg.getStr("method");
+        if (method == "hello") {
+            if (!server_.tokenPublished()) { reject(m.client, id, "agent link token file could not be written: " + net::agentTokenPath(server_.port()).string()); continue; }
+            if (!net::tokenEquals(msg.getStr("token"), server_.token())) { reject(m.client, id, "agent link: wrong token"); continue; }
+            server_.setAuthenticated(m.client);
+            Json ok = Json::object();
+            ok.set("ok", Json::fromBool(true));
+            ok.set("protocol", Json::number(int64_t(2)));
+            server_.send(m.client, reply(id, ok).dump(-1));
+            continue;
+        }
+        if (!server_.authenticated(m.client)) {
+            reject(m.client, id, "agent link: send {\"method\":\"hello\",\"token\":...} first (token in " +
+                                 net::agentTokenPath(server_.port()).string() + "); update aiversemcp");
+            continue;
+        }
+        if (method != "call") { server_.send(m.client, reply(id, Json::parse(R"({"error": "unknown method"})")).dump(-1)); continue; }
         const std::string name = msg["params"].getStr("name");
         const Json& args = msg["params"]["arguments"];
         if (name == "view_screenshot") {

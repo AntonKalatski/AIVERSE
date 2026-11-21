@@ -266,6 +266,46 @@ static void verifyGeometryPoolRetirementAndUploadRecovery() {
         CHECK(dev.buffers.empty() && geometryPoolStats(dev).pages == 0);
     }
     {
+        // Review 2026-11-21: a fence-completed topmost release returns its
+        // span to the page bump pointers (LIFO), even when it is too small
+        // for whole-pair reuse; an in-flight release never does.
+        MockDevice dev;
+        dev.serial = 30;
+        auto bottom = pooledFixture(30);
+        auto top = pooledFixture(31);
+        CHECK(uploadModel(dev, bottom, true));
+        CHECK(uploadModel(dev, top, true));
+        const uint32_t topBase = top.gpuBaseVertex;
+        const uint32_t topFirst = top.gpuFirstIndex;
+        const size_t occupiedTwo = geometryPoolStats(dev).occupiedBytes;
+        releaseModel(dev, top); // retire frame 30
+        dev.completed = 29;     // still in flight
+        auto big = pooledFixture(32);
+        big.vertices.resize(12);
+        big.indices.resize(12, 1);
+        CHECK(uploadModel(dev, big, true));
+        CHECK(big.gpuBaseVertex > topBase);
+        releaseModel(dev, big); // retire frame 30 as well
+        dev.serial = 31;
+        dev.completed = 30;
+        const uint64_t recycledBefore = geometryPoolStats(dev).recycledUploads;
+        auto big2 = pooledFixture(33);
+        big2.vertices.resize(12);
+        big2.indices.resize(12, 1);
+        CHECK(uploadModel(dev, big2, true));
+        // Both released tail pairs collapsed; big2 starts where top did.
+        CHECK(big2.gpuBaseVertex == topBase);
+        CHECK(big2.gpuFirstIndex + 12 == topFirst + 3);
+        CHECK(geometryPoolStats(dev).recycledUploads == recycledBefore);
+        CHECK(geometryPoolStats(dev).retiredPairs == 0);
+        CHECK(geometryPoolStats(dev).occupiedBytes ==
+              occupiedTwo - 3 * sizeof(ModelVertex) - 3 * sizeof(uint32_t) +
+              12 * sizeof(ModelVertex) + 12 * sizeof(uint32_t));
+        releaseModel(dev, big2);
+        releaseModel(dev, bottom);
+        CHECK(dev.buffers.empty() && geometryPoolStats(dev).pages == 0);
+    }
+    {
         MockDevice dev;
         dev.failSharedOn = 2; // vertex copy succeeded, index copy failed
         auto model = pooledFixture(10);
@@ -986,6 +1026,15 @@ int main() {
         CHECK(!staticRenderPacketCandidate(draw, true, false, false));
         CHECK(!staticRenderPacketCandidate(draw, false, true, false));
         CHECK(!staticRenderPacketCandidate(draw, false, false, true));
+        // Review 2026-11-21: GPU selection packets are per-frame; a draw
+        // carrying any of them must never replay a recorded CPU packet.
+        draw.gpuIndexedPrimitives.emplace_back();
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.gpuIndexedPrimitives.clear();
+        draw.gpuShadowPrimitives.emplace_back();
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.gpuShadowPrimitives.clear();
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
 
         ModelDraw snapshot = draw;
         CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
