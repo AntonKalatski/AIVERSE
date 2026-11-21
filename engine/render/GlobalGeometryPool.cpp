@@ -29,6 +29,12 @@ struct GeometryPoolPage {
     };
     // No concurrent RHI calls: owned by poolMutex, with bounded retention.
     std::vector<RetiredPair> retired;
+    // Default (non-recycling) mode: released pairs that may later become the
+    // topmost allocation. They are never reused in place; once their retire
+    // fence has completed and they sit exactly at both bump pointers, the
+    // pointers are rolled back (LIFO tail reclamation).
+    std::vector<RetiredPair> tailPending;
+    uint64_t reclaimedTailPairs = 0;
     // Auxiliary Strata indices share this exact buffer and the same
     // vertex-from-start / index-from-end free-space invariant.
     struct RetiredIndex {
@@ -68,6 +74,37 @@ bool rigidLodPoolAllowed() {
     }();
     const int overrideValue = rigidLodPoolingOverride.load(std::memory_order_relaxed);
     return overrideValue < 0 ? envEnabled : overrideValue != 0;
+}
+// Return the topmost released vertex/index pair(s) to the bump pointers.
+// Safe only when GPU fence information exists (completed != 0) and the pair's
+// retire frame has completed: no in-flight draw can read the rolled-back
+// range, and new data is only written after this barrier. Pairs below a live
+// allocation (or below auxiliary index spans) stay pending.
+void reclaimCompletedTail(GeometryPoolPage& page, uint64_t completed) {
+    if (completed == 0) return;
+    bool progressed = true;
+    while (progressed) {
+        progressed = false;
+        for (auto* list : {&page.tailPending, &page.retired}) {
+            for (size_t i = 0; i < list->size(); ++i) {
+                const auto span = (*list)[i];
+                if (span.retireFrame == 0 || span.retireFrame > completed ||
+                    span.vertexOffset > page.vertexEnd ||
+                    page.vertexEnd - span.vertexOffset != span.vertexBytes ||
+                    span.indexOffset != page.indexBegin ||
+                    span.indexBytes > page.capacity - page.indexBegin)
+                    continue;
+                page.vertexEnd = span.vertexOffset;
+                page.indexBegin = span.indexOffset + span.indexBytes;
+                (*list)[i] = list->back();
+                list->pop_back();
+                ++page.reclaimedTailPairs;
+                progressed = true;
+                break;
+            }
+            if (progressed) break;
+        }
+    }
 }
 bool disabled() {
     if (const char* safe = std::getenv("AIVERSE_RENDER_SAFE"); safe && std::string(safe) == "1") return true;
@@ -204,8 +241,12 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     std::shared_ptr<GeometryPoolPage> target;
     bool newPage = false;
     size_t selectedPair = SIZE_MAX;
-    const uint64_t completed = recyclingEnabled() && dev.gpuHealthy()
-        ? dev.completedFrameSerial() : 0;
+    const uint64_t fence = dev.gpuHealthy() ? dev.completedFrameSerial() : 0;
+    const uint64_t completed = recyclingEnabled() ? fence : 0;
+    // Fence-completed topmost releases go back to the bump pointers first.
+    if (fence != 0)
+        for (const auto& weak : pages)
+            if (auto page = weak.lock()) reclaimCompletedTail(*page, fence);
     // Try completed, whole vertex/index pairs first. No split/coalescing of
     // mixed geometry allocations: it must never overwrite a live neighbor.
     if (completed != 0) {
@@ -472,6 +513,23 @@ void releaseModelGeometryPool(gfx::Device& dev, Model& m) {
                 // Copy byte offsets BEFORE clearing the Model allocation.
                 // The new owner must wait for this GPU frame to complete.
                 page->retired.push_back({
+                    size_t(m.gpuBaseVertex) * sizeof(ModelVertex),
+                    size_t(m.gpuFirstIndex) * sizeof(uint32_t),
+                    m.gpuPoolVertexBytes, m.gpuPoolIndexBytes,
+                    retireFrame});
+            }
+        } else if (page.use_count() > 1 && !recyclingEnabled() &&
+                   m.gpuPoolVertexBytes && m.gpuPoolIndexBytes) {
+            // Default mode: never reuse in place, but remember the pair so a
+            // later upload can return it to the bump pointers once its
+            // retire fence completed and it is the topmost allocation.
+            // frameSerial()==0 means no fence info: keep the old behaviour.
+            const uint64_t retireFrame = dev.frameSerial();
+            if (retireFrame != 0) {
+                auto& pending = page->tailPending;
+                if (pending.size() >= kMaxRetiredPairsPerPage)
+                    pending.erase(pending.begin()); // drop the oldest
+                pending.push_back({
                     size_t(m.gpuBaseVertex) * sizeof(ModelVertex),
                     size_t(m.gpuFirstIndex) * sizeof(uint32_t),
                     m.gpuPoolVertexBytes, m.gpuPoolIndexBytes,
