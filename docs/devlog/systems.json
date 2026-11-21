@@ -685,9 +685,9 @@
         {
           "status": "done",
           "title": "Кубмапы, панорамы, зеркала и порталы",
-          "text": "Шесть граней куба и панорама 360°, камеры зеркала и портала с отсечением по плоскости — показаны в кадре Sponza на Metal; заодно исправлена перевёрнутая панорама.",
+          "text": "Шесть граней куба и панорама 360°, камеры зеркала и портала с отсечением по плоскости — показаны в кадре Sponza на Metal. Все грани куба берут одну общую карту теней солнца, поэтому освещение не ломается на швах панорамы; заодно исправлена перевёрнутая панорама.",
           "titleEn": "Cubemaps, panoramas, mirrors and portals",
-          "textEn": "Six cube faces and a 360° panorama, mirror and portal cameras clipped at their plane — shown in the Sponza frame on Metal; an upside-down panorama was fixed along the way.",
+          "textEn": "Six cube faces and a 360° panorama, mirror and portal cameras clipped at their plane — shown in the Sponza frame on Metal. All cube faces share one sun shadow map, so lighting does not break at the panorama seams; an upside-down panorama was fixed along the way.",
           "date": "2026-11-22"
         }
       ],
