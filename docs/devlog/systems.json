@@ -866,15 +866,15 @@
         },
         {
           "name": "Динамический GI",
-          "text": "Один отскок непрямого света: CPU- и GPU-мосты на Metal и Vulkan.",
+          "text": "Один отскок непрямого света: CPU- и GPU-мосты на Metal и Vulkan, до трёх каскадов за камерой.",
           "nameEn": "Dynamic GI",
-          "textEn": "One bounce of indirect light: CPU and GPU bridges on Metal and Vulkan."
+          "textEn": "One bounce of indirect light: CPU and GPU bridges on Metal and Vulkan, up to three cascades following the camera."
         },
         {
           "name": "Luma",
-          "text": "Нативное прямое освещение для тысяч источников перед тонмаппингом PRISMA.",
+          "text": "Нативное прямое освещение для тысяч источников перед тонмаппингом PRISMA, на Metal и Vulkan.",
           "nameEn": "Luma",
-          "textEn": "Native direct lighting for thousands of lights before PRISMA tone mapping."
+          "textEn": "Native direct lighting for thousands of lights before PRISMA tone mapping, on Metal and Vulkan."
         },
         {
           "name": "Свет как сущность",
@@ -923,9 +923,21 @@
           "status": "planned",
           "target": null,
           "title": "Проверка на Metal-захватах, MSL и Android",
-          "text": "Эти пути для проб GI ещё не проверены.",
+          "text": "Динамический GI и Luma проверены на Android (Vulkan); пробы GI ещё нет.",
           "titleEn": "Verification of Metal captures, MSL and Android",
-          "textEn": "Per the probe GI docs, these paths are unverified."
+          "textEn": "Dynamic GI and Luma are checked on Android (Vulkan); probe GI is not yet."
+        },
+        {
+          "status": "done",
+          "date": "2026-11-22",
+          "title": "Luma и динамический GI на Vulkan и Android",
+          "titleEn": "Luma and dynamic GI on Vulkan and Android"
+        },
+        {
+          "status": "done",
+          "date": "2026-11-22",
+          "title": "Каскады GI следуют за камерой",
+          "titleEn": "GI cascades follow the camera"
         }
       ],
       "taglineEn": "Lighting and global illumination",
