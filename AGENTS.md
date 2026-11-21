@@ -24,6 +24,8 @@ data block must be usable by any project, whatever its genre or legacy module.
 - Plans, skills, docs and status files describe capabilities, not genre silos. If a plan or a skill says "in the
   X module only" or "for genre Y", stop and redesign it as a shared capability before writing code. When you find
   an existing genre split, record it in your handoff as debt to remove, do not extend it.
+- Recipe: `skills/workflow/aiverse-shared-capability/SKILL.md` (move, compatibility headers, data blocks, adapters,
+  checksum A/B). Examples: races (`docs/races.md`), spline roads (`engine/roads`), `genre/VehicleDrive.h`.
 
 ## Terra-first game creation (user policy, 2026-11-20)
 
