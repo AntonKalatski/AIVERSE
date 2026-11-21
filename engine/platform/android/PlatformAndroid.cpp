@@ -107,7 +107,8 @@ struct PerfLog {
         if (window > 0 && windowStart >= 0 && start - windowStart >= window) {
             print("window", wall, cpu, start - windowStart); wall.clear(); cpu.clear(); windowStart = start; ++windows;
         }
-        if (exitAfter > 0 && frames >= exitAfter) {
+        // with windows on, count the frames after the first one (splash / loading frames are ~1 ms)
+        if (exitAfter > 0 && (window > 0 ? long(allWall.size()) : frames) >= exitAfter) {
             double total = 0; for (float x : allWall) total += double(x);
             print("summary", allWall, allCpu, total / 1000.0);
             return true;
