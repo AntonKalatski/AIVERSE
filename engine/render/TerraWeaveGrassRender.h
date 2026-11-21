@@ -396,6 +396,9 @@ public:
     // Submit at most N new/rebuilt GPU patch meshes. Old models stay resident
     // during upload failure; unused patches retire only once required patches
     // are ready (streamer load-before-unload).
+    // Excludes blades (e.g. inside authored water). Applies to patches built
+    // afterwards: call invalidateAll() when the filter changes.
+    void setPlacementFilter(GrassPlacementFilter filter) {placement_=std::move(filter);}
     size_t update(gfx::Device& device,
                   std::span<const GrassPatch> visible,
                   const GrassSoilHeight& ground) {
@@ -418,7 +421,7 @@ public:
                 continue;
             if(uploaded>=quality_.maxUploadsPerFrame)break;
             const bool overlay=presentation_.windSway||bool(presentation_.fire);
-            auto candidate=makeGrassPatchLodModel(patch,ground,quality_,{},
+            auto candidate=makeGrassPatchLodModel(patch,ground,quality_,placement_,
                                                   overlay?&presentation_:nullptr);
             if(candidate) {
                 render::prepareModelUpload(*candidate);
@@ -494,6 +497,7 @@ private:
         uint64_t signature=0;
     };
     GrassRenderQuality quality_;
+    GrassPlacementFilter placement_;
     GrassPresentationOptions presentation_;
     std::function<uint64_t(const RectCm&)> signature_;
     std::function<void(std::unique_ptr<render::Model>&)> retire_;

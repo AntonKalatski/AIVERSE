@@ -281,8 +281,9 @@ void Editor::registerFxPreviewOps() {
             if (needsWorld) {
                 if (!st.enabled) throw std::runtime_error("enable the nature preview first (enabled: true)");
                 // Build the preview World now so agents can act in one call.
+                nature.setWater(authoredWater());
                 nature.prepareSource(gameFx_, doc(), sim_ ? &sim_->world() : nullptr,
-                    [this](float x, float z) { return view_.heightAt(grid_, x, z); });
+                    [this](float x, float z) { return surfaceHeightAt(x, z); });
                 if (nature.usingLive()) throw std::runtime_error("the running game's PHYSIS is read-only");
             }
             if (p.has("ignite")) {

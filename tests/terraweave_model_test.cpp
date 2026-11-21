@@ -352,9 +352,10 @@ int main() {
     assert(billboard->images.size() == 1);
     assert(forest.billboardAzimuthCount(oak.speciesId) == 8);
     // The left eight tiles hold bark azimuths; the right eight hold foliage.
-    assert(billboard->images[0].width == 128 * 8 * 2);
-    assert(billboard->images[0].height == 256);
-    assert(billboard->images[0].rgba.size() == 128u * 8u * 2u * 256u * 4u);
+    // Textured bake from the near tree: 256x512 view tiles.
+    assert(billboard->images[0].width == 256 * 8 * 2);
+    assert(billboard->images[0].height == 512);
+    assert(billboard->images[0].rgba.size() == 256u * 8u * 2u * 512u * 4u);
     bool duplicateRejected = false;
     try { forest.addPrototype(oak, 18); }
     catch (const std::invalid_argument&) { duplicateRejected = true; }
@@ -407,11 +408,13 @@ int main() {
     // The adapter bakes the far atlas from the near tree itself
     // (bakeArborImpostorFromModel): deterministic, and different from the
     // legacy skeleton silhouette.
-    auto billboardRepeat = makeArborImpostorAtlas(oak, 17);
-    const auto legacyPixels = billboardRepeat.model->images[0].rgba;
-    bakeArborImpostorFromModel(billboardRepeat, *shared);
+    ArborImpostorAtlasSettings hiRes;
+    hiRes.tile = {256, 512, 8};
+    const auto legacyPixels = makeArborImpostorAtlas(oak, 17).model->images[0].rgba;
+    auto billboardRepeat = makeArborImpostorAtlas(oak, 17, hiRes);
+    bakeArborImpostorFromModel(billboardRepeat, *shared, hiRes);
     assert(billboardRepeat.model->images[0].rgba == billboard->images[0].rgba);
-    assert(legacyPixels != billboard->images[0].rgba);
+    assert(legacyPixels.size() != billboard->images[0].rgba.size());
     {   // Quad matches the near tree's real height.
         float top = 0;
         for (const auto& v : shared->vertices) top = std::max(top, v.pos.y);
@@ -463,7 +466,7 @@ int main() {
     assert(std::fabs(eastFacing.front().world.at(0, 2) - 2.0f) < 0.0001f);
     assert(eastFacing.front().persistentId == stableId);
     assert(eastFacing.front().materials != nullptr);
-    const auto frame0 = makeArborImpostorAtlas(oak, 17).viewMaterials[0][0];
+    const auto frame0 = makeArborImpostorAtlas(oak, 17, hiRes).viewMaterials[0][0];
     assert(std::fabs(eastFacing.front().materials->at(0).uvOffset.x -
                      frame0.uvOffset.x) < 0.0001f);
     bool unknownRejected = false;

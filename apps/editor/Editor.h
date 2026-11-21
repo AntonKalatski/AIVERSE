@@ -14,6 +14,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "ClientHost.h"
 #include "EditorProfile.h"
@@ -178,6 +179,15 @@ public:
     size_t terraWeaveForestPreviewCount() const { return terraWeaveForestPreview_.visibleInstances(); }
     // PHYSIS «Живая природа» Scene preview (PhysisWindow, physis_nature_preview op).
     PhysisNaturePreview& physisNaturePreview() { return physisNaturePreview_; }
+    // Authored NEREID water of the open map, rebuilt when the document changes.
+    const AuthoredWaterQuery& authoredWater() {
+        if (authoredWaterRevision_ != doc().revision || authoredWaterMap_ != &doc()) {
+            authoredWater_ = AuthoredWaterQuery::fromDoc(doc());
+            authoredWaterRevision_ = doc().revision;
+            authoredWaterMap_ = &doc();
+        }
+        return authoredWater_;
+    }
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
     // Pin a type that an editor panel or preview uses (also loads it lazily).
@@ -427,6 +437,11 @@ public:
     // helpers for windows
     bool groundAt(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy, float& x, float& z) const;
     int pickEntity(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const;
+    // Display ground height at x,z (metres): the heightfield / levels surface,
+    // or on maps whose terrain is entity tiles (terrainPresentation
+    // "entities", e.g. TerraWeave exports) a vertical ray against those tile
+    // meshes. Cached per 0.5 m; used by the PHYSIS nature preview and gizmos.
+    float surfaceHeightAt(float x, float z) const;
     // Any object under the cursor: map entities (not hidden / locked) and the world tree's objects shown in
     // the Scene (game-created objects in edit mode, live objects in play mode). None when nothing is hit.
     Selection pickObject(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const;
@@ -523,6 +538,12 @@ private:
     std::vector<VisualPickModel> visualPickModels_;
     size_t visualPickModelCount_=0;
     uint64_t visualPickCacheGeneration_=0;
+    AuthoredWaterQuery authoredWater_;
+    uint64_t authoredWaterRevision_ = ~uint64_t(0);
+    const MapDoc* authoredWaterMap_ = nullptr;
+    mutable std::vector<float> surfaceGrid_;
+    mutable int surfaceGridW_=0, surfaceGridH_=0;
+    mutable uint64_t surfaceHeightCacheKey_=0;
 
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;

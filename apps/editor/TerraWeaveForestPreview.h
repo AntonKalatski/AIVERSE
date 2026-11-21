@@ -7,6 +7,8 @@
 #include "apps/editor/TerraWeavePlacementMask.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include "engine/world/TerraWeaveBotanicalAppearance.h"
+#include "engine/render/TerraWeaveBotanicalForest.h"
+#include "engine/render/TerraWeaveHorizonScene.h"
 #include <fstream>
 #include <iterator>
 #include <unordered_map>
@@ -47,6 +49,9 @@ public:
     size_t generatedInstances() const { return placements_.size(); }
 
     void release(gfx::Device& device) {
+        if (horizon_) horizon_->shutdown(device);
+        horizon_.reset();
+        horizonRecipe_.clear();
         if (forest_) forest_->releaseModels(device);
         forest_.reset();
         placements_.clear();
@@ -83,7 +88,9 @@ public:
             throw std::runtime_error("TerraWeave forest GPU upload failed");
 
         constexpr int64_t kPreviewTileCm = 3200;
-        constexpr int kRadiusInTiles = 2;
+        // Horizon mode: individual trees (near merged models, then per-tree
+        // impostors) out to 250 m, TerraWeave Horizon cluster cards beyond.
+        const int kRadiusInTiles = horizonEnabled_ ? 8 : 2;
         // Camera/render coordinates are map-local; generator coordinates are
         // world-absolute and may have a nonzero origin in the saved recipe.
         const auto origin = terraweave_ops_detail::origin(recipe);
@@ -102,7 +109,8 @@ public:
         const int64_t tz = terraweave::detail::floorDiv(globalCameraZcm, kPreviewTileCm);
         const std::string recipeKey = recipe.dump();
         if (cachedRevision_ != doc.revision || cachedTileX_ != tx ||
-            cachedTileZ_ != tz || cachedRecipe_ != recipeKey) {
+            cachedTileZ_ != tz || cachedRecipe_ != recipeKey || cachedRadius_ != kRadiusInTiles) {
+            cachedRadius_ = kRadiusInTiles;
             placements_.clear();
             const auto t = terraweave_ops_detail::terrain(recipe);
             const auto b = terraweave::BiomeSettings{};
@@ -167,14 +175,40 @@ public:
         view.highRangeCm = int32_t(2100 * lodScale_);
         view.mediumRangeCm = int32_t(3800 * lodScale_);
         view.lowRangeCm = int32_t(5600 * lodScale_);
-        view.cullRangeCm = int32_t(7700 * lodScale_);
+        view.cullRangeCm = horizonEnabled_ ? std::max(int32_t(7700 * lodScale_), kHorizonCloseCm)
+                                           : int32_t(7700 * lodScale_);
         view.farDensityPermille = 1000;
         const auto batches = terraweave::buildFloraBatches(placements_, view);
         for (const auto& batch : batches) visibleCount_ += batch.instances.size();
         // Existing Renderer3D takes care of RHI, material sorting,
         // per-branch LOD and standard instance grouping.
         forest_->submit(renderer, batches, {});
+
+        if (horizonEnabled_) {
+            // Kilometre-scale forest HLOD: cluster cards in ONE model, from the
+            // same TerraWeave seeds, so the forest continues to the horizon.
+            if (!horizon_ || horizonRecipe_ != recipeKey) {
+                if (horizon_) horizon_->shutdown(device);
+                terraweave::HorizonSettings hs;
+                hs.closeForestEndCm = kHorizonCloseCm;
+                // Map ground covers the camera neighbourhood; far proxy ground
+                // starts where the authored map usually ends.
+                hs.terrainBeginCm = std::clamp<int32_t>(int32_t(std::min(doc.data.w, doc.data.h)) * origin.cellSizeCm / 2,
+                                                       kHorizonCloseCm, 110000);
+                hs.crownDetail = 3;
+                hs.orientationViews = 2;
+                hs.atlasTilePixels = 64;
+                horizon_ = std::make_unique<terraweave::TerraWeaveHorizonScene>(
+                    terraweave_ops_detail::terrain(recipe), terraweave::BiomeSettings{}, hs);
+                horizonRecipe_ = recipeKey;
+            }
+            horizon_->update(device, {globalCameraXcm, globalCameraZcm});
+            if (horizon_->ready())
+                horizon_->submit(renderer, {origin.worldOriginXcm, 0, origin.worldOriginZcm});
+        }
     }
+    bool horizon() const { return horizonEnabled_; }
+    void setHorizon(bool on) { horizonEnabled_ = on; }
 
 private:
     void addClassicPrototypes() {
@@ -197,54 +231,21 @@ private:
         speciesWeights_ = {{1001, 3}, {1002, 2}};
     }
 
-    // Image from a PNG on disk; false when missing (the prototype stays untextured).
-    static bool loadPng(const std::string& path, render::Image& image) {
-        std::ifstream f(path, std::ios::binary);
-        if (!f) return false;
-        const std::string bytes((std::istreambuf_iterator<char>(f)), {});
-        if (!render::decodeImage(bytes, image)) return false;
-        image.name = path;
-        return true;
-    }
-    void texture(render::Model& model, size_t slot, const std::string& stem) {
-        if (slot >= model.materials.size() || engineDir_.empty()) return;
-        const std::string base = engineDir_ + "/engine/assets/materials/vegetation/textures/" + stem + "_";
-        auto add = [&](const char* suffix) {
-            render::Image image;
-            if (!loadPng(base + suffix + ".png", image)) return -1;
-            model.images.push_back(std::move(image));
-            return int(model.images.size() - 1);
-        };
-        auto& m = model.materials[slot];
-        m.baseTex = add("basecolor");
-        if (m.baseTex < 0) return;
-        m.normalTex = add("normal");
-        m.mrTex = add("orm");
-        m.occlusionTex = m.mrTex;
-        m.baseColor = {1, 1, 1, 1};
-        m.roughness = 1;
-        m.metallic = 0;
-    }
     void addBotanicalPrototypes() {
         static constexpr struct { size_t slot; uint32_t weight; } kPick[] = {
             {4, 3}, {5, 2}, {6, 2}, {0, 2}, {1, 2}};   // oak, birch, maple, spruce, pine
         const auto& presets = terraweave::botanicalTreePresets();
-        std::unordered_map<uint32_t, std::pair<std::string, std::string>> stems;
-        for (const auto& pick : kPick) {
-            const auto& preset = presets[pick.slot];
-            stems[preset.profile.speciesId] = {std::string(preset.barkMaterial), std::string(preset.leafMaterial)};
-        }
-        forest_->setPrototypeDecorator([this, stems](uint32_t id, render::Model& model) {
-            const auto found = stems.find(id);
-            if (found == stems.end()) return;
-            texture(model, 0, found->second.first);
-            texture(model, 1, found->second.second);
-            if (model.materials.size() > 1) {
-                model.materials[1].alpha = render::AlphaMode::Mask;
-                model.materials[1].alphaCutoff = .38f;
-                model.materials[1].doubleSided = true;
-            }
-        });
+        // Shared Terra recipe (also used by the WorldScene manifest).
+        terraweave::BotanicalMaterialTable table;
+        table.dir = engineDir_.empty() ? std::string() : engineDir_ + "/engine/assets/materials/vegetation/textures";
+        table.read = [](const std::string& path, std::string& bytes) {
+            std::ifstream f(path, std::ios::binary);
+            if (!f) return false;
+            bytes.assign((std::istreambuf_iterator<char>(f)), {});
+            return true;
+        };
+        for (const auto& pick : kPick) table.add(presets[pick.slot].profile.speciesId, presets[pick.slot]);
+        if (!engineDir_.empty()) forest_->setPrototypeDecorator(table.decorator());
         speciesWeights_.clear();
         for (const auto& pick : kPick) {
             const auto& preset = presets[pick.slot];
@@ -257,6 +258,11 @@ private:
     bool hierarchicalWind_ = true;
     bool botanical_ = true;
     float lodScale_ = 1;
+    static constexpr int32_t kHorizonCloseCm = 25000;
+    bool horizonEnabled_ = false;
+    int cachedRadius_ = 0;
+    std::string horizonRecipe_;
+    std::unique_ptr<terraweave::TerraWeaveHorizonScene> horizon_;
     terraweave::ArborTreeGeometry treeGeometry_ = terraweave::ArborTreeGeometry::Auto;
     std::string engineDir_;
     std::vector<std::pair<uint32_t, uint32_t>> speciesWeights_;

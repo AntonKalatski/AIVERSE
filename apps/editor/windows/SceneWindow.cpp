@@ -17,6 +17,7 @@
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
 #include "../PhysisSceneOverlay.h"
+#include "../NatureGizmos.h"
 #include "../PhysisFieldEditor.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/GpuIcbPolicy.h"
@@ -461,6 +462,8 @@ public:
         // Authored markers are separate from live simulation: visible even
         // without PHYSIS installed in the current GameModule.
         drawPhysisFieldMarkers(ed, vp_, ed.sceneCam);
+        // PHYSIS wind/fire, NEREID flow and TERRA slope/tree-wind directions.
+        drawNatureGizmos(ed, vp_, ed.sceneCam);
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
         StudioLuaExtensions::get().drawScene(ed, vp_);
@@ -1312,6 +1315,19 @@ private:
             ImGui::Checkbox("Уровни и рампы", &ed.showLevels);
             ImGui::Checkbox("Регионы", &ed.showRegions);
             ImGui::Checkbox("Триггерные зоны", &ed.showAreas);
+            ImGui::Separator();
+            ImGui::TextDisabled("Природа: направления");
+            auto& nature = natureGizmoSettings();
+            ImGui::Checkbox("PHYSIS: ветер", &nature.physisWind);
+            ImGui::Checkbox("PHYSIS: распространение огня", &nature.physisFire);
+            ImGui::Checkbox("NEREID: течение выделенной воды", &nature.nereidFlow);
+            ImGui::Checkbox("NEREID: течение всей воды", &nature.nereidAllWater);
+            ImGui::Checkbox("TERRA: уклон выделенного рельефа", &nature.terraSlope);
+            ImGui::Checkbox("TERRA: уклон вокруг камеры", &nature.terraSlopeAtTarget);
+            ImGui::Checkbox("TERRA: ветер у выделенного дерева", &nature.terraTreeWind);
+            ImGui::Checkbox("Зоны размыва (коэффициент)", &nature.erosionZones);
+            ImGui::SliderFloat("Радиус, м", &nature.radiusMeters, 8.f, 200.f, "%.0f");
+            ImGui::SliderFloat("Шаг, м", &nature.spacingMeters, 2.f, 32.f, "%.0f");
             ImGui::EndPopup();
         }
         ImGui::SameLine();

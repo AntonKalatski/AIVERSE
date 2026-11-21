@@ -17,6 +17,7 @@
 // fire lights), PRISMA for bloom. Audio uses a preview-owned AudioEngine.
 #pragma once
 #include "apps/editor/core/MapDoc.h"
+#include "apps/editor/AuthoredWaterQuery.h"
 #include "apps/editor/PhysisAuthoring.h"
 #include "apps/editor/TerraWeavePlacementMask.h"
 #include "engine/physis/PhysisProjectConfig.h"
@@ -76,6 +77,14 @@ public:
     const world::NaturePresentationFrame* frame() const { return frame_.get(); }
 
     void requestReset() { resetRequested_ = true; }
+    // Authored NEREID water (AuthoredWaterQuery::fromDoc): grass and fuel stay
+    // out of it. A changed revision rebuilds the preview World and grass.
+    void setWater(AuthoredWaterQuery water) {
+        if (water.revision() != water_.revision()) {
+            water_ = std::move(water);
+            grassFilterDirty_ = true;
+        }
+    }
 
     // PHYSIS wind at the camera target for every model with hierarchical wind
     // masks (Renderer3D::setSceneWind). Zero when the preview is off.
@@ -255,7 +264,7 @@ private:
     }
 
     std::string configKey(const MapDoc& doc) const {
-        return physis_authoring::read(doc).dump(-1) + "|" + std::to_string(doc.data.w) + "x" +
+        return physis_authoring::read(doc).dump(-1) + "|" + std::to_string(water_.revision()) + "|" + std::to_string(doc.data.w) + "x" +
                std::to_string(doc.data.h) + "|" + std::to_string(settings.previewCellMeters) +
                "|" + std::to_string(settings.humidity);
     }
@@ -314,6 +323,19 @@ private:
             zone.prevailingWind = wind;
             world_->add<physis::ClimateZone>(e, zone);
             world_->get<physis::Atmosphere>(e).wind = wind; // no spin-up wait
+            // Authored NEREID water: no fuel in the channel, wet banks.
+            if (!water_.empty()) {
+                const float edge = water_.edgeDistance(x, z);
+                const float half = float(grid.cellSizeMeters) * 0.5f;
+                if (auto* hazard = world_->tryGet<physis::HazardCell>(e)) {
+                    if (edge <= half) { hazard->fuel = Fixed{}; hazard->fire = Fixed{};
+                                        hazard->waterDepth = Fixed::fromRatio(1, 2); }
+                }
+                if (auto* surface = world_->tryGet<physis::Surface>(e)) {
+                    if (edge <= half) surface->wetness = Fixed::fromInt(1);
+                    else if (edge <= half + 6.f) surface->wetness = std::max(surface->wetness, Fixed::fromRatio(3, 5));
+                }
+            }
         }
         // Authored wind/storm/gravity volumes affect wind and flames too.
         if (options && !authored.isNull()) {
@@ -370,6 +392,14 @@ private:
             if (!std::isfinite(y)) y = 0;
             return std::int32_t(std::llround(double(std::clamp(y, -9000.f, 9000.f)) * 100.0));
         };
+        if (grassFilterDirty_) {
+            grassFilterDirty_ = false;
+            if (water_.empty()) grass_.setPlacementFilter({});
+            else grass_.setPlacementFilter([water = water_](std::int64_t x, std::int64_t z) {
+                return water.edgeDistance(float(x) * 0.01f, float(z) * 0.01f) > 0.4f;
+            });
+            grass_.invalidateAll();
+        }
         try {
             grass_.update(device, patches_, ground);
         } catch (const std::exception& e) {
@@ -404,6 +434,8 @@ private:
     }
 
     std::unique_ptr<World> world_;
+    AuthoredWaterQuery water_;
+    bool grassFilterDirty_ = true;
     std::shared_ptr<const world::NaturePresentationFrame> frame_;
     std::string builtKey_, status_;
     bool usingLive_ = false, resetRequested_ = false, frameDirty_ = true;

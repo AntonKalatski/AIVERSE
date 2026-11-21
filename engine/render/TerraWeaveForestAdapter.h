@@ -143,11 +143,14 @@ public:
         if(merged) pivots.clear();
         else if(pivots.size()!=model->nodes.size())
             throw std::logic_error("TerraWeave branch pose/skeleton mismatch");
-        auto impostor = makeArborImpostorAtlas(profile, meshSeed);
         // Far impostors are baked from the actual near tree (geometry +
-        // textures from the decorator), so near and far trees match.
+        // textures from the decorator), so near and far trees match. Textured
+        // bakes use 256x512 view tiles (4096x512 atlas per species).
+        ArborImpostorAtlasSettings impostorSettings;
+        if(impostorFromNearModel_) impostorSettings.tile={256,512,8};
+        auto impostor = makeArborImpostorAtlas(profile, meshSeed, impostorSettings);
         if(impostorFromNearModel_)
-            bakeArborImpostorFromModel(impostor,*model);
+            bakeArborImpostorFromModel(impostor,*model,impostorSettings);
         models_.emplace(profile.speciesId, std::move(model));
         billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
         billboards_.emplace(profile.speciesId, std::move(impostor.model));

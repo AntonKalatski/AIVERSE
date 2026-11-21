@@ -4,14 +4,16 @@
 
 #include "engine/world/WorldAssets.h"
 #include "engine/world/TerraWeaveForestScene.h"
+#include "engine/render/TerraWeaveBotanicalForest.h"
 #include <cstdint>
 #include <memory>
 #include <string>
 
 namespace aiverse::world {
 
+// reader: content files for optional botanical textures ("botanicalTextures").
 inline std::unique_ptr<terraweave::TerraWeaveForestScene>
-forestSceneFromManifest(const Json& manifest) {
+forestSceneFromManifest(const Json& manifest, AssetReader reader = {}) {
     if (!manifest.has("terraweaveForest")) return {};
     const Json& j = manifest["terraweaveForest"];
     if (!j.isObject())
@@ -75,16 +77,44 @@ forestSceneFromManifest(const Json& manifest) {
         else if (geometry != "auto")
             throw JsonError("world.terraweaveForest.treeGeometry: auto | merged | perBranch");
     }
+    if (j.has("hierarchicalWind") && j["hierarchicalWind"].type() != Json::Type::Bool)
+        throw JsonError("world.terraweaveForest.hierarchicalWind: expected boolean");
+    settings.hierarchicalWind = j.getBool("hierarchicalWind", false);
     auto scene = std::make_unique<terraweave::TerraWeaveForestScene>(settings);
+    // "botanicalTextures": content folder with <stem>_basecolor/normal/orm.png
+    // for species declared with "preset" (oak, birch, spruce, ...).
     if (!j.has("species") || !j["species"].isArray() ||
         j["species"].size() == 0 || j["species"].size() > 64)
         throw JsonError("world.terraweaveForest.species: expected 1..64 entries");
+    terraweave::BotanicalMaterialTable botanical;
+    botanical.dir = j.getStr("botanicalTextures", "");
+    botanical.read = reader;
+    if (!botanical.dir.empty() && !reader)
+        throw JsonError("world.terraweaveForest.botanicalTextures: no content reader");
+    for (const auto& def : j["species"].items())
+        if (def.isObject() && def.has("preset") && !botanical.dir.empty()) {
+            const auto* preset = terraweave::findBotanicalPreset(def.getStr("preset"));
+            if (preset) botanical.add(static_cast<uint32_t>(worldInteger(def, "id", 0, 1, INT32_MAX)), *preset);
+        }
+    if (!botanical.stems.empty()) scene->setPrototypeDecorator(botanical.decorator());
     for (const auto& def : j["species"].items()) {
         if (!def.isObject())
             throw JsonError("world.terraweaveForest.species: expected object");
         terraweave::TreeProfile profile;
+        // "preset": botanical species (TerraWeaveTreePresets.h) as defaults
+        // for the profile and the organic mesh recipe.
+        const terraweave::TreePreset* preset = nullptr;
+        if (def.has("preset")) {
+            preset = terraweave::findBotanicalPreset(def.getStr("preset"));
+            if (!preset) throw JsonError("world.terraweaveForest.species.preset: unknown botanical preset");
+            profile = preset->profile;
+        }
         profile.speciesId = static_cast<uint32_t>(worldInteger(
             def, "id", 0, 1, INT32_MAX));
+        if (preset) {
+            if (def.has("minHeightCm")) profile.minHeightCm = static_cast<int32_t>(worldInteger(def, "minHeightCm", 800, 100, 100000));
+            if (def.has("maxHeightCm")) profile.maxHeightCm = static_cast<int32_t>(worldInteger(def, "maxHeightCm", 1500, 100, 100000));
+        } else {
         profile.minHeightCm = static_cast<int32_t>(worldInteger(
             def, "minHeightCm", 800, 100, 100000));
         profile.maxHeightCm = static_cast<int32_t>(worldInteger(
@@ -105,6 +135,7 @@ forestSceneFromManifest(const Json& manifest) {
         if(def.has("roundedConiferCrown")&&def["roundedConiferCrown"].type()!=Json::Type::Bool)throw JsonError("world.terraweaveForest.roundedConiferCrown requires boolean");
         profile.roundedConiferCrown=def.getBool("roundedConiferCrown",false);
         if(profile.roundedConiferCrown&&profile.shape!=terraweave::CrownShape::Conifer)throw JsonError("world.terraweaveForest.roundedConiferCrown requires conifer");
+        }
         terraweave::FoliageSpecies placement;
         placement.id = profile.speciesId;
         placement.weight = static_cast<uint32_t>(worldInteger(
@@ -115,7 +146,9 @@ forestSceneFromManifest(const Json& manifest) {
             def, "maxSlopePermille", 800, 0, 100000));
         const uint64_t prototypeSeed = static_cast<uint64_t>(worldInteger(
             def, "prototypeSeed", profile.speciesId, 0, INT32_MAX));
-        scene->addSpecies(profile, placement, prototypeSeed);
+        if (preset) scene->addSpecies(profile, placement, prototypeSeed,
+                                      terraweave::botanicalArborMeshSettings(*preset));
+        else scene->addSpecies(profile, placement, prototypeSeed);
     }
     if (j.has("exclusions")) {
         const Json& exclusions = j["exclusions"];
