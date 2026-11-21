@@ -80,3 +80,9 @@ test('a Russian description becomes a look draft',async()=>{
  assert.equal(d.face,'broad');assert.ok(d.matched.includes('обветренная кожа'));
  assert.deepEqual(describeToLook('просто человек').matched,[]);
 });
+test('age control is neutral at 30 and greys and roughens with age',async()=>{
+ const {ageLook,lookAge}=await import('../src/panels/humanCreatorSchema.ts');
+ assert.equal(ageLook(30)['hair.gray'],0);assert.equal(ageLook(30)['skin.roughness'],.62);
+ assert.ok(ageLook(70)['hair.gray']>.7&&ageLook(70)['skin.roughness']>.75);
+ assert.ok(Math.abs(lookAge(ageLook(70))-70)<=2);
+});

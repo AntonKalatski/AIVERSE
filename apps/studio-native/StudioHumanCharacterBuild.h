@@ -9,6 +9,7 @@
 #include <iterator>
 #include <optional>
 #include "engine/character/vivid/HumanWardrobe.h"
+#include "engine/character/vivid/HumanLod.h"
 #include "tools/modeling/Modeling.h"
 #include <sys/stat.h>
 namespace aiverse::studio {
@@ -39,6 +40,7 @@ inline Json buildStudioHumanCharacter(const std::string& project,const std::stri
  const auto reader=humanCharacterReader(content);
  std::optional<vivid::HumanFaceShape> face;if(editable.has("face")&&!editable["face"].isNull())face=vivid::HumanFaceShape::fromJson(editable["face"]);
  auto model=vivid::assembleHumanCharacter(source,reader,wardrobe,look,size,face?&*face:nullptr);
+ (void)vivid::generateHumanCharacterLods(*model); // index-only LODs for skinned parts lacking a chain
  const auto bytes=modeling::exportGlb(*model);
  if(bytes.size()>128u*1024u*1024u)throw std::runtime_error("Character GLB exceeds 128 MiB import budget; reduce texture resolution or source maps");
  auto check=render::loadModel("character.glb",[&](const std::string& key,std::string& out){if(key!="character.glb")return false;out=bytes;return true;});

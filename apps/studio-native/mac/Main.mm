@@ -775,6 +775,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 &session_->facialPreviewBinding());
             session_->setFacialPreviewGpuStatus(
                 preview_->facialReady(),preview_->facialError());
+            if((lightingStatusTicks_ % 30)==0)session_->setFacialPreviewClips(preview_->facialClips(),preview_->facialBaseHeight());
             if((lightingStatusTicks_++ % 60)==0)
                 [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             {

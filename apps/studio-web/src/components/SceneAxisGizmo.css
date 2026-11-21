@@ -35,3 +35,5 @@
 .studio-sculpt-brush{position:absolute;z-index:3;pointer-events:none;border-radius:50%;
   border:1.5px solid rgba(120,180,255,.9);box-shadow:0 0 0 1px rgba(0,0,0,.35),inset 0 0 14px rgba(120,180,255,.18)}
 .studio-sculpt-brush::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:rgba(120,180,255,.95)}
+/* Character Creator reference photo over the viewport (never takes input). */
+.studio-reference-photo{position:absolute;left:50%;top:50%;z-index:2;pointer-events:none;max-width:none;object-fit:contain;border-radius:4px}

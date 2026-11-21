@@ -2026,4 +2026,13 @@ baked with the character build. Each stroke re-imports the preview model (second
   `textureSize`; "В игру" = `studio.humanPlaceInGame {type, path}` merges an RTS type with `view.model` and places one unit.
 - Pose & light tab: expression chips, pose segments, light preset cards (8 rigs) applied on click.
 - MCP: `human_look_schema`, `human_look_list`, `human_look_get`, `human_look_save` (`HumanCreatorOps.cpp`).
+- Second pass: agent snapshot handshake (`studio_character_snapshot` writes `.aiverse/agent-requests/character-snapshot.json`,
+  Studio's tick answers with `.aiverse/agent-snapshots/<id>.png`); makeup layers `makeup.*` (UV ellipses in the skin
+  graph, only compiled when used); hairstyle library (models with hair/hairstyle in the path go into the outfit's
+  `hair` slot and hide the model's own hair meshes, shared try-on via `useOutfit`); age control (`ageLook`); crowd
+  variants (N looks, optionally built + placed as unit types); model clips in "Поза и свет" (`HumanPreviewAnimation.clip`,
+  clip list from the GPU preview); index-only LODs for skinned characters at build (`vivid::generateHumanCharacterLods`,
+  shares LOD0 vertices, skips morph meshes); reference photo overlay over the viewport; character packages
+  `packages/<look>.aivchar` (`studio.humanPackage{List,Export,Import}`, import never overwrites); height in cm and a
+  10 cm ruler (`studio.humanRuler`).
 

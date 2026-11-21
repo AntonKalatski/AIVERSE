@@ -32,6 +32,7 @@ public:
     // Character-editor camera framing request (face | torso | full); the
     // native scene applies it once per serial, then the artist orbits freely.
     std::string cameraView="full";
+    bool showRuler=false; // height ruler beside the character
     uint64_t cameraSerial=0;
     void reset() {
         studioLighting={};previewAnimation={};
@@ -130,6 +131,10 @@ public:
     const std::map<std::string,std::array<float,3>>& vectors() const noexcept{return vectors_;}
     // Called solely by the native Metal owner after a real render attempt.
     // Ready != QA-verified pixels; external HTML cannot set this flag.
+    // Animation clips of the shown model (from the GPU preview), for the
+    // "project animations" list; preview clips are excluded.
+    void setClips(const std::vector<std::string>& names){if(names!=clips_)clips_=names;}
+    void setBaseHeight(float h){baseHeight_=std::isfinite(h)&&h>0?h:0.f;}
     void setGpuStatus(bool ready,const std::string& reason) {
         gpuReady_=bound() && ready;
         gpuError_=reason;
@@ -251,6 +256,9 @@ public:
         result.set("appearanceOnly",Json::fromBool(appearanceOnly_));
         result.set("compare",Json::fromBool(compare_));
         result.set("tryOn",Json::fromBool(!wardrobe_.isNull()));
+        result.set("baseHeight",Json::number(double(baseHeight_),4));
+        result.set("ruler",Json::fromBool(showRuler));
+        {auto c=Json::array();for(const auto& n:clips_)c.push(Json::string(n));result.set("clips",std::move(c));}
         result.set("appearance",appearance_?appearance_->toJson():Json());
         result.set("creator",Json::fromBool(creatorMode()));
         result.set("bound",Json::fromBool(bound()));
@@ -289,6 +297,8 @@ private:
     bool appearanceOnly_=false;
     bool compare_=false;
     Json wardrobe_;
+    std::vector<std::string> clips_;
+    float baseHeight_=0;
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;

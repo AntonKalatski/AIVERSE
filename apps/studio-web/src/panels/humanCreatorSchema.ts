@@ -203,5 +203,21 @@ export function agentLookPrompt(text: string, name: string): string {
   return `Создай черновик персонажа для Character Creator в AIVERSE по описанию: «${text.trim()}».\n` +
     `1) Вызови human_look_schema и выбери значения полей (кожа, глаза, волосы, тело).\n` +
     `2) Сохрани их через human_look_save с name "${name}" (overwrite: true).\n` +
-    `3) Коротко перечисли, какие поля изменил и почему. Форму лица задаёт художник кругом смешивания в Studio.`;
+    `3) Попроси меня применить образ в Studio (Пресеты), затем вызови studio_character_snapshot и посмотри PNG; поправь значения, если не похоже.\n` +
+    `4) Коротко перечисли, какие поля изменил и почему. Форму лица задаёт художник кругом смешивания в Studio.`;
+}
+
+/** One "age" control (18..85): moves grey hair, skin roughness, pores,
+ *  redness and saturation together; neutral at 30. */
+export function ageLook(age: number): Record<string, number> {
+  const a = Math.min(85, Math.max(18, age)), t = Math.max(0, (a - 30) / 55), y = Math.max(0, (30 - a) / 12);
+  const r = (v: number) => Math.round(v * 1e4) / 1e4;
+  return { 'hair.gray': r(Math.min(1, Math.max(0, (a - 38) / 40))), 'hair.grayLightness': r(.6 + .25 * t),
+    'skin.roughness': r(.62 + .25 * t - .06 * y), 'skin.pores': r(.1 + .4 * t), 'skin.redness': r(.08 * y + .25 * t),
+    'skin.saturation': r(1 - .18 * t + .05 * y), 'skin.cavity': r(Math.min(1, .8 + .2 * t)), 'skin.oiliness': r(.06 + .08 * y - .04 * t) };
+}
+/** Inverse estimate of the age a look shows (for the slider position). */
+export function lookAge(values: Record<string, number>): number {
+  const g = values['hair.gray'] ?? 0, r = values['skin.roughness'] ?? .62;
+  return Math.round(Math.min(85, Math.max(18, g > 0 ? 38 + g * 40 : 30 + Math.max(-12, ((r - .62) / .25) * 55))));
 }

@@ -1182,6 +1182,18 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             vivid::updateHumanStudioShadows(renderer_,shadowResolution_,h,framebufferHeight);
             const auto bg=facialBinding.studioLighting.rig().background;
             if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},kDrawNoCastShadow,0);
+            if(facialBinding.showRuler && extent.y>1e-4f) {
+                // Height ruler beside the character: pole + a tick every
+                // 10 cm (longer every 50 cm), in model units = metres.
+                const float bodyH=facialBinding.appearance()?facialBinding.appearance()->get("body.height"):1.f;
+                const float metres=extent.y*bodyH,x=extent.x*.5f*scale+.12f,t=.006f;
+                const render::float4 ink{.85f,.88f,.95f,1};
+                renderer_.drawMesh(cube_,mat4::translate({x,foot.y+metres*scale*.5f,0})*mat4::scale({t,metres*scale,t}),ink,kDrawNoCastShadow);
+                for(int cm=0;cm<=int(metres*100.f+.5f)&&cm<=400;cm+=10) {
+                    const float len=cm%50==0?.07f:.035f;
+                    renderer_.drawMesh(cube_,mat4::translate({x-len*.5f,foot.y+float(cm)*.01f*scale,0})*mat4::scale({len,t*.8f,t}),ink,kDrawNoCastShadow);
+                }
+            }
 
             const bool submitted=facialGpu_.submit(
                 renderer_,facialBinding,1.f/60.f,reason);

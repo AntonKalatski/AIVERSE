@@ -68,6 +68,11 @@ int main() {
   anim.set("speed",Json::number(1.));anim.set("expression",Json::string("smile"));animParams.set("settings",anim);AIVERSE_TEST_CHECK(call("studio.humanPreviewAnimation",animParams)["result"].getStr("expression")=="smile");
   anim.set("expression",Json::string("wink"));animParams.set("settings",anim);AIVERSE_TEST_CHECK(call("studio.humanPreviewAnimation",animParams).has("error"));anim.set("expression",Json::string("smile"));
   AIVERSE_TEST_CHECK(call("studio.humanAppearanceThumbnails")["result"].isObject());
+  {auto save=Json::object();save.set("name",Json::string("pk"));save.set("look",vivid::HumanAppearance{}.toJson());AIVERSE_TEST_CHECK(!call("studio.humanAppearanceSave",save).has("error"));
+   auto ex=Json::object();ex.set("look",Json::string("pk"));AIVERSE_TEST_CHECK(!call("studio.humanPackageExport",ex).has("error"));
+   AIVERSE_TEST_CHECK(call("studio.humanPackageList")["result"]["packages"].size()==1);
+   auto im=Json::object();im.set("name",Json::string("pk"));const auto got=call("studio.humanPackageImport",im);
+   AIVERSE_TEST_CHECK(!got.has("error")&&got["result"].getStr("look")=="pk_2");}
   {auto bad=Json::object();bad.set("type",Json::string("9 bad"));bad.set("path",Json::string("Ada/model.gltf"));AIVERSE_TEST_CHECK(call("studio.humanPlaceInGame",bad).has("error"));
    bad.set("type",Json::string("hero"));bad.set("path",Json::string("../escape.glb"));AIVERSE_TEST_CHECK(call("studio.humanPlaceInGame",bad).has("error"));}
   {render::Model fixture;fixture.nodes.resize(6);fixture.nodes[4].name="upperarm_l_100";fixture.nodes[4].parent=0;fixture.nodes[5].name="upperarm_l_200";fixture.nodes[5].parent=0;fixture.nodes[5].t={10,0,0};fixture.meshes.resize(1);fixture.nodes[0].name="root";fixture.nodes[1].name="upperarm_l_23";fixture.nodes[1].parent=0;fixture.nodes[2].name="lowerarm_l_24";fixture.nodes[2].parent=1;fixture.nodes[2].t={1,-1,0};fixture.nodes[3].name="face";fixture.nodes[3].parent=0;fixture.nodes[3].mesh=0;fixture.meshes[0].morphTargetNames={"eyeBlinkLeft","eyeBlinkRight","mouthSmileLeft","eyeLookInLeft","eyeLookOutRight","eyeLookOutLeft"};fixture.finalize();

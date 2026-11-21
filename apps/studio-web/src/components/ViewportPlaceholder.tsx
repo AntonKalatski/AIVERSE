@@ -5,6 +5,7 @@ import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import { SCENE_TOOL_KEYS } from './SceneToolbar';
 import SceneAxisGizmo from './SceneAxisGizmo';
 import { brushPixels, onSculptBrush, sculptBrush, strokeSpacing } from '../panels/sculptBrushStore';
+import { onReferenceView, referenceView } from '../panels/referenceStore';
 import { forgetViewportRect, overlayBlocks, viewportRectChanged, watchOverlays } from '../nativeOverlay';
 import {
   DEFAULT_SCENE_CAMERA, dragZoomAmount, flyStep, isSceneCameraState, navigationFor, stepFlySpeed,
@@ -34,6 +35,8 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const sculptDrag = useRef<{ x: number; y: number; busy: boolean; queued: { x: number; y: number } | null } | null>(null);
   useEffect(() => onSculptBrush(setBrushView), []);
+  const [reference, setReference] = useState(referenceView());
+  useEffect(() => onReferenceView(setReference), []);
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
   const native = nativeConnected();
@@ -323,6 +326,9 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       {navigationActive?(flying.current?'Flythrough · WASD move · Q/E down/up · Shift faster · Wheel speed':'Navigating Scene')
         :'RMB fly (WASD/QE) · Alt+LMB orbit · MMB / Alt+Cmd+LMB pan · Wheel / Alt+RMB zoom · F focus'}
     </div>}
+    {navigationReady && reference.src && reference.visible && <img className="studio-reference-photo" src={reference.src} alt="" aria-hidden="true"
+      style={{ opacity: reference.opacity, height: (reference.scale * 100) + '%',
+        transform: `translate(calc(-50% + ${reference.x * 50}%), calc(-50% + ${reference.y * 50}%))${reference.mirror ? ' scaleX(-1)' : ''}` }}/>}
     {navigationReady && brush.armed && cursor && (() => {
       const h=element.current?.getBoundingClientRect().height ?? 600, r=brushPixels(brush.radius,h);
       return <div className="studio-sculpt-brush" aria-hidden="true"

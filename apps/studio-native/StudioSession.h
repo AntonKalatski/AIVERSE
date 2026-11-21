@@ -42,6 +42,7 @@ public:
     // for the face blend) instead of sculpting.
     struct SculptBrush { bool armed=false; float radius=.12f, strength=.012f; bool pull=false; bool symmetry=true; bool regionPick=false; };
     const SculptBrush& sculptBrush() const noexcept {return sculpt_;}
+    void setFacialPreviewClips(const std::vector<std::string>& names,float baseHeight){facialPreview_.setClips(names);facialPreview_.setBaseHeight(baseHeight);}
     void setFacialPreviewGpuStatus(bool rendered,const std::string& reason) {
         facialPreview_.setGpuStatus(rendered,reason);
     }

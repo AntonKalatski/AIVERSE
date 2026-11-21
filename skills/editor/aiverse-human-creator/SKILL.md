@@ -47,7 +47,11 @@ Agent draft from a text description ("пожилой рыбак, обветре�
    defaults; the whole look is validated, nothing is written on error.
 3. `human_look_list` / `human_look_get {name}` to confirm. The artist applies it in Studio > Character Creator >
    Пресеты (cards) and sets the face shape with the blend circle; face shape, sculpt and wardrobe have no MCP tools.
-The Presets tab can copy this request for you ("Запрос агенту").
+4. See the result: once the look is shown in Studio, `studio_character_snapshot {view: face|torso|full}` returns a PNG
+   path of the Character Creator viewport (Studio must be running with this game). Open the PNG before you describe
+   the result; if Studio does not answer, say that you could not see it.
+The Presets tab can copy this request for you ("Запрос агенту"). Makeup is part of the look: `makeup.*` keys
+(lips, blush, shadow, stubble with colour, position and size in skin UV).
 
 Studio-only features (describe the steps, do not claim to have run them): face blend circle with per-part handles
 picked in the viewport (`studio.humanFacePick`), drag sculpt with a brush circle, before/after (`studio.humanCompare`),

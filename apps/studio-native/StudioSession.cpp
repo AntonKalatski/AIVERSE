@@ -21,6 +21,7 @@
 #include "apps/studio-native/StudioShaderGraphDraft.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "apps/studio-native/StudioHumanLookDocument.h"
+#include "apps/studio-native/StudioHumanPackage.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -721,6 +722,12 @@ Json StudioSession::dispatch(const Json& request) {
                 throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
             sculpt_.regionPick=on;if(on)sculpt_.armed=false;
             auto result=Json::object();result.set("enabled",Json::fromBool(on));reply.set("result",std::move(result));
+        } else if(method=="studio.humanPackageList" || method=="studio.humanPackageExport" || method=="studio.humanPackageImport") {
+            // Portable character package (look + picture + built character).
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanPackageList")reply.set("result",listStudioHumanPackages(ws_.project.dir));
+            else if(method=="studio.humanPackageExport")reply.set("result",exportStudioHumanPackage(ws_.project.dir,params.getStr("look"),params.getStr("character")));
+            else reply.set("result",importStudioHumanPackage(ws_.project.dir,params.getStr("name")));
         } else if(method=="studio.humanPlaceInGame") {
             // "To the game": the built character becomes an RTS unit type
             // (view.model) and, when a map is open, one unit is placed.
@@ -761,6 +768,9 @@ Json StudioSession::dispatch(const Json& request) {
             // Live wardrobe try-on in the preview; null takes everything off.
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             reply.set("result",facialPreview_.setWardrobe(params["wardrobe"]));
+        } else if(method=="studio.humanRuler") {
+            facialPreview_.showRuler=params.getBool("enabled");
+            auto result=Json::object();result.set("enabled",Json::fromBool(facialPreview_.showRuler));reply.set("result",std::move(result));
         } else if(method=="studio.humanCompare") {
             // Before/after: show the untouched source model while held.
             reply.set("result",facialPreview_.setCompareOriginal(params.getBool("original")));

@@ -26,6 +26,13 @@ export default function HumanPreviewAnimationControls() {
     try { setDraft({ ...defaults, ...await invoke('studio.humanPreviewAnimation', { settings }) }); }
     catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
+  const [clips, setClips] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    const load = () => void invoke('studio.humanAppearanceInfo', {}).then(i => { if (live) setClips(i.preview.clips ?? []); }).catch(() => {});
+    load(); const timer = setInterval(load, 3000);
+    return () => { live = false; clearInterval(timer); };
+  }, []);
   const off = busy || !ready;
   return <>
     {error && <HcNote tone="error">{error}</HcNote>}
@@ -34,6 +41,12 @@ export default function HumanPreviewAnimationControls() {
         aria-pressed={(draft.expression ?? 'idle') === e.id} disabled={off}
         onClick={() => void apply({ ...draft, expression: e.id })}><span aria-hidden="true">{e.emoji}</span>{e.label}</button>)}</div>
       <HcSwitch label="Моргание и лёгкая мимика" checked={draft.faceIdle} disabled={off} onChange={v => void apply({ ...draft, faceIdle: v })}/>
+    </HcCard>
+    <HcCard title="Анимации модели" hint={clips.length ? 'Клипы из файла персонажа — проверьте одежду и скиннинг в движении' : 'В модели нет своих анимаций. Добавьте клипы в glTF персонажа (Idle, Walk, Run…)'}>
+      {clips.length > 0 && <div className="hc-chips">
+        <button type="button" className="hc-chip" aria-pressed={!draft.clip} disabled={off} onClick={() => void apply({ ...draft, clip: '' })}>Поза превью</button>
+        {clips.map(c => <button key={c} type="button" className="hc-chip" aria-pressed={draft.clip === c} disabled={off}
+          onClick={() => void apply({ ...draft, clip: c, playing: true })}>▶ {c}</button>)}</div>}
     </HcCard>
     <HcCard title="Поза">
       <HcSegment label="Поза" value={draft.pose} options={POSES} disabled={off} onChange={pose => void apply({ ...draft, pose })}/>

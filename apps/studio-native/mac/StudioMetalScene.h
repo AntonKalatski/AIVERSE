@@ -47,6 +47,8 @@ public:
     void setWindPreview(const StudioWindState& state) { wind_ = state; }
     Json windStats() const;
     bool facialReady() const noexcept{return facialReady_;}
+    std::vector<std::string> facialClips() const {return facialGpu_.clipNames();}
+    float facialBaseHeight() const {return facialGpu_.baseHeight();}
     const std::string& facialError() const noexcept{return facialError_;}
     // Facial preview sculpt pick (normalized head coordinates); false = miss.
     // Never throws: a rejected pick returns false with the reason in error.

@@ -366,7 +366,9 @@ bool StudioFacialGpuPreview::submit(
         }
     const float frameDt=std::clamp(dt,0.f,0.1f);
     const auto& animation=binding.previewAnimation;
-    const int requestedClip=previewClipBase_+animation.poseIndex()*2+(animation.faceIdle?1:0);
+    int requestedClip=previewClipBase_+animation.poseIndex()*2+(animation.faceIdle?1:0);
+    if(!animation.clip.empty())
+        for(size_t i=0;i<model_->clips.size();++i)if(model_->clips[i].name==animation.clip){requestedClip=int(i);break;}
     if(activePreviewClip_!=requestedClip){vivid::playHumanPreview(animator_,requestedClip,animation.playing);activePreviewClip_=requestedClip;}
     animator_.setSpeed(0,animation.speed);
     animator_.update(animation.playing?frameDt:0.f);

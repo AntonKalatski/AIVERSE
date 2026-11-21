@@ -59,6 +59,9 @@ public:
     }
     bool ready() const noexcept {return bool(model_) && (appearanceOnly_ || facial_.ready());}
     uint64_t sourceRevision() const noexcept {return revision_;}
+    // Bind-pose height of the shown character in model units (metres for glTF).
+    float baseHeight() const {return model_?model_->boundsMax.y-model_->boundsMin.y:0.f;}
+    std::vector<std::string> clipNames() const {std::vector<std::string> out;if(model_)for(const auto& c:model_->clips)if(!c.name.starts_with("__vivid_preview_"))out.push_back(c.name);return out;}
 private:
     static bool readProjectFile(const std::filesystem::path& projectRoot,
                                 const std::string& key,std::string& bytes);

@@ -133,3 +133,5 @@
 .studio-panel-human_creator .hc-budget__row--over i{background:linear-gradient(90deg,#e0644f var(--hc-fill),var(--au-line) var(--hc-fill))}
 .studio-panel-human_creator .hc-budget__row--over span:last-child{color:#e0644f}
 .studio-panel-human_creator .hc-textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:58px;padding:8px 10px;border:1px solid var(--au-line);border-radius:var(--au-radius-md);background:var(--au-input,#0e141c);color:var(--au-text);font:inherit;font-size:12.5px;margin-bottom:8px}
+.studio-panel-human_creator .hc-file{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px dashed var(--au-line-strong);border-radius:var(--au-radius-md);cursor:pointer;font-size:12.5px;margin-bottom:8px}
+.studio-panel-human_creator .hc-file input{display:none}

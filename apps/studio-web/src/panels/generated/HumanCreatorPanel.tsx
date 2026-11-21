@@ -18,12 +18,15 @@ import HumanStudioLightingControls from '../HumanStudioLightingControls';
 import HumanSculptControls from '../HumanSculptControls';
 import HumanMakeupControls from '../HumanMakeupControls';
 import HumanHairstyleControls from '../HumanHairstyleControls';
+import HumanCrowdControls from '../HumanCrowdControls';
+import HumanReferenceControls from '../HumanReferenceControls';
+import HumanPackageControls from '../HumanPackageControls';
 import { useOutfit } from '../useOutfit';
 import HumanFaceBlend from '../HumanFaceBlend';
-import { HcCard, HcHeader, HcSlider } from '../HumanCreatorUi';
+import { HcCard, HcHeader, HcSlider, HcSwitch } from '../HumanCreatorUi';
 import HumanDnaCreator from '../HumanDnaCreator';
 import { useHumanLook, type Snapshot } from '../useHumanLook';
-import { FACE_ARCHETYPES, FACE_REGIONS, LOOK_PARTS, agentLookPrompt, archetypePoint, blendFace, blendLooks, describeToLook, guessFaceMeshes, randomHandle, randomLook, type LookPart } from '../humanCreatorSchema';
+import { ageLook, lookAge, FACE_ARCHETYPES, FACE_REGIONS, LOOK_PARTS, agentLookPrompt, archetypePoint, blendFace, blendLooks, describeToLook, guessFaceMeshes, randomHandle, randomLook, type LookPart } from '../humanCreatorSchema';
 import { DOCK_PRESET_EVENT } from '../../nestedDock';
 import './HumanCreatorPanel.css';
 
@@ -90,6 +93,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
     e.preventDefault(); if (e.shiftKey) redo(); else undo();
   };
   const [locked, setLocked] = useState<LookPart[]>([]);
+  const [age, setAge] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [understood, setUnderstood] = useState<string[] | null>(null);
   // Random / described drafts: look values plus an optional face handle.
@@ -139,6 +143,11 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           </div>
           <StudioCheckbox label="Применять изменения сразу" checked={autoApply} onChange={e => setAutoApply(e.target.checked)}/>
         </HcCard>
+        <HcCard title="Возраст" hint="Седина, фактура и цвет кожи вместе; форму лица меняйте в «Лице»">
+          <HcSlider id="hc-age" label="Возраст" min={18} max={85} step={1} value={age ?? lookAge(h.draft.values)} disabled={!h.info}
+            format={v => Math.round(v) + ' лет'} onChange={v => { setAge(v); const look = { ...h.draft, values: { ...h.draft.values, ...ageLook(v) } }; h.edit(look); if (autoApply && bound) h.live(look, h.face); }}
+            onCommit={() => { setAge(null); commit(); }}/>
+        </HcCard>
         <HcCard title="Случайный персонаж" hint="Закреплённые части не меняются">
           <div className="hc-chips">{LOOK_PARTS.map(p => <button key={p.id} type="button" className="hc-chip" aria-pressed={locked.includes(p.id)}
             title={locked.includes(p.id) ? 'Закреплено' : 'Будет меняться'}
@@ -182,6 +191,8 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
             })}>Сохранить</StudioButton>
           </div>
         </HcCard>
+        <HumanCrowdControls info={h.info} draft={h.draft} face={h.face} guid={h.guid} name={profileName} locked={locked} outfit={outfit} onSaved={h.setSaved}/>
+        <HumanPackageControls look={profileName} onImported={() => { void invoke('studio.humanAppearanceList', {}).then(r => h.setSaved(r.looks)); loadThumbs(); }}/>
         <HcCard title="Смешать два образа" hint="Выберите A и B, затем ведите ползунок">
           <div className="hc-row">
             <StudioSelect aria-label="Пресет A" value={blendA} onChange={e => setBlendA(e.target.value)}><option value="">Пресет A…</option>{h.saved.map(n => <option key={n}>{n}</option>)}</StudioSelect>
@@ -198,6 +209,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
         <HcHeader title="Лицо" hint="Смешивайте архетипы или задавайте пропорции точно; импортируйте лицо из скана, фото или отдельной головы."/>
         <StudioTabs className="hc-subtabs" label="Лицо" items={[{ id: 'blend', label: 'Смешивание' }, { id: 'shape', label: 'Пропорции и импорт' }]}
           selected={faceTab} onChange={setFaceTab}/>
+        <HumanReferenceControls/>
         {faceTab === 'blend'
           ? <HumanFaceBlend guid={h.guid} face={h.face} schema={h.info?.faceSchema ?? []} disabled={h.busy || !h.guid}
               onCommit={f => { h.editFace(f); if (bound) void h.apply(f, h.draft); else h.setStatus('Форма готова — нажмите «Показать»'); }}/>
@@ -223,7 +235,17 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
       case 'hair': return <><HcHeader title="Волосы" hint="Цвет и финиш прядей, бровей и ресниц. Форму причёски задаёт модель волос."/>
         <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h} live={autoApply && bound}/></HcCard><HumanHairstyleControls guid={h.guid} outfit={outfit}/></>;
       case 'body': return <><HcHeader title="Тело" hint="Рост и пропорции. Одежда следует за скелетом — при крайних значениях проверьте пересечения."/>
-        <HcCard title="Пропорции"><LookSliders groups={['body']} h={h} live={autoApply && bound}/></HcCard></>;
+        <HcCard title="Пропорции"><LookSliders groups={['body']} h={h} live={autoApply && bound}/></HcCard><HcCard title="Рост" hint={pv?.baseHeight ? 'Исходная модель: ' + Math.round(pv.baseHeight * 100) + ' см' : 'Покажите персонажа, чтобы узнать рост'}>
+          {pv?.baseHeight ? <div className="hc-row">
+            <StudioInput type="number" aria-label="Рост, см" min={Math.round(pv.baseHeight * 80)} max={Math.round(pv.baseHeight * 120)} step={1}
+              value={Math.round(pv.baseHeight * 100 * (h.draft.values['body.height'] ?? 1))}
+              onChange={e => { const cm = e.target.valueAsNumber; if (!Number.isFinite(cm) || !pv.baseHeight) return;
+                const k = Math.min(1.2, Math.max(.8, cm / (pv.baseHeight * 100)));
+                const look = { ...h.draft, values: { ...h.draft.values, 'body.height': Math.round(k * 1e4) / 1e4 } }; h.edit(look); if (autoApply && bound) h.live(look, h.face); }}/>
+            <span className="hc-hint">см · от {Math.round(pv.baseHeight * 80)} до {Math.round(pv.baseHeight * 120)}</span></div> : null}
+          <HcSwitch label="Линейка во вьюпорте" hint="Шкала рядом с персонажем, деления по 10 см" checked={Boolean(pv?.ruler)} disabled={!bound}
+            onChange={v => void invoke('studio.humanRuler', { enabled: v }).then(() => refresh())}/>
+        </HcCard></>;
       case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face} outfit={outfit}
         onShow={g => { h.setGuid(g); h.setFace(null); h.setStatus('Показан собранный персонаж'); }}/>;
       case 'pose': return <><HcHeader title="Поза и свет" hint="Мимика и поза для проверки лица в движении, студийный свет превью."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
