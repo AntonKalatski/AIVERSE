@@ -106,10 +106,49 @@ bool insideQuad(const float2* q,float x,float y){
         const float c=(b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x);pos|=c>0;neg|=c<0;}
     return !(pos&&neg);
 }
+// Tiny 7-segment text for gizmo readouts ("-12.5°"): the Metal view covers HTML.
+float overlayTextWidth(const std::string& text,float h){
+    float w=0;for(char c:text)w+=(c=='.'?0.3f:c=='\xb0'?0.45f:c==' '?0.4f:0.7f)*h;return w;
+}
 bool rayPlane(float3 o,float3 d,float3 p,float3 n,float3& hit){
     const float den=dot(d,n);if(std::fabs(den)<1e-5f)return false;
     const float t=dot(p-o,n)/den;if(!(t>0)||!std::isfinite(t))return false;
     hit=o+d*t;return true;
+}
+void overlayText(const Overlay2D& o,float x,float y,float h,const std::string& text,uint32_t col){
+    // segments: a top, b top-right, c bottom-right, d bottom, e bottom-left, f top-left, g middle
+    static const uint8_t digits[10]={0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
+    const float w=h*0.5f,t=std::max(1.2f,h*0.12f);
+    // dark plate for contrast
+    const float pw=overlayTextWidth(text,h)+h*0.5f;
+    o.tri(x-h*0.25f,y-h*0.25f,x+pw-h*0.25f,y-h*0.25f,x+pw-h*0.25f,y+h*1.25f,rgba(10,16,26,200));
+    o.tri(x-h*0.25f,y-h*0.25f,x+pw-h*0.25f,y+h*1.25f,x-h*0.25f,y+h*1.25f,rgba(10,16,26,200));
+    for(char c:text){
+        uint8_t m=0;
+        if(c>='0'&&c<='9')m=digits[c-'0']; else if(c=='-')m=0x40; else if(c=='+')m=0x40;
+        const float X=x,Y=y,M=y+h*0.5f,B=y+h;
+        if(m&0x01)o.segment(X,Y,X+w,Y,t,col);
+        if(m&0x02)o.segment(X+w,Y,X+w,M,t,col);
+        if(m&0x04)o.segment(X+w,M,X+w,B,t,col);
+        if(m&0x08)o.segment(X,B,X+w,B,t,col);
+        if(m&0x10)o.segment(X,M,X,B,t,col);
+        if(m&0x20)o.segment(X,Y,X,M,t,col);
+        if(m&0x40)o.segment(X,M,X+w,M,t,col);
+        if(c=='+')o.segment(X+w*0.5f,M-w*0.5f,X+w*0.5f,M+w*0.5f,t,col);
+        if(c=='.')o.segment(x,B-t*0.5f,x+t,B-t*0.5f,t,col);
+        if(c=='\xb0'){o.segment(X,Y,X+h*0.25f,Y,t*0.8f,col);o.segment(X+h*0.25f,Y,X+h*0.25f,Y+h*0.25f,t*0.8f,col);
+            o.segment(X+h*0.25f,Y+h*0.25f,X,Y+h*0.25f,t*0.8f,col);o.segment(X,Y+h*0.25f,X,Y,t*0.8f,col);}
+        if(c=='x'){o.segment(X,M-w*0.45f,X+w,M+w*0.55f,t,col);o.segment(X+w,M-w*0.45f,X,M+w*0.55f,t,col);} // ×
+        x+=(c=='.'?0.3f:c=='\xb0'?0.45f:c==' '?0.4f:0.7f)*h;
+    }
+}
+// "+1.25" / "-2" / "+0.5": signed, at most 2 decimals, no trailing zeros.
+std::string gizmoNumber(float v,bool sign=true){
+    char b[32];std::snprintf(b,sizeof b,sign?"%+.2f":"%.2f",double(v));
+    std::string s=b;
+    if(s.find('.')!=std::string::npos){while(s.back()=='0')s.pop_back();if(s.back()=='.')s.pop_back();}
+    if(s=="+0"||s=="-0")s="0";
+    return s;
 }
 float segmentDistance(float px,float py,float ax,float ay,float bx,float by){
     const float vx=bx-ax,vy=by-ay,l2=vx*vx+vy*vy;
@@ -476,6 +515,13 @@ int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height
     const auto h=axisHandles(view,selectedPivot_,axes,width,height);
     if(!h.valid)return -1;
     int best=-1;float bestD=h.pick;
+    // Plane squares (all tools): Move = drag in the plane, Scale = both plane axes,
+    // Rotate = turn about the plane's normal (same as that axis's ring).
+    for(int n=0;n<3;++n){
+        float2 q[4];
+        if(planeQuad(view,selectedPivot_,axes,n,h.worldLength,width,height,q)&&insideQuad(q,x,y))
+            return tool_==TransformTool::Rotate?n:4+n;
+    }
     if(tool_==TransformTool::Rotate) {
         for(int a=0;a<3;++a){
             float3 u,v;ringBasis(axes[a],u,v);float2 prev{};bool hasPrev=false;
@@ -487,9 +533,6 @@ int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height
             }
         }
         return best;
-    }
-    if(tool_==TransformTool::Move) for(int n=0;n<3;++n){ // plane squares win inside their area
-        float2 q[4];if(planeQuad(view,selectedPivot_,axes,n,h.worldLength,width,height,q)&&insideQuad(q,x,y))return 4+n;
     }
     for(int a=0;a<3;++a){const float d=segmentDistance(x,y,h.px,h.py,h.tip[a][0],h.tip[a][1]);if(d<bestD){bestD=d;best=a;}}
     if(tool_==TransformTool::Scale && std::hypot(x-h.px,y-h.py)<h.pick*1.4f)best=3; // centre: uniform
@@ -509,6 +552,11 @@ bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float heig
         d.startAngle=d.lastAngle=std::atan2(y-h.py,x-h.px);
         d.facing=dot(d.dir,view.eye()-d.pivot)>0;
         d.screenPivot={h.px,h.py};
+        // Direction on the ring plane under the press: the angle readout starts there.
+        float3 ro,rd,hit;float3 bu,bv;ringBasis(d.dir,bu,bv);d.startVec=bu;
+        if(view.screenRay(x,y,width,height,ro,rd)&&rayPlane(ro,rd,d.pivot,d.dir,hit)){
+            const float3 v=hit-d.pivot;const float l=std::sqrt(dot(v,v));if(l>1e-5f)d.startVec=v*(1.0f/l);
+        }
     } else if(axis>=4) {
         d.planeNormal=axes[axis-4];
         float3 o,dir;if(!view.screenRay(x,y,width,height,o,dir))return false;
@@ -524,6 +572,7 @@ bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float heig
 void StudioMetalScene::updateTransformDrag(float x,float y,float width,float height,bool invertSnap) {
     if(drag_.axis<0)return;
     const bool snap=snapEnabled_!=invertSnap;
+    drag_.snapping=snap;
     if(drag_.tool==TransformTool::Rotate) {
         const float angle=std::atan2(y-drag_.screenPivot.y,x-drag_.screenPivot.x);
         float step=angle-drag_.lastAngle;
@@ -542,6 +591,15 @@ void StudioMetalScene::updateTransformDrag(float x,float y,float width,float hei
         return;
     }
     float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return;
+    if(drag_.axis>=4 && drag_.tool==TransformTool::Scale) {
+        float3 hit;if(!rayPlane(o,d,drag_.pivot,drag_.planeNormal,hit))return;
+        // Both in-plane axes grow together along the square's diagonal.
+        const float3 diag=normalize(drag_.axes[(drag_.axis-4+1)%3]+drag_.axes[(drag_.axis-4+2)%3]);
+        float f=1.0f+dot(hit-drag_.startHit,diag)/std::max(1e-4f,drag_.worldLength);
+        if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
+        drag_.value=std::clamp(f,0.01f,100.0f);
+        return;
+    }
     if(drag_.axis>=4) {
         float3 hit;if(!rayPlane(o,d,drag_.pivot,drag_.planeNormal,hit))return;
         float3 delta=hit-drag_.startHit;
@@ -575,7 +633,8 @@ render::mat4 StudioMetalScene::dragPreview() const {
     for(int c=0;c<3;++c){const float3 a=drag_.axes[c];
         basis.at(0,c)=a.x;basis.at(1,c)=a.y;basis.at(2,c)=a.z;basisT.at(c,0)=a.x;basisT.at(c,1)=a.y;basisT.at(c,2)=a.z;}
     const float f=drag_.value;
-    const float3 k=drag_.axis==3?float3{f,f,f}:float3{drag_.axis==0?f:1.f,drag_.axis==1?f:1.f,drag_.axis==2?f:1.f};
+    auto on=[&](int a){return drag_.axis==3||drag_.axis==a||(drag_.axis>=4&&drag_.axis-4!=a);};
+    const float3 k{on(0)?f:1.f,on(1)?f:1.f,on(2)?f:1.f};
     return mat4::translate(p)*basis*mat4::scale(k)*basisT*mat4::translate(p*-1.0f);
 }
 std::string StudioMetalScene::transformCaption() const {
@@ -613,7 +672,18 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
     const uint32_t colors[3]={rgba(232,82,72),rgba(120,205,85),rgba(70,135,240)};
     const uint32_t active=rgba(255,214,64);
     const float u=std::min(W,H)*0.16f/110.0f;
+    auto drawPlanes=[&](){
+        for(int n=0;n<3;++n){
+            float2 q[4];if(!planeQuad(view,pivot,axes,n,h.worldLength,W,H,q))continue;
+            const bool hot=dragging&&(drag_.axis==4+n||(tool_==TransformTool::Rotate&&drag_.axis==n));
+            const uint32_t base=hot?active:colors[n];
+            const uint32_t fill=(base&0x00ffffffu)|(hot?0xa0000000u:0x55000000u);
+            o.tri(q[0].x,q[0].y,q[1].x,q[1].y,q[2].x,q[2].y,fill);o.tri(q[0].x,q[0].y,q[2].x,q[2].y,q[3].x,q[3].y,fill);
+            for(int i=0;i<4;++i)o.segment(q[i].x,q[i].y,q[(i+1)%4].x,q[(i+1)%4].y,1.4f*u,base);
+        }
+    };
     if(tool_==TransformTool::Rotate) {
+        drawPlanes();
         const float3 toEye=normalize(view.eye()-pivot);
         for(int a=0;a<3;++a){
             const bool hot=dragging&&drag_.axis==a;
@@ -630,6 +700,43 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
                 prev=q;hasPrev=true;
             }
         }
+        if(dragging && drag_.tool==TransformTool::Rotate && drag_.axis>=0 && drag_.axis<3) {
+            const float3 axis=drag_.dir,start=drag_.startVec;const float R=h.worldLength;
+            const float deg=drag_.value;
+            float2 c;if(!view.worldToScreen(pivot,W,H,c))return;
+            auto at=[&](float degrees,float radius,float2& out){
+                const float3 v=quat::axisAngle(axis,degrees*0.017453292f).rotate(start);
+                return view.worldToScreen(pivot+v*radius,W,H,out);
+            };
+            // Swept sector (how far it turned) + its two edges.
+            const int steps=std::clamp(int(std::fabs(deg)/4.0f)+1,1,180);
+            float2 prev;bool hasPrev=at(0,R,prev);
+            for(int i=1;i<=steps;++i){
+                float2 q;if(!at(deg*float(i)/float(steps),R,q)){hasPrev=false;continue;}
+                if(hasPrev)o.tri(c.x,c.y,prev.x,prev.y,q.x,q.y,rgba(255,214,64,70));
+                prev=q;hasPrev=true;
+            }
+            float2 a0,a1;
+            if(at(0,R,a0))o.segment(c.x,c.y,a0.x,a0.y,1.6f*u,rgba(255,214,64,200));
+            if(at(deg,R,a1))o.segment(c.x,c.y,a1.x,a1.y,2.2f*u,active);
+            // Snap divisions on the active ring.
+            if(drag_.snapping && snapRotate_>0.5f) {
+                const int count=std::min(720,int(std::round(360.0f/snapRotate_)));
+                for(int i=0;i<count;++i){
+                    const float t=float(i)*snapRotate_;
+                    const bool major=std::fmod(t,90.0f)<0.01f;
+                    float2 p0,p1;
+                    if(at(t,R*(major?0.86f:0.92f),p0)&&at(t,R*1.06f,p1))o.segment(p0.x,p0.y,p1.x,p1.y,(major?2.0f:1.3f)*u,rgba(255,240,190,major?230:170));
+                }
+            }
+            // Angle readout next to the moving edge.
+            char text[32];std::snprintf(text,sizeof text,"%+.1f\xb0",double(deg));
+            std::string label=text;
+            if(label.size()>3&&label.compare(label.size()-3,2,".0")==0)label.erase(label.size()-3,2); // "+15°" not "+15.0°"
+            float2 lp;if(!at(deg,R*1.25f,lp))lp={c.x+R,c.y};
+            const float th=std::max(10.0f,12.0f*u);
+            overlayText(o,lp.x-overlayTextWidth(label,th)*0.5f,lp.y-th*0.5f,th,label,rgba(255,240,190));
+        }
         return;
     }
     int order[3]={0,1,2};
@@ -638,7 +745,7 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
     for(const int a:order){
         const uint32_t col=dragging&&drag_.axis==a?active:colors[a];
         float tipX=h.tip[a][0],tipY=h.tip[a][1];
-        if(tool_==TransformTool::Scale && dragging && (drag_.axis==a||drag_.axis==3)){
+        if(tool_==TransformTool::Scale && dragging && (drag_.axis==a||drag_.axis==3||(drag_.axis>=4&&drag_.axis-4!=a))){
             tipX=h.px+(tipX-h.px)*drag_.value;tipY=h.py+(tipY-h.py)*drag_.value;
         }
         const float dx=tipX-h.px,dy=tipY-h.py,l=std::hypot(dx,dy);
@@ -655,18 +762,29 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
         o.segment(h.px,h.py,bx,by,2.4f*u,col);
         o.tri(tipX,tipY,bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
     }
-    if(tool_==TransformTool::Move) for(int n=0;n<3;++n){
-        float2 q[4];if(!planeQuad(view,pivot,axes,n,h.worldLength,W,H,q))continue;
-        const bool hot=dragging&&drag_.axis==4+n;
-        const uint32_t base=hot?active:colors[n];
-        const uint32_t fill=(base&0x00ffffffu)|(hot?0xa0000000u:0x55000000u);
-        o.tri(q[0].x,q[0].y,q[1].x,q[1].y,q[2].x,q[2].y,fill);o.tri(q[0].x,q[0].y,q[2].x,q[2].y,q[3].x,q[3].y,fill);
-        for(int i=0;i<4;++i)o.segment(q[i].x,q[i].y,q[(i+1)%4].x,q[(i+1)%4].y,1.4f*u,base);
-    }
+    drawPlanes();
     const float c=(tool_==TransformTool::Scale?4.5f:3.0f)*u;
     const uint32_t centre=tool_==TransformTool::Scale&&dragging&&drag_.axis==3?active:rgba(235,240,250);
     o.tri(h.px-c,h.py-c,h.px+c,h.py-c,h.px+c,h.py+c,centre);
     o.tri(h.px-c,h.py-c,h.px+c,h.py+c,h.px-c,h.py+c,centre);
+    // Live readout: how far it moved (per axis, axis colours) / how much it scaled.
+    if(dragging && drag_.axis>=0) {
+        const float th=std::max(10.0f,12.0f*u);
+        float tx=h.px+16*u,ty=h.py-34*u;
+        if(drag_.tool==TransformTool::Move) {
+            float2 from;
+            if(view.worldToScreen(drag_.pivot,W,H,from))o.segment(from.x,from.y,h.px,h.py,1.4f*u,rgba(255,214,64,180));
+            for(int a=0;a<3;++a){
+                const bool on=drag_.axis==a||(drag_.axis>=4&&drag_.axis-4!=a);
+                if(!on)continue;
+                const std::string text=gizmoNumber(dot(drag_.moveOffset,drag_.axes[a]));
+                overlayText(o,tx,ty,th,text,colors[a]);
+                tx+=overlayTextWidth(text,th)+th*0.6f;
+            }
+        } else if(drag_.tool==TransformTool::Scale) {
+            overlayText(o,tx,ty,th,"x"+gizmoNumber(drag_.value,false),drag_.axis<3?colors[drag_.axis]:rgba(255,240,190));
+        }
+    }
 }
 render::Model* StudioMetalScene::builtinPrimitive(bool sphere) {
     auto& slot=sphere?builtinSphere_:builtinCube_;

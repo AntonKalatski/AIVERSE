@@ -632,7 +632,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         add({keys[commit->axis]},[&](double v){return std::remainder(v+double(commit->degrees),360.0);},3);
     } else if (commit->tool==Tool::Scale) {
         static const char* keys[3]={"scaleX","scaleY","scaleZ"};
-        for (int a=0;a<3;++a) if (commit->axis==3 || commit->axis==a)
+        for (int a=0;a<3;++a) if (commit->axis==3 || commit->axis==a || (commit->axis>=4 && commit->axis-4!=a))
             add({keys[a]},[&](double v){return std::clamp(v*double(commit->factor),0.001,10000.0);},4);
     }
     if (!values.members().empty()) {

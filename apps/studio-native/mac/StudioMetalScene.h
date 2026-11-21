@@ -154,6 +154,7 @@ private:
         float startT = 0, startX = 0, lengthPx = 1, worldLength = 1, value = 0;
         float startAngle = 0, lastAngle = 0, accumulated = 0; bool facing = false; render::float2 screenPivot{};
         render::float3 planeNormal{}, startHit{}, moveOffset{}; // Move: world offset (axis or plane)
+        render::float3 startVec{}; bool snapping = false;     // Rotate: ring direction under the press, snap active
     } drag_;
     bool selectedIsLight_ = false, selectedAxesValid_ = false;
     std::set<std::string> selection_, hidden_, locked_;
