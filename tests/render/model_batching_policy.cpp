@@ -876,6 +876,15 @@ int main() {
         CHECK(!staticRenderPacketCandidate(draw, true, false, false));
         CHECK(!staticRenderPacketCandidate(draw, false, true, false));
         CHECK(!staticRenderPacketCandidate(draw, false, false, true));
+        // Review 2026-11-21: GPU selection packets are per-frame; a draw
+        // carrying any of them must never replay a recorded CPU packet.
+        draw.gpuIndexedPrimitives.emplace_back();
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.gpuIndexedPrimitives.clear();
+        draw.gpuShadowPrimitives.emplace_back();
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.gpuShadowPrimitives.clear();
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
 
         ModelDraw snapshot = draw;
         CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
