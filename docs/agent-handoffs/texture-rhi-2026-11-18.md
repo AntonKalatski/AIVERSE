@@ -12772,3 +12772,15 @@ All local build/cache/report output is on KINGSTON. PR #96 targets main.
 [Final evidence, hashes and external CI/release boundary](texture-rhi-indexed-admission-fix-2026-11-20.md).
 Cross-backend runtime CI remains queued; Windows/macOS republish is due
 from the integrator per AGENTS §8. No unsupported parity/performance claims.
+
+## 2026-11-21 — review fixes (branch feature/aiv20261121_fix_gfx_strata)
+
+Texture/RHI part of the gfx-strata review pass; full detail in
+[review-fixes-gfx-strata-2026-11-21.md](review-fixes-gfx-strata-2026-11-21.md).
+- `817d0b5` GL: stale `glGetError()` drained before guarded sections (VT uploads no longer fail on foreign errors).
+- `aba1af2` `readTextureAsync` row order unified to top-left: GL and Vulkan flip only render targets; Metal unchanged; `gles_texture_array_gpu` gets a row-0 marker.
+- `a2fe676` Vulkan sampler `mipFilter None`: minLod = maxLod = 0.
+- `2558ba6` Vulkan device loss: pending texture/buffer readbacks complete once with an empty result.
+- `0298947` GL region uploads via `UNPACK_ROW_LENGTH`/`IMAGE_HEIGHT`; `TextureStreamQueue` deque + one-pass cancel.
+- `de4a989` Metal ordered staging-blit uploads also for 2D/cube/cube-array/3D (no auto mips, no open encoder). UNVERIFIED (ObjC++).
+Verification: syntax checks only for GL/Vulkan TUs; header-only streaming tests (texture_streaming, texture_resident_streamer, virtual_texture_file_streamer, virtual_texture_feedback_pass, texture_mip_residency) built and PASS standalone. GPU tests and full CTest NOT RUN.
