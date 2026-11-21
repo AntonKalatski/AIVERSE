@@ -779,7 +779,10 @@ void main() {
                     float thickness = v_wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         vec3 background = texture(tex4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u_color.r * clamp(albedo.a,0.0,1.0));
+                        // Light reaches the bed through the full column and returns along the
+                        // slanted view ray: the same optical path PRISMA uses under water.
+                        float opticalPath = thickness + length(v_wpos - opaquePos);
+                        float transmission = exp(-opticalPath * u_color.r * clamp(albedo.a,0.0,1.0));
 #if AIVERSE_NEREID_DIAGNOSTIC == 4
                         diagnosticTransmission=transmission;
 #endif
@@ -1113,7 +1116,10 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                     float thickness = in.wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         float3 background = tex4.sample(s4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u.color.r * clamp(albedo.a,0.0,1.0));
+                        // Light reaches the bed through the full column and returns along the
+                        // slanted view ray: the same optical path PRISMA uses under water.
+                        float opticalPath = thickness + length(in.wpos - opaquePos);
+                        float transmission = exp(-opticalPath * u.color.r * clamp(albedo.a,0.0,1.0));
 #if AIVERSE_NEREID_DIAGNOSTIC == 4
                         diagnosticTransmission=transmission;
 #endif
