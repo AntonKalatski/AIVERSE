@@ -15,6 +15,7 @@
 #include "engine/render/ModelLodTransition.h"
 #include "engine/render/EcsStaticModelRender.h"
 #include "engine/render/ModelShaders.h"
+#include "engine/render/ModelSamplingPolicy.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -444,6 +445,45 @@ static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
 }
 
 int main() {
+    // Resource admission must agree between pipeline compilation and binding.
+    // In particular, constrained RHIs retain base PBR instead of losing meshes.
+    {
+        auto plan = modelSamplingPlan(16,4,true,false,false,false,true,true);
+        CHECK(!plan.graph && plan.graphBudgetFallback && plan.alphaR8);
+        plan = modelSamplingPlan(16,3,true,false,false,false,false,true);
+        CHECK(plan.graph && plan.graphSlot==13);
+        plan = modelSamplingPlan(16,3,true,false,false,true,false,true);
+        CHECK(!plan.graph && plan.graphBudgetFallback && plan.dynamicGiSlot==13);
+        plan = modelSamplingPlan(32,4,true,false,false,true,false,true);
+        CHECK(plan.graph && plan.graphSlot==14 && plan.dynamicGiSlot==13);
+        plan = modelSamplingPlan(16,2,true,true,true,false,false,true);
+        CHECK(plan.graph && !plan.virtualTexture && plan.graphSlot==13);
+        plan = modelSamplingPlan(16,1,true,true,true,true,false,true);
+        CHECK(plan.graph && !plan.virtualTexture && plan.graphSlot==14);
+        plan = modelSamplingPlan(16,0,false,false,true,true,true,true);
+        CHECK(!plan.graph && !plan.virtualTexture && plan.alphaR8 && plan.dynamicGiSlot==13);
+        plan = modelSamplingPlan(32,4,true,true,true,true,false,true);
+        CHECK(plan.graph && plan.virtualTexture && plan.graphSlot==13);
+        CHECK(plan.atlasSlot==17 && plan.tableSlot==18 && plan.dynamicGiSlot==19);
+        plan = modelSamplingPlan(32,1,true,true,true,true,false,false);
+        CHECK(plan.graph && !plan.virtualTexture && plan.graphSlot==14);
+        plan = modelSamplingPlan(16,size_t(-1),true,true,true,true,false,true);
+        CHECK(!plan.graph && plan.graphBudgetFallback && plan.virtualTexture);
+        // Every combination keeps admitted bindings inside its advertised budget.
+        for (int slots : {16,32}) for(size_t sources=0;sources<=5;++sources)
+        for(int flags=0;flags<64;++flags) {
+            const bool graph=flags&1, usesVt=flags&2, vt=flags&4;
+            const bool gi=flags&8, alpha=flags&16, allow=flags&32;
+            const auto p=modelSamplingPlan(slots,sources,graph,usesVt,vt,gi,alpha,allow);
+            CHECK(!p.graph || p.graphSlot+int(sources)<=slots);
+            CHECK(!p.virtualTexture || (p.atlasSlot<slots && p.tableSlot<slots));
+            CHECK(!gi || p.dynamicGiSlot<slots);
+            CHECK(!p.graph || !p.alphaR8);
+            CHECK(!p.virtualTexture || (allow && vt && (!p.graph || usesVt)));
+            CHECK(!gi || !p.virtualTexture || p.dynamicGiSlot>p.tableSlot);
+        }
+    }
+
     // This process tests both serial-fenced retirement and a dedicated
     // fallback. Per-process production default remains OFF.
 #ifdef _WIN32
