@@ -72,3 +72,12 @@ Then: split `engine/render` into CMake sub-targets; shrink AGENTS.md after no-ge
   (CMakeLists.txt ~2911), `aiverse_tests` compiles them without it, so renderer tests do not cover the STRATA
   paths that ship in the client/editor. Needs an owner decision (tests on the STRATA variant, or two named
   render targets) before a shared render library.
+
+## Stage 05 (2026-11-21) — tests and registry
+- Mac `./run-tests.sh --quick --build-dir /Volumes/KINGSTON/AIVERSE-builds/arch-layers` on a3556ed01:
+  configure PASS, build PASS, CTest 362/364 PASS (aiverse_tests 967 s). FAIL, both from main:
+  `skill_audit` (missing `docs/handoff/studio-html5/NN-*.md`, same on main) and `rts_authored_pose_test`
+  (e128dfd38 feature: "authored entities not spawned"; on main the test did not even build — fixed link here,
+  logic left to its author).
+- 99611fa7d: registry schema 2 (core/partial/planned, `tests`, `gameReady`), 5 genre library suites (+4 examples)
+  moved into the root CTest, `genre_registry` check. Build/run of those new root targets: NOT RUN yet.
