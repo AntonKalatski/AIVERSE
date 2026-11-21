@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development diary: TerraWeave · AIVERSE</title>
+<meta name="description" content="Every stage of TerraWeave with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../devblog-terraweave.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="devlog.html" data-nav="devlog" aria-current="page">Devlog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
+</div>
+<a class="lang-switch" href="../devblog-terraweave.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">Engine systems</a> / <a href="system-terraweave.html">TerraWeave</a> / Diary</p><h1>Development diary: TerraWeave</h1><p>Every stage of TerraWeave with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.</p></div><div class="dl-stats"><div><strong>2</strong><span>stages</span></div><div><strong class="blog-stat-date">Nov 21, 2026</strong><span>latest</span></div></div></section><ol class="blog-list"><li class="blog-post" id="2026-11-21-terraweave-ground-detail"><time class="blog-date mono" datetime="2026-11-21">Nov 21, 2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-in-progress">In progress</span><span>agent-wind-masks · 18f16ca16</span></div><h2>TERRA ground without tiling or blotches</h2><p class="summary">Up close the ground samples grass, sand and rock from shared world-space detail layers instead of the baked tile texture; a second rotated lookup and macro noise break the repeat.</p><div class="blog-media n2"><figure><a href="../media/docs/devlog/media/2026-11-21-terraweave-ground-detail/01.jpg" data-cap="Steep bank up close: detail layers without stretching or repeats"><img src="../media/docs/devlog/media/2026-11-21-terraweave-ground-detail/01.jpg" alt="Steep bank up close: detail layers without stretching or repeats" loading="lazy"></a><figcaption>Steep bank up close: detail layers without stretching or repeats</figcaption></figure><figure><a href="../media/docs/devlog/media/2026-11-21-terraweave-ground-detail/02.jpg" data-cap="The same bank in a wide shot"><img src="../media/docs/devlog/media/2026-11-21-terraweave-ground-detail/02.jpg" alt="The same bank in a wide shot" loading="lazy"></a><figcaption>The same bank in a wide shot</figcaption></figure></div><p>Previously a 64 m tile was baked into a 1024 px texture (about 6 cm per pixel) with top-down grass, which stretched into blotches on slopes. Now the tile texture only stores layer weights (bilinear) and the 4 m detail layers use dominant-axis projection, so slopes do not stretch.</p><p>Against tiling, grass and sand get a second lookup rotated ~53° and rescaled, mixed by world gradient noise, plus a two-octave brightness variation (23 m and 7 m). The graph stays within 16 samples; material graphs gain a nodeBudget of up to 192 nodes.</p><dl class="facts-list"><div><dt>Verified</dt><dd>Mac (Metal), AlpineValley review copy: close-up bank frames; shader_graph test (nodeBudget).</dd></div><div><dt>Limitations</dt><dd>Enabled on the review copy; the main AlpineValley project still uses baked textures.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/native-landscape-authoring.md">Native landscape authoring</a></div></article></li><li class="blog-post" id="2026-11-21-terraweave-forest-impostors"><time class="blog-date mono" datetime="2026-11-21">Nov 21, 2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-in-progress">In progress</span><span>agent-wind-masks · c304a51cd</span></div><h2>TerraWeave forest: a whole tree per draw, impostors in the distance</h2><p class="summary">Identical trees now render as one instanced draw per detail level instead of one draw per branch, and distant trees use impostors baked from the near model.</p><div class="blog-media n2"><figure><a href="../media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/01.jpg" data-cap="Distant forest: impostors baked from the near models"><img src="../media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/01.jpg" alt="Distant forest: impostors baked from the near models" loading="lazy"></a><figcaption>Distant forest: impostors baked from the near models</figcaption></figure><figure><a href="../media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/02.jpg" data-cap="Near trees: one model per tree, hierarchical wind"><img src="../media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/02.jpg" alt="Near trees: one model per tree, hierarchical wind" loading="lazy"></a><figcaption>Near trees: one model per tree, hierarchical wind</figcaption></figure></div><p>With hierarchical wind a tree becomes one model with three tiers (full, reduced, minimal); FloraView picks the tier and Renderer3D instances identical trees per primitive. A forest frame went from ~6000 draws to 110–177.</p><p>The impostor atlas is baked by rasterising the near model with 2×2 supersampling and colour bleeding, so a distant tree keeps its silhouette and crown colour.</p><dl class="facts-list"><div><dt>Verified</dt><dd>Mac (Metal), editor: same-scene draw call and GPU time measurements before/after; tests wind_rig, terraweave_model, terraweave_forest_scene.</dd></div><div><dt>Limitations</dt><dd>Static glTF trees from older exports (as in AlpineValley) still have no LOD chains; horizon-wide impostor grouping is still being verified.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/native-landscape-authoring.md">TerraWeave</a></div></article></li></ol><p class="blog-first mono">first entry: Nov 21, 2026</p><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · data: docs/devlog in the repository</small>
+</div>
+</footer>
+<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>
+</body>
+</html>

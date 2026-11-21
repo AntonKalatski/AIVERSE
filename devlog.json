@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T15:21:38+00:00",
+ "generated": "2026-11-21T15:32:31+00:00",
  "lang": "ru",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -110,6 +110,72 @@
    "author": "vivid"
   },
   {
+   "id": "2026-11-21-terraweave-ground-detail",
+   "date": "2026-11-21",
+   "system": "terraweave",
+   "title": "Земля TERRA без тайлинга и клякс",
+   "summary": "Вблизи земля берёт траву, песок и скалу из общих детальных слоёв в мировых координатах, а не из запечённой текстуры тайла; повтор ломают второй повёрнутый сэмпл и макрошум.",
+   "body": [
+    "Раньше тайл 64 м был запечён в текстуру 1024 px (около 6 см на пиксель), а трава проецировалась только сверху, поэтому на склонах растягивалась в кляксы. Теперь текстура тайла хранит только веса слоёв (билинейно), детальные слои 4 м проецируются по доминирующей оси, поэтому склон не растягивается.",
+    "Против тайлинга трава и песок получают второй сэмпл, повёрнутый на ~53° и отмасштабированный, смешанный по мировому градиентному шуму, плюс двухоктавная вариация яркости (23 м и 7 м). Граф укладывается в 16 выборок; для материалов добавлен nodeBudget до 192 узлов."
+   ],
+   "status": "in-progress",
+   "verified": "Mac (Metal), ревью‑копия AlpineValley: кадры берега вплотную; тест shader_graph (nodeBudget).",
+   "limits": "Включено на ревью‑копии; основной проект AlpineValley ещё на запечённых текстурах.",
+   "branch": "agent-wind-masks",
+   "commit": "18f16ca16",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-21-terraweave-ground-detail/01.jpg",
+     "caption": "Крутой берег вплотную: детальные слои без растяжения и повтора"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-21-terraweave-ground-detail/02.jpg",
+     "caption": "Тот же берег в общем плане"
+    }
+   ],
+   "links": [
+    {
+     "title": "Native landscape authoring",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/native-landscape-authoring.md"
+    }
+   ],
+   "author": "agent-wind-masks"
+  },
+  {
+   "id": "2026-11-21-terraweave-forest-impostors",
+   "date": "2026-11-21",
+   "system": "terraweave",
+   "title": "Лес TerraWeave: дерево целиком в один вызов, импостеры вдали",
+   "summary": "Одинаковые деревья теперь рисуются одним инстансированным вызовом на уровень детализации вместо отдельного вызова на каждую ветку, а дальние деревья — импостерами, запечёнными из ближней модели.",
+   "body": [
+    "При иерархическом ветре дерево собирается в одну модель с тремя уровнями (полный, упрощённый, минимальный), уровень выбирает FloraView, а Renderer3D инстансирует одинаковые деревья по примитиву. В кадре с лесом вызовов стало 110–177 вместо ~6000.",
+    "Импостер больше не рисуется отдельной упрощённой графикой: атлас запекается растеризацией ближней модели с 2×2 сглаживанием и протеканием цвета по краям, поэтому вдали дерево узнаётся по силуэту и цвету кроны."
+   ],
+   "status": "in-progress",
+   "verified": "Mac (Metal), редактор: замеры draw calls и GPU‑времени в одной сцене до/после; тесты wind_rig, terraweave_model, terraweave_forest_scene.",
+   "limits": "Статические glTF‑деревья старых экспортов (как в AlpineValley) пока без цепочек LOD; группировка импостеров до горизонта ещё проверяется.",
+   "branch": "agent-wind-masks",
+   "commit": "c304a51cd",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/01.jpg",
+     "caption": "Дальний лес: импостеры, запечённые из ближних моделей"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/02.jpg",
+     "caption": "Ближние деревья: одна модель на дерево, иерархический ветер"
+    }
+   ],
+   "links": [
+    {
+     "title": "TerraWeave",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/native-landscape-authoring.md"
+    }
+   ],
+   "author": "agent-wind-masks"
+  },
+  {
    "id": "2026-11-21-strata-debug-view",
    "date": "2026-11-21",
    "system": "strata",
@@ -182,6 +248,39 @@
     }
    ],
    "author": "site"
+  },
+  {
+   "id": "2026-11-21-nereid-turbidity",
+   "date": "2026-11-21",
+   "system": "nereid",
+   "title": "NEREID: мутность воды снаружи и под водой",
+   "summary": "У воды появился параметр turbidity (и цвет ила): одно значение одинаково меняет вид сверху и видимость при погружении.",
+   "body": [
+    "resolvedWaterOptics() превращает мутность в общую экстинкцию, молочный цвет взвеси и долю рассеяния; их читают и шейдер поверхности, и подводный вид PRISMA. Сверху вода считает реальный оптический путь — спуск света к дну плюс наклонный луч взгляда, поэтому мутная вода и снаружи выглядит мутной, а не прозрачной.",
+    "При 0 вода как раньше. Параметр задаётся в стиле поверхности, в компоненте NereidWater и в каскадах, проверяется и входит в ключи кэша."
+   ],
+   "status": "done",
+   "verified": "Mac (Metal), ревью‑копия AlpineValley: одинаковые кадры сверху и под водой при 0 / 0.25 / 0.6; тест ecs_nereid_renderer_contract.",
+   "limits": null,
+   "branch": "agent-wind-masks",
+   "commit": "4a59b9212",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-21-nereid-turbidity/01.jpg",
+     "caption": "Мутность 0 / 0.25 / 0.6: сверху (вверху) и под водой (внизу)"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-21-nereid-turbidity/02.jpg",
+     "caption": "Мутность 0.25: дно уходит в бирюзовую толщу"
+    }
+   ],
+   "links": [
+    {
+     "title": "NEREID handoff",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/nereid/HANDOFF.md"
+    }
+   ],
+   "author": "agent-wind-masks"
   },
   {
    "id": "2026-11-21-lens-physical-lens",

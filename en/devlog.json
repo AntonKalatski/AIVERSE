@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T15:21:38+00:00",
+ "generated": "2026-11-21T15:32:31+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -110,6 +110,72 @@
    "author": "vivid"
   },
   {
+   "id": "2026-11-21-terraweave-ground-detail",
+   "date": "2026-11-21",
+   "system": "terraweave",
+   "title": "TERRA ground without tiling or blotches",
+   "summary": "Up close the ground samples grass, sand and rock from shared world-space detail layers instead of the baked tile texture; a second rotated lookup and macro noise break the repeat.",
+   "body": [
+    "Previously a 64 m tile was baked into a 1024 px texture (about 6 cm per pixel) with top-down grass, which stretched into blotches on slopes. Now the tile texture only stores layer weights (bilinear) and the 4 m detail layers use dominant-axis projection, so slopes do not stretch.",
+    "Against tiling, grass and sand get a second lookup rotated ~53° and rescaled, mixed by world gradient noise, plus a two-octave brightness variation (23 m and 7 m). The graph stays within 16 samples; material graphs gain a nodeBudget of up to 192 nodes."
+   ],
+   "status": "in-progress",
+   "verified": "Mac (Metal), AlpineValley review copy: close-up bank frames; shader_graph test (nodeBudget).",
+   "limits": "Enabled on the review copy; the main AlpineValley project still uses baked textures.",
+   "branch": "agent-wind-masks",
+   "commit": "18f16ca16",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-terraweave-ground-detail/01.jpg",
+     "caption": "Steep bank up close: detail layers without stretching or repeats"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-terraweave-ground-detail/02.jpg",
+     "caption": "The same bank in a wide shot"
+    }
+   ],
+   "links": [
+    {
+     "title": "Native landscape authoring",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/native-landscape-authoring.md"
+    }
+   ],
+   "author": "agent-wind-masks"
+  },
+  {
+   "id": "2026-11-21-terraweave-forest-impostors",
+   "date": "2026-11-21",
+   "system": "terraweave",
+   "title": "TerraWeave forest: a whole tree per draw, impostors in the distance",
+   "summary": "Identical trees now render as one instanced draw per detail level instead of one draw per branch, and distant trees use impostors baked from the near model.",
+   "body": [
+    "With hierarchical wind a tree becomes one model with three tiers (full, reduced, minimal); FloraView picks the tier and Renderer3D instances identical trees per primitive. A forest frame went from ~6000 draws to 110–177.",
+    "The impostor atlas is baked by rasterising the near model with 2×2 supersampling and colour bleeding, so a distant tree keeps its silhouette and crown colour."
+   ],
+   "status": "in-progress",
+   "verified": "Mac (Metal), editor: same-scene draw call and GPU time measurements before/after; tests wind_rig, terraweave_model, terraweave_forest_scene.",
+   "limits": "Static glTF trees from older exports (as in AlpineValley) still have no LOD chains; horizon-wide impostor grouping is still being verified.",
+   "branch": "agent-wind-masks",
+   "commit": "c304a51cd",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/01.jpg",
+     "caption": "Distant forest: impostors baked from the near models"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-terraweave-forest-impostors/02.jpg",
+     "caption": "Near trees: one model per tree, hierarchical wind"
+    }
+   ],
+   "links": [
+    {
+     "title": "TerraWeave",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/native-landscape-authoring.md"
+    }
+   ],
+   "author": "agent-wind-masks"
+  },
+  {
    "id": "2026-11-21-strata-debug-view",
    "date": "2026-11-21",
    "system": "strata",
@@ -182,6 +248,39 @@
     }
    ],
    "author": "site"
+  },
+  {
+   "id": "2026-11-21-nereid-turbidity",
+   "date": "2026-11-21",
+   "system": "nereid",
+   "title": "NEREID: water turbidity above and below the surface",
+   "summary": "Water gains a turbidity parameter (with a silt colour): one value changes both the look from above and the visibility when diving.",
+   "body": [
+    "resolvedWaterOptics() turns turbidity into shared extinction, a milky silt colour and a scattering share; both the surface shader and PRISMA's underwater view read them. From above the water uses the real optical path — light down to the bed plus the slanted view ray — so turbid water also looks turbid from outside.",
+    "At 0 the water looks as before. The parameter lives in the surface style, the NereidWater component and cascades, is validated and is part of cache keys."
+   ],
+   "status": "done",
+   "verified": "Mac (Metal), AlpineValley review copy: identical frames above and under water at 0 / 0.25 / 0.6; ecs_nereid_renderer_contract test.",
+   "limits": null,
+   "branch": "agent-wind-masks",
+   "commit": "4a59b9212",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-nereid-turbidity/01.jpg",
+     "caption": "Turbidity 0 / 0.25 / 0.6: from above (top) and under water (bottom)"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-nereid-turbidity/02.jpg",
+     "caption": "Turbidity 0.25: the bed fades into teal depth"
+    }
+   ],
+   "links": [
+    {
+     "title": "NEREID handoff",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/nereid/HANDOFF.md"
+    }
+   ],
+   "author": "agent-wind-masks"
   },
   {
    "id": "2026-11-21-lens-physical-lens",
