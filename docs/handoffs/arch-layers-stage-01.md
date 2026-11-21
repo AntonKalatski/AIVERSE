@@ -60,3 +60,15 @@ Then: split `engine/render` into CMake sub-targets; shrink AGENTS.md after no-ge
 - L1 is closed; allowlist = 19 genre-host edges (G3 16, G4 3) owned by the no-genre work.
 - g++ -fsyntax-only: all moved headers and forwarders PASS except pre-existing failures that also fail on
   the parent commit (gcc size_t lambda in TerraWeaveForestEcology.h; box3d include path not given).
+
+## Stage 04 (2026-11-21)
+- AGENTS.md 5668 -> 1098 lines, area sections verbatim in `docs/agents/*.md` (8338847d5); no-genre AGENTS wording
+  applied first (09c136ed6); worktree prune rule (b0b46a766).
+- Merged origin/main (d7a92d581): main had changed 5 moved headers (NEREID Erosion/FloodRouting/FlowObstacles,
+  MotionWeaveWorkers, EnhancedInput) and TerraWeaveSedimentEcs; their diffs were re-applied at the new paths.
+- main build fixes found on the Mac: BwAI PS save (6a12c54fd, 367b5e39e), rts_authored_pose_test link (50f9edabb).
+- Render finding, NOT changed: `Renderer3D*.cpp`, `GeometryScene.cpp`, `Prisma.cpp`, `Lights.cpp` are compiled
+  twice because they are two variants: `aiverse_runtime` defines `AIVERSE_STRATA_STAGING_ENABLED=1`
+  (CMakeLists.txt ~2911), `aiverse_tests` compiles them without it, so renderer tests do not cover the STRATA
+  paths that ship in the client/editor. Needs an owner decision (tests on the STRATA variant, or two named
+  render targets) before a shared render library.
