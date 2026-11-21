@@ -106,6 +106,7 @@
 - (void)sceneMarqueeEndFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode;
 - (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sceneSelectionAction:(const char*)method;
+- (void)placeMetalView:(NSView*)view x:(double)x y:(double)y width:(double)width height:(double)height pixelsW:(int)pixelsW pixelsH:(int)pixelsH;
 - (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
@@ -957,13 +958,10 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         rect.dpr=params["dpr"].toDouble(1);rect.visible=params.getBool("visible");
         gamePlacement_=aiverse::studio::viewportPlacement(rect,web_.bounds.size.width,
             web_.bounds.size.height,window_.backingScaleFactor);
-        gameViewport_.hidden=!gamePlacement_.visible;
-        if(gamePlacement_.visible) {
-            gameViewport_.frame=NSMakeRect(gamePlacement_.x,gamePlacement_.y,gamePlacement_.width,gamePlacement_.height);
-            CAMetalLayer* layer=(CAMetalLayer*)gameViewport_.layer;
-            layer.contentsScale=window_.backingScaleFactor;
-            layer.drawableSize=CGSizeMake(gamePlacement_.pixelsW,gamePlacement_.pixelsH);
-        }else if(game_)game_->suspend();
+        if(gameViewport_.hidden!=!gamePlacement_.visible)gameViewport_.hidden=!gamePlacement_.visible;
+        if(gamePlacement_.visible) [self placeMetalView:gameViewport_ x:gamePlacement_.x y:gamePlacement_.y
+            width:gamePlacement_.width height:gamePlacement_.height pixelsW:gamePlacement_.pixelsW pixelsH:gamePlacement_.pixelsH];
+        else if(game_)game_->suspend();
         return;
     }
     aiverse::studio::ViewportRect rect;
@@ -975,14 +973,20 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     NSRect webBounds=web_.bounds;
     placement_=aiverse::studio::viewportPlacement(rect,
         webBounds.size.width,webBounds.size.height,window_.backingScaleFactor);
-    viewport_.hidden=!placement_.visible;
+    if (viewport_.hidden!=!placement_.visible) viewport_.hidden=!placement_.visible;
     if (!placement_.visible) readyEmitted_=NO;
-    if (placement_.visible) {
-        viewport_.frame=NSMakeRect(placement_.x,placement_.y,placement_.width,placement_.height);
-        CAMetalLayer* layer=(CAMetalLayer*)viewport_.layer;
-        layer.contentsScale=window_.backingScaleFactor;
-        layer.drawableSize=CGSizeMake(placement_.pixelsW,placement_.pixelsH);
-    }
+    if (placement_.visible) [self placeMetalView:viewport_ x:placement_.x y:placement_.y
+        width:placement_.width height:placement_.height pixelsW:placement_.pixelsW pixelsH:placement_.pixelsH];
+}
+// Moving the view or resizing its drawable repaints the window: only on real change.
+- (void)placeMetalView:(NSView*)view x:(double)x y:(double)y width:(double)width height:(double)height
+               pixelsW:(int)pixelsW pixelsH:(int)pixelsH {
+    const NSRect frame=NSMakeRect(x,y,width,height);
+    if (!NSEqualRects(view.frame,frame)) view.frame=frame;
+    CAMetalLayer* layer=(CAMetalLayer*)view.layer;
+    if (layer.contentsScale!=window_.backingScaleFactor) layer.contentsScale=window_.backingScaleFactor;
+    const CGSize size=CGSizeMake(pixelsW,pixelsH);
+    if (!CGSizeEqualToSize(layer.drawableSize,size)) layer.drawableSize=size;
 }
 - (void)webView:(WKWebView*)view didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {
     (void)view; (void)navigation;

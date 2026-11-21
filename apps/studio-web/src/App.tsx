@@ -165,17 +165,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', shortcut);
   }, [busy, connected, snapshot, historyAction, switchWorkspace]);
 
+  // Selection is cheap and must not flash every control as disabled (no global busy).
   const select = async (id: string | null, mode: 'replace' | 'add' | 'toggle' = 'replace') => {
-    setBusy(true);
     try { setSnapshot(await invoke('studio.select', { id, mode })); setError(''); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
   };
   const selectIds = async (ids: string[], mode: 'replace' | 'add' | 'toggle' = 'replace') => {
-    setBusy(true);
     try { setSnapshot(await invoke('studio.select', { ids, mode })); setError(''); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
   };
   const changeProperty = async (key: string, value: string | number | boolean, componentId?: string) => {
     const entityId = inspectorPin?.entity.id ?? snapshot?.selectedId;

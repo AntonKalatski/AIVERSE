@@ -32,3 +32,18 @@ export function watchOverlays(changed: () => void): () => void {
     if (frame) cancelAnimationFrame(frame);
   };
 }
+
+/**
+ * Viewport rectangles are re-measured on every DOM mutation (selection highlights,
+ * hover…). Re-applying an unchanged rect makes the host move the Metal view and
+ * reallocate its drawable, which repaints the whole window — so only changes go out.
+ */
+const lastViewportRect = new Map<string, string>();
+export function viewportRectChanged(id: string, rect: { x: number; y: number; width: number; height: number; dpr: number; visible: boolean }): boolean {
+  const r = (v: number) => Math.round(v * 2) / 2;
+  const key = rect.visible ? [r(rect.x), r(rect.y), r(rect.width), r(rect.height), rect.dpr].join(',') : 'hidden';
+  if (lastViewportRect.get(id) === key) return false;
+  lastViewportRect.set(id, key);
+  return true;
+}
+export function forgetViewportRect(id: string): void { lastViewportRect.delete(id); }

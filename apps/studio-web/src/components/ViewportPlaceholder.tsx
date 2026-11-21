@@ -4,7 +4,7 @@ import { Box } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import { SCENE_TOOL_KEYS } from './SceneToolbar';
 import SceneAxisGizmo from './SceneAxisGizmo';
-import { overlayBlocks, watchOverlays } from '../nativeOverlay';
+import { forgetViewportRect, overlayBlocks, viewportRectChanged, watchOverlays } from '../nativeOverlay';
 import {
   DEFAULT_SCENE_CAMERA, dragZoomAmount, flyStep, isSceneCameraState, navigationFor, stepFlySpeed,
   type SceneCameraState, type SceneNavigation
@@ -62,15 +62,17 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
         frame = 0;
         if (closed) return;
         const bounds = host.getBoundingClientRect();
-        void invoke('studio.viewportRect', {
-          id: 'scene',
+        const rect = {
           x: bounds.left, y: bounds.top,
           width: bounds.width, height: bounds.height,
           dpr: window.devicePixelRatio || 1,
           // Hidden while an HTML dialog/menu overlaps it: the Metal view would cover it.
           visible: active && document.visibilityState === 'visible' &&
                    bounds.width > 16 && bounds.height > 16 && !overlayBlocks(bounds)
-        }).catch(error => console.warn('AIVERSE viewport layout:', error));
+        };
+        if (!viewportRectChanged('scene', rect)) return;
+        void invoke('studio.viewportRect', { id: 'scene', ...rect })
+          .catch(error => { forgetViewportRect('scene'); console.warn('AIVERSE viewport layout:', error); });
       });
     };
     const stopOverlays = watchOverlays(update);
@@ -89,6 +91,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       window.removeEventListener('scroll', update, true);
       document.removeEventListener('visibilitychange', update);
       // On tab switch/unmount, remove native surface even if no further resize event occurs.
+      forgetViewportRect('scene');
       void invoke('studio.viewportRect', {
         id: 'scene', x: 0, y: 0, width: 0, height: 0, dpr: 1, visible: false
       }).catch(() => {});

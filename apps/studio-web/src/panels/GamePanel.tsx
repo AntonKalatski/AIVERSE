@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { overlayBlocks, watchOverlays } from '../nativeOverlay';
+import { overlayBlocks, watchOverlays, viewportRectChanged, forgetViewportRect } from '../nativeOverlay';
 import { Play, Square, Pause, StepForward, RotateCcw } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioGameState, StudioGameDevice, StudioGameDeviceOption } from '../types';
@@ -48,8 +48,10 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
       cancelAnimationFrame(frame);
       frame=requestAnimationFrame(()=>{
         const b=host.getBoundingClientRect();
-        void invoke('studio.viewportRect',{id:'game',x:b.left,y:b.top,width:b.width,height:b.height,
-          dpr:window.devicePixelRatio||1,visible:!!state?.active && document.visibilityState==='visible' && b.width>16 && b.height>16 && !overlayBlocks(b)}).catch(e=>setError(String(e)));
+        const rect={x:b.left,y:b.top,width:b.width,height:b.height,
+          dpr:window.devicePixelRatio||1,visible:!!state?.active && document.visibilityState==='visible' && b.width>16 && b.height>16 && !overlayBlocks(b)};
+        if(!viewportRectChanged('game',rect))return;
+        void invoke('studio.viewportRect',{id:'game',...rect}).catch(e=>{forgetViewportRect('game');setError(String(e));});
       });
     };
     const stopOverlays=watchOverlays(update);
@@ -60,6 +62,7 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
       cancelAnimationFrame(frame);observer.disconnect();stopOverlays();
       window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);
       document.removeEventListener('visibilitychange',update);
+      forgetViewportRect('game');
       void invoke('studio.viewportRect',{id:'game',x:0,y:0,width:0,height:0,dpr:1,visible:false}).catch(()=>{});
     };
   },[connected,state?.active]);
