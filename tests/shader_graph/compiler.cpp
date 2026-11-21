@@ -68,6 +68,13 @@ int main(){try {
     quality.set("minQuality",Json::string("medium"));quality.set("domain",Json::string("particle"));rejects(quality);
     auto normal=makeDefault("material");normal.find("outputs")->set("normal",Json::string("input"));
     require(compile(normal).outputs.count("normal")==1,"normal output lost");
+    auto heightNormal=Json::parse(R"({"version":1,"domain":"material","nodes":[{"id":"p","op":"worldPosition"},{"id":"n","op":"normal"},{"id":"h","op":"constant","value":0},{"id":"b","op":"normalFromHeight","inputs":["p","n","h"]}],"outputs":{"color":"h","normal":"b"}})");
+    auto hn=compile(heightNormal);require(hn.samples==0,"height normal unexpectedly samples a texture");
+    require(hn.glsl.find("dFdx")!=std::string::npos && hn.msl.find("dfdx")!=std::string::npos,"height normal derivatives missing");
+    heightNormal.find("outputs")->set("vertexNormal",Json::string("b"));rejects(heightNormal);
+    heightNormal.find("outputs")->erase("vertexNormal");
+    heightNormal.set("domain",Json::string("postfx"));rejects(heightNormal);
+    heightNormal.set("domain",Json::string("particle"));rejects(heightNormal);
     Json fx=Json::parse(R"({"emitters":[{"burst":1}]})");fx.find("emitters")->at(0).set("shaderGraph",makeDefault("particle"));
     fx::EffectDef def;std::vector<std::string> errors;require(fx::parseEffect(fx,"test",def,errors),"particle graph parser");
     require(def.emitters[0].shaderGraph==makeDefault("particle"),"particle graph lost");

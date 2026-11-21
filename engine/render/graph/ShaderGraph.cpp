@@ -36,7 +36,7 @@ const std::vector<Op>& catalog() {
         {"tilingOffset",3},{"rotateUV",3},{"polarUV",2},{"panner",3},{"flipbook",4},
         {"noise",1},{"gradientNoise",1},{"voronoi",1},{"checkerboard",1},
         {"luminance",1},{"desaturate",2},{"contrast",2},{"saturation",2},
-        {"linearToSrgb",1},{"srgbToLinear",1},{"normalUnpack",1},{"normalStrength",2},
+        {"linearToSrgb",1},{"srgbToLinear",1},{"normalUnpack",1},{"normalStrength",2},{"normalFromHeight",3,1,false},
         {"lessThan",2},{"greaterThan",2},{"equal",2},{"branch",3},
         {"ddx",1,7,false},{"ddy",1,7,false},{"fwidth",1,7,false}
     };
