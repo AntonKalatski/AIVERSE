@@ -10,7 +10,7 @@ constexpr float kPi = 3.14159265358979f;
 
 float3 lerp3(float3 a, float3 b, float t) { return a + (b - a) * t; }
 
-constexpr int kMaxComps = 64;
+constexpr int kMaxComps = kMaxMorphTargets; // no silent clip-channel truncation
 int channelComps(const AnimChannel& c) {
     return c.path == AnimChannel::Rotation ? 4 : c.path == AnimChannel::Weights ? std::min<int>(c.comps, kMaxComps) : 3;
 }

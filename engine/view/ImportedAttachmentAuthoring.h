@@ -4,6 +4,7 @@
 // Never touches gameplay state, simulation, animation clock or GPU fences.
 #pragma once
 #include "AppearanceAssetRegistry.h"
+#include "AttachmentLayout.h"
 #include "engine/render/ModelResourceCache.h"
 #include "engine/render/ModelAssetProvider.h"
 #include <algorithm>
@@ -40,6 +41,23 @@ public:
         render::mat4 childWorld;
         bool visible=true;
     };
+    // Canonical conversion from authored scene/prefab layout to runtime
+    // child request. Snapshot/Model ownership is still provided by the
+    // native host; layout JSON is strictly CPU authoring data.
+    static ChildRequest childFromLayout(
+            const AttachmentLayoutItem& authored,Snapshot child) {
+        if(!child || authored.model.empty() || authored.socket.empty())
+            throw std::invalid_argument(
+                "attachment layout needs a resolved child and named socket");
+        ChildRequest next;
+        next.appearance=std::move(child);
+        next.socketName=authored.socket;
+        next.local=authored.local;
+        next.childWorld=authored.childWorld;
+        next.visible=authored.enabled;
+        return next;
+    }
+
     struct Compiled {
         struct Child {
             Snapshot appearance;
