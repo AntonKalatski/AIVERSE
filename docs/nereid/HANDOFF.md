@@ -4327,3 +4327,95 @@ NEXT REQUIRED GPUstage: currentNereidWaterScene drawstillonehydraulicsvectorpert
 Ownership/gates: flowmapversionseparatefromstaticVB/IB(meshrevisiondoesNOTchangeoncurrentfield/styleonlychanges). Finitefieldmustnotrebakeoncamera/LOD. Preserveconfluence transferFlow throughprepare-timecanonicalresolver; currentdraw callbackisnotavailableatGPUprepare unlessnativehostpassesitthere. NoGPUallocationsinsideactiveencoder/drawcallback. Immutabletextureversion+CPUcaptureleaseandGpuResourceRetirementfencesneeded; capturedsecondarycameras mustpinoldfielduntilCPUreplaydoneandlastGPUfencecompleted. No borrowedowner destruction afterDevice lifetime; explicitshutdown/quarantineifcapturesremain. Bounduploads/retainedtexturebytes andreportdeferredratherthanunboundednewtextures. DoNOTstealripple/wakearrayentries, overloadnormalattributes, addglobalMeshVertexoverhead, orincreasewaterdrawspersegmentjusttofakebends.
 
 GPUacceptance: nativeflowdebugcolouratSAMEworldpoints projectedintotwocamerasandacrossLOD; actualcurvedriverfourframes(time0/1,cameraA/B), manualreverse, foamoff, vortex/grade,movingcamera, Metal+GLshaderpixels completeTRUE/pipelineFailures0. UserlatestrockrequirementstillOPEN: supportlostunderrockmustsettle/tilt/fallviaactualPHYSIS/Box3DhostandupdatedTerra colliders, notinitialscatteronly/teleportedvisualY. Broadtree/LOD/liveecology/PRISMA/deformedpicking/GI/STRATA/VIVID/site/mainremainactive. CPUperffixc8c0c108c+d71cbc24falreadyPUSHEDfeature/terraweave, ABACPU~17.1->5.155->17.1SceneMs,440LENSchecksPASS; noFPS/GPUclaim. CurrentownQA47326STOPPED(freesGPUforuser), QAartifactbinaryAfromrepeat, nativebuiltbinaryBhasCPUfix/GPUread-onlyfields. UnlockedMacconfirmedbutmouseYUndoNOTRUNduetouserperformance/flowsteering. NoCI/mainmerge/finalacceptance.
+
+
+## 2026-11-21 local river flow GPU integration and native bend validation
+
+Code ff84b6648bd3825eea62471614611fced9f196fc; GPU-test follow-up
+6402e0bbd28ceffa575a86ee283d4c1841322920, branch feature/aiv87_terrain_pbr.
+This completes the renderer connection missing from CPU stage87ea8c294.
+NereidWaterScene prepares a bounded linear signed RGBA16F world-current texture;
+Renderer3D lit meshes sample texture6 at fragment world X/Z. U0 and reflection U0
+append waterFlowRect (672B); Model/PBR U2 stays unchanged. Waves, rapid foam,
+contact-tail orientation and contact-foam advection share the local field.
+Four-second overlapping transport phases avoid unbounded current*time shear.
+Untiled fallback current uses a stable source reference rather than the camera.
+Finite fields ignore observer/selected LOD; source current/vortex edits invalidate
+flow without remeshing. Manual/automatic grade/current/vortex ownership and all
+Fixed/save/checksum schemas remain unchanged. Rebuild native callers for appended
+renderer/capture ABI. No new draw per river segment, MeshVertex field or solver.
+
+NereidFlowTextureCache bounds active+pending logical GPU payloads to32MiB and256
+versions; exact signed-half payload and bounds/dimensions equality deduplicates
+uploads. CPU capture leases pin replaced textures, followed by real GPU-fence
+retirement. Shutdown revokes replay then drains after proven GPU idle, otherwise
+quarantines handles. CameraModelSnapshot checks revocation before mesh dereference.
+CPU half payload retention is additional memory, not included in GPU payload stat.
+WorldScene supplies existing confluence/cascade/obstruction resolution only when
+those sources exist. Nonzero resolver revision is an explicit immutable-input
+promise; unversioned resolver refreshes bounded grids and deduplicates GPU bytes.
+Many dynamic bodies may refresh over multiple frames; host CPU cost/latency still
+requires measurement. Under budget failure, draw retains valid old field or uses
+stable uniform fallback; flowPending reports deferral. No atomic mesh+field GPU
+publication or new hydraulic simulation is claimed.
+
+Native investigation found origin-amplified chevrons in rapid foam: rotating
+absolute world position by a varying current tangent shifts noise phase by the
+large world coordinate. Replaced with world-anchored noise and bounded directional
+local averaging. Actual native automatic/zero-current A/B isolated the artifact;
+zero-current temporary edit was Undo-restored, no save. Final fresh QA launch has
+original disk state and the automatic inclined river. Do not rotate absolute
+world X/Z into a per-fragment tangent frame again.
+
+ACTUALLY EXECUTED on KINGSTON root terraweave-unified:
+- flow-world-foam-build.log: aiverse_editor, aiverse_studio, aiverse_renderbench,
+  aiverse_renderbench_gl, aiverse_ecs_nereid_renderer_contract_test PASS. Earlier
+  flow-final-editors-build/final-relink also PASS; final source is world-foam build.
+- ctest -R '^(nereid_flow_map|ecs_nereid_renderer_contract_test|ecs_nereid_river_grade_test|ecs_nereid_surface_mesh_test)$'
+  4/4 PASS .26s. Includes signed half(+2/-1), capture lease before GPU fence,
+  shutdown revocation,256-version cap, resolver preserve/dedupe, no finite camera/
+  LOD rebuild, manual current edit with unchanged mesh revision.
+- python3 tests/render/verify_nereid_flow.py <native/aiverse_renderbench> <flow-foam-final-metal>
+  and <native/aiverse_renderbench_gl> <flow-foam-final-gl>:11actual GPU captures
+  EACH PASS. World coordinates offset(256,128), two cameras x two times diagnostic
+  and shaded frames, farLOD, manual reverse, foam-off. All reports completeTRUE,
+  error empty; Metal pipelineFailures0, GL no API errors. Identical world points
+  across cameras/times and near/far: RGB[128,103,50] straight,[116,109,43] turned;
+  manual(-2,0,+1) RGB[77,153,114] both. Active whitewater and foam-off differ in real
+  shaded pixels; animation changes while velocity diagnostics remain fixed.
+  Earlier flow-world-final-* used rapid foam defaultOFF, so final enabled-foam
+  rerun above is required evidence. Bench revision metadata predates commits:
+  binaries were built from the working source now committed as ff84b6648.
+- check-nereid-final-glsl.py PASS14linked GLSL330/GLES300 mode0..6 variants.
+  Compilation/generated shader/temp/module artifacts all on KINGSTON.
+- aiverse_tests buildPASS flow-lens-build.log; native/aiverse_tests lens_ PASS
+  440checks0failed flow-lens-tests.log. No retained-camera Metal GPU test, Vulkan,
+  WebGL device, mobile acceptance, full suite or CI executed. GLES compile is not
+  WebGL pixel validation. No FPS/GPU speedup claim.
+
+Failed/retried commands: initial cache used stats() without Device ->compile
+failure, fixed exact API. Extended contract test initially lacked aiverse_models
+MeshBuilder link ->fixed CMake test link. New resolver test assumed negativeY,
+failed for default elevated body ->compares local surfaceY instead, rerunPASS.
+First GL capture started before executable existed ->FileNotFound; rebuilt GL,
+all final runs abovePASS. Initial clean native screenshot omitted window:scene
+and was rejected without capture ->corrected. No failed command counted asPASS.
+
+Owned unique AiverseTerraQA.app on47326 opened review-project-v24; actual clean
+1280x720 scene captures /private/tmp/forest-local-current-final.png and
+forest-local-current-close.png (also KINGSTON/flow-native-final). Final native
+water bends smoothly without old foam chevrons; these are water-fix evidence,
+NOT final art/website hero acceptance. Native source/entities/assets preserved;
+all final scene state readbacks are native-flow-final-* JSON. User editor47325
+and original dirty project untouched. GPU is also used by that user editor,
+so whole-frame GPU readings are not isolated benchmark results. Startup graph
+compilation dominates first120-frame average; do not report it as steady runtime.
+
+Next: publish code+this separate handoff to feature/terraweave with ordinary
+non-force push. Main readiness remains unmet. Under-eroded rock settling/fall is
+STILL OPEN: authored rocks are static, initial nine-point support sampling is
+not live physics. Need actual shared ECS rigid support + PHYSIS/Box3D body host
+and changed Terra colliders, not visual Y teleport. The independent cheap shader
+binding rejection CPU hotspot is still unimplemented. All broader tree/season/
+live ecology, PRISMA video, deformed picking, native Y mouse/Undo, GI/STRATA/VIVID,
+final gallery/site/main work remains active; do not infer completion from water.
