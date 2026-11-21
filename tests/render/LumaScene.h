@@ -67,6 +67,12 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
         const float3 expected={encode(energy),encode(energy*.5f),encode(energy*.25f)};
         auto receive=[&s,test,expected,stateOk](int cw,int ch,std::vector<uint8_t> px) {
             if(cw<4||ch<4||px.size()!=size_t(cw*ch*4)){s.failed=true;return;}
+            // AIVERSE_HDR_CAPTURE set: keep each case frame as <path>.luma<case>.ppm.
+            if(std::getenv("AIVERSE_HDR_CAPTURE")) {
+                std::ofstream f(s.path+".luma"+std::to_string(test)+".ppm",std::ios::binary);
+                f<<"P6\n"<<cw<<" "<<ch<<"\n255\n";
+                for(size_t i=0;i<px.size();i+=4)f.write(reinterpret_cast<const char*>(px.data()+i),3);
+            }
             float actual[3]={};const float target[]={expected.x,expected.y,expected.z};
             for(int y=ch/2-2;y<ch/2+2;++y)for(int x=cw/2-2;x<cw/2+2;++x)
                 for(int c=0;c<3;++c)actual[c]+=px[size_t(y*cw+x)*4+c]/(16*255.0f);
