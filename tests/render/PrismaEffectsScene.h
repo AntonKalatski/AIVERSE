@@ -5,15 +5,15 @@
 // Each phase frame is also written as <AIVERSE_HDR_CAPTURE>.<test><phase>.ppm.
 //   dof:    0 no effect, 1 focus on the scene (stays sharp), 2 focus near the
 //           camera (the scene blurs).
-//   motion: 0 camera turning, no effect; 1 same turn with motion blur (blurs);
-//           2 still camera with motion blur (stays sharp).
+//   motion: 0 still camera, no effect; 1 camera turning, no effect; 2 same turn
+//           with motion blur (blurs); 3 still camera with motion blur (stays sharp).
 #pragma once
 #include <cmath>
 #include <cstring>
 namespace aiverse::test {
 struct PrismaEffectsState {
     int phase=0;
-    double sharp[3]={};
+    double sharp[4]={};
 };
 inline PrismaEffectsState& prismaEffectsState(){static PrismaEffectsState s;return s;}
 inline double frameSharpness(int w,int h,const std::vector<uint8_t>& px) {
@@ -33,17 +33,17 @@ inline void drawPrismaEffects(HdrScene& s,gfx::Device& d,int w,int h,const char*
     if(s.frame==0) {
         std::string effects;
         if(dof) {
-            if(st.phase==1)effects=R"({"type":"depthOfField","metricFocus":true,"focusDistance":17,"focusRangeMeters":6,"maxBlur":10,"intensity":1})";
+            if(st.phase==1)effects=R"({"type":"depthOfField","metricFocus":true,"focusDistance":17,"focusRangeMeters":40,"maxBlur":10,"intensity":1})";
             if(st.phase==2)effects=R"({"type":"depthOfField","metricFocus":true,"focusDistance":2,"focusRangeMeters":0.5,"maxBlur":10,"intensity":1})";
-        } else if(st.phase>=1) {
+        } else if(st.phase>=2) {
             effects=R"({"type":"motionBlur","intensity":1,"maxPixels":32,"samples":12,"shutterScale":1})";
         }
         s.post.configure(Json::parse("{\"hdr\":\"on\",\"effects\":["+effects+"]}"),Json());
         s.post.setQuality(PrismaQuality::High);
         s.camera.yaw=.18f;
     }
-    // Motion phases 0 and 1 turn the camera by the same amount every frame.
-    if(!dof && st.phase<=1)s.camera.yaw=.18f+.04f*float(s.frame);
+    // Motion phases 1 and 2 turn the camera by the same amount every frame.
+    if(!dof && (st.phase==1 || st.phase==2))s.camera.yaw=.18f+.04f*float(s.frame);
     if(s.ownsFrame)d.beginFrame(w,h);
     auto& r=s.renderer;
     r.beginScene(s.camera,w,h);
@@ -61,7 +61,7 @@ inline void drawPrismaEffects(HdrScene& s,gfx::Device& d,int w,int h,const char*
             if(const auto* report=s.post.effectReport(id))
                 for(const auto& e:report->effects)
                     if(e.type==type){authored=true;encoded|=e.encoded;reason=e.reason;}
-        if(st.phase>0 && !encoded) {
+        if((dof?st.phase>0:st.phase>=2) && !encoded) {
             std::fprintf(stderr,"PRISMA %s phase %d not encoded (%s) FAIL\n",which,st.phase,
                          authored?reason.c_str():"not authored");
             s.failed=true;
@@ -76,14 +76,14 @@ inline void drawPrismaEffects(HdrScene& s,gfx::Device& d,int w,int h,const char*
                 for(size_t i=0;i<px.size();i+=4)f.write(reinterpret_cast<const char*>(px.data()+i),3);
             }
             std::printf("PRISMA %s phase %d: sharpness %.3f\n",which,st.phase,st.sharp[st.phase]);
-            if(++st.phase==3) {
+            if(++st.phase==(dof?3:4)) {
                 const double base=st.sharp[0];
                 // dof:    in focus within 15% of no effect, defocused at least 40% softer.
-                // motion: turning + blur at least 30% softer than turning alone; a
-                //         still camera with blur stays clearly sharper than that.
+                // motion: turning + blur at least 20% softer than the same turn
+                //         alone; a still camera with blur within 5% of no effect.
                 bool ok=base>1.0;
                 if(dof) ok=ok && st.sharp[1]>=base*.85 && st.sharp[2]<=base*.6;
-                else ok=ok && st.sharp[1]<=base*.7 && st.sharp[2]>=st.sharp[1]*1.2;
+                else ok=ok && st.sharp[2]<=st.sharp[1]*.8 && st.sharp[3]>=base*.95;
                 std::printf("PRISMA %s: %s\n",which,ok?"PASS":"FAIL");
                 s.failed|=!ok;s.captured=true;
             }

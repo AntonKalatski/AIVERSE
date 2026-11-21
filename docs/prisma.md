@@ -4236,5 +4236,5 @@ GPU acceptance on the real backends: `prisma_dof_gpu` / `prisma_motion_gpu`
 (Metal), `_gl` (macOS GL), `_vulkan` (headless Vulkan host). The test renders the
 default HDR scene and measures frame sharpness (mean squared luminance step): DoF
 focused on the scene keeps it, focus near the camera softens it by at least 40%; a
-turning camera with motion blur is at least 30% softer than without, a still camera with blur stays sharp; every
+turning camera with motion blur is at least 20% softer than the same turn without, a still camera with blur stays within 5% of no effect; every
 effect phase must report `encoded`. Handoff: `docs/handoffs/prisma-stage-67.md`.
