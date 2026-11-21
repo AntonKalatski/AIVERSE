@@ -21,10 +21,11 @@ re-point every vertex attribute per draw, and per-draw uniforms were written wit
   (Linux/Android, via `eglGetProcAddress` after a version/extension check). WebGL2 and
   GLES 3.0 keep the attribute-offset emulation. `AIVERSE_GL_NATIVE_BASE_VERTEX=0` forces it.
 - **Repeated uniform blocks** are not uploaded again within a frame (byte compare per slot).
-- **Uniform ring writes** use `glMapBufferRange(WRITE | INVALIDATE_RANGE | UNSYNCHRONIZED)`:
-  each write goes to a range unused in the current ring generation (the ring is orphaned
-  per frame and when full). `AIVERSE_GL_UNIFORM_MAP=0` returns to `glBufferSubData`.
-  WebGL2 and macOS GL keep their per-slot blocks (no mapping there).
+- **Uniform ring writes**: GLES (Android, Linux) uses the fenced per-draw pools from the
+  Android work (`AIVERSE_GL_UBO=ring|pool`). The desktop GL ring can write through
+  `glMapBufferRange(WRITE | INVALIDATE_RANGE | UNSYNCHRONIZED)` with `AIVERSE_GL_UNIFORM_MAP=1`
+  (opt-in: on Adreno 610 the unsynchronized map was slower than the pools, 150 vs 79 ms;
+  desktop drivers are not measured). WebGL2 and macOS GL keep their per-slot blocks.
 
 ## Measured (2026-11-21)
 
@@ -35,7 +36,7 @@ one texture, alternating `baseVertex`; CPU submission time, best of 5:
 | Case | Before | After |
 |---|---:|---:|
 | same uniform block every draw | 46.6 µs/draw | 0.54 µs/draw |
-| different uniform block every draw | 48.8 µs/draw | 6.8 µs/draw |
+| different uniform block every draw (ring + map, before the pools) | 48.8 µs/draw | 6.8 µs/draw |
 
 llvmpipe is a CPU driver: these show the removed driver work, not a FPS promise for a
 real GPU, ANGLE or a browser. Pixels of the 3×9 test frame (pipeline/texture/uniform
