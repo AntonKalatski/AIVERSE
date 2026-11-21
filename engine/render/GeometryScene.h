@@ -341,6 +341,8 @@ private:
                                 const Instance& instance,ModelDraw& draw);
     void updateStrataStreamingBeforeDraw(Renderer3D& renderer);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
+    // Copies STRATA policy/budget settings (not resources) for staged loads.
+    void copyStrataConfigFrom(const GeometryScene& other);
     NativePresentationRetirement retirement_;
     // Failed transactions may still own GPU models after a refused idle.
     // Retain those retirement queues for a later safe collect/shutdown.
