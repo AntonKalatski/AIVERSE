@@ -1,6 +1,7 @@
 // Hierarchical wind masks: library reuse, rig packing, reference evaluation,
 // model binding, node-tree rigs, sidecars and TerraWeave Arbor trees.
 #include "engine/render/TerraWeaveArborWind.h"
+#include "engine/render/TerraWeaveForestAdapter.h"
 #include <cstdio>
 #include <set>
 
@@ -294,6 +295,105 @@ void shaderText() {
     CHECK(g->vertexGlsl.find("SG_TEXEL0") != std::string::npos && g->vertexGlsl.find("SG_TEXEL1") != std::string::npos);
     CHECK(windRigMaxOffsetMetres({0.5f, 0, 0, 0}) > 0.5f);
 }
+
+void decodeAndParams() {
+    WindMaskLibrary lib;
+    const auto rig = buildWindRig(tree(), WindProfile{}, lib, 3);
+    std::vector<uint8_t> bytes; int w = 0, h = 0;
+    packWindRig(rig, bytes, w, h);
+    const auto back = decodeWindRig(bytes, w);
+    CHECK(back.nodes.size() == rig.nodes.size());
+    for (size_t i = 0; i < rig.nodes.size(); ++i) {
+        const auto& a = rig.nodes[i]; const auto& b = back.nodes[i];
+        CHECK(length(a.pivot - b.pivot) <= rig.unitMetres());
+        CHECK(std::abs(a.length - b.length) <= rig.unitMetres());
+        CHECK(dot(a.axis, b.axis) > 0.999f);
+        CHECK(a.parent == b.parent && a.mask == b.mask && a.depth == b.depth);
+        CHECK(std::abs(a.flex - b.flex) < 0.01f && std::abs(a.stiffness - b.stiffness) < 0.005f);
+    }
+    bool threw = false;
+    try { auto bad = bytes; bad[3] = 7; (void)decodeWindRig(bad, w); } catch (const std::invalid_argument&) { threw = true; }
+    CHECK(threw);
+    // Scene wind -> object-local parameters: yaw and uniform scale undone.
+    SceneWind sw; sw.x = 10; sw.z = 0; sw.metresPerMps = 0.05f; sw.seconds = 2;
+    const auto plain = windRigParamsForDraw(sw, mat4{});
+    CHECK(std::abs(plain.windX - 0.5f) < 1e-5f && std::abs(plain.windZ) < 1e-5f);
+    const auto yawed = windRigParamsForDraw(sw, mat4::rotateY(1.5707963f));
+    // rotateY(90) maps local +Z to world +X, so world +X wind is local +Z (or -Z per handedness).
+    CHECK(std::abs(std::abs(yawed.windZ) - 0.5f) < 1e-3f && std::abs(yawed.windX) < 1e-3f);
+    const auto scaled = windRigParamsForDraw(sw, mat4::scale({2, 2, 2}));
+    CHECK(std::abs(scaled.windX - 0.25f) < 1e-5f);
+    CHECK(!SceneWind{}.enabled() && windRigParamsForDraw(SceneWind{}, mat4{}).windX == 0);
+    // Debug programs share the vertex motion and textures.
+    for (auto v : {WindDebugView::Parts, WindDebugView::Depth, WindDebugView::Weight}) {
+        const auto g = windRigDebugGraph(v);
+        CHECK(g && g->vertexGlsl == windRigGraph()->vertexGlsl && g->textures.size() == 2);
+        CHECK(g->outputs.at("color") == "wd_color" && g->glsl.find("%VEC") == std::string::npos &&
+              g->msl.find("%VEC") == std::string::npos && g->glsl.find("%MODE%") == std::string::npos);
+        CHECK(g == windRigDebugGraph(v));
+    }
+    CHECK(!windRigDebugGraph(WindDebugView::Off) && !windRigDebugGraph(WindDebugView::Skeleton));
+}
+
+void inspection() {
+    WindMaskLibrary lib;
+    auto atlas = WindMaskAtlas::fromLibrary(lib);
+    auto m = twoNodeModel();
+    WindBinding b; WindModelSpec spec;
+    const auto rig = rigFromModelNodes(*m, spec, lib, b);
+    bindWindRig(*m, rig, *atlas, b);
+    // Simulate an upload that released CPU pixels: the registry still serves.
+    for (auto& img : m->images) img.sharedRgba.reset();
+    const auto view = findWindRig(*m);
+    CHECK(view && view->decoded.nodes.size() == 2);
+    std::vector<WindDebugLine> calm, windy;
+    windRigDebugLines(*view, mat4::translate({10, 0, 0}), {}, calm, 4);
+    CHECK(calm.size() == 8);
+    CHECK(std::abs(calm.front().a.x - 10.f) < 1e-3f);                 // world transform applied
+    CHECK((calm.front().rgba >> 24) == 0xffu);
+    windRigDebugLines(*view, mat4::translate({10, 0, 0}), {0.8f, 0, 1, 0}, windy, 4);
+    CHECK(windy.size() == calm.size() && windy.back().b.x > calm.back().b.x);
+    auto plain = twoNodeModel();
+    CHECK(!findWindRig(*plain));
+}
+
+void forest() {
+    using namespace terraweave;
+    ArborForestAdapter forest;
+    forest.enableHierarchicalWind();
+    WindProfile soft; soft.levels[0].flex = 0.6f;
+    TreeProfile profile; profile.speciesId = 7;
+    forest.setSpeciesWindProfile(7, soft);
+    forest.addPrototype(profile, 11);
+    bool threw = false;
+    try { forest.enableHierarchicalWind(); } catch (const std::logic_error&) { threw = true; }
+    CHECK(threw);
+    const auto* proto = forest.prototype(7);
+    CHECK(proto && findWindRig(*proto));
+    ForestWindState wind; wind.xCmPerSec = 900; wind.zCmPerSec = 300;
+    forest.setWind(wind);
+    forest.setPresentationTick(37);
+    FloraBatch near{7, TreeLOD::High, {}}, far{7, TreeLOD::Impostor, {}};
+    FoliageInstance tree; tree.key = 5; tree.speciesId = 7; tree.yawMilliDegrees = 90000;
+    near.instances.push_back(tree); far.instances.push_back(tree);
+    std::vector<ModelDraw> draws;
+    forest.forEachDraw({near, far}, {}, [&](const ModelDraw& d) { draws.push_back(d); });
+    CHECK(draws.size() == 2);
+    const auto& n = draws[0];
+    CHECK(n.useVertexParameters && n.nodeWorld == nullptr && n.maxVertexOffsetMetres > 0);
+    CHECK(std::abs(n.vertexParameters.x) + std::abs(n.vertexParameters.y) > 0.01f);
+    const auto& mats = n.materials ? *n.materials : n.model->materials;
+    CHECK(mats[0].shaderGraph == windRigGraph() && mats[1].shaderGraph == windRigGraph());
+    // Near tree is upright: whole-tree lean is replaced by the trunk mask.
+    CHECK(std::abs(n.world.at(1, 1) - 1.f) < 1e-5f);
+    // Without hierarchical wind the legacy path is unchanged.
+    ArborForestAdapter legacy;
+    legacy.addPrototype(profile, 11);
+    legacy.setWind(wind);
+    std::vector<ModelDraw> old;
+    legacy.forEachDraw({near}, {}, [&](const ModelDraw& d) { old.push_back(d); });
+    CHECK(old.size() == 1 && !findWindRig(*legacy.prototype(7)));
+}
 }
 
 int main() {
@@ -303,6 +403,9 @@ int main() {
     sidecar();
     arbor();
     shaderText();
+    decodeAndParams();
+    inspection();
+    forest();
     std::printf("wind rig: %s\n", failed ? "FAIL" : "PASS");
     return failed ? 1 : 0;
 }

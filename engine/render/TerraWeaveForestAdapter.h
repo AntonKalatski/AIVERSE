@@ -9,6 +9,7 @@
 #include "engine/render/TerraWeaveRootModel.h"
 #include "engine/render/TerraWeaveImpostorAtlas.h"
 #include "engine/render/TerraWeaveVertexWind.h"
+#include "engine/render/TerraWeaveArborWind.h"
 #include "engine/world/TerraWeaveWindField.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
@@ -41,16 +42,52 @@ public:
     // Build a shared procedural geometry prototype off the render thread.
     // Mesh seeds are per species: an individual FoliageInstance varies only
     // in position/yaw/scale, so the GPU can instance identical geometry.
+    // Opt-in GPU hierarchical wind (engine/render/WindRig*.h): every near
+    // tree sways trunk -> branches -> twigs -> leaves in ONE draw, with masks
+    // shared by all species and a WindProfile per species. Replaces the CPU
+    // per-branch pose arena and whole-tree lean for near trees; impostors keep
+    // the cheap crown wind. Call before the first addPrototype.
+    void enableHierarchicalWind(render::wind::WindMaskLibrary masks = {},
+                                render::wind::WindProfile defaultProfile = {}) {
+        if(!models_.empty())
+            throw std::logic_error("TerraWeave hierarchical wind: enable before addPrototype");
+        hierarchicalWind_=true;
+        windMasks_=std::move(masks);
+        windAtlas_=render::wind::WindMaskAtlas::fromLibrary(windMasks_);
+        defaultWindProfile_=std::move(defaultProfile);
+    }
+    bool hierarchicalWind() const {return hierarchicalWind_;}
+    void setSpeciesWindProfile(uint32_t speciesId,render::wind::WindProfile profile) {
+        if(models_.contains(speciesId))
+            throw std::logic_error("TerraWeave species wind profile must precede addPrototype");
+        windProfiles_[speciesId]=std::move(profile);
+    }
+    // Displacement (m) at mask 1 / flex 1 per m/s of wind, before the
+    // ForestWindState lean and flex scaling.
+    void setHierarchicalWindScale(float metresPerMps) {
+        if(!std::isfinite(metresPerMps)||metresPerMps<0||metresPerMps>0.5f)
+            throw std::invalid_argument("TerraWeave hierarchical wind scale");
+        hierarchicalWindScale_=metresPerMps;
+    }
+
     void addPrototype(const TreeProfile& profile, uint64_t meshSeed,
                       ArborMeshSettings mesh = {8, true}) {
         if (profile.speciesId == 0 || models_.contains(profile.speciesId))
             throw std::invalid_argument("TerraWeave duplicate/zero forest species");
         BranchLodSettings settings;
         settings.mesh = mesh;
-        auto model = makeArborBranchLodModel(profile, meshSeed, settings);
+        std::vector<int32_t> owners;
+        auto model = makeArborBranchLodModel(profile, meshSeed, settings,
+                                             hierarchicalWind_ ? &owners : nullptr);
         // BranchLOD nodes and the skeleton use the same ordered seed. Store
         // compact branch origins once per SPECIES, never per cosmetic tree.
         const TreeSkeleton skeleton=generateTree(profile,meshSeed,TreeLOD::High);
+        if(hierarchicalWind_) {
+            const auto found=windProfiles_.find(profile.speciesId);
+            applyArborWind(*model,skeleton,owners,
+                found!=windProfiles_.end()?found->second:defaultWindProfile_,
+                windMasks_,*windAtlas_);
+        }
         std::vector<render::float3> pivots;
         pivots.reserve(skeleton.branches.size());
         if(mesh.organicBranches) {
@@ -325,7 +362,8 @@ public:
                     draw.materials=&seasonalNearMaterials_.at(batch.speciesId);
                 }
                 draw.world = render::mat4::translate(relative);
-                if(localWindActive) {
+                const bool rigWind=hierarchicalWind_ && batch.lod!=TreeLOD::Impostor;
+                if(localWindActive && !rigWind) {
                     const auto lean=forestTreeLean(
                         windAtTree,presentationTick_,
                         instance.key ^ (uint64_t(instance.speciesId)<<32));
@@ -345,7 +383,7 @@ public:
                 // and branches. Bend each child around its own stable
                 // branch pivot while preserving parent hierarchy. More
                 // distant impostors remain on the cheap whole-tree sway.
-                if(batch.lod!=TreeLOD::Impostor &&
+                if(batch.lod!=TreeLOD::Impostor && !rigWind &&
                    windAtTree.branchFlexPermille>0 &&
                    localWindActive) {
                     const auto& pivots=branchPivots_.at(batch.speciesId);
@@ -369,13 +407,34 @@ public:
                     0x54eaa75eedc0de11ULL);
                 if (draw.persistentId == 0) draw.persistentId = 1;
                 draw.flags = render::kDrawStatic;
-                if(gpuCrownWindActive()) {
+                if(rigWind) {
+                    // One GPU pass bends trunk, branches, twigs and leaves.
+                    if(localWindActive) {
+                        render::wind::SceneWind sw;
+                        sw.x=float(windAtTree.xCmPerSec)*0.01f;
+                        sw.z=float(windAtTree.zCmPerSec)*0.01f;
+                        sw.gust=float(windAtTree.gustPermille)*0.001f;
+                        sw.metresPerMps=hierarchicalWindScale_*
+                            (float(windAtTree.maxLeanMilliDegrees)/1500.0f)*
+                            (0.25f+0.75f*float(windAtTree.branchFlexPermille)*0.001f)*
+                            (batch.lod==TreeLOD::High?1.0f:batch.lod==TreeLOD::Medium?0.8f:0.55f);
+                        auto params=render::wind::windRigParamsForDraw(sw,draw.world);
+                        constexpr double tau=6.283185307179586;
+                        const uint64_t cycle=std::max<uint32_t>(1,windAtTree.cycleTicks);
+                        const double stagger=double(detail::mix64(instance.key)%1000u)*0.001*tau;
+                        params.phase=float(std::fmod(tau*double(presentationTick_%(cycle*64u))/double(cycle)+stagger,tau*64.0));
+                        draw.vertexParameters=render::wind::windRigVertexParameters(params);
+                        draw.useVertexParameters=true;
+                        draw.maxVertexOffsetMetres=std::min(10.0f,
+                            render::wind::windRigMaxOffsetMetres(params)*scale);
+                    }
+                } else if(gpuCrownWindActive()) {
                     // Bound is also required for leafless bark-only draws:
                     // graph materials remain attached to the model even when
                     // primitiveMaterialFilter suppresses the leaf primitive.
                     draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
                 }
-                if(gpuCrownWindActive() && localWindActive &&
+                if(!rigWind && gpuCrownWindActive() && localWindActive &&
                    canopyCover>0u) {
                     const float tier=batch.lod==TreeLOD::High ? 1.0f :
                                      batch.lod==TreeLOD::Medium ? 0.75f :
@@ -518,7 +577,8 @@ private:
             if(materials.size()>1) {
                 tint(materials[1],canopyCoverPermille(
                     phenology_,evergreen_.at(id)));
-                if(gpuCrownWindActive())
+                // Rigged near trees keep their hierarchical wind graph.
+                if(gpuCrownWindActive() && !hierarchicalWind_)
                     materials[1].shaderGraph=canopyWindGraph();
             }
             seasonalNearMaterials_.emplace(id,std::move(materials));
@@ -557,6 +617,12 @@ private:
     std::map<uint32_t,std::vector<render::float3>> branchPivots_;
     std::map<uint32_t,bool> evergreen_;
     std::map<uint32_t,uint64_t> prototypeSeeds_;
+    bool hierarchicalWind_=false;
+    float hierarchicalWindScale_=0.035f;
+    render::wind::WindMaskLibrary windMasks_;
+    std::shared_ptr<render::wind::WindMaskAtlas> windAtlas_;
+    render::wind::WindProfile defaultWindProfile_;
+    std::map<uint32_t,render::wind::WindProfile> windProfiles_;
     std::map<uint32_t,RootProfile> rootProfiles_;
     std::map<std::pair<uint32_t,uint64_t>,RootState> rootStates_;
     std::map<std::pair<uint32_t,uint32_t>,

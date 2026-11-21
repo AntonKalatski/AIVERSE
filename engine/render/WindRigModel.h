@@ -81,6 +81,26 @@ struct WindBindReport {
 };
 
 namespace model_detail {
+// Uploads may release CPU pixels; tools still need the bytes. Small,
+// content-keyed and shared: 16 B per part, one entry per unique rig/atlas.
+inline std::shared_ptr<const std::vector<uint8_t>> windBytes(uint64_t key,
+        std::shared_ptr<const std::vector<uint8_t>> bytes = {}) {
+    static std::mutex lock;
+    static std::map<uint64_t, std::shared_ptr<const std::vector<uint8_t>>> table;
+    std::lock_guard<std::mutex> guard(lock);
+    if (bytes) {
+        if (table.size() >= 8192 && !table.count(key)) table.erase(table.begin());
+        table[key] = bytes;
+        return bytes;
+    }
+    auto it = table.find(key);
+    return it == table.end() ? nullptr : it->second;
+}
+inline uint64_t keyFromImageName(const std::string& name) {
+    const auto at = name.find('#');
+    if (at == std::string::npos) return 0;
+    try { return std::stoull(name.substr(at + 1)); } catch (...) { return 0; }
+}
 inline Image dataImage(const std::string& name, std::shared_ptr<const std::vector<uint8_t>> rgba,
                        int w, int h) {
     Image img;
@@ -121,6 +141,8 @@ inline WindBindReport bindWindRig(Model& model, const WindRig& rig, const WindMa
     int w = 0, h = 0;
     packWindRig(rig, *bytes, w, h);
     rep.rigKey = windTextureKey(*bytes);
+    model_detail::windBytes(rep.rigKey, bytes);
+    model_detail::windBytes(atlas.key(), atlas.rgba());
     const int rigImage = int(model.images.size());
     model.images.push_back(model_detail::dataImage("wind-rig#" + std::to_string(rep.rigKey), bytes, w, h));
     const int atlasImage = int(model.images.size());
@@ -327,6 +349,79 @@ inline WindRig rigFromModelNodes(Model& model, const WindModelSpec& spec, const 
     return buildWindRig(desc, spec.profile, lib, spec.seed);
 }
 
+// --------------------------------------------------------- inspection
+
+struct ModelWindRigView {
+    std::shared_ptr<const std::vector<uint8_t>> rig, atlas;
+    int rigWidth = 0, atlasWidth = 0;
+    WindRig decoded;
+};
+
+// The rig bound to a model (first windRigGraph material), from the shared
+// CPU bytes the images keep after upload. nullopt if the model is not rigged.
+inline std::optional<ModelWindRigView> findWindRig(const Model& model) {
+    for (const auto& m : model.materials) {
+        if (m.shaderGraph != windRigGraph()) continue;
+        const int r = m.graphTextures[0], a = m.graphTextures[1];
+        if (r < 0 || a < 0 || size_t(r) >= model.images.size() || size_t(a) >= model.images.size()) continue;
+        const auto& ri = model.images[size_t(r)];
+        const auto& ai = model.images[size_t(a)];
+        ModelWindRigView v;
+        v.rig = ri.sharedRgba ? ri.sharedRgba : model_detail::windBytes(model_detail::keyFromImageName(ri.name));
+        v.atlas = ai.sharedRgba ? ai.sharedRgba : model_detail::windBytes(model_detail::keyFromImageName(ai.name));
+        if (!v.rig || !v.atlas) continue;
+        v.rigWidth = ri.width; v.atlasWidth = ai.width;
+        v.decoded = decodeWindRig(*v.rig, v.rigWidth);
+        return v;
+    }
+    return std::nullopt;
+}
+
+struct WindDebugLine { V3 a, b; uint32_t rgba = 0xffffffffu; };
+
+// Skeleton debug view: every part as a polyline pivot -> tip, displaced by the
+// same reference math as the GPU, coloured by depth, brightness = mask value.
+// `world` maps object space to the scene; `segments` per part (2..16).
+inline void windRigDebugLines(const ModelWindRigView& view, const render::mat4& world,
+                              const WindDrawParams& params, std::vector<WindDebugLine>& out,
+                              int segments = 6, size_t maxParts = 4096) {
+    segments = std::clamp(segments, 2, 16);
+    const PackedWindRig eval(*view.rig, view.rigWidth, *view.atlas, view.atlasWidth);
+    static const uint32_t palette[5][3] = {{160, 96, 46}, {242, 199, 38}, {51, 217, 89}, {51, 191, 255}, {230, 80, 230}};
+    const auto toWorld = [&](V3 p) {
+        const render::float4 w = world * render::float4{p.x, p.y, p.z, 1};
+        return V3{w.x, w.y, w.z};
+    };
+    const auto& nodes = view.decoded.nodes;
+    // Same mask bytes as the shader, for brightness.
+    const auto maskAt = [&](uint8_t mask, float t) {
+        MaskSamples m{};
+        for (int s = 0; s < kMaskSamples; ++s) {
+            const size_t at = (size_t(mask) * kMaskTexels) * 4 + size_t(s);
+            m[size_t(s)] = at < view.atlas->size() ? (*view.atlas)[at] : 0;
+        }
+        return sampleMask(m, t);
+    };
+    for (size_t i = 0; i < nodes.size() && i < maxParts; ++i) {
+        const auto& n = nodes[i];
+        const auto* c = palette[std::min<int>(n.depth, 4)];
+        V3 prev{};
+        for (int k = 0; k <= segments; ++k) {
+            const float t = float(k) / float(segments);
+            const V3 p = n.pivot + n.axis * (n.length * t);
+            const V3 moved = p + eval.offset(p, {0, 1, 0}, encodeWindVertex(uint16_t(i), 0, 0), params);
+            const V3 w = toWorld(moved);
+            if (k) {
+                const float m = maskAt(n.mask, t - 0.5f / float(segments));
+                const float b = 0.35f + 0.65f * m;
+                out.push_back({prev, w, uint32_t(c[0] * b) | (uint32_t(c[1] * b) << 8) |
+                                        (uint32_t(c[2] * b) << 16) | 0xff000000u});
+            }
+            prev = w;
+        }
+    }
+}
+
 // ------------------------------------------------------------- sidecars
 
 // Process-wide reuse: one parsed library/atlas per masks.json content.
@@ -341,7 +436,11 @@ inline std::shared_ptr<const WindProjectData> windProjectData(const FileReader& 
     static std::mutex lock;
     static std::map<std::string, std::shared_ptr<const WindProjectData>> cache;
     std::string masksText, profilesText;
-    if (read) { read("wind/masks.json", masksText); read("wind/profiles.json", profilesText); }
+    // Project root first, then a content/ mount (HTML Studio reader).
+    if (read) {
+        if (!read("wind/masks.json", masksText)) read("content/wind/masks.json", masksText);
+        if (!read("wind/profiles.json", profilesText)) read("content/wind/profiles.json", profilesText);
+    }
     const std::string key = masksText + '\x1f' + profilesText;
     std::lock_guard<std::mutex> guard(lock);
     if (auto it = cache.find(key); it != cache.end()) return it->second;

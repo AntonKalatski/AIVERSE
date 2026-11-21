@@ -347,6 +347,39 @@ inline void packWindRig(const WindRig& rig, std::vector<uint8_t>& rgba, int& wid
     }
 }
 
+// Inverse of packWindRig (quantized values). For tools, debug views and
+// tests; the GPU reads the same bytes.
+inline WindRig decodeWindRig(const std::vector<uint8_t>& rgba, int width) {
+    if (width != kTextureWidth || rgba.size() < 4) throw std::invalid_argument("wind rig texture");
+    WindRig rig;
+    const uint32_t count = uint32_t(rgba[0]) | (uint32_t(rgba[1]) << 8);
+    if (rgba[3] != 1 || count == 0 || (1 + size_t(count) * 4) * 4 > rgba.size())
+        throw std::invalid_argument("wind rig texture header");
+    rig.unitExponent = rgba[2];
+    const float unit = rig.unitMetres();
+    const auto at = [&](size_t texel, int c) { return rgba[texel * 4 + size_t(c)]; };
+    const auto s16 = [&](uint8_t lo, uint8_t hi) {
+        const int v = int(lo) | (int(hi) << 8);
+        return float(v >= 32768 ? v - 65536 : v);
+    };
+    rig.nodes.resize(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        const size_t t = 1 + size_t(i) * 4;
+        auto& n = rig.nodes[i];
+        n.pivot = {s16(at(t, 0), at(t, 1)) * unit, s16(at(t, 2), at(t, 3)) * unit,
+                   s16(at(t + 1, 0), at(t + 1, 1)) * unit};
+        n.length = std::max(float(int(at(t + 1, 2)) | (int(at(t + 1, 3)) << 8)) * unit, 0.01f);
+        n.axis = decodeOct(at(t + 2, 0) / 255.f, at(t + 2, 1) / 255.f);
+        n.parent = uint16_t(int(at(t + 2, 2)) | (int(at(t + 2, 3)) << 8));
+        n.mask = at(t + 3, 0);
+        n.stiffness = at(t + 3, 1) / 255.f;
+        n.phase = at(t + 3, 2) / 255.f;
+        n.flex = at(t + 3, 3) / 255.f * 2.f;
+        n.depth = n.parent < i ? uint8_t(std::min(int(rig.nodes[n.parent].depth) + 1, 255)) : 0;
+    }
+    return rig;
+}
+
 // Per-vertex payload, written into ModelVertex::color (RGBA8).
 //   R,G node index (u16) | B leaf flutter 0..255 | A legacy sway weight
 // The material must ignore vertex colours (Material::vertexColors=false).

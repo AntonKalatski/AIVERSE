@@ -559,6 +559,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                         args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE"+index+"(uv) "+(metal?"tex"+slot+".sample(s"+slot+",uv)":"texture(tex"+slot+",uv)")+"\n";
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
+                        macros+="#define SG_TEXEL"+index+"(x,y) "+(metal?"tex"+slot+".read(uint2(uint(x),uint(y)))":"texelFetch(tex"+slot+",ivec2(x,y),0)")+"\n";
                     }
                     if(metal) {
                         const auto f=source.find("fragment ");
@@ -1079,10 +1080,59 @@ ModelStaticEligibility Renderer3D::cachedStaticModelEligibility(const Model& sou
     return result;
 }
 
+// Rigged draws (windRigGraph materials): fill scene wind and the editor
+// debug material override, then resubmit once. Returns true if resubmitted.
+bool Renderer3D::applyWindRig(const ModelDraw& d) {
+    const bool debug = windDebugView_ == wind::WindDebugView::Parts ||
+                       windDebugView_ == wind::WindDebugView::Depth ||
+                       windDebugView_ == wind::WindDebugView::Weight;
+    const bool needWind = !d.useVertexParameters && sceneWind_.enabled();
+    if (!debug && !needWind) return false;
+    const auto& source = d.materials && d.materials->size() >= d.model->materials.size()
+        ? *d.materials : d.model->materials;
+    const auto& rigGraph = wind::windRigGraph();
+    bool rigged = false;
+    for (const auto& mat : source) if (mat.shaderGraph == rigGraph) { rigged = true; break; }
+    if (!rigged) return false;
+    ModelDraw copy = d;
+    if (needWind) {
+        const auto params = wind::windRigParamsForDraw(sceneWind_, d.world);
+        copy.useVertexParameters = true;
+        copy.vertexParameters = wind::windRigVertexParameters(params);
+        copy.maxVertexOffsetMetres = std::max(copy.maxVertexOffsetMetres,
+                                              std::min(10.f, wind::windRigMaxOffsetMetres(params)));
+    }
+    if (debug) {
+        const void* key = d.materials ? static_cast<const void*>(d.materials) : static_cast<const void*>(d.model);
+        auto& cached = windDebugMaterials_[key];
+        if (cached.revision != d.model->materialRevision || cached.count != source.size() ||
+            cached.materials.size() != source.size()) {
+            cached.materials = source;
+            const auto program = wind::windRigDebugGraph(windDebugView_);
+            for (auto& mat : cached.materials) if (mat.shaderGraph == rigGraph) mat.shaderGraph = program;
+            cached.revision = d.model->materialRevision;
+            cached.count = source.size();
+        }
+        copy.materials = &cached.materials;
+        copy.materialOwnerKey = 0; copy.materialOwnerRevision = 0;
+        copy.staticPacketRevision = 0;
+    }
+    if (!copy.useVertexParameters) copy.useVertexParameters = d.useVertexParameters;
+    // Guard: the copy carries vertex parameters and/or debug materials, so the
+    // recursive call returns false here.
+    if (!debug) { drawModel(copy); return true; }
+    const auto saved = windDebugView_;
+    windDebugView_ = wind::WindDebugView::Off;
+    drawModel(copy);
+    windDebugView_ = saved;
+    return true;
+}
+
 void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
+    if (applyWindRig(d)) return;
     if(modelPacketTap_)modelPacketTap_(d);
     recordPersistentModel(d);
     if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0) {   // light baker: the static scene, every node in world space

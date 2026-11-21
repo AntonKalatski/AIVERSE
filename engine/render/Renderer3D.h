@@ -33,6 +33,7 @@
 #include "GpuSceneDrawCommands.h"
 #include "RenderDeviceLifetime.h"
 #include "GpuProgramRetirement.h"
+#include "WindRigShader.h"
 #include <memory>
 #include <utility>
 #include <map>
@@ -703,6 +704,16 @@ public:
     // before starting another draw submission; no GPU resources are owned here.
     void invalidateStaticModelCache(uint64_t persistentId);
     void invalidateModelCachesFor(const Model* model);
+    // Hierarchical wind masks (WindRigShader.h). Scene wind drives every
+    // rigged draw that does not supply its own vertexParameters; the debug
+    // view (editors only) recolours rigged materials by part/depth/weight.
+    void setSceneWind(const wind::SceneWind& value) { sceneWind_ = value; }
+    const wind::SceneWind& sceneWind() const { return sceneWind_; }
+    void setWindRigDebugView(wind::WindDebugView view) {
+        if (view != windDebugView_) windDebugMaterials_.clear();
+        windDebugView_ = view;
+    }
+    wind::WindDebugView windRigDebugView() const { return windDebugView_; }
     // Drop one shared material-owner signature before its native source is
     // replaced or destroyed. Existing packets automatically rebuild when the
     // owner returns with a new signature serial; other owners are unaffected.
@@ -1479,6 +1490,11 @@ public:
     void bindBakedTerrain(int uniformSlot, int lightmapSlot, int maskSlot);
 
 private:
+    wind::SceneWind sceneWind_{};
+    wind::WindDebugView windDebugView_ = wind::WindDebugView::Off;
+    struct WindDebugMaterials { uint64_t revision = 0; size_t count = 0; std::vector<Material> materials; };
+    std::unordered_map<const void*, WindDebugMaterials> windDebugMaterials_;
+    bool applyWindRig(const ModelDraw& d);
     struct DrawItem {
         const Mesh* mesh; mat4 model; float4 color;
         uint32_t flags; float specular, emissive;

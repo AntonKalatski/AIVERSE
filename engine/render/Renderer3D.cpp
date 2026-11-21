@@ -358,6 +358,7 @@ void Renderer3D::invalidateSharedMaterialState(
 
 void Renderer3D::invalidateModelCachesFor(const Model* model) {
     if (!model) return;
+    windDebugMaterials_.erase(model);
     for (auto it = staticMaterialOwners_.begin(); it != staticMaterialOwners_.end();) {
         if (it->first.model == model) {
             staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
