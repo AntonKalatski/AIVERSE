@@ -6,7 +6,12 @@
 # twice (gles, vulkan). Settings reach the game through debug.aiverse.* properties (PlatformAndroid.cpp);
 # frame times come from its "[perf]" logcat lines. Results: <out>/results.tsv, raw logs in <out>/runs/.
 set -u
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# bash reads a script while running it: run a private copy so edits of this file can't hit a running bench
+if [ -z "${AIVERSE_BENCH_ROOT:-}" ]; then
+  export AIVERSE_BENCH_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+  c="${TMPDIR:-/tmp}/android-bench.$$.sh"; cp "$0" "$c"; exec bash "$c" "$@"
+fi
+ROOT="$AIVERSE_BENCH_ROOT"
 XENV=""; PROFILE=""; PSEC=12
 PROJECT="$ROOT/templates/skirmish"; MAP=0; FRAMES=1200; CASES=features; BUILD=1
 OUT=/Volumes/KINGSTON/AIVERSE-builds/android-bench
@@ -143,7 +148,7 @@ cases_features() {
     for g in gl vulkan; do run "$n" $g $U "$@"; done
   done
 }
-# --profile gl|vulkan: simpleperf (cpu-clock) for --seconds while the match runs; reports by thread,
+# --profile gl|vulkan|gl,vulkan: simpleperf (cpu-clock) for --seconds while the match runs; reports by thread,
 # library and address (symbolize the libmain.so addresses with addr2line on the unstripped library)
 profile() {
   local gfx="$1" P="$OUT/profile_${NAME}_$gfx"; mkdir -p "$P"
@@ -169,7 +174,7 @@ profile() {
   say "profile $gfx: done -> $P"
 }
 if [ -n "$PROFILE" ]; then
-  for g in $PROFILE; do profile "$g"; done
+  for g in ${PROFILE//,/ }; do profile "$g"; done
   clearprops; say "DONE profile"; exit 0
 fi
 say "bench $NAME map=$MAP frames=$FRAMES cases=$CASES env=$XENV"

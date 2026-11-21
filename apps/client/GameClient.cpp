@@ -127,6 +127,7 @@ void GameClient::initStep(gfx::Device& dev, int step) {
                 return r3d_.warmModelPipelinesChecked(model,&materials);
             });
         r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, platform::isTouchDevice()));
+        r3d_.setMobileShadowFilter(platform::isTouchDevice());
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));

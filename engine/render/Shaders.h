@@ -336,6 +336,7 @@ namespace aiverse::render::shaders {
     "    }\n" \
     "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
     "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
+    "    // fract 0.75: mobile budget, fixed unrotated disk of int(taps) samples (no 64/128-tap stable disk)\n" \
     "    if (fract(u_quality.x) <= 0.25) {\n" \
     "        int count = u_quality.x > 16.0 ? 128 : 64;\n" \
     "        int stride = count == 128 ? 1 : 2;\n" \
@@ -347,8 +348,8 @@ namespace aiverse::render::shaders {
     "        }\n" \
     "        return total / float(count);\n" \
     "    }\n" \
-    "    float temporal = fract(u_quality.x) > 0.25 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
-    "    float a = fract(u_quality.x) <= 0.25 || r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
+    "    float temporal = fract(u_quality.x) > 0.25 && fract(u_quality.x) < 0.6 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
+    "    float a = fract(u_quality.x) <= 0.25 || fract(u_quality.x) > 0.6 || r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
     "    vec2 cs = vec2(cos(a), sin(a));\n" \
     "    int n_ = int(u_quality.x);\n" \
     "    float s = 0.0;\n" \
@@ -450,6 +451,7 @@ namespace aiverse::render::shaders {
     "    }\n" \
     "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
     "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
+    "    // fract 0.75: mobile budget, fixed unrotated disk of int(taps) samples (no 64/128-tap stable disk)\n" \
     "    if (fract(f.quality.x) <= 0.25) {\n" \
     "        int count = f.quality.x > 16.0 ? 128 : 64;\n" \
     "        int stride = count == 128 ? 1 : 2;\n" \
@@ -461,8 +463,8 @@ namespace aiverse::render::shaders {
     "        }\n" \
     "        return total / float(count);\n" \
     "    }\n" \
-    "    float temporal = fract(f.quality.x) > 0.25 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
-    "    float a = fract(f.quality.x) <= 0.25 || r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
+    "    float temporal = fract(f.quality.x) > 0.25 && fract(f.quality.x) < 0.6 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
+    "    float a = fract(f.quality.x) <= 0.25 || fract(f.quality.x) > 0.6 || r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
     "    float2 cs = float2(cos(a), sin(a));\n" \
     "    int cnt = int(f.quality.x);\n" \
     "    float s = 0.0;\n" \
