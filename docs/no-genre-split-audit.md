@@ -100,7 +100,7 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 | E One scene document (G2) | not started |
 | A FPS host on ECS only | built + tested (stage 03): `modules/fps` ECS only, races ported |
 | B One vehicle system (G5) | built + tested (stage 04; CTest 365/367, checksums 95/96, road_race identical): `engine/vehicles` (`AIVERSE::vehicles`: `VehicleDrive` / `VehicleOccupant` components, `stepVehicles` over a `VehicleHost` world query, autopilot / lock API, one race adapter `VehicleRace` + `RaceState`); `RtsDriving` = grid-map world query + enter key + race seats, `FpsVehicles` = metre-map world query + seat-list glue + race seats; `DrivingStore`, `RtsRace.h`, `FpsRace.cpp`, `fps::VehicleDrive`, `CharacterRacer`, `State::race` and the road forwarders deleted. Left: rules `driving` and `vehicleTypes` are still two blocks (one parser each, one `DriveRules` result); getting in on foot keeps two seat models (driver's door vs seat list) inside the shared components |
-| C Shared systems out of `modules/rts` (G3) | not started |
+| C Shared systems out of `modules/rts` (G3) | C0a in progress (stage 06, not yet built): BW AI by registry, no Kingston type ids / helpers in the core; trigger-var protocol left |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
 | D One simulation (G1) | not started |
 | 7 Template kits (G8) | nothing to do |
