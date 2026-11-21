@@ -18,6 +18,8 @@ class SceneToolsContract(unittest.TestCase):
         self.assertIn('kind=="tool"', host)
         self.assertIn('"viewport.action"', host)
         self.assertIn('"viewport.tool"', host)
+        for cls in ("StudioHost", "StudioMetalView", "StudioFileDropWebView"):
+            self.assertEqual(host.count("@implementation " + cls + "\n"), 1, cls + " implemented once")
     def test_web_toolbar(self):
         bar = read("apps/studio-web/src/components/SceneToolbar.tsx")
         for key in ("'view'", "'move'", "'rotate'", "'scale'", "snapRotate", "gizmos"):
