@@ -803,7 +803,8 @@ bool VulkanDevice::readTextureAsync(TextureHandle h, TextureReadbackDesc request
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                  1, uint32_t(request.mipLevel), uint32_t(texture->layers));
     textureReads_.push_back({staging, allocation, bytes, width, height,
-                             texture->format, serial_, std::move(callback)});
+                             texture->format, serial_, std::move(callback),
+                             texture->renderTarget});
     return true;
 }
 

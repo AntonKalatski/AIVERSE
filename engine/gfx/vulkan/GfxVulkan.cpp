@@ -635,7 +635,15 @@ void VulkanDevice::deliverTextureReads() {
             result.width = r.width;
             result.height = r.height;
             result.pixels.resize(r.bytes);
-            std::memcpy(result.pixels.data(), r.alloc.mapped, r.bytes);
+            const auto* mapped = static_cast<const uint8_t*>(r.alloc.mapped);
+            const size_t row = r.height > 0 ? r.bytes / size_t(r.height) : 0;
+            if (r.flipRows && row) {
+                for (int y = 0; y < r.height; ++y)
+                    std::memcpy(result.pixels.data() + size_t(y) * row,
+                                mapped + size_t(r.height - 1 - y) * row, row);
+            } else {
+                std::memcpy(result.pixels.data(), mapped, r.bytes);
+            }
         }
         if (r.buffer) vkDestroyBuffer(device_, r.buffer, nullptr);
         memory_.release(r.alloc);

@@ -152,6 +152,9 @@ struct GLTextureRead {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;
     Device::TextureReadFn callback;
+    // GL stores render targets bottom-up; uploaded textures keep the CPU row
+    // order. Only render targets are flipped to the top-left row contract.
+    bool flipRows = false;
 };
 
 constexpr size_t kUniformRingSize = 1 << 20;
@@ -1330,14 +1333,16 @@ public:
             glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
             glPixelStorei(GL_PACK_ALIGNMENT,1);
             const size_t row=size_t(width)*4u;
-            std::vector<uint8_t> bottomUp(bytes);
-            glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,bottomUp.data());
+            std::vector<uint8_t> glRows(bytes);
+            glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,glRows.data());
             if(glGetError()==GL_NO_ERROR) {
                 result.width=width;result.height=height;
                 result.pixels.resize(bytes);
+                // Render targets are bottom-up; uploaded rows are already
+                // in CPU (top-left) order and must not be flipped.
                 for(int y=0;y<height;++y)
                     std::memcpy(result.pixels.data()+size_t(y)*row,
-                                bottomUp.data()+size_t(height-1-y)*row,row);
+                                glRows.data()+size_t(t->renderTarget ? height-1-y : y)*row,row);
             }
         }
         glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(oldReadFbo));
@@ -1428,7 +1433,8 @@ public:
         }
         // A fence is not a CPU wait; flushing only submits pending commands.
         glFlush();
-        textureReads_.push_back({pbo, fence, width, height, t->fmt, std::move(callback)});
+        textureReads_.push_back({pbo, fence, width, height, t->fmt, std::move(callback),
+                                 t->renderTarget});
         return true;
 #endif
     }
@@ -1459,7 +1465,7 @@ public:
                     result.pixels.resize(bytes);
                     for (int y=0;y<read.height;++y)
                         std::memcpy(result.pixels.data()+size_t(y)*row,
-                                    p+size_t(read.height-1-y)*row, row);
+                                    p+size_t(read.flipRows ? read.height-1-y : y)*row, row);
                     if (glUnmapBuffer(GL_PIXEL_PACK_BUFFER) != GL_TRUE) {
                         result = {};
                         result.format = read.format;

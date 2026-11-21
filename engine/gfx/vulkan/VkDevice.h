@@ -394,6 +394,10 @@ private:
         PixelFormat format = PixelFormat::RGBA8;
         uint64_t serial = 0;
         TextureReadFn callback;
+        // RHI render targets are stored bottom-up (GL convention); flip
+        // them to the documented top-left row order. Uploaded/storage
+        // images already have CPU row order.
+        bool flipRows = false;
     };
     std::vector<TextureRead> textureReads_;
 
