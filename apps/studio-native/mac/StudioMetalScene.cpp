@@ -247,7 +247,7 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     // Facial preview is an imported Model, not an object in the active map.
     // Never route its clicks to unrelated MapDoc entities underneath.
     if (materialMode_ || facialMode_ || !cameraInitialized_ ||
-        !camera_.screenRay(x,y,width,height,origin,direction)) return {};
+        !viewCamera().screenRay(x,y,width,height,origin,direction)) return {};
     // Pick the oriented cube mesh that Renderer3D actually draws, not its
     // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
     auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
@@ -258,16 +258,66 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     // These are the exact model instances submitted by the previous frame.
     return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
 }
+render::RTSCamera StudioMetalScene::viewCamera() const {
+    render::RTSCamera view=camera_;
+    view.zNear=std::clamp(camera_.distance*0.002f,0.05f,0.5f);
+    view.zFar=std::max(1000.0f,camera_.distance*6.0f);
+    if(view.ortho) {
+        view.orthoHalfHeightOverride=std::max(0.01f,camera_.distance*std::tan(camera_.fovY*0.5f));
+        view.distance=std::min(camera_.distance,400.0f);
+    }
+    return view;
+}
+void StudioMetalScene::startTween(render::float3 target,float distance,float yaw,float pitch) {
+    tween_.active=true;
+    tween_.fromTarget=camera_.target;tween_.toTarget=target;
+    tween_.fromDistance=camera_.distance;tween_.toDistance=distance;
+    tween_.fromYaw=camera_.yaw;
+    // Shortest rotation; the stored yaw may have accumulated many turns.
+    tween_.toYaw=camera_.yaw+std::remainder(yaw-camera_.yaw,6.28318530718f);
+    tween_.fromPitch=camera_.pitch;tween_.toPitch=pitch;
+    tween_.start=std::chrono::steady_clock::now();
+}
+void StudioMetalScene::stepTween() {
+    if(!tween_.active)return;
+    const float seconds=std::chrono::duration<float>(std::chrono::steady_clock::now()-tween_.start).count();
+    const float t=std::clamp(seconds/0.24f,0.0f,1.0f);
+    const float k=t*t*(3.0f-2.0f*t);
+    camera_.target=tween_.fromTarget+(tween_.toTarget-tween_.fromTarget)*k;
+    camera_.distance=tween_.fromDistance+(tween_.toDistance-tween_.fromDistance)*k;
+    camera_.yaw=tween_.fromYaw+(tween_.toYaw-tween_.fromYaw)*k;
+    camera_.pitch=tween_.fromPitch+(tween_.toPitch-tween_.fromPitch)*k;
+    if(t>=1.0f)tween_.active=false;
+}
+void StudioMetalScene::setOrientation(float yaw,float pitch) {
+    if(!std::isfinite(yaw)||!std::isfinite(pitch))return;
+    startTween(camera_.target,camera_.distance,yaw,std::clamp(pitch,-1.5707963f,1.5707963f));
+}
+void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; }
 void StudioMetalScene::orbit(float dx, float dy) {
+    tween_.active=false;
     camera_.yaw += dx * 0.007f;
     camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, -1.52f, 1.52f);
 }
 void StudioMetalScene::zoom(float wheel) {
-    camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
+    tween_.active=false;
+    // Unity-like dolly: zoom toward the pivot; at the minimum distance keep
+    // moving forward by pushing the pivot instead of stopping.
+    const float next=camera_.distance*std::exp(-wheel*0.035f);
+    constexpr float kMinDistance=2.0f;
+    if(next<kMinDistance && wheel>0) {
+        const float cp=std::cos(camera_.pitch),sp=std::sin(camera_.pitch);
+        const float3 forward{-std::sin(camera_.yaw)*cp,-sp,-std::cos(camera_.yaw)*cp};
+        camera_.target+=forward*std::max(0.02f,kMinDistance*(1.0f-std::exp(-wheel*0.035f)));
+        camera_.distance=kMinDistance;
+        return;
+    }
+    camera_.distance = std::clamp(next, kMinDistance, 100000.0f);
 }
 void StudioMetalScene::look(float dx, float dy) {
     // First-person free look preserves the camera's world-space eye instead
     // of orbiting around its target. WASD movement then translates the eye.
+    tween_.active=false;
     const float3 position=camera_.eye();
     camera_.yaw += dx*0.007f;
     camera_.pitch=std::clamp(camera_.pitch-dy*0.007f,-1.52f,1.52f);
@@ -277,6 +327,7 @@ void StudioMetalScene::look(float dx, float dy) {
 }
 void StudioMetalScene::pan(float dx, float dy) {
     // Editor navigation follows camera orientation, not RTS ground-plane input.
+    tween_.active=false;
     const float speed=std::max(0.005f,camera_.distance*0.0018f);
     const float yaw=camera_.yaw;
     const float3 right{std::cos(yaw),0,-std::sin(yaw)};
@@ -286,6 +337,7 @@ void StudioMetalScene::pan(float dx, float dy) {
     camera_.target += right*(-dx*speed) + up*(dy*speed);
 }
 void StudioMetalScene::move(float right, float up, float forward) {
+    tween_.active=false;
     const float speed=std::max(0.025f,camera_.distance*0.045f);
     const float yaw=camera_.yaw;
     const float3 side{std::cos(yaw),0,-std::sin(yaw)};
@@ -306,9 +358,9 @@ void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
             worldMin={std::min(worldMin.x,p.x),std::min(worldMin.y,p.y),std::min(worldMin.z,p.z)};
             worldMax={std::max(worldMax.x,p.x),std::max(worldMax.y,p.y),std::max(worldMax.z,p.z)};
         }
-        camera_.target=(worldMin+worldMax)*.5f;
         const auto size=worldMax-worldMin;
-        camera_.distance=std::clamp(std::max({size.x,size.y,size.z,1.0f})*2.5f,2.0f,100000.0f);
+        startTween((worldMin+worldMax)*.5f,
+            std::clamp(std::max({size.x,size.y,size.z,1.0f})*2.5f,2.0f,100000.0f),camera_.yaw,camera_.pitch);
         return;
     }
     auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
@@ -318,14 +370,16 @@ void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
     }),proxies.end());
     for (const auto& proxy:proxies) {
         if (proxy.id != selectedId) continue;
-        camera_.target=(proxy.boundsMin+proxy.boundsMax)*0.5f;
         const float3 extent=proxy.boundsMax-proxy.boundsMin;
         const float size=std::max({extent.x,extent.y,extent.z,0.5f});
-        camera_.distance=std::clamp(size*3.0f,2.0f,100000.0f);
+        startTween((proxy.boundsMin+proxy.boundsMax)*0.5f,std::clamp(size*3.0f,2.0f,100000.0f),
+            camera_.yaw,camera_.pitch);
         return;
     }
 }
 void StudioMetalScene::resetView() {
+    tween_.active=false;
+    camera_.ortho=false;
     cameraInitialized_=false;
     camera_.pitch=0.85f;
     camera_.yaw=0.55f;
@@ -449,11 +503,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             camera_.distance=4.3f;
             camera_.pitch=.5f;
             camera_.yaw=.25f;
+            camera_.ortho=false;
+            tween_.active=false;
             cameraInitialized_=true;
         }
         device_->beginFrame(framebufferWidth,framebufferHeight);
         StudioFrameScope scope{*device_};
-        renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
+        renderer_.beginScene(viewCamera(),framebufferWidth,framebufferHeight);
         renderer_.clearDynamicGiOverlay();
         renderer_.lighting=render::Lighting{};
         renderer_.lighting.sunIntensity=1.2f;
@@ -557,18 +613,21 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             camera_.target=(lo+hi)*.5f;
             camera_.distance=std::clamp(std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z})*1.4f,16.f,100000.f);
         }
+        tween_.active = false;
         cameraInitialized_ = true;
         lastMapWidth_ = map.w;
         lastMapHeight_ = map.h;
     }
+    stepTween();
+    const auto view=viewCamera();
     device_->beginFrame(framebufferWidth, framebufferHeight);
     StudioFrameScope scope{*device_};
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
-    nereid_.prepare(*device_,camera_.eye());
+    nereid_.prepare(*device_,view.eye());
     const double opticalNow=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
     underwaterFrameTime_=opticalNow;
-    renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
+    renderer_.beginScene(view, framebufferWidth, framebufferHeight);
     renderer_.setSceneSelectionOutline(true);
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {

@@ -72,6 +72,9 @@
     BOOL htmlComposite_;
     unsigned lightingStatusTicks_;
     BOOL closeApproved_;
+    // Last Scene camera state pushed to the HTML orientation gizmo.
+    double lastCameraYaw_, lastCameraPitch_, lastCameraDistance_;
+    BOOL lastCameraOrtho_, cameraSent_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -81,6 +84,7 @@
 - (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward;
 - (void)focusSceneSelection;
 - (void)resetSceneView;
+- (void)publishSceneCamera;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
@@ -141,22 +145,45 @@
     dragged_=NO;
     [self.window makeFirstResponder:self];
 }
+// Unity Scene view mapping, shared with the HTML composite path
+// (apps/studio-web/src/panels/sceneCamera.ts): LMB select, Alt+LMB orbit,
+// Alt+Cmd+LMB / MMB pan, RMB flythrough (WASD/QE), Alt+RMB zoom.
 - (void)mouseDragged:(NSEvent*)event {
+    const NSEventModifierFlags flags=event.modifierFlags;
+    if (!(flags & NSEventModifierFlagOption)) return; // plain LMB drag: reserved for selection
     dragged_=YES;
-    [self.host orbitX:event.deltaX y:event.deltaY];
+    if (flags & NSEventModifierFlagCommand) [self.host panX:event.deltaX y:event.deltaY];
+    else [self.host orbitX:event.deltaX y:event.deltaY];
 }
 - (void)mouseUp:(NSEvent*)event {
     const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
     if (!dragged_ && std::hypot(double(point.x-press_.x), double(point.y-press_.y)) < 5.0)
         [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
-- (void)rightMouseDragged:(NSEvent*)event { [self.host lookX:event.deltaX y:event.deltaY]; }
+- (void)rightMouseDown:(NSEvent*)event { [self.window makeFirstResponder:self]; (void)event; }
+- (void)rightMouseDragged:(NSEvent*)event {
+    if (event.modifierFlags & NSEventModifierFlagOption)
+        [self.host zoom:(event.deltaX+event.deltaY)*0.6];
+    else [self.host lookX:event.deltaX y:event.deltaY];
+}
 - (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
 - (void)keyDown:(NSEvent*)event {
     NSString* keys=event.charactersIgnoringModifiers.lowercaseString;
     if (!keys.length) { [super keyDown:event]; return; }
     const unichar key=[keys characterAtIndex:0];
     const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    // WASD/QE fly only while the right button is held; arrows always move.
+    const BOOL flying=([NSEvent pressedMouseButtons] & (1u<<1))!=0;
+    switch(key) {
+        case NSUpArrowFunctionKey: [self.host moveRight:0 up:0 forward:scale]; return;
+        case NSDownArrowFunctionKey: [self.host moveRight:0 up:0 forward:-scale]; return;
+        case NSLeftArrowFunctionKey: [self.host moveRight:-scale up:0 forward:0]; return;
+        case NSRightArrowFunctionKey: [self.host moveRight:scale up:0 forward:0]; return;
+        case NSHomeFunctionKey: [self.host resetSceneView]; return;
+        case 'f': if (!flying) { [self.host focusSceneSelection]; return; } break;
+        default: break;
+    }
+    if (!flying) { [super keyDown:event]; return; }
     switch(key) {
         case 'w': [self.host moveRight:0 up:0 forward:scale]; break;
         case 's': [self.host moveRight:0 up:0 forward:-scale]; break;
@@ -164,8 +191,6 @@
         case 'd': [self.host moveRight:scale up:0 forward:0]; break;
         case 'q': [self.host moveRight:0 up:-scale forward:0]; break;
         case 'e': [self.host moveRight:0 up:scale forward:0]; break;
-        case 'f': [self.host focusSceneSelection]; break;
-        case NSHomeFunctionKey: [self.host resetSceneView]; break;
         default: [super keyDown:event]; break;
     }
 }
@@ -399,7 +424,9 @@
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
+                cameraSent_=NO;
             }
+            [self publishSceneCamera];
         } catch (const std::exception& e) {
             NSLog(@"AIVERSE native Scene failed: %s",e.what());
             [self sendStudioEvent:"viewport.error" message:e.what()];
@@ -435,6 +462,22 @@
         session_->workspace().project.isFps(),session_->selectedObjectId());
 }
 - (void)resetSceneView { if (preview_) preview_->resetView(); }
+- (void)publishSceneCamera {
+    if (!preview_ || !htmlComposite_) return;
+    const auto camera=preview_->cameraState();
+    if (cameraSent_ && std::abs(camera.yaw-lastCameraYaw_)<1e-4 &&
+        std::abs(camera.pitch-lastCameraPitch_)<1e-4 &&
+        std::abs(camera.distance-lastCameraDistance_)<=1e-3*std::max(1.0,lastCameraDistance_) &&
+        bool(lastCameraOrtho_)==camera.ortho) return;
+    lastCameraYaw_=camera.yaw;lastCameraPitch_=camera.pitch;
+    lastCameraDistance_=camera.distance;lastCameraOrtho_=camera.ortho;cameraSent_=YES;
+    aiverse::Json payload=aiverse::Json::object();
+    payload.set("yaw",aiverse::Json::number(double(camera.yaw),5));
+    payload.set("pitch",aiverse::Json::number(double(camera.pitch),5));
+    payload.set("distance",aiverse::Json::number(double(camera.distance),4));
+    payload.set("ortho",aiverse::Json::fromBool(camera.ortho));
+    [self sendStudioEventPayload:"viewport.camera" payload:payload];
+}
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
@@ -761,6 +804,16 @@
                 [self focusSceneSelection]; result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="reset") {
                 [self resetSceneView]; result.set("ok",aiverse::Json::fromBool(true));
+            } else if (kind=="view" && input["yaw"].isNumber() && input["pitch"].isNumber()) {
+                const double yaw=input["yaw"].toDouble(),pitch=input["pitch"].toDouble();
+                if (!std::isfinite(yaw)||!std::isfinite(pitch)||std::abs(yaw)>100||std::abs(pitch)>1.5708)
+                    reply.set("error",aiverse::Json::string("Invalid camera orientation"));
+                else { preview_->setOrientation(float(yaw),float(pitch));
+                       result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="projection" &&
+                       input["ortho"].boolean(false)==input["ortho"].boolean(true)) { // a real JSON bool
+                preview_->setOrthographic(input["ortho"].boolean());
+                result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="zoom" && input["amount"].isNumber()) {
                 const double wheel=input["amount"].toDouble();
                 if (!std::isfinite(wheel) || std::abs(wheel)>1000)

@@ -100,7 +100,6 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
               <button className="viewport-control selected" title="Select tool">
                 <SlidersHorizontal size={15}/></button>
               <span className="toolbar-divider"/>
-              <span className="viewport-label">Perspective</span>
               <button type="button" className="viewport-control" title="Focus selected object (F)"
                 aria-label="Focus selected Scene object" disabled={!connected || !selected}
                 onClick={()=>void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn)}>

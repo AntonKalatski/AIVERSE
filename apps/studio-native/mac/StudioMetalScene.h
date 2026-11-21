@@ -1,6 +1,7 @@
 // macOS-only native preview: AIVERSE gfx::Device + Renderer3D over a CAMetalLayer.
 // No ImGui, no CPU texture readback, no dependency on UI component hierarchy.
 #pragma once
+#include <chrono>
 #include <memory>
 #include <cstdint>
 #include <limits>
@@ -48,7 +49,13 @@ public:
     void move(float right, float up, float forward);
     void focusSelected(const editor::MapDoc& map, bool fpsProject, const std::string& selectedId);
     void resetView();
-    void resetCamera() { lightingRevision_=std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
+    // Unity-style Scene view helpers: animated orbit to an axis view and the
+    // Persp/Iso toggle. Orientation/projection are editor camera state only.
+    void setOrientation(float yaw, float pitch);
+    void setOrthographic(bool ortho);
+    struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; };
+    CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho}; }
+    void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
     std::unique_ptr<render::RenderDeviceLifetime> deviceLifetime_;
@@ -86,6 +93,18 @@ private:
     render::RTSCamera camera_;
     render::AdaptiveShadowResolution shadowResolution_;
     bool cameraInitialized_ = false;
+    // Short eased transition for focus / axis snaps; any direct input cancels it.
+    struct CameraTween {
+        bool active = false;
+        render::float3 fromTarget{}, toTarget{};
+        float fromDistance = 0, toDistance = 0, fromYaw = 0, toYaw = 0, fromPitch = 0, toPitch = 0;
+        std::chrono::steady_clock::time_point start{};
+    } tween_;
+    void startTween(render::float3 target, float distance, float yaw, float pitch);
+    void stepTween();
+    // Camera actually submitted/picked: clip planes follow distance, ortho keeps
+    // its framing from `distance` while the eye stays inside the depth range.
+    render::RTSCamera viewCamera() const;
     bool lodDiagnostics_ = false;
     uint64_t diagnosticFrames_ = 0;
     int lastMapWidth_ = 0;

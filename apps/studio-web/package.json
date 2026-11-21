@@ -15,7 +15,7 @@
     "test:materials": "node --experimental-strip-types --test tests/materialSchema.test.mjs",
     "test:graphs": "node --experimental-strip-types --test tests/shaderGraphLayout.test.mjs tests/shaderGraphEdit.test.mjs",
     "test:mock": "node --experimental-strip-types --test tests/mock.test.mjs",
-    "test:scene": "node --experimental-strip-types --test tests/sceneState.test.mjs tests/gameViewport.test.mjs",
+    "test:scene": "node --experimental-strip-types --test tests/sceneState.test.mjs tests/gameViewport.test.mjs tests/sceneCamera.test.mjs",
     "test:bridge": "node --experimental-strip-types --test tests/bridge.test.mjs",
     "test:facial": "node --experimental-strip-types --test tests/facialRigSchema.test.mjs",
     "test:human": "node --experimental-strip-types --test tests/humanLookSchema.test.mjs",

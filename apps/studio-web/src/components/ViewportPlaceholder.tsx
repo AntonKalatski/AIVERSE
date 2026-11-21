@@ -1,12 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Box } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
+import SceneAxisGizmo from './SceneAxisGizmo';
+import {
+  DEFAULT_SCENE_CAMERA, dragZoomAmount, flyStep, isSceneCameraState, navigationFor, stepFlySpeed,
+  type SceneCameraState, type SceneNavigation
+} from '../panels/sceneCamera';
+
+type DragMode = Exclude<SceneNavigation, 'select'> | 'select';
+const FLY_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e']);
+// Unity also moves the Scene camera with arrow keys without flythrough mode.
+const ARROW_KEYS: Record<string, string> = { arrowup: 'w', arrowdown: 's', arrowleft: 'a', arrowright: 'd' };
 
 /** Layout source of truth for a real native GPU surface. Never streams raster frames to JS. */
 export default function ViewportPlaceholder({ title, active }: { title: string; active: boolean }) {
   const element = useRef<HTMLElement>(null);
-  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean; mode: 'orbit' | 'pan' | 'look'; button: number } | null>(null);
-  const orbitDelta = useRef({ x: 0, y: 0, raf: 0 });
+  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean; mode: DragMode; button: number } | null>(null);
+  const pendingDelta = useRef<{ x: number; y: number; raf: number; mode: Exclude<DragMode, 'select'> }>({ x: 0, y: 0, raf: 0, mode: 'orbit' });
+  const flying = useRef(false);
+  const flySpeedRef = useRef(1);
+  const autoIso = useRef(false);
+  const [flySpeed, setFlySpeed] = useState(1);
+  const [speedVisible, setSpeedVisible] = useState(false);
+  const speedTimer = useRef(0);
+  const [camera, setCamera] = useState<SceneCameraState>(DEFAULT_SCENE_CAMERA);
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
   const native = nativeConnected();
   const [gpuReady, setGpuReady] = useState(false);
   const [navigationActive, setNavigationActive] = useState(false);
@@ -18,6 +37,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     if (!native) return;
     return onNativeEvent((event, payload) => {
       if (event === 'viewport.ready') { setGpuReady(true); setGpuError(''); }
+      if (event === 'viewport.camera' && isSceneCameraState(payload)) setCamera(payload);
       if (event === 'viewport.error') {
         setGpuReady(false);
         setGpuError(typeof payload === 'object' && payload !== null && 'message' in payload
@@ -68,57 +88,74 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     };
   }, [active, native]);
 
-  // Editor-only navigation. Held keys move continuously, independently of OS
+  const send = useCallback((params: Parameters<typeof invoke<'studio.viewportInput'>>[1]) =>
+    invoke('studio.viewportInput', params).catch(console.warn), []);
+  const leaveAutoIso = useCallback(() => {
+    // Unity: rotating away from a gizmo-snapped axis view returns to perspective.
+    if (autoIso.current && cameraRef.current.ortho) void send({ kind: 'projection', ortho: false });
+    autoIso.current = false;
+  }, [send]);
+  const showSpeed = (speed: number) => {
+    flySpeedRef.current = speed; setFlySpeed(speed); setSpeedVisible(true);
+    window.clearTimeout(speedTimer.current);
+    speedTimer.current = window.setTimeout(() => setSpeedVisible(false), 1200);
+  };
+  useEffect(() => () => window.clearTimeout(speedTimer.current), []);
+
+  // Editor-only navigation (Unity scheme). WASD/QE move only while RMB flythrough is
+  // held; arrow keys always move. Held keys move continuously, independently of OS
   // keyboard repeat; pending bridge calls are not allowed to pile up.
   useEffect(() => {
     if (!active || !native || !gpuReady) return;
     const keys=new Set<string>();
-    const moveKeys=new Set(['w','a','s','d','q','e']);
-    let accelerated=false;
+    let boost=false;
     let frame=0;
     let lastTick=0;
+    let heldSince=0;
     let inFlight=false;
     const focused=()=>!!element.current?.matches(':focus-within');
-    const clear=()=>{keys.clear();accelerated=false;lastTick=0;};
+    const clear=()=>{keys.clear();boost=false;lastTick=0;heldSince=0;};
     const keydown=(event:KeyboardEvent)=>{
-      if (!focused() || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!focused() || event.metaKey || event.ctrlKey) return;
       const target=event.target;
       if (target instanceof HTMLElement &&
           target.closest('input, textarea, select, [contenteditable="true"]')) return;
       const key=event.key.toLowerCase();
-      if (key==='f' && !event.repeat) {
-        event.preventDefault();
-        void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn);
+      boost=event.shiftKey;
+      if (event.altKey) return;
+      if (key==='f' && !event.repeat && !flying.current) {
+        event.preventDefault(); void send({kind:'focus'});
       } else if (key==='home' && !event.repeat) {
+        event.preventDefault(); autoIso.current=false; void send({kind:'reset'});
+      } else if ((flying.current && FLY_KEYS.has(key)) || ARROW_KEYS[key]) {
         event.preventDefault();
-        void invoke('studio.viewportInput',{kind:'reset'}).catch(console.warn);
-      } else if (moveKeys.has(key)) {
-        event.preventDefault();
+        if (keys.size===0) heldSince=performance.now();
         keys.add(key);
-        accelerated=event.shiftKey;
       }
     };
     const keyup=(event:KeyboardEvent)=>{
-      keys.delete(event.key.toLowerCase());
-      accelerated=event.shiftKey;
+      const key=event.key.toLowerCase();
+      keys.delete(key);
+      boost=event.shiftKey;
+      if (keys.size===0) heldSince=0;
     };
     const blur=()=>clear();
     const visibility=()=>{if(document.hidden)clear();};
     const tick=(now:number)=>{
       frame=requestAnimationFrame(tick);
       if (!focused() || document.hidden || keys.size===0) {lastTick=0;return;}
+      // Fly keys stop as soon as the right button is released; arrows always move.
+      if (!flying.current) for (const key of [...keys]) if (!ARROW_KEYS[key]) keys.delete(key);
+      if (keys.size===0) {heldSince=0;return;}
+      const directions=new Set([...keys].map(key=>ARROW_KEYS[key] ?? key));
       if (lastTick && now-lastTick<32) return;
       const elapsed=lastTick?Math.min(80,now-lastTick):33;
       lastTick=now;
       if(inFlight)return;
-      const scale=Math.min(3,elapsed/33.333)*(accelerated?3:1);
-      const right=(Number(keys.has('d'))-Number(keys.has('a')))*scale;
-      const up=(Number(keys.has('e'))-Number(keys.has('q')))*scale;
-      const forward=(Number(keys.has('w'))-Number(keys.has('s')))*scale;
-      if (!right && !up && !forward) return;
+      const step=flyStep(directions,{elapsedMs:elapsed,heldMs:heldSince?now-heldSince:0,speed:flySpeedRef.current,boost});
+      if (!step.right && !step.up && !step.forward) return;
       inFlight=true;
-      void invoke('studio.viewportInput',{kind:'move',right,up,forward})
-        .catch(console.warn).finally(()=>{inFlight=false;});
+      void send({kind:'move',...step}).finally(()=>{inFlight=false;});
     };
     window.addEventListener('keydown',keydown);
     window.addEventListener('keyup',keyup);
@@ -133,10 +170,15 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       window.removeEventListener('blur',blur);
       document.removeEventListener('visibilitychange',visibility);
     };
-  },[active,native,gpuReady]);
+  },[active,native,gpuReady,send]);
   const composite = () => native && document.documentElement.classList.contains('native-composite');
-  const sendOrbit = (dx: number, dy: number, mode: 'orbit' | 'pan' | 'look' = 'orbit') => {
-    const state = orbitDelta.current;
+  const sendDelta = (dx: number, dy: number, mode: Exclude<DragMode, 'select'>) => {
+    const state = pendingDelta.current;
+    if (state.mode !== mode && (state.x || state.y)) {
+      const x=state.x,y=state.y; state.x=state.y=0;
+      void flushDelta(state.mode,x,y);
+    }
+    state.mode = mode;
     state.x += dx;
     state.y += dy;
     if (state.raf) return;
@@ -144,9 +186,18 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       state.raf = 0;
       const x = state.x, y = state.y;
       state.x = state.y = 0;
-      if (x !== 0 || y !== 0) void invoke('studio.viewportInput', { kind: mode, dx: x, dy: y }).catch(console.warn);
+      if (x !== 0 || y !== 0) void flushDelta(state.mode, x, y);
     });
   };
+  const flushDelta = (mode: Exclude<DragMode, 'select'>, x: number, y: number) =>
+    mode === 'zoom' ? send({ kind: 'zoom', amount: Math.max(-900, Math.min(900, dragZoomAmount(x, y))) })
+      : send({ kind: mode, dx: Math.max(-999, Math.min(999, x)), dy: Math.max(-999, Math.min(999, y)) });
+  const endDrag = () => {
+    drag.current=null;
+    flying.current=false;
+    setNavigationActive(false);
+  };
+  const navigationReady = native && active && gpuReady;
   return <section ref={element} className={'viewport' + (native && active && gpuReady ? ' viewport-native' : '')}
     aria-label={native && active ? 'Native Scene viewport' : 'Viewport placeholder'}
     tabIndex={0}
@@ -154,11 +205,13 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     onPointerDown={event => {
       if (!composite() || !active || !gpuReady) return;
       event.currentTarget.focus();
-      if (event.button!==0 && event.button!==1 && event.button!==2) return;
+      const mode=navigationFor(event.button,{alt:event.altKey,meta:event.metaKey});
+      if (!mode || drag.current) return;
+      if (mode!=='select') leaveAutoIso();
+      if (mode==='look') flying.current=true;
       drag.current = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
-        moved: false, mode: event.button===1 || (event.button===0 && event.shiftKey)?'pan':event.button===2?'look':'orbit',
-        button:event.button };
-      setNavigationActive(true);
+        moved: false, mode, button:event.button };
+      if (mode!=='select') setNavigationActive(true);
       event.currentTarget.setPointerCapture(event.pointerId);
     }}
     onPointerMove={event => {
@@ -166,28 +219,43 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       if (!state || !composite() || !gpuReady) return;
       const dx=event.clientX-state.x,dy=event.clientY-state.y;
       state.x=event.clientX; state.y=event.clientY;
-      if (Math.hypot(event.clientX-state.startX,event.clientY-state.startY)>5) state.moved=true;
-      if (state.moved) sendOrbit(dx,dy,state.mode);
+      if (Math.hypot(event.clientX-state.startX,event.clientY-state.startY)>4) state.moved=true;
+      if (state.moved && state.mode!=='select') sendDelta(dx,dy,state.mode);
     }}
     onPointerUp={event => {
       const state=drag.current;
-      drag.current=null;
-      setNavigationActive(false);
-      if (!state || !composite() || !gpuReady) return;
+      if (!state || event.button!==state.button) return;
+      endDrag();
+      if (!composite() || !gpuReady) return;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-      if (!state.moved && state.button===0 && state.mode==='orbit') {
+      if (!state.moved && state.mode==='select') {
         const bounds=event.currentTarget.getBoundingClientRect();
-        void invoke('studio.viewportInput',{kind:'pick', x:event.clientX-bounds.left,y:event.clientY-bounds.top,width:bounds.width,height:bounds.height}).catch(console.warn);
+        void send({kind:'pick', x:event.clientX-bounds.left,y:event.clientY-bounds.top,width:bounds.width,height:bounds.height});
       }
     }}
-    onPointerCancel={() => { drag.current=null; setNavigationActive(false); }}
+    onPointerCancel={endDrag}
+    onLostPointerCapture={() => { if (drag.current) endDrag(); }}
     onWheel={event => {
       if (!composite() || !active || !gpuReady) return;
-      void invoke('studio.viewportInput',{kind:'zoom',amount:-event.deltaY * 0.12}).catch(console.warn);
+      if (flying.current) { showSpeed(stepFlySpeed(flySpeedRef.current, event.deltaY)); return; }
+      // Trackpad pinch arrives as ctrl+wheel in WebKit.
+      const amount=-event.deltaY*(event.ctrlKey?0.6:0.12);
+      void send({kind:'zoom',amount:Math.max(-900,Math.min(900,amount))});
     }}>
-    {native && gpuReady && <div className="studio-scene-nav-help" aria-hidden="true">
-      {navigationActive?'Navigating Scene':'LMB orbit · RMB free look · MMB / Shift+LMB pan · Wheel zoom · WASD/QE move · F focus · Home reset'}
+    {navigationReady && <div className="studio-scene-nav-help" aria-hidden="true">
+      {navigationActive?(flying.current?'Flythrough · WASD move · Q/E down/up · Shift faster · Wheel speed':'Navigating Scene')
+        :'RMB fly (WASD/QE) · Alt+LMB orbit · MMB / Alt+Cmd+LMB pan · Wheel / Alt+RMB zoom · F focus'}
     </div>}
+    {navigationReady && speedVisible && <div className="studio-scene-fly-speed" role="status">
+      Camera speed ×{flySpeed.toFixed(flySpeed < 1 ? 2 : 1)}</div>}
+    {navigationReady && <SceneAxisGizmo camera={camera}
+      onView={view => {
+        // Unity: snapping to an axis view switches to Iso; orbiting away restores Persp.
+        autoIso.current = !cameraRef.current.ortho || autoIso.current;
+        void send({kind:'view',...view});
+        void send({kind:'projection',ortho:true});
+      }}
+      onToggleProjection={() => { autoIso.current = false; void send({kind:'projection',ortho:!cameraRef.current.ortho}); }}/>}
     <div className="viewport-grid"/>
     <div className="viewport-placeholder">
       <div className="viewport-cube"><Box size={44} strokeWidth={1.1}/></div>
@@ -196,6 +264,5 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
         'The native AIVERSE renderer is not connected to the browser preview.'}</p>
       <span className="viewport-tag">Metal · Vulkan · GLES</span>
     </div>
-    <div className="viewport-axis"><span className="axis-y">Y</span><span className="axis-x">X</span><span className="axis-z">Z</span></div>
   </section>;
 }
