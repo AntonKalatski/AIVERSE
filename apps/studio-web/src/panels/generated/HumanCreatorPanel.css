@@ -110,3 +110,9 @@
 .studio-panel-human_creator .hc-item__toggle input:checked + i::after{transform:translateX(16px)}
 .studio-panel-human_creator .hc-item__more{border-top:1px solid var(--au-line);padding:0 12px}
 .studio-panel-human_creator .hc-item__more[open]{padding-bottom:12px}
+.studio-panel-human_creator .hc-meshes{display:grid;grid-template-columns:1fr;gap:2px;max-height:220px;overflow:auto}
+.studio-panel-human_creator .hc-meshes .au-field{display:flex;flex-direction:row-reverse;justify-content:flex-end;align-items:center;gap:8px;margin:0}
+.studio-panel-human_creator .hc-meshes .au-field__label{font-size:var(--au-font-xs);color:var(--au-text-soft);word-break:break-all}
+.studio-panel-human_creator .hc-more{border:1px solid var(--au-line);border-radius:var(--au-radius-sm);padding:0 10px;background:var(--au-field)}
+.studio-panel-human_creator .hc-more > summary{padding:9px 0;color:var(--au-text);font-size:var(--au-font-sm)}
+.studio-panel-human_creator .hc-more[open]{padding-bottom:10px}
