@@ -77,25 +77,23 @@
           "status": "done",
           "date": "2026-11-19",
           "title": "Horizon: сварка ближнего и дальнего рельефа",
-          "text": "Этапы 19–22: швы без трещин на склонах, общие нормали.",
+          "text": "Швы без трещин на склонах, общие нормали.",
           "titleEn": "Horizon: near/far terrain welding",
-          "textEn": "Stages 19–22: crack-free seams on slopes, shared normals."
+          "textEn": "Crack-free seams on slopes, shared normals."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Сетка ветра и смешивание LOD",
-          "text": "Этап 32.",
-          "titleEn": "Wind grid and LOD blending",
-          "textEn": "Stage 32."
+          "titleEn": "Wind grid and LOD blending"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Эрозия, корни и жизненный цикл растений",
-          "text": "Этап 46, общий контракт с NEREID.",
+          "text": "Общий контракт с NEREID.",
           "titleEn": "Erosion, roots and plant lifecycle",
-          "textEn": "Stage 46, shared contract with NEREID."
+          "textEn": "Shared contract with NEREID."
         },
         {
           "status": "in-progress",
@@ -205,9 +203,7 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Сверка с авторитетным сервером и повтор команд",
-          "text": "Этап 23.",
-          "titleEn": "Authoritative server reconciliation and command replay",
-          "textEn": "Stage 23."
+          "titleEn": "Authoritative server reconciliation and command replay"
         },
         {
           "status": "done",
@@ -323,33 +319,27 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Архитектура и данные воды",
-          "text": "Этап 1: ECS-компоненты и выборка.",
+          "text": "ECS-компоненты и выборка.",
           "titleEn": "Architecture and water data",
-          "textEn": "Stage 1: ECS components and sampling."
+          "textEn": "ECS components and sampling."
         },
         {
           "status": "done",
           "date": "2026-11-18",
           "title": "Пена на дальнем LOD",
-          "text": "Этап 7C.",
-          "titleEn": "Far-LOD foam",
-          "textEn": "Stage 7C."
+          "titleEn": "Far-LOD foam"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Рябь океана по тайлам",
-          "text": "Этап 26.",
-          "titleEn": "Tiled ocean ripples",
-          "textEn": "Stage 26."
+          "titleEn": "Tiled ocean ripples"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Стыковка воды с берегом",
-          "text": "Этап 36.",
-          "titleEn": "Water and shoreline join",
-          "textEn": "Stage 36."
+          "titleEn": "Water and shoreline join"
         },
         {
           "status": "done",
@@ -361,9 +351,7 @@
           "status": "done",
           "date": "2026-11-20",
           "title": "Регрессионные проверки",
-          "text": "Этапы 49–50.",
-          "titleEn": "Regression gates",
-          "textEn": "Stages 49–50."
+          "titleEn": "Regression gates"
         },
         {
           "status": "done",
@@ -385,9 +373,7 @@
           "status": "in-progress",
           "target": null,
           "title": "Приёмка LOD океана для больших миров",
-          "text": "Этап 48 описывает тестовый контракт.",
-          "titleEn": "Ocean LOD acceptance for large worlds",
-          "textEn": "Stage 48 describes the test contract."
+          "titleEn": "Ocean LOD acceptance for large worlds"
         },
         {
           "status": "planned",
@@ -509,17 +495,13 @@
           "status": "done",
           "date": "2026-11-20",
           "title": "Vulkan: GPU-отбор и indirect-отрисовка",
-          "text": "Этап 16.",
-          "titleEn": "Vulkan: GPU culling and indirect drawing",
-          "textEn": "Stage 16."
+          "titleEn": "Vulkan: GPU culling and indirect drawing"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "LOD без трещин и временная стабильность",
-          "text": "Этап 17.",
-          "titleEn": "Crack-free LOD and temporal stability",
-          "textEn": "Stage 17."
+          "titleEn": "Crack-free LOD and temporal stability"
         },
         {
           "status": "done",
@@ -698,9 +680,9 @@
       "id": "vivid",
       "name": "VIVID",
       "nameEn": "VIVID",
-      "doc": null,
+      "doc": "docs/vivid.md",
       "flagship": true,
-      "where": "branch",
+      "where": "main",
       "tagline": "Цифровые люди",
       "essence": "Лицевой контроллер и морфы на GPU поверх анимации MotionWeave: мимика, моргание, глаза, LOD для персонажей.",
       "cover": {
@@ -767,17 +749,13 @@
           "status": "done",
           "date": "2026-11-20",
           "title": "Перенос LOD кожи",
-          "text": "Этап 7R.",
-          "titleEn": "Skin LOD transfer",
-          "textEn": "Stage 7R."
+          "titleEn": "Skin LOD transfer"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Коллизии волос",
-          "text": "Этап 7X.",
-          "titleEn": "Hair collisions",
-          "textEn": "Stage 7X."
+          "titleEn": "Hair collisions"
         },
         {
           "status": "done",
@@ -798,12 +776,12 @@
           "titleEn": "Adaptive soft shadows in portrait lighting"
         },
         {
-          "status": "in-progress",
-          "target": null,
+          "status": "done",
           "title": "Слияние в main",
-          "text": "Сейчас система живёт в отдельных ветках.",
+          "text": "Цифровые люди и мимика в Studio теперь в основной ветке.",
           "titleEn": "Merge into main",
-          "textEn": "The system lives in separate branches for now."
+          "textEn": "Digital humans and Studio facial editing are now in the main branch.",
+          "date": "2026-11-21"
         },
         {
           "status": "planned",
@@ -817,9 +795,9 @@
           "status": "planned",
           "target": null,
           "title": "VIVID Creator: редактор внешности",
-          "text": "По документации — поздняя веха.",
+          "text": "Поздняя веха.",
           "titleEn": "VIVID Creator: appearance editor",
-          "textEn": "A later milestone per the docs."
+          "textEn": "A later milestone."
         }
       ],
       "taglineEn": "Digital humans",
@@ -829,7 +807,8 @@
         "Build digital humans: cutscenes, NPCs, avatars, dialogue portraits.",
         "Bring faces to life with expressions, blinking and gaze on top of any body animation.",
         "Show characters in close-up without stepped shadows."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "lighting",
@@ -1008,25 +987,19 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Bloom через render graph",
-          "text": "Этап 15.",
-          "titleEn": "Bloom through the render graph",
-          "textEn": "Stage 15."
+          "titleEn": "Bloom through the render graph"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Векторы скорости для инстансов и скиннинга",
-          "text": "Этап 27.",
-          "titleEn": "Velocity for instances and skinning",
-          "textEn": "Stage 27."
+          "titleEn": "Velocity for instances and skinning"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Устойчивая HDR-экспозиция и сброс на склейках",
-          "text": "Этап 57.",
-          "titleEn": "Robust HDR exposure and reset on cuts",
-          "textEn": "Stage 57."
+          "titleEn": "Robust HDR exposure and reset on cuts"
         },
         {
           "status": "done",
@@ -1141,9 +1114,7 @@
           "status": "done",
           "date": "2026-11-19",
           "title": "GPU-конвейер scatter-kill и пример нативной ECS-интеграции",
-          "text": "Этап 36.",
-          "titleEn": "GPU scatter-kill pipeline and a native ECS integration example",
-          "textEn": "Stage 36."
+          "titleEn": "GPU scatter-kill pipeline and a native ECS integration example"
         },
         {
           "status": "done",
@@ -1241,33 +1212,33 @@
           "status": "done",
           "date": "2026-11-19",
           "title": "Многопоточный импорт моделей",
-          "text": "Этап 103.",
-          "titleEn": "Multithreaded model import",
-          "textEn": "Stage 103."
+          "titleEn": "Multithreaded model import"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Контракт пакетов презентации",
-          "text": "Этап 152.",
-          "titleEn": "Presentation packet contract",
-          "textEn": "Stage 152."
+          "titleEn": "Presentation packet contract"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Переимпорт с диска и наблюдение за файлами",
-          "text": "Этап 157.",
-          "titleEn": "Reimport from disk and file watching",
-          "textEn": "Stage 157."
+          "titleEn": "Reimport from disk and file watching"
+        },
+        {
+          "status": "done",
+          "date": "2026-11-21",
+          "title": "Мимика лица в Studio",
+          "text": "Лицевой риг, предпросмотр на Metal и привязка ассетов в редакторе.",
+          "titleEn": "Facial animation in Studio",
+          "textEn": "Facial rig, Metal preview and asset binding in the editor."
         },
         {
           "status": "in-progress",
           "target": null,
           "title": "Тесты и визуальная проверка",
-          "text": "По документации отложены пользователем.",
-          "titleEn": "Tests and visual verification",
-          "textEn": "Deferred by the user per the docs."
+          "titleEn": "Tests and visual verification"
         },
         {
           "status": "planned",
