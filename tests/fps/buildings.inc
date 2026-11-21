@@ -9,20 +9,20 @@ void buildings() {
     Json map=Json::parse(R"({"players":[{"team":1},{"team":2}],"colliders":[{"id":1,"min":[-200,-2,-200],"max":[200,0,200]}],
       "buildings":[{"pos":[20,0,20],"seed":5,"building":{"floors":3},"loot":[1,2,9]}]})");
     Json spawns=Json::array();spawns.push(at(layout.doorOutside));spawns.push(at(bottom));map.set("spawns",spawns);
-    auto sim=simulation(rules,map);auto& s=state(*sim);auto& module=static_cast<fps::Module&>(sim->module());
-    CHECK(module.collision().colliders().size()==1+layout.boxes.size()&&s.loot.size()==3);
-    for(const auto& l:s.loot)CHECK(l.pos.x>origin.x&&l.pos.z>origin.z&&l.pos.x<origin.x+def.width&&l.pos.z<origin.z+def.depth);
+    auto sim=simulation(rules,map);auto& module=static_cast<fps::Module&>(sim->module());
+    CHECK(module.collision().colliders().size()==1+layout.boxes.size()&&lootOf(*sim).size()==3);
+    for(const auto& l:lootOf(*sim))CHECK(l.pos.x>origin.x&&l.pos.z>origin.z&&l.pos.x<origin.x+def.width&&l.pos.z<origin.z+def.depth);
     auto yawTo=[](Vec3 from,Vec3 to){auto d=to-from;auto y=fxAtan2Turns(d.x,d.z);return y<Fixed{}?y+1_fx:y;};
     uint32_t seq=0;
     for(int i=0;i<150;++i){
-        auto& a=s.actors[0];auto& b=s.actors[1];
+        const auto a=character(*sim,1);const auto b=character(*sim,2);
         fps::Input in;in.sequence=++seq;in.viewTick=sim->tick();in.forward=1000;in.yaw=yawTo(a.pos,layout.door+(layout.door-layout.doorOutside));
         auto c=fps::command(1,in);c.tick=sim->tick();sim->inject(c);
         fps::Input up;up.sequence=seq;up.viewTick=sim->tick();up.forward=1000;up.yaw=yawTo(b.pos,top);if(b.pos.y>=top.y-Fixed::fromRatio(1,10))up.forward=0;
         auto d=fps::command(2,up);d.tick=sim->tick();sim->inject(d);sim->step();
     }
-    const auto& a=s.actors[0];CHECK(a.pos.x>origin.x&&a.pos.x<origin.x+def.width&&a.pos.z>origin.z&&a.pos.z<origin.z+def.depth);   // walked in
-    CHECK(s.actors[1].pos.y>=def.floorHeight);                                                                                      // climbed a floor
+    const auto a=character(*sim,1);CHECK(a.pos.x>origin.x&&a.pos.x<origin.x+def.width&&a.pos.z>origin.z&&a.pos.z<origin.z+def.depth);   // walked in
+    CHECK(character(*sim,2).pos.y>=def.floorHeight);                                                                                      // climbed a floor
 }
 // Map colliders with "yaw": exact rotated boxes (12 triangles), not their bounding boxes.
 void rotatedColliders() {
@@ -34,10 +34,10 @@ void rotatedColliders() {
     // The wall runs from (-14, 14) to (14, -14); (2, 2.5) is inside its axis-aligned bounds but 3 m away.
     CHECK(!w.cast({2_fx,1_fx,Fixed::fromRatio(3,2)},{{},{},2_fx}).hit);
     CHECK(w.cast({3_fx,1_fx,3_fx},{-6_fx,{},-6_fx}).hit);
-    auto& s=state(*sim);uint32_t seq=0;
+    uint32_t seq=0;
     for(int i=0;i<120;++i){fps::Input in;in.sequence=++seq;in.viewTick=sim->tick();in.forward=1000;in.yaw=Fixed::fromRatio(1,4);   // walk +X into the wall
         auto c=fps::command(1,in);c.tick=sim->tick();sim->inject(c);sim->step();}
-    const auto& p=s.actors[0].pos;CHECK(p.x+p.z<Fixed{}&&p.x>-5_fx);   // slid along the turned wall, never through it (wall line x + z = 0)
+    const Vec3 p=character(*sim,1).pos;CHECK(p.x+p.z<Fixed{}&&p.x>-5_fx);   // slid along the turned wall, never through it (wall line x + z = 0)
 }
 // fps.bots: a library bot walks through the door of a generated house and picks up the loot inside.
 void houseBots() {
@@ -50,12 +50,12 @@ void houseBots() {
     Json map=Json::parse(R"({"players":[{"team":1,"bot":true},{"team":2}],"colliders":[{"id":1,"min":[-200,-2,-200],"max":[200,0,200]}],
       "buildings":[{"pos":[20,0,20],"seed":8,"building":{"floors":1},"loot":[101]}]})");
     auto away=layout.doorOutside-layout.door;away.y={};Json spawns=Json::array();spawns.push(at(layout.doorOutside+away*3_fx));spawns.push(at({-150_fx,{},-150_fx}));map.set("spawns",spawns);
-    auto sim=simulation(rules,map),twin=simulation(rules,map);auto& s=state(*sim);
-    CHECK(s.botStates.size()==2&&s.loot.size()==1);
-    s.actors[0].owned=1;state(*twin).actors[0].owned=1;   // carries only the pistol
-    for(int i=0;i<900&&s.loot.size();++i){sim->step();twin->step();CHECK(sim->checksum()==twin->checksum());
+    auto sim=simulation(rules,map),twin=simulation(rules,map);
+    CHECK(sim->world().countExisting<fps::BotMemory>()==2&&lootOf(*sim).size()==1);
+    character(*sim,1).owned=1;character(*twin,1).owned=1;   // carries only the pistol
+    for(int i=0;i<900&&lootOf(*sim).size();++i){sim->step();twin->step();CHECK(sim->checksum()==twin->checksum());
         if(i==300){auto bytes=sim->serialize();auto copy=simulation(rules,map);CHECK(copy->deserialize(bytes)&&copy->checksum()==sim->checksum());}}
-    CHECK(s.loot.empty()&&(s.actors[0].owned&2u));   // walked in and took the rifle
+    CHECK(lootOf(*sim).empty()&&(character(*sim,1).owned&2u));   // walked in and took the rifle
 }
 // Every room of generated houses (all floors, via the stairs) is reachable on the bots' navmesh from the door.
 void houseNavigation() {
@@ -88,7 +88,7 @@ void upstairsBot() {
       "buildings":[{"pos":[20,0,20],"seed":4,"building":{"floors":3}}]})");
     Json loot=Json::array();Json item=Json::object();item.set("pos",at(layout.lootSpots.back()));item.set("type",Json::number(int64_t(101)));loot.push(item);map.set("loot",loot);
     auto away=layout.doorOutside-layout.door;away.y={};Json spawns=Json::array();spawns.push(at(layout.doorOutside+away*3_fx));spawns.push(at({-150_fx,{},-150_fx}));map.set("spawns",spawns);
-    auto sim=simulation(rules,map);auto& s=state(*sim);s.actors[0].owned=1;CHECK(layout.lootSpots.back().y>def.floorHeight);
-    for(int i=0;i<3000&&!s.loot.empty();++i){sim->step();}
-    CHECK(s.loot.empty()&&(s.actors[0].owned&2u));
+    auto sim=simulation(rules,map);character(*sim,1).owned=1;CHECK(layout.lootSpots.back().y>def.floorHeight);
+    for(int i=0;i<3000&&!lootOf(*sim).empty();++i){sim->step();}
+    CHECK(lootOf(*sim).empty()&&(character(*sim,1).owned&2u));
 }

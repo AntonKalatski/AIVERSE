@@ -584,7 +584,7 @@ void BwImpl::actionDetector(Ctx& c) {
         const Command& cmd = cmds[size_t(ai.cmdCursor_)];
         if (cmd.player == c.me() || (cmd.type != kCmdSend && cmd.type != kCmdUpgrade)) continue;
         if (std::find(c.cfg.botSlots.begin(), c.cfg.botSlots.end(), int(cmd.player)) != c.cfg.botSlots.end()) continue;
-        const auto& bots = c.m.bwBots();   // the other BW bots of this process (BW counts player.isBot == false only)
+        const auto& bots = c.m.botSlots();   // the other BW bots of this process (BW counts player.isBot == false only)
         if (std::find(bots.begin(), bots.end(), cmd.player) != bots.end()) continue;
         ++ai.actionCounts_[cmd.player];
     }
@@ -725,15 +725,15 @@ void BwImpl::resetBot(Ctx& c) {
 }
 
 void BwAI::update(Simulation& sim, RtsModule& m) {
-    if (!m.bwAI()) return;
-    cfg_ = m.bwAI();
+    cfg_ = std::dynamic_pointer_cast<const BwAIConfig>(m.aiConfig());
+    if (!cfg_) return;
     const BwProfile& prof = cfg_->profileFor(player_);
     const uint32_t now = sim.tick();
     if (init_ && now <= lastTick_) return;   // once per tick
     const Fixed dt = init_ ? Fixed::fromInt(int64_t(now - lastTick_)) / int64_t(sim.tickRate()) : sim.dt();
     lastTick_ = now;
     Ctx c(sim, m, *this, *cfg_, prof, dt);
-    m.bwRegisterBot(player_);
+    m.registerBotSlot(player_);
     pending_.erase(std::remove_if(pending_.begin(), pending_.end(), [&](const Pending& p) { return p.until < now; }), pending_.end());
     if (!init_) {
         init_ = true;
@@ -823,11 +823,15 @@ void BwAI::stateIo(Archive& a) {
     if (!a.writing()) routes_ = BwRoutes{};   // derived: rebuilt from the lanes on the next think
 }
 
-BwAIHolder::BwAIHolder() = default;
-BwAIHolder::BwAIHolder(const BwAIHolder& o) : p(o.p ? std::make_unique<BwAI>(*o.p) : nullptr) {}
-BwAIHolder& BwAIHolder::operator=(const BwAIHolder& o) { if (this != &o) p = o.p ? std::make_unique<BwAI>(*o.p) : nullptr; return *this; }
-BwAIHolder::BwAIHolder(BwAIHolder&&) noexcept = default;
-BwAIHolder& BwAIHolder::operator=(BwAIHolder&&) noexcept = default;
-BwAIHolder::~BwAIHolder() = default;
+void registerBwAIController() {
+    AIControllerKind k;
+    k.name = "bw";
+    k.load = [](const Json& rulesAi, const Json& map, const Rules& r) -> std::shared_ptr<const AIControllerConfig> {
+        return loadBwAIConfig(rulesAi, map, r);
+    };
+    k.create = [](uint8_t player, uint64_t seed) -> std::unique_ptr<AIController> { return std::make_unique<BwAI>(player, seed); };
+    k.pointStats = true;   // the bots read per point produced / kill counters
+    registerAIController(std::move(k));
+}
 
 } // namespace aiverse::game

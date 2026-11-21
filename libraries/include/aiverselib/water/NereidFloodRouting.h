@@ -497,9 +497,12 @@ inline void addNereidFloodRoutingSystem(
     sim.addSystem(std::move(name),
         [dtMs,config](Simulation& current){
             World& world=current.world();
-            const auto* stored=world.resourceConst<WaterFloodResource>();
-            if(!stored || stored->cells.empty())return;
-            WaterFloodResource next=*stored;
+            if(const auto* peek=world.resourceConst<WaterFloodResource>();
+               !peek || peek->cells.empty())return;
+            // Step the resource in place: resource() detaches a COW-shared
+            // snapshot, and stepNereidFlood keeps the strong exception
+            // guarantee itself, so no second whole-resource copy is needed.
+            WaterFloodResource& next=*world.resource<WaterFloodResource>();
             // An inflow whose NEREID water body died or was disabled is
             // skipped for this tick (deterministically, in port order)
             // instead of throwing every tick; the configured ports persist.
@@ -511,7 +514,7 @@ inline void addNereidFloodRoutingSystem(
                 return world.alive(port.waterBody) && body &&
                        validWaterBody(*body);
             };
-            if(!std::all_of(stored->ports.begin(),stored->ports.end(),
+            if(!std::all_of(next.ports.begin(),next.ports.end(),
                             liveInflow)){
                 configured=next.ports;
                 next.ports.erase(std::remove_if(next.ports.begin(),
@@ -519,6 +522,11 @@ inline void addNereidFloodRoutingSystem(
                         return !liveInflow(port);
                     }),next.ports.end());
             }
+            // Restore the configured ports on every exit, including a throw.
+            struct RestorePorts {
+                WaterFloodResource& r;std::vector<WaterFloodPort>& ports;
+                ~RestorePorts(){if(!ports.empty())r.ports=std::move(ports);}
+            } restore{next,configured};
             // Obstruction lookup is host-independent, based only on the
             // immutable ECS record for the same water tick.
             const NereidFloodObstructionIndex obstructions(world);
@@ -530,8 +538,6 @@ inline void addNereidFloodRoutingSystem(
                 };
             (void)stepNereidFlood(next,current.tick(),dtMs,
                                   config,resistance);
-            if(!configured.empty())next.ports=std::move(configured);
-            world.setResource<WaterFloodResource>(std::move(next));
         });
 }
 

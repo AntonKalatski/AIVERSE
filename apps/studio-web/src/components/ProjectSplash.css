@@ -1,0 +1,36 @@
+.psplash{position:fixed;inset:0;z-index:950;background:#0a0f16;color:#eef2f7;overflow:hidden;animation:psplash-in .25s ease-out}
+@keyframes psplash-in{from{opacity:0}to{opacity:1}}
+.psplash__art{position:absolute;inset:0;background-size:cover;background-position:center;transform:scale(1.04);filter:saturate(1.05)}
+.psplash__shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(6,9,14,.62) 0%,rgba(6,9,14,.25) 40%,rgba(6,9,14,0) 70%),linear-gradient(0deg,rgba(6,9,14,.7) 0%,rgba(6,9,14,0) 28%)}
+.psplash__brand{position:absolute;right:36px;top:22px;font-weight:600;letter-spacing:.18em;display:flex;align-items:center;gap:6px;font-size:12px;color:#c7d0dc;letter-spacing:.02em}
+.psplash__logo{position:absolute;right:8%;top:50%;transform:translateY(-55%);max-width:30%;max-height:42%;object-fit:contain;filter:drop-shadow(0 10px 30px rgba(0,0,0,.45))}
+.psplash__title{position:absolute;left:36px;top:34%;max-width:52%}
+.psplash__title small{font-size:13px;color:#9fb0c4}
+.psplash__title h1{margin:6px 0 10px;font-size:46px;text-shadow:0 2px 18px rgba(0,0,0,.35);line-height:1.08;font-weight:600;letter-spacing:-.01em}
+.psplash__title p{margin:0;font-size:13px;color:#9fb0c4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.psplash__foot{position:absolute;left:36px;right:36px;bottom:30px}
+.psplash__stages{display:flex;align-items:center;gap:14px;font-size:12px;color:#7f8fa3;margin-bottom:8px}
+.psplash__stages span{display:flex;align-items:center;gap:5px}
+.psplash__stages .is-done{color:#8ee6a0}.psplash__stages .is-active{color:#eef2f7}
+.psplash__stages em{margin-left:auto;font-style:normal;font-variant-numeric:tabular-nums}
+.psplash__bar{height:4px;border-radius:2px;background:rgba(255,255,255,.14);overflow:hidden}
+.psplash__bar span{display:block;height:100%;background:linear-gradient(90deg,#4fa3ff,#7ee0c3);transition:width .3s ease-out}
+.psplash__meta{display:flex;justify-content:space-between;gap:20px;margin-top:10px;font-size:12px;color:#9fb0c4}
+.psplash__meta span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.psplash__tip{text-align:right;flex:none;max-width:55%}
+.psplash__continue{position:absolute;right:0;bottom:72px;padding:5px 12px;border-radius:7px;border:1px solid rgba(255,255,255,.28);background:rgba(10,15,22,.5);color:#dbe3ee;font-size:12px;cursor:pointer}
+.psplash__continue:hover{background:rgba(255,255,255,.1)}
+.psplash__error p{margin:0 0 10px;color:#ffb4a8;font-size:13px;white-space:pre-wrap}
+.psplash__error div{display:flex;gap:8px}
+.psplash__spin{animation:psplash-spin 1s linear infinite}
+@keyframes psplash-spin{to{transform:rotate(360deg)}}
+.splash-art{position:absolute;inset:0;width:100%;height:100%}
+.splash-art__stars{animation:sa-twinkle 6s ease-in-out infinite alternate}
+@keyframes sa-twinkle{from{opacity:.75}to{opacity:1}}
+.splash-art__ridge{animation:sa-drift 18s ease-in-out infinite alternate}
+.splash-art__ridge--0{animation-duration:26s}.splash-art__ridge--1{animation-duration:22s}.splash-art__ridge--2{animation-duration:18s}.splash-art__ridge--3{animation-duration:14s}
+@keyframes sa-drift{from{transform:translateX(-6px)}to{transform:translateX(6px)}}
+@media (prefers-reduced-motion:reduce){.splash-art__stars,.splash-art__ridge{animation:none}}
+.psplash__art.is-sky{background-position:center 85%;transform-origin:60% 80%;animation:psplash-drift 40s ease-out both}
+@keyframes psplash-drift{from{transform:scale(1.04)}to{transform:scale(1.12) translateX(-1.5%)}}
+@media (prefers-reduced-motion:reduce){.psplash__art.is-sky{animation:none}}

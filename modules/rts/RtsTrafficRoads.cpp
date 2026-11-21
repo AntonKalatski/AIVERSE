@@ -1,5 +1,5 @@
 // Traffic on spline roads (docs/traffic.md § Spline roads): the traffic network built from the map's "roadNetwork"
-// (RtsRoadNet) instead of road tiles. Every drivable edge is a curved piece (its trimmed centre line, lanes per
+// (engine/roads/RoadNet.h) instead of road tiles. Every drivable edge is a curved piece (its trimmed centre line, lanes per
 // direction from its road type), every node where two or more of them meet is a junction whose arms get the four
 // sides by their directions; cells are filled from the carriageway / junction shapes, the sidewalk mask from the
 // sidewalks. Fixed math only: the same network on every machine.
@@ -9,6 +9,7 @@
 #include "../../engine/core/FixedMath.h"
 
 namespace aiverse::game {
+using namespace aiverse::roads;   // spline roads (engine/roads)
 
 namespace tl = lib::genre;
 

@@ -44,7 +44,7 @@ struct HdrScene {
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
-    RTSCamera camera;
+    Camera camera;
     Mesh floor, cube, water;
     bool fogLandscape=false;
     Mesh fogTerrain,fogTrees,fogRocks;

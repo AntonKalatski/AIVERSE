@@ -8,20 +8,20 @@ void Module::setContentReader(world::AssetReader reader) {
 bool Module::readyToStep(Simulation& sim) {
     if(!streamManifest_.getBool("async"))return true;
     if(!streamedCollision_)return false;
-    const auto& s=state(sim);
+    const Simulation& view=sim;const auto cars=vehicles(view);
     Fixed radius=64_fx;
     for(const auto& weapon:config_.weapons)radius=fxMax(radius,weapon.range+64_fx);
     radius=fxMax(radius,config_.systems.interactRange+64_fx);
     Fixed movement=config_.motor.sprintSpeed*sim.dt()+config_.motor.radius+8_fx;
-    for(const auto& vehicle:s.vehicles)movement=fxMax(movement,vehicle.speed*sim.dt()+8_fx);
+    for(const auto& vehicle:cars)movement=fxMax(movement,vehicle.speed*sim.dt()+8_fx);
     radius+=movement;
     std::vector<world::Bounds> regions;
     auto region=[&](Vec3 p,Fixed r){Vec3 extent{r,r,r};regions.push_back({p-extent,p+extent});};
     // Includes respawn and round reset destinations before any actions can consume the tick.
     for(auto p:spawns_)region(p,radius);
-    for(const auto& actor:s.actors)region(actor.pos,radius);
-    for(const auto& vehicle:s.vehicles)region(vehicle.pos,radius);
-    for(const auto& p:s.projectiles){auto travel=fxMax(fxAbs(p.velocity.y),fxMax(fxAbs(p.velocity.x),fxAbs(p.velocity.z)))*sim.dt();
+    forEachCharacter(view,[&](ConstCharacterRef actor){region(actor.pos,radius);});
+    for(const auto& vehicle:cars)region(vehicle.pos,radius);
+    for(const auto& p:projectiles(view)){auto travel=fxMax(fxAbs(p.velocity.y),fxMax(fxAbs(p.velocity.x),fxAbs(p.velocity.z)))*sim.dt();
         if(p.program.enabled)travel=fxMax(travel,(p.programSpeed+fxAbs(p.program.verticalSpeed))*sim.dt()+p.program.radius);
         Fixed reach=fxMax(config_.systems.blastRadius,config_.systems.flashRadius);
         if(p.program.enabled)for(const auto& m:config_.weapons[p.weapon].flight.modifiers)

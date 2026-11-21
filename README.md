@@ -108,7 +108,7 @@ from the mechanics libraries — each one deterministic, tested, with save/resto
 | **Any mobile game** | `aiverse::meta` and LiveOps, tutorials, UI screens, store and ads plugins |
 
 Sports games, boats, pit stops and penalties are still on the [roadmap](docs/genre-mechanics-roadmap.md). Full list of
-libraries: [`libraries/catalog.json`](libraries/catalog.json) and [genre packages](docs/genre-packages.md).
+libraries: [`libraries/catalog.json`](libraries/catalog.json) and [genre packages](docs/mechanics-packages.md).
 
 ---
 
@@ -251,6 +251,9 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 ./studio_mac.command templates/mushrooms   # ...on another project
 ```
 
+Windows: `studio_windows.cmd [project]` builds and opens `AiverseStudio.exe` (needs Visual Studio 2022,
+CMake, Node.js; runs on the WebView2 Runtime and Vulkan).
+
 `studio_mac.command` builds the web UI and the native Studio and opens it. The engine alone:
 `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`. The previous
 ImGui editor (`build/mac/AiverseEditor.app`) is still built and works on Linux and Windows.
@@ -302,7 +305,7 @@ Reference documents are in English. The overview, the game wizard, Unity migrati
 |---|---|
 | [**Full overview**](docs/overview.md) | every subsystem, building, platforms, CI, releases |
 | [Game format](docs/game-format.md) | `game.json`, `rules.json`, maps and all data blocks |
-| [Genre packages](docs/genre-packages.md) · [Libraries](docs/libraries.md) | mechanics for any genre |
+| [Genre packages](docs/mechanics-packages.md) · [Libraries](docs/libraries.md) | mechanics for any genre |
 | [Make a game wizard](docs/game-wizard.md) | how an idea plus art becomes a finished project |
 | [Scripting](docs/scripting.md) · [C++ modules](docs/native-modules.md) | when data isn't enough |
 | [Terrain](docs/terrain.md) · [Planets](docs/planets.md) · [Pathfinding](docs/pathfinding.md) | world and movement |

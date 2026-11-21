@@ -75,6 +75,9 @@ set(AIVERSE_LIBRARY_WORLD_SOURCES
     ../../engine/pack/Sha256.cpp)
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../modules/fps/FpsModule.cpp")
     file(GLOB AIVERSE_LIBRARY_FPS_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../../modules/fps/Fps*.cpp")
+    # the FPS host's vehicles run on the shared vehicle system (engine/vehicles)
+    list(APPEND AIVERSE_LIBRARY_FPS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/../../engine/vehicles/Vehicles.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../../engine/vehicles/VehicleRace.cpp")
     # FpsModule parses projectile flight programs shared with the RTS module (engine/sim/ProjectileData).
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/sim/ProjectileData.cpp")
         list(APPEND AIVERSE_LIBRARY_FPS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/../../engine/sim/ProjectileData.cpp")
@@ -117,7 +120,7 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/data/Json.cpp")
     set(AIVERSE_LIBRARY_PUZZLE_SOURCES ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)
     add_executable(aiverse_library_genre_puzzles_tests genre_puzzles_tests.cpp ${AIVERSE_LIBRARY_PUZZLE_SOURCES})
-    add_executable(aiverse_puzzles_example ../../examples/libraries/genre/puzzles/PuzzlesExample.cpp ${AIVERSE_LIBRARY_PUZZLE_SOURCES})
+    add_executable(aiverse_puzzles_example ../../examples/libraries/mechanics/puzzles/PuzzlesExample.cpp ${AIVERSE_LIBRARY_PUZZLE_SOURCES})
     foreach(target aiverse_library_genre_puzzles_tests aiverse_puzzles_example)
         target_link_libraries(${target} PRIVATE AIVERSE::gameplay_native)
         if(NOT MSVC)
@@ -127,8 +130,8 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/data/Json.cpp")
     add_test(NAME library_genre_puzzles COMMAND aiverse_library_genre_puzzles_tests ${CMAKE_CURRENT_LIST_DIR}/../..)
     add_test(NAME library_genre_puzzles_example COMMAND ${CMAKE_COMMAND}
         -DEXAMPLE=$<TARGET_FILE:aiverse_puzzles_example>
-        -DLEVELS=${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/genre/puzzles/levels.json
-        -P ${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/genre/puzzles/run_twice.cmake)
+        -DLEVELS=${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/mechanics/puzzles/levels.json
+        -P ${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/mechanics/puzzles/run_twice.cmake)
 endif()
 # Cards + turn strategy (card-games, tactics-grid, CardBot/TacticsBot): own test executable and the executable
 # bot-vs-bot example (card duel + hex skirmish, each played twice; passes only with winners and identical hashes).
@@ -136,7 +139,7 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/core/FixedMath.cpp")
     add_executable(aiverse_library_cards_turns_tests genre_cards_turns_tests.cpp
         ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)
     target_link_libraries(aiverse_library_cards_turns_tests PRIVATE AIVERSE::gameplay_native)
-    add_executable(aiverse_cards_turns_example ../../examples/libraries/genre/cards-turns/main.cpp
+    add_executable(aiverse_cards_turns_example ../../examples/libraries/mechanics/cards-turns/main.cpp
         ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)
     target_link_libraries(aiverse_cards_turns_example PRIVATE AIVERSE::gameplay_native)
     if(NOT MSVC)
@@ -144,7 +147,7 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/core/FixedMath.cpp")
         target_compile_options(aiverse_cards_turns_example PRIVATE -Wall -Wextra -Werror -pedantic)
     endif()
     add_test(NAME library_cards_turns COMMAND aiverse_library_cards_turns_tests ${CMAKE_CURRENT_LIST_DIR}/../..)
-    add_test(NAME library_cards_turns_example COMMAND aiverse_cards_turns_example ${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/genre/cards-turns 7)
+    add_test(NAME library_cards_turns_example COMMAND aiverse_cards_turns_example ${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/mechanics/cards-turns 7)
     set_tests_properties(library_cards_turns_example PROPERTIES PASS_REGULAR_EXPRESSION "deterministic replay: identical, winners: yes")
 endif()
 # Vehicles + sports (vehicle-controllers, sports-rules): unit tests and the executable gameplay example, run twice
@@ -153,7 +156,7 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/core/FixedMath.cpp")
     add_executable(aiverse_library_vehicles_sports_tests genre_vehicles_sports_tests.cpp
         ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)
     target_link_libraries(aiverse_library_vehicles_sports_tests PRIVATE AIVERSE::gameplay_native)
-    add_executable(aiverse_vehicles_sports_example ../../examples/libraries/genre/vehicles-sports/VehiclesSportsExample.cpp
+    add_executable(aiverse_vehicles_sports_example ../../examples/libraries/mechanics/vehicles-sports/VehiclesSportsExample.cpp
         ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)
     target_link_libraries(aiverse_vehicles_sports_example PRIVATE AIVERSE::gameplay_native)
     if(NOT MSVC)
@@ -164,18 +167,18 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/core/FixedMath.cpp")
     add_test(NAME library_vehicles_sports COMMAND aiverse_library_vehicles_sports_tests ${CMAKE_CURRENT_LIST_DIR}/../..)
     add_test(NAME library_vehicles_sports_example COMMAND ${CMAKE_COMMAND}
         -DEXAMPLE=$<TARGET_FILE:aiverse_vehicles_sports_example>
-        -DDATA=${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/genre/vehicles-sports
+        -DDATA=${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/mechanics/vehicles-sports
         -P ${CMAKE_CURRENT_LIST_DIR}/vehicles_sports_example.cmake)
 endif()
 # settlement-production + survival-ecology (+ colony planner bot): unit tests and the executable 20-day example
-# (examples/libraries/genre/production-survival: survival criteria, identical hashes across two runs and a restore).
+# (examples/libraries/mechanics/production-survival: survival criteria, identical hashes across two runs and a restore).
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/data/Json.cpp")
     set(AIVERSE_LIBRARY_PRODUCTION_SURVIVAL_SOURCES
         ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)
     add_executable(aiverse_library_genre_production_survival_tests genre_production_survival_tests.cpp
         ${AIVERSE_LIBRARY_PRODUCTION_SURVIVAL_SOURCES})
     add_executable(aiverse_library_production_survival_example
-        ../../examples/libraries/genre/production-survival/production_survival.cpp ${AIVERSE_LIBRARY_PRODUCTION_SURVIVAL_SOURCES})
+        ../../examples/libraries/mechanics/production-survival/production_survival.cpp ${AIVERSE_LIBRARY_PRODUCTION_SURVIVAL_SOURCES})
     foreach(_aiverse_ps aiverse_library_genre_production_survival_tests aiverse_library_production_survival_example)
         target_link_libraries(${_aiverse_ps} PRIVATE AIVERSE::gameplay_native)
         if(NOT MSVC)
@@ -184,7 +187,7 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/data/Json.cpp")
     endforeach()
     add_test(NAME library_genre_production_survival COMMAND aiverse_library_genre_production_survival_tests ${CMAKE_CURRENT_LIST_DIR}/../..)
     add_test(NAME library_production_survival_example COMMAND aiverse_library_production_survival_example
-        ${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/genre/production-survival --quiet)
+        ${CMAKE_CURRENT_LIST_DIR}/../../examples/libraries/mechanics/production-survival --quiet)
 endif()
 add_executable(aiverse_library_encounter_tests encounter_tests.cpp
     ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp)

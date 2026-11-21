@@ -9,7 +9,7 @@
 
 namespace aiverse::client {
 namespace {
-float visibleRadius(const render::RTSCamera& camera) {
+float visibleRadius(const render::Camera& camera) {
     const float w = float(platform::windowWidth()), h = float(platform::windowHeight());
     float radius = 8;
     for (float x : {0.0f, w}) for (float y : {0.0f, h}) {

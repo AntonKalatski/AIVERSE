@@ -8,7 +8,7 @@
 int main() {
     using namespace aiverse;
     using Fn=bool (game::Portrait::*)(
-        const render::ModelDraw&,const render::RTSCamera&,
+        const render::ModelDraw&,const render::Camera&,
         render::float4);
     static_assert(std::is_same_v<
         decltype(&game::Portrait::renderAppearance),Fn>);

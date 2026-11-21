@@ -192,6 +192,39 @@ int main() {
     }
 
 
+    {   // Dynamic buffer versions: partial writes on consecutive frames rotate
+        // through GPU-fenced versions; a reused version must receive every
+        // range it missed (copied incrementally, not the whole shadow).
+        constexpr size_t kBytes = 4096;
+        BufferDesc bd{BufferType::Storage, Usage::Dynamic, kBytes, nullptr, "dirty ranges"};
+        const BufferHandle buf = d.createBuffer(bd);
+        CHECK(buf.valid());
+        if (buf.valid() && d.supportsCompute()) {
+            std::vector<uint8_t> expected(kBytes, 0);
+            struct Read { bool done = false; std::vector<uint8_t> bytes; std::vector<uint8_t> want; };
+            std::vector<std::shared_ptr<Read>> reads;
+            for (int f = 0; f < 12; ++f) {
+                d.beginFrame(W, H);
+                const size_t offset = size_t((f * 384) % 3584), size = 96 + size_t(f) * 8;
+                std::vector<uint8_t> chunk(size, uint8_t(1 + f));
+                std::copy(chunk.begin(), chunk.end(), expected.begin() + long(offset));
+                CHECK(d.updateSharedBufferChecked(buf, chunk.data(), size, offset));
+                auto r = std::make_shared<Read>();
+                r->want = expected;
+                CHECK(d.readBufferAsync(buf, kBytes, [r](std::vector<uint8_t> b) {
+                    r->bytes = std::move(b); r->done = true; }));
+                reads.push_back(r);
+                d.endFrame();
+            }
+            for (int wait = 0; wait < 12; ++wait) { d.beginFrame(W, H); d.endFrame(); }
+            int matches = 0;
+            for (const auto& r : reads) matches += r->done && r->bytes == r->want;
+            CHECK(matches == 12);
+            std::printf("dynamic buffer versions: %d/12 frames match\n", matches);
+            d.destroyBuffer(buf);
+        }
+    }
+
     {   // Real Vulkan compute storage texture, barrier and async GPU readback.
         // This runs only when the physical queue and format support image stores.
         CHECK(!d.supportsStorageTexture(PixelFormat::BC7,

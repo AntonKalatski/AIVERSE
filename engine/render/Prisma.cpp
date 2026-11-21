@@ -13,6 +13,9 @@
 #include <limits>
 #include <set>
 #include "PrismaShaders.h"
+#include "PrismaShadersExtra.h"
+#include "third_party/smaa/AreaTex.h"
+#include "third_party/smaa/SearchTex.h"
 
 namespace aiverse::render {
 
@@ -37,12 +40,20 @@ enum : uint32_t {
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
     kPfAutoExposure = 1u << 13,
     kPfUnderwater = 1u << 14, kPfUnderwaterDepth = 1u << 15, kPfLensWater = 1u << 16, kPfWaterline = 1u << 17,
+    kPfDistort = 1u << 18, kPfHaze = 1u << 19, kPfShock = 1u << 20, kPfFlare = 1u << 21, kPfDirtTex = 1u << 22,
+    kPfStreaks = 1u << 23, kPfHalation = 1u << 24,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH", "PF_LENS_WATER", "PF_WATERLINE"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH", "PF_LENS_WATER", "PF_WATERLINE",
+                          "PF_DISTORT", "PF_HAZE", "PF_SHOCK", "PF_FLARE", "PF_DIRT_TEX", "PF_STREAKS", "PF_HALATION"};
 
 // Target roles inside one Sized set.
-enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131, kPhysicalSky = 200, kLocalFog = 201 };
+enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131, kPhysicalSky = 200, kLocalFog = 201,
+           // 2026-11-22 effects
+           kAoBuffer = 60, kAoOut = 61, kSsrOut = 62, kFlare0 = 63, kFlare1 = 64, kFlare2 = 65,
+           kStreak0 = 66, kStreak1 = 67, kHalo0 = 68, kHalo1 = 69, kHalo2 = 70,
+           kSmaaEdges = 140, kSmaaWeights = 141, kPostLdr0 = 142, kPostLdr1 = 143, kFsrOut = 144,
+           kHistogramBins = 150, kHistogramMean = 151 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 // Only the HDR luminance prefilter needs the camera-authored region.
@@ -85,9 +96,21 @@ const char* kTemporalFields[] = {
 };
 struct CompositeU {
     float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4], lensWater0[4], lensWater1[4], lensWater2[4], waterline0[4], waterline1[4];
+    // 2026-11-22: lensDistortion, heatHaze + shockwaves, lensFlare (+ dirt), anamorphicStreaks, halation.
+    float distort0[4], distort1[4], haze[4], shock0[4], shock1[4], shock2[4], shock3[4], shockS[4], flare[4], streaks[4], halation[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera", "lensWater0", "lensWater1", "lensWater2", "waterline0", "waterline1"};
+// Shared uniform block of the PrismaShadersExtra.h passes.
+struct ExtraU {
+    float px[4], p0[4], p1[4], p2[4], p3[4];
+    float vp0[4], vp1[4], vp2[4], vp3[4];
+    float ivp0[4], ivp1[4], ivp2[4], ivp3[4];
+    float cam[4];
+};
+const char* kExtraFields[] = {"px", "p0", "p1", "p2", "p3", "vp0", "vp1", "vp2", "vp3",
+                              "ivp0", "ivp1", "ivp2", "ivp3", "cam"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera", "lensWater0", "lensWater1", "lensWater2", "waterline0", "waterline1",
+                            "distort0", "distort1", "haze", "shock0", "shock1", "shock2", "shock3", "shockS", "flare", "streaks", "halation"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -110,8 +133,9 @@ Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMas
                                "#define TDIR(d) (px.z > 0.5 ? vec2((d).x, -(d).y) : (d))\n";
     std::string gTex, mArgs, gMacros, mMacros;
     // Slot 9 is reserved for Auto Exposure when the postfx graph uses
-    // all four authored texture slots (5,6,7,8).
-    for (int t = 0; t < 10; ++t) {
+    // all four authored texture slots (5,6,7,8). Slots 10..13: lens flare,
+    // lens dirt, anamorphic streaks, halation (GLES/Metal guarantee 16).
+    for (int t = 0; t < 14; ++t) {
         if (!(texMask & (1u << t))) continue;
         const std::string n = std::to_string(t);
         gTex += "uniform sampler2D tex" + n + ";\n";
@@ -210,6 +234,12 @@ void Prisma::collectCompletedSizes(uint64_t completedGpuFence) {
 }
 void Prisma::retireView(uint64_t id) {
     lensWaterViews_.erase(id);
+    shockwaves_.erase(id);
+    if (auto it = dlssViews_.find(id); it != dlssViews_.end()) {
+        if (externalUpscaler_) externalUpscaler_->releaseView(id);
+        retireTarget(it->second.output);
+        dlssViews_.erase(it);
+    }
     // Per-camera temporal state is not shared with another view, even if
     // both viewports have the same size. Do NOT touch Sized: color/depth
     // and graph targets are still shared by dimensions.
@@ -560,6 +590,16 @@ void Prisma::shutdown() {
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
     graphTextures_.clear();graphPaths_.clear();
+    for (auto& [path, t] : images_) release(t);
+    images_.clear();
+    release(smaaArea_); release(smaaSearch_); smaaFailed_ = false;
+    for (auto& [id, view] : dlssViews_) {
+        if (externalUpscaler_) externalUpscaler_->releaseView(id);
+        release(view.output);
+    }
+    dlssViews_.clear();
+    if (externalUpscaler_) externalUpscaler_->shutdown(*dev_);
+    shockwaves_.clear();
     for (int i = 0; i < kProgCount; ++i) {
         if (pipes_[i].valid()) dev_->destroyPipeline(pipes_[i]);
         if (shaders_[i].valid()) dev_->destroyShader(shaders_[i]);
@@ -603,7 +643,8 @@ void Prisma::setImageLoader(ImageLoader fn) {
     // than destroying live borrowed inputs as soon as a new loader arrives.
     for (auto& [path,l] : luts_) retireTarget(l.tex);
     for (auto& [path,t] : graphTextures_) retireTarget(t);
-    luts_.clear(); graphTextures_.clear();
+    for (auto& [path,t] : images_) retireTarget(t);
+    luts_.clear(); graphTextures_.clear(); images_.clear();
     loader_ = std::move(fn);
 }
 
@@ -763,6 +804,34 @@ std::vector<Prisma::ViewGpuTiming> Prisma::viewGpuTimings() const {
 }
 
 std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
+    const auto temporal=temporalRenderSizeForOutput(width,height);
+    width=std::max(1,width);
+    height=std::max(1,height);
+    if (temporal.first!=width || temporal.second!=height) return temporal;
+    // The canonical temporal resolve owns the output size whenever it runs
+    // (even 1:1 with jitter); the spatial / external upscalers yield to it.
+    if (canonicalTemporalRequested()) {
+        if (auto it=dlssViews_.find(viewId_); it!=dlssViews_.end()) it->second.jitterActive=false;
+        return temporal;
+    }
+    if (width<64 || height<64 || !dev_ || !dev_->gpuHealthy()) return temporal;
+    if (dlssActive()) {
+        const PrismaEffect* e=settings_.find(PrismaType::Dlss);
+        const auto size=prismaScaledRenderSize(width,height,e->get("renderScale"));
+        auto& view=dlssViews_[viewId_];
+        if (view.outputWidth!=width || view.outputHeight!=height ||
+            view.renderWidth!=size.first || view.renderHeight!=size.second) view.valid=false;
+        view.outputWidth=width;view.outputHeight=height;
+        view.renderWidth=size.first;view.renderHeight=size.second;
+        return size;
+    }
+    if (auto it=dlssViews_.find(viewId_); it!=dlssViews_.end()) it->second.jitterActive=false;
+    if (spatialUpscaleActive())
+        return prismaScaledRenderSize(width,height,settings_.find(PrismaType::Fsr)->get("renderScale"));
+    return temporal;
+}
+
+std::pair<int,int> Prisma::temporalRenderSizeForOutput(int width,int height) {
     width=std::max(1,width);
     height=std::max(1,height);
     requestedOutputSizes_[viewId_]={width,height};
@@ -926,7 +995,7 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
 // Stage 43: projection-only Halton jitter. Keep the caller's unjittered camera
 // for selection, UI and gameplay. History tracks per-view jitter in stable
 // unflipped UV coordinates; this helper performs no GPU work.
-RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
+Camera Prisma::jitteredCamera(Camera camera, int width, int height) {
     if (width <= 0 || height <= 0) return camera;
     const auto* effect = settings_.find(PrismaType::TemporalResolve);
     const char* temporal = std::getenv("AIVERSE_PRISMA_TEMPORAL");
@@ -945,6 +1014,24 @@ RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
     // Shader compilation can fail on a backend. Never jitter the scene
     // if there is no temporal reconstruction shader to undo it.
     if (eligible && !program(kTemporalResolve).valid()) eligible=false;
+    if (!eligible && dlssActive() && program(kMotionVectors).valid() &&
+        camera.jitter.x == 0 && camera.jitter.y == 0) {
+        // External temporal upscaler (DLSS): it owns the history, Prisma only
+        // jitters the projection (Halton 2,3 with 8 phases) and reports it.
+        auto& view = dlssViews_[viewId_];
+        const auto haltonDlss=[](uint32_t index,uint32_t base) {
+            float result=0.0f, factor=1.0f;
+            while (index>0) { factor/=float(base); result+=factor*float(index%base); index/=base; }
+            return result;
+        };
+        const uint32_t index=uint32_t((view.jitterSequence++ % 8u)+1u);
+        view.jitterPixelsX=haltonDlss(index,2)-0.5f;
+        view.jitterPixelsY=haltonDlss(index,3)-0.5f;
+        view.jitterActive=true;
+        camera.jitter={2.0f*view.jitterPixelsX/float(width),2.0f*view.jitterPixelsY/float(height)};
+        return camera;
+    }
+    if (auto it=dlssViews_.find(viewId_); it!=dlssViews_.end()) it->second.jitterActive=false;
     if (!eligible) {
         if (auto it=temporalViews_.find(viewId_); it!=temporalViews_.end()) {
             if (it->second.jitterActive) it->second.valid=false;
@@ -1232,8 +1319,54 @@ gfx::TextureHandle Prisma::depthFor(Sized& s, int w, int h, bool scratch) {
 
 gfx::PipelineHandle Prisma::program(Prog p) {
     if (pipes_[p].valid() || failed_[p]) return pipes_[p];
+    if (p >= kAo) {
+        // PrismaShadersExtra.h passes: one shared uniform block (ExtraU).
+        struct XDef { const char* body; const char* helpers; uint32_t tex; uint32_t depth; const char* label; };
+        static const XDef xdefs[kProgCount - kAo] = {
+            {prisma::kAo, nullptr, 1, 1, "prisma ambient occlusion"},
+            {prisma::kAoApply, prisma::kAoApplyHelpers, 7, 4, "prisma ambient occlusion apply"},
+            {prisma::kSsr, nullptr, 3, 2, "prisma screen-space reflections"},
+            {prisma::kFlareGhost, prisma::kFlareHelpers, 1, 0, "prisma lens flare ghosts"},
+            {prisma::kSmaaEdge, nullptr, 1, 0, "prisma smaa edges"},
+            {prisma::kSmaaWeight, prisma::kSmaaWeightHelpers, 7, 0, "prisma smaa weights"},
+            {prisma::kSmaaBlend, nullptr, 3, 0, "prisma smaa blend"},
+            {prisma::kFsrEasu, prisma::kFsrHelpers, 1, 0, "prisma fsr easu"},
+            {prisma::kFsrRcas, nullptr, 1, 0, "prisma fsr rcas"},
+            {prisma::kHistogram, nullptr, 1, 0, "prisma exposure histogram"},
+            {prisma::kHistogramResolve, nullptr, 1, 0, "prisma exposure histogram percentiles"},
+        };
+        const XDef& d = xdefs[p - kAo];
+        const std::string helpers = std::string(prisma::kExtraHelpers) + (d.helpers ? d.helpers : "");
+        Built b = buildProgram(kExtraFields, sizeof(kExtraFields) / sizeof(kExtraFields[0]), d.tex, "",
+                               helpers.c_str(), d.body, d.depth);
+        gfx::ShaderDesc sd;
+        sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
+        int slots = 0;
+        for (int t = 0; t < 14; ++t) if (d.tex & (1u << t)) slots = t + 1;
+        sd.textureSlots = slots;
+        sd.uniformSlots = 1; sd.label = d.label;
+        shaders_[p] = dev_->createShader(sd);
+        if (!shaders_[p].valid()) {
+            failed_[p] = true;
+            error_ = std::string(d.label) + ": " + dev_->lastError();
+            std::fprintf(stderr, "[postfx] %s\n", error_.c_str());
+            return {};
+        }
+        gfx::PipelineDesc pd;
+        pd.shader = shaders_[p];
+        pd.attrs[0] = {0, gfx::VertexFormat::Float2, 0};
+        pd.attrCount = 1;
+        pd.stride = 8;
+        pd.indexType = gfx::IndexType::None;
+        pd.cull = gfx::CullMode::None;
+        pd.depthTest = false; pd.depthWrite = false;
+        pd.label = d.label;
+        pipes_[p] = dev_->createPipeline(pd);
+        if (!pipes_[p].valid()) failed_[p] = true;
+        return pipes_[p];
+    }
     struct Def { const char* body; const char* helpers; uint32_t tex; const char* label; };
-    static const Def defs[kProgCount] = {
+    static const Def defs[kAo] = {
         {prisma::kPrefilter, nullptr, 1, "postfx prefilter"},
         {prisma::kDown, nullptr, 1, "postfx down"},
         {prisma::kUp, nullptr, 3, "postfx up"},
@@ -1249,7 +1382,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kMotionBlur, prisma::kMotionBlurHelpers, 15, "prisma shutter motion blur"},
         {prisma::kTemporalResolve, prisma::kTemporalResolveHelpers, 31, "prisma HDR temporal resolve"},
     };
-    const Def& d = defs[p];
+    const Def& d = defs[int(p)];
     const uint32_t sampledDepth = p == kMotionVectors || p == kDepthOfField
         ? (1u << 1) : (p == kMotionBlur ? (1u << 2) :
             (p == kTemporalResolve ? (1u << 3) : 0u));
@@ -1309,6 +1442,10 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData,
     if (mask & kPfTilt) tex |= 4;
     if (mask & kPfShafts) tex |= 8;
     if (mask & kPfLut) tex |= 16;
+    if (mask & kPfFlare) tex |= 1u << 10;
+    if (mask & kPfDirtTex) tex |= 1u << 11;
+    if (mask & kPfStreaks) tex |= 1u << 12;
+    if (mask & kPfHalation) tex |= 1u << 13;
     std::string body = prisma::kComposite;
     graph::Program graphProgram;
     if (graphData) {
@@ -1316,7 +1453,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData,
             graphProgram=graph::compile(*graphData,"postfx");
             graphPaths_[graphText]=graphProgram.textures;
             const std::string marker="    RETURN(vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0));";
-            std::string macros="\n#define SG_SAMPLE(uv) TEX0(TUV(uv))\n";
+            std::string macros="\n#define SG_SAMPLE(uv) TEX0(TUV(uv))\n#define SG_SCENE(uv) vec4(pfDisplay(TEX0(TUV(uv)).rgb, filt), 1.0)\n";
             for(size_t i=0;i<graphProgram.textures.size();++i) {
                 const auto slot=std::to_string(5+i);tex|=1u<<(5+i);
                 macros+="#define SG_TEXTURE"+std::to_string(i)+"(uv) TEX"+slot+"(uv)\n";
@@ -1345,6 +1482,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData,
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
     sd.textureSlots = std::max(layout.textureSlots, (mask & kPfUnderwaterDepth) ? 6 : 0);
+    for (int t = 10; t < 14; ++t) if (tex & (1u << t)) sd.textureSlots = std::max(sd.textureSlots, t + 1);
     sd.uniformSlots = 1; sd.label = "postfx composite";
     gfx::ShaderHandle sh = dev_->createShader(sd);
     if (!sh.valid()) {
@@ -1420,6 +1558,112 @@ gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
         return black_;
     }
     graphTextures_[path]=texture;return texture;
+}
+
+// ---- 2026-11-22 effect support -------------------------------------------------------
+void Prisma::setShockwaves(uint64_t viewId, std::vector<PrismaShockwave> waves) {
+    waves.erase(std::remove_if(waves.begin(), waves.end(), [](const PrismaShockwave& w) {
+        return !std::isfinite(w.position.x) || !std::isfinite(w.position.y) || !std::isfinite(w.position.z) ||
+               !std::isfinite(w.radius) || !std::isfinite(w.strength) || w.radius <= 0.0f || w.strength <= 0.0f;
+    }), waves.end());
+    std::stable_sort(waves.begin(), waves.end(),
+        [](const PrismaShockwave& a, const PrismaShockwave& b) { return a.strength > b.strength; });
+    if (waves.size() > 4) waves.resize(4);
+    if (waves.empty()) shockwaves_.erase(viewId);
+    else shockwaves_[viewId] = std::move(waves);
+}
+
+void Prisma::setExternalUpscaler(std::shared_ptr<PrismaExternalUpscaler> upscaler) {
+    if (externalUpscaler_ == upscaler) return;
+    for (auto& [id, view] : dlssViews_) {
+        if (externalUpscaler_) externalUpscaler_->releaseView(id);
+        retireTarget(view.output);
+    }
+    dlssViews_.clear();
+    externalUpscaler_ = std::move(upscaler);
+}
+
+bool Prisma::dlssActive(std::string* reason) const {
+    const PrismaEffect* e = settings_.find(PrismaType::Dlss);
+    auto refuse = [&](const char* r) { if (reason) *reason = r; return false; };
+    if (!e || !e->enabled) return refuse("not authored");
+    if (!enabled_ || !settings_.enabled || quality_ == PrismaQuality::Off) return refuse("Prisma disabled");
+    if (int(quality_) < int(e->minQuality)) return refuse("below effect minimum quality tier");
+    if (!hdrRequested()) return refuse("requires linear HDR output");
+    if (!externalUpscaler_) return refuse("no external upscaler registered (NVIDIA NGX SDK not configured: AIVERSE_DLSS_SDK_DIR)");
+    if (!dev_) return refuse("no GPU device");
+    std::string why;
+    if (!externalUpscaler_->supported(*dev_, why)) { if (reason) *reason = why.empty() ? "external upscaler unsupported on this device" : why; return false; }
+    return true;
+}
+
+bool Prisma::spatialUpscaleActive() const {
+    const PrismaEffect* e = settings_.find(PrismaType::Fsr);
+    return e && e->enabled && enabled_ && settings_.enabled && quality_ != PrismaQuality::Off &&
+           int(quality_) >= int(e->minQuality) && e->get("renderScale") < 0.999f;
+}
+
+Prisma::Target Prisma::ldrTarget(Sized& s, int role, int w, int h) {
+    // Post-composite chain (SMAA, FSR) is display-referred RGBA8 even in HDR frames.
+    const bool hdr = hdrFrame_;
+    hdrFrame_ = false;
+    Target t = target(s, role, w, h);
+    hdrFrame_ = hdr;
+    return t;
+}
+
+gfx::TextureHandle Prisma::imageTexture(const std::string& path) {
+    if (path.empty()) return {};
+    if (auto it = images_.find(path); it != images_.end()) return it->second;
+    int w = 0, h = 0;
+    std::vector<uint8_t> rgba;
+    gfx::TextureHandle t;
+    if (loader_ && loader_(path, w, h, rgba) && w > 0 && h > 0 && rgba.size() >= size_t(w) * size_t(h) * 4) {
+        gfx::TextureDesc td;
+        td.width = w; td.height = h; td.data = rgba.data();
+        td.filter = gfx::Filter::Linear;
+        td.label = "prisma lens dirt";
+        t = dev_->createTexture(td);
+    }
+    if (!t.valid()) {
+        error_ = "lensFlare: cannot load dirt texture '" + path + "'";
+        std::fprintf(stderr, "[postfx] %s\n", error_.c_str());
+    }
+    images_[path] = t;   // negative cache; setImageLoader() clears it
+    return t;
+}
+
+bool Prisma::smaaTextures() {
+    if (smaaArea_.valid() && smaaSearch_.valid()) return true;
+    if (smaaFailed_ || !dev_) return false;
+    // AreaTex is RG8 and SearchTex R8 (third_party/smaa); expand to RGBA8, rows as stored
+    // (both are sampled in texture space only, so no orientation fix-up is needed).
+    std::vector<uint8_t> area(size_t(AREATEX_WIDTH) * AREATEX_HEIGHT * 4);
+    for (size_t i = 0; i < size_t(AREATEX_WIDTH) * AREATEX_HEIGHT; ++i) {
+        area[i * 4 + 0] = areaTexBytes[i * 2 + 0];
+        area[i * 4 + 1] = areaTexBytes[i * 2 + 1];
+        area[i * 4 + 2] = 0; area[i * 4 + 3] = 255;
+    }
+    std::vector<uint8_t> search(size_t(SEARCHTEX_WIDTH) * SEARCHTEX_HEIGHT * 4);
+    for (size_t i = 0; i < size_t(SEARCHTEX_WIDTH) * SEARCHTEX_HEIGHT; ++i) {
+        search[i * 4 + 0] = searchTexBytes[i];
+        search[i * 4 + 1] = search[i * 4 + 2] = 0; search[i * 4 + 3] = 255;
+    }
+    gfx::TextureDesc a;
+    a.width = AREATEX_WIDTH; a.height = AREATEX_HEIGHT; a.data = area.data();
+    a.filter = gfx::Filter::Linear; a.label = "prisma smaa area";
+    smaaArea_ = dev_->createTexture(a);
+    gfx::TextureDesc b;
+    b.width = SEARCHTEX_WIDTH; b.height = SEARCHTEX_HEIGHT; b.data = search.data();
+    b.filter = gfx::Filter::Nearest; b.label = "prisma smaa search";
+    smaaSearch_ = dev_->createTexture(b);
+    if (!smaaArea_.valid() || !smaaSearch_.valid()) {
+        release(smaaArea_); release(smaaSearch_);
+        smaaFailed_ = true;
+        error_ = "smaa: lookup texture upload failed: " + dev_->lastError();
+        return false;
+    }
+    return true;
 }
 
 gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
@@ -1566,6 +1810,63 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         } else if(!fog_.lastError().empty())error_=fog_.lastError();
     }
 
+    // ---- 2026-11-22: screen-space AO and reflections change scene radiance, so they
+    // run before exposure metering, motion blur, DoF and bloom. Depth is sampled
+    // (the scene pass has ended); every pass attaches its own scratch depth.
+    const mat4 inverseViewProjFrame = f.viewProj.inverse();
+    const float zeroToOne = dev.info().clipDepthZeroToOne ? 1.0f : 0.0f;
+    const auto fillExtra = [&](ExtraU& x, int tw, int th) {
+        put(x.px, 1.0f / float(std::max(tw, 1)), 1.0f / float(std::max(th, 1)), flip, seed);
+        std::memcpy(x.vp0, f.viewProj.m, sizeof f.viewProj.m);
+        std::memcpy(x.ivp0, inverseViewProjFrame.m, sizeof inverseViewProjFrame.m);
+        put(x.cam, f.cameraPos.x, f.cameraPos.y, f.cameraPos.z, zeroToOne);
+    };
+    bool aoEncoded = false, ssrEncoded = false;
+    {
+        const gfx::TextureHandle depthTex = depthFor(set, w, h);
+        if (const PrismaEffect* ao = find(PrismaType::AmbientOcclusion);
+            ao && ao->get("intensity") > 0 && depthTex.valid() && scene.tex.valid() &&
+            program(kAo).valid() && program(kAoApply).valid()) {
+            const AoPlan plan = aoPlan(quality_);
+            const int aw = std::max(1, w / plan.div), ah = std::max(1, h / plan.div);
+            const Target buffer = target(set, kAoBuffer, aw, ah);
+            const Target applied = target(set, kAoOut, w, h);
+            if (buffer.tex.valid() && applied.tex.valid()) {
+                ExtraU x{};
+                fillExtra(x, aw, ah);
+                put(x.p0, ao->get("radius"), ao->get("intensity"), ao->get("bias"), ao->get("power"));
+                put(x.p1, float(plan.directions), float(plan.steps), ao->get("maxDistance"), ao->get("maxPixels"));
+                put(x.p2, 1.0f / float(w), 1.0f / float(h), 0, 0);
+                draw(set, buffer, pipes_[kAo], &x, sizeof x, {{0, depthTex}});
+                ExtraU a{};
+                fillExtra(a, w, h);
+                put(a.p0, 1.0f / float(aw), 1.0f / float(ah), f.depthNear, f.depthFar);
+                put(a.p1, f.orthographic ? 1.0f : 0.0f, 0, 0, 0);
+                const float* c = ao->color("color");
+                put(a.p2, c[0], c[1], c[2], 0);
+                const int before = stats_.passes;
+                draw(set, applied, pipes_[kAoApply], &a, sizeof a, {{0, scene.tex}, {1, buffer.tex}, {2, depthTex}});
+                if (stats_.passes > before) { scene = applied; aoEncoded = true; }
+            }
+        }
+        if (const PrismaEffect* r = find(PrismaType::ScreenSpaceReflections);
+            r && r->get("intensity") > 0 && depthTex.valid() && scene.tex.valid() && program(kSsr).valid()) {
+            const SsrPlan plan = ssrPlan(quality_);
+            const Target reflected = target(set, kSsrOut, w, h);
+            if (reflected.tex.valid()) {
+                ExtraU x{};
+                fillExtra(x, w, h);
+                put(x.p0, r->get("intensity"), r->get("maxDistance"), r->get("thickness"),
+                    std::min(r->get("steps"), float(plan.maxSteps)));
+                put(x.p1, r->get("minNormalY"), r->get("fresnel"), r->get("edgeFade"), float(plan.refine));
+                put(x.p2, 1.0f / float(w), 1.0f / float(h), r->get("roughness"), 0);
+                const int before = stats_.passes;
+                draw(set, reflected, pipes_[kSsr], &x, sizeof x, {{0, scene.tex}, {1, depthTex}});
+                if (stats_.passes > before) { scene = reflected; ssrEncoded = true; }
+            }
+        }
+    }
+
     // Invalidate per-camera HDR exposure BEFORE the current-frame meter.
     // Otherwise a camera jump can present one frame of stale adaptation.
     auto& motionView = motionViews_[viewId_];
@@ -1647,10 +1948,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             exposureFrozenThisFrame = true;
         }
     }
+    const bool histogramRequested = autoRequested && autoEffect->get("histogram") > 0.5f;
+    bool histogramEncoded = false;
     if (!automaticExposure.valid() && autoRequested &&
         program(kExposureLog).valid() &&
         program(kExposureReduce).valid() && program(kExposureAdapt).valid()) {
         gfx::TextureHandle source = scene.tex;
+        gfx::TextureHandle histogramSource;
+        int histogramW = 0, histogramH = 0;
         int pw = w, ph = h;
         bool valid = source.valid();
         for (int level = 0; valid && (pw > 1 || ph > 1) && level < 15; ++level) {
@@ -1683,6 +1988,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                  &measure, level == 0 ? sizeof measure : sizeof(SimpleU),
                  {{0, source}});
             source = mip.tex;
+            // First pyramid level that fits 64 x 64 feeds the histogram.
+            if (histogramRequested && !histogramSource.valid() && nextW <= 64 && nextH <= 64) {
+                histogramSource = mip.tex; histogramW = nextW; histogramH = nextH;
+            }
             pw = nextW; ph = nextH;
         }
         // A 1x1 scene input still needs logarithmic luminance encoding.
@@ -1716,6 +2025,24 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         if (!valid) {
             resetAutoExposure(viewId_);
         } else {
+        if (histogramRequested && histogramSource.valid() &&
+            program(kHistogram).valid() && program(kHistogramResolve).valid()) {
+            const Target bins = target(set, kHistogramBins, 64, 1);
+            const Target mean = target(set, kHistogramMean, 1, 1);
+            if (bins.tex.valid() && mean.tex.valid()) {
+                ExtraU hx{};
+                put(hx.px, 1.0f / 64.0f, 1.0f, flip, 0);
+                put(hx.p0, float(histogramW), float(histogramH),
+                    autoEffect->get("minMeterLogL"), autoEffect->get("maxMeterLogL"));
+                draw(set, bins, pipes_[kHistogram], &hx, sizeof hx, {{0, histogramSource}});
+                ExtraU rx{};
+                put(rx.px, 1.0f, 1.0f, flip, 0);
+                put(rx.p0, autoEffect->get("histogramLow"), autoEffect->get("histogramHigh"), 0, 0);
+                draw(set, mean, pipes_[kHistogramResolve], &rx, sizeof rx, {{0, bins.tex}});
+                source = mean.tex;
+                histogramEncoded = true;
+            }
+        }
         auto& exposureView = exposureViews_[viewId_];
         // History belongs to the stable view ID, not to the shared 1x1
         // Sized cache: same-resolution Scene/Game views never ping-pong
@@ -1809,10 +2136,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const bool temporalRequested = hdrFrame_ && temporalEffect && temporalFlag &&
         std::strcmp(temporalFlag,"1")==0 && !rejectedHistory &&
         temporalEffect->get("historyWeight")>0;
+    std::string dlssReason;
+    const bool dlssWanted = !temporalRequested && dlssActive(&dlssReason);
     const gfx::TextureHandle sceneDepth = depthFor(set,w,h);
     const gfx::TextureHandle scratchDepth = depthFor(set,w,h,true);
     Target velocity;
-    if (previousValid && (motionRequested || temporalRequested) &&
+    if (previousValid && (motionRequested || temporalRequested || dlssWanted) &&
         scene.tex.valid() && sceneDepth.valid() && scratchDepth.valid() &&
         program(kMotionVectors).valid()) {
         velocity=target(set,kMotionVelocity,w,h);
@@ -1959,7 +2288,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     }
 
     // ---- FXAA: the composite reads the anti-aliased image instead of the scene
-    if (const PrismaEffect* e = find(PrismaType::Fxaa); !hdrFrame_ && e && program(kFxaa).valid()) {
+    const PrismaEffect* smaaEffect = find(PrismaType::Smaa);
+    const bool smaaWanted = smaaEffect && program(kSmaaEdge).valid() && program(kSmaaWeight).valid() &&
+        program(kSmaaBlend).valid() && smaaTextures();
+    if (const PrismaEffect* e = find(PrismaType::Fxaa); !hdrFrame_ && !smaaWanted && e && program(kFxaa).valid()) {
         SimpleU u{};
         put(u.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
         put(u.p0, e->get("subpixel"), 0, 0, 0);
@@ -2255,6 +2587,80 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         }
     }
 
+    // ---- 2026-11-22: lens flare ghosts, anamorphic streaks, halation. Each takes its own
+    // bright pass of the current image and is added in the final composite (HDR: before
+    // tone mapping), so lens dirt can modulate flare and bloom together.
+    gfx::TextureHandle flareTex, streakTex, haloTex;
+    if (const PrismaEffect* fl = find(PrismaType::LensFlare);
+        fl && fl->get("intensity") > 0 && src.tex.valid() &&
+        program(kPrefilter).valid() && program(kFlareGhost).valid() && program(kBlur).valid()) {
+        const FlarePlan plan = flarePlan(quality_);
+        const int fw = std::max(2, w / plan.div), fh = std::max(2, h / plan.div);
+        const Target a = target(set, kFlare0, fw, fh), b = target(set, kFlare1, fw, fh), c = target(set, kFlare2, fw, fh);
+        if (a.tex.valid() && b.tex.valid() && c.tex.valid()) {
+            SimpleU pre{};
+            put(pre.px, 0.5f / float(fw), 0.5f / float(fh), flip, 0);
+            put(pre.p0, fl->get("threshold"), 0.5f, 0, 0);
+            draw(set, a, pipes_[kPrefilter], &pre, sizeof pre, {{0, src.tex}});
+            ExtraU g{};
+            put(g.px, 1.0f / float(fw), 1.0f / float(fh), flip, 0);
+            put(g.p0, std::round(fl->get("ghosts")), fl->get("ghostSpacing"), fl->get("halo"), fl->get("haloWidth"));
+            put(g.p1, fl->get("chromatic"), float(w) / float(h), 0, 0);
+            draw(set, b, pipes_[kFlareGhost], &g, sizeof g, {{0, a.tex}});
+            for (int i = 0; i < plan.blurPasses; ++i) {
+                SimpleU bh{};
+                put(bh.px, 1.0f / float(fw), 1.0f / float(fh), flip, 0);
+                put(bh.p0, 1.5f, 0, 0, 0);
+                draw(set, c, pipes_[kBlur], &bh, sizeof bh, {{0, b.tex}});
+                put(bh.p0, 0, 1.5f, 0, 0);
+                draw(set, b, pipes_[kBlur], &bh, sizeof bh, {{0, c.tex}});
+            }
+            flareTex = b.tex;
+        }
+    }
+    if (const PrismaEffect* st = find(PrismaType::AnamorphicStreaks);
+        st && st->get("intensity") > 0 && src.tex.valid() && program(kPrefilter).valid() && program(kBlur).valid()) {
+        const StreakPlan plan = streakPlan(quality_);
+        const int sw = std::max(2, w / plan.div), sh = std::max(2, h / (plan.div * 2));
+        const Target a = target(set, kStreak0, sw, sh), b = target(set, kStreak1, sw, sh);
+        if (a.tex.valid() && b.tex.valid()) {
+            SimpleU pre{};
+            put(pre.px, 0.5f / float(sw), 0.5f / float(sh), flip, 0);
+            put(pre.p0, st->get("threshold"), 0.5f, 0, 0);
+            draw(set, a, pipes_[kPrefilter], &pre, sizeof pre, {{0, src.tex}});
+            // Horizontal only, the spread triples each pass: streaks of ~3^passes texels.
+            const float base = 0.6f + 2.4f * st->get("length");
+            Target from = a, to = b;
+            for (int i = 0; i < plan.passes; ++i) {
+                SimpleU bu{};
+                put(bu.px, 1.0f / float(sw), 1.0f / float(sh), flip, 0);
+                put(bu.p0, base * std::pow(3.0f, float(i)) * (float(sw) / 480.0f + 0.5f), 0, 0, 0);
+                draw(set, to, pipes_[kBlur], &bu, sizeof bu, {{0, from.tex}});
+                std::swap(from, to);
+            }
+            streakTex = from.tex;
+        }
+    }
+    if (const PrismaEffect* ha = find(PrismaType::Halation);
+        ha && ha->get("intensity") > 0 && src.tex.valid() && program(kPrefilter).valid() && program(kBlur).valid()) {
+        const int hw = std::max(2, w / 2), hh = std::max(2, h / 2);
+        const Target a = target(set, kHalo0, hw, hh), b = target(set, kHalo1, hw, hh);
+        if (a.tex.valid() && b.tex.valid()) {
+            SimpleU pre{};
+            put(pre.px, 0.5f / float(hw), 0.5f / float(hh), flip, 0);
+            put(pre.p0, ha->get("threshold"), 0.6f, 0, 0);
+            draw(set, a, pipes_[kPrefilter], &pre, sizeof pre, {{0, src.tex}});
+            const float spread = 0.8f + 4.0f * ha->get("radius");
+            SimpleU bu{};
+            put(bu.px, 1.0f / float(hw), 1.0f / float(hh), flip, 0);
+            put(bu.p0, spread, 0, 0, 0);
+            draw(set, b, pipes_[kBlur], &bu, sizeof bu, {{0, a.tex}});
+            put(bu.p0, 0, spread, 0, 0);
+            draw(set, a, pipes_[kBlur], &bu, sizeof bu, {{0, b.tex}});
+            haloTex = a.tex;
+        }
+    }
+
     // ---- tilt-shift: downsample + one separable gaussian (H, V)
     gfx::TextureHandle tiltTex;
     const PrismaEffect* tilt = find(PrismaType::TiltShift);
@@ -2542,6 +2948,72 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         }
     }
 
+    // ---- External temporal upscaler (dlss effect). Runs instead of the canonical
+    // temporal resolve; on any failure the composite presents the jittered internal
+    // image unjittered (graphFrame.zw) at the bilinear upscale, like the TAA fallback.
+    bool dlssResolved = false;
+    if (dlssWanted && src.tex.valid() && sceneDepth.valid()) {
+        auto& view = dlssViews_[viewId_];
+        gfx::TextureInfo info{};
+        if (view.output.valid() && (!dev.textureInfo(view.output, info) ||
+            info.width != outW || info.height != outH)) {
+            retireTarget(view.output);
+            view.valid = false;
+        }
+        if (!view.output.valid()) {
+            gfx::TextureDesc desc{};
+            desc.width = outW; desc.height = outH;
+            desc.format = gfx::PixelFormat::RGBA16F;
+            desc.renderTarget = true;
+            desc.filter = gfx::Filter::Linear;
+            desc.label = "prisma external upscaler output";
+            // Vendor upscalers write the output as a storage image (UAV).
+            desc.storage = dev.info().backend == gfx::Backend::Vulkan;
+            view.output = dev.createTexture(desc);
+            if (!view.output.valid() && desc.storage) { desc.storage = false; view.output = dev.createTexture(desc); }
+            view.valid = false;
+        }
+        if (view.output.valid()) {
+            const PrismaEffect* e = find(PrismaType::Dlss);
+            const double nowSeconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            PrismaUpscaleInputs in{};
+            in.viewId = viewId_;
+            in.color = src.tex;
+            in.depth = sceneDepth;
+            in.velocity = velocity.tex;
+            in.output = view.output;
+            in.renderWidth = w; in.renderHeight = h;
+            in.outputWidth = outW; in.outputHeight = outH;
+            in.jitterPixelsX = view.jitterActive ? view.jitterPixelsX : 0.0f;
+            in.jitterPixelsY = view.jitterActive ? view.jitterPixelsY : 0.0f;
+            in.reset = !view.valid || !previousValid || !velocity.tex.valid();
+            in.depthZeroToOne = dev.info().clipDepthZeroToOne;
+            in.sharpness = e ? e->get("sharpness") : 0.0f;
+            in.frameSeconds = view.lastTime > 0 ? float(std::clamp(nowSeconds - view.lastTime, 0.0, 1.0)) : 0.0f;
+            view.lastTime = nowSeconds;
+            in.depthNear = f.depthNear; in.depthFar = f.depthFar;
+            std::string err;
+            if (externalUpscaler_->evaluate(dev, in, err)) {
+                src = {view.output, outW, outH, gfx::PixelFormat::RGBA16F};
+                view.valid = true;
+                dlssResolved = true;
+                ++stats_.passes;
+            } else {
+                view.valid = false;
+                dlssReason = err.empty() ? "external upscaler evaluate failed" : err;
+                if (error_.empty()) error_ = "dlss: " + dlssReason;
+            }
+        } else dlssReason = "output texture allocation failed";
+    }
+    if (!dlssResolved) {
+        if (auto it = dlssViews_.find(viewId_); it != dlssViews_.end() && it->second.jitterActive &&
+            !temporalResolved && fallbackJitter.x == 0 && fallbackJitter.y == 0) {
+            fallbackJitter = {it->second.jitterPixelsX / float(w), it->second.jitterPixelsY / float(h)};
+        }
+    }
+    stats_.externalUpscaled = dlssResolved;
+
     // Seed motion history independently of the effect switches. A cut or
     // resize makes the next temporal pass sharp, never a stale reprojection.
     motionView.previousViewProj=f.viewProj;
@@ -2578,8 +3050,16 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         stats_.adaptiveGpuMs=m->second.gpuMs;
     }
     stats_.requestedRenderScale=float(w)/float(std::max(1,outW));
+    // FSR 1: the composite (tone mapping, grading, grain) runs at the internal size,
+    // then EASU upscales the display-referred image and RCAS sharpens it (AMD's
+    // recommended placement). Temporal resolve / external upscaling already produced
+    // an output-size image and take priority.
+    const bool fsrUp = !temporalResolved && !dlssResolved && spatialUpscaleActive() &&
+        (outW > w || outH > h) && program(kFsrEasu).valid() && program(kFsrRcas).valid();
+    const int compW = fsrUp ? w : outW, compH = fsrUp ? h : outH;
+    stats_.spatialUpscaled = fsrUp;
     uint32_t mask = 0;
-    put(u.px, 1.0f / float(outW), 1.0f / float(outH), flip, seed);
+    put(u.px, 1.0f / float(compW), 1.0f / float(compH), flip, seed);
     put(u.grade1, 1, 1, 1, 1);
     put(u.gamma, 1, 1, 1, 0.5f);
     put(u.gain, 1, 1, 1, 0);
@@ -2641,6 +3121,92 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             break;
         case PrismaType::Fade: { mask |= kPfFade; const float* c = e->color("color"); put(u.fade, c[0], c[1], c[2], e->get("amount")); break; }
         case PrismaType::Letterbox: { mask |= kPfLetterbox; const float* c = e->color("color"); put(u.lbox, c[0], c[1], c[2], e->get("amount")); break; }
+        case PrismaType::LensFlare:
+            if (flareTex.valid()) {
+                mask |= kPfFlare;
+                const float* t = e->color("tint");
+                const float k = e->get("intensity");
+                put(u.flare, t[0] * k, t[1] * k, t[2] * k, e->get("dirt"));
+                if (!e->text.empty() && imageTexture(e->text).valid()) mask |= kPfDirtTex;
+            }
+            break;
+        case PrismaType::AnamorphicStreaks:
+            if (streakTex.valid()) {
+                mask |= kPfStreaks;
+                const float* t = e->color("tint");
+                const float k = e->get("intensity");
+                put(u.streaks, t[0] * k, t[1] * k, t[2] * k, 0);
+            }
+            break;
+        case PrismaType::Halation:
+            if (haloTex.valid()) {
+                mask |= kPfHalation;
+                const float* t = e->color("tint");
+                const float k = e->get("intensity");
+                put(u.halation, t[0] * k, t[1] * k, t[2] * k, 0);
+            }
+            break;
+        case PrismaType::LensDistortion: {
+            const bool any = std::fabs(e->get("distortion")) > 1e-4f || e->get("panini") > 1e-4f ||
+                             std::fabs(e->get("scale") - 1.0f) > 1e-4f || e->get("chromatic") > 1e-4f;
+            if (!any) break;
+            mask |= kPfDistort;
+            // Half-FOV tangents from the frame's inverse view-projection (orthographic: 1).
+            float tanX = 1.0f, tanY = 1.0f;
+            if (!f.orthographic) {
+                const float nz = dev.info().clipDepthZeroToOne ? 0.0f : -1.0f;
+                auto dirAt = [&](float x, float y) {
+                    const float4 a = inverseViewProjFrame * float4{x, y, nz, 1};
+                    const float4 b = inverseViewProjFrame * float4{x, y, 1, 1};
+                    if (std::fabs(a.w) < 1e-8f || std::fabs(b.w) < 1e-8f) return float3{0, 0, 0};
+                    return normalize(float3{b.x / b.w - a.x / a.w, b.y / b.w - a.y / a.w, b.z / b.w - a.z / a.w});
+                };
+                const float3 c = dirAt(0, 0), rx = dirAt(1, 0), uy = dirAt(0, 1);
+                const float cx = std::clamp(dot(c, rx), -1.0f, 1.0f), cy = std::clamp(dot(c, uy), -1.0f, 1.0f);
+                if (cx > 0.05f && cx < 0.99999f) tanX = std::tan(std::acos(cx));
+                if (cy > 0.05f && cy < 0.99999f) tanY = std::tan(std::acos(cy));
+            }
+            put(u.distort0, e->get("distortion"), e->get("panini"), e->get("scale"), float(compW) / float(compH));
+            put(u.distort1, tanX, tanY, e->get("chromatic"), 0);
+            break;
+        }
+        case PrismaType::HeatHaze: {
+            if (e->get("amplitude") > 1e-4f) {
+                mask |= kPfHaze;
+                put(u.haze, e->get("amplitude") * float(compW) / float(std::max(1, outW)), e->get("scale"),
+                    e->get("speed"), e->get("screenTop"));
+            }
+            const auto waves = shockwaves_.find(viewId_);
+            if (waves == shockwaves_.end() || e->get("shockwaveStrength") <= 0) break;
+            float* slots[4] = {u.shock0, u.shock1, u.shock2, u.shock3};
+            int n = 0;
+            const float aspect = float(compW) / float(compH);
+            for (const auto& wave : waves->second) {
+                if (n >= 4) break;
+                const float4 c = f.viewProj * float4{wave.position.x, wave.position.y, wave.position.z, 1};
+                if (c.w <= 1e-4f) continue;
+                const float sx = c.x / c.w * 0.5f + 0.5f, sy = c.y / c.w * 0.5f + 0.5f;
+                // Ring radius on screen: project a point offset sideways from the view ray.
+                float3 viewDir = wave.position - f.cameraPos;
+                const float len = length(viewDir);
+                viewDir = len > 1e-5f ? viewDir * (1.0f / len) : float3{0, 0, -1};
+                float3 side = cross(viewDir, float3{0, 1, 0});
+                if (length(side) < 1e-3f) side = cross(viewDir, float3{1, 0, 0});
+                side = normalize(side);
+                const float3 edge = wave.position + side * wave.radius;
+                const float4 ce = f.viewProj * float4{edge.x, edge.y, edge.z, 1};
+                if (ce.w <= 1e-4f) continue;
+                const float ex = ce.x / ce.w * 0.5f + 0.5f - sx, ey = ce.y / ce.w * 0.5f + 0.5f - sy;
+                const float radiusUv = std::sqrt(ex * ex * aspect * aspect + ey * ey);
+                if (!(radiusUv > 1e-4f) || radiusUv > 4.0f) continue;
+                put(slots[n], sx, sy, radiusUv, radiusUv * std::max(wave.thickness, 0.01f) / std::max(wave.radius, 0.01f));
+                const float k = std::clamp(wave.strength, 0.0f, 1.0f) * e->get("shockwaveStrength") * 0.03f;
+                u.shockS[n] = k;
+                ++n;
+            }
+            if (n > 0) mask |= kPfShock;
+            break;
+        }
         default: break;
         }
     }
@@ -2671,7 +3237,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     }
     if(waterline) {
         mask|=kPfWaterline;
-        const float lensScale=float(w)/std::max(1,outW);
+        const float lensScale=float(w)/std::max(1,compW);
         put(u.waterline0,underwater_.surfaceOffset,lensEffect->get("waveHeight"),
             lensEffect->get("waveLength"),lensEffect->get("waveSpeed"));
         put(u.waterline1,lensEffect->get("meniscus")*lensScale,lensEffect->get("lensDistance"),
@@ -2691,9 +3257,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         // part already carries drops; the shader masks the covered part.
         if(it!=lensWaterViews_.end()&&(!it->second.submerged||waterline)&&it->second.wetness>0&&effect->get("amount")>0){
             mask|=kPfLensWater;
-            const float lensScale=float(w)/std::max(1,outW);
+            const float lensScale=float(w)/std::max(1,compW);
             put(u.lensWater0,effect->get("amount")*it->second.wetness,effect->get("dropSize")*lensScale,effect->get("density"),effect->get("distortion")*lensScale);
-            put(u.lensWater1,effect->get("flowSpeed")*lensScale,it->second.age,effect->get("film"),float(h)*outW/(float(std::max(1,outH))*std::max(1,w)));
+            put(u.lensWater1,effect->get("flowSpeed")*lensScale,it->second.age,effect->get("film"),float(h)*compW/(float(std::max(1,compH))*std::max(1,w)));
             put(u.lensWater2,effect->get("streaks"),effect->get("glint"),effect->get("sheetTime"),effect->get("sheet"));
             ++stats_.effects;
         }
@@ -2797,21 +3363,39 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         effectReport.autoExposureBoxMetered =
             exposureRegionMeteredThisFrame && meterRegion.box;
     }
-    // TAA and FXAA are mutually exclusive for the same HDR presentation.
-    const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
-    // Do not schedule the HDR final FXAA output pass if the preceding
-    // composite could not be created. It would sample unwritten pixels.
+    // ---- Post-composite chain (display-referred RGBA8): SMAA or HDR FXAA, then FSR 1.
+    // TAA and FXAA are mutually exclusive for the same HDR presentation; SMAA replaces FXAA.
+    // Do not schedule a post pass if the preceding composite could not be created: it
+    // would sample unwritten pixels.
+    const bool smaaAfter = pipe.valid() && smaaWanted;
+    const PrismaEffect* finalAa = !smaaAfter && hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
     bool aaAfter = pipe.valid() && finalAa && program(kFxaa).valid();
+    bool fsrAfter = pipe.valid() && fsrUp;
+    bool smaaEncoded = false, fsrEncoded = false;
+    int postStages = (smaaAfter ? 1 : 0) + (aaAfter ? 1 : 0) + (fsrAfter ? 1 : 0);
+    int pingPong = 0;
+    const auto nextLdr = [&](int tw, int th) {
+        const Target t = ldrTarget(set, pingPong ? kPostLdr1 : kPostLdr0, tw, th);
+        pingPong ^= 1;
+        return t;
+    };
+    Target cur{};
     gfx::PassDesc compositeOut = out;
-    Target aaTarget;
-    if (aaAfter) {
-        hdrFrame_ = false; aaTarget = target(set, kAa, outW, outH); hdrFrame_ = true;
-        const auto aaDepth = depthFor(set, outW, outH, true);
-        aaAfter = aaTarget.tex.valid() && aaDepth.valid();
-        if (aaAfter) { compositeOut.colorTarget = aaTarget.tex; compositeOut.depthTarget = aaDepth; }
+    if (postStages > 0) {
+        cur = nextLdr(compW, compH);
+        const auto postDepth = depthFor(set, compW, compH, true);
+        if (cur.tex.valid() && postDepth.valid()) {
+            compositeOut.colorTarget = cur.tex;
+            compositeOut.depthTarget = postDepth;
+        } else {
+            // Present directly (bilinear scale, no post AA) rather than sample garbage.
+            postStages = 0;
+            aaAfter = fsrAfter = false;
+        }
     }
+    const bool smaaRun = smaaAfter && postStages > 0;
     dev.beginPass(compositeOut);
-    dev.setViewport({0, 0, outW, outH});
+    dev.setViewport({0, 0, postStages > 0 ? compW : outW, postStages > 0 ? compH : outH});
     if (pipe.valid()) {
         dev.setPipeline(pipe);
         dev.setVertexBuffer(triangle_);
@@ -2828,15 +3412,93 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 dev.setTexture(int(i) + 5, graphImages[i]);
         if (mask & kPfAutoExposure)
             dev.setTexture(compositeLayout.exposureSlot, automaticExposure);
+        if (mask & kPfFlare) dev.setTexture(10, flareTex);
+        if (mask & kPfDirtTex) dev.setTexture(11, imageTexture(find(PrismaType::LensFlare)->text));
+        if (mask & kPfStreaks) dev.setTexture(12, streakTex);
+        if (mask & kPfHalation) dev.setTexture(13, haloTex);
         dev.draw(3);
     }
     ++stats_.passes;
+    if (postStages > 0) dev.endPass();
+    // The last stage draws into the caller's pass and leaves it open for UI.
+    const auto finalDraw = [&](gfx::PipelineHandle p, const void* uniforms, size_t size,
+                               std::initializer_list<std::pair<int, gfx::TextureHandle>> tex) {
+        dev.beginPass(out);
+        dev.setViewport({0, 0, outW, outH});
+        if (p.valid()) {
+            dev.setPipeline(p);
+            dev.setVertexBuffer(triangle_);
+            dev.setUniforms(0, uniforms, size);
+            for (auto& [slot, t] : tex) dev.setTexture(slot, t);
+            dev.draw(3);
+        }
+        ++stats_.passes;
+    };
+    if (smaaRun) {
+        --postStages;
+        const Target edges = ldrTarget(set, kSmaaEdges, compW, compH);
+        const Target weights = ldrTarget(set, kSmaaWeights, compW, compH);
+        if (edges.tex.valid() && weights.tex.valid()) {
+            ExtraU e{};
+            put(e.px, 1.0f / float(compW), 1.0f / float(compH), flip, 0);
+            put(e.p0, smaaEffect->get("threshold"), 0, 0, 0);
+            draw(set, edges, pipes_[kSmaaEdge], &e, sizeof e, {{0, cur.tex}});
+            ExtraU wgt{};
+            put(wgt.px, 1.0f / float(compW), 1.0f / float(compH), flip, 0);
+            put(wgt.p0, std::min(std::round(smaaEffect->get("searchSteps")), float(smaaSearchSteps(quality_))),
+                smaaEffect->get("cornerRounding"), 0, 0);
+            draw(set, weights, pipes_[kSmaaWeight], &wgt, sizeof wgt,
+                 {{0, edges.tex}, {1, smaaArea_}, {2, smaaSearch_}});
+            ExtraU b{};
+            put(b.px, 1.0f / float(compW), 1.0f / float(compH), flip, 0);
+            if (postStages == 0) {
+                finalDraw(pipes_[kSmaaBlend], &b, sizeof b, {{0, cur.tex}, {1, weights.tex}});
+            } else {
+                const Target next = nextLdr(compW, compH);
+                draw(set, next, pipes_[kSmaaBlend], &b, sizeof b, {{0, cur.tex}, {1, weights.tex}});
+                if (next.tex.valid()) cur = next;
+            }
+            smaaEncoded = true;
+        } else if (postStages == 0) {
+            // Lost the SMAA targets: still present the composite.
+            SimpleU copy{};
+            put(copy.px, 1.0f / float(compW), 1.0f / float(compH), flip, 0);
+            finalDraw(pipes_[kDown], &copy, sizeof copy, {{0, cur.tex}});
+        }
+    }
     if (aaAfter) {
-        dev.endPass(); dev.beginPass(out); dev.setViewport({0, 0, outW, outH});
-        SimpleU au{}; put(au.px, 1.0f / float(outW), 1.0f / float(outH), flip, 0); put(au.p0, finalAa->get("subpixel"), 0, 0, 0);
-        dev.setPipeline(pipes_[kFxaa]); dev.setVertexBuffer(triangle_); dev.setUniforms(0, &au, sizeof au);
-        dev.setTexture(0, aaTarget.tex); dev.draw(3); ++stats_.passes;
+        --postStages;
+        SimpleU au{};
+        put(au.px, 1.0f / float(compW), 1.0f / float(compH), flip, 0);
+        put(au.p0, finalAa->get("subpixel"), 0, 0, 0);
+        if (postStages == 0) {
+            finalDraw(pipes_[kFxaa], &au, sizeof au, {{0, cur.tex}});
+        } else {
+            const Target next = nextLdr(compW, compH);
+            draw(set, next, pipes_[kFxaa], &au, sizeof au, {{0, cur.tex}});
+            if (next.tex.valid()) cur = next;
+        }
         fxaaEncoded = true;
+    }
+    if (fsrAfter) {
+        --postStages;
+        const Target upscaled = ldrTarget(set, kFsrOut, outW, outH);
+        const PrismaEffect* fsr = find(PrismaType::Fsr);
+        ExtraU easu{};
+        put(easu.px, 1.0f / float(outW), 1.0f / float(outH), flip, 0);
+        put(easu.p0, float(compW), float(compH), float(outW), float(outH));
+        ExtraU rcas{};
+        put(rcas.px, 1.0f / float(outW), 1.0f / float(outH), flip, 0);
+        // Authored 0..1 sharpness -> RCAS stops (0 = maximum, 2 = soft).
+        put(rcas.p0, std::exp2(-(1.0f - std::clamp(fsr->get("sharpness"), 0.0f, 1.0f)) * 2.0f), 0, 0, 0);
+        if (upscaled.tex.valid()) {
+            draw(set, upscaled, pipes_[kFsrEasu], &easu, sizeof easu, {{0, cur.tex}});
+            finalDraw(pipes_[kFsrRcas], &rcas, sizeof rcas, {{0, upscaled.tex}});
+            fsrEncoded = true;
+        } else {
+            finalDraw(pipes_[kFsrEasu], &easu, sizeof easu, {{0, cur.tex}});
+            fsrEncoded = true;
+        }
     }
 
     // Final GPU-free status snapshot. This records the ACTUAL last encoded
@@ -2924,6 +3586,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     state.pipelinePrepared = pipes_[kExposureLog].valid() &&
                         pipes_[kExposureReduce].valid() && pipes_[kExposureAdapt].valid();
                     state.encoded = compositeEncoded && (mask & kPfAutoExposure) != 0;
+                    if (state.encoded && histogramRequested && !histogramEncoded && !exposureFrozenThisFrame) {
+                        state.degraded = true;
+                        state.reason = "histogram metering unavailable; log-average meter used";
+                    }
                     if (!state.encoded) state.reason = !compositeLayout.valid ?
                         "shader graph exceeds four texture bindings" :
                         (!state.pipelinePrepared ? "exposure pipelines unavailable" :
@@ -2998,6 +3664,73 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     state.reason = !graphInputsReady ?
                         "Shader Graph source texture missing or failed to upload; fixed effects used" :
                         "Shader Graph compile/composite failed; fixed effects fallback attempted";
+                break;
+            case PrismaType::AmbientOcclusion:
+                state.pipelinePrepared = pipes_[kAo].valid() && pipes_[kAoApply].valid();
+                state.encoded = aoEncoded;
+                if (!state.encoded) state.reason = authored.get("intensity") <= 0 ? "zero intensity" :
+                    (!state.pipelinePrepared ? "AO pipelines unavailable" : "AO depth/target unavailable");
+                break;
+            case PrismaType::ScreenSpaceReflections:
+                state.pipelinePrepared = pipes_[kSsr].valid();
+                state.encoded = ssrEncoded;
+                if (!state.encoded) state.reason = authored.get("intensity") <= 0 ? "zero intensity" :
+                    (!state.pipelinePrepared ? "SSR pipeline unavailable" : "SSR depth/target unavailable");
+                break;
+            case PrismaType::LensFlare:
+                compositeBit(kPfFlare);
+                state.pipelinePrepared = pipes_[kFlareGhost].valid() && pipes_[kPrefilter].valid();
+                if (state.encoded && !authored.text.empty() && !(mask & kPfDirtTex)) {
+                    state.degraded = true;
+                    state.reason = "dirt texture missing; procedural dirt used";
+                } else if (!state.encoded) state.reason = authored.get("intensity") <= 0 ? "zero intensity" :
+                    (!flareTex.valid() ? "flare targets/pipelines unavailable" : "flare composite failed");
+                break;
+            case PrismaType::Smaa:
+                state.pipelinePrepared = smaaWanted;
+                state.encoded = smaaEncoded;
+                if (!state.encoded) state.reason = smaaFailed_ ? "SMAA lookup textures unavailable" :
+                    (!state.pipelinePrepared ? "SMAA pipelines unavailable" : "SMAA targets or composite unavailable");
+                break;
+            case PrismaType::LensDistortion:
+                compositeBit(kPfDistort);
+                if (!state.encoded && std::fabs(authored.get("distortion")) <= 1e-4f && authored.get("panini") <= 1e-4f &&
+                    std::fabs(authored.get("scale") - 1.0f) <= 1e-4f && authored.get("chromatic") <= 1e-4f) {
+                    state.requested = false;
+                    state.reason = "all parameters neutral";
+                }
+                break;
+            case PrismaType::AnamorphicStreaks:
+                compositeBit(kPfStreaks);
+                if (!state.encoded && !streakTex.valid()) state.reason = "streak targets/pipelines unavailable or zero intensity";
+                break;
+            case PrismaType::Halation:
+                compositeBit(kPfHalation);
+                if (!state.encoded && !haloTex.valid()) state.reason = "halation targets/pipelines unavailable or zero intensity";
+                break;
+            case PrismaType::HeatHaze:
+                state.pipelinePrepared = compositeEncoded;
+                state.encoded = compositeEncoded && (mask & (kPfHaze | kPfShock)) != 0;
+                if (!state.encoded) state.reason = "zero amplitude and no shockwaves this frame";
+                break;
+            case PrismaType::Fsr:
+                state.pipelinePrepared = pipes_[kFsrEasu].valid() && pipes_[kFsrRcas].valid();
+                state.encoded = fsrEncoded;
+                if (!state.encoded) {
+                    if (temporalResolved || dlssResolved) state.reason = "temporal / external upscaler owns the output";
+                    else if (authored.get("renderScale") >= 0.999f) { state.requested = false; state.reason = "renderScale 1: nothing to upscale"; }
+                    else if (outW <= w && outH <= h) state.reason = "host renders at output size (call renderSizeForOutput before beginScene)";
+                    else state.reason = state.pipelinePrepared ? "FSR targets unavailable" : "FSR pipelines unavailable";
+                }
+                break;
+            case PrismaType::Dlss:
+                state.pipelinePrepared = externalUpscaler_ != nullptr;
+                state.encoded = dlssResolved;
+                if (!state.encoded) {
+                    if (temporalRequested) state.reason = "canonical Temporal Resolve owns the output";
+                    else state.reason = dlssReason.empty() ? std::string("external upscaler did not run") : dlssReason;
+                    if (!externalUpscaler_) state.requested = false;
+                }
                 break;
             case PrismaType::Pixelate: compositeBit(kPfPixelate); break;
             case PrismaType::ChromaticAberration: compositeBit(kPfCa); break;

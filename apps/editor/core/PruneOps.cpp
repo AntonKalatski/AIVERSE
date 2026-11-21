@@ -178,7 +178,7 @@ void registerPruneOps(Workspace& ws) {
         Json::parse(R"({"properties": {"apply": {"type": "boolean"}, "limit": {"type": "integer"}}})"),
         [&ws](const Json& p) {
             if (ws.project.dir.empty()) throw std::runtime_error("no game is open (open_game)");
-            if (ws.project.isFps()) throw std::runtime_error("rules_prune reads the RTS loader; FPS rules are not supported");
+            if (ws.project.actorSessionRules()) throw std::runtime_error("rules_prune reads game::Rules; actor-session rules (rules.fps) are not supported yet (docs/no-genre-split-audit.md G1)");
             const Json map = ws.map.toJson();
             Json pruned = ws.project.rulesJson;
             const size_t before = pruned.dump(-1).size();

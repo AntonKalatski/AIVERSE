@@ -5,7 +5,7 @@ namespace aiverse::genres {
 enum class MotionKind { Platformer, Racing };
 constexpr uint16_t kMotionInput=1;
 struct MotionActor {
-    fps::Actor body;
+    fps::CharacterSnapshot body;
     Fixed speed{};
     int32_t axis=0,steer=0,checkpoint=0,lap=0,deaths=0;
     uint32_t buttons=0,lastInput=0;

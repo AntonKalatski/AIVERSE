@@ -512,7 +512,7 @@ int aiverseMain(int,char**) {
             mat.uvOffset={u,0.4f};
             mat.uvScale={0.0001f,0.0001f};
         }
-        render::RTSCamera cam;
+        render::Camera cam;
         cam.target={0,0,0};cam.distance=4.0f;
         cam.pitch=0.10f;cam.yaw=0.0f;
         renderer.beginScene(cam,kWidth,kHeight);

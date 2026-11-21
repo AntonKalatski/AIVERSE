@@ -18,7 +18,7 @@ extern "C" {
 
 namespace aiverse::studio {
 
-struct StudioLuaContext { int selectionCount = 0, selectionIndex = -1, objectCount = 0; double time = 0; bool playing = false; };
+struct StudioLuaContext { int selectionCount = 0, selectionIndex = -1, objectCount = 0, mapWidth = 0, mapHeight = 0; double time = 0; bool playing = false; };
 
 class StudioLuaPanel {
 public:
@@ -104,7 +104,11 @@ public:
              "  if id == 'radius' then radius = value; return {command='status', text='Radius '..value} end\n"
              "end\n"
              "function scene_gizmos(ctx)\n"
-             "  return {{kind='circle', x=0, y=0, z=0, radius=radius, r=0.3, g=0.8, b=1.0}}\n"
+             "  local x, z = ctx.map_width / 2, ctx.map_height / 2   -- the middle of the map\n"
+             "  return {\n"
+             "    {kind='circle', x=x, y=0, z=z, radius=radius, r=0.3, g=0.8, b=1.0},\n"
+             "    {kind='label', x=x, y=0, z=z, text='Map centre', r=1, g=1, b=1}\n"
+             "  }\n"
              "end\n";
         return bool(f);
     }
@@ -159,6 +163,8 @@ private:
         lua_pushinteger(L_, c.selectionIndex); lua_setfield(L_, -2, "selection_index");
         lua_pushinteger(L_, c.selectionCount); lua_setfield(L_, -2, "selection_count");
         lua_pushinteger(L_, c.objectCount); lua_setfield(L_, -2, "object_count");
+        lua_pushinteger(L_, c.mapWidth); lua_setfield(L_, -2, "map_width");
+        lua_pushinteger(L_, c.mapHeight); lua_setfield(L_, -2, "map_height");
         lua_pushnumber(L_, c.time); lua_setfield(L_, -2, "time");
         lua_pushboolean(L_, c.playing); lua_setfield(L_, -2, "playing");
     }

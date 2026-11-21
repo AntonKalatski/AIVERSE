@@ -22,6 +22,7 @@
 // how heavy the effect is). The tier is chosen per GPU (old Android: low), AIVERSE_POSTFX=off|low|medium|high.
 // The whole post chain costs nothing when no effect is active (the scene renders straight to the screen).
 #pragma once
+#include <utility>
 #include <string>
 #include <vector>
 #include "engine/data/Json.h"
@@ -39,7 +40,12 @@ enum class PrismaCostClass { Cheap, Medium, Heavy };
 enum class PrismaType {
     Fxaa, Pixelate, ChromaticAberration, Sharpen, TiltShift, Bloom, SunShafts,
     ColorGrade, Lut, Posterize, Vignette, Grain, Fade, Letterbox, ShaderGraph,
-    DepthOfField, AutoExposure, MotionBlur, TemporalResolve, LensWater, Count
+    DepthOfField, AutoExposure, MotionBlur, TemporalResolve, LensWater,
+    // 2026-11-22: screen-space AO/SSR, lens flare + dirt, SMAA, lens
+    // distortion/Panini, anamorphic streaks, halation, heat haze/shockwaves,
+    // FSR 1 spatial upscaling and the external (DLSS) upscaler route.
+    AmbientOcclusion, ScreenSpaceReflections, LensFlare, Smaa, LensDistortion,
+    AnamorphicStreaks, Halation, HeatHaze, Fsr, Dlss, Count
 };
 
 enum class PrismaParamKind { Number, Color, Bool, Text };
@@ -141,6 +147,22 @@ struct BlurPlan { int div = 2; int passes = 2; };               // tilt-shift bl
 BlurPlan tiltBlurPlan(PrismaQuality tier);
 struct ShaftsPlan { int div = 4; int samples = 16; };
 ShaftsPlan shaftsPlan(PrismaQuality tier);
+// Screen-space ambient occlusion: AO buffer at size / div, directions x steps per pixel.
+struct AoPlan { int div = 2; int directions = 2; int steps = 4; };
+AoPlan aoPlan(PrismaQuality tier);
+// Screen-space reflections: trace buffer at size / div, maximum march steps (authored steps are capped).
+struct SsrPlan { int div = 1; int maxSteps = 32; int refine = 4; };
+SsrPlan ssrPlan(PrismaQuality tier);
+// Lens flare ghosts / anamorphic streaks / halation work at size / div.
+struct FlarePlan { int div = 4; int blurPasses = 1; };
+FlarePlan flarePlan(PrismaQuality tier);
+struct StreakPlan { int div = 4; int passes = 3; };
+StreakPlan streakPlan(PrismaQuality tier);
+// SMAA 1x: maximum orthogonal search steps per tier (authored value is capped).
+int smaaSearchSteps(PrismaQuality tier);
+// Spatial / external upscalers: internal 3D size for an output size. Scale is
+// quantized to 1/16 steps (no per-frame target churn); never below 32 px.
+std::pair<int, int> prismaScaledRenderSize(int outputW, int outputH, float renderScale);
 
 // Cost report for MCP / the editor: per effect and in total for each device profile, plus warnings
 // (heavy effects, effects forced onto weak devices, a chain over budget).

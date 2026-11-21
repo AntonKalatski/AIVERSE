@@ -46,6 +46,11 @@ bool VulkanDevice::createInstance(bool wantSurface, std::string& error) {
         want.push_back(platformExt);
         surfaceInstance_ = true;
     }
+    // Vendor libraries (e.g. NVIDIA NGX) may ask for extra instance extensions.
+    for (const auto& name : vulkanExtensionRequests().instance)
+        if (hasExtension(exts, name.c_str()) &&
+            std::find_if(want.begin(), want.end(), [&](const char* w) { return name == w; }) == want.end())
+            want.push_back(name.c_str());
     std::vector<const char*> layers;
     const bool validation = envOn("AIVERSE_VK_VALIDATION");
     if (validation) {
@@ -156,7 +161,14 @@ bool VulkanDevice::pickDevice(std::string& error) {
     std::vector<VkExtensionProperties> ex(en);
     vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, ex.data());
     swapchainExt_ = surfaceInstance_ && hasExtension(ex, swapExt);
-    if (swapchainExt_) { di.enabledExtensionCount = 1; di.ppEnabledExtensionNames = &swapExt; }
+    std::vector<const char*> deviceExts;
+    if (swapchainExt_) deviceExts.push_back(swapExt);
+    for (const auto& name : vulkanExtensionRequests().device)
+        if (hasExtension(ex, name.c_str())) deviceExts.push_back(name.c_str());
+    if (!deviceExts.empty()) {
+        di.enabledExtensionCount = uint32_t(deviceExts.size());
+        di.ppEnabledExtensionNames = deviceExts.data();
+    }
     if (vkCreateDevice(gpu_, &di, nullptr, &device_) != VK_SUCCESS) { error = "Vulkan: vkCreateDevice failed"; return false; }
     if (!loadDeviceFunctions(device_)) {
         if (vkDestroyDevice) vkDestroyDevice(device_, nullptr);

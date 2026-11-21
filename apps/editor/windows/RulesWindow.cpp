@@ -15,9 +15,9 @@ public:
     const char* dockArea() const override { return "right-bottom"; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            ImGui::TextWrapped("%s",genreText(ed.ws(),"fps.editor.hint").c_str());
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+        if(ed.ws().project.actorSessionRules()) {
+            ImGui::TextWrapped("%s",engineText(ed.ws(),"fps.editor.hint").c_str());
+            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
             return;
         }
         static const char* modes[] = {"Общие", "Триггеры", "Весь rules.json"};

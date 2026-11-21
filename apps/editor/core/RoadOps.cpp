@@ -6,6 +6,7 @@
 namespace aiverse::editor {
 
 using namespace game;
+using namespace aiverse::roads;   // spline roads (engine/roads)
 
 namespace roads {
 

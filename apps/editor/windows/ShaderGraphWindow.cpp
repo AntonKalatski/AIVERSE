@@ -33,7 +33,7 @@ public:
         }
     }
     void draw(Editor& ed) override {
-        auto tr=[&](const char* key){return genreText(ed.ws(),key);};
+        auto tr=[&](const char* key){return engineText(ed.ws(),key);};
         if(ed.ws().project.dir.empty()){ui::hint(tr("shaderGraph.openProject").c_str());return;}
         if(project_!=ed.ws().project.dir) {
             if(!project_.empty() && dirty_) { // Keep an explicit draft per project while switching.
@@ -156,7 +156,7 @@ private:
         ImGui::SetCursorScreenPos(origin);ImGui::Dummy(avail);
     }
     void properties(Editor& ed) {
-        auto tr=[&](const char* key){return genreText(ed.ws(),key);};
+        auto tr=[&](const char* key){return engineText(ed.ws(),key);};
         selected_=std::clamp(selected_,0,int(doc_["nodes"].size())-1);
         if(selected_>=0){auto& n=doc_.find("nodes")->at(size_t(selected_));ImGui::TextUnformatted(n.getStr("id").c_str());
             if(n.getStr("op")=="constant" || n.getStr("op")=="parameter") {
