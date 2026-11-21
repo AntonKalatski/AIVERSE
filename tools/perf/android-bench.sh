@@ -197,6 +197,7 @@ shot() {
   say "shot $name $gfx -> shots/${NAME}_${name}_${gfx}.png"
 }
 cases_shots() { shot hw gl; shot manual gl AIVERSE_HW_SHADOW=0; shot off gl AIVERSE_SHADOWS=off; shot native gl AIVERSE_RENDER_SCALE=1 AIVERSE_SHADOWS=medium; }
+cases_scaleshots() { shot env067 gl AIVERSE_RENDER_SCALE=0.667; shot env050 gl AIVERSE_RENDER_SCALE=0.5; shot default gl; shot native gl AIVERSE_RENDER_SCALE=1; shot vkdefault vulkan; }
 # one traced run: RtsView / client stage times in logcat (AIVERSE_FRAME_TRACE, AIVERSE_VIEW_PROFILE)
 cases_trace() { run trace gl $U AIVERSE_FRAME_TRACE=1 AIVERSE_VIEW_PROFILE=1 AIVERSE_CLIENT_PROFILE=1; }
 # what the remaining (Low) shadow cost is: sampling taps vs the shadow-map pass
