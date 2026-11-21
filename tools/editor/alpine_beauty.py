@@ -32,6 +32,22 @@ def connect():
     sys.exit("editor agent link not reachable")
 
 sock = connect(); buf = b""; seq = 0
+def _hello():
+    # Agent link v2: authenticate with the token the editor writes per port.
+    global buf
+    path = os.path.expanduser("~/.aiverse/agent-link/%d.token" % port)
+    for _ in range(120):
+        if os.path.exists(path): break
+        time.sleep(1)
+    token = open(path).read().strip()
+    sock.sendall((json.dumps({"jsonrpc": "2.0", "id": 0, "method": "hello", "token": token}) + "\n").encode())
+    while b"\n" not in buf:
+        chunk = sock.recv(1 << 20)
+        if not chunk: sys.exit("editor closed the link during hello")
+        buf += chunk
+    line, buf = buf.split(b"\n", 1)
+    print("hello:", line[:120].decode(errors="replace"), flush=True)
+_hello()
 def call(_tool, **args):
     global buf, seq
     seq += 1

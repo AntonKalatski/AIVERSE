@@ -22,6 +22,22 @@ def connect():
     sys.exit("editor agent link not reachable")
 
 sock = connect(); buf = b""; seq = 0
+def _hello():
+    # Agent link v2: authenticate with the token the editor writes per port.
+    global buf
+    path = os.path.expanduser("~/.aiverse/agent-link/%d.token" % port)
+    for _ in range(120):
+        if os.path.exists(path): break
+        time.sleep(1)
+    token = open(path).read().strip()
+    sock.sendall((json.dumps({"jsonrpc": "2.0", "id": 0, "method": "hello", "token": token}) + "\n").encode())
+    while b"\n" not in buf:
+        chunk = sock.recv(1 << 20)
+        if not chunk: sys.exit("editor closed the link during hello")
+        buf += chunk
+    line, buf = buf.split(b"\n", 1)
+    print("hello:", line[:120].decode(errors="replace"), flush=True)
+_hello()
 def call(_tool, **args):
     global buf, seq
     seq += 1
@@ -77,8 +93,8 @@ def frame(tag, **cam):
         time.sleep(0.5)
 
 call("postfx_add", type="lensWater", enabled=True, amount=0.9, dropSize=14, density=0.6, distortion=12,
-     flowSpeed=30, dryTime=6, film=0.2, streaks=0.6, glint=0.7, waterline=True, meniscus=7,
-     waveHeight=0.06, waveLength=0.9, waveSpeed=1.2, lensDistance=0.25, sheet=0.9, sheetTime=1.2)
+     flowSpeed=30, dryTime=7, film=0.2, streaks=0.6, glint=0.7, waterline=True, meniscus=7,
+     waveHeight=0.06, waveLength=0.9, waveSpeed=1.2, lensDistance=0.25, sheet=0.9, sheetTime=2.8)
 # Clearer river for the dive (turbidity 0.1): the bed stays readable under water.
 comp = json.loads(json.dumps(river["components"]))
 comp["NereidWater"]["style"]["turbidity"] = float(os.environ.get("DIVE_TURBIDITY", "0.1"))
@@ -91,11 +107,15 @@ surf = bed + 1.55
 tx, tz = centre[idx + 10][0], centre[idx + 10][1]
 def ease(t): return t * t * (3 - 2 * t)
 path = []
-path += [surf + 0.45] * 6                                        # above
-path += [surf + 0.45 - 1.15 * ease(k / 14) for k in range(15)]   # sink through the line
-path += [surf - 0.7] * 8                                         # under water
-path += [surf - 0.7 + 1.05 * ease(k / 10) for k in range(11)]    # surface
-path += [surf + 0.35] * 40                                       # hold: film drains, drops remain
+path += [surf + 0.5] * 4                                              # above
+path += [surf + 0.5 - 0.42 * ease(k / 8) for k in range(9)]           # slow approach
+path += [surf + 0.08 * math.sin(k / 24 * 2 * math.pi * 2) for k in range(24)]  # at the line
+path += [surf - 0.08 - 0.6 * ease(k / 8) for k in range(9)]           # dive under
+path += [surf - 0.68] * 8                                             # under water
+path += [surf - 0.68 + 0.66 * ease(k / 8) for k in range(9)]          # rise to the line
+path += [surf + 0.06 * math.sin(k / 14 * 2 * math.pi) for k in range(14)]       # at the line
+path += [surf + 0.06 + 0.3 * ease(k / 4) for k in range(5)]           # emerge
+path += [surf + 0.36] * 40                                            # film drains, drops remain
 for i, y in enumerate(path):
     pitch_t = surf + 3.5
     frame(f"dive-{i:03d}", **look((x, y, z), (tx, pitch_t, tz)))

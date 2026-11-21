@@ -58,7 +58,7 @@ nothing.
 | `lensDistance` | 0.25 | metres from camera to the virtual lens surface |
 | `streaks` | 0.5 | meandering refracting rivulets with a head drop, left by the draining film |
 | `sheet` | 0.9 | just-emerged lens: one refracting water film over everything that was under water |
-| `sheetTime` | 1.2 | seconds for the film's ragged top edge to drain down to the water level |
+| `sheetTime` | 2.8 | seconds the film stays: it clings for the first third, then its ragged top edge drains to the water level |
 | `glint` | 0.5 | sun-facing specular glints on drops |
 
 Droplets appear only after a real submerged → dry transition. The part of the lens

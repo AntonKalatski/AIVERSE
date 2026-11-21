@@ -793,7 +793,8 @@ inline const char* kComposite = R"(
         // Just emerged: everything that was under water is one refracting film
         // whose ragged top edge drains down (gravity, ease-in) to the water level.
         float lensAge=lensWater1.y;
-        float sheetT=lensWater2.z>0.001?clamp(lensAge/lensWater2.z,0.0,1.0):1.0;
+        // First third: the film clings to the lens; then it drains (ease-in).
+        float sheetT=lensWater2.z>0.001?clamp((lensAge-0.33*lensWater2.z)/(0.67*lensWater2.z),0.0,1.0):1.0;
         float sheetEdge=0.035*sin(s.x*23.0+lensAge*3.0)+0.02*sin(s.x*57.0-lensAge*5.0)+
                         0.05*(pfLensHash(vec2(floor(s.x*9.0),3.0))-0.5);
         float sheetTop=1.08-1.25*pow(sheetT,1.6)+sheetEdge*(0.4+sheetT);
@@ -868,7 +869,7 @@ inline const char* kComposite = R"(
             vec2 flowN=0.6*vec2(sin(fy*90.0+lensAge*16.0+sin(s.x*41.0)*1.5),cos(s.x*83.0-fy*37.0+lensAge*9.0))+
                        0.4*vec2(sin(s.x*173.0+fy*121.0+lensAge*21.0),sin(fy*157.0-s.x*61.0+lensAge*17.0));
             float edgeBand=1.0-smoothstep(0.0,0.03,abs(sheetTop-s.y));
-            vec2 sheetOffset=(flowN*0.55+vec2(0.0,-1.6*edgeBand))*lensPixel*lensWater0.w;
+            vec2 sheetOffset=(flowN*1.1+vec2(0.0,-2.2*edgeBand))*lensPixel*lensWater0.w;
             // Applied as a refraction difference over the graded colour, like the
             // drops: no raw-HDR leak, the film only bends and brightens light.
             vec3 sheetOriginal=TEX0(uv).rgb;
@@ -877,7 +878,9 @@ inline const char* kComposite = R"(
             // Flowing glare streaks along the draining water (not a dot grid).
             float streak=pow(clamp(0.5+0.5*sin(s.x*61.0+flowN.x*2.2+lensAge*2.0),0.0,1.0),24.0)*
                          clamp(0.5+0.5*flowN.y,0.0,1.0);
-            sheetCol+=vec3(0.10,0.11,0.11)*streak*(0.4+0.6*lensWater2.y);
+            sheetCol+=vec3(0.20,0.21,0.21)*streak*(0.4+0.6*lensWater2.y);
+            // A water layer on the glass: slightly darker, cooler, less contrast.
+            sheetCol=mix(sheetCol,sheetCol*vec3(0.88,0.94,0.97)+vec3(0.02,0.03,0.035),0.6);
             sheetCol+=vec3(0.30)*pow(edgeBand,3.0)*(0.5+0.5*lensWater2.y);
             sheetCol*=1.0-0.18*smoothstep(0.03,0.0,abs(sheetTop-0.04-s.y));
             col=mix(col,sheetCol,inSheet*pfLensDry*clamp(lensWater0.x*1.4,0.0,1.0));
