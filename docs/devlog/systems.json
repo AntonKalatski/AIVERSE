@@ -120,7 +120,8 @@
         "Show forest to the horizon: near trees, impostors and HLOD blend without popping.",
         "Cut and regrow trees: clearings are visible both up close and on the horizon.",
         "Query nearby trees from gameplay and bake terrain into an editor map through MCP."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "physis",
@@ -245,7 +246,8 @@
         "Push physics bodies with wind and change gravity — through a separate Box3D adapter.",
         "Author wind zones, storms and gravity in map JSON and edit them right in the scene.",
         "Keep environment fields in sync on the server: reconciliation, command replay, recovery after a restart."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "nereid",
@@ -404,7 +406,8 @@
         "Swim, sink and drift with the current — in RTS, FPS or any other game.",
         "Show flow, foam and whitewater that follow the channel bends.",
         "Edit river grade and current in the editor and erode banks together with TerraWeave."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "strata",
@@ -548,7 +551,8 @@
         "Keep geometry in memory within a budget and stream it in pages from disk.",
         "Switch detail without cracks between clusters and without flicker.",
         "Check whether an asset fits before import — through MCP."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "lens",
@@ -669,7 +673,8 @@
         "Show several cameras in one frame: monitors, picture-in-picture, portraits.",
         "Capture game frames to PNG — including for the website and tests.",
         "Replay a prepared frame into secondary cameras without simulating again."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "vivid",
@@ -910,7 +915,8 @@
         "Get bounce light in interiors and on open maps.",
         "Bake lighting once and skip rebakes when nothing changed.",
         "Move lights and geometry and see indirect light right away."
-      ]
+      ],
+      "release": "2.0.0"
     },
     {
       "id": "prisma",
@@ -1024,7 +1030,8 @@
         "Set the mood of a frame in game.json or a map and change it through MCP.",
         "Change the look when the camera enters an area — through post-process volumes.",
         "Scale effects to the GPU, from weak phones to Apple Silicon."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "spectrafx",
@@ -1146,7 +1153,8 @@
         "Build fire, smoke, explosions and magic from a graph, not code.",
         "Trigger effects from gameplay events without touching the deterministic simulation.",
         "Bring effects over from Unity projects."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "motionweave",
@@ -1257,7 +1265,8 @@
         "One animation system for RTS armies, FPS characters and cutscenes.",
         "Reimport a model without breaking the animation that is playing.",
         "Animate large crowds with LOD."
-      ]
+      ],
+      "release": "2.2.0"
     },
     {
       "id": "render",

@@ -5,6 +5,10 @@
     "index": "https://raw.githubusercontent.com/chromealex/aiverse/builds/index.json",
     "branch": "https://github.com/chromealex/AIVERSE/tree/builds"
   },
+  "next": {
+    "version": "2.2.0",
+    "note": "Planned number of the next tag: system cards say a feature in main 'will appear' in it. The integrator updates this when the release is tagged (then the entry moves into releases)."
+  },
   "releases": [
     {
       "version": "2.1.0",

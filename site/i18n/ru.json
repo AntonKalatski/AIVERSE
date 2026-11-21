@@ -89,5 +89,12 @@
  "relNextAll": "Все {n} записей — в ходе разработки →",
  "relOtherTitle": "Промежуточные сборки",
  "relOtherLead": "Сборки из ветки builds, у которых нет релиза: версия и коммит, с которого они собраны.",
- "relPageTitle": "Релизы — AIVERSE"
+ "relPageTitle": "Релизы — AIVERSE",
+ "verSince": "с версии {v}",
+ "verNext": "появится в {v}",
+ "verBranch": "в разработке",
+ "verSinceTitle": "Появилась в релизе {v}",
+ "verNextTitle": "Уже в main, войдёт в релиз {v}",
+ "verBranchTitle": "В отдельной ветке, войдёт в релиз после слияния в main",
+ "relNextTitleV": "В следующем релизе — {v}"
 }

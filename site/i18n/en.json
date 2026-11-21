@@ -89,5 +89,12 @@
  "relNextAll": "All {n} entries are in the devlog →",
  "relOtherTitle": "Intermediate builds",
  "relOtherLead": "Builds on the builds branch without a release: the version and the commit they were built from.",
- "relPageTitle": "Releases — AIVERSE"
+ "relPageTitle": "Releases — AIVERSE",
+ "verSince": "since {v}",
+ "verNext": "coming in {v}",
+ "verBranch": "in development",
+ "verSinceTitle": "Shipped in release {v}",
+ "verNextTitle": "Already in main, ships in release {v}",
+ "verBranchTitle": "On a separate branch, ships after it is merged into main",
+ "relNextTitleV": "In the next release: {v}"
 }

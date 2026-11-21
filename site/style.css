@@ -455,3 +455,6 @@ a.chip-ink { color: var(--on-ink); }
   .rel-ver { font-size: 34px; }
   .rel-next { padding: 22px 20px; }
 }
+a.badge { text-decoration: none; color: inherit; }
+a.badge-ink { color: var(--on-ink); }
+.badge-accent { background: var(--accent); color: var(--ink); }

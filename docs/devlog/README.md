@@ -75,6 +75,13 @@ package to the release with the same `version`. Packages without a release appea
 "Intermediate builds"; a release without packages shows a link to the `builds` branch.
 "In the next release" lists devlog entries dated after the latest release, so it needs no edits.
 
+`next.version` is the planned number of the next tag. Each flagship system in `systems.json` has
+`release`: the version it shipped in (a version in `releases`) or `next.version` for systems already
+in `main` but not tagged. Cards and system pages show "since 2.0.0" / "coming in 2.2.0"; a system on
+a branch (`where: branch`, no `release`) shows "in development". When the release is tagged, move
+it from `next` into `releases` and set the next planned number; new systems merged into `main` get
+`release` = `next.version`. `build.py check` rejects a `release` that is neither.
+
 ## Languages
 
 The site is Russian at the root and English under `en/` (switch in the header). Every text field

@@ -30,6 +30,7 @@ class Ctx:
         self.B = '' if lang == 'ru' else '../'
         self.other = 'en' if lang == 'ru' else 'ru'
         self.langs = langs
+        self.rel = {'released': set(), 'next': ''}
 
     def loc(self, obj, key):
         if self.lang != 'ru':
@@ -105,6 +106,19 @@ def cover_visual(c, ctx, lazy=True):
     return f'<img src="{esc(ctx.media(c["src"]))}" alt="{cap}"{" loading=\"lazy\"" if lazy else ""}>'
 
 
+def version_badge(s, ctx):
+    """Release badge of a flagship system: shipped version, the next one, or in development."""
+    r = s.get('release')
+    if r and r in ctx.rel['released']:
+        return (f'<a class="badge badge-ink" href="releases.html#v{esc(r)}" title="{esc(ctx.T["verSinceTitle"].format(v=r))}">'
+                f'{esc(ctx.T["verSince"].format(v=r))}</a>')
+    nxt = r or ctx.rel['next']
+    if s.get('where') == 'main' and nxt:
+        return (f'<a class="badge badge-accent" href="releases.html#next" title="{esc(ctx.T["verNextTitle"].format(v=nxt))}">'
+                f'{esc(ctx.T["verNext"].format(v=nxt))}</a>')
+    return f'<span class="badge" title="{esc(ctx.T["verBranchTitle"])}">{ctx.T["verBranch"]}</span>'
+
+
 def systems_html(systems, ctx):
     cards = []
     for s in systems:
@@ -112,7 +126,7 @@ def systems_html(systems, ctx):
             continue
         sid = esc(s['id'])
         link = f'<a class="sys-link" href="system-{sid}.html">{ctx.T["cardMore"]}</a>'
-        badge = f'<span class="badge{" badge-ink" if s["where"] == "main" else ""}">{ctx.where(s["where"])}</span>'
+        badge = version_badge(s, ctx)
         head = f'<div class="sys-head"><h3><a href="system-{sid}.html">{esc(s["name"])}</a></h3>{badge}</div>'
         text = f'<p class="sys-tag">{esc(ctx.loc(s, "tagline"))}</p><p>{esc(ctx.loc(s, "essence"))}</p>'
         if s.get('cover'):
@@ -158,8 +172,7 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
         buttons.append(f'<a class="btn btn-ink" href="{esc(href)}">{ctx.T["article"]}</a>')
     buttons.append(f'<a class="btn btn-line" href="devlog.html#system={sid}">{ctx.T["devlogN"]} · {len(mine)}</a>')
     hero = (f'<section class="sp-hero"><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / {esc(s["name"])}</p>'
-            f'<div class="sp-title"><h1>{esc(s["name"])}</h1><span class="badge{" badge-ink" if s["where"] == "main" else ""}">'
-            f'{ctx.where(s["where"])}</span></div><p class="sp-tag">{esc(ctx.loc(s, "tagline"))}</p>'
+            f'<div class="sp-title"><h1>{esc(s["name"])}</h1>{version_badge(s, ctx)}</div><p class="sp-tag">{esc(ctx.loc(s, "tagline"))}</p>'
             f'<p class="sp-lead">{esc(ctx.loc(s, "essence"))}</p>'
             f'<p class="sp-since mono">{ctx.T["since"]} {ctx.fmt_date(s["started"])}</p>'
             f'<div class="actions">{"".join(buttons)}</div></section>')
@@ -345,7 +358,8 @@ def releases_page(data, entries, systems, ctx, repo):
         body = (f'<ul class="rel-next-list">{items}</ul>' if items else f'<p>{ctx.T["relNextEmpty"]}</p>')
         more = (f'<a class="rel-more" href="devlog.html">{ctx.T["relNextAll"].format(n=len(fresh))}</a>'
                 if len(fresh) > 12 else '')
-        nxt = (f'<section class="rel-next"><div class="rel-next-head"><h2>{ctx.T["relNextTitle"]}</h2>'
+        nxt = (f'<section class="rel-next" id="next"><div class="rel-next-head"><h2>'
+               f'{ctx.T["relNextTitleV"].format(v=esc(data["next"]["version"])) if data.get("next") else ctx.T["relNextTitle"]}</h2>'
                f'<p>{ctx.T["relNextLead"].format(v=esc(latest["version"]), d=ctx.fmt_date(latest["date"]))}</p></div>'
                f'{body}{more}</section>')
     cards = []

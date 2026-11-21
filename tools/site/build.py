@@ -301,6 +301,17 @@ def check_releases():
         for j, h in enumerate(r.get('highlights') or []):
             if not h.get('title') or not h.get('text'):
                 errors.append(f'{q} highlights[{j}]: "title" and "text" are required')
+    nxt = (data.get('next') or {}).get('version')
+    if nxt is not None and (not isinstance(nxt, str) or nxt in seen):
+        errors.append(f'{p}: next.version must be a version that is not released yet')
+    try:
+        _, systems = load_systems()
+    except (OSError, ValueError, KeyError):
+        systems = []
+    for s in systems:
+        r = s.get('release')
+        if r is not None and r not in seen and r != nxt:
+            errors.append(f'systems.json {s.get("id")}: release "{r}" is neither in releases nor next.version')
     return errors
 
 
@@ -432,6 +443,8 @@ def cmd_build(args):
     for lang in LANGS:
         T = json.loads((SITE / 'i18n' / f'{lang}.json').read_text(encoding='utf-8'))
         ctx = Ctx(lang, T, LANGS)
+        ctx.rel = {'released': {r['version'] for r in rel_data.get('releases') or []},
+                   'next': (rel_data.get('next') or {}).get('version', '')}
         d = out if lang == 'ru' else out / lang
         d.mkdir(parents=True, exist_ok=True)
         loc_entries = localized_entries(entries, ctx)
