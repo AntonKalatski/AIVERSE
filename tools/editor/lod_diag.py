@@ -125,6 +125,10 @@ stats("bank", **look((x - fx * 3, surf[idx] + 1.3, z - fz * 3), (bx + fx * 4, g 
 j = min(len(centre) - 1, 22)
 stats("hero", **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0], surf[8] + 35, centre[j][1])))
 stats("overview", x=256, y=0, z=256, distance=260, pitch=40, yaw=200)
+if os.environ.get("GRASS_SHOT"):
+    v = [float(t) for t in os.environ["GRASS_SHOT"].split(",")]
+    stats("meadow", **look(tuple(v[:3]), tuple(v[3:6])))
+    stats("meadow-far", **look((v[0] - (v[3] - v[0]) * 2, v[1] + 6, v[2] - (v[5] - v[2]) * 2), tuple(v[3:6])))
 call("view_wind", forest=False, nature=False)
 stats("bank-noflora", **look((x - fx * 3, surf[idx] + 1.3, z - fz * 3), (bx + fx * 4, g + 0.3, bz + fz * 4)))
 json.dump(res, open(os.path.join(out, "lod-%s.json" % os.path.basename(os.environ.get("LOD_MAP", "valley")).replace(".json","")), "w"), indent=1)

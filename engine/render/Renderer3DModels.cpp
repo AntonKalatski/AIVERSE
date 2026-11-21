@@ -3847,6 +3847,17 @@ void Renderer3D::renderModels(int phase) {
             if (paletteSort && materialGroup[a] != materialGroup[b])
                 return materialGroup[a] < materialGroup[b];
             if (x.prim != y.prim) return x.prim < y.prim;
+            // sameBatch splits on these: group them, or LOD-fading and
+            // settled copies of one primitive alternate and every switch
+            // costs a draw call.
+            {
+                const bool fx = x.lodThreshold < 1 || x.lodInvert, fy = y.lodThreshold < 1 || y.lodInvert;
+                if (fx != fy) return fx < fy;
+                const bool bx = x.tint.w < 0.99f, by = y.tint.w < 0.99f;
+                if (bx != by) return bx < by;
+                constexpr uint32_t kSplit = kDrawFadeDepth | kDrawTransparent | kDrawActorReveal;
+                if ((x.flags & kSplit) != (y.flags & kSplit)) return (x.flags & kSplit) < (y.flags & kSplit);
+            }
             if (x.gi != y.gi) return x.gi < y.gi;
             if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
             return a < b;
