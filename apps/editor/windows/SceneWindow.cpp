@@ -20,7 +20,7 @@
 #include "../PhysisFieldEditor.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/GpuIcbPolicy.h"
-#include "modules/rts/view/RtsRoadView.h"
+#include "../../../engine/roads/RoadView.h"
 #include <array>
 
 namespace aiverse::editor {

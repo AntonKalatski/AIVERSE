@@ -5,7 +5,7 @@
         if(u.hp.raw<=0||(u.flags&kUnitOffMap))return;
         for(const auto&v:driving_->rules().vehicles)if(v.type==u.type){
             Vec2 axis=normalize(u.facing.xz());if(!axis.lengthSq().raw)axis={kOne,Fixed{}};
-            Vec2 velocity{};if(auto*c=driving_->car(sim,e))velocity=c->st.velocity.xz()/driving_->rules().metersPerCell;
+            Vec2 velocity{};if(auto*c=driving_->car(sim,e))velocity=c->controller.velocity.xz()/driving_->rules().metersPerCell;
             vehicleBodies.push_back({e,t.pos.xz(),axis,velocity,v.length/2,v.width/2});break;
         }
     });

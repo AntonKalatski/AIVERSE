@@ -1084,7 +1084,7 @@ private:
     std::unique_ptr<Commerce> commerce_;   // rules "commerce" (state: CommerceStore resource)
     std::unique_ptr<Arsenal> arsenal_;     // rules "arsenal" (state: ArsenalStore resource)
     std::unique_ptr<Traffic> traffic_;     // rules "traffic" (state: TrafficStore resource)
-    std::unique_ptr<Driving> driving_;     // rules "driving" (state: DrivingStore resource)
+    std::unique_ptr<Driving> driving_;     // rules "driving": the grid-map host of the vehicle system (engine/vehicles)
     std::unique_ptr<TopDown> topDown_;     // rules "topDown" (state: TopDownStore resource)
     std::unique_ptr<Progression> progression_;   // rules "progression" (state: ProgressionStore resource)
     std::unique_ptr<Encounters> encounters_;   // rules "encounters" (state: EncounterStore resource)

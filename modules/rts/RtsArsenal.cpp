@@ -271,7 +271,7 @@ void Arsenal::crates(Simulation& sim, ArsenalStore& st) {
         if (!w.alive(hero) || w.get<Unit>(hero).hp.raw <= 0) continue;
         Entity body = hero;
         if (m_->driving() && m_->driving()->active())
-            if (const DrivingCar* c = m_->driving()->carOf(sim, hero)) body = c->e;
+            if (const Entity car = m_->driving()->vehicleOf(sim, hero); car.valid()) body = car;
         if (!w.alive(body)) continue;
         Fixed radius = types[w.get<Unit>(body).type].radius;
         if (body != hero)   // a car collects with its whole length

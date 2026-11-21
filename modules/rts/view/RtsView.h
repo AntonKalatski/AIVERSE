@@ -171,7 +171,6 @@ struct ViewEffect {
 }  // namespace aiverse::game
 namespace aiverse::roads { class RoadView; }
 namespace aiverse::game {
-using RtsRoadView = aiverse::roads::RoadView;   // shared engine road view (engine/roads/RoadView.h)
 class RtsShoreView;
 
 class RtsView : public view_adapter::ModelResourceProvider {
@@ -508,8 +507,8 @@ public:
     }
     // spline roads (map "roadNetwork", docs/roads.md): set with the map (setTerrainDetail(map) does it too)
     void setRoadMap(const Json& map);
-    RtsRoadView& roads() { return *roads_; }
-    const RtsRoadView& roads() const { return *roads_; }
+    roads::RoadView& roads() { return *roads_; }
+    const roads::RoadView& roads() const { return *roads_; }
     RtsShoreView& shores() { return *shores_; }
     const RtsShoreView& shores() const { return *shores_; }
     // ImGui: bars, counts. ox/oy: top-left of the view on screen; drawList: ImDrawList* (default: background list)
@@ -989,11 +988,11 @@ private:
     void discardPendingSurfaceLease() noexcept;
     std::unique_ptr<PreparedSurfaceLease> pendingSurfaceLease_;
     SurfacePrewarmStats surfacePrewarmStats_;
-    std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
+    std::unique_ptr<roads::RoadView> roads_;   // spline roads: map roadNetwork (engine/roads/RoadView.cpp)
     std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
     // Staged GPU kits may still own RHI handles after a refused full-idle
     // rollback. Do not drop their owner until a later host recovery/shutdown.
-    std::unique_ptr<RtsRoadView> pendingRoadRecovery_;
+    std::unique_ptr<roads::RoadView> pendingRoadRecovery_;
     std::unique_ptr<RtsShoreView> pendingShoreRecovery_;
     RtsGroundFx groundFx_;   // territory, diggable rock, lanes, roads (RtsGroundFx.cpp)
     FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)

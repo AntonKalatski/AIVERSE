@@ -18,11 +18,11 @@ inline bool beaconEnabled(aiverse::game::RtsModule& m,aiverse::Simulation& sim,a
  return activeResponse(m,sim,e);
 }
 template<class Host> void syncTrafficSignals(aiverse::Simulation& sim,Host& host){
- auto&m=static_cast<aiverse::game::RtsModule&>(sim.module());auto*d=m.driving();auto*st=d?d->store(sim):nullptr;if(!st)return;
+ auto&m=static_cast<aiverse::game::RtsModule&>(sim.module());auto*d=m.driving();if(!d||!d->active())return;
  const auto&vars=m.state(sim).trig.vars;
- for(const auto&c:st->cars){bool beacon=beaconEnabled(m,sim,c.e);auto it=vars.find("vehicle_siren_"+std::to_string(c.e.packed()));
-  bool siren=beacon&&(it!=vars.end()&&it->second.raw?it->second.raw>0:activeResponse(m,sim,c.e));
-  host.trafficSignals(c.e.packed(),beacon,siren);
+ for(const aiverse::Entity e:aiverse::vehicles::vehicleEntities(sim.world())){bool beacon=beaconEnabled(m,sim,e);auto it=vars.find("vehicle_siren_"+std::to_string(e.packed()));
+  bool siren=beacon&&(it!=vars.end()&&it->second.raw?it->second.raw>0:activeResponse(m,sim,e));
+  host.trafficSignals(e.packed(),beacon,siren);
  }
 }
 }

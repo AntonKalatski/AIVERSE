@@ -13,6 +13,7 @@
 #include "libraries/include/aiverselib/systems/BuildingGen.h"
 #include "libraries/include/aiverselib/mechanics/VehicleData.h"
 #include "libraries/include/aiverselib/mechanics/RaceSessionData.h"
+#include "engine/vehicles/VehicleRace.h"
 #include <optional>
 #include <span>
 #include <utility>
@@ -78,13 +79,6 @@ struct RoyaleView {
     bool operator==(const RoyaleView&)const=default;
 };
 void io(Archive&,RoyaleView&);
-// Race run (map "race"; part of FPS save version 10 on race maps only): the match's race session. The vehicle each
-// racer drives is the CharacterRacer component of its character entity (FpsComponents.h).
-struct RaceRun {
-    bool enabled=false;
-    lib::mechanics::RaceSessionState session;
-    bool operator==(const RaceRun&)const=default;
-};
 // One rewind frame: every character as it was at `tick` (lag-compensated hitscan).
 struct HistoryFrame { uint32_t tick=0; std::vector<CharacterSnapshot> characters; };
 // World resource with the match-level data. Characters, projectiles, loot and vehicles are entities
@@ -95,7 +89,6 @@ struct State {
     uint32_t nextObject=1;   // next id of a projectile / loot item / vehicle (ascending id = deterministic order)
     RoundState match;
     RoyaleRun royale;
-    RaceRun race;
 };
 Config readConfig(const Json& rules);
 Command command(uint8_t slot,const Input& input);
@@ -148,7 +141,7 @@ public:
     Entity vehicleEntity(const Simulation& sim,uint32_t id) const;   // kNullEntity when absent
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
     lib::mechanics::RaceView raceView(Simulation&,uint8_t slot) const;   // racer id = slot
-    bool racing() const { return raceRules_.has_value(); }   // this map has a race (map "race")
+    bool racing() const { return race_!=nullptr; }   // this map has a race (map "race": vehicles::RaceState resource)
 private:
     void tick(Simulation&);
     void shoot(Simulation&,CharacterRef);
@@ -181,23 +174,25 @@ private:
     Fixed groundBelow(Vec3) const;
     std::vector<Loot> buildMapBuildings(const Json& map);
     void setupVehicles(Simulation&,const Json&);
-    // drive: pedals that replace the driver's own for these vehicle ids this tick (race countdown, race bots).
-    void tickVehicles(Simulation&,std::span<const std::pair<uint32_t,lib::mechanics::VehicleInput>> drive={});
+    // race: the race session's pedals this tick (countdown, race bots: vehicles::VehicleRace::pedals).
+    void tickVehicles(Simulation&,std::span<const vehicles::RacePedals> race={});
     lib::mechanics::VehicleInput driverInput(const ConstCharacterRef&,uint32_t now) const;
     void setupRace(Simulation&,const Json& rules,const Json& map);
     void tickRace(Simulation&);
-    bool validRace(const RaceRun&,const std::vector<uint32_t>& racerVehicles,const std::vector<uint32_t>& typedVehicles) const;
-    std::vector<uint32_t> racerVehicles(const Simulation&) const;   // CharacterRacer::vehicle per slot (0 = none)
+    bool validRace(const vehicles::RaceState&,const std::vector<Entity>& typedVehicles) const;
     bool vehicleInteract(Simulation&,CharacterRef);
-    VehicleDrive* vehicleDrive(Simulation&,uint32_t vehicle) const;
+    vehicles::VehicleDrive* vehicleDrive(Simulation&,uint32_t vehicle) const;
+    friend class VehicleWorld;
+    friend class RaceSeats;
     bool canFireFromVehicle(Simulation&,const CharacterRef&) const;
     void setupBots(Simulation&,const Json&);
     bool thinkBot(Simulation&,CharacterRef);
     template<class T> std::vector<Entity> orderedById(const Simulation&) const;
     std::shared_ptr<BotHost> botHost_;
-    // Races (rules "race" + map "race", shared format: mechanics/RaceSessionData.h, docs/races.md); derived, never saved.
-    std::optional<lib::mechanics::RaceRules> raceRules_;lib::mechanics::RaceTrack raceTrack_;
-    std::optional<lib::bots::RaceLine> raceLine_;
+    // The vehicle system (engine/vehicles): fps.vehicleTypes as shared vehicle types (metres, seat lists), and the
+    // race adapter (rules "race" + map "race", docs/races.md); derived, never saved.
+    vehicles::DriveRules drive_;
+    std::shared_ptr<const vehicles::VehicleRace> race_;
     struct BuildingRegion{world::Bounds bounds;Vec3 door{};std::vector<std::pair<Vec3,Vec3>> stairs,halls;};
     std::vector<BuildingRegion> buildingRegions_;   // generated buildings: footprint (+margin), door, stair flights
     std::vector<world::Bounds> ladders_,sites_;

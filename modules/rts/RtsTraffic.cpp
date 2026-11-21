@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 namespace aiverse::game {
+using namespace aiverse::roads;   // spline roads (engine/roads)
 bool Traffic::projectReturnCar(Simulation& sim, TrafficStore& st, int id, Entity car) {
     auto& c=st.citizens[size_t(id)];c.state=kCitizenToHome;c.via=0;c.line=-1;c.stopA=c.stopB=-1;
     if(!startTrip(sim,st,id,car))return false;
@@ -63,7 +64,7 @@ Fixed segDistSq(Vec2 p, Vec2 a, Vec2 b) {
 // the rear axle (pure pursuit, the way a long vehicle actually follows a line) and plans its turns no tighter than the
 // car can drive them, so long vehicles do not swing out of their lane after a corner.
 struct Axles { Fixed rear{}, base{}, maxSteer{}, falloff{}; };
-Axles axlesOf(const DrivingVehicleType* vt, Fixed mpc) {
+Axles axlesOf(const vehicles::VehicleType* vt, Fixed mpc) {
     Axles a;
     if (!vt || vt->def.kind != lib::genre::VehicleKind::Wheeled || mpc.raw <= 0 || vt->def.wheeled.wheels.empty()) return a;
     const auto& wc = vt->def.wheeled;
@@ -598,16 +599,16 @@ bool Traffic::exitBlocked(Simulation& sim, const TrafficCar& c, size_t i, Fixed 
     if (dir.lengthSq().raw <= 0) return false;
     World& w = sim.world();
     Driving* drv = m_->driving();
-    auto* ds = drv ? drv->store(sim) : nullptr;
-    if (!ds) return false;
-    for (const auto& o : ds->cars) {
-        if (o.e == c.e) continue;
-        auto* u = w.tryGet<Unit>(o.e);
+    if (!drv || !drv->active()) return false;
+    for (const Entity oe : vehicles::vehicleEntities(w)) {
+        const auto& o = *vehicles::driveOf(w, oe);
+        if (oe == c.e) continue;
+        auto* u = w.tryGet<Unit>(oe);
         if (!u || u->hp.raw <= 0 || (u->flags & kUnitOffMap)) continue;
-        const Vec2 rel = v2(w.get<Transform>(o.e).pos) - e;
+        const Vec2 rel = v2(w.get<Transform>(oe).pos) - e;
         const Fixed ahead = rel.dot(dir), side = tl::trafficDetail::cross(dir, rel);
         if (ahead < -kHalf || ahead > halfLen * 2 + kUnit || fxAbs(side) > Fixed::fromRatio(2, 5)) continue;
-        if (fxAbs(tl::vehicleForwardSpeed(o.st)) < Fixed::fromInt(1)) return true;
+        if (fxAbs(tl::vehicleForwardSpeed(o.controller)) < Fixed::fromInt(1)) return true;
     }
     return false;
 }
@@ -1166,7 +1167,7 @@ void Traffic::cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& f
     // gone, wrecked or taken by a hero: no longer traffic
     for (size_t i = 0; i < st.cars.size();) {
         TrafficCar& c = st.cars[i];
-        const DrivingCar* dc = w.alive(c.e) && w.get<Unit>(c.e).hp.raw > 0 ? drv->car(sim, c.e) : nullptr;
+        const vehicles::VehicleDrive* dc = w.alive(c.e) && w.get<Unit>(c.e).hp.raw > 0 ? drv->car(sim, c.e) : nullptr;
         if (dc && !dc->driver.valid()) { ++i; continue; }
         if (dc && dc->driver.valid() && (rules_.driverPerson != UINT16_MAX || c.citizen >= 0)) {   // hijacked: the driver gets out on the far side
             const Vec3 cp = w.get<Transform>(c.e).pos, hp = w.get<Transform>(dc->driver).pos;
@@ -1268,8 +1269,8 @@ void Traffic::cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& f
         it->count++; it->longOne = it->longOne || longOne;
     }
     sirens_.clear();
-    if(auto* driving=drv->store(sim))for(const auto& car:driving->cars)
-        if(kingston::beaconEnabled(*m_,sim,car.e))sirens_.push_back({v2(w.get<Transform>(car.e).pos),{fxSinTurns(car.st.yaw),fxCosTurns(car.st.yaw)}});
+    if(drv->active())for(const Entity ce:vehicles::vehicleEntities(w)){const auto& car=*vehicles::driveOf(w,ce);
+        if(kingston::beaconEnabled(*m_,sim,ce))sirens_.push_back({v2(w.get<Transform>(ce).pos),{fxSinTurns(car.controller.yaw),fxCosTurns(car.controller.yaw)}});}
     for (auto& c : st.cars) plan(sim, st, c);
 }
 
@@ -1279,17 +1280,17 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
     const bool responsePriority=kingston::beaconEnabled(*m_,sim,c.e);
     const bool fireResponse=(c.kind==kTrafficEmergency && m_->rules().types[w.get<Unit>(c.e).type].id=="fire_engine") || (responsePriority && c.ignore.valid() && sim.tick()<c.ignoreUntil && c.wp<c.route.size() && c.route[c.wp].junction==-2);
     Driving* drv = m_->driving();
-    const DrivingCar* dc = drv->car(sim, c.e);
+    const vehicles::VehicleDrive* dc = drv->car(sim, c.e);
     if (!dc) { c.input = {}; c.input.handbrake = true; return; }
     if (c.task == kTaskCrewOut || c.task == kTaskWorking || c.task == kTaskCrewBack) {   // at the scene
         c.input = {}; c.input.handbrake = true; c.stopped = 0; c.blocker = kNullEntity;
         return;
     }
     const Vec2 pos = v2(w.get<Transform>(c.e).pos);
-    const Fixed yaw = dc->st.yaw;
+    const Fixed yaw = dc->controller.yaw;
     const Vec2 fwd{fxSinTurns(yaw), fxCosTurns(yaw)};
-    const Fixed v = tl::vehicleForwardSpeed(dc->st);
-    const auto* vt = [&]() -> const DrivingVehicleType* { for (auto& t : drv->rules().vehicles) if (t.type == w.get<Unit>(c.e).type) return &t; return nullptr; }();
+    const Fixed v = tl::vehicleForwardSpeed(dc->controller);
+    const auto* vt = [&]() -> const vehicles::VehicleType* { for (auto& t : drv->rules().vehicles) if (t.type == w.get<Unit>(c.e).type) return &t; return nullptr; }();
     const Fixed halfLen = vt ? vt->length / 2 : kHalf, halfWid = vt ? vt->width / 2 : Fixed::fromRatio(1, 4);
 
     // advance along the route
@@ -1380,17 +1381,18 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
             Vec2 outgoing=incoming;
             for(size_t n=i+1;n<c.route.size();++n)if(!c.route[n].turn){outgoing=tl::trafficDetail::normalised(c.route[n].p-centre);break;}
             if(outgoing.dot(right)<-kHalf && (pos-centre).dot(incoming)<Fixed{}) {
-                if(auto* driving=drv->store(sim))for(const auto& other:driving->cars) {
-                    if(other.e==c.e)continue;
-                    auto* unit=w.tryGet<Unit>(other.e);if(!unit||unit->hp.raw<=0||(unit->flags&kUnitOffMap))continue;
-                    const Vec2 rel=v2(w.get<Transform>(other.e).pos)-centre;
-                    const Vec2 heading{fxSinTurns(other.st.yaw),fxCosTurns(other.st.yaw)};
-                    const Fixed speed=tl::vehicleForwardSpeed(other.st);
+                if(drv->active())for(const Entity oe:vehicles::vehicleEntities(w)) {
+                    const auto& other=*vehicles::driveOf(w,oe);
+                    if(oe==c.e)continue;
+                    auto* unit=w.tryGet<Unit>(oe);if(!unit||unit->hp.raw<=0||(unit->flags&kUnitOffMap))continue;
+                    const Vec2 rel=v2(w.get<Transform>(oe).pos)-centre;
+                    const Vec2 heading{fxSinTurns(other.controller.yaw),fxCosTurns(other.controller.yaw)};
+                    const Fixed speed=tl::vehicleForwardSpeed(other.controller);
                     // Only an approaching car on the right. Parked/departing cars
                     // and traffic held by its red signal cannot deadlock this turn.
                     if(rel.dot(right)<=kHalf || rel.lengthSq()>Fixed::fromInt(64) || heading.dot(right)>-kHalf || speed<Fixed::fromRatio(1,5))continue;
                     auto axis=tl::TrafficAxis(q.axis==0?1:0);
-                    if(junction.signal && light(sim,q.junction,axis)==tl::TrafficLight::Red && !kingston::beaconEnabled(*m_,sim,other.e))continue;
+                    if(junction.signal && light(sim,q.junction,axis)==tl::TrafficLight::Red && !kingston::beaconEnabled(*m_,sim,oe))continue;
                     leftYield=true;break;
                 }
             }
@@ -1476,10 +1478,10 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
         if (ahead.raw <= 0 || ahead > range + Fixed::fromInt(1)) return;
         Fixed orad = ot.radius, olen = ot.radius;
         Vec2 ofwd{};
-        if (const DrivingCar* oc = drv->car(sim, o)) {
+        if (const vehicles::VehicleDrive* oc = drv->car(sim, o)) {
             for (auto& t : drv->rules().vehicles) if (t.type == ou->type) { orad = t.width / 2; olen = t.length / 2; }
             // Emergency vehicles also retain obstacle awareness.
-            ofwd = Vec2{fxSinTurns(oc->st.yaw), fxCosTurns(oc->st.yaw)};
+            ofwd = Vec2{fxSinTurns(oc->controller.yaw), fxCosTurns(oc->controller.yaw)};
             // oncoming cars in their own lane pass by
             if (ofwd.dot(dirRef) < -kHalf && lat > halfWid + orad) return;
         }
@@ -1506,7 +1508,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
     });
     if (blocker.valid()) {
         Fixed lead{};
-        if (const DrivingCar* oc = drv->car(sim, blocker)) lead = fxMax(Vec2{oc->st.velocity.x,oc->st.velocity.z}.dot(dirRef), Fixed{});
+        if (const vehicles::VehicleDrive* oc = drv->car(sim, blocker)) lead = fxMax(Vec2{oc->controller.velocity.x,oc->controller.velocity.z}.dot(dirRef), Fixed{});
         const Fixed room = fxMax(bestGap - rules_.gap, Fixed{});
         const Fixed vf = tl::trafficStopSpeed(room * mpc_, rules_.decel) + lead / 2;
         want = fxMin(want, room.raw > 0 ? vf : Fixed{});
@@ -1527,7 +1529,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
         else if (!(fireResponse || responsePriority) && other && other->blocker == c.e && c.e.index < blocker.index) {   // they wait for each other: the lower index goes
             c.reverseUntil = sim.tick() + sim.tickRate()*2; c.stopped = 0; // lower ID backs out, with rear clearance below
         } else if (((fireResponse || responsePriority) || !other || (other->task == kTaskNone && other->cruise.raw == 0)) && c.stopped > sim.tickRate() * 4) {
-            const DrivingCar* oc = drv->car(sim, blocker);
+            const vehicles::VehicleDrive* oc = drv->car(sim, blocker);
             const bool parked = oc ? !oc->driver.valid() : (m_->rules().types[w.get<Unit>(blocker).type].speed.raw == 0);
             bool straight = net_.junctionAt[size_t(gs.grid.cellOf(v3(pos)))] < 0;
             for (size_t i = c.wp; i < c.route.size() && i < size_t(c.wp) + 2; ++i) straight = straight && !c.route[i].turn;
@@ -1547,7 +1549,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
                 if((fireResponse || responsePriority)){
                     struct Obstacle{Vec2 pos,axis;Fixed length,width;};std::vector<Obstacle> obstacles;
                     gs.hash.query(v3(pos),Fixed::fromInt(10),[&](Entity e){if(e==c.e)return;auto*u=w.tryGet<Unit>(e);auto*tr=w.tryGet<Transform>(e);if(!u||!tr||(u->flags&kUnitOffMap))return;
-                        if(auto*car=drv->car(sim,e)){for(const auto&type:drv->rules().vehicles)if(type.type==u->type){obstacles.push_back({v2(tr->pos),{fxSinTurns(car->st.yaw),fxCosTurns(car->st.yaw)},type.length/2,type.width/2});break;}}
+                        if(auto*car=drv->car(sim,e)){for(const auto&type:drv->rules().vehicles)if(type.type==u->type){obstacles.push_back({v2(tr->pos),{fxSinTurns(car->controller.yaw),fxCosTurns(car->controller.yaw)},type.length/2,type.width/2});break;}}
                         else {const auto&type=m_->rules().types[u->type];if(u->hp.raw>0 && !(type.layer&kLayerAir)){Fixed r=type.radius+(type.speed.raw>0?Fixed::fromRatio(3,5):Fixed{});obstacles.push_back({v2(tr->pos),{kUnit,Fixed{}},r,r});}}
                     });
                     Vec2 axis=fwd;int cell=gs.grid.cellOf(v3(pos));int piece=cell>=0?net_.pieceAt[size_t(cell)]:-1;
@@ -1594,7 +1596,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
             if(!u||!tr||(u->flags&kUnitOffMap))return;
             Fixed along=m_->rules().types[u->type].radius,across=along;
             if(const auto* other=drv->car(sim,e))for(const auto& type:drv->rules().vehicles)if(type.type==u->type){
-                const Vec2 axis{fxSinTurns(other->st.yaw),fxCosTurns(other->st.yaw)};
+                const Vec2 axis{fxSinTurns(other->controller.yaw),fxCosTurns(other->controller.yaw)};
                 const Fixed dot=fxAbs(axis.dot(fwd)),cross=fxAbs(tl::trafficDetail::cross(axis,fwd));
                 along=dot*type.length/2+cross*type.width/2;across=dot*type.width/2+cross*type.length/2;
                 // The other body's axes matter too: two diagonal boxes can have
@@ -1951,14 +1953,14 @@ void Traffic::people(Simulation& sim, TrafficStore& st, const std::vector<Vec2>&
     std::vector<Fast> fast;
     std::vector<Coming> coming;
     if (Driving* drv = m_->driving(); drv && drv->active())
-        if (auto* ds = drv->store(sim))
-            for (auto& c : ds->cars) {
-                const Vec2 cp{c.st.position.x / mpc_, c.st.position.z / mpc_}, cv{c.st.velocity.x / mpc_, c.st.velocity.z / mpc_};
-                if (c.driver.valid() && fxAbs(tl::vehicleForwardSpeed(c.st)) > Fixed::fromInt(6)) fast.push_back({cp, cv});
+        for (const Entity ce : vehicles::vehicleEntities(w)) {
+                const auto& c = *vehicles::driveOf(w, ce);
+                const Vec2 cp{c.controller.position.x / mpc_, c.controller.position.z / mpc_}, cv{c.controller.velocity.x / mpc_, c.controller.velocity.z / mpc_};
+                if (c.driver.valid() && fxAbs(tl::vehicleForwardSpeed(c.controller)) > Fixed::fromInt(6)) fast.push_back({cp, cv});
                 const Fixed sp = cv.length();
-                if (sp * mpc_ < Fixed::fromInt(3) || !w.alive(c.e)) continue;
+                if (sp * mpc_ < Fixed::fromInt(3) || !w.alive(ce)) continue;
                 Fixed half = Fixed::fromRatio(1, 4);
-                for (auto& t : drv->rules().vehicles) if (t.type == w.get<Unit>(c.e).type) half = t.width / 2;
+                for (auto& t : drv->rules().vehicles) if (t.type == w.get<Unit>(ce).type) half = t.width / 2;
                 coming.push_back({cp, cv / sp, sp, half});
             }
 

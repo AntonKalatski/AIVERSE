@@ -4,7 +4,7 @@
 #include "engine/view/GeometryBounds.h"
 #include "engine/view/SceneLayers.h"
 #include "engine/view/SceneLayerProviders.h"
-#include "RtsRoadView.h"
+#include "../../../engine/roads/RoadView.h"
 #include "RtsShoreView.h"
 #include "engine/render/OwnerPrepareCommit.h"
 #include "engine/render/CameraModelSnapshot.h"
@@ -158,7 +158,7 @@ struct RtsView::PreparedSurfaceLease final {
     bool topology=false,preserveFogHistory=false;
     std::shared_ptr<TerrainRenderer::PreparedMap> topologyCandidate;
     std::shared_ptr<RtsGroundFx::PreparedFrame> groundCandidate;
-    std::shared_ptr<RtsRoadView::PreparedRebuild> roadCandidate;
+    std::shared_ptr<roads::RoadView::PreparedRebuild> roadCandidate;
     std::shared_ptr<RtsShoreView::PreparedRebuild> shoreCandidate;
     std::unique_ptr<FogOfWar::PreparedSheet> fogSheet;
     std::unique_ptr<FogOfWar::PreparedUpdate> fogUpdate;
@@ -188,7 +188,7 @@ struct RtsView::PreparedSurfaceLease final {
     }
 };
 
-RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
+RtsView::RtsView() : roads_(std::make_unique<roads::RoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
 RtsView::~RtsView() { pendingSurfaceLease_.reset(); }
 void RtsView::discardPendingSurfaceLease() noexcept {
     pendingSurfaceLease_.reset();
@@ -421,7 +421,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         overlays_.initGpu(dev);
         // Prepare BOTH GPU kits before replacing the live map views. The
         // old road and shore instances remain drawable if either kit fails.
-        auto nextRoad=std::make_unique<RtsRoadView>();
+        auto nextRoad=std::make_unique<roads::RoadView>();
         auto nextShore=std::make_unique<RtsShoreView>();
         nextRoad->inheritRuntimeStateForReload(*roads_);
         nextShore->inheritRuntimeStateForReload(*shores_);
@@ -1839,7 +1839,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         if (auto* c = w.tryGet<Cargo>(e)) { so.carry = float(c->amount.toDouble()); so.carryRes = c->res; }
         if (auto* od = w.tryGet<Orders>(e); od && !od->queue.empty()) so.order = uint8_t(od->queue.front().type) + 1;
         if (auto* mb = w.tryGet<Mobile>(e)) so.moving = mb->moving;
-        if (drivingCars) if (const DrivingCar* car = drivingCars->car(sim, e)) so.steer = float(car->st.steer.toDouble()) * 6.2831853f;
+        if (drivingCars) if (const vehicles::VehicleDrive* car = drivingCars->car(sim, e)) so.steer = float(car->controller.steer.toDouble()) * 6.2831853f;
         if (auto* pr = w.tryGet<Production>(e)) so.producing = !pr->queue.empty();
         if (auto* cb = w.tryGet<Combat>(e); cb && cb->target.valid() && w.alive(cb->target)) {
             if (auto* tt = w.tryGet<Transform>(cb->target)) { so.hasTarget = true; so.target = lerp(toF(tt->prevPos), toF(tt->pos), alpha); }

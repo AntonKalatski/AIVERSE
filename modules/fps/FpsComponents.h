@@ -5,9 +5,9 @@
 // * Characters: one entity per player slot, created at setup and never destroyed. Components
 //   CharacterId / CharacterBody / CharacterHealth / CharacterWeapons / CharacterInventory /
 //   CharacterControl / CharacterAction / CharacterMelee (+ lib::systems::GearLoadout when `fps.gear` is set,
-//   + BotMemory when `fps.bots` is set, + CharacterRacer on maps with a race). Resource CharacterIndex{bySlot} maps slot 1.. to entities.
+//   + BotMemory when `fps.bots` is set). Resource CharacterIndex{bySlot} maps slot 1.. to entities.
 // * Dynamic objects: one entity per projectile / loot item / vehicle with the component Projectile / Loot /
-//   Vehicle (FpsSystems.h) and VehicleDrive on typed vehicles. Deterministic order = ascending `id`.
+//   Vehicle (FpsSystems.h) and the shared vehicles::VehicleDrive on typed vehicles. Deterministic order = ascending `id`.
 // * Match-level data: the World resource fps::State (round, winner, nextObject, match, royale, history).
 //
 // Public API of fps::Module (FpsModule.h) for consumers (Session, client, HUD, editor, bots, tools, tests):
@@ -34,6 +34,7 @@
 #include "FpsSystems.h"
 #include "libraries/include/aiverselib/mechanics/Melee.h"
 #include "libraries/include/aiverselib/mechanics/VehicleData.h"
+#include "engine/vehicles/Vehicles.h"
 #include <algorithm>
 #include <cstddef>
 #include <stdexcept>
@@ -82,13 +83,8 @@ struct CharacterMelee {
 };
 // lib::bots::saveFps bytes of a library-controlled bot (only with `fps.bots`).
 struct BotMemory { std::string bytes; };
-// Race maps (map "race"): the vehicle id this character races in for the whole race (on every character).
-struct CharacterRacer { uint32_t vehicle=0; };
-// Controller and seat state of a typed vehicle (`fps.vehicleTypes`); on the entity with the Vehicle component.
-struct VehicleDrive {
-    int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
-    std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick (not saved)
-};
+// Typed vehicles (`fps.vehicleTypes`) carry the shared vehicles::VehicleDrive component (engine/vehicles/Vehicles.h)
+// next to Vehicle; on race maps the race is the vehicles::RaceState resource (racer i = slot i, the car it drives).
 // Resource: character entity per slot (slot 1 -> bySlot[0]); stable for the whole match.
 struct CharacterIndex { std::vector<Entity> bySlot; };
 

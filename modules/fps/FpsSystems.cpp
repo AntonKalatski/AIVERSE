@@ -269,7 +269,7 @@ void Module::action(Simulation& sim,CharacterRef a,Action kind,uint32_t argument
     if(vehicleInteract(sim,a))return;
     for(const Entity e:vehicleEntities(sim)){
         auto& v=*w.tryGet<Vehicle>(e);
-        if(v.health>0&&!v.driver&&!w.has<VehicleDrive>(e)&&accessible(v.pos)){v.driver=a.slot;a.vehicle=v.id;a.pos=v.pos;return;}
+        if(v.health>0&&!v.driver&&!w.has<vehicles::VehicleDrive>(e)&&accessible(v.pos)){v.driver=a.slot;a.vehicle=v.id;a.pos=v.pos;return;}
     }
     for(auto ladder:ladders_)if(inside(a.pos,ladder)){a.climbing=true;return;}
 }

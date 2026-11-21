@@ -235,7 +235,7 @@ void Traffic::incidents(Simulation& sim, TrafficStore& st) {
     auto heroBehind = [&](Entity e) -> Entity {
         if (!pilots || !e.valid() || !w.alive(e)) return kNullEntity;
         Entity who = e;
-        if (drv && drv->active()) if (const DrivingCar* c = drv->car(sim, e); c && c->driver.valid()) who = c->driver;
+        if (drv && drv->active()) if (const vehicles::VehicleDrive* c = drv->car(sim, e); c && c->driver.valid()) who = c->driver;
         for (auto& p : pilots->pilots) if (p.hero == who) return who;
         return kNullEntity;
     };
@@ -306,17 +306,17 @@ void Traffic::incidents(Simulation& sim, TrafficStore& st) {
     // 2) cars the heroes drove and left on a driving lane
     if (slow && ir.abandonTicks > 0 && pilots && drv && drv->active()) {
         for (auto& p : pilots->pilots) {
-            const DrivingCar* c = p.hero.valid() && w.alive(p.hero) ? drv->carOf(sim, p.hero) : nullptr;
-            if (!c) continue;
-            auto it = std::lower_bound(st.used.begin(), st.used.end(), c->e.index, [](const TrafficUsedCar& u, uint32_t i) { return u.e.index < i; });
-            if (it == st.used.end() || it->e != c->e) st.used.insert(it, {c->e, 0});
+            const Entity car = p.hero.valid() && w.alive(p.hero) ? drv->vehicleOf(sim, p.hero) : kNullEntity;
+            if (!car.valid()) continue;
+            auto it = std::lower_bound(st.used.begin(), st.used.end(), car.index, [](const TrafficUsedCar& u, uint32_t i) { return u.e.index < i; });
+            if (it == st.used.end() || it->e != car) st.used.insert(it, {car, 0});
         }
         for (size_t i = 0; i < st.used.size();) {
             TrafficUsedCar& u = st.used[i];
-            const DrivingCar* c = living(w, u.e) ? drv->car(sim, u.e) : nullptr;
+            const vehicles::VehicleDrive* c = living(w, u.e) ? drv->car(sim, u.e) : nullptr;
             if (!c) { st.used.erase(st.used.begin() + long(i)); continue; }
             ++i;
-            if (c->driver.valid() || fxAbs(tl::vehicleForwardSpeed(c->st)) > kHalf) { u.since = 0; continue; }
+            if (c->driver.valid() || fxAbs(tl::vehicleForwardSpeed(c->controller)) > kHalf) { u.since = 0; continue; }
             if (u.since == 0) { u.since = std::max<uint32_t>(sim.tick(), 1); continue; }
             if (sim.tick() - u.since < ir.abandonTicks) continue;
             // in the way: a junction, or a driving lane (not the parking lane at the kerb)
@@ -566,7 +566,7 @@ void Traffic::resolve(Simulation& sim, TrafficStore& st, TrafficIncident& inc) {
         silentRemove(sim, inc.subject);
     } else if (inc.kind == kIncidentFire) silentRemove(sim, inc.subject);
     else if (inc.kind == kIncidentWreck && living(w, inc.subject)) {
-        const DrivingCar* dc = m_->driving() ? m_->driving()->car(sim, inc.subject) : nullptr;
+        const vehicles::VehicleDrive* dc = m_->driving() ? m_->driving()->car(sim, inc.subject) : nullptr;
         if (!(dc && dc->driver.valid())) {   // somebody got back in: it stays
             const uint16_t type = w.get<Unit>(inc.subject).type;
             const uint8_t owner = w.get<Owner>(inc.subject).player;

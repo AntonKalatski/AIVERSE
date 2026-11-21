@@ -31,8 +31,6 @@ void royaleIo(Archive& a,RoyaleRun& r) {
     uint32_t feed=a.count(r.feed.size());if(feed>6){a.fail();return;}if(!a.writing())r.feed.resize(feed);for(auto& e:r.feed)lib::genre::io(a,e);
 }
 }
-void ioVehicleDrive(Archive&,uint32_t& vehicle,VehicleDrive&);
-void raceIo(Archive&,RaceRun&,std::vector<uint32_t>& vehicleOf);   // FpsRace.cpp
 Config readConfig(const Json& root) {
     if(!root["fps"].isObject())throw JsonError("rules.fps: expected object");
     // Capability blocks that are not specific to this host may sit at the top level of the rules (shared names,
@@ -407,7 +405,7 @@ void Module::tick(Simulation& sim) {
         }
         if(skydive(sim,a))continue;
         // Race bots drive through the race session (tickRace); they never run the on-foot bot.
-        const bool footBot=bots_[a.slot-1]&&a.lastSequence==0&&!s.race.enabled;
+        const bool footBot=bots_[a.slot-1]&&a.lastSequence==0&&!race_;
         if(footBot&&thinkBot(sim,a)){}
         else if(footBot) {
             std::vector<Vec3> clouds;
@@ -466,7 +464,7 @@ void Module::tick(Simulation& sim) {
             if((a.pos-config_.zoneCenter).xz().lengthSq()>radius*radius)a.health=std::max(0,a.health-config_.zoneDamage);
         }
     }
-    if(s.race.enabled){tickRace(sim);return;}
+    if(race_){tickRace(sim);return;}
     tickVehicles(sim);
     if(config_.mode=="bomb")return;
     if(config_.royale){settleRoyale(sim);if(s.winner)return;}
@@ -483,14 +481,6 @@ void Module::tick(Simulation& sim) {
     }
 }
 // ---------------------------------------------------------------- checksum and save
-namespace {
-// Typed vehicles in ascending vehicle id.
-std::vector<std::pair<uint32_t,VehicleDrive>> vehicleDrives(const World& w,const std::vector<Entity>& vehicles) {
-    std::vector<std::pair<uint32_t,VehicleDrive>> out;
-    for(const Entity e:vehicles)if(const auto* d=w.tryGetConst<VehicleDrive>(e))out.push_back({w.tryGetConst<Vehicle>(e)->id,*d});
-    return out;
-}
-}
 void Module::hashState(Simulation& sim,Hasher& hash) {
     // Read-only: const World access never detaches copy-on-write snapshot pools. The byte layout is the one of
     // the former FPS state stream (characters / projectiles / loot / vehicles in slot / id order), so match
@@ -512,18 +502,13 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
     for(auto& p:shots)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
     if(s.royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,s.royale);hash.str(extra);}
     for(size_t slot=1;slot<=characters.size();++slot)if(const auto* g=gear(view,uint8_t(slot)))hash.u64(lib::systems::gearHash(*g));
-    auto drives=vehicleDrives(w,vehicleEntities(view));
-    if(!drives.empty()){
-        std::string extra;Archive v(&extra);v.count(drives.size());
-        for(auto& [id,d]:drives)ioVehicleDrive(v,id,d);
-        hash.str(extra);
-    }
-    if(s.race.enabled){std::string extra;Archive r(&extra);auto vehicleOf=racerVehicles(view);raceIo(r,s.race,vehicleOf);hash.str(extra);}
+    if(w.countExisting<vehicles::VehicleDrive>())vehicles::hashVehicles(w,hash,false);   // typed vehicles (the shared vehicle system)
+    if(race_)race_->hash(w,hash);
     if(botHost_)for(const Entity e:w.resourceConst<CharacterIndex>()->bySlot)if(const auto* m=w.tryGetConst<BotMemory>(e))hash.str(m->bytes);
 }
 // FPS save version 10: written from the components (characters in slot order, dynamic objects in id order,
-// each with its entity handle); older versions are not readable. Maps with a race (map "race") append the race
-// block (session + each racer's vehicle id, raceIo in FpsRace.cpp); other maps write no race bytes.
+// each with its entity handle); older versions are not readable. Typed vehicles write the shared VehicleDrive record
+// (engine/vehicles); maps with a race (map "race") append the shared RaceState; other maps write no race bytes.
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=10;uint64_t content=contentHash_;archive(version,content);
     if(version!=10||content!=contentHash_)return false;
@@ -531,15 +516,15 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     struct Object { Entity entity; };
     struct SavedProjectile : Object { Projectile value; };
     struct SavedLoot : Object { Loot value; };
-    struct SavedVehicle : Object { Vehicle value;bool typed=false;VehicleDrive drive; };
+    struct SavedVehicle : Object { Vehicle value;bool typed=false;vehicles::VehicleDrive drive; };
     State s;std::vector<Character> characters;std::vector<SavedProjectile> shots;std::vector<SavedLoot> items;std::vector<SavedVehicle> cars;
     std::vector<lib::systems::GearLoadout> gears;std::vector<std::string> bots;
-    std::vector<uint32_t> racers;   // race maps: vehicle id per slot (CharacterRacer)
+    vehicles::RaceState race;   // race maps only
     World& world=sim.world();
     if(archive.writing()){
         const Simulation& view=sim;const World& w=view.world();
         s=state(view);
-        if(raceRules_)racers=racerVehicles(view);
+        if(race_)if(const auto* r=vehicles::VehicleRace::state(w))race=*r;
         for(size_t slot=1;slot<=characterCount(view);++slot){
             characters.push_back({characterEntity(view,uint8_t(slot)),snapshot(view,uint8_t(slot))});
             if(const auto* g=gear(view,uint8_t(slot)))gears.push_back(*g);
@@ -549,7 +534,7 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
         for(const Entity e:lootEntities(view))items.push_back({{e},*w.tryGetConst<Loot>(e)});
         for(const Entity e:vehicleEntities(view)){
             SavedVehicle v{{e},*w.tryGetConst<Vehicle>(e)};
-            if(const auto* d=w.tryGetConst<VehicleDrive>(e)){v.typed=true;v.drive=*d;}
+            if(const auto* d=w.tryGetConst<vehicles::VehicleDrive>(e)){v.typed=true;v.drive=*d;}
             cars.push_back(std::move(v));
         }
     }
@@ -569,7 +554,7 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     if(!sized(cars,kMaxVehicles))return false;
     for(auto& v:cars){
         archive(v.entity);io(archive,v.value);archive(v.typed);
-        if(v.typed){uint32_t id=v.value.id;ioVehicleDrive(archive,id,v.drive);if(id!=v.value.id)archive.fail();}
+        if(v.typed)vehicles::io(archive,v.drive);
     }
     if(!sized(s.history,121))return false;
     for(auto& frame:s.history){
@@ -581,17 +566,16 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     if(!sized(gears,256))return false;
     for(auto& g:gears)lib::systems::io(archive,g);
     archive(bots);
-    if(raceRules_)raceIo(archive,s.race,racers);   // only maps with a race carry the race block
+    if(race_)vehicles::VehicleRace::io(archive,race);   // only maps with a race carry the race block
     if(!archive.ok())return false;
     // Validation (also when writing: a corrupt in-memory state must not produce a save).
     const size_t n=spawns_.size();
     if(characters.size()!=n||bots.size()!=(botHost_?n:0)||gears.size()!=(config_.gear.empty()?0:n))return false;
     for(const auto& g:gears)if(!lib::systems::valid(config_.gear,g))return false;
     if(s.royale.enabled!=bool(config_.royale))return false;
-    if(s.race.enabled!=bool(raceRules_))return false;
-    if(s.race.enabled){
-        std::vector<uint32_t> typed;for(const auto& c:cars)if(c.typed)typed.push_back(c.value.id);
-        if(!validRace(s.race,racers,typed))return false;
+    if(race_){
+        std::vector<Entity> typed;for(const auto& c:cars)if(c.typed)typed.push_back(c.entity);
+        if(!validRace(race,typed))return false;
     }
     if(s.royale.enabled){
         using namespace lib::genre;const auto& r=s.royale;
@@ -624,7 +608,8 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
         previous=v.id;
         if(!item.typed)continue;
         const auto& r=item.drive;
-        if(!config_.vehicleTypes||!config_.vehicleTypes->vehicles.contains(r.type)||!lib::genre::valid(r.controller)||!lib::genre::valid(r.seats))return false;
+        if(!config_.vehicleTypes||!config_.vehicleTypes->vehicles.contains(r.type)||!vehicles::valid(r))return false;
+        if(r.player>n||(r.driver.valid()&&(!r.player||r.driver!=characters[r.player-1].entity)))return false;
         for(auto [seat,actor]:r.seats.occupants){(void)seat;if(actor<1||actor>int64_t(n))return false;}
     }
     // Entity handles: alive in the (restored) allocator and distinct.
@@ -642,17 +627,17 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     world.pool<CharacterWeapons>().clear();world.pool<CharacterInventory>().clear();world.pool<CharacterControl>().clear();
     world.pool<CharacterAction>().clear();world.pool<CharacterMelee>().clear();world.pool<lib::systems::GearLoadout>().clear();
     world.pool<BotMemory>().clear();world.pool<Projectile>().clear();world.pool<Loot>().clear();world.pool<Vehicle>().clear();
-    world.pool<VehicleDrive>().clear();world.pool<CharacterRacer>().clear();
+    world.pool<vehicles::VehicleDrive>().clear();
     CharacterIndex index;
     for(size_t i=0;i<characters.size();++i){
         const Entity e=characters[i].entity;addCharacterComponents(world,e,characters[i].value);index.bySlot.push_back(e);
         if(!gears.empty())world.add<lib::systems::GearLoadout>(e,gears[i]);
         if(!bots.empty())world.add<BotMemory>(e,BotMemory{bots[i]});
-        if(!racers.empty())world.add<CharacterRacer>(e,CharacterRacer{racers[i]});
     }
     for(auto& o:shots)world.add<Projectile>(o.entity,std::move(o.value));
     for(auto& o:items)world.add<Loot>(o.entity,std::move(o.value));
-    for(auto& o:cars){world.add<Vehicle>(o.entity,o.value);if(o.typed)world.add<VehicleDrive>(o.entity,std::move(o.drive));}
+    for(auto& o:cars){world.add<Vehicle>(o.entity,o.value);if(o.typed)world.add<vehicles::VehicleDrive>(o.entity,std::move(o.drive));}
+    if(race_)world.setResource<vehicles::RaceState>(std::move(race));
     world.setResource<CharacterIndex>(std::move(index));
     world.setResource<State>(std::move(s));
     return true;

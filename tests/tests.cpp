@@ -32,7 +32,7 @@ extern "C" {
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsCampaign.h"   // agent-mech
 #include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsRoadNet.h"   // agent-roads
+#include "../engine/roads/RoadNet.h"   // agent-roads
 #include "modules/rts/RtsScriptIeee.h"
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/RtsSphere.h"
@@ -5529,7 +5529,7 @@ TEST(store_and_ads_through_mock_plugins) {
 #include "engine/platform/Platform.h"
 #include "modules/rts/view/RtsOverlayData.h"
 #include "modules/rts/view/RtsView.h"
-#include "modules/rts/view/RtsRoadView.h"
+#include "../engine/roads/RoadView.h"
 #include "modules/rts/view/RtsShoreView.h"
 
 static game::Rules skirmishRules() { return game::loadRules(Json::parseFile(kSkirmish + "/rules.json")); }
@@ -13083,21 +13083,21 @@ TEST(road_view_staged_rebuild_preserves_old_gpu_and_wheel_surface_on_failure) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
     CHECK(!roads.types().empty());
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(92),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     edge.typeIndex=asphalt;
     edge.type=roads.types()[size_t(asphalt)].id;
@@ -13150,21 +13150,21 @@ TEST(road_view_weather_upload_failure_keeps_previous_generation) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
     CHECK(!roads.types().empty());
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(55),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     network.edges.push_back(edge);
@@ -13197,7 +13197,7 @@ TEST(road_view_weather_upload_failure_keeps_previous_generation) {
 
 TEST(road_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
     fogfaulttest::Device dev;
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     // The first successful generated kit texture must remain owned when
     // the following GPU texture allocation fails.
     dev.failTexture=2;
@@ -13244,7 +13244,7 @@ TEST(shore_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
 }
 
 TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
-    game::RtsRoadView roads,stagedRoads;
+    roads::RoadView roads,stagedRoads;
     game::RtsShoreView shores,stagedShores;
     roads.setWeather(0.7f,0.35f);
     const Json map=Json::parse(R"({"roadNetwork":{"replaces":["city_road"]},
@@ -13253,7 +13253,7 @@ TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
     shores.setMap(map);
     // Manually supplied networks are not backed by a serialized netJson_.
     // Their topology must survive a staged view copy as well.
-    game::RoadNetwork manual;
+    roads::RoadNetwork manual;
     manual.nodes.emplace_back();
     manual.edges.emplace_back();
     roads.setNetwork(manual);
@@ -13871,20 +13871,20 @@ TEST(lens_road_prepared_weather_only_preserves_wheel_surface_generation) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(55),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
     edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     network.edges={edge};
@@ -13929,7 +13929,7 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     game::RtsShoreView shores;
     view::VisibilityField fog;
     roads.init(dev,Json(),missing);
@@ -13938,17 +13938,17 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     const std::function<float(float,float)> height=[](float,float){return 0.0f;};
     fog.build(dev,100,48,height);
 
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(92),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge e;
+    roads::RoadEdge e;
     e.id=1;e.a=1;e.b=2;
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
     e.typeIndex=asphalt;e.type=roads.types()[size_t(asphalt)].id;
     network.edges={e};
@@ -13979,10 +13979,10 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     shores.invalidateGround();
     const std::vector<uint8_t> changedVision(size_t(100*48),0);
     struct RoadPart final: render::OwnerPrepareCommit::Participant {
-        game::RtsRoadView& road;gfx::Device& dev;
+        roads::RoadView& road;gfx::Device& dev;
         const std::function<float(float,float)>& ground;
-        std::shared_ptr<game::RtsRoadView::PreparedRebuild> pending;
-        RoadPart(game::RtsRoadView& r,gfx::Device& d,
+        std::shared_ptr<roads::RoadView::PreparedRebuild> pending;
+        RoadPart(roads::RoadView& r,gfx::Device& d,
                  const std::function<float(float,float)>& h)
             :road(r),dev(d),ground(h){}
         void prepare() override {pending=road.prepareRebuild(dev,ground);}
@@ -14805,7 +14805,7 @@ TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::TerrainRenderer terrain;
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     game::RtsShoreView shores;
     game::RtsGroundFx groundFx;
     view::VisibilityField fog;
@@ -14836,7 +14836,7 @@ TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
     const std::vector<uint8_t> unexplored(size_t(next.w)*size_t(next.h),0);
     std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
-    std::shared_ptr<game::RtsRoadView::PreparedRebuild> roadPending;
+    std::shared_ptr<roads::RoadView::PreparedRebuild> roadPending;
     std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
     std::shared_ptr<game::RtsGroundFx::PreparedFrame> groundPending;
     std::unique_ptr<view::VisibilityField::PreparedSheet> sheetPending;
@@ -14980,7 +14980,7 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::Rules rules=skirmishRules();
     game::TerrainRenderer terrain;
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     game::RtsShoreView shores;
     terrain.init(dev,rules,missing,"");
     roads.init(dev,Json(),missing);
@@ -14988,17 +14988,17 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     game::MapGrid oldMap;oldMap.init(48,16);
     for(auto& f:oldMap.flags)f=game::kCellGround;
     CHECK(terrain.build(dev,oldMap,false));
-    game::RoadNetwork net;
-    game::RoadNode a,b;
+    roads::RoadNetwork net;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(42),Fixed::fromInt(6)};
     net.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()){asphalt=int(i);break;}
     edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     net.edges={edge};
@@ -15015,7 +15015,7 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     for(auto& f:next.flags)f=game::kCellGround;
     next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
     std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
-    std::shared_ptr<game::RtsRoadView::PreparedRebuild> roadPending;
+    std::shared_ptr<roads::RoadView::PreparedRebuild> roadPending;
     std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
     const std::function<float(float,float)> nextGround=
         [&](float x,float z){return terrain.preparedSurfaceAt(mapPending,next,x,z);};
@@ -16239,7 +16239,7 @@ TEST(world_tree_describes_every_component_pool) {
     CHECK(described.poolCount() == n);
     // Three general-purpose hierarchy pools (Parent, LocalTransform,
     // WorldTransform) are exposed by the editor but remain opt-in: ordinary
-    // RTS v9 saves intentionally touch only the 65 legacy kPools.
+    // RTS v9 saves intentionally touch only the 67 kPools (65 legacy + the two vehicle-system pools).
     constexpr size_t kOptInHierarchyComponents = 3;
     CHECK(pv.sim()->world().poolCount() + kOptInHierarchyComponents == n);
     CHECK(editor::worldComponents().size() == n && editor::findWorldComponent("unit") >= 0 && editor::findWorldComponent("Гарнизон") >= 0);

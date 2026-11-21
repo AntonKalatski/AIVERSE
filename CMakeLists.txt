@@ -228,6 +228,14 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
+# The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
+# the race adapter. The grid-map host (modules/rts/RtsDriving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
+# only implement its world queries.
+add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
+add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
+target_include_directories(aiverse_vehicles PUBLIC "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
+target_link_libraries(aiverse_vehicles PUBLIC aiverse_engine)
+target_link_libraries(aiverse_game PUBLIC aiverse_vehicles)
 # Experimental RTS transform preprocessing remains OFF by default.
 option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
     "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)

@@ -126,7 +126,7 @@ void Traffic::depart(Simulation& sim, TrafficStore& st, int32_t id, uint8_t stat
         const Entity car = c.car;
         c.car = kNullEntity;
         if (living(w, car)) {
-            const DrivingCar* dc = m_->driving() ? m_->driving()->car(sim, car) : nullptr;
+            const vehicles::VehicleDrive* dc = m_->driving() ? m_->driving()->car(sim, car) : nullptr;
             const Vec2 cp = v2(w.get<Transform>(car).pos);
             const bool moved = (cp - a.pos).lengthSq() > Fixed::fromInt(16 * 16);
             if (dc && (dc->driver.valid() || moved)) {   // his car is gone: he tells the police, and is on foot from now on
@@ -433,7 +433,7 @@ void Traffic::keepCar(Simulation& sim, TrafficStore& st, TrafficCitizen& c, cons
     const TrafficPopulationRules& pr = rules_.population;
     if (c.car.valid()) {
         if (!living(w, c.car)) { c.car = kNullEntity; return; }
-        const DrivingCar* dc = m_->driving() ? m_->driving()->car(sim, c.car) : nullptr;
+        const vehicles::VehicleDrive* dc = m_->driving() ? m_->driving()->car(sim, c.car) : nullptr;
         if (dc && dc->driver.valid()) return;   // somebody sits in it: he finds out when he comes for it
         if (!foci.empty() && nearestSq(foci, v2(w.get<Transform>(c.car).pos)) > rules_.despawn * rules_.despawn) { silentRemove(sim, c.car); c.car = kNullEntity; --parked; }
         return;
