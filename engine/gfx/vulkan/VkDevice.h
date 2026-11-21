@@ -105,6 +105,9 @@ struct VShader {
     VkShaderModule hdrVert = VK_NULL_HANDLE, hdrFrag = VK_NULL_HANDLE;
     bool linear = false, hdrFailed = false;
     uint32_t shadowSlots = 0;
+    // Vertex/fragment modules with UByte4 inputs rescaled (no USCALED fetch),
+    // per (location mask << 1 | hdr); a null pair records a failed compile.
+    std::vector<std::pair<uint64_t, std::pair<VkShaderModule, VkShaderModule>>> scaled;
 };
 
 struct VPipeline {

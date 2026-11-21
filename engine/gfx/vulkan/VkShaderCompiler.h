@@ -15,6 +15,11 @@ constexpr int kMaxTextureSlots = 32;
 // stage a wrapper of main() that maps clip z from GL [-1, 1] to Vulkan [0, 1] (depth values equal GL's).
 std::string translateGlsl(const std::string& body, bool vertex, bool linearTarget, uint32_t* shadowSlots = nullptr);  // shadowSlots |= sampler2DShadow slots
 
+// Devices without R8G8B8A8_USCALED vertex fetch read UByte4 attributes as
+// UNORM (0..1): the vertex body's vec4 inputs at `locations` (bit mask) get
+// rescaled by 255 before main() runs.
+std::string scaleUByte4Inputs(const std::string& vertexBody, uint32_t locations);
+
 struct SpirvProgram {
     std::vector<uint32_t> vertex, fragment;
     uint32_t shadowSlots = 0;   // texture slots declared as sampler2DShadow (unset ones get a depth dummy)

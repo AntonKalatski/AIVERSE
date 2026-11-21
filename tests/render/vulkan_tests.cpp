@@ -98,6 +98,38 @@ void translation() {
     aiverse::gfx::vk::SpirvProgram p;
     CHECK(aiverse::gfx::vk::compileProgram(kVs, kColorFs, false, p) && !p.vertex.empty() && !p.fragment.empty());
     CHECK(!aiverse::gfx::vk::compileProgram(kVs, "void main() { undefined_call(); }", false, p) && !p.error.empty());
+    {   // UByte4 rescale for drivers without USCALED vertex fetch: inputs at the
+        // masked locations become UNORM raw inputs scaled by 255 before main().
+        const char* ub4 = R"(
+layout(location = 0) in vec3 a_pos;
+#if defined(LM)
+layout(location = 5) in vec4 a_lmuv;
+#endif
+#if defined(SK)
+layout(location = 5) in vec4 a_joints;
+#endif
+out vec2 v_uv;
+void main() {
+#if defined(LM)
+    v_uv = a_lmuv.xy;
+#endif
+#if defined(SK)
+    v_uv = a_joints.zw;
+#endif
+    gl_Position = vec4(a_pos, 1.0);
+}
+)";
+        const char* ub4fs = "in vec2 v_uv; out vec4 o_color; void main() { o_color = vec4(v_uv, 0.0, 1.0); }";
+        const std::string scaled = aiverse::gfx::vk::scaleUByte4Inputs(ub4, 1u << 5);
+        CHECK(scaled.find("a_lmuv_aiverse_unorm * 255.0") != std::string::npos);
+        CHECK(scaled.find("a_joints_aiverse_unorm * 255.0") != std::string::npos);
+        CHECK(scaled.find("in vec3 a_pos;") != std::string::npos);   // other locations untouched
+        CHECK(aiverse::gfx::vk::scaleUByte4Inputs(ub4, 0) == ub4);
+        for (const char* def : {"#define LM 1\n", "#define SK 1\n", ""}) {
+            aiverse::gfx::vk::SpirvProgram q;
+            CHECK(aiverse::gfx::vk::compileProgram(std::string(def) + scaled, ub4fs, false, q) && !q.vertex.empty());
+        }
+    }
     std::vector<uint32_t> computeSpv;
     std::string computeError;
     const char* computeSource = R"(
