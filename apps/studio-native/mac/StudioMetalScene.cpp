@@ -92,6 +92,25 @@ void ringBasis(float3 n,float3& u,float3& v){
     u=normalize(cross(n,ref));v=cross(n,u);
 }
 constexpr int kRingSegments=64;
+// Move plane handle (normal axis n): small square spanned by the two other axes.
+bool planeQuad(const RTSCamera& view,float3 pivot,const float3* axes,int n,float worldLength,float W,float H,float2 out[4]){
+    const float3 a=axes[(n+1)%3],b=axes[(n+2)%3];
+    const float s0=worldLength*0.18f,s1=worldLength*0.42f;
+    const float3 c[4]={pivot+a*s0+b*s0,pivot+a*s1+b*s0,pivot+a*s1+b*s1,pivot+a*s0+b*s1};
+    for(int i=0;i<4;++i)if(!view.worldToScreen(c[i],W,H,out[i]))return false;
+    return true;
+}
+bool insideQuad(const float2* q,float x,float y){
+    bool pos=false,neg=false;
+    for(int i=0;i<4;++i){const float2 a=q[i],b=q[(i+1)%4];
+        const float c=(b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x);pos|=c>0;neg|=c<0;}
+    return !(pos&&neg);
+}
+bool rayPlane(float3 o,float3 d,float3 p,float3 n,float3& hit){
+    const float den=dot(d,n);if(std::fabs(den)<1e-5f)return false;
+    const float t=dot(p-o,n)/den;if(!(t>0)||!std::isfinite(t))return false;
+    hit=o+d*t;return true;
+}
 float segmentDistance(float px,float py,float ax,float ay,float bx,float by){
     const float vx=bx-ax,vy=by-ay,l2=vx*vx+vy*vy;
     const float t=l2>0?std::clamp(((px-ax)*vx+(py-ay)*vy)/l2,0.0f,1.0f):0.0f;
@@ -469,6 +488,9 @@ int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height
         }
         return best;
     }
+    if(tool_==TransformTool::Move) for(int n=0;n<3;++n){ // plane squares win inside their area
+        float2 q[4];if(planeQuad(view,selectedPivot_,axes,n,h.worldLength,width,height,q)&&insideQuad(q,x,y))return 4+n;
+    }
     for(int a=0;a<3;++a){const float d=segmentDistance(x,y,h.px,h.py,h.tip[a][0],h.tip[a][1]);if(d<bestD){bestD=d;best=a;}}
     if(tool_==TransformTool::Scale && std::hypot(x-h.px,y-h.py)<h.pick*1.4f)best=3; // centre: uniform
     return best;
@@ -487,6 +509,10 @@ bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float heig
         d.startAngle=d.lastAngle=std::atan2(y-h.py,x-h.px);
         d.facing=dot(d.dir,view.eye()-d.pivot)>0;
         d.screenPivot={h.px,h.py};
+    } else if(axis>=4) {
+        d.planeNormal=axes[axis-4];
+        float3 o,dir;if(!view.screenRay(x,y,width,height,o,dir))return false;
+        if(!rayPlane(o,dir,d.pivot,d.planeNormal,d.startHit))return false;
     } else if(axis<3) {
         float3 o,dir;if(!view.screenRay(x,y,width,height,o,dir))return false;
         if(!axisParameter(d.pivot,d.dir,o,dir,d.startT))return false;
@@ -516,11 +542,22 @@ void StudioMetalScene::updateTransformDrag(float x,float y,float width,float hei
         return;
     }
     float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return;
+    if(drag_.axis>=4) {
+        float3 hit;if(!rayPlane(o,d,drag_.pivot,drag_.planeNormal,hit))return;
+        float3 delta=hit-drag_.startHit;
+        // Snap along the two plane axes (world or local).
+        if(snap) for(int k=1;k<=2;++k){const float3 a=drag_.axes[(drag_.axis-4+k)%3];const float c=dot(delta,a);
+            delta=delta+a*(std::round(c/snapMove_)*snapMove_-c);}
+        const float l=std::sqrt(dot(delta,delta));
+        drag_.moveOffset=l>100000.0f?delta*(100000.0f/l):delta;
+        drag_.value=l;
+        return;
+    }
     float t=0;if(!axisParameter(drag_.pivot,drag_.dir,o,d,t))return;
     float delta=std::clamp(t-drag_.startT,-100000.0f,100000.0f);
     if(drag_.tool==TransformTool::Move) {
         if(snap)delta=std::round(delta/snapMove_)*snapMove_;
-        drag_.value=delta;
+        drag_.value=delta;drag_.moveOffset=drag_.dir*delta;
     } else {
         float f=1.0f+delta/std::max(1e-4f,drag_.worldLength);
         if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
@@ -530,7 +567,7 @@ void StudioMetalScene::updateTransformDrag(float x,float y,float width,float hei
 render::mat4 StudioMetalScene::dragPreview() const {
     if(drag_.axis<0)return mat4{};
     const float3 p=drag_.pivot;
-    if(drag_.tool==TransformTool::Move)return mat4::translate(drag_.dir*drag_.value);
+    if(drag_.tool==TransformTool::Move)return mat4::translate(drag_.moveOffset);
     if(drag_.tool==TransformTool::Rotate)
         return mat4::translate(p)*mat4::rotate(quat::axisAngle(drag_.dir,drag_.value*0.017453292f))*mat4::translate(p*-1.0f);
     // Scale about the pivot along the object's own axes: B * diag(f) * B^T.
@@ -543,10 +580,12 @@ render::mat4 StudioMetalScene::dragPreview() const {
 }
 std::string StudioMetalScene::transformCaption() const {
     if(drag_.axis<0)return {};
-    static const char* names[4]={"X","Y","Z","XYZ"};
+    static const char* names[7]={"X","Y","Z","XYZ","YZ","XZ","XY"};
     char text[96];
     const char* space=(drag_.tool==TransformTool::Scale||localSpace_)?" (local)":"";
-    if(drag_.tool==TransformTool::Move)std::snprintf(text,sizeof text,"Move %s %+.3g%s",names[drag_.axis],double(drag_.value),space);
+    if(drag_.tool==TransformTool::Move&&drag_.axis>=4)std::snprintf(text,sizeof text,"Move %s (%+.3g, %+.3g, %+.3g)%s",names[drag_.axis],
+        double(drag_.moveOffset.x),double(drag_.moveOffset.y),double(drag_.moveOffset.z),space);
+    else if(drag_.tool==TransformTool::Move)std::snprintf(text,sizeof text,"Move %s %+.3g%s",names[drag_.axis],double(drag_.value),space);
     else if(drag_.tool==TransformTool::Rotate)std::snprintf(text,sizeof text,"Rotate %s %+.4g°%s",names[drag_.axis],double(drag_.value),space);
     else std::snprintf(text,sizeof text,"Scale %s ×%.3g",names[drag_.axis],double(drag_.value));
     return text;
@@ -554,7 +593,7 @@ std::string StudioMetalScene::transformCaption() const {
 std::optional<StudioMetalScene::TransformCommit> StudioMetalScene::endTransformDrag() {
     if(drag_.axis<0)return std::nullopt;
     TransformCommit c;c.id=drag_.id;c.tool=drag_.tool;c.axis=drag_.axis;
-    if(drag_.tool==TransformTool::Move)c.move=drag_.dir*drag_.value;
+    if(drag_.tool==TransformTool::Move)c.move=drag_.moveOffset;
     else if(drag_.tool==TransformTool::Rotate)c.degrees=drag_.value;
     else c.factor=drag_.value;
     // The host commits synchronously, then calls clearTransformPreview().
@@ -566,7 +605,7 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
     if(selectedIsLight_&&tool_!=TransformTool::Move)return;
     const float W=float(width),H=float(height);
     const bool dragging=drag_.id==selectedId_ && !drag_.id.empty();
-    const float3 pivot=selectedPivot_+(dragging&&drag_.tool==TransformTool::Move?drag_.dir*drag_.value:float3{});
+    const float3 pivot=selectedPivot_+(dragging&&drag_.tool==TransformTool::Move?drag_.moveOffset:float3{});
     float3 axes[3];handleAxes(axes);
     const auto h=axisHandles(view,pivot,axes,W,H);
     if(!h.valid)return;
@@ -615,6 +654,14 @@ void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int widt
         const float bx=tipX-ux*cone,by=tipY-uy*cone;
         o.segment(h.px,h.py,bx,by,2.4f*u,col);
         o.tri(tipX,tipY,bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
+    }
+    if(tool_==TransformTool::Move) for(int n=0;n<3;++n){
+        float2 q[4];if(!planeQuad(view,pivot,axes,n,h.worldLength,W,H,q))continue;
+        const bool hot=dragging&&drag_.axis==4+n;
+        const uint32_t base=hot?active:colors[n];
+        const uint32_t fill=(base&0x00ffffffu)|(hot?0xa0000000u:0x55000000u);
+        o.tri(q[0].x,q[0].y,q[1].x,q[1].y,q[2].x,q[2].y,fill);o.tri(q[0].x,q[0].y,q[2].x,q[2].y,q[3].x,q[3].y,fill);
+        for(int i=0;i<4;++i)o.segment(q[i].x,q[i].y,q[(i+1)%4].x,q[(i+1)%4].y,1.4f*u,base);
     }
     const float c=(tool_==TransformTool::Scale?4.5f:3.0f)*u;
     const uint32_t centre=tool_==TransformTool::Scale&&dragging&&drag_.axis==3?active:rgba(235,240,250);
@@ -1045,7 +1092,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         if(hidden_.count(entity.id))continue;
         const bool dragged=!drag_.id.empty() && entity.id==drag_.id;
         const mat4 preview=dragged?dragPreview():mat4{};
-        const float3 offset=dragged&&drag_.tool==TransformTool::Move?drag_.dir*drag_.value:float3{};
+        const float3 offset=dragged&&drag_.tool==TransformTool::Move?drag_.moveOffset:float3{};
         if(entity.id==selectedId) {
             selectedPivot_=entity.light?entity.center:float3{entity.center.x,entity.boundsMin.y,entity.center.z};
             selectedPivotValid_=true;selectedIsLight_=entity.light;

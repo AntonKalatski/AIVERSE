@@ -66,7 +66,7 @@ public:
     bool localSpace() const { return localSpace_; }
     void setSnap(bool enabled, float move, float rotate, float scale);
     void setGizmosVisible(bool visible) { gizmosVisible_ = visible; }
-    // -1 none, 0..2 axis, 3 centre (uniform scale).
+    // -1 none, 0..2 axis, 3 centre (uniform scale), 4..6 Move plane (normal X, Y, Z: YZ, XZ, XY).
     int transformGizmoHit(float x, float y, float width, float height) const;
     bool beginTransformDrag(float x, float y, float width, float height);
     // invertSnap: Ctrl/Cmd held flips the snap setting for this drag step.
@@ -153,6 +153,7 @@ private:
         render::float3 pivot{}, dir{}; render::float3 axes[3]{};
         float startT = 0, startX = 0, lengthPx = 1, worldLength = 1, value = 0;
         float startAngle = 0, lastAngle = 0, accumulated = 0; bool facing = false; render::float2 screenPivot{};
+        render::float3 planeNormal{}, startHit{}, moveOffset{}; // Move: world offset (axis or plane)
     } drag_;
     bool selectedIsLight_ = false, selectedAxesValid_ = false;
     std::set<std::string> selection_, hidden_, locked_;
