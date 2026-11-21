@@ -3116,3 +3116,21 @@ collision mesh and imported packages stay in tools/vivid-creator; no MCP tool ca
 Next: build on KINGSTON, run `ctest -R '^studio_human_(creator|appearance_session)$'`, screenshot Human Creator with
 "Show in viewport" for neutral/warm presets and a jawOpen rest value; then decide the SSS `light.w` layout with the
 studio-html5 owner.
+
+## 2026-11-21 — Character Creator: MetaHuman-style editor features (branch feature/vivid-digital-humans)
+
+Done (code): drag sculpt + brush circle, 1024 landmarks; live slider preview; unified look/face/sculpt history with
+⌘Z; preset thumbnails (`studio.humanLookCapture`, `studio.humanAppearanceThumbnails`); before/after
+(`studio.humanCompare`); test expressions (`HumanPreviewAnimation.expression`); per-part face blend picked in the
+viewport (`studio.humanFacePick`); card-style pose & light tabs (8 existing light rigs); live wardrobe try-on
+(`studio.humanTryOn`), clothing `tint`, LOD budget (`lodTriangles`), "В игру" (`studio.humanPlaceInGame`); random
+character with locks; Russian description -> draft + agent prompt; MCP `human_look_schema|list|get|save`.
+Fixes: no map flash when another character imports; sculpt auto-picks head meshes on a newly shown model; asset picker
+portal over the viewport; Russian status texts; Studio reopens the last project.
+
+Tests actually run here (Linux VM): `tsc --noEmit` clean; `node --test tests/*.mjs` 115/115 pass (incl. new
+humanCreatorSchema cases); `g++ -fsyntax-only` of StudioSession.cpp, StudioFacialGpuPreview.cpp, StudioMetalScene.cpp,
+HumanCreatorOps.cpp, HumanWardrobe.cpp, human_wardrobe.cpp, StudioHumanLookSessionTests.cpp. NOT yet run: the Mac build,
+ctest (studio_human_appearance_session, vivid_human_wardrobe, ...) and visual checks in Studio — next step.
+Known gaps: try-on assembly cost on big outfits is unmeasured; brush circle size is an estimate (face camera);
+thumbnails need the character shown in the viewport.
