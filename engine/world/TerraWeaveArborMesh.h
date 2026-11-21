@@ -16,6 +16,7 @@ struct ArborVertex {
     float nx = 0, ny = 1, nz = 0;
     float u = 0, v = 0;
     uint8_t material = 0; // 0 bark, 1 leaves
+    int32_t owner = -1;   // structural branch (TreeSkeleton::branches index); wind rigs, -1 unknown
 };
 
 struct ArborMesh {
@@ -164,6 +165,13 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         branchOnly < -1 || (branchOnly>=0&&size_t(branchOnly)>=tree.branches.size()))
         throw std::invalid_argument("TerraWeave Arbor radial segments");
     ArborMesh out;
+    // Owner tagging for hierarchical wind rigs: every vertex emitted after
+    // own(x) and before the next own() belongs to structural branch x.
+    size_t ownedUpTo=0; int32_t currentOwner=-1;
+    const auto own=[&](int32_t next){
+        for(size_t i=ownedUpTo;i<out.vertices.size();++i)out.vertices[i].owner=currentOwner;
+        ownedUpTo=out.vertices.size(); currentOwner=next;
+    };
     constexpr float kTau = 6.2831853071795864769f;
     using namespace arbor_detail;
     const auto curves=settings.organicBranches?branchCurves(tree,settings):std::vector<BranchCurve>{};
@@ -171,6 +179,7 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
     if(outerLeafOnly&&branchOnly>=0)for(const auto& leaf:tree.leaves)
         if(leaf.parentBranch==branchOnly)outerLeaf=&leaf;
     for (size_t branchIndex=0;branchIndex<tree.branches.size();++branchIndex) {
+        own(int32_t(branchIndex));
         const auto& b=tree.branches[branchIndex];
         if(branchOnly>=0&&branchIndex!=size_t(branchOnly))continue;
         // At far detail the bough card's textured stem provides the twig;
@@ -359,6 +368,7 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         // Every spray's stem is on its owning woody twig. Two atlas cells have
         // vertical stems; diagonal cells need a different authored anchor.
         for(const auto& leaf:tree.leaves) {
+            own(leaf.parentBranch);
             if(branchOnly>=0&&leaf.parentBranch!=branchOnly)continue;
             if(outerLeaf && &leaf!=outerLeaf)continue;
             if(leaf.variation%1000>=settings.leafCoveragePermille)continue;
@@ -401,12 +411,14 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
                 if(settings.doubleSidedLeaves){addTriangle(out,base+2,base+1,base);addTriangle(out,base+3,base+2,base);}
             }
         }
+        own(-1);
         return out;
     }
     if (settings.naturalConifer) {
         // The same structural branches feed all tiers. Sprays grow from their
         // curved centreline, never from a disconnected radial star at a leaf.
         for (size_t bi=0; bi<tree.branches.size(); ++bi) {
+            own(int32_t(bi));
             const auto& b=tree.branches[bi];
             if(branchOnly>=0&&bi!=size_t(branchOnly))continue;
             const V3 start{float(b.x0),float(b.y0),float(b.z0)};
@@ -497,9 +509,11 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
                 if(settings.doubleSidedLeaves){addTriangle(out,base+2,base+1,base);addTriangle(out,base+3,base+2,base);}
             }
         }
+        own(-1);
         return out;
     }
     for (const LeafCluster& leaf : tree.leaves) {
+        own(leaf.parentBranch);
         if(branchOnly>=0&&leaf.parentBranch!=branchOnly)continue;
         if(outerLeaf && &leaf!=outerLeaf)continue;
         if(leaf.variation%1000>=settings.leafCoveragePermille)continue;
@@ -512,6 +526,7 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         if (settings.leafPlanes == 2)
             addLeafQuad(out, at, {0, 0, 1}, r, settings.doubleSidedLeaves);
     }
+    own(-1);
     return out;
 }
 

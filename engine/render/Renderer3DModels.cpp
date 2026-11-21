@@ -631,6 +631,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                         declarations+="uniform sampler2D tex"+slot+";\n";
                         args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
+                        // Exact integer texel fetch for vertex data tables (hierarchical
+                        // wind rigs, WindRigShader.h): no filtering, wrapping or mips.
+                        macros+="#define SG_TEXEL"+index+"(x,y) "+(metal?"tex"+slot+".read(uint2(uint(x),uint(y)))":"texelFetch(tex"+slot+",ivec2(x,y),0)")+"\n";
                     }
                     if(metal)replace(source,"vs_main(VERTEX_ARGS)","vs_main(VERTEX_ARGS"+args+")");else source=declarations+source;
                     code+=macros;

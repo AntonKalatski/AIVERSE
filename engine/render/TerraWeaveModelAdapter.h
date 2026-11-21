@@ -15,9 +15,14 @@
 
 namespace aiverse::terraweave {
 
+// vertexOwners (optional): one structural-branch index per model vertex for
+// hierarchical wind rigs (TerraWeaveArborWind.h); -1 where a tier's skeleton
+// differs from the High-detail one.
 inline std::unique_ptr<render::Model> makeArborModel(
         const TreeProfile& profile, uint64_t seed,
-        ArborMeshSettings meshSettings = {}) {
+        ArborMeshSettings meshSettings = {},
+        std::vector<int32_t>* vertexOwners = nullptr) {
+    if (vertexOwners) vertexOwners->clear();
     auto model = std::make_unique<render::Model>();
     model->path = "terraweave/arbor/" + std::to_string(profile.speciesId) + "/" +
                   std::to_string(seed);
@@ -59,6 +64,7 @@ inline std::unique_ptr<render::Model> makeArborModel(
             tierSettings.sprayPairs=tier==TreeLOD::High?4u:tier==TreeLOD::Medium?3u:1u;
             tierSettings.leafPlanes=tier==TreeLOD::Low?1u:2u;
         }
+        const bool sharedSkeleton=meshSettings.naturalConifer||meshSettings.naturalBroadleaf||tier==TreeLOD::High;
         const ArborMesh geometry = buildArborMesh(generateTree(profile, seed,
             (meshSettings.naturalConifer||meshSettings.naturalBroadleaf)?TreeLOD::High:tier), tierSettings);
         const uint32_t baseVertex = static_cast<uint32_t>(model->vertices.size());
@@ -76,6 +82,7 @@ inline std::unique_ptr<render::Model> makeArborModel(
             vertex.nrm = {v.nx, v.ny, v.nz};
             vertex.uv = {v.u, v.v};
             model->vertices.push_back(vertex);
+            if (vertexOwners) vertexOwners->push_back(sharedSkeleton ? v.owner : -1);
         }
         uint32_t barkIndexCount = 0;
         bool foundLeafIndex = false;
@@ -144,7 +151,9 @@ struct BranchLodSettings {
 // single-quad model).
 inline std::unique_ptr<render::Model> makeArborBranchLodModel(
         const TreeProfile& profile, uint64_t seed,
-        BranchLodSettings settings = {}) {
+        BranchLodSettings settings = {},
+        std::vector<int32_t>* vertexOwners = nullptr) {
+    if (vertexOwners) vertexOwners->clear();
     if (!std::isfinite(settings.reducedPixels) ||
         !std::isfinite(settings.minimalPixels) ||
         settings.reducedPixels <= settings.minimalPixels ||
@@ -204,6 +213,8 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
                     vertex.color=(windWeight<<24)|0x00ffffffu;
                 }
                 model->vertices.push_back(vertex);
+                // Each render node is one structural branch.
+                if (vertexOwners) vertexOwners->push_back(int32_t(branch));
             }
             uint32_t barkIndices = 0;
             bool leafIndicesStarted = false;

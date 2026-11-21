@@ -4108,6 +4108,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_flora_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_flora_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave_flora COMMAND aiverse_terraweave_flora_test)
+    # Hierarchical wind masks: library reuse, rig packing, reference evaluation,
+    # node-tree rigs, sidecars and TerraWeave Arbor rigs (CPU, no device).
+    add_executable(aiverse_wind_rig_test tests/wind_rig_test.cpp)
+    target_link_libraries(aiverse_wind_rig_test PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME wind_rig COMMAND aiverse_wind_rig_test)
+    set_tests_properties(wind_rig PROPERTIES LABELS "RENDER;TERRAWEAVE;WIND")
     add_executable(aiverse_terraweave_model_test tests/terraweave_model_test.cpp)
     target_link_libraries(aiverse_terraweave_model_test PRIVATE aiverse_models aiverse_zstd_dec)
     target_compile_options(aiverse_terraweave_model_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
