@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -1057,7 +1058,40 @@ bool GameClient::requestHostStep() {
     return true;
 }
 
+namespace {
+// AIVERSE_CLIENT_PROFILE=1: average time of the client frame stages, printed every 120 frames
+// ("[client-stages] ..."): sim, scene, ui (update), view (RtsView::draw), fx, render (scene + PRISMA),
+// hud (overlays, RmlUi), other. Used for the Android benchmarks (tools/perf/android-bench.sh).
+struct ClientStageProfile {
+    static constexpr int kStages = 8;
+    const char* names[kStages] = {"sim", "scene", "ui", "view", "fx", "render", "hud", "other"};
+    double total[kStages] = {};
+    int frames = 0;
+    bool on = [] { const char* e = std::getenv("AIVERSE_CLIENT_PROFILE"); return e && *e == '1'; }();
+    std::chrono::steady_clock::time_point last;
+    void start() { if (on) last = std::chrono::steady_clock::now(); }
+    void lap(int stage) {
+        if (!on) return;
+        const auto now = std::chrono::steady_clock::now();
+        total[stage] += std::chrono::duration<double, std::milli>(now - last).count();
+        last = now;
+    }
+    void endFrame() {
+        if (!on) return;
+        lap(kStages - 1);
+        if (++frames < 120) return;
+        char line[512]; int n = std::snprintf(line, sizeof line, "[client-stages] avg/%d", frames);
+        double sum = 0;
+        for (int i = 0; i < kStages; ++i) { n += std::snprintf(line + n, sizeof line - size_t(n), " %s=%.2f", names[i], total[i] / frames); sum += total[i]; total[i] = 0; }
+        std::snprintf(line + n, sizeof line - size_t(n), " total=%.2f ms", sum / frames);
+        std::fprintf(stderr, "%s\n", line);
+        frames = 0;
+    }
+} g_stages;
+} // namespace
+
 void GameClient::frame(gfx::Device& dev, double dt) {
+    g_stages.start();
     lensCameras_.collectRetiredTargets();
     const bool hostFrozen = hostCanControl() && hostPaused_;
     const bool singleStep = hostFrozen && hostCanStep() && hostStep_;
@@ -1197,6 +1231,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
     }
+    g_stages.lap(0);   // sim (and everything before it)
     if (sim_) {
         sceneFromSim(*sim_, scene_, alpha, spectator_ ? 0 : human_);
         scene_.paintLayers = viewScripts_.paintLayers();
@@ -1212,6 +1247,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing) { topDownPresent(dt, alpha); topDownCamera(dt); }
     }
 
+    g_stages.lap(1);   // scene
     if (sim_ && ensureLocalAssets()) {
         // Asset-loading output has no active 3D presentation camera.
         prisma_.retireUnregisteredViews({});
@@ -1234,6 +1270,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     }
     updateUi();
     spine_.render(float(dt));   // Spine views into their textures (outside the main pass)
+    g_stages.lap(2);   // ui update
     gfx::PassDesc pass;
     pass.colorTarget = hostColor_;
     pass.depthTarget = hostDepth_;
@@ -1318,7 +1355,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             lensCaptureGuard.begin(lensModelSnapshot_,r3d_);
             view_.setCameraPreparedCapture(&lensModelSnapshot_);
         }
+        g_stages.lap(7);
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
+        g_stages.lap(3);   // view
         for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
@@ -1347,6 +1386,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
         if(lensCamerasActive_) lensLightingSnapshot=r3d_.lights.capturePrepared();
+        g_stages.lap(4);   // fx, scripts, ground, ghosts
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
         // GPU billboards share this scene depth/pass; no separate pass and no
@@ -1362,6 +1402,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             });
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD
+        g_stages.lap(5);   // render
         prisma_.clearCameraVolumes();
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
@@ -1377,6 +1418,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
     ui_.render();
     dev.endPass();
+    g_stages.lap(6);   // hud
+    g_stages.endFrame();
     // A separate offscreen path after the already presented scene/UI pass.
     // Never replay RtsView::draw: its animation, event and appearance updates
     // are stateful, even with MotionWeave's universal View adapter.

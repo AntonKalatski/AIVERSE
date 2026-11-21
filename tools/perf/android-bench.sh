@@ -183,7 +183,7 @@ cases_cpu() {
   run big vulkan $U; run nobig vulkan $U AIVERSE_BIG_CORES=0
 }
 # one traced run: RtsView / client stage times in logcat (AIVERSE_FRAME_TRACE, AIVERSE_VIEW_PROFILE)
-cases_trace() { run trace gl $U AIVERSE_FRAME_TRACE=1 AIVERSE_VIEW_PROFILE=1; }
+cases_trace() { run trace gl $U AIVERSE_FRAME_TRACE=1 AIVERSE_VIEW_PROFILE=1 AIVERSE_CLIENT_PROFILE=1; }
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
