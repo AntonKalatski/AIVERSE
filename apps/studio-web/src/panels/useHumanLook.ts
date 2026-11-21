@@ -33,7 +33,7 @@ export function useHumanLook(project: string) {
 
   const edit = useCallback((next: HumanLook) => {
     setDraft(old => { setUndo(u => [...u.slice(-63), old]); return next; });
-    setRedo([]); setStatus('Draft changed — apply to preview');
+    setRedo([]); setStatus('Есть неприменённые изменения');
   }, []);
   const undoLook = () => { if (!undo.length) return; setRedo(r => [...r, draft]); setDraft(undo[undo.length - 1]); setUndo(undo.slice(0, -1)); };
   const redoLook = () => { if (!redo.length) return; setUndo(u => [...u, draft]); setDraft(redo[redo.length - 1]); setRedo(redo.slice(0, -1)); };
@@ -44,12 +44,12 @@ export function useHumanLook(project: string) {
   }, []);
   const loadAsset = () => run(async () => {
     const result = await invoke('studio.humanAppearanceFromAsset', { guid });
-    edit(result.look); setStatus('Model profile loaded; apply to preview');
+    edit(result.look); setStatus('Профиль загружен — нажмите «Показать»');
   });
   const apply = (nextFace: HumanFaceShape | null = face, look: HumanLook = draft) => run(async () => {
     const current = await invoke('studio.humanAppearanceInfo', {});
     const result = await invoke('studio.humanAppearanceApply', { guid, revision: current.preview.revision, look, face: nextFace });
-    setInfo(result); setDraft(result.look); setStatus('Applied; native model is loading');
+    setInfo(result); setDraft(result.look); setStatus('Применено');
   });
   const refresh = useCallback(async () => {
     const next = await invoke('studio.humanAppearanceInfo', {});

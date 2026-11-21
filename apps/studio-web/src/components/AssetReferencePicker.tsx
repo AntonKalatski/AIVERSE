@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { FolderSearch, Search, X } from 'lucide-react';
 import { invoke, onNativeEvent } from '../bridge';
 import { assetFileName, assetKind, safeAssetPath } from '../assetTree';
@@ -120,7 +121,7 @@ export default function AssetReferencePicker({
       {allowClear && value && <button type="button" disabled={disabled} onClick={() => onChange('')}
         aria-label={'Clear '+label}><X size={14}/></button>}
     </div>
-    {open && <div className="studio-asset-reference__overlay" onMouseDown={event => {
+    {open && createPortal(<div className="studio-asset-reference__overlay" onMouseDown={event => {
       if (event.target === event.currentTarget) setOpen(false);
     }}>
       <section role="dialog" aria-modal="true" aria-label={'Choose '+label}
@@ -145,6 +146,6 @@ export default function AssetReferencePicker({
         </div>
         <footer>Only assets under project/content are selectable. Drag from Assets to assign.</footer>
       </section>
-    </div>}
+    </div>, document.body)}
   </div>;
 }

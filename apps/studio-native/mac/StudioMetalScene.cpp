@@ -612,7 +612,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             }
             // Frame every newly shown character once; later edits of the
             // same character keep the artist's camera.
-            if(!cameraInitialized_ || facialFramedGuid_!=facialBinding.guid()) {
+            if(!cameraInitialized_ || (synced && facialFramedGuid_!=facialBinding.guid())) {
                 camera_.target={0,0,0};
                 camera_.distance=4.2f;
                 camera_.pitch=.15f;

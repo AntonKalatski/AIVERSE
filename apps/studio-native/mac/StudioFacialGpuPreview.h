@@ -51,8 +51,10 @@ public:
     }
     // The last published character still matches the selection while a new
     // revision (edit) imports: keep drawing it instead of flashing the map.
+    // Appearance-only characters (no facial rig state) also stay on screen
+    // while ANOTHER character imports, e.g. after "show assembled character".
     bool showsCharacter(const StudioFacialPreviewBinding& binding) const noexcept {
-        return model_ && !guid_.empty() && guid_==binding.guid() && binding.bound();
+        return model_ && !guid_.empty() && binding.bound() && (guid_==binding.guid() || appearanceOnly_);
     }
     bool ready() const noexcept {return bool(model_) && (appearanceOnly_ || facial_.ready());}
     uint64_t sourceRevision() const noexcept {return revision_;}
