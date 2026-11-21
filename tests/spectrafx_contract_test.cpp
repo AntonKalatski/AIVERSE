@@ -9,6 +9,7 @@
 #include "engine/fx/SpectraFxCueInbox.h"
 #include "engine/fx/SpectraFxGpuLod.h"
 #include "engine/fx/SpectraFxGpuBudgetGovernor.h"
+#include "engine/fx/SpectraFxGpuEmitterLibrary.h"
 
 using namespace aiverse;
 using namespace aiverse::fx;
@@ -38,6 +39,43 @@ int main() {
         R"JSON({"version":1,"cpuEffect":"smoke","particles":128,
                  "gpuSortAlpha":true,"gpuIndirectCompaction":true})JSON",
         emitter,&error), "sorting and compaction mutually exclusive");
+
+    // Cached GPU emitter assets are served without file IO on every Play;
+    // only an explicit invalidate re-reads (and bumps the revision only
+    // when the authored bytes changed).
+    {
+        int reads=0;
+        std::string assetText=R"JSON({"version":1,"cpuEffect":"smoke","particles":64})JSON";
+        SpectraFxGpuEmitterLibrary library([&](const std::string& path,std::string& text) {
+            if(path!="fx/gpu/spark.gpu.json") return false;
+            ++reads;text=assetText;return true;
+        });
+        const auto first=library.load("spark");
+        expect(first.valid && first.reloaded && reads==1,"library loads asset once");
+        for(int i=0;i<100;++i) library.load("spark");
+        expect(reads==1,"cached library load performs no file IO");
+        library.invalidate("spark");
+        const auto same=library.load("spark");
+        expect(reads==2 && same.valid && !same.reloaded && same.revision==first.revision,
+               "invalidate re-reads; unchanged bytes keep revision");
+        library.load("spark");
+        expect(reads==2,"revalidated asset is cached again");
+        assetText=R"JSON({"version":1,"cpuEffect":"smoke","particles":128})JSON";
+        library.load("spark");
+        expect(reads==2 && library.find("spark")->config.backend.particles==64,
+               "edited file is not picked up without invalidate");
+        library.invalidateAll();
+        const auto edited=library.load("spark");
+        expect(reads==3 && edited.reloaded && edited.revision==first.revision+1 &&
+               library.find("spark")->config.backend.particles==128,
+               "invalidateAll reloads edited asset with a new revision");
+        assetText="{broken";
+        library.invalidate("spark");
+        const auto broken=library.load("spark");
+        library.load("spark");
+        expect(broken.valid && broken.fallback && reads==4,
+               "failed reload keeps last known-good asset without retry storm");
+    }
 
     SpectraFxGpuRouteAsset::Routes routes;
     std::optional<FxQuality> sceneQuality;
