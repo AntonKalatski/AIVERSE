@@ -21,7 +21,10 @@ namespace fs = std::filesystem;
 
 class SpectraFxGraphWindow : public EditorWindow {
 public:
-    const char* id() const override { return "spectrafx_graph"; }
+    // Distinct from SpectraGraphWindow, which keeps the legacy saved id
+    // "spectrafx_graph" (layouts, focusWindow, docs). Duplicate ids made the
+    // registry/layout resolve the wrong window.
+    const char* id() const override { return "spectrafx_vfx_graph"; }
     const char* title() const override { return "SpectraFX Graph"; }
     const char* group() const override { return "look"; }
     const char* dockArea() const override { return "center"; }
