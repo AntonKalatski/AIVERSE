@@ -1,3 +1,4 @@
+#include "engine/render/StaticImpostorLod.h"
 #include "engine/render/WindRigModel.h"
 #include "ModelTextureCache.h"
 #include "AlphaCoverageMips.h"
@@ -248,6 +249,18 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     const Json config = Json::parse(bytes);
     if (!config.isObject()) throw std::runtime_error(path + ".batching.json: expected JSON object");
     model.batching.mergeRigid = config.getBool("mergeRigid", false);
+    // Opt-in far LOD: two crossed cards with a baked silhouette of the
+    // finest mesh, appended as the last level of the existing chain.
+    if (config.has("impostor")) {
+        const Json& imp = config["impostor"];
+        if (!imp.isObject()) throw std::runtime_error(path + ".batching.json: impostor must be an object");
+        StaticImpostorSettings settings;
+        settings.maxPixels = float(imp["maxPixels"].toDouble(20.0));
+        settings.tile = int(imp["tile"].toDouble(256.0));
+        std::string why;
+        if (!appendStaticImpostorLod(model, settings, &why))
+            std::fprintf(stderr, "[impostor] %s: skipped (%s)\n", path.c_str(), why.c_str());
+    }
     // Allows projects to opt out individual sensitive assets without
     // disabling import-time LOD generation for other models.
     if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
@@ -271,6 +284,12 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
             model.batching.geometryPoolPolicy = PoolPolicy::AllowRigidLods;
         else
             throw std::runtime_error(path + ".batching.json: geometryPool must be inherit, dedicated or rigidLod");
+    }
+    if (config.has("cullPixels")) {
+        const float px = float(config["cullPixels"].toDouble());
+        if (!std::isfinite(px) || px < 0.0f || px > 4096.0f)
+            throw std::runtime_error(path + ".batching.json: cullPixels must be in [0, 4096]");
+        model.batching.cullPixels = px;
     }
     if (config.has("maxExtent")) {
         const float extent = float(config["maxExtent"].toDouble());

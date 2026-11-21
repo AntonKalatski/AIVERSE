@@ -73,7 +73,7 @@ def height(x, z):
 
 
 import math, copy
-call("map_open", file="maps/valley.json")
+call("map_open", file=os.environ.get("LOD_MAP", "maps/valley.json"))
 call("view_focus", x=256, z=256, distance=90)
 time.sleep(15)
 proj = os.environ["TERRA_PROJECT"]
@@ -116,7 +116,7 @@ res = {}
 def stats(tag, **cam):
     shot2(tag, 1280, 720, **cam); time.sleep(1.5); shot2(tag, 1280, 720, **cam)
     st = call("geometry_stats")
-    res[tag] = {k: st.get(k) for k in ("drawCalls", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata")}
+    res[tag] = {k: st.get(k) for k in ("drawCalls", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata", "lodBlocked", "shadowLimitedLod")}
     print("STATS", tag, json.dumps(res[tag]), flush=True)
 idx = 10; x, z, half = centre[idx]; (nx, nz), (fx, fz) = side(idx)
 bx, bz = x + nx * (half + 6), z + nz * (half + 6)
@@ -127,5 +127,5 @@ stats("hero", **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0],
 stats("overview", x=256, y=0, z=256, distance=260, pitch=40, yaw=200)
 call("view_wind", forest=False, nature=False)
 stats("bank-noflora", **look((x - fx * 3, surf[idx] + 1.3, z - fz * 3), (bx + fx * 4, g + 0.3, bz + fz * 4)))
-json.dump(res, open(os.path.join(out, "lod.json"), "w"), indent=1)
+json.dump(res, open(os.path.join(out, "lod-%s.json" % os.path.basename(os.environ.get("LOD_MAP", "valley")).replace(".json","")), "w"), indent=1)
 print("lod-diag: done", flush=True)

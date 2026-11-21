@@ -7,6 +7,7 @@
 #pragma once
 #include "Geometry.h"
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <array>
 #include <span>
@@ -1514,6 +1515,18 @@ public:
     bool modelLodEnabled() const { return modelLodEnabled_; }
     // Relative screen-size band around each threshold; 0 restores instant switches.
     void setModelLodFadeWidth(float width) { modelLodFadeWidth_=std::clamp(width,0.0f,0.49f); }
+    // Multiplier on the projected size used for LOD selection: <1 switches to
+    // coarser authored/generated levels sooner (all passes). 1 = unchanged.
+    void setModelLodScale(float scale) { if(std::isfinite(scale)) modelLodScale_=std::clamp(scale,0.05f,4.0f); }
+    float modelLodScale() const { return modelLodScale_; }
+    // Extra multiplier for the sun shadow pass only (shadows rarely need the
+    // camera's detail). 1 = unchanged.
+    void setShadowLodScale(float scale) { if(std::isfinite(scale)) shadowLodScale_=std::clamp(scale,0.05f,4.0f); }
+    float shadowLodScale() const { return shadowLodScale_; }
+    // Planar water reflection: skip rigid model parts smaller than this many
+    // projected pixels in the mirrored view. 0 = draw everything.
+    void setReflectionCullPixels(float px) { reflectionCullPixels_=std::isfinite(px)?std::clamp(px,0.f,4096.f):0.f; }
+    float reflectionCullPixels() const { return reflectionCullPixels_; }
     float modelLodFadeWidth() const { return modelLodFadeWidth_; }
 
     // Native renderer hosts may choose different instancing/indirect/LOD
@@ -1886,6 +1899,7 @@ private:
     bool lodDiagnosticsEnabled_ = false;
     LodDebugSample lodDebugSample_;
     float modelLodFadeWidth_=.15f;
+    float modelLodScale_=1.f, shadowLodScale_=1.f, reflectionCullPixels_=0.f;
     RenderProfile profile_;
     uint32_t instanceLimit_=32;
     GeometryStats geometryStats_;

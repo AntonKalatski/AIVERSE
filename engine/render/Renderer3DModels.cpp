@@ -1523,13 +1523,34 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             const bool zeroToOne = dev_->info().clipDepthZeroToOne;
             const float cameraPixels = nodeView
                 ? geometryErrorPixels(viewProj_ * lodWorld, lodMin, lodMax, error,
-                                       sceneW_, sceneH_, zeroToOne) : 0.0f;
+                                       sceneW_, sceneH_, zeroToOne) * modelLodScale_ : 0.0f;
             float pixels = cameraPixels;
-            const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne):0.f;
+            const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne)*modelLodScale_*shadowLodScale_:0.f;
+            // Opt-in size cull (".batching.json" cullPixels), measured in
+            // real projected pixels, independent of the LOD scale.
+            // Nodes outside both frusta keep the old path (later mirror passes).
+            if(m->batching.cullPixels>0.f && d.lodLevel<0 && rigid && (nodeView || nodeShadow)) {
+                const float cull=m->batching.cullPixels*modelLodScale_;
+                if(nodeView && cameraPixels<cull) nodeView=false;
+                if(nodeShadow && shadowPixels<cull*shadowLodScale_) nodeShadow=false;
+                if(!nodeView && !nodeShadow) { ++modelStats_.culledNodes; continue; }
+            }
             if(d.lodLevel>=0)shadowLodMesh=forcedModelLod(node.mesh,baseMesh.lods,d.lodLevel).mesh;
             else if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
             else if(nodeShadow)pixels=std::max(pixels,shadowPixels);
-            if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
+            if (!nodeView && !nodeShadow) {
+                // Later mirror/spot frusta: no frustum here, so estimate the
+                // size from the distance to the camera instead of forcing
+                // LOD0 (a planar reflection sees the same distances).
+                const mat4 clip = viewProj_ * lodWorld;
+                const float3 centre = (lodMin + lodMax) * .5f;
+                const float4 cc = clip * float4{centre.x, centre.y, centre.z, 1};
+                const float focal = length(float3{clip.at(1,0), clip.at(1,1), clip.at(1,2)});
+                const float dist = std::max(std::fabs(cc.w), error);
+                pixels = std::isfinite(cc.w) && std::isfinite(focal)
+                    ? .5f * float(sceneH_) * error * focal / dist * modelLodScale_
+                    : std::numeric_limits<float>::infinity();
+            }
             const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
                 std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
             const float fadeWidth = opaque && !m->geometry && matQuality_!=MaterialQuality::Low ? modelLodFadeWidth_ : 0;
@@ -3418,6 +3439,15 @@ void Renderer3D::renderModels(int phase) {
             take=geometryBoxVisible(lightViewProj_*it.world,it.prim->boundsMin,it.prim->boundsMax);
         // Reflection has its own view, never consume main-view occlusion there.
         if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.vertexOverride.valid() || it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
+        // Reflection size cull (game.json "lod.reflectionCullPixels"): the
+        // mirror is low-res and rippled, small rigid parts are not visible.
+        if (take && phase == 1 && !geometryMainView_ && reflectionCullPixels_ > 0.f && it.rigid &&
+            it.joints < 0 && !it.vertexOverride.valid()) {
+            const float diag = length(it.prim->boundsMax - it.prim->boundsMin);
+            const float px = geometryErrorPixels(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax, diag,
+                                                 sceneW_, sceneH_, dev_->info().clipDepthZeroToOne);
+            if (px < reflectionCullPixels_) take = false;
+        }
         // Kingston water: ground models must not cover the mirrored city.
         // This flat city puts the rainwater at y=.045. Fully submerged primitives
         // are omitted only from the reflection, retaining normal and shadow draws.

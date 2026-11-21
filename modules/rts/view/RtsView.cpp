@@ -415,6 +415,23 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         const Json& rj=incomingRules;
         fog_.setLook(incomingFogLook);
         spriteDefaults_ = incomingSpriteDefaults;   // same snapshot as staged sprites
+        // game.json "lod": {"scale": s, "shadowScale": t} — projected-size
+        // multipliers for model LOD selection (<1 = coarser levels sooner).
+        {
+            const Json& lod=incomingGame["lod"];
+            auto num=[&](const char* k){
+                const Json& v=lod[k];
+                const double d=v.isNumber()?v.toDouble(1.0):1.0;
+                return float(std::clamp(std::isfinite(d)?d:1.0,0.05,4.0));
+            };
+            modelLodScale_=lod.isObject()?num("scale"):1.f;
+            shadowLodScale_=lod.isObject()?num("shadowScale"):1.f;
+            const Json& rc=lod["reflectionCullPixels"];
+            reflectionCullPixels_=lod.isObject()&&rc.isNumber()?float(std::clamp(rc.toDouble(0.0),0.0,4096.0)):0.f;
+            // Optional LOD cross-fade width (0..0.49); absent keeps the host's.
+            const Json& fd=lod["fade"];
+            lodFadeWidth_=lod.isObject()&&fd.isNumber()?float(std::clamp(fd.toDouble(0.15),0.0,0.49)):-1.f;
+        }
         fogMeshDirty_ = true;
         // overlays: built-ins + rules "overlays" + game.json "overlays" (by id)
         overlays_.initPrepared(rules,std::move(incomingOverlaySet),contentBase_);
@@ -1087,6 +1104,10 @@ private:
 };
 
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    r.setModelLodScale(modelLodScale_);
+    r.setShadowLodScale(shadowLodScale_);
+    r.setReflectionCullPixels(reflectionCullPixels_);
+    if(lodFadeWidth_>=0.f) r.setModelLodFadeWidth(lodFadeWidth_);
     // A matching topology prewarm MUST publish before even the first
     // hierarchy/animation height query or FramePublicationEpoch::begin().
     std::unique_ptr<PreparedSurfaceLease> surfaceLease;
