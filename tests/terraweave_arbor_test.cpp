@@ -135,6 +135,43 @@ void testInvalidProfiles() {
 }
 }
 int main() {
+    {
+        const auto& preset=botanicalTreePresets()[4];
+        ArborMeshSettings mesh;mesh.naturalBroadleaf=true;mesh.organicRootFlare=true;
+        const auto tree=generateTree(preset.profile,2718);
+        const auto geometry=buildArborMesh(tree,mesh);
+        float shortest=1e9f,longest=0;
+        size_t feet=0;
+        for(const auto& v:geometry.vertices) {
+            assert(std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z));
+            assert(std::isfinite(v.u)&&std::isfinite(v.v));
+            const float normal=v.nx*v.nx+v.ny*v.ny+v.nz*v.nz;
+            assert(std::abs(normal-1.f)<.002f);
+            if(v.material==0&&v.y< -14.9f) {
+                const float radius=std::hypot(v.x,v.z);
+                shortest=std::min(shortest,radius);longest=std::max(longest,radius);++feet;
+            }
+        }
+        // A buried continuous ring, with seeded lobes rather than capped spokes.
+        assert(feet>=25&&longest>shortest*1.3f);
+        assert(std::all_of(geometry.indices.begin(),geometry.indices.end(),
+            [&](uint32_t i){return i<geometry.vertices.size();}));
+        for(size_t i=0;i<geometry.indices.size();i+=3) {
+            const auto& a=geometry.vertices[geometry.indices[i]];
+            const auto& b=geometry.vertices[geometry.indices[i+1]];
+            const auto& c=geometry.vertices[geometry.indices[i+2]];
+            if(a.material!=0)continue;
+            const float ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z;
+            const float vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
+            const float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+            // Backface culling must retain the exterior, matching shading.
+            assert(nx*(a.nx+b.nx+c.nx)+ny*(a.ny+b.ny+c.ny)+nz*(a.nz+b.nz+c.nz)>0);
+        }
+        mesh.trunkFlare=false;
+        const auto isolated=buildArborMesh(tree,mesh);
+        assert(std::none_of(isolated.vertices.begin(),isolated.vertices.end(),
+            [](const auto& v){return v.material==0&&v.y<0;}));
+    }
     for(uint32_t species:{1u,2u,3u,4u,10u,16u}) {
         constexpr uint32_t variants=4;
         std::vector<bool> seen(species*variants,false);

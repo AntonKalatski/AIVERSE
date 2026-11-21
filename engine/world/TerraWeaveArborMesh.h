@@ -35,6 +35,7 @@ struct ArborMeshSettings {
     bool naturalBroadleaf = false; // connected2x2 spray atlas on owned twigs
     uint32_t leafCoveragePermille = 1000; // existing ecology/phenology input
     bool trunkFlare = true, includeLeader = true; // isolated branch adapters set these explicitly
+    bool organicRootFlare = false; // continuous seeded basal buttresses, not exposed-root simulation
 };
 
 namespace arbor_detail {
@@ -112,11 +113,38 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         // Thin twigs also do not need a trunk-sized circular cross section.
         const bool straightTwig=settings.naturalBroadleaf&&b.parent>=0;
         const int32_t thick=std::max(b.startRadiusCm,b.endRadiusCm);
-        const uint32_t radial=straightTwig?std::min(settings.radialSegments,
+        const bool organicRoot=settings.organicRootFlare&&settings.trunkFlare&&b.parent<0&&
+            (settings.naturalBroadleaf||settings.naturalConifer);
+        const uint32_t radial=organicRoot?(settings.radialSegments>=6?48u:settings.radialSegments>=4?32u:16u):
+            straightTwig?std::min(settings.radialSegments,
             thick<=2?3u:thick<=5?4u:thick<=12?5u:8u):settings.radialSegments;
         const uint32_t side = radial + 1u;
-        const uint32_t rings = straightTwig?1u:
+        const uint32_t rings = organicRoot?(settings.radialSegments>=6?10u:settings.radialSegments>=4?6u:3u):straightTwig?1u:
             (settings.naturalConifer||settings.naturalBroadleaf) ? settings.longitudinalSegments : 1;
+        const auto organicSurface=[&](float step,float angle) {
+            const float t=step*step*step;
+            // The open foot ring is buried; the trunk and every buttress share
+            // this one skin. Nothing ends in a visible capped root stump.
+            const float y=delta.y*t-15.f*std::exp(-t*12.f);
+            const float taper=float(b.startRadiusCm)*(1-t)+float(b.endRadiusCm)*t;
+            // A square-root shoulder approaches the soil tangentially instead
+            // of ending in the steep side wall of a conical support strut.
+            const float fade=std::exp(-2.f*std::sqrt(std::max(0.f,y)/
+                std::max(16.f,float(b.startRadiusCm)*1.8f)));
+            const uint32_t roots=5u+uint32_t(detail::mix64(tree.seed)%3u);
+            const float phase=float(detail::mix64(tree.seed^7919u)%6283u)*.001f;
+            float lobes=0;
+            for(uint32_t j=0;j<roots;++j) {
+                const auto h=detail::mix64(tree.seed^uint64_t(j+1)*104729u);
+                const float jitter=(float(h%1001u)/1000.f-.5f)*.45f;
+                const float heading=phase+kTau*(float(j)+jitter)/float(roots);
+                const float strength=.7f+float((h>>16)%1001u)/1000.f*.6f;
+                lobes+=strength*std::pow(std::max(0.f,std::cos(angle-heading)),24.f);
+            }
+            const float radius=taper*(1.f+.35f*fade)+float(b.startRadiusCm)*2.6f*lobes*fade;
+            return start+delta*t+V3{0,y-delta.y*t,0}+
+                (tangent*std::cos(angle)+bitangent*std::sin(angle))*radius;
+        };
         for (uint32_t ring = 0; ring <= rings; ++ring) {
             const float step = float(ring) / rings;
             const float t = (settings.compactConifer||settings.naturalBroadleaf)&&b.parent<0?step*step*step:step;
@@ -128,20 +156,36 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
                 (settings.naturalConifer && std::fabs(axis.y)<.95f ? .30f : 1.f)*(1.f+.65f*root);
             for (uint32_t seg = 0; seg <= radial; ++seg) {
                 const float angle = kTau * float(seg) / float(radial);
-                const V3 normal = tangent * std::cos(angle) + bitangent * std::sin(angle);
-                const V3 at = center + normal * radius;
+                V3 normal = tangent * std::cos(angle) + bitangent * std::sin(angle);
+                V3 at = center + normal * radius;
+                float barkV=t*length/100.f;
+                if(organicRoot) {
+                    at=organicSurface(step,angle);
+                    const V3 around=organicSurface(step,angle+.001f)-organicSurface(step,angle-.001f);
+                    const V3 along=organicSurface(std::min(1.f,step+.003f),angle)-
+                        organicSurface(std::max(0.f,step-.003f),angle);
+                    normal=normalize(cross(around,along));
+                    const V3 offset=at-(start+delta*t);
+                    const float radialLength=std::sqrt(offset.x*offset.x+offset.z*offset.z);
+                    // Continue longitudinal bark grain out over the shoulder;
+                    // mapping only Y stretches one row across an entire root.
+                    barkV=(at.y-start.y-std::max(0.f,radialLength-float(b.startRadiusCm)))/100.f;
+                }
                 out.vertices.push_back({at.x, at.y, at.z,
                                         normal.x, normal.y, normal.z,
                                         float(seg) / float(radial),
-                                        t * length / 100.0f, 0});
+                                        barkV, 0});
             }
         }
         for (uint32_t ring=0; ring<rings; ++ring)
         for (uint32_t seg = 0; seg < radial; ++seg) {
             const uint32_t a = base + ring*side + seg, b0 = a + 1u;
             const uint32_t c = a + side, d = c + 1u;
-            addTriangle(out, a, c, b0);
-            addTriangle(out, b0, c, d);
+            // tangent/bitangent circle advances around the outward normal.
+            // Reversing these faces culls the front bark and exposes the
+            // hollow back wall at the ground and branch junctions.
+            addTriangle(out, a, b0, c);
+            addTriangle(out, b0, d, c);
         }
     }
     if(settings.naturalBroadleaf) {

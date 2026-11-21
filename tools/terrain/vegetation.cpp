@@ -51,7 +51,7 @@ int main(int argc,char** argv){try{
             p.branchLengthPermille=pine?620:440;p.branchRisePermille=pine?90:35;p.leafRadiusCm=45;
             kind=pine?"pine":"spruce";bark=kind+"_bark";leaves=kind+"_leaves";
         }
-        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;
+        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;mesh.organicRootFlare=botanical;
         mesh.naturalConifer=p.shape==CrownShape::Conifer;mesh.naturalBroadleaf=!mesh.naturalConifer;
         mesh.compactConifer=mesh.naturalConifer;mesh.sprayDroop=mesh.naturalBroadleaf?(kind=="willow"?.85f:.12f):(kind=="pine"?.08f:kind=="larch"?.55f:.35f);mesh.sprayPairs=4;
         CanopyPhenology phenology;if(season=="winter")phenology.broadleafCoverPermille=0;

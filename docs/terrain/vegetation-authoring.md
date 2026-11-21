@@ -168,3 +168,14 @@ neighbor state. Choose the cell spacing used by native scatter. This guarantees
 local cell diversity, not arbitrary-distance nearest-neighbor exclusion after
 manual moving/deleting of entities. Palette size is bounded to16species and
 8variants per species. Existing conifer export and catalog fields stay compatible.
+
+### Basal root skin
+
+Botanical exports enable `ArborMeshSettings::organicRootFlare`: seeded asymmetric
+buttresses are part of the trunk's continuous bark skin, with a buried open foot
+ring and a curved shoulder. Trunk sampling uses48/32/16sides across detail tiers;
+twig sampling stays independently bounded. Derived surface normals match the
+shape. This is cosmetic basal anatomy, separate from conditional exposed-root
+models and deterministic soil support/erosion/fall ownership. It does not fit
+arbitrary terrain slopes per instance. Root UV stretch and junction finishing
+still need authoring QA; an organic skin alone is not final art acceptance.
