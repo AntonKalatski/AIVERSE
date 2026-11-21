@@ -807,7 +807,7 @@ void BwAI::stateIo(Archive& a) {
     ioVec(a, casters_, [&](Caster& k) { io(a, k.ability); io(a, k.slot); io(a, k.kind); io(a, k.timer); io(a, k.heat); io(a, k.a); io(a, k.b); io(a, k.n); });
     ioVec(a, moveTasks_, [&](MoveTask& t) { io(a, t.from); io(a, t.owner); io(a, t.timer); io(a, t.duration); io(a, t.percent); });
     io(a, lastGroupId_);
-    ioVec(a, ms_, [&](PS& p) { game::io(a, p); });
+    ioVec(a, ms_, [&](PS& p) { io(a, p); });  // unqualified: game::io(AuthoredPose&) must not hide the local PS overload
     io(a, ownPoints_);
     io(a, debut_); io(a, debutPlaying_); io(a, debutCursor_);
     io(a, trigGroupOn_); io(a, trigArrived_);
