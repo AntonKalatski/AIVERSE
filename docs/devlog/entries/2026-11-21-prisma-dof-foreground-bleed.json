@@ -1,0 +1,48 @@
+{
+  "id": "2026-11-21-prisma-dof-foreground-bleed",
+  "date": "2026-11-21",
+  "system": "prisma",
+  "title": "Глубина резкости: размытый передний план больше не обрезан",
+  "summary": "Размытые предметы на переднем плане теперь растекаются на фон, как в настоящем объективе, а не заканчиваются резкой линией, будто вырезаны ножницами. Фон по-прежнему не затекает на резкий передний план.",
+  "body": [
+    "Раньше размытие у границы двух глубин отбрасывало всё, что лежит по другую сторону: ближний занавес или плющ оставались с чётким контуром на размытом фоне, а рядом появлялись двоящиеся пятна. Теперь каждая точка кадра собирает свет с соседей, чьё пятно размытия до неё дотягивается. Ближние размытые предметы перекрывают фон и резкую зону, а на их краю просвечивает то, что за ними.",
+    "Правило симметрично для резкости: фон не может затечь на предмет, который резче его, поэтому резкий объект в фокусе сохраняет чистый край. Изменение касается метрического режима глубины резкости PRISMA — его использует объектив LENS и настройка metricFocus."
+  ],
+  "status": "done",
+  "verified": "Сравнение до/после снято на Mac (Metal) в сцене Sponza тем же кадром: объектив 35 мм f/1.4, фокус 4 м.",
+  "limits": "Компиляция нового шейдера на OpenGL, WebGL и Vulkan ещё не проверена. Проход стал дороже (32 выборки вместо 8 на пиксель), на слабых мобильных GPU цену не мерили.",
+  "branch": "main",
+  "commit": "6f7e1861c",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-prisma-dof-foreground-bleed/before.jpg",
+      "caption": "До: размытый плющ и колонна обрезаны резким контуром, рядом двоится фон",
+      "captionEn": "Before: the blurred ivy and column end on a hard outline, with a ghosted background next to it"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-prisma-dof-foreground-bleed/after.jpg",
+      "caption": "После: передний план мягко растекается на фон, двоения нет",
+      "captionEn": "After: the foreground softly spreads over the background, no ghosting"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-prisma-dof-foreground-bleed/full.jpg",
+      "caption": "Весь кадр после исправления: фокус 4 м, ближний синий занавес и даль размыты",
+      "captionEn": "The whole frame after the fix: focus at 4 m, the near blue curtain and the distance are blurred"
+    }
+  ],
+  "links": [
+    {
+      "title": "Handoff",
+      "href": "docs/handoffs/prisma-stage-dof-foreground-bleed-2026-11-21.md"
+    }
+  ],
+  "author": "lens",
+  "titleEn": "Depth of field: the blurred foreground is no longer cut out",
+  "summaryEn": "Blurred foreground objects now spread over the background as in a real lens instead of ending on a hard line, as if cut out with scissors. The background still does not bleed onto a sharp foreground.",
+  "bodyEn": [
+    "Before, blur at a depth boundary threw away everything on the other side: a near curtain or ivy kept a crisp outline over a blurred background, with ghosted patches next to it. Now every point of the frame gathers light from neighbours whose blur disc reaches it. Near blurred objects cover the background and the sharp zone, and what is behind them shows through their edge.",
+    "The rule respects sharpness: the background cannot bleed onto an object sharper than itself, so a sharp object in focus keeps a clean edge. The change is in PRISMA's metric depth of field, used by the LENS lens and the metricFocus setting."
+  ],
+  "verifiedEn": "A before/after pair was rendered on a Mac (Metal) in Sponza with the same frame: a 35 mm f/1.4 lens focused at 4 m.",
+  "limitsEn": "The new shader has not been compiled on OpenGL, WebGL or Vulkan yet. The pass is more expensive (32 samples per pixel instead of 8); its cost on weak mobile GPUs has not been measured."
+}

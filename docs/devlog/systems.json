@@ -254,7 +254,12 @@
       "where": "main",
       "tagline": "Вода, которая ведёт себя как вода",
       "essence": "Реки, озёра и океан, плавучесть и сопротивление, брызги, волны и след от движения.",
-      "cover": null,
+      "cover": {
+        "src": "docs/devlog/media/systems/nereid-alpine-river.jpg",
+        "caption": "NEREID в Alpine River Valley: река с течением через изгиб, мутность и глубина дают бирюзовый цвет, пена по линии берега",
+        "captionEn": "NEREID in Alpine River Valley: the river flows through a bend, turbidity and depth give the teal colour, foam along the shoreline",
+        "approved": true
+      },
       "coverBrief": "Река NEREID в Alpine River Valley: течение через изгибы, пена и белая вода на перекатах, камни в потоке — снято через LENS без интерфейса редактора; лучше коротким видео.",
       "article": "docs/nereid/ARCHITECTURE.md",
       "started": "2026-11-18",
@@ -559,10 +564,10 @@
       "tagline": "Камеры и кинематографичный кадр",
       "essence": "Сцены камер как данные: несколько камер, расписание кадров, захват изображения и авторинг через MCP и Studio.",
       "cover": {
-        "src": "docs/devlog/media/systems/lens-sponza-dof.jpg",
-        "caption": "LENS: объектив 35 мм f/1.4, фокус 4 м на занавесе; во врезке вторая камера той же сцены",
-        "captionEn": "LENS: 35 mm f/1.4 lens focused at 4 m on the curtain; the inset is a second camera on the same scene",
-        "approved": true
+        "src": "docs/devlog/media/systems/lens-sponza-arcade.jpg",
+        "caption": "LENS: объектив 35 мм f/1.4, фокус 4 м на зелёном занавесе; во врезке вторая камера той же сцены",
+        "captionEn": "LENS: 35 mm f/1.4 lens focused at 4 m on the green curtain; the inset is a second camera on the same scene",
+        "approved": false
       },
       "coverBrief": "Кинематографичный кадр, снятый LENS: глубина резкости, выверенная композиция, видно, что это работа камеры, а не скриншот редактора.",
       "article": "docs/camera-system.md",

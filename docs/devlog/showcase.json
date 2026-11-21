@@ -3,6 +3,17 @@
   "note": "The main page shows frames[0] full-width as 'Кадр движка'. approved: only the user sets true. Agents never edit frames: they add proposals to candidates and tell the user.",
   "frames": [
     {
+      "src": "docs/devlog/media/showcase/2026-11-21-alpine-river.jpg",
+      "title": "Alpine Valley: река с гор в реальном времени",
+      "titleEn": "Alpine Valley: a mountain river in real time",
+      "caption": "Низкая камера над рекой NEREID: течение от гор, бирюзовая толща воды, песчаные берега и хвойный лес TerraWeave под штатным небом PhysicalSky. Настоящий кадр Metal из редактора без интерфейса.",
+      "captionEn": "A low camera over the NEREID river: flow from the mountains, teal water depth, sandy banks and the TerraWeave conifer forest under the stock PhysicalSky. A real Metal frame from the editor, no UI.",
+      "system": "nereid",
+      "date": "2026-11-21",
+      "entry": "2026-11-21-nereid-turbidity",
+      "approved": true
+    },
+    {
       "src": "docs/devlog/media/showcase/2026-11-20-alpine-valley.jpg",
       "title": "Alpine Valley: горная долина в реальном времени",
       "caption": "Авторская сцена: 662 хвойных дерева, камни TerraWeave на берегах, трава и снег под штатным небом PhysicalSky с объёмными облаками. Настоящий кадр Metal без ретуши.",
