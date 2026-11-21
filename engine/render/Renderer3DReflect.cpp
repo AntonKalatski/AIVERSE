@@ -59,7 +59,7 @@ void Renderer3D::renderReflection() {
         reflectionPlaneValid_ = true;
         dev_->setPipeline(litPipe_);
         uploadFrameUniforms(false);
-        dev_->setTexture(0, shadowMap_);
+        bindShadowMap(0);
         lights.bind(2, 1, 2);   // not ready yet: binds black for the reflection slot
         bindTraceTextures();    // height field (terrain shadows in the mirror image), scene placeholders
         dev_->setTexture(6,white_);

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeftRight, Loader2, RefreshCw } from 'lucide-react';
 import { invoke } from '../bridge';
-import type { StudioProjectState, StudioSnapshot, StudioStats } from '../types';
-import { jsonDiff, previewValue, type JsonChange } from './jsonDiff';
+import type { StudioGpuStats, StudioProjectState, StudioSnapshot, StudioStats } from '../types';
+import { formatBytes, frameSummary, jsonDiff, previewValue, type JsonChange } from './jsonDiff';
 import './ToolPanel.css';
 import './ProjectToolPanels.css';
 
@@ -93,6 +93,80 @@ export function SnapshotDiffPanel({ snapshot }: Ctx) {
         <tr key={i} className={'diff__' + c.kind}><td>{c.kind === 'added' ? '+' : c.kind === 'removed' ? '−' : '~'} {c.path}</td>
           <td>{previewValue(c.before)}</td><td>{previewValue(c.after)}</td></tr>)}</tbody></table>}
       {!changes && <p className="ptp__hint">Compares two JSON files of the project path by path (numbers within 1e-6 count as equal). Read-only.</p>}
+    </div>
+  </div>;
+}
+
+/** Frame Capture: the Scene's last 240 frames (time between frames, draw calls), live or frozen with Capture. */
+export function FrameCapturePanel({ snapshot }: Ctx) {
+  const path = snapshot?.project.path ?? '';
+  const [live, setLive] = useState<StudioGpuStats | null>(null);
+  const [frozen, setFrozen] = useState<StudioGpuStats | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!path || frozen) return;
+    const read = () => void invoke('studio.gpuStats', {}).then(s => { setLive(s); setError(s.error ?? ''); }).catch(e => setError(message(e)));
+    read(); const t = window.setInterval(read, 500); return () => window.clearInterval(t);
+  }, [path, frozen]);
+  if (!path) return <div className="tool__empty">Open a project to capture Scene frames.</div>;
+  const data = frozen ?? live;
+  const ms = (data?.history ?? []).map(h => h[0]), draws = (data?.history ?? []).map(h => h[1]);
+  const sum = frameSummary(ms);
+  const W = 480, H = 90, top = Math.max(33.4, sum.max * 1.1);
+  const line = ms.map((v, i) => `${(i / Math.max(1, ms.length - 1)) * W},${H - (v / top) * H}`).join(' ');
+  const y16 = H - (16.7 / top) * H, y33 = H - (33.3 / top) * H;
+  return <div className="ptp">
+    <div className="ptp__edhead">
+      <button type="button" className={'au-button au-button--sm' + (frozen ? '' : ' au-button--primary')} onClick={() => setFrozen(frozen ? null : live)}>
+        {frozen ? 'Resume live' : 'Capture'}</button>
+      <span className="ptp__meta">{frozen ? 'Captured' : 'Live'} · {sum.count} frames · draw calls {data?.drawCalls ?? '—'}</span>
+    </div>
+    {error && <div className="tool__error" role="alert">{error}</div>}
+    <div className="ptp__scroll">
+      <div className="stats__cards">
+        <div><b>{sum.avg ? (1000 / sum.avg).toFixed(0) : '—'}</b><span>fps (average)</span></div>
+        <div><b>{sum.avg.toFixed(1)}</b><span>ms average</span></div>
+        <div><b>{sum.p95.toFixed(1)}</b><span>ms 95th percentile</span></div>
+        <div><b>{sum.max.toFixed(1)}</b><span>ms worst</span></div>
+        <div><b>{draws.length ? Math.max(...draws) : '—'}</b><span>draw calls (max)</span></div>
+      </div>
+      <svg className="frames__chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Frame times">
+        <line x1={0} x2={W} y1={y16} y2={y16} className="frames__budget"/><line x1={0} x2={W} y1={y33} y2={y33} className="frames__budget"/>
+        <polyline points={line} className="frames__line"/>
+      </svg>
+      <p className="ptp__hint">Time between Scene frames (CPU side, includes waiting for the display); lines at 60 and 30 fps. Draw calls of the Scene renderer. Not a GPU command capture.</p>
+    </div>
+  </div>;
+}
+
+/** Texture Resources: live GPU textures of the Scene renderer with a format-based size estimate. */
+export function TextureResourcesPanel({ snapshot }: Ctx) {
+  const path = snapshot?.project.path ?? '';
+  const [gpu, setGpu] = useState<StudioGpuStats['gpu'] | null>(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('');
+  const read = useCallback(() => void invoke('studio.gpuStats', { textures: true }).then(s => { setGpu(s.gpu ?? null); setError(s.error ?? ''); })
+    .catch(e => setError(message(e))), []);
+  useEffect(() => { if (path) read(); }, [path, read]);
+  if (!path) return <div className="tool__empty">Open a project to list GPU textures.</div>;
+  const rows = [...(gpu?.textures ?? [])].sort((a, b) => b.bytes - a.bytes)
+    .filter(t => !filter || t.format.toLowerCase().includes(filter.toLowerCase()) || `${t.width}x${t.height}`.includes(filter));
+  return <div className="ptp">
+    <div className="ptp__edhead">
+      <button type="button" className="au-button au-button--sm" onClick={read}><RefreshCw size={13}/>Refresh</button>
+      <span className="ptp__meta">{gpu ? `${gpu.textures.length} textures · ${formatBytes(gpu.totalBytes)} estimated` : ''}</span>
+      <input className="au-input" placeholder="Filter (format, 1024x1024)" value={filter} onChange={e => setFilter(e.target.value)}/>
+    </div>
+    {error && <div className="tool__error" role="alert">{error}</div>}
+    <div className="ptp__scroll">
+      <table className="ptp__table ptp__audit">
+        <thead><tr><th>#</th><th>Size</th><th>Format</th><th>Mips</th><th>Kind</th><th>Estimate</th></tr></thead>
+        <tbody>{rows.slice(0, 1000).map(t => <tr key={t.id}>
+          <td>{t.id}</td><td>{t.width}×{t.height}{t.depth > 1 ? `×${t.depth}` : ''}{t.layers > 1 ? ` [${t.layers}]` : ''}</td>
+          <td>{t.format}</td><td>{t.mips}</td><td>{t.renderTarget ? 'target' : 'sampled'}{t.samples > 1 ? ` ×${t.samples}` : ''}</td>
+          <td className="stats__num">{formatBytes(t.bytes)}</td></tr>)}</tbody>
+      </table>
+      <p className="ptp__hint">Estimated from format and size (tightly packed); drivers may pad. Scene renderer only.</p>
     </div>
   </div>;
 }

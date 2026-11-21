@@ -278,6 +278,9 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         if (d.tint.w < 0.99f) d.flags |= kDrawFadeDepth;   // a faded solid: in front of the ground layers drawn later
     }
     if (L.transparent) d.flags |= kDrawTransparent;
+    // Weak mobile GPUs (Low + mobile filter): units ground with contact blobs (RtsLights) and skip the shadow
+    // map; only structures cast. Adreno 610: the shadow pass redrew ~500 skinned units, ~10 ms a frame.
+    if (!t.structure && !L.air && r.blobUnitShadows()) d.flags |= kDrawNoCastShadow;
     if (tintOverride) { d.tint = *tintOverride; d.flags = kDrawNoCastShadow; d.flash = 0; d.dissolve = 0; }
     // The editor explicitly enables mesh outlines for its selection, independent
     // of game overlay configuration. Hover remains controlled by game overlays.

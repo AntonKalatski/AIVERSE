@@ -292,21 +292,69 @@ void authoredEntityWorkflow() {
    }
    // Terrain brush: a stroke of several dabs is one History step; Stats counts the map.
    {
-       AIVERSE_TEST_CHECK(call("studio.terrainBrush",R"({"op":"nope"})").has("error"));
-       const auto armed=call("studio.terrainBrush",R"({"armed":true,"op":"raise","radius":3,"strength":1})");
+       AIVERSE_TEST_CHECK(call("studio.sceneBrush",R"({"op":"nope"})").has("error"));
+       const auto armed=call("studio.sceneBrush",R"({"armed":true,"kind":"terrain","op":"raise","radius":3,"strength":1})");
        AIVERSE_TEST_CHECK(armed["result"].getBool("armed"));
        const size_t depth=session.workspace().map.undoDepth();
        std::string err;
-       AIVERSE_TEST_CHECK(session.terrainStrokeBegin(4,4,&err));
-       AIVERSE_TEST_CHECK(session.terrainStrokeDab(8,4,&err) && session.terrainStrokeDab(12,4,&err));
-       session.terrainStrokeEnd();
+       AIVERSE_TEST_CHECK(session.strokeBegin(4,4,&err));
+       AIVERSE_TEST_CHECK(session.strokeDab(8,4,&err) && session.strokeDab(12,4,&err));
+       AIVERSE_TEST_CHECK(session.strokeEnd(&err));
        AIVERSE_TEST_CHECK(session.workspace().map.undoDepth()==depth+1);
        const auto steps=call("studio.history")["result"]["steps"];
        AIVERSE_TEST_CHECK(steps.size()>0 && steps[steps.size()-1].getStr("label")=="Terrain brush");
        AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.undoDepth()==depth);
-       call("studio.terrainBrush",R"({"armed":false})");
+       // Object scatter: three dabs far apart place three entities, one History step "Scatter objects".
+       const size_t entities=session.workspace().map.data.entities.size(),depth2=session.workspace().map.undoDepth();
+       AIVERSE_TEST_CHECK(call("studio.sceneBrush",R"({"kind":"objects","type":"tree","radius":2})")["result"].getStr("kind")=="objects");
+       AIVERSE_TEST_CHECK(session.strokeBegin(5,5,&err) && session.strokeDab(10,5,&err) && session.strokeDab(15,5,&err) && session.strokeEnd(&err));
+       AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==entities+3 && session.workspace().map.undoDepth()==depth2+1);
+       const auto steps2=call("studio.history")["result"]["steps"];
+       AIVERSE_TEST_CHECK(steps2[steps2.size()-1].getStr("label")=="Scatter objects");
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.data.entities.size()==entities);
+       // Path tool without a road type refuses to start.
+       call("studio.sceneBrush",R"({"kind":"road","roadType":""})");
+       AIVERSE_TEST_CHECK(!session.strokeBegin(5,5,&err) && !err.empty());
+       call("studio.sceneBrush",R"({"armed":false,"kind":"terrain"})");
        const auto stats=call("studio.stats");
        AIVERSE_TEST_CHECK(!stats.has("error") && stats["result"]["entities"].integer()==int64_t(session.workspace().map.data.entities.size()));
+   }
+   // Keep play changes: positions by index + type, wrong type skipped, dead removed only on request; one undo step.
+   {
+       const auto& doc=session.workspace().map;
+       const std::string type0=doc.data.entities[0].type;
+       const size_t count=doc.data.entities.size(),depth=doc.undoDepth();
+       const std::string body=std::string(R"({"entities":[{"index":0,"type":")")+type0+R"(","x":7.5,"z":9.25},{"index":999,"type":"__nope__","x":1,"z":1},{"index":0,"removed":false}]})";
+       const auto kept=call("studio.keepPlayChanges",body.c_str());
+       AIVERSE_TEST_CHECK(!kept.has("error") && kept["result"]["moved"].integer()==1 && kept["result"]["skipped"].integer()==1 && kept["result"]["removed"].integer()==0);
+       AIVERSE_TEST_CHECK(doc.data.entities[0].x==7.5f && doc.data.entities[0].z==9.25f && doc.data.entities.size()==count && doc.undoDepth()==depth+1);
+       const auto steps=call("studio.history")["result"]["steps"];
+       AIVERSE_TEST_CHECK(steps[steps.size()-1].getStr("label")=="Keep play changes");
+       if(count>=2){
+           const std::string last=std::string(R"({"entities":[{"index":)")+std::to_string(count-1)+R"(,"removed":true}],"removeDead":true})";
+           const auto removed=call("studio.keepPlayChanges",last.c_str());
+           AIVERSE_TEST_CHECK(removed["result"]["removed"].integer()==1 && doc.data.entities.size()==count-1);
+           AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && doc.data.entities.size()==count);
+       }
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && doc.undoDepth()==depth);
+   }
+   // Extensions: the example script gives widgets, an action command, a change command and a gizmo.
+   {
+       AIVERSE_TEST_CHECK(!call("studio.extensions")["result"].getBool("exists"));
+       const auto made=call("studio.extensionCreate");
+       AIVERSE_TEST_CHECK(!made.has("error") && made["result"]["widgets"].size()==4 && made["result"]["gizmos"].size()==1);
+       AIVERSE_TEST_CHECK(call("studio.extensionCreate").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.extensionAction",R"({"id":"inspector"})")["result"]["command"].getStr("id")=="inspector");
+       AIVERSE_TEST_CHECK(call("studio.extensionAction",R"({"id":"radius","value":25})")["result"]["command"].getStr("command")=="status");
+       AIVERSE_TEST_CHECK(session.extensionGizmos()[0]["radius"].toDouble()==25);
+   }
+   // Attachments layout: invalid entries are refused, a valid one round-trips through the codec.
+   {
+       AIVERSE_TEST_CHECK(!call("studio.attachmentsGet")["result"].getBool("exists"));
+       AIVERSE_TEST_CHECK(call("studio.attachmentsSet",R"({"document":{"parent":"content/a.glb","attachments":[{"model":"content/b.glb"}]}})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.attachmentsGet",R"({"path":"../x.json"})").has("error"));
+       const auto saved=call("studio.attachmentsSet",R"({"document":{"parent":"content/a.glb","attachments":[{"model":"content/b.glb","socket":"hand_r","id":"sword"}]}})");
+       AIVERSE_TEST_CHECK(!saved.has("error") && saved["result"].getBool("exists") && saved["result"]["document"]["attachments"][0].getStr("socket")=="hand_r");
    }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {

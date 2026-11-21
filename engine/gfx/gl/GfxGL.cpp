@@ -1027,8 +1027,11 @@ public:
     }
 
     // ---------- shaders ----------
+    void setGlslPrelude(const std::string& defines) override { glslPrelude_ = defines; }
+    std::string glslPrelude_;
     GLuint compile(GLenum type, const char* body) {
         std::string src = info_.backend == Backend::GL33 ? "#version 330 core\n" : "#version 300 es\nprecision highp float;\nprecision highp int;\n";
+        src += glslPrelude_;
         src += body;
         GLuint s = glCreateShader(type);
         const char* p = src.c_str();

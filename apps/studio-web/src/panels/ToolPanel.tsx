@@ -5,9 +5,14 @@ import type { StudioSnapshot } from '../types';
 import { buildParams, fieldDraft, opLabel, resultLine, schemaFields, stateOps, type ToolField, type ToolOpInfo } from './toolSchema';
 import { TOOL_PANELS, type ToolPanelId } from './toolPanels';
 import JsonTree from './JsonTree';
-import TerrainBrushBar from './TerrainBrushBar';
+import SceneBrushBar, { type BrushKind } from './SceneBrushBar';
 import './ProjectToolPanels.css';
 import './ToolPanel.css';
+
+/** Panels with a Scene brush and the brush tools each offers. */
+const BRUSHES: Partial<Record<ToolPanelId, BrushKind[]>> = {
+  terrain: ['terrain', 'paint', 'objects'], tiles: ['tiles'], fields: ['field'], roads: ['road'], water: ['river'],
+};
 
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 
@@ -122,7 +127,7 @@ export default function ToolPanel({ panel, snapshot, commitSnapshot }: {
     </div>
     {error && <div className="tool__error" role="alert">{error}</div>}
     <div className="tool__scroll">
-      {panel === 'terrain' && <TerrainBrushBar/>}
+      {BRUSHES[panel] && <SceneBrushBar kinds={BRUSHES[panel]!}/>}
       {Object.entries(state).map(([name, value]) => <div key={name} className="tool__state">
         <JsonTree value={value} name={opLabel(name, spec.prefix)} open/>
       </div>)}

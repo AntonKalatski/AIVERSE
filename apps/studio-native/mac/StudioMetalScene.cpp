@@ -718,6 +718,60 @@ void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int heig
     constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
     for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
 }
+Json StudioMetalScene::textureResources() const {
+    static const char* formats[]={"RGBA8","R8","Depth","RGBA32F","ETC2_RGB8","ETC2_RGBA8","BC1","BC3","BC7","ASTC_4x4","ASTC_6x6",
+        "RGBA8_sRGB","RGBA16F","BC4","BC5","EAC_R11","RG8","R16F","RG16F","R32F","RG32F","BC6H_UFloat","BC6H_SFloat",
+        "BC1_sRGB","BC3_sRGB","BC7_sRGB","ETC2_RGB8_sRGB","ETC2_RGBA8_sRGB","ASTC_4x4_sRGB","ASTC_6x6_sRGB"};
+    Json list=Json::array();
+    size_t total=0;
+    for(const auto& t:device_->textureResources()){
+        Json o=Json::object();
+        const size_t f=size_t(t.format);
+        o.set("id",Json::number(int64_t(t.handle.id)));
+        o.set("format",Json::string(f<sizeof(formats)/sizeof(formats[0])?formats[f]:"?"));
+        o.set("width",Json::number(int64_t(t.width)));o.set("height",Json::number(int64_t(t.height)));
+        o.set("depth",Json::number(int64_t(t.depth)));o.set("layers",Json::number(int64_t(t.arrayLayers)));
+        o.set("mips",Json::number(int64_t(t.mipLevels)));o.set("samples",Json::number(int64_t(t.sampleCount)));
+        o.set("renderTarget",Json::fromBool(t.renderTarget));o.set("bytes",Json::number(int64_t(t.estimatedBytes)));
+        total+=t.estimatedBytes;
+        list.push(std::move(o));
+    }
+    Json out=Json::object();
+    out.set("textures",list);out.set("totalBytes",Json::number(int64_t(total)));
+    return out;
+}
+void StudioMetalScene::drawBrushCursor(const RTSCamera& view,int width,int height) {
+    const float W=float(width),H=float(height);
+    Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.6f};
+    const float px=std::max(1.0f,std::min(W,H)/800.0f);   // points → framebuffer pixels (approx.)
+    for(const auto& s:overlayShapes_){
+        const uint32_t color=rgba(s.r,s.g,s.bl,235);
+        float2 a,b;
+        if(!view.worldToScreen(s.a,W,H,a))continue;
+        const float t=s.thickness*px;
+        if(s.kind==1&&view.worldToScreen(s.b,W,H,b))o.segment(a.x,a.y,b.x,b.y,t,color);
+        else if(s.kind==2||s.kind==3){
+            const float r=(s.kind==2?s.radius:std::max(1.f,s.radius))*px;constexpr int N=32;
+            for(int i=0;i<N;++i){
+                const float a0=float(i)/N*6.2831853f,a1=float(i+1)/N*6.2831853f;
+                o.segment(a.x+std::cos(a0)*r,a.y+std::sin(a0)*r,a.x+std::cos(a1)*r,a.y+std::sin(a1)*r,s.kind==3?r:t,color);
+            }
+        }
+    }
+    if(!brushVisible_||brushRadius_<=0)return;
+    const float w=std::max(1.5f,std::min(W,H)*0.002f);
+    constexpr int N=48;
+    float2 prev{};bool prevOk=false;
+    for(int i=0;i<=N;++i){
+        const float a=float(i)/N*6.2831853f;
+        const float3 p{brushCenter_.x+std::cos(a)*brushRadius_,brushCenter_.y+0.05f,brushCenter_.z+std::sin(a)*brushRadius_};
+        float2 s;const bool ok=view.worldToScreen(p,W,H,s);
+        if(ok&&prevOk)o.segment(prev.x,prev.y,s.x,s.y,w,rgba(120,200,255,220));
+        prev=s;prevOk=ok;
+    }
+    float2 c;
+    if(brushVisible_&&view.worldToScreen(brushCenter_,W,H,c)){o.segment(c.x-4,c.y,c.x+4,c.y,w,rgba(120,200,255,220));o.segment(c.x,c.y-4,c.x,c.y+4,w,rgba(120,200,255,220));}
+}
 void StudioMetalScene::setSnap(bool enabled,float move,float rotate,float scale) {
     snapEnabled_=enabled;
     if(std::isfinite(move)&&move>0)snapMove_=std::clamp(move,0.001f,1000.0f);
@@ -1735,6 +1789,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
     if(gizmosVisible_)drawSelectionBox(view,framebufferWidth,framebufferHeight);
+    drawBrushCursor(view,framebufferWidth,framebufferHeight);
     drawTransformGizmo(view,framebufferWidth,framebufferHeight);
     if(orientationGizmo_&&gizmosVisible_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
     if(marquee_.on) {
@@ -1825,6 +1880,10 @@ uint64_t StudioMetalScene::frameSignature(int width,int height,const editor::Map
     value(marquee_.on);value(marquee_.x0);value(marquee_.y0);value(marquee_.x1);value(marquee_.y1);
     value(wind_.revision);value(wind_.enabled);value(wind_.speed);value(wind_.directionDeg);
     value(wind_.gust);value(wind_.scale);value(wind_.debug);
+    value(brushVisible_);vec(brushCenter_);value(brushRadius_);
+    value(overlayShapes_.size());
+    for(const auto& shape:overlayShapes_){value(shape.kind);vec(shape.a);vec(shape.b);value(shape.radius);
+        value(shape.thickness);value(shape.r);value(shape.g);value(shape.bl);}
     value(lightingRevision_);value(terrainRevision_);
     value(modelInstances_.size());value(documentModels_.size());value(loadProgress_.done);
     return h;
