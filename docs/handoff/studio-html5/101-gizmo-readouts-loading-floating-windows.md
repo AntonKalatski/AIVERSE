@@ -14,23 +14,31 @@ Branch `feature/studio-html5`. Covers the work after handoff 100 (commits b5bc44
   session access); `project.loading` events drive a Unity/Unreal-style progress dialog, then models stream
   into the scene with a 30 ms per-frame budget and a strip in the header/status bar.
 - **Assets folder tree is resizable** (splitter, width in `aiverse.studio.assets.treeWidth`).
-- **Floating panel windows** (this stage): any dock tab can live in its own OS window, e.g. on a second
-  monitor.
-  - Drag a tab out of the main window (drop outside it), or use ⋮ / tab right-click → *Open in New Window*,
-    or ⌘K → *Open … in New Window*.
-  - Native: `studio.windowOpen {panel,title,ifOutside,x,y,width,height}` creates an NSWindow + WKWebView
-    loading `index.html?panel=<id>`; `studio.windowClose {panel}`; `studio.windowBroadcast {event:"ui.*"}`.
-    All WebViews share one bridge and one `StudioSession`; events go to every WebView, synchronous replies
-    to the sender, asynchronous replies to all (each window uses its own request-id range, `bridge.ts`).
+- **Floating windows** (two commits): any dock tab can live in its own OS window, e.g. on a second
+  monitor, and each floating window is a small dock of its own (several tabs, splits).
+  - Out: drag a tab out of any Studio window and drop it outside all of them, or ⋮ / tab right-click →
+    *Open in New Window*, or ⌘K → *Open … in New Window*.
+  - Between windows: drag a tab onto another Studio window's dock (tab strip, centre or edge zones) — it moves
+    there; this is also how a tab goes back into the main window. ⋮ → *Move to Main Window* does the same.
+    Closing a floating window docks all its tabs back; Window → *Dock All Floating Windows*.
+  - Native: `studio.windowOpen {window,panels,title,ifOutside,x,y,width,height}` creates an NSWindow + WKWebView
+    loading `index.html?window=<key>&panels=a,b`; `studio.windowClose {window}`; `studio.windowTitle {title}`
+    (a float names itself after its active tabs); `studio.windowBroadcast {event:"ui.*"}`. All WebViews share
+    one bridge and one `StudioSession`; events go to every WebView, synchronous replies to the sender,
+    asynchronous replies to all (each window uses its own request-id range, `bridge.ts`). `ifOutside` opens
+    only when the mouse is outside every Studio window.
+  - Cross-window protocol (`ui.*`): `panelTaken {panel,by}` (every other window drops the tab),
+    `floatPanels {window,panels}` (float → main), `showPanel`/`dockPanel` (float → main), `activatePanel`
+    (main → float). Tabs carry `application/x-aiverse-studio-tab` and `text/plain aiverse-panel:<id>`.
   - Scene and Game work floating: the Metal view moves into the window whose WebView reports its rect
     (`adoptNativeView`); closing that window moves it back to the main window.
-  - Closing a floating window (or its *Dock* button) docks the panel back (`window.floatClosed`). The main
-    window keeps the list and frames (`window.floatFrame`) in `aiverse.studio.floating` and reopens them on
-    the next launch; a floating panel is never also in the dock of any workspace. Closing the main window
-    closes the floats but keeps the list.
+  - Persistence: main keeps `[{key,panels,frame}]` in `aiverse.studio.floating.v2` and reopens them on launch;
+    each float keeps its own arrangement in `aiverse.studio.float.<key>`. A panel shown by a float is never
+    also in the main dock of any workspace. Closing the main window closes the floats but keeps the list.
   - Selection made in a floating window refreshes the others (`selection.changed` when floats exist).
-- Web: `src/floating.ts` (+ `tests/floating.test.mjs`), `FloatingShell.css`, App panel-only mode,
-  `NestedDockWorkspace` `onFloat`; mock returns `opened:false` (browser preview stays single-window).
+- Web: `src/floating.ts` (+ `tests/floating.test.mjs`), `FloatingShell.css`, App floating mode,
+  `NestedDockWorkspace` `onFloat`/`onAdopt`/`onDockBack`/`compact`; mock returns `opened:false`
+  (the browser preview stays single-window).
 
 ## Verified
 - tsc, `npm run test:web` (all suites, incl. floating), `tools/studio/test_scene_tools.py`.
@@ -42,5 +50,4 @@ Branch `feature/studio-html5`. Covers the work after handoff 100 (commits b5bc44
 - Rotation sector/angle/ticks, move/scale readouts, loading dialog/strip, tree splitter on screen.
 
 ## Next
-- Dock a floating panel back by dragging it into the main window (today: close or *Dock*).
-- Several tabs per floating window.
+- On-screen pass of everything above on a two-monitor setup.

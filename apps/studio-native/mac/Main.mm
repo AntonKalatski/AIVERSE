@@ -526,30 +526,41 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     if (!panel || closingFloats_) return;
     const NSRect f=window.frame;
     aiverse::Json payload=aiverse::Json::object();
-    payload.set("panel",aiverse::Json::string(panel.UTF8String));
+    payload.set("window",aiverse::Json::string(panel.UTF8String));
     payload.set("x",aiverse::Json::number(double(f.origin.x),1));
     payload.set("y",aiverse::Json::number(double(f.origin.y),1));
     payload.set("width",aiverse::Json::number(double(f.size.width),1));
     payload.set("height",aiverse::Json::number(double(f.size.height),1));
     [self sendStudioEventPayload:"window.floatFrame" payload:payload];
 }
-// Undock a panel into its own OS window (any monitor). Frames are AppKit screen
-// coordinates; a missing or off-screen frame opens the window under the mouse.
+// Open a floating Studio window (its own small dock) on any monitor. Frames are
+// AppKit screen coordinates; a missing or off-screen frame opens it under the mouse.
 - (aiverse::Json)openFloatingPanel:(const aiverse::Json&)params {
     aiverse::Json result=aiverse::Json::object();
-    const std::string panel=params.getStr("panel"),title=params.getStr("title");
-    static const std::regex valid("^[a-z][a-zA-Z0-9-]{0,31}$");
-    if (!std::regex_match(panel,valid) || title.size()>64) throw std::runtime_error("Invalid floating panel");
-    NSString* key=[NSString stringWithUTF8String:panel.c_str()];
-    if (NSWindow* existing=floatWindows_[key]) {
+    const std::string key=params.getStr("window"),title=params.getStr("title");
+    static const std::regex validKey("^[a-z0-9-]{1,40}$"),validPanel("^[a-z][a-z0-9_]{0,31}$");
+    if (!std::regex_match(key,validKey) || title.size()>64) throw std::runtime_error("Invalid floating window");
+    std::string panels;
+    const auto& list=params["panels"].items();
+    for (size_t i=0;i<list.size() && i<16;++i) {
+        const std::string panel=list[i].str();
+        if (!std::regex_match(panel,validPanel)) throw std::runtime_error("Invalid floating panel");
+        panels+=(panels.empty()?"":",")+panel;
+    }
+    NSString* nsKey=[NSString stringWithUTF8String:key.c_str()];
+    if (NSWindow* existing=floatWindows_[nsKey]) {
         [existing makeKeyAndOrderFront:nil];
         result.set("opened",aiverse::Json::fromBool(true));return result;
     }
+    if (panels.empty()) throw std::runtime_error("A floating window needs a panel");
     const NSPoint mouse=[NSEvent mouseLocation];
-    if (params.getBool("ifOutside") && NSPointInRect(mouse,window_.frame)) {
-        result.set("opened",aiverse::Json::fromBool(false));return result;
+    if (params.getBool("ifOutside")) {
+        // Dropped over a Studio window: that window's dock handles it, nothing floats.
+        BOOL inside=NSPointInRect(mouse,window_.frame);
+        for (NSWindow* f in floatWindows_.allValues) inside=inside || NSPointInRect(mouse,f.frame);
+        if (inside) { result.set("opened",aiverse::Json::fromBool(false));return result; }
     }
-    const bool big=panel=="scene" || panel=="game";
+    const bool big=panels.find("scene")!=std::string::npos || panels.find("game")!=std::string::npos;
     NSRect frame=NSMakeRect(mouse.x-60,mouse.y-(big?560:520)+18,big?900:420,big?560:520);
     if (params["x"].isNumber() && params["y"].isNumber() && params["width"].isNumber() && params["height"].isNumber()) {
         const NSRect asked=NSMakeRect(params["x"].toDouble(),params["y"].toDouble(),
@@ -562,15 +573,15 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         backing:NSBackingStoreBuffered defer:NO];
     window.releasedWhenClosed=NO;
     [window setFrame:frame display:NO];
-    window.title=[NSString stringWithUTF8String:(title.empty()?panel:title).c_str()];
+    window.title=[NSString stringWithUTF8String:(title.empty()?std::string("AIVERSE"):title).c_str()];
     window.delegate=self;
     window.acceptsMouseMovedEvents=YES;
     window.tabbingMode=NSWindowTabbingModeDisallowed;
     window.appearance=window_.appearance ?: [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     WKWebView* web=[self makeWebViewWithFrame:window.contentView.bounds];
     [window.contentView addSubview:web];
-    floatWindows_[key]=window;floatWebs_[key]=web;
-    NSString* query=[@"?panel=" stringByAppendingString:key];
+    floatWindows_[nsKey]=window;floatWebs_[nsKey]=web;
+    NSString* query=[NSString stringWithFormat:@"?window=%@&panels=%s",nsKey,panels.c_str()];
     NSURL* url=devURL_ ? [NSURL URLWithString:query relativeToURL:devURL_]
                        : [NSURL URLWithString:[@"aiverse-studio://shell/index.html" stringByAppendingString:query]];
     [web loadRequest:[NSURLRequest requestWithURL:url]];
@@ -1246,7 +1257,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         }
         if (req.getStr("method")=="studio.windowZoom") { [(currentWeb_.window ?: window_) zoom:nil]; return; }
         if (req["id"].isNumber() && (req.getStr("method")=="studio.windowOpen" || req.getStr("method")=="studio.windowClose" ||
-                                     req.getStr("method")=="studio.windowBroadcast")) {
+                                     req.getStr("method")=="studio.windowBroadcast" || req.getStr("method")=="studio.windowTitle")) {
             aiverse::Json reply=aiverse::Json::object();
             reply.set("id",req["id"]);
             try {
@@ -1255,9 +1266,16 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 aiverse::Json result=aiverse::Json::object();
                 if (method=="studio.windowOpen") result=[self openFloatingPanel:params];
                 else if (method=="studio.windowClose") {
-                    NSWindow* f=floatWindows_[[NSString stringWithUTF8String:params.getStr("panel").c_str()]];
+                    NSWindow* f=floatWindows_[[NSString stringWithUTF8String:params.getStr("window").c_str()]];
                     result.set("closed",aiverse::Json::fromBool(f!=nil));
                     if (f) dispatch_async(dispatch_get_main_queue(),^{ [f close]; });
+                } else if (method=="studio.windowTitle") {
+                    // A floating window names itself after its active tab.
+                    const std::string title=params.getStr("title");
+                    NSWindow* w=currentWeb_.window;
+                    if (title.size()>64 || !w || w==window_) throw std::runtime_error("Invalid window title");
+                    w.title=[NSString stringWithUTF8String:title.c_str()] ?: @"AIVERSE";
+                    result.set("ok",aiverse::Json::fromBool(true));
                 } else {
                     // UI-only notifications between Studio windows (no Workspace access).
                     const std::string event=params.getStr("event");

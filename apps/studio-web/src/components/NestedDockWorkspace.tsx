@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppWindow, Columns2, MoreVertical, Rows2, X } from 'lucide-react';
 import { StudioContextMenu, type StudioMenuItem } from '../ui';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
@@ -17,22 +17,38 @@ interface Properties {
   renderPanel: (panel: StudioPanel) => ReactNode;
   /** Undock into an OS window. ifOutside: a tab drag ended outside every drop target. */
   onFloat?: (panel: StudioPanel, ifOutside: boolean) => void;
+  /** A tab dragged in from another Studio window was dropped here. */
+  onAdopt?: (panel: StudioPanel) => void;
+  /** Floating window: move a tab back into the main window. */
+  onDockBack?: (panel: StudioPanel) => void;
+  /** Floating window: no layout toolbar. */
+  compact?: boolean;
 }
 interface BranchProperties extends Properties {
   node: DockNode;
   dragging: StudioPanel | null;
   setDragging: (panel: StudioPanel | null) => void;
   stacks: DockStack[];
+  /** A tab from another Studio window is being dragged over this one. */
+  foreign: boolean;
+  setForeign: (value: boolean) => void;
   actionsPanel: StudioPanel | null;
   showActions: (panel: StudioPanel) => void;
 }
 const validPanel = (input: string): input is StudioPanel => (STUDIO_PANELS as readonly string[]).includes(input);
+// Tabs also travel between Studio windows (same origin); text/plain is the fallback.
+const TEXT_PREFIX = 'aiverse-panel:';
 function draggedPanel(event: DragEvent<HTMLElement>, dragging: StudioPanel | null): StudioPanel | null {
   const data = event.dataTransfer.getData(MIME);
-  return validPanel(data) ? data : dragging;
+  if (validPanel(data)) return data;
+  const text = event.dataTransfer.getData('text/plain');
+  if (text.startsWith(TEXT_PREFIX) && validPanel(text.slice(TEXT_PREFIX.length))) return text.slice(TEXT_PREFIX.length) as StudioPanel;
+  return dragging;
 }
+// Only the tab MIME (never plain text: asset drags carry text/plain too).
+const carriesTab = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes(MIME);
 function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
-                    stacks, onFloat }: BranchProperties & { node: DockStack }) {
+                    stacks, onFloat, onAdopt, onDockBack, foreign, setForeign }: BranchProperties & { node: DockStack }) {
   const [hover, setHover] = useState<DockEdge | 'center' | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; panel: StudioPanel } | null>(null);
   // Unity-style dock menu (also on tab right-click): close, split, move to another area.
@@ -44,6 +60,8 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
     return [
       ...(onFloat ? [{ id: 'float', label: 'Open in New Window', icon: <AppWindow size={13}/>,
         onSelect: () => onFloat(panel, false) } as StudioMenuItem] : []),
+      ...(onDockBack ? [{ id: 'dock-back', label: 'Move to Main Window', icon: <AppWindow size={13}/>,
+        onSelect: () => onDockBack(panel) } as StudioMenuItem] : []),
       { id: 'close', label: 'Close ' + STUDIO_PANEL_TITLES[panel], icon: <X size={13}/>, onSelect: () => setTree(t => closeTab(t, panel)) },
       split('right', 'Split Right', <Columns2 size={13}/>, true),
       split('left', 'Split Left', <Columns2 size={13}/>),
@@ -59,19 +77,23 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
     event.preventDefault();
     event.stopPropagation();
     const panel = draggedPanel(event, dragging);
+    setForeign(false);
     if (!panel) return;
+    const adopted = panelStack(tree, panel) === null; // came from another Studio window
     setTree(current => edge ? splitDockStack(current, panel, node.id, edge)
       : moveTab(current, panel, node.id, before));
     setDragging(null);
     setHover(null);
+    if (adopted) onAdopt?.(panel);
   };
-  const showEdges = dragging !== null && (panelStack(tree, dragging) !== node.id || node.tabs.length > 1);
+  const showEdges = foreign || (dragging !== null && (panelStack(tree, dragging) !== node.id || node.tabs.length > 1));
   return <section className="nested-stack" aria-label={'Dock '+node.id}
     onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect='move';}}
     onDrop={event => transfer(event)}>
     <div className="nested-tabs" role="tablist" aria-label={'Tabs '+node.id}>
       {node.tabs.map(panel => <div key={panel} draggable className={'nested-tab'+(node.active===panel?' nested-active':'')}
-        onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.effectAllowed='move';setDragging(panel);}}
+        onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.setData('text/plain',TEXT_PREFIX+panel);
+          event.dataTransfer.effectAllowed='move';setDragging(panel);}}
         onDragEnd={event=>{setDragging(null);setHover(null);
           // Dropped on no dock target: the native host floats it if the mouse left the window.
           if(event.dataTransfer.dropEffect==='none')onFloat?.(panel,true);}}
@@ -106,7 +128,7 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
   </section>;
 }
 function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging,
-                         stacks, actionsPanel, showActions, onFloat }: BranchProperties & { node: DockSplit }) {
+                         stacks, actionsPanel, showActions, onFloat, onAdopt, onDockBack, foreign, setForeign }: BranchProperties & { node: DockSplit }) {
   const horizontal=node.axis==='horizontal';
   const adjust=(ratio:number)=>setTree(t=>resizeDockSplit(t,node.id,ratio));
   const resize=(event: ReactPointerEvent<HTMLDivElement>)=>{
@@ -137,7 +159,7 @@ function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging
       event.preventDefault();adjust(event.key==='Home'?.12:.88);
     }
   };
-  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions,onFloat};
+  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions,onFloat,onAdopt,onDockBack,foreign,setForeign};
   return <div className={'nested-split '+(horizontal?'nested-horizontal':'nested-vertical')}>
     <div className="nested-child" style={{flex:node.ratio+' 1 0%'}}>
       <DockBranch node={node.first} {...shared}/>
@@ -154,8 +176,10 @@ function DockBranch(props: BranchProperties) {
   return props.node.kind==='stack' ? <DockTabs {...props} node={props.node}/>
     : <DockSplitNode {...props} node={props.node}/>;
 }
-export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloat }: Properties) {
+export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloat, onAdopt, onDockBack, compact }: Properties) {
   const [dragging,setDragging]=useState<StudioPanel|null>(null);
+  const [foreign,setForeign]=useState(false);
+  const foreignTimer=useRef(0);
   const [actionsPanel,setActionsPanel]=useState<StudioPanel|null>(null);
   const stacks=dockStacks(tree);
   const currentStackId=actionsPanel ? panelStack(tree,actionsPanel) : null;
@@ -170,8 +194,18 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloa
     setTree(update);
     setActionsPanel(null);
   };
-  return <div className="nested-workspace-root">
-    <div className={"nested-toolbar"+(actionsPanel?" nested-toolbar--actions":"")}>
+  return <div className="nested-workspace-root"
+    onDragEnter={event=>{if(dragging===null && carriesTab(event))setForeign(true);}}
+    onDragOver={()=>{ // a foreign drag that ends without a drop here stops sending dragover
+      if(!foreign)return;
+      window.clearTimeout(foreignTimer.current);
+      foreignTimer.current=window.setTimeout(()=>setForeign(false),400);
+    }}
+    onDragLeave={event=>{ // WebKit gives no relatedTarget: leaving means crossing the window edge
+      if(event.clientX<=0||event.clientY<=0||event.clientX>=window.innerWidth||event.clientY>=window.innerHeight)setForeign(false);
+    }}
+    onDrop={()=>setForeign(false)}>
+    {!compact && <div className={"nested-toolbar"+(actionsPanel?" nested-toolbar--actions":"")}>
       {actionsPanel && currentStackId ? <div className="nested-action-bar" role="toolbar"
           aria-label={'Panel actions for '+STUDIO_PANEL_TITLES[actionsPanel]}>
         <strong className="nested-action-title">{STUDIO_PANEL_TITLES[actionsPanel]}</strong>
@@ -207,8 +241,9 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloa
         <button onClick={()=>setTree(defaultDockTree())}>Reset layout</button>
         <span>Drag tabs to rearrange or out of the window to float them; ⋮ for dock actions</span>
       </>}
-    </div>
+    </div>}
     <DockBranch node={tree.root} tree={tree} setTree={setTree} renderPanel={renderPanel} onFloat={onFloat}
+      onAdopt={onAdopt} onDockBack={onDockBack} foreign={foreign} setForeign={setForeign}
       dragging={dragging} setDragging={setDragging} stacks={stacks}
       actionsPanel={actionsPanel} showActions={panel=>setActionsPanel(current=>
         current===panel?null:panel)}/>

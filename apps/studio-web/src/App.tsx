@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shortcutKey } from './keyboard';
-import { ChevronDown, PanelTopClose, Search, Settings2 } from 'lucide-react';
+import { ChevronDown, Search, Settings2 } from 'lucide-react';
 import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
 import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, dockStacks, panelStack, reopenTab
@@ -24,13 +24,21 @@ import StudioMenuBar, { type StudioMenu } from './components/StudioMenuBar';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
 import {
-  addFloating, floatingPanelParam, isFloating, readFloating, removeFloating, saveFloating, updateFloatingFrame,
+  floatOwner, floatingPanels, floatingParams, forgetFloatTree, newFloatKey, readFloatTree, readFloating, releasePanel,
+  removeFloatWindow, saveFloatTree, saveFloating, setFloatPanels, treePanels, updateFloatingFrame, validFloatKey,
   type FloatingWindow
 } from './floating';
 import './components/FloatingShell.css';
 
-/** Set when this WebView is a floating panel window (`?panel=`), null in the main window. */
-const FLOAT_PANEL = floatingPanelParam();
+/** Set when this WebView is a floating window (`?window=…&panels=…`), null in the main window. */
+const FLOAT = floatingParams();
+const WINDOW_KEY = FLOAT?.key ?? 'main';
+const field = (payload: unknown, key: string): unknown =>
+  payload && typeof payload === 'object' && key in payload ? (payload as Record<string, unknown>)[key] : undefined;
+const broadcast = (event: string, payload: unknown) =>
+  void invoke('studio.windowBroadcast', { event, payload }).catch(console.warn);
+/** Tell every other Studio window that this one now shows `panel`. */
+const announceTaken = (panel: StudioPanel) => broadcast('ui.panelTaken', { panel, by: WINDOW_KEY });
 const knownPanel = (value: unknown): value is StudioPanel =>
   typeof value === 'string' && (STUDIO_PANELS as readonly string[]).includes(value);
 const showPanelEvent = (panel: StudioPanel) =>
@@ -48,8 +56,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [workspace, setWorkspace] = useState<StudioWorkspace>(readActiveWorkspace);
-  const [dock, setDock] = useState(() => readWorkspaceDock(readActiveWorkspace()));
-  const [floating, setFloating] = useState<FloatingWindow[]>(() => FLOAT_PANEL ? [] : readFloating());
+  const [dock, setDock] = useState(() => FLOAT ? readFloatTree(FLOAT.key, FLOAT.panels) : readWorkspaceDock(readActiveWorkspace()));
+  const [floating, setFloating] = useState<FloatingWindow[]>(() => FLOAT ? [] : readFloating());
   const [palette, setPalette] = useState<string | null>(null); // null = closed, else initial query
   const [paletteAssets, setPaletteAssets] = useState<StudioAsset[]>([]);
   const [game, setGame] = useState<StudioGameState | null>(null);
@@ -78,7 +86,7 @@ export default function App() {
 
   // Store browser-only layout (not engine state) with bounded write frequency.
   useEffect(() => {
-    if (FLOAT_PANEL) return; // a floating window never owns the dock layout
+    if (FLOAT) return; // a floating window never owns the main dock layout
     const handle = window.setTimeout(() => saveWorkspaceDock(workspace, dock), 180);
     return () => window.clearTimeout(handle);
   }, [dock, workspace]);
@@ -110,17 +118,28 @@ export default function App() {
         setHoverId(payload && typeof payload === 'object' && 'message' in payload ? String(payload.message) : '');
       } else if (event === 'viewport.action') {
         setSceneAction(payload && typeof payload === 'object' && 'message' in payload ? String(payload.message) : '');
-      } else if (event === 'window.floatClosed' && !FLOAT_PANEL) {
-        const panel = payload && typeof payload === 'object' && 'message' in payload ? payload.message : '';
-        if (knownPanel(panel)) { // closing a floating window docks its panel back
-          setFloating(list => removeFloating(list, panel));
-          setDock(t => reopenTab(t, panel, STUDIO_PANEL_HOME[panel]));
+      } else if (event === 'ui.panelTaken') {
+        // Another window now shows this panel (a tab dragged across windows).
+        const panel = field(payload, 'panel');
+        if (knownPanel(panel) && field(payload, 'by') !== WINDOW_KEY) {
+          setDock(t => panelStack(t, panel) !== null ? closeTab(t, panel) : t);
+          if (!FLOAT && validFloatKey(field(payload, 'by'))) setFloating(list => setFloatPanels(list, String(field(payload, 'by')),
+            [...(list.find(item => item.key === field(payload, 'by'))?.panels ?? []), panel]));
         }
-      } else if (event === 'window.floatFrame' && !FLOAT_PANEL) {
+      } else if (FLOAT && event === 'ui.activatePanel') {
+        const panel = field(payload, 'panel');
+        if (knownPanel(panel)) setDock(t => panelStack(t, panel) !== null ? reopenTab(t, panel) : t);
+      } else if (!FLOAT && event === 'window.floatClosed') {
+        const key = field(payload, 'message');
+        if (validFloatKey(key)) window.dispatchEvent(new CustomEvent('studio:float-closed', { detail: key }));
+      } else if (!FLOAT && event === 'window.floatFrame') {
         setFloating(list => updateFloatingFrame(list, payload));
-      } else if (event === 'ui.showPanel' && !FLOAT_PANEL) {
-        const panel = payload && typeof payload === 'object' && 'panel' in payload ? payload.panel : '';
-        if (knownPanel(panel)) showPanelEvent(panel);
+      } else if (!FLOAT && event === 'ui.floatPanels') {
+        const key = field(payload, 'window');
+        if (validFloatKey(key)) setFloating(list => setFloatPanels(list, key, field(payload, 'panels')));
+      } else if (!FLOAT && (event === 'ui.showPanel' || event === 'ui.dockPanel')) {
+        const panel = field(payload, 'panel');
+        if (knownPanel(panel)) window.dispatchEvent(new CustomEvent(event === 'ui.dockPanel' ? 'studio:dock-panel' : 'studio:show-panel', { detail: panel }));
       } else if (event === 'workspace.changed' || event === 'selection.changed' ||
                  event === 'document.changed') void refresh();
     });
@@ -165,7 +184,7 @@ export default function App() {
         window.dispatchEvent(new CustomEvent('studio:play-control', { detail: event.altKey ? 'step' : event.shiftKey ? 'pause' : 'toggle' }));
         return;
       }
-      const ws = FLOAT_PANEL ? undefined : WORKSPACES.find(id => WORKSPACE_INFO[id].key === key);
+      const ws = FLOAT ? undefined : WORKSPACES.find(id => WORKSPACE_INFO[id].key === key);
       if (ws && !event.altKey && !event.shiftKey) { event.preventDefault(); switchWorkspace(ws); return; }
       if (event.altKey || busy) return;
       const target = event.target;
@@ -263,44 +282,82 @@ export default function App() {
     window.addEventListener('studio:entity-action', run);
     return () => window.removeEventListener('studio:entity-action', run);
   });
-  // Floating windows: remembered by the main window, reopened on launch, and never
-  // also present in the dock (any workspace).
-  useEffect(() => { if (!FLOAT_PANEL) saveFloating(floating); }, [floating]);
+  // Floating windows: remembered by the main window, reopened on launch; a panel
+  // shown by a floating window is never also in the main dock (any workspace).
+  useEffect(() => { if (!FLOAT) saveFloating(floating); }, [floating]);
   useEffect(() => {
-    if (FLOAT_PANEL) return;
-    const docked = floating.filter(item => panelStack(dock, item.panel) !== null);
-    if (docked.length) setDock(t => docked.reduce((tree, item) => closeTab(tree, item.panel), t));
+    if (FLOAT) return;
+    const docked = floatingPanels(floating).filter(panel => panelStack(dock, panel) !== null);
+    if (docked.length) setDock(t => docked.reduce((tree, panel) => closeTab(tree, panel), t));
   }, [dock, floating]);
-  const dockBack = (panel: StudioPanel) => {
-    setFloating(list => removeFloating(list, panel));
+  // A floating window saves its own dock, reports its panels and names itself.
+  useEffect(() => {
+    if (!FLOAT || !connected) return;
+    saveFloatTree(FLOAT.key, dock);
+    const panels = treePanels(dock);
+    broadcast('ui.floatPanels', { window: FLOAT.key, panels });
+    if (!panels.length) { void invoke('studio.windowClose', { window: FLOAT.key }).catch(console.warn); return; }
+    const active = dockStacks(dock).map(stack => stack.active).filter((panel): panel is StudioPanel => !!panel);
+    void invoke('studio.windowTitle', { title: active.map(panel => STUDIO_PANEL_TITLES[panel]).join(' · ').slice(0, 64) })
+      .catch(console.warn);
+  }, [dock, connected]);
+  /** Main window: show `panel` in its own dock, taking it from any floating window. */
+  const dockHere = (panel: StudioPanel) => {
+    setFloating(list => releasePanel(list, panel));
     setDock(t => reopenTab(t, panel, STUDIO_PANEL_HOME[panel]));
+    announceTaken(panel);
+  };
+  const adopt = (panel: StudioPanel) => {
+    if (!FLOAT) setFloating(list => releasePanel(list, panel));
+    announceTaken(panel);
   };
   useEffect(() => {
-    if (FLOAT_PANEL || !connected) return;
+    if (FLOAT || !connected) return;
     for (const item of readFloating()) {
-      void invoke('studio.windowOpen', { panel: item.panel, title: STUDIO_PANEL_TITLES[item.panel],
+      const restore = () => {
+        setFloating(list => removeFloatWindow(list, item.key));
+        setDock(t => item.panels.reduce((tree, panel) => reopenTab(tree, panel, STUDIO_PANEL_HOME[panel]), t));
+      };
+      void invoke('studio.windowOpen', { window: item.key, panels: item.panels,
+        title: item.panels.map(panel => STUDIO_PANEL_TITLES[panel]).join(' · ').slice(0, 64),
         x: item.x, y: item.y, width: item.width, height: item.height })
-        .then(result => { if (!result.opened) dockBack(item.panel); })
-        .catch(() => dockBack(item.panel));
+        .then(result => { if (!result.opened) restore(); }).catch(restore);
     }
     // once per launch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
+  useEffect(() => { // a closed floating window gives its panels back to the main dock
+    const run = (event: Event) => {
+      const key = String((event as CustomEvent<unknown>).detail);
+      const panels = floating.find(item => item.key === key)?.panels ?? [];
+      setFloating(list => removeFloatWindow(list, key));
+      setDock(t => panels.reduce((tree, panel) => reopenTab(tree, panel, STUDIO_PANEL_HOME[panel]), t));
+      forgetFloatTree(key);
+    };
+    const dockPanel = (event: Event) => { const panel = (event as CustomEvent<unknown>).detail; if (knownPanel(panel)) dockHere(panel); };
+    window.addEventListener('studio:float-closed', run);
+    window.addEventListener('studio:dock-panel', dockPanel);
+    return () => { window.removeEventListener('studio:float-closed', run); window.removeEventListener('studio:dock-panel', dockPanel); };
+  });
   const floatOut = (panel: StudioPanel, ifOutside: boolean) => {
-    if (!connected || FLOAT_PANEL) return;
-    void invoke('studio.windowOpen', { panel, title: STUDIO_PANEL_TITLES[panel], ifOutside }).then(result => {
+    if (!connected) return;
+    const key = newFloatKey();
+    void invoke('studio.windowOpen', { window: key, panels: [panel], title: STUDIO_PANEL_TITLES[panel], ifOutside }).then(result => {
       if (!result.opened) return;
-      setFloating(list => addFloating(list, panel));
+      if (!FLOAT) setFloating(list => setFloatPanels(list, key, [panel]));
       setDock(t => closeTab(t, panel));
     }).catch(e => setError(e instanceof Error ? e.message : String(e)));
   };
   const showPanel = (panel: StudioPanel) => {
-    if (FLOAT_PANEL) { // the main window owns the dock
-      void invoke('studio.windowBroadcast', { event: 'ui.showPanel', payload: { panel } }).catch(console.warn);
+    if (FLOAT) {
+      if (panelStack(dock, panel) !== null) setDock(t => reopenTab(t, panel));
+      else broadcast('ui.showPanel', { panel }); // the main window owns everything else
       return;
     }
-    if (isFloating(floating, panel)) { // bring its window forward instead of docking a copy
-      void invoke('studio.windowOpen', { panel, title: STUDIO_PANEL_TITLES[panel] }).catch(console.warn);
+    const owner = floatOwner(floating, panel);
+    if (owner) { // bring its window forward instead of docking a copy
+      void invoke('studio.windowOpen', { window: owner }).catch(console.warn);
+      broadcast('ui.activatePanel', { panel });
       return;
     }
     setDock(t => reopenTab(t, panel, STUDIO_PANEL_HOME[panel]));
@@ -333,12 +390,11 @@ export default function App() {
     ] },
     { id: 'window', label: 'Window', items: () => [
       ...STUDIO_PANELS.map(panel => ({ id: 'panel-' + panel, label: STUDIO_PANEL_TITLES[panel],
-        checked: panelStack(dock, panel) !== null || isFloating(floating, panel),
-        onSelect: () => isFloating(floating, panel)
-          ? void invoke('studio.windowClose', { panel }).catch(console.warn)
+        checked: panelStack(dock, panel) !== null || !!floatOwner(floating, panel),
+        onSelect: () => floatOwner(floating, panel) ? dockHere(panel)
           : setDock(t => panelStack(t, panel) !== null ? closeTab(t, panel) : reopenTab(t, panel, STUDIO_PANEL_HOME[panel])) })),
-      ...(floating.length ? [{ id: 'dock-floating', label: 'Dock All Floating Windows (' + floating.length + ')', separator: true,
-        onSelect: () => { for (const item of floating) void invoke('studio.windowClose', { panel: item.panel }).catch(console.warn); } }] : []),
+      ...(!FLOAT && floating.length ? [{ id: 'dock-floating', label: 'Dock All Floating Windows (' + floating.length + ')', separator: true,
+        onSelect: () => { for (const item of floating) void invoke('studio.windowClose', { window: item.key }).catch(console.warn); } }] : []),
       { id: 'ws', label: 'Workspaces', caption: true, separator: true, onSelect: () => {} },
       ...WORKSPACES.map(id => ({ id: 'ws-' + id, label: WORKSPACE_INFO[id].title, shortcut: '⌘' + WORKSPACE_INFO[id].key,
         checked: workspace === id, onSelect: () => switchWorkspace(id) })),
@@ -370,8 +426,8 @@ export default function App() {
     for (const id of WORKSPACES) out.push({ id: 'ws:' + id, kind: 'workspace', title: WORKSPACE_INFO[id].title + ' workspace',
       hint: WORKSPACE_INFO[id].purpose, shortcut: '⌘' + WORKSPACE_INFO[id].key, run: () => switchWorkspace(id) });
     for (const panel of STUDIO_PANELS) out.push({ id: 'panel:' + panel, kind: 'window', title: STUDIO_PANEL_TITLES[panel],
-      hint: isFloating(floating, panel) ? 'Floating window · focus' : panelStack(dock, panel) ? 'Open · focus' : 'Open in ' + WORKSPACE_INFO[workspace].title, run: () => showPanel(panel) });
-    if (!FLOAT_PANEL && connected) for (const stack of dockStacks(dock)) if (stack.active) {
+      hint: floatOwner(floating, panel) ? 'Floating window · focus' : panelStack(dock, panel) ? 'Open · focus' : 'Open in ' + WORKSPACE_INFO[workspace].title, run: () => showPanel(panel) });
+    if (connected) for (const stack of dockStacks(dock)) if (stack.active) {
       const panel = stack.active;
       out.push({ id: 'float:' + panel, kind: 'window', title: 'Open ' + STUDIO_PANEL_TITLES[panel] + ' in New Window',
         hint: 'Undock into its own window (second monitor)', run: () => floatOut(panel, false) });
@@ -393,18 +449,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot, paletteAssets, dock, floating, workspace, busy, connected, switchWorkspace]);
 
-  if (FLOAT_PANEL) return <div className={'studio compact-shell floating-shell'+(connected?' compact-shell--native':'')}>
-    <header className="floating-titlebar">
-      <strong>{STUDIO_PANEL_TITLES[FLOAT_PANEL]}</strong>
-      <span>{snapshot?.project.name ?? ''}{snapshot?.project.dirty ? ' •' : ''}</span>
-      <span className="floating-fill"/>
-      <button type="button" className="tool-button" title="Dock back into the main window"
-        onClick={() => void invoke('studio.windowClose', { panel: FLOAT_PANEL }).catch(console.warn)}>
-        <PanelTopClose size={12}/>Dock</button>
-    </header>
+  // Floating window: its own small dock, no header, menus or workspaces.
+  if (FLOAT) return <div className={'studio compact-shell floating-shell'+(connected?' compact-shell--native':'')}>
     {error && <div role="alert" className="error-banner">{error}
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
-    <main className="nested-stack-body floating-body" aria-label={STUDIO_PANEL_TITLES[FLOAT_PANEL]}>{renderPanel(FLOAT_PANEL)}</main>
+    <NestedDockWorkspace compact tree={dock} setTree={setDock} renderPanel={renderPanel}
+      onFloat={connected ? floatOut : undefined} onAdopt={adopt}
+      onDockBack={panel => broadcast('ui.dockPanel', { panel })}/>
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 
@@ -450,7 +501,8 @@ export default function App() {
       are demonstrated locally. Native C++ Workspace and GPU renderer are not connected yet.</div>}
     {error && <div role="alert" className="error-banner">{error}
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
-    <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel} onFloat={connected ? floatOut : undefined}/>
+    <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}
+      onFloat={connected ? floatOut : undefined} onAdopt={adopt}/>
     <ProjectLoadingDialog state={loading} onClose={clearLoading}/>
     <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction || sceneLoadingText(loading)}
       onOpenConsole={() => showPanel('console')}/>

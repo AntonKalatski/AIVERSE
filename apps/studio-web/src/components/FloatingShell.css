@@ -1,10 +1,4 @@
-/* A panel torn out of the dock into its own OS window (second monitor etc.). */
+/* A floating Studio window (second monitor etc.): just its own small dock. */
 .floating-shell{display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.floating-titlebar{display:flex;align-items:center;gap:var(--au-space-2);height:28px;flex:none;padding:0 var(--au-space-2) 0 var(--au-space-3);
-  border-bottom:1px solid var(--au-line);background:var(--au-shell-header);font-size:var(--au-font-sm);color:var(--au-text-muted)}
-.floating-titlebar strong{color:var(--au-text);font-weight:600}
-.floating-titlebar .floating-fill{flex:1}
-.floating-titlebar button{height:22px;padding:0 var(--au-space-2);display:inline-flex;align-items:center;gap:5px;font-size:var(--au-font-xs)}
-.floating-body{flex:1}
-html.native-composite .floating-shell:has(.viewport-native),
-html.native-composite .floating-shell:has(.viewport-native) .floating-body{background:transparent!important}
+.floating-shell>.nested-workspace-root{flex:1;min-height:0}
+html.native-composite .floating-shell:has(.viewport-native){background:transparent!important}
