@@ -1943,3 +1943,10 @@ fixed PCF with bounds fitted to the character instead of a room-sized shadow
 volume. Ordinary game views keep their existing shadow behavior. This is a
 single-map adaptation, not virtual shadow maps. See
 `docs/qa/vivid-adaptive-shadows-2026-11-21.md` for actual verification and limits.
+## Stage 6G — safe live Human Creator publication (2026-11-19)
+
+The existing standalone VIVID Creator now stages a full replacement human before releasing the last-good visible one. Editing HumanDNA, changing eye/skin/hair material parameters, adjusting groom quality or reimporting an authored glTF/FBX/OBJ asset builds a new CPU head and groom, compiles the MotionWeave graph, uploads a replacement GPU model, creates a fresh immutable morph asset and separate actor GPU stream and allocates a presentation World. Only after each step succeeds is the previous instance retired behind a real GPU idle boundary. Failed edits preserve the old preview and report a concrete error; staged GPU allocations are released only after a successful idle barrier. The change preserves imported texture maps through `humanMaterialFromSource` and does not schedule or duplicate any skeletal animation.
+
+Versioned DNA JSON saving on the VIVID base already uses failure-safe atomic rename without deleting the previous file. The `vivid_human_creator` regression now exercises a deliberately nonreplaceable target with a sentinel to ensure an unsuccessful save cannot erase existing user content. An isolated branch, `feature/vivid-human-safe-publication`, keeps these integration hardening changes separate from parallel new appearance and human importer commits.
+
+**Native tests and GUI screenshots on this branch are still NOT RUN.** Current procedural skin/eye/groom is a preview reference, not photorealistic MetaHuman scan quality. HumanCreator and MotionWeave share established runtime modules; no proprietary DNA parser was introduced. Validate the existing 16-test VIVID suite and four real GUI capture modes on the Mac before promoting this branch, and run full AIVERSE regression before merging into main.
