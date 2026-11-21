@@ -4,6 +4,7 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <QuartzCore/CATransaction.h>
 #import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioHost.h"
 #include "apps/studio-native/StudioGameInput.h"
@@ -149,9 +150,19 @@ public:
         if (currentOnly && shell_->currentWeb_) [shell_->currentWeb_ evaluateJavaScript:text completionHandler:nil];
         else [shell_ evaluateInAllWebs:text];
     }
+    // The Scene's device is made on its render thread: the layers were captured on the main thread.
+    void setLayers(void* scene, void* game) { sceneLayer_=scene; gameLayer_=game; }
     std::unique_ptr<aiverse::gfx::Device> createDevice(studio::StudioSurface surface) override {
-        NSView* view=surface==studio::StudioSurface::Scene ? (NSView*)shell_->viewport_ : (NSView*)shell_->gameViewport_;
-        return aiverse::gfx::createMetalDevice((__bridge void*)view.layer);
+        return aiverse::gfx::createMetalDevice(surface==studio::StudioSurface::Scene ? sceneLayer_ : gameLayer_);
+    }
+    // Render-thread frames: layer changes off the main thread go into an explicit transaction.
+    void sceneThreadScope(const std::function<void()>& body) override {
+        @autoreleasepool {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            struct Commit { ~Commit() { [CATransaction commit]; } } commit;
+            body();
+        }
     }
     bool surfaceDrawable(studio::StudioSurface surface) override {
         NSView* view=surface==studio::StudioSurface::Scene ? (NSView*)shell_->viewport_ : (NSView*)shell_->gameViewport_;
@@ -259,6 +270,8 @@ public:
     void log(const std::string& message) override { NSLog(@"%s",message.c_str()); }
 private:
     __unsafe_unretained StudioShell* shell_;
+    void* sceneLayer_=nullptr;
+    void* gameLayer_=nullptr;
 };
 
 // Developer automation for scene-only wind-mask screenshots (no desktop or
@@ -674,6 +687,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     gameChrome_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     [gameViewport_ addSubview:gameChrome_];
     [window_.contentView addSubview:gameViewport_ positioned:NSWindowAbove relativeTo:web_];
+    static_cast<MacPlatform*>(platform_.get())->setLayers((__bridge void*)viewport_.layer,(__bridge void*)gameViewport_.layer);
     StudioWindowChrome* chrome=[[StudioWindowChrome alloc]
         initWithFrame:NSMakeRect(0,window_.contentView.bounds.size.height-44,80,44)];
     chrome.autoresizingMask=NSViewMinYMargin;
@@ -1108,7 +1122,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     const CGFloat scale=(view.window ?: window_).backingScaleFactor;
     if (layer.contentsScale!=scale) layer.contentsScale=scale;
     const CGSize size=CGSizeMake(out.pixelsW,out.pixelsH);
-    if (!CGSizeEqualToSize(layer.drawableSize,size)) layer.drawableSize=size;
+    if (!CGSizeEqualToSize(layer.drawableSize,size)) {
+        // The Scene layer is drawn on the render thread: resize between its frames.
+        if (view==viewport_) core_->runOnSceneThread([&]{ layer.drawableSize=size; });
+        else layer.drawableSize=size;
+    }
     return YES;
 }
 - (void)webView:(WKWebView*)view didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {

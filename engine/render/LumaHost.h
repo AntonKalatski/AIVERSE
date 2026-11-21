@@ -24,7 +24,8 @@ struct LumaHost {
         else if(tier=="ultra")quality=LumaWeaveQuality::Ultra;
         else throw std::runtime_error("luma quality must be balanced, high or ultra");
         if(!hdr)fallback="Luma requires HDR; legacy direct fallback";
-        else if(d.info().backend!=gfx::Backend::Metal)fallback="Luma GPU backend unavailable; legacy direct fallback";
+        else if(d.info().backend!=gfx::Backend::Metal && d.info().backend!=gfx::Backend::Vulkan)
+            fallback="Luma GPU backend unavailable; legacy direct fallback";
         else if(mesh.triangles.size()>GiGpuBvh::kMaxTriangles || lights.size()>LumaWeaveRegistry::kMaxSources)
             fallback="Luma GPU capacity exceeded; legacy direct fallback";
         if(!fallback.empty()) {

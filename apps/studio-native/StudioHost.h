@@ -7,6 +7,7 @@
 #include "apps/studio-native/StudioScene.h"
 #include "apps/studio-native/StudioGameSurface.h"
 #include "apps/studio-native/StudioViewportLayout.h"
+#include "apps/studio-native/StudioRenderThread.h"
 #include "engine/data/Json.h"
 #include "engine/platform/Platform.h"
 #include <atomic>
@@ -14,6 +15,8 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -27,8 +30,12 @@ public:
     virtual ~StudioHostPlatform() = default;
     // Web views. currentOnly: the web view whose message is being handled (all of them when there is none).
     virtual void evaluateScript(const std::string& js, bool currentOnly) = 0;
-    // GPU devices for the native views (created lazily, the first time the view is shown).
+    // GPU devices for the native views (created lazily, the first time the view is shown). The Scene's device is
+    // created ON THE SCENE RENDER THREAD (its GPU caches bind to that thread): use a handle captured beforehand,
+    // never UI objects.
     virtual std::unique_ptr<gfx::Device> createDevice(StudioSurface surface) = 0;
+    // Wraps work on the Scene render thread that draws (macOS: autorelease pool + explicit CATransaction).
+    virtual void sceneThreadScope(const std::function<void()>& body) { body(); }
     // The native view is shown in a visible, not minimised window.
     virtual bool surfaceDrawable(StudioSurface surface) = 0;
     // The Game view has keyboard focus (input goes to the game).
@@ -73,6 +80,9 @@ public:
     ~StudioHost();
     StudioSession& session() { return *session_; }
     StudioScene* scene() { return preview_.get(); }
+    // Runs fn on the Scene render thread between its frames and waits (inline when there is none yet).
+    // Shells use it for Scene surface changes, e.g. resizing the drawable.
+    void runOnSceneThread(const std::function<void()>& fn) { if (renderThread_) renderThread_->invoke(fn); else fn(); }
     bool projectLoading() const { return projectLoading_; }
     bool htmlComposite() const { return htmlComposite_; }
 
@@ -104,7 +114,7 @@ public:
     void frameAll();
     void setPivotSnap(bool on);
     void setTool(int tool);
-    int tool() const;
+    int tool();
     bool gizmoAt(double x, double y, double w, double h);
     bool moveBegin(double x, double y, double w, double h);
     void moveUpdate(double x, double y, double w, double h, bool invertSnap);
@@ -139,13 +149,43 @@ public:
     Json gameState();
 
 private:
+    // The render thread owns the Scene and its GPU resources: every Scene call from the UI thread runs
+    // there and waits for its result (inline before the thread exists).
+    template <class F> auto onScene(F&& fn) -> decltype(fn()) {
+        if (!renderThread_) return fn();
+        return renderThread_->invoke(std::forward<F>(fn));
+    }
+    // Inputs of one map frame, snapshotted on the UI thread for the render thread.
+    struct FrameInputs {
+        int width = 0, height = 0;
+        std::shared_ptr<const editor::MapDoc> map;
+        std::shared_ptr<const Json> rules;
+        bool fps = false;
+        std::string selected, project, hover;
+        float levelHeight = 1.5f;
+        std::set<std::string> selection, hidden, locked;
+        StudioWindState wind;
+    };
+    // Results of the last finished Scene frame, consumed by the UI thread.
+    struct FrameOutputs {
+        std::string error, facialError, lightingStatus;
+        bool facialReady = false;
+        StudioScene::LoadProgress load;
+        StudioScene::CameraState camera;
+        std::vector<std::string> thumbnails; // Assets panel model thumbnails finished since the last frame
+        uint32_t drawCalls = 0;
+    };
+    void tickScene();                  // UI thread: snapshot inputs, kick the render thread, publish results
+    void renderSceneFrame();           // render thread: one map frame
+    void publishSceneFrame(const FrameOutputs& out);
+    void failScene(const std::string& message);
     Json request(const char* method, Json params);
     void sendLoading(const std::string& phase, const std::string& message, int done, int total);
     void sendProjectSplash(const std::string& path);
     void sendProjectCancelled(int64_t requestId);
     void sendError(const Json& id, const std::string& message);
     void rebuildOverlay();
-    void publishCamera();
+    void publishCamera(const StudioScene::CameraState& camera);
     void tickGame();
     void tickAgentScreenshot();
     void pollAgentRequests();
@@ -162,7 +202,18 @@ private:
     std::string engineRoot_;
     bool htmlComposite_ = false;
     std::unique_ptr<StudioSession> session_;
-    std::unique_ptr<StudioScene> preview_;
+    std::unique_ptr<StudioScene> preview_;             // created, used and destroyed on renderThread_
+    std::unique_ptr<StudioRenderThread> renderThread_;
+    std::mutex renderIoMutex_;                         // guards renderInputs_ / renderOutputs_
+    FrameInputs renderInputs_;
+    FrameOutputs renderOutputs_;
+    bool renderOutputsFresh_ = false;
+    std::shared_ptr<const editor::MapDoc> mapSnapshot_;
+    const editor::MapDoc* mapSnapshotSource_ = nullptr;
+    std::shared_ptr<const Json> rulesSnapshot_;
+    std::string rulesSnapshotProject_;
+    size_t rulesSnapshotHash_ = 0;
+    double nextMapSnapshot_ = 0, nextRulesCheck_ = 0;
     std::unique_ptr<StudioGameSurface> game_;
     NativeViewportPlacement placement_{}, gamePlacement_{};
     double gameFrameTime_ = 0;

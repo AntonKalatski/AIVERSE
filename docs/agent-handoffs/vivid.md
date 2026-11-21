@@ -3152,3 +3152,9 @@ Follow-up (same day): makeup auto-placement from face geometry, hairstyle rig de
 attach), external animation clips via `<model>.clips.json`. Verified: tsc clean, g++ -fsyntax-only of the touched C++.
 Still needs the Mac build + ctest + visual check. External clips need the same bone names as the character.
 
+## 2026-11-21 (night) — MetaHuman adapter
+
+`vivid::adaptMetaHuman` + Studio card + MCP `human_metahuman_check`. Mac build green; ctest 9/9 PASS incl.
+`vivid_metahuman_adapter` against the real local Ada and Bruce-Full exports. Not supported (stated in the report):
+RigLogic correctives, FACIAL joint animation, strand groom, .dna at runtime, Draco GLB.
+

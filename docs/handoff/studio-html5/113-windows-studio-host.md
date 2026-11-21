@@ -84,3 +84,18 @@ The host was a single macOS file (`mac/Main.mm`, ~2.5k lines: Cocoa + WKWebView 
 - Device bezel / safe-area overlay on the Game view.
 - A GL fallback when there is no Vulkan driver (the Scene reports "Vulkan is required").
 - Agent panel: `claude` CLI and `aiversemcp.exe` paths are the same code; untested on Windows.
+
+## Merge with main (render thread)
+
+`main` moved the Scene onto a dedicated render thread inside `mac/Main.mm` (`StudioRenderThread`, frame-input snapshots, idle frames, debounced lighting; feature/aiv20261121_studio-render-perf). In the merge that design moved into the shared `StudioHost`, so Windows has it too:
+- `renderThread_` owns the Scene: it is created, drawn and destroyed there, and every Scene call goes through `onScene()`.
+- Map frames render asynchronously from snapshots (`tickScene` / `renderSceneFrame` / `publishSceneFrame`). Character and material previews still render synchronously.
+- New platform hooks:
+  - `sceneThreadScope` (macOS: autorelease pool + CATransaction);
+  - `createDevice(Scene)` runs on the render thread, so macOS hands over the layer pointers beforehand;
+  - `runOnSceneThread` for drawable resizes.
+- `AIVERSE_STUDIO_RENDER_THREAD=0` and `AIVERSE_STUDIO_CONTINUOUS_REDRAW=1` work as before.
+
+Verified on macOS after the merge:
+- the build passes, and so does the session contract;
+- on screen: the Scene renders, the extension gizmo shows, a click selects (townhall; Hierarchy and status bar update), and the Edit menu has Cut / Copy / Paste / Select All.

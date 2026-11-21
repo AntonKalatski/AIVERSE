@@ -203,7 +203,9 @@ bool Renderer3D::setDynamicGiOverlay(const GiMainGpuBridge& bridge) {
         float* u=dynamicGiUniforms_.data()+size_t(k)*12;
         u[0]=c.origin.x;u[1]=c.origin.y;u[2]=c.origin.z;u[3]=1.0f/c.spacing;
         u[4]=float(c.nx);u[5]=float(c.ny);u[6]=float(c.nz);u[7]=float(bridge.cascadeProbeOffset(k));
-        u[8]=u[9]=u[10]=0.0f;u[11]=k==0?float(cascades):0.0f;
+        // Scrolling cascades address their probes through a toroidal ring.
+        const auto ring=bridge.cascadeRing(k);
+        u[8]=float(ring[0]);u[9]=float(ring[1]);u[10]=float(ring[2]);u[11]=k==0?float(cascades):0.0f;
     }
     dynamicGiAtlas_=atlas;
     return true;
@@ -1180,6 +1182,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
+    if ((d.layers & visibilityMask_) == 0) return;
     if (applyWindRig(d)) return;
     if(modelPacketTap_)modelPacketTap_(d);
     const auto overrideStatus = modelVertexOverrideStatus(

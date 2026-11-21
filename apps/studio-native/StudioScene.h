@@ -17,6 +17,7 @@
 #include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
+#include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
@@ -44,7 +45,7 @@ public:
                uint64_t previewRevision, float levelHeight = 1.5f,
                const std::string& projectPath = {}, const Json& rules = Json::object(),
                const StudioFacialPreviewBinding* facialBinding=nullptr);
-    void captureNextFrame(gfx::Device::CaptureFn callback) { device_->captureNextFrame(std::move(callback)); }
+    void captureNextFrame(gfx::Device::CaptureFn callback) { lastFrameSignature_=0; device_->captureNextFrame(std::move(callback)); }
     const std::string& lightingStatus() const { return lightingStatus_; }
     // Preview wind for every rigged model (<model>.wind.json) + debug view.
     void setWindPreview(const StudioWindState& state) { wind_ = state; }
@@ -144,6 +145,13 @@ public:
     bool projectPoint(render::float3 world, float width, float height, render::float2& out) const;
     void setBrushCursor(bool visible, render::float3 center, float radius) { brushVisible_=visible; brushCenter_=center; brushRadius_=radius; }
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
+    // Frames actually drawn / skipped because nothing visible changed (diagnostics).
+    uint64_t framesDrawn() const { return framesDrawn_; }
+    uint64_t framesSkipped() const { return framesSkipped_; }
+    // Default: draw every frame() call and rebuild lighting on every edit (tests,
+    // automation, captures). The interactive Studio viewport turns this off: it
+    // then skips idle frames and debounces lighting rebuilds during edit bursts.
+    void setContinuousRedraw(bool on) { continuousRedraw_ = on; }
     // Automation (AIVERSE_STUDIO_WIND_SHOTS): frame a point of interest.
     // Automation (AIVERSE_STUDIO_SKY_SHOTS): the engine's PhysicalSky with a given sun, for the splash art.
     struct SkyShot { float elevationDeg = 8, azimuthDeg = 250, coverage = .5f; render::float3 sunColor{1.f, .85f, .66f}; };
@@ -274,5 +282,55 @@ private:
     uint64_t diagnosticFrames_ = 0;
     int lastMapWidth_ = 0;
     int lastMapHeight_ = 0;
+
+    // Document-derived scene cache. Unreal/Godot keep a persistent render-side
+    // scene (scene proxies / RenderingServer instances) and update it on change;
+    // the Studio likewise rebuilds proxies, lights, water and model instances only
+    // when the document, rules or project change, and re-checks model files on
+    // disk (hot reload) at most once a second, not on every 60 Hz frame.
+    struct SceneCacheKey {
+        const editor::MapDoc* doc = nullptr; uint64_t revision = std::numeric_limits<uint64_t>::max();
+        bool fps = false; float levelHeight = 0; std::string project; const Json* rules = nullptr;
+        bool operator==(const SceneCacheKey& o) const {
+            return doc==o.doc && revision==o.revision && fps==o.fps && levelHeight==o.levelHeight &&
+                   project==o.project && rules==o.rules;
+        }
+    };
+    // Per document proxy: everything the frame loop needs that depends only on the
+    // document, rules and loaded models (selection, hover, hide and drag stay per frame).
+    struct ProxyDraw {
+        size_t proxy = 0;            // index into proxies_
+        int sourceIndex = -1;        // map entity index or -1
+        bool water = false;          // NereidWater component: drawn by NEREID
+        bool hasModel = false;       // drawn through modelInstances_
+        render::mat4 world{}, frame{};
+        render::Model* primitive = nullptr; // Mesh Renderer builtin cube/sphere (PBR path)
+        std::vector<render::Material> materials;
+    };
+    SceneCacheKey sceneKey_;
+    bool sceneCacheValid_ = false;
+    std::chrono::steady_clock::time_point nextFileCheck_{};
+    std::vector<StudioDocumentProxy> proxies_;
+    std::vector<ProxyDraw> proxyDraws_;
+    std::vector<render::PointLight> activeLights_;
+    Json lightingSettings_ = Json::object();
+    bool useLighting_ = false;
+    PreviewDayLighting day_{};
+    bool showTerrain_ = true;
+    void rebuildProxyDraws(const editor::MapDoc& doc);
+    // Lighting/GI rebuilds are expensive (GPU idle wait, GI snapshot): a burst of
+    // edits (Inspector slider scrubbing) rebuilds at most every ~0.3 s and once
+    // more after the edits settle, like a debounced "Build Lighting".
+    uint64_t lastSeenRevision_ = std::numeric_limits<uint64_t>::max();
+    std::chrono::steady_clock::time_point lastDocChange_{}, lastLightingBuild_{};
+    // Idle frame skipping: the viewport redraws only when something visible changed,
+    // plus a few settle frames (temporal AA, GI) and a 1 s heartbeat.
+    uint64_t lastFrameSignature_ = 0;
+    int settleFrames_ = 0;
+    std::chrono::steady_clock::time_point lastDrawn_{};
+    uint64_t framesDrawn_ = 0, framesSkipped_ = 0;
+    bool continuousRedraw_ = true;
+    uint64_t frameSignature(int width, int height, const editor::MapDoc& doc, bool fpsProject,
+                            const std::string& selectedId) const;
 };
 }

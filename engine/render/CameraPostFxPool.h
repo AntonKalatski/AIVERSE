@@ -28,6 +28,9 @@ class CameraPostFxPool {
         bool lensExposure=false, lensDof=false;
         float lensEV=0;
         Prisma::DepthOfFieldOverride lensDofValues{};
+        // Per-camera PRISMA settings (setCameraSettings); otherwise shared.
+        bool ownSettings=false;
+        PostFxSettings settings{};
     };
     gfx::Device* device_=nullptr;
     const World* world_=nullptr;
@@ -49,12 +52,30 @@ public:
         for(auto& [id,e]:entries_) {
             (void)id;
             if(e->initialized) {
-                e->post.setSettings(settings_);
+                e->post.setSettings(e->ownSettings?e->settings:settings_);
                 e->post.setQuality(quality_);
                 e->screen.setEnabled(enableTemporal);
                 e->screen.reset();
             }
         }
+    }
+    // Own PRISMA effect stack for one camera (another grade, no bloom, a
+    // different DoF...). The camera keeps it across configure() calls until
+    // clearCameraSettings(). Lens-driven exposure/DoF are re-applied.
+    void setCameraSettings(Entity entity,PostFxSettings settings) {
+        auto& e=entryFor(entity.packed());
+        e.ownSettings=true;e.settings=std::move(settings);
+        if(e.initialized){clearLens(e);e.post.setSettings(e.settings);e.screen.reset();}
+    }
+    void clearCameraSettings(Entity entity) {
+        auto it=entries_.find(entity.packed());
+        if(it==entries_.end()||!it->second->ownSettings)return;
+        Entry& e=*it->second;e.ownSettings=false;e.settings={};
+        if(e.initialized){clearLens(e);e.post.setSettings(settings_);e.screen.reset();}
+    }
+    bool hasCameraSettings(Entity entity)const {
+        auto it=entries_.find(entity.packed());
+        return it!=entries_.end()&&it->second->ownSettings;
     }
     void setImageLoader(Prisma::ImageLoader loader) {
         loader_=std::move(loader);
@@ -178,7 +199,7 @@ private:
         if(!e.initialized) {
             if(!e.post.init(*device_)){e.post.shutdown();e.failed=true;return false;}
             e.initialized=true;
-            e.post.setSettings(settings_);e.post.setQuality(quality_);
+            e.post.setSettings(e.ownSettings?e.settings:settings_);e.post.setQuality(quality_);
             if(loader_)e.post.setImageLoader(loader_);
         }
         if(temporalEnabled_ && !e.hasScreen) {

@@ -89,13 +89,19 @@ StudioHost::StudioHost(StudioHostPlatform& platform, const std::string& engineRo
     // The project opens asynchronously after the UI loads (splash and progress).
     session_ = std::make_unique<StudioSession>(engineRoot, std::string());
     session_->setMaterialSlotProvider([this](const std::string& asset) {
-        return preview_ ? preview_->modelMaterialSlots(asset) : std::vector<std::string>{};
+        return preview_ ? onScene([&] { return preview_->modelMaterialSlots(asset); }) : std::vector<std::string>{};
     });
 }
 StudioHost::~StudioHost() { shutdown(); }
 void StudioHost::shutdown() {
     *alive_ = false;
-    game_.reset();    // hosted client and its device retire before the native surface
+    game_.reset(); // hosted client and its device retire before the native surface
+    if (renderThread_) {
+        // The Scene and its GPU resources are released on their owner thread, then the thread stops.
+        try { renderThread_->invoke([&] { preview_.reset(); }); } catch (const std::exception&) {}
+        renderThread_->stop();
+        renderThread_.reset();
+    }
     preview_.reset(); // GPU resources before the native view
 }
 
@@ -234,7 +240,8 @@ void StudioHost::openProject(const std::string& path, int64_t requestId) {
         [this, alive, path, requestId, snapshot, error] {
             if (!*alive) return;
             projectLoading_ = false;
-            if (preview_) preview_->resetCamera();
+            if (preview_) onScene([&] { preview_->resetCamera(); });
+            mapSnapshot_.reset(); rulesSnapshot_.reset();
             lastLoadDone_ = lastLoadTotal_ = -1;
             if (requestId >= 0) {
                 Json reply = Json::object();
@@ -304,7 +311,7 @@ void StudioHost::tickAgentScreenshot() {
     }
     auto shot = std::make_shared<AgentShot>();
     agentShot_ = shot;
-    preview_->captureNextFrame([shot](int w, int h, std::vector<uint8_t> rgba) {
+    onScene([&] { preview_->captureNextFrame([shot](int w, int h, std::vector<uint8_t> rgba) {
         if (w > 0 && h > 0 && rgba.size() >= size_t(w) * size_t(h) * 4) {
             // At most 1280 px wide: enough for the agent, small for the MCP answer.
             const int ow = std::min(w, 1280), oh = std::max(1, int(int64_t(h) * ow / w));
@@ -319,7 +326,7 @@ void StudioHost::tickAgentScreenshot() {
             shot->w = ow; shot->h = oh;
         }
         shot->done.store(true);
-    });
+    }); });
 }
 // Agent snapshot handshake (MCP studio_character_snapshot): the tool writes
 // <project>/.aiverse/agent-requests/character-snapshot.json {id, view}; the
@@ -352,7 +359,7 @@ void StudioHost::pollAgentRequests() {
             p.set("view", Json::string(view));
             (void)request("studio.humanCamera", p);
         }
-        preview_->captureFacialThumbnail((out / (id + ".png")).string(), false);
+        onScene([&] { preview_->captureFacialThumbnail((out / (id + ".png")).string(), false); });
     } catch (const std::exception&) {}
 }
 void StudioHost::tick() {
@@ -401,71 +408,206 @@ void StudioHost::tick() {
         return;
     }
     try {
+        if (!renderThread_) {
+            // The Scene renders on its own thread (Unreal-style render thread);
+            // AIVERSE_STUDIO_RENDER_THREAD=0 runs it on the UI thread instead.
+            const char* threaded = std::getenv("AIVERSE_STUDIO_RENDER_THREAD");
+            renderThread_ = std::make_unique<StudioRenderThread>([this] { renderSceneFrame(); }, !(threaded && std::string(threaded) == "0"));
+        }
         if (!preview_) {
-            preview_ = std::make_unique<StudioScene>(platform_.createDevice(StudioSurface::Scene));
-            // Default host: the native view covers HTML, so the renderer draws the
-            // orientation gizmo itself; composite mode uses the HTML gizmo.
-            preview_->setOrientationGizmo(!htmlComposite_);
+            const char* continuous = std::getenv("AIVERSE_STUDIO_CONTINUOUS_REDRAW");
+            const bool always = continuous && std::string(continuous) == "1";
+            const bool composite = htmlComposite_;
+            renderThread_->invoke([&] {
+                // Created on its owner thread: GPU resource caches bind to it.
+                auto created = std::make_unique<StudioScene>(platform_.createDevice(StudioSurface::Scene));
+                // Default host: the native view covers HTML, so the renderer draws the
+                // orientation gizmo itself; composite mode uses the HTML gizmo.
+                created->setOrientationGizmo(!composite);
+                // Interactive viewport: redraw on change only, debounce lighting rebuilds.
+                // AIVERSE_STUDIO_CONTINUOUS_REDRAW=1 restores drawing every tick.
+                created->setContinuousRedraw(always);
+                preview_ = std::move(created);
+            });
         }
+        // Character and material previews read live session state (facial binding, material drafts):
+        // the UI thread waits for those frames. Everything else renders asynchronously.
+        const bool facialBound = session_->facialPreviewBinding().bound();
+        const bool materialPreview = !session_->previewMaterialName().empty() && session_->previewMaterialFactors().isObject();
+        if (!facialBound && !materialPreview) { tickScene(); return; }
+        FrameOutputs out;
+        const bool wantClips = (lightingStatusTicks_ % 30) == 0;
+        std::vector<std::string> clips;
+        float baseHeight = 0;
+        renderThread_->flush(); // the last asynchronous map frame finished
+        renderThread_->invoke([&] {
+            platform_.sceneThreadScope([&] {
+                const auto ids = session_->selectedObjectIds();
+                preview_->setEditorState(std::set<std::string>(ids.begin(), ids.end()), session_->hiddenIds(), session_->lockedIds(), hoverId_);
+                preview_->setWindPreview(session_->windPreview());
+                const auto& ws = session_->workspace();
+                preview_->frame(placement_.pixelsW, placement_.pixelsH, ws.map, ws.project.isFps(), session_->selectedObjectId(),
+                    session_->previewMaterialName(), session_->previewMaterialFactors(), session_->previewMaterialRevision(),
+                    float(ws.project.rules.levelHeight.toDouble()), ws.project.dir, ws.project.rulesJson, &session_->facialPreviewBinding());
+                out.facialReady = preview_->facialReady();
+                out.facialError = preview_->facialError();
+                if (wantClips) { clips = preview_->facialClips(); baseHeight = preview_->facialBaseHeight(); }
+                out.lightingStatus = preview_->lightingStatus();
+                out.load = preview_->modelLoadProgress();
+                out.camera = preview_->cameraState();
+                out.thumbnails = preview_->takeFinishedThumbnails();
+                out.drawCalls = preview_->drawCalls();
+            });
+        });
         {
-            const auto ids = session_->selectedObjectIds();
-            preview_->setEditorState(std::set<std::string>(ids.begin(), ids.end()), session_->hiddenIds(), session_->lockedIds(), hoverId_);
+            // A map frame that finished before this one is superseded.
+            std::lock_guard<std::mutex> io(renderIoMutex_);
+            renderOutputsFresh_ = false;
         }
-        preview_->setWindPreview(session_->windPreview());
-        {
-            // Stats panel: smoothed time between Scene frames.
-            const double now = platform_.now();
-            if (lastSceneFrame_ > 0) {
-                const double ms = (now - lastSceneFrame_) * 1000.0;
-                sceneFrameMs_ = sceneFrameMs_ <= 0 ? ms : sceneFrameMs_ * 0.95 + ms * 0.05;
-                frameHistory_.emplace_back(float(ms), preview_->drawCalls());
-                if (frameHistory_.size() > 240) frameHistory_.pop_front();
-            }
-            lastSceneFrame_ = now;
-            session_->setSceneFrameStats(sceneFrameMs_, ++sceneFrameCount_);
-        }
-        const auto& ws = session_->workspace();
-        preview_->frame(placement_.pixelsW, placement_.pixelsH, ws.map, ws.project.isFps(), session_->selectedObjectId(),
-            session_->previewMaterialName(), session_->previewMaterialFactors(), session_->previewMaterialRevision(),
-            float(ws.project.rules.levelHeight.toDouble()), ws.project.dir, ws.project.rulesJson, &session_->facialPreviewBinding());
-        session_->setFacialPreviewGpuStatus(preview_->facialReady(), preview_->facialError());
-        if ((lightingStatusTicks_ % 30) == 0) session_->setFacialPreviewClips(preview_->facialClips(), preview_->facialBaseHeight());
-        if ((lightingStatusTicks_++ % 60) == 0) sendEvent("lighting.status", preview_->lightingStatus());
-        for (const auto& asset : preview_->takeFinishedThumbnails()) {
-            Json payload = Json::object();
-            payload.set("path", Json::string(asset));
-            sendEventPayload("asset.thumbnail", payload);
-        }
-        {
-            // Scene model streaming progress (status bar / splash).
-            const auto& load = preview_->modelLoadProgress();
-            if (load.total > 0 && load.done < load.total) {
-                if (load.done != lastLoadDone_ || load.total != lastLoadTotal_) {
-                    lastLoadDone_ = load.done; lastLoadTotal_ = load.total; loadingShown_ = true;
-                    sendLoading("models", load.current, load.done, load.total);
-                }
-            } else if (loadingShown_) {
-                loadingShown_ = false; lastLoadDone_ = lastLoadTotal_ = -1;
-                sendLoading("done", "", load.total, load.total);
-            }
-        }
-        if (!readyEmitted_) {
-            sendEvent("viewport.ready", "Native Renderer3D");
-            readyEmitted_ = true;
-            cameraSent_ = false;
-        }
-        publishCamera();
+        if (wantClips) session_->setFacialPreviewClips(clips, baseHeight);
+        publishSceneFrame(out);
     } catch (const std::exception& e) {
-        platform_.log(std::string("AIVERSE native Scene failed: ") + e.what());
-        sendEvent("viewport.error", e.what());
-        readyEmitted_ = false;
-        placement_.visible = false;
-        preview_.reset();
+        failScene(e.what());
     }
 }
-void StudioHost::publishCamera() {
-    if (!preview_ || !htmlComposite_) return;
-    const auto camera = preview_->cameraState();
+// UI thread: snapshot what the map frame reads (document, rules, editor state), hand it to the
+// render thread and publish the last finished frame's results.
+void StudioHost::tickScene() {
+    const auto& ws = session_->workspace();
+    const double now = platform_.now();
+    const auto& map = ws.map;
+    // Copy only on change (and once a second for edits that did not bump the revision).
+    if (!mapSnapshot_ || mapSnapshotSource_ != &map || mapSnapshot_->revision != map.revision ||
+        mapSnapshot_->path != map.path || now >= nextMapSnapshot_) {
+        auto copy = std::make_shared<editor::MapDoc>();
+        copy->data = map.data; copy->path = map.path; copy->revision = map.revision;
+        mapSnapshot_ = std::move(copy); mapSnapshotSource_ = &map; nextMapSnapshot_ = now + 1.0;
+    }
+    if (!rulesSnapshot_ || rulesSnapshotProject_ != ws.project.dir || now >= nextRulesCheck_) {
+        const size_t hash = std::hash<std::string>{}(ws.project.rulesJson.dump(-1));
+        if (!rulesSnapshot_ || rulesSnapshotProject_ != ws.project.dir || hash != rulesSnapshotHash_) {
+            rulesSnapshot_ = std::make_shared<const Json>(ws.project.rulesJson);
+            rulesSnapshotHash_ = hash; rulesSnapshotProject_ = ws.project.dir;
+        }
+        nextRulesCheck_ = now + 1.0;
+    }
+    FrameInputs in;
+    in.width = placement_.pixelsW; in.height = placement_.pixelsH;
+    in.map = mapSnapshot_; in.rules = rulesSnapshot_;
+    in.fps = ws.project.isFps();
+    in.selected = session_->selectedObjectId();
+    in.levelHeight = float(ws.project.rules.levelHeight.toDouble());
+    in.project = ws.project.dir;
+    const auto ids = session_->selectedObjectIds();
+    in.selection = std::set<std::string>(ids.begin(), ids.end());
+    in.hidden = session_->hiddenIds(); in.locked = session_->lockedIds(); in.hover = hoverId_;
+    in.wind = session_->windPreview();
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        renderInputs_ = std::move(in);
+    }
+    renderThread_->kick();
+    FrameOutputs out;
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        if (!renderOutputsFresh_) return;
+        out = renderOutputs_; renderOutputsFresh_ = false;
+    }
+    if (!out.error.empty()) { failScene(out.error); return; }
+    publishSceneFrame(out);
+}
+// Render thread: one map frame from the latest published inputs.
+void StudioHost::renderSceneFrame() {
+    FrameInputs in;
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        in = renderInputs_;
+    }
+    if (!in.map || !in.rules || !preview_) return;
+    FrameOutputs out;
+    try {
+        platform_.sceneThreadScope([&] {
+            preview_->setEditorState(std::move(in.selection), std::move(in.hidden), std::move(in.locked), std::move(in.hover));
+            preview_->setWindPreview(in.wind);
+            preview_->frame(in.width, in.height, *in.map, in.fps, in.selected, "", Json::object(), 0,
+                            in.levelHeight, in.project, *in.rules, nullptr);
+            out.facialReady = preview_->facialReady();
+            out.facialError = preview_->facialError();
+            out.lightingStatus = preview_->lightingStatus();
+            out.load = preview_->modelLoadProgress();
+            out.camera = preview_->cameraState();
+            out.thumbnails = preview_->takeFinishedThumbnails();
+            out.drawCalls = preview_->drawCalls();
+        });
+    } catch (const std::exception& e) {
+        out.error = e.what();
+        if (out.error.empty()) out.error = "Scene render failed";
+    }
+    std::lock_guard<std::mutex> io(renderIoMutex_);
+    renderOutputs_ = std::move(out);
+    renderOutputsFresh_ = true;
+}
+// Events of a finished Scene frame (UI thread): Stats history, GPU and lighting status,
+// model streaming progress, viewport.ready and the HTML gizmo camera.
+void StudioHost::publishSceneFrame(const FrameOutputs& out) {
+    {
+        // Stats panel: smoothed time between finished Scene frames.
+        const double now = platform_.now();
+        if (lastSceneFrame_ > 0) {
+            const double ms = (now - lastSceneFrame_) * 1000.0;
+            sceneFrameMs_ = sceneFrameMs_ <= 0 ? ms : sceneFrameMs_ * 0.95 + ms * 0.05;
+            frameHistory_.emplace_back(float(ms), out.drawCalls);
+            if (frameHistory_.size() > 240) frameHistory_.pop_front();
+        }
+        lastSceneFrame_ = now;
+        session_->setSceneFrameStats(sceneFrameMs_, ++sceneFrameCount_);
+    }
+    for (const auto& asset : out.thumbnails) {
+        Json payload = Json::object();
+        payload.set("path", Json::string(asset));
+        sendEventPayload("asset.thumbnail", payload);
+    }
+    session_->setFacialPreviewGpuStatus(out.facialReady, out.facialError);
+    if ((lightingStatusTicks_++ % 60) == 0) sendEvent("lighting.status", out.lightingStatus);
+    {
+        // Scene model streaming progress (status bar / splash).
+        const auto& load = out.load;
+        if (load.total > 0 && load.done < load.total) {
+            if (load.done != lastLoadDone_ || load.total != lastLoadTotal_) {
+                lastLoadDone_ = load.done; lastLoadTotal_ = load.total; loadingShown_ = true;
+                sendLoading("models", load.current, load.done, load.total);
+            }
+        } else if (loadingShown_) {
+            loadingShown_ = false; lastLoadDone_ = lastLoadTotal_ = -1;
+            sendLoading("done", "", load.total, load.total);
+        }
+    }
+    if (!readyEmitted_) {
+        sendEvent("viewport.ready", "Native Renderer3D");
+        readyEmitted_ = true;
+        cameraSent_ = false;
+    }
+    publishCamera(out.camera);
+}
+void StudioHost::failScene(const std::string& message) {
+    platform_.log("AIVERSE native Scene failed: " + message);
+    sendEvent("viewport.error", message);
+    readyEmitted_ = false;
+    placement_.visible = false;
+    {
+        ViewportRect hidden;
+        NativeViewportPlacement none;
+        (void)platform_.placeSurface(StudioSurface::Scene, hidden, none);
+    }
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        renderOutputsFresh_ = false;
+    }
+    try { onScene([&] { preview_.reset(); }); }
+    catch (const std::exception& e) { platform_.log(std::string("AIVERSE native Scene release failed: ") + e.what()); }
+}
+void StudioHost::publishCamera(const StudioScene::CameraState& camera) {
+    if (!htmlComposite_) return;
     if (cameraSent_ && std::abs(camera.yaw - lastCameraYaw_) < 1e-4 && std::abs(camera.pitch - lastCameraPitch_) < 1e-4 &&
         std::abs(camera.distance - lastCameraDistance_) <= 1e-3 * std::max(1.0, lastCameraDistance_) &&
         lastCameraOrtho_ == camera.ortho) return;
@@ -480,51 +622,53 @@ void StudioHost::publishCamera() {
 }
 
 // ---------------------------------------------------------------- Scene operations
-void StudioHost::orbit(double dx, double dy) { if (preview_ && finite({dx, dy})) preview_->orbit(float(dx), float(dy)); }
-void StudioHost::zoom(double amount) { if (preview_ && std::isfinite(amount)) preview_->zoom(float(amount)); }
-void StudioHost::look(double dx, double dy) { if (preview_ && finite({dx, dy})) preview_->look(float(dx), float(dy)); }
-void StudioHost::pan(double dx, double dy) { if (preview_ && finite({dx, dy})) preview_->pan(float(dx), float(dy)); }
+void StudioHost::orbit(double dx, double dy) { if (preview_ && finite({dx, dy})) onScene([&] { preview_->orbit(float(dx), float(dy)); }); }
+void StudioHost::zoom(double amount) { if (preview_ && std::isfinite(amount)) onScene([&] { preview_->zoom(float(amount)); }); }
+void StudioHost::look(double dx, double dy) { if (preview_ && finite({dx, dy})) onScene([&] { preview_->look(float(dx), float(dy)); }); }
+void StudioHost::pan(double dx, double dy) { if (preview_ && finite({dx, dy})) onScene([&] { preview_->pan(float(dx), float(dy)); }); }
 void StudioHost::moveCamera(double right, double up, double forward) {
-    if (preview_ && finite({right, up, forward})) preview_->move(float(right), float(up), float(forward));
+    if (preview_ && finite({right, up, forward})) onScene([&] { preview_->move(float(right), float(up), float(forward)); });
 }
 void StudioHost::focusSelection() {
     if (projectLoading_ || !preview_) return;
-    preview_->focusSelected(session_->workspace().map, session_->workspace().project.isFps(), session_->selectedObjectId());
+    onScene([&] { preview_->focusSelected(session_->workspace().map, session_->workspace().project.isFps(), session_->selectedObjectId()); });
 }
-void StudioHost::resetView() { if (preview_) preview_->resetView(); }
+void StudioHost::resetView() { if (preview_) onScene([&] { preview_->resetView(); }); }
 void StudioHost::frameAll() {
     if (projectLoading_ || !preview_) return;
-    preview_->frameAll(session_->workspace().map, session_->workspace().project.isFps());
+    onScene([&] { preview_->frameAll(session_->workspace().map, session_->workspace().project.isFps()); });
 }
-void StudioHost::setPivotSnap(bool on) { if (preview_) preview_->setPivotSnap(on); }
+void StudioHost::setPivotSnap(bool on) { if (preview_) onScene([&] { preview_->setPivotSnap(on); }); }
 void StudioHost::setTool(int tool) {
     if (!preview_ || tool < 0 || tool > 3) return;
-    preview_->setTransformTool(StudioScene::TransformTool(tool));
+    onScene([&] { preview_->setTransformTool(StudioScene::TransformTool(tool)); });
     static const char* names[4] = {"view", "move", "rotate", "scale"};
     sendEvent("viewport.tool", names[tool]);
 }
-int StudioHost::tool() const { return preview_ ? int(preview_->transformTool()) : 1; }
+int StudioHost::tool() { return preview_ ? int(onScene([&] { return preview_->transformTool(); })) : 1; }
 bool StudioHost::gizmoAt(double x, double y, double w, double h) {
     if (!preview_) return false;
-    const int hit = preview_->orientationGizmoHit(float(x), float(y), float(w), float(h));
+    const int hit = onScene([&] { return preview_->orientationGizmoHit(float(x), float(y), float(w), float(h)); });
     if (hit < 0) return false;
-    preview_->activateOrientationGizmo(hit);
+    onScene([&] { preview_->activateOrientationGizmo(hit); });
     return true;
 }
 bool StudioHost::moveBegin(double x, double y, double w, double h) {
     if (projectLoading_) return false;
-    return preview_ && preview_->beginTransformDrag(float(x), float(y), float(w), float(h));
+    return preview_ && onScene([&] { return preview_->beginTransformDrag(float(x), float(y), float(w), float(h)); });
 }
 void StudioHost::moveUpdate(double x, double y, double w, double h, bool invertSnap) {
     if (!preview_) return;
-    preview_->updateTransformDrag(float(x), float(y), float(w), float(h), invertSnap);
-    const std::string caption = preview_->transformCaption();
+    const std::string caption = onScene([&] {
+        preview_->updateTransformDrag(float(x), float(y), float(w), float(h), invertSnap);
+        return preview_->transformCaption();
+    });
     if (caption != lastActionCaption_) { lastActionCaption_ = caption; sendEvent("viewport.action", caption); }
 }
 void StudioHost::moveEnd() {
-    if (projectLoading_) { if (preview_) preview_->clearTransformPreview(); return; }
+    if (projectLoading_) { if (preview_) onScene([&] { preview_->clearTransformPreview(); }); return; }
     if (!preview_) return;
-    const auto commit = preview_->endTransformDrag();
+    const auto commit = onScene([&] { return preview_->endTransformDrag(); });
     lastActionCaption_.clear();
     sendEvent("viewport.action", "");
     using Tool = StudioScene::TransformTool;
@@ -532,7 +676,7 @@ void StudioHost::moveEnd() {
         (commit->tool == Tool::Move && std::abs(commit->move.x) + std::abs(commit->move.y) + std::abs(commit->move.z) < 1e-4f) ||
         (commit->tool == Tool::Rotate && (!std::isfinite(commit->degrees) || std::abs(commit->degrees) < 1e-3f)) ||
         (commit->tool == Tool::Scale && (!std::isfinite(commit->factor) || std::abs(commit->factor - 1.0f) < 1e-4f));
-    if (unchanged) { preview_->clearTransformPreview(); return; }
+    if (unchanged) { onScene([&] { preview_->clearTransformPreview(); }); return; }
     // Read current Transform values through the same inspector API the UI uses, then
     // write ONE undoable studio.setProperties (y promotes legacy units; lights use height).
     Json params = Json::object();
@@ -575,19 +719,21 @@ void StudioHost::moveEnd() {
         const auto outcome = request("studio.setProperties", set);
         if (outcome.has("error")) platform_.log("AIVERSE transform: " + outcome.getStr("error"));
     }
-    preview_->clearTransformPreview();
+    onScene([&] { preview_->clearTransformPreview(); });
     sendEvent("document.changed", "");
 }
 void StudioHost::marquee(double ax, double ay, double bx, double by, double w, double h) {
     if (!preview_ || w < 2 || h < 2) return;
-    preview_->setMarquee(true, float(ax / w), float(ay / h), float(bx / w), float(by / h));
+    onScene([&] { preview_->setMarquee(true, float(ax / w), float(ay / h), float(bx / w), float(by / h)); });
 }
 void StudioHost::marqueeEnd(double ax, double ay, double bx, double by, double w, double h, const std::string& mode) {
-    if (projectLoading_) { if (preview_) preview_->setMarquee(false); return; }
+    if (projectLoading_) { if (preview_) onScene([&] { preview_->setMarquee(false); }); return; }
     if (!preview_) return;
-    preview_->setMarquee(false);
-    const auto ids = preview_->idsInRect(float(ax), float(ay), float(bx), float(by), float(w), float(h),
-        session_->workspace().map, session_->workspace().project.isFps());
+    const auto ids = onScene([&] {
+        preview_->setMarquee(false);
+        return preview_->idsInRect(float(ax), float(ay), float(bx), float(by), float(w), float(h),
+                                   session_->workspace().map, session_->workspace().project.isFps());
+    });
     Json params = Json::object(), list = Json::array();
     for (const auto& id : ids) list.push(Json::string(id));
     params.set("ids", list);
@@ -595,10 +741,10 @@ void StudioHost::marqueeEnd(double ax, double ay, double bx, double by, double w
     if (!request("studio.select", params).has("error")) sendEvent("selection.changed", "");
 }
 void StudioHost::hover(double x, double y, double w, double h) {
-    if (projectLoading_ || !preview_ || preview_->transformDragActive()) return;
+    if (projectLoading_ || !preview_ || onScene([&] { return preview_->transformDragActive(); })) return;
     if (updateBrushCursor(x, y, w, h)) return;
-    const std::string id = x < 0 || y < 0 ? std::string() :
-        preview_->pick(float(x), float(y), float(w), float(h), session_->workspace().map, session_->workspace().project.isFps());
+    const std::string id = x < 0 || y < 0 ? std::string() : onScene([&] {
+        return preview_->pick(float(x), float(y), float(w), float(h), session_->workspace().map, session_->workspace().project.isFps()); });
     if (id == hoverId_) return;
     hoverId_ = id;
     sendEvent("viewport.hover", id);
@@ -619,12 +765,12 @@ bool StudioHost::updateBrushCursor(double x, double y, double w, double h) {
     if (!preview_) return false;
     const auto& b = session_->sceneBrush();
     render::float3 at{};
-    if (!b.armed || x < 0 || y < 0 || !preview_->groundPoint(float(x), float(y), float(w), float(h), at)) {
-        preview_->setBrushCursor(false, {}, 0);
+    if (!b.armed || x < 0 || y < 0 || !onScene([&] { return preview_->groundPoint(float(x), float(y), float(w), float(h), at); })) {
+        onScene([&] { preview_->setBrushCursor(false, {}, 0); });
         return b.armed;
     }
     const float r = b.kind == "road" ? 0.6f : b.kind == "river" ? float(b.width * 0.5) : float(b.radius);
-    preview_->setBrushCursor(true, at, r);
+    onScene([&] { preview_->setBrushCursor(true, at, r); });
     return true;
 }
 void StudioHost::brushAdjust(double factor, bool disarm) {
@@ -634,7 +780,7 @@ void StudioHost::brushAdjust(double factor, bool disarm) {
     else params.set("radius", Json::number(std::clamp(b.radius * factor, 0.25, 64.0), 2));
     const auto reply = request("studio.sceneBrush", params);
     if (reply.has("result")) sendEventPayload("brush.changed", reply["result"]);
-    if (disarm && preview_) preview_->setBrushCursor(false, {}, 0);
+    if (disarm && preview_) onScene([&] { preview_->setBrushCursor(false, {}, 0); });
 }
 bool StudioHost::brushArmed() const { return !projectLoading_ && preview_ && session_->sceneBrush().armed; }
 // Scene overlay: extension gizmos + spline handles (Roads / Water "Edit nodes").
@@ -654,7 +800,7 @@ void StudioHost::rebuildOverlay() {
         sh.a = {float(hd["x"].toDouble()), 0.2f, float(hd["z"].toDouble())};
         shapes.push_back(sh);
     }
-    preview_->setOverlayShapes(std::move(shapes));
+    onScene([&] { preview_->setOverlayShapes(std::move(shapes)); });
 }
 // phase 0 press (true when a handle was hit), 1 drag, 2 release (commits the move).
 bool StudioHost::splineDrag(int phase, double x, double y, double w, double h) {
@@ -664,7 +810,7 @@ bool StudioHost::splineDrag(int phase, double x, double y, double w, double h) {
         std::string hit;
         for (const auto& hd : splineCache_["handles"].items()) {
             render::float2 p;
-            if (!preview_->projectPoint({float(hd["x"].toDouble()), 0.2f, float(hd["z"].toDouble())}, float(w), float(h), p)) continue;
+            if (!onScene([&] { return preview_->projectPoint({float(hd["x"].toDouble()), 0.2f, float(hd["z"].toDouble())}, float(w), float(h), p); })) continue;
             const float d = std::hypot(p.x - float(x), p.y - float(y));
             if (d < best) { best = d; hit = hd.getStr("id"); }
         }
@@ -674,7 +820,7 @@ bool StudioHost::splineDrag(int phase, double x, double y, double w, double h) {
     }
     if (splineDrag_.empty()) return false;
     render::float3 at{};
-    const bool onGround = preview_->groundPoint(float(x), float(y), float(w), float(h), at);
+    const bool onGround = onScene([&] { return preview_->groundPoint(float(x), float(y), float(w), float(h), at); });
     if (phase == 1) {
         if (!onGround) return true;
         Json handles = Json::array();
@@ -722,7 +868,7 @@ bool StudioHost::terrainStroke(int phase, double x, double y, double w, double h
         return true;
     }
     render::float3 at{};
-    if (!preview_->groundPoint(float(x), float(y), float(w), float(h), at)) return phase != 0;
+    if (!onScene([&] { return preview_->groundPoint(float(x), float(y), float(w), float(h), at); })) return phase != 0;
     updateBrushCursor(x, y, w, h);
     const bool ok = phase == 0 ? session_->strokeBegin(at.x, at.z, &error) : session_->strokeDab(at.x, at.z, &error);
     if (!ok && !error.empty()) report();
@@ -731,7 +877,7 @@ bool StudioHost::terrainStroke(int phase, double x, double y, double w, double h
 bool StudioHost::placeAsset(const std::string& asset, double x, double y, double w, double h) {
     if (projectLoading_ || !preview_) return false;
     render::float3 at{};
-    if (!preview_->groundPoint(float(x), float(y), float(w), float(h), at)) return false;
+    if (!onScene([&] { return preview_->groundPoint(float(x), float(y), float(w), float(h), at); })) return false;
     Json params = Json::object();
     params.set("asset", Json::string(asset));
     params.set("x", Json::number(double(at.x), 3));
@@ -750,7 +896,7 @@ bool StudioHost::placeAsset(const std::string& asset, double x, double y, double
 bool StudioHost::placeType(const std::string& type, double x, double y, double w, double h) {
     if (projectLoading_ || !preview_ || type.empty() || type.size() > 128) return false;
     render::float3 at{};
-    if (!preview_->groundPoint(float(x), float(y), float(w), float(h), at)) return false;
+    if (!onScene([&] { return preview_->groundPoint(float(x), float(y), float(w), float(h), at); })) return false;
     // Resources and scenery start neutral, everything else belongs to player 1.
     const auto& t = session_->workspace().project.rulesJson["types"][type];
     const int owner = (t.has("resourceNode") || t.getBool("invulnerable")) ? 0 : 1;
@@ -779,7 +925,7 @@ void StudioHost::select(double x, double y, double w, double h, const std::strin
         vivid::HumanFaceHit hit;
         Json payload = Json::object();
         std::string pickError;
-        if (face && preview_->sculptPick(float(x), float(y), float(w), float(h), *face, hit, &pickError)) {
+        if (face && onScene([&] { return preview_->sculptPick(float(x), float(y), float(w), float(h), *face, hit, &pickError); })) {
             Json p = Json::array();
             for (float v : {hit.point.x, hit.point.y, hit.point.z}) p.push(Json::number(double(v), region ? 5 : 6));
             payload.set("hit", Json::fromBool(true));
@@ -799,8 +945,8 @@ void StudioHost::select(double x, double y, double w, double h, const std::strin
         sendEventPayload(region ? "human.facePick" : "human.sculpt", payload);
         return;
     }
-    const std::string objectId = preview_->pick(float(x), float(y), float(w), float(h),
-        session_->workspace().map, session_->workspace().project.isFps());
+    const std::string objectId = onScene([&] { return preview_->pick(float(x), float(y), float(w), float(h),
+        session_->workspace().map, session_->workspace().project.isFps()); });
     // A modifier click on empty space keeps the current selection.
     if (objectId.empty() && mode != "replace") return;
     Json params = Json::object();
@@ -977,7 +1123,7 @@ Json StudioHost::assetThumbnail(const std::string& path) {
     }
     if (models.count(ext)) {
         if (!preview_) { out.set("pending", Json::fromBool(false)); return out; }
-        preview_->requestThumbnail(ws.project.dir, path, file.string());
+        onScene([&] { preview_->requestThumbnail(ws.project.dir, path, file.string()); });
         out.set("pending", Json::fromBool(true));
         return out;
     }
@@ -1042,7 +1188,7 @@ Json StudioHost::viewportInput(const Json& input) {
     if (kind == "view") {
         auto [yaw, pitch] = delta("yaw", "pitch", 100, "Invalid camera orientation");
         if (std::abs(pitch) > 1.5708) throw std::runtime_error("Invalid camera orientation");
-        preview_->setOrientation(float(yaw), float(pitch));
+        onScene([&] { preview_->setOrientation(float(yaw), float(pitch)); });
         return ok();
     }
     if (kind == "handle") {
@@ -1070,10 +1216,12 @@ Json StudioHost::viewportInput(const Json& input) {
             const double x = set["x"].toDouble(), y = set["y"].toDouble(), z = set["z"].toDouble(), dist = set["distance"].toDouble(),
                          yaw = set["yaw"].toDouble(), pitch = set["pitch"].toDouble();
             for (double v : {x, y, z, dist, yaw, pitch}) if (!std::isfinite(v) || std::abs(v) > 1e6) throw std::runtime_error("Invalid camera");
-            preview_->setOrthographic(set.getBool("ortho"));
-            preview_->tweenCamera({float(x), float(y), float(z)}, float(std::clamp(dist, 0.5, 100000.0)), float(yaw), float(pitch));
+            onScene([&] {
+                preview_->setOrthographic(set.getBool("ortho"));
+                preview_->tweenCamera({float(x), float(y), float(z)}, float(std::clamp(dist, 0.5, 100000.0)), float(yaw), float(pitch));
+            });
         }
-        const auto cam = preview_->cameraState();
+        const auto cam = onScene([&] { return preview_->cameraState(); });
         result.set("x", Json::number(double(cam.target.x), 3)); result.set("y", Json::number(double(cam.target.y), 3));
         result.set("z", Json::number(double(cam.target.z), 3)); result.set("distance", Json::number(double(cam.distance), 3));
         result.set("yaw", Json::number(double(cam.yaw), 5)); result.set("pitch", Json::number(double(cam.pitch), 5));
@@ -1084,17 +1232,19 @@ Json StudioHost::viewportInput(const Json& input) {
         // Scene toolbar: tool, Global/Local, snapping, gizmo visibility.
         static const char* names[4] = {"view", "move", "rotate", "scale"};
         const std::string t = input.getStr("tool");
-        for (int i = 0; i < 4; ++i) if (t == names[i]) preview_->setTransformTool(StudioScene::TransformTool(i));
-        if (realBool("local")) preview_->setLocalSpace(input["local"].boolean());
-        if (realBool("gizmos")) preview_->setGizmosVisible(input["gizmos"].boolean());
+        onScene([&] {
+            for (int i = 0; i < 4; ++i) if (t == names[i]) preview_->setTransformTool(StudioScene::TransformTool(i));
+            if (realBool("local")) preview_->setLocalSpace(input["local"].boolean());
+            if (realBool("gizmos")) preview_->setGizmosVisible(input["gizmos"].boolean());
+        });
         if (realBool("surface")) surfaceSnap_ = input["surface"].boolean();
         if (realBool("snap"))
-            preview_->setSnap(input["snap"].boolean(), float(input["snapMove"].toDouble(0)),
-                              float(input["snapRotate"].toDouble(0)), float(input["snapScale"].toDouble(0)));
-        result.set("tool", Json::string(names[int(preview_->transformTool())]));
+            onScene([&] { preview_->setSnap(input["snap"].boolean(), float(input["snapMove"].toDouble(0)),
+                              float(input["snapRotate"].toDouble(0)), float(input["snapScale"].toDouble(0))); });
+        result.set("tool", Json::string(names[int(onScene([&] { return preview_->transformTool(); }))]));
         return ok();
     }
-    if (kind == "projection" && realBool("ortho")) { preview_->setOrthographic(input["ortho"].boolean()); return ok(); }
+    if (kind == "projection" && realBool("ortho")) { onScene([&] { preview_->setOrthographic(input["ortho"].boolean()); }); return ok(); }
     if (kind == "zoom" && input["amount"].isNumber()) {
         const double wheel = input["amount"].toDouble();
         if (!std::isfinite(wheel) || std::abs(wheel) > 1000) throw std::runtime_error("Invalid zoom delta");
@@ -1161,14 +1311,14 @@ bool StudioHost::handleHostMethod(const Json& req) {
     if (method == "studio.humanMakeupAlign") return answer([&] {
         // Makeup layers placed from the shown face (needs the GPU preview's CPU copy).
         if (!preview_) throw std::runtime_error("Покажите персонажа во вьюпорте");
-        Json r = Json::object(); r.set("values", preview_->alignMakeup(session_->facialPreviewBinding())); return r;
+        Json r = Json::object(); r.set("values", onScene([&] { return preview_->alignMakeup(session_->facialPreviewBinding()); })); return r;
     });
     if (method == "studio.humanLookCapture") return answer([&] {
         // Preset card picture: the next character frame is cropped around the head and written beside the look.
         if (!preview_ || !session_->facialPreviewBinding().bound())
             throw std::runtime_error("Покажите персонажа во вьюпорте, чтобы снять превью");
         const auto path = studioHumanLookThumbnailFile(session_->workspace().project.dir, params.getStr("name"), true);
-        preview_->captureFacialThumbnail(path.string());
+        onScene([&] { preview_->captureFacialThumbnail(path.string()); });
         Json r = Json::object(); r.set("ok", Json::fromBool(true)); return r;
     });
     if (method == "studio.viewportInput") return answer([&] { return viewportInput(params); });
@@ -1216,7 +1366,7 @@ bool StudioHost::handleHostMethod(const Json& req) {
             if (entry != "map" && entry != "menu") throw std::runtime_error("Invalid game entry");
             auto plan = studioGameLaunch(session_->workspace(), entry == "map");
             if (entry == "map" && params.getBool("fromScene") && preview_) {
-                const auto cam = preview_->cameraState();
+                const auto cam = onScene([&] { return preview_->cameraState(); });
                 plan.camera = std::array<float, 5>{cam.target.x, cam.target.z, cam.distance, float(cam.pitch * 57.29578), float(cam.yaw * 57.29578)};
             }
             ensureGame();
@@ -1342,7 +1492,10 @@ void StudioHost::afterSessionReply(const Json& req, const Json& reply) {
     if (reply.has("error")) return;
     const std::string method = req.getStr("method");
     if (method == "studio.select" && platform_.hasFloatingWindows()) sendEvent("selection.changed", ""); // floats follow it
-    if (preview_ && (method == "studio.openMap" || method == "studio.newMap")) preview_->resetCamera();
+    if (preview_ && (method == "studio.openMap" || method == "studio.newMap")) {
+        onScene([&] { preview_->resetCamera(); });
+        mapSnapshot_.reset(); rulesSnapshot_.reset();
+    }
     if (method == "studio.materialPreview") sendEvent("material.preview", req["params"].getStr("name"));
     if (documentChangingMethods().count(method) || (method == "studio.op" && reply["result"].getBool("changed")))
         sendEvent("document.changed", "");
@@ -1377,8 +1530,8 @@ void StudioHost::handleMessage(const std::string& json) {
             result.set("history", history);
             result.set("frames", Json::number(int64_t(sceneFrameCount_)));
             if (preview_) {
-                result.set("drawCalls", Json::number(int64_t(preview_->drawCalls())));
-                if (req["params"].getBool("textures")) result.set("gpu", preview_->textureResources());
+                result.set("drawCalls", Json::number(int64_t(onScene([&] { return preview_->drawCalls(); }))));
+                if (req["params"].getBool("textures")) result.set("gpu", onScene([&] { return preview_->textureResources(); }));
             } else result.set("error", Json::string("The Scene panel is not visible"));
             reply.set("result", std::move(result));
         } else if (method == "studio.viewportRect" && req["id"].isNumber()) {
@@ -1389,7 +1542,7 @@ void StudioHost::handleMessage(const std::string& json) {
             result.set("ok", Json::fromBool(true));
             reply.set("result", std::move(result));
         } else {
-            if (preview_ && (method == "studio.wind" || method == "studio.windSet")) session_->setWindSceneStats(preview_->windStats());
+            if (preview_ && (method == "studio.wind" || method == "studio.windSet")) session_->setWindSceneStats(onScene([&] { return preview_->windStats(); }));
             reply = session_->dispatch(req);
         }
         sendReply(reply);
