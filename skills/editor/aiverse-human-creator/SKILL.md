@@ -1,0 +1,54 @@
+---
+name: aiverse-human-creator
+description: Author VIVID digital humans (skin, eyes, hair, face and body proportions, 52 facial rest channels, morph routes, rig bone names, rig corrections, skin weights) through the aiversemcp human_* tools or the Studio "Human Creator" window, saved as humans/<name>.json and previewed in the Studio viewport.
+---
+
+# VIVID Human Creator
+
+Use this skill when a user asks to create, change or review a digital human / character face, skin,
+eyes or hair in an AIVERSE game, or asks about the Studio "Human Creator" window.
+
+One document, two editors:
+- Studio window "Human Creator" (centre dock, panel id human_creator), native bridge methods studio.humanCreator*.
+- MCP tools `human_schema`, `human_list`, `human_get`, `human_create`, `human_edit`, `human_validate`
+  (GPU-free; run in aiversemcp without an editor).
+- Both read and write `<project>/humans/<name>.json` (version 1: `dna`, `rigCorrections`, `skinWeights`, `routes`)
+  through `engine/character/vivid/HumanCreatorWorkbench.h` (`aiverse::vivid::HumanCreatorWorkbench`, target `aiverse_vivid_human`).
+  Saves are atomic and never truncate the last-good file.
+
+## Workflow (MCP)
+1. `human_schema` once: section ids, field `key`s (DNA paths), `min`/`max`, presets, 52 channel names,
+   reference rig `nodes`, morph `targets`, head `vertices`. Never guess a key or a range.
+2. `human_create {name, preset}` (neutral | warm | cool | stylized).
+3. `human_edit {name, ...}` - one all-or-nothing transaction, applied in order:
+   `preset` -> `set {key: value}` -> `routes` (replaces the list) -> `rig` -> `skin`.
+   ```json
+   {"name":"ada","set":{"skin.melanin":0.55,"skin.melaninColor":[0.48,0.32,0.24],
+     "eyes.irisColor":[0.22,0.36,0.18],"groom.lengthMeters":0.35,"groom.curl":0.4,
+     "anatomy.jawWidth":0.95,"expressionRest.24":0.15},
+    "rig":[{"node":"head","translation":[0,0.005,0]}]}
+   ```
+   An invalid edit (out of range, unknown key, duplicate bone, |offset| > 1, weight outside 0..1) rejects the whole
+   call and writes nothing; read `error`, fix, retry.
+4. `human_get {name}` to confirm the stored document.
+5. Visual check: the user opens Studio > Human Creator > Load `<name>` > "Show in viewport". Say plainly that you did not
+   see pixels: `aiversemcp` has no Studio screenshot tool yet.
+
+## Sections (Studio window = tools/vivid-creator)
+Skin, Eyes, Hair/groom, Face and body proportions, Facial morph / 52 channels (baked into the preview through the
+routes), Facial morph bindings (channel -> target, gain 0..4), Rig bone names, Rig correction authoring
+(presentation-only node overlay), Skin weight authoring (per vertex + named bone), plus Identity.
+Viewport brush painting, scalp collision meshes and imported glTF/FBX/OBJ packages stay in `tools/vivid-creator`.
+
+## Rules
+- DNA is presentation only: no gameplay authority, no ECS mutation, no MetaHuman/Unreal DNA files.
+- Keep the 52 channel order (`engine/character/vivid/Face.h`); address channels as `expressionRest.<index>`.
+- Groom budget: `groom.guideCount * groom.segments <= 262144`.
+- Imported characters (scans, wardrobes, appearance looks) use the "VIVID Appearance" window and `studio.humanAppearance*`.
+
+## Validation
+- `ctest -R '^studio_human_(creator|appearance_session)$'` (native, Mac/KINGSTON build).
+- `cd apps/studio-web && npm run test:human && npx tsc --noEmit`.
+- After a change: `python3 tools/skills/catalog.py generate` and `python3 tools/skills/audit.py --strict`.
+
+Reference: `docs/vivid.md` (Studio Human Creator), `docs/agent-handoffs/vivid.md`.

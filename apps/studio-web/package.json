@@ -18,7 +18,7 @@
     "test:scene": "node --experimental-strip-types --test tests/sceneState.test.mjs tests/gameViewport.test.mjs tests/sceneCamera.test.mjs",
     "test:bridge": "node --experimental-strip-types --test tests/bridge.test.mjs",
     "test:facial": "node --experimental-strip-types --test tests/facialRigSchema.test.mjs",
-    "test:human": "node --experimental-strip-types --test tests/humanLookSchema.test.mjs",
+    "test:human": "node --experimental-strip-types --test tests/humanLookSchema.test.mjs tests/humanCreatorSchema.test.mjs",
     "test:assets": "node --experimental-strip-types --test tests/assetTree.test.mjs"
   },
   "dependencies": {

@@ -3,6 +3,7 @@
 // Only called on the Metal gfx::Device owner thread, never from browser code.
 #pragma once
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
+#include "engine/character/vivid/HumanCreatorWorkbench.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/ModelAssetProvider.h"
 #include "engine/render/Animation.h"
@@ -45,6 +46,9 @@ private:
     render::RenderDeviceLifetime::Lease gpuLease_;
     std::unique_ptr<render::ModelAssetProvider> provider_;
     render::Model* model_=nullptr; // borrowed from provider, guarded per frame
+    render::Model* hair_=nullptr;  // Human Creator groom cards (borrowed)
+    std::string hairKey_;
+    vivid::RigAuthoring creatorRig_; // Human Creator presentation overlay
     lib::animation::FacialPreviewSession facial_;
     render::Animator animator_; // ONLY parent pose evaluator in this preview
     render::Pose pose_;

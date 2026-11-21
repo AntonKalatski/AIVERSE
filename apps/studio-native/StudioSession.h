@@ -8,6 +8,7 @@
 #include <functional>
 #include "apps/studio-native/StudioAssetTransfers.h"
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
+#include "engine/character/vivid/HumanCreatorWorkbench.h"
 #include "apps/editor/core/Workspace.h"
 namespace aiverse::studio {
 class StudioSession {
@@ -44,6 +45,7 @@ private:
     editor::Workspace ws_;
     std::string selected_;
     StudioFacialPreviewBinding facialPreview_;
+    vivid::HumanCreatorWorkbench humanCreator_;
     std::future<Json> humanBuild_;
     Json humanBuildResult_=Json::object();
     std::string humanBuildProject_;

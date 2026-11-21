@@ -1959,3 +1959,33 @@ The versioned `HumanCreatorSession::saveFile` no longer removes the target DNA r
 Work is isolated on `feature/vivid-human-creator-ui`, because `feature/vivid-digital-humans` has progressed through other agents' Stage 6A–6E edits. This branch intentionally uses their existing full Creator, HumanDNA/Rig/Materials/Groom/Import, not a duplicate implementation. The macOS native CI workflow `.github/workflows/vivid-human-creator-validation.yml` builds the existing Creator and all 16 VIVID/MotionWeave focused test binaries and runs CTest. `AIVERSE_VIVID_REF=feature/vivid-human-creator-ui` selects this branch in `tools/vivid-validate.sh` (the branch default is changed within this branch only). That script also runs real Renderer3D one/12 actor and procedural/imported human Creator GPU GUI previews on a graphical Mac.
 
 **Status:** changes are committed, but the CI job was pending at last inspection and no user Mac test for this isolated branch has been reported. The earlier 11/11 CTest and one/12 actor GUI passes apply to older Stage 5J source only. Production-grade photorealism still requires authored licensed/scanned geometry, high-quality skin/eye/hair maps, rig corrective authoring, physically evaluated performance/lighting and actual end-to-end visual asset QA. Do not claim MetaHuman parity from the procedural reference.
+
+## Studio Human Creator — Studio window, MCP tools (2026-11-21)
+
+The `tools/vivid-creator` authoring sections are available in the HTML5 Studio as the **Human Creator** window
+(centre dock, panel `human_creator`) and to agents as `aiversemcp` tools. One shared core:
+
+- `engine/character/vivid/HumanCreatorWorkbench.h` — `vivid::HumanCreatorWorkbench`: `HumanCreatorSession` (DNA, undo/redo),
+  `RigAuthoring`, `SkinWeightAuthoring` and facial `ShapeRoute`s as one validated document. `schema()` lists 10 sections
+  (identity, skin, eyes, groom, anatomy, expression = 52 rest channels, routes, rig bone names, rigCorrections,
+  skinWeights) with DNA paths and the same limits as `HumanDNA::validate()`. Every edit is all-or-nothing.
+  `buildModels()` generates the procedural head + groom cards, bakes `expressionRest` through the routes into the CPU
+  vertices (`FaceShapeBinding` + `SparseMorphLibrary::evaluate`) and applies skin weights before upload.
+- Storage: `<project>/humans/<name>.json` `{version:1, dna, rigCorrections, skinWeights, routes}`; exclusive staging +
+  `renameat`, never truncates or deletes the last-good file; names `[A-Za-z0-9_-]{1,64}`, no symlinks.
+- Studio native: `studio.humanCreatorInfo|Set|Preset|Undo|Redo|Route|Rig|Skin|New|Save|Load|List|Preview`
+  (`apps/studio-native/StudioSession.cpp`). `Preview {enabled}` binds `StudioFacialPreviewBinding::bindCreator(document)`;
+  every accepted edit rebinds with a new revision. `StudioFacialGpuPreview` regenerates on the Metal owner thread,
+  publishes head + hair under fresh generation keys (last-good stays drawable until publication), applies rig
+  corrections to node world matrices at submit and draws the hair cards with the head framing.
+- Studio web: `apps/studio-web/src/panels/generated/HumanCreatorPanel.tsx`, helpers `panels/humanCreatorSchema.ts`.
+- MCP: `human_schema`, `human_list`, `human_get`, `human_create`, `human_edit`, `human_validate`
+  (`apps/editor/core/HumanCreatorOps.cpp`, GPU-free). Recipe: `skills/editor/aiverse-human-creator`.
+
+Limits of this stage: the Studio preview is static (no groom simulation; hair follows the head framing, not the
+animated scalp); viewport brush painting, scalp collision meshes and imported glTF/FBX/OBJ packages remain in
+`tools/vivid-creator`; `aiversemcp` cannot capture the Studio viewport.
+
+Tests: `studio_human_creator` (workbench: schema, validated edits, routes, rig/skin, rest bake moves vertices,
+document round trip, atomic storage, traversal rejection) and new `studio.humanCreator*` checks in
+`studio_human_appearance_session`; web `tests/humanCreatorSchema.test.mjs`.

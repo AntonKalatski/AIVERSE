@@ -97,6 +97,26 @@ int main() {
   auto parts=Json::object();parts.set("guid",Json::string(person->guid));parts.set("headGuid",Json::string(person->guid));parts.set("bone",Json::string(""));parts.set("hiddenMeshes",Json::array());parts.set("name",Json::string("parts_imported"));
   AIVERSE_TEST_CHECK(call("studio.humanHeadBodyImport",parts)["result"].getBool("running"));AIVERSE_TEST_CHECK(!poll().has("error"));
   build.set("guid",Json::string("../../outside"));AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build).has("error"));
+  // Digital Human Creator window methods (studio.humanCreator*).
+  const auto creator=call("studio.humanCreatorInfo");
+  AIVERSE_TEST_CHECK(!creator.has("error")&&creator["result"]["schema"].size()==10&&creator["result"]["catalog"]["nodes"].size()>0);
+  auto set=Json::object();set.set("key",Json::string("skin.melanin"));set.set("value",Json::number(.66));
+  AIVERSE_TEST_CHECK(!call("studio.humanCreatorSet",set).has("error"));
+  set.set("value",Json::number(9.0));AIVERSE_TEST_CHECK(call("studio.humanCreatorSet",set).has("error"));
+  auto preview=Json::object();preview.set("enabled",Json::fromBool(true));
+  const auto bound=call("studio.humanCreatorPreview",preview);
+  AIVERSE_TEST_CHECK(!bound.has("error")&&bound["result"]["preview"]["creator"].boolean()&&bound["result"]["preview"]["bound"].boolean());
+  const auto before=bound["result"]["preview"]["revision"].integer();
+  set.set("value",Json::number(.5));
+  AIVERSE_TEST_CHECK(call("studio.humanCreatorSet",set)["result"]["preview"]["revision"].integer()>before);
+  auto undo=Json::object();undo.set("target",Json::string("dna"));AIVERSE_TEST_CHECK(!call("studio.humanCreatorUndo",undo).has("error"));
+  auto named=Json::object();named.set("name",Json::string("ada_creator"));
+  AIVERSE_TEST_CHECK(!call("studio.humanCreatorSave",named).has("error"));
+  AIVERSE_TEST_CHECK(call("studio.humanCreatorList")["result"]["humans"].size()==1);
+  AIVERSE_TEST_CHECK(!call("studio.humanCreatorNew").has("error"));
+  AIVERSE_TEST_CHECK(!call("studio.humanCreatorLoad",named).has("error"));
+  named.set("name",Json::string("../escape"));AIVERSE_TEST_CHECK(call("studio.humanCreatorSave",named).has("error"));
+  preview.set("enabled",Json::fromBool(false));AIVERSE_TEST_CHECK(!call("studio.humanCreatorPreview",preview)["result"]["preview"]["bound"].boolean());
   fs::remove_all(root);
  } catch(...) {fs::remove_all(root);throw;}
 }

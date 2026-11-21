@@ -48,7 +48,7 @@ bool StudioFacialGpuPreview::clear(
     animator_.setModel(nullptr);
     pose_.clear();
     nodeWorld_.clear();
-    model_=nullptr;
+    model_=nullptr;hair_=nullptr;hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
     guid_.clear();projectRoot_.clear();modelKey_.clear();
     pendingSource_.clear();pendingProject_.clear();pendingGuid_.clear();
     pendingRevision_=revision_=rejectedRevision_=0;
@@ -107,6 +107,54 @@ bool StudioFacialGpuPreview::sync(
            !rejectedError_.empty()) {
             error=rejectedError_;
             return false;
+        }
+        if(binding.creatorMode()) {
+            // Digital Human Creator: regenerate the procedural VIVID human
+            // on this owner thread from the validated document copy, then
+            // publish head + groom cards under fresh generation keys. The
+            // previous generation stays drawable until publication succeeds.
+            if(!pendingSource_.empty()){provider_->cancelAsync(pendingSource_);pendingSource_.clear();}
+            vivid::HumanCreatorWorkbench creator;std::string loadError;
+            if(!creator.loadDocument(binding.creatorDocument(),&loadError))
+                throw std::runtime_error("Human Creator: "+loadError);
+            auto built=creator.buildModels(vivid::GroomQuality::Medium);
+            const int previewBase=vivid::appendHumanPreviewClips(*built.head);
+            if(provider_->publicationBackpressured()) {
+                error="Human Creator publication waiting for GPU retirement";
+                return false;
+            }
+            const auto serial=std::to_string(++publicationSerial_);
+            auto* head=provider_->publishPrepared(device,"studio-creator-head/"+serial,std::move(built.head));
+            render::Model* hair=built.hair?provider_->publishPrepared(device,"studio-creator-hair/"+serial,std::move(built.hair)):nullptr;
+            std::vector<std::string> retired;
+            if(!modelKey_.empty())retired.push_back(modelKey_);
+            if(!hairKey_.empty())retired.push_back(hairKey_);
+            if(!retired.empty())
+                provider_->resources().invalidateSources(device,retired,[&](const auto& affected) {
+                    for(const auto& item:affected)
+                        if(item.model)renderer.invalidateModelCachesFor(item.model);
+                    animator_.setModel(nullptr);
+                    facial_.clear();
+                });
+            appearanceOnly_=true;facial_=lib::animation::FacialPreviewSession{};
+            model_=head;hair_=hair;
+            modelKey_="studio-creator-head/"+serial;hairKey_=hair?"studio-creator-hair/"+serial:std::string();
+            creatorRig_=creator.rigCorrections();
+            animator_.setModel(model_);
+            previewClipBase_=previewBase;activePreviewClip_=-1;
+            projectRoot_=projectRoot;guid_=binding.guid();revision_=binding.revision();
+            pendingRevision_=0;pendingGuid_.clear();pendingProject_.clear();
+            rejectedRevision_=0;rejectedGuid_.clear();rejectedProject_.clear();rejectedError_.clear();
+            return true;
+        }
+        if(!hairKey_.empty()) {
+            // Leaving Creator mode: the groom generation is not part of an
+            // imported character; retire it with the next publication.
+            provider_->resources().invalidateSources(device,{hairKey_},[&](const auto& affected) {
+                for(const auto& item:affected)
+                    if(item.model)renderer.invalidateModelCachesFor(item.model);
+            });
+            hairKey_.clear();hair_=nullptr;creatorRig_=vivid::RigAuthoring{};
         }
         const std::string source="content/"+binding.path();
         if(pendingRevision_!=binding.revision() ||
@@ -231,6 +279,15 @@ bool StudioFacialGpuPreview::submit(
     if(!appearanceOnly_ && !facial_.apply(*model_,pose_,frameDt,error))
         return false; // FacialControlRig is transactional on failure
     render::worldMatrices(*model_,pose_,nodeWorld_);
+    if(binding.creatorMode() && !creatorRig_.edits().empty()) {
+        // Presentation-only rig correction overlay (Creator section 8).
+        std::vector<render::mat4> corrected(nodeWorld_.size());
+        if(!creatorRig_.apply(*model_,nodeWorld_,corrected)) {
+            error="Human Creator rig correction rejected (unknown node or singular pose)";
+            return false;
+        }
+        nodeWorld_=std::move(corrected);
+    }
     if(binding.appearance()) {
         try {vivid::applyHumanBody(*model_,*binding.appearance(),nodeWorld_);}
         catch(const std::exception& ex){error=ex.what();return false;}
@@ -247,6 +304,15 @@ bool StudioFacialGpuPreview::submit(
     draw.world=render::mat4::scale({scale,scale,scale}) *
                render::mat4::translate({-center.x,-center.y,-center.z});
     renderer.drawModel(draw); // same native Renderer3D, no fake browser face
+    if(binding.creatorMode() && hair_) {
+        // Groom cards are authored in head space at bind pose; drawn with
+        // the head's framing. Follow-the-scalp simulation stays in
+        // tools/vivid-creator (dynamic stream), not in this static preview.
+        render::ModelDraw hairDraw;
+        hairDraw.model=hair_;
+        hairDraw.world=draw.world;
+        renderer.drawModel(hairDraw);
+    }
     return true;
 }
 

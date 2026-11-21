@@ -89,7 +89,17 @@ export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boole
 export interface StudioGameDeviceOption { id:string; name:string; group:string }
 export interface StudioGameState { device:StudioGameDevice; paused: boolean; canControl: boolean; canStep: boolean; active: boolean; loading: boolean; progress: number; inMatch: boolean; tick: number; error: string }
 export type StudioMethod = 'studio.renderLighting' | 'studio.inspect' | 'studio.entityMove' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
-  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanPreviewAnimation' | 'studio.humanStudioLighting' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus';
+  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanPreviewAnimation' | 'studio.humanStudioLighting' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus' | 'studio.humanCreatorInfo' | 'studio.humanCreatorSet' | 'studio.humanCreatorPreset' | 'studio.humanCreatorUndo' | 'studio.humanCreatorRedo' | 'studio.humanCreatorRoute' | 'studio.humanCreatorRig' | 'studio.humanCreatorSkin' | 'studio.humanCreatorNew' | 'studio.humanCreatorSave' | 'studio.humanCreatorLoad' | 'studio.humanCreatorList' | 'studio.humanCreatorPreview';
+export type HumanCreatorFieldKind = 'number' | 'integer' | 'string' | 'color' | 'bone' | 'bones';
+export interface HumanCreatorField { key:string; label:string; kind:HumanCreatorFieldKind; min?:number; max?:number; step?:number }
+export interface HumanCreatorSection { id:string; title:string; hint:string; fields:HumanCreatorField[] }
+export interface HumanCreatorRoute { channel:string; target:string; gain:number }
+export interface HumanCreatorDocument { version:1; dna:Record<string,any>; rigCorrections:{version:1;offsets:{node:string;translation:[number,number,number]}[]}; skinWeights:{version:1;edits:{vertex:number;joint:string;weight:number}[]}|null; routes:HumanCreatorRoute[] }
+export interface HumanCreatorInfo { revision?:number; schema?:HumanCreatorSection[]; document:HumanCreatorDocument|{dna:Record<string,any>}; presets?:string[];
+  canUndo?:boolean; canRedo?:boolean; rigCanUndo?:boolean; rigCanRedo?:boolean; skinCanUndo?:boolean; skinCanRedo?:boolean; dirty?:boolean;
+  catalog?:{nodes:string[];targets:string[];channels:string[];vertices:number;error:string};
+  preview?:StudioFacialPreviewBinding & {creator?:boolean} }
+export type HumanCreatorUndoTarget = 'dna' | 'rig' | 'skin';
 export interface HumanLook { version: 1; values: Record<string,number>; materials: Record<string,string> }
 export interface HumanLookField { key:string; label:string; min:number; max:number; initial:number }
 export interface HumanPreviewAnimationSettings {pose:string;playing:boolean;faceIdle:boolean;speed:number;automaticLod?:boolean}
@@ -125,6 +135,19 @@ export interface StudioParams {
   'studio.humanCharacterBuild': {guid:string;look:HumanLook;wardrobe:HumanWardrobe;name:string;textureSize:number;face?:HumanFaceShape|null};
   'studio.humanCharacterBuildStatus': Record<string,never>;
   'studio.humanAppearanceInfo': Record<string,never>;
+  'studio.humanCreatorInfo': Record<string,never>;
+  'studio.humanCreatorSet': { key:string; value:unknown };
+  'studio.humanCreatorPreset': { id:string };
+  'studio.humanCreatorUndo': { target:HumanCreatorUndoTarget };
+  'studio.humanCreatorRedo': { target:HumanCreatorUndoTarget };
+  'studio.humanCreatorRoute': { index:number; channel?:string; target?:string; gain?:number; remove?:boolean };
+  'studio.humanCreatorRig': { node:string; translation:[number,number,number] };
+  'studio.humanCreatorSkin': { vertex:number; joint?:string; weight?:number; erase?:boolean };
+  'studio.humanCreatorNew': Record<string,never>;
+  'studio.humanCreatorSave': { name:string };
+  'studio.humanCreatorLoad': { name:string };
+  'studio.humanCreatorList': Record<string,never>;
+  'studio.humanCreatorPreview': { enabled:boolean };
   'studio.humanAppearanceApply': {guid:string;revision:number;look:HumanLook;face?:HumanFaceShape|null};
   'studio.humanAppearanceSave': {name:string;look:HumanLook};
   'studio.humanAppearanceLoad': {name:string};
@@ -202,6 +225,19 @@ export interface StudioResult {
   'studio.humanCharacterBuild': HumanBuildStatus;
   'studio.humanCharacterBuildStatus': HumanBuildStatus;
   'studio.humanAppearanceInfo': HumanLookInfo;
+  'studio.humanCreatorInfo': Required<HumanCreatorInfo>;
+  'studio.humanCreatorSet': Required<HumanCreatorInfo>;
+  'studio.humanCreatorPreset': Required<HumanCreatorInfo>;
+  'studio.humanCreatorUndo': Required<HumanCreatorInfo>;
+  'studio.humanCreatorRedo': Required<HumanCreatorInfo>;
+  'studio.humanCreatorRoute': Required<HumanCreatorInfo>;
+  'studio.humanCreatorRig': Required<HumanCreatorInfo>;
+  'studio.humanCreatorSkin': Required<HumanCreatorInfo>;
+  'studio.humanCreatorNew': Required<HumanCreatorInfo>;
+  'studio.humanCreatorSave': Required<HumanCreatorInfo>;
+  'studio.humanCreatorLoad': Required<HumanCreatorInfo>;
+  'studio.humanCreatorList': { humans:string[] };
+  'studio.humanCreatorPreview': Required<HumanCreatorInfo>;
   'studio.humanAppearanceApply': HumanLookInfo;
   'studio.humanAppearanceSave': {name:string;look:HumanLook};
   'studio.humanAppearanceLoad': {name:string;look:HumanLook};

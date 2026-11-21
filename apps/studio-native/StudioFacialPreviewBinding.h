@@ -31,6 +31,7 @@ public:
     void reset() {
         studioLighting={};previewAnimation={};
         appearance_.reset();face_.reset();appearanceOnly_=false;
+        creator_=Json();
         guid_.clear();
         path_.clear();
         draft_=Json();
@@ -53,10 +54,28 @@ public:
         if(guid_!=guid || !bound()) {
             draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;
         }
+        creator_=Json();
         guid_=guid;path_=path;appearance_=candidate;face_=candidateFace;
         gpuReady_=false;gpuError_.clear();++revision_;return describe();
     }
     bool bound() const {return !guid_.empty();}
+    // Digital Human Creator mode: the native preview regenerates the
+    // procedural VIVID human from this validated creator document (copy,
+    // owner-thread safe). No asset path, no facial rig document.
+    static constexpr const char* kCreatorGuid="vivid-creator";
+    Json bindCreator(const Json& document) {
+        if(!document.isObject() || document["version"].integer(-1)!=1)
+            throw std::invalid_argument("Invalid Human Creator document");
+        if(!creatorMode()) {
+            draft_=Json();values_.clear();vectors_.clear();
+            appearance_.reset();face_.reset();
+        }
+        appearanceOnly_=true;creator_=document;
+        guid_=kCreatorGuid;path_.clear();
+        gpuReady_=false;gpuError_.clear();++revision_;return describe();
+    }
+    bool creatorMode() const noexcept {return guid_==kCreatorGuid && creator_.isObject();}
+    const Json& creatorDocument() const noexcept {return creator_;}
     uint64_t revision() const {return revision_;}
     const std::string& guid() const noexcept{return guid_;}
     const std::string& path() const noexcept{return path_;}
@@ -131,6 +150,7 @@ public:
         // authoring schema checks. This is NOT a Model/Graph/GPU compile.
         if(guid_!=guid){appearance_.reset();face_.reset();}
         appearanceOnly_=false;
+        creator_=Json();
         guid_=guid;
         path_=path;
         draft_=draft;
@@ -184,6 +204,7 @@ public:
         Json result=Json::object();
         result.set("appearanceOnly",Json::fromBool(appearanceOnly_));
         result.set("appearance",appearance_?appearance_->toJson():Json());
+        result.set("creator",Json::fromBool(creatorMode()));
         result.set("bound",Json::fromBool(bound()));
         result.set("guid",Json::string(guid_));
         result.set("path",Json::string(path_));
@@ -214,6 +235,7 @@ public:
 private:
     std::string guid_,path_;
     Json draft_;
+    Json creator_; // Human Creator document while guid_==kCreatorGuid
     std::optional<vivid::HumanAppearance> appearance_;
     std::optional<vivid::HumanFaceShape> face_;
     bool appearanceOnly_=false;

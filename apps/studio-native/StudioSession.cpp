@@ -159,7 +159,7 @@ bool studioModelAssetPath(const std::string& path) {
 Json StudioSession::inspectorFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-        if (nodeId(ws_.map,node.ref) != entityId) continue;
+        if (nodeId(node.ref,ws_.map) != entityId) continue;
         Json result=Json::object(),components=Json::array();
         result.set("id",str(entityId));result.set("name",str(node.label));
         if(node.ref.isLight()) {
@@ -556,6 +556,68 @@ Json StudioSession::dispatch(const Json& request) {
                     auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
                 }
             }
+        } else if(method.rfind("studio.humanCreator",0)==0) {
+            // Digital Human Creator window (docs/vivid.md § Studio Human Creator).
+            // Every mutation is validated all-or-nothing; the result is always
+            // the full creator state so the window can redraw from one reply.
+            std::string error;bool ok=true;
+            auto creatorNum=[&](const char* key,double lo,double hi)->double {
+                const auto& v=params[key];
+                if(!v.isNumber()||!std::isfinite(v.toDouble())||v.toDouble()<lo||v.toDouble()>hi)
+                    throw std::invalid_argument(std::string("Human Creator: invalid ")+key);
+                return v.toDouble();
+            };
+            const std::string which=params.getStr("target","dna");
+            if(method=="studio.humanCreatorInfo") {
+            } else if(method=="studio.humanCreatorSet") {
+                ok=humanCreator_.set(params.getStr("key"),params["value"],&error);
+            } else if(method=="studio.humanCreatorPreset") {
+                ok=humanCreator_.preset(params.getStr("id"),&error);
+            } else if(method=="studio.humanCreatorUndo" || method=="studio.humanCreatorRedo") {
+                const bool undo=method=="studio.humanCreatorUndo";
+                if(which=="dna")ok=undo?humanCreator_.undo():humanCreator_.redo();
+                else if(which=="rig")ok=undo?humanCreator_.rigUndo():humanCreator_.rigRedo();
+                else if(which=="skin")ok=undo?humanCreator_.skinUndo():humanCreator_.skinRedo();
+                else throw std::invalid_argument("Human Creator: undo target must be dna, rig or skin");
+                if(!ok)error="Nothing to "+std::string(undo?"undo":"redo");
+            } else if(method=="studio.humanCreatorRoute") {
+                const auto index=std::size_t(creatorNum("index",0,256));
+                if(params.getBool("remove"))ok=humanCreator_.removeRoute(index),error=ok?"":"Route index out of range";
+                else ok=humanCreator_.setRoute(index,params.getStr("channel"),params.getStr("target"),creatorNum("gain",0,4),&error);
+            } else if(method=="studio.humanCreatorRig") {
+                const auto& t=params["translation"];
+                if(!t.isArray()||t.size()!=3||!t[0].isNumber()||!t[1].isNumber()||!t[2].isNumber())
+                    throw std::invalid_argument("Human Creator: translation must be [x,y,z]");
+                ok=humanCreator_.setRig(params.getStr("node"),{float(t[0].toDouble()),float(t[1].toDouble()),float(t[2].toDouble())},&error);
+            } else if(method=="studio.humanCreatorSkin") {
+                const auto vertex=std::uint32_t(creatorNum("vertex",0,double(std::numeric_limits<std::uint32_t>::max())));
+                if(params.getBool("erase"))ok=humanCreator_.eraseSkin(vertex),error=ok?"":"No weight edit on that vertex";
+                else ok=humanCreator_.setSkin(vertex,params.getStr("joint"),creatorNum("weight",0,1),&error);
+            } else if(method=="studio.humanCreatorNew") {
+                vivid::HumanCreatorWorkbench fresh;humanCreator_=std::move(fresh);
+            } else if(method=="studio.humanCreatorSave") {
+                if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+                vivid::saveHumanCreator(ws_.project.dir,params.getStr("name"),humanCreator_.toDocument());
+            } else if(method=="studio.humanCreatorLoad") {
+                if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+                ok=humanCreator_.loadDocument(vivid::readHumanCreator(ws_.project.dir,params.getStr("name")),&error);
+            } else if(method=="studio.humanCreatorList") {
+                if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+                reply.set("result",vivid::listHumanCreators(ws_.project.dir));
+                return reply;
+            } else if(method=="studio.humanCreatorPreview") {
+                if(params.getBool("enabled",true)) {
+                    facialPreview_.bindCreator(humanCreator_.toDocument());
+                    previewMaterialName_.clear();refreshMaterialPreview();
+                } else if(facialPreview_.creatorMode()) facialPreview_.reset();
+            } else throw std::invalid_argument("Unknown Human Creator method");
+            if(!ok)throw std::invalid_argument(error.empty()?"Human Creator edit rejected":error);
+            // Live preview follows the document after every accepted edit.
+            if(facialPreview_.creatorMode() && method!="studio.humanCreatorPreview" && method!="studio.humanCreatorInfo")
+                facialPreview_.bindCreator(humanCreator_.toDocument());
+            auto info=humanCreator_.info();
+            info.set("preview",facialPreview_.describe());
+            reply.set("result",std::move(info));
         } else if(method=="studio.humanAppearanceInfo" || method=="studio.humanAppearanceApply" ||
                   method=="studio.humanAppearanceSave" || method=="studio.humanAppearanceLoad" ||
                   method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
