@@ -920,14 +920,6 @@
           "titleEn": "Lighting, entity components and MCP merged into main"
         },
         {
-          "status": "planned",
-          "target": null,
-          "title": "Проверка на Metal-захватах, MSL и Android",
-          "text": "Динамический GI и Luma проверены на Android (Vulkan); пробы GI ещё нет.",
-          "titleEn": "Verification of Metal captures, MSL and Android",
-          "textEn": "Dynamic GI and Luma are checked on Android (Vulkan); probe GI is not yet."
-        },
-        {
           "status": "done",
           "date": "2026-11-22",
           "title": "Luma и динамический GI на Vulkan и Android",
@@ -938,6 +930,14 @@
           "date": "2026-11-22",
           "title": "Каскады GI следуют за камерой",
           "titleEn": "GI cascades follow the camera"
+        },
+        {
+          "status": "planned",
+          "target": null,
+          "title": "Запечённое освещение на Vulkan и Android",
+          "text": "Динамический GI и Luma уже работают на Vulkan и Android; запечённые лайтмапы и пробы там ещё не проверены.",
+          "titleEn": "Baked lighting on Vulkan and Android",
+          "textEn": "Dynamic GI and Luma already run on Vulkan and Android; baked lightmaps and probes are not verified there yet."
         }
       ],
       "taglineEn": "Lighting and global illumination",
