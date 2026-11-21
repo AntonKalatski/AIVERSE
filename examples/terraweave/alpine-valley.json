@@ -17,7 +17,7 @@
     "minX": -11000,
     "maxX": 11000,
     "minZ": -4000,
-    "maxZ": 19000
+    "maxZ": 25000
   },
   "grassPatches": [
     {
@@ -1945,25 +1945,52 @@
   },
   "peaks": [
     {
-      "xCm": -15000,
-      "zCm": 65000,
-      "radiusXcm": 26000,
-      "radiusZcm": 34000,
-      "heightCm": 32000,
+      "xCm": -18000,
+      "zCm": 60000,
+      "radiusXcm": 25000,
+      "radiusZcm": 29000,
+      "heightCm": 30000,
       "shearPermille": 100,
       "morphology": "ridged_massif"
     },
     {
-      "xCm": 16000,
-      "zCm": 76000,
-      "radiusXcm": 28000,
-      "radiusZcm": 35000,
-      "heightCm": 37000,
+      "xCm": 15500,
+      "zCm": 73000,
+      "radiusXcm": 27000,
+      "radiusZcm": 34000,
+      "heightCm": 35500,
       "shearPermille": -80,
+      "morphology": "ridged_massif"
+    },
+    {
+      "xCm": 1500,
+      "zCm": 68000,
+      "radiusXcm": 18000,
+      "radiusZcm": 24000,
+      "heightCm": 28500,
+      "shearPermille": 180,
+      "morphology": "ridged_massif"
+    },
+    {
+      "xCm": -24500,
+      "zCm": 48000,
+      "radiusXcm": 19000,
+      "radiusZcm": 21000,
+      "heightCm": 17500,
+      "shearPermille": -120,
+      "morphology": "ridged_massif"
+    },
+    {
+      "xCm": 21000,
+      "zCm": 51000,
+      "radiusXcm": 20500,
+      "radiusZcm": 22000,
+      "heightCm": 18500,
+      "shearPermille": 100,
       "morphology": "ridged_massif"
     }
   ],
-  "valleyHalfWidthCm": 1800,
+  "valleyHalfWidthCm": 0,
   "valleyBlendCm": 14000,
   "alignRiverGrade": true
 }
