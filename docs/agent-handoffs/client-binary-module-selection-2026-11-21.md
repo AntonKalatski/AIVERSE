@@ -377,3 +377,69 @@ unrelated changes, including a separate uncommitted Entity rule in
 `AGENTS.md`; those changes remain in the worktree and were not included in
 the rule commit. Next: validate `auto` on a representative real game project
 and measure optimized Web builds when Emscripten is available.
+
+## 2026-11-21 continuation: first real HTML5 measurement, Web build fixes, traffic module
+
+Branch `feature/aiv20261121_web_client_modules` (from `origin/main` 7f3a9fbb4).
+Affected paths: `engine/platform/web/PlatformWeb.cpp`, `engine/gfx/gl/GfxGL.cpp`,
+`engine/gfx/gl/GLApi.h`, `CMakeLists.txt`, `apps/client/ClientFx.h`,
+`modules/rts/RtsTrafficDisabled.cpp`, `tools/aiversebuild/main.cpp`,
+`docs/overview.md`, `AGENTS.md`.
+
+Web client did not build on main. Four fixes:
+1. `PlatformWeb.cpp` used `EmscriptenWebGLContextEvent`, a type no Emscripten
+   release has (checked 3.1.50 and 7.0.1-git); callbacks now take
+   `const void* reserved` as `html5_webgl.h` declares (broken since edb22101a).
+2. `aiverse_client_runtime` forwarded only `INTERFACE_LINK_LIBRARIES`; Web lost
+   `-sUSE_WEBGL2`, WebGL version limits, `ALLOW_MEMORY_GROWTH` and `-lidbfs.js`
+   (undefined WebGL2 symbols). It now forwards link options, definitions,
+   compile options and include directories too.
+3. GL texture readback used `glMapBufferRange`/`glUnmapBuffer`, absent in
+   WebGL2; under Emscripten it copies the fenced PBO with `glGetBufferSubData`.
+4. The no-FX `ClientFx` adapter lacked `renderPrepared` (added for LENS
+   secondary cameras in 66df69dd3), so `fx`-free packaged clients did not compile.
+
+New selectable module `traffic` (`AIVERSE_GAME_WITH_TRAFFIC`, default ON).
+OFF replaces the five `RtsTraffic*.cpp` simulation files with
+`RtsTrafficDisabled.cpp`: Traffic stays inactive, so no system, hash or save
+block is registered — identical to the full build for rules without
+`traffic`. Rules enabling traffic throw a readable error at match start;
+`aiversebuild` rejects them unless `traffic` (or `auto`) is selected; `auto`
+selects it from an enabled `traffic` block in the composed rules. CMake fails
+if OFF is combined with editor, tests, headless, server or HTML5 Studio.
+`RtsTrafficRoads.cpp` (road nets) is unaffected.
+
+Verification actually run (cloud Linux x86_64, Emscripten 3.1.50 from source
+with Ubuntu LLVM 18.1.3 and binaryen 116; `templates/skirmish` content,
+Release, same configuration apart from module switches):
+- A legacy defaults: `index.wasm` 17,219,047 B (gzip -9 6,001,381; brotli -q11 4,100,775).
+- B all eleven earlier modules OFF: 15,432,286 B (gzip 5,305,893; brotli 3,618,904).
+- C = B + traffic OFF: 14,945,536 B (gzip 5,133,528; brotli 3,500,882).
+- Name-section link of B vs C: Traffic functions 514,858 → 7,686 B of code.
+- `platform/web/smoke.mjs` (system Chrome, SwiftShader) for A, B, C: identical
+  screenshot statistics (2487 colours, luminance 139), match HUD and minimap
+  visible. The harness reported FAILED in all three for the same two console
+  errors: a 404 (no favicon in a raw CMake build; `aiversebuild` adds icons)
+  and Emscripten's "2 FS.syncfs operations in flight" warning. Not caused by
+  module selection; not investigated further.
+- Native `aiversebuild --check-engine-modules` on a copied skirmish: `auto`
+  without traffic → OFF; with `rules.traffic` → ON; `["fx"]` with
+  `rules.traffic` → exit 1 with the intended error; `["fx","traffic"]` → ON;
+  `traffic.enabled=false` with `["fx"]` → OFF; no list → legacy defaults.
+- `wasm-opt -O3` segfaulted in worker threads (binaryen 116, 117, 121); links
+  pass with `BINARYEN_CORES=1` and `ulimit -s 8000000` (~8.5 min).
+
+NOT RUN: emsdk-distributed toolchain, the runtime error path for a traffic
+game in a traffic-free client, determinism comparison ON/OFF via headless
+(blocked by design), macOS/iOS/Android/Windows/Linux packaged builds, CI.
+Engine texture PNG/KTX2 files changed on main after e61a56c75 were not copied
+to the build host; they affect `index.data`, not `index.wasm`.
+
+Remaining wasm (B, pre-optimisation code 16.2 MB): `aiverse::game` ~40%.
+Rule-gated systems following the same pattern, by code size: RtsAI 0.37 MB,
+Encounters 0.14, TopDown 0.14, Planet (RtsPlanetGroundFx + PlanetRenderer)
+~0.14, city generator + roadkit + road geometry ~0.22, Progression 0.08,
+Driving 0.08, FieldOps 0.08, BwImpl 0.07, RegionSwipe 0.06, Arsenal 0.06,
+Raid 0.06, Commerce 0.06; also ImGui ~0.36 MB and RmlUi Debugger 0.04 MB.
+Next: same treatment for Encounters/Commerce/Raid/Arsenal/Progression/Career
+(each gated by its rules block), then TopDown/Planet views and generators.
