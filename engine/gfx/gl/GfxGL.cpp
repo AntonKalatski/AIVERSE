@@ -2105,8 +2105,12 @@ public:
         // (the ring is orphaned per frame and when exhausted), so an unsynchronized
         // map is safe. glBufferSubData into a buffer the GPU still reads makes many
         // drivers stall or copy the whole 1 MB ring on every draw.
+#if defined(__EMSCRIPTEN__)
+        void* mapped = nullptr; // WebGL2 has no buffer mapping (and uses per-slot blocks)
+#else
         void* mapped = mapUniformsUnsynchronized_ ? glMapBufferRange(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size),
             GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT) : nullptr;
+#endif
         if (mapped) {
             std::memcpy(mapped, data, size);
             if (!glUnmapBuffer(GL_UNIFORM_BUFFER)) glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
