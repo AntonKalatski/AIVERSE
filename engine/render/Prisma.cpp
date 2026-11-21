@@ -1,4 +1,5 @@
 #include "Prisma.h"
+#include "GpuTier.h"
 #include "PrismaVolumes.h"
 #include "PrismaRhiExecutor.h"
 #include "PrismaCompositeTextureLayout.h"
@@ -134,8 +135,7 @@ PrismaQuality Prisma::defaultQualityFor(const gfx::Device& dev, bool mobile) {
     const std::string& n = dev.info().name;
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return PrismaQuality::Low;
     if (mobile) {
-        for (const char* weak : {"Mali-4", "Mali-T", "Adreno (TM) 3", "Adreno (TM) 4", "Adreno (TM) 50", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return PrismaQuality::Low;
+        if (isWeakMobileGpu(n)) return PrismaQuality::Low;   // GpuTier.h
         return PrismaQuality::Medium;
     }
     return PrismaQuality::High;

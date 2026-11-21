@@ -1,4 +1,5 @@
 #include "ParticleSystem.h"
+#include "../render/GpuTier.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -55,9 +56,7 @@ FxQuality defaultQualityFor(const std::string& n, bool mobile) {
     }
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return FxQuality::Low;
     if (mobile) {
-        for (const char* weak : {"Mali-4", "Mali-T", "Mali-G31", "Mali-G51", "Mali-G52", "Adreno (TM) 3", "Adreno (TM) 4",
-                                 "Adreno (TM) 50", "Adreno (TM) 51", "PowerVR SGX", "PowerVR Rogue GE", "PowerVR Rogue GX6"})
-            if (n.find(weak) != std::string::npos) return FxQuality::Low;
+        if (render::isWeakMobileGpu(n)) return FxQuality::Low;   // GpuTier.h
         return FxQuality::Medium;
     }
     return FxQuality::High;

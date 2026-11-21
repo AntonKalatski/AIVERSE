@@ -1,4 +1,5 @@
 #include "Renderer3D.h"
+#include "GpuTier.h"
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
 #include "Renderer3DMotionShaders.h"
@@ -40,11 +41,7 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
     const std::string& n = dev.info().name;
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return ShadowQuality::Low;
     if (mobile) {
-        // Old/weak mobile GPUs get the cheapest shadows; everything else medium.
-        // Entry-level 6xx / Bifrost too (Adreno 610 at 2400x1080 spent ~0.5 s a frame on Medium).
-        for (const char* weak : {"Mali-4", "Mali-T", "Mali-G31", "Mali-G51", "Mali-G52", "Adreno (TM) 3", "Adreno (TM) 4",
-                                 "Adreno (TM) 50", "Adreno (TM) 51", "Adreno (TM) 60", "Adreno (TM) 61", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return ShadowQuality::Low;
+        if (isWeakMobileGpu(n)) return ShadowQuality::Low;   // GpuTier.h
         return ShadowQuality::Medium;
     }
     return ShadowQuality::High;
