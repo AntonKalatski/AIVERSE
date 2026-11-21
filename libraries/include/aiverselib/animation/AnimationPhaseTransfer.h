@@ -26,8 +26,11 @@ inline std::optional<float> captureGraphClipPhase(
         const render::Model& model,bool moving) {
     const auto* program=graph.graph();
     if(!program || program->model()!=&model)return std::nullopt;
-    for(const char* id : moving?std::initializer_list<const char*>{"move","idle"}:
-                                 std::initializer_list<const char*>{"idle","move"}) {
+    // Named static arrays: the backing arrays of initializer_list temporaries
+    // in a ternary do not live through the range-for (dangling pointers).
+    static constexpr const char* kMoving[]{"move","idle"};
+    static constexpr const char* kIdle[]{"idle","move"};
+    for(const char* id : moving?kMoving:kIdle) {
         const auto time=graph.clipTime(id);
         if(!time)continue;
         for(const auto& n:program->nodes())

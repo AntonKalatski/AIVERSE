@@ -630,6 +630,16 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_root_motor_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_root_motor COMMAND aiverse_animation_root_motor_tests)
 endif()
+# Stage 180: semantic facial Control Rig + existing native IK/ECS.
+# Deferred until the coordinated Mac CMake/CTest/RHI acceptance campaign.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_facial_control_rig_tests
+        tests/animation/facial_control_rig.cpp)
+    target_link_libraries(aiverse_animation_facial_control_rig_tests
+        PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME animation_facial_control_rig
+        COMMAND aiverse_animation_facial_control_rig_tests)
+endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_humanoid_retarget_tests tests/animation/humanoid_retarget.cpp)
     target_link_libraries(aiverse_humanoid_retarget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
@@ -719,6 +729,28 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_model_asset_provider_api_tests
         PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME model_asset_provider_api COMMAND aiverse_model_asset_provider_api_tests)
+endif()
+# Stage 176: actual SceneLoadCoordinator and MotionWeave native type
+# integration, prepared now and run in the final coordinated Mac suite.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_animation_scene_game_host_api_tests
+        tests/animation/scene_game_host_api.cpp)
+    target_link_libraries(aiverse_animation_scene_game_host_api_tests
+        PRIVATE aiverse_models aiverse_zstd_dec aiverse_engine AIVERSE::View
+                Threads::Threads)
+    add_test(NAME animation_scene_game_host_api
+        COMMAND aiverse_animation_scene_game_host_api_tests)
+
+    # Stage 179: fixture validates real showcase SceneAsset/preloaded GLB
+    # paths. The graphical --scene-preview is compiled with ModelView itself.
+    add_executable(aiverse_animation_scene_preview_assets_tests
+        tests/animation/scene_preview_assets.cpp)
+    target_compile_definitions(aiverse_animation_scene_preview_assets_tests
+        PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(aiverse_animation_scene_preview_assets_tests
+        PRIVATE aiverse_engine)
+    add_test(NAME animation_scene_preview_assets
+        COMMAND aiverse_animation_scene_preview_assets_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_retirement_pressure_tests
@@ -1615,7 +1647,10 @@ endif()
 
 # Model viewer (models agent): models, materials, clips and quality tiers as the game renders them.
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
-    add_executable(aiverse_modelview apps/modelview/main.cpp apps/modelview/Gallery.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    add_executable(aiverse_modelview
+        apps/modelview/main.cpp apps/modelview/Gallery.cpp
+        apps/modelview/NativeScenePreview.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
 endif()
 
