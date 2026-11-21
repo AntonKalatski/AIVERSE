@@ -6,6 +6,7 @@
 // The public part of Editor is the API windows use; keep it small and stable.
 #pragma once
 #include "SceneRenderable.h"
+#include <array>
 #include <cmath>
 #include <atomic>
 #include <deque>
@@ -21,6 +22,7 @@
 #include "modules/rts/view/RtsViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
+#include "engine/world/NereidManifestHost.h"
 #include "core/FileAssoc.h"
 #include "core/Net.h"
 #include "core/Workspace.h"
@@ -47,7 +49,26 @@
 #include "modules/rts/view/RtsView.h"
 #include "modules/rts/view/RtsModelDemandScheduler.h"
 
+namespace aiverse::spectra {
+class GpuPoolWorld;
+class GpuCaptureRequestMailbox;
+class GpuPoolRecoveryHost;
+}
+
 namespace aiverse::editor {
+
+// Read-only 180-frame diagnostic history of the optional Metal preview.
+// This is NOT a restorable GPU snapshot or authoritative simulation data.
+struct SpectraGpuPreviewFrameRecord {
+    uint64_t deviceFrame=0;
+    double visualSeconds=0;
+    uint32_t estimatedParticles=0;
+    uint32_t freshGroups=0, staleGroups=0, pendingGroups=0;
+    uint32_t killedSlotsWaiting=0;
+    bool stepAccepted=false;
+    bool deviceHealthy=false;
+};
+
 
 // What the Inspector shows. Hierarchy/Project/Scene set it.
 struct Selection {
@@ -110,12 +131,8 @@ public:
         bool nativeChild = false;    // --native-editor / AIVERSE_NATIVE_EDITOR=1: started by the switch to the project's build (EditorNativeBuild.cpp)
     };
 
-    explicit Editor(Options o) : opt_(std::move(o)) {}
-    ~Editor() {
-        // A graphics backend can deliver a capture callback after the
-        // Editor instance is gone, even if an explicit shutdown was skipped.
-        captureLifetime_->store(false,std::memory_order_release);
-    }
+    explicit Editor(Options o);
+    ~Editor(); // out-of-line: owns optional Spectra GPU preview resources
     void init(gfx::Device& dev);
     void frame(gfx::Device& dev, double dt);
     void event(const platform::Event& e);
@@ -250,7 +267,7 @@ public:
     Simulation* sim() { return sim_.get(); }
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
-    void enqueueFpsSceneGeometry(const render::RTSCamera&);
+    void enqueueFpsSceneGeometry(const render::RTSCamera&, bool editOverlays=true);
     const Json& fpsRuntimeSnapshot(); // FPS World resource actors; cached by document/rules revision
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
@@ -303,6 +320,8 @@ public:
 
     // rendering a map view into a Viewport (used by Scene and Game windows)
     void renderScene(Viewport& vp, const render::RTSCamera& cam, bool editOverlays);
+    bool cleanSceneCaptureRequested() const;
+    std::pair<int,int> sceneCaptureSize(int width,int height) const;
     void renderGame(Viewport& vp, const render::RTSCamera& cam, uint64_t prismaViewId = 2);
 
     // overlays (Overlays window / overlay_preview): ids drawn regardless of their conditions, and a
@@ -312,6 +331,92 @@ public:
 
     // particle effects of the play-test (fx/fx.json + fx/*.json of the open game)
     fx::ParticleSystem& gameFx() { return gameFx_; }
+    // Queue Metal-only graph preview for the next safe pre-pass phase.
+    // Existing CPU preview is the default and never silently GPU-routed.
+    void queueSpectraGpuPreview(fx::EffectDef effect,
+        std::array<float,8> params,fx::float3 position,bool inGame,bool loop);
+    void stopSpectraGpuPreview();
+    bool spectraGpuPreviewActive() const;
+    bool spectraGpuPreviewPaused() const {return spectraPreviewPaused_;}
+    bool spectraGpuPreviewFrozen() const {return spectraPreviewFrozen_;}
+    bool spectraGpuPreviewLoop() const {return spectraPreviewLoop_;}
+    void setSpectraGpuPreviewPaused(bool value) {spectraPreviewPaused_=value;}
+    void setSpectraGpuPreviewFrozen(bool value) {spectraPreviewFrozen_=value;}
+    void setSpectraGpuPreviewLoop(bool value) {spectraPreviewLoop_=value;}
+    float spectraGpuPreviewSpeed() const {return spectraPreviewSpeed_;}
+    void setSpectraGpuPreviewSpeed(float speed);
+    bool stepSpectraGpuPreviewOnce() {return queueSpectraGpuPreviewFrames(1);}
+    // A bounded forward-only visual timeline. One fixed 1/60 step is
+    // consumed per actual scene-render frame; no backward GPU scrubbing.
+    bool queueSpectraGpuPreviewFrames(uint32_t frames);
+    bool restartSpectraGpuPreview();
+    enum class SpectraGpuCaptureState : uint8_t {
+        Idle, Queued, InFlight, Ready, Failed
+    };
+    // Freeze before enqueueing. The request is performed ONLY at next safe
+    // pre-pass graphics phase and serviced asynchronously by the RHI.
+    bool requestSpectraGpuPreviewCheckpoint();
+    SpectraGpuCaptureState spectraGpuCaptureState() const {
+        return spectraGpuCaptureState_;
+    }
+    const std::string& spectraGpuCaptureNote() const {
+        return spectraGpuCaptureNote_;
+    }
+    double spectraGpuPreviewVisualSeconds() const {
+        return spectraPreviewVisualSeconds_;
+    }
+    uint32_t spectraGpuPreviewPendingSteps() const {
+        return spectraPreviewStepRequests_;
+    }
+    const std::string& spectraGpuPreviewLastError() const {
+        return spectraPreviewLastError_;
+    }
+    const std::deque<SpectraGpuPreviewFrameRecord>&
+    spectraGpuPreviewHistory() const {return spectraPreviewHistory_;}
+    // JSON diagnostic export; never promises a replayable GPU particle state.
+    std::string spectraGpuPreviewHistoryJson() const;
+    // Non-owning optional telemetry source. Editor's normal FX preview is
+    // CPU-only; external Metal preview hosts explicitly attach their pool.
+    // The host MUST detach it before destroying the pool.
+    void setSpectraGpuTelemetry(const spectra::GpuPoolWorld* pool) {
+        spectraGpuTelemetry_=pool;
+    }
+    const spectra::GpuPoolWorld* spectraGpuTelemetry() const {
+        return spectraGpuTelemetry_;
+    }
+    // Optional native renderer-owner mailbox, NOT a GPU command interface.
+    // The external host must detach this before releasing its mailbox/pool.
+    // Never use this for the Editor's own Metal preview.
+    void setSpectraGpuCaptureMailbox(
+        spectra::GpuCaptureRequestMailbox* mailbox) {
+        spectraGpuMailbox_=mailbox;
+    }
+    const spectra::GpuCaptureRequestMailbox*
+    spectraGpuCaptureMailbox() const {return spectraGpuMailbox_;}
+    bool queueSpectraExternalGpuCapture(size_t groupIndex);
+    bool releaseSpectraExternalGpuCapture();
+    // Recovery host is also NON-OWNING. UI may enqueue a status-only
+    // visual-reset intent; actual GPU recovery runs in native safe pre-pass.
+    void setSpectraGpuRecoveryHost(spectra::GpuPoolRecoveryHost* host) {
+        spectraGpuRecoveryHost_=host;
+    }
+    const spectra::GpuPoolRecoveryHost* spectraGpuRecoveryHost() const {
+        return spectraGpuRecoveryHost_;
+    }
+    bool queueSpectraExternalVisualReset();
+    // Exports a FULL, CURRENT-revision GPU checkpoint from an attached pool,
+    // if available. Writes one <=529 KiB diagnostic file under userDataDir.
+    // out receives a path on success or a reason on failure.
+    bool saveFreshSpectraGpuCheckpoint(
+        std::string& out,size_t groupIndex=static_cast<size_t>(-1)) const;
+    // Saves only aggregate diagnostic counters; coordinates/serials require
+    // separate explicit opt-ins. NEVER includes raw GPU/VM scalar buffers.
+    bool saveSafeSpectraGpuReport(std::string& out,size_t groupIndex,
+        bool includeWorldBounds=false,bool includeGpuIdentifiers=false) const;
+    // Only a local, explicit user action. This ZIP cannot contain raw SPFX,
+    // world bounds, GPU identifiers or VM scalars even if other export
+    // checkboxes are enabled. Fixed filenames and total size <=128 KiB.
+    bool saveSafeSpectraGpuBundle(std::string& out,size_t groupIndex) const;
     void reloadFx();                           // after fx files changed (Effects window, agents)
     std::vector<std::string> fxWarnings;       // from the last reloadFx()
     int fxRevision = 0;                        // bumped when fx files change (agents): the Effects window re-reads
@@ -382,6 +487,8 @@ private:
     // Particles of the Scene / Game views (EditorFxOps.cpp): after beginScene (dt, previews, event bridge,
     // particle lights into r3d_.lights); render them after Renderer3D::render.
     void tickFx(const render::RTSCamera& cam, int w, int h, const std::vector<game::SceneObject>* objects);
+    void tickSpectraGpuPreview(const render::RTSCamera& cam,int w,int h,bool game);
+    void drawSpectraGpuPreview();
     void samplePlayStats();
     void updateWorld();       // EditorWorld.cpp: preview / live rows, selection kept across rebuilds
     void syncSelection();
@@ -399,6 +506,20 @@ private:
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
     TerraWeaveForestPreview terraWeaveForestPreview_;
+    world::NereidManifestHost nereidPreview_;
+    struct VisualPickModel {
+        const render::Model* model=nullptr; // identity only until cache read lease acquired
+        std::string entityId;
+        size_t documentIndex=0;
+        render::mat4 world;
+        std::vector<render::mat4> nodes;
+        std::vector<render::Material> materials;
+        std::vector<int> nodeMaterials;
+    };
+    std::vector<VisualPickModel> visualPickModels_;
+    size_t visualPickModelCount_=0;
+    uint64_t visualPickCacheGeneration_=0;
+
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;
@@ -477,12 +598,46 @@ private:
     bool sceneFlying_ = false;
     render::float3 sceneGoal_{};
 
+    const spectra::GpuPoolWorld* spectraGpuTelemetry_=nullptr;
+    spectra::GpuCaptureRequestMailbox* spectraGpuMailbox_=nullptr; // non-owning
+    spectra::GpuPoolRecoveryHost* spectraGpuRecoveryHost_=nullptr; // non-owning
+    std::unique_ptr<spectra::GpuPoolWorld> spectraPreviewGpu_;
+    struct RetiredSpectraPreview {
+        uint64_t fence = 0;
+        std::unique_ptr<spectra::GpuPoolWorld> pool;
+    };
+    std::vector<RetiredSpectraPreview> retiredSpectraPreviews_;
+    void retireSpectraPreview(std::unique_ptr<spectra::GpuPoolWorld>& pool);
+    void collectRetiredSpectraPreviews();
+    struct SpectraPreviewRequest {
+        fx::EffectDef effect;
+        std::array<float,8> params{};
+        fx::float3 position{};
+        bool pending=false, inGame=false, loop=false;
+    } spectraPreviewRequest_;
+    bool spectraPreviewStop_=false, spectraPreviewFrameOpen_=false;
+    bool spectraPreviewInGame_=false;
+    uint64_t spectraPreviewSimulatedFrame_=~uint64_t{0};
+    bool spectraPreviewLoop_=false;
+    bool spectraPreviewPaused_=false,spectraPreviewFrozen_=false;
+    float spectraPreviewSpeed_=1.f; // visual preview only, not ECS
+    uint32_t spectraPreviewStepRequests_=0; // bounded to 300 requests
+    bool spectraPreviewRestart_=false;
+    double spectraPreviewVisualSeconds_=0;
+    std::string spectraPreviewLastError_;
+    SpectraGpuCaptureState spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+    std::string spectraGpuCaptureNote_;
+    std::deque<SpectraGpuPreviewFrameRecord> spectraPreviewHistory_;
+    double spectraPreviewNextBurst_=0;
+    std::array<float,8> spectraPreviewParams_{};
+    fx::float3 spectraPreviewPosition_{};
     fx::ParticleSystem gameFx_;
     game::RtsFx gameFxBridge_;
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
     double fxTime_ = -1;
     struct FxPreview { std::string name; fx::float3 pos{}; float scale = 1; fx::float4 tint{1, 1, 1, 1}; bool loop = false; fx::FxHandle h; double next = 0;
-                       bool moving = false; float moveT = 0; };   // moving: circles 2 m around pos (trails, perMeter)
+                       bool moving = false; float moveT = 0;
+                       std::array<float,8> programParams{}; }; // preserved across preview loop restarts   // moving: circles 2 m around pos (trails, perMeter)
     FxPreview fxPreview_;                      // fx_preview: the effect an agent is looking at
     bool fxFrozen_ = false;                    // fx_preview {freeze}: particles hold still for screenshots
     std::unique_ptr<Simulation> sim_;

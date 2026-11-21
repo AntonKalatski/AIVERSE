@@ -11,7 +11,15 @@ npm run dev
 # open http://127.0.0.1:4173/
 ```
 
-`npm run build` produces `dist/` with **relative** asset paths for future WKWebView packaging.
+On the owner’s Mac, run `bash tools/studio/verify_mac.sh` from the repository root.
+It requires mounted writable KINGSTON and writes native/frontend output and caches under
+`/Volumes/KINGSTON/AIVERSE-builds/studio-html5-verify`. Do not use local build output.
+For custom build directories, pass the built frontend directory with
+`-DAIVERSE_STUDIO_WEB_DIST=/absolute/path/to/web/dist` to CMake.
+Assets use **relative** paths and are refreshed on every `aiverse_studio` build,
+including when native sources have not changed.
+
+Full migration status and remaining workflows: [parity matrix](../../docs/studio-html5-parity.md).
 
 ## AI-first screen authoring
 - Build independent React panels in `src/components/<Name>.tsx`; keep `src/App.tsx` as the host/composition layer.

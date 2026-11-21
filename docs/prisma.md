@@ -4181,3 +4181,24 @@ Local fog now also supports `heightVariation`, three-dimensional `warp`, boundar
 all active volumes and reveal holes toward the sun, independently of the existing
 geometry shadow map. This is bounded single scattering; no new temporal buffers,
 shadow-map ownership, terrain dependency or authoritative simulation state.
+
+
+### Inspector graph-v2 preview composition (2026-11-20)
+
+The integrated optional `spectra::GpuPoolWorld` editor preview contributes through
+`Editor::drawSpectraGpuPreview()` in the same open HDR scene pass, immediately
+before `Renderer3D::resolvePrisma()`. SpectraFX owns emitters, per-frame simulation
+and particle GPU resources. PRISMA retains the full-screen resolve, camera volumes,
+reactive coverage and viewport GPU timing. Main's existing completion timeline is
+preserved; no new postprocess implementation or renderer default is introduced.
+See `docs/agent-handoffs/inspector-spectrafx-main-2026-11-20.md` for integration
+verification and remaining UI/platform coverage.
+
+
+## Optional water on the lens
+
+The independent `lensWater` catalog effect is opt-in, configurable and removable
+without disabling NEREID underwater absorption. See [parameters and host contract](prisma-lens-water.md).
+NEREID supplies read-only camera immersion; PRISMA owns bounded per-view wetness,
+post-exit drainage/drying and the shared GLSL/MSL composite. This is a screen-space
+approximation; see the separate stage handoff for actual GPU/test coverage.

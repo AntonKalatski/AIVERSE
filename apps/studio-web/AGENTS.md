@@ -1,5 +1,16 @@
 # AIVERSE Studio Web — AI authoring rules
 
+## Approved visual direction — do not reinterpret
+**The selected design is the FIRST cinematic concept, approved 2026-11-20.** It has a dominant real 3D Scene, premium layered dark-navy editor surfaces, blue/periwinkle focused highlights, softly raised panels, a practical Hierarchy/Inspector and a bottom Assets grid. The later stricter/flat mockup was **not** selected.
+
+Before editing any new or existing panel, read:
+- `docs/studio-visual-direction.md` — exact design/visual goal.
+- `docs/studio-ui-agent-guide.md` — paths, library usage, generation, examples and verification.
+- `docs/studio-design-system.md` — real shared React/CSS API.
+- `skills/editor/studio-ui/SKILL.md` — repeatable workflow.
+
+Use the shared `src/ui` library. Do not hardcode another palette, fake ECS components, substitute a mock image for Renderer3D, or change Metal viewport layering to satisfy a visual mock. Keep the current frontend functional and improve it incrementally with screenshots.
+
 ## Product
 This is the **editor**, not an in-game interface. Everything shared across windows is genre-independent. The old ImGui editor is temporary; do not add new UI features there.
 
@@ -44,3 +55,10 @@ The generator creates a component and CSS under `src/panels/generated/`, registe
 
 ## Existing panels — gradual migration
 The old App shell and NestedDockWorkspace use `src/ui/editor-shell.css` to inherit shared tokens without changing their event handling or native Metal geometry. Migrate each panel to true Studio UI components gradually, with macOS screenshots. Do not duplicate shell overrides in panel CSS or alter .viewport/.viewport-native rules to change the native renderer.
+
+## Project assets: content/ convention (Stages 67–68)
+- The shared `apps/editor/core/Projects.cpp::createProject` creates a lower-case `content/` directory for all new projects. HTML5 Studio also creates it for already-existing projects when opened, using `StudioContentDirectory.h`. Do not create it inside the engine repository when opening an unrelated project.
+- The Assets browser shows **only real regular files within `project/content/`**, and path strings in `studio.assets` are relative to `content` (e.g. `Models/Ship.glb`, not `content/Models/Ship.glb`).
+- API: `studio.assets` takes an empty parameters object and returns `{root:"content",files:[{path,bytes}]}`. Do not reintroduce an arbitrary browser-selected directory or expose game.json/rules.json/maps from the project root.
+- Existing project files **outside** `content/` are not moved automatically. If needed, instruct the user to move/copy assets consciously and update any existing references; never migrate by silently overwriting paths.
+- The HTML5 content-browser is read-only. Asset import/rename/delete can be added only with new bounded native Workspace operations and separate handoffs/tests.

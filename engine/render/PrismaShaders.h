@@ -551,6 +551,11 @@ inline const char* kFxaa = R"(
 // Textures: 0 scene, 1 bloom, 2 tilt-shift blur, 3 sun shafts, 4 LUT.
 inline const char* kCompositeHelpers = R"(
 PF_FN float pfHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+PF_FN float pfLensHash(vec2 p) {
+    vec3 q=fract(vec3(p.x,p.y,p.x)*0.1031);
+    q+=dot(q,q.yzx+33.33);
+    return fract((q.x+q.y)*q.z);
+}
 )";
 inline const char* kComposite = R"(
     // When output-history reconstruction fails after a jittered scene frame,
@@ -717,6 +722,43 @@ inline const char* kComposite = R"(
         col = mix(col, underwater0.rgb, weight);
         col += underwater0.rgb * scatterWeight * underwater0.w * 0.06;
         col *= 1.0 - underwater0.w * clamp(underwater1.y * 0.012, 0.0, 0.35);
+    }
+#endif
+#ifdef PF_LENS_WATER
+    {
+        // Stable lens-space droplets: no water-world simulation or history texture.
+        vec2 lensPixel=px.xy*vec2(1.0,lensWater1.w);
+        vec2 cellSize=max(lensPixel*lensWater0.y*4.0,vec2(0.0001));
+        vec2 moving=s/cellSize+vec2(0.0,lensWater1.y*lensWater1.x/max(lensWater0.y*4.0,1.0));
+        vec2 cell=floor(moving),local=fract(moving);
+        float coverage=0.0,rim=0.0,glint=0.0;
+        vec2 refractOffset=vec2(0.0);
+        // Neighbour cells let fully jittered droplets cross cell boundaries
+        // without a visible grid, clipped circles or a texture atlas.
+        for(int iy=-1;iy<=1;++iy)for(int ix=-1;ix<=1;++ix){
+            vec2 neighbour=vec2(float(ix),float(iy)),id=cell+neighbour;
+            float seed=pfLensHash(id+vec2(73.1,19.7));
+            if(seed>lensWater0.z)continue;
+            vec2 centre=vec2(pfLensHash(id),pfLensHash(id+vec2(17.0,29.0)));
+            float size=0.22+0.78*pfLensHash(id+vec2(39.2,5.7));
+            vec2 q=(local-neighbour-centre)*4.0/size;
+            q.y*=q.y>0.0?0.7:1.05;
+            float radius=dot(q,q);
+            float c=1.0-smoothstep(0.65,1.0,radius);
+            if(c>coverage){
+                coverage=c;
+                refractOffset=q*(1.0-clamp(radius,0.0,1.0))*size;
+                rim=c*smoothstep(0.5,0.95,radius);
+                glint=rim*max(0.0,-q.x+q.y);
+            }
+        }
+        float film=pow(max(0.0,sin(s.x*53.0+sin(s.y*11.0+lensWater1.y*lensWater1.x/max(lensWater0.y,1.0)))),12.0)*lensWater1.z;
+        vec2 offset=(refractOffset*coverage+vec2(film*0.25,film*0.08))*lensWater0.w*lensPixel;
+        vec3 original=TEX0(uv).rgb;
+        vec3 bent=TEX0(clamp(uv+TDIR(offset),vec2(0.002),vec2(0.998))).rgb;
+        col+=(bent-original)*lensWater0.x;
+        col*=1.0-0.055*rim*lensWater0.x;
+        col+=vec3(0.035)*glint*lensWater0.x;
     }
 #endif
 #ifdef PF_FADE

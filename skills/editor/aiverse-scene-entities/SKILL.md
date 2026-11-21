@@ -17,7 +17,7 @@ the updated engine build; restart an older connected editor before using new too
 Call `open_game` with the intended project first.
 `scene_entity_list` returns entityId, stableId and component descriptors/data.
 `scene_entity_get` reads one entity. Retain returned IDs; never infer an ID from
-an array position. Only lights currently report stableId=true; legacy other
+an array position. Lights and authored Transform+StaticModel entities have stable IDs; legacy other
 objects retain provisional IDs. Re-list after structural edits to those objects.
 
 `scene_component_set` takes entityId, componentId and patch. Transform position
@@ -44,3 +44,14 @@ Generic attach/remove-component support is not implemented; do not invent tools.
 
 Validate actual stdio transport with `tests/editor/scene_entity_mcp.py`, using an
 external fixture/output directory on KINGSTON. Follow project per-stage handoffs.
+
+
+## Visual Scene picking
+
+Use read-only `view_pick {"u":0.5,"v":0.5}` on an open Scene to exercise the
+actual mouse triangle/alpha selection path. The result includes current document
+index and stable entityId when present. Current editor_select uses docs:[index],
+not the older kind/index schema; re-query after structural changes.
+See docs/editor-visual-selection.md for owner-thread leases, CPU retention and
+limits: rigid/base-LOD CPU picking is not universal rendered-ID accuracy.
+Authoring Scene has no gameplay health HUD; game modules own those overlays.

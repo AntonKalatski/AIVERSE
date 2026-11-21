@@ -43,6 +43,11 @@ int main() {
     require(eligibility.eligible, "simple sprite point graph should pass GPU eligibility");
     require(eligibility.gpu.burst==5 && eligibility.gpu.capacity==128,
             "GPU emitter config must mirror compiled graph");
+    options.gpuIndirect=true;
+    eligibility=sp::inspectGraphGpuEligibility(basic,options);
+    require(eligibility.eligible && eligibility.gpu.gpuIndirect,
+            "opt-in GPU-authored indirect preference was not forwarded");
+    options.gpuIndirect=false;
 
     auto alternate=basic;
     alternate.emitters[0].spread=30;

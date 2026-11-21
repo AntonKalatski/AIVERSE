@@ -2081,6 +2081,17 @@ fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requeste
 merge only. Remote documentation and latest MotionWeave merge/push remain next.
 
 
+## 2026-11-20 — Inspector graph-v2 integration with current main
+
+Implementation `9db6d2014137e41cd67ff82dc187cf1136f73bb3`; branch `feature/aiv20261120_perf_inspector_integration`.
+Editor build PASS; final SpectraFX 20/20 PASS including five hardware Metal tests;
+actual PRISMA frame checks 5/5 PASS. Source-compatible view adapters and GPU
+preview retirement corrections preserve newer main ownership. No experimental
+defaults enabled. Full repo/Release/Vulkan/GLES/manual editor UI NOT RUN.
+Exact commands, earlier failures, warnings, APIs and next steps:
+`docs/agent-handoffs/inspector-spectrafx-main-2026-11-20.md`. Separate documentation commit follows implementation.
+
+
 ## 2026-11-20 — lighting branch Light entities
 
 Code d6ddd951b521f7a10aff5ddace7ebd76032eb8c7 adds stable document light identities, common Transform/Light components and component-targeted Studio Inspector writes. Canonical data remains legacy lights[] through an explicit compatibility adapter; no duplicate state or simulation ECS migration claim. Native RTS/FPS persistence and Release Metal/UI checks passed. See docs/agent-handoffs/lighting-main-stage34-light-entities-2026-11-20.md for commands, compatibility, remaining scope and exact evidence.
@@ -2091,3 +2102,12 @@ Code d6ddd951b521f7a10aff5ddace7ebd76032eb8c7 adds stable document light identit
 Merge 9611d05d5aaf299f0892b1fe2f60b935a6c5bede on main preserves VT/LENS/Vulkan contracts and adds tested
 GI coexistence. See docs/agent-handoffs/lighting-main-stage36-merge-2026-11-20.md
 for exact builds/tests, initial failures and remaining platform gates.
+
+
+## 2026-11-20 — Inspector revalidated with lighting main
+
+Combined implementation `4acfb482742d2bb1d615c3eaae60308af09ffa1b` preserves incoming main `d84e958b1`.
+Editor build PASS; SpectraFX 20/20 PASS (16.78s), five real Metal checks with
+no skips; actual PRISMA frame review 5/5 PASS. Two unused GraphWindow helpers
+removed; cleanup build has zero warnings. Full repository/platform/manual UI
+coverage remains unrun. Exact commands and integration decisions: `docs/agent-handoffs/inspector-spectrafx-lighting-sync-2026-11-20.md`.

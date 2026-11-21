@@ -53,6 +53,7 @@ float RtsView::groundAt(const MapGrid& g, float x, float z) const {
 }
 
 void RtsView::setTerrainDetail(const Json& map) {
+    setMapSurfaceEnabled(map.getStr("terrainPresentation","legacy")!="entities");
     discardPendingSurfaceLease();
     ++terrainGeneration_; // includes surface policy/texture changes before rebuilding geometry
     setRoadMap(map);

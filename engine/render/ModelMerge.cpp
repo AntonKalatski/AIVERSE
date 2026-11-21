@@ -31,7 +31,8 @@ bool paletteStateEqual(const Material& a, const Material& b) {
             m.castShadow, m.receiveShadow, m.team, m.teamStrength,
             m.baseTex, m.mrTex, m.normalTex, m.occlusionTex, m.emissiveTex, m.teamTex,
             m.uvOffset.x, m.uvOffset.y, m.uvScale.x, m.uvScale.y, m.uvRotation,
-            m.fixedLight.x, m.fixedLight.y, m.fixedLight.z, m.fixedLight.w, m.shadowDiffusion, m.fixedShade.x, m.fixedShade.y);
+            m.fixedLight.x, m.fixedLight.y, m.fixedLight.z, m.fixedLight.w, m.thinTransmission, m.shadowDiffusion, m.fixedShade.x, m.fixedShade.y,
+            m.sssStrength, m.sssColor.x, m.sssColor.y, m.sssColor.z, m.sssScale);
     };
     return state(a) == state(b);
 }
