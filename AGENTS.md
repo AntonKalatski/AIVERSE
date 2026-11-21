@@ -4,6 +4,27 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## NO GENRE SPLIT — EVER (owner rule, 2026-11-21, highest priority for every agent)
+
+**Features are never divided, gated or duplicated by genre.** AIVERSE has no "RTS features", "FPS features",
+"racing features" or "city-game features": every mechanic, system, view feature, editor tool, asset pipeline and
+data block must be usable by any project, whatever its genre or legacy module.
+
+- Never add genre-named modes, flags or branches: no `fps.mode "race"`, no `isFps()` / `isRts()` gates, no
+  `if (module == "rts")`, no "only in the top-down host". A project enables capabilities by data (components,
+  systems, rules/map blocks), not by picking a genre.
+- Never implement the same capability twice for two modules, and never limit new work to the one module that
+  happens to have a prerequisite today. If what you need lives only inside `modules/rts`, `modules/fps` or another
+  legacy module (example: spline roads are drawn only by `modules/rts/view`; vehicles are hosted separately by
+  `RtsDriving` and `FpsVehicles`), the task **includes extracting it** into shared `engine/` / `libraries/` code
+  with a thin adapter in each legacy module — not building around the split.
+- `modules/rts` / `modules/fps` are legacy hosts. New code goes to shared engine/library systems; legacy modules
+  only get adapters. Their names stay for compatibility (see "Engine naming").
+- Templates may showcase a genre; the code under them must not know which genre it serves.
+- Plans, skills, docs and status files describe capabilities, not genre silos. If a plan or a skill says "in the
+  X module only" or "for genre Y", stop and redesign it as a shared capability before writing code. When you find
+  an existing genre split, record it in your handoff as debt to remove, do not extend it.
+
 ## Terra-first game creation (user policy, 2026-11-20)
 
 For every new game and environment task, read `skills/workflow/aiverse-terra-first/SKILL.md`.
