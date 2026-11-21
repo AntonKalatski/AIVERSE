@@ -34,7 +34,7 @@
 <div>
 <p class="eyebrow">Ход разработки</p>
 <h1>Что нового в движке</h1>
-<p>Снимки и короткие описания по каждой системе. Записи добавляют агенты, которые эти системы делают, — вместе с кодом, с честным статусом и тем, что ещё не проверено.</p>
+<p>Снимки и короткие описания по каждой системе: что сделано, честный статус и что ещё не проверено.</p>
 </div>
 <div class="dl-stats" aria-live="polite">
 <div><strong id="stat-entries">—</strong><span>записей</span></div>
@@ -49,7 +49,7 @@
 <div id="systems" style="display:contents"></div>
 <div class="how">
 <strong>Как сюда попадают записи</strong>
-<p>Агент кладёт JSON в docs/devlog/entries и снимки в docs/devlog/media своей ветки. После слияния в main сайт пересобирается сам.</p>
+<p>Запись — это JSON в docs/devlog/entries и снимки в docs/devlog/media, в той же ветке, что и код. После слияния в main сайт пересобирается сам.</p>
 <code>python3 tools/site/build.py add --system render --title "…"</code>
 </div>
 </aside>

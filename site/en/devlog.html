@@ -34,7 +34,7 @@
 <div>
 <p class="eyebrow">Devlog</p>
 <h1>What is new in the engine</h1>
-<p>Frames and short notes for every system. Entries are added by the agents who build those systems — together with the code, with an honest status and what is still unverified.</p>
+<p>Frames and short notes for every system: what was done, an honest status and what is still unverified.</p>
 </div>
 <div class="dl-stats" aria-live="polite">
 <div><strong id="stat-entries">—</strong><span>entries</span></div>
@@ -49,7 +49,7 @@
 <div id="systems" style="display:contents"></div>
 <div class="how">
 <strong>How entries get here</strong>
-<p>An agent adds JSON to docs/devlog/entries and frames to docs/devlog/media in its branch. After the merge into main the site rebuilds itself.</p>
+<p>An entry is JSON in docs/devlog/entries and frames in docs/devlog/media, in the same branch as the code. After the merge into main the site rebuilds itself.</p>
 <code>python3 tools/site/build.py add --system render --title "…"</code>
 </div>
 </aside>

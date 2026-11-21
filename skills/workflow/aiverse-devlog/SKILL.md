@@ -21,6 +21,8 @@ own development diary on the site (`devblog-<system>.html`, newest first) and th
   partial attempts, build errors and red tests stay in the handoff and never reach the site.
 - A stage with nothing to show (refactor, internal API, test-only work) is written up together
   with the next stage that has a frame; one entry may cover several stages.
+- Never say on the site that agents build the engine or its systems, and do not sign entries as
+  agents. Engine features for AI agents (MCP, skills) are product features and may be described.
 - Do not stress that a system is "genre-independent", "for any genre", "one for all genres" or
   "universal" anywhere on the site: that is an internal architecture rule, not news for readers.
   Say what the system does.
