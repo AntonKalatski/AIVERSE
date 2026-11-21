@@ -13,10 +13,12 @@ void GeometryScene::validate(const Json& j){
     const auto& st=j["strata"];
     if(!st.isNull()){
         if(!st.isObject())throw std::runtime_error("geometry scene: strata must be object");
-        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
+        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale"&&k!="select"&&k!="minTriangles")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
         if(st.has("mergeClusters")&&st["mergeClusters"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.mergeClusters must be boolean");
         if(st.has("reflections")&&st.getStr("reflections")!="finest"&&st.getStr("reflections")!="main")throw std::runtime_error("geometry scene: strata.reflections must be finest or main");
         if(st.has("enabled")&&st["enabled"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.enabled must be boolean");
+        if(st.has("select")&&st.getStr("select")!="auto"&&st.getStr("select")!="all")throw std::runtime_error("geometry scene: strata.select must be auto or all");
+        number(st,"minTriangles",0,100000000);
         number(st,"hysteresis",0,.45);
         number(st,"shadowErrorScale",1,64);
     }
@@ -30,9 +32,10 @@ void GeometryScene::validate(const Json& j){
     std::set<std::string> ids;
     for(auto& i:j["instances"].items()){
         if(!i.isObject())throw std::runtime_error("geometry scene: instance must be object");
-        for(auto& [k,v]:i.members())if(k!="id"&&k!="model"&&k!="position"&&k!="rotation"&&k!="scale"&&k!="geometry"&&k!="proxy")throw std::runtime_error("geometry scene: unknown instance key '"+k+"'");
+        for(auto& [k,v]:i.members())if(k!="id"&&k!="model"&&k!="position"&&k!="rotation"&&k!="scale"&&k!="geometry"&&k!="proxy"&&k!="strata")throw std::runtime_error("geometry scene: unknown instance key '"+k+"'");
         if(i.getStr("id").empty()||!ids.insert(i.getStr("id")).second)throw std::runtime_error("geometry scene: unique nonempty instance id required");
         path(i.getStr("model"));parseGeometryPolicy(i["geometry"]);
+        if(i.has("strata")&&i["strata"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: instance strata must be boolean (forces STRATA on/off for its model)");
         if(i.has("proxy")){
             const auto& p=i["proxy"];if(!p.isObject())throw std::runtime_error("geometry scene: proxy must be object");
             for(auto& [k,v]:p.members())if(k!="model"&&k!="maxPixels")throw std::runtime_error("geometry scene: unknown proxy key '"+k+"'");

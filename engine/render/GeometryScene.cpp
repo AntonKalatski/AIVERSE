@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include "GeometryScene.h"
+#include "StrataAutoSelect.h"
 #include "Renderer3D.h"
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
 #include "StrataModelAdapter.h"
@@ -372,6 +373,9 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataReflectionFinest_=staged->strataReflectionFinest_;
     strataMergeClusters_=staged->strataMergeClusters_;
     strataShadowErrorScale_=staged->strataShadowErrorScale_;
+    strataAutoSelect_=staged->strataAutoSelect_;
+    strataAutoMinTriangles_=staged->strataAutoMinTriangles_;
+    strataSelectDecisions_=std::move(staged->strataSelectDecisions_);
     staged->strataStaging_.reset();
     staged->strataGpuMetadata_.reset();
     staged->strataGpuCulling_.reset();
@@ -396,6 +400,8 @@ void GeometryScene::copyStrataConfigFrom(const GeometryScene& o) {
     strataReflectionFinest_=o.strataReflectionFinest_;
     strataMergeClusters_=o.strataMergeClusters_;
     strataShadowErrorScale_=o.strataShadowErrorScale_;
+    strataAutoSelect_=o.strataAutoSelect_;
+    strataAutoMinTriangles_=o.strataAutoMinTriangles_;
     // Debug view options decide per-source capture during load.
     strataDebugView_=o.strataDebugView_;
     strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
@@ -434,6 +440,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         strataPortableRenderingEnabled_=!off&&json["strata"].getBool("enabled");
         strataMergeClusters_=json["strata"].getBool("mergeClusters",true);
         strataShadowErrorScale_=float(json["strata"]["shadowErrorScale"].toDouble(1.0));
+        strataAutoSelect_=json["strata"].getStr("select","auto")!="all";
+        strataAutoMinTriangles_=uint64_t(std::max(0.0,json["strata"]["minTriangles"].toDouble(0.0)));
         if(json["strata"].has("reflections"))
             strataReflectionFinest_=json["strata"].getStr("reflections")!="main";
         if(json["strata"].has("hysteresis"))
@@ -478,6 +486,34 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             }
             instances_.push_back(in);
         }
+        // strata.select auto: decide per source BEFORE upload preparation may
+        // generate LOD meshes, so "authored LODs" means the asset's own chain.
+        std::set<const Model*> strataLodSources;
+        strataSelectDecisions_.clear();
+        if (strataPortableRenderingEnabled_ && strataAutoSelect_) {
+            std::map<const Model*,size_t> count;
+            std::map<const Model*,int> forced; // -1 off, 1 on
+            {
+                size_t k=0;
+                for (const auto& i : json["instances"].items()) {
+                    if (k>=instances_.size()) break;
+                    const Model* m=instances_[k++].model;
+                    ++count[m];
+                    if (i.has("strata")) forced[m]=i["strata"].boolean()?1:-1;
+                }
+            }
+            StrataAutoSelectConfig cfg;
+            if (strataAutoMinTriangles_) cfg.minTriangles=strataAutoMinTriangles_;
+            for (const auto& [file, m] : models_) {
+                if (!m || !count.count(m.get())) continue;
+                std::string why;
+                bool strata=strataPreferred(strataSourceFacts(*m,count[m.get()]),cfg,&why);
+                if (forced.count(m.get())) { strata=forced[m.get()]>0; why="forced by instance \"strata\""; }
+                if (!strata) strataLodSources.insert(m.get());
+                strata ? ++stats_.strataAutoStrataSources : ++stats_.strataAutoLodSources;
+                strataSelectDecisions_.push_back(file+": "+(strata?"strata":"lod")+" ("+why+")");
+            }
+        }
         for(auto& [file,m]:models_)if(hlod_||std::any_of(instances_.begin(),instances_.end(),[&](const Instance& i){return i.model==m.get()&&(i.policy.clusters||i.policy.shadowClusters||i.policy.occluder);}))prepareGeometry(*m);
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
         if (strataPortableRenderingEnabled_) {
@@ -504,7 +540,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 strataStaging_->setAllowPreparedRootLods(true);
             std::set<const Model*> usedSources;
             for (const auto& instance : instances_)
-                usedSources.insert(instance.model);
+                if (!strataLodSources.count(instance.model))
+                    usedSources.insert(instance.model);
             for (const auto& [file, model] : models_)
                 if (model && usedSources.count(model.get())) {
                     strataStaging_->stage(file, *model);

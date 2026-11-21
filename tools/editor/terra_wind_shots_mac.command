@@ -15,12 +15,12 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 mkdir -p "$OUT/tmp"; export TMPDIR="$OUT/tmp"
 echo "== build"
 cmake "$OUT/native" > "$ROOT/.wind-qa/terra-configure.log" 2>&1 || { echo "== FAILED configure"; tail -20 "$ROOT/.wind-qa/terra-configure.log"; exit 1; }
-cmake --build "$OUT/native" --target aiverse_editor aiverse_wind_rig_test aiverse_terraweave_model_test aiverse_terraweave_forest_scene_test aiverse_terraweave_erosion_zones_test aiverse_prisma_lens_water_tests aiverse_ecs_nereid_renderer_contract_test aiverse_shader_graph_tests aiverse_strata_portable_tests aiverse_static_impostor_lod_tests --parallel 8 > "$ROOT/.wind-qa/terra-build.log" 2>&1; rc=$?
+cmake --build "$OUT/native" --target aiverse_editor aiverse_wind_rig_test aiverse_terraweave_model_test aiverse_terraweave_forest_scene_test aiverse_terraweave_erosion_zones_test aiverse_prisma_lens_water_tests aiverse_ecs_nereid_renderer_contract_test aiverse_shader_graph_tests aiverse_strata_portable_tests aiverse_static_impostor_lod_tests aiverse_strata_auto_select_tests --parallel 8 > "$ROOT/.wind-qa/terra-build.log" 2>&1; rc=$?
 grep -E "error:|FAILED" "$ROOT/.wind-qa/terra-build.log" | head -40
 [[ $rc == 0 ]] || { echo "== FAILED build rc=$rc"; exit 1; }
 BIN="$(find "$OUT/native" -maxdepth 6 -type f -perm -u+x \( -name aiverse_editor -o -name AiverseEditor \) | head -1)"
 echo "editor: $BIN"
-ctest --test-dir "$OUT/native" -R "^(wind_rig|terraweave_model|terraweave_forest_scene|terraweave_erosion_zones|prisma_lens_water|ecs_nereid_renderer_contract_test|shader_graph|strata_portable|static_impostor_lod)$" --verbose --output-on-failure | grep -E "tests passed|Failed|\*\*\*|Test #|erosion cm"
+ctest --test-dir "$OUT/native" -R "^(wind_rig|terraweave_model|terraweave_forest_scene|terraweave_erosion_zones|prisma_lens_water|ecs_nereid_renderer_contract_test|shader_graph|strata_portable|static_impostor_lod|strata_auto_select)$" --verbose --output-on-failure | grep -E "tests passed|Failed|\*\*\*|Test #|erosion cm"
 if [[ -n "${TERRA_PROJECT:-}" ]]; then PROJ="$TERRA_PROJECT"
 else PROJ="$ROOT/.wind-qa/terra-project"; rm -rf "$PROJ"; cp -R "$ROOT/templates/wildfire" "$PROJ"; fi
 rm -rf "$ROOT/.wind-qa/terra"

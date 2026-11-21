@@ -313,6 +313,13 @@ void Editor::registerGuiOps() {
             st.set("instances",Json::number(int64_t(view_.geometryScene().instanceCount())));
             st.set("sharedModels",Json::number(int64_t(g.strataPortableSharedModels)));
             st.set("sharedReuses",Json::number(int64_t(g.strataPortableSharedReuses)));
+            st.set("autoLodSources",Json::number(int64_t(g.strataAutoLodSources)));
+            st.set("autoStrataSources",Json::number(int64_t(g.strataAutoStrataSources)));
+            {   // strata.select auto: one line per source, model and reason.
+                auto list=Json::array();
+                for(const auto& d:view_.geometryScene().strataSelectDecisions())list.push(Json::string(d));
+                st.set("select",list);
+            }
             r.set("strata",st);
         }
         // Reuse completed host-owned queries only; do not poll, wait or add

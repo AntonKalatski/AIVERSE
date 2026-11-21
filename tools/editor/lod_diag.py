@@ -128,6 +128,11 @@ for rep in range(int(os.environ.get("LOD_REPEAT", "0"))):
     time.sleep(2)
     stats("hero-%d" % rep, **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0], surf[8] + 35, centre[j][1])))
 stats("overview", x=256, y=0, z=256, distance=260, pitch=40, yaw=200)
+if os.environ.get("CASTLE_SHOT"):
+    # Static castle from the geometry scene: near / mid / far.
+    cx, cy, cz = [float(t) for t in os.environ["CASTLE_SHOT"].split(",")]
+    for tag, d, up in (("castle-near", 70, 18), ("castle-mid", 160, 40), ("castle-far", 380, 80)):
+        stats(tag, **look((cx + d * 0.8, cy + up, cz + d * 0.6), (cx, cy + 8, cz)))
 if os.environ.get("REFLECT_SHOT"):
     # Looking down at the water: far-bank trees above the frame show only as reflections.
     for k, ii in enumerate((10, 16, 22)):
