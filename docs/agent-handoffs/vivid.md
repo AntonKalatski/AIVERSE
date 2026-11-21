@@ -3085,3 +3085,34 @@ camera angles, production LOD tuning and interactive editor parity.
 - **Actual tests after Stage 6C/6F:** **NOT RUN** from this assistant session. GitHub Actions run for the isolated branch was pending at last inspection. The earlier user-provided 11/11 CTest and single/12-actor GUI pass were at Stage 5J SHA `fa5504a9f2e1f64087ef73139525e5bde31976b4`, before Stage 6 human code and this stage; they are not evidence for current branch.
 - **Risks:** the Creator's GPU transaction still requires an explicit idle barrier on editing (never per frame) and remains a standalone GUI, not yet embedded as a tab in the editor. Asset licensing, true human scans, multi-layer skin refraction/diffusion, realistic strand hair and MetaHuman binary DNA interchange are not solved by this PR. The source VIVID branch advanced independently and may conflict in `tools/vivid-creator/main.cpp` when integrated; reconcile before merge.
 - **Next step:** obtain full Mac test log for `bash tools/vivid-validate.sh` in an isolated worktree, including 16 CTests, GPU single/crowd previews, procedural and imported human GUI smoke (8 PPMs); only after successful validation integrate as a reviewed PR into the updated VIVID branch. Then run full AIVERSE regression before merge into main.
+
+## Studio Human Creator window + human_* MCP — 2026-11-21
+
+Branch `feature/vivid-digital-humans`. Before it: main (`43ef79e6b`, shared engine roads), vivid-human-safe-publication
+(`7aef6fe98`), vivid-human-creator-ui (`13f1121d0`) and the studio-html5 editor commits (Scene camera, orientation
+gizmo, component Inspector: `5d106b453`..`d32a720d4`, cherry-picked) were merged in. Not taken from studio-html5:
+`607f7b958` "shadow-depth transmission for backlit SSS" + its docs — its `sssThickness` and main's vegetation
+`thinTransmission` both claim PBR U2 `light.w`; the studio-html5 owner must pick a layout when merging main.
+
+Implementation: `ef3ac46eb` (see docs/vivid.md § Studio Human Creator).
+
+Actually run (Linux VM, g++ 11.4, no CMake):
+- `apps/studio-native/tests/StudioHumanCreatorTests.cpp` standalone g++ build + run with the vivid human sources,
+  Json, Model, ModelMerge, MeshBuilder, ShaderGraph (other model loaders left unresolved, never called):
+  `studio human creator PASS (25 nodes, 5 targets, 11932 verts)`. `-Wall -Wextra` clean for the new headers.
+- `g++ -fsyntax-only` OK: StudioSession.cpp, mac/StudioFacialGpuPreview.cpp, apps/editor/core/HumanCreatorOps.cpp,
+  Workspace.cpp. MCP input schemas parsed with json.loads (7/7).
+- Studio web: `npx tsc --noEmit` OK; all 16 node test files PASS (new humanCreatorSchema, updated nested-dock).
+- `python3 -m unittest discover -s tools/studio` 41 OK (1 skipped); `tools/readme/check.py` 0 problems;
+  `tools/skills/catalog.py check` OK; `tools/skills/audit.py --strict` 1 error, pre-existing (studio-ui NN-* path).
+
+NOT RUN (KINGSTON Mac): CMake configure/build/link, ctest `studio_human_creator` and the extended
+`studio_human_appearance_session`, Metal: Creator publication in StudioFacialGpuPreview (head + hair keys,
+retirement on mode switch), rig overlay at submit, hair draw; aiversemcp link with aiverse_vivid_human; Studio UI
+screenshot of the window and the viewport.
+
+Known limits: static Studio preview (no groom simulation, hair uses head framing); brush weight painting, scalp
+collision mesh and imported packages stay in tools/vivid-creator; no MCP tool captures the Studio viewport.
+Next: build on KINGSTON, run `ctest -R '^studio_human_(creator|appearance_session)$'`, screenshot Human Creator with
+"Show in viewport" for neutral/warm presets and a jawOpen rest value; then decide the SSS `light.w` layout with the
+studio-html5 owner.
