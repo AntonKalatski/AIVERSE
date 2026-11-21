@@ -787,6 +787,12 @@ private:
         float deathAge = 0;
         int baseKind = -1;
         uint64_t seen = 0;
+        // Camera culling (RtsView::draw): bounds of the last submission, relative
+        // to the ground point under the object, and clock time not yet animated.
+        bool cullValid = false;
+        render::float3 cullOffset{};
+        float cullRadius = 0;
+        float culledDt = 0;
         SceneObject last;
         int prevClip[render::Animator::kLayers] = {-1, -1, -1};
         float prevTime[render::Animator::kLayers] = {0, 0, 0};

@@ -55,6 +55,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -116,6 +117,7 @@ struct Options {
     std::string plugins;      // --plugins a,b: native plugins instead of game.json "plugins" (tools/aiversebuild/Plugins.h)
     unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
     bool installMissing = false;   // --install-missing: install what the target needs, then build
+    bool precompileMetal = false;  // --precompile-metal: macOS ships offline .metallib + pipeline archive
 };
 
 // game.json "module": "scene": the project has no game module. It ships the minimal scene client
@@ -138,6 +140,31 @@ bool projectUsesRoads(const Options& o) {
         } catch (const std::exception&) { return true; }
     }
     return false;
+}
+
+// engine/assets/materials (terrain + vegetation PBR libraries, ~145 MB) is an authoring source:
+// projects copy what they use into their own materials/ (tools/terrain/install_pbr_pack.py, the
+// editor's empty-project template) and the runtime never reads engine/materials. Ship it only to a
+// project whose own data names an engine/materials/ path.
+bool projectUsesEngineMaterials(const Options& o) {
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(o.project, fs::directory_options::skip_permission_denied, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (it->is_directory(ec)) {
+            if (name == "Builds" || name == "Logs" || name == "logs" || name == "dist" || name == ".aiverse" ||
+                name == "node_modules" || name == ".git" || name == "native" || name == "source")
+                it.disable_recursion_pending();
+            continue;
+        }
+        const std::string ext = it->path().extension().string();
+        if (ext != ".json" && ext != ".lua" && ext != ".rml" && ext != ".rcss" && ext != ".gltf") continue;
+        if (it->file_size(ec) > 64ull * 1024 * 1024) continue;
+        std::ifstream in(it->path(), std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (text.find("engine/materials/") != std::string::npos) return true;
+    }
+    return !!ec;   // could not scan the project: keep everything
 }
 
 struct Game {
@@ -481,6 +508,10 @@ fs::path contentPack(Options& o) {
     // Engine assets only some games need: the road paint atlas (RoadView draws a generated one without it).
     aiverse::pack::IgnoreRules engineRules;
     if (!projectUsesRoads(o)) engineRules.add("roads/markings.png");
+    if (!projectUsesEngineMaterials(o)) {
+        engineRules.add("materials/");
+        info("engine/materials не нужен проекту (материалы копируются в проект): не входит в пак");
+    }
     if (w.addDirectory(game.string(), "", rules, &err) < 0 ||
         (!sceneClient(o) && w.addDirectory((o.engine / "engine" / "assets").string(), "engine", engineRules, &err) < 0))
         die(err);
@@ -622,7 +653,11 @@ void placeContent(Options& o, const fs::path& contentDir) {
         copyFile(contentPack(o), contentDir / "content.rpak");
     } else {
         copyDir(gameContent(o), contentDir);
-        if (!sceneClient(o)) copyDir(o.engine / "engine" / "assets", contentDir / "engine");
+        if (!sceneClient(o)) {
+            copyDir(o.engine / "engine" / "assets", contentDir / "engine");
+            std::error_code ec;
+            if (!projectUsesEngineMaterials(o)) fs::remove_all(contentDir / "engine" / "materials", ec);   // as in the pack
+        }
     }
 }
 
@@ -943,7 +978,18 @@ void buildMac(const Game& g, Options& o) {
 
     step("macOS: конфигурация CMake");
     std::string gen_ = findTool("ninja").empty() ? "" : " -G Ninja";
-    mustRun("cmake -S " + quote(o.engine) + " -B " + quote(bdir) + gen_ + cmakeVars(g, o, gameContent(o), gen) + packVar(o) + pluginsVar(o, "macos", gen) + " -DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0");
+    // --precompile-metal: tools/metal/precompile.py runs the linked client on loose bundled
+    // content (captures the startup shader variants, compiles them offline, records the
+    // pipeline archive), so the first launch does not compile Metal shaders from source.
+    // It needs the Xcode Metal Toolchain and a GUI session, and loose content (no content.rpak).
+    std::string metalVars = " -DAIVERSE_PRECOMPILE_METAL=OFF";
+    std::string pack = packVar(o);
+    if (o.precompileMetal) {
+        if (o.pack) info("macOS: --precompile-metal собирает с распакованным контентом (без content.rpak)");
+        pack = " -DAIVERSE_CONTENT_PACK=";
+        metalVars = " -DAIVERSE_PRECOMPILE_METAL=ON";
+    }
+    mustRun("cmake -S " + quote(o.engine) + " -B " + quote(bdir) + gen_ + cmakeVars(g, o, gameContent(o), gen) + pack + metalVars + pluginsVar(o, "macos", gen) + " -DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0");
     step("macOS: сборка");
     mustRun("cmake --build " + quote(bdir) + " --target aiverse_client --config " + o.config + " -j " + std::to_string(o.jobs));
     fs::path app = bdir / (g.exe + ".app");
@@ -1257,6 +1303,7 @@ void usage() {
                  "                [--estimate]  (content pack + size-report.json per target only, for the editor)\n"
                  "                [--check-engine-modules]  (show selected optional client modules without building)\n"
                  "                [--install-missing]  (install missing toolchains into ~/.aiverse/toolchains first)\n"
+                 "                [--precompile-metal]  (macOS: offline Metal libraries + pipeline archive; Metal Toolchain, GUI)\n"
                  "       aiversebuild --check-toolchain <target> [--json]\n"
                  "       aiversebuild --install-toolchain <target|emsdk|cmake|jdk|android-sdk|android-ndk|android-cmake|gradle|xcode-clt>\n";
 }
@@ -1320,6 +1367,7 @@ int main(int argc, char** argv) {
         else if (a == "--fill-base") o.fillBase = 1;
         else if (a == "--audio") o.audio = next();
         else if (a == "--install-missing") o.installMissing = true;
+        else if (a == "--precompile-metal") o.precompileMetal = true;
         else if (a == "--check-toolchain") checkTarget = next();
         else if (a == "--install-toolchain") installWhat = next();
         else if (a == "--json") json = true;

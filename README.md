@@ -247,10 +247,13 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 **1. Build the engine** (macOS; requires Xcode and CMake):
 
 ```bash
-cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
-cmake --build build/mac -j 8
-open build/mac/AiverseEditor.app        # editor: project hub and templates
+./studio_mac.command                    # AIVERSE Studio, the editor (needs Xcode, CMake, Node.js)
+./studio_mac.command templates/mushrooms   # ...on another project
 ```
+
+`studio_mac.command` builds the web UI and the native Studio and opens it. The engine alone:
+`cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`. The previous
+ImGui editor (`build/mac/AiverseEditor.app`) is still built and works on Linux and Windows.
 
 Linux: `cmake --preset linux-release && cmake --build build/linux-release`. If you'd rather not compile,
 the `builds` branch has a prebuilt editor and tools
@@ -259,7 +262,7 @@ the `builds` branch has a prebuilt editor and tools
 **2. Make a game.** In the hub, click **Make a game** or create a project from a template. You can
 play it with bots right away in the Game window.
 
-**3. Connect an AI agent.** The **Agent** window in the editor shows a ready-made config. For Claude Code:
+**3. Connect an AI agent.** In Studio the **Agent** panel runs Claude Code on the open project directly (every edit is an undo step). To connect your own client, the ImGui editor's **Agent** window shows a ready-made config. For Claude Code:
 
 ```bash
 claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE

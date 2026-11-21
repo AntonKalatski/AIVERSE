@@ -39,6 +39,13 @@ platform/    packaging templates (Info.plist, Gradle project, HTML shell)
 
 ## Quick start (macOS)
 
+The editor on macOS is **AIVERSE Studio** (HTML5 UI over the native engine, `apps/studio-native` +
+`apps/studio-web`): `./studio_mac.command [project]` builds and opens it. Workspaces Scene / World / Look /
+Animate / Character / Logic / Publish hold every former editor window as a panel; the Scene has transform
+tools and brushes (terrain, paint, tiles, fields, objects, roads, rivers), Play runs the game in place, the
+Agent panel drives the project with Claude Code, Publish builds. The ImGui editor below stays for Linux /
+Windows and as a fallback.
+
 ```bash
 cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release      # requires Xcode and CMake
 cmake --build build/mac -j 8
@@ -221,6 +228,11 @@ A `"module": "scene"` project (docs/game-format.md) ships about 150 KB.
 The content pack leaves out `engine/roads/markings.png` (328 KB, stored
 uncompressed) when the project has no `roads/` folder, rules `roadTypes` or map
 `roadNetwork`; the road view then draws its generated paint atlas.
+It also leaves out `engine/materials` (terrain and vegetation PBR libraries,
+about 145 MB): projects copy the materials they use into their own `materials/`
+(`tools/terrain/install_pbr_pack.py`, the editor's empty project) and the runtime
+never reads `engine/materials`. A project whose data names an `engine/materials/`
+path keeps the folder.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

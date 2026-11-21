@@ -1,4 +1,5 @@
 #include "Lights.h"
+#include "../gfx/GpuTier.h"
 #include "LightShaders.h"
 #include <algorithm>
 #include <chrono>
@@ -20,8 +21,7 @@ LightQuality LightSystem::defaultQualityFor(const gfx::Device& dev, bool mobile)
     const std::string& n = dev.info().name;
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return LightQuality::Low;
     if (mobile) {
-        for (const char* weak : {"Mali-4", "Mali-T", "Adreno (TM) 3", "Adreno (TM) 4", "Adreno (TM) 50", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return LightQuality::Low;
+        if (gfx::isWeakMobileGpu(n)) return LightQuality::Low;   // GpuTier.h
         return LightQuality::Medium;
     }
     return LightQuality::High;

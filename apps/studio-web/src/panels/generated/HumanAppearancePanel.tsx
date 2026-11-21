@@ -2,53 +2,23 @@ import HumanPreviewAnimationControls from '../HumanPreviewAnimationControls';
 import HumanStudioLightingControls from '../HumanStudioLightingControls';
 import HumanFaceControls from '../HumanFaceControls';
 import HumanWardrobeControls from '../HumanWardrobeControls';
-import { useEffect, useRef, useState } from 'react';
-import type { HumanFaceShape, HumanLook, HumanLookInfo, StudioSnapshot } from '../../types';
+import { useState } from 'react';
+import type { HumanLook, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
+import { emptyLook, useHumanLook } from '../useHumanLook';
 import AssetReferencePicker from '../../components/AssetReferencePicker';
 import { StudioPanel, StudioSection, StudioBadge, StudioAlert, StudioEmptyState,
   StudioButton, StudioField, StudioInput, StudioSelect } from '../../ui';
 import './HumanAppearancePanel.css';
 import { validateHumanLook } from '../humanLookSchema';
-const emptyLook=():HumanLook=>({version:1,values:{},materials:{}});
 const groups:Record<string,string>={skin:'Skin · tone & texture',hair:'Hair · colour & finish',
   lashes:'Eyelashes',eyes:'Eyes · iris & sclera',cloth:'Clothing · fabric',body:'Body proportions'};
 export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot|null}) {
  const project=snapshot?.project.path ?? '';
- const [info,setInfo]=useState<HumanLookInfo|null>(null);
- const [face,setFace]=useState<HumanFaceShape|null>(null);
- const [draft,setDraft]=useState<HumanLook>(emptyLook);
- const [guid,setGuid]=useState('');const [name,setName]=useState('character');
- const [saved,setSaved]=useState<string[]>([]);const [selected,setSelected]=useState('');
- const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [status,setStatus]=useState('');
- const [undo,setUndo]=useState<HumanLook[]>([]);const [redo,setRedo]=useState<HumanLook[]>([]);
- const generation=useRef(0);
- useEffect(()=>{const gen=++generation.current;setInfo(null);setFace(null);setGuid('');setDraft(emptyLook());setUndo([]);setRedo([]);
-  if(!project||!nativeConnected())return;
-  setBusy(true);
-  void Promise.all([invoke('studio.humanAppearanceInfo',{}),invoke('studio.humanAppearanceList',{})])
-   .then(([i,list])=>{if(gen!==generation.current)return;setInfo(i);setFace(i.face);setDraft(i.look);setGuid(i.preview.guid);setSaved(list.looks);setError('');})
-   .catch(e=>{if(gen===generation.current)setError(String(e));})
-   .finally(()=>{if(gen===generation.current)setBusy(false);});
-  return ()=>{++generation.current;};
- },[project]);
- const edit=(next:HumanLook)=>{setUndo(u=>[...u.slice(-63),draft]);setRedo([]);setDraft(next);setStatus('Draft changed — apply to preview');};
- const run=async(action:()=>Promise<void>)=>{setBusy(true);setError('');try{await action();}catch(e){setError(String(e));}finally{setBusy(false);}};
- const loadAsset=()=>run(async()=>{const result=await invoke('studio.humanAppearanceFromAsset',{guid});edit(result.look);setStatus('Model profile loaded; apply to preview');});
- const apply=()=>run(async()=>{
-  const current=await invoke('studio.humanAppearanceInfo',{});
-  const result=await invoke('studio.humanAppearanceApply',{guid,revision:current.preview.revision,look:draft,face});
-  setInfo(result);setDraft(result.look);setStatus('Applied; native model is loading');
- });
- useEffect(()=>{
-  if(!info?.preview.bound||!project||!nativeConnected())return;
-  const gen=generation.current;
-  const timer=setInterval(()=>{void invoke('studio.humanAppearanceInfo',{}).then(next=>{
-   if(gen!==generation.current)return;
-   setInfo(old=>old?.preview.revision===next.preview.revision?next:old);
-  }).catch(()=>{});},1500);
-  return ()=>clearInterval(timer);
- },[project,info?.preview.revision,info?.preview.bound]);
+ const h=useHumanLook(project);
+ const {info,face,setFace,draft,setDraft,edit,guid,setGuid,saved,setSaved,busy,error,status,setStatus,undo,redo,run,loadAsset}=h;
+ const [name,setName]=useState('character');const [selected,setSelected]=useState('');
+ const apply=()=>h.apply();
  const validName=/^[A-Za-z0-9_-]{1,64}$/.test(name);
  if(!project)return <StudioPanel title="VIVID Appearance"><StudioEmptyState title="Open a project" description="Choose a character model from project content to edit its appearance."/></StudioPanel>;
  if(!nativeConnected())return <StudioPanel title="VIVID Appearance"><StudioAlert>Open native Studio to edit and render a character. Browser demo does not simulate material changes.</StudioAlert></StudioPanel>;
@@ -74,8 +44,8 @@ export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot
     </StudioField>
    </StudioSection>
    <div className="au-row">
-    <StudioButton disabled={busy||!undo.length} onClick={()=>{setRedo(r=>[...r,draft]);setDraft(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo</StudioButton>
-    <StudioButton disabled={busy||!redo.length} onClick={()=>{setUndo(u=>[...u,draft]);setDraft(redo[redo.length-1]);setRedo(redo.slice(0,-1));}}>Redo</StudioButton>
+    <StudioButton disabled={busy||!undo.length} onClick={h.undoLook}>Undo</StudioButton>
+    <StudioButton disabled={busy||!redo.length} onClick={h.redoLook}>Redo</StudioButton>
     <StudioButton disabled={busy||!info} onClick={()=>edit({...draft,values:{}})}>Reset values</StudioButton>
    </div>
    {Object.entries(groups).map(([group,title])=><details key={group} open={group==='skin'}>

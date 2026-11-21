@@ -54,13 +54,17 @@ bool QualityGovernor::stepUp() {
 bool QualityGovernor::update(double dt) {
     if (disabled_ || locked_ || dt <= 0) return false;
     const float ms = float(dt * 1000.0) + fakeMs_;
-    if (++frames_ <= kWarmupFrames || ms > 250.0f) return false;   // ignore loading / pauses
-    bestMs_ = std::min(bestMs_, std::max(ms, 6.0f));
+    if (++frames_ <= kWarmupFrames) return false;
+    // an isolated long frame is loading / a pause; a run of them is a device that is simply too slow
+    const bool longFrame = ms > 250.0f;
+    longRun_ = longFrame ? longRun_ + 1 : 0;
+    if (longFrame && longRun_ < 3) return false;
+    if (!longFrame) bestMs_ = std::min(bestMs_, std::max(ms, 6.0f));
     const float slowMs = std::max(bestMs_ * 1.35f, 18.0f);
     sinceChange_ += dt;
     windowTime_ += dt;
     ++windowFrames_;
-    if (ms > slowMs) ++windowSlow_;
+    if (longFrame || ms > slowMs) ++windowSlow_;
     if (windowTime_ < kWindow) return false;
 
     const float slowShare = float(windowSlow_) / float(std::max(windowFrames_, 1));

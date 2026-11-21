@@ -1,6 +1,7 @@
 // Renderer3D: models (PBR materials, GPU skinning, alpha modes) — shader permutations, culling,
 // sorting and the per-draw uniform blocks. See ModelShaders.h for the uniform layouts.
 #include "Renderer3D.h"
+#include "../gfx/GpuTier.h"
 #include "ModelMerge.h"
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
@@ -171,11 +172,13 @@ bool Renderer3D::setDynamicGiOverlay(const GiMainCpuBridge& bridge) {
     if (!std::isfinite(config.spacing) || config.spacing<=0 ||
         config.nx<1 || config.ny<1 || config.nz<1)
         return false;
-    dynamicGiUniforms_={
+    dynamicGiUniforms_={};
+    const float base[12]={
         config.origin.x,config.origin.y,config.origin.z,1.0f/config.spacing,
         float(config.nx),float(config.ny),float(config.nz),0.0f,
-        0.0f,0.0f,0.0f,0.0f
+        0.0f,0.0f,0.0f,1.0f
     };
+    std::copy(std::begin(base),std::end(base),dynamicGiUniforms_.begin());
     dynamicGiAtlas_=atlas;
     return true;
 }
@@ -191,11 +194,17 @@ bool Renderer3D::setDynamicGiOverlay(const GiMainGpuBridge& bridge) {
     if (!std::isfinite(config.spacing) || config.spacing<=0 ||
         config.nx<1 || config.ny<1 || config.nz<1)
         return false;
-    dynamicGiUniforms_={
-        config.origin.x,config.origin.y,config.origin.z,1.0f/config.spacing,
-        float(config.nx),float(config.ny),float(config.nz),0.0f,
-        0.0f,0.0f,0.0f,0.0f
-    };
+    // U6 layout: three float4 per cascade (GiDynamicShaders.h); the cascade
+    // count rides in cascade 0's ring.w.
+    dynamicGiUniforms_={};
+    const int cascades=std::clamp(bridge.cascadeCount(),1,3);
+    for(int k=0;k<cascades;++k) {
+        const auto c=bridge.cascade(k);
+        float* u=dynamicGiUniforms_.data()+size_t(k)*12;
+        u[0]=c.origin.x;u[1]=c.origin.y;u[2]=c.origin.z;u[3]=1.0f/c.spacing;
+        u[4]=float(c.nx);u[5]=float(c.ny);u[6]=float(c.nz);u[7]=float(bridge.cascadeProbeOffset(k));
+        u[8]=u[9]=u[10]=0.0f;u[11]=k==0?float(cascades):0.0f;
+    }
     dynamicGiAtlas_=atlas;
     return true;
 }
@@ -287,8 +296,7 @@ MaterialQuality Renderer3D::defaultMaterialQualityFor(const gfx::Device& dev, bo
     }
     const std::string& n = dev.info().name;
     if (mobile) {
-        for (const char* weak : {"Mali-4", "Mali-T", "Adreno (TM) 3", "Adreno (TM) 4", "Adreno (TM) 50", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return MaterialQuality::Low;
+        if (gfx::isWeakMobileGpu(n)) return MaterialQuality::Low;   // GpuTier.h
         return MaterialQuality::Medium;
     }
     return MaterialQuality::High;

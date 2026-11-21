@@ -3,6 +3,7 @@
 #include "engine/render/Animation.h"
 #include "engine/data/Json.h"
 #include <array>
+#include <vector>
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -10,11 +11,16 @@
 #include <stdexcept>
 namespace aiverse::vivid {
 inline constexpr std::array<const char*,4> humanPreviewPoses={"relaxed","a_pose","t_pose","portrait"};
+// Test expressions for checking how a sculpted/blended face deforms. Each is
+// a set of ARKit-named morph weights layered over the clip pose; "talk"
+// cycles visemes. Models without those morph targets are left unchanged.
+inline constexpr std::array<const char*,8> humanPreviewExpressions={"idle","smile","laugh","surprise","anger","sad","disgust","talk"};
+inline bool humanPreviewExpressionKnown(const std::string& id){for(const char* e:humanPreviewExpressions)if(id==e)return true;return false;}
 struct HumanPreviewAnimation {
- std::string pose="relaxed";bool playing=true,faceIdle=true;float speed=1;bool automaticLod=true;
+ std::string pose="relaxed";bool playing=true,faceIdle=true;float speed=1;bool automaticLod=true;std::string expression="idle";std::string clip; // non-empty: play this model clip instead of the preview pose
  int poseIndex()const{for(size_t i=0;i<humanPreviewPoses.size();++i)if(pose==humanPreviewPoses[i])return int(i);throw std::invalid_argument("Unknown character pose");}
- Json toJson()const{auto j=Json::object();j.set("automaticLod",Json::fromBool(automaticLod));j.set("pose",Json::string(pose));j.set("playing",Json::fromBool(playing));j.set("faceIdle",Json::fromBool(faceIdle));j.set("speed",Json::number(double(speed)));return j;}
- static HumanPreviewAnimation fromJson(const Json& j){if(!j.isObject())throw std::invalid_argument("Invalid preview animation");for(const auto& [k,v]:j.members())if(k!="pose"&&k!="playing"&&k!="faceIdle"&&k!="speed"&&k!="automaticLod")throw std::invalid_argument("Unknown animation field");HumanPreviewAnimation s;if(j.has("automaticLod")){if(j["automaticLod"].type()!=Json::Type::Bool)throw std::invalid_argument("Invalid LOD toggle");s.automaticLod=j.getBool("automaticLod");}s.pose=j.getStr("pose");(void)s.poseIndex();if(j["playing"].type()!=Json::Type::Bool||j["faceIdle"].type()!=Json::Type::Bool)throw std::invalid_argument("Invalid animation toggle");s.playing=j.getBool("playing");s.faceIdle=j.getBool("faceIdle");if(!j["speed"].isNumber()||!std::isfinite(j["speed"].toDouble())||j["speed"].toDouble()<.25||j["speed"].toDouble()>2)throw std::invalid_argument("Invalid animation speed");s.speed=float(j["speed"].toDouble());return s;}
+ Json toJson()const{auto j=Json::object();j.set("automaticLod",Json::fromBool(automaticLod));j.set("pose",Json::string(pose));j.set("playing",Json::fromBool(playing));j.set("faceIdle",Json::fromBool(faceIdle));j.set("speed",Json::number(double(speed)));j.set("expression",Json::string(expression));j.set("clip",Json::string(clip));return j;}
+ static HumanPreviewAnimation fromJson(const Json& j){if(!j.isObject())throw std::invalid_argument("Invalid preview animation");for(const auto& [k,v]:j.members())if(k!="pose"&&k!="playing"&&k!="faceIdle"&&k!="speed"&&k!="automaticLod"&&k!="expression"&&k!="clip")throw std::invalid_argument("Unknown animation field");HumanPreviewAnimation s;if(j.has("automaticLod")){if(j["automaticLod"].type()!=Json::Type::Bool)throw std::invalid_argument("Invalid LOD toggle");s.automaticLod=j.getBool("automaticLod");}s.pose=j.getStr("pose");(void)s.poseIndex();if(j["playing"].type()!=Json::Type::Bool||j["faceIdle"].type()!=Json::Type::Bool)throw std::invalid_argument("Invalid animation toggle");s.playing=j.getBool("playing");s.faceIdle=j.getBool("faceIdle");if(!j["speed"].isNumber()||!std::isfinite(j["speed"].toDouble())||j["speed"].toDouble()<.25||j["speed"].toDouble()>2)throw std::invalid_argument("Invalid animation speed");s.speed=float(j["speed"].toDouble());if(j.has("expression")){s.expression=j.getStr("expression");if(!humanPreviewExpressionKnown(s.expression))throw std::invalid_argument("Unknown preview expression");}if(j.has("clip")){s.clip=j.getStr("clip");if(s.clip.size()>128)throw std::invalid_argument("Clip name too long");}return s;}
 };
 inline std::string humanBoneSemantic(std::string name){const auto slash=name.rfind('/');if(slash!=std::string::npos)name=name.substr(slash+1);if(name=="spine_01"||name=="spine_02"||name=="spine_03"||name=="neck_01")return name;const auto pos=name.rfind('_');if(pos!=std::string::npos&&pos+1<name.size()&&std::all_of(name.begin()+pos+1,name.end(),[](unsigned char c){return std::isdigit(c);}))name.resize(pos);// Common MakeHuman/Mixamo spellings use the same presentation semantics.
  const std::array<std::pair<const char*,const char*>,12> aliases={{{"Spine","spine_01"},{"Spine1","spine_02"},{"Spine2","spine_03"},{"Neck","neck_01"},{"LeftArm","upperarm_l"},{"RightArm","upperarm_r"},{"LeftForeArm","lowerarm_l"},{"RightForeArm","lowerarm_r"},{"LeftShoulder","clavicle_l"},{"RightShoulder","clavicle_r"},{"LeftHand","hand_l"},{"RightHand","hand_r"}}};
@@ -136,4 +142,28 @@ inline render::AnimClip humanPreviewClip(const render::Model& model,int poseInde
  return clip;
 }
 inline int appendHumanPreviewClips(render::Model& model){const int base=int(model.clips.size());for(int i=0;i<4;++i)for(bool face:{false,true})model.clips.push_back(humanPreviewClip(model,i,face));return base;}
+
+// Layer a test expression over the evaluated pose (weights only, max-blend).
+inline int applyHumanPreviewExpression(const render::Model& model,render::Pose& pose,const std::string& expression,float time){
+ if(expression=="idle"||expression.empty())return 0;
+ struct W{const char* key;float v;};
+ std::vector<W> w;
+ if(expression=="smile")w={{"mouthSmileLeft",.75f},{"mouthSmileRight",.75f},{"cheekSquintLeft",.4f},{"cheekSquintRight",.4f},{"eyeSquintLeft",.2f},{"eyeSquintRight",.2f}};
+ else if(expression=="laugh")w={{"mouthSmileLeft",1},{"mouthSmileRight",1},{"jawOpen",.45f},{"cheekSquintLeft",.7f},{"cheekSquintRight",.7f},{"eyeSquintLeft",.55f},{"eyeSquintRight",.55f},{"mouthUpperUpLeft",.3f},{"mouthUpperUpRight",.3f}};
+ else if(expression=="surprise")w={{"browInnerUp",.9f},{"browOuterUpLeft",.8f},{"browOuterUpRight",.8f},{"eyeWideLeft",.8f},{"eyeWideRight",.8f},{"jawOpen",.35f},{"mouthFunnel",.25f}};
+ else if(expression=="anger")w={{"browDownLeft",.9f},{"browDownRight",.9f},{"eyeSquintLeft",.45f},{"eyeSquintRight",.45f},{"noseSneerLeft",.5f},{"noseSneerRight",.5f},{"mouthPressLeft",.5f},{"mouthPressRight",.5f},{"jawForward",.2f}};
+ else if(expression=="sad")w={{"browInnerUp",.75f},{"mouthFrownLeft",.7f},{"mouthFrownRight",.7f},{"mouthLowerDownLeft",.2f},{"mouthLowerDownRight",.2f},{"eyeLookDownLeft",.3f},{"eyeLookDownRight",.3f},{"mouthShrugLower",.3f}};
+ else if(expression=="disgust")w={{"noseSneerLeft",.85f},{"noseSneerRight",.85f},{"mouthUpperUpLeft",.6f},{"mouthUpperUpRight",.6f},{"browDownLeft",.5f},{"browDownRight",.5f},{"cheekSquintLeft",.4f},{"cheekSquintRight",.4f}};
+ else if(expression=="talk"){
+  // Viseme cycle ~4 syllables per second.
+  const float p=time*4.f;const int i=int(std::floor(p))%5;const float a=std::sin((p-std::floor(p))*3.14159265f);
+  const W cycle[5][2]={{{"jawOpen",.45f},{"mouthFunnel",.1f}},{{"mouthPucker",.6f},{"jawOpen",.15f}},{{"mouthStretchLeft",.4f},{"mouthStretchRight",.4f}},{{"jawOpen",.3f},{"mouthRollLower",.2f}},{{"mouthClose",.3f},{"mouthPressLeft",.3f}}};
+  w={{cycle[i][0].key,cycle[i][0].v*a},{cycle[i][1].key,cycle[i][1].v*a},{"browInnerUp",.15f}};
+ } else return 0;
+ int touched=0;
+ for(size_t n=0;n<model.nodes.size()&&n<pose.size();++n){const auto& node=model.nodes[n];if(node.mesh<0)continue;
+  const auto& mesh=model.meshes.at(size_t(node.mesh));const size_t count=std::min(mesh.morphTargetNames.size(),size_t(render::kMaxMorphTargets));
+  for(size_t k=0;k<count;++k)for(const auto& x:w)if(mesh.morphTargetNames[k]==x.key){pose[n].w[k]=std::max(pose[n].w[k],x.v);++touched;}}
+ return touched;
+}
 }

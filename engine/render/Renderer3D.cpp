@@ -1,4 +1,5 @@
 #include "Renderer3D.h"
+#include "../gfx/GpuTier.h"
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
 #include "Renderer3DMotionShaders.h"
@@ -40,9 +41,7 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
     const std::string& n = dev.info().name;
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return ShadowQuality::Low;
     if (mobile) {
-        // Old/weak mobile GPUs get the cheapest shadows; everything else medium.
-        for (const char* weak : {"Mali-4", "Mali-T", "Adreno (TM) 3", "Adreno (TM) 4", "Adreno (TM) 50", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return ShadowQuality::Low;
+        if (gfx::isWeakMobileGpu(n)) return ShadowQuality::Low;   // GpuTier.h
         return ShadowQuality::Medium;
     }
     return ShadowQuality::High;
@@ -188,6 +187,8 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
     int size=q==ShadowQuality::High?highShadowSize_:
              q==ShadowQuality::Medium?1536:1024;
     if(q==ShadowQuality::Off)size=0;
+    static const int sizeOverride=[]{const char* e=std::getenv("AIVERSE_SHADOW_SIZE");return e?std::atoi(e):0;}();
+    if(size>0 && sizeOverride>=256)size=std::min(sizeOverride,4096);   // testing
     if(size==shadowSize_ && shadowMap_.valid()) {
         quality_=q;return;
     }
@@ -231,6 +232,9 @@ void Renderer3D::shutdown() {
             "Renderer3D shutdown: pending GPU shader/pipeline completion");
     gpuModelCommands_.release(*dev_);
     persistentCull_.release(*dev_);
+    if (shadowCompareView_.valid()) dev_->destroyTextureView(shadowCompareView_);
+    if (shadowCompareSampler_.valid()) dev_->destroySampler(shadowCompareSampler_);
+    shadowCompareView_ = {}; shadowCompareSampler_ = {}; shadowCompareViewFor_ = 0;
     if (persistentUpload_) {
         persistentUpload_->release();
         persistentUpload_.reset();
@@ -793,13 +797,43 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
     // This flag is active only for the HDR ScreenLighting TAA path; static PCF stays stable elsewhere.
     if (!forShadow && quality_ >= ShadowQuality::Medium && post_ && post_->temporalShadowResolve())
         f.quality[0] += 0.5f;
+    else if (mobileShadowFilter_ && quality_ >= ShadowQuality::Medium)
+        f.quality[0] = (quality_ == ShadowQuality::High ? 12.0f : 8.0f) + 0.75f;   // Shaders.h: fixed disk
+    else if (mobileShadowFilter_ && quality_ == ShadowQuality::Low)
+        f.quality[0] = 1.0f;   // one bilinear compare: Adreno 610 at 720p 65 -> 50 ms a frame against 4 taps
+    static const float tapsOverride = [] { const char* e = std::getenv("AIVERSE_SHADOW_TAPS"); return e ? float(std::atof(e)) : 0.0f; }();
+    if (tapsOverride > 0) f.quality[0] = tapsOverride;   // testing: 1 = one bilinear compare, 4 = fixed 4 taps, 8.75 = fixed 8-tap disk
     f.quality[1] = quality_ == ShadowQuality::Off || forShadow ? 0.0f : lighting.shadowContactHardening ? 2.0f : 1.0f;
+    static const bool noSample = [] { const char* e = std::getenv("AIVERSE_SHADOW_SAMPLE"); return e && *e == '0'; }();
+    if (noSample) f.quality[1] = 0.0f;   // testing: the shadow pass runs, the lit shaders do not read it
     dev_->setUniforms(1, &f, sizeof f);
+}
+
+void Renderer3D::bindShadowMap(int slot) {
+    if (!hwShadowCompare_ || !shadowMap_.valid()) { dev_->setTexture(slot, shadowMap_); return; }
+    if (!shadowCompareSampler_.valid()) {
+        gfx::SamplerDesc sd;
+        sd.minFilter = sd.magFilter = gfx::Filter::Linear;   // hardware 2x2 PCF
+        sd.mipFilter = gfx::SamplerMipFilter::None;
+        sd.compare = true;
+        sd.comparison = gfx::CompareFunction::LessEqual;      // lit when the receiver depth <= the stored depth
+        shadowCompareSampler_ = dev_->createSampler(sd);
+    }
+    if (shadowCompareViewFor_ != shadowMap_.id) {
+        if (shadowCompareView_.valid()) dev_->destroyTextureView(shadowCompareView_);
+        gfx::TextureViewDesc vd;
+        vd.aspect = gfx::TextureAspect::Depth;
+        shadowCompareView_ = dev_->createTextureView(shadowMap_, vd);
+        shadowCompareViewFor_ = shadowMap_.id;
+    }
+    if (!shadowCompareView_.valid() || !shadowCompareSampler_.valid() ||
+        !dev_->bindTextureView(slot, shadowCompareView_, shadowCompareSampler_))
+        dev_->setTexture(slot, shadowMap_);   // no compare view: shadows read wrong for this frame, never crash
 }
 
 void Renderer3D::bindLitFrame() {
     uploadFrameUniforms(false);
-    dev_->setTexture(0, shadowMap_);
+    bindShadowMap(0);
     lights.bind();
 }
 
@@ -2260,7 +2294,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     for (auto& fn : customOpaque_) fn(*dev_);
     dev_->setPipeline(litPipe_);
     uploadFrameUniforms(false);
-    dev_->setTexture(0, shadowMap_);
+    bindShadowMap(0);
     lights.bind(2, 1, 2);
     bindTraceTextures();
     auto drawItem = [&](const DrawItem& it) {
@@ -2324,7 +2358,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     if (capture) {
         endSceneCapture(mainPass, sw, sh); dev_->setViewport({0, 0, sw, sh});
         // The blit binds scene color at slot 0; model shaders expect the sun depth map there.
-        dev_->setTexture(0, shadowMap_);
+        bindShadowMap(0);
         // Read the first opaque pass while shading into a different target (no feedback).
         if (modelReflections_ && hdrFrame_ && traceActive()) { uploadFrameUniforms(false); renderModels(1); }
     }
@@ -2332,7 +2366,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     bool any = false;
     for (auto& it : items_) {
         if (it.color.w >= 0.99f) continue;
-        if (!any) { dev_->setPipeline(litBlendPipe_); uploadFrameUniforms(false); dev_->setTexture(0, shadowMap_); lights.bind(2, 1, 2); bindTraceTextures(); any = true; }
+        if (!any) { dev_->setPipeline(litBlendPipe_); uploadFrameUniforms(false); bindShadowMap(0); lights.bind(2, 1, 2); bindTraceTextures(); any = true; }
         drawItem(it);
     }
     const uint32_t blendedStart = profile_.triangles[2];

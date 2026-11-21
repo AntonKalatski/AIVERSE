@@ -128,6 +128,12 @@ public:
     // instead of the screen; the host also sets platform::setHostedView around every call.
     void setHostTarget(gfx::TextureHandle color, gfx::TextureHandle depth, int w, int h) { hostColor_ = color; hostDepth_ = depth; hostW_ = w; hostH_ = h; }
     Simulation* simulation() { return sim_.get(); }
+    // Host "Play from here" (Studio): the first camera of the next match (target x, z; distance; pitch and
+    // yaw in degrees) instead of the fitted one. Applied once, then cleared.
+    void setStartCamera(float x, float z, float distance, float pitchDeg, float yawDeg) {
+        startCamera_[0] = x; startCamera_[1] = z; startCamera_[2] = distance; startCamera_[3] = pitchDeg; startCamera_[4] = yawDeg;
+        hasStartCamera_ = true;
+    }
     bool inMatch() const { return !mapLoading_ && sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
     const std::string& errorText() const { return error_; }
     // Non-owning, frame-scoped LENS RT handles for native UI/material consumers.
@@ -178,6 +184,8 @@ private:
     size_t loadingCursor_ = 0;
     std::chrono::steady_clock::time_point loadingStarted_;
     void fitCamera();
+    float startCamera_[5] = {};
+    bool hasStartCamera_ = false;
     // planet maps (ClientPlanet.cpp): orbit camera input, picking through RtsView; flat maps never get here
     bool planet() const { return view_.planetMode(); }
     void planetCameraKeys(double dt);

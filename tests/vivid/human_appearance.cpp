@@ -43,6 +43,10 @@ void test() {
     const auto before=source.materials[0].shaderGraph;
     look.values["skin.roughness"]=.3f;applyHumanAppearance(source,look);
     expect(source.materials[0].roughness<.35f && source.materials[0].shaderGraph!=before,"roughness not applied");
+    {auto made=look;for(const char* k:{"makeup.lips","makeup.blush","makeup.shadow","makeup.stubble"})made.values[k]=.8f;
+     render::Model copy=source;applyHumanAppearance(copy,made);
+     expect(bool(copy.materials[0].shaderGraph)&&copy.materials[0].shaderGraph->nodes>source.materials[0].shaderGraph->nodes,"makeup layers not compiled into the skin graph");
+     expect(copy.materials[0].shaderGraph->nodes<=256,"makeup graph unbounded");}
     source.boundsMin={-1,0,-1};source.boundsMax={1,2,1};source.nodes.resize(2);
     render::Skin skin;skin.joints={1};source.skins.push_back(skin);
     std::vector<render::mat4> world(2,render::mat4::translate({0,1,0}));
