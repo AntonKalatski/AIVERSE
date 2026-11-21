@@ -4234,7 +4234,7 @@ Temporal resolve, auto exposure and the graph passes keep their `=1` opt-ins.
 
 GPU acceptance on the real backends: `prisma_dof_gpu` / `prisma_motion_gpu`
 (Metal), `_gl` (macOS GL), `_vulkan` (headless Vulkan host). The test renders the
-default HDR scene and measures frame sharpness: DoF focused on the scene keeps it,
-focus near the camera softens it by at least 25%; a turning camera with motion blur
-is at least 20% softer than without, a still camera with blur stays sharp; every
+default HDR scene and measures frame sharpness (mean squared luminance step): DoF
+focused on the scene keeps it, focus near the camera softens it by at least 40%; a
+turning camera with motion blur is at least 30% softer than without, a still camera with blur stays sharp; every
 effect phase must report `encoded`. Handoff: `docs/handoffs/prisma-stage-67.md`.

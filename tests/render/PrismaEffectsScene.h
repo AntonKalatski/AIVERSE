@@ -1,6 +1,8 @@
 // PRISMA Depth of Field / Motion Blur GPU acceptance on the real backend.
 // AIVERSE_PRISMA_EFFECT_TEST=dof|motion. Uses the default HDR scene geometry.
-// Sharpness = mean absolute horizontal luminance step of the captured frame.
+// Sharpness = mean squared horizontal luminance step of the captured frame
+// (a blur keeps the summed |step| of an edge but spreads it, so the squares drop).
+// Each phase frame is also written as <AIVERSE_HDR_CAPTURE>.<test><phase>.ppm.
 //   dof:    0 no effect, 1 focus on the scene (stays sharp), 2 focus near the
 //           camera (the scene blurs).
 //   motion: 0 camera turning, no effect; 1 same turn with motion blur (blurs);
@@ -19,7 +21,8 @@ inline double frameSharpness(int w,int h,const std::vector<uint8_t>& px) {
     for(int y=h/8;y<h-h/8;++y)for(int x=w/8;x<w-w/8-1;++x) {
         const auto lum=[&](int xx){const uint8_t* p=px.data()+(size_t(y)*size_t(w)+size_t(xx))*4;
             return .2126*p[0]+.7152*p[1]+.0722*p[2];};
-        sum+=std::abs(lum(x+1)-lum(x));++n;
+        const double step=lum(x+1)-lum(x);
+        sum+=step*step;++n;
     }
     return n?sum/double(n):0;
 }
@@ -67,15 +70,20 @@ inline void drawPrismaEffects(HdrScene& s,gfx::Device& d,int w,int h,const char*
             auto& st=prismaEffectsState();
             if(cw<8||ch<8||px.size()!=size_t(cw*ch*4)){s.failed=true;return;}
             st.sharp[st.phase]=frameSharpness(cw,ch,px);
+            {
+                std::ofstream f(s.path+"."+which+std::to_string(st.phase)+".ppm",std::ios::binary);
+                f<<"P6\n"<<cw<<" "<<ch<<"\n255\n";
+                for(size_t i=0;i<px.size();i+=4)f.write(reinterpret_cast<const char*>(px.data()+i),3);
+            }
             std::printf("PRISMA %s phase %d: sharpness %.3f\n",which,st.phase,st.sharp[st.phase]);
             if(++st.phase==3) {
                 const double base=st.sharp[0];
-                // dof:    in focus within 15% of no effect, defocused at least 25% softer.
-                // motion: turning + blur at least 20% softer than turning alone; a
+                // dof:    in focus within 15% of no effect, defocused at least 40% softer.
+                // motion: turning + blur at least 30% softer than turning alone; a
                 //         still camera with blur stays clearly sharper than that.
-                bool ok=base>0.5;
-                if(dof) ok=ok && st.sharp[1]>=base*.85 && st.sharp[2]<=base*.75;
-                else ok=ok && st.sharp[1]<=base*.80 && st.sharp[2]>=st.sharp[1]*1.1;
+                bool ok=base>1.0;
+                if(dof) ok=ok && st.sharp[1]>=base*.85 && st.sharp[2]<=base*.6;
+                else ok=ok && st.sharp[1]<=base*.7 && st.sharp[2]>=st.sharp[1]*1.2;
                 std::printf("PRISMA %s: %s\n",which,ok?"PASS":"FAIL");
                 s.failed|=!ok;s.captured=true;
             }
