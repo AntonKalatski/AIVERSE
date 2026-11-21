@@ -214,7 +214,10 @@ build every system.
 Measured Web Release `index.wasm` (Emscripten 3.1.50, `templates/skirmish`,
 2026-11-21): legacy defaults 17.22 MB (brotli 4.10 MB); the eleven
 earlier switches off 15.43 MB (brotli 3.62 MB); `[]` including `traffic` off
-14.95 MB (brotli 3.50 MB).
+14.95 MB (brotli 3.50 MB); every module off, including the simulation systems,
+14.00 MB (brotli 3.27 MB). With the default `-Oz` + LTO (`AIVERSE_WEB_OPTIMIZE_SIZE`):
+traffic off 8.34 MB (brotli 2.41 MB), every module off 7.99 MB (brotli 2.29 MB).
+A `"module": "scene"` project (docs/game-format.md) ships about 150 KB.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

@@ -31,6 +31,17 @@ else()
 endif()
 message(STATUS "AIVERSE platform: ${AIVERSE_PLATFORM}")
 
+# Web Release / MinSizeRel: optimize for download size and link-time code removal across all libraries.
+# Measured on skirmish (2026-11-21): index.wasm 14.95 MB -> 8.34 MB (brotli 3.50 -> 2.41 MB). Applied before
+# any target so engine, third-party and client objects share the LTO format. OFF restores -O3 without LTO.
+if(EMSCRIPTEN)
+    option(AIVERSE_WEB_OPTIMIZE_SIZE "Web Release: -Oz and LTO" ON)
+    if(AIVERSE_WEB_OPTIMIZE_SIZE)
+        add_compile_options("$<$<CONFIG:Release,MinSizeRel>:-Oz>" "$<$<CONFIG:Release,MinSizeRel>:-flto>")
+        add_link_options("$<$<CONFIG:Release,MinSizeRel>:-Oz>" "$<$<CONFIG:Release,MinSizeRel>:-flto>")
+    endif()
+endif()
+
 set(AIVERSE_DESKTOP OFF)
 if(AIVERSE_PLATFORM MATCHES "^(macos|windows|linux)$")
     set(AIVERSE_DESKTOP ON)

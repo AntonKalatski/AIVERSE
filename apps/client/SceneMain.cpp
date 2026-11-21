@@ -1,5 +1,5 @@
-// Minimal game client for projects without a game module (game.json "module": "scene" or no
-// "module"): window / canvas, content pack, and an empty scene cleared to game.json "background"
+// Minimal game client for projects without a game module (game.json "module": "scene"):
+// window / canvas, content pack, and an empty scene cleared to game.json "background"
 // ("#rrggbb", default dark grey). It links no simulation, renderer, UI, scripting or audio, so an
 // empty project ships only the platform layer and one graphics backend (aiversebuild picks this
 // target from game.json; docs/overview.md "Engine modules").

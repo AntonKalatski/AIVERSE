@@ -549,3 +549,30 @@ Next candidates (code before wasm-opt, in the all-off build): planets/sphere
 Raid 0.09, FieldOps 0.09, Dungeon 0.08. Progression/Raid parse their rules in
 the shared loadRules and FieldOps turns on from type keys, so their adapters
 need parser stubs and wider auto detection.
+
+## 2026-11-21 continuation: -Oz + LTO by default for Web Release
+
+`CMakeLists.txt`: `AIVERSE_WEB_OPTIMIZE_SIZE` (EMSCRIPTEN only, default ON)
+adds `-Oz -flto` to compile and link options for Release/MinSizeRel before any
+target, so every library shares the LTO format; `-Oz` follows CMake's `-O3`
+and wins (checked in `ninja -t commands`). OFF restores the previous flags.
+
+Web Release, skirmish content, Emscripten 3.1.50, `BINARYEN_CORES=1`:
+
+| configuration | index.wasm | brotli |
+|---|---|---|
+| -O3, traffic off | 14,945,536 | 3,500,882 |
+| -Oz + LTO, traffic off | 8,336,282 | 2,408,000 |
+| -Oz + LTO, every optional module off | 7,994,736 | 2,292,603 |
+| scene client, -Oz + LTO | 311,677 | 108,058 (+ index.js 39,932) |
+
+Smoke for both RTS LTO builds: match draws (2517 / 2525 sampled colours, HUD,
+minimap), no exception. Runtime speed of `-Oz` versus `-O3` was NOT measured
+(only first-frame time under load: 6.7–8.3 s vs 9.3 s); a game that needs speed
+can set `-DAIVERSE_WEB_OPTIMIZE_SIZE=OFF`. These LTO numbers came from a build
+folder configured with the same flags by hand (`CMAKE_*_FLAGS_RELEASE=-Oz -flto`);
+the option itself was checked only by its generated commands, not by a full
+rebuild. NOT RUN: aiversebuild end-to-end with the option, native/mobile, CI.
+
+Remaining for an RTS project: index.data (engine/assets) ~0.63 MB brotli, mostly
+`engine/roads/markings.png` (only roads use it) and `engine/fonts/ui.ttf`.
