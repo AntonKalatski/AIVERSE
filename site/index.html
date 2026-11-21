@@ -95,7 +95,7 @@
 </div>
 <div class="grid">
 <article class="card"><span class="tag">01 · данные</span><h3 class="h3">Проект — это текст</h3><p>game.json, rules.json, уровни, UI, звук и эффекты — читаемые файлы. Никаких бинарных сцен: человек и агент правят одно и то же.</p></article>
-<article class="card"><span class="tag">02 · механики</span><h3 class="h3">Геймплей уже внутри</h3><p>Полные модули RTS и FPS и 88 детерминированных библиотек: бой, движение, стелс, диалоги, карты, головоломки, экономика.</p></article>
+<article class="card"><span class="tag">02 · механики</span><h3 class="h3">Геймплей уже внутри</h3><p>Армии, персонажи, транспорт и гонки, бой, движение, стелс, диалоги, карты, головоломки, экономика — 88 детерминированных библиотек, которые работают в любом проекте.</p></article>
 <article class="card card-ink"><span class="tag">03 · агент</span><h3 class="h3">ИИ проверяет сам себя</h3><p>Матчи ботов, сценарии с проверками, матрицы баланса, линтер правил и скриншоты — агент видит результат, а не работает вслепую.</p></article>
 </div>
 </div>
@@ -144,25 +144,24 @@
 <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:48px">
 <div style="display:flex;flex-direction:column;gap:18px;max-width:760px">
 <p class="eyebrow">Любой жанр</p>
-<h2 class="h2">Механики — это строительные блоки движка</h2>
+<h2 class="h2">Механики работают в любом проекте</h2>
 </div>
-<p style="margin:0;color:var(--muted);max-width:360px">Каждая библиотека детерминирована, протестирована, умеет сохраняться и валидирует свой конфиг.</p>
+<p style="margin:0;color:var(--muted);max-width:420px">Движок не делится на «модули жанров»: жанр — это только шаблон, а механики подключаются данными и сочетаются как угодно. Каждая библиотека детерминирована, протестирована, умеет сохраняться и валидирует свой конфиг.</p>
 </div>
 <div class="grid genres">
-<article class="card genre"><div class="genre-top"><h3>RTS, tower defense</h3><span class="badge badge-ink">модуль</span></div><p>Юниты и здания из данных, A*/HPA*/flow fields для тысяч юнитов на картах до 2048², экономика, туман войны, ИИ.</p><code>rts · 26 шаблонов</code></article>
-<article class="card genre"><div class="genre-top"><h3>FPS и TPS</h3><span class="badge badge-ink">модуль</span></div><p>Клиент и авторитетный сервер, большие стримящиеся миры до 100 игроков, боты, отдача и баллистика.</p><code>fps · weapon-policies · match-rules</code></article>
-<article class="card genre"><div class="genre-top"><h3>Экшен, файтинг, соулслайк</h3><span class="badge">библиотеки</span></div><p>Хитбоксы, комбо и окна отмены, i-frames уклонения, парирование, захват цели.</p><code>combat-actions · melee-combat</code></article>
-<article class="card genre"><div class="genre-top"><h3>Платформер, метроидвания</h3><span class="badge">библиотеки</span></div><p>Coyote time, буфер прыжка, уступы, лестницы, плавание; гейты способностей и проверка на софтлоки.</p><code>character-locomotion · zone-graph</code></article>
-<article class="card genre"><div class="genre-top"><h3>Стелс, immersive sim</h3><span class="badge">библиотеки</span></div><p>Конусы зрения, слух, подозрение и тревога, маскировка; перенос, броски, верёвки, двери.</p><code>stealth-senses · physical-interactions</code></article>
-<article class="card genre"><div class="genre-top"><h3>Сюжет, визуальные новеллы</h3><span class="badge">библиотеки</span></div><p>Диалоги с условиями, отношения и последствия, бэклог; таймлайны, QTE, замедление.</p><code>narrative-graphs · cinematic-gameplay</code></article>
-<article class="card genre"><div class="genre-top"><h3>Тактика, карты, настолки</h3><span class="badge">библиотеки</span></div><p>Инициатива, очки действий, реакции; зоны, стек приоритета и скрытая информация.</p><code>turn-scheduler · card-runtime</code></article>
-<article class="card genre"><div class="genre-top"><h3>Головоломки</h3><span class="badge">библиотеки</span></div><p>Правила сокобана, undo/redo и решатель; VM для программистских головоломок.</p><code>grid-puzzles · puzzle-machine</code></article>
-<article class="card genre"><div class="genre-top"><h3>Рогалики</h3><span class="badge">библиотеки</span></div><p>Сидированные забеги, бюджеты встреч, таблицы лута с гарантированной редкостью.</p><code>run-graph · loot-tables</code></article>
-<article class="card genre"><div class="genre-top"><h3>Idle, фабрики, колонии</h3><span class="badge">библиотеки</span></div><p>Большие числа, точный офлайн-прогресс, производственные сети и логистика.</p><code>big-numbers · offline-production</code></article>
-<article class="card genre"><div class="genre-top"><h3>Ритм-игры</h3><span class="badge">библиотеки</span></div><p>Темповые карты и оценка попаданий, не зависящая от кадров.</p><code>rhythm-timing</code></article>
-<article class="card genre"><div class="genre-top"><h3>Любая мобильная игра</h3><span class="badge">библиотеки</span></div><p>Магазин, валюты, квесты, пассы, энергия, кланы, турниры, сундуки — в JSON.</p><code>aiverse::meta · LiveOps</code></article>
+<article class="card genre"><div class="genre-top"><h3>Армии, здания, экономика</h3></div><p>Юниты и здания из данных, A*/HPA*/flow fields для тысяч юнитов на картах до 2048², ресурсы, туман войны, ИИ-командир стороны.</p><code>26 шаблонов · aiverse-bots-commander</code></article>
+<article class="card genre"><div class="genre-top"><h3>Персонаж и сетевой бой</h3></div><p>Авторитетный сервер с откатом попаданий, большие стримящиеся миры до 100 игроков, отдача и баллистика, боты.</p><code>weapon-policies · match-rules</code></article>
+<article class="card genre"><div class="genre-top"><h3>Транспорт и гонки</h3></div><p>Колёсные, гусеничные, ховер и летающие машины с местами; трассы на сплайновых дорогах, старт, чекпоинты, круги, гоночные боты.</p><code>vehicle-controllers · aiverse-races</code></article>
+<article class="card genre"><div class="genre-top"><h3>Ближний бой</h3></div><p>Хитбоксы, комбо и окна отмены, i-frames уклонения, парирование, захват цели.</p><code>combat-actions · melee-combat</code></article>
+<article class="card genre"><div class="genre-top"><h3>Движение и мир</h3></div><p>Coyote time, буфер прыжка, уступы, лестницы, плавание; гейты способностей и проверка на софтлоки.</p><code>character-locomotion · zone-graph</code></article>
+<article class="card genre"><div class="genre-top"><h3>Восприятие и взаимодействие</h3></div><p>Конусы зрения, слух, подозрение и тревога, маскировка; перенос, броски, верёвки, двери.</p><code>stealth-senses · physical-interactions</code></article>
+<article class="card genre"><div class="genre-top"><h3>Сюжет и постановка</h3></div><p>Диалоги с условиями, отношения и последствия, бэклог; таймлайны, QTE, замедление.</p><code>narrative-graphs · cinematic-gameplay</code></article>
+<article class="card genre"><div class="genre-top"><h3>Ходы, карты, скрытая информация</h3></div><p>Инициатива, очки действий, реакции; зоны, стек приоритета, тактическая сетка.</p><code>turn-scheduler · card-runtime</code></article>
+<article class="card genre"><div class="genre-top"><h3>Головоломки, ритм, спорт</h3></div><p>Правила сокобана, undo/redo и решатель, VM для задач; темповые карты; владение мячом, пасы, удары, периоды.</p><code>grid-puzzles · rhythm-timing · sports-rules</code></article>
+<article class="card genre"><div class="genre-top"><h3>Забеги и лут</h3></div><p>Сидированные забеги, бюджеты встреч, таблицы лута с гарантированной редкостью.</p><code>run-graph · loot-tables</code></article>
+<article class="card genre"><div class="genre-top"><h3>Большие числа и производство</h3></div><p>Точный офлайн-прогресс, многослойный престиж, производственные сети и логистика.</p><code>big-numbers · offline-production</code></article>
+<article class="card genre"><div class="genre-top"><h3>Мета мобильной игры</h3></div><p>Магазин, валюты, квесты, пассы, энергия, кланы, турниры, сундуки — в JSON.</p><code>aiverse::meta · LiveOps</code></article>
 </div>
-<p style="margin:28px 0 0;color:var(--muted)">Гонки, спорт и транспорт — <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/genre-mechanics-roadmap.md">в дорожной карте</a>.</p>
 </section>
 
 <section class="wrap" style="padding-bottom:120px">
