@@ -1792,6 +1792,8 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         }
     } else if (physisNaturePreview_.hasPreviewWorld() || physisNaturePreview_.flames())
         physisNaturePreview_.release(*dev_, gameFx_);
+    // Models with <model>.wind.json sway with the PHYSIS preview wind.
+    r3d_.setSceneWind(physisNaturePreview_.sceneWind(time_));
     if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     tickSpectraGpuPreview(useCam,renderW,renderH,false);
     gfx::PassDesc pass;

@@ -93,6 +93,23 @@ void entityWorkflow() {
             return session.dispatch(request);
         };
         {
+            // «Ветер»: session-only preview wind; masks from wind/masks.json.
+            fs::create_directories(project/"wind");
+            std::ofstream(project/"wind"/"masks.json") << R"({"masks":{"palm_frond":[[0,0],[0.3,0.4],[1,1]]}})";
+            const auto before=session.workspace().map.toJson();
+            auto wind=call("studio.wind");
+            AIVERSE_TEST_CHECK(!wind.has("error") && wind["result"]["settings"].getBool("enabled"));
+            bool frond=false;
+            for(const auto& m:wind["result"]["library"]["masks"].items()) frond|=m.getStr("name")=="palm_frond";
+            AIVERSE_TEST_CHECK(frond);
+            auto set=call("studio.windSet",Json::parse(R"({"speed":12,"direction":90,"debug":"depth"})"));
+            AIVERSE_TEST_CHECK(!set.has("error") && set["result"]["settings"].getStr("debug")=="depth");
+            AIVERSE_TEST_CHECK(session.windPreview().speed==12.f);
+            AIVERSE_TEST_CHECK(call("studio.windSet",Json::parse(R"({"speed":12,"debug":"rainbow"})")).has("error"));
+            AIVERSE_TEST_CHECK(session.windPreview().debug==render::wind::WindDebugView::Depth);   // atomic
+            AIVERSE_TEST_CHECK(session.workspace().map.toJson()==before && !session.workspace().map.dirty);
+        }
+        {
             auto state=call("studio.nereidFlow");AIVERSE_TEST_CHECK(!state.has("error")&&state["result"]["surfaces"].size()==1);
             auto input=Json::parse(R"({"id":7,"mode":"automatic","slopeDegrees":1,"downhillHeadingDegrees":180})");
             AIVERSE_TEST_CHECK(!call("studio.nereidFlowSet",input).has("error"));

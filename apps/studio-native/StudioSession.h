@@ -6,6 +6,7 @@
 #include <filesystem>
 #include "apps/studio-native/StudioAssetTransfers.h"
 #include "apps/editor/core/Workspace.h"
+#include "apps/studio-native/StudioWindPreview.h"
 namespace aiverse::studio {
 class StudioSession {
 public:
@@ -17,6 +18,9 @@ public:
     const std::string& previewMaterialName() const { return previewMaterialName_; }
     const Json& previewMaterialFactors() const { return previewMaterialFactors_; }
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
+    // «Ветер» panel: preview wind + rig debug view (session only, not saved).
+    const StudioWindState& windPreview() const { return wind_; }
+    void setWindSceneStats(Json stats) { windSceneStats_ = std::move(stats); }
     Json saveMapAs(const std::string& path); // trusted native Save panel only
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
     Json previewExternalAssets(const std::vector<std::filesystem::path>& files,
@@ -32,5 +36,7 @@ private:
     uint64_t previewMaterialRevision_ = 0;
     void refreshMaterialPreview();
     std::optional<StudioTransferPlan> pendingAssetTransfer_;
+    StudioWindState wind_;
+    Json windSceneStats_;
 };
 }

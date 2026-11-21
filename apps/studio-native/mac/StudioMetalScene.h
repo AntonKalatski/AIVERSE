@@ -9,6 +9,8 @@
 #include <set>
 #include <vector>
 #include <filesystem>
+#include <chrono>
+#include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/editor/core/MapDoc.h"
@@ -17,6 +19,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/RenderLightingRuntime.h"
 #include "engine/world/NereidManifestHost.h"
+#include "apps/studio-native/StudioWindPreview.h"
 
 namespace aiverse::studio {
 class StudioMetalScene final {
@@ -32,6 +35,9 @@ public:
                const std::string& projectPath={}, const Json& rules=Json{});
     void captureNextFrame(gfx::Device::CaptureFn callback) { device_->captureNextFrame(std::move(callback)); }
     const std::string& lightingStatus() const { return lightingStatus_; }
+    // Preview wind for every rigged model (<model>.wind.json) + debug view.
+    void setWindPreview(const StudioWindState& state) { wind_ = state; }
+    Json windStats() const;
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -69,6 +75,10 @@ private:
     void clearDocumentModels();
     void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,
                             const Json& rules, const std::vector<StudioDocumentProxy>& proxies);
+    StudioWindState wind_;
+    size_t riggedInstances_ = 0, riggedParts_ = 0;
+    std::map<const render::Model*, std::optional<render::wind::ModelWindRigView>> windRigs_;
+    std::chrono::steady_clock::time_point windClock_ = std::chrono::steady_clock::now();
     render::RTSCamera camera_;
     bool cameraInitialized_ = false;
     bool lodDiagnostics_ = false;

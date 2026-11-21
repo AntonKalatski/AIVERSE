@@ -128,6 +128,9 @@ public:
     }
     size_t size() const { return masks_.size(); }
     size_t names() const { return byName_.size(); }
+    std::vector<std::pair<std::string, uint8_t>> namedMasks() const {
+        return {byName_.begin(), byName_.end()};
+    }
     uint64_t revision() const { return revision_; }
 
     // {"masks": {"name": [[t, v], ...], ...}}  (project file wind/masks.json)

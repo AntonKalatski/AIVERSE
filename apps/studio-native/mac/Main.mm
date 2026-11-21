@@ -380,6 +380,7 @@
         try {
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
             // StudioSession/renderer are owned and called on the main thread.
+            preview_->setWindPreview(session_->windPreview());
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
@@ -860,6 +861,8 @@
             result.set("ok",aiverse::Json::fromBool(true));
             reply.set("result",std::move(result));
         } else {
+            if (preview_ && (req.getStr("method")=="studio.wind" || req.getStr("method")=="studio.windSet"))
+                session_->setWindSceneStats(preview_->windStats());
             reply=session_->dispatch(req);
         }
         [self sendStudioReply:reply];

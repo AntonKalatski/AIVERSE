@@ -77,6 +77,19 @@ public:
 
     void requestReset() { resetRequested_ = true; }
 
+    // PHYSIS wind at the camera target for every model with hierarchical wind
+    // masks (Renderer3D::setSceneWind). Zero when the preview is off.
+    render::wind::SceneWind sceneWind(double seconds) const {
+        render::wind::SceneWind w;
+        if (!settings.enabled || !frame_ || !frame_->valid) return w;
+        const auto at = frame_->sample(frameX_, frameZ_);
+        w.x = at.valid ? at.windX : frame_->meanWindX;
+        w.z = at.valid ? at.windZ : frame_->meanWindZ;
+        w.seconds = float(std::fmod(seconds, 3600.0));
+        w.gust = std::clamp(frame_->maxWindSpeed / 30.f, 0.f, 1.f);
+        return w;
+    }
+
     // Ignite at scene metres (private preview only). Returns false + reason.
     bool ignite(float x, float z, std::string* why = nullptr) {
         if (usingLive_) { if (why) *why = "live game simulation is read-only"; return false; }
