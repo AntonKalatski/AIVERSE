@@ -2,23 +2,23 @@
   "id": "2026-11-21-lens-physical-lens",
   "date": "2026-11-21",
   "system": "lens",
-  "title": "LENS: физическая линза, глубина резкости и EXR",
-  "summary": "Камера LENS теперь сама задаёт экспозицию и глубину резкости по параметрам объектива: фокусное расстояние, диафрагма, выдержка, ISO и дистанция фокуса. Добавлены сплайновые рельсы, шумовая тряска и запись HDR-кадров в EXR.",
+  "title": "LENS: объектив задаёт экспозицию и глубину резкости",
+  "summary": "Камеру можно описать как настоящий объектив — фокусное расстояние, диафрагма, выдержка, ISO и дистанция фокуса, — и кадр получает экспозицию и глубину резкости по этим параметрам. Появились плавные рельсы для пролётов камеры, тряска и запись HDR-кадров в EXR.",
   "body": [
-    "Компонент CameraLensComponent получил флаги driveExposure и driveDepthOfField. CameraPostFxPool переводит объектив в EV100 и в ручную экспозицию PRISMA, а по формулам тонкой линзы считает ближнюю и дальнюю границы резкости и передаёт их в DoF PRISMA отдельно для каждой камеры. Глобальные настройки PRISMA при этом не меняются.",
-    "Рельсы камеры строятся по centripetal Catmull-Rom с равномерной скоростью по длине дуги и сглаживанием старта и остановки; тряска — детерминированный шум с сидом и затуханием. Старые линейные рельсы и синусная тряска работают как раньше. CameraHdrFrameRecorder пишет линейные кадры RGBA16F в OpenEXR и отказывается записывать 8-битный результат.",
-    "Кадр снят хостом tools/site/lens_showcase.cpp: главная камера с объективом 35 мм f/1.4 и фокусом 4 м на красном занавесе, вторая камера той же сцены во врезке через CameraCompositor."
+    "У каждой камеры в cameras.json теперь есть блок lens. Если включить driveExposure и driveDepthOfField, камера сама выставляет яркость кадра и зону резкости: f/1.4 даёт короткую резкую зону и сильно размытый фон, f/8 — почти всё резкое. Настройки считаются отдельно для каждой камеры, поэтому основной кадр и врезка могут снимать разными объективами.",
+    "Для пролётов камера едет по рельсам через несколько точек с ровной скоростью, мягко трогается и останавливается; рельсы могут быть замкнутыми. Тряска — шум по шести осям с затуханием, одинаковый при каждом запуске. Старые линейные рельсы и прежняя тряска работают как раньше.",
+    "Кадры можно записывать последовательностью в OpenEXR с полным HDR-диапазоном — для монтажа, цветокоррекции и сравнения рендера."
   ],
   "status": "done",
-  "verified": "Кадр снят на Mac (Metal), 1920×1080, сцена Sponza (Khronos glTF Sample). Хост печатает фактическое состояние PRISMA: EV +1.24, DoF включён, фокус 4.08 м, зона резкости 1.11 м, размытие 5 px; без DoF кадр снят отдельно для сравнения. Юнит-тесты линзы, рельсов и EXR (camera_lens_physics, camera_rail_path, camera_exr) и тесты в aiverse_tests прошли на Linux (GCC). Перед заливкой в main ветка собрана на Mac целиком: 365 из 367 тестов прошли; два упавших (skill_audit, rts_authored_pose_test) падают и на чистом main.",
-  "limits": "HDR-захват через readTextureAsync RGBA16F есть только на Metal; на OpenGL доступна лишь 8-битная запись. Кубмапы, панорамы, зеркала, порталы и стерео — не сделаны. Экспозиция относительна объектива по умолчанию, а не фотометрическая.",
+  "verified": "Кадр снят на Mac (Metal) в сцене Sponza, 1920×1080: объектив 35 мм f/1.4, фокус 4 м, во врезке вторая камера той же сцены. Расчёт экспозиции, глубины резкости, рельсов и EXR проверен тестами на Linux и Mac.",
+  "limits": "Запись HDR в EXR пока есть только на Metal; на OpenGL — только 8-битный кадр. Экспозиция задаётся относительно стандартного объектива, а не в физических единицах освещённости. Кубмапы, панорамы, зеркала, порталы и стерео ещё не сделаны.",
   "branch": "main",
   "commit": "cd6633caf",
   "media": [
     {
-      "src": "docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg",
-      "caption": "Объектив 35 мм f/1.4, фокус 4 м: занавес и колонна резкие, аркада вдали размыта; во врезке вторая камера",
-      "captionEn": "35 mm f/1.4 lens focused at 4 m: the curtain and column are sharp, the far arcade is blurred; the inset is a second camera"
+      "src": "docs/devlog/media/2026-11-21-lens-physical-lens/sponza-arcade.jpg",
+      "caption": "Объектив 35 мм f/1.4, фокус 4 м: зелёный занавес и колонна резкие, ближний синий занавес и даль размыты; во врезке вторая камера",
+      "captionEn": "35 mm f/1.4 lens focused at 4 m: the green curtain and column are sharp, the near blue curtain and the distance are blurred; the inset is a second camera"
     }
   ],
   "links": [
@@ -28,13 +28,13 @@
     }
   ],
   "author": "lens",
-  "titleEn": "LENS: physical lens, depth of field and EXR",
-  "summaryEn": "A LENS camera now drives exposure and depth of field from its lens: focal length, aperture, shutter, ISO and focus distance. Spline rails, noise shake and HDR frame recording to EXR were added.",
+  "titleEn": "LENS: the lens sets exposure and depth of field",
+  "summaryEn": "A camera can be described as a real lens — focal length, aperture, shutter, ISO and focus distance — and the frame gets its exposure and depth of field from them. Smooth camera rails for fly-throughs, camera shake and HDR frame recording to EXR were added.",
   "bodyEn": [
-    "CameraLensComponent gained driveExposure and driveDepthOfField. CameraPostFxPool turns the lens into EV100 and PRISMA manual exposure, and uses thin-lens formulas for the near and far sharp limits, which it passes to PRISMA depth of field per camera. Global PRISMA settings are left alone.",
-    "Rails use centripetal Catmull-Rom with constant speed along the arc and eased start and stop; shake is seeded deterministic noise with a fade. The old linear rails and sine shake behave as before. CameraHdrFrameRecorder writes linear RGBA16F frames to OpenEXR and refuses an 8-bit result.",
-    "The frame was rendered by tools/site/lens_showcase.cpp: the main camera with a 35 mm f/1.4 lens focused at 4 m on the red curtain, and a second camera of the same scene in the inset through CameraCompositor."
+    "Every camera in cameras.json now has a lens block. With driveExposure and driveDepthOfField on, the camera sets the frame brightness and the sharp zone itself: f/1.4 gives a short sharp zone and a strongly blurred background, f/8 keeps almost everything sharp. It is computed per camera, so the main view and the inset can use different lenses.",
+    "For fly-throughs the camera follows a rail through several points at an even speed, eases in and out, and the rail can loop. Shake is noise on six axes with a fade, identical on every run. The old linear rails and the previous shake behave as before.",
+    "Frames can be recorded as an OpenEXR sequence with the full HDR range, for editing, grading and render comparisons."
   ],
-  "verifiedEn": "Rendered on a Mac (Metal), 1920×1080, Sponza (Khronos glTF Sample). The host prints the actual PRISMA state: EV +1.24, DoF on, focus 4.08 m, sharp range 1.11 m, blur 5 px; a frame without DoF was rendered separately for comparison. Unit tests for the lens, rails and EXR (camera_lens_physics, camera_rail_path, camera_exr) and the aiverse_tests cases passed on Linux (GCC). Before the merge into main the whole branch was built on a Mac: 365 of 367 tests passed; the two failures (skill_audit, rts_authored_pose_test) also fail on plain main.",
-  "limitsEn": "HDR capture via readTextureAsync RGBA16F exists only on Metal; OpenGL can only record 8-bit. Cubemaps, panoramas, mirrors, portals and stereo are not done. Exposure is relative to the default lens, not photometric."
+  "verifiedEn": "Rendered on a Mac (Metal) in Sponza at 1920×1080: a 35 mm f/1.4 lens focused at 4 m, with a second camera of the same scene in the inset. Exposure, depth of field, rails and EXR maths are covered by tests on Linux and Mac.",
+  "limitsEn": "HDR recording to EXR is Metal-only for now; OpenGL records an 8-bit frame. Exposure is relative to a default lens, not in physical light units. Cubemaps, panoramas, mirrors, portals and stereo are not done yet."
 }

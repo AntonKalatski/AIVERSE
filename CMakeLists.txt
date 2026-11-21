@@ -4416,6 +4416,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_lighting_composition
             lighting_gles_admission
             gi_chunked_geometry
+            gi_gpu_bvh_validator
             lumaweave_direct_reference
             gi_dynamic_probe_reference
             gi_cpu_trace_budget
