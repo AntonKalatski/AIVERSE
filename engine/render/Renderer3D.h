@@ -534,6 +534,12 @@ public:
     // Mobile GPUs: Medium / High filter the sun shadow with a fixed 8 / 12-tap disk instead of the
     // 64 / 128-tap stable disk (4 fetches each); the blocker search stays. Set by touch-device hosts.
     void setMobileShadowFilter(bool on) { mobileShadowFilter_ = on; }
+    // GL hosts that set gfx::Device::setGlslPrelude("#define AIVERSE_HW_SHADOW ...") before init:
+    // the lit shaders read the shadow map through a compare sampler (Shaders.h). Call before init.
+    void setHardwareShadowCompare(bool on) { hwShadowCompare_ = on; }
+    bool hardwareShadowCompare() const { return hwShadowCompare_; }
+    // The sun shadow map for the lit shaders' slot (a compare view with hardwareShadowCompare).
+    void bindShadowMap(int slot);
     bool mobileShadowFilter() const { return mobileShadowFilter_; }
     // Mobile Low: hosts draw units without casting into the shadow map (contact blobs instead).
     // AIVERSE_UNIT_SHADOWS=1 keeps them casting.
@@ -1749,6 +1755,10 @@ private:
     float3 shadowBoundsMin_{}, shadowBoundsMax_{};
     ShadowQuality quality_ = ShadowQuality::Medium;
     bool mobileShadowFilter_ = false;
+    bool hwShadowCompare_ = false;
+    gfx::TextureViewHandle shadowCompareView_{};
+    uint32_t shadowCompareViewFor_ = 0;
+    gfx::SamplerHandle shadowCompareSampler_{};
     std::vector<DrawItem> items_;
     std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;

@@ -232,6 +232,9 @@ void Renderer3D::shutdown() {
             "Renderer3D shutdown: pending GPU shader/pipeline completion");
     gpuModelCommands_.release(*dev_);
     persistentCull_.release(*dev_);
+    if (shadowCompareView_.valid()) dev_->destroyTextureView(shadowCompareView_);
+    if (shadowCompareSampler_.valid()) dev_->destroySampler(shadowCompareSampler_);
+    shadowCompareView_ = {}; shadowCompareSampler_ = {}; shadowCompareViewFor_ = 0;
     if (persistentUpload_) {
         persistentUpload_->release();
         persistentUpload_.reset();
@@ -806,9 +809,31 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
     dev_->setUniforms(1, &f, sizeof f);
 }
 
+void Renderer3D::bindShadowMap(int slot) {
+    if (!hwShadowCompare_ || !shadowMap_.valid()) { dev_->setTexture(slot, shadowMap_); return; }
+    if (!shadowCompareSampler_.valid()) {
+        gfx::SamplerDesc sd;
+        sd.minFilter = sd.magFilter = gfx::Filter::Linear;   // hardware 2x2 PCF
+        sd.mipFilter = gfx::SamplerMipFilter::None;
+        sd.compare = true;
+        sd.comparison = gfx::CompareFunction::LessEqual;      // lit when the receiver depth <= the stored depth
+        shadowCompareSampler_ = dev_->createSampler(sd);
+    }
+    if (shadowCompareViewFor_ != shadowMap_.id) {
+        if (shadowCompareView_.valid()) dev_->destroyTextureView(shadowCompareView_);
+        gfx::TextureViewDesc vd;
+        vd.aspect = gfx::TextureAspect::Depth;
+        shadowCompareView_ = dev_->createTextureView(shadowMap_, vd);
+        shadowCompareViewFor_ = shadowMap_.id;
+    }
+    if (!shadowCompareView_.valid() || !shadowCompareSampler_.valid() ||
+        !dev_->bindTextureView(slot, shadowCompareView_, shadowCompareSampler_))
+        dev_->setTexture(slot, shadowMap_);   // no compare view: shadows read wrong for this frame, never crash
+}
+
 void Renderer3D::bindLitFrame() {
     uploadFrameUniforms(false);
-    dev_->setTexture(0, shadowMap_);
+    bindShadowMap(0);
     lights.bind();
 }
 
@@ -2269,7 +2294,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     for (auto& fn : customOpaque_) fn(*dev_);
     dev_->setPipeline(litPipe_);
     uploadFrameUniforms(false);
-    dev_->setTexture(0, shadowMap_);
+    bindShadowMap(0);
     lights.bind(2, 1, 2);
     bindTraceTextures();
     auto drawItem = [&](const DrawItem& it) {
@@ -2333,7 +2358,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     if (capture) {
         endSceneCapture(mainPass, sw, sh); dev_->setViewport({0, 0, sw, sh});
         // The blit binds scene color at slot 0; model shaders expect the sun depth map there.
-        dev_->setTexture(0, shadowMap_);
+        bindShadowMap(0);
         // Read the first opaque pass while shading into a different target (no feedback).
         if (modelReflections_ && hdrFrame_ && traceActive()) { uploadFrameUniforms(false); renderModels(1); }
     }
@@ -2341,7 +2366,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     bool any = false;
     for (auto& it : items_) {
         if (it.color.w >= 0.99f) continue;
-        if (!any) { dev_->setPipeline(litBlendPipe_); uploadFrameUniforms(false); dev_->setTexture(0, shadowMap_); lights.bind(2, 1, 2); bindTraceTextures(); any = true; }
+        if (!any) { dev_->setPipeline(litBlendPipe_); uploadFrameUniforms(false); bindShadowMap(0); lights.bind(2, 1, 2); bindTraceTextures(); any = true; }
         drawItem(it);
     }
     const uint32_t blendedStart = profile_.triangles[2];

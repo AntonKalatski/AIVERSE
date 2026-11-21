@@ -767,6 +767,9 @@ public:
     virtual bool textureInfo(TextureHandle h, TextureInfo& out) const {
         (void)h; (void)out; return false;
     }
+    // GLSL defines put after #version / precision of every GL shader compiled from now on (GL backend only;
+    // others ignore it). Set before the renderers create their pipelines.
+    virtual void setGlslPrelude(const std::string& defines) { (void)defines; }
     virtual ShaderHandle createShader(const ShaderDesc& d) = 0;   // returns invalid handle on failure (see lastError())
     // Start on the device thread, then poll on that same thread. Jobs must not outlive
     // the device. Dropping a job cancels publication; backend callbacks own their data.

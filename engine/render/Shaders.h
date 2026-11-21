@@ -242,9 +242,18 @@ namespace aiverse::render::shaders {
     "    return sm.sample_compare(compareSampler, uv, d);\n" \
     "}\n"
 
+// AIVERSE_HW_SHADOW (GL prelude, weak mobile GPUs): tex0 is the shadow map through a compare sampler, one
+// hardware 2x2 PCF fetch per tap instead of 4 texelFetch + textureSize. No raw depth: sunDepth is a stub
+// (the blocker search and the nearest-fetch path are not used with it).
 #define AIVERSE_GLSL_SHADOW \
+    "#ifdef AIVERSE_HW_SHADOW\n" \
+    "uniform highp sampler2DShadow tex0;\n" \
+    "float sunDepth(vec2 uv) { return 1.0; }\n" \
+    "float sunCompare(vec2 uv, float d) { return texture(tex0, vec3(uv, d)); }\n" \
+    "#else\n" \
     "uniform highp sampler2D tex0;\n" \
     AIVERSE_GLSL_SUN_FILTER("tex0") \
+    "#endif\n" \
     "// Soft shadows: rotated Poisson-disc PCF over bilinear 2x2 compare taps.\n" \
     "//   u_quality.x taps (1 / 4 / 8 / 16), u_quality.z filter radius in shadow UV, u_quality.w normal offset (world)\n" \
     "const vec2 kDisk[24] = vec2[24](\n" \
@@ -304,16 +313,18 @@ namespace aiverse::render::shaders {
     "    vec2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
     "    float d = p.z * u_shadow.y + u_shadow.z;\n" \
+    "    bool outside = uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0;\n" \
+    "    // single tap (weak mobile GPUs): uniform branches before the derivatives, no receiver-plane gradient\n" \
+    "    if (u_quality.x < 0.9) return outside ? 1.0 : step(d, sunDepth(uv));\n" \
+    "    if (u_quality.x < 2.0) return outside ? 1.0 : sunCompare(uv, d);\n" \
     "    vec2 dx = dFdx(uv), dy = dFdy(uv);\n" \
     "    float zx = dFdx(d), zy = dFdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
     "    vec2 gradient = abs(det) > 1e-10 ? vec2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : vec2(0.0);\n" \
     "#if defined(SKINNED) || defined(BAKED)\n" \
     "    if (u_quality.y < 1.5) gradient = vec2(0.0);\n" \
     "#endif\n" \
-    "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
+    "    if (outside) return 1.0;\n" \
     "    float r = u_quality.z;\n" \
-    "    if (u_quality.x < 0.9) return step(d, sunDepth(uv));   // one nearest fetch (weak mobile GPUs)\n" \
-    "    if (u_quality.x < 2.0) return sunCompare(uv, d);\n" \
     "    if (u_quality.x < 5.0) { // weak GPUs: fixed 4 taps, no blocker search\n" \
     "        float s = sunCompare(uv + vec2(-0.5, -0.5) * r, d + dot(gradient, vec2(-0.5, -0.5) * r));\n" \
     "        s += sunCompare(uv + vec2( 0.5, -0.5) * r, d + dot(gradient, vec2( 0.5, -0.5) * r));\n" \
