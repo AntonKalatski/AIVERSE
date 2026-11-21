@@ -61,9 +61,14 @@ for PROJECT in /Volumes/KINGSTON/AIVERSE-builds/studio-html5-completion/qa-lua-l
     done
   }
   if [[ -x "$BIN" ]]; then
+    # Order alternates so shader-cache warmup and desktop noise do not favour one mode.
+    OLDENV="AIVERSE_RTS_VIEW_CULL=0 AIVERSE_RTS_PLACEMENT_CACHE=0 AIVERSE_RTS_STATIC_ANIMATE_FAST=0 AIVERSE_RTS_GROUND_CACHE=0"
+    run_mode warmup
     run_mode new
-    run_mode old AIVERSE_RTS_VIEW_CULL=0 AIVERSE_RTS_PLACEMENT_CACHE=0 AIVERSE_RTS_STATIC_ANIMATE_FAST=0 \
-      AIVERSE_RTS_GROUND_CACHE=0 AIVERSE_METAL_EARLY_DRAWABLE=1
+    run_mode old $OLDENV
+    run_mode late AIVERSE_METAL_LATE_DRAWABLE=1
+    run_mode old2 $OLDENV
+    run_mode new2
     python3 - "$LOGS/$P-new.ppm" "$LOGS/$P-old.ppm" >> "$SUMMARY" 2>&1 <<'PY'
 import sys
 def read(p):
