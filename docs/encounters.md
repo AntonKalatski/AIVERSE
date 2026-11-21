@@ -2,8 +2,8 @@
 
 Boss fights, telegraphed area attacks, status effects, add waves, personal boss windows and mob behaviour on
 real units of the RTS simulation (Drone Fall port). The decisions come from the `boss-encounters` library
-package (`libraries/include/aiverselib/genre/{Telegraphs,StatusEffects,BossEncounter,BossSchedule,MobBehaviour}.h`,
-[genre-packages.md § Boss encounters](genre-packages.md)); `modules/rts/RtsEncounters.*` owns the bodies:
+package (`libraries/include/aiverselib/mechanics/{Telegraphs,StatusEffects,BossEncounter,BossSchedule,MobBehaviour}.h`,
+[mechanics-packages.md § Boss encounters](mechanics-packages.md)); `modules/rts/RtsEncounters.*` owns the bodies:
 orders, damage, statuses, spawning, events, saves. Sample: `templates/boss_arena` ("Golem Pit": a top-down hero
 against a three-phase golem with adds and crawler packs).
 

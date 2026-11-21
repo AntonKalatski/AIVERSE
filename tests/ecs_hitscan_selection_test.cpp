@@ -1,7 +1,7 @@
 // Shared hitscan candidate policy: deterministic tie, eligibility, occlusion
 // fraction and immutable rewind-pose behavior for any gameplay host.
-#include <aiverselib/genre/EcsHitscanSystems.h>
-#include <aiverselib/genre/EcsOrderedImpactSystems.h>
+#include <aiverselib/mechanics/EcsHitscanSystems.h>
+#include <aiverselib/mechanics/EcsOrderedImpactSystems.h>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>

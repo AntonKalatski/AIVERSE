@@ -367,6 +367,10 @@ private:
                 std::string s = e.text;
                 if (ui::inputString(p.label, s, ImGuiInputTextFlags_EnterReturnsTrue))
                     edit(ed, scope, [&](Json& arr) { arr.at(i).set(p.name, Json::string(s)); });
+                if (e.type != PrismaType::Lut) {
+                    ui::help("Картинка в папке игры (PNG), Enter — применить. Пусто — процедурная грязь на линзе.");
+                    break;
+                }
                 ui::help("Путь в папке игры, Enter — применить. Нейтральная таблица для правки: кнопка ниже (или MCP postfx_lut_neutral).");
                 if (ImGui::SmallButton("Создать нейтральную LUT")) {
                     Json r = ed.ws().call("postfx_lut_neutral", Json::object());

@@ -36,11 +36,11 @@ const char* kDriveStart = R"({"type":"guy","owner":1,"pos":[4.5,7.4]},{"type":"s
 
 TEST(driving_rules_parse_and_errors) {
     std::vector<std::string> ids = {"guy", "sedan"};
-    auto r = game::Driving::parse(Json::parse(R"({"controls": "stick", "vehicles": {"sedan": {"length": 1.2, "width": 0.6}}})"), ids);
-    CHECK(r.enabled && r.controls == game::DriveControls::Stick && r.vehicles.size() == 1 && r.vehicles[0].type == 1);
-    CHECK(!game::Driving::parse(Json(), ids).enabled);
+    auto r = vehicles::parseDriving(Json::parse(R"({"controls": "stick", "vehicles": {"sedan": {"length": 1.2, "width": 0.6}}})"), ids);
+    CHECK(r.enabled && r.controls == vehicles::DriveControls::Stick && r.vehicles.size() == 1 && r.vehicles[0].type == 1);
+    CHECK(!vehicles::parseDriving(Json(), ids).enabled);
     auto fails = [&](const char* json, const char* what) {
-        try { game::Driving::parse(Json::parse(json), ids); } catch (const std::exception& e) { return std::string(e.what()).find(what) != std::string::npos; }
+        try { vehicles::parseDriving(Json::parse(json), ids); } catch (const std::exception& e) { return std::string(e.what()).find(what) != std::string::npos; }
         return false;
     };
     CHECK(fails(R"({"vehicles": {}})", "driving.vehicles: list at least one"));
@@ -68,7 +68,7 @@ TEST(driving_enter_drive_crash_into_a_wall_and_get_out) {
     enterKey(*sim, 1);
     run(*sim, 0.3);
     CHECK(drv(*sim).isDriving(*sim, hero) && (w.get<game::Unit>(hero).flags & game::kUnitInCargo));
-    CHECK(drv(*sim).carOf(*sim, hero)->e == car && drv(*sim).carOf(*sim, hero)->player == 1);
+    CHECK(drv(*sim).vehicleOf(*sim, hero) == car && drv(*sim).carOf(*sim, hero)->player == 1);
     // stick up = throttle: the car (facing east) pulls away and takes the hero along
     steer(*sim, 1, kNorth);
     run(*sim, 2.0);
@@ -341,7 +341,7 @@ TEST(driving_determinism_save_and_rollback) {
 
 TEST(driving_games_without_the_block_are_untouched) {
     auto sim = makeSimJson(kTopDownRules, topDownMap(R"({"type":"drone","owner":1,"pos":[6.5,8.5]},{"type":"dummy","owner":2,"pos":[30.5,1.5]})"));
-    CHECK(mod(*sim).driving() && !mod(*sim).driving()->active() && !mod(*sim).driving()->store(*sim));
+    CHECK(mod(*sim).driving() && !mod(*sim).driving()->active() && !mod(*sim).driving()->decks(*sim));
     enterKey(*sim, 1);   // ignored
     run(*sim, 0.2);
     CHECK(sim->world().alive(mod(*sim).topDown()->heroOf(*sim, 1)));
@@ -427,13 +427,13 @@ TEST(driving_race_seats_the_hero_and_holds_the_doors) {
     auto sim = makeSimJson(kRaceRules, raceMap(false));
     sim->step();
     const Entity hero = mod(*sim).topDown()->heroOf(*sim, 1);
-    const game::DrivingCar* car = drv(*sim).carOf(*sim, hero);
+    const vehicles::VehicleDrive* car = drv(*sim).carOf(*sim, hero);
     CHECK(car != nullptr);
     enterKey(*sim, 1); sim->step();
     CHECK(drv(*sim).carOf(*sim, hero) != nullptr);        // racers stay at the wheel
     // countdown: the brakes hold even with the stick forward
     for (int i = 0; i < 30; ++i) { steer(*sim, 1, {Fixed{}, Fixed{}, Fixed::fromInt(-1)}); sim->step(); }
-    CHECK(fxAbs(drv(*sim).speed(*sim, drv(*sim).carOf(*sim, hero)->e)) < Fixed::fromRatio(1, 10));
+    CHECK(fxAbs(drv(*sim).speed(*sim, drv(*sim).vehicleOf(*sim, hero))) < Fixed::fromRatio(1, 10));
     // a map without "race" keeps racing off
     auto plain = Json::parse(raceMap(false)); plain.erase("race");
     auto free = makeSimJson(kRaceRules, plain.dump(-1));

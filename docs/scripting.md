@@ -334,6 +334,34 @@ read and write them: `field.get(id, x, z [, player])`, `field.set` / `field.add`
 `on_field_threshold(id, value, fn [, "rise" | "fall"])` hooks. Values are integers (`int` fields) or `fx`
 (`fixed`). View scripts get the read-only part. Reference: `docs/fields.md`.
 
+## The `services` table (traffic services)
+
+State of the city services (`traffic.services`, RtsServiceState.h) and the handles a script uses to take a person,
+a vehicle or a hero over for a while. Queries work in view scripts too; the actions only in simulation scripts.
+
+| Query | Returns |
+|---|---|
+| `services.custody(player)` | phase (0 free, 1 cuffed, 2 walked, 3 boarding, 4 driven, 5 delivered), custody vehicle or nil, deliveries |
+| `services.held_by(e)` | the custody vehicle holding `e`, or nil |
+| `services.stand_in(body)` | victim handle and victim type id of a stand-in body, or nil |
+| `services.custody_car(car)` / `services.carry(car)` | phase (0: none), prisoner / patient or nil |
+| `services.carried(car)` | delivered, x, z of the carry the vehicle ended within the last minute, or nil |
+| `services.totals()` | custody deliveries, carry deliveries, calls answered by a vehicle already out |
+| `services.crossing(e)` | 0 walking, 1 waiting for a vehicle, 2 peeking past a parked one |
+| `services.passenger(e)` | claim, aboard, walk result, walk done |
+| `services.citizen(id)` | held, off, journey (nil: no such citizen) |
+
+| Action | Effect |
+|---|---|
+| `services.claim(e, claim)` | take a person over (0 gives him back to the pedestrians) |
+| `services.board(e, aboard)` | a claimed person rides inside a vehicle |
+| `services.walk(e, request, x, z)` | a claimed person walks to (x, z); `passenger` answers +request / -request, then done |
+| `services.signals(vehicle, beacon, siren)` | >0 on, <0 off, 0 automatic |
+| `services.door(vehicle, open)` | 0 closed, -1 / 1 open left / right (presentation) |
+| `services.hold(car, held)` | the script runs the crew's work at the scene and their way back in |
+| `services.set_citizen(id, held, off, journey)` | held: the schedule leaves him alone; journey 1 to work, 2 home |
+| `services.control(player, held)` | the player's stick does not move his hero while held |
+
 ## Data hooks: scripts inside rules
 
 ```json

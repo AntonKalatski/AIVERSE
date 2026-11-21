@@ -198,7 +198,7 @@ struct Fixture {
         return true;
     }
 
-    bool checkSelectedRanges(const RTSCamera& cam, bool leaves) {
+    bool checkSelectedRanges(const Camera& cam, bool leaves) {
         strata::ViewConfig view{};
         view.objectToClip = cam.proj(float(kWidth)/kHeight, true) *
                             cam.view() * mat4::identity();
@@ -329,7 +329,7 @@ struct Fixture {
         Mode mode = frame <= 8 ? Mode::Empty :
                     frame <= 19 ? Mode::Legacy :
                     frame <= 30 ? Mode::Fine : Mode::Coarse;
-        RTSCamera cam;
+        Camera cam;
         cam.target={0,0,0};
         cam.distance=5.f;
         cam.pitch=.2f;

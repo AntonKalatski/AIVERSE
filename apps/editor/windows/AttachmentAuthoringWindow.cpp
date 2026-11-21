@@ -196,7 +196,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             render::sampleClip(model->clips[size_t(clip)],
                                previewTime_,previewPose_);
         render::worldMatrices(*model,previewPose_,previewMatrices_);
-        render::RTSCamera cam;
+        render::Camera cam;
         cam.target=(model->boundsMin+model->boundsMax)*0.5f;
         cam.distance=std::max(2.f,
             render::length(model->boundsMax-model->boundsMin)*1.4f);

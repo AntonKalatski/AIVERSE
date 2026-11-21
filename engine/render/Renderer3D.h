@@ -322,6 +322,10 @@ struct ModelDraw {
     // geometry, GPU ICB/MDI, instancing, LOD or legacy shader morph blending.
     gfx::BufferHandle vertexOverride{};
     uint32_t vertexOverrideCount = 0;
+    // Visibility layers (bit set) of this draw. A camera draws it only when
+    // (layers & Renderer3D::visibilityMask()) != 0; skipped draws also cast
+    // no shadow in that view. Default layer 0 (bit 1).
+    uint32_t layers = 1;
 };
 
 enum DrawFlags : uint32_t {
@@ -509,6 +513,11 @@ public:
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
     void setShadowBounds(float3 lo, float3 hi) { shadowBoundsMin_=lo; shadowBoundsMax_=hi; hasShadowBounds_=true; }
     void clearShadowBounds() { hasShadowBounds_=false; }
+    // Scoped capture override: one shared light frustum for every face of a
+    // cubemap (or any view set) so shadows meet at the face seams.
+    struct ShadowBoundsState { bool set=false; float3 lo{}, hi{}; };
+    ShadowBoundsState shadowBoundsState() const { return {hasShadowBounds_, shadowBoundsMin_, shadowBoundsMax_}; }
+    void restoreShadowBounds(const ShadowBoundsState& s) { shadowBoundsMin_=s.lo; shadowBoundsMax_=s.hi; hasShadowBounds_=s.set; }
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
@@ -553,6 +562,11 @@ public:
     // Negative resumes the steady clock. Set before beginScene on the render thread.
     void setPresentationTime(float seconds);
     void beginScene(const Camera3D& cam, int fbW, int fbH);
+    // Camera layer mask for model draws of the current view (LENS
+    // CameraComponent::visibilityMask). beginScene resets it to all layers;
+    // set it after beginScene. Meshes, sprites and terrain ignore it.
+    void setVisibilityMask(uint32_t mask) { visibilityMask_ = mask; }
+    uint32_t visibilityMask() const { return visibilityMask_; }
     // Before render only: drop borrowed packets/callbacks of a failed host
     // preparation before destroying its private CPU owners. No RHI work.
     void discardSceneSubmission() noexcept;
@@ -2229,6 +2243,7 @@ private:
     bool suppressGeometryTap_=false;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
+    uint32_t visibilityMask_ = ~0u;
 };
 
 } // namespace aiverse::render

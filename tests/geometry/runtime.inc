@@ -52,7 +52,7 @@ TEST(geometry_renderer_clusters_and_occlusion) {
     using namespace render;entityfxtest::RecordingDevice dev;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Off);
     auto wall=geometrytest::grid();prepareGeometry(wall);CHECK(uploadModel(dev,wall));
     auto target=geometrytest::grid(2);CHECK(uploadModel(dev,target));
-    RTSCamera cam;cam.target={0,0,0};cam.pitch=0;cam.distance=20;
+    Camera cam;cam.target={0,0,0};cam.pitch=0;cam.distance=20;
     auto frame=[&](bool occ,bool occluder,float dissolve){r.beginScene(cam,800,600);ModelDraw a;a.model=&wall;a.geometry.clusters=true;a.geometry.occluder=occluder;a.dissolve=dissolve;r.drawModel(a);
         ModelDraw b;b.model=&target;b.world=mat4::translate({-2,0,-3})*mat4::scale({.02f,.02f,.02f});b.geometry.occlusion=occ;r.drawModel(b);r.render(gfx::PassDesc{});return r.geometryStats();};
     const auto clustered=frame(false,true,0);CHECK(clustered.occluded==0);CHECK(clustered.clustersTested>0);
@@ -68,10 +68,15 @@ TEST(geometry_hlod_scene_switch_and_validation) {
     using namespace render;entityfxtest::RecordingDevice dev;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Off);
     auto json=Json::parse(R"({"version":1,"hlod":{"enabled":true,"maxPixels":256,"errorPixels":2},"instances":[{"id":"a","model":"box.obj","position":[-3,0,0]},{"id":"b","model":"box2.obj","position":[3,0,0]}]})");
     GeometryScene scene;scene.load(dev,json,[](const std::string& f,std::string& s){if(f!="box.obj"&&f!="box2.obj")return false;s=geometrytest::boxObj();return true;});CHECK(scene.stats().proxies==1);
-    RTSCamera cam;cam.pitch=0;cam.distance=10;r.beginScene(cam,800,600);scene.draw(r);r.render(gfx::PassDesc{});CHECK(scene.stats().submitted==2);
+    Camera cam;cam.pitch=0;cam.distance=10;r.beginScene(cam,800,600);scene.draw(r);r.render(gfx::PassDesc{});CHECK(scene.stats().submitted==2);
     cam.distance=200;r.beginScene(cam,800,600);scene.draw(r);r.render(gfx::PassDesc{});CHECK(scene.stats().submitted==1);
     cam.distance=10;r.beginScene(cam,800,600);scene.draw(r);r.render(gfx::PassDesc{});CHECK(scene.stats().submitted==2);
     for(auto bad:{R"({"version":1,"instances":[{"id":"x","model":"../secret.obj"}]})",R"({"version":1,"instances":[{"id":"x","model":"box.obj","scale":[-1,1,1]}]})",R"({"version":1,"instances":[],"hlod":{"enabled":"yes"}})"}){bool caught=false;try{GeometryScene::validate(Json::parse(bad));}catch(...){caught=true;}CHECK(caught);}
+    // Visibility layers: nonzero 32-bit mask, not with HLOD (proxies merge instances).
+    GeometryScene::validate(Json::parse(R"({"version":1,"instances":[{"id":"x","model":"box.obj","layers":6}]})"));
+    for(auto bad:{R"({"version":1,"instances":[{"id":"x","model":"box.obj","layers":0}]})",R"({"version":1,"instances":[{"id":"x","model":"box.obj","layers":1.5}]})",
+                  R"({"version":1,"instances":[{"id":"x","model":"box.obj","layers":4294967296}]})",R"({"version":1,"hlod":{"enabled":true},"instances":[{"id":"x","model":"box.obj","layers":2}]})"}){
+        bool caught=false;try{GeometryScene::validate(Json::parse(bad));}catch(...){caught=true;}CHECK(caught);}
     for(auto bad:{R"({"clusters":"yes"})",R"({"errorPixels":0})",R"({"typo":true})"}){bool caught=false;try{parseGeometryPolicy(Json::parse(bad));}catch(...){caught=true;}CHECK(caught);}
     json.member("instances").at(1).set("model",Json::string("box.obj"));
     scene.load(dev,json,[](const std::string&,std::string& out){out=geometrytest::boxObj();return true;});
@@ -107,7 +112,7 @@ TEST(geometry_surface_proxy_near_far_and_hlod) {
     auto data=Json::parse(R"({"version":1,"hlod":{"enabled":true},"instances":[{"id":"a","model":"source.obj","proxy":{"model":"proxy.obj","maxPixels":96}},{"id":"b","model":"source.obj","position":[4,0,0]}]})");
     GeometryScene scene;scene.load(dev,data,[](const std::string&,std::string& out){out=geometrytest::boxObj();return true;});
     CHECK(scene.stats().proxies==1); // parent HLOD must not bypass the explicit proxy threshold
-    RTSCamera cam;cam.pitch=0;cam.distance=8;
+    Camera cam;cam.pitch=0;cam.distance=8;
     auto frame=[&](){renderer.beginScene(cam,800,600);scene.draw(renderer);renderer.render(gfx::PassDesc{});return scene.stats().surfaceProxiesSubmitted;};
     CHECK(frame()==0);cam.distance=200;CHECK(frame()==1);cam.distance=8;CHECK(frame()==0);
     scene.shutdown(dev);renderer.shutdown();
@@ -116,7 +121,7 @@ TEST(geometry_surface_proxy_near_far_and_hlod) {
 TEST(geometry_static_cache_matches_and_rejects_stale_transform) {
     using namespace render;entityfxtest::RecordingDevice dev;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Off);
     auto model=geometrytest::grid(2);uploadModel(dev,model);StaticModelCache cache;cache.prepare(model,mat4{});
-    RTSCamera cam;cam.pitch=0;cam.distance=20;
+    Camera cam;cam.pitch=0;cam.distance=20;
     auto frame=[&](const StaticModelCache* c,mat4 world){dev.draws.clear();r.beginScene(cam,800,600);ModelDraw d;d.model=&model;d.world=world;d.staticCache=c;r.drawModel(d);r.render(gfx::PassDesc{});return dev.draws;};
     auto plain=frame(nullptr,mat4{}),cached=frame(&cache,mat4{});CHECK(plain.size()==cached.size());CHECK(!cached.empty());
     if(!cached.empty())CHECK(plain[0].inst==cached[0].inst);
@@ -128,7 +133,7 @@ TEST(geometry_instancing_caps_and_preserves_every_instance) {
     using namespace render;
     for(size_t bytes:{size_t(4096),size_t(32768)}){
         entityfxtest::RecordingDevice dev;dev.uniformLimit=bytes;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Off);CHECK(r.instanceLimit()==bytes/144);
-        auto m=geometrytest::grid(2);uploadModel(dev,m);RTSCamera cam;cam.pitch=0;cam.distance=20;r.beginScene(cam,800,600);
+        auto m=geometrytest::grid(2);uploadModel(dev,m);Camera cam;cam.pitch=0;cam.distance=20;r.beginScene(cam,800,600);
         for(int i=0;i<513;++i){ModelDraw d;d.model=&m;d.flash=float(i)/1024;r.drawModel(d);}r.render(gfx::PassDesc{});
         size_t total=0;for(const auto& draw:dev.draws){CHECK(draw.instances<=bytes/144);CHECK(draw.inst.size()*sizeof(float)<=bytes);for(size_t i=0;i<draw.instances;++i)CHECK(draw.inst[i*36+23]==float(total+i)/1024);total+=draw.instances;}
         CHECK(total==513);CHECK(dev.draws.size()==(513+bytes/144-1)/(bytes/144));r.setInstanceLimit(32);CHECK(r.instanceLimit()==std::min<size_t>(32,bytes/144));releaseModel(dev,m);r.shutdown();
@@ -139,7 +144,7 @@ TEST(geometry_shadow_policy_and_mesh_lod) {
     bool bad=false;try{parseGeometryPolicy(Json::parse(R"({"shadowErrorPixels":-1})"));}catch(...){bad=true;}CHECK(bad);
     entityfxtest::RecordingDevice dev;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Off);
     auto m=geometrytest::grid(4);auto coarse=m.meshes[0];coarse.primitives[0].indexCount=6;m.meshes.push_back(coarse);m.meshes[0].lods.push_back({1,10000});m.finalize();uploadModel(dev,m);
-    RTSCamera cam;cam.pitch=0;cam.distance=100;
+    Camera cam;cam.pitch=0;cam.distance=100;
     r.setLodDebugTarget(77);
     r.setLodDiagnosticsEnabled(true);
     auto frame=[&](bool lod){
@@ -170,12 +175,12 @@ TEST(geometry_prepared_scene_owns_geometry_and_shared_materials) {
     std::map<std::string,std::unique_ptr<Model>> models;
     for(auto key:{"a.obj","b.obj"}){auto m=std::make_unique<Model>(geometrytest::grid(4));Image image;image.tex={9000};image.borrowedTexture=true;m->images.push_back(image);m->materials[0].baseTex=0;models[key]=std::move(m);}
     auto json=Json::parse(R"({"version":1,"hlod":{"enabled":true,"maxPixels":256},"instances":[{"id":"a","model":"a.obj"},{"id":"b","model":"b.obj","position":[12,0,0]}]})");
-    GeometryScene scene;scene.loadPrepared(dev,json,std::move(models));CHECK(scene.stats().proxies==1);RTSCamera cam;cam.distance=500;cam.pitch=0;r.beginScene(cam,800,600);scene.draw(r);r.render(gfx::PassDesc{});CHECK(scene.stats().submitted==1);CHECK(r.profile().draws[1]==1);scene.shutdown(dev);r.shutdown();
+    GeometryScene scene;scene.loadPrepared(dev,json,std::move(models));CHECK(scene.stats().proxies==1);Camera cam;cam.distance=500;cam.pitch=0;r.beginScene(cam,800,600);scene.draw(r);r.render(gfx::PassDesc{});CHECK(scene.stats().submitted==1);CHECK(r.profile().draws[1]==1);scene.shutdown(dev);r.shutdown();
 }
 
 TEST(geometry_shadow_clusters_use_light_resolution) {
     using namespace render;entityfxtest::RecordingDevice dev;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Medium);
-    auto m=geometrytest::grid(32);prepareGeometry(m);uploadModel(dev,m);RTSCamera cam;cam.pitch=.8f;cam.distance=200;
+    auto m=geometrytest::grid(32);prepareGeometry(m);uploadModel(dev,m);Camera cam;cam.pitch=.8f;cam.distance=200;
     auto frame=[&](bool coarse,bool mask){m.materials[0].alpha=mask?AlphaMode::Mask:AlphaMode::Opaque;r.beginScene(cam,800,600);ModelDraw d;d.model=&m;d.world=mat4::rotateX(-1.5707963f);d.geometry.shadowClusters=coarse;d.geometry.shadowErrorPixels=16;r.drawModel(d);r.render(gfx::PassDesc{});return r.profile();};
     const auto fine=frame(false,false),coarse=frame(true,false),masked=frame(true,true);
     CHECK(fine.triangles[0]>0);CHECK(coarse.triangles[0]<fine.triangles[0]);CHECK(coarse.triangles[1]==fine.triangles[1]);CHECK(masked.triangles[0]==fine.triangles[0]);
@@ -183,7 +188,7 @@ TEST(geometry_shadow_clusters_use_light_resolution) {
 }
 TEST(geometry_offscreen_rigid_caster_is_retained) {
     using namespace render;entityfxtest::RecordingDevice dev;Renderer3D r;CHECK(r.init(dev));r.setShadowQuality(ShadowQuality::Medium);
-    auto m=geometrytest::grid(2);uploadModel(dev,m);RTSCamera cam;cam.pitch=.8f;cam.distance=20;r.beginScene(cam,800,600);
+    auto m=geometrytest::grid(2);uploadModel(dev,m);Camera cam;cam.pitch=.8f;cam.distance=20;r.beginScene(cam,800,600);
     bool found=false;mat4 chosen;
     for(int z=-100;z<=100&&!found;z+=4)for(int x=-100;x<=100&&!found;x+=4){auto xf=mat4::translate({float(x),0,float(z)})*mat4::rotateX(-1.5707963f)*mat4::scale({.1f,.1f,.1f});
         const auto lo=m.boundsMin-float3{3,3,3},hi=m.boundsMax+float3{3,3,3};
@@ -246,7 +251,7 @@ TEST(geometry_transactional_reload_preserves_live_scene_on_source_failure) {
     CHECK(scene.pendingGpuRetirements()==0); // No old source retired.
     // A previously built model/cache must remain draw-capable.
     Renderer3D renderer;CHECK(renderer.init(dev));renderer.setShadowQuality(ShadowQuality::Off);
-    RTSCamera cam;cam.distance=20;cam.pitch=0;
+    Camera cam;cam.distance=20;cam.pitch=0;
     renderer.beginScene(cam,800,600);
     scene.draw(renderer);
     renderer.render(gfx::PassDesc{});

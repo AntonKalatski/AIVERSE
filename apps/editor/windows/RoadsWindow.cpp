@@ -9,11 +9,12 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "../core/RoadOps.h"
-#include "../../../modules/rts/view/RtsRoadView.h"
+#include "../../../engine/roads/RoadView.h"
 
 namespace aiverse::editor {
 
 using namespace game;
+using namespace aiverse::roads;   // spline roads (engine/roads)
 
 namespace {
 Fixed fx(float v) { return Fixed::fromRaw(int64_t(std::llround(double(v) * 65536.0))); }
@@ -133,7 +134,7 @@ private:
     void reset() { step_ = 0; fromLanes_ = toLanes_ = {}; haveTangent_ = false; dragging_ = 0; }
     void clearGhost(Editor& ed) {
         if (ed.view().roads().types().empty()) return;
-        static RtsRoadView::Ghost none;
+        static aiverse::roads::RoadView::Ghost none;
         ed.view().roads().setGhost(none);
     }
 
@@ -262,7 +263,7 @@ private:
     Vec2 startPoint() const { return start_.p; }
 
     void updateGhost(Editor& ed) {
-        RtsRoadView::Ghost g;
+        aiverse::roads::RoadView::Ghost g;
         if (mode_ <= 2 && step_ >= 1 && hoverOk_) {
             roads::AddSpec s;
             if (build(ed, hover_, s) && typeOf(type_)) {

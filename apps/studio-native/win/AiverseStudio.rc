@@ -1,0 +1,2 @@
+// MinGW builds: the application manifest as a resource (MSVC merges AiverseStudio.manifest itself).
+1 24 "AiverseStudio.manifest"

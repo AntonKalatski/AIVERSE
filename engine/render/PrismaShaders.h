@@ -576,6 +576,68 @@ PF_FN vec3 pfUnprojectWater(vec4 c0, vec4 c1, vec4 c2, vec4 c3, vec2 sp, float z
     vec4 h = c0 * (sp.x * 2.0 - 1.0) + c1 * (sp.y * 2.0 - 1.0) + c2 * z + c3;
     return h.xyz / max(abs(h.w), 0.000001) * sign(h.w + 0.0000001);
 }
+// Shader Graph "sceneColor": the scene at another uv, display-referred like `col` before
+// grading (exposure, ACES when tone mapping is on, sRGB). Auto exposure is not applied.
+PF_FN vec3 pfDisplay(vec3 c, vec4 filt) {
+    if (filt.x > 0.5) {
+        c = max(c * filt.z, vec3(0.0));
+        if (filt.y > 0.5) c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+        c = rtsSrgbEncode(clamp(c, vec3(0.0), vec3(1.0)));
+    }
+    return c;
+}
+// Lens distortion (lensDistortion): d0 = (k, panini, scale, aspect), d1 = (tan half fov x, y, chromatic, -).
+// Panini_Generic of the Unity/UE post stacks; then radial barrel (k > 0) / pincushion (k < 0).
+PF_FN vec2 pfLensDistort(vec2 sp, vec4 d0, vec4 d1) {
+    vec2 c = (sp - vec2(0.5)) * 2.0 / max(d0.z, 0.0001);
+    if (d0.y > 0.0001) {
+        vec2 v = c * d1.xy;
+        float dd = d0.y;
+        float viewDist = 1.0 + dd;
+        float hyp = v.x * v.x + viewDist * viewDist;
+        float isectD = v.x * dd;
+        float discrim = max(hyp - isectD * isectD, 0.0);
+        float cylMinusD = (-isectD * v.x + viewDist * sqrt(discrim)) / hyp;
+        float cyl = cylMinusD + dd;
+        v = v * (cyl / viewDist) / max(cyl - dd, 0.0001);
+        c = v / max(d1.xy, vec2(0.0001));
+    }
+    vec2 a = c * vec2(d0.w, 1.0);
+    float r2 = dot(a, a) / (d0.w * d0.w + 1.0);
+    c *= 1.0 + d0.x * r2;
+    return c * 0.5 + vec2(0.5);
+}
+// Shockwave ring offset (heatHaze): w = (centre uv, radius, thickness), uv units of height.
+PF_FN vec2 pfShockOffset(vec2 sp, vec4 w, float strength, float aspect) {
+    if (w.z <= 0.0 || strength == 0.0) return vec2(0.0);
+    vec2 d = (sp - w.xy) * vec2(aspect, 1.0);
+    float r = length(d);
+    float x = (r - w.z) / max(w.w, 0.0001);
+    float ring = exp(-x * x * 3.0) * x;
+    return d / max(r, 0.0001) * vec2(1.0 / max(aspect, 0.0001), 1.0) * ring * strength;
+}
+// Procedural lens dirt: three layers of soft random smudges (lensFlare without a dirt texture).
+PF_FN float pfDirtLayer(vec2 p, float scale, float seed) {
+    vec2 g = p * scale;
+    vec2 c = floor(g), f = fract(g);
+    float v = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 cell = vec2(float(x), float(y));
+            vec2 id = c + cell + vec2(seed);
+            float h = pfLensHash(id);
+            vec2 o = vec2(pfLensHash(id + vec2(7.1, 2.3)), pfLensHash(id + vec2(3.7, 9.1)));
+            float r = 0.25 + 0.55 * pfLensHash(id + vec2(11.3, 5.9));
+            float dd = length(cell + o - f);
+            v = max(v, (1.0 - smoothstep(r * 0.3, r, dd)) * step(0.5, h) * (0.35 + 0.65 * h));
+        }
+    }
+    return v;
+}
+PF_FN float pfDirt(vec2 p) {
+    return clamp(pfDirtLayer(p, 2.5, 1.0) * 0.6 + pfDirtLayer(p, 6.0, 13.0) * 0.45 +
+                 pfDirtLayer(p, 15.0, 29.0) * 0.3, 0.0, 1.0);
+}
 // Three travelling waves; w = (surfaceOffset, height, length, speed).
 PF_FN float pfWaterWave(vec2 p, float t, vec4 w) {
     float k = 6.2831853 / max(w.z, 0.05);
@@ -590,6 +652,30 @@ inline const char* kComposite = R"(
     // graphFrame.zw remains zero on normal frames; the caller owns this
     // uniform and leaves HUD/UI rasterization untouched.
     vec2 sp = clamp(s + graphFrame.zw,vec2(0.0),vec2(1.0));
+    float pfEdgeMask = 1.0;
+#ifdef PF_DISTORT
+    sp = pfLensDistort(sp, distort0, distort1);
+    pfEdgeMask = step(0.0, sp.x) * step(sp.x, 1.0) * step(0.0, sp.y) * step(sp.y, 1.0);
+#endif
+#ifdef PF_HAZE
+    {
+        float t = graphFrame.x * haze.z;
+        float m = haze.w >= 0.999 ? 1.0 : 1.0 - smoothstep(haze.w - 0.12, haze.w, sp.y);
+        vec2 nn = vec2(sin(sp.y * haze.y * 6.2831853 + t * 3.1 + sin(sp.x * haze.y * 2.3 + t)),
+                       cos(sp.x * haze.y * 4.7 - t * 2.3 + sin(sp.y * haze.y * 3.1 - t * 0.7)));
+        sp += nn * haze.x * px.xy * m;
+    }
+#endif
+#ifdef PF_SHOCK
+    {
+        float aspect = px.y / px.x;
+        sp += pfShockOffset(sp, shock0, shockS.x, aspect) + pfShockOffset(sp, shock1, shockS.y, aspect) +
+              pfShockOffset(sp, shock2, shockS.z, aspect) + pfShockOffset(sp, shock3, shockS.w, aspect);
+    }
+#endif
+#if defined(PF_DISTORT) || defined(PF_HAZE) || defined(PF_SHOCK)
+    sp = clamp(sp, vec2(0.0), vec2(1.0));
+#endif
 #ifdef PF_PIXELATE
     {
         vec2 cell = px.xy * grade1.w;
@@ -597,8 +683,15 @@ inline const char* kComposite = R"(
     }
 #endif
     vec2 uv = TUV(sp);
+#if defined(PF_CA) || defined(PF_DISTORT)
+    vec2 cd = vec2(0.0);
 #ifdef PF_CA
-    vec2 cd = TDIR((sp - 0.5) * (vig.w * 0.012));
+    cd += (sp - 0.5) * (vig.w * 0.012);
+#endif
+#ifdef PF_DISTORT
+    cd += (sp - 0.5) * (distort1.z * 0.02);
+#endif
+    cd = TDIR(cd);
     vec3 col = vec3(TEX0(uv + cd).r, TEX0(uv).g, TEX0(uv - cd).b);
 #else
     vec3 col = TEX0(uv).rgb;
@@ -622,6 +715,26 @@ inline const char* kComposite = R"(
 #endif
 #ifdef PF_SHAFTS
     col += TEX3(uv).rgb * shafts.rgb;
+#endif
+#ifdef PF_FLARE
+    {
+        // Lens dirt lights up where flare / bloom light reaches the lens.
+#ifdef PF_DIRT_TEX
+        float dirtMask = TEX11(vec2(s.x, 1.0 - s.y)).r;
+#else
+        float dirtMask = pfDirt(s * vec2(px.y / px.x, 1.0));
+#endif
+        col += TEX10(uv).rgb * flare.rgb * (1.0 + flare.w * dirtMask);
+#ifdef PF_BLOOM
+        col += TEX1(uv).rgb * bloom.rgb * (flare.w * dirtMask);
+#endif
+    }
+#endif
+#ifdef PF_STREAKS
+    col += TEX12(uv).rgb * streaks.rgb;
+#endif
+#ifdef PF_HALATION
+    col += TEX13(uv).rgb * halation.rgb;
 #endif
 #ifdef PF_AUTO_EXPOSURE
     // HDR-only 1x1 GPU-adapted exposure, before ACES/sRGB. A fourth
@@ -899,6 +1012,7 @@ inline const char* kComposite = R"(
 #ifdef PF_LETTERBOX
     if (s.y < lbox.w * 0.5 || s.y > 1.0 - lbox.w * 0.5) col = lbox.rgb;
 #endif
+    col *= pfEdgeMask;   // lensDistortion: black outside the distorted image
     col += vec3((pfHash(s * 1931.0 + px.w) - 0.5) / 255.0);   // dither: no banding in gradients / vignette
     RETURN(vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0));
 )";

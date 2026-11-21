@@ -94,7 +94,7 @@ entry in `docs/agent-handoffs/animation-universal.md`.
 ## Camera API migration
 
 The engine renderer's target/orbit camera is now named
-`aiverse::render::Camera3D`. `render::RTSCamera` remains an
+`aiverse::render::Camera3D`. `render::Camera` remains an
 exact `using` alias for source compatibility: no duplicate data,
 no copy/conversion and no change to the existing camera math.
 
@@ -1726,7 +1726,7 @@ CPU requests and GPU publication are paused; resident visuals
 remain available when the device can still present them.
 
 **Static portrait migration:** `game::Portrait::renderAppearance(
-const render::ModelDraw&,const render::RTSCamera&,float4 background)`
+const render::ModelDraw&,const render::Camera&,float4 background)`
 accepts *fully authored, borrowed* model packets, including material
 overrides, node-material assignments, geometry policy, team tint,
 variant and optionally already-evaluated pose. It submits through

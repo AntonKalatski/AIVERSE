@@ -1,3 +1,4 @@
+import { copyText } from '../clipboard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, ChevronDown, ChevronRight, Info, Lightbulb, Lock, LockOpen, MoreVertical, Move3d, Puzzle, Search, Shield, User
@@ -181,7 +182,7 @@ export default function InspectorPanel({ inspector: primary, selected, busy, ins
     { id: 'reset', label: 'Reset', disabled: busy || !canReset(component), onSelect: () => setMany(component, resetValues(component)) },
     { id: 'copy', label: 'Copy Values', separator: true, onSelect: () => {
       componentClipboard = copyValues(component);
-      try { void navigator.clipboard?.writeText(JSON.stringify(componentClipboard)); } catch { /* optional */ }
+      void copyText(JSON.stringify(componentClipboard));
     } },
     { id: 'paste', label: 'Paste Values', disabled: busy || !pasteValues(componentClipboard, component),
       onSelect: () => setMany(component, pasteValues(componentClipboard, component)) },

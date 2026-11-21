@@ -26,7 +26,7 @@ for mode in off on; do
   build="$ROOT/build-$mode"
   flag=OFF
   [[ "$mode" == on ]] && flag=ON
-  cmake -S . -B "$build" "${COMMON[@]}" "-DAIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=$flag" "-DAIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR=$flag"
+  cmake -S . -B "$build" "${COMMON[@]}" "-DAIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=$flag"
   targets=(aiverse_headless aiverse_fps_tests)
   if [[ "$FULL" == 1 ]]; then
     targets+=(aiverse_tests aiverse_net_tests
@@ -70,23 +70,11 @@ for mode in off on; do
     echo "FPS movement and combat parity hashes are both required in $mode" >&2
     exit 1
   fi
-  motor_batches="$(sed -n 's/^FPS_MOTOR_BATCHES=//p' "$ROOT/fps-$mode.log" | tail -1)"
-  motor_commits="$(sed -n 's/^FPS_MOTOR_COMMITS=//p' "$ROOT/fps-$mode.log" | tail -1)"
-  if ! [[ "$motor_batches" =~ ^[0-9]+$ && "$motor_commits" =~ ^[0-9]+$ ]]; then
-    echo "FPS motor job coverage counters missing in $mode" >&2; exit 1
-  fi
-  if [[ "$mode" == on ]]; then
-    if [[ "$motor_batches" == 0 || "$motor_commits" == 0 ]]; then
-      echo "Parallel FPS motor path was never exercised" >&2; exit 1
-    fi
-  elif [[ "$motor_batches" != 0 || "$motor_commits" != 0 ]]; then
-    echo "Disabled FPS motor unexpectedly executed parallel jobs" >&2; exit 1
-  fi
   fps_motor_ms="$(sed -n 's/^FPS_MOTOR_TICKS_MS=//p' "$ROOT/fps-$mode.log" | tail -1)"
   if ! [[ "$fps_motor_ms" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo "Missing FPS motor timing in $mode" >&2; exit 1
   fi
-  echo "FPS motor $mode: batches=$motor_batches commits=$motor_commits 120-tick-ms=$fps_motor_ms"
+  echo "FPS motor $mode: 120-tick-ms=$fps_motor_ms"
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS and network tests: $mode ==="
     ctest --test-dir "$build" --no-tests=error \
@@ -99,7 +87,7 @@ if ! grep -Eq "^[0-9]+ [0-9a-fA-F]{16}$" "$ROOT/rtssim-off.checksums"; then
   exit 1
 fi
 if ! diff -u "$ROOT/fps-off.hash" "$ROOT/fps-on.hash"; then
-  echo "FAIL: FPS baseline and parallel-motor checkpoints differ" >&2
+  echo "FAIL: FPS checkpoints differ between the baseline and opt-in builds" >&2
   exit 1
 fi
 if ! diff -u "$ROOT/rtssim-off.checksums" "$ROOT/rtssim-on.checksums"; then

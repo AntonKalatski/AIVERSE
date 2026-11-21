@@ -1,6 +1,6 @@
 // SpectraFX genre-neutral scheduler: queues, budgets, ECS attachments,
 // tick deduplication, entity generation and rollback ownership.
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 #include "engine/fx/SpectraCueScheduler.h"
 #include <iostream>
 #include <stdexcept>

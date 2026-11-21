@@ -5,6 +5,7 @@
 #include "StudioSession.h"
 #include "engine/world/NereidFlowAuthoring.h"
 #include "apps/editor/core/ProjectFile.h"
+#include "apps/editor/core/Projects.h"
 #include "modules/rts/RtsMap.h"
 #include "apps/editor/EditorWorldEdit.h"
 #include "apps/studio-native/StudioContentDirectory.h"
@@ -96,7 +97,7 @@ int StudioSession::indexFor(const std::string& id) const {
 Json StudioSession::propertiesFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     Json fields = Json::array();
-    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps())) {
         if (nodeId(ws_.map,node.ref) != entityId) continue;
         if(node.ref.isLight()) {
             const auto& light=*editor::documentLight(ws_.map,node.ref);
@@ -105,7 +106,7 @@ Json StudioSession::propertiesFor(const std::string& entityId) const {
             type.set("options",Json::parse(R"([{"label":"Point","value":"point"},{"label":"Spot","value":"spot"}])"));fields.push(type);
             for(const auto& [key,label,def,lo,hi]:std::vector<std::tuple<const char*,const char*,double,double,double>>{
                 {"x","Position X",0,-1000000,1000000},
-                {"height",ws_.project.isFps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
+                {"height",ws_.project.worldSpaceMaps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
                 auto field=numericProp(key,label,Json::number(light[key].toDouble(def),3));
                 field.set("min",Json::number(lo));field.set("max",Json::number(hi));fields.push(field);
             }
@@ -202,7 +203,7 @@ Json StudioSession::componentCatalog(const std::string& entityId) const {
     return out;
 }
 bool StudioSession::documentHas(const std::string& id) const {
-    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps()))
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps()))
         if (nodeId(ws_.map,node.ref) == id) return true;
     return false;
 }
@@ -219,7 +220,7 @@ void StudioSession::dropOrdinalFlags() {
 }
 Json StudioSession::inspectorFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
-    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps())) {
         if (nodeId(ws_.map,node.ref) != entityId) continue;
         Json result=Json::object(),components=Json::array();
         result.set("id",str(entityId));result.set("name",str(node.label));
@@ -406,7 +407,7 @@ Json StudioSession::snapshot() const {
     Json scene = Json::object();
     scene.set("name", str(ws_.map.data.name));
     Json rows = Json::array();
-    const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps());
+    const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps());
     for (const auto& node : nodes) {
         Json row = Json::object();
         row.set("id", str(nodeId(ws_.map,node.ref)));
@@ -632,7 +633,97 @@ StudioLuaContext StudioSession::luaContext() const {
     c.selectionCount=int(ids.size());
     c.selectionIndex=ids.empty()?-1:indexFor(ids.back());
     c.objectCount=int(ws_.map.data.entities.size());
+    c.mapWidth=ws_.map.data.w;c.mapHeight=ws_.map.data.h;
     return c;
+}
+namespace {
+// Stable handle key of a water body: its numeric id (water_network), else its position in the list.
+std::string waterKey(const Json& body,size_t index){
+    if(body["id"].isNumber())return std::to_string(body["id"].integer());
+    const std::string s=body.getStr("id");
+    return s.empty()?"#"+std::to_string(index):s;
+}
+}
+Json StudioSession::splineHandles() {
+    Json out=Json::object(),handles=Json::array(),segments=Json::array();
+    auto seg=[&](double x0,double z0,double x1,double z1){Json s=Json::array();for(double v:{x0,z0,x1,z1})s.push(Json::number(v,3));segments.push(std::move(s));};
+    if(splineEdit_=="road"){
+        const Json net=ws_.call("road_network",Json::object(),"editor");
+        std::map<int64_t,std::pair<double,double>> at;
+        for(const auto& n:net["nodes"].items()){
+            const int64_t id=n["id"].integer();at[id]={n["x"].toDouble(),n["z"].toDouble()};
+            Json h=Json::object();h.set("id",str("road:"+std::to_string(id)));h.set("x",n["x"]);h.set("z",n["z"]);handles.push(std::move(h));
+        }
+        for(const auto& e:net["edges"].items()){
+            const auto a=at.find(e["a"].integer()),b=at.find(e["b"].integer());
+            if(a==at.end()||b==at.end())continue;
+            const Json& c1=e["c1"];const Json& c2=e["c2"];
+            if(c1.isArray()&&c2.isArray()&&c1.size()>=2&&c2.size()>=2){
+                // Bezier a, c1, c2, b sampled in 12 pieces.
+                double px=a->second.first,pz=a->second.second;
+                for(int i=1;i<=12;++i){
+                    const double t=i/12.0,u=1-t;
+                    const double x=u*u*u*a->second.first+3*u*u*t*c1[0].toDouble()+3*u*t*t*c2[0].toDouble()+t*t*t*b->second.first;
+                    const double z=u*u*u*a->second.second+3*u*u*t*c1[1].toDouble()+3*u*t*t*c2[1].toDouble()+t*t*t*b->second.second;
+                    seg(px,pz,x,z);px=x;pz=z;
+                }
+            } else seg(a->second.first,a->second.second,b->second.first,b->second.second);
+        }
+    } else if(splineEdit_=="river"){
+        const Json net=ws_.call("water_network",Json::object(),"editor");
+        size_t bi=0;
+        for(const auto& body:net["bodies"].items()){
+            const std::string key=waterKey(body,bi);
+            const Json& pts=body.has("points")?body["points"]:body["shore"];
+            for(size_t i=0;i<pts.size();++i){
+                Json h=Json::object();h.set("id",str("water:"+key+":"+std::to_string(i)));
+                h.set("x",pts[i][0]);h.set("z",pts[i][1]);handles.push(std::move(h));
+                if(i>0)seg(pts[i-1][0].toDouble(),pts[i-1][1].toDouble(),pts[i][0].toDouble(),pts[i][1].toDouble());
+            }
+            ++bi;
+        }
+    }
+    out.set("kind",str(splineEdit_));out.set("handles",handles);out.set("segments",segments);
+    return out;
+}
+bool StudioSession::splineMove(const std::string& id, double x, double z, std::string* error) {
+    if(!std::isfinite(x)||!std::isfinite(z)){if(error)*error="invalid position";return false;}
+    syncHistoryLabels();
+    const size_t before=ws_.map.undoDepth();
+    Json r;std::string label;
+    if(id.rfind("road:",0)==0){
+        Json p=Json::object();p.set("node",num(int64_t(std::stoll(id.substr(5)))));
+        p.set("x",Json::number(x,3));p.set("z",Json::number(z,3));
+        r=ws_.call("road_node_set",p,"studio");label="Move road node";
+    } else if(id.rfind("water:",0)==0){
+        const size_t colon=id.rfind(':');
+        const std::string key=id.substr(6,colon-6);const size_t index=size_t(std::stoul(id.substr(colon+1)));
+        const Json net=ws_.call("water_network",Json::object(),"editor");
+        size_t bi=0;Json body;
+        for(const auto& b:net["bodies"].items()){
+            if(waterKey(b,bi)==key){body=b;break;}
+            ++bi;
+        }
+        if(!body.isObject()){if(error)*error="water body not found";return false;}
+        const char* field=body.has("points")?"points":"shore";
+        Json pts=body[field];
+        if(index>=pts.size()){if(error)*error="water point not found";return false;}
+        Json pt=pts[index];
+        Json moved=Json::array();moved.push(Json::number(x,2));moved.push(Json::number(z,2));
+        for(size_t k=2;k<pt.size();++k)moved.push(pt[k]);   // keep the width
+        pts.at(index)=std::move(moved);
+        body.set(field,std::move(pts));
+        Json p=Json::object();p.set("body",std::move(body));
+        r=ws_.call("water_set",p,"studio");label="Move river point";
+    } else {if(error)*error="unknown handle";return false;}
+    if(r.has("error")){if(error)*error=r.getStr("error");return false;}
+    if(ws_.map.undoDepth()>before){
+        ws_.map.mergeUndoSince(before);
+        while(undoLabels_.size()>before)undoLabels_.pop_back();
+        undoLabels_.push_back(label);redoLabels_.clear();
+    }
+    syncHistoryLabels();
+    return true;
 }
 Json StudioSession::sceneBrushJson() const {
     const auto& b=brush_;
@@ -976,11 +1067,30 @@ Json StudioSession::dispatchImpl(const Json& request) {
         if((method=="studio.lightUpdate" || method=="studio.lightDelete") && params.has("entityId")) {
             if(!params["entityId"].isString())throw std::runtime_error("Invalid light entity ID");
             bool found=false;
-            for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
+            for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.worldSpaceMaps()))
                 if(node.ref.isLight() && nodeId(ws_.map,node.ref)==params.getStr("entityId")) {
                     params.set("index",num(int64_t(node.ref.index)));found=true;break;
                 }
             if(!found)throw std::runtime_error("Light entity no longer exists");
+        }
+        if (method == "studio.hub") {
+            // Project hub: recent projects (shared with the ImGui editor and aiversemcp) and the engine templates.
+            Json out=Json::object(),recent=Json::array(),templates=Json::array();
+            for (const auto& p:editor::recentProjects()) {
+                // Test fixtures and other temporary folders are not projects anyone wants to reopen.
+                if (p.dir.find("/tmp/")!=std::string::npos||p.dir.find("/var/folders/")!=std::string::npos||p.dir.find("/T/")!=std::string::npos) continue;
+                Json o=Json::object();o.set("dir",str(p.dir));o.set("name",str(p.name));
+                o.set("lastOpened",num(int64_t(p.lastOpened)));o.set("exists",Json::fromBool(p.exists));
+                recent.push(std::move(o));
+            }
+            for (const auto& t:editor::listTemplates(ws_.engineDir)) {
+                Json o=Json::object();o.set("id",str(t.id));o.set("name",str(t.name));o.set("description",str(t.description));
+                o.set("genre",str(t.genre));o.set("maps",num(int64_t(t.maps)));
+                templates.push(std::move(o));
+            }
+            out.set("recent",recent);out.set("templates",templates);out.set("defaultLocation",str(editor::defaultProjectsDir()));
+            reply.set("result",std::move(out));
+            return reply;
         }
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
@@ -1085,13 +1195,20 @@ Json StudioSession::dispatchImpl(const Json& request) {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
             const auto relative=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
-            const auto reader=humanCharacterReader(studioContentRoot(ws_.project.dir));
-            auto model=render::loadModel(relative,reader);
-            if(!model)throw std::runtime_error("Не удалось загрузить модель "+relative);
-            const auto report=vivid::adaptMetaHuman(*model);
-            auto result=report.toJson();result.set("look",report.look());result.set("face",report.face());
-            result.set("rig",vivid::buildMetaHumanRig(*model).toJson());
-            reply.set("result",std::move(result));
+            const auto key=ws_.project.dir+"|"+relative;
+            if(metaHumanKey_!=key){metaHumanKey_=key;metaHumanResult_=Json();
+                const auto content=studioContentRoot(ws_.project.dir);
+                metaHumanJob_=std::async(std::launch::async,[content,relative]{
+                    auto model=render::loadModel(relative,humanCharacterReader(content));
+                    if(!model)throw std::runtime_error("Не удалось загрузить модель "+relative);
+                    const auto report=vivid::adaptMetaHuman(*model);
+                    auto result=report.toJson();result.set("look",report.look());result.set("face",report.face());
+                    result.set("rig",vivid::buildMetaHumanRig(*model).toJson());
+                    return result;});}
+            if(metaHumanResult_.isNull()&&metaHumanJob_.valid()&&metaHumanJob_.wait_for(std::chrono::seconds(0))==std::future_status::ready){
+                try{metaHumanResult_=metaHumanJob_.get();}catch(...){metaHumanKey_.clear();throw;}}
+            if(metaHumanResult_.isNull()){auto pending=Json::object();pending.set("pending",Json::fromBool(true));reply.set("result",std::move(pending));}
+            else reply.set("result",metaHumanResult_);
         } else if(method=="studio.humanPlaceInGame") {
             // "To the game": the built character becomes an RTS unit type
             // (view.model) and, when a map is open, one unit is placed.
@@ -1119,7 +1236,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             const Json merged=ws_.call("rules_merge",args,"studio");
             if(merged.has("error"))throw std::runtime_error(merged.getStr("error"));
             bool placed=false;
-            if(!ws_.project.isFps() && ws_.map.data.w>0) {
+            if(!ws_.project.worldSpaceMaps() && ws_.map.data.w>0) {
                 auto at=Json::object();at.set("type",Json::string(type));
                 at.set("x",Json::number(double(ws_.map.data.w)/2));at.set("z",Json::number(double(ws_.map.data.h)/2));at.set("owner",Json::number(1.));
                 const Json put=ws_.call("entity_place",at,"studio");
@@ -1568,7 +1685,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             reply.set("result",std::move(result));
         } else if(method=="studio.nereidFlow"||method=="studio.nereidFlowSet"){
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
-            if(ws_.project.isFps())throw std::runtime_error("NEREID authoring currently requires a flat map");
+            if(ws_.project.worldSpaceMaps())throw std::runtime_error("NEREID authoring currently requires a flat map");
             if(method=="studio.nereidFlowSet"){
                 if(!params["mode"].isString())throw std::runtime_error("Choose current mode");
                 editor::editAuthoredWaterFlow(ws_.map,params);
@@ -1585,7 +1702,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 for(const auto& [key,value]:patch.members())settings.set(key,value);
                 settings=render::renderLightingSettings(settings); // validate BEFORE beginEdit
                 if(!(settings==current["renderLighting"])) {
-                    if(ws_.project.isFps()) {
+                    if(ws_.project.worldSpaceMaps()) {
                         Json next=current;next.set("renderLighting",settings);
                         Json input=Json::object();input.set("map",next);
                         const auto updated=ws_.call("fps_set",input,"studio");
@@ -1604,7 +1721,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (ws_.project.isFps()) {
+            if (ws_.project.worldSpaceMaps()) {
                 // FPS maps serialize MapData.fps, NOT MapData.extra. Apply to a copy,
                 // then validate/commit the full candidate through fps_set.
                 const Json currentDocument = ws_.map.toJson();
@@ -1633,8 +1750,8 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 Json input = Json::object();
                 // New authored lights go to map center for flat maps; FPS origin otherwise.
                 // Optional x/z (Inspector › Add Component › Light at the entity); else map center.
-                const double x = params["x"].isNumber() ? params["x"].toDouble() : ws_.project.isFps() ? 0.0 : double(ws_.map.data.w) * 0.5;
-                const double z = params["z"].isNumber() ? params["z"].toDouble() : ws_.project.isFps() ? 0.0 : double(ws_.map.data.h) * 0.5;
+                const double x = params["x"].isNumber() ? params["x"].toDouble() : ws_.project.worldSpaceMaps() ? 0.0 : double(ws_.map.data.w) * 0.5;
+                const double z = params["z"].isNumber() ? params["z"].toDouble() : ws_.project.worldSpaceMaps() ? 0.0 : double(ws_.map.data.h) * 0.5;
                 if (!validLightScalar("x",x) || !validLightScalar("z",z))
                     throw std::runtime_error("Map coordinates out of range");
                 input.set("x", Json::number(x,3));
@@ -1935,7 +2052,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             reply.set("result", snapshot());
         } else if (method == "studio.entitiesDelete" || method == "studio.entitiesDuplicate") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            if (ws_.project.worldSpaceMaps()) throw std::runtime_error("This operation requires a map entity document");
             std::vector<int> indices;
             for(const auto& v:params["entityIds"].items()) {
                 if(!v.isString() || v.str().compare(0,7,"entity:")!=0)continue; // lights/colliders: not map entities
@@ -1979,7 +2096,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             // Drop a model from Assets into the Scene: a new authored entity with
             // Transform + StaticModel. Needs a scenery type in rules.json.
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            if (ws_.project.worldSpaceMaps()) throw std::runtime_error("This operation requires a map entity document");
             const std::string asset=params.getStr("asset");
             for(const char* key:{"x","z"}){const double v=params[key].toDouble(NAN);if(!std::isfinite(v)||std::abs(v)>1000000)throw std::runtime_error("Drop position out of range");}
             std::string type;
@@ -2011,7 +2128,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 row.set("title",str(item.getStr("title",item.getStr("file"))));maps.push(std::move(row));
             }
             state.set("maps",std::move(maps));state.set("currentMap",str(ws_.map.path.empty()?"":ws_.relative(ws_.map.path)));
-            state.set("canCreateMap",Json::fromBool(!ws_.project.isFps()));
+            state.set("canCreateMap",Json::fromBool(!ws_.project.worldSpaceMaps()));
             state.set("maxMapSize",num(game::kMaxMapSize));reply.set("result",std::move(state));
         } else if (method == "studio.openMap" || method == "studio.newMap") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
@@ -2027,12 +2144,12 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     throw std::runtime_error("Map path escapes the project");
                 editor::MapDoc draft;std::string error;
                 if (!draft.load(path.string(),&error)) throw std::runtime_error(error);
-                if (ws_.project.isFps()!=draft.data.fps.isObject()) throw std::runtime_error("Map format does not match the project");
+                if (ws_.project.worldSpaceMaps()!=draft.data.fps.isObject()) throw std::runtime_error("Map format does not match the project");
                 draft.revision=ws_.map.revision+1;
                 ws_.map=std::move(draft);
                 ws_.note({editor::Change::Map,0,0,-1,-1,-1,"Opened map"});
             } else {
-                if (ws_.project.isFps()) throw std::runtime_error("FPS map creation requires an FPS document template");
+                if (ws_.project.worldSpaceMaps()) throw std::runtime_error("World-space map creation requires a world-space document template");
                 for (const char* key:{"width","height"}) {
                     const double value=params[key].toDouble();
                     if (!params[key].isNumber() || !std::isfinite(value) || value!=std::floor(value) || value<8 || value>game::kMaxMapSize)
@@ -2055,12 +2172,12 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 types.push(std::move(row));
             }
             catalog.set("types",std::move(types));
-            catalog.set("mapEntities",Json::fromBool(!ws_.project.isFps()));
+            catalog.set("mapEntities",Json::fromBool(!ws_.project.worldSpaceMaps()));
             reply.set("result",std::move(catalog));
         } else if (method == "studio.entityCreate" || method == "studio.entityDelete" ||
                    method == "studio.entityDuplicate") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            if (ws_.project.worldSpaceMaps()) throw std::runtime_error("This operation requires a map entity document");
             if (method == "studio.entityCreate") {
                 const std::string type=params.getStr("type");
                 if (ws_.project.rules.findType(type)<0) throw std::runtime_error("Unknown entity type");
@@ -2097,7 +2214,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
         } else if (method == "studio.entityMove") {
             // Hierarchy drag: reorder authored map entities (document order), undoable.
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            if (ws_.project.worldSpaceMaps()) throw std::runtime_error("This operation requires a map entity document");
             const int from=indexFor(params.getStr("entityId"));
             auto& entities=ws_.map.data.entities;
             int to=int(entities.size());
@@ -2306,6 +2423,13 @@ Json StudioSession::dispatchImpl(const Json& request) {
             out.set("moved",num(int64_t(moved)));out.set("amounts",num(int64_t(amounts)));out.set("removed",num(int64_t(removed)));
             out.set("skipped",num(int64_t(skipped)));out.set("snapshot",snapshot());
             reply.set("result",std::move(out));
+        } else if (method == "studio.splineEdit") {
+            // Roads / Water panels: show node handles in the Scene ("road" | "river" | "" off).
+            const std::string k=params.getStr("kind");
+            if (k!="road"&&k!="river"&&!k.empty()) throw std::runtime_error("Unknown spline kind");
+            splineEdit_=ws_.project.dir.empty()?std::string():k;
+            if (!splineEdit_.empty()) brush_.armed=false;
+            reply.set("result",splineHandles());
         } else if (method == "studio.sceneBrush") {
             // Arm / disarm the Scene brush and set its tool and settings (session only).
             auto& b=brush_;
@@ -2330,7 +2454,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             if (params.has("spread")) b.spread=number("spread",0,32);
             if (params.has("roadType")) b.roadType=text("roadType");
             if (params.has("width")) b.width=number("width",1,200);
-            if (params.has("armed")) b.armed=params.getBool("armed")&&!ws_.project.dir.empty();
+            if (params.has("armed")) { b.armed=params.getBool("armed")&&!ws_.project.dir.empty(); if (b.armed) splineEdit_.clear(); }
             reply.set("result",sceneBrushJson());
         } else if (method == "studio.agentInfo" || method == "studio.agentStart" || method == "studio.agentStop" || method == "studio.agentReset") {
             reply.set("result", agentRequest(method, params));
@@ -2439,7 +2563,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             }
             if(entityId.compare(0,6,"light:")==0) {
                 bool found=false;size_t index=0;
-                for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
+                for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.worldSpaceMaps()))
                     if(node.ref.isLight() && nodeId(ws_.map,node.ref)==entityId){index=node.ref.index;found=true;break;}
                 if(!found)throw std::runtime_error("Light entity no longer exists");
                 const std::string owner=key=="name"?"Entity":
@@ -2454,7 +2578,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
                 } else {
                     editor::MapDoc draft;draft.data=ws_.map.data;
-                    const auto ref=editor::DocumentEntityRef::light(index,ws_.project.isFps());
+                    const auto ref=editor::DocumentEntityRef::light(index,ws_.project.worldSpaceMaps());
                     bool changed=false;
                     if(owner=="Transform") {
                         if(!value.isNumber() || !validLightScalar(key,value.toDouble()))
@@ -2471,7 +2595,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                         changed=editor::writeDocumentComponent(draft,ref,editor::DocumentComponentKind::Light,patch);
                     }
                     if(!changed)throw std::runtime_error("Invalid component property");
-                    if(ws_.project.isFps()) {
+                    if(ws_.project.worldSpaceMaps()) {
                         Json args=Json::object();args.set("map",draft.toJson());
                         const auto updated=ws_.call("fps_set",args,"studio");
                         if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
@@ -2483,7 +2607,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 // Non-map document sources use the shared editor transform adapter.
                 // fps_set validates the COMPLETE edited document atomically before
                 // committing it with the existing MapDoc undo snapshots.
-                if (!ws_.project.isFps() ||
+                if (!ws_.project.worldSpaceMaps() ||
                     (key != "x" && key != "y" && key != "z") || !value.isNumber())
                     throw std::runtime_error("Unsupported document property");
                 const double number = value.toDouble();

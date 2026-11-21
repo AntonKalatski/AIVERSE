@@ -110,7 +110,7 @@ y tiene una configuración validable.
 | **Cualquier juego móvil** | `aiverse::meta` y LiveOps, tutoriales, pantallas de UI, plugins de tiendas y anuncios |
 
 Los juegos de deportes, los barcos, las paradas en boxes y las penalizaciones siguen en la [hoja de ruta](docs/genre-mechanics-roadmap.md). Lista completa
-de bibliotecas: [`libraries/catalog.json`](libraries/catalog.json) y [paquetes de género](docs/genre-packages.md).
+de bibliotecas: [`libraries/catalog.json`](libraries/catalog.json) y [paquetes de género](docs/mechanics-packages.md).
 
 ---
 
@@ -301,7 +301,7 @@ Los documentos de referencia están en inglés. La visión completa, el asistent
 |---|---|
 | [**Visión completa**](docs/es/overview.md) | todos los subsistemas, compilación, plataformas, CI, versiones |
 | [Formato del juego](docs/game-format.md) | `game.json`, `rules.json`, mapas y todos los bloques de datos |
-| [Paquetes de género](docs/genre-packages.md) · [Bibliotecas](docs/libraries.md) | mecánicas para cualquier género |
+| [Paquetes de género](docs/mechanics-packages.md) · [Bibliotecas](docs/libraries.md) | mecánicas para cualquier género |
 | [Asistente Crear un juego](docs/es/game-wizard.md) | cómo una idea y arte se convierten en un proyecto terminado |
 | [Scripting](docs/scripting.md) · [Módulos C++](docs/native-modules.md) | cuando los datos no bastan |
 | [Terreno](docs/terrain.md) · [Planetas](docs/planets.md) · [Búsqueda de rutas](docs/pathfinding.md) | mundo y movimiento |

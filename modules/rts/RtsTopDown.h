@@ -110,6 +110,7 @@ struct TopDownPilot {
     uint32_t respawnAt = 0;               // tick of a pending respawn (0: none)
     topdown::Input input;                 // sticky, already re-quantized
     uint32_t inputTick = 0;
+    bool controlHeld = false;             // a script / native module moves the hero now (getting into a car): the stick is ignored
     Vec3 vel{};
     Entity target = kNullEntity;
     uint32_t retargetAt = 0;

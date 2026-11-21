@@ -8,8 +8,8 @@ description: Reuse AIVERSE combat actions (frame-keyed hitboxes/hurtboxes, dodge
 Use when a native/host combat owner needs spatial melee hits, i-frames, parry/block direction, stagger or
 lock-on. Attack timing/combos/hit dedupe come from `melee-combat` (`genre/Melee.h`); this package composes it.
 
-1. Read `docs/genre-packages.md` (combat-actions rows and runtime contract) and the catalog entry. Inspect
-   `libraries/include/aiverselib/genre/CombatActions.h` for exact behavior.
+1. Read `docs/mechanics-packages.md` (combat-actions rows and runtime contract) and the catalog entry. Inspect
+   `libraries/include/aiverselib/mechanics/CombatActions.h` for exact behavior.
 2. Responsibility: contacts and outcomes only. `collectMeleeHits` returns `HitContact`s (self/team filtered,
    once per swing via `recordMeleeHit`); `resolveCombatContact` returns Hit/Blocked/Parried/Evaded;
    `applyPoiseHit` returns poise damage and stun ticks. Health, damage formulas, stamina and status effects
@@ -17,7 +17,7 @@ lock-on. Attack timing/combos/hit dedupe come from `melee-combat` (`genre/Melee.
 3. Data: scalar knobs live in the generated `combat` section of `libraries/spec/gameplay.json` (ticks and
    milli-units). Load with `readGameplaySettings`, then `genre/CombatConfigured.h`: `dodgeConfig`,
    `guardConfig`, `poiseConfig`, `lockOnConfig`. Hitbox definitions: `genre/CombatData.h` `readHitboxes(json,
-   attacks)` (example `examples/libraries/genre/hitboxes.json`); frames must lie inside the attack's active
+   attacks)` (example `examples/libraries/mechanics/hitboxes.json`); frames must lie inside the attack's active
    window; errors are readable `JsonError`s. Edit the spec and run `python3 tools/libraries/generate_gameplay.py`.
 4. Per authoritative tick, in order: `stepMelee`, `stepDodge`, `stepGuard`, `stepPoise`, `stepLockOn` (each
    rejects repeated/backwards ticks), then `collectMeleeHits` with the bodies' current poses, then for each
