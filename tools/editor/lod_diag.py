@@ -116,7 +116,7 @@ res = {}
 def stats(tag, **cam):
     shot2(tag, 1280, 720, **cam); time.sleep(1.5); shot2(tag, 1280, 720, **cam)
     st = call("geometry_stats")
-    res[tag] = {k: st.get(k) for k in ("drawCalls", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata", "lodBlocked", "shadowLimitedLod")}
+    res[tag] = {k: st.get(k) for k in ("drawCalls", "frameIntervalMs", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata", "lodBlocked", "shadowLimitedLod")}
     print("STATS", tag, json.dumps(res[tag]), flush=True)
 idx = 10; x, z, half = centre[idx]; (nx, nz), (fx, fz) = side(idx)
 bx, bz = x + nx * (half + 6), z + nz * (half + 6)
@@ -124,7 +124,16 @@ g = ground([(bx, bz)])[0]
 stats("bank", **look((x - fx * 3, surf[idx] + 1.3, z - fz * 3), (bx + fx * 4, g + 0.3, bz + fz * 4)))
 j = min(len(centre) - 1, 22)
 stats("hero", **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0], surf[8] + 35, centre[j][1])))
+for rep in range(int(os.environ.get("LOD_REPEAT", "0"))):
+    time.sleep(2)
+    stats("hero-%d" % rep, **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0], surf[8] + 35, centre[j][1])))
 stats("overview", x=256, y=0, z=256, distance=260, pitch=40, yaw=200)
+if os.environ.get("REFLECT_SHOT"):
+    # Looking down at the water: far-bank trees above the frame show only as reflections.
+    for k, ii in enumerate((10, 16, 22)):
+        ii = min(ii, len(centre) - 1); (fx2, fz2) = side(ii)[1]
+        cx, cz, _ = centre[ii]
+        stats("reflect-%d" % k, **look((cx - fx2 * 4, surf[ii] + 7, cz - fz2 * 4), (cx + fx2 * 6, surf[ii], cz + fz2 * 6)))
 if os.environ.get("GRASS_SHOT"):
     v = [float(t) for t in os.environ["GRASS_SHOT"].split(",")]
     stats("meadow", **look(tuple(v[:3]), tuple(v[3:6])))

@@ -287,6 +287,9 @@ void Editor::registerGuiOps() {
         r.set("occluded",Json::number(int64_t(s.occluded)));
         r.set("occluderTriangles",Json::number(int64_t(s.occluderTriangles)));
         r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls())));
+        // Wall-clock frame interval (ImGui's 60-frame average): includes CPU work,
+        // drawable waits and vsync, unlike completedGpuFrameMs.
+        r.set("frameIntervalMs",Json::number(ImGui::GetIO().Framerate>0?1000.0/double(ImGui::GetIO().Framerate):0.0));
         r.set("cameraModelTriangles",Json::number(int64_t(r3d_.profile().cameraModelTriangles)));
         r.set("cameraMeshTriangles",Json::number(int64_t(r3d_.profile().cameraMeshTriangles)));
         r.set("opaqueSceneCapture",Json::fromBool(r3d_.ssrActive()));
