@@ -37,6 +37,9 @@ weighted by the vertex's B channel.
 | `engine/render/TerraWeaveArborWind.h` | `arborWindRig`, `applyArborWind` |
 | `engine/render/Renderer3DModels.cpp` | `SG_TEXEL<i>(x,y)` exact vertex texel fetch for graph textures |
 | `engine/render/Model.cpp` | `loadModel` applies `<model>.wind.json` |
+| `engine/render/Renderer3D.h` | `setSceneWind`, `setWindRigDebugView` (Parts/Depth/Weight) |
+| `engine/render/TerraWeaveForestAdapter.h` | `enableHierarchicalWind`, `setSpeciesWindProfile` |
+| `apps/studio-native/StudioWindPreview.h` | Studio «Ветер» panel state (`studio.wind`, `studio.windSet`) |
 
 ## Project data
 
@@ -55,6 +58,13 @@ weighted by the vertex's B channel.
 `<model>.wind.json`: `profile` (name or inline), `rules` (`node` exact or
 `prefix*`, `mask`, `stiffness`, `flex`, `flutter`), `flutterMaterials`,
 `materials`, optional explicit `skeleton`.
+
+## Seeing it
+
+Studio: panel «Ветер» (right dock) — preview wind, debug view
+(части / уровни иерархии / сила качания / скелет), mask curves of the
+project. ImGui editor: PHYSIS «Живая природа» drives the same scene wind.
+Games: call `Renderer3D::setSceneWind` with PHYSIS or gameplay wind.
 
 ## Limits
 

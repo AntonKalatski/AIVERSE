@@ -48,3 +48,30 @@ Changed outside new files:
    `applyArborWind`, keep the existing per-draw `vertexParameters`.
 3. Editor: rig debug view (colour parts by depth / mask value) and a
    Wind panel editing `wind/masks.json` curves + `.wind.json` rules.
+
+## Stage 2 (2026-11-21): scene wind, debug views, forest, Studio panel
+
+Commits: `1839583bf` (engine), `f0afc486c` (Studio/editor).
+
+- `Renderer3D::setSceneWind(wind::SceneWind)`: every rigged draw without its
+  own vertexParameters sways with the scene wind (world m/s → object-local,
+  yaw/scale undone). Any `<model>.wind.json` model moves in any host.
+- `Renderer3D::setWindRigDebugView(Parts|Depth|Weight)`: shared debug graphs
+  recolour rigged materials; Skeleton = host lines via `windRigDebugLines`.
+- `SG_TEXEL<i>` also in fragment graph code.
+- `findWindRig` / `decodeWindRig`; rig bytes survive upload via a small
+  content-keyed registry.
+- `ArborForestAdapter::enableHierarchicalWind`, `setSpeciesWindProfile`,
+  `setHierarchicalWindScale`: near trees bend on the GPU in one draw (no CPU
+  branch pose arena, no whole-tree lean); impostors keep crown wind; default
+  path unchanged.
+- Studio panel «Ветер» (`studio.wind`, `studio.windSet`), see
+  `docs/handoff/studio-html5/stage-100-wind-masks-panel.md`.
+- ImGui editor: PHYSIS «Живая природа» feeds `setSceneWind`.
+
+Tests run (Linux VM, by hand): `wind_rig` PASS (decode, params, debug lines,
+registry, forest hierarchical + legacy); new `wind_rig_glsl` PASS (glslang:
+vertex 330/ES300/450, three debug fragments 330/ES300); web tsc + test:web
+PASS; Studio Python contracts PASS; `terraweave_*` PASS earlier.
+NOT RUN: Metal/MSL, macOS build/CTest (`wind_rig_glsl` needs the Vulkan
+build's `aiverse_glslang` target), visual QA, vite build.
