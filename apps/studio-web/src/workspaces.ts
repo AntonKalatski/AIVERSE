@@ -5,7 +5,7 @@
  * Legacy (not yet migrated) ImGui windows are grouped by the same areas so the
  * command palette and Window menu can show where they will live.
  */
-import { normalizeDockTree, panelStack, reopenTab, type DockNode, type DockTree, type StudioPanel } from './nestedDock.ts';
+import { STUDIO_PANEL_HOME, normalizeDockTree, panelStack, reopenTab, type DockNode, type DockTree, type StudioPanel } from './nestedDock.ts';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows.ts';
 
 export const WORKSPACES = ['scene', 'world', 'look', 'animate', 'logic', 'publish'] as const;
@@ -25,7 +25,7 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     left: ['hierarchy'], center: ['scene', 'game'], right: ['inspector', 'nereid_flow'], bottom: ['assets', 'console'],
     legacy: ['terrain', 'water', 'roads', 'tiles', 'fields', 'fog', 'generate', 'physis'] },
   look: { id: 'look', title: 'Look', purpose: 'Materials, light, FX', key: '3',
-    left: ['hierarchy'], center: ['scene', 'materials', 'shader_graph'], right: ['inspector', 'lighting'], bottom: ['assets', 'console'],
+    left: ['hierarchy'], center: ['scene', 'materials', 'shader_graph'], right: ['inspector', 'lighting', 'wind'], bottom: ['assets', 'console'],
     legacy: ['lightbake', 'postfx', 'effects', 'spectrafx_graph', 'spectrafx_gpu_assets', 'texture_resources', 'models', 'ModelingWindow'] },
   animate: { id: 'animate', title: 'Animate', purpose: 'Rigs, clips, graphs', key: '4',
     left: ['hierarchy'], center: ['animation', 'facial_rig', 'scene'], right: ['inspector'], bottom: ['assets', 'console'],
@@ -82,7 +82,7 @@ export function readActiveWorkspace(store: Storage | null = storage()): StudioWo
 export function saveActiveWorkspace(id: StudioWorkspace, store: Storage | null = storage()): void {
   try { store?.setItem(ACTIVE_KEY, id); } catch { /* private mode */ }
 }
-const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = { publish: ['build'] };
+const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = { publish: ['build'], look: ['wind'] };
 /** Saved layout of a workspace; the Scene workspace inherits the pre-workspace layout once. */
 export function readWorkspaceDock(id: StudioWorkspace, store: Storage | null = storage()): DockTree {
   try {
@@ -93,7 +93,7 @@ export function readWorkspaceDock(id: StudioWorkspace, store: Storage | null = s
     for (const panel of WORKSPACE_ADDED[id] ?? []) {
       const flag = 'aiverse.studio.ws.added.' + id + '.' + panel;
       if (store?.getItem(flag)) continue;
-      if (panelStack(tree, panel) === null) tree = reopenTab(tree, panel, 'dock-center');
+      if (panelStack(tree, panel) === null) tree = reopenTab(tree, panel, STUDIO_PANEL_HOME[panel]);
       store?.setItem(flag, '1');
     }
     return tree;

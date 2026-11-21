@@ -89,6 +89,14 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.materialPatch' || method === 'studio.materialCreate') {
     throw Error('Editing materials requires the native AIVERSE host');
   }
+  if(method==='studio.wind'){
+    const curve=(f:(t:number)=>number)=>Array.from({length:32},(_,i)=>Math.round(f(i/31)*1000)/1000);
+    return {settings:{enabled:true,speed:6,direction:0,gust:.35,scale:.035,debug:'off'},
+      library:{masks:[{name:'trunk',index:2,samples:curve(t=>t<.25?t*.12:t<.6?.03+(t-.25)*.77:.3+(t-.6)*1.75)},
+        {name:'branch',index:3,samples:curve(t=>t*t)},{name:'leaf',index:5,samples:curve(t=>Math.min(1,.5+t*.5))}],
+        profiles:[],uniqueMasks:8,warnings:[]},scene:{}} as StudioResult['studio.wind'];
+  }
+  if(method==='studio.windSet')throw Error('Wind preview requires the native host');
   if(method==='studio.nereidFlow')return {surfaces:[],computed:[]};
   if(method==='studio.nereidFlowSet')throw Error('NEREID flow editing requires the native host');
   if (method === 'studio.renderLighting') return { version: 1, indirect: 'off', direct: 'legacy', quality: 'high', probes: 8, layers: 4, spacing: 4, samples: 32, distance: 32, cpuBudgetMs: 2 } as StudioResult['studio.renderLighting'];

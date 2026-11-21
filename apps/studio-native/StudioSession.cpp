@@ -1020,6 +1020,10 @@ Json StudioSession::dispatch(const Json& request) {
                 }
             }
             reply.set("result",settings);
+        } else if(method=="studio.wind"||method=="studio.windSet"){
+            // Presentation-only preview: never touches the map or project files.
+            if(method=="studio.windSet")applyStudioWindPatch(wind_,params);
+            reply.set("result",studioWindJson(wind_,ws_.project.dir,windSceneStats_));
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {

@@ -75,7 +75,29 @@ struct WaterSurfaceStyle {
     // Defaults reproduce Stage 38 hard-coded shader colour.
     float rapidFoamR=0.84f, rapidFoamG=0.93f, rapidFoamB=0.94f;
     WaterRapidDetail rapidDetail=WaterRapidDetail::Medium;
+    // Suspended silt, 0..1. One authored value drives both views: from above
+    // the bed fades sooner and the body turns milky; under water visibility
+    // shrinks and the haze takes the silt colour. 0 keeps legacy optics.
+    float turbidity=0.f;
+    float siltR=0.42f, siltG=0.43f, siltB=0.31f; // linear in-scatter colour
 };
+
+// Effective optics after turbidity; renderers and the underwater view read
+// this instead of the authored fields so above/below water always agree.
+inline WaterSurfaceStyle resolvedWaterOptics(WaterSurfaceStyle s) {
+    const float t=std::clamp(s.turbidity,0.f,1.f);
+    if(t<=0.f)return s;
+    const float milk=0.75f*t;
+    s.deepR+=(std::clamp(s.siltR,0.f,1.f)-s.deepR)*milk;
+    s.deepG+=(std::clamp(s.siltG,0.f,1.f)-s.deepG)*milk;
+    s.deepB+=(std::clamp(s.siltB,0.f,1.f)-s.deepB)*milk;
+    s.absorption=std::min(4.f,s.absorption+1.6f*t);   // extinction per metre (t=1: ~2 m visibility)
+    s.depthTint=s.depthTint+(1.f-s.depthTint)*t;        // in-scatter replaces bed
+    s.underwaterScattering=std::max(s.underwaterScattering,0.85f*t);
+    s.refractionStrength*=1.f-0.5f*t;                   // silt blurs the bed
+    s.turbidity=0.f;
+    return s;
+}
 
 namespace water_mesh_detail {
 struct P {double x=0,z=0;};

@@ -11,6 +11,8 @@
 #include <set>
 #include <vector>
 #include <filesystem>
+#include <chrono>
+#include <optional>
 #include "apps/studio-native/StudioModelPicking.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/editor/core/MapDoc.h"
@@ -20,6 +22,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/RenderLightingRuntime.h"
 #include "engine/world/NereidManifestHost.h"
+#include "apps/studio-native/StudioWindPreview.h"
 #include "engine/render/PostFx.h"
 #include "engine/render/AdaptiveShadowResolution.h"
 #include "engine/render/RenderDeviceLifetime.h"
@@ -40,6 +43,9 @@ public:
                const StudioFacialPreviewBinding* facialBinding=nullptr);
     void captureNextFrame(gfx::Device::CaptureFn callback) { device_->captureNextFrame(std::move(callback)); }
     const std::string& lightingStatus() const { return lightingStatus_; }
+    // Preview wind for every rigged model (<model>.wind.json) + debug view.
+    void setWindPreview(const StudioWindState& state) { wind_ = state; }
+    Json windStats() const;
     bool facialReady() const noexcept{return facialReady_;}
     const std::string& facialError() const noexcept{return facialError_;}
     std::string pick(float x, float y, float width, float height,
@@ -105,6 +111,11 @@ public:
     // Material slot names of a loaded content model (for the Inspector's Mesh Renderer).
     std::vector<std::string> modelMaterialSlots(const std::string& asset) const;
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
+    // Automation (AIVERSE_STUDIO_WIND_SHOTS): frame a point of interest.
+    void setShotCamera(float tx, float ty, float tz, float distance, float yaw, float pitch) {
+        camera_.target={tx,ty,tz}; camera_.distance=distance; camera_.yaw=yaw; camera_.pitch=pitch;
+        cameraInitialized_=true;
+    }
 private:
     std::unique_ptr<gfx::Device> device_;
     std::unique_ptr<render::RenderDeviceLifetime> deviceLifetime_;
@@ -153,6 +164,10 @@ private:
     void clearDocumentModels();
     void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,
                             const Json& rules, const std::vector<StudioDocumentProxy>& proxies);
+    StudioWindState wind_;
+    size_t riggedInstances_ = 0, riggedParts_ = 0;
+    std::map<const render::Model*, std::optional<render::wind::ModelWindRigView>> windRigs_;
+    std::chrono::steady_clock::time_point windClock_ = std::chrono::steady_clock::now();
     // Facial/material preview FXAA (LDR); the map view keeps PRISMA HDR post_.
     render::PostFx antialiasing_;
     render::RTSCamera camera_;

@@ -16,7 +16,9 @@ pixel (by more than `occlusionToleranceMeters`) use their own circle, so the blu
 foreground bleeds over the background and the sharp zone. Taps at the same depth or behind
 are limited by the pixel's own circle, so the background still never bleeds onto a sharper
 foreground. Depth 1 (sky) is treated as the far plane instead of being skipped.
-New helpers `prismaDofCoc`, `prismaDofReach`. The legacy (non-metric) branch is unchanged.
+In the near field (pixel in front of the sharp interval) taps behind use the pixel's own
+circle, so the background shows through the blurred foreground edge instead of the edge
+ending on a sharp line. New helpers `prismaDofCoc`, `prismaDofReach`. The legacy (non-metric) branch is unchanged.
 Cost: 24 taps + depth reads per pixel instead of up to 8, for metric DoF only.
 
 ## Verified
@@ -30,6 +32,13 @@ over the column and the background instead of ending on a sharp line (before/aft
 
 GL / GLES / WebGL / Vulkan compilation of the new loop (same shared source, int division and
 `cos`/`sin` in a loop), mobile cost, CTest (no shader test covers this pass).
+
+## Tried and dropped
+
+A thin-lens CoC r(d) = r_inf*|d-S|/d for LENS overrides: physically right, but with the
+showcase lens (r_inf = 5 px) it left the near curtains and the mid-ground almost sharp, so
+the frame lost its depth of field. The linear ramp stays; revisit together with a larger
+blur budget (LENS clamps r_inf to 16 px) and more taps.
 
 ## Next
 
