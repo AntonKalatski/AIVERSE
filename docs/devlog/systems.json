@@ -131,7 +131,7 @@
       "flagship": true,
       "where": "main",
       "tagline": "Живая среда: ветер, огонь, земля",
-      "essence": "Жанронезависимые поля природы в ECS: ветер, огонь, землетрясения и нагрузки на конструкции, которые реагируют друг на друга.",
+      "essence": "Поля природы в ECS: ветер, огонь, землетрясения и нагрузки на конструкции, которые реагируют друг на друга.",
       "cover": null,
       "coverBrief": "Момент, где среда действует сама: пожар, который гонит ветер по траве, или постройка, ломающаяся от нагрузки. Видимые последствия, не тепловая карта отладки.",
       "article": "docs/physis.md",
@@ -175,7 +175,7 @@
         }
       ],
       "enables": [
-        "Добавить погоду, огонь и наводнения в игру любого жанра одной системой.",
+        "Добавить в игру погоду, огонь и наводнения одной системой.",
         "Толкать физические тела ветром и менять гравитацию — через отдельный адаптер Box3D.",
         "Задавать зоны ветра, штормы и гравитацию в JSON карты и править их прямо в сцене.",
         "Держать поля среды синхронными на сервере: сверка, повтор команд, восстановление после рестарта."
@@ -185,9 +185,9 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Ядро среды в ECS",
-          "text": "Жанронезависимая детерминированная сетка.",
+          "text": "Детерминированная сетка.",
           "titleEn": "Environment core in ECS",
-          "textEn": "A genre-neutral deterministic grid."
+          "textEn": "A deterministic grid."
         },
         {
           "status": "done",
@@ -239,10 +239,10 @@
         }
       ],
       "taglineEn": "A living environment: wind, fire, earth",
-      "essenceEn": "Genre-neutral nature fields in ECS: wind, fire, earthquakes and structural stress that react to each other.",
+      "essenceEn": "Nature fields in ECS: wind, fire, earthquakes and structural stress that react to each other.",
       "coverBriefEn": "A moment where the environment acts on its own: wind driving a fire through grass, or a structure failing under stress. Visible consequences, not a debug heatmap.",
       "enablesEn": [
-        "Add weather, fire and floods to a game of any genre with one system.",
+        "Add weather, fire and floods to a game with one system.",
         "Push physics bodies with wind and change gravity — through a separate Box3D adapter.",
         "Author wind zones, storms and gravity in map JSON and edit them right in the scene.",
         "Keep environment fields in sync on the server: reconciliation, command replay, recovery after a restart."
@@ -257,7 +257,7 @@
       "flagship": true,
       "where": "main",
       "tagline": "Вода, которая ведёт себя как вода",
-      "essence": "Универсальная вода: реки, озёра и океан, плавучесть и сопротивление, брызги, волны и след от движения.",
+      "essence": "Реки, озёра и океан, плавучесть и сопротивление, брызги, волны и след от движения.",
       "cover": null,
       "coverBrief": "Река NEREID в Alpine River Valley: течение через изгибы, пена и белая вода на перекатах, камни в потоке — снято через LENS без интерфейса редактора; лучше коротким видео.",
       "article": "docs/nereid/ARCHITECTURE.md",
@@ -271,9 +271,9 @@
         },
         {
           "name": "Плавучесть",
-          "text": "Сила плавучести и сопротивления для любых жанров.",
+          "text": "Силы плавучести и сопротивления воды.",
           "nameEn": "Buoyancy",
-          "textEn": "Buoyancy and drag forces for any genre."
+          "textEn": "Buoyancy and water drag forces."
         },
         {
           "name": "Течение на GPU",
@@ -399,7 +399,7 @@
         }
       ],
       "taglineEn": "Water that behaves like water",
-      "essenceEn": "Universal water: rivers, lakes and ocean, buoyancy and drag, splashes, waves and wakes.",
+      "essenceEn": "Rivers, lakes and ocean, buoyancy and drag, splashes, waves and wakes.",
       "coverBriefEn": "A NEREID river in Alpine River Valley: flow through bends, foam and whitewater over rapids, rocks in the stream — captured with LENS without editor UI; ideally a short video.",
       "enablesEn": [
         "Build rivers, lakes and ocean with one data model for gameplay and visuals.",
@@ -752,7 +752,7 @@
         }
       ],
       "enables": [
-        "Делать цифровых людей для любого жанра: кат-сцены, NPC, аватары, портреты в диалогах.",
+        "Делать цифровых людей: кат-сцены, NPC, аватары, портреты в диалогах.",
         "Оживлять лицо мимикой, морганием и взглядом поверх любой анимации тела.",
         "Показывать персонажа крупным планом без ступенчатых теней."
       ],
@@ -826,7 +826,7 @@
       "essenceEn": "A facial controller and GPU morphs on top of MotionWeave animation: expressions, blinking, eyes and LODs for characters.",
       "coverBriefEn": "A close-up portrait of a digital human in studio light: skin, eyes and lively expressions.",
       "enablesEn": [
-        "Build digital humans for any genre: cutscenes, NPCs, avatars, dialogue portraits.",
+        "Build digital humans: cutscenes, NPCs, avatars, dialogue portraits.",
         "Bring faces to life with expressions, blinking and gaze on top of any body animation.",
         "Show characters in close-up without stepped shadows."
       ]
@@ -1182,7 +1182,7 @@
       "flagship": true,
       "where": "main",
       "tagline": "Анимация персонажей",
-      "essence": "Графы анимации, ретаргет между ригами, LOD скелетов и вложения — единая анимация для всех жанров.",
+      "essence": "Графы анимации, ретаргет между ригами, LOD скелетов и вложения.",
       "cover": null,
       "coverBrief": "Персонаж в движении: смешение анимаций, ретаргет на разные риги или толпа с LOD; стоп-кадр должен читаться как движение.",
       "article": "docs/motionweave.md",
@@ -1277,7 +1277,7 @@
         }
       ],
       "taglineEn": "Character animation",
-      "essenceEn": "Animation graphs, retargeting between rigs, skeleton LODs and attachments — one animation system for every genre.",
+      "essenceEn": "Animation graphs, retargeting between rigs, skeleton LODs and attachments.",
       "coverBriefEn": "A character in motion: blended animations, retargeting onto different rigs or a crowd with LOD; a still must read as motion.",
       "enablesEn": [
         "One animation system for RTS armies, FPS characters and cutscenes.",
