@@ -6,7 +6,7 @@
 #include "engine/world/TerraWeaveEarthworks.h"
 #include "engine/world/TerraWeaveRootEvents.h"
 #include "engine/world/TerraWeaveGrassCover.h"
-#include <aiverselib/water/NereidErosion.h>
+#include "engine/world/nereid/NereidErosion.h"
 #include <algorithm>
 #include <cstdint>
 #include <map>
