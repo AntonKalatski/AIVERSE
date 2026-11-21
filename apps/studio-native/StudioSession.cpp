@@ -51,7 +51,6 @@ Json numericProp(const char* key, const char* label, Json value, bool integer = 
     return r;
 }
 std::string nodeId(const editor::MapDoc& map,const editor::DocumentEntityRef& ref) { return studioDocumentId(map,ref); }
-std::string nodeId(const editor::DocumentEntityRef& ref,const editor::MapDoc& map) { return studioDocumentId(map,ref); }
 // Resolve native picker/CLI inputs before locating the project-local journal.
 // Workspace supports directories, manifest/project files and sample template IDs.
 std::string recoveredProjectDir(const editor::Workspace& ws,const std::string& input) {
