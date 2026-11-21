@@ -1,4 +1,4 @@
-// Typed FPS vehicles over the vehicle-controllers package (libraries/.../genre/Vehicle*.h): map vehicles with a
+// Typed FPS vehicles over the vehicle-controllers package (libraries/.../mechanics/Vehicle*.h): map vehicles with a
 // `type` from `fps.vehicleTypes` drive with the package controller (wheeled / tracked / hover / flight) on the
 // ground height under them, collide with static geometry through the package's collision response, and carry a
 // driver plus passengers / gunners through the package's seats. Vehicles without a type keep the arcade car (FpsSystems actorSystems).
@@ -6,6 +6,7 @@
 // Passengers and gunners may shoot; the driver steers. A destroyed vehicle kills its occupants.
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/mechanics/VehiclePersistence.h"
+#include "libraries/include/aiverselib/mechanics/VehicleDrive.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 namespace aiverse::fps {
@@ -36,6 +37,7 @@ bool Module::canFireFromVehicle(Simulation& sim,const CharacterRef& a) const {
 // Interact on or in a typed vehicle becomes a seat request handled by tickVehicles this tick. False: not typed.
 bool Module::vehicleInteract(Simulation& sim,CharacterRef a) {
     World& w=sim.world();if(!w.countExisting<VehicleDrive>())return false;
+    if(state(sim).race.enabled)return true;   // racers stay at the wheel: Interact does nothing during a race
     VehicleSeatRequest r;r.actor=a.slot;r.team=a.team;r.actorPosition=a.pos;
     if(a.vehicle){
         auto* run=vehicleDrive(sim,a.vehicle);if(!run)return false;
@@ -53,12 +55,18 @@ bool Module::vehicleInteract(Simulation& sim,CharacterRef a) {
     r.id=best->seats.lastRequest+1+int64_t(best->requests.size());r.action=VehicleSeatAction::Enter;r.preferred=VehicleSeatRole::Driver;
     best->requests.push_back(r);return true;
 }
-void Module::tickVehicles(Simulation& sim) {
+// The driver's held controls (released after the input timeout) through the shared axes mapping (mechanics/VehicleDrive.h):
+// forward / back -> throttle / brake, right steers, Jump is the handbrake, pitch drives flight.
+VehicleInput Module::driverInput(const ConstCharacterRef& a,uint32_t now) const {
+    if(now-a.lastInputTick>config_.inputTimeout)return {};
+    return vehicleInputFromAxes({Fixed::fromRatio(a.input.forward,1000),Fixed::fromRatio(a.input.right,1000),a.input.pitch,(a.input.buttons&Jump)!=0});
+}
+void Module::tickVehicles(Simulation& sim,std::span<const std::pair<uint32_t,VehicleInput>> drive) {
     World& w=sim.world();if(!w.countExisting<VehicleDrive>())return;auto now=sim.tick();
     const auto count=int64_t(characterCount(sim));
     for(const Entity entity:vehicleEntities(sim)){
-        auto* drive=w.tryGet<VehicleDrive>(entity);if(!drive)continue;
-        auto& run=*drive;Vehicle* v=w.tryGet<Vehicle>(entity);
+        auto* typed=w.tryGet<VehicleDrive>(entity);if(!typed)continue;
+        auto& run=*typed;Vehicle* v=w.tryGet<Vehicle>(entity);
         const auto& def=config_.vehicleTypes->vehicles.at(run.type);
         // Seats: enter / exit requests of this tick; an occupant with a free seat ahead takes the driver seat first.
         auto clear=[&](Vec3 p,int64_t){auto b=bodyBounds(p,config_.motor.height,config_.motor);b.min.y+=Fixed::fromRatio(1,100);return !collision_.blocked(b)&&fxAbs(p.x)<config_.worldLimit&&fxAbs(p.z)<config_.worldLimit;};
@@ -78,12 +86,8 @@ void Module::tickVehicles(Simulation& sim) {
         // Controller step: the driver's held input (released after the input timeout) -> pedals and steering.
         VehicleInput in;
         if(driver&&v->health>0){
-            const auto a=character(sim,uint8_t(driver));
-            if(now-a.lastInputTick<=config_.inputTimeout){
-                auto f=Fixed::fromRatio(a.input.forward,1000);in.throttle=fxMax(Fixed{},f);in.brake=fxMax(Fixed{},-f);
-                in.steer=fxClamp(Fixed::fromRatio(a.input.right,1000),-1_fx,1_fx);in.handbrake=(a.input.buttons&Jump)!=0;
-                in.pitch=fxClamp(-a.input.pitch*4,-1_fx,1_fx);in.yaw=in.steer;
-            }
+            in=driverInput(character(static_cast<const Simulation&>(sim),uint8_t(driver)),now);
+            for(const auto& [id,x]:drive)if(id==v->id){in=x;break;}
         }else in.brake=1_fx;
         auto under=run.controller.position+Vec3{{},2_fx,{}};auto hit=collision_.cast(under,{{},-64_fx,{}});
         VehicleContacts k;k.groundHeight=hit.hit?under.y-64_fx*hit.fraction:groundBelow(run.controller.position);k.groundNormal=hit.hit&&hit.normal.y>Fixed{}?hit.normal:Vec3{{},1_fx,{}};
@@ -95,7 +99,7 @@ void Module::tickVehicles(Simulation& sim) {
             if(sweep.hit&&sweep.normal.y<Fixed::fromRatio(1,2)){
                 auto stop=before+Vec3{delta.x,{},delta.z}*fxMax(Fixed{},sweep.fraction-Fixed::fromRatio(1,100));stop.y=run.controller.position.y;
                 auto impulse=vehicleResolveCollision(run.controller,stop,sweep.normal);
-                if(impulse>8_fx)v->health=std::max(0,v->health-int32_t((impulse-8_fx).toInt()*10));   // hard crash
+                if(impulse>8_fx&&(!raceRules_||raceRules_->crashDamage))v->health=std::max(0,v->health-int32_t((impulse-8_fx).toInt()*10));   // hard crash
             }
             auto& p=run.controller.position;p.x=fxClamp(p.x,-config_.worldLimit,config_.worldLimit);p.z=fxClamp(p.z,-config_.worldLimit,config_.worldLimit);
         }

@@ -148,6 +148,16 @@ thrown-out occupants are ejected; a destroyed vehicle kills everyone inside. Veh
 legacy car. FPS save version 9 stores controller and seat state. `templates/fps_survival` has ten four-seat cars
 (`rules/vehicles.json`). Test: `typedVehicles` in `tests/fps/tests.cpp`.
 
+## Races
+
+A map `"race"` block makes the typed map vehicles race: the shared race capability of every project, documented in
+[races.md](races.md) (data, behaviour, HUD). This module's adapter is `modules/fps/FpsRace.cpp`: player `i` is seated
+as the driver of the `i`-th typed map vehicle (ascending vehicle id); the race decides the round. ECS shape: the
+session is match-level data (`State::race`), every character entity carries `CharacterRacer{vehicle}`, the cars are
+the `Vehicle` + `VehicleDrive` entities. FPS save version 10 appends the race block (session + each racer's vehicle id)
+only on maps with a race; snapshots carry the player's `lib::mechanics::RaceView` (authority protocol 6). The client
+shows the chase camera and the race HUD at the wheel and hides the weapon UI.
+
 ## Generated buildings (opt-in)
 
 Map `buildings` lists [building-gen](../skills/world/aiverse-building-gen/SKILL.md) houses:
