@@ -8,6 +8,7 @@
 #include "StrataView.h"
 #include "GlobalGeometryPool.h"
 #include "StrataIndexResidency.h"
+#include "StrataDebugView.h"
 
 #include <memory>
 #include <map>
@@ -116,6 +117,19 @@ public:
     // device is refused without destroying foreign RHI buffer handles.
     void shutdown(gfx::Device& device);
     const PortableRenderStats& stats() const { return stats_; }
+    // Debug visualisation only (default OFF). When enabled, every successful
+    // prepareModel publishes the exact selected frontier it wrote into the
+    // alias. Failed preparations leave the previous record untouched, like
+    // the alias itself. Never read back from GPU; never alters selection.
+    void setDebugCaptureEnabled(bool on) {
+        debugCapture_=on;
+        if(!on)std::vector<SelectedCluster>().swap(debugSelection_);
+    }
+    bool debugCaptureEnabled() const { return debugCapture_; }
+    const std::vector<SelectedCluster>& debugSelection() const {
+        return debugSelection_;
+    }
+    const ModelAsset* debugAsset() const { return asset_; }
     gfx::BufferHandle indexBuffer() const { return indexBuffer_; }
     uint32_t firstIndex() const { return firstIndex_; }
 private:
@@ -137,6 +151,8 @@ private:
     uint64_t sourceMaterialRevision_ = 0;
     std::vector<uint32_t> primitiveOffsets_;
     PortableRenderStats stats_{};
+    bool debugCapture_ = false;
+    std::vector<SelectedCluster> debugSelection_;
 };
 
 } // namespace aiverse::render::strata

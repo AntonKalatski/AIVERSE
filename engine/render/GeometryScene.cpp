@@ -231,6 +231,7 @@ void GeometryScene::retireResident(gfx::Device& dev) {
     for (auto& [source, staged] : strataPortableSources_)
         if (staged) staged->shutdown(dev);
     strataPortableSources_.clear();
+    strataDebugGeometry_.clear();
     // The original RHI buffers are already released through their owner;
     // only now return cross-world reservations to the device ledger.
     for(const auto& [source,token]:strataGlobalIndexLeases_)
@@ -473,8 +474,18 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             for (const auto& instance : instances_)
                 usedSources.insert(instance.model);
             for (const auto& [file, model] : models_)
-                if (model && usedSources.count(model.get()))
+                if (model && usedSources.count(model.get())) {
                     strataStaging_->stage(file, *model);
+                    // Debug-only copy BEFORE uploadModel releases vertices.
+                    if (strataDebugGeometryCapture_ &&
+                        strataStaging_->find(file)) {
+                        auto geometry=
+                            std::make_shared<strata::DebugGeometry>();
+                        if (strata::captureDebugGeometry(*model,*geometry))
+                            strataDebugGeometry_[model.get()]=
+                                std::move(geometry);
+                    }
+                }
             const auto& st = strataStaging_->stats();
             stats_.strataSources = st.stagedSources;
             stats_.strataPrimitives = st.stagedPrimitives;
@@ -657,6 +668,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                         }
                     }
                 }
+                source->setDebugCaptureEnabled(strataDebugView_.enabled);
                 strataPortableSources_.emplace(model.get(), std::move(source));
                 ++stats_.strataPortableSources;
                 // Disk manifest was matched against the entire source,
@@ -976,6 +988,7 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
 }
 void GeometryScene::draw(Renderer3D& r){
     stats_.submitted=0;stats_.surfaceProxiesSubmitted=0;
+    strataDebugStats_.reset();
     updateStrataStreamingBeforeDraw(r);
     if(hlod_&&!groups_.empty())drawGroup(r,0);
     else for(auto& i:instances_)drawInstance(r,i);
@@ -1331,7 +1344,79 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     stats_.strataLodHysteresisHistories=
         uint32_t(strataPortableLodHistories_.size());
 #endif
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if(strataDebugView_.enabled)drawStrataDebug(r,i,d,gpuStrataPrepared);
+#endif
     r.drawModel(d);++stats_.submitted;
+}
+
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+namespace {
+// Immediate overlay sink: Renderer3D owns the actual line/triangle passes.
+class RendererDebugSink final : public strata::DebugSink {
+public:
+    explicit RendererDebugSink(Renderer3D& r) : r_(r) {}
+    void line(float3 a,float3 b,uint32_t c) override { r_.line(a,b,c); }
+    void triangle(float3 a,float3 b,float3 c,uint32_t col) override {
+        r_.triangle(a,b,c,col);
+    }
+private:
+    Renderer3D& r_;
+};
+} // namespace
+#endif
+
+bool GeometryScene::setStrataDebugView(const strata::DebugViewOptions& o){
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if(!strata::validDebugViewOptions(o))return false;
+    strataDebugView_=o;
+    for(auto& [model,source]:strataPortableSources_)
+        if(source)source->setDebugCaptureEnabled(o.enabled);
+    if(!o.enabled)strataDebugStats_.reset();
+    return true;
+#else
+    (void)o;
+    return false; // STRATA not compiled into this runtime
+#endif
+}
+
+uint64_t GeometryScene::strataDebugGeometryBytes() const {
+    uint64_t bytes=0;
+    for(const auto& [model,geometry]:strataDebugGeometry_)
+        if(geometry)bytes+=geometry->bytes();
+    return bytes;
+}
+
+void GeometryScene::drawStrataDebug(Renderer3D& r,const Instance& i,
+                                    const ModelDraw& d,bool gpuRoute){
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    const auto& o=strataDebugView_;
+    auto& st=strataDebugStats_;
+    RendererDebugSink sink(r);
+    const auto source=strataPortableSources_.find(i.model);
+    const bool staged=source!=strataPortableSources_.end() && source->second;
+    const auto slot=strataPortableDrawModels_.find(&i);
+    const bool portable=!gpuRoute && staged &&
+        slot!=strataPortableDrawModels_.end() && slot->second &&
+        d.model==slot->second.get();
+    strata::DebugRoute route=strata::DebugRoute::Legacy;
+    if(gpuRoute)route=strata::DebugRoute::StrataVulkanGpu;
+    else if(portable)route=strata::DebugRoute::StrataPortable;
+    else if(staged)route=strata::DebugRoute::LegacyFallback;
+    if(route==strata::DebugRoute::Legacy && !o.includeLegacy)return;
+    ++st.instances;
+    if(o.instanceBounds && i.min.x<=i.max.x)
+        strata::emitDebugBox(sink,mat4::identity(),i.min,i.max,
+                             strata::debugRouteColor(route),o,st);
+    // The GPU route has no CPU frontier (no readback): bounds only.
+    if(!portable || !source->second->debugAsset())return;
+    const auto geometry=strataDebugGeometry_.find(i.model);
+    strata::emitSelectedClusters(sink,*source->second->debugAsset(),*i.model,
+        geometry!=strataDebugGeometry_.end() ? geometry->second.get() : nullptr,
+        i.world,source->second->debugSelection(),o,st);
+#else
+    (void)r;(void)i;(void)d;(void)gpuRoute;
+#endif
 }
 
 }
