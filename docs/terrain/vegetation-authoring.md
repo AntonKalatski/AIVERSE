@@ -302,3 +302,32 @@ Five-layer normal projection uses a surface gradient projected onto the shading
 tangent plane; do not normalize projected UV axes independently on a slope.
 Legacy four-layer mode retains the earlier basis. Projection still chooses a
 dominant axis, not a smooth three-axis blend; cliffs need visual acceptance.
+
+
+### Six-layer height-gradient PBR terrain
+
+New opt-in builder example (updated native compiler required):
+
+    --sand-layer river_sand --secondary-sand pebble_sand \
+    --rock-layer granite_rock --secondary-rock schist_rock --height-normals
+
+This blends grass/two sands/two rocks/snow with original continuous world masks.
+RGB native masks and the sum of shore/rock weights remain unchanged; alpha noise
+splits families. Normalized physical microrelief is packed into albedo alpha
+(linear, not opacity), with shared relief metres stored in the manifest. Heights
+are centered consistently before mixing. The generic normalFromHeight node
+reconstructs a world-space shading normal after height blending; output color
+is explicitly opaque. NormalScale0 prevents double-application of the old baked
+normal fallback. The ordinary source PBR libraries still include normal maps.
+
+Six layers:117nodes,13samples,3sourceimages, two3x2 atlases (heightcolorRGBA and
+ORM), not six independent material bindings or a raised graph budget. The four/
+five-layer normal-atlas authoring modes remain available. Height mode needs the
+terrain catalog alongside the source textures for per-family physical amplitudes.
+No geometry displacement, erosion or real GPU speedup follows from sample count.
+Dominant-axis projection remains; severe cliff transitions still need acceptance.
+Granite/schist source prompts and seam processing are in pbr_sources/README.md.
+
+For a long-distance showcase, explicitly author existing lighting.fogDensity
+in the project. Renderer default.0025 can wash out a small alpine scene; the
+review uses.00035. This is scene tuning, not a global engine-default change.

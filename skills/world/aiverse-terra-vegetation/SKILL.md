@@ -111,3 +111,11 @@ weather-driven accumulation, snow geometry or load simulation. The host owns
 season selection. Generic thinTransmission is direct diffuse-sheet sun
 transport, default0; native botanical leaf materials opt into.35, snow materials
 0. Do not call either shadowDiffusion or this thin-sheet approximation full SSS.
+
+
+For varied shores and mountains, terrain detail builder supports paired sand
+and rock families with --height-normals (requires normalFromHeight native
+compiler). Read vegetation-authoring.md: six layers stay117nodes/13samples/
+3sources, using albedo alpha as physical height and explicit opaque color.
+Retain normalScale0 override in this mode to avoid double normal mapping.
+This is PBR shading only; terrain/entity/erosion ownership stays native Terra.

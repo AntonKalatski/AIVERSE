@@ -8,7 +8,7 @@ import json, argparse
 import numpy as np
 from PIL import Image
 
-MATERIALS={'grass':(2.0,.004,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'forest_floor':(2.0,.025,.91),'wet_soil':(2.0,.022,.59),'gravel_soil':(2.0,.045,.85),'snow_crust':(2.0,.006,.66),'river_sand':(4.0,.002,.87),'pebble_sand':(4.0,.012,.82),'checkerboard':(4.0,0,.68)}
+MATERIALS={'grass':(2.0,.004,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'forest_floor':(2.0,.025,.91),'wet_soil':(2.0,.022,.59),'gravel_soil':(2.0,.045,.85),'snow_crust':(2.0,.006,.66),'river_sand':(4.0,.002,.87),'pebble_sand':(4.0,.012,.82),'granite_rock':(4.0,.04,.83),'schist_rock':(4.0,.035,.90),'checkerboard':(4.0,0,.68)}
 SIZE=1024
 
 def tile(a):
@@ -48,6 +48,12 @@ def bake(root):
             base=np.asarray(Image.open(Path(__file__).resolve().parent/'pbr_sources'/f'{name}_basecolor.png').convert('RGB').resize((SIZE,SIZE),Image.Resampling.LANCZOS),dtype=float)/255
             height=np.asarray(Image.open(Path(__file__).resolve().parent/'pbr_sources'/f'{name}_height.png').convert('L').resize((SIZE,SIZE),Image.Resampling.LANCZOS),dtype=float)/255
             base=tile(base);height=tile(height)
+            if name=='schist_rock':
+                # A broad plate crossed the first overlap cut. A second
+                # coherent quarter-period overlap removes its repeated edge
+                # in BOTH albedo and height before normal/AO derivation.
+                base=tile(np.roll(base,(SIZE//4,SIZE//4),axis=(0,1)))
+                height=tile(np.roll(height,(SIZE//4,SIZE//4),axis=(0,1)))
             if name=='grass':
                 # Remove source-wide illumination/colour drift before repetition.
                 # The blade detail stays; broad dark/light bands must not become

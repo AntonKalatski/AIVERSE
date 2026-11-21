@@ -33,3 +33,18 @@ approximations, not measured or scanned surface properties. Tool image output
 was1774x887; halves887px before deterministic1024px runtime resampling.
 Files generated with exec-32d50571-a834-44ab-bea7-17fab120447e and
 exec-bf64098b-cd88-4922-8178-6b093feb0a0c respectively.
+
+
+2026-11-21 dark cliff families granite_rock and schist_rock were authored with
+built-in image_gen, not API CLI. Original source sheets and lossless albedo/height
+halves retained. Prompt set: two aligned square panels, left unlit diffuse dark
+alpine granite / weathered slate-grey schist, right corresponding grayscale
+relief; overhead4m square, seamless EACH panel, irregular fractured mineral
+plates/grain, restrained brown weathering, no regular stripes, rectangular blocks,
+snow, moss, water, perspective, lighting, highlights, labels or borders.
+Original sheets1774x887, halves887px resampled to1K by baker. Artist approximations,
+not scans or measured albedo/height/roughness/AO. Granite source tool output
+exec-b0931ea2-a560-4609-b385-3d35b29ef19a; schist exec-1ca05e8f-1b56-45ac-87f4-01c78760ae96.
+Schist first periodic overlap left an overly strong repeated AO/height edge;
+coherent second quarter-period overlap is applied to BOTH colour and height
+before normal/AO derivation, then wrap seams audited. Original source preserved.

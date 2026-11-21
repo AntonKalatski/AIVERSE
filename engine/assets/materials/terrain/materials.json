@@ -252,6 +252,52 @@
       1
     ]
   },
+  "terrain_granite_rock": {
+    "description": "Bundled terrain PBR: granite_rock. Dielectric; 4 m repeat.",
+    "texture": "materials/terrain/textures/granite_rock_basecolor_repeat.png",
+    "normalMap": "materials/terrain/textures/granite_rock_normal_repeat.png",
+    "metallicRoughnessMap": "materials/terrain/textures/granite_rock_orm_repeat.png",
+    "occlusionMap": "materials/terrain/textures/granite_rock_ao_repeat.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "roughness": 1,
+    "metallic": 0,
+    "normalScale": 1,
+    "occlusionStrength": 1,
+    "vertexColors": false,
+    "team": "none",
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "terrain_schist_rock": {
+    "description": "Bundled terrain PBR: schist_rock. Dielectric; 4 m repeat.",
+    "texture": "materials/terrain/textures/schist_rock_basecolor_repeat.png",
+    "normalMap": "materials/terrain/textures/schist_rock_normal_repeat.png",
+    "metallicRoughnessMap": "materials/terrain/textures/schist_rock_orm_repeat.png",
+    "occlusionMap": "materials/terrain/textures/schist_rock_ao_repeat.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "roughness": 1,
+    "metallic": 0,
+    "normalScale": 1,
+    "occlusionStrength": 1,
+    "vertexColors": false,
+    "team": "none",
+    "uvScale": [
+      1,
+      1
+    ]
+  },
   "terrain_checkerboard": {
     "description": "Bundled terrain PBR: checkerboard. Dielectric; 4 m repeat.",
     "texture": "materials/terrain/textures/checkerboard_basecolor_repeat.png",

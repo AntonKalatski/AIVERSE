@@ -197,6 +197,40 @@
       }
     },
     {
+      "id": "granite_rock",
+      "repeatMeters": 4.0,
+      "heightMeters": 0.04,
+      "heightMap": "materials/terrain/textures/granite_rock_height_repeat.png",
+      "terrainLayer": {
+        "id": "granite_rock",
+        "texture": "materials/terrain/textures/granite_rock_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/granite_rock_terrain_normal_repeat.png",
+        "scale": 4.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "schist_rock",
+      "repeatMeters": 4.0,
+      "heightMeters": 0.035,
+      "heightMap": "materials/terrain/textures/schist_rock_height_repeat.png",
+      "terrainLayer": {
+        "id": "schist_rock",
+        "texture": "materials/terrain/textures/schist_rock_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/schist_rock_terrain_normal_repeat.png",
+        "scale": 4.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
       "id": "checkerboard",
       "repeatMeters": 4.0,
       "heightMeters": 0,

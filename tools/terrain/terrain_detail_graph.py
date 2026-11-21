@@ -8,7 +8,12 @@ import json
 
 
 def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
-                   noise_underlay=True, resolution=1024, gutter=32, mask_resolution=1024, secondary_sand=False):
+                   noise_underlay=True, resolution=1024, gutter=32, mask_resolution=1024, secondary_sand=False, secondary_rock=False,
+                   height_normals=False, height_metres=.04):
+    if secondary_rock and not height_normals:
+        raise ValueError('secondary rock requires height-normal mode')
+    if not math.isfinite(height_metres) or not 0 < height_metres <= 1:
+        raise ValueError('height relief must be0..1 metres')
     if not math.isfinite(metres) or not 0.25 <= metres <= 64:
         raise ValueError('detail metres 0.25..64')
     if not math.isfinite(transparency) or not 0 <= transparency <= .2:
@@ -48,10 +53,11 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     total = add_many(weights)
     weights = [n('divide', weight, total) for weight in weights]
     gray = n('alpha', mask)
-    if secondary_sand:
-        grass, sand, rock, snow = weights
-        weights = [grass, n('multiply', sand, n('oneMinus', gray)),
-                   n('multiply', sand, gray), rock, snow]
+    grass, sand, rock, snow = weights
+    weights=[grass]
+    weights += [n('multiply', sand, n('oneMinus', gray)), n('multiply', sand, gray)] if secondary_sand else [sand]
+    weights += [n('multiply', rock, gray), n('multiply', rock, n('oneMinus', gray))] if secondary_rock else [rock]
+    weights.append(snow)
     world = n('worldPosition')
     normal = n('normal')
     # Dominant-axis projection also covers steep cliffs. Base normal is world
@@ -71,7 +77,7 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
     lod = n('clampRange', n('log2', n('multiply', footprint, c(resolution))), c(0), c(4))
     wrapped = n('fract', tiled)
     cell = resolution + 2 * gutter
-    columns = 3 if secondary_sand else 2
+    columns = 3 if len(weights)>4 else 2
     atlas_size = [columns * cell, 2 * cell]
     colors, normals, roughness = [], [], []
     for i, weight in enumerate(weights):
@@ -79,24 +85,28 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
                   (i // columns * cell + gutter) / atlas_size[1], 0, 0]
         coordinate = n('add', n('multiply', wrapped, c([resolution / atlas_size[0], resolution / atlas_size[1], 0, 0])), c(offset))
         color = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['basecolor'], srgb=True)
-        detail_normal = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['normal'])
+        detail_normal = None if height_normals else n('sampleTextureLod', coordinate, lod, texture=atlas_paths['normal'])
         orm = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['orm'])
         colors.append(n('multiply', color, weight))
-        normals.append(n('multiply', detail_normal, weight))
+        if not height_normals:
+            normals.append(n('multiply', detail_normal, weight))
         roughness.append(n('multiply', orm, weight))
     color = add_many(colors)
+    height = n('multiply', n('alpha', color), c(height_metres)) if height_normals else None
     if noise_underlay:
         # Grayscale texture is packed in mask alpha, independent of PBR alpha.
         gray = n('alpha', mask)
-        underlay = n('mix', c([.06,.06,.06,1]) if secondary_sand else c(.06),
-                     c([.30,.30,.30,1]) if secondary_sand else c(.30), gray)
+        underlay = n('mix', c([.06,.06,.06,1]) if secondary_sand or height_normals else c(.06),
+                     c([.30,.30,.30,1]) if secondary_sand or height_normals else c(.30), gray)
         color = n('mix', color, underlay, c(transparency))
     # Normalized layer weights and opaque underlay already preserve alpha1.
-    if not secondary_sand:
+    if not secondary_sand or height_normals:
         color = n('setAlpha', color, c(1))
-    detail = n('normalUnpack', add_many(normals))
+    detail = None if height_normals else n('normalUnpack', add_many(normals))
     # Projected UV basis vectors; remove the component along the geometric N.
-    if secondary_sand:
+    if height_normals:
+        final_normal=n('normalFromHeight', world, normal, height)
+    elif secondary_sand:
         # Surface gradient for world-axis projection: project the encoded
         # gradient onto the shading tangent plane. Normalizing each projected
         # axis separately incorrectly boosts detail on tilted banks.
@@ -114,12 +124,12 @@ def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
         final_normal = n('normalize3', n('add', n('multiply', normal, n('blue', detail)), perturb))
     surface_orm = add_many(roughness)
     roughness_output = n('green', surface_orm)
-    occlusion_output = n('red', surface_orm) if secondary_sand else None
+    occlusion_output = n('red', surface_orm) if secondary_sand or height_normals else None
     metallic_output = c(0)
     if len(nodes) > 128:
         raise ValueError('terrain graph exceeds native node budget')
     outputs=dict(color=color, normal=final_normal, roughness=roughness_output, metallic=metallic_output)
-    if secondary_sand:
+    if secondary_sand or height_normals:
         outputs['occlusion']=occlusion_output
     return dict(version=1, domain='material', minQuality='low', sampleBudget=16,
                 nodes=nodes, outputs=outputs)
