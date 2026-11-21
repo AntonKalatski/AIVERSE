@@ -1,7 +1,8 @@
+import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { StudioProperty } from '../types';
 import AssetReferencePicker from './AssetReferencePicker';
-import { isSameFieldValue, parseFieldDraft, validateBooleanChange } from '../propertyLogic';
+import { isSameFieldValue, parseFieldDraft, scrubValue, validateBooleanChange } from '../propertyLogic';
 
 interface PropertyFieldProps {
   property: StudioProperty;
@@ -9,10 +10,11 @@ interface PropertyFieldProps {
   onChange: (value: string | number | boolean) => void;
   /** 'axis': compact single-letter label for X/Y/Z vector rows. */
   variant?: 'row' | 'axis';
+  className?: string;
 }
 
 /** Controlled, schema-driven property editor; writes happen only after validation. */
-export default function PropertyField({ property, disabled, onChange, variant = 'row' }: PropertyFieldProps) {
+export default function PropertyField({ property, disabled, onChange, variant = 'row', className }: PropertyFieldProps) {
   const [draft, setDraft] = useState(String(property.value));
   const [error, setError] = useState('');
   const skipBlur = useRef(false);
@@ -53,8 +55,43 @@ export default function PropertyField({ property, disabled, onChange, variant = 
     </label>;
   }
 
-  return <label className={'property-row' + (variant === 'axis' ? ' property-row--axis' : '')}>
-    <span>{property.label}</span>
+  // Drag the label (Unity "scrub"): 1 px = 1 step; Shift = fine, Alt = snap
+  // (15° for rotations, 1 unit otherwise). One commit on release = one undo step.
+  const scrubbable = property.type === 'number' && !property.options?.length && !locked;
+  const scrub = useRef<{ x: number; start: number; value: number; moved: boolean } | null>(null);
+  const scrubHandlers = scrubbable ? {
+    onPointerDown: (event: React.PointerEvent<HTMLSpanElement>) => {
+      if (event.button !== 0) return;
+      const start = Number(draft.trim() === '' ? property.value : draft);
+      if (!Number.isFinite(start)) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      scrub.current = { x: event.clientX, start, value: start, moved: false };
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLSpanElement>) => {
+      const s = scrub.current;
+      if (!s) return;
+      const dx = event.clientX - s.x;
+      if (!s.moved && Math.abs(dx) < 2) return;
+      s.moved = true;
+      const rotation = /^rotation|^yaw$|^facing$/.test(property.key);
+      s.value = scrubValue(s.start, dx, { step: property.step ?? (rotation ? 1 : undefined), min: property.min, max: property.max,
+        integer: property.integer, fine: event.shiftKey, snap: event.altKey ? (rotation ? 15 : 1) : undefined });
+      setDraft(String(s.value)); setError('');
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLSpanElement>) => {
+      const s = scrub.current;
+      scrub.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      if (s?.moved) validateAndCommit(String(s.value));
+    },
+    onPointerCancel: () => { scrub.current = null; setDraft(String(property.value)); },
+    // A click on a <label> focuses its input; a scrub must not.
+    onClick: (event: React.MouseEvent) => { event.preventDefault(); },
+    title: 'Drag to change · Shift fine · Alt snap',
+  } : {};
+  return <label className={'property-row' + (variant === 'axis' ? ' property-row--axis' : '') + (className ? ' ' + className : '')}>
+    <span className={scrubbable ? 'property-scrub' : undefined} {...scrubHandlers}>{property.label}</span>
     {property.options?.length ?
       <select className="au-select" disabled={locked} value={String(property.value)}
         aria-label={property.label}

@@ -117,6 +117,12 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.
   }
+  if (method === 'studio.componentCatalog') return [
+    { id: 'MeshRenderer', title: 'Mesh Renderer', group: 'Rendering', hint: 'Model and material slots', action: 'native', available: false, reason: 'Already on this entity' },
+    { id: 'Light', title: 'Point Light', group: 'Rendering', hint: 'Adds a light entity at this position', action: 'light', available: true },
+  ] as StudioResult['studio.componentCatalog'];
+  if (method === 'studio.componentAdd' || method === 'studio.componentRemove' || method === 'studio.setProperties')
+    throw new Error('Open the native Studio to change components');
   if (method === 'studio.inspect') {
     return demoInspector((params as StudioParams['studio.inspect']).entityId);
   }

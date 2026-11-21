@@ -42,6 +42,10 @@ export interface StudioPanelContext {
   toggleInspectorPin: () => void;
   select: (id: string | null) => Promise<void>;
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
+  /** Apply a snapshot from an Inspector action without dropping the Inspector pin. */
+  commitSnapshot: (value: StudioSnapshot) => void;
+  showPanel: (panel: StudioPanel) => void;
+  reportError: (message: string) => void;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {

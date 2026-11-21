@@ -29,6 +29,8 @@ public:
 private:
     Json snapshot() const;
     Json propertiesFor(const std::string& entityId) const;
+    Json componentCatalog(const std::string& entityId) const;
+    editor::DocEntity promotedAuthored(int index) const;
     Json inspectorFor(const std::string& entityId) const; // entity header + components
     Json setMeshRenderer(int index, const std::string& key, const Json& value);
     MaterialSlotProvider materialSlots_;

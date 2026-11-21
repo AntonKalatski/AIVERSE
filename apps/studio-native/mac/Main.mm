@@ -1033,7 +1033,8 @@ static NSEvent* gStudioLastWebMouseDown=nil;
              method=="studio.undo" || method=="studio.redo" ||
              method=="studio.nereidFlowSet" || method=="studio.renderLightingSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
-             method=="studio.materialPatch" || method=="studio.materialCreate")) {
+             method=="studio.materialPatch" || method=="studio.materialCreate" || method=="studio.setProperties" ||
+             method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove")) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

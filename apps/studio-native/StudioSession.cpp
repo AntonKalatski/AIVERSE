@@ -156,6 +156,42 @@ bool studioModelAssetPath(const std::string& path) {
     return ext==".glb" || ext==".gltf" || ext==".obj";
 }
 }
+// Legacy map unit -> authored entity with an explicit Transform that keeps it
+// exactly where/how it stands now (terrain height, runtime facing).
+editor::DocEntity StudioSession::promotedAuthored(int index) const {
+    const auto& source=ws_.map.data.entities.at(size_t(index));
+    auto candidate=source;
+    if(editor::authoredEntity(source))return candidate;
+    Json t=Json::object();
+    t.set("y",Json::number(source.at.isNull()?double(terrainPreviewHeight(ws_.map.data,source.x,source.z,
+        float(ws_.project.rules.levelHeight.toDouble()))):0.0,4));
+    if(source.extra["facing"].isNumber())t.set("yaw",Json::number(studioFacingToYaw(source.extra["facing"].toDouble()),3));
+    auto components=candidate.extra["components"].isObject()?candidate.extra["components"]:Json::object();
+    components.set("Transform",t);candidate.extra.set("components",components);
+    return candidate;
+}
+Json StudioSession::componentCatalog(const std::string& entityId) const {
+    Json out=Json::array();
+    auto item=[&](const char* id,const char* title,const char* group,const char* hint,const char* action,bool available,const char* reason) {
+        Json o=Json::object();o.set("id",str(id));o.set("title",str(title));o.set("group",str(group));o.set("hint",str(hint));
+        o.set("action",str(action));o.set("available",Json::fromBool(available));if(reason&&*reason)o.set("reason",str(reason));out.push(o);
+    };
+    if(entityId.compare(0,7,"entity:")!=0) {
+        item("Transform","Transform","Core","Position, rotation, scale","native",false,"Already on this entity");
+        return out;
+    }
+    const auto& e=ws_.map.data.entities.at(size_t(indexFor(entityId)));
+    const auto& comps=e.extra["components"];
+    const bool water=comps.has("NereidWater");
+    item("Transform","Transform","Core","Position, rotation, scale","native",false,"Already on this entity");
+    item("MeshRenderer","Mesh Renderer","Rendering","Model and material slots (built-in cube by default)","native",
+        !comps.has("StaticModel") && !water,comps.has("StaticModel")?"Already on this entity":water?"Water entities are drawn by NEREID":
+        (editor::authoredEntity(e)?"":"Replaces the look from rules.json for this entity only"));
+    item("Light","Point Light","Rendering","Adds a light entity at this position","light",true,"");
+    item("NereidWater","NEREID Water","World","Rivers, lakes and sea are authored in World › NEREID Water","water",false,"Create water from the NEREID Water panel");
+    item("Unit","Unit","Gameplay","Type, owner and stats come from rules.json","native",false,"Defined by the entity type");
+    return out;
+}
 Json StudioSession::inspectorFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
@@ -751,8 +787,9 @@ Json StudioSession::dispatch(const Json& request) {
             } else if (method == "studio.lightAdd") {
                 Json input = Json::object();
                 // New authored lights go to map center for flat maps; FPS origin otherwise.
-                const double x = ws_.project.isFps() ? 0.0 : double(ws_.map.data.w) * 0.5;
-                const double z = ws_.project.isFps() ? 0.0 : double(ws_.map.data.h) * 0.5;
+                // Optional x/z (Inspector › Add Component › Light at the entity); else map center.
+                const double x = params["x"].isNumber() ? params["x"].toDouble() : ws_.project.isFps() ? 0.0 : double(ws_.map.data.w) * 0.5;
+                const double z = params["z"].isNumber() ? params["z"].toDouble() : ws_.project.isFps() ? 0.0 : double(ws_.map.data.h) * 0.5;
                 if (!validLightScalar("x",x) || !validLightScalar("z",z))
                     throw std::runtime_error("Map coordinates out of range");
                 input.set("x", Json::number(x,3));
@@ -1101,6 +1138,49 @@ Json StudioSession::dispatch(const Json& request) {
             reply.set("result", propertiesFor(params.getStr("entityId")));
         } else if (method == "studio.inspect") {
             reply.set("result", inspectorFor(params.getStr("entityId")));
+        } else if (method == "studio.componentCatalog") {
+            reply.set("result", componentCatalog(params.getStr("entityId")));
+        } else if (method == "studio.componentAdd" || method == "studio.componentRemove") {
+            const std::string entityId=params.getStr("entityId"),componentId=params.getStr("componentId");
+            if(entityId.compare(0,7,"entity:")!=0)throw std::runtime_error("Components can be changed on map entities only");
+            const int index=indexFor(entityId);
+            const auto& source=ws_.map.data.entities[size_t(index)];
+            auto candidate=source;
+            if(method=="studio.componentAdd") {
+                if(componentId!="MeshRenderer")throw std::runtime_error("This component cannot be added here");
+                if(source.extra["components"].has("StaticModel"))throw std::runtime_error("Mesh Renderer is already on this entity");
+                if(source.extra["components"].has("NereidWater"))throw std::runtime_error("Water entities are drawn by NEREID");
+                candidate=promotedAuthored(index);
+                auto components=candidate.extra["components"];components.set("StaticModel",Json::object());
+                candidate.extra.set("components",components);
+            } else {
+                const char* id=componentId=="MeshRenderer"?"StaticModel":componentId.c_str();
+                if(componentId=="Transform"||componentId=="Unit"||componentId=="NereidWater")
+                    throw std::runtime_error(componentId+" cannot be removed");
+                if(!source.extra["components"].has(id))throw std::runtime_error("Component is not on this entity");
+                auto components=candidate.extra["components"];components.erase(id);candidate.extra.set("components",components);
+            }
+            ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
+            reply.set("result",snapshot());
+        } else if (method == "studio.setProperties") {
+            // Several properties of one component as ONE undo step (paste / reset).
+            const Json& values=params["values"];
+            if(!values.isObject() || values.members().empty())throw std::runtime_error("Missing property values");
+            if(values.members().size()>64)throw std::runtime_error("Too many properties");
+            const size_t depth=ws_.map.undoDepth();
+            try {
+                for(const auto& [key,value]:values.members()) {
+                    Json nested=Json::object(),input=Json::object();
+                    nested.set("id",request["id"]);nested.set("method",str("studio.setProperty"));
+                    input.set("entityId",str(params.getStr("entityId")));input.set("key",str(key));input.set("value",value);
+                    if(params.has("componentId"))input.set("componentId",params["componentId"]);
+                    nested.set("params",input);
+                    const auto updated=dispatch(nested);
+                    if(updated.has("error"))throw std::runtime_error(key+": "+updated.getStr("error"));
+                }
+            } catch(...) { ws_.map.abandonSince(depth); throw; }
+            ws_.map.mergeUndoSince(depth);
+            reply.set("result",snapshot());
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
             // A pinned Inspector may edit its own explicitly addressed entity while
@@ -1207,17 +1287,8 @@ Json StudioSession::dispatch(const Json& request) {
             const int index = indexFor(entityId);
             if(editor::authoredTransformKey(key)) {
                const auto& source=ws_.map.data.entities[size_t(index)];
-               auto candidate=source;
                const bool legacy=!editor::authoredEntity(source);
-               if(legacy) {
-                   // Promote: keep the unit exactly where/how it stands now.
-                   Json t=Json::object();
-                   t.set("y",Json::number(source.at.isNull()?double(terrainPreviewHeight(ws_.map.data,source.x,source.z,
-                       float(ws_.project.rules.levelHeight.toDouble()))):0.0,4));
-                   if(source.extra["facing"].isNumber())t.set("yaw",Json::number(studioFacingToYaw(source.extra["facing"].toDouble()),3));
-                   auto components=candidate.extra["components"].isObject()?candidate.extra["components"]:Json::object();
-                   components.set("Transform",t);candidate.extra.set("components",components);
-               }
+               auto candidate=promotedAuthored(index);
                candidate=editor::editAuthoredPlacement(candidate,key,value);
                // The RTS runtime reads "facing" for the initial rotation: keep it in sync.
                if((key=="rotationY"||key=="yaw") && (legacy || source.extra.has("facing")))

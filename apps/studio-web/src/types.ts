@@ -6,6 +6,8 @@ export type { FacialRigDocument, FacialRigList, FacialRigResult, FacialRigValida
 export type StudioProperty = import('./propertyLogic').FieldDescriptor;
 export interface StudioInspectorComponent { id: string; title: string; note?: string; properties: StudioProperty[] }
 /** Entity header + its document components (Transform, Mesh Renderer, Light…). */
+/** Add Component entry: `native` adds via studio.componentAdd; `light`/`water` run an editor action. */
+export interface StudioComponentCatalogItem { id: string; title: string; group: string; hint: string; action: 'native' | 'light' | 'water'; available: boolean; reason?: string }
 export interface StudioInspector { id: string; name: string; kind: string; nameEditable?: boolean; components: StudioInspectorComponent[] }
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
@@ -73,7 +75,7 @@ export interface StudioRuntimeEntity {ref:string; epoch:string; tick:number; com
 export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boolean; width:number; height:number; touch:boolean }
 export interface StudioGameDeviceOption { id:string; name:string; group:string }
 export interface StudioGameState { device:StudioGameDevice; paused: boolean; canControl: boolean; canStep: boolean; active: boolean; loading: boolean; progress: number; inMatch: boolean; tick: number; error: string }
-export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.inspect' | 'studio.entityMove' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
+export type StudioMethod = 'studio.renderLighting' | 'studio.renderLightingSet' | 'studio.nereidFlow' | 'studio.nereidFlowSet' | 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.inspect' | 'studio.componentCatalog' | 'studio.componentAdd' | 'studio.componentRemove' | 'studio.setProperties' | 'studio.entityMove' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
   'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
 export interface StudioParams {
   'studio.nereidFlow':Record<string,never>;
@@ -98,6 +100,10 @@ export interface StudioParams {
   'studio.propertiesFor': { entityId: string };
   'studio.inspect': { entityId: string };
   'studio.entityMove': { entityId: string; targetId?: string | null; placement?: 'before' | 'after' };
+  'studio.componentCatalog': { entityId: string };
+  'studio.componentAdd': { entityId: string; componentId: string };
+  'studio.componentRemove': { entityId: string; componentId: string };
+  'studio.setProperties': { entityId: string; componentId?: string; values: Record<string, string | number | boolean> };
   'studio.save': Record<string, never>;
   'studio.undo': Record<string, never>;
   'studio.redo': Record<string, never>;
@@ -127,7 +133,7 @@ export interface StudioParams {
   'studio.renderLightingSet': { patch: Partial<RenderLightingSettings> };
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
-  'studio.lightAdd': Record<string, never>;
+  'studio.lightAdd': { x?: number; z?: number };
   'studio.lightUpdate': { index: number; entityId?: string; key: import('./panels/lightingSchema').LightEditableKey; value: string | number | boolean };
   'studio.lightDelete': { index: number; entityId?: string };
   'studio.select': { id: string | null };
@@ -158,6 +164,10 @@ export interface StudioResult {
   'studio.propertiesFor': StudioProperty[];
   'studio.inspect': StudioInspector;
   'studio.entityMove': StudioSnapshot;
+  'studio.componentCatalog': StudioComponentCatalogItem[];
+  'studio.componentAdd': StudioSnapshot;
+  'studio.componentRemove': StudioSnapshot;
+  'studio.setProperties': StudioSnapshot;
   'studio.save': StudioSnapshot;
   'studio.undo': StudioSnapshot;
   'studio.redo': StudioSnapshot;

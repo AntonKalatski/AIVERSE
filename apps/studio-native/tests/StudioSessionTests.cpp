@@ -1,4 +1,5 @@
 #include "apps/studio-native/StudioSession.h"
+#include "apps/editor/AuthoringComponents.h"
 #include "tests/TestCheck.h"
 #include "apps/studio-native/StudioGameLaunch.h"
 #include "apps/studio-native/StudioGameInput.h"
@@ -97,6 +98,29 @@ void authoredEntityWorkflow() {
        for(const auto& c:mesh["result"]["components"].items())if(c.getStr("id")=="MeshRenderer")
            for(const auto& f:c["properties"].items())if(f.getStr("key")=="asset")shown=f.getStr("value");
        AIVERSE_TEST_CHECK(shown=="builtin:cube");
+   }
+   // Batch edit (Inspector paste / reset): one undo step; a failing value rolls everything back.
+   {
+       const auto entity=[&]()->const editor::DocEntity&{return session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))];};
+       AIVERSE_TEST_CHECK(!call("studio.setProperties",R"({"entityId":"entity:@second","componentId":"Transform","values":{"rotationX":15,"scaleY":2,"y":3}})").has("error"));
+       AIVERSE_TEST_CHECK(editor::authoredRotationDegrees(entity())[0]==15 && editor::authoredScale3(entity())[1]==2);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+       AIVERSE_TEST_CHECK(editor::authoredRotationDegrees(entity())[0]==0 && editor::authoredScale3(entity())[1]==1);
+       const auto before=entity().extra.dump();
+       AIVERSE_TEST_CHECK(call("studio.setProperties",R"({"entityId":"entity:@second","componentId":"Transform","values":{"rotationX":15,"scaleY":0}})").has("error"));
+       AIVERSE_TEST_CHECK(entity().extra.dump()==before);
+       // Component catalog, remove and re-add the Mesh Renderer, each undoable.
+       const auto catalog=call("studio.componentCatalog",R"({"entityId":"entity:@second"})");
+       bool meshListed=false;for(const auto& c:catalog["result"].items())if(c.getStr("id")=="MeshRenderer")meshListed=!c.getBool("available");
+       AIVERSE_TEST_CHECK(meshListed);
+       AIVERSE_TEST_CHECK(call("studio.componentRemove",R"({"entityId":"entity:@second","componentId":"Transform"})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.componentRemove",R"({"entityId":"entity:@second","componentId":"MeshRenderer"})").has("error"));
+       AIVERSE_TEST_CHECK(!entity().extra["components"].has("StaticModel"));
+       AIVERSE_TEST_CHECK(!call("studio.componentAdd",R"({"entityId":"entity:@second","componentId":"MeshRenderer"})").has("error"));
+       AIVERSE_TEST_CHECK(entity().extra["components"]["StaticModel"].isObject());
+       AIVERSE_TEST_CHECK(call("studio.componentAdd",R"({"entityId":"entity:@second","componentId":"MeshRenderer"})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && !call("studio.undo").has("error"));
+       AIVERSE_TEST_CHECK(entity().extra["components"].has("StaticModel"));
    }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {

@@ -202,7 +202,7 @@ export default function App() {
     select, changeProperty, openProject, updateSnapshot: value => {
       setInspectorPin(null); // create/delete/duplicate or map replacement invalidates positional pins
       setSnapshot(value);
-    }, setBusy
+    }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError
   });
 
   const project = connected && !!snapshot?.project.path;

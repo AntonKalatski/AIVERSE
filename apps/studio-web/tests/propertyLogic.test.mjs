@@ -40,3 +40,14 @@ test('same-value check avoids redundant undo snapshots',()=>{
   assert.equal(isSameFieldValue(10,'10'),false);
   assert.equal(isSameFieldValue(false,false),true);
 });
+
+import { scrubValue } from '../src/propertyLogic.ts';
+test('drag-to-scrub moves by step per pixel, fine, snap and clamps', () => {
+  assert.equal(scrubValue(1, 10), 2);
+  assert.equal(scrubValue(1, 10, { fine: true }), 1.1);
+  assert.equal(scrubValue(0, 37, { step: 1 }), 37);
+  assert.equal(scrubValue(0, 37, { step: 1, snap: 15 }), 30);
+  assert.equal(scrubValue(1, -50, { min: 0.001 }), 0.001);
+  assert.equal(scrubValue(5, 3.4, { integer: true }), 8);
+  assert.equal(scrubValue(0.2, 1), 0.3);
+});
