@@ -258,7 +258,12 @@
       "where": "main",
       "tagline": "Вода, которая ведёт себя как вода",
       "essence": "Универсальная вода: реки, озёра и океан, плавучесть и сопротивление, брызги, волны и след от движения.",
-      "cover": null,
+      "cover": {
+        "src": "docs/devlog/media/systems/nereid-alpine-river.jpg",
+        "caption": "NEREID в Alpine River Valley: река с течением через изгиб, мутность и глубина дают бирюзовый цвет, пена по линии берега",
+        "captionEn": "NEREID in Alpine River Valley: the river flows through a bend, turbidity and depth give the teal colour, foam along the shoreline",
+        "approved": true
+      },
       "coverBrief": "Река NEREID в Alpine River Valley: течение через изгибы, пена и белая вода на перекатах, камни в потоке — снято через LENS без интерфейса редактора; лучше коротким видео.",
       "article": "docs/nereid/ARCHITECTURE.md",
       "started": "2026-11-18",
