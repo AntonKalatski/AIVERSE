@@ -198,6 +198,15 @@ bool initEGL() {
         if (!eglChooseConfig(g_dpy, attrs, &g_cfg, 1, &n) || n == 0) return false;
         const EGLint ctxAttrs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
         g_ctx = eglCreateContext(g_dpy, g_cfg, EGL_NO_CONTEXT, ctxAttrs);
+        // The GPU name before the window surface exists (EGL_KHR_surfaceless_context): a weak GPU gets its
+        // lower render resolution now. Re-creating the surface afterwards left the window black on Adreno.
+        const char* ext = eglQueryString(g_dpy, EGL_EXTENSIONS);
+        if (ext && std::strstr(ext, "EGL_KHR_surfaceless_context") && !(std::getenv("AIVERSE_RENDER_SCALE") && *std::getenv("AIVERSE_RENDER_SCALE")) &&
+            eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, g_ctx)) {
+            const char* r = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            if (r && gfx::isWeakMobileGpu(r)) { g_weakGpu = true; applyRenderScale(g_app->window); }
+            eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        }
     }
     g_surf = eglCreateWindowSurface(g_dpy, g_cfg, g_app->window, nullptr);
     if (!eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx)) return false;
@@ -253,7 +262,6 @@ void onCmd(android_app* app, int32_t cmd) {
         if (app->window && initEGL()) {
             if (!g_device) {
                 g_device = gfx::createGLDevice(gfx::Backend::GLES3);
-                if (lowerResolutionForWeakGpu(app->window)) { termSurface(); initEGL(); }   // a surface of the new size
                 if (S.cb.init) S.cb.init(*g_device);
             }
             g_inited = true;

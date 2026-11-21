@@ -229,6 +229,8 @@ cases_shsplit() {
 }
 # hardware PCF (AIVERSE_HW_SHADOW) against the manual one-tap filter and no shadows
 cases_hwshadow() { run hw gl $U; run manual gl $U AIVERSE_HW_SHADOW=0; run off gl $U AIVERSE_SHADOWS=off; run hw_vsync gl; run vk vulkan $U; }
+# the defaults with a picture check: screenshot first, then the numbers
+cases_verify() { shot default gl; shot vkdefault vulkan; run hw gl $U; run manual gl $U AIVERSE_HW_SHADOW=0; run off gl $U AIVERSE_SHADOWS=off; run hw_vsync gl; }
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
