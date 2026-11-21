@@ -1,3 +1,4 @@
+#include <map>
 #include "HumanMaterials.h"
 #include "HumanAppearance.h"
 #include <algorithm>
@@ -36,12 +37,16 @@ struct Nodes {
         list.push(std::move(item));
         return name;
     }
-    std::string constant(float scalar) {
-        return add("constant",{},Json::number(double(scalar),6));
+    // Identical constants share one node (graphs are capped at 128 nodes).
+    std::map<std::string,std::string> constants;
+    std::string cached(Json value) {
+        const auto key=value.dump();
+        if(auto it=constants.find(key);it!=constants.end())return it->second;
+        return constants[key]=add("constant",{},std::move(value));
     }
-    std::string color(const std::array<float,3>& rgb) {
-        return add("constant",{},vector4(rgb[0],rgb[1],rgb[2]));
-    }
+    std::string constant(float scalar) {return cached(Json::number(double(scalar),6));}
+    std::string color(const std::array<float,3>& rgb) {return cached(vector4(rgb[0],rgb[1],rgb[2]));}
+    std::string vec(float a,float b,float c,float d) {return cached(vector4(a,b,c,d));}
     std::string scalarOp(const char* op,std::string input) {
         return add(op,{std::move(input)});
     }
@@ -425,7 +430,7 @@ static void appearanceImpl(render::Model& model,const HumanAppearance& look,int 
                 color=mul(color,add(c(1),mul(sub(pores,c(.5f)),c(.12f*value("skin.pores")))));
                 // Makeup layers: soft UV ellipses (mask 1 inside, 0 outside).
                 auto ellipse=[&](float u,float v,float w,float h){
-                    const auto d=g.scalarOp("length3",mul(sub(uv,g.add("constant",{},vector4(u,v,0,1))),g.add("constant",{},vector4(1.f/w,1.f/h,0,0))));
+                    const auto d=g.scalarOp("length3",mul(sub(uv,g.vec(u,v,0,1)),g.vec(1.f/w,1.f/h,0,0)));
                     return sub(c(1),smooth(.55f,1.f,d));};
                 const float fu=value("makeup.faceU");
                 if(value("makeup.stubble")>0) {
