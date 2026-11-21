@@ -13,9 +13,12 @@ void GeometryScene::validate(const Json& j){
     const auto& st=j["strata"];
     if(!st.isNull()){
         if(!st.isObject())throw std::runtime_error("geometry scene: strata must be object");
-        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
+        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
+        if(st.has("mergeClusters")&&st["mergeClusters"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.mergeClusters must be boolean");
+        if(st.has("reflections")&&st.getStr("reflections")!="finest"&&st.getStr("reflections")!="main")throw std::runtime_error("geometry scene: strata.reflections must be finest or main");
         if(st.has("enabled")&&st["enabled"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.enabled must be boolean");
         number(st,"hysteresis",0,.45);
+        number(st,"shadowErrorScale",1,64);
     }
     const auto& h=j["hlod"];
     if(!h.isNull()){

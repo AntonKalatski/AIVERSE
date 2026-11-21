@@ -228,6 +228,7 @@ void GeometryScene::retireResident(gfx::Device& dev) {
     // Renderer3D has consumed the previous draw epoch before scene unload.
     // Release alias borrowers BEFORE their index sidecars / source Models.
     strataPortableDrawModels_.clear();
+    strataSharedAliases_.clear();
     strataPortableLodHistories_.clear();
     for (auto& [source, staged] : strataPortableSources_)
         if (staged) staged->shutdown(dev);
@@ -356,6 +357,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataPortableSources_=std::move(staged->strataPortableSources_);
     strataGlobalIndexLeases_=std::move(staged->strataGlobalIndexLeases_);
     strataPortableDrawModels_=std::move(staged->strataPortableDrawModels_);
+    strataSharedAliases_=std::move(staged->strataSharedAliases_);
     strataPortableLodHistories_=std::move(staged->strataPortableLodHistories_);
     strataDebugGeometry_=std::move(staged->strataDebugGeometry_);
     strataGpuDevice_=staged->strataGpuDevice_;
@@ -367,12 +369,16 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     // "strata" block may have switched portable rendering / hysteresis.
     strataPortableRenderingEnabled_=staged->strataPortableRenderingEnabled_;
     strataLodHysteresisFraction_=staged->strataLodHysteresisFraction_;
+    strataReflectionFinest_=staged->strataReflectionFinest_;
+    strataMergeClusters_=staged->strataMergeClusters_;
+    strataShadowErrorScale_=staged->strataShadowErrorScale_;
     staged->strataStaging_.reset();
     staged->strataGpuMetadata_.reset();
     staged->strataGpuCulling_.reset();
     staged->strataPortableSources_.clear();
     staged->strataGlobalIndexLeases_.clear();
     staged->strataPortableDrawModels_.clear();
+    staged->strataSharedAliases_.clear();
     staged->strataPortableLodHistories_.clear();
     staged->strataDebugGeometry_.clear();
     staged->strataGpuDevice_=nullptr;
@@ -387,6 +393,9 @@ void GeometryScene::copyStrataConfigFrom(const GeometryScene& o) {
     strataRenderPreviewEnabled_=o.strataRenderPreviewEnabled_;
     strataPortableRenderingEnabled_=o.strataPortableRenderingEnabled_;
     strataLodHysteresisFraction_=o.strataLodHysteresisFraction_;
+    strataReflectionFinest_=o.strataReflectionFinest_;
+    strataMergeClusters_=o.strataMergeClusters_;
+    strataShadowErrorScale_=o.strataShadowErrorScale_;
     // Debug view options decide per-source capture during load.
     strataDebugView_=o.strataDebugView_;
     strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
@@ -423,6 +432,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         const char* env=std::getenv("AIVERSE_STRATA");
         const bool off=env&&(std::string(env)=="off"||std::string(env)=="0");
         strataPortableRenderingEnabled_=!off&&json["strata"].getBool("enabled");
+        strataMergeClusters_=json["strata"].getBool("mergeClusters",true);
+        strataShadowErrorScale_=float(json["strata"]["shadowErrorScale"].toDouble(1.0));
+        if(json["strata"].has("reflections"))
+            strataReflectionFinest_=json["strata"].getStr("reflections")!="main";
         if(json["strata"].has("hysteresis"))
             (void)setStrataLodHysteresisFraction(float(json["strata"]["hysteresis"].toDouble()));
     }
@@ -660,6 +673,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     }
                 }
                 auto source=std::make_shared<strata::PortableSource>();
+                // Scene-authored STRATA draws adjacent clusters as one primitive.
+                source->setMergeAdjacentClusters(strataMergeClusters_);
                 if (!source->stage(dev, *model, *asset, &error,
                                    sourceBudget,
                                    strataIncrementalIndexStreamingEnabled_,
@@ -1008,6 +1023,13 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
 void GeometryScene::draw(Renderer3D& r){
     stats_.submitted=0;stats_.surfaceProxiesSubmitted=0;
     strataDebugStats_.reset();
+    ++strataDrawFrame_;
+    // Shared STRATA aliases only borrow source buffers; drop selections no
+    // copy has used for a few seconds (bounded CPU memory, no GPU release).
+    if((strataDrawFrame_&63)==0)
+        for(auto it=strataSharedAliases_.begin();it!=strataSharedAliases_.end();)
+            it=it->second.lastFrame+240<strataDrawFrame_?strataSharedAliases_.erase(it):std::next(it);
+    stats_.strataPortableSharedModels=uint32_t(strataSharedAliases_.size());
     updateStrataStreamingBeforeDraw(r);
     if(hlod_&&!groups_.empty())drawGroup(r,0);
     else for(auto& i:instances_)drawInstance(r,i);
@@ -1265,6 +1287,20 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     return false;
 }
 
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+// Identity of a portable alias: which index ranges of which meshes it draws.
+// Same source + same signature => identical draw, safe to share.
+static uint64_t strataAliasSignature(const Model& alias){
+    uint64_t h=1469598103934665603ull;
+    const auto mix=[&](uint64_t v){h^=v;h*=1099511628211ull;};
+    mix(alias.ib.valid()?uint64_t(alias.ib.id):0);mix(alias.gpuFirstIndex);
+    for(size_t m=0;m<alias.meshes.size();++m){
+        mix(m);mix(alias.meshes[m].primitives.size());
+        for(const auto& p:alias.meshes[m].primitives){mix(p.firstIndex);mix(p.indexCount);mix(uint64_t(uint32_t(p.material)));}
+    }
+    return h;
+}
+#endif
 void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     ModelDraw d;d.model=i.model;d.world=i.world;d.geometry=geometryEnabled_?i.policy:GeometryPolicy{};d.staticCache=cacheEnabled_?&i.cache:nullptr;
     if(i.surfaceProxy&&surfacesEnabled_){
@@ -1308,12 +1344,12 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
                 r.shadowMapSize() > 0)
                 views.push_back({r.lightViewProj(), r.shadowMapSize(),
                                  r.shadowMapSize(), r.clipDepthZeroToOne(),
-                                 errorPixels_});
+                                 errorPixels_*strataShadowErrorScale_});
             // A planar reflection camera is chosen after drawModel(), by
             // renderReflection(). To guarantee no missing reflected detail,
             // use the finest resident frontier whenever water reflections
             // might consume this ModelDraw in the current frame.
-            const bool forceFinest = r.lights.reflectionsWanted();
+            const bool forceFinest = r.lights.reflectionsWanted() && strataReflectionFinest_;
             auto& slot=strataPortableDrawModels_[&i];
             if (!slot) slot=std::make_unique<Model>();
             std::string error;
@@ -1331,7 +1367,16 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
                 stats_.strataLodHysteresisTransitions+=
                     staged->second->stats().hysteresisTransitions-
                     oldTransitions;
-                d.model=slot.get();
+                // Copies that selected the same clusters draw ONE shared
+                // alias, so Renderer3D instances them (same Primitive*).
+                const uint64_t signature=strataAliasSignature(*slot);
+                auto& shared=strataSharedAliases_[{i.model,signature}];
+                if(!shared.model)
+                    shared.model=std::make_unique<Model>(std::move(*slot));
+                else
+                    ++stats_.strataPortableSharedReuses;
+                shared.lastFrame=strataDrawFrame_;
+                d.model=shared.model.get();
                 d.flags |= kDrawStatic; // eligible rigid Strata, Vulkan MDI may batch it
                 d.staticCache=nullptr;
                 d.persistentId=0; // no stale original static-render packets
@@ -1339,9 +1384,9 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
                 // Do not draw the original source after a successful switch.
                 ++stats_.strataPortableDraws;
                 stats_.strataPortableClusters+=
-                    slot->meshes.empty() ? 0u :
+                    d.model->meshes.empty() ? 0u :
                     uint64_t(std::accumulate(
-                        slot->meshes.begin(),slot->meshes.end(),size_t(0),
+                        d.model->meshes.begin(),d.model->meshes.end(),size_t(0),
                         [](size_t n,const MeshDef& mesh) {
                             return n+mesh.primitives.size();
                         }));
@@ -1417,7 +1462,7 @@ void GeometryScene::drawStrataDebug(Renderer3D& r,const Instance& i,
     const auto slot=strataPortableDrawModels_.find(&i);
     const bool portable=!gpuRoute && staged &&
         slot!=strataPortableDrawModels_.end() && slot->second &&
-        d.model==slot->second.get();
+        d.model!=i.model;
     strata::DebugRoute route=strata::DebugRoute::Legacy;
     if(gpuRoute)route=strata::DebugRoute::StrataVulkanGpu;
     else if(portable)route=strata::DebugRoute::StrataPortable;

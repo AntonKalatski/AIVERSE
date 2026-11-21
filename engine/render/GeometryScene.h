@@ -38,6 +38,10 @@ public:
         uint64_t strataGpuIndexBytes=0;
         // Cross-backend CPU-selected Strata indexed rendering (opt-in).
         uint32_t strataPortableSources=0, strataPortableDeclined=0;
+        // Copies with the same selected cluster set share one alias Model,
+        // so Renderer3D instances them (key: primitive pointer).
+        uint32_t strataPortableSharedModels=0;
+        uint64_t strataPortableSharedReuses=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
         uint64_t strataLodHysteresisTransitions=0;
@@ -384,6 +388,10 @@ private:
     // Reservation tokens are released AFTER GPU sidecars are destroyed.
     std::map<const Model*,uint64_t> strataGlobalIndexLeases_;
     std::map<const Instance*, std::unique_ptr<Model>> strataPortableDrawModels_;
+    struct StrataSharedAlias { std::unique_ptr<Model> model; uint64_t lastFrame=0; };
+    // (source model, selected-cluster signature) -> shared drawn alias.
+    std::map<std::pair<const Model*,uint64_t>,StrataSharedAlias> strataSharedAliases_;
+    uint64_t strataDrawFrame_=0;
     std::map<const Instance*,std::shared_ptr<strata::PortableLodHistory>>
         strataPortableLodHistories_;
     gfx::Device* strataGpuDevice_ = nullptr; // borrowed owner-thread validation
@@ -397,6 +405,13 @@ private:
     bool strataGpuCullingEnabled_=false;
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
+    // Planar water reflections: true = finest frontier (safe default);
+    // false = reuse the main-camera frontier (mirror sees similar distances).
+    bool strataReflectionFinest_=true;
+    bool strataMergeClusters_=false; // scene "strata" block turns it on
+    // Sun shadow pass error tolerance multiplier (the shadow map covers the
+    // whole map; per-branch detail there forces the finest frontier).
+    float strataShadowErrorScale_=1.f;
     float strataLodHysteresisFraction_=0.f;
     uint64_t strataGpuLodPolicyEpoch_=1;
     bool strataVulkanGpuIndirectEnabled_=false;

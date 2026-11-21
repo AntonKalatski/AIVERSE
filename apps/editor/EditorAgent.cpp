@@ -308,6 +308,8 @@ void Editor::registerGuiOps() {
             st.set("seamUnsafeDeclined",Json::number(int64_t(g.strataSeamUnsafeDeclined)));
             st.set("globalBudgetDeclined",Json::number(int64_t(g.strataGlobalBudgetDeclined)));
             st.set("instances",Json::number(int64_t(view_.geometryScene().instanceCount())));
+            st.set("sharedModels",Json::number(int64_t(g.strataPortableSharedModels)));
+            st.set("sharedReuses",Json::number(int64_t(g.strataPortableSharedReuses)));
             r.set("strata",st);
         }
         // Reuse completed host-owned queries only; do not poll, wait or add

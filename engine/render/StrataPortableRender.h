@@ -126,6 +126,11 @@ public:
         if(!on)std::vector<SelectedCluster>().swap(debugSelection_);
     }
     bool debugCaptureEnabled() const { return debugCapture_; }
+    // Draw adjacent selected clusters of one source primitive as a single
+    // primitive (fewer draws; per-cluster culling becomes per-run). Off by
+    // default: one primitive per selected cluster, as before.
+    void setMergeAdjacentClusters(bool on) { mergeAdjacent_=on; }
+    bool mergeAdjacentClusters() const { return mergeAdjacent_; }
     const std::vector<SelectedCluster>& debugSelection() const {
         return debugSelection_;
     }
@@ -152,6 +157,7 @@ private:
     std::vector<uint32_t> primitiveOffsets_;
     PortableRenderStats stats_{};
     bool debugCapture_ = false;
+    bool mergeAdjacent_ = false;
     std::vector<SelectedCluster> debugSelection_;
 };
 
