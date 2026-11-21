@@ -134,6 +134,8 @@
     NSMutableDictionary<NSString*,WKWebView*>* floatWebs_;
     __unsafe_unretained WKWebView* currentWeb_; // sender of the bridge message being handled
     BOOL closingFloats_;            // main window closes: keep the float list for next launch
+    NSTimer* dockWatch_;            // a floating window is being dragged: dock it when dropped over the main window
+    BOOL dockHover_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -682,7 +684,32 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     result.set("opened",aiverse::Json::fromBool(true));
     return result;
 }
-- (void)windowDidMove:(NSNotification*)note { [self sendFloatFrame:note.object]; }
+- (void)windowDidMove:(NSNotification*)note {
+    NSWindow* moved=note.object;
+    [self sendFloatFrame:moved];
+    // Dragging a floating window by its title bar over the main window docks its tabs back on release.
+    if (moved==window_ || !studioFloatPanel(moved,floatWindows_) || dockWatch_) return;
+    if (!([NSEvent pressedMouseButtons] & 1u)) return;
+    __weak NSWindow* weakMoved=moved;
+    dockWatch_=[NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer* timer) {
+        NSWindow* window=weakMoved;
+        const BOOL over=window && NSPointInRect([NSEvent mouseLocation],window_.frame);
+        if (over!=dockHover_) {
+            dockHover_=over;
+            aiverse::Json payload=aiverse::Json::object();
+            payload.set("over",aiverse::Json::fromBool(over));
+            [self sendStudioEventPayload:"window.dockHover" payload:payload];
+        }
+        if ([NSEvent pressedMouseButtons] & 1u) return;
+        [timer invalidate];dockWatch_=nil;
+        if (dockHover_) {
+            dockHover_=NO;
+            aiverse::Json payload=aiverse::Json::object();payload.set("over",aiverse::Json::fromBool(false));
+            [self sendStudioEventPayload:"window.dockHover" payload:payload];
+            if (window) [window close]; // window.floatClosed docks every tab back
+        }
+    }];
+}
 - (void)windowDidEndLiveResize:(NSNotification*)note { [self sendFloatFrame:note.object]; }
 - (void)windowWillClose:(NSNotification*)note {
     NSWindow* window=note.object;

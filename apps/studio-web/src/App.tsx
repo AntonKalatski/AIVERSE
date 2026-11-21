@@ -63,6 +63,7 @@ export default function App() {
   const [game, setGame] = useState<StudioGameState | null>(null);
   const [sceneAction, setSceneAction] = useState('');
   const [hoverId, setHoverId] = useState('');
+  const [dockHover, setDockHover] = useState(false); // a floating window is dragged over the main window
   const [loading, clearLoading] = useProjectLoading();
   // Requests answered while the native side opens a project are expected, not errors.
   useEffect(() => { if (error === 'Project is loading') setError(''); }, [error]);
@@ -132,6 +133,8 @@ export default function App() {
       } else if (!FLOAT && event === 'window.floatClosed') {
         const key = field(payload, 'message');
         if (validFloatKey(key)) window.dispatchEvent(new CustomEvent('studio:float-closed', { detail: key }));
+      } else if (!FLOAT && event === 'window.dockHover') {
+        setDockHover(field(payload, 'over') === true);
       } else if (!FLOAT && event === 'window.floatFrame') {
         setFloating(list => updateFloatingFrame(list, payload));
       } else if (!FLOAT && event === 'ui.floatPanels') {
@@ -504,8 +507,10 @@ export default function App() {
     <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}
       onFloat={connected ? floatOut : undefined} onAdopt={adopt}/>
     <ProjectLoadingDialog state={loading} onClose={clearLoading}/>
+    {dockHover && <div className="dock-drop-hint" data-native-overlay role="status">Release to dock the window's tabs here</div>}
     <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction || sceneLoadingText(loading)}
-      onOpenConsole={() => showPanel('console')}/>
+      onOpenConsole={() => { showPanel('console');
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('studio:console-filter', { detail: 'error' })), 0); }}/>
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 }

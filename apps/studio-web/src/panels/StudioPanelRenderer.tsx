@@ -26,6 +26,7 @@ import ProjectPanel from './generated/ProjectPanel';
 
 import RuntimePanel from './generated/RuntimePanel';
 import BuildPanel from './BuildPanel';
+import ConsolePanel from './ConsolePanel';
 
 import NereidFlowPanel from './generated/NereidFlowPanel';
 
@@ -103,12 +104,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             <ViewportPlaceholder title="Scene viewport" active/>}
         </>;
       case 'console':
-        return <div className="log-list">
-          {snapshot?.logs.map((line, i) =>
-            <div className={'log-row log-' + line.level} key={i}>
-              <span>{line.time}</span>{line.text}
-            </div>)}
-        </div>;
+        return <ConsolePanel logs={snapshot?.logs ?? []} select={id => select(id)}/>;
       case 'lighting':
         return <LightingPanel projectPath={snapshot?.project.path ?? ''} selectedId={snapshot?.selectedId ?? null} onSelect={select}/>;
       case 'materials':

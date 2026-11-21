@@ -32,7 +32,7 @@ export interface StudioComponentCatalogItem { id: string; title: string; group: 
 export interface StudioRules { types: Record<string, unknown>; resolved: Record<string, unknown>; resources: string[]; summary: unknown[]; dirty: boolean }
 export interface StudioInspector { id: string; name: string; kind: string; nameEditable?: boolean; components: StudioInspectorComponent[] }
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean; locked?: boolean; owner?: number }
-export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
+export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string; source?: string }
 export interface StudioAsset {
   path: string;
   bytes: number;

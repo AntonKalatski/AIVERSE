@@ -272,7 +272,8 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
             Json options=Json::array();
             {Json none=Json::object();none.set("label",str("Default (owner colour)"));none.set("value",str(""));options.push(none);}
             for(const auto& [name,value]:library.members()){(void)value;Json o=Json::object();o.set("label",str(name));o.set("value",str(name));options.push(o);}
-            if(comps.has("StaticModel") || authored) {
+            // A Transform alone (authored pose) keeps the type's look: only StaticModel overrides it.
+            if(comps.has("StaticModel")) {
                 const std::string asset=editor::authoredModelAsset(e);
                 // No mesh = the built-in cube the Scene actually draws.
                 Json field=prop("asset","Mesh","asset",str(asset.empty()?"builtin:cube":asset),authored);
@@ -295,7 +296,15 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
                 const Json& model=view["model"];
                 std::string path=model.isString()?model.str():model.isArray()&&model.size()?
                     (model[size_t(0)].isString()?model[size_t(0)].str():model[size_t(0)].getStr("file")):"";
-                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"Cube (built-in)":path))));
+                std::string look=path;
+                if(look.empty()) {
+                    // RTS types without a model are drawn as built-in procedural shapes (game and Scene).
+                    const Json& type=ws_.project.rulesJson["types"][e.type];
+                    const bool structure=type.has("structure") && !type["structure"].isNull() && type["structure"].boolean(true);
+                    look=type.isObject() ? "Shape · "+view.getStr("shape",structure?(type.has("resourceNode")?"mine":"structure"):"generic")+" (built-in)"
+                                         : std::string("Cube (built-in)");
+                }
+                mesh.push(readOnly(prop("asset","Mesh","text",str(look))));
                 for(const auto& [slot,ref]:view["materials"].members())
                     mesh.push(readOnly(prop(("material:"+slot).c_str(),(slot=="*"?std::string("Material (all slots)"):"Material · "+slot).c_str(),
                         "text",str(ref.isString()?ref.str():ref.dump(-1)))));
@@ -447,6 +456,7 @@ Json StudioSession::snapshot() const {
         row.set("level", str(activity[i].error ? "error" : "info"));
         row.set("text", str(activity[i].text));
         row.set("time", str(activity[i].source));
+        row.set("source", str(activity[i].source));
         logs.push(std::move(row));
     }
     result.set("logs", std::move(logs));
