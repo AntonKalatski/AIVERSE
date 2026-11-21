@@ -53,10 +53,12 @@ River Valley review-project-v24 (приёмка шла через AiverseTerraQA
 Цель: кинематографичный кадр работы камеры: глубина резкости, композиция; хорошо — кадр с
 картинкой-в-картинке из вторичной камеры.
 Есть: камеры в ECS, риги, захват PNG, окно камер в Studio, навыки `aiverse-lens`, `aiverse-lens-native`.
-Сделано 2026-11-21: `docs/devlog/media/systems/lens-sponza-dof.jpg` — хост `tools/site/lens_showcase.cpp`
-(ветка `feature/aiv20261121_lens_p2`, сборка `-DAIVERSE_BUILD_SITE_SHOWCASE=ON`) на Mac (Metal):
-объектив 35 мм f/1.4, фокус 4 м, DoF и экспозиция из линзы через PRISMA, PiP второй камеры.
-Запись `2026-11-21-lens-physical-lens`. Одобрено пользователем 2026-11-21.
+Сделано 2026-11-21: `docs/devlog/media/systems/lens-sponza-arcade.jpg` — хост `tools/site/lens_showcase.cpp`
+(сборка `-DAIVERSE_BUILD_SITE_SHOWCASE=ON`) на Mac (Metal), аркада Sponza: объектив 35 мм f/1.4,
+фокус 4 м, DoF и экспозиция из линзы через PRISMA, PiP второй камеры. Переснято после исправления
+DoF (размытый передний план больше не обрезан резким контуром); ждёт одобрения пользователя.
+Камера: `LENS_EYE="-5,1.5,-4.0" LENS_AT="6,1.4,-1.0" LENS_LENS="35,1.4,0.004,100,1.3,4"`.
+Запись `2026-11-21-lens-physical-lens`.
 
 ### SpectraFX — эффекты
 Цель: взрыв, магия или огонь с дымом и светом в игровой сцене, не пустой тестовый эмиттер.
