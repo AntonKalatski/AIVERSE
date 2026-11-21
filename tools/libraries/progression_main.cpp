@@ -2,9 +2,9 @@
 // bot choices -> recruits as allies -> deaths -> summon circle restores) over the example definitions.
 // --verify replays the run twice and once through a mid-match save/restore and requires identical checksums.
 //   aiverse_progression [--root DIR] [--defs F] [--deck F] [--settings F] [--seed N] [--ticks N] [--verify] [--json]
-#include <aiverselib/genre/PerksData.h>
-#include <aiverselib/genre/PerksConfigured.h>
-#include <aiverselib/genre/PerksPersistence.h>
+#include <aiverselib/mechanics/PerksData.h>
+#include <aiverselib/mechanics/PerksConfigured.h>
+#include <aiverselib/mechanics/PerksPersistence.h>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -53,7 +53,7 @@ bool flag(int argc,char** argv,const std::string& name){for(int i=1;i<argc;++i)i
 }
 int main(int argc,char** argv){
     try{
-        auto root=arg(argc,argv,"--root",".");auto ex=root+"/examples/libraries/genre/";
+        auto root=arg(argc,argv,"--root",".");auto ex=root+"/examples/libraries/mechanics/";
         auto defsJson=Json::parseFile(arg(argc,argv,"--defs",ex+"perks.json"));
         auto settings=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(arg(argc,argv,"--settings",ex+"perks-settings.json")));
         if(!settings.value){for(auto& e:settings.errors)std::cerr<<e<<'\n';return 2;}

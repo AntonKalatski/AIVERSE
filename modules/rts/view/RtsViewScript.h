@@ -42,7 +42,7 @@ struct ViewCamera {
     bool ortho = false;          // read-only
     // view.to_screen: the host camera and the window size in points (the space of view.draw); view.set_camera
     // updates this copy at once, so scripts after the camera script project with the frame's final camera.
-    render::RTSCamera view;
+    render::Camera view;
     float screenW = 0, screenH = 0;
 };
 // A set_camera request: fields left out of the call stay NaN (= keep the host's value).

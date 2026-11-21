@@ -70,6 +70,11 @@ public:
         std::string roadType; double width=6;
     };
     const SceneBrush& sceneBrush() const noexcept { return brush_; }
+    // Spline editing (Roads / Water panels): "road" or "river" shows the network's handles in the Scene;
+    // a handle dragged and released moves that road node / river point (one History step).
+    const std::string& splineEdit() const noexcept { return splineEdit_; }
+    Json splineHandles();   // {handles:[{id,x,z}], segments:[[x0,z0,x1,z1],...]}
+    bool splineMove(const std::string& id, double x, double z, std::string* error);
     bool strokeBegin(double x, double z, std::string* error);
     bool strokeDab(double x, double z, std::string* error);
     bool strokeEnd(std::string* error = nullptr);
@@ -114,6 +119,8 @@ private:
     SculptBrush sculpt_;
     std::map<std::string,Json> wardrobeInfoCache_; // humanWardrobeInfo by path+mtime
     std::future<Json> humanBuild_;
+    // MetaHuman adapter runs off the UI thread (large exports take seconds).
+    std::future<Json> metaHumanJob_;std::string metaHumanKey_;Json metaHumanResult_;
     Json humanBuildResult_=Json::object();
     std::string humanBuildProject_;
     std::string previewMaterialName_;
@@ -133,6 +140,7 @@ private:
     struct AgentShot { int client; Json id; };
     std::vector<AgentShot> agentShots_;
     SceneBrush brush_;
+    std::string splineEdit_;
     StudioLuaPanel lua_;   // Extensions panel (editor/extensions.lua)
     StudioLuaContext luaContext() const;
     Json sceneBrushJson() const;

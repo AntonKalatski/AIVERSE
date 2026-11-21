@@ -263,20 +263,20 @@ void Editor::drawGamePicker() {
         drawGameWizard();
     } else {
         ui::heading("Новый проект");
-        ui::heading(genreText(ws_, "hub.genre").c_str());
+        ui::heading(engineText(ws_, "hub.genre").c_str());
         const float genreWidth=std::max(120.0f,(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)*0.5f);
         for(int genre=0;genre<2;++genre) {
             if(genre)ImGui::SameLine();
             ImGui::PushID(genre+10000);
-            if(ImGui::Selectable(genreText(ws_,genre?"hub.genre.fps":"hub.genre.rts").c_str(),H.genre==genre,0,ImVec2(genreWidth,42))) {
+            if(ImGui::Selectable(engineText(ws_,genre?"hub.genre.fps":"hub.genre.rts").c_str(),H.genre==genre,0,ImVec2(genreWidth,42))) {
                 H.genre=genre;H.templ=-1;
                 if(std::string(H.title)=="Моя стратегия"||std::string(H.title)=="Мой шутер")std::snprintf(H.title,sizeof H.title,"%s",genre?"Мой шутер":"Моя стратегия");
             }
-            ImGui::SetItemTooltip("%s",genreText(ws_,genre?"hub.genre.fps.detail":"hub.genre.rts.detail").c_str());
+            ImGui::SetItemTooltip("%s",engineText(ws_,genre?"hub.genre.fps.detail":"hub.genre.rts.detail").c_str());
             ImGui::PopID();
         }
-        ImGui::TextWrapped("%s",genreText(ws_,H.genre?"hub.genre.fps.detail":"hub.genre.rts.detail").c_str());
-        ui::heading(genreText(ws_, "hub.template").c_str());
+        ImGui::TextWrapped("%s",engineText(ws_,H.genre?"hub.genre.fps.detail":"hub.genre.rts.detail").c_str());
+        ui::heading(engineText(ws_, "hub.template").c_str());
         ImGui::SetItemTooltip("Шаблоны: %s", (fs::path(ws_.engineDir) / "templates").string().c_str());
         ImGui::Separator();
         const float formH = 150;

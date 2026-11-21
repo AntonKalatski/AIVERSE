@@ -3,7 +3,7 @@
 // the encounter schedule, hashing and saving. Integer / Fixed maths only; loops in entity order or sorted vectors.
 #include "RtsEncounters.h"
 #include "RtsInternal.h"
-#include "aiverselib/genre/EncounterPersistence.h"
+#include "aiverselib/mechanics/EncounterPersistence.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>

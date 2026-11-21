@@ -5,11 +5,6 @@ namespace aiverse::fps {
 Vec3 direction(Fixed yaw,Fixed pitch) {
     auto cp=fxCosTurns(pitch);return {fxSinTurns(yaw)*cp,fxSinTurns(pitch),fxCosTurns(yaw)*cp};
 }
-Fixed stanceHeight(const Actor& a,const MotorConfig& c){return (a.prone||a.downed)?Fixed::fromRatio(6,10):a.crouched?c.crouchHeight:c.height;}
-world::Bounds actorBounds(const Actor& a,const MotorConfig& c) {
-    auto height=stanceHeight(a,c);
-    return {a.pos-Vec3{c.radius,{},c.radius},a.pos+Vec3{c.radius,height,c.radius}};
-}
 namespace {
 constexpr auto skin=Fixed::fromRatio(1,1000);
 Vec3 slide(Vec3 center,Vec3 delta,Vec3 half,const world::SpatialWorld& world,bool& grounded) {
@@ -28,16 +23,15 @@ Vec3 slide(Vec3 center,Vec3 delta,Vec3 half,const world::SpatialWorld& world,boo
     return center;
 }
 }
-void moveActor(Actor& a,const Input& in,const MotorConfig& c,const world::SpatialWorld& w,Fixed dt,Fixed limit) {
+void moveBody(MotorBody& a,const Input& in,const MotorConfig& c,const world::SpatialWorld& w,Fixed dt,Fixed limit) {
     if(a.health<=0||a.vehicle||a.frozen)return;
     a.yaw=in.yaw;a.pitch=in.pitch;
     bool crouch=(in.buttons&Crouch)!=0;
     bool prone=(in.buttons&Prone)!=0||a.downed;
-    if(a.prone&&!prone){Actor standing=a;standing.prone=false;auto b=actorBounds(standing,c);b.min.y+=skin;if(w.blocked(b))prone=true;}
+    if(a.prone&&!prone){auto b=bodyBounds(a.pos,stanceHeight(false,a.downed,a.crouched,c),c);b.min.y+=skin;if(w.blocked(b))prone=true;}
     a.prone=prone;
     if(a.crouched&&!crouch) {
-        Actor standing=a;standing.crouched=false;
-        auto b=actorBounds(standing,c);b.min.y+=skin;
+        auto b=bodyBounds(a.pos,stanceHeight(a.prone,a.downed,false,c),c);b.min.y+=skin;
         if(w.blocked(b))crouch=true;
     }
     a.crouched=crouch;
@@ -88,8 +82,12 @@ bool decodeInput(const Command& c,Input& out) {
     out={int32_t(a[0]),int32_t(a[1]),Fixed::fromRaw(a[2]),Fixed::fromRaw(a[3]),uint32_t(a[4]),uint32_t(a[5]),c.seq,Action(a[6]),uint32_t(a[7])};return true;
 }
 void io(Archive& a,Input& i){a(i.forward,i.right,i.yaw,i.pitch,i.buttons,i.viewTick,i.sequence,i.action,i.argument);}
-void io(Archive& a,Actor& p) {
+void io(Archive& a,CharacterSnapshot& p) {
     a(p.slot,p.team,p.pos,p.velocity,p.yaw,p.pitch,p.health,p.ammo,p.reserve,p.kills,p.reloadUntil,p.nextFire,p.respawnAt,
       p.lastInputTick,p.lastSequence,p.life,p.weaponIndex,p.storedAmmo,p.storedReserve,p.shots,p.hits,p.switchUntil,p.fireHeld,p.grounded,p.crouched,p.input,p.armor,p.money,p.owned,p.attachments,p.recoil,p.aiming,p.prone,p.downed,p.climbing,p.frozen,p.bleedUntil,p.blindUntil,p.vehicle,p.lastDamage,p.activeAction,p.actionUntil,p.actionTarget,p.actionOrigin,p.bag);
+}
+void ioMelee(Archive& a,CharacterSnapshot& p) {
+    a(p.melee.attack,p.melee.queued,p.melee.started,p.melee.queuedAt,p.melee.lastTick,p.melee.initialized,p.melee.hitTargets,
+      p.parryUntil,p.staggerUntil,p.lockTarget,p.blockHeld,p.meleeHasTip,p.meleeTip);
 }
 }

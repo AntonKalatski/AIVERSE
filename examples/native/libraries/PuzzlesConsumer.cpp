@@ -1,4 +1,4 @@
-#include <aiverselib/genre/PuzzleSolvers.h>
+#include <aiverselib/mechanics/PuzzleSolvers.h>
 #include <aiverselib/bots/PuzzleBot.h>
 #include "modules/rts/RtsNative.h"
 // puzzle-solvers in a native module: validated level data, the authoritative command path shared by the player

@@ -638,7 +638,7 @@ private:
     fx::ParticleSystem preview_;
     render::TextureCache previewTextures_;
     Viewport previewViewport_;
-    render::RTSCamera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
+    render::Camera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
     fx::FxHandle previewHandle_;
     int previewId_=-1;
     uint64_t previewHash_=0;

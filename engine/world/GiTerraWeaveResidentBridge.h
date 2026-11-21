@@ -106,11 +106,12 @@ public:
         return attemptPublish(scene,gpu,out);
     }
 
-    // Hook for terraweave::TerrainMutationCoordinator::setPatchListener.
+    // Hook for terraweave::TerrainMutationCoordinator (addPatchListener: other
+    // observers such as the Box3D collision publisher stay attached).
     template<class Coordinator,class GpuRuntime>
     void attach(Coordinator& terrain,render::GiGeometryScene& scene,GpuRuntime& gpu,
                 render::float3 albedo={.22f,.38f,.16f}) {
-        terrain.setPatchListener({
+        terrain.addPatchListener({
             [this,&scene,&gpu,albedo](const auto& resident,const auto& patch) {
                 try {(void)syncPublishedPatch(resident,patch,scene,gpu,albedo);}
                 catch(const std::exception&) {++listenerErrors_;}

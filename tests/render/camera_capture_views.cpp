@@ -14,6 +14,12 @@ int main() {
         check(face.width==256&&face.height==256&&
               std::abs(face.camera.fovY-render::cameraPi*.5f)<.0001f);
     check(cube[0].camera.rotation.rotate({0,0,-1}).x>.9f);
+    // All faces share one light frustum around the capture point.
+    for(const auto& face:cube)
+        check(face.shadowBounds&&face.shadowMin.x==cube[0].shadowMin.x&&
+              face.shadowMax.y==cube[0].shadowMax.y&&face.shadowMax.z-face.shadowMin.z==80.f);
+    auto noShadow=render::makeCubemapCameraViews(main,keys,256,false,0.f);
+    check(!noShadow[3].shadowBounds);
     auto stereo=render::makeStereoCameraViews(main,.064f,2.f,{7,8},1024,1024);
     check(stereo[0].camera.eye().x<0 && stereo[1].camera.eye().x>0);
     check(stereo[0].camera.lensShift.x>0 && stereo[1].camera.lensShift.x<0);

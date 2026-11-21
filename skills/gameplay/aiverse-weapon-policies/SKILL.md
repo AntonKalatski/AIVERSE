@@ -10,7 +10,7 @@ description: Reuse AIVERSE seeded spread, recoil, swept projectiles, material pe
 Follow `AGENTS.md` and `docs/ecs-mechanic-composition.md`.
 Weapons must be built from reusable ECS components and systems, not separate
 RTS/FPS projectile calculations. The public integration reference is
-`<aiverselib/genre/EcsProjectileSystems.h>`, which binds a shared
+`<aiverselib/mechanics/EcsProjectileSystems.h>`, which binds a shared
 `ProjectileFlightComponent` and `BallisticFlightPolicy` into any
 `Simulation` and delivers ordered `ProjectileImpactEvent` records.
 
@@ -36,10 +36,10 @@ verify save/rollback/hash parity, collisions, team ownership and native C++
 linkage. See `tests/ecs_projectile_composition_test.cpp`. That test shows
 ballistic flight reuse, NOT a completed full FPS/RTS shooting-system migration.
 
-1. Read `docs/genre-packages.md` (section Weapons and ballistics) and the catalog entry. Inspect `genre/Weapons.h` (recoil, spread, projectiles), `genre/Ballistics.h` (traceLayers/resolvePenetration, resolveExplosion, solveLaunch/solveIntercept), `genre/WeaponMods.h` (stepFeed, stepCharge, equipAttachment/resolveStats), `genre/WeaponData.h` and `genre/WeaponPersistence.h` for exact behavior.
-2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
+1. Read `docs/mechanics-packages.md` (section Weapons and ballistics) and the catalog entry. Inspect `genre/Weapons.h` (recoil, spread, projectiles), `genre/Ballistics.h` (traceLayers/resolvePenetration, resolveExplosion, solveLaunch/solveIntercept), `genre/WeaponMods.h` (stepFeed, stepCharge, equipAttachment/resolveStats), `genre/WeaponData.h` and `genre/WeaponPersistence.h` for exact behavior.
+2. One owner per state: if the project's host already owns this state (for example a legacy host in `modules/rts` or `modules/fps` that has its own movement, ammo, damage or victory), adapt that owner to these policies instead of running a second copy; never maintain duplicate health, inventory or cooldown state. A host that cannot use the policy yet is debt in `docs/no-genre-split-audit.md`, not a genre rule.
 3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
-4. Host executables link AIVERSE::genre. Registered native OBJECT modules call aiverse_native_use_genre(aiverse_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
+4. Host executables link AIVERSE::mechanics. Registered native OBJECT modules call aiverse_native_use_mechanics(aiverse_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
 5. Route external actions as Commands, validate ownership/resources/targets, and consume policy outcomes in the authoritative owner. Presentation only reads committed state. Use sim.rng for spread, integer ticks and Fixed arithmetic.
 6. Weapons specifics: call stepFeed/stepCharge exactly once per weapon per tick in the authoritative handler; `draw(n)` must atomically take rounds from the real reserve owner (do not keep a second copy of FPS module ammo). Explosion `exposure` is the owner's real LOS/cover query; apply returned damage/impulses through the existing damage owner, in the returned order. Material tables, frames and attachments come from `readWeaponDefinitions`; scalar configs from `penetrationConfig`/`explosionConfig`/`feedConfig`/`chargeConfig`/`aimConfig` plus `weaponSettingsErrors`. Fold committed outcomes into the checksum with `hashWeapon`.
 7. Persist state with genre::save/load and storeBytes/loadBytes in a separate NativeState key. Bind configuration/definition versions in the save envelope. Do not put mutable state on a NativeModule instance or keep future state after rollback.

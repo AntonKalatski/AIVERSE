@@ -607,7 +607,7 @@ int aiverseMain(int,char**) {
         }
         const bool gpu=phaseGpu(phase);
         renderer.setGpuAuthoredDrawEnabled(gpu);
-        render::RTSCamera camera;
+        render::Camera camera;
         camera.target={0,0,0};camera.distance=4.0f;
         camera.pitch=0.10f;camera.yaw=0.0f;
         renderer.beginScene(camera,kWidth,kHeight);

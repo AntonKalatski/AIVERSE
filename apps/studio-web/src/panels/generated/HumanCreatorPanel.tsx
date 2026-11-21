@@ -1,3 +1,4 @@
+import { copyText } from '../../clipboard';
 // Character Creator (MetaHuman-style): a category rail (Presets & Blend, Face,
 // Sculpt, Skin, Eyes, Hair, Body, Clothing, Pose & Light), camera framing
 // (face / torso / full), a one-click "character studio" layout with the Scene
@@ -21,6 +22,7 @@ import HumanHairstyleControls from '../HumanHairstyleControls';
 import HumanCrowdControls from '../HumanCrowdControls';
 import HumanReferenceControls from '../HumanReferenceControls';
 import HumanPackageControls from '../HumanPackageControls';
+import HumanMetaHumanControls from '../HumanMetaHumanControls';
 import { useOutfit } from '../useOutfit';
 import HumanFaceBlend from '../HumanFaceBlend';
 import { HcCard, HcHeader, HcSlider, HcSwitch } from '../HumanCreatorUi';
@@ -143,6 +145,8 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           </div>
           <StudioCheckbox label="Применять изменения сразу" checked={autoApply} onChange={e => setAutoApply(e.target.checked)}/>
         </HcCard>
+        <HumanMetaHumanControls guid={h.guid} draft={h.draft} face={h.face}
+          onApply={(look, f) => { h.edit(look); if (f !== h.face) h.editFace(f); if (autoApply && bound) void h.apply(f, look); }}/>
         <HcCard title="Возраст" hint="Седина, фактура и цвет кожи вместе; форму лица меняйте в «Лице»">
           <HcSlider id="hc-age" label="Возраст" min={18} max={85} step={1} value={age ?? lookAge(h.draft.values)} disabled={!h.info}
             format={v => Math.round(v) + ' лет'} onChange={v => { setAge(v); const look = { ...h.draft, values: { ...h.draft.values, ...ageLook(v) } }; h.edit(look); if (autoApply && bound) h.live(look, h.face); }}
@@ -166,7 +170,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
               if (d.matched.length) applyDraft(d.values, i >= 0 ? archetypePoint(i) : null);
             }}>Создать черновик</StudioButton>
             <StudioButton disabled={!description.trim()} title="Запрос для агента с MCP-инструментами AIVERSE"
-              onClick={() => { void navigator.clipboard?.writeText(agentLookPrompt(description, profileName)); h.setStatus('Запрос для агента скопирован'); }}>Запрос агенту</StudioButton>
+              onClick={() => { void copyText(agentLookPrompt(description, profileName)); h.setStatus('Запрос для агента скопирован'); }}>Запрос агенту</StudioButton>
           </div>
           {understood && <p className="hc-hint">{understood.length ? 'Понял: ' + understood.join(', ') : 'Ничего не распознал — уточните цвет волос, глаз, кожу, телосложение или форму лица, либо отправьте запрос агенту.'}</p>}
         </HcCard>

@@ -61,7 +61,7 @@ public:
     }
     const std::vector<std::string>& warnings() const { return warnings_; }
 
-    // extra materials after the road kit's (RtsRoadView::Mat)
+    // extra materials after the road kit's (roads::RoadView::Mat)
     enum Mat : int { kStone = 100, kRock, kSand, kFoam, kCanvas, kPaint, kShoreMatEnd };
 
 private:

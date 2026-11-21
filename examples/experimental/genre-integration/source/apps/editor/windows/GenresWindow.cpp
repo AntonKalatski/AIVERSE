@@ -13,7 +13,7 @@ public:
     const char* dockArea() const override{return "center";}
     bool openByDefault() const override{return false;}
     void draw(Editor& ed) override {
-        auto& ws=ed.ws();auto tr=[&](const char* key){return genreText(ws,key);};
+        auto& ws=ed.ws();auto tr=[&](const char* key){return engineText(ws,key);};
         if(!ws.project.isGenre()){ImGui::TextUnformatted(tr("genres.editor.only").c_str());return;}
         auto identity=ws.project.dir+"\n"+ed.doc().path;
         if(project_!=identity){project_=identity;rules_=ws.project.rulesJson.dump(2);map_=ed.doc().toJson().dump(2);message_.clear();}

@@ -1,7 +1,7 @@
 // Ordered projectile programs on flat maps and planetary surfaces. All structural ECS edits occur outside world.each.
 #include "RtsInternal.h"
-#include "../../libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
-#include "KingstonRocketCollision.h"
+#include "../../libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h"
+#include "RtsProjectileWalls.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>
 #include <optional>
@@ -276,9 +276,8 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
             }
             Vec3 heading=spatial?projectile::unit(delta):s.direction;
             auto wall=terrain(position,heading,length);
-            const auto* kingstonWeapon=projectileWeapon(p);
-            const bool kingstonRocket=kingstonWeapon&&kingstonWeapon->id=="rocket";
-            auto building=kingstonRocket?kingston::rocketWall(w,rules_,position,heading,length,s.radius):kingston::RocketContact{};
+            const auto* shotWeapon=projectileWeapon(p);
+            auto building=shotWeapon&&shotWeapon->hitsWalls?projectileWall(w,rules_,position,heading,length,s.radius):WallContact{};
             if(building.distance&&(!wall||*building.distance<=*wall))wall=building.distance;
             else building={};
             struct Hit { Fixed distance; Entity target; };
@@ -303,8 +302,8 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
                 s.hit.push_back(hit.target);
                 Projectile shot=p;
                 bool replaced=contact(position);
-                if(kingstonRocket&&w.has<Unit>(hit.target)&&
-                   (rules_.types[w.get<Unit>(hit.target).type].tags&rules_.tagMask("city_drivable")))
+                if(shotWeapon&&!shotWeapon->wrecksTag.empty()&&w.has<Unit>(hit.target)&&
+                   (rules_.types[w.get<Unit>(hit.target).type].tags&rules_.tagMask(shotWeapon->wrecksTag)))
                     shot.damage=fxMax(shot.damage,w.get<Unit>(hit.target).hp*100+Fixed::fromInt(1000));
                 impact(shot,hit.target,position);
                 if (replaced) { alive=false; break; }

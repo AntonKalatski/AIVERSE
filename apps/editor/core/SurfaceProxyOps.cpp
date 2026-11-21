@@ -37,10 +37,10 @@ void registerSurfaceProxyOps(Workspace& ws){
             fs::create_hard_link(tmp,dest);
             auto result=baked.report;result.set("ok",Json::fromBool(true));result.set("model",Json::string(name));
             auto proxy=Json::object();proxy.set("model",Json::string(name));proxy.set("maxPixels",Json::number(int64_t(96)));result.set("sceneProxy",proxy);
-            result.set("next",Json::string("Inspect source/proxy from front, side and oblique cameras; use geometry_proxy_lod for an RTS type or instance.proxy in geometry_scene_set. No automatic gameplay/collision changes."));
+            result.set("next",Json::string("Inspect source/proxy from front, side and oblique cameras; use geometry_proxy_lod for a rules type or instance.proxy in geometry_scene_set. No automatic gameplay/collision changes."));
             return result;
         }});
-    ws.registerOp({"geometry_proxy_lod","Append a baked surface proxy to an RTS type's existing view.lod. Requires the expected source model; preserves other view settings and rejects animated sources. Distance is explicit; inspect transitions and material overrides.",
+    ws.registerOp({"geometry_proxy_lod","Append a baked surface proxy to a rules type's existing view.lod. Requires the expected source model; preserves other view settings and rejects animated sources. Distance is explicit; inspect transitions and material overrides.",
         Json::parse(R"({"type":"object","properties":{"type":{"type":"string"},"source":{"type":"string"},"model":{"type":"string"},"distance":{"type":"number","exclusiveMinimum":0}},"required":["type","source","model","distance"]})"),
         [&ws](const Json& p){
             const auto type=p.getStr("type"),model=p.getStr("model"),source=p.getStr("source");

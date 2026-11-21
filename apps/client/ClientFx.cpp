@@ -148,7 +148,7 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
     ps_.setViewSpace(&space_);
 }
 
-void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
+void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::Camera& cam, const render::mat4& viewProj,
                       int fbW, int fbH, float dt) {
     preparedLightsValid_ = false;
     lightBuf_.clear();
@@ -226,7 +226,7 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
     }
 }
 
-void ClientFx::prepareGpuFrame(float dt,const render::RTSCamera& camera) {
+void ClientFx::prepareGpuFrame(float dt,const render::Camera& camera) {
     if(!gpuPlayback_ || planet_) return;
     // Called inside Device::beginFrame, before Renderer3D::beginScene:
     // GPU buffers and compute are not touched by Simulation::step().
@@ -245,7 +245,7 @@ void ClientFx::prepareGpuFrame(float dt,const render::RTSCamera& camera) {
 }
 
 void ClientFx::renderGpu(const render::mat4& viewProj,
-                         const render::RTSCamera& camera) {
+                         const render::Camera& camera) {
     if(!gpuPlayback_ || planet_) return;
     const render::mat4 view=camera.view();
     const render::float3 right{view.at(0,0),view.at(0,1),view.at(0,2)};

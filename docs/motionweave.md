@@ -443,7 +443,7 @@ new model publication, leaving all GPU-retired models alive
 until correct fence completion can be established.
 
 `game::Portrait::renderAppearance(const render::ModelDraw&,
-RTSCamera,background)` is a generic synchronous offscreen
+Camera,background)` is a generic synchronous offscreen
 consumer that keeps the host-selected material override,
 node-material mapping, geometry policy, team tint, variant
 and any precomputed pose. Raw-model, precomputed-pose and

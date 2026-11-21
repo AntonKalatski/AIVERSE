@@ -58,6 +58,14 @@
       "path": "third_party/rmlui/Source/Debugger/LICENSE.txt"
     },
     {
+      "name": "third_party/fsr",
+      "path": "third_party/fsr/LICENSE.txt"
+    },
+    {
+      "name": "third_party/smaa",
+      "path": "third_party/smaa/LICENSE.txt"
+    },
+    {
       "name": "third_party/stb",
       "path": "third_party/stb/LICENSE.txt"
     },

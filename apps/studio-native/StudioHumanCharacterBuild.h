@@ -46,6 +46,27 @@ inline Json buildStudioHumanCharacter(const std::string& project,const std::stri
  auto check=render::loadModel("character.glb",[&](const std::string& key,std::string& out){if(key!="character.glb")return false;out=bytes;return true;});
  if(!check||check->meshes.size()!=model->meshes.size()||check->skins.size()!=model->skins.size())throw std::runtime_error("Assembled GLB roundtrip failed");
  for(size_t i=0;i<check->meshes.size();++i)if(check->meshes[i].morphTargetNames!=model->meshes[i].morphTargetNames)throw std::runtime_error("Assembled facial semantics changed");
+ #ifdef _WIN32
+ // Same contract as below: a fresh staging folder, durable files, published only if the name is still free.
+ {
+  namespace fs=std::filesystem;
+  if(!platform::plainDirectory(content))throw std::runtime_error("Cannot open content directory");
+  const fs::path folder=content/"Characters";std::error_code ec;
+  fs::create_directory(folder,ec);
+  if(!platform::plainDirectory(folder))throw std::runtime_error("Unsafe Characters directory");
+  const fs::path target=folder/name,staging=folder/("."+name+".pending");
+  if(fs::exists(fs::symlink_status(target,ec)))throw std::runtime_error("Character already exists; choose a new name");
+  if(!fs::create_directory(staging,ec)||ec)throw std::runtime_error("Character build staging already exists");
+  try {
+   platform::writeNewFileDurably(staging/"model.glb",bytes,"character");
+   platform::writeNewFileDurably(staging/"source.json",editable.dump(2),"character");
+   platform::writeNewFileDurably(staging/"appearance.json",vivid::HumanAppearance{}.toJson().dump(2),"character");
+   if(fs::exists(fs::symlink_status(target,ec)))throw std::runtime_error("Cannot publish character without replacing an existing asset");
+   fs::rename(staging,target,ec); // a directory never replaces an existing one on Windows
+   if(ec)throw std::runtime_error("Cannot publish character");
+  }catch(...){std::error_code ignore;fs::remove_all(staging,ignore);throw;}
+ }
+ #else
  const int root=::open(content.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(root<0)throw std::runtime_error("Cannot open content directory");
  if(::mkdirat(root,"Characters",0700)!=0&&errno!=EEXIST){::close(root);throw std::runtime_error("Cannot create Characters directory");}
  const int folder=::openat(root,"Characters",O_RDONLY|O_DIRECTORY|O_NOFOLLOW);::close(root);if(folder<0)throw std::runtime_error("Unsafe Characters directory");
@@ -65,6 +86,7 @@ inline Json buildStudioHumanCharacter(const std::string& project,const std::stri
 #endif
   (void)::fsync(folder);::close(dir);::close(folder);
  }catch(...){for(auto file:{"model.glb","source.json","appearance.json"})::unlinkat(dir,file,0);::close(dir);::unlinkat(folder,pending.c_str(),AT_REMOVEDIR);::close(folder);throw;}
+ #endif
  auto result=Json::object();result.set("running",Json::fromBool(false));result.set("path",Json::string("Characters/"+name+"/model.glb"));result.set("vertices",Json::number(int64_t(check->vertices.size())));result.set("meshes",Json::number(int64_t(check->meshes.size())));result.set("materials",Json::number(int64_t(check->materials.size())));result.set("bytes",Json::number(int64_t(bytes.size())));result.set("lodTriangles",studioHumanLodTriangles(*check));result.set("textureSize",Json::number(int64_t(size)));return result;
 }
 }

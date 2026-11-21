@@ -34,7 +34,7 @@ inline PhysisSceneOverlayState& physisSceneOverlayState() {
 }
 
 inline void drawPhysisSceneOverlay(Editor& editor, const Viewport& vp,
-                                   const render::RTSCamera& camera) {
+                                   const render::Camera& camera) {
     auto& overlay = physisSceneOverlayState();
     if (!overlay.enabled || vp.pointsW <= 0 || vp.pointsH <= 0) return;
     // Live game PHYSIS first; otherwise the editor's «Живая природа» private

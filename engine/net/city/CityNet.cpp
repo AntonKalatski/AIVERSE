@@ -432,7 +432,11 @@ void Server::broadcast() {
     for (auto& p : peers_) human[p.slot] = 1;
     std::unordered_map<uint32_t, uint8_t> driven;   // car index -> driver's slot
     std::unordered_set<uint32_t> inside;            // heroes in a vehicle
-    if (game::Driving* d = m.driving()) if (auto* ds = d->store(sim)) for (auto& c : ds->cars) if (c.player) { driven[c.e.index] = c.player; if (c.driver.valid()) inside.insert(c.driver.index); }
+    if (game::Driving* d = m.driving(); d && d->active())
+        for (const Entity e : vehicles::vehicleEntities(sim.world())) {
+            const auto& c = *vehicles::driveOf(sim.world(), e);
+            if (c.player) { driven[e.index] = c.player; if (c.driver.valid()) inside.insert(c.driver.index); }
+        }
     std::unordered_map<uint32_t, uint8_t> involved;
     game::Traffic* tr = m.traffic();
     auto* ts = tr && tr->active() ? tr->store(sim) : nullptr;

@@ -116,7 +116,7 @@ struct Fixture {
         asset.primitives.push_back(std::move(primitive));
     }
 
-    bool makeAlias(Model& alias, const RTSCamera& cam, bool leaves) {
+    bool makeAlias(Model& alias, const Camera& cam, bool leaves) {
         strata::PortablePassView main{cam.proj(float(kWidth)/kHeight,true)*
                                       cam.view(),kWidth,kHeight,true,
                                       leaves?.01f:10000.f};
@@ -187,7 +187,7 @@ struct Fixture {
         return true;
     }
 
-    bool checkSelectedRanges(const RTSCamera& cam, bool leaves) {
+    bool checkSelectedRanges(const Camera& cam, bool leaves) {
         Model& alias=leaves?fine:coarse;
         if(!makeAlias(alias,cam,leaves))return false;
         const auto& tree=asset.primitives[0].geometry.nodes;
@@ -300,7 +300,7 @@ struct Fixture {
         Mode mode = frame <= 8 ? Mode::Empty :
                     frame <= 19 ? Mode::Legacy :
                     frame <= 30 ? Mode::Fine : Mode::Coarse;
-        RTSCamera cam;
+        Camera cam;
         cam.target={0,0,0};
         cam.distance=5.f;
         cam.pitch=.2f;
