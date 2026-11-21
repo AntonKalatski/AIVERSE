@@ -5,7 +5,7 @@
   "title": "LENS: панорамы, зеркала, порталы и стерео",
   "summary": "Камера умеет снять шесть граней куба и собрать из них панораму 360°, показать вид зеркала или портала с отсечением по их плоскости и отрисовать пару глаз для стерео — в том числе по данным позы и углов обзора, которые отдаёт XR-рантайм.",
   "body": [
-    "Панорама строится на GPU из шести граней по 90° и разворачивается в равнопромежуточную проекцию: подходит для отражений, превью и съёмки окружения. Найдена и исправлена ошибка: раньше панорама выходила вверх ногами.",
+    "Панорама строится на GPU из шести граней по 90° и разворачивается в равнопромежуточную проекцию: подходит для отражений, превью и съёмки окружения. Найдена и исправлена ошибка: раньше панорама выходила вверх ногами. Тень солнца во всех шести гранях строится по одной общей теневой карте вокруг точки съёмки, поэтому освещение не меняется скачком на швах между гранями.",
     "Камеры зеркала и портала отражают или переносят взгляд основной камеры и отсекают всё, что лежит за плоскостью зеркала или выхода портала. На кадрах они показаны врезкой поверх основного вида.",
     "Стерео-пару можно получить из одной камеры — по межзрачковому расстоянию и дистанции схождения — или из данных шлема: позы каждого глаза и четырёх тангенсов угла обзора, включая несимметричные."
   ],
@@ -51,7 +51,7 @@
   "titleEn": "LENS: panoramas, mirrors, portals and stereo",
   "summaryEn": "A camera can capture six cube faces and assemble them into a 360° panorama, show the view of a mirror or a portal clipped at its plane, and render a pair of eyes for stereo — including from the eye poses and field-of-view angles an XR runtime provides.",
   "bodyEn": [
-    "The panorama is built on the GPU from six 90° faces into an equirectangular projection, for reflections, previews and environment capture. A bug was found and fixed: the panorama used to come out upside down.",
+    "The panorama is built on the GPU from six 90° faces into an equirectangular projection, for reflections, previews and environment capture. A bug was found and fixed: the panorama used to come out upside down. The sun shadow in all six faces comes from one shared shadow map around the capture point, so lighting does not jump at the seams between faces.",
     "Mirror and portal cameras reflect or carry over the main camera's view and clip everything behind the mirror plane or the portal exit. In the frames they are shown as an inset over the main view.",
     "A stereo pair can come from one camera — by interpupillary distance and convergence distance — or from headset data: a pose per eye and four field-of-view tangents, asymmetric ones included."
   ],
