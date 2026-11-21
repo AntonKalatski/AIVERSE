@@ -1,4 +1,5 @@
 {
+ "engine/net/authority/Session.cpp -> libraries/include/aiverselib/genre/VehiclePersistence.h": "L2",
  "engine/net/authority/Session.h -> modules/fps/FpsModule.h": "G4",
  "engine/net/city/CityMirror.cpp -> modules/rts/RtsCommerce.h": "G3",
  "engine/net/city/CityMirror.cpp -> modules/rts/RtsModule.h": "G3",
@@ -9,6 +10,7 @@
  "engine/net/city/CityNet.cpp -> modules/rts/RtsModule.h": "G3",
  "engine/net/city/CityNet.cpp -> modules/rts/RtsTopDown.h": "G3",
  "engine/net/city/CityNet.cpp -> modules/rts/RtsTraffic.h": "G3",
+ "engine/ui/RaceHud.h -> libraries/include/aiverselib/genre/RaceSession.h": "L2",
  "libraries/include/aiverselib/bots/Fps.h -> modules/fps/FpsModule.h": "G4",
  "libraries/include/aiverselib/bots/Rts.h -> modules/rts/RtsAI.h": "G3",
  "libraries/include/aiverselib/gameplay/NativeCommands.h -> modules/rts/RtsModule.h": "G3",

@@ -326,8 +326,8 @@ need physics, while an FPS hitscan weapon may not simulate a flying entity.
 
 ## NEREID: shared water ECS primitives (experimental)
 
-Public headers: `<aiverselib/water/NereidWaterSystems.h>` and
-`<aiverselib/water/NereidWater.h>`; package: `AIVERSE::lib_nereid_water`.
+Public headers: `"engine/world/nereid/NereidWaterSystems.h"` and
+`"engine/world/nereid/NereidWater.h"`; package: `AIVERSE::lib_nereid_water`.
 `WaterBodyComponent` defines deterministic bodies, `WaterProbeComponent`
 supplies a query point, `WaterContactComponent` stores sampled water
 immersion/velocity; the host registers water persistence. The same pure

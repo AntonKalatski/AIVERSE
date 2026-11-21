@@ -8,7 +8,7 @@
 //  - trafficLocalDetour: a short bounded route around a local blockage (a jam, a wreck) on a small lattice
 //    around the vehicle, simplified to straight legs that the caller's `clear` test accepts.
 // Integers / Fixed only and the immutable road net: the same inputs give the same choice everywhere.
-#include "../../Graphs.h"
+#include "engine/core/Graphs.h"
 #include "../Traffic.h"
 #include <algorithm>
 #include <vector>

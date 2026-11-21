@@ -1,6 +1,6 @@
 #pragma once
 #include "modules/rts/RtsModule.h"
-#include "Loot.h"
+#include "engine/core/progression/Loot.h"
 #include <optional>
 #include <span>
 namespace aiverse::lib::systems {

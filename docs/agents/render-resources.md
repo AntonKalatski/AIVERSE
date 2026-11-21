@@ -342,11 +342,11 @@ retargeting, IK, root-motion policy, scheduling, pose/skin output.
 Never fork an algorithm per genre or put genre-specific events in
 `engine/render`, `libraries/include/aiverselib/animation` or
 `libraries/include/aiverselib/motionweave`. Use
-`<aiverselib/animation/MotionWeaveSourceBridge.h>`.
+`"engine/animation/MotionWeaveSourceBridge.h"`.
 Document each implementation stage in a separate handoff commit.
 
 **AIVERSE MotionWeave — canonical modular animation system.**
-For new projects use `<aiverselib/motionweave/MotionWeave.h>`,
+For new projects use `"engine/animation/MotionWeave.h"`,
 `aiverse::motionweave`, `motionweave::MotionWeave::update` and
 `AIVERSE::MotionWeave`. Legacy `aiverse::lib::animation`,
 `AIVERSE::animation_ecs`, `AnimationGraph`, existing JSON asset IDs and

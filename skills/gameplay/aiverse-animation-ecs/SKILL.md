@@ -6,11 +6,11 @@ description: Shared C++ presentation ECS animation components and graph player u
 
 Subsystem name: **AIVERSE MotionWeave**. New agents should prefer
 `skills/gameplay/aiverse-motionweave/SKILL.md`, public header
-`<aiverselib/motionweave/MotionWeave.h>` and
+`"engine/animation/MotionWeave.h"` and
 `AIVERSE::MotionWeave`. The old API, skill and target remain usable.
 
 CMake target `AIVERSE::animation_ecs`; public header
-`<aiverselib/animation/EcsAnimationSystems.h>`.
+`"engine/animation/EcsAnimationSystems.h"`.
 
 Use a SEPARATE `aiverse::World` for animation presentation. Never put these
 floating-point components, graph players, or asset pointers in the authoritative

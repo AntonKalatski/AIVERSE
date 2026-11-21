@@ -82,7 +82,7 @@
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "libraries/include/aiverselib/animation/EcsAnimationSystems.h",
+      "source": "engine/animation/EcsAnimationSystems.h",
       "keywords": [
         "animation",
         "ecs",
@@ -1789,7 +1789,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/Graphs.h",
+      "source": "engine/core/Graphs.h",
       "keywords": []
     },
     {
@@ -1853,7 +1853,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/InputFlow.h",
+      "source": "engine/platform/input/InputFlowCore.h",
       "keywords": []
     },
     {
@@ -2058,7 +2058,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/systems/Loot.h",
+      "source": "engine/core/progression/Loot.h",
       "keywords": []
     },
     {
@@ -2407,7 +2407,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/water/NereidBuoyancySystems.h",
+      "source": "engine/world/nereid/NereidBuoyancySystems.h",
       "keywords": [
         "buoyancy",
         "float",
@@ -2435,7 +2435,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/water/NereidCascades.h",
+      "source": "engine/world/nereid/NereidCascades.h",
       "keywords": [
         "cascade",
         "waterfall",
@@ -2463,7 +2463,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/water/NereidCurrentField.h",
+      "source": "engine/world/nereid/NereidCurrentField.h",
       "keywords": [
         "current",
         "river",
@@ -2491,7 +2491,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/water/NereidInteractions.h",
+      "source": "engine/world/nereid/NereidInteractions.h",
       "keywords": [
         "water",
         "splash",
@@ -2520,7 +2520,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/water/NereidVortices.h",
+      "source": "engine/world/nereid/NereidVortices.h",
       "keywords": [
         "vortex",
         "water",
@@ -2546,7 +2546,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
+      "source": "engine/world/nereid/NereidWaterSystems.h",
       "keywords": [
         "water",
         "ocean",
@@ -3090,7 +3090,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/Progression.h",
+      "source": "engine/core/progression/Progression.h",
       "keywords": []
     },
     {
@@ -3746,7 +3746,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/net/SnapshotDelta.h",
+      "source": "engine/net/SnapshotDelta.h",
       "keywords": [
         "snapshot",
         "delta",

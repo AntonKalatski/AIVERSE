@@ -2,7 +2,7 @@
 
 Optional FPS skeletal animations are powered by **AIVERSE MotionWeave**.
 New native modules link `AIVERSE::MotionWeave` and include
-`<aiverselib/motionweave/MotionWeave.h>`.
+`"engine/animation/MotionWeave.h"`.
 See [MotionWeave](motionweave.md). The old animation ECS target remains valid.
 
 FPS projects use `game.json` with `module: "fps"` and `genre: "fps"`. Choose FPS in

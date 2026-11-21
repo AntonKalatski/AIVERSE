@@ -2,7 +2,7 @@
 // Bounded deterministic local routing around the complete nearby vehicle cluster.
 // The caller supplies road/obstacle clearance; the normal swept collision checks remain authoritative.
 #include <algorithm>
-#include <aiverselib/Graphs.h>
+#include "engine/core/Graphs.h"
 #include "libraries/include/aiverselib/genre/Traffic.h"
 namespace kingston {
 template<class Clear> std::vector<aiverse::Vec2> fireLocalDetour(aiverse::Vec2 start,aiverse::Vec2 goal,Clear clear){

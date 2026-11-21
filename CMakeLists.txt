@@ -3952,7 +3952,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_ENABLE_PHYSICS AND
         tests/physis_terraweave_fall_bridge_test.cpp)
     # TerraWeaveEcsAuthority.h transitively reads the NEREID shoreline
     # policy through TerraWeaveNereidSoilBridge.h. AIVERSE::lib_nereid_water
-    # exports libraries/include for <aiverselib/water/NereidErosion.h>.
+    # exports libraries/include for "engine/world/nereid/NereidErosion.h".
     # Do not compensate with a global compiler include path.
     target_link_libraries(aiverse_physis_terraweave_fall_bridge_test PRIVATE
         aiverse_engine aiverse_physics aiverse_models aiverse_zstd_dec

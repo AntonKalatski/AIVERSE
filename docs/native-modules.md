@@ -287,7 +287,7 @@ aiverse_native_module(ID my_game VERSION 1 ENTRY createMyGame SOURCES MyGame.cpp
 target_link_libraries(aiverse_native_my_game PRIVATE AIVERSE::libraries)
 ```
 
-Use `#include <aiverselib/Graphs.h>` (and other headers from `libraries/include/aiverselib`). Do not copy algorithms and do
+Use `#include "engine/core/Graphs.h"` (and other headers from `libraries/include/aiverselib`). Do not copy algorithms and do
 not edit the engine CMake for a specific game: the target is already declared before the native project is loaded.
 `aiversebuild` carries the libraries into source exports. Full example: `examples/native/libraries`; API and limits:
 [libraries.md](libraries.md). Library containers are not saved automatically: persistent state lives in NativeState, and

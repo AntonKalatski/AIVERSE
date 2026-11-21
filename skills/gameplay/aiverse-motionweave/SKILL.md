@@ -5,7 +5,7 @@ description: Modular ECS animation system for AIVERSE native projects across FPS
 # AIVERSE MotionWeave
 
 Canonical public API:
-- Header: `<aiverselib/motionweave/MotionWeave.h>`
+- Header: `"engine/animation/MotionWeave.h"`
 - CMake: `AIVERSE::MotionWeave`
 - C++ namespace: `aiverse::motionweave`
 - Scheduler: `motionweave::MotionWeave::update(presentationWorld, dt)`

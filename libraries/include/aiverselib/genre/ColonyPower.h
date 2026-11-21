@@ -6,7 +6,7 @@
 // supply, later ones that still fit are kept too (skip-fit); a shed consumer stays off for restoreDelayTicks
 // (hysteresis against flapping). Surplus charges storage in ascending id order.
 // Integer units per tick (watts, litres, ...); producer output is scaled by owner factors (weather, fuel).
-#include "../Graphs.h"
+#include "engine/core/Graphs.h"
 #include <algorithm>
 #include <cstdint>
 #include <map>

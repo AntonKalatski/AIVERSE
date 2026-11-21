@@ -1,7 +1,7 @@
 #include <aiverselib/systems/Tags.h>
 #include <aiverselib/systems/Reservations.h>
 #include <aiverselib/systems/Sequence.h>
-#include <aiverselib/systems/Loot.h>
+#include "engine/core/progression/Loot.h"
 #include <aiverselib/systems/Curves.h>
 #include <aiverselib/systems/Perception.h>
 #include <aiverselib/systems/Decisions.h>

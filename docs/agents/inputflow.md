@@ -5,7 +5,7 @@ mandatory reading before working in this area). Newest entries are at the end.
 
 ## AIVerse InputFlow (formerly Enhanced Input) — mandatory stage-by-stage agent handoff
 
-**Canonical name and native API:** AIVerse InputFlow / `<aiverselib/gameplay/InputFlow.h>` / `aiverse::lib::gameplay::inputflow::InputFlow`. Retain compatibility with `enhanced::InputSystem`, old project JSON and `AIVERSE::lib_input`.
+**Canonical name and native API:** AIVerse InputFlow / `"engine/platform/input/InputFlowCore.h"` / `aiverse::lib::gameplay::inputflow::InputFlow`. Retain compatibility with `enhanced::InputSystem`, old project JSON and `AIVERSE::lib_input`.
 
 For changes in `feature/aiv990_enhanced_input` / PR #20 (and any future
 continuation of that subsystem), read

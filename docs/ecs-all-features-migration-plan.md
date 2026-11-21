@@ -78,7 +78,7 @@ Work from command dispatch, queues and phase ordering toward small neutral syste
 |---|---|---|---|
 | `tasks` | `libraries/include/aiverselib/Tasks.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `logistics` | `libraries/include/aiverselib/Logistics.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
-| `progression` | `libraries/include/aiverselib/Progression.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
+| `progression` | `engine/core/progression/Progression.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `objectives` | `libraries/include/aiverselib/Objectives.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `construction` | `libraries/include/aiverselib/gameplay/Construction.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `inventory` | `libraries/include/aiverselib/gameplay/Inventory.h` | ECS | Extract state+systems; preserve and reuse existing policy |
@@ -87,7 +87,7 @@ Work from command dispatch, queues and phase ordering toward small neutral syste
 | `object-interactions` | `libraries/include/aiverselib/systems/Interactions.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `reservations` | `libraries/include/aiverselib/systems/Reservations.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `action-sequences` | `libraries/include/aiverselib/systems/Sequence.h` | ECS | Extract state+systems; preserve and reuse existing policy |
-| `loot-tables` | `libraries/include/aiverselib/systems/Loot.h` | ECS | Extract state+systems; preserve and reuse existing policy |
+| `loot-tables` | `engine/core/progression/Loot.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `offline-production` | `libraries/include/aiverselib/strategy/Offline.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `production-networks` | `libraries/include/aiverselib/strategy/Production.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `settlement-production` | `libraries/include/aiverselib/genre/Colony.h` | ECS | Extract state+systems; preserve and reuse existing policy |
@@ -134,7 +134,7 @@ Work from command dispatch, queues and phase ordering toward small neutral syste
 | `geometry` | `engine/render/Geometry.h` | ADAPTER | Inspect existing implementation; do not duplicate |
 | `math` | `engine/core/FixedMath.h` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
 | `collections` | `libraries/include/aiverselib/Collections.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
-| `graphs` | `libraries/include/aiverselib/Graphs.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
+| `graphs` | `engine/core/Graphs.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `behavior` | `libraries/include/aiverselib/Behavior.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `rules` | `libraries/include/aiverselib/Rules.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `generation` | `modules/rts/gen/MapGen.h` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
@@ -175,7 +175,7 @@ Work from command dispatch, queues and phase ordering toward small neutral syste
 | `bot-matches` | `examples/libraries/bots/main.cpp` | KEEP | Extract state+systems; preserve and reuse existing policy |
 | `big-numbers` | `libraries/include/aiverselib/strategy/BigNumber.h` | ECS | Extract state+systems; preserve and reuse existing policy |
 | `session-admission` | `libraries/include/aiverselib/net/Admission.h` | ADAPTER | Extract state+systems; preserve and reuse existing policy |
-| `snapshot-delta` | `libraries/include/aiverselib/net/SnapshotDelta.h` | ADAPTER | Extract state+systems; preserve and reuse existing policy |
+| `snapshot-delta` | `engine/net/SnapshotDelta.h` | ADAPTER | Extract state+systems; preserve and reuse existing policy |
 | `physics` | `engine/physics/World.h` | ADAPTER | Inspect existing implementation; do not duplicate |
 | `weather-timeline` | `libraries/include/aiverselib/systems/WeatherTimeline.h` | ADAPTER | Extract state+systems; preserve and reuse existing policy |
 | `vehicle-fx` | `libraries/include/aiverselib/genre/vehicle-fx/VehicleLights.h` | ADAPTER | Extract state+systems; preserve and reuse existing policy |

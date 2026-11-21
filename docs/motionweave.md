@@ -13,7 +13,7 @@ target_link_libraries(my_game PRIVATE AIVERSE::MotionWeave)
 ```
 
 ```cpp
-#include <aiverselib/motionweave/MotionWeave.h>
+#include "engine/animation/MotionWeave.h"
 
 // Separate client presentation ECS World; never Simulation::world().
 aiverse::World presentation;
@@ -29,7 +29,7 @@ This is the *same* implementation as the existing library, not a second engine:
 | `AIVERSE::motionweave` | `AIVERSE::animation_ecs` |
 | `aiverse::motionweave` | `aiverse::lib::animation` |
 | `MotionWeave::update(world,dt)` | `stepAnimationPresentation(world,dt)` |
-| `<aiverselib/motionweave/MotionWeave.h>` | `<aiverselib/animation/EcsAnimationSystems.h>` |
+| `"engine/animation/MotionWeave.h"` | `"engine/animation/EcsAnimationSystems.h"` |
 
 All specialist libraries still have their historical
 `<aiverselib/animation/...>` paths. Existing `render::AnimationGraph`,
@@ -67,7 +67,7 @@ For a game with many animated characters, create a **persistent host-owned**
 scheduler once and pass it to the three-argument MotionWeave update:
 
 ```cpp
-#include <aiverselib/motionweave/MotionWeave.h>
+#include "engine/animation/MotionWeave.h"
 
 aiverse::motionweave::MotionWeaveScheduler scheduler;
 auto stats = aiverse::motionweave::MotionWeave::update(
@@ -155,7 +155,7 @@ The core doesn't know what "fire", "attack", "move", "cast",
 names in their own graphs; clients project their state into the
 same reusable API.
 
-Generic `<aiverselib/animation/MotionWeaveSourceBridge.h>` exposes
+Generic `"engine/animation/MotionWeaveSourceBridge.h"` exposes
 `AnimationSourceFrame {sourceId,generation,model,graph,inputs}` and
 `MotionWeaveSourceBridge::sync(presentationWorld, sources)`.
 A bridge maintains visual ECS entity identity, resets visual players

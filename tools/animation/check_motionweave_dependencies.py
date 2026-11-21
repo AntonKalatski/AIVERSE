@@ -65,7 +65,7 @@ def main(argv: list[str]) -> int:
         print("usage: check_motionweave_dependencies.py REPO_ROOT", file=sys.stderr)
         return 2
     root = pathlib.Path(argv[1]).resolve()
-    if not (root / "libraries/include/aiverselib/motionweave/MotionWeave.h").is_file():
+    if not (root / "engine/animation/MotionWeave.h").is_file():
         print("MotionWeave public header not found", file=sys.stderr)
         return 2
     problems = check(root)

@@ -6,7 +6,7 @@ mandatory reading before working in this area). Newest entries are at the end.
 ## NEREID universal water framework (2026-11-18)
 
 New opt-in, genre-independent ECS water capability: `AIVERSE::lib_nereid_water`
-with `<aiverselib/water/NereidWaterSystems.h>`. It samples Fixed-point
+with `"engine/world/nereid/NereidWaterSystems.h"`. It samples Fixed-point
 water-body volumes for native shooter/strategy/vehicle/other hosts; it must not
 be reimplemented in FPS or RTS. Existing editor `waterNetwork`, baked tiles,
 shore geometry and RTS water paths are still authoritative for legacy games.

@@ -14,6 +14,7 @@ allowlisted edge that is **gone**, so `tools/layers/allowlist.json` only shrinks
 |---|---|---|
 | G3 | `engine/net/city`, `libraries/.../systems/{Persistence,EngineMechanics,NativeCommands}.h`, `voxel*Persistence.h`, `bots/Rts.h`, `modules/strategic` include `modules/rts` | no-genre work, `docs/no-genre-split-audit.md` stage 4 (extract `modules/rts`-only capabilities) |
 | G4 | `engine/net/authority/Session.h`, `bots/Fps.h`, `modules/genres` include `modules/fps` | no-genre work, stages 3/6 |
+| L2 | 2 edges from the racing merge (dcba54d8c): `engine/net/authority/Session.cpp` -> `genre/VehiclePersistence.h`, `engine/ui/RaceHud.h` -> `genre/RaceSession.h`; the vehicle/race cluster (Vehicles, RaceCourse, RaceSession, RaceBot, genre Persistence) should move into `engine/` like NEREID did | racing agent |
 | L1 | closed 2026-11-21: InputFlow -> `engine/platform/input`, Graphs/Progression/Loot -> `engine/core`, SnapshotDelta -> `engine/net`, NEREID core -> `engine/world/nereid`, MotionWeave core -> `engine/animation`; old `aiverselib/...` paths forward | done |
 
 ## Rules
