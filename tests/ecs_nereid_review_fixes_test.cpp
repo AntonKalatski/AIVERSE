@@ -3,6 +3,7 @@
 // bucketed flood obstruction lookup.
 #include <aiverselib/water/NereidErosion.h>
 #include <aiverselib/water/NereidFloodRouting.h>
+#include "engine/world/NereidRipples.h"
 #include "TestCheck.h"
 #include <iostream>
 #include <memory>
@@ -170,11 +171,44 @@ static void obstructionIndexMatchesScan(){
     AIVERSE_TEST_CHECK(blocked>0);
 }
 
+static void wakeTileCullMatchesShaderEllipse(){
+    const Entity water{4,1};
+    const auto event=[&](nw::WaterInteractionKind kind){
+        nw::WaterPresentationEvent e;
+        e.source=Entity{9,1};
+        e.event.kind=kind;
+        e.event.water=water;
+        e.event.radius=Fixed::fromInt(2);
+        e.event.strength=Fixed::fromInt(4);
+        e.event.tick=1;
+        e.movementDirection={Fixed::fromInt(1),Fixed{}};
+        return std::vector<nw::WaterPresentationEvent>{e};
+    };
+    const uint64_t bodyId=water.packed()+1;
+    // ring 2 m + 2.5 m band: the wake shader ellipse reaches 4.5/0.75 = 6 m
+    // ahead; a tile at 5..5.5 m used to be culled by the circular test.
+    world::NereidRippleField wake;
+    wake.ingest(event(nw::WaterInteractionKind::SurfaceWake),1);
+    const auto ahead=wake.shaderPacketForTile(bodyId,0,0,5.0,5.5,-0.1,0.1);
+    AIVERSE_TEST_CHECK(ahead.rings[0].w>0.f && ahead.shapes[0].w>0.5f &&
+                       ahead.shapes[0].z==1.35f);
+    AIVERSE_TEST_CHECK(wake.shaderPacketForTile(
+        bodyId,0,0,6.5,7.0,-0.1,0.1).rings[0].w==0.f);
+    // A plain ring keeps its circular bound.
+    world::NereidRippleField ring;
+    ring.ingest(event(nw::WaterInteractionKind::Enter),1);
+    AIVERSE_TEST_CHECK(ring.shaderPacketForTile(
+        bodyId,0,0,5.0,5.5,-0.1,0.1).rings[0].w==0.f);
+    AIVERSE_TEST_CHECK(ring.shaderPacketForTile(
+        bodyId,0,0,4.0,4.4,-0.1,0.1).rings[0].w>0.f);
+}
+
 int main(){
     rockIsNotErodible();
     partialObstructionPassesWater();
     floodFlowHasVelocityUnits();
     portsMustBeInsideGrid();
     obstructionIndexMatchesScan();
-    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index)\n";
+    wakeTileCullMatchesShaderEllipse();
+    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull)\n";
 }
