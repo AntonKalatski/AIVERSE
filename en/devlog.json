@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T22:36:44+00:00",
+ "generated": "2026-11-21T23:55:52+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -152,6 +152,44 @@
     {
      "title": "Dynamic GI",
      "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/dynamic-gi.md"
+    }
+   ],
+   "author": "lighting"
+  },
+  {
+   "id": "2026-11-22-lighting-baked-lighting-vulkan",
+   "date": "2026-11-22",
+   "system": "lighting",
+   "title": "Baked lighting on Vulkan and Android",
+   "summary": "Baked lightmaps and light probes are checked on Vulkan and Android; on the way, reading packed vertex data on mobile GPUs was fixed — it broke both lightmaps and skeletal animation.",
+   "body": [
+    "Static models standing where they were baked take their light from the lightmap, moved or new objects from the probe grid. This has long worked on Metal and GL; the same is now checked on Vulkan and on an Android phone.",
+    "The check found a bug in the Vulkan backend. Some mobile GPUs (Adreno 610 among them) have no `R8G8B8A8_USCALED` vertex format, so byte attributes were read as 0..1 instead of 0..255. Lightmap UVs pointed at one spot and skeletal animation used the wrong bones. On such devices the engine now builds a vertex-shader variant that restores the real values; devices with the format are unchanged.",
+    "The tests of the new PRISMA effects were fixed too: their check did not recognise the \"PASS\" line and reported passing effects as failed."
+   ],
+   "status": "done",
+   "verified": "New GPU test `lighting_baked_{gpu,gl,vulkan}`: a slab with a two-colour lightmap and the same slab moved (lit by probes), sun off. Mac Studio (Metal and GL) and a Samsung Galaxy A05s phone (Adreno 610, Vulkan) — passed. On the phone the lightmap UV check failed before the fix and passes after; Luma, dynamic GI and `aiverse_vulkan_tests` pass there again.",
+   "limits": "This is a one-slab test scene, not baking a real map on a phone. Skeletal models on Adreno were not checked visually — the fix is verified on lightmaps and on compiling the shader variants.",
+   "branch": "main",
+   "commit": "781b362e1",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lighting-baked-lighting-vulkan/01.jpg",
+     "caption": "A two-colour lightmap on a slab: red on the left, blue on the right, Vulkan on Android"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lighting-baked-lighting-vulkan/02.jpg",
+     "caption": "The same slab moved off its baked place — lit by a green probe grid"
+    }
+   ],
+   "links": [
+    {
+     "title": "Light baking",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/lightbake.md"
+    },
+    {
+     "title": "Vulkan",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/vulkan.md"
     }
    ],
    "author": "lighting"
