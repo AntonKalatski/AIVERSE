@@ -8,6 +8,11 @@ target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(aiverse_studio PRIVATE aiverse_hosted_client SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view AIVERSE::vivid_human AIVERSE::libraries "-framework Cocoa" "-framework WebKit")
 target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
 target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+# Publish / Build panel: the packager built next to Studio.
+if(TARGET aiversebuild)
+    add_dependencies(aiverse_studio aiversebuild)
+    target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_BUILD_TOOL="$<TARGET_FILE:aiversebuild>")
+endif()
 set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 set_target_properties(aiverse_studio PROPERTIES
     OUTPUT_NAME AiverseStudioHTML5
@@ -43,6 +48,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_studio_human_appearance_session_tests PRIVATE aiverse_editor_core SQLite::SQLite3)
     add_test(NAME studio_human_appearance_session COMMAND aiverse_studio_human_appearance_session_tests)
     set_tests_properties(studio_human_appearance_session PROPERTIES LABELS "EDITOR")
+    add_executable(aiverse_studio_human_creator_tests tests/StudioHumanCreatorTests.cpp)
+    target_include_directories(aiverse_studio_human_creator_tests PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_human_creator_tests PRIVATE aiverse_zstd_dec)
+    add_test(NAME studio_human_creator COMMAND aiverse_studio_human_creator_tests)
+    set_tests_properties(studio_human_creator PROPERTIES LABELS "EDITOR" PASS_REGULAR_EXPRESSION "studio human creator PASS")
     add_executable(aiverse_studio_content_tests tests/StudioContentDirectoryTests.cpp)
     target_include_directories(aiverse_studio_content_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     add_test(NAME studio_content_directory COMMAND aiverse_studio_content_tests)
@@ -186,7 +196,7 @@ if(AIVERSE_BUILD_TESTS)
     set_tests_properties(studio_session PROPERTIES LABELS "EDITOR")
 endif()
 
-foreach(target aiverse_studio aiverse_studio_session_tests aiverse_studio_human_appearance_session_tests
+foreach(target aiverse_studio aiverse_studio_session_tests aiverse_studio_human_appearance_session_tests aiverse_studio_human_creator_tests
         aiverse_studio_render_lighting_tests aiverse_studio_metal_lighting_tests)
     if(TARGET ${target})
         target_link_libraries(${target} PRIVATE aiverse_vivid_human aiverse_modeling)

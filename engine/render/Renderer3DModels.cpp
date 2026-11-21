@@ -60,8 +60,10 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         mu.light[0] = mt.shading == ShadingModel::Pbr ? mt.sssColor.x : mt.fixedLight.x;
         mu.light[1] = mt.shading == ShadingModel::Pbr ? mt.sssColor.y : mt.fixedLight.y;
         mu.light[2] = mt.shading == ShadingModel::Pbr ? mt.sssColor.z : mt.fixedLight.z;
-        mu.light[3] = mt.shading == ShadingModel::Unlit ? mt.fixedLight.w :
-            (std::isfinite(mt.thinTransmission) ? std::clamp(mt.thinTransmission,0.f,1.f) : 0.f);
+        // PBR light.w packs two independent features: integer part = thin
+        // transmission quantised to 1/255, fraction = SSS max transmitted
+        // world depth in [0,1) (0 keeps the artistic backlight).
+        mu.light[3] = mt.shading == ShadingModel::Unlit ? mt.fixedLight.w : gpuPackThinSss(mt.thinTransmission, mt.sssThickness);
     return mu;
 }
 // Regular (non-ICB) draws append the VIVID layered-eye row (MU2.eyeOptics).
@@ -605,6 +607,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                         args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE"+index+"(uv) "+(metal?"tex"+slot+".sample(s"+slot+",uv)":"texture(tex"+slot+",uv)")+"\n";
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
+                        macros+="#define SG_TEXEL"+index+"(x,y) "+(metal?"tex"+slot+".read(uint2(uint(x),uint(y)))":"texelFetch(tex"+slot+",ivec2(x,y),0)")+"\n";
                     }
                     if(metal) {
                         const auto f=source.find("fragment ");
@@ -677,6 +680,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                         declarations+="uniform sampler2D tex"+slot+";\n";
                         args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
+                        // Exact integer texel fetch for vertex data tables (hierarchical
+                        // wind rigs, WindRigShader.h): no filtering, wrapping or mips.
+                        macros+="#define SG_TEXEL"+index+"(x,y) "+(metal?"tex"+slot+".read(uint2(uint(x),uint(y)))":"texelFetch(tex"+slot+",ivec2(x,y),0)")+"\n";
                     }
                     if(metal)replace(source,"vs_main(VERTEX_ARGS)","vs_main(VERTEX_ARGS"+args+")");else source=declarations+source;
                     code+=macros;
@@ -1122,10 +1128,59 @@ ModelStaticEligibility Renderer3D::cachedStaticModelEligibility(const Model& sou
     return result;
 }
 
+// Rigged draws (windRigGraph materials): fill scene wind and the editor
+// debug material override, then resubmit once. Returns true if resubmitted.
+bool Renderer3D::applyWindRig(const ModelDraw& d) {
+    const bool debug = windDebugView_ == wind::WindDebugView::Parts ||
+                       windDebugView_ == wind::WindDebugView::Depth ||
+                       windDebugView_ == wind::WindDebugView::Weight;
+    const bool needWind = !d.useVertexParameters && sceneWind_.enabled();
+    if (!debug && !needWind) return false;
+    const auto& source = d.materials && d.materials->size() >= d.model->materials.size()
+        ? *d.materials : d.model->materials;
+    const auto& rigGraph = wind::windRigGraph();
+    bool rigged = false;
+    for (const auto& mat : source) if (mat.shaderGraph == rigGraph) { rigged = true; break; }
+    if (!rigged) return false;
+    ModelDraw copy = d;
+    if (needWind) {
+        const auto params = wind::windRigParamsForDraw(sceneWind_, d.world);
+        copy.useVertexParameters = true;
+        copy.vertexParameters = wind::windRigVertexParameters(params);
+        copy.maxVertexOffsetMetres = std::max(copy.maxVertexOffsetMetres,
+                                              std::min(10.f, wind::windRigMaxOffsetMetres(params)));
+    }
+    if (debug) {
+        const void* key = d.materials ? static_cast<const void*>(d.materials) : static_cast<const void*>(d.model);
+        auto& cached = windDebugMaterials_[key];
+        if (cached.revision != d.model->materialRevision || cached.count != source.size() ||
+            cached.materials.size() != source.size()) {
+            cached.materials = source;
+            const auto program = wind::windRigDebugGraph(windDebugView_);
+            for (auto& mat : cached.materials) if (mat.shaderGraph == rigGraph) mat.shaderGraph = program;
+            cached.revision = d.model->materialRevision;
+            cached.count = source.size();
+        }
+        copy.materials = &cached.materials;
+        copy.materialOwnerKey = 0; copy.materialOwnerRevision = 0;
+        copy.staticPacketRevision = 0;
+    }
+    if (!copy.useVertexParameters) copy.useVertexParameters = d.useVertexParameters;
+    // Guard: the copy carries vertex parameters and/or debug materials, so the
+    // recursive call returns false here.
+    if (!debug) { drawModel(copy); return true; }
+    const auto saved = windDebugView_;
+    windDebugView_ = wind::WindDebugView::Off;
+    drawModel(copy);
+    windDebugView_ = saved;
+    return true;
+}
+
 void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
+    if (applyWindRig(d)) return;
     if(modelPacketTap_)modelPacketTap_(d);
     const auto overrideStatus = modelVertexOverrideStatus(
         *m, d.vertexOverride, d.vertexOverrideCount);
@@ -1319,7 +1374,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                 error, shadowSize_, shadowSize_, z01));
                         if (!st.inView && !st.inShadow)
                             pixels = std::numeric_limits<float>::infinity();
-                        lod = selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
+                        lod = d.lodLevel >= 0 ? forcedModelLod(node.mesh, mesh.lods, d.lodLevel)
+                                              : selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
                     }
                     st.mesh = lod.mesh;
                     st.level = lod.level;
@@ -1455,7 +1511,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         int shadowLodMesh=node.mesh;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
-            float3 lodMin = baseMesh.boundsMin-margin, lodMax = baseMesh.boundsMax+margin;
+            // Detail is chosen by the projected size of the geometry itself.
+            // The vertex-offset margin (wind, up to 10 m) only widens the
+            // culling box: on a 2 m branch it would pin every node at LOD0.
+            float3 lodMin = baseMesh.boundsMin, lodMax = baseMesh.boundsMax;
             if (skinLod) {
                 lodMin = {1e30f, 1e30f, 1e30f}; lodMax = {-1e30f, -1e30f, -1e30f};
                 const Skin& skin = m->skins[size_t(node.skin)];
@@ -1477,13 +1536,15 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                        sceneW_, sceneH_, zeroToOne) : 0.0f;
             float pixels = cameraPixels;
             const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne):0.f;
-            if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
+            if(d.lodLevel>=0)shadowLodMesh=forcedModelLod(node.mesh,baseMesh.lods,d.lodLevel).mesh;
+            else if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
             else if(nodeShadow)pixels=std::max(pixels,shadowPixels);
             if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
             const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
                 std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
             const float fadeWidth = opaque && !m->geometry && matQuality_!=MaterialQuality::Low ? modelLodFadeWidth_ : 0;
-            lodBlend=selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
+            lodBlend=d.lodLevel>=0?forcedModelLod(node.mesh,baseMesh.lods,d.lodLevel)
+                                   :selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
             meshIndex=lodBlend.mesh;level=lodBlend.level;
             // This extra camera-only LOD selection is a diagnostic, not
             // part of rendering. Avoid doing it on every frame when the

@@ -135,7 +135,7 @@ Json patternSchema() {
 }
 
 const char* kMaterialDoc =
-    "Material keys: color [r,g,b(,a)] linear 0..1, metallic 0..1, roughness 0..1, thinTransmission 0..1, shadowDiffusion 0..1 world units, sssStrength 0..1, sssScale 0..1, sssColor [r,g,b] linear 0..1, emissive [r,g,b], emissiveStrength, "
+    "Material keys: color [r,g,b(,a)] linear 0..1, metallic 0..1, roughness 0..1, thinTransmission 0..1, shadowDiffusion 0..1 world units, sssStrength 0..1, sssScale 0..1, sssThickness 0..1 world units (0 = artistic backlight), sssColor [r,g,b] linear 0..1, emissive [r,g,b], emissiveStrength, "
     "alpha opaque|mask|blend, cutoff, doubleSided, unlit, castShadow, receiveShadow, vertexColors, team tint|mask|alpha|vertex|none, "
     "teamStrength, texture / normalMap / emissiveMap / teamMask (PNG/JPEG/TGA/KTX2 paths in the game folder, e.g. made by texture_generate), "
     "metallicRoughnessMap (glTF layout: G roughness, B metallic) / occlusionMap (R) with occlusionStrength, normalScale, "
@@ -144,7 +144,7 @@ const char* kMaterialDoc =
 } // namespace
 
 const std::vector<std::string>& materialKeys() {
-    static const std::vector<std::string> keys = {"shaderGraph", "color", "metallic", "roughness", "thinTransmission", "shadowDiffusion", "sssStrength", "sssScale", "sssColor", "emissive", "emissiveStrength", "alpha", "cutoff",
+    static const std::vector<std::string> keys = {"shaderGraph", "color", "metallic", "roughness", "thinTransmission", "shadowDiffusion", "sssStrength", "sssScale", "sssThickness", "sssColor", "emissive", "emissiveStrength", "alpha", "cutoff",
                                                   "doubleSided", "unlit", "castShadow", "receiveShadow", "vertexColors", "team", "teamStrength",
                                                   "teamMask", "texture", "normalMap", "emissiveMap", "uvScale", "base", "use", "replace", "description",
                                                   "metallicRoughnessMap", "occlusionMap", "occlusionStrength", "normalScale", "uvOffset"};
@@ -167,7 +167,7 @@ std::vector<std::string> checkMaterial(const Json& m) {
                     break;
                 }
         }
-        if ((k == "metallic" || k == "roughness" || k == "thinTransmission" || k == "shadowDiffusion" || k == "sssStrength" || k == "sssScale" || k == "cutoff" || k == "teamStrength") && (!v.isNumber() || !std::isfinite(v.toDouble()) || v.toDouble() < 0 || v.toDouble() > 1))
+        if ((k == "metallic" || k == "roughness" || k == "thinTransmission" || k == "shadowDiffusion" || k == "sssStrength" || k == "sssScale" || k == "sssThickness" || k == "cutoff" || k == "teamStrength") && (!v.isNumber() || !std::isfinite(v.toDouble()) || v.toDouble() < 0 || v.toDouble() > 1))
             out.push_back(k + " must be a number 0..1");
         if (k == "alpha" && v.str() != "opaque" && v.str() != "mask" && v.str() != "blend") out.push_back("alpha must be opaque, mask or blend");
         if (k == "team" && v.str() != "tint" && v.str() != "mask" && v.str() != "alpha" && v.str() != "vertex" && v.str() != "none")

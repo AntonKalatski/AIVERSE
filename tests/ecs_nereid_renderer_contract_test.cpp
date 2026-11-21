@@ -496,12 +496,13 @@ int main() {
       "style":{"shoreFoamDepth":21}
     }]}})"),"reject invalid depth foam width");
     check(std::string(render::shaders::kLitFS).find(
-          "float transmission = exp(-thickness * u_color.r * clamp(albedo.a,0.0,1.0))")!=std::string::npos &&
+          "float transmission = exp(-opticalPath * u_color.r * clamp(albedo.a,0.0,1.0))")!=std::string::npos &&
+          std::string(render::shaders::kLitFS).find("float opticalPath = thickness + length(v_wpos - opaquePos)")!=std::string::npos &&
           std::string(render::shaders::kLitFS).find(
           "contactFoam=1.0-smoothstep(0.0,u_color.g,depth)")!=std::string::npos,
           "GLSL Beer-Lambert approximation or shore foam missing");
     check(std::string(render::shaders::kLitMSL).find(
-          "float transmission = exp(-thickness * u.color.r * clamp(albedo.a,0.0,1.0))")!=std::string::npos &&
+          "float transmission = exp(-opticalPath * u.color.r * clamp(albedo.a,0.0,1.0))")!=std::string::npos &&
           std::string(render::shaders::kLitMSL).find(
           "contactFoam=1.0-smoothstep(0.0,u.color.g,depth)")!=std::string::npos,
           "Metal Beer-Lambert approximation or shore foam missing");
@@ -629,6 +630,39 @@ int main() {
     check(opticsManifest.surfaces[0].style.underwaterDistortion>0.69f &&
           opticsManifest.surfaces[0].style.underwaterScattering==0.5f,
           "manifest must expose underwater settings per surface");
+    // Turbidity: one authored value, same resolved optics above and below.
+    const auto murkyManifest=world::parseNereidWaterManifest(Json::parse(R"({
+      "nereidWater":{"surfaces":[{"kind":"lake","shape":"box",
+        "surfaceY":4,"bottomY":-10,"halfExtents":[5,5],
+        "style":{"absorption":0.3,"turbidity":0.5,"siltColor":[0.5,0.45,0.3]}}]}}
+    )"));
+    const auto& murkyStyle=murkyManifest.surfaces[0].style;
+    check(murkyStyle.turbidity==0.5f && murkyStyle.siltR==0.5f,
+          "manifest must expose turbidity and silt colour");
+    const auto clearResolved=lib::nereid::resolvedWaterOptics(style);
+    check(clearResolved.absorption==style.absorption && clearResolved.deepR==style.deepR,
+          "zero turbidity must keep legacy optics");
+    const auto murkyResolved=lib::nereid::resolvedWaterOptics(murkyStyle);
+    check(murkyResolved.absorption>murkyStyle.absorption+0.7f &&
+          murkyResolved.depthTint>murkyStyle.depthTint &&
+          murkyResolved.deepR>murkyStyle.deepR && murkyResolved.absorption<=4.f,
+          "turbidity must raise extinction, in-scatter and milkiness");
+    check(render::validNereidWaterStyle(murkyStyle),"bounded turbidity must be valid");
+    auto badSilt=murkyStyle;badSilt.turbidity=1.5f;
+    check(!render::validNereidWaterStyle(badSilt),"unbounded turbidity must be rejected");
+    check(!render::sameNereidSurfaceKey(
+          render::makeNereidSurfaceKey(30,false,highOpts,style),
+          render::makeNereidSurfaceKey(30,false,highOpts,murkyStyle)),
+          "water presentation cache must notice turbidity changes");
+    world::NereidSceneSurface clearCamera=underwaterLake,murkyCamera=underwaterLake;
+    clearCamera.style.absorption=0.3f;
+    murkyCamera.style=murkyStyle;
+    const auto clearView=world::sampleNereidUnderwater({clearCamera},{0_fx,3_fx,0_fx});
+    const auto murkyView=world::sampleNereidUnderwater({murkyCamera},{0_fx,3_fx,0_fx});
+    check(murkyView.absorption>clearView.absorption+0.7f &&
+          murkyView.scattering>clearView.scattering && murkyView.silt==0.5f &&
+          murkyView.transmission<clearView.transmission,
+          "diving into turbid water must shorten visibility");
     render::PostFxUnderwater cameraTarget{};
     cameraTarget.submerged=true;
     cameraTarget.distortion=0.8f;

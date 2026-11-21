@@ -3050,3 +3050,105 @@ or unchanged-suite repetition; actual native captures cover this host fix.
 No GUI (standing user instruction: verify without interface), other outfits,
 Vulkan/mobile, CI, performance benchmark or push. Next: additional outfits and
 camera angles, production LOD tuning and interactive editor parity.
+## Stage 6G — 2026-11-19 — atomic human Creator hot reload integration
+
+- **Branch:** `feature/vivid-human-safe-publication`, created from live VIVID branch commit `d02943682c0e287b9ee5043ded5da528c7c57a10`, rather than carrying an old divergent branch with potential conflicts. This stage updates only the original `tools/vivid-creator/main.cpp` and its headless transaction test, plus macOS CI branch routing; no duplicate GUI, renderer, skinning or simulation.
+- **Commits and paths:**
+  - `bb55053a60191952b725859660bacb85c922f6a3`: `tools/vivid-creator/main.cpp` implements all-or-nothing GPU character reload. Builds a new DNA-driven CPU head/groom, preserves imported source texture maps via `humanMaterialFromSource`, compiles MotionWeave animation graph, stages complete GPU models and a new GPU actor, constructs the new World and pose, and only then retires and replaces the previous visible human. Failed candidate stage is retired only after an explicit successful device idle barrier; the old character remains on screen and usable.
+  - `6a343e5b3d7a62019ae9f74bf96e02f00257d2d6`: `tests/vivid/human_creator.cpp` adds a protected existing-target regression that verifies a failed DNA atomic save never removes its existing sentinel/directory. Current base already implements the safe atomic rename failure behavior, so it was not reimplemented.
+  - `a0685e6c802d7968c25310135303190d57242298`: `.github/workflows/vivid-validation.yml` adds the safe-publication integration branch to macOS 16-CTest/Creator build CI while preserving the main VIVID workflow.
+- **Architecture:** stage/candidate CPU model, hair model and DNA-driven skin/eye shader graphs before retiring old GPU resources. New rig graph, cached immutable morph asset, own writable actor stream, MotionWeave World/pose all exist before publication. Existing creator controls, glTF/FBX/OBJ import, texture preservation, 52 facial semantics, skin/eye/hair surfaces and GUI smoke capture are unchanged. One GPU idle boundary is allowed on committed edit, never per animation frame. On failure, staged resources are freed behind a confirmed barrier and previous presentation remains valid.
+- **Tests actually run on this new branch:** **NOT RUN**. GitHub source was fetched and structurally inspected, but no actual Mac compiler/Metal GPU or screenshot evidence has been received for Stage 6G. Prior Stage 5J user Mac 11/11 and 2 GUI previews on `fa5504a9` predates Stage 6 human code. The newly authored 16 CTests plus procedural/imported Creator GUI smoke should be run in one pass, followed by full engine regression.
+- **Known constraints and risks:** the Creator remains standalone ImGui instead of an integrated editor tab. An explicit idle barrier blocks rare DNA edit commits; a failed barrier prevents publication and may require manual retry. Production photorealistic skin diffusion/eye optics/groom, bespoke licensed head scans, artist DNA calibration, streaming/LOD and Vulkan parity are still separate visual quality gates. This is an integration hardening change, not full MetaHuman-quality certification.
+- **Next:** user Mac: fetch this branch into a separate clean VIVID worktree, `AIVERSE_VIVID_REF=feature/vivid-human-safe-publication bash tools/vivid-validate.sh`. Inspect 16 CTests, single and 12-actor GPU previews, procedural and imported Creator GUI PPMs. Only when green should the PR be rebased/merged to the updated VIVID feature branch; do not merge to main until full AIVERSE tests also pass.
+
+### Stage 6G follow-up — selection-safe one-pass runner
+
+- Commit `6447bb1c374d7d31517a76609c17c267694941eb` updates `tools/vivid-validate.sh` to read `AIVERSE_VIVID_REF`, defaulting to the existing `feature/vivid-digital-humans` for backward compatibility. The isolated safety-fix branch must be tested with `AIVERSE_VIVID_REF=feature/vivid-human-safe-publication bash tools/vivid-validate.sh`; otherwise the script would deliberately switch to the base VIVID branch and NOT test this patch. This clarification is critical for reliable test provenance.
+- Tests after this runner adjustment: **NOT RUN**; Mac CMake, CTest, and four GUI previews still require the actual user/CI execution.
+## Stage 6C — 2026-11-19 — Creator last-good transactional publication
+
+- **Dedicated integration branch:** `feature/vivid-human-creator-ui`, branched from `feature/vivid-digital-humans` at `0b5a94d789258a1c6d3a1a3cc898656e4f249a27`. Avoid overwriting concurrent improvements to the original VIVID branch. No `main` merge.
+- **Discovery:** the source branch already included a working full ImGui editor at `tools/vivid-creator/main.cpp` with DNA editing, procedural/manifest import, GPU facial morphs, MotionWeave, dynamic hair, and GUI capture smoke mode. A provisional duplicate `apps/vivid_creator/main.cpp` and duplicate `aiverse_vivid_creator` CMake target were *discarded* in commits `ddd4fe94b0dd2aac616485688c89895d445b8242`, `9f9ddb929514ee338149eb24f43701f3caed71e0`. Production continues using the original Creator, not a second editor/scheduler.
+- **Implementation commit:** `4cd4bd1713e0d3b647ad2bc26678e8096ae3856d` — `tools/vivid-creator/main.cpp`: Creator regeneration is transactional rather than destroying existing head/hair/actor before GPU creation of the replacement. It first compiles the DNA-driven candidate on CPU, builds MotionWeave graph, reserves GPU head and dynamic groom buffers, creates the shared morph GPU asset and per-character actor, allocates new presentation World and face matrices, and publishes only when all stages succeed. Any failure leaves the original character's model and rig intact. Failed candidate uploads retire staged GPU resources behind a full queue idle barrier rather than leaking or drawing partial data. Existing `releaseHuman` owns the old actor's explicit-safe retirement.
+- **Compatibility:** no serialized DNA schema changes, no authoritative simulation, no `gfx::Device` or `ModelVertex` ABI changes, and no duplicate animation implementation. Uses existing VIVID HumanCreatorSession/Preview/Import/GpuActorStream and MotionWeave APIs. GUI, CTest target names and manifest format remain unchanged.
+- **Verification:** source review only. No native macOS compilation, ShaderGraph warm-up or screenshots were run for this commit. Previous Stage 5J 11/11 CTests and one/twelve-actor GUI passes were on `fa5504a9` and do not validate Stage 6 human code. Stage 6A/6B human tests remain unverified until a Mac run.
+- **Risks:** asset publication requires GPU idle only when a DNA edit commits, not per frame. A failed GPU idle barrier prevents retiring last-good or staged buffer resources and must abort safely. Existing Creator may still need stronger device-loss handling, asset migration/undo policy and real human visual regression. Transaction is an editor-local integration, not generic automatic hot reload of all model assets.
+- **Next:** audit Creator smoke and headless HumanDNA/HumanRig/Materials/Groom/Import tests in the current branch; fix first Mac compiler/ShaderGraph errors, then run a single comprehensive macOS validation including the real GUI Creator capture. Keep separate handoff for each stage.
+
+## Stage 6F — 2026-11-19 — Creator DNA last-good save and isolated macOS CI
+
+- **Branch:** `feature/vivid-human-creator-ui`, forked at `0b5a94d789258a1c6d3a1a3cc898656e4f249a27` from `feature/vivid-digital-humans`. Base VIVID branch has continued to receive parallel updates, so this is an isolated integration/review branch, **not merged to VIVID/main**.
+- **Implementation commits and exact files:** `2931fdb77d67f6075673c2a4fd28fd376bdea55b` — `tools/vivid-validate.sh` now selects `AIVERSE_VIVID_REF` or defaults to isolated branch for this branch's one-shot Mac acceptance; `0c739b4f831c258a0807d94503d76cda01aa52dd` — new `.github/workflows/vivid-human-creator-validation.yml`, macOS-15 focused build for Creator and VIVID/MotionWeave 16-case CTest; `a701f303f639ea1caa4965b7323469f17844557f` — `engine/character/vivid/HumanCreatorSession.cpp` removes unsafe delete-existing-asset fallback after atomic save rename failure; `793c1a0a04ddd39a5d4475760fa6412383a206e4` — `tests/vivid/human_creator.cpp` asserts failed save cannot delete existing directory and sentinel; `2eef4c1dcc3fd892159baf4bcd50339714c23323` — `docs/vivid.md` details safety and provenance.
+- **Creator integration context:** Stage 6C commit `4cd4bd1713e0d3b647ad2bc26678e8096ae3856d` changed existing `tools/vivid-creator/main.cpp::regenerate` to stage CPU/GPU human, morph actor, MotionWeave World and presentation matrices before retiring the previously displayed model. No duplicate editor, scene scheduler or simulation ownership was created.
+- **Behavior:** `saveFile` never removes the last-good DNA JSON on failed rename. On Windows/filesystems where atomic replacement of an existing file is not available, the method now fails conservatively (leaving `.vivid.tmp`) instead of deleting the original. Headless CTest covers this on every supported platform using a target directory containing sentinel data.
+- **Actual tests after Stage 6C/6F:** **NOT RUN** from this assistant session. GitHub Actions run for the isolated branch was pending at last inspection. The earlier user-provided 11/11 CTest and single/12-actor GUI pass were at Stage 5J SHA `fa5504a9f2e1f64087ef73139525e5bde31976b4`, before Stage 6 human code and this stage; they are not evidence for current branch.
+- **Risks:** the Creator's GPU transaction still requires an explicit idle barrier on editing (never per frame) and remains a standalone GUI, not yet embedded as a tab in the editor. Asset licensing, true human scans, multi-layer skin refraction/diffusion, realistic strand hair and MetaHuman binary DNA interchange are not solved by this PR. The source VIVID branch advanced independently and may conflict in `tools/vivid-creator/main.cpp` when integrated; reconcile before merge.
+- **Next step:** obtain full Mac test log for `bash tools/vivid-validate.sh` in an isolated worktree, including 16 CTests, GPU single/crowd previews, procedural and imported human GUI smoke (8 PPMs); only after successful validation integrate as a reviewed PR into the updated VIVID branch. Then run full AIVERSE regression before merge into main.
+
+## Studio Human Creator window + human_* MCP — 2026-11-21
+
+Branch `feature/vivid-digital-humans`. Before it: main (`43ef79e6b`, shared engine roads), vivid-human-safe-publication
+(`7aef6fe98`), vivid-human-creator-ui (`13f1121d0`) and the studio-html5 editor commits (Scene camera, orientation
+gizmo, component Inspector: `5d106b453`..`d32a720d4`, cherry-picked) were merged in. Not taken from studio-html5:
+`607f7b958` "shadow-depth transmission for backlit SSS" + its docs — its `sssThickness` and main's vegetation
+`thinTransmission` both claim PBR U2 `light.w`; the studio-html5 owner must pick a layout when merging main.
+
+Implementation: `ef3ac46eb` (see docs/vivid.md § Studio Human Creator).
+
+Actually run (Linux VM, g++ 11.4, no CMake):
+- `apps/studio-native/tests/StudioHumanCreatorTests.cpp` standalone g++ build + run with the vivid human sources,
+  Json, Model, ModelMerge, MeshBuilder, ShaderGraph (other model loaders left unresolved, never called):
+  `studio human creator PASS (25 nodes, 5 targets, 11932 verts)`. `-Wall -Wextra` clean for the new headers.
+- `g++ -fsyntax-only` OK: StudioSession.cpp, mac/StudioFacialGpuPreview.cpp, apps/editor/core/HumanCreatorOps.cpp,
+  Workspace.cpp. MCP input schemas parsed with json.loads (7/7).
+- Studio web: `npx tsc --noEmit` OK; all 16 node test files PASS (new humanCreatorSchema, updated nested-dock).
+- `python3 -m unittest discover -s tools/studio` 41 OK (1 skipped); `tools/readme/check.py` 0 problems;
+  `tools/skills/catalog.py check` OK; `tools/skills/audit.py --strict` 1 error, pre-existing (studio-ui NN-* path).
+
+NOT RUN (KINGSTON Mac): CMake configure/build/link, ctest `studio_human_creator` and the extended
+`studio_human_appearance_session`, Metal: Creator publication in StudioFacialGpuPreview (head + hair keys,
+retirement on mode switch), rig overlay at submit, hair draw; aiversemcp link with aiverse_vivid_human; Studio UI
+screenshot of the window and the viewport.
+
+Known limits: static Studio preview (no groom simulation, hair uses head framing); brush weight painting, scalp
+collision mesh and imported packages stay in tools/vivid-creator; no MCP tool captures the Studio viewport.
+Next: build on KINGSTON, run `ctest -R '^studio_human_(creator|appearance_session)$'`, screenshot Human Creator with
+"Show in viewport" for neutral/warm presets and a jawOpen rest value; then decide the SSS `light.w` layout with the
+studio-html5 owner.
+
+## 2026-11-21 — Character Creator: MetaHuman-style editor features (branch feature/vivid-digital-humans)
+
+Done (code): drag sculpt + brush circle, 1024 landmarks; live slider preview; unified look/face/sculpt history with
+⌘Z; preset thumbnails (`studio.humanLookCapture`, `studio.humanAppearanceThumbnails`); before/after
+(`studio.humanCompare`); test expressions (`HumanPreviewAnimation.expression`); per-part face blend picked in the
+viewport (`studio.humanFacePick`); card-style pose & light tabs (8 existing light rigs); live wardrobe try-on
+(`studio.humanTryOn`), clothing `tint`, LOD budget (`lodTriangles`), "В игру" (`studio.humanPlaceInGame`); random
+character with locks; Russian description -> draft + agent prompt; MCP `human_look_schema|list|get|save`.
+Fixes: no map flash when another character imports; sculpt auto-picks head meshes on a newly shown model; asset picker
+portal over the viewport; Russian status texts; Studio reopens the last project.
+
+Tests actually run here (Linux VM): `tsc --noEmit` clean; `node --test tests/*.mjs` 115/115 pass (incl. new
+humanCreatorSchema cases); `g++ -fsyntax-only` of StudioSession.cpp, StudioFacialGpuPreview.cpp, StudioMetalScene.cpp,
+HumanCreatorOps.cpp, HumanWardrobe.cpp, human_wardrobe.cpp, StudioHumanLookSessionTests.cpp. NOT yet run: the Mac build,
+ctest (studio_human_appearance_session, vivid_human_wardrobe, ...) and visual checks in Studio — next step.
+Known gaps: try-on assembly cost on big outfits is unmeasured; brush circle size is an estimate (face camera);
+thumbnails need the character shown in the viewport.
+
+## 2026-11-21 (later) — Character Creator second pass + main merge
+
+Merged origin/main (85 commits; Studio workspaces) — added a "Character" workspace (⌘7) and kept main's async project
+open (last project saved there). Added: MCP `studio_character_snapshot` (file handshake with the running Studio),
+makeup layers (`makeup.*`), hairstyle library + shared outfit try-on, age control, crowd variants, model animation
+clips in "Поза и свет", index-only LODs for skinned characters at build (`HumanLod.cpp`), reference photo overlay,
+`.aivchar` packages, height in cm + ruler.
+
+Tests actually run (Linux VM): tsc clean; web `node --test` 137/137; `tests/vivid/human_lod.cpp` compiled with
+meshoptimizer and RUN — passes; g++ -fsyntax-only of StudioSession.cpp, StudioMetalScene.cpp, StudioFacialGpuPreview.cpp,
+HumanMaterials.cpp, HumanCreatorOps.cpp, StudioHumanLookSessionTests.cpp. Not run: Mac build, ctest, Studio visuals.
+Known gaps: makeup positions are UV estimates (artist aligns once per model); hairstyles need models skinned to the
+same head bone; no retargeting of external animation files (only clips inside the character glTF).
+Follow-up (same day): makeup auto-placement from face geometry, hairstyle rig detection (shared skeleton vs head-bone
+attach), external animation clips via `<model>.clips.json`. Verified: tsc clean, g++ -fsyntax-only of the touched C++.
+Still needs the Mac build + ctest + visual check. External clips need the same bone names as the character.
+

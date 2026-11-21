@@ -132,7 +132,8 @@ void validateHumanWardrobe(const Json& r) {
   }
  }need(r["version"].isNumber()&&r["version"].toDouble()==1,"Wardrobe version must be 1");names(r["hiddenMeshes"]);need(r["items"].isArray()&&r["items"].size()<=32,"Wardrobe allows up to 32 items");std::set<std::string> ids,slots;
  for(const auto& item:r["items"].items()){
-  known(item,{"id","asset","slot","enabled","bone","translation","rotation","scale","hideMeshes","masks","finish","independentRig","attachmentRule","socket"});
+  known(item,{"id","asset","slot","enabled","bone","translation","rotation","scale","hideMeshes","masks","finish","independentRig","attachmentRule","socket","tint"});
+  need(!item.has("tint")||(item["tint"].isArray()&&item["tint"].size()==3&&[&]{for(const auto& c:item["tint"].items())if(!c.isNumber()||!(c.toDouble()>=0&&c.toDouble()<=4))return false;return true;}()),"Clothing tint must be [r,g,b] in 0..4");
   if(item.has("attachmentRule")){need(item.getStr("attachmentRule")=="keep_world"||item.getStr("attachmentRule")=="snap","Invalid attachment rule");need(item.getBool("independentRig"),"Attachment rules require a separate skeleton");}
   if(item.has("socket")){need(item["socket"].isString(),"Invalid socket name");need(item.getStr("socket").empty()||item.getStr("bone").empty(),"Choose bone or socket, not both");}
 need(!item.has("independentRig")||item["independentRig"].type()==Json::Type::Bool,"Invalid independent rig flag");need(!item.has("finish")||item.getStr("finish")=="cloth"||item.getStr("finish")=="source","Unknown clothing finish");key(item["id"]);key(item["asset"]);key(item["slot"]);need(ids.insert(item.getStr("id")).second,"Duplicate clothing ID");need((item["enabled"]==Json::fromBool(true)||item["enabled"]==Json::fromBool(false)),"Clothing enabled must be boolean");
@@ -155,7 +156,9 @@ std::unique_ptr<Model> assembleHumanCharacter(const std::string& base,const File
  bakeHumanAppearance(*model,look,size);hide(*model,wardrobe["hiddenMeshes"]);
  for(const auto& item:wardrobe["items"].items())if(item.getBool("enabled")){
   hide(*model,item["hideMeshes"]);for(const auto& entry:item["masks"].items())mask(*model,entry,read,size);
-  auto part=loadModel(item.getStr("asset"),read);need(bool(part),"Cannot import clothing: "+item.getStr("id"));part->finalize();if(item.getStr("finish")=="cloth"){auto fabric=look;fabric.materials.clear();for(const auto& material:part->materials)fabric.materials[material.name]="cloth";bakeHumanAppearance(*part,fabric,size);}append(*model,std::move(*part),item);
+  auto part=loadModel(item.getStr("asset"),read);need(bool(part),"Cannot import clothing: "+item.getStr("id"));part->finalize();if(item.getStr("finish")=="cloth"){auto fabric=look;fabric.materials.clear();for(const auto& material:part->materials)fabric.materials[material.name]="cloth";bakeHumanAppearance(*part,fabric,size);}
+  if(item.has("tint")){const auto& t=item["tint"];for(auto& material:part->materials){material.baseColor.x*=float(t[0].toDouble());material.baseColor.y*=float(t[1].toDouble());material.baseColor.z*=float(t[2].toDouble());}}
+  append(*model,std::move(*part),item);
  }
  prune(*model);need(!model->meshes.empty(),"Character has no visible meshes");model->boundsMin=bodyMin;model->boundsMax=bodyMax;body(*model,look);compactMaterials(*model);model->markGeometryChanged();model->markMaterialChanged();model->finalize();return model;
 }

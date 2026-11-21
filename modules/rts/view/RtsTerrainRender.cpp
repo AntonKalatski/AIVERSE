@@ -1949,6 +1949,7 @@ void TerrainRenderer::drawPrepared(Renderer3D& r,const MapGrid& g,
 void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
                                    const std::vector<uint8_t>* vision,
                                    bool preparedOnly) {
+    // terrain.render=false or entity-authored terrain suppresses the map surface.
     if(!look_.render||!mapSurfaceEnabled_){r.setHeightField({});return;}
     if (!built_ || !dev_ || g.w != mapW_ || g.h != mapH_) return;
     gfx::Device& dev = *dev_;
@@ -2224,7 +2225,7 @@ void TerrainRenderer::updateHeightField(gfx::Device& dev, const MapGrid& g) {
 }
 
 void TerrainRenderer::drawWater(render::Renderer3D& r) {
-    if (hasWater_ && water_.indexCount)
+    if (look_.render && mapSurfaceEnabled_ && hasWater_ && water_.indexCount)
         r.drawMeshSnapshot(water_, render::mat4{}, look_.waterColor, render::kDrawNoCastShadow, .9f);
 }
 

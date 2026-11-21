@@ -4426,3 +4426,28 @@ Final publication checkpoint: code+handoff ordinary push to origin/feature/terra
 ## 2026-11-21 main publication explicitly requested
 
 User «Заливай в мейн» supersedes the prior defer-main condition for publication. Fresh remote main973b32970654cc5318fa6b6571f35d020501dcdd was an ancestor of TerraWeave ab5d360f4cb2f2f1f2e99b78b0262f596c48f8d9; normal push HEAD:main succeeded and ls-remote confirmed that exact SHA. No merge conflicts/new code. Repeated4NEREIDCTestPASS +440LENSchecks0failed. CI/fullGPU rerun NOTRUN this unchanged-code promotion; previous actual GPU evidence remains above. Details and still-open work: docs/agent-handoffs/terraweave-main-promotion-2026-11-21.md. Original dirty checkout/user editor untouched. This separate docs commit records the completed publication and is also published to main/TerraWeave; no claim that erosion-driven rocks or all broader art goals are done.
+
+
+## Turbidity (`style.turbidity`, `style.siltColor`)
+
+One authored value for suspended silt, 0..1 (default 0 = legacy optics).
+`lib::nereid::resolvedWaterOptics(style)` derives the effective optics and is
+the single source for both views:
+
+- surface shader (outside): extinction `absorption + 1.6*t` (capped 4/m; t=1 sees ~2 m),
+  deep colour milked toward `siltColor` by `0.75*t`, depth tint toward 1,
+  refraction strength halved at t=1 - the bed fades sooner and the body
+  turns milky;
+- `NereidUnderwaterView` (diving): the same extinction, tint and
+  `underwaterScattering >= 0.85*t` - visibility shrinks, the haze takes the
+  silt colour. `view.silt` reports the authored value.
+
+`siltColor` default `[0.42,0.43,0.31]` (linear). Both fields are parsed for
+surfaces, entity water (`NereidWater` component) and cascades, validated,
+and part of cache/change keys. No uniform or layout change. Contract test:
+`ecs_nereid_renderer_contract_test` (turbidity block).
+
+```json
+"style": {"deepColor":[0.03,0.2,0.26], "absorption":0.5, "depthTint":0.85,
+          "turbidity":0.22, "siltColor":[0.36,0.42,0.33]}
+```
