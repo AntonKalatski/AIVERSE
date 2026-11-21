@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shortcutKey } from './keyboard';
-import {
-  ChevronDown, CheckCircle2, FileCode2,
-  PanelBottom, Redo2, RefreshCw, Save, Settings2, Terminal, Undo2
-} from 'lucide-react';
+import { ChevronDown, Search, Settings2 } from 'lucide-react';
 import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
 import {
-  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
+  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, panelStack, reopenTab
 } from './nestedDock';
+import {
+  WORKSPACES, WORKSPACE_INFO, legacyWorkspace, readActiveWorkspace, readWorkspaceDock, saveActiveWorkspace,
+  saveWorkspaceDock, workspaceDockTree, type StudioWorkspace
+} from './workspaces';
+import type { CommandEntry } from './commandSearch';
+import CommandPalette from './components/CommandPalette';
+import StudioStatusBar from './components/StudioStatusBar';
+import WorkspaceTabs from './components/WorkspaceTabs';
 import type { StudioPanel } from './nestedDock';
-import type { StudioEntity, StudioInspector, StudioSnapshot } from './types';
+import type { StudioAsset, StudioEntity, StudioGameState, StudioInspector, StudioSnapshot } from './types';
 import HeaderGameControls from './components/HeaderGameControls';
 import engineLogo from '../../../engine/assets/branding/mark.png';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
@@ -28,7 +33,11 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [dock, setDock] = useState(readNestedDock);
+  const [workspace, setWorkspace] = useState<StudioWorkspace>(readActiveWorkspace);
+  const [dock, setDock] = useState(() => readWorkspaceDock(readActiveWorkspace()));
+  const [palette, setPalette] = useState<string | null>(null); // null = closed, else initial query
+  const [paletteAssets, setPaletteAssets] = useState<StudioAsset[]>([]);
+  const [game, setGame] = useState<StudioGameState | null>(null);
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {
@@ -49,9 +58,17 @@ export default function App() {
 
   // Store browser-only layout (not engine state) with bounded write frequency.
   useEffect(() => {
-    const handle = window.setTimeout(() => saveNestedDock(dock), 180);
+    const handle = window.setTimeout(() => saveWorkspaceDock(workspace, dock), 180);
     return () => window.clearTimeout(handle);
-  }, [dock]);
+  }, [dock, workspace]);
+  // Each workspace keeps its own arrangement; switching never loses the current one.
+  const switchWorkspace = useCallback((next: StudioWorkspace) => {
+    if (next === workspace) return;
+    saveWorkspaceDock(workspace, dock);
+    saveActiveWorkspace(next);
+    setWorkspace(next);
+    setDock(readWorkspaceDock(next));
+  }, [workspace, dock]);
 
   const refresh = useCallback(async () => {
     try {
@@ -103,8 +120,18 @@ export default function App() {
   }, []);
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || busy) return;
+      if (!(event.metaKey || event.ctrlKey)) return;
       const key = shortcutKey(event);
+      // Global navigation works even while a request is in flight.
+      if (key === 'k' && !event.altKey && !event.shiftKey) { event.preventDefault(); setPalette(current => current === null ? '' : null); return; }
+      if (key === 'p') {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent('studio:play-control', { detail: event.altKey ? 'step' : event.shiftKey ? 'pause' : 'toggle' }));
+        return;
+      }
+      const ws = WORKSPACES.find(id => WORKSPACE_INFO[id].key === key);
+      if (ws && !event.altKey && !event.shiftKey) { event.preventDefault(); switchWorkspace(ws); return; }
+      if (event.altKey || busy) return;
       const target = event.target;
       const editable = target instanceof HTMLElement &&
         !!target.closest('input,textarea,[contenteditable="true"]');
@@ -126,7 +153,7 @@ export default function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [busy, connected, snapshot, historyAction]);
+  }, [busy, connected, snapshot, historyAction, switchWorkspace]);
 
   const select = async (id: string | null) => {
     setBusy(true);
@@ -169,7 +196,6 @@ export default function App() {
   const inspector = inspectorPin ? inspectorPin.inspector : snapshot?.inspector ?? null;
   const toggleInspectorPin = () => setInspectorPin(current => current ? null :
     selected ? {entity: {...selected}, inspector: snapshot?.inspector ? structuredClone(snapshot.inspector) : null} : null);
-  const consoleOpen = panelStack(dock, 'console') !== null;
   const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
     snapshot, busy, connected, search, setSearch, rows, selected,
     inspector, inspectorPinned: !!inspectorPin, toggleInspectorPin,
@@ -213,11 +239,54 @@ export default function App() {
       ...STUDIO_PANELS.map(panel => ({ id: 'panel-' + panel, label: STUDIO_PANEL_TITLES[panel],
         checked: panelStack(dock, panel) !== null,
         onSelect: () => setDock(t => panelStack(t, panel) !== null ? closeTab(t, panel) : reopenTab(t, panel, STUDIO_PANEL_HOME[panel])) })),
-      { id: 'reset', label: 'Reset Layout', separator: true, onSelect: () => setDock(defaultDockTree()) },
+      { id: 'ws', label: 'Workspaces', caption: true, separator: true, onSelect: () => {} },
+      ...WORKSPACES.map(id => ({ id: 'ws-' + id, label: WORKSPACE_INFO[id].title, shortcut: '⌘' + WORKSPACE_INFO[id].key,
+        checked: workspace === id, onSelect: () => switchWorkspace(id) })),
+      { id: 'reset', label: 'Reset ' + WORKSPACE_INFO[workspace].title + ' Layout', separator: true, onSelect: () => setDock(workspaceDockTree(workspace)) },
+      { id: 'palette', label: 'Command Palette…', shortcut: '⌘K', onSelect: () => setPalette('') },
       { id: 'legacy', label: 'Legacy editor — not migrated yet', caption: true, separator: true, onSelect: () => {} },
-      ...LEGACY_WINDOWS_NOT_MIGRATED.map(w => ({ id: 'legacy-' + w.id, label: w.title, disabled: true, onSelect: () => {} })),
+      ...LEGACY_WINDOWS_NOT_MIGRATED.map(w => {
+        const area = legacyWorkspace(w.id);
+        return { id: 'legacy-' + w.id, label: w.title + (area ? '  ·  ' + WORKSPACE_INFO[area].title : ''), disabled: true, onSelect: () => {} };
+      }),
     ] },
   ];
+
+  useEffect(() => {
+    if (palette === null || !project) return;
+    let live = true;
+    void invoke('studio.assets', {}).then(list => { if (live) setPaletteAssets(list.files); }).catch(() => {});
+    return () => { live = false; };
+  }, [palette === null, project]);
+  const paletteEntries = useMemo<CommandEntry[]>(() => {
+    const out: CommandEntry[] = [];
+    for (const menu of menus) for (const item of menu.items()) {
+      if (item.caption || item.id.startsWith('legacy-') || item.id.startsWith('panel-') || item.id.startsWith('ws-') || item.id === 'palette') continue;
+      out.push({ id: 'menu:' + menu.id + ':' + item.id, kind: 'command', title: item.label, hint: menu.label,
+        shortcut: item.shortcut, disabled: item.disabled, run: item.onSelect });
+    }
+    out.push({ id: 'cmd:refresh', kind: 'command', title: 'Refresh from engine', hint: 'Re-read the native document', run: () => void refresh() });
+    out.push({ id: 'cmd:console', kind: 'command', title: 'Show Console', run: () => setDock(t => reopenTab(t, 'console', 'dock-bottom')) });
+    for (const id of WORKSPACES) out.push({ id: 'ws:' + id, kind: 'workspace', title: WORKSPACE_INFO[id].title + ' workspace',
+      hint: WORKSPACE_INFO[id].purpose, shortcut: '⌘' + WORKSPACE_INFO[id].key, run: () => switchWorkspace(id) });
+    for (const panel of STUDIO_PANELS) out.push({ id: 'panel:' + panel, kind: 'window', title: STUDIO_PANEL_TITLES[panel],
+      hint: panelStack(dock, panel) ? 'Open · focus' : 'Open in ' + WORKSPACE_INFO[workspace].title, run: () => showPanel(panel) });
+    for (const w of LEGACY_WINDOWS_NOT_MIGRATED) {
+      const area = legacyWorkspace(w.id);
+      out.push({ id: 'legacy:' + w.id, kind: 'window', title: w.title, legacy: true, disabled: true,
+        hint: (area ? WORKSPACE_INFO[area].title + ' workspace · ' : '') + 'not migrated to HTML5 yet — use the legacy editor', run: () => {} });
+    }
+    for (const entity of snapshot?.scene.entities ?? []) out.push({ id: 'entity:' + entity.id, kind: 'entity', title: entity.name,
+      hint: entity.kind + ' · select and frame (F)', run: () => { void select(entity.id).then(() => invoke('studio.viewportInput', { kind: 'focus' })).catch(console.warn); } });
+    for (const asset of paletteAssets) out.push({ id: 'asset:' + asset.path, kind: 'asset', title: asset.path.split('/').pop() ?? asset.path,
+      hint: asset.path, keywords: asset.path, run: () => {
+        setDock(t => reopenTab(t, 'assets', 'dock-bottom'));
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('studio:reveal-asset', { detail: { path: asset.path } })), 0);
+      } });
+    return out;
+    // menus are rebuilt each render from the same state listed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot, paletteAssets, dock, workspace, busy, connected, switchWorkspace]);
 
   return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')}>
     <header className="titlebar"
@@ -231,26 +300,18 @@ export default function App() {
         <strong>AIVERSE</strong></div>
       <StudioMenuBar menus={menus}/>
       <button className="project-breadcrumb tool-button" onClick={() => void openProject()}
-        disabled={!connected || busy} title="Open project">
-        <b>{snapshot?.project.name ?? 'Loading…'}</b><ChevronDown size={13}/>
+        disabled={!connected || busy} title={snapshot?.project.dirty ? 'Open project · unsaved changes' : 'Open project'}>
+        <b>{snapshot?.project.name ?? 'Loading…'}</b>{snapshot?.project.dirty && <span className="dirty-dot active" aria-label="Unsaved changes"/>}<ChevronDown size={13}/>
       </button>
-      <span className="save-indicator" title={snapshot?.project.dirty ? 'Unsaved changes' : 'Saved'}>
-        <CheckCircle2 size={14}/><span>{snapshot?.project.dirty ? 'Unsaved' : 'Saved'}</span>
-      </span>
-      <div className="header-history">
-        <button className="icon-button" aria-label="Undo" onClick={() => void historyAction('studio.undo')}
-          disabled={busy || !snapshot?.history.canUndo}><Undo2 size={16}/></button>
-        <button className="icon-button" aria-label="Redo" onClick={() => void historyAction('studio.redo')}
-          disabled={busy || !snapshot?.history.canRedo}><Redo2 size={16}/></button>
-        <button className="icon-button" aria-label="Save current map" onClick={() => void historyAction('studio.save')}
-          disabled={busy || !connected || !snapshot?.project.path || !snapshot.project.dirty}><Save size={15}/></button>
-      </div>
-      <HeaderGameControls enabled={connected && !!snapshot?.project.path}
+      <div className="header-drag-space"/>
+      <HeaderGameControls enabled={connected && !!snapshot?.project.path} onState={setGame}
         onPlay={()=>setDock(current=>reopenTab(current,'game','dock-center'))} onError={setError}/>
       <div className="header-drag-space"/>
+      <WorkspaceTabs value={workspace} onChange={switchWorkspace}/>
+      <button type="button" className="command-search-button" onClick={() => setPalette('')} aria-label="Search or run a command (⌘K)">
+        <Search size={13}/><span>Search or run…</span><kbd>⌘K</kbd>
+      </button>
       <div className="title-actions">
-        <button className="icon-button" title="Refresh from engine" aria-label="Refresh from engine" onClick={() => void refresh()}>
-          <RefreshCw size={15}/></button>
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
       </div>
@@ -262,25 +323,15 @@ export default function App() {
           onChange={e => setUiScale(Number(e.target.value) / 100)}/>
       </label>
       <button type="button" onClick={() => setUiScale(1)}>Reset scale to 100%</button>
-      <button type="button" onClick={() => setDock(defaultDockTree())}>Reset panel layout</button>
+      <button type="button" onClick={() => setDock(workspaceDockTree(workspace))}>Reset panel layout</button>
     </section>}
     {!connected && <div className="demo-banner"><span>Preview mode:</span> interface and edits
       are demonstrated locally. Native C++ Workspace and GPU renderer are not connected yet.</div>}
     {error && <div role="alert" className="error-banner">{error}
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
     <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}/>
-    <footer className="statusbar">
-      <div><span className={connected ? 'status-dot connected' : 'status-dot'}/>
-        {connected ? 'Native transport connected' : 'Demo transport'}
-      </div>
-      <div className="statusbar-right">
-        <button onClick={() => setDock(current => consoleOpen
-          ? closeTab(current, 'console') : reopenTab(current, 'console', 'dock-bottom'))}>
-          <PanelBottom size={14}/> {consoleOpen ? 'Hide console' : 'Show console'}
-        </button>
-        <span><Terminal size={13}/> {snapshot?.logs.length ?? 0} messages</span>
-        <span><FileCode2 size={13}/> HTML5 + TypeScript</span>
-      </div>
-    </footer>
+    <StudioStatusBar snapshot={snapshot} connected={connected} game={game}
+      onOpenConsole={() => setDock(current => reopenTab(current, 'console', 'dock-bottom'))}/>
+    {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 }

@@ -157,6 +157,17 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     }
   }),[reload]);
   useEffect(()=>{setFolder('');setSelected(null);setPinnedAssetGuid(null);setSearch('');setPlan(null);},[projectPath]);
+  // Command palette (# assets) reveals a file: open its folder and select it.
+  useEffect(()=>{
+    const reveal=(event:Event)=>{
+      const path=(event as CustomEvent<{path?:unknown}>).detail?.path;
+      if(typeof path!=='string'||!path)return;
+      const cut=path.lastIndexOf('/');
+      setSearch('');setFolder(cut>0?path.slice(0,cut):'');setSelected(path);
+    };
+    window.addEventListener('studio:reveal-asset',reveal);
+    return ()=>window.removeEventListener('studio:reveal-asset',reveal);
+  },[]);
   useEffect(()=>{
     let cancelled=false;
     setLoading(true);setError('');
