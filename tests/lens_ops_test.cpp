@@ -26,10 +26,31 @@ int main() {
     auto current = call("lens_scene_get")["scene"];
     require(current["cameras"].size()==1, "camera missing");
     require(call("lens_camera_set",p).has("error"), "stale edit accepted");
+    // Opaque revision: preferred concurrency token.
+    const auto withRevision = call("lens_scene_get");
+    require(initial.getStr("revision")=="missing" && withRevision.getStr("revision").size()==16, "revision reported");
+    Json renamed = camera; renamed.set("name", Json::string("ByRevision"));
+    Json byRevision = Json::object(); byRevision.set("expectedRevision", withRevision["revision"]); byRevision.set("camera", renamed);
+    auto revSaved = call("lens_camera_set", byRevision);
+    require(revSaved.getBool("ok") && revSaved.getStr("revision")==call("lens_scene_get").getStr("revision"), "revision write");
+    renamed.set("name", Json::string("Again")); byRevision.set("camera", renamed);
+    require(call("lens_camera_set", byRevision).has("error"), "stale revision accepted");
+    current = call("lens_scene_get")["scene"];
+    // A scene re-serialized elsewhere (member order, number spelling) still matches.
+    {
+        Json reordered = Json::object();
+        reordered.set("cameras", current["cameras"]);
+        reordered.set("version", Json::numberText("1.0"));
+        Json q = Json::object(); q.set("expectedScene", reordered); q.set("camera", camera);
+        require(call("lens_camera_set", q).getBool("ok"), "round-tripped expectedScene rejected");
+        current = call("lens_scene_get")["scene"];
+    }
     p.set("expectedScene", current); camera.set("name",Json::string("Changed")); p.set("camera",camera);
     require(call("lens_camera_set",p).getBool("ok"), "replace failed");
     current=call("lens_scene_get")["scene"];
-    p.set("expectedScene",current); camera.set("id",Json::number(int64_t(2))); p.set("camera",camera);
+    p.set("expectedScene",current); camera.set("id",Json::number(int64_t(2)));
+    camera.member("output").set("key",Json::number(int64_t(43))); // texture keys are unique per scene
+    p.set("camera",camera);
     require(call("lens_camera_set",p).getBool("ok"), "second create failed");
     current=call("lens_scene_get")["scene"];
     require(current["cameras"][0].getStr("name")=="Changed", "unrelated record changed");
