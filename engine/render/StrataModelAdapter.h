@@ -62,11 +62,13 @@ struct StagingStats {
 
 class SceneStaging {
 public:
-    // Conservative bounds cap staging work on unexpectedly massive models.
+    // Bounds cap staging work on unexpectedly massive models. They must
+    // admit the sources STRATA exists for (scans and buildings of millions
+    // of triangles); the geometry scene's own vertex budget still applies.
     // A skipped or failed source never prevents the existing renderer drawing it.
     struct Limits {
-        size_t maxVerticesPerSource = 250000;
-        size_t maxIndicesPerSource = 750000;
+        size_t maxVerticesPerSource = 1500000;
+        size_t maxIndicesPerSource = 4500000;
     };
     SceneStaging() = default;
     explicit SceneStaging(const BuildOptions& options) : options_(options) {}

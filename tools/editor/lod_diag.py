@@ -73,7 +73,7 @@ def height(x, z):
 
 
 import math, copy
-call("map_open", file="maps/valley.json")
+call("map_open", file=os.environ.get("LOD_MAP", "maps/valley.json"))
 call("view_focus", x=256, z=256, distance=90)
 time.sleep(15)
 proj = os.environ["TERRA_PROJECT"]
@@ -116,7 +116,7 @@ res = {}
 def stats(tag, **cam):
     shot2(tag, 1280, 720, **cam); time.sleep(1.5); shot2(tag, 1280, 720, **cam)
     st = call("geometry_stats")
-    res[tag] = {k: st.get(k) for k in ("drawCalls", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata")}
+    res[tag] = {k: st.get(k) for k in ("drawCalls", "frameIntervalMs", "cameraModelTriangles", "cameraMeshTriangles", "sunShadowModelTriangles", "cameraLodNodes", "lodChains", "completedGpuFrameMs", "strata", "lodBlocked", "shadowLimitedLod")}
     print("STATS", tag, json.dumps(res[tag]), flush=True)
 idx = 10; x, z, half = centre[idx]; (nx, nz), (fx, fz) = side(idx)
 bx, bz = x + nx * (half + 6), z + nz * (half + 6)
@@ -124,8 +124,26 @@ g = ground([(bx, bz)])[0]
 stats("bank", **look((x - fx * 3, surf[idx] + 1.3, z - fz * 3), (bx + fx * 4, g + 0.3, bz + fz * 4)))
 j = min(len(centre) - 1, 22)
 stats("hero", **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0], surf[8] + 35, centre[j][1])))
+for rep in range(int(os.environ.get("LOD_REPEAT", "0"))):
+    time.sleep(2)
+    stats("hero-%d" % rep, **look((centre[8][0], surf[8] + 1.1, centre[8][1]), (centre[j][0], surf[8] + 35, centre[j][1])))
 stats("overview", x=256, y=0, z=256, distance=260, pitch=40, yaw=200)
+if os.environ.get("CASTLE_SHOT"):
+    # Static castle from the geometry scene: near / mid / far.
+    cx, cy, cz = [float(t) for t in os.environ["CASTLE_SHOT"].split(",")]
+    for tag, d, up in (("castle-near", 70, 18), ("castle-mid", 160, 40), ("castle-far", 380, 80)):
+        stats(tag, **look((cx + d * 0.8, cy + up, cz + d * 0.6), (cx, cy + 8, cz)))
+if os.environ.get("REFLECT_SHOT"):
+    # Looking down at the water: far-bank trees above the frame show only as reflections.
+    for k, ii in enumerate((10, 16, 22)):
+        ii = min(ii, len(centre) - 1); (fx2, fz2) = side(ii)[1]
+        cx, cz, _ = centre[ii]
+        stats("reflect-%d" % k, **look((cx - fx2 * 4, surf[ii] + 7, cz - fz2 * 4), (cx + fx2 * 6, surf[ii], cz + fz2 * 6)))
+if os.environ.get("GRASS_SHOT"):
+    v = [float(t) for t in os.environ["GRASS_SHOT"].split(",")]
+    stats("meadow", **look(tuple(v[:3]), tuple(v[3:6])))
+    stats("meadow-far", **look((v[0] - (v[3] - v[0]) * 2, v[1] + 6, v[2] - (v[5] - v[2]) * 2), tuple(v[3:6])))
 call("view_wind", forest=False, nature=False)
 stats("bank-noflora", **look((x - fx * 3, surf[idx] + 1.3, z - fz * 3), (bx + fx * 4, g + 0.3, bz + fz * 4)))
-json.dump(res, open(os.path.join(out, "lod.json"), "w"), indent=1)
+json.dump(res, open(os.path.join(out, "lod-%s.json" % os.path.basename(os.environ.get("LOD_MAP", "valley")).replace(".json","")), "w"), indent=1)
 print("lod-diag: done", flush=True)

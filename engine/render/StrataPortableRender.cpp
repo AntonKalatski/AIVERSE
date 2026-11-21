@@ -1,3 +1,4 @@
+#include <cstdint>
 #include "StrataPortableRender.h"
 
 #include <algorithm>
@@ -374,6 +375,7 @@ bool PortableSource::prepareModel(
     using HistoryKey=PortableLodHistory::Key;
     std::vector<std::pair<HistoryKey,std::vector<uint8_t>>> historyUpdates;
     uint64_t selected=0;
+    size_t mergeEntry=SIZE_MAX;
     std::vector<SelectedCluster> debugPicks; // published only on success
     for(size_t i=0;i<asset_->primitives.size();++i){
         const auto& entry=asset_->primitives[i];
@@ -454,6 +456,7 @@ bool PortableSource::prepareModel(
             }
             if(!wasUsed)return reject("staged material mesh is unused by model nodes");
         }
+        mergeEntry=SIZE_MAX; // never merge across source primitives
         std::vector<uint32_t> pending(g.roots.rbegin(),g.roots.rend());
         while(!pending.empty()){
             const uint32_t n=pending.back();pending.pop_back();
@@ -488,7 +491,19 @@ bool PortableSource::prepareModel(
             const auto& bounds=g.bounds[n];
             prim.boundsMin={bounds.min[0],bounds.min[1],bounds.min[2]};
             prim.boundsMax={bounds.max[0],bounds.max[1],bounds.max[2]};
-            alias.meshes[entry.mesh].primitives.push_back(std::move(prim));
+            auto& out=alias.meshes[entry.mesh].primitives;
+            // Clusters of the same source primitive whose index ranges are
+            // adjacent draw as ONE primitive (one draw instead of many).
+            if(mergeAdjacent_ && mergeEntry==i && !out.empty() &&
+               out.back().firstIndex+out.back().indexCount==prim.firstIndex){
+                auto& last=out.back();
+                last.indexCount+=prim.indexCount;
+                last.boundsMin={std::min(last.boundsMin.x,prim.boundsMin.x),std::min(last.boundsMin.y,prim.boundsMin.y),std::min(last.boundsMin.z,prim.boundsMin.z)};
+                last.boundsMax={std::max(last.boundsMax.x,prim.boundsMax.x),std::max(last.boundsMax.y,prim.boundsMax.y),std::max(last.boundsMax.z,prim.boundsMax.z)};
+            }else{
+                out.push_back(std::move(prim));
+                mergeEntry=i;
+            }
             if(debugCapture_)debugPicks.push_back({uint32_t(i),n});
             ++selected;
         }
