@@ -156,6 +156,29 @@ Moving the core into `engine/` with that code would put games into the engine. O
 - Then D (one simulation), E (one scene document), F (names).
 Each step: merge origin/main, KINGSTON build, CTest, template checksums, handoff, audit row, commit, push.
 
+## Stage G, one presentation (2026-11-21, owner: "fix everything")
+
+Audit of origin/main: the shared render layers (`engine/render`, `gfx`, `view`, `fx`, `world`, `ui`, `character`)
+include nothing from `modules/` or `apps/`, and genre words there are comments only. The split is one level up:
+- `modules/rts/view` (87 files, ~28k lines, 40 drawing directly): `RtsView` is the presentation of grid maps;
+  `engine/view/View.h` itself calls it a compatibility adapter;
+- `apps/fps/client.cpp` and `apps/voxel/client.cpp` are separate game executables with their own render loops;
+  `modules/fps/view` holds `FirstPersonCamera`, `FpsAnimationEvents`;
+- the editor picks render paths by `isFps()` (play-test render, field preview, planets, overlays) over two scene
+  documents (`data.fps` / `data.extra`); `apps/client` + `ClientFx` are built on `game::RtsView`.
+Steps:
+1. done (8832de38a): `render::RTSCamera` alias removed, 109 files on `render::Camera`.
+2. done: CTest `genre_free_engine` (`tools/genre/check_engine_genre_free.py`): no `Rts*` / `Fps*` / `rts::` / `fps::`
+   / `isFps` in engine code; debt only `engine/net/authority` (FPS host session) and `engine/net/city` (RTS host),
+   52 names, the limits only shrink.
+3. Everything that draws the world goes through `engine/view` (`View`): reusable parts of `RtsView` (terrain,
+   visibility / fog, units and models, overlays, planets, portraits, animation) move to `engine/view` or
+   `engine/<capability>/view` (like `engine/roads`); `RtsView` is deleted.
+4. One client for any project instead of `apps/client`, `apps/fps`, `apps/voxel`: the project's data enables
+   capabilities, not the executable.
+5. Camera rigs in `engine` (overhead / orbit / chase / first person as modes of one camera component).
+6. Editor without `isFps()` render paths - together with E (one scene document).
+
 ## Rule for agents meanwhile
 
 A skill or plan that needs a capability from one legacy host includes its extraction (AGENTS.md). Do not add

@@ -3316,6 +3316,7 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME skill_catalog COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/skills/catalog.py check)
     add_test(NAME skill_routing COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/skills/catalog_test.py)
     add_test(NAME skill_audit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/skills/audit.py --strict)
+    add_test(NAME genre_free_engine COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/genre/check_engine_genre_free.py ${CMAKE_CURRENT_SOURCE_DIR})   # NO GENRE SPLIT: no Rts/Fps names in engine code
     # tools behind workflow skills (skills/ai/aiverse-bots-tune, verification/aiverse-determinism-triage, aiverse-visual-qa)
     add_test(NAME tool_bot_sweep COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bots/test_sweep.py)
     add_test(NAME tool_determinism_diff COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/determinism/test_diff.py)
