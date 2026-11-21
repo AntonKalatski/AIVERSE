@@ -1261,6 +1261,17 @@ add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
 add_library(aiverse_client_runtime STATIC $<TARGET_OBJECTS:aiverse_runtime>)
 target_link_libraries(aiverse_client_runtime PUBLIC
     "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_LIBRARIES>")
+# The archive must carry every usage requirement of the runtime, not only its
+# libraries: Web link flags (-sUSE_WEBGL2, memory growth, idbfs) and public
+# definitions/includes are set on aiverse_runtime later in this file.
+target_link_options(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_OPTIONS>")
+target_compile_definitions(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_COMPILE_DEFINITIONS>")
+target_compile_options(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_COMPILE_OPTIONS>")
+target_include_directories(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_INCLUDE_DIRECTORIES>")
 if(AIVERSE_VULKAN)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
 endif()
@@ -2111,7 +2122,18 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+# AIVERSE_GAME_WITH_TRAFFIC=OFF (packaging.engineModules without "traffic") compiles a small adapter instead:
+# rules with an enabled "traffic" block then fail at match start with a readable error. Packaged clients only:
+# the editor, tests, headless runner and servers keep the full simulation.
+option(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation" ON)
+if(AIVERSE_GAME_WITH_TRAFFIC)
+    target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+else()
+    if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_HEADLESS OR AIVERSE_BUILD_SERVER OR AIVERSE_BUILD_STUDIO_HTML5)
+        message(FATAL_ERROR "AIVERSE_GAME_WITH_TRAFFIC=OFF is for packaged clients only; turn off the editor, tests, headless runner and server")
+    endif()
+    target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficDisabled.cpp)
+endif()
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoadNet.cpp modules/rts/RtsRoadTypes.cpp modules/rts/RtsTrafficRoads.cpp)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
