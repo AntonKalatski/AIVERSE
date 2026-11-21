@@ -82,6 +82,7 @@ def main():
              'nereidWater': {'surfaces': [{'id': 1, 'kind': 'river', 'shape': 'river',
                  'surfaceY': 2, 'bottomY': -2, 'points': [[0, 0, 6], [0, 20, 6], [12, 40, 6]],
                  'flow': [0, 0, -1], 'lod': 'near', 'foamWidth': 0,
+                 'style': {'rapidFoamStrength': .5, 'rapidFlowThreshold': .2, 'rapidNoiseScale': .7, 'rapidDetail': 'high'},
                  'grade': {'slopeDegrees': math.degrees(math.atan(.02)), 'downhillHeadingDegrees': 180,
                            'automaticCurrent': True, 'responseSeconds': 5, 'maxSpeed': 5}}]}}
     # Exercise the real showcase's nonzero world coordinates. Rotating world
@@ -139,17 +140,21 @@ def main():
         a, b = images['normal', camera, 0][2], images['normal', camera, 1][2]
         assert sum(abs(x-y) for x, y in zip(a, b)) > 1000, 'water remained static'
     extra = {}
-    for variant in ['far', 'manual']:
+    for variant in ['far', 'manual', 'foam-off']:
         changed = copy.deepcopy(scene)
         surface = changed['nereidWater']['surfaces'][0]
         if variant == 'far':
             surface['lod'] = 'far'
+        elif variant == 'foam-off':
+            surface['style']['rapidFoamStrength'] = 0
         else:
             surface['grade']['automaticCurrent'] = False
             surface['flow'] = [-2, 0, 1]
         path = output/(variant+'.json')
         path.write_text(json.dumps(changed))
         env = dict(os.environ, AIVERSE_BENCH_QUICK='1', AIVERSE_NEREID_DIAGNOSTIC='flow')
+        if variant == 'foam-off':
+            env.pop('AIVERSE_NEREID_DIAGNOSTIC', None)
         report_path = output/(variant+'-report.json')
         with (output/(variant+'.log')).open('w') as log:
             result = subprocess.run([str(binary), '--scene', str(path), '--output', str(report_path),
@@ -163,8 +168,11 @@ def main():
         sample = [pixel(ppm(output/(variant+'.ppm')), cameras[0], point) for point in points]
         if variant == 'far':
             assert sample == measured, (variant, sample, measured)
-        else:
+        elif variant == 'manual':
             assert all(max(abs(a-b) for a, b in zip(rgb, [77, 153, 114])) <= 1 for rgb in sample), sample
+        else:
+            actual = ppm(output/(variant+'.ppm'))[2]
+            assert sum(abs(a-b) for a, b in zip(actual, images['normal', 0, 0][2])) > 1000, 'foam toggle did not affect pixels'
         extra[variant] = sample
         print(variant, 'PASS', sample, flush=True)
     (output/'verification.json').write_text(json.dumps({'pass': True, 'binary': str(binary), 'worldFlowRGB': measured, 'extra': extra}, indent=2))
