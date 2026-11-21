@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T17:11:09+00:00",
+ "generated": "2026-11-21T18:34:15+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -174,6 +174,24 @@
     }
    ],
    "author": "agent-wind-masks"
+  },
+  {
+   "id": "2026-11-21-studio-build-panel",
+   "date": "2026-11-21",
+   "system": "studio",
+   "title": "The Build panel in Studio",
+   "summary": "Building a game for a platform and estimating the size of its content now happens right in Studio, on the Publish tab.",
+   "body": [
+    "The panel shows the game name, version and orientation, the platform list (macOS, iOS, Android, Web, Windows, Linux) with already built ones marked, and Release or Debug.",
+    "For the selected platform it shows which tools are present, which are missing and which Studio can install itself. \"Estimate size\" builds only the content pack and lists its size and heaviest files. The build log streams live; the finished build and the log open in Finder.",
+    "Studio never builds an unsaved project silently: it offers to save first."
+   ],
+   "status": "done",
+   "verified": "On a Mac the tool table and size estimate were checked on a copy of the Lua Lab sample.",
+   "limits": "A full platform build from the panel has not been run yet. Branding and the asset audit are still in the old editor only.",
+   "branch": "main",
+   "commit": "ef80a6525",
+   "media": []
   },
   {
    "id": "2026-11-21-strata-debug-view",
@@ -385,6 +403,47 @@
     }
    ],
    "author": "lens"
+  },
+  {
+   "id": "2026-11-21-gameplay-races",
+   "date": "2026-11-21",
+   "system": "gameplay",
+   "title": "Races in any project",
+   "summary": "A map with a \"race\" block turns its cars into a race: countdown, gates, laps, standings, bots on the track, a HUD and a chase camera.",
+   "body": [
+    "A race is map data: checkpoint gates in driving order (the last one is the finish), a starting grid and a closed line for the bots. Rules set the countdown, the time to finish after the winner, a timeout and crash damage.",
+    "Gates count only in order, so shortcuts gain nothing. A car that is stuck, going the wrong way, wrecked or fallen off the world returns to its last gate. The race decides the match: the team in first place wins.",
+    "The same race, HUD and camera run on two kinds of maps: metre maps with colliders and grid maps with heroes. Controls, car physics and spline roads are shared. There are two sample games: the Oval Sprint oval and the Road Circuit along a spline road with trucks whose wheels roll and steer."
+   ],
+   "status": "done",
+   "verified": "Bots complete three laps on both samples; a save in the middle of a race continues exactly as without it; other metre-map games play as before.",
+   "limits": "Getting in and the look of the cars still differ between the two map kinds: on metre maps cars are drawn as boxes.",
+   "branch": "main",
+   "commit": "dcba54d8c",
+   "media": [],
+   "links": [
+    {
+     "title": "Races: format and behaviour",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/races.md"
+    }
+   ]
+  },
+  {
+   "id": "2026-11-21-build-engine-modules",
+   "date": "2026-11-21",
+   "system": "build",
+   "title": "Client builds take only the engine modules they need",
+   "summary": "game.json can choose which optional engine parts go into the packaged game, or leave it to detection: \"engineModules\": [\"auto\"].",
+   "body": [
+    "Every packaged game used to carry the whole engine: particles, Spine, gamepads, FBX and legacy model loaders, the city server client, traffic and map generation. Now a packaging.engineModules list, shared or per platform, can leave them out.",
+    "\"auto\" looks into the project: Spine and gamepad from game.json, particles from effect files, loaders from source models, simulations from rules and maps. If the game uses something excluded, the packager refuses with a clear error; without the field everything builds as before.",
+    "On a test macOS client build the executable shrank by about 7% just from linking only the code in use. Each disabled module removes from about a hundred kilobytes (gamepad) to a couple of megabytes (particles, legacy model loaders)."
+   ],
+   "status": "done",
+   "verified": "The packager checks the module choice for Web, Windows and macOS; sizes were measured on the macOS client.",
+   "limits": "HTML5 build size and startup are not measured yet: Emscripten was missing on the build machine. Android, iOS, Windows and Linux have not been built with modules off either.",
+   "branch": "main",
+   "media": []
   },
   {
    "id": "2026-11-20-lens-cameras-studio-mcp",
