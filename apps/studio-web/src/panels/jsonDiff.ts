@@ -41,3 +41,14 @@ export function previewValue(v: unknown, max = 80): string {
   const s = typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v) ?? String(v);
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
+
+/** Frame Capture summary of frame times (ms): count, min, average, 95th percentile, max. */
+export function frameSummary(ms: number[]): { count: number; min: number; avg: number; p95: number; max: number } {
+  if (!ms.length) return { count: 0, min: 0, avg: 0, p95: 0, max: 0 };
+  const sorted = [...ms].sort((a, b) => a - b);
+  const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)];
+  return { count: ms.length, min: sorted[0], avg: ms.reduce((a, b) => a + b, 0) / ms.length, p95, max: sorted[sorted.length - 1] };
+}
+export function formatBytes(n: number): string {
+  return n >= 1 << 30 ? (n / (1 << 30)).toFixed(2) + ' GB' : n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + ' MB' : n >= 1024 ? (n / 1024).toFixed(0) + ' KB' : n + ' B';
+}

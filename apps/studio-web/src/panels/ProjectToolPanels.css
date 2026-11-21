@@ -73,3 +73,16 @@
 .diff__summary .au-input{margin-left:auto;width:140px}
 .diff__added,.diff__summary .diff__added{color:#8ee6a0}.diff__removed{color:#ff9a8a}.diff__changed{color:#f3c873}
 tr.diff__added td:first-child{color:#8ee6a0}tr.diff__removed td:first-child{color:#ff9a8a}tr.diff__changed td:first-child{color:#f3c873}
+.frames__chart{width:100%;height:110px;background:#07090d;border:1px solid var(--au-line);border-radius:var(--au-radius-md)}
+.frames__line{fill:none;stroke:var(--au-accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.frames__budget{stroke:var(--au-line-strong);stroke-dasharray:4 4;vector-effect:non-scaling-stroke}
+.ptp__edhead>.au-input{width:170px;margin-left:auto}
+.ext__label{margin:0;white-space:pre-wrap}
+.ext__row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ext__group{border:1px solid var(--au-line);border-radius:var(--au-radius-md);padding:4px 8px}
+.ext__group>summary{cursor:pointer;color:var(--au-text-muted);font-size:var(--au-font-xs);padding:2px 0}
+.att__path{flex:1;min-width:0}
+.att__wide{grid-column:2/4;width:100%}
+.att__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px 8px}
+.att__num{display:flex;flex-direction:column;gap:2px;font-size:var(--au-font-xs);color:var(--au-text-muted)}
+.att__num .au-input{width:100%;min-width:0}

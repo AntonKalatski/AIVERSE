@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <deque>
 #include <fstream>
 #include <iterator>
 
@@ -123,7 +124,9 @@
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
     BOOL agentShotInFlight_; // agent view_screenshot capture on its way
+    CFTimeInterval nextGizmoPoll_;
     CFTimeInterval lastSceneFrame_; double sceneFrameMs_; uint64_t sceneFrameCount_;
+    std::deque<std::pair<float,uint32_t>> frameHistory_; // last 240 Scene frames: ms between frames, draw calls
     BOOL closeApproved_;
     unsigned lightingStatusTicks_;
     // Last Scene camera state pushed to the HTML orientation gizmo.
@@ -161,6 +164,8 @@
 - (void)sceneMoveEnd;
 - (void)frameAllScene;
 - (BOOL)terrainBrushArmed;
+- (void)brushAdjust:(double)factor disarm:(BOOL)disarm;
+- (BOOL)updateBrushCursorAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (BOOL)terrainStroke:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (BOOL)placeType:(const std::string&)type atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (aiverse::Json)assetThumbnail:(const std::string&)path;
@@ -361,6 +366,12 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     if (code==kD && mods==NSEventModifierFlagCommand) { [self.host sceneSelectionAction:"studio.entitiesDuplicate"]; return; }
     if (code==kF && mods==NSEventModifierFlagShift) { [self.host frameAllScene]; return; }   // ⇧F: frame everything
     if (code==9 && !mods) { [self.host setScenePivotSnap:YES]; return; }                       // hold V: snap to pivots
+    // Scene brush: [ / ] resize it, Esc puts it down (physical keys, any layout).
+    if ([self.host terrainBrushArmed] && !(mods&~NSEventModifierFlagShift)) {
+        if (code==33) { [self.host brushAdjust:0.8 disarm:NO]; return; }
+        if (code==30) { [self.host brushAdjust:1.25 disarm:NO]; return; }
+        if (code==53) { [self.host brushAdjust:1.0 disarm:YES]; return; }
+    }
     if (event.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) {
         [super keyDown:event]; return;
     }
@@ -813,6 +824,27 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         [self sendStudioEvent:"document.changed" message:""];
         [self sendStudioEvent:"agent.changed" message:""];
     }
+    // Extension gizmos (editor/extensions.lua scene_gizmos) a few times a second.
+    if (preview_ && CACurrentMediaTime()>=nextGizmoPoll_) {
+        nextGizmoPoll_=CACurrentMediaTime()+0.2;
+        std::vector<aiverse::studio::StudioMetalScene::OverlayShape> shapes;
+        try {
+            for (const auto& g:session_->extensionGizmos().items()) {
+                if (!g.isObject() || shapes.size()>=256) continue;
+                const std::string kind=g.getStr("kind");
+                aiverse::studio::StudioMetalScene::OverlayShape sh;
+                sh.kind=kind=="line"?1:kind=="circle"?2:kind=="point"?3:0;
+                if (!sh.kind) continue;
+                auto f=[&](const char* k,double d){const double v=g[k].toDouble(d);return float(std::isfinite(v)?v:d);};
+                sh.a={f("x",0),f("y",0),f("z",0)};sh.b={f("x2",0),f("y2",0),f("z2",0)};
+                sh.radius=std::clamp(f("radius",sh.kind==3?4:12),1.f,120.f);sh.thickness=std::clamp(f("thickness",2),1.f,10.f);
+                auto c=[&](const char* k,double d){return uint8_t(std::clamp(f(k,float(d)),0.f,1.f)*255);};
+                sh.r=c("r",0.35);sh.g=c("g",0.7);sh.bl=c("b",1.0);
+                shapes.push_back(sh);
+            }
+        } catch (...) {}
+        preview_->setOverlayShapes(std::move(shapes));
+    }
     if (session_->agentScreenshotPending() && !agentShotInFlight_) {
         if (!preview_ || !placement_.visible) session_->finishAgentScreenshot("",0,0,"The Scene panel is not visible in Studio; ask the user to show it");
         else {
@@ -874,6 +906,10 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 // Stats panel: smoothed time between Scene frames.
                 const CFTimeInterval now=CACurrentMediaTime();
                 if (lastSceneFrame_>0) sceneFrameMs_=sceneFrameMs_<=0 ? (now-lastSceneFrame_)*1000.0 : sceneFrameMs_*0.95+(now-lastSceneFrame_)*1000.0*0.05;
+                if (lastSceneFrame_>0) {
+                    frameHistory_.emplace_back(float((now-lastSceneFrame_)*1000.0),preview_->drawCalls());
+                    if (frameHistory_.size()>240) frameHistory_.pop_front();
+                }
                 lastSceneFrame_=now;
                 session_->setSceneFrameStats(sceneFrameMs_,++sceneFrameCount_);
             }
@@ -1242,6 +1278,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 - (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (projectLoading_) return;
     if (!preview_ || !session_ || preview_->transformDragActive()) return;
+    if ([self updateBrushCursorAtX:x y:y width:width height:height]) return;
     const std::string id=x<0||y<0?std::string():preview_->pick(float(x),float(y),float(width),float(height),
         session_->workspace().map,session_->workspace().project.isFps());
     if (id==hoverId_) return;
@@ -1314,22 +1351,51 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     [self sendStudioEvent:"document.changed" message:""];
     [self sendStudioEvent:"selection.changed" message:""];
 }
-- (BOOL)terrainBrushArmed { return !projectLoading_ && session_ && preview_ && session_->terrainBrush().armed; }
+// Ring under the cursor while the Scene brush is armed (radius; river: half its width; road: a dot).
+- (BOOL)updateBrushCursorAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (!preview_ || !session_) return NO;
+    const auto& b=session_->sceneBrush();
+    aiverse::render::float3 at{};
+    if (!b.armed || x<0 || y<0 || !preview_->groundPoint(float(x),float(y),float(width),float(height),at)) {
+        preview_->setBrushCursor(false,{},0);
+        return b.armed;
+    }
+    const float r=b.kind=="road" ? 0.6f : b.kind=="river" ? float(b.width*0.5) : float(b.radius);
+    preview_->setBrushCursor(true,at,r);
+    return YES;
+}
+- (void)brushAdjust:(double)factor disarm:(BOOL)disarm {
+    if (!session_) return;
+    const auto& b=session_->sceneBrush();
+    aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object();
+    if (disarm) params.set("armed",aiverse::Json::fromBool(false));
+    else params.set("radius",aiverse::Json::number(std::clamp(b.radius*factor,0.25,64.0),2));
+    request.set("id",aiverse::Json::number(int64_t(0)));request.set("method",aiverse::Json::string("studio.sceneBrush"));request.set("params",params);
+    const auto reply=session_->dispatch(request);
+    if (reply.has("result")) [self sendStudioEventPayload:"brush.changed" payload:reply["result"]];
+    if (disarm && preview_) preview_->setBrushCursor(false,{},0);
+}
+- (BOOL)terrainBrushArmed { return !projectLoading_ && session_ && preview_ && session_->sceneBrush().armed; }
 // phase 0 begin, 1 drag, 2 end. Map coordinates: world x, world z (the terrain ops' x, y).
 - (BOOL)terrainStroke:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (projectLoading_ || !preview_ || !session_) return NO;
+    std::string error;
     if (phase==2) {
-        session_->terrainStrokeEnd();
+        if (!session_->strokeEnd(&error)) {
+            aiverse::Json payload=aiverse::Json::object();
+            payload.set("message",aiverse::Json::string("Scene brush: "+error));
+            [self sendStudioEventPayload:"assets.importError" payload:payload];
+        }
         [self sendStudioEvent:"document.changed" message:""];
         return YES;
     }
     aiverse::render::float3 at{};
     if (!preview_->groundPoint(float(x),float(y),float(width),float(height),at)) return phase!=0 ? YES : NO;
-    std::string error;
-    const bool ok=phase==0 ? session_->terrainStrokeBegin(at.x,at.z,&error) : session_->terrainStrokeDab(at.x,at.z,&error);
+    [self updateBrushCursorAtX:x y:y width:width height:height];
+    const bool ok=phase==0 ? session_->strokeBegin(at.x,at.z,&error) : session_->strokeDab(at.x,at.z,&error);
     if (!ok && !error.empty()) {
         aiverse::Json payload=aiverse::Json::object();
-        payload.set("message",aiverse::Json::string("Terrain brush: "+error));
+        payload.set("message",aiverse::Json::string("Scene brush: "+error));
         [self sendStudioEventPayload:"assets.importError" payload:payload];
     }
     return ok;
@@ -1988,6 +2054,20 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
             [self sendStudioReply:reply];return;
         }
+        if(gameMethod=="studio.keepPlayChanges" && req["id"].isNumber()) {
+            // The running game's map entities (positions, amounts, removed) go to the map as one History step.
+            aiverse::Json reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try {
+                if(!game_)throw std::runtime_error("No game is running");
+                const auto states=game_->mapEntityStates();
+                aiverse::Json r=aiverse::Json::object(),p=aiverse::Json::object();
+                p.set("entities",states["entities"]);p.set("removeDead",aiverse::Json::fromBool(req["params"].getBool("removeDead")));
+                r.set("id",req["id"]);r.set("method",aiverse::Json::string("studio.keepPlayChanges"));r.set("params",p);
+                reply=session_->dispatch(r);
+                if(!reply.has("error"))[self sendStudioEvent:"document.changed" message:""];
+            }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
+            [self sendStudioReply:reply];return;
+        }
         if(gameMethod=="studio.gameDevices" && req["id"].isNumber()) {
             auto reply=aiverse::Json::object();reply.set("id",req["id"]);
             reply.set("result",aiverse::studio::studioGameDevices());[self sendStudioReply:reply];return;
@@ -2064,6 +2144,22 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             reply=aiverse::Json::object();reply.set("id",req["id"]);
             try { reply.set("result",[self assetThumbnail:req["params"].getStr("path")]); }
             catch (const std::exception& e) { reply.set("error",aiverse::Json::string(e.what())); }
+        } else if (req.getStr("method")=="studio.gpuStats" && req["id"].isNumber()) {
+            // Frame Capture / Texture Resources: Scene frame history (CPU frame time, draw calls) and live GPU textures.
+            reply=aiverse::Json::object();reply.set("id",req["id"]);
+            aiverse::Json result=aiverse::Json::object(),history=aiverse::Json::array();
+            for (const auto& f:frameHistory_) {
+                aiverse::Json o=aiverse::Json::array();
+                o.push(aiverse::Json::number(double(f.first),2));o.push(aiverse::Json::number(int64_t(f.second)));
+                history.push(std::move(o));
+            }
+            result.set("history",history);
+            result.set("frames",aiverse::Json::number(int64_t(sceneFrameCount_)));
+            if (preview_) {
+                result.set("drawCalls",aiverse::Json::number(int64_t(preview_->drawCalls())));
+                if (req["params"].getBool("textures")) result.set("gpu",preview_->textureResources());
+            } else result.set("error",aiverse::Json::string("The Scene panel is not visible"));
+            reply.set("result",std::move(result));
         } else if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
             reply=aiverse::Json::object();

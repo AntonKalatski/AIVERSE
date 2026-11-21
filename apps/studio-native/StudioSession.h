@@ -15,6 +15,7 @@
 #include "apps/studio-native/StudioWindPreview.h"
 #include "apps/editor/core/Net.h"
 #include "apps/editor/core/WizardAgent.h"
+#include "apps/studio-native/StudioLuaPanel.h"
 namespace aiverse::studio {
 class StudioSession {
 public:
@@ -58,15 +59,24 @@ public:
     bool pollAgentLink();
     // view_screenshot from the agent: the host captures the Scene's next frame and answers here
     // (png "" + error when there is nothing to capture).
-    // Terrain brush (Terrain panel → Scene): while armed, a Scene drag sculpts. Dabs apply live and the
-    // whole stroke is merged into one History step "Terrain brush".
-    struct TerrainBrush { bool armed=false; std::string op="raise"; double radius=4, strength=1; };
-    const TerrainBrush& terrainBrush() const noexcept { return terrainBrush_; }
-    bool terrainStrokeBegin(double x, double y, std::string* error);
-    bool terrainStrokeDab(double x, double y, std::string* error);
-    void terrainStrokeEnd();
+    // Scene brush (Terrain / Tiles / Fields / Roads / Water panels → Scene): while armed, a Scene drag
+    // edits the map. Dab kinds (terrain, paint, tiles, field, objects) apply live; path kinds (road, river)
+    // collect points and apply on release. Either way the stroke is one History step.
+    struct SceneBrush {
+        bool armed=false; std::string kind="terrain";
+        std::string op="raise"; double radius=4, strength=1;   // terrain sculpt; paint uses radius/strength + layer
+        int layer=0; std::string tile, field, fieldMode="add"; double value=1;
+        std::string type; int owner=0, count=1; double spread=1;
+        std::string roadType; double width=6;
+    };
+    const SceneBrush& sceneBrush() const noexcept { return brush_; }
+    bool strokeBegin(double x, double z, std::string* error);
+    bool strokeDab(double x, double z, std::string* error);
+    bool strokeEnd(std::string* error = nullptr);
     // Stats panel: the host reports the Scene's frame time (ms, smoothed) and its frame count.
     void setSceneFrameStats(double ms, uint64_t frames) { sceneFrameMs_=ms; sceneFrames_=frames; }
+    // Scene overlay shapes from editor/extensions.lua scene_gizmos(ctx) (empty without a project or script).
+    Json extensionGizmos() { return ws_.project.dir.empty() ? Json::array() : lua_.gizmos(ws_.project.dir,luaContext()); }
     bool agentScreenshotPending() const { return !agentShots_.empty(); }
     void finishAgentScreenshot(const std::string& pngBase64, int width, int height, const std::string& error);
     // Host-provided material slot names of a loaded content model (the native
@@ -122,7 +132,11 @@ private:
     int64_t agentRunStart_=-1;
     struct AgentShot { int client; Json id; };
     std::vector<AgentShot> agentShots_;
-    TerrainBrush terrainBrush_;
+    SceneBrush brush_;
+    StudioLuaPanel lua_;   // Extensions panel (editor/extensions.lua)
+    StudioLuaContext luaContext() const;
+    Json sceneBrushJson() const;
+    Json strokePoints_=Json::array(); int strokeDabs_=0;
     double sceneFrameMs_=0; uint64_t sceneFrames_=0;
     size_t strokeDepth_=0; bool stroking_=false; double strokeX_=0, strokeY_=0;   // History position when the current conversation started (Undo all)
     Json agentRequest(const std::string& method, const Json& params);

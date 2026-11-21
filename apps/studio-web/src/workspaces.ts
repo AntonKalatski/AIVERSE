@@ -25,11 +25,11 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     left: ['hierarchy'], center: ['scene', 'game'], right: ['inspector', 'terrain', 'water', 'roads', 'tiles', 'fog', 'generate', 'fields', 'physis', 'nereid_flow'], bottom: ['assets', 'console'],
     legacy: [] },
   look: { id: 'look', title: 'Look', purpose: 'Materials, light, FX', key: '3',
-    left: ['hierarchy'], center: ['scene', 'materials', 'shader_graph'], right: ['inspector', 'lighting', 'postfx', 'effects', 'lightbake', 'models', 'modeling', 'fx_graph', 'fx_functions', 'wind'], bottom: ['assets', 'console'],
-    legacy: ['texture_resources'] },
+    left: ['hierarchy'], center: ['scene', 'materials', 'shader_graph'], right: ['inspector', 'lighting', 'postfx', 'effects', 'lightbake', 'models', 'modeling', 'fx_graph', 'fx_functions', 'wind'], bottom: ['assets', 'console', 'texture_resources'],
+    legacy: [] },
   animate: { id: 'animate', title: 'Animate', purpose: 'Rigs, clips, graphs', key: '4',
-    left: ['hierarchy'], center: ['animation', 'facial_rig', 'scene'], right: ['inspector', 'anim_assets', 'anim_graph', 'anim_rig', 'model_anim'], bottom: ['assets', 'console'],
-    legacy: ['animation_attachments'] },
+    left: ['hierarchy'], center: ['animation', 'facial_rig', 'scene'], right: ['inspector', 'anim_assets', 'anim_graph', 'anim_rig', 'model_anim', 'attachments'], bottom: ['assets', 'console'],
+    legacy: [] },
   character: { id: 'character', title: 'Character', purpose: 'Digital humans', key: '7',
     left: ['human_creator'], center: ['scene', 'facial_rig'], right: ['inspector', 'human_appearance'], bottom: ['assets', 'console'],
     legacy: [] },
@@ -37,8 +37,8 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     left: ['hierarchy'], center: ['rules', 'scripts', 'game', 'scene'], right: ['runtime', 'inspector', 'input', 'overlays', 'fps', 'raid', 'balance', 'stats'], bottom: ['console', 'assets', 'agent'],
     legacy: [] },
   publish: { id: 'publish', title: 'Publish', purpose: 'Build and audit', key: '6',
-    left: ['project', 'hierarchy'], center: ['build', 'game', 'scene', 'snapshot_diff'], right: ['inspector', 'branding', 'asset_audit', 'project_import'], bottom: ['console', 'assets'],
-    legacy: ['studio_extensions', 'studio_frame_capture'] },
+    left: ['project', 'hierarchy'], center: ['build', 'game', 'scene', 'snapshot_diff'], right: ['inspector', 'branding', 'asset_audit', 'project_import', 'extensions'], bottom: ['console', 'assets', 'frame_capture'],
+    legacy: [] },
 };
 
 export function isWorkspace(value: unknown): value is StudioWorkspace {
@@ -86,9 +86,9 @@ export function saveActiveWorkspace(id: StudioWorkspace, store: Storage | null =
   try { store?.setItem(ACTIVE_KEY, id); } catch { /* private mode */ }
 }
 const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = {
-  publish: ['build', 'branding', 'asset_audit', 'project_import', 'snapshot_diff'], look: ['wind', 'postfx', 'effects', 'lightbake', 'models', 'modeling', 'fx_graph', 'fx_functions'], scene: ['history', 'agent'],
+  publish: ['build', 'branding', 'asset_audit', 'project_import', 'snapshot_diff', 'frame_capture', 'extensions'], look: ['wind', 'postfx', 'effects', 'lightbake', 'models', 'modeling', 'fx_graph', 'fx_functions', 'texture_resources'], scene: ['history', 'agent'],
   world: ['terrain', 'water', 'roads', 'tiles', 'fog', 'generate', 'fields', 'physis'], logic: ['scripts', 'input', 'overlays', 'agent', 'fps', 'raid', 'balance', 'stats'],
-  animate: ['anim_assets', 'anim_graph', 'anim_rig', 'model_anim'],
+  animate: ['anim_assets', 'anim_graph', 'anim_rig', 'model_anim', 'attachments'],
 };
 /** Saved layout of a workspace; the Scene workspace inherits the pre-workspace layout once. */
 export function readWorkspaceDock(id: StudioWorkspace, store: Storage | null = storage()): DockTree {

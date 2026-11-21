@@ -65,3 +65,19 @@ test('json diff: paths, kinds, float tolerance, limit', () => {
   assert.equal(jsonDiff({ a: [1, 2, 3, 4] }, { a: [5, 6, 7, 8] }, 1e-6, 2).length, 2);
   assert.equal(previewValue('x'.repeat(100), 10).length, 10);
 });
+import { frameSummary, formatBytes } from '../src/panels/jsonDiff.ts';
+test('frame summary and byte formatting', () => {
+  const s = frameSummary([10, 20, 30, 40]);
+  assert.equal(s.avg, 25); assert.equal(s.max, 40); assert.equal(s.min, 10); assert.equal(s.p95, 40);
+  assert.equal(frameSummary([]).count, 0);
+  assert.equal(formatBytes(2 * 1024 * 1024), '2.0 MB');
+});
+import { fromTrs, toTrs, IDENTITY } from '../src/panels/attachMath.ts';
+test('attachment transforms: TRS round trip, custom matrices flagged', () => {
+  const m = fromTrs([1, 2, 3], 90, 2);
+  const t = toTrs(m);
+  assert.deepEqual(t.t, [1, 2, 3]); assert.equal(Math.round(t.yaw), 90); assert.equal(t.scale, 2); assert.equal(t.custom, false);
+  assert.equal(toTrs(IDENTITY).custom, false);
+  const tilted = [...IDENTITY]; tilted[1] = 0.5;
+  assert.equal(toTrs(tilted).custom, true);
+});
