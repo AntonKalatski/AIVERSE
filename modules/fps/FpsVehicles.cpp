@@ -1,7 +1,8 @@
 // Typed FPS vehicles over the vehicle-controllers package (libraries/.../genre/Vehicle*.h): map vehicles with a
 // `type` from `fps.vehicleTypes` drive with the package controller (wheeled / tracked / hover / flight) on the
 // ground height under them, collide with static geometry through the package's collision response, and carry a
-// driver plus passengers / gunners through the package's seats. Legacy vehicles (no type) are untouched.
+// driver plus passengers / gunners through the package's seats. Vehicles without a type keep the arcade car (FpsSystems actorSystems).
+// Each typed vehicle is the Vehicle entity plus its VehicleDrive component; iteration in ascending vehicle id.
 // Passengers and gunners may shoot; the driver steers. A destroyed vehicle kills its occupants.
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/mechanics/VehiclePersistence.h"
@@ -9,72 +10,75 @@
 #include <algorithm>
 namespace aiverse::fps {
 using namespace lib::genre;
-VehicleRun* Module::vehicleRun(State& s,uint32_t vehicle) const {
-    for(auto& r:s.vehicleRuns)if(r.vehicle==vehicle)return &r;return nullptr;
+VehicleDrive* Module::vehicleDrive(Simulation& sim,uint32_t vehicle) const {
+    return sim.world().tryGet<VehicleDrive>(vehicleEntity(sim,vehicle));
 }
-void Module::setupVehicles(Simulation&,const Json& map,State& s) {
-    s.vehicleRuns.clear();
+void Module::setupVehicles(Simulation& sim,const Json& map) {
     const auto& list=map["vehicles"];if(!list.isArray())return;
-    for(size_t i=0;i<list.size()&&i<s.vehicles.size();++i){
+    World& w=sim.world();const auto entities=vehicleEntities(sim);
+    for(size_t i=0;i<list.size()&&i<entities.size();++i){
         const auto& j=list[i];if(!j.has("type"))continue;
         if(!config_.vehicleTypes)throw JsonError("fps vehicle.type: requires fps.vehicleTypes");
         auto type=j.getInt("type");auto it=config_.vehicleTypes->vehicles.find(type);
         if(it==config_.vehicleTypes->vehicles.end())throw JsonError("fps vehicle.type: unknown vehicle type "+std::to_string(type));
         if(j.has("yaw")&&!j["yaw"].isNumber())throw JsonError("fps vehicle.yaw: expected turns");
-        auto& v=s.vehicles[i];v.yaw=j.getFx("yaw",Fixed{});
-        VehicleRun run;run.vehicle=v.id;run.type=type;run.controller=makeVehicleState(it->second.controller,v.pos,v.yaw);
-        s.vehicleRuns.push_back(std::move(run));
+        auto& v=*w.tryGet<Vehicle>(entities[i]);v.yaw=j.getFx("yaw",Fixed{});
+        VehicleDrive drive;drive.type=type;drive.controller=makeVehicleState(it->second.controller,v.pos,v.yaw);
+        w.add<VehicleDrive>(entities[i],std::move(drive));
     }
 }
-bool Module::canFireFromVehicle(State& s,const Actor& a) const {
-    auto* run=vehicleRun(s,a.vehicle);if(!run)return false;
+bool Module::canFireFromVehicle(Simulation& sim,const CharacterRef& a) const {
+    auto* run=vehicleDrive(sim,a.vehicle);if(!run)return false;
     const auto& def=config_.vehicleTypes->vehicles.at(run->type);auto seat=vehicleSeatOf(run->seats,a.slot);
     for(const auto& d:def.seats.seats)if(d.id==seat)return d.role!=VehicleSeatRole::Driver;
     return false;
 }
 // Interact on or in a typed vehicle becomes a seat request handled by tickVehicles this tick. False: not typed.
-bool Module::vehicleInteract(Simulation& sim,Actor& a) {
-    auto& s=state(sim);if(s.vehicleRuns.empty())return false;
+bool Module::vehicleInteract(Simulation& sim,CharacterRef a) {
+    World& w=sim.world();if(!w.countExisting<VehicleDrive>())return false;
     VehicleSeatRequest r;r.actor=a.slot;r.team=a.team;r.actorPosition=a.pos;
     if(a.vehicle){
-        auto* run=vehicleRun(s,a.vehicle);if(!run)return false;
+        auto* run=vehicleDrive(sim,a.vehicle);if(!run)return false;
         r.id=run->seats.lastRequest+1+int64_t(run->requests.size());r.action=VehicleSeatAction::Exit;r.seat=vehicleSeatOf(run->seats,a.slot);
         run->requests.push_back(r);return true;
     }
-    VehicleRun* best=nullptr;Fixed bestDistance;
-    for(auto& run:s.vehicleRuns){
-        const Vehicle* v=nullptr;for(const auto& x:s.vehicles)if(x.id==run.vehicle)v=&x;
-        if(!v||v->health<=0)continue;auto d=(v->pos-a.pos).lengthSq();if(d>36_fx)continue;
-        if(!best||d<bestDistance){best=&run;bestDistance=d;}
+    VehicleDrive* best=nullptr;Fixed bestDistance;
+    for(const Entity e:vehicleEntities(sim)){
+        auto* run=w.tryGet<VehicleDrive>(e);if(!run)continue;
+        const auto& v=*w.tryGet<Vehicle>(e);
+        if(v.health<=0)continue;auto d=(v.pos-a.pos).lengthSq();if(d>36_fx)continue;
+        if(!best||d<bestDistance){best=run;bestDistance=d;}
     }
     if(!best)return false;
     r.id=best->seats.lastRequest+1+int64_t(best->requests.size());r.action=VehicleSeatAction::Enter;r.preferred=VehicleSeatRole::Driver;
     best->requests.push_back(r);return true;
 }
 void Module::tickVehicles(Simulation& sim) {
-    auto& s=state(sim);if(s.vehicleRuns.empty())return;auto now=sim.tick();
-    for(auto& run:s.vehicleRuns){
-        Vehicle* v=nullptr;for(auto& x:s.vehicles)if(x.id==run.vehicle)v=&x;if(!v)continue;
+    World& w=sim.world();if(!w.countExisting<VehicleDrive>())return;auto now=sim.tick();
+    const auto count=int64_t(characterCount(sim));
+    for(const Entity entity:vehicleEntities(sim)){
+        auto* drive=w.tryGet<VehicleDrive>(entity);if(!drive)continue;
+        auto& run=*drive;Vehicle* v=w.tryGet<Vehicle>(entity);
         const auto& def=config_.vehicleTypes->vehicles.at(run.type);
         // Seats: enter / exit requests of this tick; an occupant with a free seat ahead takes the driver seat first.
-        auto clear=[&](Vec3 p,int64_t){Actor probe;probe.pos=p;auto b=actorBounds(probe,config_.motor);b.min.y+=Fixed::fromRatio(1,100);return !collision_.blocked(b)&&fxAbs(p.x)<config_.worldLimit&&fxAbs(p.z)<config_.worldLimit;};
+        auto clear=[&](Vec3 p,int64_t){auto b=bodyBounds(p,config_.motor.height,config_.motor);b.min.y+=Fixed::fromRatio(1,100);return !collision_.blocked(b)&&fxAbs(p.x)<config_.worldLimit&&fxAbs(p.z)<config_.worldLimit;};
         std::vector<VehicleSeatRequest> requests;std::swap(requests,run.requests);
         for(auto [seat,actor]:run.seats.occupants){
-            const auto& who=s.actors[size_t(actor-1)];if(v->health>0&&who.health>0&&!who.downed&&who.vehicle==v->id)continue;   // knocked / killed / thrown out by damage
+            const auto who=character(sim,uint8_t(actor));if(v->health>0&&who.health>0&&!who.downed&&who.vehicle==v->id)continue;   // knocked / killed / thrown out by damage
             VehicleSeatRequest r;r.id=run.seats.lastRequest+1+int64_t(requests.size());r.actor=actor;r.action=VehicleSeatAction::Eject;r.seat=seat;requests.push_back(r);}
         if(auto report=stepVehicleSeats(def.seats,run.seats,now,run.controller,std::span<const VehicleSeatRequest>(requests),clear)){
             for(const auto& e:report->events){
-                if(e.actor<=0||e.actor>int64_t(s.actors.size()))continue;auto& a=s.actors[size_t(e.actor-1)];
+                if(e.actor<=0||e.actor>count)continue;auto a=character(sim,uint8_t(e.actor));
                 if(e.kind==VehicleEventKind::SeatEntered){a.vehicle=v->id;a.velocity={};}
             }
-            for(const auto& x:report->exits){auto& a=s.actors[size_t(x.actor-1)];a.vehicle=0;a.pos=x.position;a.velocity=run.controller.velocity;
+            for(const auto& x:report->exits){auto a=character(sim,uint8_t(x.actor));a.vehicle=0;a.pos=x.position;a.velocity=run.controller.velocity;
                 if(v->health<=0)damage(sim,0,a,1000);}
         }
         auto driver=vehicleDriver(def.seats,run.seats);v->driver=uint8_t(driver);
         // Controller step: the driver's held input (released after the input timeout) -> pedals and steering.
         VehicleInput in;
         if(driver&&v->health>0){
-            const auto& a=s.actors[size_t(driver-1)];
+            const auto a=character(sim,uint8_t(driver));
             if(now-a.lastInputTick<=config_.inputTimeout){
                 auto f=Fixed::fromRatio(a.input.forward,1000);in.throttle=fxMax(Fixed{},f);in.brake=fxMax(Fixed{},-f);
                 in.steer=fxClamp(Fixed::fromRatio(a.input.right,1000),-1_fx,1_fx);in.handbrake=(a.input.buttons&Jump)!=0;
@@ -97,14 +101,13 @@ void Module::tickVehicles(Simulation& sim) {
         }
         v->pos=run.controller.position;v->yaw=run.controller.yaw;v->velocity=run.controller.velocity;
         for(auto [seat,actor]:run.seats.occupants){
-            if(actor<=0||actor>int64_t(s.actors.size()))continue;auto& a=s.actors[size_t(actor-1)];
+            if(actor<=0||actor>count)continue;auto a=character(sim,uint8_t(actor));
             for(const auto& d:def.seats.seats)if(d.id==seat)a.pos=vehicleWorldPoint(run.controller,d.entry)+Vec3{{},Fixed::fromRatio(1,2),{}};
             a.velocity=run.controller.velocity;a.grounded=true;
         }
     }
 }
-void ioVehicleRuns(Archive& a,std::vector<VehicleRun>& runs) {
-    uint32_t n=a.count(runs.size());if(n>32){a.fail();return;}if(!a.writing())runs.resize(n);
-    for(auto& r:runs){a(r.vehicle,r.type);lib::genre::io(a,r.controller);lib::genre::io(a,r.seats);}
+void ioVehicleDrive(Archive& a,uint32_t& vehicle,VehicleDrive& d) {
+    a(vehicle,d.type);lib::genre::io(a,d.controller);lib::genre::io(a,d.seats);
 }
 }
