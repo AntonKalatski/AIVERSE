@@ -83,13 +83,28 @@ CMake `aiverse_native_use_genre`, `aiverse_native_use_bots(... RTS FPS)`, packag
 `genre-bots`, `genre-kits`, `lib_bots_rts`/`lib_bots_fps`, `docs/genre-packages.md`,
 `docs/genre-implementation.json`, test names `genre_*`, `ecs_cross_genre_*`.
 
-### G8. Genre kits carry a host
-`app/Genre.h` kits are allowed (template level), but each kit names a host `module` (`rts`, `fps`, `racing`),
-and `parseGenre("rts")` maps to it. Only the template wizard may read kits.
+### G8. Template kits (checked: no host coupling)
+`app/Genre.h` kits carry a `family` that the header documents as a user-facing classification, not a module
+name; they are read only by the template wizard and app tools. Nothing to remove; keep it that way.
 
 ### G9. Tools and defaults
 `apps/editor/core/Projects.cpp:92` falls back from `genre` to `module` (`"rts"`); `module` default `"rts"` in
 editor, server, headless; `tools/citygen` writes only the flat grid format.
+
+## Progress (branch feature/aiv20261121_no-genre)
+
+| Stage | State |
+|---|---|
+| 1 Naming (G7) | code written: `aiverselib/mechanics`, namespace `aiverse::lib::mechanics` (alias `genre`), forwarders, CMake aliases, docs renamed. Package ids `bots-rts`/`bots-fps`/`genre-bots`/`genre-kits` and test names still old |
+| 2a Capability queries (G2) | code written: `Project::isFps()` removed, `worldSpaceMaps()` / `actorSessionPlay()` / `actorSessionRules()` / `hostId()` |
+| 2b One scene document (G2) | not started |
+| 3 One vehicle system (G5) | not started - needs build-driven work |
+| 4 Extract `modules/rts`-only capabilities (G3) | not started |
+| 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
+| 6 One simulation (G1) | not started |
+| 7 Template kits (G8) | nothing to do |
+
+Every stage above is unverified until the Mac build and tests in the latest `docs/handoffs/no-genre-split-stage-NN.md` pass.
 
 ## Removal plan (each stage: own branch, merge main first, handoff, full tests)
 
@@ -112,7 +127,7 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 6. **One simulation host (G1).** `game.json` lists systems / blocks instead of `module`; `module` stays as a
    compatibility preset that expands to a system list. Server, headless, editor, navmesh tool and Studio Play run
    any project.
-7. **Template kits (G8)** keep the genre label only; the `module` field is removed after stage 6.
+7. **Template kits (G8)**: verified, the kit carries only a label (`family`); no change needed.
 
 ## Rule for agents meanwhile
 

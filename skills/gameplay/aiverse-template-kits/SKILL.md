@@ -6,8 +6,8 @@ description: Template-level kits - map a template or wizard genre label to the c
 # Template kits (package `genre-kits`, legacy id)
 
 A genre exists only as a template / wizard label. Kits only choose capability packages and acceptance scenarios for a
-template; no engine, library or editor code may branch on the returned genre. The kit's `module` field (rts/fps/racing
-host) is debt G1/G8 in `docs/no-genre-split-audit.md`: do not add new values, and do not read it outside the template wizard.
+template; no engine, library or editor code may branch on the returned genre. The kit's `family` is a display label only (not
+a simulation host); do not read it outside the template wizard.
 
 Read `docs/application-packages.md`, `libraries/include/aiverselib/app/Genre.h` and the matching catalog entry.
 
