@@ -48,6 +48,22 @@ legacy gameplay/save compatibility until a deliberate, tested migration; do not
 claim source APIs or static exports prove live simulation. PRISMA/PHYSIS/SpectraFX
 retain sky/weather/VFX ownership rather than duplicating them in Terra or NEREID.
 
+## Finish before starting: WIP limit, priorities, main gate (owner rule, 2026-11-21)
+
+The status of every capability area is `docs/genre-implementation.json` (`planned` / `partial` / `core`, with the
+`tests` that check its acceptance criterion and `gameReady` for what a shipped game still needs).
+- **At most 5 areas in progress at once** across all agents. Record the area id (K2, I2, ...) in your branch
+  handoff when you start; take a new area only after yours reached `core` (tests listed, registry updated in the
+  same branch) or you handed it back with a written reason.
+- **Priority order** (closest to `core` first): K2 card match reconnect without leaking hidden cards; I2 number
+  formatting and layered prestige; V1 suspension/surface grip; W1 seamless region transitions; then the other
+  `partial` areas; `planned` areas only on the owner's request.
+- **Main gate:** nothing enters `main` without a green `./run-tests.sh --quick` on the Mac
+  (`--build-dir /Volumes/KINGSTON/AIVERSE-builds/<branch>`) on the merged tree; the handoff records the SHA, the
+  pass count and every failure with its owner. A failure inherited from `main` is named, not hidden.
+- Moving code: no compatibility headers or mirrors (see NO GENRE SPLIT); `tools/layers/check_layers.py` and
+  `tools/genre/check_registry.py` must pass.
+
 ## Area rules — read the file for your area before changing it
 
 Subsystem contracts and stage logs live next to the docs, not here. Before you touch an area, read its
@@ -1040,7 +1056,7 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 | Owner (agent / active feature branch) | Exclusive implementation scope | Shared consumption boundary |
 |---|---|---|
 | **PHYSIS agent** / `feature/physis-nature-simulation`, draft PR #25 | Atmospheric/climate ECS, rain/snow/wind, surface wetness/snowpack/ice, fire and quake events. `engine/physis/` | Publish read-only `physis::EnvironmentalResponse` / `PresentationCell`; no water body/river/ocean/shoreline solver or terrain meshes. |
-| **Water agent (NEREID)** / `feature/nereid-water-core`, draft PR #23 | Generic ECS water bodies, water-surface and flow sampling, river/lake/ocean geometry, buoyancy, optional water mesh and water legacy adapters. `engine/world/nereid/` (public path `aiverselib/water/` forwards), `docs/nereid/` | Export NEREID `WaterSample` / `WaterContactComponent` and stable water-body geometry for any terrain/render host; do not own PHYSIS climate or Terra terrain. |
+| **Water agent (NEREID)** / `feature/nereid-water-core`, draft PR #23 | Generic ECS water bodies, water-surface and flow sampling, river/lake/ocean geometry, buoyancy, optional water mesh and water legacy adapters. `engine/world/nereid/`, `docs/nereid/` | Export NEREID `WaterSample` / `WaterContactComponent` and stable water-body geometry for any terrain/render host; do not own PHYSIS climate or Terra terrain. |
 | **Terra agent (TerraWeave)** / `feature/terraweave` | Heightfields, biome/soil and terrain geometry, foliage/scatter, scene/terrain adapters, ground/shore presentation. `engine/world/TerraWeave*.h` | Opt-in adapters consume NEREID water and PHYSIS environment; do not duplicate a mutable water solver or weather simulation in Terra core. |
 | **Integration agent** / explicitly assigned at merge time | Coordinates, units, tick order, persistence, optional adapters, editor/host integration and cross-system tests | Independent composition target, **not** dependencies from PHYSIS/NEREID/Terra foundational headers into one another. |
 | **Render/VFX agent** / separately assigned | Particles, precipitation visuals, wet/snow material layers, foliage deformation, water material effects | Presentation-only snapshots; never write authoritative PHYSIS/NEREID/Terra ECS state from GPU/render frames. |

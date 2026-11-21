@@ -57,7 +57,7 @@ non-authoritative debugging overlay. The independent CTest targets are
 
 NEVER introduce genre/app includes into `engine/render`,
 `libraries/include/aiverselib/animation` or
-`libraries/include/aiverselib/motionweave`.
+`engine/animation`.
 A generic source frame carries stable source ID, generation,
 model, graph and named animation parameter values; the source adapter
 `MotionWeaveSourceBridge` projects those into a presentation ECS World.

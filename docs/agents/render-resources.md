@@ -341,7 +341,7 @@ Core provides reusable ECS components, graph sampling, montage,
 retargeting, IK, root-motion policy, scheduling, pose/skin output.
 Never fork an algorithm per genre or put genre-specific events in
 `engine/render`, `libraries/include/aiverselib/animation` or
-`libraries/include/aiverselib/motionweave`. Use
+`engine/animation`. Use
 `"engine/animation/MotionWeaveSourceBridge.h"`.
 Document each implementation stage in a separate handoff commit.
 

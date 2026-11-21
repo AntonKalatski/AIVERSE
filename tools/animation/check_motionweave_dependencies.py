@@ -28,7 +28,6 @@ def relevant_files(root: pathlib.Path) -> list[pathlib.Path]:
     targets: list[pathlib.Path] = []
     for directory in (
         root / "libraries/include/aiverselib/animation",
-        root / "libraries/include/aiverselib/motionweave",
         root / "engine/animation",  # core moved here 2026-11-21 (docs/architecture-layers.md)
     ):
         if directory.is_dir():
