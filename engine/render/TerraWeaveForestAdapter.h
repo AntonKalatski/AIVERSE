@@ -4,6 +4,7 @@
 // This adapter intentionally creates ONE near model + ONE impostor per species,
 // not unique models per tree.
 #pragma once
+#include <functional>
 
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveRootModel.h"
@@ -70,6 +71,12 @@ public:
         hierarchicalWindScale_=metresPerMps;
     }
 
+    // Optional host hook (editor / native presentation): assign textures or
+    // material tweaks to each near-tree prototype right after mesh build,
+    // before GPU upload. Called once per species, never per instance.
+    using PrototypeDecorator=std::function<void(uint32_t speciesId,render::Model& model)>;
+    void setPrototypeDecorator(PrototypeDecorator decorator) {decorator_=std::move(decorator);}
+
     void addPrototype(const TreeProfile& profile, uint64_t meshSeed,
                       ArborMeshSettings mesh = {8, true}) {
         if (profile.speciesId == 0 || models_.contains(profile.speciesId))
@@ -81,6 +88,7 @@ public:
                                              hierarchicalWind_ ? &owners : nullptr);
         // BranchLOD nodes and the skeleton use the same ordered seed. Store
         // compact branch origins once per SPECIES, never per cosmetic tree.
+        if(decorator_)decorator_(profile.speciesId,*model);
         const TreeSkeleton skeleton=generateTree(profile,meshSeed,TreeLOD::High);
         if(hierarchicalWind_) {
             const auto found=windProfiles_.find(profile.speciesId);
@@ -617,6 +625,7 @@ private:
     std::map<uint32_t,std::vector<render::float3>> branchPivots_;
     std::map<uint32_t,bool> evergreen_;
     std::map<uint32_t,uint64_t> prototypeSeeds_;
+    PrototypeDecorator decorator_;
     bool hierarchicalWind_=false;
     float hierarchicalWindScale_=0.035f;
     render::wind::WindMaskLibrary windMasks_;

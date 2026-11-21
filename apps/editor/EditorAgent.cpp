@@ -294,6 +294,58 @@ void Editor::registerGuiOps() {
     add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); x,y,z set the Scene target (y defaults to zero with x,z), distance/pitch(-89..89)/yaw set its orbit. Scene defaults to clean texture capture; clean:false keeps viewport UI. Optional width/height render up to8MP without changing the map.",
         R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "clean":{"type":"boolean"}, "width":{"type":"integer"}, "height":{"type":"integer"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}, "pitch": {"type": "number"}, "yaw": {"type": "number"}}})",
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });
+    add("view_wind", "Editor-only wind showcase: TerraWeave forest overlay (forest), hierarchical wind masks on its trees (hierarchical), "
+        "PHYSIS nature preview grass and wind (nature, grass, flames, sound, windSpeed m/s, windDirection deg towards, playing) and "
+        "the wind-mask debug view (debug: off|parts|depth|weight|skeleton), lodScale 0.25..4 for forest LOD distances. Never edits the map.",
+        R"({"properties":{"forest":{"type":"boolean"},"hierarchical":{"type":"boolean"},"nature":{"type":"boolean"},"grass":{"type":"boolean"},"flames":{"type":"boolean"},"sound":{"type":"boolean"},"playing":{"type":"boolean"},"windSpeed":{"type":"number"},"windDirection":{"type":"number"},"grassQuality":{"type":"integer"},"lodScale":{"type":"number"},"debug":{"type":"string","enum":["off","parts","depth","weight","skeleton"]}}})",
+        [this](const Json& p) {
+            auto flag=[&](const char* key,bool current){
+                if(!p.has(key))return current;
+                if(p[key].type()!=Json::Type::Bool)throw std::runtime_error(std::string(key)+" must be boolean");
+                return p[key].boolean(current);
+            };
+            auto number=[&](const char* key,float current,float lo,float hi){
+                if(!p.has(key))return current;
+                const double v=p[key].toDouble();
+                if(!p[key].isNumber()||!std::isfinite(v)||v<lo||v>hi)throw std::runtime_error(std::string(key)+" out of range");
+                return float(v);
+            };
+            render::wind::WindDebugView view=r3d_.windRigDebugView();
+            if(p.has("debug")) {
+                const auto d=p.getStr("debug");
+                if(d=="off")view=render::wind::WindDebugView::Off;
+                else if(d=="parts")view=render::wind::WindDebugView::Parts;
+                else if(d=="depth")view=render::wind::WindDebugView::Depth;
+                else if(d=="weight")view=render::wind::WindDebugView::Weight;
+                else if(d=="skeleton")view=render::wind::WindDebugView::Skeleton;
+                else throw std::runtime_error("debug must be off|parts|depth|weight|skeleton");
+            }
+            auto& nature=physisNaturePreview_.settings;
+            const float speed=number("windSpeed",nature.windSpeed,0,60);
+            const float direction=number("windDirection",nature.windDirectionDeg,-360,360);
+            const int quality=int(number("grassQuality",float(nature.grassQuality),0,2));
+            terraWeaveForestPreview_.setLodScale(number("lodScale",terraWeaveForestPreview_.lodScale(),0.25f,4));
+            const bool hierarchical=flag("hierarchical",terraWeaveForestPreview_.hierarchicalWind());
+            if(hierarchical!=terraWeaveForestPreview_.hierarchicalWind()) {
+                if(dev_)terraWeaveForestPreview_.release(*dev_);
+                terraWeaveForestPreview_.setHierarchicalWind(hierarchical);
+            }
+            setTerraWeaveForestPreviewEnabled(flag("forest",terraWeaveForestPreview_.enabled()));
+            nature.enabled=flag("nature",nature.enabled);
+            nature.grass=flag("grass",nature.grass);
+            nature.flames=flag("flames",nature.flames);
+            nature.sound=flag("sound",nature.sound);
+            nature.playing=flag("playing",nature.playing);
+            nature.windSpeed=speed;nature.windDirectionDeg=direction;nature.grassQuality=quality;
+            r3d_.setWindRigDebugView(view);
+            Json r=Json::object();
+            r.set("forest",Json::fromBool(terraWeaveForestPreview_.enabled()));
+            r.set("hierarchical",Json::fromBool(terraWeaveForestPreview_.hierarchicalWind()));
+            r.set("forestInstances",Json::number(int64_t(terraWeaveForestPreview_.visibleInstances())));
+            r.set("nature",Json::fromBool(nature.enabled));
+            r.set("summary",Json::string("Ветер: "+std::to_string(int(speed))+" м/с"));
+            return r;
+        });
     add("view_focus", "Move the Scene camera to look at x,y,z (y and distance optional).",
         R"({"properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}, "required": ["x", "z"]})", [this, okSummary](const Json& p) {
             const float x=cameraNumber(p,"x",0),y=cameraNumber(p,"y",0),z=cameraNumber(p,"z",0),distance=cameraNumber(p,"distance",-1);

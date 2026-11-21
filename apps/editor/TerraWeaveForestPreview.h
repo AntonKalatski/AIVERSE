@@ -6,6 +6,11 @@
 #include "apps/editor/core/TerraWeaveOps.h"
 #include "apps/editor/TerraWeavePlacementMask.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
+#include "engine/world/TerraWeaveBotanicalAppearance.h"
+#include <fstream>
+#include <iterator>
+#include <unordered_map>
+#include <utility>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -22,6 +27,19 @@ class TerraWeaveForestPreview {
 public:
     bool enabled() const { return enabled_; }
     void setEnabled(bool enabled) { enabled_ = enabled; }
+    // GPU hierarchical wind masks (trunk -> branch -> twig -> leaf) on near
+    // trees. Takes effect on the next prototype build (release() first).
+    bool hierarchicalWind() const { return hierarchicalWind_; }
+    void setHierarchicalWind(bool on) { hierarchicalWind_ = on; }
+    // Botanical catalog (oak, birch, maple, spruce, pine) with the PBR bark and
+    // leaf maps of engine/assets/materials/vegetation/textures, else the two
+    // classic untextured prototypes. Takes effect after release().
+    bool botanical() const { return botanical_; }
+    void setBotanical(bool on) { botanical_ = on; }
+    // Distance multiplier for near-model LOD ranges (beauty captures); 1 = default.
+    float lodScale() const { return lodScale_; }
+    void setLodScale(float scale) { lodScale_ = std::clamp(scale, 0.25f, 4.f); }
+    void setEngineDir(std::string dir) { engineDir_ = std::move(dir); }
     size_t visibleInstances() const { return visibleCount_; }
     size_t generatedInstances() const { return placements_.size(); }
 
@@ -53,22 +71,9 @@ public:
 
         if (!forest_) {
             forest_ = std::make_unique<terraweave::ArborForestAdapter>();
-            terraweave::TreeProfile broadleaf;
-            broadleaf.speciesId = 1001;
-            broadleaf.minHeightCm = 550;
-            broadleaf.maxHeightCm = 1150;
-            broadleaf.primaryBranches = 12;
-            broadleaf.shape = terraweave::CrownShape::Broadleaf;
-            terraweave::TreeProfile conifer;
-            conifer.speciesId = 1002;
-            conifer.minHeightCm = 900;
-            conifer.maxHeightCm = 1750;
-            conifer.trunkRadiusCm = 19;
-            conifer.primaryBranches = 14;
-            conifer.leafRadiusCm = 55;
-            conifer.shape = terraweave::CrownShape::Conifer;
-            forest_->addPrototype(broadleaf, 0x544552524131ULL);
-            forest_->addPrototype(conifer, 0x544552524132ULL);
+            if (hierarchicalWind_) forest_->enableHierarchicalWind();
+            if (botanical_) addBotanicalPrototypes();
+            else addClassicPrototypes();
         }
         if (!forest_->uploadModels(device))
             throw std::runtime_error("TerraWeave forest GPU upload failed");
@@ -108,15 +113,15 @@ public:
                 terraweave::biomeBit(terraweave::Biome::Wetland) |
                 terraweave::biomeBit(terraweave::Biome::Tundra) |
                 terraweave::biomeBit(terraweave::Biome::Alpine);
-            terraweave::FoliageSpecies broadleaf;
-            broadleaf.id = 1001;
-            broadleaf.biomeMask = forestBiomes;
-            broadleaf.weight = 3;
-            broadleaf.maxSlopePermille = 1250;
-            terraweave::FoliageSpecies conifer = broadleaf;
-            conifer.id = 1002;
-            conifer.weight = 2;
-            const std::vector<terraweave::FoliageSpecies> species{broadleaf, conifer};
+            std::vector<terraweave::FoliageSpecies> species;
+            for (const auto& [id, weight] : speciesWeights_) {
+                terraweave::FoliageSpecies f;
+                f.id = id;
+                f.biomeMask = forestBiomes;
+                f.weight = weight;
+                f.maxSlopePermille = 1250;
+                species.push_back(f);
+            }
             terraweave::ScatterSettings scatter;
             scatter.seed = t.seed ^ 0x5457464f52455354ULL;
             scatter.spacingCm = 1100;
@@ -155,10 +160,10 @@ public:
         terraweave::FloraView view;
         view.cameraXcm = cameraXcm;
         view.cameraZcm = cameraZcm;
-        view.highRangeCm = 2100;
-        view.mediumRangeCm = 3800;
-        view.lowRangeCm = 5600;
-        view.cullRangeCm = 7700;
+        view.highRangeCm = int32_t(2100 * lodScale_);
+        view.mediumRangeCm = int32_t(3800 * lodScale_);
+        view.lowRangeCm = int32_t(5600 * lodScale_);
+        view.cullRangeCm = int32_t(7700 * lodScale_);
         view.farDensityPermille = 1000;
         const auto batches = terraweave::buildFloraBatches(placements_, view);
         for (const auto& batch : batches) visibleCount_ += batch.instances.size();
@@ -168,7 +173,88 @@ public:
     }
 
 private:
+    void addClassicPrototypes() {
+        terraweave::TreeProfile broadleaf;
+        broadleaf.speciesId = 1001;
+        broadleaf.minHeightCm = 550;
+        broadleaf.maxHeightCm = 1150;
+        broadleaf.primaryBranches = 12;
+        broadleaf.shape = terraweave::CrownShape::Broadleaf;
+        terraweave::TreeProfile conifer;
+        conifer.speciesId = 1002;
+        conifer.minHeightCm = 900;
+        conifer.maxHeightCm = 1750;
+        conifer.trunkRadiusCm = 19;
+        conifer.primaryBranches = 14;
+        conifer.leafRadiusCm = 55;
+        conifer.shape = terraweave::CrownShape::Conifer;
+        forest_->addPrototype(broadleaf, 0x544552524131ULL);
+        forest_->addPrototype(conifer, 0x544552524132ULL);
+        speciesWeights_ = {{1001, 3}, {1002, 2}};
+    }
+
+    // Image from a PNG on disk; false when missing (the prototype stays untextured).
+    static bool loadPng(const std::string& path, render::Image& image) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f) return false;
+        const std::string bytes((std::istreambuf_iterator<char>(f)), {});
+        if (!render::decodeImage(bytes, image)) return false;
+        image.name = path;
+        return true;
+    }
+    void texture(render::Model& model, size_t slot, const std::string& stem) {
+        if (slot >= model.materials.size() || engineDir_.empty()) return;
+        const std::string base = engineDir_ + "/engine/assets/materials/vegetation/textures/" + stem + "_";
+        auto add = [&](const char* suffix) {
+            render::Image image;
+            if (!loadPng(base + suffix + ".png", image)) return -1;
+            model.images.push_back(std::move(image));
+            return int(model.images.size() - 1);
+        };
+        auto& m = model.materials[slot];
+        m.baseTex = add("basecolor");
+        if (m.baseTex < 0) return;
+        m.normalTex = add("normal");
+        m.mrTex = add("orm");
+        m.occlusionTex = m.mrTex;
+        m.baseColor = {1, 1, 1, 1};
+        m.roughness = 1;
+        m.metallic = 0;
+    }
+    void addBotanicalPrototypes() {
+        static constexpr struct { size_t slot; uint32_t weight; } kPick[] = {
+            {4, 3}, {5, 2}, {6, 2}, {0, 2}, {1, 2}};   // oak, birch, maple, spruce, pine
+        const auto& presets = terraweave::botanicalTreePresets();
+        std::unordered_map<uint32_t, std::pair<std::string, std::string>> stems;
+        for (const auto& pick : kPick) {
+            const auto& preset = presets[pick.slot];
+            stems[preset.profile.speciesId] = {std::string(preset.barkMaterial), std::string(preset.leafMaterial)};
+        }
+        forest_->setPrototypeDecorator([this, stems](uint32_t id, render::Model& model) {
+            const auto found = stems.find(id);
+            if (found == stems.end()) return;
+            texture(model, 0, found->second.first);
+            texture(model, 1, found->second.second);
+            if (model.materials.size() > 1) {
+                model.materials[1].alpha = render::AlphaMode::Mask;
+                model.materials[1].alphaCutoff = .38f;
+                model.materials[1].doubleSided = true;
+            }
+        });
+        speciesWeights_.clear();
+        for (const auto& pick : kPick) {
+            const auto& preset = presets[pick.slot];
+            auto mesh = terraweave::botanicalArborMeshSettings(preset);
+            forest_->addPrototype(preset.profile, 0x54574254ULL + preset.profile.speciesId, mesh);
+            speciesWeights_.push_back({preset.profile.speciesId, pick.weight});
+        }
+    }
     bool enabled_ = false;
+    bool hierarchicalWind_ = true;
+    bool botanical_ = true;
+    float lodScale_ = 1;
+    std::string engineDir_;
+    std::vector<std::pair<uint32_t, uint32_t>> speciesWeights_;
     uint64_t cachedRevision_ = std::numeric_limits<uint64_t>::max();
     int64_t cachedTileX_ = std::numeric_limits<int64_t>::max();
     int64_t cachedTileZ_ = std::numeric_limits<int64_t>::max();

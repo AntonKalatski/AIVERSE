@@ -1763,6 +1763,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
                 std::abs(xCm) > double(terraweave::kWorldLimitCm) ||
                 std::abs(zCm) > double(terraweave::kWorldLimitCm))
                 throw std::out_of_range("TerraWeave forest camera outside world extent");
+            terraWeaveForestPreview_.setEngineDir(ws_.engineDir);
             terraWeaveForestPreview_.draw(*dev_, r3d_, doc(),
                 int64_t(std::llround(xCm)), int64_t(std::llround(zCm)),
                 [this](int64_t x, int64_t z) -> int32_t {
@@ -1801,6 +1802,13 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.13f; pass.clearColor[1] = 0.15f; pass.clearColor[2] = 0.17f;
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
+    // Clean captures (agent beauty shots) have no UI: show the horizon/fog
+    // colour instead of the editor's neutral backdrop.
+    else if (cleanSceneCaptureRequested()) {
+        pass.clearColor[0] = r3d_.lighting.fogColor.x;
+        pass.clearColor[1] = r3d_.lighting.fogColor.y;
+        pass.clearColor[2] = r3d_.lighting.fogColor.z;
+    }
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
     const bool postActiveForScene = postEnabledForScene && prisma_.active();
