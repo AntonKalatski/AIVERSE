@@ -50,6 +50,9 @@ public:
     void stop(fx::FxHandle h);
     void kill(fx::FxHandle h);
     bool playing(fx::FxHandle h) const;
+    // Instance still exists (emitting or owning live particles); handle
+    // lists use it to drop finished handles instead of growing to a cap.
+    bool alive(fx::FxHandle h) const;
 
     // EXACTLY ONCE per presentation frame, after all emitters registered
     // their births/moves. draw() EXACTLY ONCE during the scene render pass.
