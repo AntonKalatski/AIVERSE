@@ -184,6 +184,12 @@ cases_cpu() {
 }
 # one traced run: RtsView / client stage times in logcat (AIVERSE_FRAME_TRACE, AIVERSE_VIEW_PROFILE)
 cases_trace() { run trace gl $U AIVERSE_FRAME_TRACE=1 AIVERSE_VIEW_PROFILE=1 AIVERSE_CLIENT_PROFILE=1; }
+# what the remaining (Low) shadow cost is: sampling taps vs the shadow-map pass
+cases_shadow() {
+  run base gl $U; run off gl $U AIVERSE_SHADOWS=off; run taps1 gl $U AIVERSE_SHADOW_TAPS=1
+  run base_s050 gl $U AIVERSE_RENDER_SCALE=0.5; run off_s050 gl $U AIVERSE_RENDER_SCALE=0.5 AIVERSE_SHADOWS=off
+  run taps1_s050 gl $U AIVERSE_RENDER_SCALE=0.5 AIVERSE_SHADOW_TAPS=1
+}
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \

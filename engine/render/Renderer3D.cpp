@@ -787,6 +787,8 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
         f.quality[0] += 0.5f;
     else if (mobileShadowFilter_ && quality_ >= ShadowQuality::Medium)
         f.quality[0] = (quality_ == ShadowQuality::High ? 12.0f : 8.0f) + 0.75f;   // Shaders.h: fixed disk
+    static const float tapsOverride = [] { const char* e = std::getenv("AIVERSE_SHADOW_TAPS"); return e ? float(std::atof(e)) : 0.0f; }();
+    if (tapsOverride > 0) f.quality[0] = tapsOverride;   // testing: 1 = one bilinear compare, 4 = fixed 4 taps, 8.75 = fixed 8-tap disk
     f.quality[1] = quality_ == ShadowQuality::Off || forShadow ? 0.0f : lighting.shadowContactHardening ? 2.0f : 1.0f;
     dev_->setUniforms(1, &f, sizeof f);
 }
