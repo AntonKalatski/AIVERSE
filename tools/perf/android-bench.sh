@@ -190,6 +190,15 @@ cases_shadow() {
   run base_s050 gl $U AIVERSE_RENDER_SCALE=0.5; run off_s050 gl $U AIVERSE_RENDER_SCALE=0.5 AIVERSE_SHADOWS=off
   run taps1_s050 gl $U AIVERSE_RENDER_SCALE=0.5 AIVERSE_SHADOW_TAPS=1
 }
+# Vulkan: what costs ~100 ms of GPU whatever the resolution
+cases_vk() {
+  for c in "base" "shadows_off AIVERSE_SHADOWS=off" "postfx_off AIVERSE_POSTFX=off" "particles_off AIVERSE_PARTICLES=off" \
+           "mdi_off AIVERSE_MULTI_DRAW_INDIRECT=off" "pool_off AIVERSE_GEOMETRY_POOL=off" "batches_off AIVERSE_AUTO_MATERIAL_BATCHES=off" \
+           "lights_off AIVERSE_LIGHTS=off" "overlays_low AIVERSE_OVERLAYS=low"; do
+    set -- $c; local n="$1"; shift
+    run "$n" vulkan $U "$@"
+  done
+}
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
