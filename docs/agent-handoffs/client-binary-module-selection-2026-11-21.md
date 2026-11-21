@@ -451,3 +451,31 @@ in `RtsBwAI.cpp` — main did not compile (any compiler). The helper is now
 `ioPs`; save format unchanged. After the merge the C configuration (all
 optional modules off, traffic off) rebuilt and linked: `index.wasm`
 14,966,706 B (brotli 3,503,417); smoke screenshot statistics unchanged.
+
+## 2026-11-21 continuation: empty project size, stale Web content
+
+Minimal project (game.json, rules with one unused type, one empty 16x16 map,
+`engineModules: ["auto"]` → no optional modules) packaged with
+`aiversebuild --target web`, Release, Emscripten 3.1.50:
+
+| file | raw | brotli -q11 |
+|---|---|---|
+| index.wasm | 14,948,555 | 3,498,016 |
+| index.js | 191,641 | 43,087 |
+| index.data (content.rpak, 52 files) | 671,099 | ~627,000 |
+
+About 15.8 MB on disk / 4.17 MB brotli for an empty scene. The code floor is
+the RTS module plus renderer, UI (RmlUi, ImGui) and Lua; content is mostly
+engine assets every project ships: `engine/roads/markings.png` 328 KB (stored
+uncompressed) and `engine/fonts/ui.ttf` 215 KB. Smoke: the match loads and
+draws the field, HUD and minimap; it ends at once (no entities).
+
+Found on the way:
+- `aiversebuild` re-runs left a stale `index.data` when only content changed:
+  the pack is a `--preload-file` link input unknown to ninja. Added
+  `LINK_DEPENDS` on the pack and `shell.html` (CMakeLists.txt, web branch).
+- Web builds have C++ exception catching disabled (Emscripten default), so any
+  thrown data error (e.g. "rules: no types defined", or the traffic adapter's
+  message) aborts the client with a bare number instead of the native error
+  screen. Not changed here; reading the message from wasm memory in the
+  browser worked for diagnosis.
