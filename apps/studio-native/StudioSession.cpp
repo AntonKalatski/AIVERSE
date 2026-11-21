@@ -582,7 +582,7 @@ Json StudioSession::dispatch(const Json& request) {
                 if(params.has("mode")){const auto m=params.getStr("mode");if(m!="push"&&m!="pull")throw std::invalid_argument("Brush mode is push or pull");next.pull=m=="pull";}
                 if(params.has("symmetry"))next.symmetry=params.getBool("symmetry");
                 if(next.armed && (!facialPreview_.face() || facialPreview_.face()->meshes.empty()))
-                    throw std::runtime_error("Choose the face meshes in the Face tab before sculpting");
+                    throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
                 sculpt_=next;
             } else if(method=="studio.humanSculptStroke") {
                 // Sent by the native viewport after a hit test on the face meshes.

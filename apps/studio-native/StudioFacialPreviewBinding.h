@@ -84,7 +84,7 @@ public:
         if(!bound() || creatorMode())
             throw std::runtime_error("Sculpt needs a project character model in the preview");
         if(!face_ || face_->meshes.empty())
-            throw std::runtime_error("Choose the face meshes in the Face tab before sculpting");
+            throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
         auto next=*face_;
         if(next.landmarks.size()>=256)throw std::runtime_error("Sculpt limit: 256 strokes; bake the character to continue");
         next.landmarks.push_back(stroke);

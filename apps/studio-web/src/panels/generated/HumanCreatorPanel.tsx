@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Brush, Eye, Lightbulb, PersonStanding, Redo2, ScanFace, Scissors, Shirt, Sparkles, Undo2,
   UserRound, LayoutDashboard, Palette } from 'lucide-react';
-import type { HumanLook, StudioSnapshot } from '../../types';
+import type { HumanFaceShape, HumanLook, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
 import { StudioPanel, StudioAlert, StudioEmptyState, StudioButton,
   StudioField, StudioInput, StudioSelect, StudioTabs, StudioCheckbox, StudioBadge } from '../../ui';
@@ -20,7 +20,7 @@ import HumanFaceBlend from '../HumanFaceBlend';
 import { HcCard, HcHeader, HcSlider } from '../HumanCreatorUi';
 import HumanDnaCreator from '../HumanDnaCreator';
 import { useHumanLook } from '../useHumanLook';
-import { blendLooks } from '../humanCreatorSchema';
+import { blendLooks, guessFaceMeshes } from '../humanCreatorSchema';
 import { DOCK_PRESET_EVENT } from '../../nestedDock';
 import './HumanCreatorPanel.css';
 
@@ -138,7 +138,16 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           : <HumanFaceControls key={'face' + project + h.guid} guid={h.guid} face={h.face}
               schema={h.info?.faceSchema ?? []} onChange={f => { h.setFace(f); if (autoApply && bound) void h.apply(f, h.draft); }}
               onImported={g => { h.setGuid(g); h.setFace(null); }}/>}</>;
-      case 'sculpt': return <HumanSculptControls face={h.info?.face ?? h.face} ready={ready} onChanged={refresh}/>;
+      case 'sculpt': return <HumanSculptControls face={h.info?.face ?? h.face} ready={ready} onChanged={refresh}
+          prepare={async () => {
+            // A freshly shown (e.g. assembled) model has no face selection yet:
+            // pick its head meshes automatically so the brush works at once.
+            if (h.info?.face?.meshes.length || !h.guid) return;
+            const meshes = guessFaceMeshes((await invoke('studio.humanWardrobeInfo', { guid: h.guid })).meshes);
+            if (!meshes.length) throw Error('Не нашёл меш лица: отметьте его в «Лицо → Пропорции и импорт»');
+            const f: HumanFaceShape = { version: 1, meshes, landmarks: h.face?.landmarks ?? [], values: h.face?.values ?? {} };
+            h.setFace(f); await h.apply(f, h.draft);
+          }}/>;
       case 'skin': return <><HcHeader title="Кожа" hint="Тон, текстура и блеск кожи. Изменения применяются, когда вы отпускаете ползунок."/>
         <HcCard title="Тон и поверхность"><LookSliders groups={['skin']} h={h}/></HcCard></>;
       case 'eyes': return <><HcHeader title="Глаза" hint="Цвет радужки, склера и блеск. Камера приближена к лицу."/>

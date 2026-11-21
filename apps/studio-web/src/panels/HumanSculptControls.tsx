@@ -10,13 +10,13 @@ import { sculptZone } from './humanCreatorSchema';
 import { HcCard, HcHeader, HcNote, HcSegment, HcSlider, HcSwitch } from './HumanCreatorUi';
 
 type Brush = Pick<HumanSculptState, 'armed' | 'radius' | 'strength' | 'mode' | 'symmetry'>;
-export default function HumanSculptControls({ face, ready, onChanged }: { face: HumanFaceShape | null; ready: boolean; onChanged: () => void }) {
+export default function HumanSculptControls({ face, ready, onChanged, prepare }: { face: HumanFaceShape | null; ready: boolean; onChanged: () => void; prepare?: () => Promise<void> }) {
   const [brush, setBrush] = useState<Brush>({ armed: false, radius: .12, strength: .012, mode: 'push', symmetry: true });
   const [error, setError] = useState('');
   const [miss, setMiss] = useState(false);
   const call = async (params: { enabled?: boolean; radius?: number; strength?: number; mode?: 'push' | 'pull'; symmetry?: boolean }) => {
     setError('');
-    try { const r = await invoke('studio.humanSculpt', params); setBrush({ armed: r.armed, radius: r.radius, strength: r.strength, mode: r.mode, symmetry: r.symmetry }); }
+    try { if (params.enabled && prepare) await prepare(); const r = await invoke('studio.humanSculpt', params); setBrush({ armed: r.armed, radius: r.radius, strength: r.strength, mode: r.mode, symmetry: r.symmetry }); }
     catch (e) { setError(String(e).replace(/^Error: /, '')); }
   };
   const undo = (all: boolean) => void invoke('studio.humanSculptUndo', all ? { all: true } : {}).then(() => onChanged()).catch(e => setError(String(e)));
@@ -35,12 +35,12 @@ export default function HumanSculptControls({ face, ready, onChanged }: { face: 
     {!hasFace && <HcNote tone="warn">Сначала задайте форму в «Лицо → Смешивание» — меш лица выберется автоматически.</HcNote>}
 
     <HcCard title="Кисть" hint={brush.armed ? 'Кликайте по лицу во вьюпорте' : 'Включите, чтобы клики по лицу лепили форму'}>
-      <button type="button" className={'hc-brush' + (brush.armed ? ' hc-brush--on' : '')} disabled={!hasFace}
+      <button type="button" className={'hc-brush' + (brush.armed ? ' hc-brush--on' : '')} disabled={!hasFace && !prepare}
         aria-pressed={brush.armed} onClick={() => void call({ enabled: !brush.armed })}>
         <MousePointerClick size={18}/><span>{brush.armed ? 'Кисть включена' : 'Включить кисть'}</span>
         {brush.armed && !ready && <small>персонаж загружается…</small>}
       </button>
-      <HcSegment label="Режим кисти" value={brush.mode} disabled={!hasFace} onChange={mode => void call({ mode })}
+      <HcSegment label="Режим кисти" value={brush.mode} disabled={!hasFace && !prepare} onChange={mode => void call({ mode })}
         options={[{ id: 'push', label: 'Вытянуть', icon: <Plus size={14}/> }, { id: 'pull', label: 'Вдавить', icon: <Minus size={14}/> }]}/>
       <HcSwitch label="Симметрия по X" hint="Штрих повторяется на другой половине лица" checked={brush.symmetry}
         onChange={v => void call({ symmetry: v })}/>
