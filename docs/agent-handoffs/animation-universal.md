@@ -3314,3 +3314,13 @@ Detailed evidence, exact scope and unverified platforms are in
 No save/asset format change; no production performance-default change.
 Working tree/diff check clean. Next: authorized fast-forward push to main,
 verify remote SHA and record the publication receipt.
+
+
+## Review fixes (prisma-view) — 2026-11-21
+Branch feature/aiv20261121_fix_prisma_view. RtsView::trimTypes / loadType(replacing) now detach
+MotionWeave sources (forgetSources / forgetSourcesForReimport) before Models are released (UAF in
+MotionWeaveSourceBridge::sync snapshotPlayback). View clones share the MotionWeaveScheduler;
+View::update validates before mutating frame state; MotionWeaveWorkerPool nested parallelFor runs
+inline instead of deadlocking. Targeted view_* / motionweave_* tests PASS in a scratch Release build;
+motionweave_backend_phase_transfer fails pre-existing (unrelated). Full build/CTest NOT RUN.
+Details: docs/agent-handoffs/review-fixes-prisma-view-2026-11-21.md.

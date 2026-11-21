@@ -157,6 +157,15 @@ static bool unitChecks() {
     calibrated.observe(0, 1024, true, 0.65);
     ok &= check(calibrated.useMdi(0, 1024)); // MDI now wins after warmup
     ok &= check(!calibrated.useMdi(1, 1024)); // independent opaque lane
+    // Review 2026-11-21: non-learning AUTO passes keep CPU MDI for large
+    // workloads; only the small-item threshold forces the direct path.
+    AutoCpuBatchPolicy gate;
+    ok &= check(autoCpuMdiPermit(gate, false, false, 0, 8, 64));
+    ok &= check(autoCpuMdiPermit(gate, true, false, 0, 1024, 64));
+    ok &= check(!autoCpuMdiPermit(gate, true, false, 0, 32, 64));
+    ok &= check(gate.lanes[0][2].opportunities == 0); // policy untouched
+    ok &= check(!autoCpuMdiPermit(gate, true, true, 0, 1024, 64)); // first probe direct
+    ok &= check(gate.lanes[0][2].opportunities == 1);
 
     std::printf("material palette CPU checks=%d result=%s\n",checks,ok?"passed":"FAILED");
     return ok;
