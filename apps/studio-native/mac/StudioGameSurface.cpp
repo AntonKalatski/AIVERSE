@@ -1,5 +1,7 @@
 #include "StudioGameSurface.h"
 #include "engine/sim/Simulation.h"
+#include "engine/sim/CommonComponents.h"
+#include "modules/rts/RtsModule.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -17,6 +19,7 @@ StudioGameSurface::~StudioGameSurface() {
 void StudioGameSurface::start(const StudioGameLaunch& plan,const std::string& assets) {
     error_.clear();launch_=plan;assets_=assets;matchObserved_=false;++runtimeEpoch_;
     host_->start(*device_,plan.project,assets,lifetime_->lease(),plan.map);
+    if (plan.camera) { const auto& c=*plan.camera; host_->setStartCamera(c[0],c[1],c[2],c[3],c[4]); }
 }
 void StudioGameSurface::stop() { matchObserved_=false;++runtimeEpoch_; host_->suspendInput();host_->stop();host_->collectGpuRetirements(); }
 void StudioGameSurface::setDevice(const StudioGameDevice& profile) {
@@ -59,6 +62,30 @@ void StudioGameSurface::frame(int w,int h,float pw,float ph,double dt,bool focus
     } catch (const std::exception& e) {
         device_->endPass();device_->endFrame();error_=e.what();stop();
     }
+}
+Json StudioGameSurface::mapEntityStates() {
+    Simulation* sim=host_ && host_->inMatch()?host_->simulation():nullptr;
+    auto* mod=sim?dynamic_cast<game::RtsModule*>(&sim->module()):nullptr;
+    if(!mod)throw std::runtime_error("No game with map entities is running");
+    auto& w=sim->world();
+    Json out=Json::array();
+    const auto& placed=mod->mapPlaced();
+    for(size_t i=0;i<placed.size();++i){
+        const Entity e=placed[i];
+        if(!e.valid())continue;   // static collider: not a live entity
+        Json o=Json::object();
+        o.set("index",Json::number(int64_t(i)));
+        if(!w.alive(e)){o.set("removed",Json::fromBool(true));out.push(std::move(o));continue;}
+        if(const auto* u=w.tryGet<game::Unit>(e))o.set("type",Json::string(mod->rules().types[u->type].id));
+        if(const auto* t=w.tryGet<Transform>(e)){o.set("x",Json::number(t->pos.x.toDouble(),3));o.set("z",Json::number(t->pos.z.toDouble(),3));}
+        if(const auto* rs=w.tryGet<game::ResourceStock>(e);rs&&!rs->infinite){
+            o.set("amount",Json::number(rs->amount.toDouble(),2));
+            if(const auto* u=w.tryGet<game::Unit>(e))o.set("defaultAmount",Json::number(mod->rules().types[u->type].resourceAmount.toDouble(),2));
+        }
+        out.push(std::move(o));
+    }
+    Json r=Json::object();r.set("entities",std::move(out));r.set("tick",Json::number(int64_t(sim->tick())));
+    return r;
 }
 Json StudioGameSurface::entities(int offset,int limit,const std::string& query) {
     return inspector_.entities(host_->inMatch()?host_->simulation():nullptr,std::to_string(runtimeEpoch_),offset,limit,query);

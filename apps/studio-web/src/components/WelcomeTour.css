@@ -1,0 +1,11 @@
+.tour{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:rgba(5,8,12,.55);backdrop-filter:blur(2px)}
+.tour__card{position:relative;width:min(460px,calc(100vw - 40px));padding:22px 24px 18px;border-radius:14px;background:var(--au-panel-raised);border:1px solid var(--au-line-strong);box-shadow:0 20px 60px rgba(0,0,0,.45);color:var(--au-text);display:flex;flex-direction:column;gap:8px}
+.tour__card small{color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.tour__card h2{margin:0;font-size:17px}
+.tour__card p{margin:0;color:var(--au-text-muted);line-height:1.55;font-size:var(--au-font-sm)}
+.tour__icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--au-active);color:var(--au-accent)}
+.tour__close{position:absolute;top:10px;right:10px;background:none;border:0;color:var(--au-text-faint);cursor:pointer}
+.tour__dots{display:flex;gap:6px;margin-top:6px}
+.tour__dots button{width:7px;height:7px;border-radius:50%;border:0;padding:0;background:var(--au-line-strong);cursor:pointer}
+.tour__dots button.is-on{background:var(--au-accent)}
+.tour__actions{display:flex;justify-content:flex-end;gap:6px;margin-top:4px}

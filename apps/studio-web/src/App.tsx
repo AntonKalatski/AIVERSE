@@ -22,7 +22,9 @@ import engineLogo from '../../../engine/assets/branding/mark.png';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
 import StudioMenuBar, { type StudioMenu } from './components/StudioMenuBar';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows';
+import WelcomeTour, { tourSeen } from './components/WelcomeTour';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
+import { resetLive } from './panels/livePlay';
 import {
   floatOwner, floatingPanels, floatingParams, forgetFloatTree, newFloatKey, readFloatTree, readFloating, releasePanel,
   removeFloatWindow, saveFloatTree, saveFloating, setFloatPanels, treePanels, updateFloatingFrame, validFloatKey,
@@ -63,11 +65,14 @@ export default function App() {
   const [game, setGame] = useState<StudioGameState | null>(null);
   const [sceneAction, setSceneAction] = useState('');
   const [hoverId, setHoverId] = useState('');
+  const [dockHover, setDockHover] = useState(false); // a floating window is dragged over the main window
   const [loading, clearLoading] = useProjectLoading();
   // Requests answered while the native side opens a project are expected, not errors.
   useEffect(() => { if (error === 'Project is loading') setError(''); }, [error]);
+  useEffect(() => { if (!game?.active) resetLive(); }, [game?.active]); // live refs belong to one session
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(() => !tourSeen());
   const [uiScale, setUiScale] = useState<number>(() => {
     const stored = Number(window.localStorage.getItem('aiverse.studio.uiScale'));
     return Number.isFinite(stored) && stored >= 0.75 && stored <= 2 ? stored : 1;
@@ -138,6 +143,8 @@ export default function App() {
       } else if (!FLOAT && event === 'window.floatClosed') {
         const key = field(payload, 'message');
         if (validFloatKey(key)) window.dispatchEvent(new CustomEvent('studio:float-closed', { detail: key }));
+      } else if (!FLOAT && event === 'window.dockHover') {
+        setDockHover(field(payload, 'over') === true);
       } else if (!FLOAT && event === 'window.floatFrame') {
         setFloating(list => updateFloatingFrame(list, payload));
       } else if (!FLOAT && event === 'ui.floatPanels') {
@@ -269,7 +276,8 @@ export default function App() {
     select, selectIds, hoverId, changeProperty, openProject, updateSnapshot: value => {
       setInspectorPin(null); // create/delete/duplicate or map replacement invalidates positional pins
       setSnapshot(value);
-    }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError
+    }, setBusy, commitSnapshot: setSnapshot, showPanel: panel => showPanel(panel), reportError: setError,
+    playing: !!game?.active
   })}</PanelErrorBoundary>;
 
   const project = connected && !!snapshot?.project.path;
@@ -392,6 +400,16 @@ export default function App() {
         onSelect: () => entityAction('studio.entityDelete') },
       { id: 'frame', label: 'Frame Selected', shortcut: 'F', disabled: !selectedEntity || !connected,
         onSelect: () => void invoke('studio.viewportInput', { kind: 'focus' }).catch(console.warn) },
+      { id: 'frameAll', label: 'Frame All', shortcut: '⇧F', disabled: !connected || !project,
+        onSelect: () => void invoke('studio.viewportInput', { kind: 'frameAll' }).catch(console.warn) },
+      { id: 'align', label: 'Align', caption: true, separator: true, onSelect: () => {} },
+      ...([['minX', 'Align Left (min X)', 2], ['centerX', 'Align Centre X', 2], ['maxX', 'Align Right (max X)', 2],
+           ['minZ', 'Align Back (min Z)', 2], ['centerZ', 'Align Centre Z', 2], ['maxZ', 'Align Front (max Z)', 2],
+           ['distributeX', 'Distribute Along X', 3], ['distributeZ', 'Distribute Along Z', 3], ['ground', 'Drop to Ground', 1]] as const)
+        .map(([mode, label, min]) => ({ id: 'align-' + mode, label, disabled: busy || selection.length < min,
+          onSelect: () => void invoke('studio.entitiesAlign', { entityIds: selection, mode })
+            .then(next => { setInspectorPin(null); setSnapshot(next); setError(''); })
+            .catch(e => setError(e instanceof Error ? e.message : String(e))) })),
       { id: 'prefs', label: 'Preferences…', separator: true, onSelect: () => setSettingsOpen(true) },
     ] },
     { id: 'window', label: 'Window', items: () => [
@@ -406,7 +424,8 @@ export default function App() {
         checked: workspace === id, onSelect: () => switchWorkspace(id) })),
       { id: 'reset', label: 'Reset ' + WORKSPACE_INFO[workspace].title + ' Layout', separator: true, onSelect: () => setDock(workspaceDockTree(workspace)) },
       { id: 'palette', label: 'Command Palette…', shortcut: '⌘K', onSelect: () => setPalette('') },
-      { id: 'legacy', label: 'Legacy editor — not migrated yet', caption: true, separator: true, onSelect: () => {} },
+      { id: 'tour', label: 'Welcome Tour…', onSelect: () => setTourOpen(true) },
+      ...(LEGACY_WINDOWS_NOT_MIGRATED.length ? [{ id: 'legacy', label: 'Legacy editor — not migrated yet', caption: true, separator: true, onSelect: () => {} }] : []),
       ...LEGACY_WINDOWS_NOT_MIGRATED.map(w => {
         const area = legacyWorkspace(w.id);
         return { id: 'legacy-' + w.id, label: w.title + (area ? '  ·  ' + WORKSPACE_INFO[area].title : ''), disabled: true, onSelect: () => {} };
@@ -465,7 +484,7 @@ export default function App() {
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 
-  return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')}>
+  return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')+(game?.active?' is-playing':'')}>
     <header className="titlebar"
       onMouseDown={event => {
         // Empty title-bar areas move the native window (like the macOS title bar).
@@ -473,6 +492,7 @@ export default function App() {
         if (event.detail === 2) nativeWindowAction('studio.windowZoom');
         else nativeWindowAction('studio.windowDrag');
       }}>
+      <div className="titlebar__side titlebar__side--left">
       <div className="wordmark"><img className="engine-mark" src={engineLogo} alt=""/>
         <strong>AIVERSE</strong></div>
       <StudioMenuBar menus={menus}/>
@@ -481,8 +501,10 @@ export default function App() {
         <b>{snapshot?.project.name ?? 'Loading…'}</b>{snapshot?.project.dirty && <span className="dirty-dot active" aria-label="Unsaved changes"/>}<ChevronDown size={13}/>
       </button>
       <div className="header-drag-space"/>
+      </div>
       <HeaderGameControls enabled={connected && !!snapshot?.project.path} onState={setGame}
         onPlay={()=>showPanel('game')} onError={setError}/>
+      <div className="titlebar__side titlebar__side--right">
       <div className="header-drag-space"/>
       <WorkspaceTabs value={workspace} onChange={switchWorkspace}/>
       <button type="button" className="command-search-button" onClick={() => setPalette('')} aria-label="Search or run a command (⌘K)">
@@ -492,6 +514,7 @@ export default function App() {
       <div className="title-actions">
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
+      </div>
       </div>
     </header>
     {settingsOpen && <section className="studio-editor-settings" aria-label="Editor settings">
@@ -510,8 +533,11 @@ export default function App() {
     <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}
       onFloat={connected ? floatOut : undefined} onAdopt={adopt}/>
     <ProjectLoadingDialog state={loading} onClose={clearLoading}/>
+    {dockHover && <div className="dock-drop-hint" data-native-overlay role="status">Release to dock the window's tabs here</div>}
+    {tourOpen && !FLOAT && <WelcomeTour onClose={() => setTourOpen(false)}/>}
     <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction || sceneLoadingText(loading)}
-      onOpenConsole={() => showPanel('console')}/>
+      onOpenConsole={() => { showPanel('console');
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('studio:console-filter', { detail: 'error' })), 0); }}/>
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 }

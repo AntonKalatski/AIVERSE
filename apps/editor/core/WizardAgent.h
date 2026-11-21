@@ -24,7 +24,9 @@ class AgentRun {
 public:
     ~AgentRun();
     // Starts the client's CLI in the project folder with the task file on stdin. False + err when it can't start.
-    bool start(const std::string& clientId, const std::string& projectDir, const std::string& taskFile, const std::string& logFile, std::string* err);
+    // extraArgs: more CLI flags for Claude Code (Studio's agent panel: --mcp-config <file> --strict-mcp-config --resume <id>).
+    bool start(const std::string& clientId, const std::string& projectDir, const std::string& taskFile, const std::string& logFile, std::string* err,
+               const std::string& extraArgs = "");
     void stop();                                  // kills the agent
     bool running() const { return running_; }
     bool started() const { return started_; }
@@ -35,6 +37,7 @@ public:
     std::string result();                         // the agent's final message (Claude Code), when finished
     int toolCalls() const { return tools_; }
     std::string client() const { return client_; }
+    std::string sessionId();                      // Claude Code session of the last run (for --resume), "" if unknown
 
 private:
     void reader(std::string cmd, std::string logFile);
@@ -45,7 +48,7 @@ private:
     std::mutex m_;
     std::vector<std::string> lines_;
     size_t taken_ = 0;
-    std::string result_, client_, pidFile_;
+    std::string result_, client_, pidFile_, session_;
 };
 
 } // namespace aiverse::editor

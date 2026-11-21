@@ -11,6 +11,7 @@
 #include <array>
 #include <span>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <utility>
 #include <string>
@@ -530,6 +531,22 @@ public:
                (shadowMap_.valid() && shadowSize_==size);
     }
     ShadowQuality shadowQuality() const { return quality_; }
+    // Mobile GPUs: Medium / High filter the sun shadow with a fixed 8 / 12-tap disk instead of the
+    // 64 / 128-tap stable disk (4 fetches each); the blocker search stays. Set by touch-device hosts.
+    void setMobileShadowFilter(bool on) { mobileShadowFilter_ = on; }
+    // GL hosts that set gfx::Device::setGlslPrelude("#define AIVERSE_HW_SHADOW ...") before init:
+    // the lit shaders read the shadow map through a compare sampler (Shaders.h). Call before init.
+    void setHardwareShadowCompare(bool on) { hwShadowCompare_ = on; }
+    bool hardwareShadowCompare() const { return hwShadowCompare_; }
+    // The sun shadow map for the lit shaders' slot (a compare view with hardwareShadowCompare).
+    void bindShadowMap(int slot);
+    bool mobileShadowFilter() const { return mobileShadowFilter_; }
+    // Mobile Low: hosts draw units without casting into the shadow map (contact blobs instead).
+    // AIVERSE_UNIT_SHADOWS=1 keeps them casting.
+    bool blobUnitShadows() const {
+        static const bool keep = [] { const char* e = std::getenv("AIVERSE_UNIT_SHADOWS"); return e && *e == '1'; }();
+        return mobileShadowFilter_ && quality_ == ShadowQuality::Low && !keep;
+    }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     // Shader presentation clock only; never changes simulation/current velocity.
@@ -1737,6 +1754,11 @@ private:
     bool hasShadowBounds_ = false;
     float3 shadowBoundsMin_{}, shadowBoundsMax_{};
     ShadowQuality quality_ = ShadowQuality::Medium;
+    bool mobileShadowFilter_ = false;
+    bool hwShadowCompare_ = false;
+    gfx::TextureViewHandle shadowCompareView_{};
+    uint32_t shadowCompareViewFor_ = 0;
+    gfx::SamplerHandle shadowCompareSampler_{};
     std::vector<DrawItem> items_;
     std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;
@@ -2191,9 +2213,10 @@ private:
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
     // One-view borrowed atlas; beginScene drops it before the next view.
-    // U6 (three float4): origin+inverseSpacing, dimensions, ring offset=0.
+    // U6 (nine float4, GiDynamicShaders.h): per cascade origin+1/spacing,
+    // dimensions+probe offset, ring(+cascade count in cascade 0).
     gfx::TextureHandle dynamicGiAtlas_{};
-    std::array<float,12> dynamicGiUniforms_{};
+    std::array<float,36> dynamicGiUniforms_{};
     gfx::PipelineHandle currentPipe_;
     std::string modelError_;
     // baked lighting (Renderer3DBaked.cpp)

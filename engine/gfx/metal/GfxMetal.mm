@@ -1909,7 +1909,7 @@ public:
         if (!cmd_ || enc_ || !dst) return false;
         id<MTLTexture> src = nil;
         if (from.valid()) { if (auto* s = textures_.get(from.id)) src = s->tex; }
-        else if (drawable_) src = drawable_.texture;
+        else if (acquireDrawable()) src = drawable_.texture;
         if (!src || src.framebufferOnly || src.pixelFormat != dst->tex.pixelFormat ||
             src.width != dst->tex.width || src.height != dst->tex.height) return false;
         id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
@@ -2011,7 +2011,13 @@ public:
         uniformPage_=uniformOffset_=0;
         gpuIcbInstanceUploadedBytes_ = 0;
         layer_.drawableSize = CGSizeMake(w, h);
-        drawable_ = [layer_ nextDrawable];
+        // Opt-in late drawable acquisition (AIVERSE_METAL_LATE_DRAWABLE=1): the
+        // drawable is taken at the first screen pass, after offscreen passes and
+        // the game's CPU work. Default stays here: on the owner's Mac it showed no
+        // gain and one run measured ~8 ms vs ~4 ms frames (2026-11-21, unresolved).
+        drawable_ = nil;
+        drawablePending_ = true;
+        if (!lateDrawable_) acquireDrawable();
         if (!depth_ || int(depth_.width) != w || int(depth_.height) != h) {
             MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
                 width:NSUInteger(w) height:NSUInteger(h) mipmapped:NO];
@@ -2345,6 +2351,7 @@ public:
         }
         cmd_ = nil;
         drawable_ = nil;
+        drawablePending_ = false;
     }
 
     bool bindingCacheEnabled_=true;
@@ -2533,7 +2540,7 @@ public:
             pipelineId_ = 0;
             return;
         }
-        if (!drawable_) return;
+        if (!acquireDrawable()) return;
         rp.colorAttachments[0].texture = drawable_.texture;
         rp.colorAttachments[0].loadAction = d.clearColorEnabled ? MTLLoadActionClear : (firstPass_ ? MTLLoadActionDontCare : MTLLoadActionLoad);
         rp.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -3834,6 +3841,18 @@ private:
     std::shared_ptr<std::atomic<uint64_t>> completedFrame_=
         std::make_shared<std::atomic<uint64_t>>(0);
     id<CAMetalDrawable> drawable_;
+    bool drawablePending_ = false;   // beginFrame ran, nextDrawable not yet called
+    const bool lateDrawable_ = [] {
+        const char* v = std::getenv("AIVERSE_METAL_LATE_DRAWABLE");
+        return v && std::strcmp(v, "1") == 0;
+    }();
+    id<CAMetalDrawable> acquireDrawable() {
+        if (!drawable_ && drawablePending_) {
+            drawablePending_ = false;
+            drawable_ = [layer_ nextDrawable];
+        }
+        return drawable_;
+    }
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;

@@ -79,12 +79,13 @@ inline bool stepAnimationPresentationParallel(World& world,float dt,size_t lanes
 #else
     return dispatchAnimationPresentation(world,dt,lanes,
         [](size_t count,const auto& worker){
-            std::vector<std::jthread> jobs;
+            // std::thread + join, not std::jthread: Android NDK libc++ has no jthread.
+            std::vector<std::thread> jobs;
             jobs.reserve(count>0?count-1:0);
             for(size_t i=1;i<count;++i)
                 jobs.emplace_back([&,i]{worker(i);});
             worker(0);
-            // jthread joins at scope exit: barrier before renderer reads poses.
+            for(auto& j:jobs)j.join();   // barrier before the renderer reads poses
         });
 #endif
 }

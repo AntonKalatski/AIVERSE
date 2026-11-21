@@ -1,0 +1,10 @@
+.history{display:flex;flex-direction:column;height:100%;min-height:0}
+.history__list{flex:1;min-height:0;overflow:auto;padding:4px 0}
+.history__step{display:flex;align-items:center;gap:8px;width:100%;padding:4px 10px;border:0;background:none;color:var(--au-text);text-align:left;font-size:var(--au-font-sm);cursor:pointer}
+.history__step b{min-width:20px;color:var(--au-text-faint);font-weight:500;font-variant-numeric:tabular-nums;font-size:var(--au-font-xs)}
+.history__step:hover{background:var(--au-hover)}
+.history__step.is-current{background:var(--au-active);box-shadow:inset 2px 0 0 var(--au-accent)}
+.history__step.is-redo{color:var(--au-text-faint)}
+.history__step--origin{color:var(--au-text-muted)}
+.history__empty{display:flex;gap:6px;align-items:center;padding:10px;color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.history__error{padding:6px 10px;color:#ff9a8a;font-size:var(--au-font-xs)}

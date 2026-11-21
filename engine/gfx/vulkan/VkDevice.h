@@ -342,6 +342,11 @@ private:
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     VkFormat swapFormat_ = VK_FORMAT_B8G8R8A8_UNORM;
     VkExtent2D swapExtent_{};
+    VkSurfaceTransformFlagBitsKHR swapTransform_ = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;   // caps.currentTransform at creation
+    VkExtent2D swapCapsExtent_{};   // caps.currentExtent at creation (the swapchain may be smaller: Android)
+    // VK_SUBOPTIMAL_KHR means "recreate" only when the surface really changed: Android reports it on every
+    // present while preTransform (IDENTITY) differs from the display rotation (any landscape game).
+    bool swapchainChanged();
     std::vector<VkImage> swapImages_;
     std::vector<VkSemaphore> swapRendered_;
     uint32_t swapIndex_ = 0;
