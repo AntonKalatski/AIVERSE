@@ -160,6 +160,14 @@ add_library(aiverse_engine STATIC
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
 target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# PHYSIS nature simulation installs itself from a map "physis" block in
+# Simulation::setup for every game module (engine/physis/PhysisAutoInstall.cpp).
+# OFF drops it from the link; maps with a "physis" block then run without it.
+option(AIVERSE_SIM_PHYSIS "Install PHYSIS automatically from map data" ON)
+if(AIVERSE_SIM_PHYSIS)
+    target_sources(aiverse_engine PRIVATE engine/physis/PhysisAutoInstall.cpp)
+    target_compile_definitions(aiverse_engine PRIVATE AIVERSE_SIM_PHYSIS=1)
+endif()
 # Tests that rely on assert() must keep it in Release (CMake adds NDEBUG): undefine NDEBUG for the
 # target on every compiler (GCC/Clang/AppleClang/clang-cl: -UNDEBUG, MSVC: /UNDEBUG).
 function(aiverse_keep_test_asserts target)
@@ -4195,6 +4203,13 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_nature_presentation_test PRIVATE aiverse_engine)
     add_test(NAME physis_nature_presentation COMMAND aiverse_physis_nature_presentation_test)
     set_tests_properties(physis_nature_presentation PROPERTIES LABELS "PHYSIS")
+    if(AIVERSE_SIM_PHYSIS)
+        # Map-data install for any GameModule + presentation config/wind adapters.
+        add_executable(aiverse_physis_nature_runtime_test tests/physis_nature_runtime_test.cpp)
+        target_link_libraries(aiverse_physis_nature_runtime_test PRIVATE aiverse_engine)
+        add_test(NAME physis_nature_runtime COMMAND aiverse_physis_nature_runtime_test)
+        set_tests_properties(physis_nature_runtime PROPERTIES LABELS "PHYSIS;TERRAWEAVE;NEREID")
+    endif()
     if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
         # PHYSIS -> SpectraFX / audio planners and TerraWeave grass overlay
         # (CPU only; no device, no audio hardware).
@@ -4795,4 +4810,21 @@ option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
 if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
     add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
+endif()
+
+# One target that builds every PHYSIS test executable defined above, so CI and
+# agents never keep a hand-written list that silently misses new tests (a
+# registered CTest without its executable fails as "Not Run").
+if(AIVERSE_BUILD_TESTS)
+    get_property(_aiverse_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    set(_aiverse_physis_test_targets)
+    foreach(_aiverse_target IN LISTS _aiverse_all_targets)
+        if(_aiverse_target MATCHES "^aiverse_physis_.*_tests?$")
+            list(APPEND _aiverse_physis_test_targets ${_aiverse_target})
+        endif()
+    endforeach()
+    add_custom_target(aiverse_physis_tests)
+    if(_aiverse_physis_test_targets)
+        add_dependencies(aiverse_physis_tests ${_aiverse_physis_test_targets})
+    endif()
 endif()
