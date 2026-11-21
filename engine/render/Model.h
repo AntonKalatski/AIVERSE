@@ -68,6 +68,7 @@ struct Material {
     float sssStrength = 0;                 // artistic diffuse wrap/backlight, 0 disables
     float3 sssColor{1, 1, 1};             // linear scattering tint
     float sssScale = 0.5f;                // wrap width and backlight falloff, [0,1]
+    float sssThickness = 0;               // max transmitted path in world units; 0 keeps artistic backlight
 };
 
 struct Image {

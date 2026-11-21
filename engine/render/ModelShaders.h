@@ -26,7 +26,7 @@
 //                 vec4 pbr (metallic, roughness, normalScale, occlusionStrength);
 //                 vec4 misc (alphaCutoff, teamMode, teamStrength, flags: bit0 vertex RGB/alpha, bit1 alpha is local AO);
 //                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, SSS strength/scale for PBR or fixed shade ambient/diffuse for unlit);
-//                 vec4 light (SSS color for PBR or fixed light direction for unlit, w 1 = fixed light on);
+//                 vec4 light (SSS color + max transmitted world depth for PBR; fixed light direction + enabled for unlit);
 //   U3 skin:      SKINNED vec4 joints[240] (3 rows of a 3x4 matrix per joint);
 //                 BAKED   vec4 palette[20] (palette slot -> skin joint, 4 per vec4)
 //   U4 morph:     vec4 w[2] (8 weights); vec4 info (first texel, first vertex, vertex count, targets);
@@ -423,7 +423,25 @@ void main() {
         float wrap = clamp(m_uv1.w, 0.0, 1.0);
         float wrapped = max((dot(n, L) + wrap) / (1.0 + wrap), 0.0);
         float back = pow(max(dot(-n, L), 0.0), mix(8.0, 2.0, wrap));
-        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5) * m_uv1.z;
+        float transmission = 1.0;
+        if (m_light.w > 0.0) {
+            transmission = 0.0;
+            if (back > 0.0 && v_draw.x > 0.5 && u_quality.y > 0.5) {
+                vec4 lp = u_lightViewProj * vec4(v_wpos, 1.0);
+                vec3 p = lp.xyz / lp.w;
+                vec2 uv = p.xy * 0.5 + 0.5;
+                if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;
+                float d = p.z * u_shadow.y + u_shadow.z;
+                if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && d > 0.0 && d < 1.0) {
+                    float entry = sunDepth(uv);
+                    float depthPerWorld = length(vec3(u_lightViewProj[0].z, u_lightViewProj[1].z, u_lightViewProj[2].z)) * u_shadow.y;
+                    float path = (d - entry) / max(depthPerWorld, 1e-6);
+                    if (entry < 0.9999 && path > 0.0001 && path < m_light.w)
+                        transmission = exp(-3.0 * path / m_light.w);
+                }
+            }
+        }
+        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5 * transmission) * m_uv1.z;
         col += diff * m_light.rgb * sun * scatter * ao;
     }
 #if AIVERSE_HDR && AIVERSE_Q > 0
@@ -970,7 +988,25 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         float wrap = clamp(m.uv1.w, 0.0f, 1.0f);
         float wrapped = max((dot(n, L) + wrap) / (1.0f + wrap), 0.0f);
         float back = pow(max(dot(-n, L), 0.0f), mix(8.0f, 2.0f, wrap));
-        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f) * m.uv1.z;
+        float transmission = 1.0f;
+        if (m.light.w > 0.0f) {
+            transmission = 0.0f;
+            if (back > 0.0f && in.draw.x > 0.5f && f.quality.y > 0.5f) {
+                float4 lp = f.lightViewProj * float4(in.wpos, 1.0f);
+                float3 p = lp.xyz / lp.w;
+                float2 uv = p.xy * 0.5f + 0.5f;
+                if (f.shadow.x > 0.5f) uv.y = 1.0f - uv.y;
+                float d = p.z * f.shadow.y + f.shadow.z;
+                if (uv.x > 0.0f && uv.x < 1.0f && uv.y > 0.0f && uv.y < 1.0f && d > 0.0f && d < 1.0f) {
+                    float entry = sunDepth(tex0, uv);
+                    float depthPerWorld = length(float3(f.lightViewProj[0].z, f.lightViewProj[1].z, f.lightViewProj[2].z)) * f.shadow.y;
+                    float path = (d - entry) / max(depthPerWorld, 1e-6f);
+                    if (entry < 0.9999f && path > 0.0001f && path < m.light.w)
+                        transmission = exp(-3.0f * path / m.light.w);
+                }
+            }
+        }
+        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f * transmission) * m.uv1.z;
         col += diff * m.light.rgb * sun * scatter * ao;
     }
 #if AIVERSE_HDR && AIVERSE_Q > 0

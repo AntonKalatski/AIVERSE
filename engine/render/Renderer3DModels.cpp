@@ -50,7 +50,7 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         mu.light[0] = mt.shading == ShadingModel::Pbr ? mt.sssColor.x : mt.fixedLight.x;
         mu.light[1] = mt.shading == ShadingModel::Pbr ? mt.sssColor.y : mt.fixedLight.y;
         mu.light[2] = mt.shading == ShadingModel::Pbr ? mt.sssColor.z : mt.fixedLight.z;
-        mu.light[3] = mt.fixedLight.w;
+        mu.light[3] = mt.shading == ShadingModel::Pbr ? std::clamp(mt.sssThickness, 0.0f, 1.0f) : mt.fixedLight.w;
     return mu;
 }
 inline std::array<gfx::TextureHandle,4> gpuGraphSourceTextures(
