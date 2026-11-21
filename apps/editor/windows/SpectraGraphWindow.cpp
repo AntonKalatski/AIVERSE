@@ -128,8 +128,11 @@ private:
         }
     }
     void remember() {
+        rememberSnapshot(doc_);
+    }
+    void rememberSnapshot(Json snapshot) {
         if(undo_.size()==64)undo_.erase(undo_.begin());
-        undo_.push_back(doc_);
+        undo_.push_back(std::move(snapshot));
         redo_.clear();dirty_=true;
     }
     bool checkResult(const Json& result) {
@@ -564,17 +567,23 @@ private:
                 break;
             }
             }
-            // One undo checkpoint per active drag/text edit, not one per frame.
-            if(started) remember();
+            // One undo checkpoint per active drag/text edit, not one per
+            // frame, and only once an edit was actually applied: a rejected
+            // value (or a click without change) must not push undo / dirty.
+            if(started) {fieldCheckpoint_=doc_;fieldCheckpointValid_=true;}
             if(changed) {
                 Json probe=doc_["nodes"][size_t(selected_)];
                 if(spectra::applyTypedField(probe,field.key,updated,error)) {
-                    if(!started && !ImGui::IsItemActive())remember();
+                    if(fieldCheckpointValid_) {
+                        fieldCheckpointValid_=false;
+                        rememberSnapshot(std::move(fieldCheckpoint_));
+                    } else if(!ImGui::IsItemActive())remember();
                     doc_.find("nodes")->at(size_t(selected_))=std::move(probe);
                     propertyText_=doc_["nodes"][size_t(selected_)]["properties"].dump(2);
                     refreshDiagnostics();
                 } else message_=error;
             }
+            if(ImGui::IsItemDeactivated())fieldCheckpointValid_=false;
             ImGui::SameLine();
             if(ImGui::SmallButton("x")) {
                 Json probe=doc_["nodes"][size_t(selected_)];
@@ -1236,6 +1245,8 @@ private:
     std::vector<std::string> names_,draftNames_,errors_;
     Json doc_=defaultGraph();
     std::vector<Json> undo_,redo_;
+    Json fieldCheckpoint_; // pre-edit doc of the active typed field widget
+    bool fieldCheckpointValid_=false;
     std::map<std::string,std::pair<std::string,Json>> drafts_;
     std::map<std::string,bool> draftModes_;
     ImVec2 pan_{10,10};

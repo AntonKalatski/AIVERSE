@@ -240,6 +240,7 @@ private:
     std::vector<ProgramParams> pendingProgramParams_, programStateCache_;
     std::array<float,8> programParams_{};
     std::vector<fx::FxHandle> cpuHandles_;
+    size_t cpuHandlePruneAt_ = 64; // amortized pruning of finished handles
     bool programParamsDirty_ = false;
     render::mat4 viewProj_;
     fx::float3 eye_{}, right_{1,0,0}, up_{0,1,0};

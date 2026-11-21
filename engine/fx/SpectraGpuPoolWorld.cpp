@@ -69,7 +69,7 @@ void GpuPoolWorld::shutdown() {
     checkpointBudget_.reset();
     cpu_.shutdown();
     device_=nullptr;
-    initialized_=frameOpen_=stepped_=drawn_=false;
+    initialized_=frameOpen_=stepped_=drawn_=groupsDirty_=false;
     nextGroupStart_=nextContinuousSource_=0;
     particlePressureLatched_=readbackPressureLatched_=false;
     stats_={};
@@ -95,7 +95,10 @@ std::string GpuPoolWorld::groupKey(const fx::EffectDef& effect,
 }
 
 void GpuPoolWorld::recountBindings() {
-    stats_.gpuGroups=uint32_t(gpuGroups_.size());
+    // Any definition change may orphan a GPU group; rescan at the next frame.
+    groupsDirty_=true;
+    stats_.gpuGroups=uint32_t(std::count_if(gpuGroups_.begin(),gpuGroups_.end(),
+        [](const Group& group){return group.live();}));
     std::set<int> distinctCpu;
     for(const auto& [name,binding]:bindings_) {
         (void)name;
@@ -179,7 +182,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
     if(wantsGpu && eligible.eligible && metalAvailable) {
         const std::string key=groupKey(effect,actual,actual.capacity);
         for(size_t i=0;i<gpuGroups_.size();++i)
-            if(gpuGroups_[i].key==key) {
+            if(gpuGroups_[i].live() && gpuGroups_[i].key==key) {
                 next.gpu=true;next.gpuIndex=i;
                 next.revision=nextBindingRevision_++;
                 bindings_[name]=std::move(next);
@@ -188,13 +191,23 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
                 reason_.clear();
                 return true; // share GPU storage, shader and draw for this effect
             }
-        if(gpuGroups_.size()<budgets_.maxGpuGroups) {
+        // Retired groups (orphaned by redefinition) do not count toward the
+        // unique-group budget; a fully released slot is reused in place so
+        // existing binding/source group indices stay stable.
+        size_t liveGroups=0,freeSlot=gpuGroups_.size();
+        for(size_t i=0;i<gpuGroups_.size();++i) {
+            if(gpuGroups_[i].live())++liveGroups;
+            else if(!gpuGroups_[i].particles && freeSlot==gpuGroups_.size())freeSlot=i;
+        }
+        if(liveGroups<budgets_.maxGpuGroups) {
             auto particles=std::make_unique<ComputeParticles>();
             ComputeEmitterDesc desc=eligible.gpu;
             desc.backend=ComputePreference::RequireGpu;
             if(particles->init(device_,desc) && particles->gpuActive()) {
-                next.gpu=true;next.gpuIndex=gpuGroups_.size();
-                gpuGroups_.push_back({key,std::move(particles)});
+                next.gpu=true;next.gpuIndex=freeSlot;
+                if(freeSlot==gpuGroups_.size())
+                    gpuGroups_.push_back({key,std::move(particles)});
+                else gpuGroups_[freeSlot]=Group{key,std::move(particles)};
                 next.revision=nextBindingRevision_++;
                 bindings_[name]=std::move(next);
                 definitions_[name]=remembered;
@@ -365,6 +378,7 @@ bool GpuPoolWorld::retireSource(PoolSourceId id) {
     source->continuous={};source->transformAttached=false;
     if(!source->exhausted)freeSourceSlots_.push_back(id.slot);
     if(stats_.activeSources>0)--stats_.activeSources;
+    if(source->gpu)groupsDirty_=true;
     return true;
 }
 bool GpuPoolWorld::killSourceParticles(PoolSourceId id) {
@@ -372,6 +386,7 @@ bool GpuPoolWorld::killSourceParticles(PoolSourceId id) {
     if(!source)return false;
     if(source->gpu) {
         if(source->gpuIndex>=gpuGroups_.size() ||
+           !gpuGroups_[source->gpuIndex].particles ||
            !gpuGroups_[source->gpuIndex].particles->killSourceParticles(source->token)) {
             reason_="SpectraFX selective GPU kill must be before the scene render pass";
             return false;
@@ -391,6 +406,7 @@ bool GpuPoolWorld::canStopSource(PoolSourceId id,bool killLiving) const {
     return device_ && device_->gpuHealthy() &&
            device_->canUpdateSharedBuffers() &&
            source->gpuIndex<gpuGroups_.size() &&
+           gpuGroups_[source->gpuIndex].particles &&
            gpuGroups_[source->gpuIndex].particles->gpuActive();
 }
 bool GpuPoolWorld::stopSource(PoolSourceId id,bool killLiving) {
@@ -459,7 +475,15 @@ bool GpuPoolWorld::emitSource(PoolSourceId id,fx::float3 position,
     const bool emitted=burstImpl(source.effectName,position,direction,tint,
                                   &values,source.token,&cpuHandle);
     if(emitted && !source.gpu && cpuHandle.valid()) {
-        if(source.cpuHandles.size()==65536) {
+        // Drop handles whose instances finished (no particles left) so a
+        // long-lived source does not grow to the cap and pay O(n) erases.
+        if(source.cpuHandles.size()>=source.cpuHandlePruneAt) {
+            auto& handles=source.cpuHandles;
+            handles.erase(std::remove_if(handles.begin(),handles.end(),
+                [&](fx::FxHandle h){return !cpu_.alive(h);}),handles.end());
+            source.cpuHandlePruneAt=std::max<size_t>(64,handles.size()*2);
+        }
+        if(source.cpuHandles.size()>=65536) {
             cpu_.kill(source.cpuHandles.front()); // do not lose kill ownership
             source.cpuHandles.erase(source.cpuHandles.begin());
         }
@@ -537,15 +561,58 @@ bool GpuPoolWorld::beginPresentationFrame(const fx::SpectraFxView& view) {
         reason_="SpectraFX pool begin frame requires a healthy, unblocked world and viewport";
         return false;
     }
+    // Frame boundary: earlier frames' commands are committed and nothing of
+    // this frame references a retired group yet.
+    retireUnusedGroups();
     frameOpen_=true;stepped_=drawn_=false;
     stats_.frameBursts=stats_.gpuDrawCalls=stats_.cpuDrawCalls=0;
     cpu_.setView(view);
     for(auto& group:gpuGroups_) {
         group.stepOk=false;
-        group.particles->setView(view);
+        if(group.live())group.particles->setView(view);
     }
     reason_.clear();
     return true;
+}
+
+void GpuPoolWorld::retireUnusedGroups() {
+    if(groupsDirty_) {
+        groupsDirty_=false;
+        std::vector<uint8_t> used(gpuGroups_.size(),0u);
+        for(const auto& [name,binding]:bindings_) {
+            (void)name;
+            if(binding.gpu && binding.gpuIndex<used.size())used[binding.gpuIndex]=1u;
+        }
+        // Stale-revision sources keep their old group (and its living
+        // particles, selective kill) until they are retired.
+        for(const Source& source:sources_)
+            if(source.active && source.gpu && source.gpuIndex<used.size())
+                used[source.gpuIndex]=1u;
+        for(size_t i=0;i<gpuGroups_.size();++i)
+            if(gpuGroups_[i].live() && !used[i]) {
+                gpuGroups_[i].retired=true;
+                gpuGroups_[i].stepOk=false;
+            }
+        stats_.gpuGroups=uint32_t(std::count_if(gpuGroups_.begin(),gpuGroups_.end(),
+            [](const Group& group){return group.live();}));
+    }
+    if(!device_)return;
+    for(auto& group:gpuGroups_) {
+        if(!group.retired || !group.particles)continue;
+        // Never destroy on elapsed frames: only a completed ordered GPU
+        // marker (Gfx.h retirement contract) proves the old frames finished.
+        // Unsupported devices (token 0) keep the idle group allocated.
+        if(group.retireToken==0) {
+            group.retireToken=device_->beginResourceRetirement();
+            continue;
+        }
+        if(device_->resourceRetirementStatus(group.retireToken)!=
+           gfx::ResourceRetirementStatus::Complete)continue;
+        device_->endResourceRetirement(group.retireToken);
+        group.retireToken=0;
+        group.particles.reset();
+        group.key.clear();
+    }
 }
 
 void GpuPoolWorld::tickContinuous(float dt) {
@@ -712,6 +779,7 @@ bool GpuPoolWorld::step(float dt) {
     if(groupCount)nextGroupStart_=(first+1)%groupCount;
     for(size_t j=0;j<groupCount;++j) {
         auto& group=gpuGroups_[(first+j)%groupCount];
+        if(!group.live()) {group.stepOk=false;continue;}
         group.stepOk=group.particles->step(dt);
         if(!group.stepOk) {
             allOk=false;
@@ -721,6 +789,7 @@ bool GpuPoolWorld::step(float dt) {
     stats_.gpuParticlesEstimated=0;
     stats_.gpuBytes=0;
     for(const auto& group:gpuGroups_) {
+        if(!group.live())continue;
         const auto& stats=group.particles->stats();
         stats_.gpuParticlesEstimated+=stats.alive;
         stats_.gpuBytes+=stats.gpuBytes;
@@ -737,7 +806,7 @@ void GpuPoolWorld::draw(const fx::FxFog& fog) {
     stats_.cpuDrawCalls=uint32_t(cpu_.stats().drawCalls);
     stats_.gpuDrawCalls=0;
     for(auto& group:gpuGroups_) {
-        if(!group.stepOk)continue; // never replay stale last-frame vertices
+        if(!group.live() || !group.stepOk)continue; // never replay stale last-frame vertices
         group.particles->draw(fog);
         stats_.gpuDrawCalls+=group.particles->stats().drawCalls;
     }
@@ -789,6 +858,11 @@ bool GpuPoolWorld::resetForRollback() {
         auto& group=gpuGroups_[i];
         group.stepOk=false;
         if(resetAccepted_[i])continue;
+        if(!group.live()) { // retired: never drawn again, nothing to clear
+            resetAccepted_[i]=1u;
+            ++resetReport_.groupsAccepted;
+            continue;
+        }
         if(!group.particles->tryClear()) {
             resetReport_.failedGroup=uint32_t(i);
             reason_="SpectraFX pooled rollback partially prepared ("+
@@ -817,6 +891,7 @@ bool GpuPoolWorld::resetForRollback() {
         if(!source.exhausted)freeSourceSlots_.push_back(i);
     }
     stats_.activeSources=0;
+    groupsDirty_=true;
     resetReport_.retryRequired=false;
     resetReport_.failedGroup=std::numeric_limits<uint32_t>::max();
     reason_.clear();
@@ -873,7 +948,7 @@ bool GpuPoolWorld::requestGpuCheckpoint(
     size_t groupIndex,std::function<void(bool)> completion) {
     if(!initialized_ || presentationBlocked() ||
        groupIndex>=gpuGroups_.size() ||
-       !gpuGroups_[groupIndex].particles ||
+       !gpuGroups_[groupIndex].live() ||
        !gpuGroups_[groupIndex].particles->gpuActive()) {
         reason_="SpectraFX GPU checkpoint request requires an active healthy group";
         return false;
@@ -897,7 +972,7 @@ bool GpuPoolWorld::exportFreshCheckpoint(
         return false;
     }
     const auto& group=gpuGroups_[groupIndex];
-    if(!group.particles || !group.particles->gpuActive()) {
+    if(!group.live() || !group.particles->gpuActive()) {
         if(error)*error="SpectraFX checkpoint group has no Metal GPU simulation";
         return false;
     }
@@ -907,7 +982,7 @@ bool GpuPoolWorld::exportFreshCheckpoint(
 bool GpuPoolWorld::gpuGroupSummary(
     size_t index,PoolGpuGroupSummary& result) const {
     if(!initialized_ || index>=gpuGroups_.size() ||
-       !gpuGroups_[index].particles)return false;
+       !gpuGroups_[index].live())return false;
     const Group& group=gpuGroups_[index];
     PoolGpuGroupSummary next;
     next.index=index;
@@ -934,6 +1009,7 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
     if(result.gpuDeviceHealthKnown)
         result.gpuDeviceHealthy=device_->gpuHealthy();
     for(const auto& group:gpuGroups_) {
+        if(!group.live())continue;
         const GpuCheckpointStatus state=group.particles->checkpointStatus();
         const ComputeStats& stats=group.particles->stats();
         result.requests+=stats.checkpointRequests;
@@ -974,6 +1050,7 @@ bool GpuPoolWorld::isGpuEffect(const std::string& name) const {
     const auto it=bindings_.find(name);
     return it!=bindings_.end() && it->second.gpu &&
         it->second.gpuIndex<gpuGroups_.size() &&
+        gpuGroups_[it->second.gpuIndex].live() &&
         gpuGroups_[it->second.gpuIndex].particles->gpuActive();
 }
 

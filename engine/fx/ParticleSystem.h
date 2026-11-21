@@ -168,6 +168,7 @@ public:
     void stop(FxHandle h);                             // stops emitting; live particles fade out
     void kill(FxHandle h);                             // stops and removes its particles at once
     bool playing(FxHandle h) const;                    // still emitting (its particles may outlive it)
+    bool alive(FxHandle h) const;                      // instance exists: emitting or still owns live particles
     void emitManual(FxHandle h);                       // fires the "manual" sub-emitters of its live particles
     void clear();                                      // everything (new match)
 

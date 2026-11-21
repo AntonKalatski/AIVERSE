@@ -36,7 +36,8 @@ struct GpuCueStats {
     uint64_t submitted=0;
     uint64_t droppedBudget=0;
     uint64_t droppedUnbound=0;
-    uint64_t rejectedByWorld=0;
+    uint64_t rejectedByWorld=0; // dropped after kMaxFlushAttempts rejections
+    uint64_t deferredByWorld=0; // rejected once, kept for the next flush
     uint32_t queued=0;
 };
 
@@ -59,8 +60,11 @@ public:
     // On rollback the host must call resetForRollback() before replaying ticks.
     bool accept(uint64_t tick, std::span<const GpuCueEvent> events);
     // Called between GpuPoolWorld::beginPresentationFrame and ::step.
-    // Submission failure is not silently counted as emitted; the failed
-    // event is dropped rather than indefinitely blocking the queue.
+    // Submission failure is not silently counted as emitted. A rejected
+    // event (e.g. the world's per-frame burst budget is full) stays queued,
+    // in order, for the next flush; after kMaxFlushAttempts rejections it is
+    // dropped so a permanently invalid cue cannot block the queue.
+    static constexpr uint8_t kMaxFlushAttempts = 4;
     uint32_t flush();
 
     // Resets ALL visual effects registered in the GpuPoolWorld and clears
@@ -74,7 +78,7 @@ public:
     const std::string& reason() const {return reason_;}
     GpuCueBudgets budgets() const {return budgets_;}
 private:
-    struct Queued { std::string effect; GpuCueEvent cue; };
+    struct Queued { std::string effect; GpuCueEvent cue; uint8_t attempts=0; };
     GpuPoolWorld& world_;
     GpuCueBudgets budgets_;
     GpuCueStats stats_{};
