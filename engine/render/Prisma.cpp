@@ -144,6 +144,7 @@ PrismaQuality Prisma::defaultQualityFor(const gfx::Device& dev, bool mobile) {
 bool Prisma::init(gfx::Device& dev) {
     checkGpuDevice(dev);
     dev_ = &dev;
+    hdrFailed_ = false; hdrFailedSizes_.clear(); hdrFailedError_.clear();
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
     triangle_ = dev.createBuffer(bd);
@@ -1043,13 +1044,7 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     RuntimeCapabilities out;
     out.deviceHealthy=dev_ && dev_->gpuHealthy() && enabled_ && settings_.enabled;
     out.hdrFormatSupported=dev_ && dev_->supports(gfx::PixelFormat::RGBA16F);
-    HdrMode authoredHdr=settings_.hdr;
-    if (const char* flag=std::getenv("AIVERSE_HDR")) {
-        const std::string mode=flag;
-        if (mode=="off" || mode=="0") authoredHdr=HdrMode::Off;
-        else if (mode=="on" || mode=="1") authoredHdr=HdrMode::On;
-    }
-    out.hdrAuthoredRequested=authoredHdr!=HdrMode::Off;
+    out.hdrAuthoredRequested=hdrModeWithEnv(settings_.hdr)!=HdrMode::Off;
     out.hdrRequested=hdrRequested();
     out.hdrEffectiveLastFrame=hdrFrame_ && stats_.width>0 && sceneReady_;
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
@@ -1086,6 +1081,10 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     else if (!dev_->gpuHealthy()) out.fallbackReason="GPU device lost";
     else if (!enabled_ || !settings_.enabled) out.fallbackReason="Prisma disabled";
     else if (!out.hdrFormatSupported) out.fallbackReason="RGBA16F unavailable";
+    else if (hdrFailed_)
+        out.fallbackReason=hdrFailedError_.empty() ?
+            std::string("HDR target allocation failed") :
+            "HDR target allocation failed: "+hdrFailedError_;
     else if (!out.hdrRequested) out.fallbackReason="HDR disabled or tier insufficient";
     else if (out.temporalRequested && quality_!=PrismaQuality::High)
         out.fallbackReason="Temporal HDR requires High quality";
@@ -1113,14 +1112,17 @@ bool Prisma::canonicalTemporalRequested() const {
 
 bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PrismaQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
-    HdrMode mode = settings_.hdr;
+    return hdrAtQuality(hdrModeWithEnv(settings_.hdr), quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
+}
+
+HdrMode Prisma::hdrModeWithEnv(HdrMode authored) {
     if (const char* e = std::getenv("AIVERSE_HDR")) {
         const std::string v = e;
-        if (v == "off" || v == "0") mode = HdrMode::Off;
-        else if (v == "on" || v == "1") mode = HdrMode::On;
-        else if (v == "auto") mode = HdrMode::Auto;
+        if (v == "off" || v == "0") return HdrMode::Off;
+        if (v == "on" || v == "1") return HdrMode::On;
+        if (v == "auto") return HdrMode::Auto;
     }
-    return hdrAtQuality(mode, quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
+    return authored;
 }
 
 bool Prisma::active() const {
@@ -1380,6 +1382,11 @@ gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
 
 gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     if(dev_)checkGpuDevice(*dev_);
+    // A failed HDR allocation is not retried every frame for the same
+    // size, but a new size gets a fresh attempt (quality changes and
+    // init() forget all failures).
+    hdrFailed_ = std::find(hdrFailedSizes_.begin(), hdrFailedSizes_.end(),
+                           std::pair<int,int>{w, h}) != hdrFailedSizes_.end();
     hdrFrame_ = hdrRequested();
     Sized& s = sized(w, h);
     gfx::PassDesc p = out;
@@ -1389,7 +1396,10 @@ gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     sceneReady_ = p.colorTarget.valid() && p.depthTarget.valid();
     if (!sceneReady_ && hdrFrame_) {
         hdrFailed_ = true; hdrFrame_ = false;
-        std::fprintf(stderr, "[postfx] HDR allocation failed; falling back to RGBA8: %s\n", dev_->lastError().c_str());
+        if (hdrFailedSizes_.size() >= 16) hdrFailedSizes_.erase(hdrFailedSizes_.begin());
+        hdrFailedSizes_.emplace_back(w, h);
+        hdrFailedError_ = dev_ ? dev_->lastError() : std::string{};
+        std::fprintf(stderr, "[postfx] HDR allocation failed; falling back to RGBA8: %s\n", hdrFailedError_.c_str());
         return scenePass(out, w, h);
     }
     if (!sceneReady_) return out;
