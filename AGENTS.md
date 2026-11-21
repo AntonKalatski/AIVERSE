@@ -55,6 +55,16 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 - Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
 
 
+## Hierarchical wind masks (2026-11-21)
+
+Object sway = shared mask library + per-class profiles + per-prototype part
+hierarchy: `engine/render/WindRig{,Shader,Model}.h`, Arbor glue
+`engine/render/TerraWeaveArborWind.h`, `<model>.wind.json` sidecars applied by
+`render::loadModel`. Reuse `windRigGraph()`; do not add per-object wind
+shaders or new sway-weight vertex conventions. Skill
+`skills/visuals/aiverse-wind-masks/SKILL.md`; handoff
+`docs/agent-handoffs/wind-masks-2026-11-21.md` (Metal NOT verified).
+
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
 **Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
