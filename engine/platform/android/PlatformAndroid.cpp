@@ -48,6 +48,7 @@ bool g_inited = false;
 bool g_vulkan = false;   // g_device is the Vulkan backend: no EGL, the swapchain follows the native window
 float g_density = 1.0f;       // physical px per point (touches, insets and the keyboard arrive in physical px)
 float g_renderScale = 1.0f;   // window buffer / physical size; the display hardware scales the buffer up
+int g_bufW = 0, g_bufH = 0;      // window buffer size (render resolution); Vulkan reads it, not the window
 bool g_weakGpu = false;       // gfx::isWeakMobileGpu: a lower render resolution (540 instead of 720 lines)
 
 // Render resolution: the window's buffers are made smaller than the screen and the compositor / display
@@ -64,6 +65,7 @@ void applyRenderScale(ANativeWindow* win) {
     const int bw = std::max(1, int(float(w) * s + 0.5f)), bh = std::max(1, int(float(h) * s + 0.5f));
     if (s < 1.0f) ANativeWindow_setBuffersGeometry(win, bw, bh, 0);
     g_renderScale = s < 1.0f ? float(bw) / float(w) : 1.0f;
+    g_bufW = s < 1.0f ? bw : w; g_bufH = s < 1.0f ? bh : h;
     state().scale = g_density * g_renderScale;   // framebuffer px per point
     static int logged = -1;
     if (logged != int(g_weakGpu)) { logged = int(g_weakGpu); __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[gfx] screen %dx%d, render %dx%d (scale %.3f)", w, h, s < 1.0f ? bw : w, s < 1.0f ? bh : h, double(g_renderScale)); }
@@ -251,7 +253,10 @@ void onCmd(android_app* app, int32_t cmd) {
                 else __android_log_print(ANDROID_LOG_WARN, "AIVERSE", "[gfx] %s, using OpenGL ES", err.c_str());
             }
             if (g_vulkan) {
-                S.fbW = ANativeWindow_getWidth(app->window); S.fbH = ANativeWindow_getHeight(app->window);
+                // the swapchain size is ours (GfxVulkan: Android swapchains take any extent, the compositor scales):
+                // the window reports its physical size once a swapchain of that size was made
+                S.fbW = g_bufW > 0 ? g_bufW : ANativeWindow_getWidth(app->window);
+                S.fbH = g_bufH > 0 ? g_bufH : ANativeWindow_getHeight(app->window);
                 S.winW = float(S.fbW) / S.scale; S.winH = float(S.fbH) / S.scale;
                 g_inited = true;
                 Event e; e.type = EventType::Resized; detail::dispatch(e);
@@ -630,7 +635,10 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
         if (g_device) drainTextQueue();
         if (!g_inited || S.quit) continue;
         EGLint w = 0, h = 0;
-        if (g_vulkan) { w = ANativeWindow_getWidth(g_app->window); h = ANativeWindow_getHeight(g_app->window); }
+        if (g_vulkan) {
+            w = g_bufW > 0 ? g_bufW : ANativeWindow_getWidth(g_app->window);
+            h = g_bufH > 0 ? g_bufH : ANativeWindow_getHeight(g_app->window);
+        }
         else {
             eglQuerySurface(g_dpy, g_surf, EGL_WIDTH, &w);
             eglQuerySurface(g_dpy, g_surf, EGL_HEIGHT, &h);
