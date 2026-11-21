@@ -5608,6 +5608,17 @@ fixtures, and record actual platform coverage in the handoff. Build/cache/log
 paths for this integration are on KINGSTON, per the user's instruction.
 
 
+## LENS P2: physical lens, rails/shake, HDR EXR (2026-11-21)
+
+`CameraLensComponent::driveExposure/driveDepthOfField` feed per-camera PRISMA
+manual EV and `Prisma::setViewDepthOfField` through `CameraPostFxPool` (only on
+change; never add PRISMA effects implicitly). Rails/shake live in
+`engine/render/CameraRailPath.h` (pure functions of presentation seconds; linear
+rail and sine shake keep the old formulas). `CameraExr.h` +
+`CameraHdrFrameRecorder` write linear EXR from RGBA16F readback and must reject,
+not down-convert, 8-bit results. Do not reintroduce multi-line raw strings inside
+`#define` (GCC rejects them). Handoff: `docs/agent-handoffs/lens-p2-2026-11-21.md`.
+
 ## LENS authoring tools and engine skills
 
 Use `skills/visuals/aiverse-lens/SKILL.md` for project camera authoring and

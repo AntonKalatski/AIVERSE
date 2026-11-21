@@ -1721,6 +1721,7 @@ if(AIVERSE_BUILD_TESTS)
     # view.entity_fx draw tests: the 3D renderer against a recording gfx::Device (no GPU; platform stubs in tests.cpp)
     target_sources(aiverse_tests PRIVATE engine/render/Renderer3D.cpp engine/render/Renderer3DModels.cpp engine/render/Lights.cpp
         engine/render/Renderer3DReflect.cpp engine/render/Renderer3DTrace.cpp engine/render/Prisma.cpp engine/render/PhysicalSky.cpp engine/render/LocalFog.cpp engine/render/GeometryScene.cpp)
+    target_sources(aiverse_tests PRIVATE engine/render/PrismaScreenLighting.cpp)   # LENS per-camera PostFx pool test
     target_sources(aiverse_tests PRIVATE engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)   # agent-lightbake
     target_sources(aiverse_tests PRIVATE engine/ui/UiLua.cpp)    # UI Lua sandbox (no RmlUi)
     target_link_libraries(aiverse_tests PRIVATE aiverse_lua)
@@ -1751,6 +1752,12 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_camera_rig_tests tests/render/camera_rig.cpp)
     target_include_directories(aiverse_camera_rig_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rig COMMAND aiverse_camera_rig_tests)
+    add_executable(aiverse_camera_rail_path_tests tests/render/camera_rail_path.cpp)
+    target_include_directories(aiverse_camera_rail_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME camera_rail_path COMMAND aiverse_camera_rail_path_tests)
+    add_executable(aiverse_camera_exr_tests tests/render/camera_exr.cpp)
+    target_include_directories(aiverse_camera_exr_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME camera_exr COMMAND aiverse_camera_exr_tests)
     add_executable(aiverse_camera_temporal_tests tests/render/camera_temporal.cpp)
     target_include_directories(aiverse_camera_temporal_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_temporal COMMAND aiverse_camera_temporal_tests)
@@ -1764,6 +1771,10 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_camera_scene_asset_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_camera_scene_asset_tests PRIVATE aiverse_engine)
     add_test(NAME camera_scene_asset COMMAND aiverse_camera_scene_asset_tests)
+    add_executable(aiverse_camera_lens_physics_tests tests/render/camera_lens_physics.cpp)
+    target_include_directories(aiverse_camera_lens_physics_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_camera_lens_physics_tests PRIVATE aiverse_engine)
+    add_test(NAME camera_lens_physics COMMAND aiverse_camera_lens_physics_tests)
     add_executable(aiverse_camera_capture_graph_tests tests/render/camera_capture_graph.cpp)
     target_include_directories(aiverse_camera_capture_graph_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_capture_graph COMMAND aiverse_camera_capture_graph_tests)
@@ -4500,4 +4511,11 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_hdr_scene AND AIVERSE_PLATFORM STREQUA
         ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_VT_GI_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+endif()
+
+# Website capture host for LENS (tools/site/lens_showcase.cpp). Off by default; no engine behaviour.
+option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
+if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
+    add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
 endif()
