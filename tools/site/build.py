@@ -368,7 +368,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, Converter, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, Converter, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, fill_tokens)
 
@@ -559,6 +559,16 @@ def cmd_build(args):
                     layout, ctx, name, f'{ctx.loc(it, "name")} — {s["name"]} · AIVERSE', ctx.loc(it, 'text'),
                     feature_page(s, it, body_html, ctx), nav='systems', script=FEATURE_JS), encoding='utf-8')
                 pages += 1
+        flag_ids = {s['id'] for s in flagships}
+        for s in systems:
+            mine = [e for e in loc_entries if e['system'] == s['id']]
+            if not mine:
+                continue
+            name = f'devblog-{s["id"]}.html'
+            (d / name).write_text(render_page(
+                layout, ctx, name, f'{T["blogTitle"]}: {s["name"]} · AIVERSE', T['blogLead'].format(s=s['name']),
+                devblog_page(s, mine, ctx, s['id'] in flag_ids), nav='devlog', script=FEATURE_JS), encoding='utf-8')
+            pages += 1
         (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
                                                     roadmap_page(flagships, ctx), nav='roadmap', script=ROADMAP_JS),
                                         encoding='utf-8')

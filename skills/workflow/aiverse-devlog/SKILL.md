@@ -10,10 +10,18 @@ Tool: `tools/site/build.py` (stdlib). No runtime library: workflow-only skill.
 
 ## When
 
-Every finished stage with a visible or user-facing result in any engine system: a new
-render feature, a lighting or VFX change, an editor window, a world tool, a network or
-meta capability, a new template. One entry per stage. Pure refactors, test-only work and
-fixes nobody can see get no entry.
+Every successfully finished stage of any engine system gets an entry. Entries form the system's
+own development diary on the site (`devblog-<system>.html`, newest first) and the shared feed.
+
+- Only successful stages: a result that works and is shown in a real frame. Failed, abandoned or
+  partial attempts, build errors and red tests stay in the handoff and never reach the site.
+- A stage with nothing to show (refactor, internal API, test-only work) is written up together
+  with the next stage that has a frame; one entry may cover several stages.
+- People read the diary. Write what changed, what a game or a developer can now do, how it looks
+  and where it is turned on. No "the build passed", "build failed", "tests are green", command
+  lists, logs, handoff stage numbers or temp paths. `verified`: one or two sentences on where and
+  how the result was shown working (platform, scene, backend). `limits`: what is missing or not
+  yet checked, in plain words.
 
 ## Steps
 

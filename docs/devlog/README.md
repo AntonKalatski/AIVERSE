@@ -6,6 +6,10 @@ The site (`site/`, published to GitHub Pages from the `gh-pages` branch) has two
 - **"Кадр движка" on the main page** — `frames[0]` in `docs/devlog/showcase.json`;
 - **"Системы движка" on the main page** — flagship systems with cover frames in `docs/devlog/systems.json`.
 
+Every system also has its own diary page, `devblog-<system>.html`: all its entries, newest first,
+fully expanded with every screenshot. Each successfully finished stage gets an entry with real
+frames; failed or partial attempts and build/test chatter stay in handoffs (AGENTS.md has the rules).
+
 Agents add entries themselves, in their own branch, in the same change as the feature
 (AGENTS.md "Ход разработки на сайте"; skill `skills/workflow/aiverse-devlog`). When the
 branch reaches `main`, `.github/workflows/site.yml` rebuilds the site and pushes `gh-pages`.

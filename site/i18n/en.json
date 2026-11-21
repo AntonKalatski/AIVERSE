@@ -103,5 +103,15 @@
  "rmNext": "Forward",
  "incMore": "Read more →",
  "incOther": "More in {s}",
- "incRuOnly": "This article is in Russian only for now."
+ "incRuOnly": "This article is in Russian only for now.",
+ "blogTitle": "Development diary",
+ "blogLead": "Every stage of {s} with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.",
+ "blogAll": "Full diary · {n}",
+ "blogStages": "stages",
+ "blogFirst": "first entry",
+ "blogLast": "latest",
+ "stExperimental": "Experimental",
+ "blogVerified": "Verified",
+ "blogLimits": "Limitations",
+ "blogNav": "Diary"
 }

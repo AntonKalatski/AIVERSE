@@ -187,6 +187,49 @@ def include_card(s, it, ctx):
             f'<h3>{name}</h3><p>{text}</p><span class="inc-more">{ctx.T["incMore"]}</span></a>')
 
 
+def devblog_page(s, mine, ctx, flagship):
+    """All stages of one system, newest first, fully expanded: the system's own development diary."""
+    sid = esc(s['id'])
+    name = esc(s['name'])
+    status = {'done': ctx.T['stDone'], 'in-progress': ctx.T['stProgress'], 'experimental': ctx.T['stExperimental']}
+    sys_href = f'system-{sid}.html' if flagship else f'devlog.html#system={sid}'
+    posts = []
+    for e in mine:
+        figs = []
+        for m in e['media']:
+            cap = esc(m['caption'])
+            if re.search(r'\.(mp4|webm)$', m['src'], re.I):
+                figs.append(f'<figure><video src="{esc(m["src"])}" controls muted playsinline preload="metadata" aria-label="{cap}"></video>'
+                            f'<figcaption>{cap}</figcaption></figure>')
+            else:
+                figs.append(f'<figure><a href="{esc(m["src"])}" data-cap="{cap}"><img src="{esc(m["src"])}" alt="{cap}" loading="lazy"></a>'
+                            f'<figcaption>{cap}</figcaption></figure>')
+        body = ''.join(f'<p>{esc(p)}</p>' for p in (e.get('body') or []))
+        facts = f'<div><dt>{ctx.T["blogVerified"]}</dt><dd>{esc(e["verified"])}</dd></div>'
+        if e.get('limits'):
+            facts += f'<div><dt>{ctx.T["blogLimits"]}</dt><dd>{esc(e["limits"])}</dd></div>'
+        src = esc(e['branch'] or '') + (f' · {esc(e["commit"])}' if e.get('commit') else '')
+        links = ''.join(f'<a href="{esc(l["href"])}">{esc(l["title"])}</a>' for l in e.get('links') or [])
+        posts.append(f'<li class="blog-post" id="{esc(e["id"])}"><time class="blog-date mono" datetime="{esc(e["date"])}">{ctx.fmt_date(e["date"])}</time>'
+                     f'<span class="blog-dot" aria-hidden="true"></span><article class="blog-card">'
+                     f'<div class="entry-meta"><span class="st st-{esc(e["status"])}">{esc(status.get(e["status"], e["status"]))}</span>'
+                     f'{f"<span>{src}</span>" if src else ""}</div>'
+                     f'<h2>{esc(e["title"])}</h2><p class="summary">{esc(e["summary"])}</p>'
+                     f'<div class="blog-media n{min(len(figs), 3)}">{"".join(figs)}</div>{body}'
+                     f'<dl class="facts-list">{facts}</dl>{f"<div class=entry-links>{links}</div>" if links else ""}</article></li>')
+    first = ctx.fmt_date(mine[-1]['date']) if mine else ''
+    last = ctx.fmt_date(mine[0]['date']) if mine else ''
+    return (f'<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / '
+            f'<a href="{sys_href}">{name}</a> / {ctx.T["blogNav"]}</p>'
+            f'<h1>{ctx.T["blogTitle"]}: {name}</h1><p>{esc(ctx.T["blogLead"].format(s=s["name"]))}</p></div>'
+            f'<div class="dl-stats"><div><strong>{len(mine)}</strong><span>{ctx.T["blogStages"]}</span></div>'
+            f'<div><strong class="blog-stat-date">{last}</strong><span>{ctx.T["blogLast"]}</span></div></div></section>'
+            f'<ol class="blog-list">{"".join(posts)}</ol>'
+            f'<p class="blog-first mono">{ctx.T["blogFirst"]}: {first}</p>'
+            '<div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button>'
+            '<img id="lb-img" alt=""><p id="lb-cap"></p></div>')
+
+
 def feature_page(s, it, body_html, ctx):
     """A mini-article about one part of a flagship system: lead, screenshots, long text."""
     sid = esc(s['id'])
@@ -214,7 +257,7 @@ def feature_page(s, it, body_html, ctx):
 FEATURE_JS = """<script>
 (function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
 function close(){lb.classList.remove('open');im.removeAttribute('src');}
-document.querySelectorAll('.fp-gallery a, .fp-body a.fp-img').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
 im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
 document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
@@ -231,7 +274,7 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
     elif art:
         href = art if art.startswith('https://') else f'{repo_blob}/{art}'
         buttons.append(f'<a class="btn btn-ink" href="{esc(href)}">{ctx.T["article"]}</a>')
-    buttons.append(f'<a class="btn btn-line" href="devlog.html#system={sid}">{ctx.T["devlogN"]} · {len(mine)}</a>')
+    buttons.append(f'<a class="btn btn-line" href="{f"devblog-{sid}.html" if mine else f"devlog.html#system={sid}"}">{ctx.T["blogTitle"]} · {len(mine)}</a>')
     hero = (f'<section class="sp-hero"><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / {esc(s["name"])}</p>'
             f'<div class="sp-title"><h1>{esc(s["name"])}</h1>{version_badge(s, ctx)}</div><p class="sp-tag">{esc(ctx.loc(s, "tagline"))}</p>'
             f'<p class="sp-lead">{esc(ctx.loc(s, "essence"))}</p>'
@@ -250,8 +293,9 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
     for e in mine[:6]:
         m = next((m for m in e['media'] if not re.search(r'\.(mp4|webm)$', m['src'], re.I)), None)
         img = f'<img src="{esc(m["src"])}" alt="{esc(m["caption"])}" loading="lazy">' if m else ''
-        shots.append(f'<a class="sp-entry" href="devlog.html#{esc(e["id"])}">{img}<span class="mono">{ctx.fmt_date(e["date"])}</span>'
+        shots.append(f'<a class="sp-entry" href="devblog-{sid}.html#{esc(e["id"])}">{img}<span class="mono">{ctx.fmt_date(e["date"])}</span>'
                      f'<strong>{esc(e["title"])}</strong><span>{esc(e["summary"])}</span></a>')
+    blog_link = (f'<a href="devblog-{sid}.html">{esc(ctx.T["blogAll"].format(n=len(mine)))}</a>' if mine else '')
     log = (f'<div class="sp-entries">{"".join(shots)}</div>' if shots else f'<p class="empty">{ctx.T["noEntries"]}</p>')
     others = ''.join(f'<a class="chip{" chip-ink" if o["id"] == s["id"] else ""}" href="system-{esc(o["id"])}.html">{esc(o["name"])}</a>'
                      for o in flagships)
@@ -260,7 +304,8 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
             f'<section class="sp-sec"><h2 class="h2">{ctx.T["secEnables"]}</h2><ul class="sp-ena">{ena}</ul></section>'
             f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secRoadmap"]}</h2>'
             f'<a href="roadmap.html#{sid}">{ctx.T["secRoadmapAll"]}</a></div>{rm}</section>'
-            f'<section class="sp-sec"><h2 class="h2">{ctx.T["secDevlog"]}</h2>{log}</section>'
+            f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secDevlog"]}</h2>'
+            f'{blog_link}</div>{log}</section>'
             f'<section class="sp-sec sp-others"><p class="eyebrow">{ctx.T["otherSystems"]}</p><div class="chips">{others}</div></section>')
 
 
