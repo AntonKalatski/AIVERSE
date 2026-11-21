@@ -19,10 +19,14 @@ static std::unique_ptr<Simulation> make(const Json& map, const std::string& base
     sim->setup(rules, map);
     return sim;
 }
+// Buildings snap to their footprint at spawn (RtsModule::spawn), so the map
+// position is only close to the entity's: take the nearest one within a cell.
 static Entity findAt(Simulation& sim, float x, float z) {
     Entity found;
+    double best = 1.0;
     sim.world().each<Transform>([&](Entity e, Transform& t) {
-        if (std::abs(t.pos.x.toDouble() - x) < 1e-3 && std::abs(t.pos.z.toDouble() - z) < 1e-3) found = e;
+        const double dx = t.pos.x.toDouble() - x, dz = t.pos.z.toDouble() - z, d = std::sqrt(dx * dx + dz * dz);
+        if (d < best) { best = d; found = e; }
     });
     return found;
 }
