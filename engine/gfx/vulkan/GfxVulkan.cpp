@@ -131,6 +131,9 @@ bool VulkanDevice::pickDevice(std::string& error) {
     enable.multiDrawIndirect = have.multiDrawIndirect;
     enable.drawIndirectFirstInstance = have.drawIndirectFirstInstance;
     multiDrawIndirect_ = have.multiDrawIndirect && have.drawIndirectFirstInstance;
+    // A single GPU-authored indirect draw needs no multiDrawIndirect, but
+    // its untrusted firstInstance still requires drawIndirectFirstInstance.
+    drawIndirectFirstInstance_ = have.drawIndirectFirstInstance;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
     enable.imageCubeArray = have.imageCubeArray;
@@ -628,10 +631,32 @@ void VulkanDevice::completeTextureCaptures(FrameSlot& slot,bool succeeded) {
     }
 }
 
+void VulkanDevice::failPendingReadsAfterDeviceLoss() {
+    // Staging buffers stay owned by their entries (released at shutdown):
+    // a lost device gives no completion point that proves them unused.
+    // Moving the callback out makes delivery exactly-once even if a later
+    // serial were ever observed complete.
+    std::vector<std::pair<TextureReadFn,PixelFormat>> textures;
+    for (auto& r : textureReads_)
+        if (r.callback) textures.emplace_back(std::move(r.callback), r.format);
+    std::vector<BufferReadFn> buffers;
+    for (auto& r : computeReads_)
+        if (r.callback) buffers.push_back(std::move(r.callback));
+    for (auto& r : textureReads_) r.callback = nullptr;
+    for (auto& r : computeReads_) r.callback = nullptr;
+    for (auto& [callback, format] : textures) {
+        TextureReadbackResult failed;
+        failed.format = format;
+        callback(std::move(failed));
+    }
+    for (auto& callback : buffers) callback({});
+}
+
 void VulkanDevice::deliverTextureReads() {
     // Completed serials are advanced only after a frame-slot fence is waited.
     // Never touch mapped staging data while the GPU can still write to it,
     // and never run the user's callback inside garbage collection.
+    if (!healthy_) { failPendingReadsAfterDeviceLoss(); return; }
     struct Done { TextureReadFn callback; TextureReadbackResult result; };
     std::vector<Done> ready;
     for (size_t i=0; i<textureReads_.size();) {
@@ -643,7 +668,15 @@ void VulkanDevice::deliverTextureReads() {
             result.width = r.width;
             result.height = r.height;
             result.pixels.resize(r.bytes);
-            std::memcpy(result.pixels.data(), r.alloc.mapped, r.bytes);
+            const auto* mapped = static_cast<const uint8_t*>(r.alloc.mapped);
+            const size_t row = r.height > 0 ? r.bytes / size_t(r.height) : 0;
+            if (r.flipRows && row) {
+                for (int y = 0; y < r.height; ++y)
+                    std::memcpy(result.pixels.data() + size_t(y) * row,
+                                mapped + size_t(r.height - 1 - y) * row, row);
+            } else {
+                std::memcpy(result.pixels.data(), mapped, r.bytes);
+            }
         }
         if (r.buffer) vkDestroyBuffer(device_, r.buffer, nullptr);
         memory_.release(r.alloc);

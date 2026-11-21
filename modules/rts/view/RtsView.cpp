@@ -1229,10 +1229,13 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const auto& look=looks_[o.type];if(look.models.empty())continue;uint64_t key=o.entity.valid()?o.entity.packed():(uint64_t(1)<<63)|oi;auto state=anims_.find(key);
         size_t choice=state!=anims_.end()&&size_t(state->second.choice)<look.models.size()?size_t(state->second.choice):0;const ModelChoice* ch=&look.models[choice];
         const Stage* stage=nullptr;for(const auto& sg:look.stages){if(o.build<1&&look.construction==Construction::Stages&&sg.build>=0&&sg.build<=o.build&&(!stage||sg.build>stage->build))stage=&sg;if(o.build>=1&&sg.hp>=0&&o.hp<=sg.hp&&(!stage||sg.hp<stage->hp))stage=&sg;}if(stage)ch=&stage->choice;if(!ch->model)continue;
-        EntityFxValues values;bool hasFx=fxFor(o,values);float lift=hasFx?values.v[EntityFxValues::kLift]:0;float3 position{o.pos.x,heightAt(grid,o.pos.x,o.pos.z)+(look.air?look.flyHeight:0)+lift,o.pos.z};
+        EntityFxValues values;bool hasFx=fxFor(o,values);float lift=hasFx?values.v[EntityFxValues::kLift]:0;const float groundY=heightAt(grid,o.pos.x,o.pos.z);
+        if(o.posed&&o.poseHasY)lift+=state!=anims_.end()&&state->second.poseLiftSet?state->second.poseLift:o.poseY-groundY;
+        float3 position{o.pos.x,groundY+(look.air?look.flyHeight:0)+lift,o.pos.z};
         float yaw=state!=anims_.end()?state->second.yaw:std::atan2(-o.facing.z,o.facing.x);float k=look.scale,grow=look.construction==Construction::Grow?std::clamp(o.build,.15f,1.f):1;
         mat4 base;if(look.structure&&look.shape&&!stage)base=mat4::translate(position)*mat4::scale({look.sx*k,k*std::max(look.sx,look.sz)*.75f*grow,look.sz*k});else base=mat4::translate(position)*mat4::rotateY(yaw)*mat4::scale({k,k*(look.structure?grow:1),k});
         if(hasFx){auto tilt=mat4::rotateZ(-values.v[EntityFxValues::kPitch]*.017453292f)*mat4::rotateX(-values.v[EntityFxValues::kRoll]*.017453292f);base=mat4::translate(position)*mat4::rotateY(yaw)*tilt*mat4::rotateY(-yaw)*mat4::translate(-position)*base*mat4::scale({values.scale(0),values.scale(1),values.scale(2)});}
+        if(o.posed&&!o.parented)base=authoredPoseFrame(o,yaw,position)*base;
         if(o.parented)base=o.parentFrame*mat4::scale({k,k*(look.structure?grow:1),k});
         if(state!=anims_.end())base=base*state->second.objXf;base=base*ch->fix;const auto& model=*ch->model;
         const auto& matrices=!stage&&state!=anims_.end()&&state->second.world.size()==model.nodes.size()?state->second.world:model.bindWorld;
@@ -1730,6 +1733,20 @@ bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, 
     return cam.worldToScreen({o.pos.x, top, o.pos.z}, w, h, sp);
 }
 
+mat4 authoredPoseFrame(const SceneObject& o, float facingYaw, float3 p) {
+    if (!o.posed) return mat4{};
+    const bool tilt = o.poseRotX != 0.0f || o.poseRotZ != 0.0f;
+    const bool scaled = o.poseScale.x != 1.0f || o.poseScale.y != 1.0f || o.poseScale.z != 1.0f;
+    if (!tilt && !scaled) return mat4{};
+    // Studio order R = Ry(yaw) * Rx * Rz with yaw the authored Y rotation; the
+    // RTS draw already applies Ry(facingYaw) = Ry(yaw + 90 deg), so tilt/scale
+    // are expressed in the authored frame and conjugated by the authored yaw.
+    constexpr float kDeg = 0.017453292f;
+    const float yaw = facingYaw - 1.5707963f;
+    return mat4::translate(p) * mat4::rotateY(yaw) * mat4::rotateX(o.poseRotX * kDeg) *
+           mat4::rotateZ(o.poseRotZ * kDeg) * mat4::scale(o.poseScale) * mat4::rotateY(-yaw) * mat4::translate(-p);
+}
+
 void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
     World& w = sim.world();
     auto* m = dynamic_cast<RtsModule*>(&sim.module());
@@ -1811,6 +1828,12 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         if (!gs.routes.walks.empty()) so.fade = float(m->routeAlpha(sim, e).toDouble());   // route end fade
         if (auto* c = w.tryGet<Construction>(e)) so.build = float(c->progress.toDouble());
         so.unpowered = (u.flags & kUnitDisabled) || (o.player < gs.players.size() && gs.players[o.player].productionMult < Fixed::fromInt(1));
+        if (auto* ap = w.tryGet<AuthoredPose>(e)) {
+            so.posed = true; so.poseHasY = ap->hasY;
+            so.poseY = float(ap->y.toDouble());
+            so.poseRotX = float(ap->rotX.toDouble()); so.poseRotZ = float(ap->rotZ.toDouble());
+            so.poseScale = toF(ap->scale);
+        }
         if (auto* g = w.tryGet<Garrison>(e)) so.garrison = g->count;
         if (auto* tp = w.tryGet<Transport>(e); tp && !tp->cargo.empty()) so.garrison = int(tp->cargo.size());   // passengers
         if (auto* c = w.tryGet<Cargo>(e)) { so.carry = float(c->amount.toDouble()); so.carryRes = c->res; }

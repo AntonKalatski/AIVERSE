@@ -2,6 +2,7 @@
 #include "Geometry.h"
 #include "Renderer3D.h"
 #include "NativePresentationRetirement.h"
+#include "StrataDebugView.h"
 #include <cmath>
 #include <map>
 #include <memory>
@@ -318,6 +319,28 @@ public:
         uint32_t mesh, uint32_t primitive, strata::RenderPass pass,
         const strata::ViewConfig& view, strata::RenderCandidate& out,
         std::string* error = nullptr) const;
+    // STRATA debug visualisation of chunks (selected clusters) and geometry.
+    // Runtime toggle, default OFF, presentation-only: draws immediate
+    // Renderer3D lines/triangles after the frontier the portable selector
+    // already chose; never changes LOD selection, routing or GPU data.
+    // Returns false (and keeps the old options) for invalid options.
+    bool setStrataDebugView(const strata::DebugViewOptions& options);
+    const strata::DebugViewOptions& strataDebugView() const {
+        return strataDebugView_;
+    }
+    // Wireframe/fill need CPU positions that uploadModel releases. Must be
+    // set BEFORE load; copies float3 positions of STRATA sources only.
+    void setStrataDebugGeometryCaptureEnabled(bool on) {
+        strataDebugGeometryCapture_=on;
+    }
+    bool strataDebugGeometryCaptureEnabled() const {
+        return strataDebugGeometryCapture_;
+    }
+    uint64_t strataDebugGeometryBytes() const;
+    // Counters of the most recent draw() call.
+    const strata::DebugDrawStats& strataDebugStats() const {
+        return strataDebugStats_;
+    }
     const Stats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
@@ -340,7 +363,11 @@ private:
     bool tryStrataVulkanGpuDraw(Renderer3D& renderer,
                                 const Instance& instance,ModelDraw& draw);
     void updateStrataStreamingBeforeDraw(Renderer3D& renderer);
+    void drawStrataDebug(Renderer3D& renderer,const Instance& instance,
+                         const ModelDraw& draw,bool gpuRoute);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
+    // Copies STRATA policy/budget settings (not resources) for staged loads.
+    void copyStrataConfigFrom(const GeometryScene& other);
     NativePresentationRetirement retirement_;
     // Failed transactions may still own GPU models after a refused idle.
     // Retain those retirement queues for a later safe collect/shutdown.
@@ -392,6 +419,11 @@ private:
     uint64_t strataStreamingSourceCursor_=0;
     std::string strataDiskPageDirectory_;
     bool strataDropArchivedCpuIndicesEnabled_=false;
+    strata::DebugViewOptions strataDebugView_{};
+    strata::DebugDrawStats strataDebugStats_{};
+    bool strataDebugGeometryCapture_=false;
+    std::map<const Model*,std::shared_ptr<strata::DebugGeometry>>
+        strataDebugGeometry_;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };

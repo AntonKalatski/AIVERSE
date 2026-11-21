@@ -363,7 +363,11 @@ struct TextureReadbackDesc {
 struct TextureReadbackResult {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;
-    std::vector<uint8_t> pixels; // tightly packed top-left rows, output format
+    // Tightly packed rows in output format, row 0 = top of the image on
+    // every backend: uploaded textures return rows in upload order, render
+    // targets return the rendered top row first (GL/Vulkan flip their
+    // bottom-up render targets; Metal render targets are already top-down).
+    std::vector<uint8_t> pixels;
     bool success() const { return width > 0 && height > 0 && !pixels.empty(); }
 };
 

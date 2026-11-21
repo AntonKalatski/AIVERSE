@@ -103,7 +103,17 @@ struct SceneObject {
     // Optional stable identity supplied by editor/native scene sources whose
     // SceneObject::entity is invalid. Zero uses ECS entity identity or transient.
     uint64_t persistentKey = 0;
+    // Studio-authored Transform (sim AuthoredPose): absolute height, X/Z tilt in
+    // degrees and per-axis scale, applied about the object's ground point.
+    bool posed = false, poseHasY = false;
+    float poseY = 0, poseRotX = 0, poseRotZ = 0;
+    render::float3 poseScale{1, 1, 1};
 };
+
+// World-space premultiplier for SceneObject's authored pose. `facingYaw` is the
+// RTS draw yaw (models face +X: yaw = authored Y rotation + 90 degrees), `p`
+// the object's pivot. Identity when the object has no tilt / scale.
+render::mat4 authoredPoseFrame(const SceneObject& o, float facingYaw, render::float3 p);
 
 struct RtsScene {
     std::shared_ptr<render::PaintLayers> paintLayers;
@@ -723,6 +733,7 @@ private:
         std::vector<render::mat4> world;
         std::vector<render::ProcRuntime> rt;
         render::mat4 objXf;                       // procedural whole-object offset
+        float poseLift = 0; bool poseLiftSet = false; // authored Y minus ground at first draw
         render::mat4 drawn;                       // last world transform of the host model
         // Reuse finished non-animated scenery placement without rebuilding
         // translate/rotate/scale matrices. Every varying input is validated

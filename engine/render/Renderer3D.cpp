@@ -645,7 +645,11 @@ void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32
     items_.push_back({&m, model, color, flags, specular, emissive});
     // Specialized water/selection draw variants carry extra state that a
     // plain mesh packet cannot replay; skip those until their own packets exist.
-    if(geometryPacketTap_ && !suppressGeometryTap_ && !(flags&kDrawWaterSurface))
+    // A NEREID cascade sheet is a plain drawMesh (no ripple/wake/hydraulic
+    // state), so its Mesh packet with the original flags replays exactly.
+    const bool plainWater=(flags&kDrawNereidCascade)!=0;
+    if(geometryPacketTap_ && !suppressGeometryTap_ &&
+       (!(flags&kDrawWaterSurface) || plainWater))
         geometryPacketTap_({CameraGeometryCommand::Kind::Mesh,&m,model,
                             color,flags,specular,emissive});
 }

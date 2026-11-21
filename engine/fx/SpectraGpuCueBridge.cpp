@@ -54,7 +54,7 @@ bool GpuCueBridge::accept(uint64_t tick,std::span<const GpuCueEvent> events) {
             ++stats_.droppedBudget;
             continue;
         }
-        queued_.push_back({binding->second,cue});
+        queued_.push_back({binding->second,cue,0});
         ++admitted;
         ++stats_.accepted;
     }
@@ -65,6 +65,7 @@ bool GpuCueBridge::accept(uint64_t tick,std::span<const GpuCueEvent> events) {
 uint32_t GpuCueBridge::flush() {
     uint32_t emitted=0;
     uint32_t attempts=0;
+    std::deque<Queued> retry; // rejected this frame, kept in original order
     while(!queued_.empty()&&attempts<budgets_.dispatchedPerFrame) {
         Queued q=std::move(queued_.front());
         queued_.pop_front();
@@ -74,9 +75,19 @@ uint32_t GpuCueBridge::flush() {
             ++stats_.submitted;
             ++emitted;
         } else {
-            ++stats_.rejectedByWorld;
             reason_=world_.reason();
+            if(++q.attempts>=kMaxFlushAttempts) ++stats_.rejectedByWorld;
+            else {
+                ++stats_.deferredByWorld;
+                retry.push_back(std::move(q));
+            }
         }
+    }
+    // Re-queue ahead of never-attempted cues; size never exceeds the bound
+    // because every retried cue was popped from queued_ this flush.
+    while(!retry.empty()) {
+        queued_.push_front(std::move(retry.back()));
+        retry.pop_back();
     }
     stats_.queued=uint32_t(queued_.size());
     return emitted;
