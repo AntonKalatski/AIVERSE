@@ -96,6 +96,14 @@
           "textEn": "Shared contract with NEREID."
         },
         {
+          "status": "done",
+          "date": "2026-11-21",
+          "title": "Изменения рельефа сразу в динамическом GI",
+          "titleEn": "Terrain edits feed dynamic GI",
+          "text": "Изменённые тайлы рельефа сразу передаются в динамический непрямой свет LUMA; совместная работа с NEREID и PHYSIS: импостеры, горизонт, зоны эрозии.",
+          "textEn": "Changed terrain tiles go straight into LUMA dynamic indirect light; joint work with NEREID and PHYSIS: impostors, horizon, erosion zones."
+        },
+        {
           "status": "in-progress",
           "target": null,
           "title": "Проверка на GPU, в редакторе и по производительности",
@@ -226,12 +234,12 @@
           "titleEn": "Parallel grid updates and streaming for large worlds"
         },
         {
-          "status": "planned",
-          "target": null,
+          "status": "done",
           "title": "Подключение к TerraWeave, NEREID, растительности, VFX и звуку",
-          "text": "Сейчас интеграции не подключены автоматически.",
+          "text": "Ветер и лесные пожары передаются в SpectraFX, звук и траву TerraWeave; «Живая природа» видна в окне «Сцена» редактора.",
           "titleEn": "Hooking into TerraWeave, NEREID, vegetation, VFX and audio",
-          "textEn": "These integrations are not wired automatically yet."
+          "textEn": "Wind and wildfire drive SpectraFX, audio and TerraWeave grass; “Live nature” shows in the editor Scene view.",
+          "date": "2026-11-21"
         }
       ],
       "taglineEn": "A living environment: wind, fire, earth",
@@ -810,20 +818,20 @@
           "date": "2026-11-21"
         },
         {
-          "status": "planned",
-          "target": null,
+          "status": "done",
           "title": "Совместимость с MetaHuman через проверенный адаптер",
-          "text": "Без зависимости от Unreal в рантайме.",
+          "text": "Адаптер проверен на настоящих экспортах MetaHuman (Ada и Bruce): роли, меши лица, корректирующие кости, отчёт в Studio. Unreal в рантайме не нужен.",
           "titleEn": "MetaHuman compatibility through an audited adapter",
-          "textEn": "No Unreal dependency at runtime."
+          "textEn": "Verified on real MetaHuman exports (Ada and Bruce): roles, face meshes, corrective joints, a report in Studio. No Unreal at runtime.",
+          "date": "2026-11-21"
         },
         {
-          "status": "planned",
-          "target": null,
+          "status": "done",
           "title": "VIVID Creator: редактор внешности",
-          "text": "Поздняя веха.",
+          "text": "Редактор персонажа в Studio: смешивание и лепка лица, возраст, рост, гардероб, макияж, причёски, варианты для толпы и пакеты персонажей.",
           "titleEn": "VIVID Creator: appearance editor",
-          "textEn": "A later milestone."
+          "textEn": "Character editor in Studio: face blending and sculpting, age, height, wardrobe, makeup, hairstyles, crowd variants and character packages.",
+          "date": "2026-11-21"
         }
       ],
       "taglineEn": "Digital humans",
@@ -1050,6 +1058,14 @@
           "title": "Глубина резкости и motion blur вне экспериментального режима",
           "titleEn": "Depth of field and motion blur out of experimental mode",
           "date": "2026-11-22"
+        },
+        {
+          "status": "done",
+          "date": "2026-11-22",
+          "title": "AO, SSR, SMAA, FSR 1 и эффекты линзы",
+          "titleEn": "AO, SSR, SMAA, FSR 1 and lens effects",
+          "text": "Затенение AO, экранные отражения, блики и грязь на линзе, искажения и Panini, анаморфные лучи, ореол, марево и ударные волны, SMAA, FSR 1, гистограммная экспозиция и пресеты стилизации.",
+          "textEn": "Ambient occlusion, screen-space reflections, lens flare and dirt, distortion and Panini, anamorphic streaks, halation, heat haze and shockwaves, SMAA, FSR 1, histogram metering and stylization presets."
         }
       ],
       "taglineEn": "Post-processing and atmosphere",
@@ -1335,7 +1351,7 @@
       "id": "gameplay",
       "name": "Жанры и механики",
       "nameEn": "Genres and mechanics",
-      "doc": "docs/genre-packages.md"
+      "doc": "docs/mechanics-packages.md"
     },
     {
       "id": "agents",
