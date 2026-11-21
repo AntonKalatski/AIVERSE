@@ -43,7 +43,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `raid` | `apps/editor/windows/RaidWindow.cpp` | Missing functional HTML5 implementation |
 | `roads` | `apps/editor/windows/RoadsWindow.cpp` | Missing functional HTML5 implementation |
 | `rules` | `apps/editor/windows/RulesWindow.cpp` | Missing functional HTML5 implementation |
-| `scene` | `apps/editor/windows/SceneWindow.cpp` | Partial: native rigid-model render/picking/hot reload merged, cache release corrected (78–79); gizmos, broader authoring/model formats and visual parity pending |
+| `scene` | `apps/editor/windows/SceneWindow.cpp` | Partial: native rigid-model render/picking/hot reload merged, cache release corrected (78–79); Unity-style navigation + orientation gizmo with axis snap and Persp/Iso (91, web/Linux-checked, Mac build pending); transform gizmos, rect selection, broader authoring/model formats and visual parity pending |
 | `scripts` | `apps/editor/windows/ScriptsWindow.cpp` | Missing functional HTML5 implementation |
 | `shader_graph` | `apps/editor/windows/ShaderGraphWindow.cpp` | Partial; native visual parity pending |
 | `spectrafx_gpu_assets` | `apps/editor/windows/SpectraFxGpuAssetsWindow.cpp` | Missing functional HTML5 implementation |
