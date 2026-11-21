@@ -378,8 +378,10 @@ def roadmap_lines(flagships, ctx):
             sts.append(f'<span class="ln-st ln-{cls}" style="left:{x:.2f}%" title="{esc(title)}"><i></i>{lab}</span>')
         xn = 3 + 94 * min(now, n - 1) / max(n - 1, 1) if now < n else 100
         done = sum(1 for it in rm if it['status'] == 'done')
+        now_m = f'<span class="ln-now-m">{esc(ctx.loc(rm[now], "title"))}</span>' if now < n else ''
         rows.append(f'<a class="ln" href="roadmap.html#{esc(s["id"])}" style="--c:{col};--x:{xn:.2f}%">'
-                    f'<span class="ln-n">{esc(s["name"])}<small>{esc(ctx.T["rmProgress"].format(d=done, n=n))}</small></span>'
+                    f'<span class="ln-n">{esc(s["name"])}<small>{esc(ctx.T["rmProgress"].format(d=done, n=n))}</small>'
+                    f'{now_m}</span>'
                     f'<span class="ln-track"><span class="ln-rail"></span>{"".join(sts)}</span></a>')
     return (f'<section id="roadmap" class="section wrap ln-sec"><div class="ln-head"><div><p class="eyebrow">{ctx.T["navRoadmap"]}</p>'
             f'<h2 class="h2">{ctx.T["lnTitle"]}</h2></div><div class="ln-side"><p>{ctx.T["lnLead"]}</p>'
