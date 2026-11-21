@@ -325,7 +325,25 @@ public:
         return result;
     }
     const std::string& lastError() const override { return error_; }
+    // GL errors are sticky context state: a stale error raised by unrelated
+    // code (UI, plugins, an earlier frame) would otherwise be attributed to
+    // the next guarded section and fail an upload/allocation that succeeded.
+    // Drain the queue before each section that checks glGetError() so the
+    // check observes only the section's own calls. Bounded because a lost
+    // context may report GL_CONTEXT_LOST indefinitely.
+    void drainPendingGlErrors() {
+        for (int i = 0; i < 32; ++i) {
+            const GLenum e = glGetError();
+            if (e == GL_NO_ERROR) return;
+            if (!loggedStaleGlError_) {
+                loggedStaleGlError_ = true;
+                std::fprintf(stderr, "GL: discarded stale error 0x%04X raised outside the RHI\n",
+                             static_cast<unsigned>(e));
+            }
+        }
+    }
     bool waitIdle() override {
+        drainPendingGlErrors();
         glFinish();
         return glGetError()==GL_NO_ERROR;
     }
@@ -398,6 +416,7 @@ public:
         const GLenum internal = uncompressedInternal(d.format);
         const GLenum format = uncompressedExternal(d.format);
         const GLenum type = uncompressedType(d.format);
+        drainPendingGlErrors();
         const size_t bpp = size_t(uncompressedTexturePixelBytes(d.format));
         // GLES3/WebGL2 share pixel-unpack state across all upload paths.
         // GL_PIXEL_UNPACK_BUFFER changes host pointers into byte offsets;
@@ -515,6 +534,7 @@ public:
                 error_ = "GL: unsupported multisample attachment format";
                 return {};
             }
+            drainPendingGlErrors();
             GLint maxSamples = 0;
             glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
             if (d.sampleCount > maxSamples) {
@@ -553,6 +573,7 @@ public:
             error_ = "GL: requested compressed pixel format unsupported";
             return {};
         }
+        drainPendingGlErrors();
         // Legacy Texture2D and compressed uploads also consume CPU pointers.
         // Inherit no pixel-unpack/PBO state from previous render systems.
         struct Scoped2DUnpack {
@@ -733,6 +754,7 @@ public:
         GLint previousUnpackAlignment = 4, previousRowLength = 0;
         GLint previousImageHeight = 0, previousSkipPixels = 0;
         GLint previousSkipRows = 0, previousSkipImages = 0;
+        drainPendingGlErrors();
         glGetIntegerv(bindingQuery, &previousBinding);
         glGetIntegerv(kUnpackBufferBinding, &previousUnpackBuffer);
         glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
@@ -841,6 +863,7 @@ public:
             }
             return GL_LEQUAL;
         };
+        drainPendingGlErrors();
         GLuint sampler = 0;
         glGenSamplers(1, &sampler);
         if (!sampler) { error_ = "GL sampler allocation failed"; return {}; }
@@ -887,6 +910,7 @@ public:
             if (!s) return false;
             sampler = s->native;
         }
+        drainPendingGlErrors();
         glActiveTexture(GL_TEXTURE0 + GLenum(slot));
         glBindTexture(t->target, t->id);
         glBindSampler(GLuint(slot), sampler);
@@ -1117,6 +1141,7 @@ public:
 #endif
     bool waitForResourceIdle() override {
         // Fallback for unsupported/failed async sync objects.
+        drainPendingGlErrors();
         glFinish();
         return glGetError()==GL_NO_ERROR;
     }
@@ -1223,6 +1248,7 @@ public:
         if(!fn || !tex || (tex->fmt!=PixelFormat::RGBA8 &&
                            tex->fmt!=PixelFormat::RGBA8_sRGB) ||
            tex->w<=0 || tex->h<=0)return false;
+        drainPendingGlErrors();
         GLint oldFbo=0,oldPack=4;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING,&oldFbo);
         glGetIntegerv(GL_PACK_ALIGNMENT,&oldPack);
@@ -1272,6 +1298,7 @@ public:
         const int height=std::max(1,t->h>>request.mipLevel);
         const size_t bytes=size_t(width)*size_t(height)*4u;
         if (bytes > (size_t(256)<<10)) return false;
+        drainPendingGlErrors();
         GLint oldReadFbo=0,oldPackPbo=0,oldPackAlignment=4,oldReadBuffer=GL_BACK;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&oldReadFbo);
         glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&oldPackPbo);
@@ -1351,6 +1378,7 @@ public:
         const int height = std::max(1, t->h >> request.mipLevel);
         const size_t bytes = size_t(width) * size_t(height) * 4u;
         if (bytes > (size_t(256) << 20)) return false;
+        drainPendingGlErrors();
         GLint oldReadFbo = 0, oldPackPbo = 0, oldPackAlignment = 4;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldReadFbo);
         glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &oldPackPbo);
@@ -1913,6 +1941,7 @@ private:
     bool hdrPass_ = false;
     DeviceInfo info_;
     std::string error_;
+    bool loggedStaleGlError_ = false;
     GLuint vao_ = 0, ubo_ = 0, currentProgram_ = 0;
 #if defined(__EMSCRIPTEN__) || defined(__APPLE__)   // same guard as every use (Android: unused private field)
     GLuint slotUbos_[kMaxUniformSlots] = {};
