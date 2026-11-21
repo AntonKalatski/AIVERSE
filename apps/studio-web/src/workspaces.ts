@@ -14,6 +14,8 @@ export type StudioWorkspace = typeof WORKSPACES[number];
 export interface WorkspaceInfo {
   id: StudioWorkspace; title: string; purpose: string; key: string;
   left: StudioPanel[]; center: StudioPanel[]; right: StudioPanel[]; bottom: StudioPanel[];
+  /** Optional share of the left column (default .19) and of the body over the bottom row (default .74). */
+  leftRatio?: number; bodyRatio?: number;
   legacy: string[];
 }
 
@@ -32,7 +34,7 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     legacy: [] },
   character: { id: 'character', title: 'Character', purpose: 'Digital humans', key: '7',
     left: ['human_creator'], center: ['scene', 'facial_rig'], right: ['inspector', 'human_appearance'], bottom: ['assets', 'console'],
-    legacy: [] },
+    leftRatio: .34, bodyRatio: .86, legacy: [] },
   logic: { id: 'logic', title: 'Logic', purpose: 'Rules, scripts, runtime', key: '5',
     left: ['hierarchy'], center: ['rules', 'scripts', 'game', 'scene'], right: ['runtime', 'inspector', 'input', 'overlays', 'fps', 'raid', 'balance', 'stats'], bottom: ['console', 'assets', 'agent'],
     legacy: [] },
@@ -54,8 +56,8 @@ export function workspaceDockTree(id: StudioWorkspace): DockTree {
   const take = (panels: StudioPanel[]) => panels.filter(p => !seen.has(p) && (seen.add(p), true));
   const left = take(w.left), center = take(w.center), right = take(w.right), bottom = take(w.bottom);
   return normalizeDockTree({ version: 3, root: {
-    kind: 'split', id: 'root', axis: 'vertical', ratio: .74,
-    first: { kind: 'split', id: 'split-body-left', axis: 'horizontal', ratio: .19,
+    kind: 'split', id: 'root', axis: 'vertical', ratio: w.bodyRatio ?? .74,
+    first: { kind: 'split', id: 'split-body-left', axis: 'horizontal', ratio: w.leftRatio ?? .19,
       first: stack('dock-left', left),
       second: { kind: 'split', id: 'split-body-right', axis: 'horizontal', ratio: .74,
         first: stack('dock-center', center), second: stack('dock-right', right) } },

@@ -105,7 +105,11 @@ export default function App() {
   }, [workspace, dock]);
   // Character Creator "studio layout" button: open the Character workspace.
   useEffect(() => {
-    const preset = (event: Event) => { if ((event as CustomEvent<string>).detail === 'character') switchWorkspace('character'); };
+    const preset = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== 'character') return;
+      // The layout button restores the default Character arrangement.
+      switchWorkspace('character'); setDock(workspaceDockTree('character'));
+    };
     window.addEventListener(DOCK_PRESET_EVENT, preset);
     return () => window.removeEventListener(DOCK_PRESET_EVENT, preset);
   }, [switchWorkspace]);
