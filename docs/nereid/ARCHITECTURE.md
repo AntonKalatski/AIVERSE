@@ -427,8 +427,27 @@ overlapping same-scale patches retain one world lattice. RG stores X/Z m/s, B
 local rapid intensity, A validity. This rectangle is presentation coverage, not
 replacement authoritative water membership.
 
-CPU bilinear sampling and native bend/manual/vortex/overlap/budget tests are
-implemented. **GPU upload, shader sampling, native host connection and visual
-camera invariance are not implemented by this CPU stage.** The existing renderer
-still uses a per-draw current until that integration is completed. No component,
+The shared NereidWaterScene prepares immutable linear RGBA16F versions before
+drawing. Lit-mesh texture6 and appended U0 waterFlowRect sample velocity at each
+fragment world X/Z. Waves use overlapping bounded four-second advection phases;
+rapid foam and contact-tail direction consume the same local current. Finite
+fields do not rebuild for observer/LOD changes. Infinite patches remain bounded
+and world-anchored. Manual flow and automatic grade remain canonical NEREID inputs.
+
+NereidFlowTextureCache bounds active plus pending resources to256 versions/32MiB.
+Exact half payload comparison avoids redundant uploads; signed half preserves
+negative velocities. CPU captured-frame leases pin replaced versions, then
+GpuResourceRetirement waits for GPU completion. Explicit shutdown revokes future
+replay before an idle drain, or quarantines handles if idle is unavailable.
+NereidFlowBinding is an appended optional renderer argument; existing calls fall
+back to per-draw hydraulics, now sampled at a stable source point rather than the
+observer. Rebuild native clients for the extended renderer/uniform ABI.
+
+WorldScene supplies its existing confluence/cascade/obstruction resolver when
+needed. A trusted nonzero resolver revision permits reuse; zero revalidates a
+bounded number of grids each update, exact-deduplicating GPU payloads. Dynamic
+many-body refresh latency and CPU cost need host-specific measurement. This is a
+presentation snapshot, not a new fluid solver. Metal/desktop GL bend fixtures
+verify camera/time-invariant velocity and actual animated shading; editor and
+other-platform coverage must be recorded separately in HANDOFF.md. No component,
 persistence/checksum, simulation-clock or river-grade save format changes.

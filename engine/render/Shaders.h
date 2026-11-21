@@ -24,14 +24,14 @@ namespace aiverse::render::shaders {
     "  vec4 u_skyColor; vec4 u_groundColor; vec4 u_fog; vec4 u_camPos; vec4 u_shadow; vec4 u_quality;\n" \
     "  vec4 u_trace0; vec4 u_trace1; vec4 u_trace2; vec4 u_trace3; };\n"
 #define AIVERSE_GLSL_BLOCKS \
-    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; vec4 u_waterWind; vec4 u_waterHydraulics; vec4 u_waterRapidColor; };\n" AIVERSE_GLSL_FRAME
+    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; vec4 u_waterWind; vec4 u_waterHydraulics; vec4 u_waterRapidColor; vec4 u_waterFlowRect; };\n" AIVERSE_GLSL_FRAME
 
 #define AIVERSE_MSL_FRAME \
     "struct U1 { float4x4 viewProj; float4x4 lightViewProj; float4x4 invViewProj; float4 sunDir; float4 sunColor;\n" \
     "  float4 skyColor; float4 groundColor; float4 fog; float4 camPos; float4 shadow; float4 quality;\n" \
     "  float4 trace0; float4 trace1; float4 trace2; float4 trace3; };\n"
 #define AIVERSE_MSL_BLOCKS \
-    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; float4 waterWind; float4 waterHydraulics; float4 waterRapidColor; };\n" AIVERSE_MSL_FRAME
+    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; float4 waterWind; float4 waterHydraulics; float4 waterRapidColor; float4 waterFlowRect; };\n" AIVERSE_MSL_FRAME
 
 // Traced terrain shadows (Renderer3D "trace" tier, needs U1 and the height field in slot TEX):
 // the sun ray is marched over a 16-bit height map of the whole map (R high byte, G low byte; built by
@@ -502,6 +502,7 @@ in vec3 v_nrm;
 in vec3 v_wpos;
 in vec4 v_col;
 out vec4 o_color;
+uniform sampler2D tex6;
 
 float shadowFactor(vec3 n) { return u_params.z < 0.5 ? 1.0 : min(shadowAt(v_wpos, n), terrainShadow(v_wpos)); }
 
@@ -512,6 +513,38 @@ float nereidNoise(vec2 p) {
     float c=fract(sin(dot(i+vec2(0,1),vec2(127.1,311.7)))*43758.5453);
     float d=fract(sin(dot(i+vec2(1,1),vec2(127.1,311.7)))*43758.5453);
     return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}
+vec2 nereidWaveGradient(vec2 p,float intrinsicTime,bool tagged) {
+    float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
+    const vec4 wv[6] = vec4[6](vec4(0.951,0.309,0.61,0.060),vec4(-0.454,0.891,0.97,0.045),vec4(0.588,-0.809,1.63,0.036),vec4(-0.978,-0.208,2.71,0.026),vec4(0.139,0.990,4.37,0.018),vec4(0.743,0.669,6.91,0.012));
+    vec2 g=vec2(0.0);
+    for(int i=0;i<6;++i) {
+        float ph=dot(p,wv[i].xy)*wv[i].z+intrinsicTime*sqrt(wv[i].z)*1.3+(tagged?phaseWarp:0.0);
+        g+=wv[i].xy*(wv[i].z*wv[i].w*cos(ph));
+    }
+    vec2 q=p*.9+vec2(intrinsicTime*.11,-intrinsicTime*.07);
+    if(tagged)q+=vec2(sin(p.y*.37+p.x*.17),cos(p.x*.43-p.y*.23))*1.7;
+    vec2 qi=floor(q),qf=fract(q),qu=qf*qf*(3.0-2.0*qf);
+    float h00=fract(sin(dot(qi,vec2(127.1,311.7)))*43758.5),h10=fract(sin(dot(qi+vec2(1,0),vec2(127.1,311.7)))*43758.5);
+    float h01=fract(sin(dot(qi+vec2(0,1),vec2(127.1,311.7)))*43758.5),h11=fract(sin(dot(qi+vec2(1,1),vec2(127.1,311.7)))*43758.5);
+    vec2 dn=vec2(mix(h10-h00,h11-h01,qu.y),mix(h01-h00,h11-h10,qu.x))*6.0*qf*(1.0-qf);
+    return g+dn*.09;
+}
+float nereidMacroPatch(vec2 p,float intrinsicTime) {
+    vec2 m=p*.021+vec2(intrinsicTime*.004,0.0);
+    return .5+.5*sin(m.x*2.3+sin(m.y*1.7)*2.1)*sin(m.y*1.9+sin(m.x*1.3)*1.7);
+}
+float nereidRapidField(vec2 transported,vec2 flow,float scale,float detail) {
+    vec2 dir=flow/max(length(flow),.001);
+    // Rotating absolute world position by a varying tangent makes phase grow
+    // with distance from the world origin, tearing foam into chevrons at bends.
+    // Keep noise world-anchored; direction only stretches a bounded local filter.
+    vec2 q=transported*scale*1.3;
+    float warp=nereidNoise(q*.23+vec2(13.7,-5.1));q+=vec2(warp*1.8,warp*.7);
+    float field=.5*(nereidNoise(q-dir*1.2)+nereidNoise(q+dir*1.2));
+    if(detail>.5)field=field*.65+.35*nereidNoise(vec2(q.x*1.73-q.y*.67,q.x*.67+q.y*1.73)+17.3);
+    if(detail>1.5)field=field*.8+.2*nereidNoise(vec2(q.x*3.11+q.y*1.27,-q.x*1.27+q.y*3.11)-9.2);
+    return field;
 }
 void main() {
     // Studio draw-call visualizer bypasses all PBR, shadows and texture shading.
@@ -534,6 +567,23 @@ void main() {
     if(u_params.x < -0.5){ vec3 diagnostic=base; o_color=vec4(diagnostic,1.0); return; }
 #endif
     vec3 n = normalize(v_nrm);
+    bool localCurrent=u_params.x < -.5 && u_waterFlowRect.z>0.0 && u_waterFlowRect.w>0.0;
+    vec3 waterFlow=vec3(u_waterHydraulics.xy,u_waterHydraulics.z);
+    if(localCurrent) {
+        vec2 flowUV=(v_wpos.xz-u_waterFlowRect.xy)*u_waterFlowRect.zw;
+        waterFlow=texture(tex6,flowUV).xyz;
+    }
+#if AIVERSE_NEREID_DIAGNOSTIC == 6
+    if(u_params.x < -.5) { o_color=vec4(clamp(waterFlow.xy*.1+.5,0.0,1.0),clamp(length(waterFlow.xy)*.2,0.0,1.0),1.0); return; }
+#endif
+    // Two overlapping bounded advection phases hide their individual resets.
+    // Variable spatial currents never multiply an unbounded renderer clock.
+    bool boundedCurrent=localCurrent&&length(waterFlow.xy)>.001;
+    float phase=fract(u_camPos.w*.25);
+    float currentTime0=boundedCurrent?phase*4.0:u_camPos.w;
+    float currentTime1=boundedCurrent?fract(phase+.5)*4.0:currentTime0;
+    float currentBlend=boundedCurrent?abs(phase*2.0-1.0):0.0;
+
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
@@ -545,34 +595,22 @@ void main() {
         float windCoupling=u_params.x < -0.5 ? u_waterWind.w : 0.0;
         vec2 p = v_wpos.xz -
                  u_waterWind.xy * wt * (0.02 * windCoupling);
-        if(u_params.x < -0.5)p-=u_waterHydraulics.xy*wt;
+        vec2 p1=p;
+        if(u_params.x < -0.5){p-=waterFlow.xy*currentTime0;p1-=waterFlow.xy*currentTime1;}
         // Moving NEREID detail is transported by the authored current. Independent
         // wave phases would send highlights sideways even when flow is fixed.
-        float intrinsicTime=(u_params.x < -0.5 && length(u_waterHydraulics.xy)>0.001)?0.0:wt;
-        float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
-        float fade = clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0);
-        const vec4 wv[6] = vec4[6](vec4(0.951, 0.309, 0.61, 0.060), vec4(-0.454, 0.891, 0.97, 0.045), vec4(0.588, -0.809, 1.63, 0.036),
-                                   vec4(-0.978, -0.208, 2.71, 0.026), vec4(0.139, 0.990, 4.37, 0.018), vec4(0.743, 0.669, 6.91, 0.012));
-        vec2 g = vec2(0.0);
-        for (int i = 0; i < 6; ++i) {
-            float ph = dot(p, wv[i].xy) * wv[i].z + intrinsicTime * sqrt(wv[i].z) * 1.3 + (u_params.x < -0.5 ? phaseWarp : 0.0);
-            g += wv[i].xy * (wv[i].z * wv[i].w * cos(ph));
-        }
-        vec2 q = p * 0.9 + vec2(intrinsicTime * 0.11, -intrinsicTime * 0.07);
-        if(u_params.x < -0.5)q+=vec2(sin(p.y*0.37+p.x*0.17),cos(p.x*0.43-p.y*0.23))*1.7;
-        vec2 qi = floor(q), qf = fract(q), qu = qf * qf * (3.0 - 2.0 * qf);
-        float h00 = fract(sin(dot(qi, vec2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(qi + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5);
-        float h01 = fract(sin(dot(qi + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5);
-        vec2 dn = vec2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
-        g += dn * 0.09;
+        float intrinsicTime=(u_params.x < -0.5 && length(waterFlow.xy)>0.001)?0.0:wt;
+        float fade=clamp(1.0-length(u_camPos.xyz-v_wpos)/160.0,.3,1.0);
+        vec2 g=nereidWaveGradient(p,intrinsicTime,u_params.x < -.5);
+        if(boundedCurrent)g=mix(g,nereidWaveGradient(p1,intrinsicTime,u_params.x < -.5),currentBlend);
         float windSpeed=length(u_waterWind.xy);
         float gust=(0.4+0.6*clamp(u_waterWind.z,0.0,1.0))*windCoupling;
         float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
         vec2 windDir=u_waterWind.xy/max(windSpeed,0.001);
         g+=windDir*windSlope;
         n = normalize(vec3(-g.x * fade, 1.0, -g.y * fade));
-        vec2 m = p * 0.021 + vec2(intrinsicTime * 0.004, 0.0);
-        float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
+        float patches=nereidMacroPatch(p,intrinsicTime);
+        if(boundedCurrent)patches=mix(patches,nereidMacroPatch(p1,intrinsicTime),currentBlend);
         base *= 0.84 + 0.22 * patches;
     }
     // NEREID: vertical/stepped cascades remain on the shared water
@@ -590,23 +628,14 @@ void main() {
     }
     // NEREID opt-in whitewater: sample locally resolved X/Z river,
     // vortex and cascade-mouth currents from the presentation snapshot.
-    // No extra RHI resource; zero intensity preserves old water materials.
-    if(u_params.x < -0.5 && u_waterHydraulics.z > 0.001 && n.y > 0.5) {
-        vec2 flow=u_waterHydraulics.xy;
+    // Local flow comes from the immutable NEREID field; zero intensity disables whitewater.
+    if(u_params.x < -0.5 && waterFlow.z > 0.001 && n.y > 0.5) {
+        vec2 flow=waterFlow.xy;
         float speed=length(flow);
         vec2 dir=flow/max(speed,0.001),side=vec2(-dir.y,dir.x);
-        vec2 transported=v_wpos.xz-flow*u_camPos.w;
-        float scale=u_waterHydraulics.w;
-        float along=dot(transported,dir)*scale,across=dot(transported,side)*scale;
-        // Stretched domain-warped noise follows the current. Products of sine
-        // waves formed a visibly repeated grid of white ellipses on the river.
-        vec2 q=vec2(across*1.8,along*0.42);
-        float warp=nereidNoise(q*0.23+vec2(13.7,-5.1));
-        q+=vec2(warp*1.8,warp*0.7);
-        float field=nereidNoise(q);
-        if(u_waterRapidColor.a>0.5)field=field*0.65+0.35*nereidNoise(vec2(q.x*1.73-q.y*0.67,q.x*0.67+q.y*1.73)+17.3);
-        if(u_waterRapidColor.a>1.5)field=field*0.8+0.2*nereidNoise(vec2(q.x*3.11+q.y*1.27,-q.x*1.27+q.y*3.11)-9.2);
-        float foam=smoothstep(0.48,0.78,field)*u_waterHydraulics.z;
+        float field=nereidRapidField(v_wpos.xz-flow*currentTime0,flow,u_waterHydraulics.w,u_waterRapidColor.a);
+        if(boundedCurrent)field=mix(field,nereidRapidField(v_wpos.xz-flow*currentTime1,flow,u_waterHydraulics.w,u_waterRapidColor.a),currentBlend);
+        float foam=smoothstep(0.48,0.78,field)*waterFlow.z;
         base=mix(base,u_waterRapidColor.rgb,clamp(foam*0.78,0.0,0.78));
         if(u_waterRapidColor.a>0.5)n=normalize(n+vec3(side.x*(field-0.5)*foam*0.17,0.0,side.y*(field-0.5)*foam*0.17));
     }
@@ -709,8 +738,8 @@ void main() {
                         contactFoam=1.0-smoothstep(0.0,u_color.g,depth);
                         // Bounded overlapping upstream depth probes create a tapered downstream
                         // tail. No contact wake exists ahead of the obstacle/current.
-                        float speed=length(u_waterHydraulics.xy);
-                        vec2 currentDir=u_waterHydraulics.xy/max(speed,0.001);
+                        float speed=length(waterFlow.xy);
+                        vec2 currentDir=waterFlow.xy/max(speed,0.001);
                         float wakeFoam=0.0;
                         int tapCount=u_waterRapidColor.a>1.5?16:(u_waterRapidColor.a>0.5?8:4);
                         if(speed>0.01)for(int tap=0;tap<16;++tap){
@@ -768,8 +797,13 @@ void main() {
         }
     }
     if(contactFoam>0.0){
-        vec2 foamPoint=v_wpos.xz-u_waterHydraulics.xy*u_camPos.w;
+        vec2 foamPoint=v_wpos.xz-waterFlow.xy*currentTime0;
         float breakup=0.65+0.35*sin(dot(foamPoint,vec2(2.7,4.1))+sin(dot(foamPoint,vec2(-3.3,1.9))));
+        if(boundedCurrent){
+            vec2 other=v_wpos.xz-waterFlow.xy*currentTime1;
+            float otherBreakup=0.65+0.35*sin(dot(other,vec2(2.7,4.1))+sin(dot(other,vec2(-3.3,1.9))));
+            breakup=mix(breakup,otherBreakup,currentBlend);
+        }
         outc=mix(outc,vec3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72*clamp(albedo.a,0.0,1.0),0.0,0.72));
     }
 #if AIVERSE_NEREID_DIAGNOSTIC == 1
@@ -816,13 +850,46 @@ static float nereidNoise(float2 p) {
     float d=fract(sin(dot(i+float2(1,1),float2(127.1,311.7)))*43758.5453);
     return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
 }
+float2 nereidWaveGradient(float2 p,float intrinsicTime,bool tagged) {
+    float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
+    const float4 wv[6] = {float4(0.951,0.309,0.61,0.060),float4(-0.454,0.891,0.97,0.045),float4(0.588,-0.809,1.63,0.036),float4(-0.978,-0.208,2.71,0.026),float4(0.139,0.990,4.37,0.018),float4(0.743,0.669,6.91,0.012)};
+    float2 g=float2(0.0);
+    for(int i=0;i<6;++i) {
+        float ph=dot(p,wv[i].xy)*wv[i].z+intrinsicTime*sqrt(wv[i].z)*1.3+(tagged?phaseWarp:0.0);
+        g+=wv[i].xy*(wv[i].z*wv[i].w*cos(ph));
+    }
+    float2 q=p*.9+float2(intrinsicTime*.11,-intrinsicTime*.07);
+    if(tagged)q+=float2(sin(p.y*.37+p.x*.17),cos(p.x*.43-p.y*.23))*1.7;
+    float2 qi=floor(q),qf=fract(q),qu=qf*qf*(3.0-2.0*qf);
+    float h00=fract(sin(dot(qi,float2(127.1,311.7)))*43758.5),h10=fract(sin(dot(qi+float2(1,0),float2(127.1,311.7)))*43758.5);
+    float h01=fract(sin(dot(qi+float2(0,1),float2(127.1,311.7)))*43758.5),h11=fract(sin(dot(qi+float2(1,1),float2(127.1,311.7)))*43758.5);
+    float2 dn=float2(mix(h10-h00,h11-h01,qu.y),mix(h01-h00,h11-h10,qu.x))*6.0*qf*(1.0-qf);
+    return g+dn*.09;
+}
+float nereidMacroPatch(float2 p,float intrinsicTime) {
+    float2 m=p*.021+float2(intrinsicTime*.004,0.0);
+    return .5+.5*sin(m.x*2.3+sin(m.y*1.7)*2.1)*sin(m.y*1.9+sin(m.x*1.3)*1.7);
+}
+float nereidRapidField(float2 transported,float2 flow,float scale,float detail) {
+    float2 dir=flow/max(length(flow),.001);
+    // Rotating absolute world position by a varying tangent makes phase grow
+    // with distance from the world origin, tearing foam into chevrons at bends.
+    // Keep noise world-anchored; direction only stretches a bounded local filter.
+    float2 q=transported*scale*1.3;
+    float warp=nereidNoise(q*.23+float2(13.7,-5.1));q+=float2(warp*1.8,warp*.7);
+    float field=.5*(nereidNoise(q-dir*1.2)+nereidNoise(q+dir*1.2));
+    if(detail>.5)field=field*.65+.35*nereidNoise(float2(q.x*1.73-q.y*.67,q.x*.67+q.y*1.73)+17.3);
+    if(detail>1.5)field=field*.8+.2*nereidNoise(float2(q.x*3.11+q.y*1.27,-q.x*1.27+q.y*3.11)-9.2);
+    return field;
+}
 fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], constant U1& f [[buffer(2)]],
                         depth2d<float> tex0 [[texture(0)]], sampler s0 [[sampler(0)]],
                         constant LightU& l [[buffer(3)]], texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]],
                         texture2d<float> tex2 [[texture(2)]], sampler s2 [[sampler(2)]],
                         texture2d<float> tex3 [[texture(3)]], sampler s3 [[sampler(3)]],
                         texture2d<float> tex4 [[texture(4)]], sampler s4 [[sampler(4)]],
-                        depth2d<float> tex5 [[texture(5)]], sampler s5 [[sampler(5)]]) {
+                        depth2d<float> tex5 [[texture(5)]], sampler s5 [[sampler(5)]],
+                        texture2d<float> tex6 [[texture(6)]], sampler s6 [[sampler(6)]]) {
     if (u.params.x > 9.5) {
         int mode = int(u.params.x - 10.0 + .5);
         if (mode == 2) return float4(normalize(in.nrm) * .5 + .5, 1.0);
@@ -840,6 +907,23 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     if(u.params.x < -0.5){ float3 diagnostic=base; return float4(diagnostic,1.0); }
 #endif
     float3 n = normalize(in.nrm);
+    bool localCurrent=u.params.x < -.5 && u.waterFlowRect.z>0.0 && u.waterFlowRect.w>0.0;
+    float3 waterFlow=float3(u.waterHydraulics.xy,u.waterHydraulics.z);
+    if(localCurrent) {
+        float2 flowUV=(in.wpos.xz-u.waterFlowRect.xy)*u.waterFlowRect.zw;
+        waterFlow=tex6.sample(s6,flowUV).xyz;
+    }
+#if AIVERSE_NEREID_DIAGNOSTIC == 6
+    if(u.params.x < -.5) { return float4(clamp(waterFlow.xy*.1+.5,0.0,1.0),clamp(length(waterFlow.xy)*.2,0.0,1.0),1.0);  }
+#endif
+    // Two overlapping bounded advection phases hide their individual resets.
+    // Variable spatial currents never multiply an unbounded renderer clock.
+    bool boundedCurrent=localCurrent&&length(waterFlow.xy)>.001;
+    float phase=fract(f.camPos.w*.25);
+    float currentTime0=boundedCurrent?phase*4.0:f.camPos.w;
+    float currentTime1=boundedCurrent?fract(phase+.5)*4.0:currentTime0;
+    float currentBlend=boundedCurrent?abs(phase*2.0-1.0):0.0;
+
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
@@ -849,34 +933,22 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float windCoupling=u.params.x < -0.5 ? u.waterWind.w : 0.0;
         float2 p = in.wpos.xz -
                    u.waterWind.xy * wt * (0.02 * windCoupling);
-        if(u.params.x < -0.5)p-=u.waterHydraulics.xy*wt;
+        float2 p1=p;
+        if(u.params.x < -0.5){p-=waterFlow.xy*currentTime0;p1-=waterFlow.xy*currentTime1;}
         // Moving NEREID detail is transported by the authored current. Independent
         // wave phases would send highlights sideways even when flow is fixed.
-        float intrinsicTime=(u.params.x < -0.5 && length(u.waterHydraulics.xy)>0.001)?0.0:wt;
-        float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
-        float fade = clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0);
-        const float4 wv[6] = {float4(0.951, 0.309, 0.61, 0.060), float4(-0.454, 0.891, 0.97, 0.045), float4(0.588, -0.809, 1.63, 0.036),
-                                   float4(-0.978, -0.208, 2.71, 0.026), float4(0.139, 0.990, 4.37, 0.018), float4(0.743, 0.669, 6.91, 0.012)};
-        float2 g = float2(0.0);
-        for (int i = 0; i < 6; ++i) {
-            float ph = dot(p, wv[i].xy) * wv[i].z + intrinsicTime * sqrt(wv[i].z) * 1.3 + (u.params.x < -0.5 ? phaseWarp : 0.0);
-            g += wv[i].xy * (wv[i].z * wv[i].w * cos(ph));
-        }
-        float2 q = p * 0.9 + float2(intrinsicTime * 0.11, -intrinsicTime * 0.07);
-        if(u.params.x < -0.5)q+=float2(sin(p.y*0.37+p.x*0.17),cos(p.x*0.43-p.y*0.23))*1.7;
-        float2 qi = floor(q), qf = fract(q), qu = qf * qf * (3.0 - 2.0 * qf);
-        float h00 = fract(sin(dot(qi, float2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(qi + float2(1, 0), float2(127.1, 311.7))) * 43758.5);
-        float h01 = fract(sin(dot(qi + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + float2(1, 1), float2(127.1, 311.7))) * 43758.5);
-        float2 dn = float2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
-        g += dn * 0.09;
+        float intrinsicTime=(u.params.x < -0.5 && length(waterFlow.xy)>0.001)?0.0:wt;
+        float fade=clamp(1.0-length(f.camPos.xyz-in.wpos)/160.0,.3,1.0);
+        float2 g=nereidWaveGradient(p,intrinsicTime,u.params.x < -.5);
+        if(boundedCurrent)g=mix(g,nereidWaveGradient(p1,intrinsicTime,u.params.x < -.5),currentBlend);
         float windSpeed=length(u.waterWind.xy);
         float gust=(0.4+0.6*clamp(u.waterWind.z,0.0,1.0))*windCoupling;
         float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
         float2 windDir=u.waterWind.xy/max(windSpeed,0.001);
         g+=windDir*windSlope;
         n = normalize(float3(-g.x * fade, 1.0, -g.y * fade));
-        float2 m = p * 0.021 + float2(intrinsicTime * 0.004, 0.0);
-        float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
+        float patches=nereidMacroPatch(p,intrinsicTime);
+        if(boundedCurrent)patches=mix(patches,nereidMacroPatch(p1,intrinsicTime),currentBlend);
         base *= 0.84 + 0.22 * patches;
     }
     if(u.params.x < -2.5) {
@@ -889,22 +961,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                              crossFlow*0.12));
         base *= 0.87+0.13*streak*streak;
     }
-    if(u.params.x < -0.5 && u.waterHydraulics.z > 0.001 && n.y > 0.5) {
-        float2 flow=u.waterHydraulics.xy;
+    if(u.params.x < -0.5 && waterFlow.z > 0.001 && n.y > 0.5) {
+        float2 flow=waterFlow.xy;
         float speed=length(flow);
         float2 dir=flow/max(speed,0.001),side=float2(-dir.y,dir.x);
-        float2 transported=in.wpos.xz-flow*f.camPos.w;
-        float scale=u.waterHydraulics.w;
-        float along=dot(transported,dir)*scale,across=dot(transported,side)*scale;
-        // Stretched domain-warped noise follows the current. Products of sine
-        // waves formed a visibly repeated grid of white ellipses on the river.
-        float2 q=float2(across*1.8,along*0.42);
-        float warp=nereidNoise(q*0.23+float2(13.7,-5.1));
-        q+=float2(warp*1.8,warp*0.7);
-        float field=nereidNoise(q);
-        if(u.waterRapidColor.a>0.5)field=field*0.65+0.35*nereidNoise(float2(q.x*1.73-q.y*0.67,q.x*0.67+q.y*1.73)+17.3);
-        if(u.waterRapidColor.a>1.5)field=field*0.8+0.2*nereidNoise(float2(q.x*3.11+q.y*1.27,-q.x*1.27+q.y*3.11)-9.2);
-        float foam=smoothstep(0.48,0.78,field)*u.waterHydraulics.z;
+        float field=nereidRapidField(in.wpos.xz-flow*currentTime0,flow,u.waterHydraulics.w,u.waterRapidColor.a);
+        if(boundedCurrent)field=mix(field,nereidRapidField(in.wpos.xz-flow*currentTime1,flow,u.waterHydraulics.w,u.waterRapidColor.a),currentBlend);
+        float foam=smoothstep(0.48,0.78,field)*waterFlow.z;
         base=mix(base,u.waterRapidColor.rgb,clamp(foam*0.78,0.0,0.78));
         if(u.waterRapidColor.a>0.5)n=normalize(n+float3(side.x*(field-0.5)*foam*0.17,0.0,side.y*(field-0.5)*foam*0.17));
     }
@@ -1002,8 +1065,8 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                         contactFoam=1.0-smoothstep(0.0,u.color.g,depth);
                         // Bounded overlapping upstream depth probes create a tapered downstream
                         // tail. No contact wake exists ahead of the obstacle/current.
-                        float speed=length(u.waterHydraulics.xy);
-                        float2 currentDir=u.waterHydraulics.xy/max(speed,0.001);
+                        float speed=length(waterFlow.xy);
+                        float2 currentDir=waterFlow.xy/max(speed,0.001);
                         float wakeFoam=0.0;
                         int tapCount=u.waterRapidColor.a>1.5?16:(u.waterRapidColor.a>0.5?8:4);
                         if(speed>0.01)for(int tap=0;tap<16;++tap){
@@ -1062,8 +1125,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         }
     }
     if(contactFoam>0.0){
-        float2 foamPoint=in.wpos.xz-u.waterHydraulics.xy*f.camPos.w;
+        float2 foamPoint=in.wpos.xz-waterFlow.xy*currentTime0;
         float breakup=0.65+0.35*sin(dot(foamPoint,float2(2.7,4.1))+sin(dot(foamPoint,float2(-3.3,1.9))));
+        if(boundedCurrent){
+            float2 other=in.wpos.xz-waterFlow.xy*currentTime1;
+            float otherBreakup=0.65+0.35*sin(dot(other,float2(2.7,4.1))+sin(dot(other,float2(-3.3,1.9))));
+            breakup=mix(breakup,otherBreakup,currentBlend);
+        }
         outc=mix(outc,float3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72*clamp(albedo.a,0.0,1.0),0.0,0.72));
     }
 #if AIVERSE_NEREID_DIAGNOSTIC == 1

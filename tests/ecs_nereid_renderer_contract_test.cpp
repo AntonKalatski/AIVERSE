@@ -9,6 +9,7 @@
 #include "engine/render/PostFx.h"
 #include "engine/render/PostFxShaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
+#include "tests/cloth/FakeDevice.h"
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -17,6 +18,10 @@ using namespace aiverse;
 static void check(bool value,const char* message) {
     if(!value)throw std::runtime_error(message);
 }
+struct WaterTestDevice final:FakeDevice {
+    bool waitForResourceIdle()override{return true;}
+    bool gpuHealthy()const override{return true;}
+};
 int main() {
     lib::nereid::WaterSurfaceVertex shore;
     shore.shore=1.f;
@@ -736,5 +741,31 @@ int main() {
           std::string::npos &&
           depthComposite.find("immersedFraction")!=std::string::npos,
           "shared GL/Metal shader must clip underwater distance to water plane");
+    // Finite flow texture depends on canonical water data, never observer/mesh LOD.
+    WaterTestDevice flowDevice;
+    world::NereidWaterScene localWater;
+    world::NereidSceneSurface localSource;
+    localSource.id=42;localSource.body.halfExtents={8_fx,8_fx};
+    localSource.body.flow={1_fx,0_fx,-2_fx};
+    localSource.autoLod=true;localSource.mediumDistance=20;localSource.farDistance=40;
+    localWater.setSurfaces({localSource});
+    Vec3 nearObserver{0_fx,5_fx,0_fx},farObserver{100_fx,5_fx,100_fx};
+    localWater.update(flowDevice,&nearObserver);
+    check(localWater.stats().flowUploads==1,"first resident water needs local current texture");
+    localWater.update(flowDevice,&farObserver);
+    check(localWater.stats().flowUploads==0&&localWater.stats().flowBuilds==0,
+          "camera and LOD must not rebuild finite flow field");
+    const auto meshRevision=localWater.surfaceRevision(42);
+    localSource.body.flow.x=-1_fx;localWater.setSurfaces({localSource});
+    check(localWater.surfaceRevision(42)==meshRevision,"current change must not remesh water");
+    localWater.update(flowDevice,&nearObserver);
+    check(localWater.stats().flowUploads==1,"manual current edit must update local texture");
+    auto transfer=[](uint64_t id,Vec3,Vec3 flow){check(id==42,"resolver stable water identity");flow.z=3_fx;return flow;};
+    localWater.update(flowDevice,&nearObserver,transfer);
+    check(localWater.stats().flowUploads==1,"host confluence current must reach local texture");
+    localWater.update(flowDevice,&nearObserver,transfer);
+    check(localWater.stats().flowUploads==0&&localWater.stats().flowBuilds==1,
+          "unversioned resolver must revalidate but reuse exact unchanged GPU payload");
+    localWater.shutdown(flowDevice);
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }

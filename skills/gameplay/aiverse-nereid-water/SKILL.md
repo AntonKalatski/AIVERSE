@@ -753,3 +753,22 @@ minimum valid opacity against the same scene without water. Use the opt-in
 AIVERSE_NEREID_DIAGNOSTIC modes from docs/water.md in an owned review process
 when depth/coefficients/background dominance disagree; never publish their
 false-colour images as final scene screenshots.
+
+
+## Local current rendering
+
+Use NereidWaterScene's native flow-map preparation, not one scene-wide shader
+angle. Automatic river grade follows the canonical local spline tangent; manual
+WaterBody.flow remains manual. Current/vortex fields are sampled into bounded
+world-space RGBA16F data. Finite grids ignore cameras and mesh LOD. WorldScene
+preserves confluence/cascade/obstruction resolution through the prepare callback.
+Only supply a nonzero resolver revision when ALL its inputs are revisioned; zero
+revalidates bounded CPU grids and deduplicates equal GPU payloads.
+
+Capture/replay must retain NereidFlowBinding leases. Do not destroy textures on
+CPU replacement or allocate them inside a draw encoder. Explicitly shutdown the
+owner before Device destruction; preserve fence retirement and revoked replay
+guards. See docs/nereid/ARCHITECTURE.md. Native GPU regression:
+`python3 tests/render/verify_nereid_flow.py <renderbench> <KINGSTON-output>`; run
+Metal and desktop GL separately. Diagnostic flow images are technical evidence,
+not final beauty screenshots.

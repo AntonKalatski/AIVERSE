@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -27,6 +28,9 @@ struct NereidFlowMapSource {
     const lib::nereid::WaterCurrentFieldComponent* currents=nullptr;
     const lib::nereid::WaterVortexFieldComponent* vortices=nullptr;
     float rapidStrength=0,rapidThreshold=3;
+    // Optional existing host confluence/cascade/obstruction resolver. Borrowed
+    // synchronously during build; never retained by the resulting snapshot.
+    std::function<Vec3(Vec3,Vec3)> resolve;
 };
 struct NereidFlowMap {
     double minX=0,minZ=0,cellMetres=0;
@@ -95,7 +99,8 @@ inline Vec3 nereidSurfaceCurrentAt(const NereidFlowMapSource& src,Vec3 point) {
     const auto local=gradedWaterBody(src.body,src.grade,point,src.geometry);
     // Sample the local SURFACE layer, including an inclined river's height.
     point.y=local.surfaceY-Fixed::fromRatio(1,10);
-    return waterCurrentWithVortices(local,src.geometry,src.currents,src.vortices,point);
+    const auto ordinary=waterCurrentWithVortices(local,src.geometry,src.currents,src.vortices,point);
+    return src.resolve?src.resolve(point,ordinary):ordinary;
 }
 
 inline NereidFlowMap buildNereidFlowMap(const NereidFlowMapSource& src,
@@ -127,7 +132,8 @@ inline NereidFlowMap buildNereidFlowMap(const NereidFlowMapSource& src,
         Vec3 point{fixed(out.minX+(x+.5)*out.cellMetres),{},
             fixed(out.minZ+(z+.5)*out.cellMetres)};
         const auto flow=nereidSurfaceCurrentAt(src,point);
-        const float vx=float(flow.x.toDouble()),vz=float(flow.z.toDouble());
+        const float vx=float(std::clamp(flow.x.toDouble(),-1000.,1000.));
+        const float vz=float(std::clamp(flow.z.toDouble(),-1000.,1000.));
         const float foam=std::clamp((std::hypot(vx,vz)-src.rapidThreshold)*.35f*
             src.rapidStrength,0.f,1.f);
         out.texels.push_back({vx,vz,foam,1});

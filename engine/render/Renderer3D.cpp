@@ -19,7 +19,7 @@ namespace aiverse::render {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 
-struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; };
+struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; float waterFlowRect[4]; };
 struct FrameUniforms {
     float viewProj[16];
     float lightViewProj[16];
@@ -78,14 +78,15 @@ bool Renderer3D::init(gfx::Device& dev) {
                 diagnostic && std::string(diagnostic)=="coefficients"?2:
                 diagnostic && std::string(diagnostic)=="basecolor"?3:
                 diagnostic && std::string(diagnostic)=="transmission"?4:
-                diagnostic && std::string(diagnostic)=="coverage"?5:0;
+                diagnostic && std::string(diagnostic)=="coverage"?5:
+                diagnostic && std::string(diagnostic)=="flow"?6:0;
             std::string diagnosticGlsl,diagnosticMsl;
             if(diagnosticMode){
                 const auto prefix="#define AIVERSE_NEREID_DIAGNOSTIC "+std::to_string(diagnosticMode)+"\n";
                 diagnosticGlsl=prefix+ls.glslFragment;diagnosticMsl=prefix+ls.msl;
                 ls.glslFragment=diagnosticGlsl.c_str();ls.msl=diagnosticMsl.c_str();
             }
-            ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
+            ls.uniformSlots = 3; ls.textureSlots = 7; ls.label = "lit"; // 6: immutable NEREID local flow
             litShader_ = dev.createShader(ls);
             gfx::ShaderDesc ss; ss.glslVertex = shaders::kShadowVS; ss.glslFragment = shaders::kShadowFS; ss.msl = shaders::kShadowMSL;
             ss.uniformSlots = 2; ss.label = "shadow";
@@ -647,7 +648,8 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         const std::array<float4,16>& ripples,
         uint32_t firstIndex,uint32_t indexCount,
         const std::array<float4,16>& wakeShapes,float4 wind,
-        float4 hydraulics,float4 rapidColor) {
+        float4 hydraulics,float4 rapidColor,NereidFlowBinding flow) {
+    if(!flow.validForReplay())return;
     drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
              specular,refraction);
     if(geometryPacketTap_ && !suppressGeometryTap_) {
@@ -658,6 +660,7 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         packet.specular=specular;packet.emissive=refraction;
         packet.ripples=ripples;packet.wakes=wakeShapes;packet.wind=wind;
         packet.hydraulics=hydraulics;packet.rapidColor=rapidColor;
+        packet.waterFlow=flow;
         packet.firstIndex=firstIndex;packet.indexCount=indexCount;
         geometryPacketTap_(packet);
     }
@@ -667,6 +670,7 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         items_.back().waterWind=wind;
         items_.back().waterHydraulics=hydraulics;
         items_.back().waterRapidColor=rapidColor;
+        items_.back().waterFlow=std::move(flow);
         items_.back().waterFirstIndex=firstIndex;
         items_.back().waterIndexCount=indexCount;
     }
@@ -2249,6 +2253,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     lights.bind(2, 1, 2);
     bindTraceTextures();
     auto drawItem = [&](const DrawItem& it) {
+        if(!it.waterFlow.validForReplay())return;
         DrawUniforms u{};
         std::memcpy(u.model, it.model.m, sizeof u.model);
         u.color[0] = it.color.x; u.color[1] = it.color.y; u.color[2] = it.color.z; u.color[3] = it.color.w;
@@ -2275,6 +2280,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
                     sizeof u.waterHydraulics);
         std::memcpy(u.waterRapidColor,&it.waterRapidColor,
                     sizeof u.waterRapidColor);
+        const bool localFlow=it.waterFlow.available();
+        if(localFlow)std::memcpy(u.waterFlowRect,&it.waterFlow.rect,sizeof u.waterFlowRect);
+        dev_->setTexture(6,localFlow?it.waterFlow.texture:white_);
         if (studioDebugMode_ == 2 || studioDebugMode_ == 4 || studioDebugMode_ == 9)
             u.params[0] = 10.0f + float(studioDebugMode_);
         if (drawCallDebug_) {

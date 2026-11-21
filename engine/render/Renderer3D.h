@@ -18,6 +18,7 @@
 #include "../gfx/VirtualTextureFeedbackPass.h"
 #include "Lights.h"
 #include "Math3D.h"
+#include "NereidFlowBinding.h"
 #include "PrismaMotionTextureInput.h"
 #include "PrismaGpuRetirement.h"
 #include "Model.h"
@@ -446,6 +447,7 @@ struct CameraGeometryCommand {
     float4 wind{},hydraulics{},rapidColor{};
     uint32_t firstIndex=0,indexCount=0;
     float4 selection{};
+    NereidFlowBinding waterFlow{};
 };
 
 class Renderer3D {
@@ -592,7 +594,8 @@ public:
                               uint32_t firstIndex=0,uint32_t indexCount=0,
                               const std::array<float4,16>& wakeShapes={},
                               float4 wind={},float4 hydraulics={},
-                               float4 rapidColor={0.84f,0.93f,0.94f,1.f});
+                               float4 rapidColor={0.84f,0.93f,0.94f,1.f},
+                               NereidFlowBinding flow={});
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -1486,6 +1489,7 @@ private:
         float4 waterHydraulics{};
         float4 waterRapidColor{};
         uint32_t waterFirstIndex=0,waterIndexCount=0;
+        NereidFlowBinding waterFlow{};
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;

@@ -1,13 +1,30 @@
 #include "engine/world/NereidFlowMap.h"
 #include "tests/TestCheck.h"
+#include "engine/render/NereidFlowTexture.h"
+#include "tests/cloth/FakeDevice.h"
 #include <iostream>
 using namespace aiverse;
 using namespace aiverse::world;
 using namespace aiverse::lib::nereid;
 static bool near(float a,float b,float error=.0001f){return std::abs(a-b)<error;}
+struct FlowDevice final:FakeDevice {
+    uint64_t submitted=7,completed=0;
+    bool idle=true;
+    std::vector<uint16_t> uploaded;
+    uint64_t gpuSubmissionFence()const override{return submitted;}
+    uint64_t gpuCompletedFence()const override{return completed;}
+    bool gpuHealthy()const override{return true;}
+    bool waitForResourceIdle()override{return idle;}
+    gfx::TextureHandle createTexture(const gfx::TextureDesc& d)override {
+        AIVERSE_TEST_CHECK(d.format==gfx::PixelFormat::RGBA16F&&d.filter==gfx::Filter::Linear);
+        const auto* bytes=static_cast<const uint16_t*>(d.data);
+        uploaded.assign(bytes,bytes+size_t(d.width)*d.height*4);
+        return FakeDevice::createTexture(d);
+    }
+};
 int main(){
     WaterBodyComponent body;body.halfExtents={20_fx,20_fx};body.flow={2_fx,0_fx,-1_fx};
-    NereidFlowMapSource source{body};source.rapidStrength=.8f;source.rapidThreshold=.2f;
+    NereidFlowMapSource source{body,nullptr,nullptr,nullptr,nullptr,0,3,{}};source.rapidStrength=.8f;source.rapidThreshold=.2f;
     auto constant=buildNereidFlowMap(source);
     AIVERSE_TEST_CHECK(!constant.empty());
     for(const auto& cell:constant.texels){
@@ -70,6 +87,47 @@ int main(){
     invalid=first;invalid.cellMetres=NAN;rejected=false;
     try{(void)buildNereidFlowMap(source,invalid);}catch(const std::invalid_argument&){rejected=true;}
     AIVERSE_TEST_CHECK(rejected);
+    source.resolve=[&](Vec3 position,Vec3 ordinary){
+        AIVERSE_TEST_CHECK(position.y<body.surfaceY);
+        ordinary.x=-3_fx;return ordinary;
+    };
+    const auto resolved=buildNereidFlowMap(source);
+    AIVERSE_TEST_CHECK(resolved.sample(0,0).x==-3);
+    source.resolve={};
+    FlowDevice device;
+    render::NereidFlowTextureCache cache;
+    bool created=false;
+    auto version=cache.upload(device,constant,1,1,false,{},&created);
+    AIVERSE_TEST_CHECK(version&&created&&device.textures.size()==1);
+    AIVERSE_TEST_CHECK(device.uploaded[0]==0x4000&&device.uploaded[1]==0xbc00); // +2/-1 signed half
+    auto lease=version->binding(100,-30);
+    AIVERSE_TEST_CHECK(lease.available()&&near(lease.rect.x,float(constant.minX-100)));
+    auto equal=cache.upload(device,constant,2,1,false,version,&created);
+    AIVERSE_TEST_CHECK(equal==version&&!created); // exact payload, no needless GPU replacement
+    equal.reset();version.reset();cache.collect(device);
+    AIVERSE_TEST_CHECK(device.textures.size()==1); // CPU captured packet still owns lease
+    lease={};cache.collect(device);
+    AIVERSE_TEST_CHECK(device.textures.size()==1); // GPU fence still in flight
+    device.completed=7;cache.collect(device);
+    AIVERSE_TEST_CHECK(device.textures.empty()&&cache.knownBytes(device)==0);
+    version=cache.upload(device,constant,3,1);
+    lease=version->binding(0,0);
+    AIVERSE_TEST_CHECK(cache.shutdown(device));
+    AIVERSE_TEST_CHECK(!lease.validForReplay()&&!lease.available()&&device.textures.empty());
+    // Bound retained captured versions without destroying any live lease.
+    std::vector<std::shared_ptr<const render::NereidFlowTextureVersion>> retained;
+    NereidFlowMap small;small.width=small.height=1;small.cellMetres=2;
+    small.texels={{0,0,0,1}};
+    for(size_t i=0;i<render::NereidFlowTextureCache::kMaxVersions;++i) {
+        small.texels[0].x=float(i);
+        auto next=cache.upload(device,small,i+10,1);
+        AIVERSE_TEST_CHECK(next!=nullptr);retained.push_back(next);
+    }
+    small.texels[0].x=999;
+    AIVERSE_TEST_CHECK(!cache.upload(device,small,999,1));
+    AIVERSE_TEST_CHECK(device.textures.size()==render::NereidFlowTextureCache::kMaxVersions);
+    AIVERSE_TEST_CHECK(cache.shutdown(device));
+    for(const auto& old:retained)AIVERSE_TEST_CHECK(!old->lifetime->load());
     body.enabled=false;AIVERSE_TEST_CHECK(buildNereidFlowMap(source).empty());
     std::cout<<"NEREID camera-independent flow map PASS\n";
 }

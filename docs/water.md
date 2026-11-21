@@ -153,7 +153,8 @@ art presets, HDR/LDR, underwater transitions and TAA on target platforms.
 
 Set AIVERSE_NEREID_DIAGNOSTIC only for a separate inspection process: depth
 (red=positive depth/4m, green=negative, blue=unavailable), coefficients
-(absorption/4,shoreFoamDepth,depthTint), basecolor, transmission or coverage.
+(absorption/4,shoreFoamDepth,depthTint), basecolor, transmission, coverage or flow. Flow encodes world X/Z as
+(v*.1+.5) in RG and horizontal speed*.2 in B.
 These opt-in shader variants draw opaque diagnostic colour for NEREID only;
 postprocessing may transform the display values. Unset the environment variable
 for normal rendering. They do not change scene/component/save state.
