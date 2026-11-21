@@ -26,6 +26,7 @@
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "apps/studio-native/StudioHumanLookDocument.h"
 #include "apps/studio-native/StudioHumanPackage.h"
+#include "engine/character/vivid/MetaHumanAdapter.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -1078,6 +1079,19 @@ Json StudioSession::dispatchImpl(const Json& request) {
             if(method=="studio.humanPackageList")reply.set("result",listStudioHumanPackages(ws_.project.dir));
             else if(method=="studio.humanPackageExport")reply.set("result",exportStudioHumanPackage(ws_.project.dir,params.getStr("look"),params.getStr("character")));
             else reply.set("result",importStudioHumanPackage(ws_.project.dir,params.getStr("name")));
+        } else if(method=="studio.humanMetaHuman") {
+            // MetaHuman adapter: inspect a project model (permitted MetaHuman
+            // export), return its report plus the VIVID look roles and face meshes.
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
+            const auto relative=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
+            const auto reader=humanCharacterReader(studioContentRoot(ws_.project.dir));
+            auto model=render::loadModel(relative,reader);
+            if(!model)throw std::runtime_error("Не удалось загрузить модель "+relative);
+            const auto report=vivid::adaptMetaHuman(*model);
+            auto result=report.toJson();result.set("look",report.look());result.set("face",report.face());
+            result.set("rig",vivid::buildMetaHumanRig(*model).toJson());
+            reply.set("result",std::move(result));
         } else if(method=="studio.humanPlaceInGame") {
             // "To the game": the built character becomes an RTS unit type
             // (view.model) and, when a map is open, one unit is placed.

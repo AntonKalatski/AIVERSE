@@ -1,6 +1,8 @@
 #include "HumanCreatorOps.h"
 #include "engine/character/vivid/HumanCreatorWorkbench.h"
 #include "engine/character/vivid/HumanAppearance.h"
+#include "engine/character/vivid/MetaHumanAdapter.h"
+#include "engine/render/Model.h"
 #include <fstream>
 #include <iterator>
 #include <algorithm>
@@ -252,6 +254,37 @@ void registerHumanCreatorOps(Workspace& ws) {
             r.set("name", Json::string(name));
             r.set("look", checked.toJson());
             r.set("summary", Json::string("Saved look " + name));
+            return r;
+        }});
+    ws.registerOp({"human_metahuman_check",
+        "MetaHuman compatibility adapter (no Unreal at runtime): inspect a permitted MetaHuman export in the open game "
+        "(content-relative glTF/GLB/FBX path) and return detection, head bone, face meshes, material roles for the "
+        "Character Creator look, ARKit channel coverage vs VIVID's 52, FACIAL/corrective joint counts, LOD levels and "
+        "plain notes on unsupported parts (RigLogic correctives, strand groom). save_look:<name> also writes "
+        "human-looks/<name>.json with those roles.",
+        Json::parse(R"({"properties": {"path": {"type": "string"}, "save_look": {"type": "string"}}, "required": ["path"]})"),
+        [w](const Json& p) {
+            namespace fs = std::filesystem;
+            const fs::path root = projectDir(*w);
+            const std::string rel = p.getStr("path");
+            if (rel.empty() || fs::path(rel).is_absolute() || rel.find("..") != std::string::npos) throw std::invalid_argument("path: content-relative model");
+            const fs::path content = fs::is_directory(root / "content") ? root / "content" : root;
+            auto model = render::loadModel(rel, [content](const std::string& key, std::string& out) {
+                if (key.find("..") != std::string::npos) return false;
+                std::ifstream in(content / key, std::ios::binary); if (!in) return false;
+                out.assign(std::istreambuf_iterator<char>(in), {}); return true; });
+            if (!model) throw std::runtime_error("cannot load " + rel);
+            const auto report = vivid::adaptMetaHuman(*model);
+            Json r = report.toJson();
+            r.set("ok", Json::fromBool(true)); r.set("look", report.look()); r.set("face", report.face());
+            if (p.has("save_look") && report.detected) {
+                const auto name = p.getStr("save_look");
+                const auto file = lookFile(root.string(), name);
+                fs::create_directories(file.parent_path());
+                { std::ofstream out(file.string() + ".pending", std::ios::binary | std::ios::trunc); out << report.look().dump(2) << "\n"; }
+                fs::rename(file.string() + ".pending", file);
+                r.set("saved", Json::string("human-looks/" + name + ".json"));
+            }
             return r;
         }});
     ws.registerOp({"studio_character_snapshot",
