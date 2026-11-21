@@ -404,8 +404,27 @@ int main() {
     }
     assert(transparent > 0 && opaque > 0 && green > 0 && brown > 0);
     assert(image[3] == 0);
-    const auto billboardRepeat = makeArborImpostorAtlas(oak, 17);
+    // The adapter bakes the far atlas from the near tree itself
+    // (bakeArborImpostorFromModel): deterministic, and different from the
+    // legacy skeleton silhouette.
+    auto billboardRepeat = makeArborImpostorAtlas(oak, 17);
+    const auto legacyPixels = billboardRepeat.model->images[0].rgba;
+    bakeArborImpostorFromModel(billboardRepeat, *shared);
     assert(billboardRepeat.model->images[0].rgba == billboard->images[0].rgba);
+    assert(legacyPixels != billboard->images[0].rgba);
+    {   // Quad matches the near tree's real height.
+        float top = 0;
+        for (const auto& v : shared->vertices) top = std::max(top, v.pos.y);
+        float quadTop = 0;
+        for (const auto& v : billboard->vertices) quadTop = std::max(quadTop, v.pos.y);
+        assert(std::fabs(quadTop - top) < 1e-4f);
+    }
+    {   // Legacy silhouette stays available.
+        ArborForestAdapter legacyForest;
+        legacyForest.setImpostorFromNearModel(false);
+        legacyForest.addPrototype(oak, 17);
+        assert(legacyForest.billboardPrototype(oak.speciesId)->images[0].rgba == legacyPixels);
+    }
     assert(billboardRepeat.model->indices == billboard->indices);
     assert(billboardRepeat.viewMaterials.size() == 8);
     for (size_t i = 0; i < billboardRepeat.viewMaterials.size(); ++i) {

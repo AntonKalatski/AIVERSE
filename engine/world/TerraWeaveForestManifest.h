@@ -66,6 +66,15 @@ forestSceneFromManifest(const Json& manifest) {
     settings.view.impostorBlendWidthCm = static_cast<int32_t>(worldInteger(
         j, "impostorBlendWidthCm", 3000, 0, 100000000));
 
+    // "merged": one instanced draw per species/tier/material (whole-tree
+    // LOD by projected size); "perBranch": one node per branch; "auto".
+    {
+        const std::string geometry = j.getStr("treeGeometry", "auto");
+        if (geometry == "merged") settings.treeGeometry = terraweave::ArborTreeGeometry::Merged;
+        else if (geometry == "perBranch") settings.treeGeometry = terraweave::ArborTreeGeometry::PerBranch;
+        else if (geometry != "auto")
+            throw JsonError("world.terraweaveForest.treeGeometry: auto | merged | perBranch");
+    }
     auto scene = std::make_unique<terraweave::TerraWeaveForestScene>(settings);
     if (!j.has("species") || !j["species"].isArray() ||
         j["species"].size() == 0 || j["species"].size() > 64)

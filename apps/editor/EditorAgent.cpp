@@ -296,8 +296,8 @@ void Editor::registerGuiOps() {
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });
     add("view_wind", "Editor-only wind showcase: TerraWeave forest overlay (forest), hierarchical wind masks on its trees (hierarchical), "
         "PHYSIS nature preview grass and wind (nature, grass, flames, sound, windSpeed m/s, windDirection deg towards, playing) and "
-        "the wind-mask debug view (debug: off|parts|depth|weight|skeleton), lodScale 0.25..4 for forest LOD distances. Never edits the map.",
-        R"({"properties":{"forest":{"type":"boolean"},"hierarchical":{"type":"boolean"},"nature":{"type":"boolean"},"grass":{"type":"boolean"},"flames":{"type":"boolean"},"sound":{"type":"boolean"},"playing":{"type":"boolean"},"windSpeed":{"type":"number"},"windDirection":{"type":"number"},"grassQuality":{"type":"integer"},"lodScale":{"type":"number"},"debug":{"type":"string","enum":["off","parts","depth","weight","skeleton"]}}})",
+        "the wind-mask debug view (debug: off|parts|depth|weight|skeleton), lodScale 0.25..4 for forest LOD distances, treeGeometry auto|merged|perBranch (near-tree draw merging). Never edits the map.",
+        R"({"properties":{"forest":{"type":"boolean"},"hierarchical":{"type":"boolean"},"nature":{"type":"boolean"},"grass":{"type":"boolean"},"flames":{"type":"boolean"},"sound":{"type":"boolean"},"playing":{"type":"boolean"},"windSpeed":{"type":"number"},"windDirection":{"type":"number"},"grassQuality":{"type":"integer"},"lodScale":{"type":"number"},"treeGeometry":{"type":"string","enum":["auto","merged","perBranch"]},"debug":{"type":"string","enum":["off","parts","depth","weight","skeleton"]}}})",
         [this](const Json& p) {
             auto flag=[&](const char* key,bool current){
                 if(!p.has(key))return current;
@@ -326,9 +326,19 @@ void Editor::registerGuiOps() {
             const int quality=int(number("grassQuality",float(nature.grassQuality),0,2));
             terraWeaveForestPreview_.setLodScale(number("lodScale",terraWeaveForestPreview_.lodScale(),0.25f,4));
             const bool hierarchical=flag("hierarchical",terraWeaveForestPreview_.hierarchicalWind());
-            if(hierarchical!=terraWeaveForestPreview_.hierarchicalWind()) {
+            auto geometry=terraWeaveForestPreview_.treeGeometry();
+            if(p.has("treeGeometry")) {
+                const auto g=p.getStr("treeGeometry");
+                if(g=="auto")geometry=terraweave::ArborTreeGeometry::Auto;
+                else if(g=="merged")geometry=terraweave::ArborTreeGeometry::Merged;
+                else if(g=="perBranch")geometry=terraweave::ArborTreeGeometry::PerBranch;
+                else throw std::runtime_error("treeGeometry must be auto|merged|perBranch");
+            }
+            if(hierarchical!=terraWeaveForestPreview_.hierarchicalWind() ||
+               geometry!=terraWeaveForestPreview_.treeGeometry()) {
                 if(dev_)terraWeaveForestPreview_.release(*dev_);
                 terraWeaveForestPreview_.setHierarchicalWind(hierarchical);
+                terraWeaveForestPreview_.setTreeGeometry(geometry);
             }
             setTerraWeaveForestPreviewEnabled(flag("forest",terraWeaveForestPreview_.enabled()));
             nature.enabled=flag("nature",nature.enabled);

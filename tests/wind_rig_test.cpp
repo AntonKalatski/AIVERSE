@@ -1,3 +1,5 @@
+#include <algorithm>
+#include "engine/render/ModelLodTransition.h"
 // Hierarchical wind masks: library reuse, rig packing, reference evaluation,
 // model binding, node-tree rigs, sidecars and TerraWeave Arbor trees.
 #include "engine/render/TerraWeaveArborWind.h"
@@ -393,6 +395,56 @@ void forest() {
     std::vector<ModelDraw> old;
     legacy.forEachDraw({near}, {}, [&](const ModelDraw& d) { old.push_back(d); });
     CHECK(old.size() == 1 && !findWindRig(*legacy.prototype(7)));
+    CHECK(legacy.treeGeometry() == ArborTreeGeometry::PerBranch);
+    CHECK(legacy.prototype(7)->nodes.size() > 1);
+    // GPU wind -> merged whole-tree tiers: ONE node, three LOD meshes with at
+    // most two primitives each, so all trees of a species share one draw per
+    // material and tier.
+    CHECK(forest.treeGeometry() == ArborTreeGeometry::Merged);
+    // FloraView tier -> host-chosen whole-tree LOD level.
+    CHECK(n.lodLevel == 0);
+    {
+        FloraBatch mid{7, TreeLOD::Medium, {tree}}, low{7, TreeLOD::Low, {tree}};
+        std::vector<ModelDraw> tiers;
+        forest.forEachDraw({mid, low}, {}, [&](const ModelDraw& d) { tiers.push_back(d); });
+        CHECK(tiers.size() == 2 && tiers[0].lodLevel == 1 && tiers[1].lodLevel == 2);
+        CHECK(draws[1].lodLevel == -1);   // impostor: no chain
+        CHECK(old[0].lodLevel == -1);     // PerBranch: renderer picks per branch
+    }
+    CHECK(forcedModelLod(3, proto->meshes[0].lods, 1).mesh == 1 &&
+          forcedModelLod(3, proto->meshes[0].lods, 9).mesh == 2 &&
+          forcedModelLod(3, proto->meshes[0].lods, 0).mesh == 3);
+    // Calm rigged trees still declare a bounded offset (keeps culling + LOD).
+    ArborForestAdapter calmForest;
+    calmForest.enableHierarchicalWind();
+    calmForest.addPrototype(profile, 11);
+    std::vector<ModelDraw> calmDraws;
+    calmForest.forEachDraw({near}, {}, [&](const ModelDraw& d) { calmDraws.push_back(d); });
+    CHECK(calmDraws.size() == 1 && calmDraws[0].maxVertexOffsetMetres > 0 && !calmDraws[0].useVertexParameters);
+    CHECK(proto->nodes.size() == 1 && proto->meshes.size() == 3);
+    CHECK(proto->meshes[0].lods.size() == 2 && proto->meshes[0].lods[0].mesh == 1 &&
+          proto->meshes[0].lods[1].mesh == 2);
+    for (const auto& mesh : proto->meshes) {
+        CHECK(!mesh.primitives.empty() && mesh.primitives.size() <= 2);
+        for (size_t i = 0; i < mesh.primitives.size(); ++i) CHECK(mesh.primitives[i].material == int(i));
+    }
+    // Coarser tiers really are cheaper.
+    auto tris = [&](int m) { uint32_t n = 0; for (const auto& p : proto->meshes[size_t(m)].primitives) n += p.indexCount; return n; };
+    CHECK(tris(0) > tris(1) && tris(1) > tris(2));
+    // Builder: owners cover every vertex; leaf vertices flutter.
+    std::vector<int32_t> owners;
+    auto merged = makeArborTreeLodModel(profile, 11, {}, &owners);
+    CHECK(owners.size() == merged->vertices.size());
+    CHECK(*std::max_element(owners.begin(), owners.end()) > 0);
+    // Explicit PerBranch with GPU wind keeps the per-branch nodes.
+    ArborForestAdapter branches;
+    branches.enableHierarchicalWind();
+    branches.setTreeGeometry(ArborTreeGeometry::PerBranch);
+    branches.addPrototype(profile, 11);
+    CHECK(branches.prototype(7)->nodes.size() > 1 && findWindRig(*branches.prototype(7)));
+    bool late = false;
+    try { branches.setTreeGeometry(ArborTreeGeometry::Merged); } catch (const std::logic_error&) { late = true; }
+    CHECK(late);
 }
 }
 

@@ -35,6 +35,10 @@ struct ForestSceneSettings {
     uint32_t requestsPerUpdate = 2;  // 1..8
     uint32_t publicationsPerUpdate = 2; // 1..8
     FloraView view{0, 0, 3000, 9000, 12000, 24000, 650, 3000};
+    // Near-tree geometry (ArborForestAdapter::setTreeGeometry): Merged draws
+    // every tree of a species/tier/material in one instanced call.
+    ArborTreeGeometry treeGeometry = ArborTreeGeometry::Auto;
+    TreeLodSettings treeLod;
 };
 
 struct ForestSceneStats {
@@ -119,6 +123,7 @@ public:
         adapter_.setWindTransitionRange(
             std::min<int32_t>(settings_.view.mediumRangeCm,windEnd-1),
             windEnd);
+        adapter_.setTreeGeometry(settings_.treeGeometry,settings_.treeLod);
     }
 
     void addSpecies(const TreeProfile& profile,

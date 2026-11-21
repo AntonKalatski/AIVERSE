@@ -269,4 +269,114 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
     return model;
 }
 
+
+// Whole-tree LOD chain with every branch of a detail tier MERGED into one
+// mesh: one node, three MeshDefs (Full -> Reduced -> Minimal), each with
+// exactly two primitives (bark, foliage). All trees of a species and tier
+// share one primitive, so Renderer3D draws a whole forest of that species
+// with ONE instanced draw per material (per instance-limit chunk) instead of
+// one draw per branch node. The renderer picks the tier per TREE by its
+// projected size (MeshDef::lods). Use with GPU hierarchical wind
+// (vertex owners -> rig parts); CPU per-branch poses need the BranchLOD model.
+struct TreeLodSettings {
+    ArborMeshSettings mesh{8, true};
+    float reducedPixels = 260.0f; // whole-tree projected diameter
+    float minimalPixels = 110.0f;
+};
+
+inline std::unique_ptr<render::Model> makeArborTreeLodModel(
+        const TreeProfile& profile, uint64_t seed,
+        TreeLodSettings settings = {},
+        std::vector<int32_t>* vertexOwners = nullptr) {
+    if (vertexOwners) vertexOwners->clear();
+    if (!std::isfinite(settings.reducedPixels) ||
+        !std::isfinite(settings.minimalPixels) ||
+        settings.reducedPixels <= settings.minimalPixels ||
+        settings.minimalPixels <= 0 ||
+        settings.mesh.radialSegments < 3 || settings.mesh.radialSegments > 16 ||
+        settings.mesh.leafPlanes < 1 || settings.mesh.leafPlanes > 2)
+        throw std::invalid_argument("TerraWeave tree LOD settings");
+    const TreeSkeleton tree = generateTree(profile, seed, TreeLOD::High);
+    auto model = std::make_unique<render::Model>();
+    model->path = "terraweave/arbor-tree/" + std::to_string(profile.speciesId) +
+                  "/" + std::to_string(seed);
+    model->batching.independentShadowLod = true;
+    model->batching.autoLod = false; // explicit merged tiers below
+    render::Material bark;
+    bark.name = "TerraWeave Branch Bark";
+    bark.baseColor = {0.31f, 0.18f, 0.11f, 1.0f};
+    bark.roughness = 0.9f;
+    render::Material foliage;
+    foliage.name = "TerraWeave Branch Foliage";
+    foliage.baseColor = {0.21f, 0.43f, 0.16f, 1.0f};
+    foliage.roughness = 0.85f;
+    foliage.doubleSided = true;
+    if(settings.mesh.organicBranches)foliage.thinTransmission=.35f;
+    foliage.alpha = render::AlphaMode::Opaque;
+    foliage.vertexColors=false;
+    model->materials = {bark, foliage};
+
+    for (const BranchDetail detail : {BranchDetail::Full, BranchDetail::Reduced,
+                                      BranchDetail::Minimal}) {
+        // Gather all branches of this tier: bark first, then foliage, so each
+        // material is ONE contiguous vertex/index range.
+        std::vector<render::ModelVertex> verts[2];
+        std::vector<int32_t> owners[2];
+        std::vector<uint32_t> idx[2];
+        for (size_t branch = 0; branch < tree.branches.size(); ++branch) {
+            const ArborMesh geometry = buildArborBranchMesh(tree, branch, detail, settings.mesh);
+            std::vector<uint32_t> remap(geometry.vertices.size(), 0);
+            for (size_t i = 0; i < geometry.vertices.size(); ++i) {
+                const ArborVertex& v = geometry.vertices[i];
+                if (v.material > 1) throw std::logic_error("TerraWeave tree material");
+                render::ModelVertex vertex;
+                vertex.pos = {v.x * 0.01f, v.y * 0.01f, v.z * 0.01f};
+                vertex.nrm = {v.nx, v.ny, v.nz};
+                vertex.uv = {v.u, v.v};
+                if (v.material == 1) {
+                    const int64_t y = std::clamp<int64_t>(v.y, 0, std::max<int32_t>(1, tree.heightCm));
+                    const uint32_t windWeight = static_cast<uint32_t>(
+                        y * 255 / std::max<int32_t>(1, tree.heightCm));
+                    vertex.color = (windWeight << 24) | 0x00ffffffu;
+                }
+                remap[i] = uint32_t(verts[v.material].size());
+                verts[v.material].push_back(vertex);
+                owners[v.material].push_back(int32_t(branch));
+            }
+            for (const uint32_t index : geometry.indices) {
+                if (index >= geometry.vertices.size())
+                    throw std::logic_error("TerraWeave tree invalid mesh index");
+                const uint8_t mat = geometry.vertices[index].material;
+                idx[mat].push_back(remap[index]);
+            }
+        }
+        render::MeshDef mesh;
+        mesh.name = std::string("Arbor tree LOD") + std::to_string(static_cast<int>(detail));
+        for (uint8_t mat = 0; mat < 2; ++mat) {
+            if (idx[mat].empty()) continue;
+            const uint32_t baseVertex = uint32_t(model->vertices.size());
+            const uint32_t baseIndex = uint32_t(model->indices.size());
+            model->vertices.insert(model->vertices.end(), verts[mat].begin(), verts[mat].end());
+            if (vertexOwners) vertexOwners->insert(vertexOwners->end(), owners[mat].begin(), owners[mat].end());
+            for (const uint32_t i : idx[mat]) model->indices.push_back(baseVertex + i);
+            render::Primitive p;
+            p.material = mat;
+            p.firstVertex = baseVertex;
+            p.vertexCount = uint32_t(verts[mat].size());
+            p.firstIndex = baseIndex;
+            p.indexCount = uint32_t(idx[mat].size());
+            mesh.primitives.push_back(p);
+        }
+        model->meshes.push_back(std::move(mesh));
+    }
+    model->meshes[0].lods = {{1, settings.reducedPixels}, {2, settings.minimalPixels}};
+    render::Node node;
+    node.name = "Arbor tree";
+    node.mesh = 0;
+    model->nodes.push_back(std::move(node));
+    render::generateTangents(model->vertices,model->indices,0,uint32_t(model->indices.size()));
+    model->finalize();
+    return model;
+}
+
 } // namespace aiverse::terraweave

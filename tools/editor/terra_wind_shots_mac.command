@@ -14,21 +14,24 @@ if [[ ! -d /Volumes/KINGSTON || ! -w /Volumes/KINGSTON ]]; then echo "KINGSTON m
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 mkdir -p "$OUT/tmp"; export TMPDIR="$OUT/tmp"
 echo "== build"
-cmake --build "$OUT/native" --target aiverse_editor --parallel 8 > "$ROOT/.wind-qa/terra-build.log" 2>&1; rc=$?
+cmake --build "$OUT/native" --target aiverse_editor aiverse_wind_rig_test aiverse_terraweave_model_test --parallel 8 > "$ROOT/.wind-qa/terra-build.log" 2>&1; rc=$?
 grep -E "error:|FAILED" "$ROOT/.wind-qa/terra-build.log" | head -40
 [[ $rc == 0 ]] || { echo "== FAILED build rc=$rc"; exit 1; }
 BIN="$(find "$OUT/native" -maxdepth 6 -type f -perm -u+x \( -name aiverse_editor -o -name AiverseEditor \) | head -1)"
 echo "editor: $BIN"
+ctest --test-dir "$OUT/native" -R "^(wind_rig|terraweave_model)$" --output-on-failure | grep -E "tests passed|Failed|\*\*\*|Test #"
 PROJ="$ROOT/.wind-qa/terra-project"
 rm -rf "$PROJ"; cp -R "$ROOT/templates/wildfire" "$PROJ"
 rm -rf "$ROOT/.wind-qa/terra"
 PORT=47931
 "$BIN" --project "$PROJ" --engine "$ROOT" --listen $PORT > "$ROOT/.wind-qa/terra-editor.log" 2>&1 &
 PID=$!
-python3 "$ROOT/tools/editor/terra_wind_shots.py" $PORT "$ROOT/.wind-qa/terra" &
+SCRIPT="${TERRA_SCRIPT:-terra_wind_shots.py}"; DEST="${TERRA_OUT:-terra}"
+rm -rf "$ROOT/.wind-qa/$DEST"
+python3 "$ROOT/tools/editor/$SCRIPT" $PORT "$ROOT/.wind-qa/$DEST" &
 DRV=$!
 for i in $(seq 1 300); do sleep 1; kill -0 $DRV 2>/dev/null || break; kill -0 $PID 2>/dev/null || { echo "editor exited"; break; }; done
 kill $DRV 2>/dev/null; kill $PID 2>/dev/null
 grep -iE "error|exception|failed" "$ROOT/.wind-qa/terra-editor.log" | head -20
-ls -la "$ROOT/.wind-qa/terra" 2>/dev/null
+ls -la "$ROOT/.wind-qa/$DEST" 2>/dev/null
 echo "== DONE"

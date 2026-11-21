@@ -38,6 +38,8 @@ struct ForestCameraCm {
     int64_t x = 0, z = 0;
 };
 
+enum class ArborTreeGeometry : uint8_t { Auto, PerBranch, Merged };
+
 class ArborForestAdapter {
 public:
     // Build a shared procedural geometry prototype off the render thread.
@@ -71,21 +73,51 @@ public:
         hierarchicalWindScale_=metresPerMps;
     }
 
+    // Near-tree geometry. PerBranch: one render node per branch with its own
+    // screen-size LOD (needed for CPU per-branch wind poses), but one draw
+    // per branch node. Merged: whole-tree Full/Reduced/Minimal meshes, one
+    // instanced draw per species, tier and material. Auto (default) = Merged
+    // when GPU hierarchical wind is on (it bends branches in the shader),
+    // otherwise PerBranch. Call before the first addPrototype.
+    void setTreeGeometry(ArborTreeGeometry geometry,TreeLodSettings lod={}) {
+        if(!models_.empty())
+            throw std::logic_error("TerraWeave tree geometry: set before addPrototype");
+        treeGeometry_=geometry;
+        treeLod_=lod;
+    }
+    ArborTreeGeometry treeGeometry() const {
+        if(treeGeometry_!=ArborTreeGeometry::Auto)return treeGeometry_;
+        return hierarchicalWind_?ArborTreeGeometry::Merged:ArborTreeGeometry::PerBranch;
+    }
+
     // Optional host hook (editor / native presentation): assign textures or
     // material tweaks to each near-tree prototype right after mesh build,
     // before GPU upload. Called once per species, never per instance.
     using PrototypeDecorator=std::function<void(uint32_t speciesId,render::Model& model)>;
     void setPrototypeDecorator(PrototypeDecorator decorator) {decorator_=std::move(decorator);}
+    // Far impostor atlas: rasterized from the near tree mesh and textures
+    // (default) or the legacy skeleton disk/line silhouette. Before addPrototype.
+    void setImpostorFromNearModel(bool on) {impostorFromNearModel_=on;}
+    bool impostorFromNearModel() const {return impostorFromNearModel_;}
 
     void addPrototype(const TreeProfile& profile, uint64_t meshSeed,
                       ArborMeshSettings mesh = {8, true}) {
         if (profile.speciesId == 0 || models_.contains(profile.speciesId))
             throw std::invalid_argument("TerraWeave duplicate/zero forest species");
-        BranchLodSettings settings;
-        settings.mesh = mesh;
         std::vector<int32_t> owners;
-        auto model = makeArborBranchLodModel(profile, meshSeed, settings,
-                                             hierarchicalWind_ ? &owners : nullptr);
+        const bool merged=treeGeometry()==ArborTreeGeometry::Merged;
+        std::unique_ptr<render::Model> model;
+        if(merged) {
+            TreeLodSettings settings=treeLod_;
+            settings.mesh=mesh;
+            model=makeArborTreeLodModel(profile,meshSeed,settings,
+                                        hierarchicalWind_ ? &owners : nullptr);
+        } else {
+            BranchLodSettings settings;
+            settings.mesh = mesh;
+            model = makeArborBranchLodModel(profile, meshSeed, settings,
+                                            hierarchicalWind_ ? &owners : nullptr);
+        }
         // BranchLOD nodes and the skeleton use the same ordered seed. Store
         // compact branch origins once per SPECIES, never per cosmetic tree.
         if(decorator_)decorator_(profile.speciesId,*model);
@@ -106,9 +138,16 @@ public:
             pivots.push_back({float(branch.x0)*0.01f,
                               float(branch.y0)*0.01f,
                               float(branch.z0)*0.01f});
-        if(pivots.size()!=model->nodes.size())
+        // Merged trees have one node: no CPU per-branch pose (GPU rig or
+        // whole-tree lean + crown wind instead).
+        if(merged) pivots.clear();
+        else if(pivots.size()!=model->nodes.size())
             throw std::logic_error("TerraWeave branch pose/skeleton mismatch");
         auto impostor = makeArborImpostorAtlas(profile, meshSeed);
+        // Far impostors are baked from the actual near tree (geometry +
+        // textures from the decorator), so near and far trees match.
+        if(impostorFromNearModel_)
+            bakeArborImpostorFromModel(impostor,*model);
         models_.emplace(profile.speciesId, std::move(model));
         billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
@@ -415,7 +454,19 @@ public:
                     0x54eaa75eedc0de11ULL);
                 if (draw.persistentId == 0) draw.persistentId = 1;
                 draw.flags = render::kDrawStatic;
+                // Merged trees: Terra's FloraView distance tier picks the
+                // whole-tree mesh (High=Full, Medium=Reduced, Low=Minimal).
+                // The renderer's projected-size metric is too conservative
+                // for a whole 20 m tree and would keep it at Full.
+                if(batch.lod!=TreeLOD::Impostor && model->nodes.size()==1 &&
+                   !model->meshes.empty() && model->meshes[0].lods.size()==2)
+                    draw.lodLevel=batch.lod==TreeLOD::High?0:batch.lod==TreeLOD::Medium?1:2;
                 if(rigWind) {
+                    // Rig materials always carry a vertex-offset graph. A zero
+                    // bound means "unbounded" to Renderer3D (no culling, no
+                    // LOD), so calm trees declare a tiny bound; scene wind
+                    // (Renderer3D::applyWindRig) widens it when it applies.
+                    draw.maxVertexOffsetMetres=0.01f;
                     // One GPU pass bends trunk, branches, twigs and leaves.
                     if(localWindActive) {
                         render::wind::SceneWind sw;
@@ -626,6 +677,9 @@ private:
     std::map<uint32_t,bool> evergreen_;
     std::map<uint32_t,uint64_t> prototypeSeeds_;
     PrototypeDecorator decorator_;
+    bool impostorFromNearModel_=true;
+    ArborTreeGeometry treeGeometry_=ArborTreeGeometry::Auto;
+    TreeLodSettings treeLod_;
     bool hierarchicalWind_=false;
     float hierarchicalWindScale_=0.035f;
     render::wind::WindMaskLibrary windMasks_;

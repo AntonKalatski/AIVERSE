@@ -307,6 +307,11 @@ struct ModelDraw {
     float4 vertexParameters{0, 0, 0, 0};
     // Bounded vertexOffset (metres), zero means unknown displacement.
     float maxVertexOffsetMetres = 0;
+    // Host-chosen level of every node's MeshDef::lods chain (0 = base mesh,
+    // n = lods[n-1], clamped). Skips projected-size selection and crossfade;
+    // used by hosts with their own distance tiers (TerraWeave FloraView).
+    // -1 = renderer picks by projected size.
+    int lodLevel = -1;
 };
 
 enum DrawFlags : uint32_t {

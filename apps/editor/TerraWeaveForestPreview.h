@@ -39,6 +39,9 @@ public:
     // Distance multiplier for near-model LOD ranges (beauty captures); 1 = default.
     float lodScale() const { return lodScale_; }
     void setLodScale(float scale) { lodScale_ = std::clamp(scale, 0.25f, 4.f); }
+    // Near-tree geometry (merged whole-tree tiers vs one node per branch).
+    terraweave::ArborTreeGeometry treeGeometry() const { return treeGeometry_; }
+    void setTreeGeometry(terraweave::ArborTreeGeometry geometry) { treeGeometry_ = geometry; }
     void setEngineDir(std::string dir) { engineDir_ = std::move(dir); }
     size_t visibleInstances() const { return visibleCount_; }
     size_t generatedInstances() const { return placements_.size(); }
@@ -72,6 +75,7 @@ public:
         if (!forest_) {
             forest_ = std::make_unique<terraweave::ArborForestAdapter>();
             if (hierarchicalWind_) forest_->enableHierarchicalWind();
+            forest_->setTreeGeometry(treeGeometry_);
             if (botanical_) addBotanicalPrototypes();
             else addClassicPrototypes();
         }
@@ -253,6 +257,7 @@ private:
     bool hierarchicalWind_ = true;
     bool botanical_ = true;
     float lodScale_ = 1;
+    terraweave::ArborTreeGeometry treeGeometry_ = terraweave::ArborTreeGeometry::Auto;
     std::string engineDir_;
     std::vector<std::pair<uint32_t, uint32_t>> speciesWeights_;
     uint64_t cachedRevision_ = std::numeric_limits<uint64_t>::max();

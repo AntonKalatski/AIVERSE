@@ -1298,7 +1298,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                 error, shadowSize_, shadowSize_, z01));
                         if (!st.inView && !st.inShadow)
                             pixels = std::numeric_limits<float>::infinity();
-                        lod = selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
+                        lod = d.lodLevel >= 0 ? forcedModelLod(node.mesh, mesh.lods, d.lodLevel)
+                                              : selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
                     }
                     st.mesh = lod.mesh;
                     st.level = lod.level;
@@ -1375,7 +1376,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         int shadowLodMesh=node.mesh;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
-            float3 lodMin = baseMesh.boundsMin-margin, lodMax = baseMesh.boundsMax+margin;
+            // Detail is chosen by the projected size of the geometry itself.
+            // The vertex-offset margin (wind, up to 10 m) only widens the
+            // culling box: on a 2 m branch it would pin every node at LOD0.
+            float3 lodMin = baseMesh.boundsMin, lodMax = baseMesh.boundsMax;
             if (skinLod) {
                 lodMin = {1e30f, 1e30f, 1e30f}; lodMax = {-1e30f, -1e30f, -1e30f};
                 const Skin& skin = m->skins[size_t(node.skin)];
@@ -1397,13 +1401,15 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                        sceneW_, sceneH_, zeroToOne) : 0.0f;
             float pixels = cameraPixels;
             const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne):0.f;
-            if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
+            if(d.lodLevel>=0)shadowLodMesh=forcedModelLod(node.mesh,baseMesh.lods,d.lodLevel).mesh;
+            else if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
             else if(nodeShadow)pixels=std::max(pixels,shadowPixels);
             if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
             const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
                 std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
             const float fadeWidth = opaque && !m->geometry && matQuality_!=MaterialQuality::Low ? modelLodFadeWidth_ : 0;
-            lodBlend=selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
+            lodBlend=d.lodLevel>=0?forcedModelLod(node.mesh,baseMesh.lods,d.lodLevel)
+                                   :selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
             meshIndex=lodBlend.mesh;level=lodBlend.level;
             // This extra camera-only LOD selection is a diagnostic, not
             // part of rendering. Avoid doing it on every frame when the
