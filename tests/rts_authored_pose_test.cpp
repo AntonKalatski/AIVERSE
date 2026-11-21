@@ -19,10 +19,12 @@ static std::unique_ptr<Simulation> make(const Json& map, const std::string& base
     sim->setup(rules, map);
     return sim;
 }
+// Structures snap to their footprint on spawn: take the nearest unit within 2 cells.
 static Entity findAt(Simulation& sim, float x, float z) {
-    Entity found;
-    sim.world().each<Transform>([&](Entity e, Transform& t) {
-        if (std::abs(t.pos.x.toDouble() - x) < 1e-3 && std::abs(t.pos.z.toDouble() - z) < 1e-3) found = e;
+    Entity found; double best = 4.0;
+    sim.world().each<Transform, g::Unit>([&](Entity e, Transform& t, g::Unit&) {
+        const double dx = t.pos.x.toDouble() - x, dz = t.pos.z.toDouble() - z, d = dx * dx + dz * dz;
+        if (d < best) { best = d; found = e; }
     });
     return found;
 }
