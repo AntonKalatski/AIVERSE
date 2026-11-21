@@ -93,7 +93,7 @@ void registerGeometryOps(Workspace& ws){
         r.set("suggestedPolicy",policy);r.set("hlodCandidate",Json::fromBool(rigid&&opaque&&context=="scenery"));r.set("note",Json::string("Heuristic recommendation, not a performance measurement. HLOD only for immutable decorative scenery."));return r;
     }});
     const auto policy=Json::parse(R"({"type":"object","properties":{"type":{"type":"string"},"policy":{"type":"object"}},"required":["type","policy"]})");
-    ws.registerOp({"geometry_policy_set","Validate and save an RTS type's view.geometry policy. Existing LOD and instancing settings are preserved.",policy,[&ws](const Json& p){
+    ws.registerOp({"geometry_policy_set","Validate and save a rules type's view.geometry policy. Existing LOD and instancing settings are preserved.",policy,[&ws](const Json& p){
         render::parseGeometryPolicy(p["policy"]);const auto type=p.getStr("type");
         if(!ws.project.rulesJson["types"][type].isObject())throw std::runtime_error("unknown type '"+type+"'");
         // Avoid interpreting user IDs as JSON paths: merge an object rooted at types.
@@ -103,7 +103,7 @@ void registerGeometryOps(Workspace& ws){
     const auto scene=Json::parse(R"({"type":"object","properties":{"scene":{"type":"object"}},"required":["scene"]})");
     ws.registerOp({"geometry_scene_validate","Validate static scenery/HLOD schema without saving. Does not load assets or render.",scene,[](const Json& p){render::GeometryScene::validate(p["scene"]);return ok();}});
     ws.registerOp({"geometry_scene_get","Read the saved geometry.json static scenery manifest.",Json::object(),[&ws](const Json&){auto r=ok();r.set("scene",Json::parseFile(projectPath(ws,"geometry.json").string()));return r;}});
-    ws.registerOp({"geometry_scene_set","Validate and atomically save geometry.json. RTS: applies game-wide static scenery and rebuilds views. FPS: set map geometryScene=geometry.json separately. Never move gameplay entities into static scenery.",scene,[&ws](const Json& p){
+    ws.registerOp({"geometry_scene_set","Validate and atomically save geometry.json. Grid maps: applies game-wide static scenery and rebuilds views. World-space maps: set map geometryScene=geometry.json separately. Never move gameplay entities into static scenery.",scene,[&ws](const Json& p){
         render::GeometryScene::validate(p["scene"]);
         if(fs::is_symlink(fs::path(ws.project.dir)/"geometry.json.tmp"))throw std::runtime_error("geometry scene: temporary path is symlink");
         const auto file=projectPath(ws,"geometry.json"),tmp=projectPath(ws,"geometry.json.tmp");
@@ -117,7 +117,7 @@ void registerGeometryOps(Workspace& ws){
             for(auto& mesh:m->meshes)for(auto& primitive:mesh.primitives)if(primitive.morphTargets)throw std::runtime_error("geometry scene: morph assets must remain entities");}
         if(fs::is_symlink(tmp))throw std::runtime_error("geometry scene: temporary path is symlink");
         {std::ofstream f(tmp,std::ios::binary|std::ios::trunc);f<<text;f.close();if(!f)throw std::runtime_error("geometry scene: write failed");}fs::rename(tmp,file);
-        if(!ws.project.isFps()){Json q=Json::object();q.set("path",Json::string("geometryScene"));q.set("value",Json::string("geometry.json"));auto result=ws.call("set_manifest",q);if(result.has("error"))return result;}
+        if(!ws.project.worldSpaceMaps()){Json q=Json::object();q.set("path",Json::string("geometryScene"));q.set("value",Json::string("geometry.json"));auto result=ws.call("set_manifest",q);if(result.has("error"))return result;}
         ws.note({Change::Rules,0,0,-1,-1,-1,"Geometry scene updated"});return ok();
     }});
 }

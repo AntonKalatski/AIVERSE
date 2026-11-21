@@ -173,6 +173,7 @@ public:
             // This renderer revision has no adaptive CPU-MDI policy owner.
             // Camera LOD state remains scoped by the prepared-frame adapter.
             renderer_.beginScene(view.camera,width,height);
+            renderer_.setVisibilityMask(view.visibilityMask);
             submit(view,renderer_); // renderer must be initialized by the host
             renderer_.render(pass,post);
             // Particle and other forward overlays draw into the live pass

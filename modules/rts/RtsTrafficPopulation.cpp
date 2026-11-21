@@ -263,7 +263,7 @@ void Traffic::population(Simulation& sim, TrafficStore& st, const std::vector<Ve
     for (size_t k = 0; k < slice; ++k) {
         const size_t id = st.citizenCursor++ % n;
         TrafficCitizen& c = st.citizens[id];
-        if (m_->state(sim).trig.vars["tow_worker_"+std::to_string(id)].raw>0 || m_->state(sim).trig.vars["tow_claimant_"+std::to_string(id)].raw>0) continue;
+        if (c.held) continue;   // a script / native module runs him (TrafficCitizen::held)
         if (c.state == kCitizenDead || c.state == kCitizenGang) continue;
         if (c.state == kCitizenJail) { if (sim.tick() >= c.eta) c.state = kCitizenHome; continue; }
         if (c.e.valid() && !(w.alive(c.e) && w.get<Unit>(c.e).hp.raw > 0)) {   // his body (his car) vanished without a report: assume the hospital
@@ -275,20 +275,14 @@ void Traffic::population(Simulation& sim, TrafficStore& st, const std::vector<Ve
             if (sim.tick() >= c.eta) { c.state = kCitizenHome; c.leg = kLegWalk; }
             continue;
         }
-        // Kingston family calendar v2: native/Lua policy submits requests through saved variables.
-        auto& familyVars=m_->state(sim).trig.vars;
-        const auto suffix=std::to_string(id);
-        auto value=[&](const std::string& key) {auto it=familyVars.find(key);return it==familyVars.end()?Fixed{}:it->second;};
-        const bool off=value("resident_schedule_off_"+suffix).raw>0;
-        // A leisure controller owns this same resident until return/cancellation.
-        if(value("resident_visit_active_"+suffix).raw>0)continue;
-        const int request=int(value("resident_journey_"+suffix).toInt());
+        // A trip a script / native module asked for (TrafficCitizen::journey): 1 to work, 2 home (from home: via the school).
+        const bool off=c.off;
+        const int request=c.journey;
         if(request && (c.state==kCitizenHome || c.state==kCitizenWork)) {
             const int savedWork=c.work;
-            // A pickup from home is a return journey via school, with home as its origin.
             if(request==2 && c.state==kCitizenHome)c.work=c.home;
             if(c.work>=0)depart(sim,st,int32_t(id),request==1?kCitizenToWork:kCitizenToHome);
-            c.work=savedWork;familyVars["resident_journey_"+suffix]={};
+            c.work=savedWork;c.journey=0;
             continue;
         }
         if (c.state == kCitizenHome) {

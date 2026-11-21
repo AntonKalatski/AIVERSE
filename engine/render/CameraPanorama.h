@@ -32,7 +32,7 @@ uniform sampler2D tex3;uniform sampler2D tex4;uniform sampler2D tex5;
 in vec2 uv;out vec4 outColor;
 void main(){
 float lon=(uv.x-.5)*6.28318530718;
-float lat=(.5-uv.y)*3.14159265359;
+float lat=(uv.y-.5)*3.14159265359; // uv from NDC: y=0 is the bottom row (nadir)
 vec3 dir=vec3(sin(lon)*cos(lat),sin(lat),-cos(lon)*cos(lat));
 vec3 a=abs(dir);vec2 t;int f;
 if(a.x>=a.y&&a.x>=a.z){
@@ -62,7 +62,7 @@ texture2d<float> tex0 [[texture(0)]],texture2d<float> tex1 [[texture(1)]],
 texture2d<float> tex2 [[texture(2)]],texture2d<float> tex3 [[texture(3)]],
 texture2d<float> tex4 [[texture(4)]],texture2d<float> tex5 [[texture(5)]],
 sampler smp [[sampler(0)]]) {
-float lon=(in.uv.x-.5f)*6.28318530718f,lat=(.5f-in.uv.y)*3.14159265359f;
+float lon=(in.uv.x-.5f)*6.28318530718f,lat=(in.uv.y-.5f)*3.14159265359f;
 float3 dir=float3(sin(lon)*cos(lat),sin(lat),-cos(lon)*cos(lat));
 float3 a=abs(dir);float2 t;int face;
 if(a.x>=a.y&&a.x>=a.z){

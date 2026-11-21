@@ -301,7 +301,7 @@ before claiming it works end-to-end.
 
 After the main merge `810feba70f01cdc35003ac80ea8486f39dc16049`,
 the editor Scene adds an opt-in transparent heatmap drawn **in the actual 3D
-view**, projected through the existing `RTSCamera::worldToScreen`, plus
+view**, projected through the existing `Camera::worldToScreen`, plus
 world-space rings for WindZone, StormEvent and GravityField. The toolbar
 controls live under **Мир → PHYSIS · Природа**; toggle **Показать 3D-оверлей
 в «Сцене»**. This is an ImGui presentation overlay (not shaded 3D geometry or
@@ -512,7 +512,7 @@ off.
 
 Pivot modes: Active, Average, Bounds Center, World Origin, Custom XYZ.
 These choices are session-only; no authored ECS/map schema changes.
-Move mode projects X/Y/Z axes and uses RTSCamera::screenRay plus the
+Move mode projects X/Y/Z axes and uses Camera::screenRay plus the
 ray/axis closest point (not a screen delta) to move a group in world metres.
 Parallel/behind-eye solutions are rejected. Pivot-only snap preserves
 the internal arrangement of selected sources.

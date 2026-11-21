@@ -1,4 +1,4 @@
-// Spline road network: map "roadNetwork" parsing and the shared geometry (RtsRoadNet.h, docs/roads.md).
+// Spline road network: map "roadNetwork" parsing and the shared geometry (RoadNet.h, docs/roads.md).
 #include "RoadNet.h"
 #include <algorithm>
 #include <map>

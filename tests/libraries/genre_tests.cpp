@@ -1,13 +1,13 @@
-#include <aiverselib/genre/NarrativeCinematicBridge.h>
-#include <aiverselib/genre/Configured.h>
-#include <aiverselib/genre/Persistence.h>
-#include <aiverselib/genre/Data.h>
-#include <aiverselib/genre/LocomotionModes.h>
-#include <aiverselib/genre/CombatConfigured.h>
-#include <aiverselib/genre/CombatData.h>
-#include <aiverselib/genre/NarrativeConfigured.h>
-#include <aiverselib/genre/NarrativeSceneData.h>
-#include <aiverselib/genre/NarrativeScenePersistence.h>
+#include <aiverselib/mechanics/NarrativeCinematicBridge.h>
+#include <aiverselib/mechanics/Configured.h>
+#include <aiverselib/mechanics/Persistence.h>
+#include <aiverselib/mechanics/Data.h>
+#include <aiverselib/mechanics/LocomotionModes.h>
+#include <aiverselib/mechanics/CombatConfigured.h>
+#include <aiverselib/mechanics/CombatData.h>
+#include <aiverselib/mechanics/NarrativeConfigured.h>
+#include <aiverselib/mechanics/NarrativeSceneData.h>
+#include <aiverselib/mechanics/NarrativeScenePersistence.h>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -47,11 +47,11 @@ void matches(){
     CaptureState capture;CHECK(stepCapture(capture,{{1,1}},3,0));CHECK(stepCapture(capture,{{1,1},{2,1}},3,1)&&capture.progress==1);CHECK(stepCapture(capture,{{1,1}},3,2));auto taken=stepCapture(capture,{{1,1}},3,3);CHECK(taken&&*taken&&capture.owner==1);CHECK(!stepCapture(capture,{},3,3));roundtrip(capture);
 }
 void narrative(const std::string& root){
-    auto graph=readStory(Json::parseFile(root+"/examples/libraries/genre/story.json"));auto s=beginStory(graph,1);CHECK(s&&storyChoices(graph,*s)==std::vector<int64_t>{2});CHECK(!chooseStory(graph,*s,1,1));
+    auto graph=readStory(Json::parseFile(root+"/examples/libraries/mechanics/story.json"));auto s=beginStory(graph,1);CHECK(s&&storyChoices(graph,*s)==std::vector<int64_t>{2});CHECK(!chooseStory(graph,*s,1,1));
     s=beginStory(graph,1,{{1,1}});CHECK(s&&chooseStory(graph,*s,1,1)&&s->node==2&&s->facts.at(2)==1);CHECK(!chooseStory(graph,*s,1,1));roundtrip(*s);CHECK(chooseStory(graph,*s,1,2)&&s->complete);roundtrip(*s);
     auto bad=graph;bad[1].choices[0].next=99;CHECK(!valid(bad));
     auto overflow=graph;overflow[1].choices[0].changes={{2,1,true}};auto initial=beginStory(overflow,1,{{1,1},{2,INT64_MAX}});auto before=save(*initial);CHECK(!chooseStory(overflow,*initial,1,1)&&save(*initial)==before);
-    auto settings=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/settings.json"));CHECK(settings.value&&motionConfig(*settings.value).maxJumps==2&&matchConfig(*settings.value).roundsToWin==2);
+    auto settings=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/settings.json"));CHECK(settings.value&&motionConfig(*settings.value).maxJumps==2&&matchConfig(*settings.value).roundsToWin==2);
 }
 // Locomotion mode machine: each mode's trajectory, save/restore and invalid-data rejection.
 namespace loco {
@@ -197,7 +197,7 @@ void rejection(const std::string& root){
     auto unknown=parse("{\"schemaVersion\":1,\"locomotion\":{\"ladderSpeed\":3}}");CHECK(!unknown.value&&unknown.errors.at(0)=="locomotion.ladderSpeed: unknown field");
     auto range=parse("{\"schemaVersion\":1,\"locomotion\":{\"mantleTicks\":1}}");CHECK(!range.value&&range.errors.at(0)=="locomotion.mantleTicks: integer out of range");
     auto type=parse("{\"schemaVersion\":1,\"locomotion\":{\"climbEnabled\":1}}");CHECK(!type.value&&type.errors.at(0)=="locomotion.climbEnabled: expected boolean");
-    auto example=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/settings.json"));CHECK(example.value);
+    auto example=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/settings.json"));CHECK(example.value);
     auto configured=locomotionModeConfig(*example.value);CHECK(valid(configured)&&configured.motion.maxJumps==2&&configured.staminaMax==240&&configured.maxSlope==Fixed::fromRatio(50000,360000)&&!configured.autoLedgeGrab);
 }
 }
@@ -294,7 +294,7 @@ void combatPersistence(){
     roundtrip(actor.dodge);roundtrip(actor.poise);roundtrip(actor.lock);
 }
 void combatData(const std::string& root){
-    auto settings=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/settings.json"));CHECK(settings.value);
+    auto settings=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/settings.json"));CHECK(settings.value);
     CHECK(dodgeConfig(*settings.value).cooldown==24&&guardConfig(*settings.value).parryTicks==5&&lockOnConfig(*settings.value).range==12_fx);
     CHECK(valid(dodgeConfig(*settings.value))&&valid(guardConfig(*settings.value))&&valid(poiseConfig(*settings.value))&&valid(lockOnConfig(*settings.value)));
     auto defaults=aiverse::lib::gameplay::readGameplaySettings(Json::parse(R"({"schemaVersion":1})"));CHECK(defaults.value&&poiseConfig(*defaults.value).maximum==100000&&lockOnConfig(*defaults.value).halfAngle==Fixed::fromRatio(1,4));
@@ -303,7 +303,7 @@ void combatData(const std::string& root){
     CHECK(error(R"({"schemaVersion":1,"combat":{"parryTicks":5000}})","combat.parryTicks: integer out of range"));
     CHECK(error(R"({"schemaVersion":1,"combat":{"stamina":1}})","combat.stamina: unknown field"));
     CHECK(error(R"({"schemaVersion":1,"combat":{"lockRangeMilli":30000,"lockBreakMilli":20000}})","combat.lockRangeMilli: must not exceed lockBreakMilli"));
-    AttackSet defs{{1,attackConfig(*settings.value,1)}};auto boxes=readHitboxes(Json::parseFile(root+"/examples/libraries/genre/hitboxes.json"),defs);
+    AttackSet defs{{1,attackConfig(*settings.value,1)}};auto boxes=readHitboxes(Json::parseFile(root+"/examples/libraries/mechanics/hitboxes.json"),defs);
     CHECK(boxes.at(1).size()==2&&boxes.at(1)[1].shape.kind==ShapeKind::Box&&boxes.at(1)[0].shape.radius==milli(250)&&valid(defs,boxes));
     auto rejects=[&](const std::string& text,const std::string& expected){try{readHitboxes(Json::parse(text),defs);}catch(const JsonError& e){return std::string(e.what()).find(expected)!=std::string::npos;}return false;};
     CHECK(rejects(R"({"attacks":[{"attack":9,"hitboxes":[]}]})","hitboxes.attack 9: unknown attack"));
@@ -316,11 +316,11 @@ void combatData(const std::string& root){
 }
 void combatActions(const std::string& root){combatShapes();combatHitboxes();combatDefense();combatPoise();combatLockOn();combatPersistence();combatData(root);}
 // ---- weapon-policies 0.2: penetration, explosions, feeds, charge, attachments, aiming ----
-#include <aiverselib/genre/WeaponData.h>
-#include <aiverselib/genre/WeaponPersistence.h>
+#include <aiverselib/mechanics/WeaponData.h>
+#include <aiverselib/mechanics/WeaponPersistence.h>
 bool weaponNear(Fixed a,Fixed b,Fixed eps){return fxAbs(a-b)<=eps;}
 bool weaponNearV(Vec3 a,Vec3 b,Fixed eps){return weaponNear(a.x,b.x,eps)&&weaponNear(a.y,b.y,eps)&&weaponNear(a.z,b.z,eps);}
-WeaponDefinitions weaponDefs(const std::string& root){return readWeaponDefinitions(Json::parseFile(root+"/examples/libraries/genre/weapons.json"));}
+WeaponDefinitions weaponDefs(const std::string& root){return readWeaponDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/weapons.json"));}
 void weaponPenetration(const std::string& root){
     auto defs=weaponDefs(root);world::SpatialWorld world;
     CHECK(world.add({1,{{-1_fx,-1_fx,2_fx},{1_fx,1_fx,3_fx}}}));CHECK(world.add({2,{{-1_fx,-1_fx,5_fx},{1_fx,1_fx,Fixed::fromRatio(51,10)}}}));CHECK(world.add({3,{{-1_fx,-1_fx,8_fx},{1_fx,1_fx,10_fx}}}));
@@ -477,7 +477,7 @@ void weaponData(const std::string& root){
     expectError(R"({"frame":{"slots":[1],"stats":[{"id":1,"baseMilli":5}]},"attachments":[{"id":2,"slot":1,"modifiers":[{"stat":4,"op":"add","valueMilli":1}]}]})","modifiers[0].stat: unknown frame stat 4");
     expectError(R"({"frame":{"slots":[1],"stats":[{"id":1,"baseMilli":5}]},"attachments":[{"id":2,"slot":1,"modifiers":[{"stat":1,"op":"pow","valueMilli":1}]}]})","modifiers[0].op: expected \"add\" or \"mul\"");
     expectError(R"({"frame":{"slots":[1],"stats":[{"id":1,"baseMilli":5}]},"attachments":[{"id":2,"slot":1,"modifiers":[{"stat":1,"op":"mul","valueMilli":-1}]}]})","valueMilli: integer out of range");
-    auto parsed=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/weapon-settings.json"));CHECK(parsed.value&&weaponSettingsErrors(*parsed.value).empty());
+    auto parsed=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/weapon-settings.json"));CHECK(parsed.value&&weaponSettingsErrors(*parsed.value).empty());
     auto feed=feedConfig(*parsed.value);auto charge=chargeConfig(*parsed.value);auto blast=explosionConfig(*parsed.value);
     CHECK(feed.kind==FeedKind::PerShell&&feed.capacity==6&&valid(feed)&&charge.tiers.size()==3&&charge.tiers[1].ticks==35&&charge.tiers[1].scale==Fixed::fromRatio(3,2)&&valid(charge));
     CHECK(blast.edgeScale==Fixed::fromRatio(1,5)&&valid(blast)&&valid(penetrationConfig(*parsed.value))&&aimConfig(*parsed.value).tolerance==Fixed::fromRatio(5,1000));
@@ -492,8 +492,8 @@ void weaponData(const std::string& root){
 void weaponBallistics(const std::string& root){weaponPenetration(root);weaponExplosions();weaponFeeds();weaponCharge();weaponAttachments(root);weaponAiming();weaponRestore();weaponData(root);}
 // Match objective modes: zones/KotH, payload, elimination, extraction, bomb, route, clock, spectator,
 // scoring through the match owner, save/restore mid-match and invalid data.
-#include <aiverselib/genre/MatchObjectivesConfigured.h>
-#include <aiverselib/genre/MatchObjectivesData.h>
+#include <aiverselib/mechanics/MatchObjectivesConfigured.h>
+#include <aiverselib/mechanics/MatchObjectivesData.h>
 namespace objectives {
 using K=ObjectiveEventKind;
 template<class F> ObjectiveEvents ok(F&& f){auto r=f();CHECK(r);return *r;}
@@ -678,7 +678,7 @@ void restore(){
     SpectatorState spec=*makeSpectator(1,1);spec.target=1;CHECK(save(spec).empty());
 }
 void data(const std::string& root){
-    auto layout=readObjectiveLayout(Json::parseFile(root+"/examples/libraries/genre/objectives.json"));
+    auto layout=readObjectiveLayout(Json::parseFile(root+"/examples/libraries/mechanics/objectives.json"));
     CHECK(layout.zones.size()==4&&layout.zones[2].kind==ObjectiveZoneKind::Extraction&&layout.payload&&layout.payload->checkpoints.size()==2&&layout.gates.size()==3);
     CHECK(insideZone(layout.zones[0],layout.zones[0].center)&&!insideZone(layout.zones[0],layout.zones[0].center+Vec3{100_fx,{},{}}));
     auto expectError=[](const char* text,const std::string& message){
@@ -695,7 +695,7 @@ void data(const std::string& root){
     expectError(R"({"payload":{"path":[[0,0,0],[5000,0,0]],"checkpointsMilli":[6000]}})","checkpoints must ascend strictly inside the path length");
     expectError(R"({"route":{"gates":[{"id":2,"center":[0,0,0],"normal":[0,0,1000],"radiusMilli":5},{"id":1,"center":[0,0,0],"normal":[0,0,1000],"radiusMilli":5}]}})","objectives.route.gates[1].id: gate ids must ascend");
     expectError(R"({"route":{"gates":[{"id":1,"center":[0,0,0],"normal":[0,0,0],"radiusMilli":5}]}})","objectives.route.gates[0].normal: needs a length of at least 100 milli-units");
-    auto parsed=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/objective-settings.json"));CHECK(parsed.value&&objectiveSettingsErrors(*parsed.value).empty());
+    auto parsed=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/objective-settings.json"));CHECK(parsed.value&&objectiveSettingsErrors(*parsed.value).empty());
     const auto& v=*parsed.value;auto zc=zoneConfig(v);auto pc=payloadConfig(v);auto bc=bombConfig(v);auto cc=objectiveClockConfig(v);
     CHECK(valid(zc)&&zc.contest==ContestRule::Majority&&zc.holdScoreInterval==60&&valid(pc)&&pc.pushSpeed==Fixed::fromRatio(80,1000)&&valid(bc)&&bc.kitDefuseTicks==150);
     CHECK(valid(cc)&&cc.limitTicks==v.matchRules.roundTicks&&valid(eliminationConfig(v))&&eliminationConfig(v).respawnWaveTicks==600&&valid(extractionConfig(v))&&valid(spectatorConfig(v))&&valid(routeConfig(v,3))&&hillRotation(v).count==3);
@@ -709,9 +709,9 @@ void data(const std::string& root){
 }
 void matchObjectives(const std::string& root){objectives::zones();objectives::payload();objectives::elimination();objectives::extraction();objectives::bomb();objectives::route();objectives::clock();objectives::spectator();objectives::scoring();objectives::restore();objectives::data(root);}
 // ---- Stealth and senses (stealth-senses package).
-#include <aiverselib/genre/SensesConfigured.h>
-#include <aiverselib/genre/SensesData.h>
-#include <aiverselib/genre/SensesPersistence.h>
+#include <aiverselib/mechanics/SensesConfigured.h>
+#include <aiverselib/mechanics/SensesData.h>
+#include <aiverselib/mechanics/SensesPersistence.h>
 // Brace initializers contain commas, so the checks forward variadic arguments.
 #define SCHECK(...) CHECK((__VA_ARGS__))
 namespace senses {
@@ -832,7 +832,7 @@ void searchGiveUp(){
     SCHECK(count(r,SenseEventKind::SearchUpdated)==1&&again.observers.at(1).search.lastKnown==Vec3{2_fx,{},{}}&&again.observers.at(1).search.deadline==30);
 }
 void disguises(const std::string& root){
-    SensesConfig c;auto d=readSenseDefinitions(Json::parseFile(root+"/examples/libraries/genre/senses.json"));SCHECK(d.disguises.size()==1&&d.spots.size()==2);
+    SensesConfig c;auto d=readSenseDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/senses.json"));SCHECK(d.disguises.size()==1&&d.spots.size()==2);
     SensesState s;SensesInput in;in.observers={agent(1,1,{}),agent(2,3,{})};auto t=target(10,2,{{},{},1_fx});t.zone=10;t.equipDisguise=1;in.targets={t};
     auto meter=[&](uint32_t tick,int64_t zone,std::vector<int64_t> actions,int64_t equip=-1){auto x=in;x.targets[0].zone=zone;x.targets[0].actions=std::move(actions);x.targets[0].equipDisguise=equip;auto r=run(c,d,s,tick,x);return std::make_pair(seen(r,1,10)->suspicion,r);};
     auto [m0,r0]=meter(0,10,{},1);SCHECK(m0==12&&seen(r0,2,10)->suspicion==60&&count(r0,SenseEventKind::DisguiseEquipped)==1);
@@ -843,7 +843,7 @@ void disguises(const std::string& root){
     auto [m6,r6]=meter(6,10,{},0);SCHECK(m6==276&&first(r6,SenseEventKind::DisguiseEquipped)->value==0&&!s.disguises.contains(10));
 }
 void hiding(const std::string& root){
-    SensesConfig c;auto d=readSenseDefinitions(Json::parseFile(root+"/examples/libraries/genre/senses.json"));SensesState s;
+    SensesConfig c;auto d=readSenseDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/senses.json"));SensesState s;
     std::vector<int64_t> checked;auto los=[&](const SenseAgent&,const SenseTarget& t){checked.push_back(t.id);return true;};auto open=[](const SenseAgent&,const NoiseEvent&){return 1000;};
     SensesInput in;in.observers={agent(1,1,{})};auto a=target(10,2,{{},{},4_fx});auto b=target(11,2,{10_fx,{},10_fx});a.enterHiding=5;b.enterHiding=6;b.coverMilli=0;in.targets={a,b};
     auto r=stepSenses(c,d,s,0,in,los,open);SCHECK(r&&count(*r,SenseEventKind::HidingEntered)==2&&s.hiding.at(10).revealedTo==std::vector<int64_t>{1}&&s.hiding.at(11).revealedTo.empty());
@@ -919,7 +919,7 @@ void rejection(const std::string& root){
     auto range=parse("{\"schemaVersion\":1,\"senses\":{\"searchMaxPoints\":65}}");SCHECK(!range.value&&range.errors.at(0)=="senses.searchMaxPoints: integer out of range");
     auto type=parse("{\"schemaVersion\":1,\"senses\":{\"alertRelay\":1}}");SCHECK(!type.value&&type.errors.at(0)=="senses.alertRelay: expected boolean");
     auto strict=parse("{\"schemaVersion\":1,\"senses\":{\"suspiciousAtMilli\":500}}");SCHECK(strict.value&&sensesSettingsErrors(*strict.value).at(0)=="senses.suspiciousAtMilli: must be below searchingAtMilli");
-    auto example=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/senses-settings.json"));SCHECK(example.value&&sensesSettingsErrors(*example.value).empty());
+    auto example=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/senses-settings.json"));SCHECK(example.value&&sensesSettingsErrors(*example.value).empty());
     auto configured=sensesConfig(*example.value);SCHECK(valid(configured)&&configured.sight.range==25_fx&&configured.sight.halfAngle==Fixed::fromRatio(1,10)&&configured.alert.relay&&configured.alert.delay==20&&configured.trail.lifetime==900);
     auto rejects=[](const std::string& text,const std::string& expected){try{readSenseDefinitions(Json::parse(text));}catch(const JsonError& e){return std::string(e.what()).find(expected)!=std::string::npos;}return false;};
     SCHECK(rejects(R"({"disguise":[]})","senses: unknown key 'disguise'"));
@@ -1279,7 +1279,7 @@ void persistence(){
     CHECK(genreBotHash(m)==genreBotHash(m)&&genreBotHash(m)!=genreBotHash(MeleeBotState{}));
 }
 void settings(const std::string& root){
-    auto parsed=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/bot-settings.json"));
+    auto parsed=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/bot-settings.json"));
     CHECK(parsed.value&&genreBotSettingsErrors(*parsed.value).empty());
     auto melee=meleeBotConfig(*parsed.value);auto shooter=shooterBotConfig(*parsed.value);auto squad=squadConfig(*parsed.value);auto weights=objectiveWeights(*parsed.value);
     CHECK(valid(melee)&&valid(shooter)&&valid(squad)&&valid(weights));
@@ -1323,7 +1323,7 @@ void sensesBotBridge(){
 // ---- Narrative scenes (narrative-graphs 0.2.0): relationships, knowledge, consequences, cues, barks, VN helpers.
 namespace narr {
 using EK=NarrativeEventKind;using CK=NarrativeCommandKind;using Ids=std::vector<int64_t>;
-NarrativeWorld social(const std::string& root){return readNarrativeWorld(Json::parseFile(root+"/examples/libraries/genre/story-social.json"));}
+NarrativeWorld social(const std::string& root){return readNarrativeWorld(Json::parseFile(root+"/examples/libraries/mechanics/story-social.json"));}
 int eventAt(const NarrativeReport& r,EK k,int64_t subject=-1){for(std::size_t i=0;i<r.events.size();++i)if(r.events[i].kind==k&&(subject<0||r.events[i].subject==subject))return int(i);return -1;}
 bool has(const NarrativeReport& r,EK k,int64_t subject=-1){return eventAt(r,k,subject)>=0;}
 struct Driver {
@@ -1333,7 +1333,7 @@ struct Driver {
 };
 Driver drive(const NarrativeWorld& w,NarrativeConfig c={},const std::map<int64_t,int64_t>& facts={}){auto s=beginNarrative(w,c,facts);CHECK(s);return Driver{w,c,*s};}
 void legacy(const std::string& root){
-    auto file=Json::parseFile(root+"/examples/libraries/genre/story.json");CHECK(readStory(file).size()==2);
+    auto file=Json::parseFile(root+"/examples/libraries/mechanics/story.json");CHECK(readStory(file).size()==2);
     auto w=readNarrativeWorld(file);CHECK(w.scenes.size()==1&&w.scenes.at(1).entry==1&&w.facts.size()==2&&w.facts.at(1).persistent&&w.nodes.size()==2);
     auto d=drive(w);d.run(CK::StartScene,1);CHECK(d.s.node==1&&sceneChoices(w,d.s)==Ids{2});auto r=d.run(CK::Choose,1);CHECK(has(r,EK::CommandRejected)&&d.s.node==1);
     auto e=drive(w,{},{{1,1}});e.run(CK::StartScene,1);CHECK(sceneChoices(w,e.s)==(Ids{1,2}));e.run(CK::Choose,1);CHECK(e.s.node==2&&e.s.facts.at(2)==1);
@@ -1421,7 +1421,7 @@ void restore(const std::string& root){
     }
     CHECK(d.s.chapter==3&&knows(d.s,0,4));
     auto bad=bytes;bad[6]=char(bad[6]^1);CHECK(!load(bad,copy));
-    NarrativeState other;CHECK(load(bytes,other));auto legacyWorld=readNarrativeWorld(Json::parseFile(root+"/examples/libraries/genre/story.json"));
+    NarrativeState other;CHECK(load(bytes,other));auto legacyWorld=readNarrativeWorld(Json::parseFile(root+"/examples/libraries/mechanics/story.json"));
     CHECK(!narrativeStateError(legacyWorld,{},other).empty());
     CHECK(narrativeWorldHash(w)==narrativeWorldHash(social(root))&&narrativeWorldHash(w)!=narrativeWorldHash(legacyWorld)&&narrativeConfigHash({})!=narrativeConfigHash(c));
     CHECK(!d.s.inScene);auto broken=d.s;broken.inScene=true;CHECK(save(broken).empty());broken=d.s;broken.lineStart=d.tick+1;CHECK(save(broken).empty());
@@ -1458,7 +1458,7 @@ void rejection(const std::string& root){
 }
 void settings(const std::string& root){
     auto read=[](const std::string& text){return aiverse::lib::gameplay::readGameplaySettings(Json::parse(text));};
-    auto s=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/narrative-settings.json"));CHECK(s.value&&narrativeSettingsErrors(*s.value).empty());
+    auto s=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/narrative-settings.json"));CHECK(s.value&&narrativeSettingsErrors(*s.value).empty());
     auto c=narrativeConfig(*s.value);CHECK(c.autoAdvanceTicks==120&&c.skipLinesPerTick==8&&c.backlogLimit==64&&c.maxPending==256&&c.maxBarkRequests==16&&c.speakerCooldownTicks==60&&valid(c));
     auto defaults=read(R"({"schemaVersion":1})");CHECK(defaults.value&&narrativeConfigHash(narrativeConfig(*defaults.value))==narrativeConfigHash(NarrativeConfig{}));
     auto r=read(R"({"schemaVersion":1,"narrative":{"meterInitial":200}})");CHECK(!r.value&&r.errors.at(0)=="narrative.meterInitial: must not exceed meterMaximum");
@@ -1472,9 +1472,9 @@ void narrativeScenes(const std::string& root){narr::legacy(root);narr::relations
 // Physical interactions (physical-interactions): carry/throw arc vs simulation, push/pull blocking, rope
 // convergence and breaking, door locks and auto-reverse, platform rider deltas through LocomotionModes,
 // breakable stages/debris, mid-interaction save/restore and invalid data.
-#include <aiverselib/genre/InteractionConfigured.h>
-#include <aiverselib/genre/InteractionData.h>
-#include <aiverselib/genre/InteractionPersistence.h>
+#include <aiverselib/mechanics/InteractionConfigured.h>
+#include <aiverselib/mechanics/InteractionData.h>
+#include <aiverselib/mechanics/InteractionPersistence.h>
 namespace physical {
 using K=InteractionEventKind;
 const Fixed dt=Fixed::fromRatio(1,60);
@@ -1678,7 +1678,7 @@ void invalidData(const std::string& root){
     CHECK(fails(R"({"platforms":[{"id":1,"halfMilli":[1,1,1],"speedMilli":10,"waypoints":[[0,0,0],[0,0,0]]}]})","interaction.platforms[0].waypoints[1]: repeats the previous waypoint"));
     CHECK(fails(R"({"breakables":[{"id":1,"health":100,"stages":[{"stage":1,"health":50},{"stage":2,"health":70}]}]})","interaction.breakables[0].stages[1].health: must decrease from stage to stage"));
     CHECK(fails(R"({"breakables":[{"id":1,"health":100,"damage":[{"type":1},{"type":1}]}]})","interaction.breakables[0].damage[1].type: duplicate damage type 1"));
-    auto settings=lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/interaction-settings.json"));
+    auto settings=lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/interaction-settings.json"));
     CHECK(settings.value&&interactionSettingsErrors(*settings.value).empty());auto c=interactionConfig(*settings.value);
     CHECK(valid(c)&&c.maxMass==25_fx&&c.ropeIterations==12&&c.gridMoveTicks==16&&c.throwMaxImpulse==90_fx&&interactionConfigHash(c)!=interactionConfigHash(InteractionConfig{}));
     auto bad=lib::gameplay::readGameplaySettings(Json::parse(R"({"schemaVersion":1,"interaction":{"throwMinImpulseMilli":5000,"throwMaxImpulseMilli":1000,"spin":1}})"));
@@ -1689,16 +1689,16 @@ void invalidData(const std::string& root){
 }
 }
 void physicalInteractions(const std::string& root){
-    auto defs=readInteractionDefinitions(Json::parseFile(root+"/examples/libraries/genre/interactables.json"));
+    auto defs=readInteractionDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/interactables.json"));
     CHECK(defs.carryables.size()==2&&defs.doors.size()==2&&defs.platforms.size()==2&&defs.breakables.size()==1&&defs.ropes.at(20).b.anchor==RopeAnchor::Load);
-    CHECK(interactionDefinitionsHash(defs)==interactionDefinitionsHash(readInteractionDefinitions(Json::parseFile(root+"/examples/libraries/genre/interactables.json"))));
+    CHECK(interactionDefinitionsHash(defs)==interactionDefinitionsHash(readInteractionDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/interactables.json"))));
     physical::carryThrow(defs);physical::pushPull();physical::ropes();physical::doors(defs);physical::platforms(defs);physical::breakables(defs);physical::invalidData(root);
 }
 // ---- cinematic-gameplay: time-scale domains, scene timelines, sync waits, QTE, staging, checkpoints (kinds 72..75) ----
-#include <aiverselib/genre/Cinematic.h>
-#include <aiverselib/genre/CinematicData.h>
-#include <aiverselib/genre/CinematicConfigured.h>
-#include <aiverselib/genre/CinematicPersistence.h>
+#include <aiverselib/mechanics/Cinematic.h>
+#include <aiverselib/mechanics/CinematicData.h>
+#include <aiverselib/mechanics/CinematicConfigured.h>
+#include <aiverselib/mechanics/CinematicPersistence.h>
 #define CCHECK(...) CHECK((__VA_ARGS__))
 namespace cine {
 using K=SceneEventKind;using C=SceneCommandKind;using Ids=std::vector<int64_t>;
@@ -1963,7 +1963,7 @@ uint64_t hostTick(const SceneLibrary& l,Host& h,uint32_t t){
     return cinematicHash(*r)^(cinematicHash(*tr)*31);
 }
 void saveRestore(const std::string& root){
-    auto l=readSceneLibrary(Json::parseFile(root+"/examples/libraries/genre/scene.json"));
+    auto l=readSceneLibrary(Json::parseFile(root+"/examples/libraries/mechanics/scene.json"));
     Host a;std::vector<uint64_t> hashes;std::string timeMid,sceneMid;TimeInput pendingMid;std::size_t qtes=0;uint64_t slow=0;
     for(uint32_t t=1;t<=600;++t){
         hashes.push_back(hostTick(l,a,t));
@@ -1976,12 +1976,12 @@ void saveRestore(const std::string& root){
     for(uint32_t t=151;t<=600;++t)CCHECK(hostTick(l,b,t)==hashes[t-1]);
     CCHECK(save(a.scene)==save(b.scene)&&save(a.time)==save(b.time)&&cinematicHash(a.scene)==cinematicHash(b.scene));
     Host c;for(uint32_t t=1;t<=600;++t)CCHECK(hostTick(l,c,t)==hashes[t-1]);
-    CCHECK(sceneLibraryHash(l)==sceneLibraryHash(readSceneLibrary(Json::parseFile(root+"/examples/libraries/genre/scene.json"))));
+    CCHECK(sceneLibraryHash(l)==sceneLibraryHash(readSceneLibrary(Json::parseFile(root+"/examples/libraries/mechanics/scene.json"))));
     auto changed=l;changed.scenes[10].version=2;CCHECK(sceneLibraryHash(changed)!=sceneLibraryHash(l));
     SceneState mid;CCHECK(load(sceneMid,mid));CCHECK(!stepScene(changed,mid,151,{})); // saved against version 1
 }
 void invalidData(const std::string& root){
-    auto l=readSceneLibrary(Json::parseFile(root+"/examples/libraries/genre/scene.json"));
+    auto l=readSceneLibrary(Json::parseFile(root+"/examples/libraries/mechanics/scene.json"));
     CCHECK(l.scenes.size()==2&&sceneForCue(l,5001)==10&&sceneForCue(l,5002)==11&&l.presets.at(3).request.blend==TimeBlend::Multiply&&l.time.domains.size()==4);
     const auto& s10=l.scenes.at(10);CCHECK(s10.cues.front().id==1&&s10.cues[1].id==2&&s10.cues[4].essential&&!s10.cues[0].essential&&s10.qtes[0].perfectClose==18);
     CCHECK(s10.marks.at(2).tolerance==Fixed::fromRatio(3,4)&&s10.participants.at(2).fallback==StagingFallback::Proceed&&s10.syncs[0].waits.size()==3);
@@ -2027,7 +2027,7 @@ void invalidData(const std::string& root){
     auto unknown=parse("{\"schemaVersion\":1,\"cinematic\":{\"hitStop\":3}}");CCHECK(!unknown.value&&unknown.errors.at(0)=="cinematic.hitStop: unknown field");
     auto range=parse("{\"schemaVersion\":1,\"cinematic\":{\"hitStopTicks\":0}}");CCHECK(!range.value&&range.errors.at(0)=="cinematic.hitStopTicks: integer out of range");
     auto type=parse("{\"schemaVersion\":1,\"cinematic\":{\"qteAutoSucceed\":1}}");CCHECK(!type.value&&type.errors.at(0)=="cinematic.qteAutoSucceed: expected boolean");
-    auto example=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/genre/cinematic-settings.json"));
+    auto example=aiverse::lib::gameplay::readGameplaySettings(Json::parseFile(root+"/examples/libraries/mechanics/cinematic-settings.json"));
     CCHECK(example.value&&cinematicSettingsErrors(*example.value).empty());
     auto slow=slowMotionRequest(*example.value,kDomainCinematic);o=qteOptions(*example.value);
     CCHECK(hitStopRequest(*example.value).duration==4&&slow.scale.num==1&&slow.scale.den==3&&slow.duration==120&&slow.domain==kDomainCinematic&&o.accessibleWindowMilli==2000&&o.mashScaleMilli==500);
