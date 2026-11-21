@@ -2687,7 +2687,8 @@ struct DrawArgs {
 struct IcbContainer {
     command_buffer commands [[id(0)]];
 };
-struct Params { uint count, indexCapacity, materialStride, vtStride, pbrU2Stride; };
+struct Params { uint count, indexCapacity, materialStride, vtStride, pbrU2Stride,
+                 vertexCapacity; };
 kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     device uint* indices [[buffer(1)]],
                     device IcbContainer* container [[buffer(2)]],
@@ -2712,6 +2713,9 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
     if (args.indexCount == 0 || args.instanceCount != 1 ||
         args.firstIndex > params.indexCapacity ||
         args.indexCount > params.indexCapacity - args.firstIndex) return;
+    // baseVertex is signed and untrusted: a negative or out-of-buffer base
+    // would make every fetched vertex address escape the vertex buffer.
+    if (args.baseVertex < 0 || uint(args.baseVertex) >= params.vertexCapacity) return;
     render_command command(container->commands, tid);
     // Bind explicitly in the ICB. Inheriting buffers with a zero binding
     // capacity previously triggered an AGX executeCommandsInBuffer crash.
@@ -2967,13 +2971,21 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                       atIndex:NSUInteger(slot + 5)];
         [encoder setBuffer:resources.pbrArgs offset:0 atIndex:13];
         struct Params { uint32_t count, indexCapacity, materialStride, vtStride,
-                        pbrU2Stride; };
+                        pbrU2Stride, vertexCapacity; };
         const size_t indexCount = indexData->size / sizeof(uint32_t);
         if (indexCount > UINT32_MAX) return 0;
+        // The vertex layout is owned by the bound pipeline, not known here.
+        // Bound baseVertex by the smallest possible vertex (float3 position):
+        // never rejects a valid command, always rejects negative or
+        // beyond-buffer bases.
+        constexpr size_t kMinVertexStride = 3u * sizeof(float);
+        const size_t vertexCapacity = std::min<size_t>(vertexData->size / kMinVertexStride,
+                                                       size_t(INT32_MAX));
         Params params{count,uint32_t(indexCount),
             materials ? uint32_t(kPerCommandPbrStride) : 0u,
             commandVt ? uint32_t(kPerCommandVtStride) : 0u,
-            commandPbr ? uint32_t(kPerCommandU2Stride) : 0u};
+            commandPbr ? uint32_t(kPerCommandU2Stride) : 0u,
+            uint32_t(vertexCapacity)};
         [encoder setBytes:&params length:sizeof(params) atIndex:17];
         [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
         [encoder dispatchThreadgroups:MTLSizeMake((count + 63u) / 64u, 1, 1)
