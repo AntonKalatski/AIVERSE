@@ -81,3 +81,27 @@ test('attachment transforms: TRS round trip, custom matrices flagged', () => {
   const tilted = [...IDENTITY]; tilted[1] = 0.5;
   assert.equal(toTrs(tilted).custom, true);
 });
+import { clipDuration, clipKeyTimes, projectSkeleton } from '../src/panels/animLogic.ts';
+test('animation timeline: duration, keys, skeleton fit', () => {
+  const clip = { id: 'walk', channels: [{ node: 'hip', times: [0, 0.5, 1] }, { node: 'knee', times: [0, 0.5004, 1.2] }] };
+  assert.equal(clipDuration(clip), 1.2);
+  assert.deepEqual(clipKeyTimes(clip), [0, 0.5, 1, 1.2]);
+  const doc = { nodes: [{ id: 'hip' }, { id: 'knee', parent: 'hip' }] };
+  const s = projectSkeleton(doc, [{ id: 'hip', worldPosition: [0, 1, 0] }, { id: 'knee', worldPosition: [0, 0.5, 0] }], 'front', 260, 200);
+  assert.equal(s.bones.length, 1); assert.equal(s.joints.length, 2);
+  for (const [x, y] of s.joints) { assert.ok(x >= 0 && x <= 260 && y >= 0 && y <= 200); }
+});
+import { pickSky, splashStages } from '../src/components/projectSplashLogic.ts';
+test('project splash stages', () => {
+  assert.deepEqual(splashStages({ phase: 'project', done: 0, total: 0, message: '' }).steps.map(s => s.state), ['active', 'todo', 'todo', 'todo']);
+  const m = splashStages({ phase: 'models', done: 5, total: 10, message: 'models/a/b.glb' });
+  assert.deepEqual(m.steps.map(s => s.state), ['done', 'done', 'active', 'todo']);
+  assert.equal(m.steps[2].label, 'Scene models 5 / 10'); assert.equal(m.detail, 'a/b.glb');
+  assert.ok(Math.abs(m.ratio - 0.675) < 1e-9);
+  assert.equal(splashStages({ phase: 'done', done: 0, total: 0, message: '' }).ratio, 1);
+});
+test('splash sky pick is stable and in range', () => {
+  assert.equal(pickSky('Iron and Gold', 6), pickSky('Iron and Gold', 6));
+  for (const n of ['a', 'Iron and Gold', '', 'Kingston']) { const i = pickSky(n, 6); assert.ok(i >= 0 && i < 6); }
+  assert.equal(pickSky('x', 0), -1);
+});

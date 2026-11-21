@@ -64,13 +64,13 @@ option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot c
 # Register Objective-C++ in the ROOT directory before creating any targets.
 # CMake does not propagate a language enabled only in a child directory back
 # to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
-# The HTML5 Studio is the main editor on macOS: built by default once its web bundle exists
-# (studio_mac.command builds the bundle first; -DAIVERSE_BUILD_STUDIO_HTML5=OFF skips it).
+# The HTML5 Studio is the main editor on macOS and Windows: built by default once its web bundle exists
+# (studio_mac.command / studio_windows.cmd build the bundle first; -DAIVERSE_BUILD_STUDIO_HTML5=OFF skips it).
 set(_aiverse_studio_default OFF)
-if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/studio-web/dist/index.html")
+if((APPLE OR WIN32) AND NOT IOS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/studio-web/dist/index.html")
     set(_aiverse_studio_default ON)
 endif()
-option(AIVERSE_BUILD_STUDIO_HTML5 "Build the macOS HTML5 Studio (main editor)" ${_aiverse_studio_default})
+option(AIVERSE_BUILD_STUDIO_HTML5 "Build the HTML5 Studio (main editor; macOS and Windows)" ${_aiverse_studio_default})
 if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
     enable_language(OBJCXX)
 endif()
@@ -4809,10 +4809,10 @@ endif()
 # Experimental HTML5 Studio host. Production editor still uses its existing UI.
 # ---------------------------------------------------------------------------
 if(AIVERSE_BUILD_STUDIO_HTML5)
-    if(APPLE AND TARGET aiverse_editor_core)
+    if((APPLE OR WIN32) AND TARGET aiverse_editor_core)
         add_subdirectory(apps/studio-native)
     else()
-        message(WARNING "AIVERSE Studio HTML5 currently requires macOS and aiverse_editor_core (AIVERSE_BUILD_TOOLS or AIVERSE_BUILD_EDITOR)")
+        message(WARNING "AIVERSE Studio HTML5 requires macOS or Windows and aiverse_editor_core (AIVERSE_BUILD_TOOLS or AIVERSE_BUILD_EDITOR)")
     endif()
 endif()
 

@@ -22,6 +22,7 @@
 //   LENS_DIRECTOR="eye,at,fov,switchFrame,blendSeconds"  CameraDirector: the second
 //              camera gets the higher priority at switchFrame; frames step 1/30 s.
 //   LENS_CUBE=faceSize        six cube faces from the main eye -> CameraPanorama
+//              LENS_CUBE_SHADOW=radius (default 40, 0 = per-face fit) shared sun shadow box.
 //              equirectangular frame.
 //   LENS_MIRROR="nx,ny,nz,offset,x,y,w,h"  makeMirrorCamera view as an inset.
 //   LENS_PORTAL="ex,ey,ez,yawDeg,xx,xy,xz,yawDeg,x,y,w,h"  makePortalCamera (entrance ->
@@ -307,8 +308,15 @@ struct Host {
             layers.push_back({mainTarget.color, {0, 0, W, H}, 0, 1.f, 1});
         } else if (layout == "cube") {
             std::array<uint64_t, 6> keys{1, 2, 3, 4, 5, 6};
-            const auto views = makeCubemapCameraViews(resolved(mainCam), keys, faces[0].w);
-            for (int i = 0; i < 6; ++i) drawView(d, mainCam, faces[i], false, &views[size_t(i)].camera);
+            const auto views = makeCubemapCameraViews(resolved(mainCam), keys, faces[0].w, false,
+                                                     float(std::atof(env("LENS_CUBE_SHADOW", "40"))));
+            const auto shadowState = r3d.shadowBoundsState();
+            for (int i = 0; i < 6; ++i) {
+                const auto& v = views[size_t(i)];
+                if (v.shadowBounds) r3d.setShadowBounds(v.shadowMin, v.shadowMax);
+                drawView(d, mainCam, faces[i], false, &v.camera);
+            }
+            r3d.restoreShadowBounds(shadowState);
             std::array<gfx::TextureHandle, 6> tex{};
             for (int i = 0; i < 6; ++i) tex[size_t(i)] = faces[i].color;
             if (!panorama.render(tex, panoTarget.color, panoTarget.w, panoTarget.h) && frame == 2)

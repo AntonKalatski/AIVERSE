@@ -1,6 +1,10 @@
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/studio-native/StudioContentDirectory.h"
+#if defined(AIVERSE_WINSQLITE)
+#include <winsqlite/winsqlite3.h> // Windows' own SQLite (MSVC builds): no third-party DLL
+#else
 #include <sqlite3.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <cctype>

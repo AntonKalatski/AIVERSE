@@ -42,3 +42,11 @@
 .tbrush.is-armed{border-color:var(--au-accent);box-shadow:0 0 0 1px var(--au-accent) inset}
 .tbrush__row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tbrush .ptp__seg button{padding:3px 8px;font-size:var(--au-font-xs)}
+.tbrush__choice{display:flex;flex-direction:column;gap:4px}
+.tbrush__choice>span{font-size:var(--au-font-xs);color:var(--au-text-muted)}
+.tbrush__filter{width:100%}
+.tbrush__chips{display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow:auto}
+.tbrush__chips button{padding:2px 8px;border-radius:10px;border:1px solid var(--au-line);background:none;color:var(--au-text-muted);font-size:var(--au-font-xs);cursor:pointer}
+.tbrush__chips button:hover{background:var(--au-hover);color:var(--au-text)}
+.tbrush__chips button.is-on{background:var(--au-active);border-color:var(--au-accent);color:var(--au-text)}
+.tbrush__chips em{color:var(--au-text-faint);font-size:var(--au-font-xs)}

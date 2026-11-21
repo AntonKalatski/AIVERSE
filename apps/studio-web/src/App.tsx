@@ -23,6 +23,8 @@ import NestedDockWorkspace from './components/NestedDockWorkspace';
 import StudioMenuBar, { type StudioMenu } from './components/StudioMenuBar';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows';
 import WelcomeTour, { tourSeen } from './components/WelcomeTour';
+import ProjectHub from './components/ProjectHub';
+import ProjectSplash from './components/ProjectSplash';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
 import { resetLive } from './panels/livePlay';
 import {
@@ -73,6 +75,7 @@ export default function App() {
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(() => !tourSeen());
+  const [hubOpen, setHubOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {
     const stored = Number(window.localStorage.getItem('aiverse.studio.uiScale'));
     return Number.isFinite(stored) && stored >= 0.75 && stored <= 2 ? stored : 1;
@@ -387,6 +390,7 @@ export default function App() {
   });
   const menus: StudioMenu[] = [
     { id: 'file', label: 'File', items: () => [
+      { id: 'hub', label: 'Project Hub…', disabled: !connected || busy, onSelect: () => setHubOpen(true) },
       { id: 'open', label: 'Open Project…', shortcut: '⌘O', disabled: !connected || busy, onSelect: () => void openProject() },
       { id: 'maps', label: 'New / Open Map…', separator: true, disabled: !project, onSelect: () => showPanel('project') },
       { id: 'save', label: 'Save', shortcut: '⌘S', disabled: !project || busy || !snapshot?.project.dirty,
@@ -536,9 +540,11 @@ export default function App() {
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
     <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}
       onFloat={connected ? floatOut : undefined} onAdopt={adopt}/>
-    <ProjectLoadingDialog state={loading} onClose={clearLoading}/>
+    {FLOAT ? <ProjectLoadingDialog state={loading} onClose={clearLoading}/> : <ProjectSplash state={loading} onClose={clearLoading} onHub={() => setHubOpen(true)}/>}
     {dockHover && <div className="dock-drop-hint" data-native-overlay role="status">Release to dock the window's tabs here</div>}
     {tourOpen && !FLOAT && <WelcomeTour onClose={() => setTourOpen(false)}/>}
+    {hubOpen && !FLOAT && <div className="hub-modal" role="dialog" aria-modal="true" aria-label="Project hub" data-native-overlay onMouseDown={e => { if (e.target === e.currentTarget) setHubOpen(false); }}>
+      <ProjectHub onOpened={next => { setHubOpen(false); setInspectorPin(null); setSnapshot(next); }} openOther={() => { setHubOpen(false); void openProject(); }}/></div>}
     <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction || sceneLoadingText(loading)}
       onOpenConsole={() => { showPanel('console');
         window.setTimeout(() => window.dispatchEvent(new CustomEvent('studio:console-filter', { detail: 'error' })), 0); }}/>
