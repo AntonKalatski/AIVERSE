@@ -37,6 +37,13 @@ if(AIVERSE_PLATFORM MATCHES "^(macos|windows|linux)$")
 endif()
 
 option(AIVERSE_BUILD_TESTS "Build unit tests" ${AIVERSE_DESKTOP})
+# Languages must be enabled in the highest common directory of their targets.
+# VIVID's real Metal GPU test is Objective-C++ (.mm); enabling OBJCXX only
+# inside engine/character/vivid left CMAKE_OBJCXX_COMPILE_OBJECT undefined
+# while generating the macOS build. Keep this opt-in for desktop tests only.
+if(AIVERSE_PLATFORM STREQUAL "macos" AND AIVERSE_BUILD_TESTS)
+    enable_language(OBJCXX)
+endif()
 option(AIVERSE_BUILD_HEADLESS "Build headless runner" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_CLIENT "Build the game client" ON)
 option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
@@ -557,6 +564,9 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME unity_anim_controller COMMAND aiverse_unity_anim_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_adaptive_shadow_resolution_tests tests/render/adaptive_shadow_resolution.cpp)
+    target_include_directories(aiverse_adaptive_shadow_resolution_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME adaptive_shadow_resolution COMMAND aiverse_adaptive_shadow_resolution_tests)
     add_executable(aiverse_model_batching_policy_tests tests/render/model_batching_policy.cpp)
     target_link_libraries(aiverse_model_batching_policy_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME model_batching_policy COMMAND aiverse_model_batching_policy_tests)
@@ -584,6 +594,9 @@ if(NOT EMSCRIPTEN)
 else()
     target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_models)
 endif()
+
+# VIVID digital humans (presentation-only facial/runtime and portable GPU morph compute).
+add_subdirectory(engine/character/vivid)
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_ecs_tests tests/animation/ecs_presentation.cpp)
     target_link_libraries(aiverse_animation_ecs_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
@@ -629,6 +642,16 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_root_motor_tests tests/animation/root_motor.cpp)
     target_link_libraries(aiverse_animation_root_motor_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_root_motor COMMAND aiverse_animation_root_motor_tests)
+endif()
+# Stage 180: semantic facial Control Rig + existing native IK/ECS.
+# Deferred until the coordinated Mac CMake/CTest/RHI acceptance campaign.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_facial_control_rig_tests
+        tests/animation/facial_control_rig.cpp)
+    target_link_libraries(aiverse_animation_facial_control_rig_tests
+        PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME animation_facial_control_rig
+        COMMAND aiverse_animation_facial_control_rig_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_humanoid_retarget_tests tests/animation/humanoid_retarget.cpp)
@@ -719,6 +742,28 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_model_asset_provider_api_tests
         PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME model_asset_provider_api COMMAND aiverse_model_asset_provider_api_tests)
+endif()
+# Stage 176: actual SceneLoadCoordinator and MotionWeave native type
+# integration, prepared now and run in the final coordinated Mac suite.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_animation_scene_game_host_api_tests
+        tests/animation/scene_game_host_api.cpp)
+    target_link_libraries(aiverse_animation_scene_game_host_api_tests
+        PRIVATE aiverse_models aiverse_zstd_dec aiverse_engine AIVERSE::View
+                Threads::Threads)
+    add_test(NAME animation_scene_game_host_api
+        COMMAND aiverse_animation_scene_game_host_api_tests)
+
+    # Stage 179: fixture validates real showcase SceneAsset/preloaded GLB
+    # paths. The graphical --scene-preview is compiled with ModelView itself.
+    add_executable(aiverse_animation_scene_preview_assets_tests
+        tests/animation/scene_preview_assets.cpp)
+    target_compile_definitions(aiverse_animation_scene_preview_assets_tests
+        PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(aiverse_animation_scene_preview_assets_tests
+        PRIVATE aiverse_engine)
+    add_test(NAME animation_scene_preview_assets
+        COMMAND aiverse_animation_scene_preview_assets_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_retirement_pressure_tests
@@ -1153,7 +1198,35 @@ if(AIVERSE_VULKAN)
         target_link_libraries(aiverse_lighting_vulkan_compute_shader PRIVATE aiverse_gfx_vulkan)
         add_test(NAME lighting_vulkan_compute_shader COMMAND aiverse_lighting_vulkan_compute_shader)
         set_tests_properties(lighting_vulkan_compute_shader PROPERTIES LABELS "Lighting")
+
+        # Real headless Vulkan VIVID ID/depth + async one-pixel RHI oracle.
+        # No driver is a registered SKIP, not an invented GPU PASS.
+        add_executable(aiverse_vivid_vulkan_sculpt_id_tests
+            tests/vivid/vulkan_sculpt_id.cpp)
+        target_link_libraries(aiverse_vivid_vulkan_sculpt_id_tests PRIVATE
+            aiverse_gfx_vulkan aiverse_models)
+        target_compile_features(aiverse_vivid_vulkan_sculpt_id_tests
+            PRIVATE cxx_std_20)
+        add_test(NAME vivid_vulkan_sculpt_id
+            COMMAND aiverse_vivid_vulkan_sculpt_id_tests)
+        set_tests_properties(vivid_vulkan_sculpt_id
+            PROPERTIES SKIP_RETURN_CODE 77)
     endif()
+endif()
+
+# Native GLES3 VIVID GPU-ID + PBO/fence readback acceptance. Does not link a
+# game client or platform window; skips on systems without EGL/GLES3 driver.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux")
+    add_executable(aiverse_vivid_gles_sculpt_id_tests
+        tests/vivid/gles_sculpt_id.cpp
+        engine/gfx/gl/GfxGL.cpp)
+    target_link_libraries(aiverse_vivid_gles_sculpt_id_tests PRIVATE
+        aiverse_models EGL GLESv2)
+    target_compile_features(aiverse_vivid_gles_sculpt_id_tests
+        PRIVATE cxx_std_20)
+    add_test(NAME vivid_gles_sculpt_id
+        COMMAND aiverse_vivid_gles_sculpt_id_tests)
+    set_tests_properties(vivid_gles_sculpt_id PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 # The platform files define main(); they are compiled into each executable through an OBJECT
@@ -1615,7 +1688,10 @@ endif()
 
 # Model viewer (models agent): models, materials, clips and quality tiers as the game renders them.
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
-    add_executable(aiverse_modelview apps/modelview/main.cpp apps/modelview/Gallery.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    add_executable(aiverse_modelview
+        apps/modelview/main.cpp apps/modelview/Gallery.cpp
+        apps/modelview/NativeScenePreview.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
 endif()
 
@@ -1686,6 +1762,7 @@ if(AIVERSE_BUILD_TESTS)
     # view.entity_fx draw tests: the 3D renderer against a recording gfx::Device (no GPU; platform stubs in tests.cpp)
     target_sources(aiverse_tests PRIVATE engine/render/Renderer3D.cpp engine/render/Renderer3DModels.cpp engine/render/Lights.cpp
         engine/render/Renderer3DReflect.cpp engine/render/Renderer3DTrace.cpp engine/render/Prisma.cpp engine/render/PhysicalSky.cpp engine/render/LocalFog.cpp engine/render/GeometryScene.cpp)
+    target_sources(aiverse_tests PRIVATE engine/render/PrismaScreenLighting.cpp)   # LENS per-camera PostFx pool test
     target_sources(aiverse_tests PRIVATE engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)   # agent-lightbake
     target_sources(aiverse_tests PRIVATE engine/ui/UiLua.cpp)    # UI Lua sandbox (no RmlUi)
     target_link_libraries(aiverse_tests PRIVATE aiverse_lua)
@@ -1716,6 +1793,12 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_camera_rig_tests tests/render/camera_rig.cpp)
     target_include_directories(aiverse_camera_rig_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rig COMMAND aiverse_camera_rig_tests)
+    add_executable(aiverse_camera_rail_path_tests tests/render/camera_rail_path.cpp)
+    target_include_directories(aiverse_camera_rail_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME camera_rail_path COMMAND aiverse_camera_rail_path_tests)
+    add_executable(aiverse_camera_exr_tests tests/render/camera_exr.cpp)
+    target_include_directories(aiverse_camera_exr_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME camera_exr COMMAND aiverse_camera_exr_tests)
     add_executable(aiverse_camera_temporal_tests tests/render/camera_temporal.cpp)
     target_include_directories(aiverse_camera_temporal_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_temporal COMMAND aiverse_camera_temporal_tests)
@@ -1729,6 +1812,10 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_camera_scene_asset_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_camera_scene_asset_tests PRIVATE aiverse_engine)
     add_test(NAME camera_scene_asset COMMAND aiverse_camera_scene_asset_tests)
+    add_executable(aiverse_camera_lens_physics_tests tests/render/camera_lens_physics.cpp)
+    target_include_directories(aiverse_camera_lens_physics_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_camera_lens_physics_tests PRIVATE aiverse_engine)
+    add_test(NAME camera_lens_physics COMMAND aiverse_camera_lens_physics_tests)
     add_executable(aiverse_camera_capture_graph_tests tests/render/camera_capture_graph.cpp)
     target_include_directories(aiverse_camera_capture_graph_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_capture_graph COMMAND aiverse_camera_capture_graph_tests)
@@ -2494,7 +2581,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_compile_definitions(aiverse_ecs_native_rts_integration_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME ecs_native_rts_integration_test COMMAND aiverse_ecs_native_rts_integration_test)
     add_executable(aiverse_rts_authored_pose_test tests/rts_authored_pose_test.cpp)
-    target_link_libraries(aiverse_rts_authored_pose_test PRIVATE aiverse_game aiverse_game_view)
+    target_link_libraries(aiverse_rts_authored_pose_test PRIVATE aiverse_runtime aiverse_game aiverse_game_view)
     target_compile_definitions(aiverse_rts_authored_pose_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME rts_authored_pose_test COMMAND aiverse_rts_authored_pose_test)
     add_executable(aiverse_ecs_native_persistence_test tests/ecs_native_persistence_test.cpp)
@@ -2819,6 +2906,28 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
         endif()
         add_test(NAME place_secure COMMAND aiverse_place_secure_tests)
     endif()
+endif()
+
+# VIVID stage 5D: real macOS scene/renderer visual acceptance preview.
+# GUI-driven, NOT a CTest (requires drawable, snapshots and actual shadows).
+# The runtime object library owns the platform entry point (aiverseMain).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_vivid_renderer_preview tests/vivid/renderer_preview.cpp)
+    target_link_libraries(aiverse_vivid_renderer_preview PRIVATE
+        aiverse_runtime AIVERSE::vivid_actor AIVERSE::MotionWeave aiverse_zstd_dec)
+    target_compile_features(aiverse_vivid_renderer_preview PRIVATE cxx_std_20)
+endif()
+
+# VIVID Creator: interactive DNA + rig/eye/skin/hair authoring with
+# MotionWeave and native Model/ShaderGraph preview. Separate from the
+# general editor and optional for non-desktop builds.
+if(AIVERSE_DESKTOP AND (AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS))
+    add_executable(aiverse_vivid_creator tools/vivid-creator/main.cpp)
+    target_link_libraries(aiverse_vivid_creator PRIVATE
+        aiverse_runtime AIVERSE::vivid_human AIVERSE::vivid_actor
+        AIVERSE::MotionWeave aiverse_zstd_dec)
+    target_compile_features(aiverse_vivid_creator PRIVATE cxx_std_20)
+    target_compile_definitions(aiverse_vivid_creator PRIVATE AIVERSE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 endif()
 
 # Geometry visibility verification uses the same renderer on GL and Metal.
@@ -4465,4 +4574,21 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_hdr_scene AND AIVERSE_PLATFORM STREQUA
         ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_VT_GI_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+endif()
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_modeling AND TARGET aiverse_vivid_human)
+    add_executable(aiverse_vivid_human_wardrobe_tests tests/vivid/human_wardrobe.cpp)
+    target_link_libraries(aiverse_vivid_human_wardrobe_tests PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)
+    add_test(NAME vivid_human_wardrobe COMMAND aiverse_vivid_human_wardrobe_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_modeling AND TARGET aiverse_vivid_human)
+    add_executable(aiverse_vivid_face_shape_tests tests/vivid/human_face_shape.cpp)
+    target_link_libraries(aiverse_vivid_face_shape_tests PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)
+    add_test(NAME vivid_face_shape COMMAND aiverse_vivid_face_shape_tests)
+endif()
+
+# Website capture host for LENS (tools/site/lens_showcase.cpp). Off by default; no engine behaviour.
+option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
+if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
+    add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
 endif()

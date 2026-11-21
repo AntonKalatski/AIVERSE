@@ -46,9 +46,9 @@
         },
         {
           "title": "Навигация",
-          "text": "Жанронезависимая навигационная сетка для RTS и FPS и гибридный поиск пути: один граф порталов и свой решатель на каждую область.",
+          "text": "Навигационная сетка и гибридный поиск пути: один граф порталов и свой решатель на каждую область.",
           "titleEn": "Navigation",
-          "textEn": "A genre-independent navigation mesh for RTS and FPS and hybrid pathfinding: one portal graph with a solver per area."
+          "textEn": "A navigation mesh and hybrid pathfinding: one portal graph with a solver per area."
         },
         {
           "title": "Рендер",

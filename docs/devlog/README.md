@@ -6,6 +6,10 @@ The site (`site/`, published to GitHub Pages from the `gh-pages` branch) has two
 - **"Кадр движка" on the main page** — `frames[0]` in `docs/devlog/showcase.json`;
 - **"Системы движка" on the main page** — flagship systems with cover frames in `docs/devlog/systems.json`.
 
+Every system also has its own diary page, `devblog-<system>.html`: all its entries, newest first,
+fully expanded with every screenshot. Each successfully finished stage gets an entry with real
+frames; failed or partial attempts and build/test chatter stay in handoffs (AGENTS.md has the rules).
+
 Agents add entries themselves, in their own branch, in the same change as the feature
 (AGENTS.md "Ход разработки на сайте"; skill `skills/workflow/aiverse-devlog`). When the
 branch reaches `main`, `.github/workflows/site.yml` rebuilds the site and pushes `gh-pages`.
@@ -59,6 +63,11 @@ Each flagship system also has its own page (`system-<id>.html`) and feeds the sh
 (what a game can do with it) and `roadmap` items `{"status", "title", "text"?, "date"|"target"}`:
 `done` needs `date` (YYYY-MM-DD, when it landed), `in-progress`/`planned` take `target` (YYYY-MM)
 or `null` — shown as "срок не назначен". Targets come from the user or the system's docs, never guessed.
+An `includes` item can grow into a mini-article: give it a slug `id`, write
+`docs/devlog/features/<system>/<id>.md` (English twin `<id>.en.md`; long text, `##` sections,
+tables, code, images by paths relative to the file) and/or a `media` list (`[{src, caption, captionEn}]`).
+The card then links to `system-<system>-<id>.html` and shows the first media as its thumbnail;
+with no article the page is a captioned gallery. `check` validates slugs, files, sizes and captions.
 `coverBrief` says what the frame must show; the owning agent renders it and, if it has no cover
 yet, may set `cover` with `"approved": false`. Replacing an existing cover needs the user.
 

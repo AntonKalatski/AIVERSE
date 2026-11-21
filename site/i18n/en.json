@@ -96,5 +96,22 @@
  "verSinceTitle": "Shipped in release {v}",
  "verNextTitle": "Already in main, ships in release {v}",
  "verBranchTitle": "On a separate branch, ships after it is merged into main",
- "relNextTitleV": "In the next release: {v}"
+ "relNextTitleV": "In the next release: {v}",
+ "rmNow": "Now",
+ "rmProgress": "{d} of {n} done",
+ "rmPrev": "Back",
+ "rmNext": "Forward",
+ "incMore": "Read more →",
+ "incOther": "More in {s}",
+ "incRuOnly": "This article is in Russian only for now.",
+ "blogTitle": "Development diary",
+ "blogLead": "Every stage of {s} with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.",
+ "blogAll": "Full diary · {n}",
+ "blogStages": "stages",
+ "blogFirst": "first entry",
+ "blogLast": "latest",
+ "stExperimental": "Experimental",
+ "blogVerified": "Verified",
+ "blogLimits": "Limitations",
+ "blogNav": "Diary"
 }

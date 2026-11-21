@@ -143,21 +143,125 @@ def systems_html(systems, ctx):
 
 # ---------------------------------------------------------------- system pages and roadmap
 
-def roadmap_item(it, ctx, system=None):
-    st = it['status']
-    when = ctx.fmt_date(it['date']) if st == 'done' else ctx.fmt_target(it.get('target'))
-    chip = (f'<a class="rm-sys" href="system-{esc(system["id"])}.html">{esc(system["name"])}</a>' if system else '')
-    text = ctx.loc(it, 'text')
-    text = f'<p>{esc(text)}</p>' if text else ''
-    data = f' data-sys="{esc(system["id"])}"' if system else ''
-    return (f'<li{data} class="rm-item rm-{st}"><span class="rm-dot" aria-hidden="true"></span>'
-            f'<div><div class="rm-meta">{chip}<span class="st st-{st}">{ctx.status(st)}</span>'
-            f'<time>{esc(when)}</time></div><h3>{esc(ctx.loc(it, "title"))}</h3>{text}</div></li>')
-
-
 def sorted_roadmap(items):
     order = {'done': 0, 'in-progress': 1, 'planned': 2}
     return sorted(items, key=lambda it: (order[it['status']], it.get('date') or it.get('target') or '9999'))
+
+
+def rm_track(items, ctx):
+    """Horizontal roadmap timeline: done items on the left, the current one marked, plans to the right."""
+    items = sorted_roadmap(items)
+    now = next((i for i, it in enumerate(items) if it['status'] != 'done'), None)
+    lis = []
+    for i, it in enumerate(items):
+        st = it['status']
+        when = ctx.fmt_date(it['date']) if st == 'done' else ctx.fmt_target(it.get('target'))
+        text = ctx.loc(it, 'text')
+        text = f'<p>{esc(text)}</p>' if text else ''
+        flag = f'<span class="rmt-now">{ctx.T["rmNow"]}</span>' if i == now else ''
+        lis.append(f'<li class="rmt-item rm-{st}{" is-now" if i == now else ""}">{flag}<span class="rmt-dot" aria-hidden="true"></span>'
+                   f'<div class="rmt-card"><div class="rm-meta"><span class="st st-{st}">{ctx.status(st)}</span>'
+                   f'<time>{esc(when)}</time></div><h3>{esc(ctx.loc(it, "title"))}</h3>{text}</div></li>')
+    done = sum(1 for it in items if it['status'] == 'done')
+    pct = round(100 * done / len(items)) if items else 0
+    return (f'<div class="rmt"><div class="rmt-bar"><div class="rmt-progress" role="img" '
+            f'aria-label="{esc(ctx.T["rmProgress"].format(d=done, n=len(items)))}"><span style="width:{pct}%"></span></div>'
+            f'<span class="rmt-count mono">{esc(ctx.T["rmProgress"].format(d=done, n=len(items)))}</span>'
+            f'<span class="rmt-nav"><button type="button" class="rmt-btn" data-dir="-1" aria-label="{ctx.T["rmPrev"]}">←</button>'
+            f'<button type="button" class="rmt-btn" data-dir="1" aria-label="{ctx.T["rmNext"]}">→</button></span></div>'
+            f'<div class="rmt-scroll" tabindex="0"><ol class="rmt-list">{"".join(lis)}</ol></div></div>')
+
+
+def feature_has_page(it):
+    return bool(it.get('id') and (it.get('article') or it.get('media')))
+
+
+def include_card(s, it, ctx):
+    name = esc(ctx.loc(it, 'name'))
+    text = esc(ctx.loc(it, 'text'))
+    if not feature_has_page(it):
+        return f'<article class="card"><h3>{name}</h3><p>{text}</p></article>'
+    m = (it.get('media') or [None])[0]
+    thumb = (f'<span class="inc-thumb"><img src="{esc(ctx.media(m["src"]))}" alt="" loading="lazy"></span>' if m else '')
+    return (f'<a class="card inc-link{" has-thumb" if m else ""}" href="system-{esc(s["id"])}-{esc(it["id"])}.html">{thumb}'
+            f'<h3>{name}</h3><p>{text}</p><span class="inc-more">{ctx.T["incMore"]}</span></a>')
+
+
+def devblog_page(s, mine, ctx, flagship):
+    """All stages of one system, newest first, fully expanded: the system's own development diary."""
+    sid = esc(s['id'])
+    name = esc(s['name'])
+    status = {'done': ctx.T['stDone'], 'in-progress': ctx.T['stProgress'], 'experimental': ctx.T['stExperimental']}
+    sys_href = f'system-{sid}.html' if flagship else f'devlog.html#system={sid}'
+    posts = []
+    for e in mine:
+        figs = []
+        for m in e['media']:
+            cap = esc(m['caption'])
+            if re.search(r'\.(mp4|webm)$', m['src'], re.I):
+                figs.append(f'<figure><video src="{esc(m["src"])}" controls muted playsinline preload="metadata" aria-label="{cap}"></video>'
+                            f'<figcaption>{cap}</figcaption></figure>')
+            else:
+                figs.append(f'<figure><a href="{esc(m["src"])}" data-cap="{cap}"><img src="{esc(m["src"])}" alt="{cap}" loading="lazy"></a>'
+                            f'<figcaption>{cap}</figcaption></figure>')
+        body = ''.join(f'<p>{esc(p)}</p>' for p in (e.get('body') or []))
+        facts = f'<div><dt>{ctx.T["blogVerified"]}</dt><dd>{esc(e["verified"])}</dd></div>'
+        if e.get('limits'):
+            facts += f'<div><dt>{ctx.T["blogLimits"]}</dt><dd>{esc(e["limits"])}</dd></div>'
+        src = esc(e['branch'] or '') + (f' · {esc(e["commit"])}' if e.get('commit') else '')
+        links = ''.join(f'<a href="{esc(l["href"])}">{esc(l["title"])}</a>' for l in e.get('links') or [])
+        posts.append(f'<li class="blog-post" id="{esc(e["id"])}"><time class="blog-date mono" datetime="{esc(e["date"])}">{ctx.fmt_date(e["date"])}</time>'
+                     f'<span class="blog-dot" aria-hidden="true"></span><article class="blog-card">'
+                     f'<div class="entry-meta"><span class="st st-{esc(e["status"])}">{esc(status.get(e["status"], e["status"]))}</span>'
+                     f'{f"<span>{src}</span>" if src else ""}</div>'
+                     f'<h2>{esc(e["title"])}</h2><p class="summary">{esc(e["summary"])}</p>'
+                     f'<div class="blog-media n{min(len(figs), 3)}">{"".join(figs)}</div>{body}'
+                     f'<dl class="facts-list">{facts}</dl>{f"<div class=entry-links>{links}</div>" if links else ""}</article></li>')
+    first = ctx.fmt_date(mine[-1]['date']) if mine else ''
+    last = ctx.fmt_date(mine[0]['date']) if mine else ''
+    return (f'<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / '
+            f'<a href="{sys_href}">{name}</a> / {ctx.T["blogNav"]}</p>'
+            f'<h1>{ctx.T["blogTitle"]}: {name}</h1><p>{esc(ctx.T["blogLead"].format(s=s["name"]))}</p></div>'
+            f'<div class="dl-stats"><div><strong>{len(mine)}</strong><span>{ctx.T["blogStages"]}</span></div>'
+            f'<div><strong class="blog-stat-date">{last}</strong><span>{ctx.T["blogLast"]}</span></div></div></section>'
+            f'<ol class="blog-list">{"".join(posts)}</ol>'
+            f'<p class="blog-first mono">{ctx.T["blogFirst"]}: {first}</p>'
+            '<div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button>'
+            '<img id="lb-img" alt=""><p id="lb-cap"></p></div>')
+
+
+def feature_page(s, it, body_html, ctx):
+    """A mini-article about one part of a flagship system: lead, screenshots, long text."""
+    sid = esc(s['id'])
+    gal = ''
+    if it.get('media') and not it.get('article'):  # an article places its own images
+        figs = ''.join(f'<figure><a href="{esc(ctx.media(m["src"]))}" data-cap="{esc(ctx.loc(m, "caption"))}">'
+                       f'<img src="{esc(ctx.media(m["src"]))}" alt="{esc(ctx.loc(m, "caption"))}"{" loading=\"lazy\"" if i else ""}></a>'
+                       f'<figcaption>{esc(ctx.loc(m, "caption"))}</figcaption></figure>'
+                       for i, m in enumerate(it['media']))
+        gal = f'<div class="fp-gallery{" fp-one" if len(it["media"]) == 1 else ""}">{figs}</div>'
+    def sib_href(o):
+        return f'system-{sid}-{esc(o["id"])}.html' if feature_has_page(o) else f'system-{sid}.html#inc'
+    sib = ''.join(f'<a class="chip{" chip-ink" if o is it else ""}" href="{sib_href(o)}">{esc(ctx.loc(o, "name"))}</a>'
+                  for o in s['includes'])
+    return (f'<section class="sp-hero fp-hero"><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / '
+            f'<a href="system-{sid}.html">{esc(s["name"])}</a> / {esc(ctx.loc(it, "name"))}</p>'
+            f'<h1>{esc(ctx.loc(it, "name"))}</h1><p class="sp-lead">{esc(ctx.loc(it, "text"))}</p></section>'
+            f'{gal}<article class="doc fp-body">{body_html}</article>'
+            f'<section class="sp-sec sp-others"><p class="eyebrow">{ctx.T["incOther"].format(s=esc(s["name"]))}</p>'
+            f'<div class="chips">{sib}</div><p><a class="btn btn-line" href="system-{sid}.html">← {esc(s["name"])}</a></p></section>'
+            '<div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button>'
+            '<img id="lb-img" alt=""><p id="lb-cap"></p></div>')
+
+
+FEATURE_JS = """<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>"""
 
 
 def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
@@ -170,7 +274,7 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
     elif art:
         href = art if art.startswith('https://') else f'{repo_blob}/{art}'
         buttons.append(f'<a class="btn btn-ink" href="{esc(href)}">{ctx.T["article"]}</a>')
-    buttons.append(f'<a class="btn btn-line" href="devlog.html#system={sid}">{ctx.T["devlogN"]} · {len(mine)}</a>')
+    buttons.append(f'<a class="btn btn-line" href="{f"devblog-{sid}.html" if mine else f"devlog.html#system={sid}"}">{ctx.T["blogTitle"]} · {len(mine)}</a>')
     hero = (f'<section class="sp-hero"><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / {esc(s["name"])}</p>'
             f'<div class="sp-title"><h1>{esc(s["name"])}</h1>{version_badge(s, ctx)}</div><p class="sp-tag">{esc(ctx.loc(s, "tagline"))}</p>'
             f'<p class="sp-lead">{esc(ctx.loc(s, "essence"))}</p>'
@@ -182,25 +286,26 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
     else:
         cover = (f'<div class="sp-cover sp-pending"><div class="sys-placeholder">{MARK_LIGHT}<span>{esc(s["name"])}</span></div>'
                  f'<p><strong>{ctx.T["pendingTitle"]}</strong> {esc(ctx.loc(s, "coverBrief"))}</p></div>')
-    inc = ''.join(f'<article class="card"><h3>{esc(ctx.loc(i, "name"))}</h3><p>{esc(ctx.loc(i, "text"))}</p></article>'
-                  for i in s['includes'])
+    inc = ''.join(include_card(s, i, ctx) for i in s['includes'])
     ena = ''.join(f'<li>{esc(x)}</li>' for x in (ctx.loc(s, 'enables') or []))
-    rm = ''.join(roadmap_item(it, ctx) for it in sorted_roadmap(s['roadmap']))
+    rm = rm_track(s['roadmap'], ctx)
     shots = []
     for e in mine[:6]:
         m = next((m for m in e['media'] if not re.search(r'\.(mp4|webm)$', m['src'], re.I)), None)
         img = f'<img src="{esc(m["src"])}" alt="{esc(m["caption"])}" loading="lazy">' if m else ''
-        shots.append(f'<a class="sp-entry" href="devlog.html#{esc(e["id"])}">{img}<span class="mono">{ctx.fmt_date(e["date"])}</span>'
+        shots.append(f'<a class="sp-entry" href="devblog-{sid}.html#{esc(e["id"])}">{img}<span class="mono">{ctx.fmt_date(e["date"])}</span>'
                      f'<strong>{esc(e["title"])}</strong><span>{esc(e["summary"])}</span></a>')
+    blog_link = (f'<a href="devblog-{sid}.html">{esc(ctx.T["blogAll"].format(n=len(mine)))}</a>' if mine else '')
     log = (f'<div class="sp-entries">{"".join(shots)}</div>' if shots else f'<p class="empty">{ctx.T["noEntries"]}</p>')
     others = ''.join(f'<a class="chip{" chip-ink" if o["id"] == s["id"] else ""}" href="system-{esc(o["id"])}.html">{esc(o["name"])}</a>'
                      for o in flagships)
     return (hero + cover +
-            f'<section class="sp-sec"><h2 class="h2">{ctx.T["secIncludes"]}</h2><div class="grid sp-inc">{inc}</div></section>'
+            f'<section class="sp-sec" id="inc"><h2 class="h2">{ctx.T["secIncludes"]}</h2><div class="grid sp-inc">{inc}</div></section>'
             f'<section class="sp-sec"><h2 class="h2">{ctx.T["secEnables"]}</h2><ul class="sp-ena">{ena}</ul></section>'
             f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secRoadmap"]}</h2>'
-            f'<a href="roadmap.html#{sid}">{ctx.T["secRoadmapAll"]}</a></div><ol class="rm-list">{rm}</ol></section>'
-            f'<section class="sp-sec"><h2 class="h2">{ctx.T["secDevlog"]}</h2>{log}</section>'
+            f'<a href="roadmap.html#{sid}">{ctx.T["secRoadmapAll"]}</a></div>{rm}</section>'
+            f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secDevlog"]}</h2>'
+            f'{blog_link}</div>{log}</section>'
             f'<section class="sp-sec sp-others"><p class="eyebrow">{ctx.T["otherSystems"]}</p><div class="chips">{others}</div></section>')
 
 
@@ -208,30 +313,32 @@ def roadmap_page(flagships, ctx):
     chips = [f'<button class="filter" type="button" data-sys="" aria-pressed="true">{ctx.T["rmAll"]}</button>']
     chips += [f'<button class="filter" type="button" data-sys="{esc(s["id"])}" aria-pressed="false">{esc(s["name"])}</button>'
               for s in flagships]
-    cols = []
-    for st in ('done', 'in-progress', 'planned'):
-        items = [(it, s) for s in flagships for it in s['roadmap'] if it['status'] == st]
-        if st == 'done':
-            items.sort(key=lambda x: x[0]['date'], reverse=True)
-        else:
-            items.sort(key=lambda x: (x[0].get('target') or '9999', x[1]['name']))
-        lis = ''.join(roadmap_item(it, ctx, s) for it, s in items)
-        cols.append(f'<section class="rm-col rm-col-{st}"><h2>{ctx.status(st)} <span class="count">{len(items)}</span></h2>'
-                    f'<ol class="rm-list">{lis}</ol></section>')
+    lanes = ''.join(f'<section class="rml" id="{esc(s["id"])}" data-sys="{esc(s["id"])}"><div class="rml-head">'
+                    f'<a class="rml-name" href="system-{esc(s["id"])}.html">{esc(s["name"])}</a>'
+                    f'<span>{esc(ctx.loc(s, "tagline"))}</span></div>{rm_track(s["roadmap"], ctx)}</section>'
+                    for s in flagships)
     total = sum(len(s['roadmap']) for s in flagships)
+    done = sum(1 for s in flagships for it in s['roadmap'] if it['status'] == 'done')
     return (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["rmEyebrow"]}</p><h1>{ctx.T["rmTitle"]}</h1>'
             f'<p>{ctx.T["rmLead"]}</p></div>'
             f'<div class="dl-stats"><div><strong>{len(flagships)}</strong><span>{ctx.T["rmSystems"]}</span></div>'
-            f'<div><strong>{total}</strong><span>{ctx.T["rmItems"]}</span></div></div></section>'
+            f'<div><strong>{done}/{total}</strong><span>{ctx.T["rmItems"]}</span></div></div></section>'
             f'<div class="dl-filters rm-filters" role="group" aria-label="{ctx.T["rmFilter"]}">{"".join(chips)}</div>'
-            f'<div class="rm-board">{"".join(cols)}</div>')
+            f'<div class="rml-board">{lanes}</div>')
 
 
-ROADMAP_JS = """<script>
+TRACK_JS = """<script>
+(function(){document.querySelectorAll('.rmt').forEach(function(t){var sc=t.querySelector('.rmt-scroll'),now=t.querySelector('.is-now');
+function edges(){t.classList.toggle('at-start',sc.scrollLeft<4);t.classList.toggle('at-end',sc.scrollLeft+sc.clientWidth>sc.scrollWidth-4);}
+if(now)sc.scrollLeft=Math.max(0,now.offsetLeft-sc.clientWidth*0.35);
+t.querySelectorAll('.rmt-btn').forEach(function(b){b.addEventListener('click',function(){sc.scrollBy({left:+b.dataset.dir*sc.clientWidth*0.8,behavior:'smooth'});});});
+sc.addEventListener('scroll',edges,{passive:true});window.addEventListener('resize',edges);edges();});})();
+</script>"""
+
+ROADMAP_JS = TRACK_JS + """<script>
 (function(){var b=document.querySelectorAll('.rm-filters .filter');function set(id){b.forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.sys===id));});
-document.querySelectorAll('.rm-item').forEach(function(li){li.hidden=!!id&&li.dataset.sys!==id;});
-document.querySelectorAll('.rm-col').forEach(function(c){c.querySelector('.count').textContent=c.querySelectorAll('.rm-item:not([hidden])').length;});
-history.replaceState(null,'',id?'#'+id:location.pathname);}
+document.querySelectorAll('.rml').forEach(function(l){l.hidden=!!id&&l.dataset.sys!==id;});
+history.replaceState(null,'',id?'#'+id:location.pathname);window.dispatchEvent(new Event('resize'));}
 b.forEach(function(x){x.addEventListener('click',function(){set(x.dataset.sys);});});
 var h=location.hash.slice(1);if(h&&document.querySelector('.rm-filters [data-sys="'+h+'"]'))set(h);})();
 </script>"""

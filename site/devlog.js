@@ -62,7 +62,7 @@
   function entry(e) {
     var meta = el('div', { class: 'entry-meta' }, [
       el('span', { class: 'st st-' + e.status, text: STATUS[e.status] || e.status }),
-      el('span', { text: systemName(e.system) }),
+      el('a', { class: 'entry-sys', href: 'devblog-' + e.system + '.html', text: systemName(e.system) }),
       el('time', { datetime: e.date, text: e.date }),
       e.branch ? el('span', { text: e.branch + (e.commit ? ' · ' + e.commit : '') }) : null
     ]);

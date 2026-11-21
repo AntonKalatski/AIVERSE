@@ -10,10 +10,21 @@ Tool: `tools/site/build.py` (stdlib). No runtime library: workflow-only skill.
 
 ## When
 
-Every finished stage with a visible or user-facing result in any engine system: a new
-render feature, a lighting or VFX change, an editor window, a world tool, a network or
-meta capability, a new template. One entry per stage. Pure refactors, test-only work and
-fixes nobody can see get no entry.
+Every successfully finished stage of any engine system gets an entry. Entries form the system's
+own development diary on the site (`devblog-<system>.html`, newest first) and the shared feed.
+
+- Only successful stages: a result that works and is shown in a real frame. Failed, abandoned or
+  partial attempts, build errors and red tests stay in the handoff and never reach the site.
+- A stage with nothing to show (refactor, internal API, test-only work) is written up together
+  with the next stage that has a frame; one entry may cover several stages.
+- Do not stress that a system is "genre-independent", "for any genre", "one for all genres" or
+  "universal" anywhere on the site: that is an internal architecture rule, not news for readers.
+  Say what the system does.
+- People read the diary. Write what changed, what a game or a developer can now do, how it looks
+  and where it is turned on. No "the build passed", "build failed", "tests are green", command
+  lists, logs, handoff stage numbers or temp paths. `verified`: one or two sentences on where and
+  how the result was shown working (platform, scene, backend). `limits`: what is missing or not
+  yet checked, in plain words.
 
 ## Steps
 
@@ -41,6 +52,11 @@ the same commit: move the finished `roadmap` item to `"status": "done"` with tod
 add one), mark what you are starting as `in-progress`, add newly planned features from your
 handoff as `planned` with `"target": null` unless the user gave a date, and keep `includes` and
 `enables` true to what is merged, with their `En` twins. A new flagship system needs every field (see docs/devlog/README.md).
+
+- Mini-article for an `includes` card: add `"id": "<slug>"` to the item, write
+  `docs/devlog/features/<system>/<slug>.md` and `.en.md` (why, what it does, how to turn it on,
+  limits; real screenshots by relative path) and optionally `media` for the card thumbnail.
+  Facts only from the code, docs and verified runs; run `build.py check`.
 
 ## Documentation pages
 
