@@ -153,6 +153,13 @@ cases_quick() {
   for g in gl vulkan; do run vsync_default $g; done
   for g in gl vulkan; do run uncapped $g $U; done
 }
+# render resolution (PlatformAndroid applyRenderScale) on default tiers, vsync on and off
+cases_scale() {
+  for g in gl vulkan; do run vsync_default $g; done
+  for g in gl vulkan; do run uncapped $g $U; done
+  for g in gl vulkan; do run native_res $g $U AIVERSE_RENDER_SCALE=1; done
+  for g in gl vulkan; do run scale_050 $g $U AIVERSE_RENDER_SCALE=0.5; done
+}
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
