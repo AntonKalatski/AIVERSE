@@ -204,6 +204,8 @@ cases_gles() {
   run base gl $U; run sm512 gl $U AIVERSE_SHADOW_SIZE=512; run sm256 gl $U AIVERSE_SHADOW_SIZE=256; run shadows_off gl $U AIVERSE_SHADOWS=off
   run s044 gl $U AIVERSE_RENDER_SCALE=0.444; run vsync gl
 }
+# weak-GPU unit shadows: contact blobs (default) vs casting into the shadow map
+cases_units() { run blobs gl $U; run cast gl $U AIVERSE_UNIT_SHADOWS=1; run blobs_vsync gl; }
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \

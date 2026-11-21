@@ -11,6 +11,7 @@
 #include <array>
 #include <span>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <utility>
 #include <string>
@@ -534,6 +535,12 @@ public:
     // 64 / 128-tap stable disk (4 fetches each); the blocker search stays. Set by touch-device hosts.
     void setMobileShadowFilter(bool on) { mobileShadowFilter_ = on; }
     bool mobileShadowFilter() const { return mobileShadowFilter_; }
+    // Mobile Low: hosts draw units without casting into the shadow map (contact blobs instead).
+    // AIVERSE_UNIT_SHADOWS=1 keeps them casting.
+    bool blobUnitShadows() const {
+        static const bool keep = [] { const char* e = std::getenv("AIVERSE_UNIT_SHADOWS"); return e && *e == '1'; }();
+        return mobileShadowFilter_ && quality_ == ShadowQuality::Low && !keep;
+    }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     // Shader presentation clock only; never changes simulation/current velocity.
