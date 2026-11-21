@@ -1951,7 +1951,7 @@
       "radiusZcm": 29000,
       "heightCm": 30000,
       "shearPermille": 100,
-      "morphology": "ridged_massif"
+      "morphology": "cragged_massif"
     },
     {
       "xCm": 15500,
@@ -1960,7 +1960,7 @@
       "radiusZcm": 34000,
       "heightCm": 35500,
       "shearPermille": -80,
-      "morphology": "ridged_massif"
+      "morphology": "cragged_massif"
     },
     {
       "xCm": 1500,
@@ -1969,7 +1969,7 @@
       "radiusZcm": 24000,
       "heightCm": 28500,
       "shearPermille": 180,
-      "morphology": "ridged_massif"
+      "morphology": "cragged_massif"
     },
     {
       "xCm": -24500,
@@ -1978,7 +1978,7 @@
       "radiusZcm": 21000,
       "heightCm": 17500,
       "shearPermille": -120,
-      "morphology": "ridged_massif"
+      "morphology": "cragged_massif"
     },
     {
       "xCm": 21000,
@@ -1987,7 +1987,7 @@
       "radiusZcm": 22000,
       "heightCm": 18500,
       "shearPermille": 100,
-      "morphology": "ridged_massif"
+      "morphology": "cragged_massif"
     }
   ],
   "valleyHalfWidthCm": 0,
