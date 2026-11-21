@@ -38,3 +38,7 @@
 .jt__key::after{content:':'}
 .jt__str{color:#a5d6ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .jt__num{color:#f3c873}.jt__lit{color:#d2a8ff}.jt__meta{color:var(--au-text-faint)}
+.tbrush{display:flex;flex-direction:column;gap:6px;border:1px solid var(--au-line);border-radius:var(--au-radius-md);padding:8px;flex:none}
+.tbrush.is-armed{border-color:var(--au-accent);box-shadow:0 0 0 1px var(--au-accent) inset}
+.tbrush__row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tbrush .ptp__seg button{padding:3px 8px;font-size:var(--au-font-xs)}

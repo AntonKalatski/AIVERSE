@@ -581,6 +581,13 @@ bool StudioSession::pollAgentLink() {
         if(method!="call"){agentServer_.send(m.client,reply(id,error("unknown method")).dump(-1));continue;}
         const std::string name=msg["params"].getStr("name");
         const Json args=msg["params"]["arguments"].isObject()?msg["params"]["arguments"]:Json::object();
+        if(name=="view_screenshot"){
+            // Answered by the host with the Scene's next frame (finishAgentScreenshot).
+            if(!agentShots_.empty()){agentServer_.send(m.client,reply(id,error("another screenshot is pending; retry after its reply")).dump(-1));continue;}
+            agentShots_.push_back({m.client,id});
+            agentLines_.push_back("→ view_screenshot");
+            continue;
+        }
         syncHistoryLabels();
         const size_t before=ws_.map.undoDepth(),entities=ws_.map.data.entities.size();
         const bool wasDirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
@@ -609,6 +616,49 @@ bool StudioSession::pollAgentLink() {
     for(auto& line:agentRun_.takeLines())agentLines_.push_back(line);
     if(agentLines_.size()>3000)agentLines_.erase(agentLines_.begin(),agentLines_.begin()+1000);
     return changed;
+}
+bool StudioSession::terrainStrokeDab(double x, double y, std::string* error) {
+    if(!stroking_)return false;
+    // Dabs closer than a third of the radius add little but cost a full map snapshot each.
+    if(std::hypot(x-strokeX_,y-strokeY_)<terrainBrush_.radius*0.33 && ws_.map.undoDepth()>strokeDepth_)return true;
+    Json p=Json::object();
+    p.set("op",str(terrainBrush_.op));p.set("x",Json::number(x,3));p.set("y",Json::number(y,3));
+    p.set("radius",Json::number(terrainBrush_.radius,3));p.set("strength",Json::number(terrainBrush_.strength,3));
+    const Json r=ws_.call("terrain_sculpt",p,"studio");
+    if(r.has("error")){if(error)*error=r.getStr("error");return false;}
+    strokeX_=x;strokeY_=y;
+    return true;
+}
+bool StudioSession::terrainStrokeBegin(double x, double y, std::string* error) {
+    if(!terrainBrush_.armed||ws_.project.dir.empty())return false;
+    syncHistoryLabels();
+    strokeDepth_=ws_.map.undoDepth();stroking_=true;
+    strokeX_=x+1e9;   // the first dab always applies
+    if(!terrainStrokeDab(x,y,error)){stroking_=false;return false;}
+    return true;
+}
+void StudioSession::terrainStrokeEnd() {
+    if(!stroking_)return;
+    stroking_=false;
+    if(ws_.map.undoDepth()<=strokeDepth_)return;
+    ws_.map.mergeUndoSince(strokeDepth_);
+    while(undoLabels_.size()>strokeDepth_)undoLabels_.pop_back();
+    undoLabels_.push_back("Terrain brush");redoLabels_.clear();
+    syncHistoryLabels();
+}
+void StudioSession::finishAgentScreenshot(const std::string& pngBase64, int width, int height, const std::string& why) {
+    for(const auto& shot:agentShots_){
+        Json r=Json::object(),result=Json::object();
+        if(pngBase64.empty())result.set("error",str(why.empty()?std::string("nothing to capture"):why));
+        else {
+            result.set("png_base64",str(pngBase64));
+            result.set("width",num(int64_t(width)));result.set("height",num(int64_t(height)));
+            result.set("view",str("Studio Scene panel as the user sees it (camera unchanged)"));
+        }
+        r.set("id",shot.id);r.set("result",std::move(result));
+        agentServer_.send(shot.client,r.dump(-1));
+    }
+    agentShots_.clear();
 }
 Json StudioSession::agentRequest(const std::string& method, const Json& params) {
     namespace fs=std::filesystem;
@@ -2018,6 +2068,44 @@ Json StudioSession::dispatchImpl(const Json& request) {
             out.set("types",types["value"]);out.set("resolved",resolved["value"]);
             out.set("resources",list["resources"]);out.set("summary",list["types"]);
             out.set("dirty",Json::fromBool(ws_.project.rulesDirty));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.stats") {
+            // Statistics: map contents and Scene timing (the legacy Stats window's editor part).
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const auto& d=ws_.map.data;
+            std::map<std::string,int64_t> byType;std::map<int,int64_t> byOwner;
+            for (const auto& e:d.entities){++byType[e.type];++byOwner[e.owner];}
+            Json types=Json::array();
+            std::vector<std::pair<std::string,int64_t>> sorted(byType.begin(),byType.end());
+            std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second>b.second||(a.second==b.second&&a.first<b.first);});
+            for (const auto& [t,n]:sorted){Json o=Json::object();o.set("type",str(t));o.set("count",num(n));types.push(std::move(o));}
+            Json owners=Json::array();
+            for (const auto& [o,n]:byOwner){
+                Json j=Json::object();j.set("owner",num(int64_t(o)));j.set("count",num(n));
+                j.set("name",str(o==0?std::string("Neutral"):o<0?std::string("Hostile"):o<=int(d.players.size())?d.players[size_t(o-1)].name:"Player "+std::to_string(o)));
+                owners.push(std::move(j));
+            }
+            Json out=Json::object();
+            out.set("map",str(ws_.map.path.empty()?std::string("(unsaved)"):ws_.relative(ws_.map.path)));
+            out.set("width",num(int64_t(d.w)));out.set("height",num(int64_t(d.h)));
+            out.set("entities",num(int64_t(d.entities.size())));out.set("players",num(int64_t(d.players.size())));
+            out.set("roads",num(int64_t(d.roads.size())));
+            out.set("types",types);out.set("owners",owners);
+            out.set("ruleTypes",num(int64_t(ws_.project.rules.types.size())));
+            out.set("undoSteps",num(int64_t(ws_.map.undoDepth())));
+            out.set("dirty",Json::fromBool(ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty));
+            out.set("sceneFrameMs",Json::number(sceneFrameMs_,2));out.set("sceneFrames",num(int64_t(sceneFrames_)));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.terrainBrush") {
+            // Arm / disarm the Scene brush and set its op, radius and strength (session only).
+            static const std::set<std::string> ops={"raise","lower","smooth","flatten","noise","erode"};
+            if (params.has("op")) { const std::string op=params.getStr("op"); if(!ops.count(op))throw std::runtime_error("Unknown brush op"); terrainBrush_.op=op; }
+            if (params.has("radius")) { const double r=params["radius"].toDouble(); if(!std::isfinite(r)||r<0.25||r>64)throw std::runtime_error("Radius 0.25..64"); terrainBrush_.radius=r; }
+            if (params.has("strength")) { const double v=params["strength"].toDouble(); if(!std::isfinite(v)||v<0||v>20)throw std::runtime_error("Strength 0..20"); terrainBrush_.strength=v; }
+            if (params.has("armed")) terrainBrush_.armed=params.getBool("armed")&&!ws_.project.dir.empty();
+            Json out=Json::object();
+            out.set("armed",Json::fromBool(terrainBrush_.armed));out.set("op",str(terrainBrush_.op));
+            out.set("radius",Json::number(terrainBrush_.radius,3));out.set("strength",Json::number(terrainBrush_.strength,3));
             reply.set("result",std::move(out));
         } else if (method == "studio.agentInfo" || method == "studio.agentStart" || method == "studio.agentStop" || method == "studio.agentReset") {
             reply.set("result", agentRequest(method, params));

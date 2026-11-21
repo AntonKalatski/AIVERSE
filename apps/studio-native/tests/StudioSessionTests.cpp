@@ -7,6 +7,8 @@
 #include "apps/studio-native/StudioRuntimeInspect.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
+#include <thread>
+#include <chrono>
 #include <set>
 #include <filesystem>
 #include <fstream>
@@ -278,8 +280,33 @@ void authoredEntityWorkflow() {
            AIVERSE_TEST_CHECK(steps.size()>0 && steps[steps.size()-1].getStr("label")=="Agent · Entity place");
            AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.data.entities.size()==before);
        } else AIVERSE_TEST_CHECK(after["result"]["changes"].size()==1 && !after["result"]["changes"][0].getBool("ok"));
+       // view_screenshot waits for the host's capture; the host answers through finishAgentScreenshot.
+       client.send(R"({"id":3,"method":"call","params":{"name":"view_screenshot","arguments":{}}})");
+       for(int i=0;i<100 && !session.agentScreenshotPending();++i){session.pollAgentLink();std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+       AIVERSE_TEST_CHECK(session.agentScreenshotPending());
+       session.finishAgentScreenshot("iVBORw0KGgo=",2,2,"");
+       std::string shot;client.recv(shot,1000);
+       AIVERSE_TEST_CHECK(!shot.empty() && Json::parse(shot)["result"].getStr("png_base64")=="iVBORw0KGgo=" && !session.agentScreenshotPending());
        client.close();
        AIVERSE_TEST_CHECK(call("studio.agentStart",R"({"prompt":""})").has("error"));
+   }
+   // Terrain brush: a stroke of several dabs is one History step; Stats counts the map.
+   {
+       AIVERSE_TEST_CHECK(call("studio.terrainBrush",R"({"op":"nope"})").has("error"));
+       const auto armed=call("studio.terrainBrush",R"({"armed":true,"op":"raise","radius":3,"strength":1})");
+       AIVERSE_TEST_CHECK(armed["result"].getBool("armed"));
+       const size_t depth=session.workspace().map.undoDepth();
+       std::string err;
+       AIVERSE_TEST_CHECK(session.terrainStrokeBegin(4,4,&err));
+       AIVERSE_TEST_CHECK(session.terrainStrokeDab(8,4,&err) && session.terrainStrokeDab(12,4,&err));
+       session.terrainStrokeEnd();
+       AIVERSE_TEST_CHECK(session.workspace().map.undoDepth()==depth+1);
+       const auto steps=call("studio.history")["result"]["steps"];
+       AIVERSE_TEST_CHECK(steps.size()>0 && steps[steps.size()-1].getStr("label")=="Terrain brush");
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.undoDepth()==depth);
+       call("studio.terrainBrush",R"({"armed":false})");
+       const auto stats=call("studio.stats");
+       AIVERSE_TEST_CHECK(!stats.has("error") && stats["result"]["entities"].integer()==int64_t(session.workspace().map.data.entities.size()));
    }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {

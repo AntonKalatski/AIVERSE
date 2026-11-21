@@ -58,3 +58,18 @@
 .ptp__table--rows .au-input{min-width:0}
 .ptp__ctxhead>input{min-width:90px}
 .ptp__ctxhead .ptp__narrow{width:56px!important}
+.stats__cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+.stats__cards>div{border:1px solid var(--au-line);border-radius:var(--au-radius-md);padding:6px 8px;background:var(--au-panel-raised);display:flex;flex-direction:column}
+.stats__cards b{font-size:16px;font-variant-numeric:tabular-nums}
+.stats__cards span{color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.stats__num{text-align:right;font-variant-numeric:tabular-nums}
+.stats__bars{display:flex;flex-direction:column;gap:2px}
+.stats__bar{display:grid;grid-template-columns:110px 1fr 36px;align-items:center;gap:6px;font-size:var(--au-font-xs)}
+.stats__bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--au-text-muted)}
+.stats__bar i{height:8px;border-radius:2px;background:var(--au-accent);opacity:.75;min-width:2px}
+.stats__bar b{text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+.diff__head .au-input{flex:1;min-width:0}
+.diff__summary{display:flex;align-items:center;gap:10px;font-size:var(--au-font-xs);color:var(--au-text-muted)}
+.diff__summary .au-input{margin-left:auto;width:140px}
+.diff__added,.diff__summary .diff__added{color:#8ee6a0}.diff__removed{color:#ff9a8a}.diff__changed{color:#f3c873}
+tr.diff__added td:first-child{color:#8ee6a0}tr.diff__removed td:first-child{color:#ff9a8a}tr.diff__changed td:first-child{color:#f3c873}

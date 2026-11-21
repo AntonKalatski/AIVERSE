@@ -37,6 +37,25 @@ inline const std::vector<StudioToolGroup>& studioToolGroups() {
         {"scripts", {"script_api", "script_list", "script_read", "script_write", "script_check"}},
         {"overlays", {"overlay_templates", "overlay_list", "overlay_get", "overlay_set", "overlay_delete", "overlay_preview"}},
         {"branding", {"branding_get", "branding_set", "splash_preview", "icons_preview"}},
+        {"fields", {"field_list", "field_get", "field_paint", "field_set_rules", "region_paint", "territory_paint"}},
+        {"physis", {"physis_get", "physis_validate", "physis_set"}},
+        {"fps", {"fps_get", "fps_set", "lens_scene_get", "lens_scene_validate", "lens_scene_set", "lens_camera_set", "lens_camera_delete"}},
+        {"raid", {"raid_info", "raid_set", "raid_point", "raid_run"}},
+        {"balance", {"balance_stats", "balance_duel", "balance_matrix", "balance_batch", "match_run", "scenario_run", "rules_lint"}},
+        {"fx_graph", {"fx_graph_list", "fx_graph_node_catalog", "fx_graph_get", "fx_graph_validate", "fx_graph_set", "fx_graph_edit",
+                      "fx_graph_bake", "fx_graph_delete", "fx_graph_draft_list", "fx_graph_draft_get", "fx_graph_draft_set", "fx_graph_draft_publish"}},
+        {"fx_functions", {"fx_function_list", "fx_function_get", "fx_function_set", "fx_function_import", "fx_function_export", "fx_import_unity"}},
+        {"modeling", {"modeling_catalog", "modeling_list", "modeling_get", "modeling_create", "modeling_edit", "modeling_apply", "modeling_build",
+                      "modeling_duplicate", "modeling_lod", "modeling_export", "modeling_graph_set", "modeling_graph_import", "modeling_graph_publish",
+                      "texture_patterns", "texture_generate"}},
+        {"anim_assets", {"animation_asset_get", "animation_asset_save", "animation_generate", "animation_bake", "animation_sample"}},
+        {"anim_graph", {"animation_graph_list", "animation_graph_get", "animation_graph_validate", "animation_graph_set", "animation_graph_apply",
+                        "animation_montage_validate"}},
+        {"anim_rig", {"animation_avatar_suggest", "animation_avatar_validate", "rig_auto_weights", "rig_edit", "animation_ragdoll_generate",
+                      "animation_root_motion_generate"}},
+        {"model_anim", {"model_info", "animation_editor", "animation_edit"}},
+        {"snapshot_diff", {"game_file_read"}},
+        {"project_import", {"port_scan", "port_report", "port_item", "port_resolve", "port_import"}},
     };
     return groups;
 }
@@ -57,7 +76,8 @@ inline bool studioToolAllowed(const std::string& op) {
 inline bool studioToolReadOnly(const std::string& op) {
     static const char* suffixes[] = {"_get", "_list", "_info", "_types", "_network", "_catalog", "_templates",
                                      "_presets", "_validate", "_ascii", "_estimate", "_api", "_read", "_check",
-                                     "_preview", "_analyze", "_state", "_export"};
+                                     "_preview", "_analyze", "_state", "_export", "_run", "_scan", "_report", "_sample",
+                                     "_stats", "_duel", "_matrix", "_batch", "_suggest", "_patterns", "_item", "_lint"};
     for (const char* s : suffixes) {
         const std::string suf = s;
         if (op.size() > suf.size() && op.compare(op.size() - suf.size(), suf.size(), suf) == 0) return true;

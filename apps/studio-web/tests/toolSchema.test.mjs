@@ -39,7 +39,7 @@ test('state ops: read-only and runnable without parameters', () => {
   assert.deepEqual(stateOps(ops, ['a_get', 'a_info', 'a_set', 'missing']).map(o => o.name), ['a_get']);
 });
 test('every tool panel is a registered dock panel', () => {
-  for (const id of TOOL_PANEL_IDS) { assert.ok(STUDIO_PANELS.includes(id), id); assert.ok(TOOL_PANELS[id].state.length); }
+  for (const id of TOOL_PANEL_IDS) { assert.ok(STUDIO_PANELS.includes(id), id); assert.ok(TOOL_PANELS[id].open.length, id); }
 });
 test('choice fields start on their first option', () => {
   const [op] = schemaFields({ properties: { op: { type: 'string', enum: ['raise', 'lower'] } } });
@@ -54,4 +54,14 @@ test('agent transcript line kinds', () => {
   assert.equal(agentLineKind('агент закончил'), 'done');
   assert.equal(agentLineKind('агент остановлен (код 1)'), 'error');
   assert.equal(agentLineKind('I added two mines.'), 'text');
+});
+import { jsonDiff, previewValue } from '../src/panels/jsonDiff.ts';
+test('json diff: paths, kinds, float tolerance, limit', () => {
+  const a = { w: 64, entities: [{ type: 'tree', x: 1 }, { type: 'mine', x: 2 }], extra: { fog: 1 } };
+  const b = { w: 64, entities: [{ type: 'tree', x: 1.0000001 }, { type: 'mine', x: 3 }, { type: 'farm', x: 4 }], name: 'v2' };
+  const d = jsonDiff(a, b);
+  assert.deepEqual(d.map(c => c.kind + ' ' + c.path), ['changed entities[1].x', 'added entities[2]', 'removed extra', 'added name']);
+  assert.equal(jsonDiff(a, a).length, 0);
+  assert.equal(jsonDiff({ a: [1, 2, 3, 4] }, { a: [5, 6, 7, 8] }, 1e-6, 2).length, 2);
+  assert.equal(previewValue('x'.repeat(100), 10).length, 10);
 });
