@@ -5,6 +5,7 @@
 #include "RtsTrafficRoads.h"
 #include "RtsInternal.h"
 #include "RtsTrafficPriority.h"
+#include "RtsServiceCustody.h"
 #include <aiverselib/mechanics/traffic/TrafficRoutes.h>
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
@@ -332,6 +333,15 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
         }
     }
     if (drv && drv->active()) mpc_ = drv->rules().metersPerCell;
+    // service state (RtsServiceState.h): saved and hashed with the world
+    sim.registerPersistentComponent<CustodyCar>("traffic.custody_car", 1);
+    sim.registerPersistentComponent<InCustody>("traffic.in_custody", 1);
+    sim.registerPersistentComponent<StandIn>("traffic.stand_in", 1);
+    sim.registerPersistentComponent<ServicePassenger>("traffic.passenger", 1);
+    sim.registerPersistentComponent<CarryCar>("traffic.carry_car", 1);
+    sim.registerPersistentComponent<VehicleSignals>("traffic.vehicle_signals", 1);
+    sim.registerPersistentComponent<VehicleDoor>("traffic.vehicle_door", 1);
+    sim.registerPersistentResource<ServiceLedger>("traffic.service_ledger", 1);
     noParking_.clear();
     for (const Json& r : mapBlock["noParking"].items()) {   // map traffic.noParking: rectangles in cells
         if (!r.isArray() || r.size() != 4) throw std::runtime_error("traffic.noParking: expected [x0, z0, x1, z1] rectangles");
@@ -784,6 +794,7 @@ void Traffic::io(Simulation& sim, Archive& a) {
 void Traffic::tick(Simulation& sim) {
     auto* st = store(sim);
     if (!st) return;
+    custodyGuard(sim);   // RtsServiceCustody.h
     std::vector<Vec2> foci;
     focus(sim, foci);
     if (!st->placed || sim.tick() % 10 == 0) syncLights(sim, *st, foci);
@@ -1529,7 +1540,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
         const bool person = isPersonType(w.get<Unit>(blocker).type) || !drv->car(sim, blocker);
         if (!(fireResponse || responsePriority) && person && !other && m_->rules().types[w.get<Unit>(blocker).type].speed.raw > 0) {
             if(c.kind!=kTrafficEmergency || (fireResponse || responsePriority)){if (c.stopped > sim.tickRate()*4) { c.reverseUntil=sim.tick()+sim.tickRate()*2; c.stopped=0; }}else{if (c.stopped > sim.tickRate() * 3) { c.ignore = blocker; c.ignoreUntil = sim.tick() + sim.tickRate() * 3 / 2; }}   // creep on: people step aside
-        } else if (!(fireResponse || responsePriority) && c.kind == kTrafficEmergency && m_->state(sim).trig.vars["ambulance_owned_"+std::to_string(c.e.packed())].raw && c.stopped > sim.tickRate()*4) {
+        } else if (!(fireResponse || responsePriority) && c.kind == kTrafficEmergency && (sim.world().has<CarryCar>(c.e) && sim.world().get<CarryCar>(c.e).owned) && c.stopped > sim.tickRate()*4) {
             c.reverseUntil=sim.tick()+sim.tickRate()*2;c.stopped=0;
         } else if (c.kind == kTrafficEmergency && !(fireResponse || responsePriority)) { c.ignore=c.e; c.ignoreUntil=sim.tick()+sim.tickRate()*2; }
         else if (!(fireResponse || responsePriority) && other && other->blocker == c.e && c.e.index < blocker.index) {   // they wait for each other: the lower index goes
@@ -1891,10 +1902,9 @@ bool Traffic::spawnPerson(Simulation& sim, TrafficStore& st, const std::vector<V
 void Traffic::people(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& foci) {
     if (rules_.people.empty() && st.citizens.empty()) return;
     World& w = sim.world();
-    // Kingston external journeys v2: keep the citizen record and the standard sidewalk/signal walker.
-    auto& journeyVars=m_->state(sim).trig.vars;
-    auto journeyValue=[&](const std::string& key) {auto it=journeyVars.find(key);return it==journeyVars.end()?Fixed{}:it->second;};
-    auto claimed=[&](Entity e) {return journeyValue("resident_transport_"+std::to_string(e.packed())).raw>0;};
+    // People taken over by a service or a script (ServicePassenger, RtsServiceState.h) keep their citizen record and
+    // the standard sidewalk / signal walker, which answers their walk requests.
+    auto claimed=[&](Entity e) {const auto* sp=w.tryGet<ServicePassenger>(e);return sp && sp->claim;};
     if (sim.tick() >= st.nextAdopt) { adoptPeople(sim, st); st.nextAdopt = sim.tick() + sim.tickRate(); }
     for (size_t i = 0; i < st.people.size();) {
         const Entity e = st.people[i].e;
@@ -1902,11 +1912,10 @@ void Traffic::people(Simulation& sim, TrafficStore& st, const std::vector<Vec2>&
         st.people.erase(st.people.begin() + long(i));
     }
     for(auto& p:st.people) {
-        const auto suffix=std::to_string(p.e.packed());
-        const auto heldKey="resident_transport_seen_"+suffix;
-        const bool held=claimed(p.e),wasHeld=journeyValue(heldKey).raw>0;
+        auto* sp=w.tryGet<ServicePassenger>(p.e);
+        const bool held=sp && sp->claim,wasHeld=sp && sp->seen;
         auto& unit=w.get<Unit>(p.e);
-        if(held && journeyValue("resident_transport_aboard_"+suffix).raw>0) unit.flags|=kUnitInCargo;
+        if(held && sp->aboard) unit.flags|=kUnitInCargo;
         else if(wasHeld || held) unit.flags&=~kUnitInCargo;
         if(!held && wasHeld) {
             if(auto* orders=w.tryGet<Orders>(p.e)) orders->queue.clear();
@@ -1917,23 +1926,22 @@ void Traffic::people(Simulation& sim, TrafficStore& st, const std::vector<Vec2>&
                 p.goal=dest>=0?places_[size_t(dest)].cell:-1;
             }
         }
-        journeyVars[heldKey]=held?Fixed::fromInt(1):Fixed{};
-        if(!held) continue;
-        const auto request=journeyValue("resident_transport_walk_request_"+suffix);
-        const auto resultKey="resident_transport_walk_result_"+suffix;
-        if(request.raw>0 && fxAbs(journeyValue(resultKey))!=request) {
+        if(sp) sp->seen=held;
+        if(!held) { if(sp && !wasHeld) w.remove<ServicePassenger>(p.e); continue; }   // released and reset: gone
+        const int32_t request=sp->walkRequest;
+        if(request>0 && std::abs(sp->walkResult)!=request) {
             if(auto* orders=w.tryGet<Orders>(p.e)) orders->queue.clear();
             m_->stopMoving(sim,p.e);p.path.clear();p.leg.clear();p.idx=p.legEnd=p.legPt=0;p.state=PedState::Pause;p.panic=false;
-            Vec2 goal{journeyValue("resident_transport_walk_x_"+suffix),journeyValue("resident_transport_walk_z_"+suffix)};
+            Vec2 goal{sp->walkX,sp->walkZ};
             int cell=sidewalkNear(goal,3);
             bool ok=walkTo(sim,p,cell);
             if(!ok && cell>=0 && m_->state(sim).grid.cellOf(w.get<Transform>(p.e).pos)==cell) ok=true;
-            journeyVars[resultKey]=ok?request:-request;
-            journeyVars["resident_transport_walk_done_"+suffix]=Fixed{};
+            sp->walkResult=ok?request:-request;
+            sp->walkDone=0;
             if(ok && !p.path.empty()) {if(stripAt(p.path[0])>=0&&!walkAllowed(sim,stripAt(p.path[0])))p.state=PedState::Wait;else startLeg(sim,p);}
         }
-        if(p.state==PedState::Pause && p.idx>=p.path.size() && journeyValue(resultKey)==request)
-            journeyVars["resident_transport_walk_done_"+suffix]=request;
+        if(p.state==PedState::Pause && p.idx>=p.path.size() && sp->walkResult==request)
+            sp->walkDone=request;
     }
     if (!foci.empty())
         for (auto& p : st.people)

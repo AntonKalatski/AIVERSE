@@ -46,6 +46,7 @@ struct TrafficService {
     int crewCount = 2;
     bool custody = false;                // police: officers detain an unarmed offender and take him to the station instead of fighting
     std::vector<uint16_t> officers;          // custody: more types that count as officers besides the crew
+    std::vector<uint16_t> wards;             // carry: map object types next to a station that make it a ward (sorted)
     bool carry = false;                  // ambulance: the crew carries the patient to the vehicle and delivers him to a hospital
     uint32_t workTicks = 100, maxWorkTicks = 1200;
     int max = 1;                             // vehicles on call at a time

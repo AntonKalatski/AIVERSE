@@ -1,96 +1,86 @@
-// Included inside Traffic::responders: uses the existing saved incident and lane route.
+// traffic.services.<id>.carry: two of the crew treat the patient, carry him to the vehicle and deliver him to a ward
+// (traffic.services.<id>.wards; none: the station it came from). State: CarryCar on the vehicle, the end of each
+// carry in ServiceLedger::carried (RtsServiceState.h). Included in Traffic::responders (RtsTrafficCity.cpp).
 if (sv.answers == kIncidentInjured && inc &&
-    (c.task==kTaskCrewOut || c.task==kTaskWorking || gs.trig.vars["ambulance_owned_"+std::to_string(c.e.packed())].raw)) {
-    auto& vars=gs.trig.vars;const auto key="ambulance_"+std::to_string(c.e.packed())+"_";
-    auto get=[&](const std::string& name){auto it=vars.find(key+name);return it==vars.end()?Fixed{}:it->second;};
-    auto set=[&](const std::string& name,int64_t value){vars[key+name]=Fixed::fromInt(value);};
-    auto phase=[&](int value){set("phase",value);set("since",sim.tick());};
-    const auto owned="ambulance_owned_"+std::to_string(c.e.packed());
-    int state=int(get("phase").toInt());
-    if(!state){phase(1);state=1;set("patient",inc->subject.packed());vars[owned]=kOne;if(living(w,inc->subject))w.get<Unit>(inc->subject).flags&=~kUnitInCargo;}
+    (c.task==kTaskCrewOut || c.task==kTaskWorking || (w.has<CarryCar>(c.e) && w.get<CarryCar>(c.e).owned))) {
+    auto alive=[&](Entity e){return living(w,e);};
+    if(!w.has<CarryCar>(c.e)){auto& n=w.add<CarryCar>(c.e);n.phase=kCarryToPatient;n.since=sim.tick();n.patient=inc->subject;n.owned=true;
+        if(alive(inc->subject))w.get<Unit>(inc->subject).flags&=~kUnitInCargo;}
+    auto& cc=w.get<CarryCar>(c.e);
+    auto phase=[&](uint8_t value){cc.phase=value;cc.since=sim.tick();};
+    const int state=cc.phase;
     inc->born=sim.tick();inc->assigned=sim.tick(); // A reserved patient never expires during transport.
     auto patient=inc->subject;
-    auto alive=[&](Entity e){return living(w,e);};
+    auto ended=[&](bool delivered,Fixed x,Fixed z){auto& l=serviceLedger(w);
+        while(!l.carried.empty()&&l.carried.front().tick+sim.tickRate()*60<sim.tick())l.carried.erase(l.carried.begin());
+        l.carried.push_back({c.e,patient,delivered,x,z,sim.tick()});if(delivered)++l.carryDelivered;
+        if(auto* d=w.tryGet<VehicleDoor>(c.e))d->open=0;w.remove<CarryCar>(c.e);};
     if(!alive(patient)||c.crew.size()<2){
-        if(alive(patient)){w.get<Unit>(patient).flags&=~kUnitInCargo;inc->pos=v2(w.get<Transform>(patient).pos);}
-        for(unsigned pl=1;pl<gs.players.size();++pl){auto pk="medical_"+std::to_string(pl)+"_";
-            auto it=vars.find(pk+"car");if(it==vars.end()||it->second.toInt()!=int64_t(c.e.packed())+1)continue;
-            vars[pk+"phase"]=kOne;vars[pk+"medics_arrived"]={};vars[pk+"car"]={};
-            if(alive(patient)){const auto p=w.get<Transform>(patient).pos;vars[pk+"ground_x"]=p.x;vars[pk+"ground_y"]={};vars[pk+"ground_z"]=p.z;}
-        }
-        vars["drive_door_"+std::to_string(c.e.packed())]={};
-        vars[owned]={};phase(0);finish(sim,st,c,false);continue;
+        Fixed x{},z{};
+        if(alive(patient)){w.get<Unit>(patient).flags&=~kUnitInCargo;inc->pos=v2(w.get<Transform>(patient).pos);x=w.get<Transform>(patient).pos.x;z=w.get<Transform>(patient).pos.z;}
+        ended(false,x,z);finish(sim,st,c,false);continue;
     }
-    // Player recovery observes the same transport; its patient proxy is kept separate from the incident marker.
-    std::string playerKey;
-    for(unsigned pl=1;pl<gs.players.size();++pl){auto pk="medical_"+std::to_string(pl)+"_";
-        auto it=vars.find(pk+"car");if(it!=vars.end()&&it->second.toInt()==int64_t(c.e.packed())+1){playerKey=pk;break;}}
-    auto heroPatient=[&](){return playerKey.empty()?kNullEntity:Entity::fromPacked(uint64_t(vars[playerKey+"patient"].toInt()-1));};
-    auto syncPlayer=[&](int p){if(playerKey.empty())return;vars[playerKey+"phase"]=Fixed::fromInt(p);
-        auto e=heroPatient();if(alive(e)){w.get<Transform>(e).pos=w.get<Transform>(patient).pos;w.get<Unit>(e).flags|=kUnitInCargo;}};
     auto medic=c.crew[0],other=c.crew[1];
     auto close=[&](Entity e,Vec3 goal,Fixed radius){return (w.get<Transform>(e).pos-goal).lengthSq()<=radius*radius;};
     auto move=[&](Entity e,Vec3 goal){if(sim.tick()%10==0||!w.get<Mobile>(e).moving)m_->moveTo(sim,e,goal,Fixed::fromRatio(12,100));};
     auto stop=[&](){for(auto e:c.crew)m_->stopMoving(sim,e);};
-    const auto elapsed=int64_t(sim.tick())-get("since").toInt();
-    if(state==1){
+    const auto elapsed=int64_t(sim.tick())-int64_t(cc.since);
+    if(state==kCarryToPatient){
         c.task=kTaskCrewOut;
         const auto at=w.get<Transform>(patient).pos;
         // Work from distinct sides of the patient, within arm reach rather than a full cell away.
         const auto facing=w.get<Unit>(patient).facing;Vec3 side{facing.z,{},-facing.x};
         const auto first=at+side*Fixed::fromRatio(8,25),second=at-side*Fixed::fromRatio(8,25);
-        if(close(medic,first,Fixed::fromRatio(9,50))&&close(other,second,Fixed::fromRatio(9,50))){stop();phase(2);c.task=kTaskWorking;}
+        if(close(medic,first,Fixed::fromRatio(9,50))&&close(other,second,Fixed::fromRatio(9,50))){stop();phase(kCarryTreating);c.task=kTaskWorking;}
         else {move(medic,first);move(other,second);}
-    }else if(state==2){
+    }else if(state==kCarryTreating){
         c.task=kTaskWorking;stop();
         for(auto e:c.crew){auto toward=w.get<Transform>(patient).pos-w.get<Transform>(e).pos;if(toward.length().raw>0)w.get<Unit>(e).facing=toward/toward.length();}
-        if(!close(medic,w.get<Transform>(patient).pos,Fixed::fromInt(1))||!close(other,w.get<Transform>(patient).pos,Fixed::fromInt(1))){phase(1);continue;}
+        if(!close(medic,w.get<Transform>(patient).pos,Fixed::fromInt(1))||!close(other,w.get<Transform>(patient).pos,Fixed::fromInt(1))){phase(kCarryToPatient);continue;}
         if(elapsed>=std::max(sv.workTicks,sim.tickRate()*4u)){
-            w.get<Unit>(patient).flags|=kUnitInCargo;phase(3);syncPlayer(2);
+            w.get<Unit>(patient).flags|=kUnitInCargo;phase(kCarryToVehicle);
         }
-    }else if(state==3 || state==6){
+    }else if(state==kCarryToVehicle || state==kCarryToWard){
         c.task=kTaskWorking;
         Vec3 goal;
-        if(state==3){
+        if(state==kCarryToVehicle){
             Fixed length=Fixed::fromRatio(3,2);
             for(const auto& def:drv->rules().vehicles)if(def.type==w.get<Unit>(c.e).type)length=def.length;
             goal=pos3-w.get<Unit>(c.e).facing*(length/2+Fixed::fromRatio(2,5));
-        }else goal={get("entrance_x"),{},get("entrance_z")};
+        }else goal={cc.entranceX,{},cc.entranceZ};
         move(medic,goal);
         const auto lead=w.get<Transform>(medic).pos;
         move(other,lead-w.get<Unit>(medic).facing*Fixed::fromRatio(45,100));
         auto& tr=w.get<Transform>(patient);tr.prevPos=tr.pos;tr.pos=lead-w.get<Unit>(medic).facing*Fixed::fromRatio(23,100);tr.pos.y+=Fixed::fromRatio(1,5);
-        vars[key+"x"]=tr.pos.x;vars[key+"z"]=tr.pos.z;
-        auto direction=w.get<Unit>(medic).facing;vars[key+"fx"]=direction.x;vars[key+"fz"]=direction.z;
-        syncPlayer(2);
-        if(close(medic,goal,Fixed::fromRatio(3,10))&&close(other,goal,Fixed::fromRatio(9,10))){stop();phase(state==3?4:7);}
-    }else if(state==4){
+        cc.carriedX=tr.pos.x;cc.carriedZ=tr.pos.z;
+        auto direction=w.get<Unit>(medic).facing;cc.facingX=direction.x;cc.facingZ=direction.z;
+        if(close(medic,goal,Fixed::fromRatio(3,10))&&close(other,goal,Fixed::fromRatio(9,10))){stop();phase(state==kCarryToVehicle?kCarryLoading:kCarryHandover);}
+    }else if(state==kCarryLoading){
         c.task=kTaskWorking;stop();
         if(elapsed>=sim.tickRate()*3){
-            // Prefer a hospital ward over the clinic from which the crew dispatched.
+            // Prefer a ward (a station next to one of the service's ward types) over the station the crew came from.
             const Station* ward=nullptr;Fixed nearest=Fixed::fromInt(1000000);
-            for(const auto& station:stations_[size_t(c.service)]){
-                bool hospital=false;
+            if(!sv.wards.empty())for(const auto& station:stations_[size_t(c.service)]){
+                bool isWard=false;
                 w.each<Unit,Transform>([&](Entity,const Unit& unit,const Transform& tr){
-                    if(m_->rules().types[unit.type].id.find("hospital")!=std::string::npos && (v2(tr.pos)-station.pos).lengthSq()<Fixed::fromInt(1))hospital=true;
+                    if(std::binary_search(sv.wards.begin(),sv.wards.end(),unit.type) && (v2(tr.pos)-station.pos).lengthSq()<Fixed::fromInt(1))isWard=true;
                 });
-                const auto distance=(station.pos-pos).lengthSq();if(hospital&&distance<nearest){nearest=distance;ward=&station;}
+                const auto distance=(station.pos-pos).lengthSq();if(isWard&&distance<nearest){nearest=distance;ward=&station;}
             }
             if(ward){c.homePiece=ward->piece;c.homeAlong=ward->along;}
-            set("hospital_selected",ward?1:0);
-            if(c.homePiece>=0){auto goal=tl::trafficLanePoint(net_,net_.pieces[size_t(c.homePiece)],1,0,c.homeAlong);vars[key+"destination_x"]=goal.x;vars[key+"destination_z"]=goal.y;}
-            if(c.homePiece<0){phase(3);continue;} // A real medical facility is required.
+            cc.wardFound=ward!=nullptr;
+            if(c.homePiece>=0){auto goal=tl::trafficLanePoint(net_,net_.pieces[size_t(c.homePiece)],1,0,c.homeAlong);cc.destinationX=goal.x;cc.destinationZ=goal.y;}
+            if(c.homePiece<0){phase(kCarryToVehicle);continue;} // A real medical facility is required.
             c.destPiece=c.homePiece;c.destAlong=c.homeAlong;c.task=kTaskHome;
             const auto facing=w.get<Unit>(c.e).facing;
             if(!reroute(sim,c,pos,{facing.x,facing.z})){c.task=kTaskWorking;continue;}
             for(auto e:c.crew)w.get<Unit>(e).flags|=kUnitInCargo;
-            vars["drive_door_"+std::to_string(c.e.packed())]={};phase(5);syncPlayer(3);
+            if(auto* d=w.tryGet<VehicleDoor>(c.e))d->open=0;phase(kCarryDriving);
         }
-    }else if(state==5){
+    }else if(state==kCarryDriving){
         c.task=kTaskHome;
         w.get<Transform>(patient).pos=pos3;
         for(auto e:c.crew){w.get<Transform>(e).pos=pos3;w.get<Unit>(e).flags|=kUnitInCargo;}
-        syncPlayer(3);
         if(slowNow&&atAddress()){
             Vec3 hospital=pos3;Fixed best=Fixed::fromInt(1000000);
             for(const auto& station:stations_[size_t(c.service)]){auto d=(station.pos-pos).lengthSq();if(d<best){best=d;hospital=v3(station.pos);}}
@@ -102,26 +92,19 @@ if (sv.answers == kIncidentInjured && inc &&
                 auto d=(p-hospital).lengthSq()+(p-pos3).lengthSq();if(d<best){best=d;entrance=p;found=true;}
             }
             if(!found)continue;
-            vars[key+"entrance_x"]=entrance.x;vars[key+"entrance_z"]=entrance.z;
+            cc.entranceX=entrance.x;cc.entranceZ=entrance.z;
             auto f=w.get<Unit>(c.e).facing;Vec3 right{-f.z,{},f.x};if((entrance-pos3).dot(right).raw<0)right=right*Fixed::fromInt(-1);
             const auto clearance=m_->rules().types[w.get<Unit>(c.e).type].radius+Fixed::fromRatio(2,5);
             Vec3 exit=pos3+right*clearance;
             if(!gs.grid.passableAt(exit,kLayerGround))continue;
             for(size_t i=0;i<c.crew.size();++i){auto e=c.crew[i];w.get<Unit>(e).flags&=~kUnitInCargo;
                 auto& tr=w.get<Transform>(e);tr.pos=exit+f*Fixed::fromRatio(int(i),3);tr.prevPos=tr.pos;}
-            c.task=kTaskWorking;phase(6);
+            c.task=kTaskWorking;phase(kCarryToWard);
         }
-    }else if(state==7){
+    }else if(state==kCarryHandover){
         c.task=kTaskWorking;stop();
         if(elapsed>=sim.tickRate()*2){
-            if(!playerKey.empty()){
-                vars[playerKey+"phase"]=Fixed::fromInt(4);vars[playerKey+"delivered"]=kOne;
-                vars[playerKey+"release"]=Fixed::fromInt(sim.tick()+sim.tickRate()*8);
-                vars[playerKey+"exit_x"]=get("entrance_x");vars[playerKey+"exit_z"]=get("entrance_z");
-            }
-            resolve(sim,st,*inc);vars[owned]={};phase(0);
-            vars["drive_door_"+std::to_string(c.e.packed())]={};
-            vars["ambulance_delivered"]+=kOne;finish(sim,st,c,true);
+            resolve(sim,st,*inc);ended(true,cc.entranceX,cc.entranceZ);finish(sim,st,c,true);
         }
     }
     continue;

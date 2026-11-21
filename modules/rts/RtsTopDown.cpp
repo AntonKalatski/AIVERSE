@@ -7,6 +7,7 @@
 #include "RtsEncounters.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
+#include "RtsServiceState.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -723,10 +724,7 @@ void TopDown::tick(Simulation& sim) {
     for (size_t pl = 1; pl < st->pilots.size(); ++pl) {
         TopDownPilot& p = st->pilots[pl];
         if (!w.alive(p.hero) || w.get<Unit>(p.hero).hp.raw <= 0) { p.casting = -1; p.held = -1; continue; }
-        const auto& custodyVars=m_->state(sim).trig.vars;
-        auto held=custodyVars.find("police_custody_"+std::to_string(p.hero.packed()));
-        auto dead=custodyVars.find("police_dead_"+std::to_string(p.hero.packed()));
-        if((held!=custodyVars.end()&&held->second.raw)||(dead!=custodyVars.end()&&dead->second.raw)){p.input={};p.vel={};p.target=kNullEntity;continue;}
+        if (w.has<InCustody>(p.hero) || w.has<StandIn>(p.hero)) { p.input = {}; p.vel = {}; p.target = kNullEntity; continue; }   // held (RtsServiceState.h)
         if (m_->driving() && m_->driving()->isDriving(sim, p.hero)) continue;   // at the wheel: RtsDriving.cpp reads the stick
         if (rules_.extended) tickCasts(sim, p);
         moveHero(sim, p);

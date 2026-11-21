@@ -81,6 +81,7 @@ void Traffic::parseCity(const Json& j, TrafficRules& r, const std::vector<std::s
             s.custody = v.getBool("custody", false);
             s.carry = v.getBool("carry", false);
             s.officers = typeList(v["officers"], where + ".officers");
+            s.wards = typeList(v["wards"], where + ".wards");
             s.workTicks = std::max<uint32_t>(1, seconds(v, "work", ticksOf(Fixed::fromInt(5), rate), where));
             s.maxWorkTicks = std::max(s.workTicks, seconds(v, "maxWork", ticksOf(Fixed::fromInt(60), rate), where));
             s.max = int(std::clamp<int64_t>(v.getInt("max", 1), 1, 32));

@@ -4,9 +4,10 @@
 #include "modules/rts/RtsDriving.h"
 #include "modules/rts/RtsArsenal.h"
 #include "modules/rts/RtsTopDown.h"
+#include "modules/rts/RtsServiceState.h"
 namespace aiverse::game {
 // Custody (traffic.services.<id>.custody): who counts as an officer, whether an offender is armed, and the
-// stand-in body a fallen hero leaves for the officers to take away. Trigger vars police_* are the script protocol.
+// stand-in body a fallen hero leaves for the officers to take away. State: RtsServiceState.h.
 inline bool custodyOfficer(aiverse::Simulation& s,aiverse::Entity e){
  using namespace aiverse;using namespace game;auto&m=static_cast<RtsModule&>(s.module());auto*t=m.traffic();
  if(t)if(auto*st=t->store(s))for(const auto&c:st->cars)if(c.service>=0&&t->rules().services[size_t(c.service)].answers==kIncidentCrime)
@@ -31,21 +32,31 @@ inline uint8_t victimPilot(aiverse::Simulation&s,aiverse::Entity victim){
  auto&m=static_cast<aiverse::game::RtsModule&>(s.module());if(auto*t=m.topDown())if(auto*st=t->store(s))for(size_t i=1;i<st->pilots.size();++i)if(st->pilots[i].hero==victim)return uint8_t(i);return 0;
 }
 inline bool custodyVictim(aiverse::Simulation&s,aiverse::Entity victim){
- auto&m=static_cast<aiverse::game::RtsModule&>(s.module());return victimPilot(s,victim)>0||m.state(s).trig.vars.count("police_body_for_"+std::to_string(victim.packed()));
+ bool standIn=false;s.world().each<StandIn>([&](aiverse::Entity,const StandIn&b){standIn=standIn||b.victim==victim;});
+ return victimPilot(s,victim)>0||standIn;
 }
 inline aiverse::Entity custodyBody(aiverse::Simulation&s,aiverse::Entity victim,uint16_t type,uint8_t owner,aiverse::Vec3 at){
- using namespace aiverse;using namespace game;auto&m=static_cast<RtsModule&>(s.module());auto&v=m.state(s).trig.vars;
- auto key="police_body_for_"+std::to_string(victim.packed());auto old=v.find(key);
- if(old!=v.end()&&old->second.raw){auto e=Entity::fromPacked(uint64_t(old->second.toInt()-1));if(s.world().alive(e))return e;}
+ using namespace aiverse;using namespace game;auto&m=static_cast<RtsModule&>(s.module());World&w=s.world();
+ Entity existing=kNullEntity;w.each<StandIn>([&](Entity e,const StandIn&b){if(b.victim==victim&&!existing.valid())existing=e;});
+ if(existing.valid())return existing;
  const uint16_t proxy=m.traffic()?m.traffic()->rules().incidents.patient:UINT16_MAX;auto body=m.spawn(s,proxy!=UINT16_MAX?proxy:type,owner,at);if(!body.valid())return body;
- auto suffix=std::to_string(body.packed());v[key]=Fixed::fromInt(int64_t(body.packed())+1);
- v["police_dead_"+suffix]=Fixed::fromInt(1);v["police_original_"+suffix]=Fixed::fromInt(type);
- v["police_victim_"+suffix]=Fixed::fromInt(int64_t(victim.packed())+1);
- v["resident_transport_"+suffix]=Fixed::fromInt(6);s.world().get<Unit>(body).flags|=kUnitDisabled;
- if(auto*td=m.topDown())if(auto*st=td->store(s))if(owner<st->pilots.size()&&(st->pilots[owner].hero==victim||(!s.world().alive(st->pilots[owner].hero)&&st->pilots[owner].heroType==type))){
+ w.add<StandIn>(body,StandIn{victim,type});w.add<ServicePassenger>(body).claim=kClaimCustody;w.get<Unit>(body).flags|=kUnitDisabled;
+ if(auto*td=m.topDown())if(auto*st=td->store(s))if(owner<st->pilots.size()&&(st->pilots[owner].hero==victim||(!w.alive(st->pilots[owner].hero)&&st->pilots[owner].heroType==type))){
   auto&p=st->pilots[owner];p.hero=body;p.respawnAt=0;p.vel={};p.input={};p.target=kNullEntity;
-  v["police_"+std::to_string(owner)+"_phase"]=Fixed::fromInt(1);
+  serviceLedger(w).player(owner).phase=kHeldCuffed;
  }
  return body;
+}
+// A prisoner whose custody vehicle is destroyed is free again (a hero gets his controls back).
+inline void custodyGuard(aiverse::Simulation&s){
+ using namespace aiverse;using namespace game;auto&m=static_cast<RtsModule&>(s.module());World&w=s.world();
+ std::vector<Entity> freed;
+ w.each<InCustody>([&](Entity e,const InCustody&c){const auto*car=w.tryGet<Unit>(c.car);if(!w.alive(c.car)||!car||car->hp.raw<=0)freed.push_back(e);});
+ for(Entity e:freed){
+  auto&u=w.get<Unit>(e);u.flags&=~kUnitInCargo;w.remove<InCustody>(e);if(auto*sp=w.tryGet<ServicePassenger>(e)){sp->claim=0;sp->aboard=false;}
+  if(w.has<StandIn>(e))continue;
+  u.flags&=~kUnitDisabled;
+  if(auto*td=m.topDown())if(auto*st=td->store(s))for(size_t i=1;i<st->pilots.size();++i)if(st->pilots[i].hero==e){u.flags|=kUnitPossessed;serviceLedger(w).player(i).phase=kHeldNone;}
+ }
 }
 }
