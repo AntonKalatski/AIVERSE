@@ -13,7 +13,12 @@ export default function HumanMetaHumanControls({ guid, draft, face, onApply }:
   const [report, setReport] = useState<MetaHumanReport | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const run = () => { setBusy(true); setError('');
-    void invoke('studio.humanMetaHuman', { guid }).then(r => {
+    // The native side imports the model in the background: poll until ready.
+    const poll = async (): Promise<MetaHumanReport> => {
+      for (let i = 0; i < 120; ++i) { const r = await invoke('studio.humanMetaHuman', { guid }); if (!r.pending) return r; await new Promise(t => setTimeout(t, 500)); }
+      throw Error('Модель слишком долго загружается');
+    };
+    void poll().then(r => {
       setReport(r);
       if (r.detected) onApply({ ...draft, materials: { ...r.look.materials, ...draft.materials } },
         face?.meshes.length ? face : { ...r.face, landmarks: face?.landmarks ?? [], values: face?.values ?? {} });

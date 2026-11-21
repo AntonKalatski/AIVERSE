@@ -32,6 +32,7 @@ let nextId = firstRequestId();
 
 window.__aiverseReceive = (message: NativeReply) => {
   if (message && typeof message.event === 'string') {
+    if (STICKY.has(message.event)) sticky.set(message.event, { payload: message.payload, at: Date.now() });
     listeners.forEach(listener => listener(message.event!, message.payload));
     return;
   }
@@ -51,8 +52,14 @@ export function nativeWindowAction(action: 'studio.windowDrag' | 'studio.windowZ
   try { native?.postMessage({ id: 0, method: action, params: {} }); }
   catch { /* not in the native host */ }
 }
+/** Events the host may send while React is still mounting (the startup project opens on didFinishNavigation):
+ *  a listener added within a few seconds still gets the latest one. */
+const STICKY = new Set(['project.splash', 'project.loading']);
+const sticky = new Map<string, { payload: unknown; at: number }>();
 export function onNativeEvent(listener: (event: string, payload: unknown) => void): () => void {
   listeners.add(listener);
+  const now = Date.now();
+  for (const [event, last] of sticky) if (now - last.at < 4000) queueMicrotask(() => { if (listeners.has(listener)) listener(event, last.payload); });
   return () => listeners.delete(listener);
 }
 export async function invoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {
@@ -62,10 +69,13 @@ export async function invoke<M extends StudioMethod>(method: M, params: StudioPa
     const id = nextId++;
     // Interactive native sheets wait for a person, including dirty-document prompts.
     const interactive = ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save','studio.assetImportPreview'].includes(method);
+    // No RPC timeout: the host answers every request (with an error if it fails), and long operations
+    // (generation, builds, a busy main thread while a project streams in) are legitimate. A very slow reply
+    // only leaves a note in the host log; the call keeps waiting and resolves when the answer comes.
     const timer = interactive ? null : setTimeout(() => {
-      pending.delete(id);
-      reject(new Error('Native bridge timeout: ' + method));
-    }, 8000);
+      try { native.postMessage({ id: 0, method: 'studio.webDiagnostic', params: { message: `slow native reply (>30 s): ${method}` } }); }
+      catch { /* diagnostics only */ }
+    }, 30000);
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
     try { native.postMessage({ id, method, params }); }
     catch (error) { if (timer !== null) clearTimeout(timer); pending.delete(id); reject(error); }

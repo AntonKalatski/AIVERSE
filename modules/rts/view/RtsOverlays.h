@@ -111,7 +111,7 @@ public:
     const std::vector<OverlayMinimapMark>& minimapMarks() const { return marks_; }
 
     void drawWorld(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid, const RtsView& view);
-    void drawScreen(const render::RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList, const RtsView& view);
+    void drawScreen(const render::Camera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList, const RtsView& view);
     // view.draw batches of the view scripts (window points), in layer order; textures through this TextureCache.
     void drawCanvas(const std::vector<ViewDrawBatch>& batches, float ox, float oy, void* drawList);
 

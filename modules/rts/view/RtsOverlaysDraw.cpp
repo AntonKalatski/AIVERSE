@@ -684,7 +684,7 @@ void RtsOverlays::drawWorld(Renderer3D& r, const RtsScene& s, double time, const
     if (!qualityForced_)
         quality_ = r.materialQuality() == MaterialQuality::Low ? OverlayQuality::Low
                  : r.materialQuality() == MaterialQuality::Medium ? OverlayQuality::Medium : OverlayQuality::High;
-    const RTSCamera& cam = r.camera();
+    const Camera& cam = r.camera();
     camTarget_ = cam.target;
     const float cp = std::cos(cam.pitch), sp = std::sin(cam.pitch);
     const float3 fwd = normalize(float3{-std::sin(cam.yaw) * cp, -sp, -std::cos(cam.yaw) * cp});
@@ -777,7 +777,7 @@ void RtsOverlays::flush(Renderer3D& r) {
 
 // ------------------------------------------------------------------ screen pass
 
-void RtsOverlays::drawScreen(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList, const RtsView& view) {
+void RtsOverlays::drawScreen(const Camera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList, const RtsView& view) {
     if (!rules_ || !grid_) return;
     view_ = &view;
     if (scene_ != &s) prepare(s, time_, vision_, *grid_, cam.distance);

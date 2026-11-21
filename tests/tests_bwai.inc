@@ -44,8 +44,8 @@ static BwaiMatch bwaiMatch(const Json& rules, const Json& map, uint64_t seed, ui
 }
 
 TEST(bwai_config) {
-    CHECK(game::loadRules(bwaiRules()).bwAI);
-    CHECK(game::loadRules(bwaiRules(R"({"difficulty":"expert","players":{"2":"easy"},"skills":{"freeze":"Freeze"},"profiles":{"boss":{"base":"expert","minGroupSize":8}}})")).bwAI);
+    CHECK(game::loadRules(bwaiRules()).aiController == "bw");
+    CHECK(game::loadRules(bwaiRules(R"({"difficulty":"expert","players":{"2":"easy"},"skills":{"freeze":"Freeze"},"profiles":{"boss":{"base":"expert","minGroupSize":8}}})")).aiController == "bw");
     auto fails = [](const Json& r, const char* needle) {
         try { game::loadRules(r); } catch (const std::exception& e) { return std::string(e.what()).find(needle) != std::string::npos; }
         return false;
@@ -66,7 +66,7 @@ TEST(bwai_config) {
     CHECK(!bwaiThrows(bwaiRules(), m, "ai"));
     // the built-in profiles carry the BW asset values
     auto sim = bwaiSim(bwaiRules(), bwaiMap(), 1);
-    const auto& cfg = *mod(*sim).bwAI();
+    const auto& cfg = *std::dynamic_pointer_cast<const game::BwAIConfig>(mod(*sim).aiConfig());
     CHECK(cfg.profiles.at("easy").maxDelay == Fixed::fromInt(12) && cfg.profiles.at("expert").structuredAttacks);
     CHECK(cfg.profiles.at("hard").attackDistanceSafety == Fixed::fromRatio(3, 4) && cfg.profileFor(2).name == "normal");
 }

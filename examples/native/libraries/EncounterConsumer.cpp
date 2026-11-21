@@ -1,8 +1,8 @@
 // boss-encounters in a native module: an inline encounter (one cone attack, one burn), one boss decision, the chosen
 // telegraph begun and stepped to its strike, the burn applied, and every state stored in NativeState. A real
 // authoritative handler passes sim.rng(), applies the hits through the game's damage owner and draws the views.
-#include <aiverselib/genre/EncounterData.h>
-#include <aiverselib/genre/EncounterPersistence.h>
+#include <aiverselib/mechanics/EncounterData.h>
+#include <aiverselib/mechanics/EncounterPersistence.h>
 #include "modules/rts/RtsNative.h"
 #include <array>
 bool libraryEncounterConsumerExample(aiverse::game::NativeState& state){

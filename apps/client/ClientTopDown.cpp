@@ -353,8 +353,8 @@ void GameClient::topDownCamera(double dt) {
     bool have = false;
     // at the wheel the hero is off the map (not in the scene): the camera follows his car
     Entity follow = hero;
-    const game::DrivingCar* car = mod().driving() && mod().driving()->active() && hero.valid() ? mod().driving()->carOf(*sim_, hero) : nullptr;
-    if (car) follow = car->e;
+    const Entity car = mod().driving() && mod().driving()->active() && hero.valid() ? mod().driving()->vehicleOf(*sim_, hero) : kNullEntity;
+    if (car.valid()) follow = car;
     for (auto& o : scene_.objects) if (o.entity == follow && follow.valid()) { pos = o.pos; have = true; break; }   // interpolated + predicted
     if (!have && follow.valid() && sim_->world().alive(follow)) {   // not drawn this frame: the simulation position
         const Vec3 p = sim_->world().get<Transform>(follow).pos;
@@ -363,7 +363,7 @@ void GameClient::topDownCamera(double dt) {
     if (topDown_.escape().active) { pos = {topDown_.escape().x, pos.y, topDown_.escape().z}; have = true; }   // escape preview
     auto& g = mod().state(*sim_).grid;
     // the stick is pedals + steering there, not a direction: only the velocity look-ahead applies
-    topDown_.setStickLookAhead(!car);
+    topDown_.setStickLookAhead(!car.valid());
     topDown_.updateCamera(cam_, pos, have, float(dt), float(g.w), float(g.h));
 }
 

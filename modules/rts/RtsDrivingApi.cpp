@@ -14,19 +14,19 @@ bool unitArg(lua_State* L, Vm& vm, int idx, Entity& e) {
 }
 Driving* drivingOf(Vm& vm) {
     Driving* d = vm.module ? vm.module->driving() : nullptr;
-    return d && d->active() && vm.sim && d->store(*vm.sim) ? d : nullptr;
+    return d && d->active() && vm.sim ? d : nullptr;
 }
 // driving.car_of(player) -> the vehicle the player's hero drives, or nil
 int dCarOf(lua_State* L, Vm& vm) {
     Driving* d = drivingOf(vm);
     int64_t s;
     if (!argInt(L, vm, 1, s, "player")) return -1;
-    const DrivingCar* c = nullptr;
+    Entity car = kNullEntity;
     if (d && s > 0 && s < 256 && vm.module->topDown() && vm.module->topDown()->active()) {
         const Entity hero = vm.module->topDown()->heroOf(*vm.sim, uint8_t(s));
-        if (hero.valid()) c = d->carOf(*vm.sim, hero);
+        if (hero.valid()) car = d->vehicleOf(*vm.sim, hero);
     }
-    if (c) pushEntity(L, c->e); else lua_pushnil(L);
+    if (car.valid()) pushEntity(L, car); else lua_pushnil(L);
     return 1;
 }
 // driving.speed(vehicle) -> forward speed in m/s (0 for anything that is not a vehicle)
@@ -41,7 +41,7 @@ int dSpeed(lua_State* L, Vm& vm) {
 int dDriver(lua_State* L, Vm& vm) {
     Driving* d = drivingOf(vm);
     Entity e;
-    const DrivingCar* c = d && unitArg(L, vm, 1, e) ? d->car(*vm.sim, e) : nullptr;
+    const vehicles::VehicleDrive* c = d && unitArg(L, vm, 1, e) ? d->car(*vm.sim, e) : nullptr;
     if (c && c->driver.valid()) pushEntity(L, c->driver); else lua_pushnil(L);
     return 1;
 }

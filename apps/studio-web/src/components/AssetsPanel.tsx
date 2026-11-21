@@ -1,3 +1,4 @@
+import { copyText } from '../clipboard';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
@@ -301,7 +302,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
 
   const copyPath=(path:string)=>{
     const text='content/'+path;
-    void navigator.clipboard?.writeText(text).then(()=>setMessage('Copied '+text),()=>setError('Clipboard unavailable'));
+    void copyText(text).then(ok=>ok?setMessage('Copied '+text):setError('Clipboard unavailable'));
   };
   const createMaterial=async()=>{
     const name=materialName.trim();

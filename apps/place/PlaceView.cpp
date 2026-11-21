@@ -177,7 +177,7 @@ struct View {
         if (!client) {   // nothing received yet: sky and the HUD
             hud(nullptr, 0, 0);
             lock.unlock();
-            RTSCamera cam;
+            Camera cam;
             renderer.beginScene(cam, d.framebufferWidth(), d.framebufferHeight());
             renderer.render(pass);
             gui.render();
@@ -188,7 +188,7 @@ struct View {
         auto& r = client->replica();
         const auto& params = client->params();
         b3Vec3 me = client->drawPosition(), view = client->cameraPosition();
-        RTSCamera cam;
+        Camera cam;
         cam.target = {view.x, view.y + params.height * 0.85f, view.z};
         cam.distance = distance;
         cam.pitch = pitch;

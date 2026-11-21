@@ -15,7 +15,7 @@ int main() {
     static_assert(std::is_same_v<
         decltype(&View::submitMesh),
         void(*)(Renderer3D&,const view::MeshObject&)>);
-    static_assert(std::is_same_v<Camera3D,RTSCamera>,
+    static_assert(std::is_same_v<Camera3D,Camera>,
                   "legacy camera alias must remain ABI-compatible");
     Model m;
     m.nodes.resize(1);m.order={0};m.nodes[0].name="root";

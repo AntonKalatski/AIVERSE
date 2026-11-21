@@ -3,7 +3,7 @@
 // hero and rules "driving" can switch it on with data only.
 //
 // The road network is built at setup from the map's tile characters (tiles.rows): rules traffic.roads.tiles lists
-// the road characters, traffic.pedestrians.walk the sidewalk ones (libraries/include/aiverselib/genre/Traffic.h:
+// the road characters, traffic.pedestrians.walk the sidewalk ones (libraries/include/aiverselib/mechanics/Traffic.h:
 // pieces, junctions, lanes). Cars are ordinary "driving" vehicles: this file is their driver. Each tick it plans
 // pedals and steering (pure pursuit along the lane / the turn through the junction, stop lines on yellow and red,
 // following distance to whatever is ahead: cars, people, the hero, parked cars), and RtsDriving.cpp feeds that input
@@ -16,13 +16,15 @@
 // State lives in the TrafficStore world resource: hashed, saved after the vehicles, copied by rollback snapshots.
 // Games without the block keep their checksums and save layout.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 #include "../../engine/core/ECS.h"
+#include <algorithm>
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
-#include "../../libraries/include/aiverselib/genre/Traffic.h"
+#include "../../libraries/include/aiverselib/mechanics/Traffic.h"
 
 namespace aiverse { class Simulation; class Hasher; class Archive; }
 
@@ -44,6 +46,8 @@ struct TrafficService {
     uint16_t crew = UINT16_MAX;              // people who get out at the scene (medics, officers, firemen); none: the vehicle works
     int crewCount = 2;
     bool custody = false;                // police: officers detain an unarmed offender and take him to the station instead of fighting
+    std::vector<uint16_t> officers;          // custody: more types that count as officers besides the crew
+    std::vector<uint16_t> wards;             // carry: map object types next to a station that make it a ward (sorted)
     bool carry = false;                  // ambulance: the crew carries the patient to the vehicle and delivers him to a hospital
     uint32_t workTicks = 100, maxWorkTicks = 1200;
     int max = 1;                             // vehicles on call at a time
@@ -60,6 +64,14 @@ struct TrafficIncidentRules {
     uint32_t treatTicks = 1200;              // in hospital this long, then the person walks out of it
     uint32_t abandonTicks = 0;               // a car a hero left on a driving lane this long is towed (0: never)
     Fixed witness = Fixed::fromInt(7);       // a crime is reported when somebody is this close to it
+    std::vector<std::pair<uint16_t, uint16_t>> bodies;   // incidents.bodies: {type: body type} a casualty of that type leaves (sorted)
+    uint16_t bodyFor(uint16_t type) const {
+        auto it = std::lower_bound(bodies.begin(), bodies.end(), std::pair<uint16_t, uint16_t>{type, 0});
+        return it != bodies.end() && it->first == type ? it->second : UINT16_MAX;
+    }
+    bool isBody(uint16_t type) const { for (auto& b : bodies) if (b.second == type) return true; return false; }
+    uint16_t patient = UINT16_MAX;           // custody/carry: stand-in body a fallen hero leaves (none: his own type)
+    std::vector<std::string> unarmed;        // weapon ids that do not make an offender armed (custody)
     std::vector<uint16_t> lots;              // map object types: towed cars are put next to the nearest one
 };
 
@@ -132,6 +144,10 @@ struct TrafficCitizen {
     int16_t line = -1;                       // the bus line he takes (-1: any bus)
     int32_t school = -1;                     // the place his child goes to (-1: no child)
     uint8_t via = 0;                         // this trip goes by the school first, and it is still ahead
+    // set by scripts / native modules (Lua traffic.citizen / set_citizen):
+    bool held = false;                       // somebody else runs him now (a job, a visit): the schedule leaves him alone
+    bool off = false;                        // a day off: he does not go to work
+    uint8_t journey = 0;                     // a trip asked for: 1 to work, 2 home (via the school); done: back to 0
 };
 
 struct TrafficRules {
@@ -170,6 +186,8 @@ struct TrafficRules {
     std::string busCrew;
     // emergency vehicles: fast, through red lights, the other traffic pulls over
     std::vector<TrafficWeighted> emergency;
+    std::vector<uint16_t> wideRoadTypes;     // traffic.wideRoads: responders of these types keep to wide streets and detour round jams
+    bool wideRoads(uint16_t type) const { for (uint16_t t : wideRoadTypes) if (t == type) return true; return false; }
     int maxEmergency = 0;
     Fixed emMin = Fixed::fromInt(13), emMax = Fixed::fromInt(16);        // m/s
     Fixed emIntervalMin = Fixed::fromInt(20), emIntervalMax = Fixed::fromInt(60);   // seconds between call-outs
@@ -188,6 +206,7 @@ struct TrafficRules {
     int maxPeople = 24;
     uint8_t peopleOwner = 0;
     Fixed peopleMin = Fixed::fromInt(12), peopleMax = Fixed::fromInt(22), peopleDespawn = Fixed::fromInt(30);
+    uint32_t peopleGrace = 0;                // pedestrians.grace (ticks): before a stuck walker goes on unseen
     int routeMin = 6, routeMax = 30;         // cells of a walk
     Fixed pauseMin = Fixed::fromInt(1), pauseMax = Fixed::fromInt(6);    // seconds between walks
     Fixed side = Fixed::fromRatio(3, 10);    // cells off the sidewalk centre line (each person keeps one)
@@ -301,6 +320,7 @@ struct TrafficStore {
     int64_t gangLoot = 0;                    // taken home so far
     uint32_t gangRobberies = 0, gangCaught = 0;
     uint32_t citizenCursor = 0;              // the next one to look at (a slice per tick)
+    int32_t busDrivers = -1, buses = 0;      // bus depot: drivers on shift (-1: no depot rule), buses out (derived)
     std::vector<TrafficIncident> incidents;  // in the order they happened
     uint32_t nextIncident = 1;
     std::vector<TrafficUsedCar> used;        // ascending entity index
@@ -456,6 +476,7 @@ private:
     TrafficRules rules_;
     bool base_ = false; int baseLimits_[4] = {0, 0, 0, 0};   // scaleLimits: the rules' own limits
     lib::genre::TrafficNet net_;
+    std::vector<std::array<Fixed, 4>> noParking_;   // map traffic.noParking: [x0, z0, x1, z1] cell rectangles where nobody parks
     std::vector<uint32_t> offset_;           // per junction: signal phase offset (ticks)
     std::vector<uint8_t> walk_;              // per cell: sidewalk or crossing (pedestrian graph)
     std::vector<int32_t> stripAt_;           // per cell: crossing strip or -1

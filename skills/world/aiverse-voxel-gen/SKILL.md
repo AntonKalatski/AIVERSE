@@ -17,7 +17,7 @@ API: `libraries/include/aiverselib/systems/voxelgen/VoxelGen.h` and `VoxelGenDat
    `tests/libraries/voxel_tests.cpp`. Changing the algorithm changes the golden hash - only on purpose, noted in
    `docs/voxel.md`, because saves keep only edited chunks.
 
-Not done: structures (villages, dungeons; W3 in `docs/genre-implementation.json`), rivers, overhang terrain.
+Not done: structures (villages, dungeons; W3 in `docs/capability-status.json`), rivers, overhang terrain.
 
 Build selection: `AIVERSE::lib_voxel_gen`; native OBJECT modules call
 `aiverse_native_use_libraries(target voxel-gen)`. Only this header library and its declared dependencies are

@@ -19,6 +19,18 @@ existing native interfaces and distinguishes them from PHYSIS authoring MCP.
 - SpectraFX owns **simulation/presentation of 3D VFX**: emitter graphs, sprite/mesh/ribbon particles, smoke/fire/explosions/trails, ECS FX events. It adds linear HDR pixels to the scene BEFORE PRISMA processes the result.
 - Shared Renderer3D/RHI, generic Shader Graph compiler and ECS transport adapters are engine infrastructure, not a second postprocess implementation. **Do not duplicate features or couple them to genres.**
 
+## Effect catalog additions (Stage 97, 2026-11-22)
+
+Besides colour grade, LUT, bloom, DoF, motion blur, auto exposure, TAA, FXAA and the others, the
+catalog has `ambientOcclusion`, `screenSpaceReflections`, `lensFlare` (lens dirt texture or
+procedural; dirt also lifts bloom), `smaa`, `lensDistortion` (barrel / pincushion / Panini),
+`anamorphicStreaks`, `halation`, `heatHaze` (+ `Prisma::setShockwaves` for explosion rings), `fsr`
+(FSR 1; host calls `renderSizeForOutput` before `beginScene`) and `dlss` (external upscaler,
+NVIDIA NGX only with `AIVERSE_DLSS_SDK_DIR`, Windows + Vulkan). `autoExposure` has
+`histogram` percentile metering. Stylized looks are presets: `toon`, `sketch`, `crt`, `scanlines`,
+`dither`, `kuwahara`, plus `lens` and `realistic`; the postfx Shader Graph node `sceneColor` samples
+the display-referred scene at any uv. Details and limits: `docs/prisma.md` § Stage 97.
+
 ## Native C++ integration
 
 ```cpp
@@ -117,7 +129,7 @@ renderer.beginScene(renderCamera, framebufferW, framebufferH);
 ```
 
 `jitteredCamera` uses a per-camera 8-phase Halton (2,3) sequence in
-`RTSCamera::jitter` (NDC). The temporal shader samples the current HDR
+`Camera::jitter` (NDC). The temporal shader samples the current HDR
 scene at `stablePixel + currentJitter` and reads prior HDR history at the
 reprojected pixel **minus previousJitter**; the persistent history target
 always uses the stable output grid. The previous jitter is removed from

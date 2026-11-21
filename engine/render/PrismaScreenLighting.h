@@ -44,7 +44,7 @@ public:
     void setVolumetricLight(const VolumetricLight& v) { volume_=v; volume_.steps=std::clamp(v.steps,4,32); volume_.ambientStart=std::max(v.ambientStart,0.0f); }
     const VolumetricLight& volumetricLight() const { return volume_; }
     void reset() { valid_ = false; sequence_ = 0; }
-    RTSCamera jittered(RTSCamera camera, int w, int h);
+    Camera jittered(Camera camera, int w, int h);
     bool active() const override { return post_ && post_->active(); }
     bool linearScene() const override { return post_ && post_->linearScene(); }
     // Shadow PCSS temporal tap rotation is allowed only with this wrapper's

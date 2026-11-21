@@ -105,7 +105,7 @@
 | **任何手机游戏** | `aiverse::meta` 和 LiveOps、新手教程、界面、商店和广告插件 |
 
 体育游戏、船只、进站和处罚仍在[路线图](docs/genre-mechanics-roadmap.md)中。完整的库列表：
-[`libraries/catalog.json`](libraries/catalog.json) 和[类型包](docs/genre-packages.md)。
+[`libraries/catalog.json`](libraries/catalog.json) 和[类型包](docs/mechanics-packages.md)。
 
 ---
 
@@ -293,7 +293,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 |---|---|
 | [**完整概览**](docs/zh-CN/overview.md) | 所有子系统、构建、平台、CI、发布 |
 | [游戏格式](docs/game-format.md) | `game.json`、`rules.json`、地图及所有数据块 |
-| [类型包](docs/genre-packages.md) · [库](docs/libraries.md) | 适用于任何类型的机制 |
+| [类型包](docs/mechanics-packages.md) · [库](docs/libraries.md) | 适用于任何类型的机制 |
 | [“制作游戏”向导](docs/zh-CN/game-wizard.md) | 想法加美术如何变成完整项目 |
 | [脚本](docs/scripting.md) · [C++ 模块](docs/native-modules.md) | 当数据不够用时 |
 | [地形](docs/terrain.md) · [星球](docs/planets.md) · [寻路](docs/pathfinding.md) | 世界与移动 |

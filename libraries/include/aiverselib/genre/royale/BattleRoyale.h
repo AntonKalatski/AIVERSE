@@ -1,4 +1,3 @@
 #pragma once
-// battle-royale package entry point: every policy of genre/royale/ plus its JSON reader and save records.
-// Include single headers (Zone.h, Insertion.h, Standings.h, ...) when only one policy is needed.
-#include "Data.h"
+// Legacy path: moved to <aiverselib/mechanics/royale/BattleRoyale.h> (docs/no-genre-split-audit.md, G7).
+#include <aiverselib/mechanics/royale/BattleRoyale.h>

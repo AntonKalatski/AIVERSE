@@ -43,8 +43,14 @@ The editor on macOS is **AIVERSE Studio** (HTML5 UI over the native engine, `app
 `apps/studio-web`): `./studio_mac.command [project]` builds and opens it. Workspaces Scene / World / Look /
 Animate / Character / Logic / Publish hold every former editor window as a panel; the Scene has transform
 tools and brushes (terrain, paint, tiles, fields, objects, roads, rivers), Play runs the game in place, the
-Agent panel drives the project with Claude Code, Publish builds. The ImGui editor below stays for Linux /
-Windows and as a fallback.
+Agent panel drives the project with Claude Code, Publish builds. The ImGui editor below stays for Linux
+(and as a fallback on Windows).
+
+On **Windows** the same Studio runs as `AiverseStudio.exe` (WebView2 UI, Vulkan Scene and Game views):
+`studio_windows.cmd [project]` builds and opens it (Visual Studio 2022, CMake, Node.js; at run time the
+WebView2 Runtime, built into Windows 11, and a Vulkan driver). Both shells are thin: everything else is the
+shared `apps/studio-native/StudioHost` (`mac/Main.mm` Cocoa + Metal, `win/Main.cpp` Win32 + Vulkan).
+Floating panel windows and drag-and-drop from Explorer are macOS-only for now.
 
 ```bash
 cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release      # requires Xcode and CMake

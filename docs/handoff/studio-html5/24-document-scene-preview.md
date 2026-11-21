@@ -36,7 +36,7 @@ On Mac: bash tools/studio/verify_mac.sh, then verify picking AABB/rotated collid
 - These are document authoring proxies, not fully-featured ECS WorldScene. Real model assets, materials/animations, water, planet geometry, and VFX remain to port.
 - Up to 2000 proxies currently drawn; index source IDs may change after deletion/reorder.
 - Rotated picking uses conservative bounds (may select outside exact collider volume).
-- Native Scene camera still uses the current Renderer3D RTSCamera type; generic camera service migration is separate.
+- Native Scene camera still uses the current Renderer3D Camera type; generic camera service migration is separate.
 - WebView composition experimental, actual macOS validation missing.
 - The full old ImGui editor is still needed; do NOT remove until parity.
 

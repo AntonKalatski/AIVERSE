@@ -5,9 +5,9 @@ description: Reuse AIVERSE gear-tiers for tiered protective equipment in any gen
 
 # gear-tiers
 
-Use when a game has armor-like pieces with levels and durability (shooters, survival, looters, RPG equipment
-slots). FPS projects get it from rules (`fps.gear`, docs/fps.md § Gear); the steps below are for native / host
-owners and other modules.
+Use when a project has armor-like pieces with levels and durability (equipment slots of any kind). The legacy
+`modules/fps` host wires it from rules (`gear` at the top level or legacy `fps.gear`, docs/fps.md § Gear); the same block on other hosts is debt G4/G6
+in `docs/no-genre-split-audit.md`. The steps below are for native / host owners.
 
 1. Read `libraries/include/aiverselib/systems/Gear.h` (namespace `aiverse::lib::systems`) and the catalog entry.
 2. Data: `readGearCatalog(json["gear"], "gear")` - pieces with `id`, `slot` (your slot numbering), `tier`,

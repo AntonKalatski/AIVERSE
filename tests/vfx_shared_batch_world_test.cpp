@@ -99,7 +99,7 @@ int main() {
     check(!rejected.initEffect(world,a,mandatoryGpu),"shared batching silently downgraded RequireGpu");
     check(!rejected.reason().empty(),"missing RequireGpu rejection reason");
 
-    render::RTSCamera camera{{0,0,0},8.f,0.5f,0.5f};
+    render::Camera camera{{0,0,0},8.f,0.5f,0.5f};
     gfx.beginFrame(1280,720);
     world.setView(camera,camera.proj(1280.f/720.f,false)*camera.view(),1280,720);
     check(one.burstAt({0,0,0}),"first effect instance failed to emit");
