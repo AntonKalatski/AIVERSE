@@ -1067,9 +1067,12 @@ struct ClientStageProfile {
     const char* names[kStages] = {"sim", "scene", "ui", "view", "fx", "render", "hud", "other"};
     double total[kStages] = {};
     int frames = 0;
-    bool on = [] { const char* e = std::getenv("AIVERSE_CLIENT_PROFILE"); return e && *e == '1'; }();
+    bool on = false, checked = false;   // read on the first frame: Android sets the env from adb after load
     std::chrono::steady_clock::time_point last;
-    void start() { if (on) last = std::chrono::steady_clock::now(); }
+    void start() {
+        if (!checked) { checked = true; const char* e = std::getenv("AIVERSE_CLIENT_PROFILE"); on = e && *e == '1'; }
+        if (on) last = std::chrono::steady_clock::now();
+    }
     void lap(int stage) {
         if (!on) return;
         const auto now = std::chrono::steady_clock::now();
