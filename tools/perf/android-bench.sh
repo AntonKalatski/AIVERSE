@@ -172,6 +172,11 @@ cases_gpu() {
     for g in ${G//,/ }; do run "$n" $g $U "$@"; done
   done
 }
+# GLES uniform upload strategy (GfxGL.cpp poolUniforms) + Vulkan, uncapped
+cases_ubo() {
+  run pool gl $U; run ring gl $U AIVERSE_GL_UBO=ring; run base vulkan $U
+  run pool_s050 gl $U AIVERSE_RENDER_SCALE=0.5; run vsync gl; run vsync vulkan
+}
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
