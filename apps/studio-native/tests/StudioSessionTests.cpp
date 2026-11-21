@@ -266,6 +266,7 @@ void entityWorkflow() {
             fs::create_directories(project/"wind");
             std::ofstream(project/"wind"/"masks.json") << R"({"masks":{"palm_frond":[[0,0],[0.3,0.4],[1,1]]}})";
             const auto before=session.workspace().map.toJson();
+            const bool dirtyBefore=session.workspace().map.dirty; // earlier checks may have edited the map
             auto wind=call("studio.wind");
             AIVERSE_TEST_CHECK(!wind.has("error") && wind["result"]["settings"].getBool("enabled"));
             bool frond=false;
@@ -276,7 +277,7 @@ void entityWorkflow() {
             AIVERSE_TEST_CHECK(session.windPreview().speed==12.f);
             AIVERSE_TEST_CHECK(call("studio.windSet",Json::parse(R"({"speed":12,"debug":"rainbow"})")).has("error"));
             AIVERSE_TEST_CHECK(session.windPreview().debug==render::wind::WindDebugView::Depth);   // atomic
-            AIVERSE_TEST_CHECK(session.workspace().map.toJson()==before && !session.workspace().map.dirty);
+            AIVERSE_TEST_CHECK(session.workspace().map.toJson()==before && session.workspace().map.dirty==dirtyBefore);
             }
         }
         {
