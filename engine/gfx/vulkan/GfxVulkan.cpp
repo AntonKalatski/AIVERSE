@@ -374,6 +374,10 @@ bool VulkanDevice::createSwapchain() {
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu_, surface_, &caps) != VK_SUCCESS) return false;
     VkExtent2D ext = caps.currentExtent;
     if (ext.width == 0xFFFFFFFFu) ext = {uint32_t(std::max(1, fbW_)), uint32_t(std::max(1, fbH_))};
+    // Android: any extent within min/max, the compositor scales it to the window. The platform renders at a
+    // lower resolution than the screen (PlatformAndroid applyRenderScale): the swapchain follows the frame size.
+    if (window_.kind == VulkanWindow::Kind::Android && fbW_ > 0 && fbH_ > 0)
+        ext = {uint32_t(fbW_), uint32_t(fbH_)};
     ext.width = std::clamp(ext.width, caps.minImageExtent.width, caps.maxImageExtent.width);
     ext.height = std::clamp(ext.height, caps.minImageExtent.height, caps.maxImageExtent.height);
     if (ext.width == 0 || ext.height == 0) return false;   // minimized
@@ -418,6 +422,7 @@ bool VulkanDevice::createSwapchain() {
     swapFormat_ = fmt.format;
     swapExtent_ = ext;
     swapTransform_ = caps.currentTransform;
+    swapCapsExtent_ = caps.currentExtent;
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, nullptr);
     swapImages_.resize(n);
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, swapImages_.data());
@@ -435,7 +440,7 @@ bool VulkanDevice::swapchainChanged() {
     if (!surface_ || vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu_, surface_, &caps) != VK_SUCCESS) return true;
     if (caps.currentTransform != swapTransform_) return true;
     if (caps.currentExtent.width == 0xFFFFFFFFu) return false;   // the extent follows the swapchain
-    return caps.currentExtent.width != swapExtent_.width || caps.currentExtent.height != swapExtent_.height;
+    return caps.currentExtent.width != swapCapsExtent_.width || caps.currentExtent.height != swapCapsExtent_.height;
 }
 
 void VulkanDevice::destroySwapchain() {

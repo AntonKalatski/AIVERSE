@@ -121,6 +121,12 @@ void GameClient::initStep(gfx::Device& dev, int step) {
 #endif
         overlay_.init(dev, "fonts/ui.ttf", 17.0f);
         r3d_.setGpuDeviceLease(gpuDeviceLease_);
+        // Touch devices on GLES: hardware PCF for the sun shadow (Shaders.h AIVERSE_HW_SHADOW), set before any
+        // lit pipeline exists. Adreno 610: the manual bilinear filter cost ~6 ms a frame at 540p.
+        if (platform::isTouchDevice() && dev.info().backend == gfx::Backend::GLES3) {
+            const char* e = std::getenv("AIVERSE_HW_SHADOW");
+            if (!(e && *e == '0')) { dev.setGlslPrelude("#define AIVERSE_HW_SHADOW 1\n"); r3d_.setHardwareShadowCompare(true); }
+        }
         if (!r3d_.init(dev)) error_ = "renderer: " + dev.lastError();
         view_.setAppearancePipelineValidator(
             [this](const render::Model& model,

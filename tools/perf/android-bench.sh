@@ -182,6 +182,22 @@ cases_cpu() {
   run big gl $U; run nobig gl $U AIVERSE_BIG_CORES=0; run big_s050 gl $U AIVERSE_RENDER_SCALE=0.5
   run big vulkan $U; run nobig vulkan $U AIVERSE_BIG_CORES=0
 }
+# a phone screenshot of the running match: shot name gfx env... -> $OUT/shots/<project>_<name>_<gfx>.png
+shot() {
+  local name="$1" gfx="$2"; shift 2
+  mkdir -p "$OUT/shots"
+  A shell am force-stop "$PKG"; clearprops
+  A shell setprop debug.aiverse.args "'--map $MAP --spectate --gfx $gfx'"
+  local i=0
+  for kv in AIVERSE_PERF_LOG=2 AIVERSE_SEED=3 AIVERSE_GFX=$gfx $XENV "$@"; do A shell setprop debug.aiverse.env$i "'$kv'"; i=$((i+1)); done
+  A logcat -c; A shell am start -W -n "$ACT" > /dev/null
+  local t=0; while [ $t -lt 120 ] && [ "$(A logcat -d -s AIVERSE:I | grep -c '\[perf\] window')" -lt 4 ]; do sleep 2; t=$((t+2)); done
+  A exec-out screencap -p > "$OUT/shots/${NAME}_${name}_${gfx}.png"
+  A shell am force-stop "$PKG"
+  say "shot $name $gfx -> shots/${NAME}_${name}_${gfx}.png"
+}
+cases_shots() { shot hw gl; shot manual gl AIVERSE_HW_SHADOW=0; shot off gl AIVERSE_SHADOWS=off; shot native gl AIVERSE_RENDER_SCALE=1 AIVERSE_SHADOWS=medium; }
+cases_scaleshots() { shot env067 gl AIVERSE_RENDER_SCALE=0.667; shot env050 gl AIVERSE_RENDER_SCALE=0.5; shot default gl; shot native gl AIVERSE_RENDER_SCALE=1; shot vkdefault vulkan; }
 # one traced run: RtsView / client stage times in logcat (AIVERSE_FRAME_TRACE, AIVERSE_VIEW_PROFILE)
 cases_trace() { run trace gl $U AIVERSE_FRAME_TRACE=1 AIVERSE_VIEW_PROFILE=1 AIVERSE_CLIENT_PROFILE=1; }
 # what the remaining (Low) shadow cost is: sampling taps vs the shadow-map pass
@@ -204,6 +220,18 @@ cases_gles() {
   run base gl $U; run sm512 gl $U AIVERSE_SHADOW_SIZE=512; run sm256 gl $U AIVERSE_SHADOW_SIZE=256; run shadows_off gl $U AIVERSE_SHADOWS=off
   run s044 gl $U AIVERSE_RENDER_SCALE=0.444; run vsync gl
 }
+# weak-GPU unit shadows: contact blobs (default) vs casting into the shadow map
+cases_units() { run blobs gl $U; run cast gl $U AIVERSE_UNIT_SHADOWS=1; run blobs_vsync gl; }
+# where the Low shadow cost is: the pass, the sampling, or the off-tier differences
+cases_shsplit() {
+  run base gl $U; run nosample gl $U AIVERSE_SHADOW_SAMPLE=0; run nearest gl $U AIVERSE_SHADOW_TAPS=0.5
+  run off gl $U AIVERSE_SHADOWS=off
+}
+# hardware PCF (AIVERSE_HW_SHADOW) against the manual one-tap filter and no shadows
+cases_hwshadow() { run hw gl $U; run manual gl $U AIVERSE_HW_SHADOW=0; run off gl $U AIVERSE_SHADOWS=off; run hw_vsync gl; run vk vulkan $U; }
+# the defaults with a picture check: screenshot first, then the numbers
+cases_verify() { shot default gl; shot vkdefault vulkan; run hw gl $U; run manual gl $U AIVERSE_HW_SHADOW=0; run off gl $U AIVERSE_SHADOWS=off; run hw_vsync gl; }
+cases_vkverify() { shot vkdefault vulkan; run vk vulkan $U; run vk_native vulkan $U AIVERSE_RENDER_SCALE=1; shot default gl; run hw gl $U; }
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \
