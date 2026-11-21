@@ -353,6 +353,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         shadowResolution_={};
         if(facialRequested)renderer_.setShadowQuality(ShadowQuality::High);
         cameraInitialized_=false;
+        // Facial preview overwrites renderer_.lighting; re-apply map lighting after it.
+        lightingRevision_=std::numeric_limits<uint64_t>::max();
     }
     // A real imported Model is drawn through the SAME Metal Renderer3D used
     // for native materials and the map; no HTML fake character, no second
@@ -378,6 +380,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             }
             device_->beginFrame(framebufferWidth,framebufferHeight);
             renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
+            renderer_.clearDynamicGiOverlay(); // map GI must not leak into the isolated facial preview
             const auto* model=facialGpu_.model();
             // Match the exact normalization used by StudioFacialGpuPreview::submit.
             const auto extent=model->boundsMax-model->boundsMin;
