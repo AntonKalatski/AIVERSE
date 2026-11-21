@@ -48,7 +48,19 @@ inline constexpr AppearanceField appearanceFields[]={
  {"body.depth","Body depth",.8f,1.2f,1},{"body.shoulders","Shoulder width",.8f,1.2f,1},
  {"body.chest","Chest width",.8f,1.2f,1},{"body.waist","Waist width",.75f,1.25f,1},
  {"body.hips","Hip width",.8f,1.2f,1},{"body.head","Head scale",.85f,1.15f,1},
- {"body.legs","Leg length",.85f,1.15f,1},{"body.torso","Torso length",.85f,1.15f,1}
+ {"body.legs","Leg length",.85f,1.15f,1},{"body.torso","Torso length",.85f,1.15f,1},
+ // Makeup / detail layers: UV-space ellipses on the skin texture (centre U of
+ // the face, then per-layer centre V and size), aligned once per model.
+ {"makeup.faceU","Face centre U",0,1,.5f},
+ {"makeup.lips","Lipstick",0,1,0},{"makeup.lipR","Lipstick red",0,1,.55f},{"makeup.lipG","Lipstick green",0,1,.12f},{"makeup.lipB","Lipstick blue",0,1,.16f},
+ {"makeup.lipV","Lips centre V",0,1,.3f},{"makeup.lipW","Lips width (UV)",.005f,.3f,.06f},{"makeup.lipH","Lips height (UV)",.005f,.2f,.025f},
+ {"makeup.blush","Blush",0,1,0},{"makeup.blushR","Blush red",0,1,.85f},{"makeup.blushG","Blush green",0,1,.35f},{"makeup.blushB","Blush blue",0,1,.35f},
+ {"makeup.blushOffset","Blush distance from centre (UV)",0,.4f,.1f},{"makeup.blushV","Blush centre V",0,1,.45f},{"makeup.blushSize","Blush size (UV)",.005f,.3f,.06f},
+ {"makeup.shadow","Eyeshadow",0,1,0},{"makeup.shadowR","Eyeshadow red",0,1,.35f},{"makeup.shadowG","Eyeshadow green",0,1,.25f},{"makeup.shadowB","Eyeshadow blue",0,1,.3f},
+ {"makeup.shadowOffset","Eyeshadow distance from centre (UV)",0,.4f,.07f},{"makeup.shadowV","Eyeshadow centre V",0,1,.58f},
+ {"makeup.shadowW","Eyeshadow width (UV)",.005f,.2f,.04f},{"makeup.shadowH","Eyeshadow height (UV)",.005f,.2f,.02f},
+ {"makeup.stubble","Stubble",0,1,0},{"makeup.stubbleDensity","Stubble density",0,1,.5f},
+ {"makeup.stubbleV","Stubble centre V",0,1,.25f},{"makeup.stubbleSize","Stubble size (UV)",.01f,.4f,.12f}
 };
 struct HumanAppearance {
  std::map<std::string,float> values;

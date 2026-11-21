@@ -649,6 +649,9 @@ int main() {
     gpuB.materials[0].sssColor.y = .3f;
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     gpuB.materials[0].sssColor.y = 1;
+    gpuB.materials[0].sssThickness = .06f;
+    CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.materials[0].sssThickness = 0;
     gpuA.images.resize(1); gpuB.images.resize(1);
     gpuA.images[0].tex.id = 101;
     gpuB.images[0].tex.id = 101;

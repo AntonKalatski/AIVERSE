@@ -38,7 +38,7 @@ inline bool validStudioMaterialName(std::string_view name) {
 inline bool validStudioMaterialNumber(std::string_view key,double value) {
     if(!std::isfinite(value))return false;
     if(key=="metallic"||key=="roughness"||key=="shadowDiffusion"||
-       key=="thinTransmission"||key=="sssStrength"||key=="sssScale"||key=="cutoff"||
+       key=="thinTransmission"||key=="sssStrength"||key=="sssScale"||key=="sssThickness"||key=="cutoff"||
        key=="teamStrength"||key=="occlusionStrength")
         return value>=0&&value<=1;
     if(key=="emissiveStrength")return value>=0&&value<=100;

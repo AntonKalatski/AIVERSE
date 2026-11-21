@@ -27,7 +27,7 @@ bool sameUntextured(const Material& a,const Material& b){
         m.metallic,m.roughness,m.normalScale,m.occlusionStrength,m.emissive.x,m.emissive.y,m.emissive.z,m.emissiveStrength,
         m.alpha,m.alphaCutoff,m.doubleSided,m.vertexColors,m.castShadow,m.receiveShadow,m.transparent,m.team,m.teamStrength,
         m.uvOffset.x,m.uvOffset.y,m.uvScale.x,m.uvScale.y,m.uvRotation,m.fixedLight.x,m.fixedLight.y,m.fixedLight.z,m.fixedLight.w,m.thinTransmission,m.shadowDiffusion, m.fixedShade.x,m.fixedShade.y,
-        m.sssStrength,m.sssColor.x,m.sssColor.y,m.sssColor.z,m.sssScale, m.humanProfile.x, m.humanProfile.y, m.eyeOptics.x, m.eyeOptics.y, m.eyeOptics.z, m.eyeOptics.w);};
+        m.sssStrength,m.sssColor.x,m.sssColor.y,m.sssColor.z,m.sssScale,m.sssThickness, m.humanProfile.x, m.humanProfile.y, m.eyeOptics.x, m.eyeOptics.y, m.eyeOptics.z, m.eyeOptics.w);};
     auto plain=[](const Material& m){return !m.shaderGraph&&m.baseTex<0&&m.mrTex<0&&m.normalTex<0&&m.occlusionTex<0&&m.emissiveTex<0&&m.teamTex<0;};
     return plain(a)&&plain(b)&&key(a)==key(b);
 }
