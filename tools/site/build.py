@@ -17,6 +17,7 @@ import shutil
 import struct
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 ROOT = Path(__file__).resolve().parents[2]
 DEVLOG = ROOT / 'docs/devlog'
 ENTRIES = DEVLOG / 'entries'
@@ -27,7 +28,8 @@ SITE = ROOT / 'site'
 
 STATUSES = ('done', 'in-progress', 'experimental')
 REQUIRED = ('id', 'date', 'system', 'title', 'summary', 'body', 'status', 'verified', 'media')
-OPTIONAL = ('limits', 'branch', 'commit', 'links', 'author')
+OPTIONAL = ('limits', 'branch', 'commit', 'links', 'author',
+            'titleEn', 'summaryEn', 'bodyEn', 'verifiedEn', 'limitsEn')
 IMAGE_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 STILL_EXT = {'.png', '.jpg', '.jpeg'}
 VIDEO_EXT = {'.mp4', '.webm'}
@@ -261,178 +263,11 @@ def check():
     return entries, errors
 
 
-def esc(text):
-    return html.escape(str(text or ''), quote=True)
+from render import (Ctx, MARK_LIGHT, ROADMAP_JS, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+                    render_page, roadmap_page, showcase_html, system_page, systems_html, fill_tokens)
 
-
-def showcase_html(frame, systems):
-    more = ''
-    if frame.get('entry'):
-        more = f'<a href="devlog.html#{esc(frame["entry"])}">Подробнее в ходе разработки →</a>'
-    return (
-        '<section class="showcase" aria-labelledby="showcase-title">\n'
-        f'<figure><img src="media/{esc(frame["src"])}" alt="{esc(frame["title"])}">\n'
-        '<figcaption><div class="wrap"><div>'
-        '<p class="eyebrow">Кадр движка</p>'
-        f'<h2 id="showcase-title">{esc(frame["title"])}</h2><p>{esc(frame["caption"])}</p></div>'
-        f'<div class="meta"><span>{esc(systems[frame["system"]]["name"])} · {esc(frame["date"])}</span>{more}</div>'
-        '</div></figcaption></figure>\n</section>'
-    )
-
-
-def systems_html(systems, counts):
-    cards = []
-    for s in systems:
-        if not s.get('flagship'):
-            continue
-        n = counts.get(s['id'], 0)
-        log = f'<a class="sys-link" href="system-{esc(s["id"])}.html">О системе и роадмап →</a>'
-        badge = f'<span class="badge{" badge-ink" if s["where"] == "main" else ""}">{WHERE[s["where"]]}</span>'
-        head = f'<div class="sys-head"><h3><a href="system-{esc(s["id"])}.html">{esc(s["name"])}</a></h3>{badge}</div>'
-        text = f'<p class="sys-tag">{esc(s["tagline"])}</p><p>{esc(s["essence"])}</p>'
-        if s.get('cover'):
-            c = s['cover']
-            if c.get('video'):
-                visual = (f'<video src="media/{esc(c["video"])}" poster="media/{esc(c["src"])}" autoplay muted loop '
-                          f'playsinline preload="none" aria-label="{esc(c["caption"])}"></video>')
-            else:
-                visual = f'<img src="media/{esc(c["src"])}" alt="{esc(c["caption"])}" loading="lazy">'
-            cards.append(
-                f'<article class="sys-card" id="sys-{esc(s["id"])}">'
-                f'<figure>{visual}'
-                f'<figcaption>{esc(c["caption"])}</figcaption></figure>'
-                f'<div class="sys-body">{head}{text}{log}</div></article>')
-        else:
-            cards.append(
-                f'<article class="sys-card sys-pending" id="sys-{esc(s["id"])}">'
-                f'<div class="sys-placeholder" aria-hidden="true">{MARK_LIGHT}<span>{esc(s["name"])}</span></div>'
-                f'<div class="sys-body">{head}{text}<p class="sys-wait">Кадр системы готовится</p>{log}</div></article>')
-    return '\n'.join(cards)
-
-
-def fmt_date(iso):
-    y, m, d = iso.split('-')
-    return f'{int(d)}.{m}.{y}'
-
-
-def fmt_target(target):
-    if not target:
-        return 'срок не назначен'
-    y, m = target.split('-')
-    return f'{MONTHS[int(m) - 1]} {y}'
-
-
-def article_href(art, repo_blob):
-    if not art:
-        return None
-    return art if art.startswith('https://') else f'{repo_blob}/{art}'
-
-
-def render_page(layout, title, desc, content, nav=None, script=''):
-    out = layout.replace('<!--TITLE-->', esc(title)).replace('<!--DESC-->', esc(desc))
-    out = out.replace('<!--CONTENT-->', content).replace('<!--SCRIPT-->', script)
-    if nav:
-        out = out.replace(f'data-nav="{nav}"', f'data-nav="{nav}" aria-current="page"')
-    return out
-
-
-def roadmap_item(it, system=None):
-    st = it['status']
-    when = fmt_date(it['date']) if st == 'done' else fmt_target(it.get('target'))
-    sys_chip = (f'<a class="rm-sys" href="system-{esc(system["id"])}.html">{esc(system["name"])}</a>'
-                if system else '')
-    text = f'<p>{esc(it["text"])}</p>' if it.get('text') else ''
-    return (f'<li class="rm-item rm-{st}"><span class="rm-dot" aria-hidden="true"></span>'
-            f'<div><div class="rm-meta">{sys_chip}<span class="st st-{st}">{ROADMAP_STATUS[st]}</span>'
-            f'<time>{esc(when)}</time></div><h3>{esc(it["title"])}</h3>{text}</div></li>')
-
-
-def sorted_roadmap(items):
-    order = {'done': 0, 'in-progress': 1, 'planned': 2}
-    return sorted(items, key=lambda it: (order[it['status']], it.get('date') or it.get('target') or '9999'))
-
-
-def system_page(s, flagships, entries, repo_blob):
-    sid = esc(s['id'])
-    art = article_href(s.get('article'), repo_blob)
-    mine = [e for e in entries if e['system'] == s['id']]
-    buttons = []
-    if art:
-        buttons.append(f'<a class="btn btn-ink" href="{esc(art)}">Статья о разработке</a>')
-    buttons.append(f'<a class="btn btn-line" href="devlog.html#system={sid}">Ход разработки · {len(mine)}</a>')
-    hero = (f'<section class="sp-hero"><p class="crumbs"><a href="./#systems">Системы движка</a> / {esc(s["name"])}</p>'
-            f'<div class="sp-title"><h1>{esc(s["name"])}</h1><span class="badge{" badge-ink" if s["where"] == "main" else ""}">'
-            f'{WHERE[s["where"]]}</span></div><p class="sp-tag">{esc(s["tagline"])}</p>'
-            f'<p class="sp-lead">{esc(s["essence"])}</p>'
-            f'<p class="sp-since mono">в разработке с {fmt_date(s["started"])}</p>'
-            f'<div class="actions">{"".join(buttons)}</div></section>')
-    c = s.get('cover')
-    if c:
-        if c.get('video'):
-            vis = (f'<video src="media/{esc(c["video"])}" poster="media/{esc(c["src"])}" autoplay muted loop playsinline '
-                   f'aria-label="{esc(c["caption"])}"></video>')
-        else:
-            vis = f'<img src="media/{esc(c["src"])}" alt="{esc(c["caption"])}">'
-        cover = f'<figure class="sp-cover">{vis}<figcaption>{esc(c["caption"])}</figcaption></figure>'
-    else:
-        cover = (f'<div class="sp-cover sp-pending"><div class="sys-placeholder">{MARK_LIGHT}<span>{esc(s["name"])}</span></div>'
-                 f'<p><strong>Кадр системы готовится.</strong> {esc(s["coverBrief"])}</p></div>')
-    inc = ''.join(f'<article class="card"><h3>{esc(i["name"])}</h3><p>{esc(i["text"])}</p></article>' for i in s['includes'])
-    ena = ''.join(f'<li>{esc(x)}</li>' for x in s['enables'])
-    rm = ''.join(roadmap_item(it) for it in sorted_roadmap(s['roadmap']))
-    shots = []
-    for e in mine[:6]:
-        m = next((m for m in e['media'] if not re.search(r'\.(mp4|webm)$', m['src'], re.I)), None)
-        img = f'<img src="{esc(m["src"])}" alt="{esc(m["caption"])}" loading="lazy">' if m else ''
-        shots.append(f'<a class="sp-entry" href="devlog.html#{esc(e["id"])}">{img}<span class="mono">{fmt_date(e["date"])}</span>'
-                     f'<strong>{esc(e["title"])}</strong><span>{esc(e["summary"])}</span></a>')
-    log = (f'<div class="sp-entries">{"".join(shots)}</div>' if shots else
-           '<p class="empty">Записей пока нет. Агент системы добавит их вместе с ближайшим этапом.</p>')
-    others = ''.join(f'<a class="chip{" chip-ink" if o["id"] == s["id"] else ""}" href="system-{esc(o["id"])}.html">{esc(o["name"])}</a>'
-                     for o in flagships)
-    body = (hero + cover +
-            f'<section class="sp-sec"><h2 class="h2">Что входит</h2><div class="grid sp-inc">{inc}</div></section>'
-            f'<section class="sp-sec"><h2 class="h2">Что позволяет делать</h2><ul class="sp-ena">{ena}</ul></section>'
-            f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">Роадмап</h2><a href="roadmap.html#{sid}">Общий роадмап движка →</a></div>'
-            f'<ol class="rm-list">{rm}</ol></section>'
-            f'<section class="sp-sec"><h2 class="h2">Ход разработки</h2>{log}</section>'
-            f'<section class="sp-sec sp-others"><p class="eyebrow">Другие системы</p><div class="chips">{others}</div></section>')
-    return body
-
-
-def roadmap_page(flagships):
-    chips = ['<button class="filter" type="button" data-sys="" aria-pressed="true">Все системы</button>']
-    chips += [f'<button class="filter" type="button" data-sys="{esc(s["id"])}" aria-pressed="false">{esc(s["name"])}</button>'
-              for s in flagships]
-    cols = []
-    for st in ('done', 'in-progress', 'planned'):
-        items = [(it, s) for s in flagships for it in s['roadmap'] if it['status'] == st]
-        if st == 'done':
-            items.sort(key=lambda x: x[0]['date'], reverse=True)
-        else:
-            items.sort(key=lambda x: (x[0].get('target') or '9999', x[1]['name']))
-        lis = ''.join(roadmap_item(it, s).replace('<li class="rm-item', f'<li data-sys="{esc(s["id"])}" class="rm-item', 1)
-                      for it, s in items)
-        cols.append(f'<section class="rm-col rm-col-{st}"><h2>{ROADMAP_STATUS[st]} <span class="count">{len(items)}</span></h2>'
-                    f'<ol class="rm-list">{lis}</ol></section>')
-    total = sum(len(s['roadmap']) for s in flagships)
-    return (f'<section class="dl-hero"><div><p class="eyebrow">Роадмап</p><h1>Куда движется движок</h1>'
-            f'<p>Все системы и их фичи в одном месте: что готово и когда, что делается сейчас и что запланировано. '
-            f'Сроки ставятся только по решению команды — где их нет, так и написано.</p></div>'
-            f'<div class="dl-stats"><div><strong>{len(flagships)}</strong><span>систем</span></div>'
-            f'<div><strong>{total}</strong><span>пунктов</span></div></div></section>'
-            f'<div class="dl-filters rm-filters" role="group" aria-label="Система">{"".join(chips)}</div>'
-            f'<div class="rm-board">{"".join(cols)}</div>')
-
-
-ROADMAP_JS = """<script>
-(function(){var b=document.querySelectorAll('.rm-filters .filter');function set(id){b.forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.sys===id));});
-document.querySelectorAll('.rm-item').forEach(function(li){li.hidden=!!id&&li.dataset.sys!==id;});
-document.querySelectorAll('.rm-col').forEach(function(c){c.querySelector('.count').textContent=c.querySelectorAll('.rm-item:not([hidden])').length;});
-history.replaceState(null,'',id?'#'+id:location.pathname);}
-b.forEach(function(x){x.addEventListener('click',function(){set(x.dataset.sys);});});
-var h=location.hash.slice(1);if(h&&document.querySelector('.rm-filters [data-sys="'+h+'"]'))set(h);})();
-</script>"""
+LANGS = ('ru', 'en')
+DOCS_MANIFEST = SITE / 'docs.json'
 
 
 def cmd_check(_args):
@@ -484,8 +319,25 @@ def cmd_add(args):
     return 0
 
 
+def check_docs():
+    errors = []
+    manifest = json.loads(DOCS_MANIFEST.read_text(encoding='utf-8'))
+    ids = set()
+    for sec in manifest.get('sections', []):
+        for pg in sec.get('pages', []):
+            if not re.match(r'^[a-z0-9-]+$', pg.get('id', '')) or pg['id'] in ids:
+                errors.append(f'site/docs.json: bad or duplicate page id {pg.get("id")!r}')
+            ids.add(pg.get('id'))
+            f = repo_file(pg.get('source'))
+            if f is None or not f.is_file():
+                errors.append(f'site/docs.json: source not found: {pg.get("source")!r}')
+    return manifest, errors
+
+
 def cmd_build(args):
     entries, errors = check()
+    manifest_docs, doc_errors = check_docs()
+    errors += doc_errors
     if errors:
         for err in errors:
             print('error:', err)
@@ -497,7 +349,7 @@ def cmd_build(args):
         sys.exit('--out must be outside the repository or under build/ or dist/')
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(SITE, out, ignore=shutil.ignore_patterns('manifest.json', '_layout.html', '.DS_Store'))
+    shutil.copytree(SITE, out, ignore=shutil.ignore_patterns('manifest.json', 'docs.json', '_layout.html', 'i18n', '.DS_Store'))
     manifest = json.loads((SITE / 'manifest.json').read_text(encoding='utf-8'))
     copied = set()
 
@@ -516,23 +368,12 @@ def cmd_build(args):
         copy_media(rel)
     frame = json.loads(SHOWCASE.read_text(encoding='utf-8'))['frames'][0]
     copy_media(frame['src'])
-    for s in systems:
-        if s.get('flagship') and s.get('cover'):
+    flagships = [s for s in systems if s.get('flagship')]
+    for s in flagships:
+        if s.get('cover'):
             copy_media(s['cover']['src'])
             if s['cover'].get('video'):
                 copy_media(s['cover']['video'])
-    counts = {}
-    for e in entries:
-        counts[e['system']] = counts.get(e['system'], 0) + 1
-    index = out / 'index.html'
-    page = index.read_text(encoding='utf-8')
-    for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->'):
-        if mark not in page:
-            sys.exit(f'site/index.html lost the {mark} placeholder')
-    page = page.replace('<!--SHOWCASE-->', showcase_html(frame, by_id))
-    page = page.replace('<!--SYSTEMS-->', systems_html(systems, counts))
-    index.write_text(page, encoding='utf-8')
-
     entries.sort(key=lambda e: (e['date'], e['id']), reverse=True)
     for e in entries:
         for m in e['media']:
@@ -542,22 +383,54 @@ def cmd_build(args):
             if not link['href'].startswith('https://'):
                 link['href'] = f'{manifest["repoBlob"]}/{link["href"]}'
     layout = (SITE / '_layout.html').read_text(encoding='utf-8')
-    flagships = [s for s in systems if s.get('flagship')]
-    for s in flagships:
-        html_text = render_page(layout, f'{s["name"]} — {s["tagline"]} · AIVERSE', s['essence'],
-                         system_page(s, flagships, entries, manifest['repoBlob']), nav='systems')
-        (out / f'system-{s["id"]}.html').write_text(html_text, encoding='utf-8')
-    (out / 'roadmap.html').write_text(render_page(layout, 'Роадмап — AIVERSE',
-                                           'Все системы движка AIVERSE и их фичи: что готово, что в работе, что запланировано.',
-                                           roadmap_page(flagships), nav='roadmap', script=ROADMAP_JS), encoding='utf-8')
-    public = [{k: s[k] for k in ('id', 'name', 'nameEn') if k in s} for s in systems]
-    data = {
-        'generated': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
-        'repo': manifest['repo'], 'systems': public, 'entries': entries,
-    }
-    (out / 'devlog.json').write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
+    doc_pages = {p['source']: p['id'] for sec in manifest_docs['sections'] for p in sec['pages']}
+    generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+    pages = 0
+    for lang in LANGS:
+        T = json.loads((SITE / 'i18n' / f'{lang}.json').read_text(encoding='utf-8'))
+        ctx = Ctx(lang, T, LANGS)
+        d = out if lang == 'ru' else out / lang
+        d.mkdir(parents=True, exist_ok=True)
+        loc_entries = localized_entries(entries, ctx)
+        # static pages per language: site/<page>.html (ru) and site/<lang>/<page>.html
+        for name in ('index.html', 'devlog.html'):
+            f = d / name
+            if not f.is_file():
+                sys.exit(f'site page missing: {f.relative_to(out)}')
+            text = fill_tokens(f.read_text(encoding='utf-8'), ctx, name)
+            if name == 'index.html':
+                for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->'):
+                    if mark not in text:
+                        sys.exit(f'{lang}/index.html lost the {mark} placeholder')
+                text = text.replace('<!--SHOWCASE-->', showcase_html(frame, by_id, ctx))
+                text = text.replace('<!--SYSTEMS-->', systems_html(systems, ctx))
+            f.write_text(text, encoding='utf-8')
+        for s in flagships:
+            body = system_page(s, flagships, loc_entries, ctx, manifest['repoBlob'], doc_pages)
+            (d / f'system-{s["id"]}.html').write_text(render_page(
+                layout, ctx, f'system-{s["id"]}.html', f'{s["name"]} — {ctx.loc(s, "tagline")} · AIVERSE',
+                ctx.loc(s, 'essence'), body, nav='systems'), encoding='utf-8')
+            pages += 1
+        (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
+                                                    roadmap_page(flagships, ctx), nav='roadmap', script=ROADMAP_JS),
+                                        encoding='utf-8')
+        (d / 'docs.html').write_text(render_page(layout, ctx, 'docs.html', T['docsPageTitle'], T['docsLead'],
+                                                 docs_index(manifest_docs, ctx), nav='docs'), encoding='utf-8')
+        for sec in manifest_docs['sections']:
+            for pg in sec['pages']:
+                body, heads = doc_page(pg, manifest_docs, ctx, ROOT, manifest['repo'], doc_pages)
+                title = ctx.loc(pg, 'title')
+                (d / f'docs-{pg["id"]}.html').write_text(render_page(
+                    layout, ctx, f'docs-{pg["id"]}.html', f'{title} — AIVERSE', ctx.loc(pg, 'lead') or title,
+                    body, nav='docs', main_class=' docs-main'), encoding='utf-8')
+                pages += 1
+        public = [{'id': s['id'], 'name': ctx.loc(s, 'name')} for s in systems]
+        data = {'generated': generated, 'lang': lang, 'repo': manifest['repo'], 'systems': public,
+                'entries': loc_entries}
+        (d / 'devlog.json').write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
+        pages += 5
     (out / '.nojekyll').write_text('', encoding='utf-8')
-    print(f'{out}: {len(entries)} entries, {len(copied)} media files')
+    print(f'{out}: {len(LANGS)} languages, {pages} pages, {len(entries)} entries, {len(copied)} media files')
     return 0
 
 

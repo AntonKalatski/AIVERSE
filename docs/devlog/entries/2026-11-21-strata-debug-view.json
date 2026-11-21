@@ -16,15 +16,18 @@
   "media": [
     {
       "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg",
-      "caption": "Кластеры: каждый своим цветом"
+      "caption": "Кластеры: каждый своим цветом",
+      "captionEn": "Clusters: each in its own colour"
     },
     {
       "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg",
-      "caption": "Уровни LOD: от финального вблизи к грубым вдали"
+      "caption": "Уровни LOD: от финального вблизи к грубым вдали",
+      "captionEn": "LOD levels: finest up close, coarse in the distance"
     },
     {
       "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg",
-      "caption": "Тот же ракурс в обычном рендере"
+      "caption": "Тот же ракурс в обычном рендере",
+      "captionEn": "The same view in the normal render"
     }
   ],
   "links": [
@@ -33,5 +36,13 @@
       "href": "docs/strata.md"
     }
   ],
-  "author": "site"
+  "author": "site",
+  "titleEn": "STRATA: Nanite-style cluster visualization",
+  "summaryEn": "A debug view shows which clusters STRATA split the geometry into and which detail levels it selected in the frame: every cluster in its own colour.",
+  "verifiedEn": "Debug view in main (7d0654223). Frames captured with the tools/site/strata_showcase host (branch feature/site-strata-showcase, 4bf7232d4) on Linux, OpenGL through Mesa llvmpipe: 2 STRATA sources, 0 declined, 15,280 clusters, 1,384,090 debug triangles, 0 truncated, 1920×1080.",
+  "bodyEn": [
+    "StrataDebugView draws the selected cluster frontier over the frame — fill, wireframe or bounds — coloured by cluster, LOD depth, geometric error or material. Presentation only: LOD selection, routing and GPU data are unchanged, and the view is off by default.",
+    "The scene is procedural terrain (≈105 k triangles) and 20 rocks (≈82 k each), about 1.7 M source triangles in total. STRATA selected 15,280 clusters in the frame: small finest-level clusters up close, increasingly coarse ones towards the horizon."
+  ],
+  "limitsEn": "Not captured on Metal or other GPUs. Scene triangles are Morton-ordered: with the procedural mesh's original order clusters came out as strips — worth checking on real assets. STRATA rejects Sponza (cross-material seams)."
 }

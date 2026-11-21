@@ -16,15 +16,18 @@
   "media": [
     {
       "src": "docs/images/lightbake_before_realtime.png",
-      "caption": "До: только realtime"
+      "caption": "До: только realtime",
+      "captionEn": "Before: realtime only"
     },
     {
       "src": "docs/images/lightbake_after_baked.png",
-      "caption": "После запекания"
+      "caption": "После запекания",
+      "captionEn": "After baking"
     },
     {
       "src": "docs/images/lightbake_lightmap.png",
-      "caption": "Лайтмап"
+      "caption": "Лайтмап",
+      "captionEn": "Lightmap"
     }
   ],
   "links": [
@@ -33,5 +36,12 @@
       "href": "docs/lightbake.md"
     }
   ],
-  "author": "agent-lightbake"
+  "author": "agent-lightbake",
+  "titleEn": "Light baking: lightmaps and probes",
+  "summaryEn": "The engine's own offline CPU path tracer writes lightmaps for static objects and terrain and a probe grid for everything that moves.",
+  "verifiedEn": "Before and after frames captured by the engine.",
+  "bodyEn": [
+    "Map lights are marked mixed (stay realtime, their bounce is baked) or baked (lightmap and probes only). The runtime blends baked light with the realtime sun, like mixed lighting in Unity.",
+    "Rebakes are skipped when nothing changed: the bake stores a 64-bit hash of geometry, materials, textures, transforms, lights and settings. Available in the editor (Graphics → Light baking) and through MCP: lightbake_set, lightbake_bake, lightbake_status."
+  ]
 }

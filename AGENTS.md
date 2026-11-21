@@ -34,6 +34,14 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   Сроки (`target`) — только от пользователя или из документа системы, не придумывать.
 - Не редактировать `gh-pages` вручную и не коммитить `build/site`: после слияния в `main`
   `.github/workflows/site.yml` проверяет записи, собирает сайт и публикует `gh-pages`.
+- Сайт двуязычный: русский в корне, английский в `en/`. У каждого текстового поля записи и
+  системы есть английская пара с суффиксом `En` (`titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`,
+  `limitsEn`, `captionEn`; в `systems.json` — `nameEn`, `taglineEn`, `essenceEn`, `enablesEn`,
+  `includes[].nameEn/textEn`, `roadmap[].titleEn/textEn`). Агент заполняет обе версии; без `En`
+  английская страница показывает русский текст. Строки интерфейса — `site/i18n/ru.json`, `en.json`.
+- Раздел «Документация» сайта — страницы из Markdown-документов репозитория по списку
+  `site/docs.json` (разделы и страницы `{id, source, title, titleEn, lead, leadEn}`). Новый документ системы,
+  который нужен разработчикам игр, агент добавляет туда сам; `build.py check` проверяет пути.
 - Вёрстку сайта менять в `site/` в визуальном языке дизайна сайта (бумага #F3EFE8, чернила
   #141210, ромб #E9C3A4; Unbounded / Onest / JetBrains Mono).
 ## Terra-first game creation (user policy, 2026-11-20)

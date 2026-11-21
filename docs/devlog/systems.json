@@ -14,7 +14,8 @@
       "cover": {
         "src": "docs/devlog/media/systems/terraweave-river-forest.jpg",
         "caption": "TerraWeave: река в лесу, вид сверху",
-        "approved": true
+        "approved": true,
+        "captionEn": "TerraWeave: a river through forest, top view"
       },
       "coverBrief": "Широкий вид на сгенерированный TerraWeave рельеф с лесом и камнями в мягком свете; видно, что всё выросло из правил, а не расставлено руками.",
       "article": "docs/terrain/TERRAWEAVE.md",
@@ -22,23 +23,33 @@
       "includes": [
         {
           "name": "Core",
-          "text": "Рельеф, климат и биомы из сида: высота и климат в любой точке мира в целых сантиметрах."
+          "text": "Рельеф, климат и биомы из сида: высота и климат в любой точке мира в целых сантиметрах.",
+          "nameEn": "Core",
+          "textEn": "Terrain, climate and biomes from a seed: height and climate at any world point in integer centimetres."
         },
         {
           "name": "Arbor",
-          "text": "Процедурные деревья с независимыми LOD ветвей, импостер-атласы на 8 ракурсов и билборды."
+          "text": "Процедурные деревья с независимыми LOD ветвей, импостер-атласы на 8 ракурсов и билборды.",
+          "nameEn": "Arbor",
+          "textEn": "Procedural trees with independent branch LODs, 8-view impostor atlases and billboards."
         },
         {
           "name": "Flora",
-          "text": "Видимость и инстансинг растительности патчами — без сущности на каждую травинку."
+          "text": "Видимость и инстансинг растительности патчами — без сущности на каждую травинку.",
+          "nameEn": "Flora",
+          "textEn": "Vegetation visibility and instancing in patches — no entity per grass blade."
         },
         {
           "name": "Horizon",
-          "text": "Ландшафт и лес километрового масштаба: HLOD, GPU-резидентность регионов, сварка ближнего и дальнего рельефа без швов."
+          "text": "Ландшафт и лес километрового масштаба: HLOD, GPU-резидентность регионов, сварка ближнего и дальнего рельефа без швов.",
+          "nameEn": "Horizon",
+          "textEn": "Kilometre-scale terrain and forest: HLOD, GPU region residency, seamless welding of near and far terrain."
         },
         {
           "name": "Экология",
-          "text": "Ветер по сетке, здоровье листвы, эрозия, корни, рост и восстановление леса, вырубки."
+          "text": "Ветер по сетке, здоровье листвы, эрозия, корни, рост и восстановление леса, вырубки.",
+          "nameEn": "Ecology",
+          "textEn": "Gridded wind, foliage health, erosion, roots, forest growth and recovery, clearings."
         }
       ],
       "enables": [
@@ -52,42 +63,63 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Ядро: рельеф, биомы и растительность",
-          "text": "Детерминированная генерация мира из сида."
+          "text": "Детерминированная генерация мира из сида.",
+          "titleEn": "Core: terrain, biomes and vegetation",
+          "textEn": "Deterministic world generation from a seed."
         },
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Импостер-атлас деревьев на 8 ракурсов"
+          "title": "Импостер-атлас деревьев на 8 ракурсов",
+          "titleEn": "8-view tree impostor atlas"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Horizon: сварка ближнего и дальнего рельефа",
-          "text": "Этапы 19–22: швы без трещин на склонах, общие нормали."
+          "text": "Этапы 19–22: швы без трещин на склонах, общие нормали.",
+          "titleEn": "Horizon: near/far terrain welding",
+          "textEn": "Stages 19–22: crack-free seams on slopes, shared normals."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Сетка ветра и смешивание LOD",
-          "text": "Этап 32."
+          "text": "Этап 32.",
+          "titleEn": "Wind grid and LOD blending",
+          "textEn": "Stage 32."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Эрозия, корни и жизненный цикл растений",
-          "text": "Этап 46, общий контракт с NEREID."
+          "text": "Этап 46, общий контракт с NEREID.",
+          "titleEn": "Erosion, roots and plant lifecycle",
+          "textEn": "Stage 46, shared contract with NEREID."
         },
         {
           "status": "in-progress",
           "target": null,
           "title": "Проверка на GPU, в редакторе и по производительности",
-          "text": "По документации системы проверка GPU, интеграций и производительности ещё не завершена."
+          "text": "По документации системы проверка GPU, интеграций и производительности ещё не завершена.",
+          "titleEn": "GPU, editor and performance verification",
+          "textEn": "Per the system's docs, GPU, integration and performance verification is not complete yet."
         },
         {
           "status": "planned",
           "target": null,
-          "title": "Автоматический стриминг, коллизии деревьев и панель генератора в Studio"
+          "title": "Автоматический стриминг, коллизии деревьев и панель генератора в Studio",
+          "titleEn": "Automatic streaming, tree collisions and a Studio generator panel"
         }
+      ],
+      "taglineEn": "Procedural terrain and nature",
+      "essenceEn": "Terrain, vegetation and rocks from rules and a seed: a generator of rounded rocks, boulders, slabs and rubble with three LODs and placement by height, slope and masks.",
+      "coverBriefEn": "A wide view of TerraWeave terrain with forest and rocks in soft light, clearly grown from rules rather than placed by hand.",
+      "enablesEn": [
+        "Generate a world from a seed — identical for any chunk partition and job order.",
+        "Show forest to the horizon: near trees, impostors and HLOD blend without popping.",
+        "Cut and regrow trees: clearings are visible both up close and on the horizon.",
+        "Query nearby trees from gameplay and bake terrain into an editor map through MCP."
       ]
     },
     {
@@ -106,27 +138,39 @@
       "includes": [
         {
           "name": "Ядро среды",
-          "text": "Детерминированная сетка атмосферы и поверхности на fixed-point с запросами из ECS."
+          "text": "Детерминированная сетка атмосферы и поверхности на fixed-point с запросами из ECS.",
+          "nameEn": "Environment core",
+          "textEn": "A deterministic fixed-point atmosphere and surface grid queried from ECS."
         },
         {
           "name": "Климат и погода",
-          "text": "Климатические зоны, погодные фронты и сезоны."
+          "text": "Климатические зоны, погодные фронты и сезоны.",
+          "nameEn": "Climate and weather",
+          "textEn": "Climate zones, weather fronts and seasons."
         },
         {
           "name": "Поверхность",
-          "text": "Снег, влажность и лёд; подсказки трения и стока для геймплея."
+          "text": "Снег, влажность и лёд; подсказки трения и стока для геймплея.",
+          "nameEn": "Surface",
+          "textEn": "Snow, wetness and ice; friction and runoff hints for gameplay."
         },
         {
           "name": "Бедствия",
-          "text": "Огонь и топливо, мелкие наводнения, землетрясения."
+          "text": "Огонь и топливо, мелкие наводнения, землетрясения.",
+          "nameEn": "Disasters",
+          "textEn": "Fire and fuel, shallow floods, earthquakes."
         },
         {
           "name": "Ветер, гравитация, штормы",
-          "text": "3D-зоны ветра с порывами и укрытиями, поля гравитации, ураганы и торнадо."
+          "text": "3D-зоны ветра с порывами и укрытиями, поля гравитации, ураганы и торнадо.",
+          "nameEn": "Wind, gravity, storms",
+          "textEn": "3D wind zones with gusts and shelter, gravity fields, hurricanes and tornadoes."
         },
         {
           "name": "Редактор и сеть",
-          "text": "Окно PHYSIS, поля в сцене с гизмо, сверка полей с авторитетным сервером и журнал команд."
+          "text": "Окно PHYSIS, поля в сцене с гизмо, сверка полей с авторитетным сервером и журнал команд.",
+          "nameEn": "Editor and network",
+          "textEn": "The PHYSIS window, in-scene fields with gizmos, authoritative server reconciliation and a command journal."
         }
       ],
       "enables": [
@@ -140,46 +184,67 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Ядро среды в ECS",
-          "text": "Жанронезависимая детерминированная сетка."
+          "text": "Жанронезависимая детерминированная сетка.",
+          "titleEn": "Environment core in ECS",
+          "textEn": "A genre-neutral deterministic grid."
         },
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Силы ветра и гравитации для ECS-получателей"
+          "title": "Силы ветра и гравитации для ECS-получателей",
+          "titleEn": "Wind and gravity forces for ECS receivers"
         },
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Поля ветра, штормов и гравитации из конфига карты"
+          "title": "Поля ветра, штормов и гравитации из конфига карты",
+          "titleEn": "Wind, storm and gravity fields from map config"
         },
         {
           "status": "done",
           "date": "2026-11-18",
           "title": "Сверка с авторитетным сервером и повтор команд",
-          "text": "Этап 23."
+          "text": "Этап 23.",
+          "titleEn": "Authoritative server reconciliation and command replay",
+          "textEn": "Stage 23."
         },
         {
           "status": "done",
           "date": "2026-11-19",
-          "title": "Журнал и восстановление после рестарта сервера"
+          "title": "Журнал и восстановление после рестарта сервера",
+          "titleEn": "Journal and recovery after a server restart"
         },
         {
           "status": "in-progress",
           "target": null,
           "title": "Сборка и тесты в CI",
-          "text": "По документации компиляция и CTest в этой линии ещё не подтверждены."
+          "text": "По документации компиляция и CTest в этой линии ещё не подтверждены.",
+          "titleEn": "Build and tests in CI",
+          "textEn": "Per the docs, compilation and CTest are not yet confirmed on this line."
         },
         {
           "status": "planned",
           "target": null,
-          "title": "Параллельное обновление сетки и стриминг больших миров"
+          "title": "Параллельное обновление сетки и стриминг больших миров",
+          "titleEn": "Parallel grid updates and streaming for large worlds"
         },
         {
           "status": "planned",
           "target": null,
           "title": "Подключение к TerraWeave, NEREID, растительности, VFX и звуку",
-          "text": "Сейчас интеграции не подключены автоматически."
+          "text": "Сейчас интеграции не подключены автоматически.",
+          "titleEn": "Hooking into TerraWeave, NEREID, vegetation, VFX and audio",
+          "textEn": "These integrations are not wired automatically yet."
         }
+      ],
+      "taglineEn": "A living environment: wind, fire, earth",
+      "essenceEn": "Genre-neutral nature fields in ECS: wind, fire, earthquakes and structural stress that react to each other.",
+      "coverBriefEn": "A moment where the environment acts on its own: wind driving a fire through grass, or a structure failing under stress. Visible consequences, not a debug heatmap.",
+      "enablesEn": [
+        "Add weather, fire and floods to a game of any genre with one system.",
+        "Push physics bodies with wind and change gravity — through a separate Box3D adapter.",
+        "Author wind zones, storms and gravity in map JSON and edit them right in the scene.",
+        "Keep environment fields in sync on the server: reconciliation, command replay, recovery after a restart."
       ]
     },
     {
@@ -198,35 +263,51 @@
       "includes": [
         {
           "name": "Данные воды",
-          "text": "Авторитетные данные водоёмов и выборка уровня и течения из ECS."
+          "text": "Авторитетные данные водоёмов и выборка уровня и течения из ECS.",
+          "nameEn": "Water data",
+          "textEn": "Authoritative water body data and level and current sampling from ECS."
         },
         {
           "name": "Плавучесть",
-          "text": "Сила плавучести и сопротивления для любых жанров."
+          "text": "Сила плавучести и сопротивления для любых жанров.",
+          "nameEn": "Buoyancy",
+          "textEn": "Buoyancy and drag forces for any genre."
         },
         {
           "name": "Течение на GPU",
-          "text": "Локальное поле течения рек в текстуре: волны, пена и белая вода следуют изгибам русла, независимо от камеры."
+          "text": "Локальное поле течения рек в текстуре: волны, пена и белая вода следуют изгибам русла, независимо от камеры.",
+          "nameEn": "GPU flow",
+          "textEn": "A local river flow field in a texture: waves, foam and whitewater follow the channel bends, independent of the camera."
         },
         {
           "name": "Геометрия и рендер",
-          "text": "Переиспользуемая геометрия поверхности, мост к рендереру, планарные отражения, преломление дна."
+          "text": "Переиспользуемая геометрия поверхности, мост к рендереру, планарные отражения, преломление дна.",
+          "nameEn": "Geometry and rendering",
+          "textEn": "Reusable surface geometry, a renderer bridge, planar reflections, riverbed refraction."
         },
         {
           "name": "Пена и белая вода",
-          "text": "Пена, белая вода на быстром течении, качество по профилям."
+          "text": "Пена, белая вода на быстром течении, качество по профилям.",
+          "nameEn": "Foam and whitewater",
+          "textEn": "Foam, whitewater on fast currents, quality profiles."
         },
         {
           "name": "Слияния рек",
-          "text": "Потоки на слиянии рек в ECS и в сцене."
+          "text": "Потоки на слиянии рек в ECS и в сцене.",
+          "nameEn": "River confluences",
+          "textEn": "Flow at river confluences in ECS and in the scene."
         },
         {
           "name": "Океан",
-          "text": "Тайлы океана с рябью, LOD для больших миров."
+          "text": "Тайлы океана с рябью, LOD для больших миров.",
+          "nameEn": "Ocean",
+          "textEn": "Ocean tiles with ripples, LOD for large worlds."
         },
         {
           "name": "Редактор",
-          "text": "Уклон и течение реки правятся в Studio через нативный мост."
+          "text": "Уклон и течение реки правятся в Studio через нативный мост.",
+          "nameEn": "Editor",
+          "textEn": "River grade and current are edited in Studio through the native bridge."
         }
       ],
       "enables": [
@@ -240,61 +321,89 @@
           "status": "done",
           "date": "2026-11-18",
           "title": "Архитектура и данные воды",
-          "text": "Этап 1: ECS-компоненты и выборка."
+          "text": "Этап 1: ECS-компоненты и выборка.",
+          "titleEn": "Architecture and water data",
+          "textEn": "Stage 1: ECS components and sampling."
         },
         {
           "status": "done",
           "date": "2026-11-18",
           "title": "Пена на дальнем LOD",
-          "text": "Этап 7C."
+          "text": "Этап 7C.",
+          "titleEn": "Far-LOD foam",
+          "textEn": "Stage 7C."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Рябь океана по тайлам",
-          "text": "Этап 26."
+          "text": "Этап 26.",
+          "titleEn": "Tiled ocean ripples",
+          "textEn": "Stage 26."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Стыковка воды с берегом",
-          "text": "Этап 36."
+          "text": "Этап 36.",
+          "titleEn": "Water and shoreline join",
+          "textEn": "Stage 36."
         },
         {
           "status": "done",
           "date": "2026-11-19",
-          "title": "Эрозия и общий контракт с TerraWeave"
+          "title": "Эрозия и общий контракт с TerraWeave",
+          "titleEn": "Erosion and a shared contract with TerraWeave"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Регрессионные проверки",
-          "text": "Этапы 49–50."
+          "text": "Этапы 49–50.",
+          "titleEn": "Regression gates",
+          "textEn": "Stages 49–50."
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Уклон реки и течение под гору в редакторе",
-          "text": "Правка в Studio через нативный мост."
+          "text": "Правка в Studio через нативный мост.",
+          "titleEn": "River grade and downhill current in the editor",
+          "textEn": "Edited in Studio through the native bridge."
         },
         {
           "status": "done",
           "date": "2026-11-21",
           "title": "Течение рек на GPU и приёмка в Alpine River Valley",
-          "text": "Пена и белая вода по изгибам русла; 11 GPU-захватов на Metal и GL прошли."
+          "text": "Пена и белая вода по изгибам русла; 11 GPU-захватов на Metal и GL прошли.",
+          "titleEn": "GPU river flow and acceptance in Alpine River Valley",
+          "textEn": "Foam and whitewater follow the bends; 11 GPU captures on Metal and GL passed."
         },
         {
           "status": "in-progress",
           "target": null,
           "title": "Приёмка LOD океана для больших миров",
-          "text": "Этап 48 описывает тестовый контракт."
+          "text": "Этап 48 описывает тестовый контракт.",
+          "titleEn": "Ocean LOD acceptance for large worlds",
+          "textEn": "Stage 48 describes the test contract."
         },
         {
           "status": "planned",
           "target": null,
           "title": "Перевод старой RTS-воды на NEREID",
-          "text": "Старая вода остаётся до отдельной проверенной миграции."
+          "text": "Старая вода остаётся до отдельной проверенной миграции.",
+          "titleEn": "Moving legacy RTS water to NEREID",
+          "textEn": "Legacy water stays until a separate verified migration."
         }
+      ],
+      "taglineEn": "Water that behaves like water",
+      "essenceEn": "Universal water: rivers, lakes and ocean, buoyancy and drag, splashes, waves and wakes.",
+      "coverBriefEn": "A NEREID river in Alpine River Valley: flow through bends, foam and whitewater over rapids, rocks in the stream — captured with LENS without editor UI; ideally a short video.",
+      "enablesEn": [
+        "Build rivers, lakes and ocean with one data model for gameplay and visuals.",
+        "Swim, sink and drift with the current — in RTS, FPS or any other game.",
+        "Show flow, foam and whitewater that follow the channel bends.",
+        "Edit river grade and current in the editor and erode banks together with TerraWeave."
       ]
     },
     {
@@ -309,7 +418,8 @@
       "cover": {
         "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg",
         "caption": "STRATA: кластеры, выбранные в кадре, каждый своим цветом",
-        "approved": false
+        "approved": false,
+        "captionEn": "STRATA: clusters selected in the frame, each in its own colour"
       },
       "coverBrief": "Визуализация кластеров как у Nanite: сцена с миллионами треугольников, где каждый кластер окрашен своим цветом, — видно, что геометрия разбита на части и детализация меняется с расстоянием. Парой — тот же ракурс в обычном рендере.",
       "article": "docs/strata.md",
@@ -317,27 +427,39 @@
       "includes": [
         {
           "name": "Builder",
-          "text": "Кластеризация мешей, иерархия LOD и сертификация швов."
+          "text": "Кластеризация мешей, иерархия LOD и сертификация швов.",
+          "nameEn": "Builder",
+          "textEn": "Mesh clustering, an LOD hierarchy and seam certification."
         },
         {
           "name": "Выбор LOD",
-          "text": "Выбор детализации на вид с гистерезисом, на CPU и на GPU."
+          "text": "Выбор детализации на вид с гистерезисом, на CPU и на GPU.",
+          "nameEn": "LOD selection",
+          "textEn": "Per-view detail selection with hysteresis, on CPU and GPU."
         },
         {
           "name": "Резидентность",
-          "text": "Страницы индексов с бюджетом памяти и асинхронной подгрузкой с диска, несколько миров."
+          "text": "Страницы индексов с бюджетом памяти и асинхронной подгрузкой с диска, несколько миров.",
+          "nameEn": "Residency",
+          "textEn": "Index pages with a memory budget, asynchronous disk loading, several worlds."
         },
         {
           "name": "Рендер",
-          "text": "Отрисовка через существующий Renderer3D; GPU-отбор на Metal и Vulkan, indirect-отрисовка на Vulkan."
+          "text": "Отрисовка через существующий Renderer3D; GPU-отбор на Metal и Vulkan, indirect-отрисовка на Vulkan.",
+          "nameEn": "Rendering",
+          "textEn": "Drawn through the existing Renderer3D; GPU culling on Metal and Vulkan, indirect drawing on Vulkan."
         },
         {
           "name": "Инструменты",
-          "text": "Навык для агентов и анализ ассетов через MCP."
+          "text": "Навык для агентов и анализ ассетов через MCP.",
+          "nameEn": "Tools",
+          "textEn": "An agent skill and asset analysis through MCP."
         },
         {
           "name": "Отладочный вид",
-          "text": "Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация."
+          "text": "Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация.",
+          "nameEn": "Debug view",
+          "textEn": "Colouring of selected clusters by id, LOD level, error or material; presentation only."
         }
       ],
       "enables": [
@@ -350,58 +472,82 @@
         {
           "status": "done",
           "date": "2026-11-19",
-          "title": "API сборщика и владение в движке"
+          "title": "API сборщика и владение в движке",
+          "titleEn": "Builder API and engine ownership"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Выбор кластеров на Metal совпал с эталоном",
-          "text": "Mac Studio: 5/5 проверок выбора, 6/6 целевых тестов."
+          "text": "Mac Studio: 5/5 проверок выбора, 6/6 целевых тестов.",
+          "titleEn": "Metal cluster selection matches the reference",
+          "textEn": "Mac Studio: 5/5 selection checks, 6/6 focused tests."
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Инкрементальные страницы индексов"
+          "title": "Инкрементальные страницы индексов",
+          "titleEn": "Incremental index pages"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Vulkan: GPU-отбор и indirect-отрисовка",
-          "text": "Этап 16."
+          "text": "Этап 16.",
+          "titleEn": "Vulkan: GPU culling and indirect drawing",
+          "textEn": "Stage 16."
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "LOD без трещин и временная стабильность",
-          "text": "Этап 17."
+          "text": "Этап 17.",
+          "titleEn": "Crack-free LOD and temporal stability",
+          "textEn": "Stage 17."
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Навык и анализ ассетов через MCP"
+          "title": "Навык и анализ ассетов через MCP",
+          "titleEn": "Skill and asset analysis through MCP"
         },
         {
           "status": "done",
           "date": "2026-11-21",
           "title": "Визуализация кластеров и уровней LOD",
-          "text": "Отладочный вид в стиле Nanite: кластеры, глубина LOD, ошибка, материалы."
+          "text": "Отладочный вид в стиле Nanite: кластеры, глубина LOD, ошибка, материалы.",
+          "titleEn": "Cluster and LOD visualization",
+          "textEn": "A Nanite-style debug view: clusters, LOD depth, error, materials."
         },
         {
           "status": "in-progress",
           "target": null,
-          "title": "Приёмка на реальном железе Vulkan, GLES и WebGL"
+          "title": "Приёмка на реальном железе Vulkan, GLES и WebGL",
+          "titleEn": "Acceptance on real Vulkan, GLES and WebGL hardware"
         },
         {
           "status": "planned",
           "target": null,
-          "title": "Нативная сборка arm64 и приёмка производительности"
+          "title": "Нативная сборка arm64 и приёмка производительности",
+          "titleEn": "Native arm64 build and performance acceptance"
         },
         {
           "status": "planned",
           "target": null,
           "title": "Включение по умолчанию",
-          "text": "Сейчас экспериментальные флаги выключены."
+          "text": "Сейчас экспериментальные флаги выключены.",
+          "titleEn": "On by default",
+          "textEn": "Experimental flags are off for now."
         }
+      ],
+      "taglineEn": "Virtualized geometry",
+      "essenceEn": "Huge meshes without hand-made LODs: paged streaming, clusters with crack-free detail transitions and GPU culling on Metal and Vulkan.",
+      "coverBriefEn": "A Nanite-style cluster view: a scene of millions of triangles with every cluster in its own colour, showing how geometry is split and detail changes with distance. Paired with the same view in the normal render.",
+      "enablesEn": [
+        "Put huge meshes in a scene without hand-made LODs.",
+        "Keep geometry in memory within a budget and stream it in pages from disk.",
+        "Switch detail without cracks between clusters and without flicker.",
+        "Check whether an asset fits before import — through MCP."
       ]
     },
     {
@@ -420,23 +566,33 @@
       "includes": [
         {
           "name": "Камеры в ECS",
-          "text": "Ассеты камер, расписание кадров и проверка зависимостей."
+          "text": "Ассеты камер, расписание кадров и проверка зависимостей.",
+          "nameEn": "Cameras in ECS",
+          "textEn": "Camera assets, frame scheduling and dependency checks."
         },
         {
           "name": "Цели рендера",
-          "text": "Управляемые цели цвета и глубины для каждой камеры."
+          "text": "Управляемые цели цвета и глубины для каждой камеры.",
+          "nameEn": "Render targets",
+          "textEn": "Managed colour and depth targets for every camera."
         },
         {
           "name": "Риги и история",
-          "text": "Риги камер и отдельное временное состояние на каждую камеру."
+          "text": "Риги камер и отдельное временное состояние на каждую камеру.",
+          "nameEn": "Rigs and history",
+          "textEn": "Camera rigs and separate temporal state for every camera."
         },
         {
           "name": "Захват",
-          "text": "Чтение кадра с GPU и сохранение в PNG."
+          "text": "Чтение кадра с GPU и сохранение в PNG.",
+          "nameEn": "Capture",
+          "textEn": "GPU readback and PNG output."
         },
         {
           "name": "Авторинг",
-          "text": "Окно камер в Studio, навыки и MCP-инструменты для агентов."
+          "text": "Окно камер в Studio, навыки и MCP-инструменты для агентов.",
+          "nameEn": "Authoring",
+          "textEn": "A cameras window in Studio, skills and MCP tools for agents."
         }
       ],
       "enables": [
@@ -448,49 +604,71 @@
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Модули камер на базе MotionWeave"
+          "title": "Модули камер на базе MotionWeave",
+          "titleEn": "Camera modules on the MotionWeave base"
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Навыки и MCP-авторинг камер"
+          "title": "Навыки и MCP-авторинг камер",
+          "titleEn": "Skills and MCP camera authoring"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Нативная проверка на Metal",
-          "text": "Сравнение первичного кадра и повтора во вторичную камеру."
+          "text": "Сравнение первичного кадра и повтора во вторичную камеру.",
+          "titleEn": "Native validation on Metal",
+          "textEn": "Primary frame compared with its replay into a secondary camera."
         },
         {
           "status": "planned",
           "target": null,
           "title": "Планировщик, стек камер, режиссёр и split-screen",
-          "text": "Приоритет P1 в документации."
+          "text": "Приоритет P1 в документации.",
+          "titleEn": "Scheduler, camera stack, director and split-screen",
+          "textEn": "P1 priority in the docs."
         },
         {
           "status": "planned",
           "target": null,
           "title": "PostFX и слои отдельно для каждой камеры",
-          "text": "P1."
+          "text": "P1.",
+          "titleEn": "Per-camera PostFX and layers",
+          "textEn": "P1."
         },
         {
           "status": "planned",
           "target": null,
           "title": "Физическая линза и глубина резкости, кубмапы и панорамы",
-          "text": "P2."
+          "text": "P2.",
+          "titleEn": "Physical lens and depth of field, cubemaps and panoramas",
+          "textEn": "P2."
         },
         {
           "status": "planned",
           "target": null,
           "title": "HDR/EXR-последовательности, зеркала и порталы, тряска и рельсы камеры",
-          "text": "P2."
+          "text": "P2.",
+          "titleEn": "HDR/EXR sequences, mirrors and portals, camera shake and rails",
+          "textEn": "P2."
         },
         {
           "status": "planned",
           "target": null,
           "title": "Стерео и OpenXR",
-          "text": "P2."
+          "text": "P2.",
+          "titleEn": "Stereo and OpenXR",
+          "textEn": "P2."
         }
+      ],
+      "taglineEn": "Cameras and cinematic frames",
+      "essenceEn": "Camera scenes as data: several cameras, frame scheduling, image capture and authoring through MCP and Studio.",
+      "coverBriefEn": "A cinematic frame shot with LENS: depth of field, a deliberate composition, clearly the work of a camera rather than an editor screenshot.",
+      "enablesEn": [
+        "Show several cameras in one frame: monitors, picture-in-picture, portraits.",
+        "Capture game frames to PNG — including for the website and tests.",
+        "Replay a prepared frame into secondary cameras without simulating again."
       ]
     },
     {
@@ -506,7 +684,8 @@
         "src": "docs/devlog/media/systems/vivid-portrait.jpg",
         "caption": "VIVID: портрет в студийном свете, нативный кадр Metal",
         "approved": false,
-        "video": "docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/adaptive-soft-shadows.mp4"
+        "video": "docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/adaptive-soft-shadows.mp4",
+        "captionEn": "VIVID: portrait in studio light, native Metal frame"
       },
       "coverBrief": "Портрет цифрового человека крупным планом в студийном свете: кожа, глаза и живая мимика.",
       "article": "https://github.com/chromealex/AIVERSE/blob/feature/vivid-digital-humans/docs/vivid.md",
@@ -514,27 +693,39 @@
       "includes": [
         {
           "name": "Лицевой контроллер",
-          "text": "Семантические каналы лица, виземы, выражения и взгляд поверх позы MotionWeave."
+          "text": "Семантические каналы лица, виземы, выражения и взгляд поверх позы MotionWeave.",
+          "nameEn": "Facial controller",
+          "textEn": "Semantic facial channels, visemes, expressions and gaze on top of the MotionWeave pose."
         },
         {
           "name": "Морфы на GPU",
-          "text": "Разреженные морфы через вычислительные шейдеры."
+          "text": "Разреженные морфы через вычислительные шейдеры.",
+          "nameEn": "GPU morphs",
+          "textEn": "Sparse morphs through compute shaders."
         },
         {
           "name": "Кожа и LOD",
-          "text": "Перенос LOD кожи, отдельные материалы для кожи, глаз и волос."
+          "text": "Перенос LOD кожи, отдельные материалы для кожи, глаз и волос.",
+          "nameEn": "Skin and LOD",
+          "textEn": "Skin LOD transfer, separate materials for skin, eyes and hair."
         },
         {
           "name": "Волосы",
-          "text": "Коллизии причёски с переиспользуемым буфером."
+          "text": "Коллизии причёски с переиспользуемым буфером.",
+          "nameEn": "Hair",
+          "textEn": "Groom collisions with a reusable buffer."
         },
         {
           "name": "Вложения",
-          "text": "Именованные сокеты и независимые скиннед-модели."
+          "text": "Именованные сокеты и независимые скиннед-модели.",
+          "nameEn": "Attachments",
+          "textEn": "Named sockets and independent skinned models."
         },
         {
           "name": "Creator и Studio",
-          "text": "Панель внешности в Studio, студийный свет с адаптивными мягкими тенями."
+          "text": "Панель внешности в Studio, студийный свет с адаптивными мягкими тенями.",
+          "nameEn": "Creator and Studio",
+          "textEn": "An appearance panel in Studio, studio lighting with adaptive soft shadows."
         }
       ],
       "enables": [
@@ -546,53 +737,75 @@
         {
           "status": "done",
           "date": "2026-11-19",
-          "title": "Архитектура и начало работы"
+          "title": "Архитектура и начало работы",
+          "titleEn": "Architecture and start of work"
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Перенос LOD кожи",
-          "text": "Этап 7R."
+          "text": "Этап 7R.",
+          "titleEn": "Skin LOD transfer",
+          "textEn": "Stage 7R."
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Коллизии волос",
-          "text": "Этап 7X."
+          "text": "Этап 7X.",
+          "titleEn": "Hair collisions",
+          "textEn": "Stage 7X."
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Панель внешности в Studio и предпросмотр персонажа"
+          "title": "Панель внешности в Studio и предпросмотр персонажа",
+          "titleEn": "Studio appearance panel and character preview"
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Сокеты и независимые вложения"
+          "title": "Сокеты и независимые вложения",
+          "titleEn": "Sockets and independent attachments"
         },
         {
           "status": "done",
           "date": "2026-11-21",
-          "title": "Адаптивные мягкие тени в портретном свете"
+          "title": "Адаптивные мягкие тени в портретном свете",
+          "titleEn": "Adaptive soft shadows in portrait lighting"
         },
         {
           "status": "in-progress",
           "target": null,
           "title": "Слияние в main",
-          "text": "Сейчас система живёт в отдельных ветках."
+          "text": "Сейчас система живёт в отдельных ветках.",
+          "titleEn": "Merge into main",
+          "textEn": "The system lives in separate branches for now."
         },
         {
           "status": "planned",
           "target": null,
           "title": "Совместимость с MetaHuman через проверенный адаптер",
-          "text": "Без зависимости от Unreal в рантайме."
+          "text": "Без зависимости от Unreal в рантайме.",
+          "titleEn": "MetaHuman compatibility through an audited adapter",
+          "textEn": "No Unreal dependency at runtime."
         },
         {
           "status": "planned",
           "target": null,
           "title": "VIVID Creator: редактор внешности",
-          "text": "По документации — поздняя веха."
+          "text": "По документации — поздняя веха.",
+          "titleEn": "VIVID Creator: appearance editor",
+          "textEn": "A later milestone per the docs."
         }
+      ],
+      "taglineEn": "Digital humans",
+      "essenceEn": "A facial controller and GPU morphs on top of MotionWeave animation: expressions, blinking, eyes and LODs for characters.",
+      "coverBriefEn": "A close-up portrait of a digital human in studio light: skin, eyes and lively expressions.",
+      "enablesEn": [
+        "Build digital humans for any genre: cutscenes, NPCs, avatars, dialogue portraits.",
+        "Bring faces to life with expressions, blinking and gaze on top of any body animation.",
+        "Show characters in close-up without stepped shadows."
       ]
     },
     {
@@ -607,7 +820,8 @@
       "cover": {
         "src": "docs/images/readme/sponza.jpg",
         "caption": "Sponza: PBR, тени и ambient occlusion",
-        "approved": false
+        "approved": false,
+        "captionEn": "Sponza: PBR, shadows and ambient occlusion"
       },
       "coverBrief": "Интерьер, где видно отражённый свет: солнце через проём, цветной отскок от ткани на камень, мягкие тени.",
       "article": "docs/dynamic-gi.md",
@@ -615,23 +829,33 @@
       "includes": [
         {
           "name": "Пробы GI",
-          "text": "Перезапекаемые пробы с переносимыми кэшами и видимостью по моментам."
+          "text": "Перезапекаемые пробы с переносимыми кэшами и видимостью по моментам.",
+          "nameEn": "GI probes",
+          "textEn": "Rebakeable probes with portable caches and moment-based visibility."
         },
         {
           "name": "Запекание",
-          "text": "Свой path tracer на CPU для лайтмапов и сетки проб."
+          "text": "Свой path tracer на CPU для лайтмапов и сетки проб.",
+          "nameEn": "Baking",
+          "textEn": "The engine's own CPU path tracer for lightmaps and a probe grid."
         },
         {
           "name": "Динамический GI",
-          "text": "Один отскок непрямого света: CPU- и GPU-мосты на Metal и Vulkan."
+          "text": "Один отскок непрямого света: CPU- и GPU-мосты на Metal и Vulkan.",
+          "nameEn": "Dynamic GI",
+          "textEn": "One bounce of indirect light: CPU and GPU bridges on Metal and Vulkan."
         },
         {
           "name": "Luma",
-          "text": "Нативное прямое освещение для тысяч источников перед тонмаппингом PRISMA."
+          "text": "Нативное прямое освещение для тысяч источников перед тонмаппингом PRISMA.",
+          "nameEn": "Luma",
+          "textEn": "Native direct lighting for thousands of lights before PRISMA tone mapping."
         },
         {
           "name": "Свет как сущность",
-          "text": "Свет — компонент сущности; инструменты MCP для агентов."
+          "text": "Свет — компонент сущности; инструменты MCP для агентов.",
+          "nameEn": "Light as an entity",
+          "textEn": "Light is an entity component; MCP tools for agents."
         }
       ],
       "enables": [
@@ -643,34 +867,49 @@
         {
           "status": "done",
           "date": "2026-11-12",
-          "title": "Пробы GI и переносимые кэши освещения"
+          "title": "Пробы GI и переносимые кэши освещения",
+          "titleEn": "GI probes and portable lighting caches"
         },
         {
           "status": "done",
           "date": "2026-11-12",
-          "title": "Запекание лайтмапов и проб"
+          "title": "Запекание лайтмапов и проб",
+          "titleEn": "Lightmap and probe baking"
         },
         {
           "status": "done",
           "date": "2026-11-12",
-          "title": "Видимость проб по моментам"
+          "title": "Видимость проб по моментам",
+          "titleEn": "Moment-based probe visibility"
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Luma на Metal с HDR-материалами"
+          "title": "Luma на Metal с HDR-материалами",
+          "titleEn": "Luma on Metal with HDR materials"
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Свет, компоненты сущностей и MCP слиты в main"
+          "title": "Свет, компоненты сущностей и MCP слиты в main",
+          "titleEn": "Lighting, entity components and MCP merged into main"
         },
         {
           "status": "planned",
           "target": null,
           "title": "Проверка на Metal-захватах, MSL и Android",
-          "text": "По документации проб GI эти пути не проверены."
+          "text": "По документации проб GI эти пути не проверены.",
+          "titleEn": "Verification of Metal captures, MSL and Android",
+          "textEn": "Per the probe GI docs, these paths are unverified."
         }
+      ],
+      "taglineEn": "Lighting and global illumination",
+      "essenceEn": "Light as an entity component, GI probes, lightmap baking with the engine's own path tracer and dynamic indirect lighting.",
+      "coverBriefEn": "An interior with visible bounce light: sun through an opening, coloured bounce from cloth onto stone, soft shadows.",
+      "enablesEn": [
+        "Get bounce light in interiors and on open maps.",
+        "Bake lighting once and skip rebakes when nothing changed.",
+        "Move lights and geometry and see indirect light right away."
       ]
     },
     {
@@ -685,7 +924,8 @@
       "cover": {
         "src": "docs/images/readme/sponza-light-shafts.png",
         "caption": "Лучи света сквозь дымку: выключено / включено",
-        "approved": false
+        "approved": false,
+        "captionEn": "Light shafts through haze: off / on"
       },
       "coverBrief": "Один и тот же кадр с PRISMA и без, где разница — настроение: свет, цвет, атмосфера.",
       "article": "docs/prisma.md",
@@ -693,27 +933,39 @@
       "includes": [
         {
           "name": "HDR-конвейер",
-          "text": "Экспозиция и автоэкспозиция, тонмаппинг ACES, sRGB."
+          "text": "Экспозиция и автоэкспозиция, тонмаппинг ACES, sRGB.",
+          "nameEn": "HDR pipeline",
+          "textEn": "Exposure and auto exposure, ACES tone mapping, sRGB."
         },
         {
           "name": "Эффекты",
-          "text": "Bloom, глубина резкости, motion blur, TAA, tilt shift, лучи солнца."
+          "text": "Bloom, глубина резкости, motion blur, TAA, tilt shift, лучи солнца.",
+          "nameEn": "Effects",
+          "textEn": "Bloom, depth of field, motion blur, TAA, tilt shift, sun shafts."
         },
         {
           "name": "Цвет",
-          "text": "Цветокоррекция, LUT и пресеты: cinematic, vivid, noir, retro и другие."
+          "text": "Цветокоррекция, LUT и пресеты: cinematic, vivid, noir, retro и другие.",
+          "nameEn": "Colour",
+          "textEn": "Colour grading, LUTs and presets: cinematic, vivid, noir, retro and more."
         },
         {
           "name": "Объёмы камер",
-          "text": "Post-process volumes со смешиванием параметров."
+          "text": "Post-process volumes со смешиванием параметров.",
+          "nameEn": "Camera volumes",
+          "textEn": "Post-process volumes with parameter blending."
         },
         {
           "name": "Render graph",
-          "text": "Граф проходов, пул ресурсов, профили качества."
+          "text": "Граф проходов, пул ресурсов, профили качества.",
+          "nameEn": "Render graph",
+          "textEn": "A pass graph, a resource pool and quality profiles."
         },
         {
           "name": "Атмосфера",
-          "text": "Объёмный туман банками и приземной дымкой."
+          "text": "Объёмный туман банками и приземной дымкой.",
+          "nameEn": "Atmosphere",
+          "textEn": "Volumetric fog banks and ground mist."
         }
       ],
       "enables": [
@@ -725,36 +977,53 @@
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Архитектура и план миграции"
+          "title": "Архитектура и план миграции",
+          "titleEn": "Architecture and migration plan"
         },
         {
           "status": "done",
           "date": "2026-11-18",
           "title": "Bloom через render graph",
-          "text": "Этап 15."
+          "text": "Этап 15.",
+          "titleEn": "Bloom through the render graph",
+          "textEn": "Stage 15."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Векторы скорости для инстансов и скиннинга",
-          "text": "Этап 27."
+          "text": "Этап 27.",
+          "titleEn": "Velocity for instances and skinning",
+          "textEn": "Stage 27."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Устойчивая HDR-экспозиция и сброс на склейках",
-          "text": "Этап 57."
+          "text": "Этап 57.",
+          "titleEn": "Robust HDR exposure and reset on cuts",
+          "textEn": "Stage 57."
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Туман банками по ветру и приземная дымка"
+          "title": "Туман банками по ветру и приземная дымка",
+          "titleEn": "Wind-driven fog banks and ground mist"
         },
         {
           "status": "in-progress",
           "target": null,
-          "title": "Глубина резкости и motion blur вне экспериментального режима"
+          "title": "Глубина резкости и motion blur вне экспериментального режима",
+          "titleEn": "Depth of field and motion blur out of experimental mode"
         }
+      ],
+      "taglineEn": "Post-processing and atmosphere",
+      "essenceEn": "HDR, exposure and tone mapping, bloom, DoF, motion blur, TAA, colour grading and screen-space atmosphere with quality profiles.",
+      "coverBriefEn": "The same frame with and without PRISMA, where the difference is mood: light, colour, atmosphere.",
+      "enablesEn": [
+        "Set the mood of a frame in game.json or a map and change it through MCP.",
+        "Change the look when the camera enters an area — through post-process volumes.",
+        "Scale effects to the GPU, from weak phones to Apple Silicon."
       ]
     },
     {
@@ -766,34 +1035,51 @@
       "where": "main",
       "tagline": "Эффекты частиц",
       "essence": "Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.",
-      "cover": null,
+      "cover": {
+        "src": "docs/devlog/media/systems/spectrafx-explosion.jpg",
+        "caption": "SpectraFX: большой взрыв и огонь с дымом из JSON-эффектов, CPU-бэкенд частиц",
+        "captionEn": "SpectraFX: a big explosion and fire with smoke from JSON effects, CPU particle backend",
+        "approved": false
+      },
       "coverBrief": "Эффектный момент в игровой сцене: взрыв, магия или огонь с дымом и светом, а не тестовый эмиттер на пустом поле.",
       "article": "docs/spectrafx.md",
       "started": "2026-10-28",
       "includes": [
         {
           "name": "Графы эффектов",
-          "text": "Типизированный граф v2, подграфы-функции, варианты и горячая перезагрузка."
+          "text": "Типизированный граф v2, подграфы-функции, варианты и горячая перезагрузка.",
+          "nameEn": "Effect graphs",
+          "textEn": "A typed graph v2, function subgraphs, variants and hot reload."
         },
         {
           "name": "CPU и GPU",
-          "text": "CPU-бэкенд частиц и GPU-частицы на Metal."
+          "text": "CPU-бэкенд частиц и GPU-частицы на Metal.",
+          "nameEn": "CPU and GPU",
+          "textEn": "A CPU particle backend and GPU particles on Metal."
         },
         {
           "name": "Связь с ECS",
-          "text": "Источники эффектов из сущностей, события и планирование сигналов."
+          "text": "Источники эффектов из сущностей, события и планирование сигналов.",
+          "nameEn": "ECS link",
+          "textEn": "Effect sources from entities, events and cue scheduling."
         },
         {
           "name": "Редактор",
-          "text": "Визуальный редактор графов в Studio и авторинг через MCP."
+          "text": "Визуальный редактор графов в Studio и авторинг через MCP.",
+          "nameEn": "Editor",
+          "textEn": "A visual graph editor in Studio and authoring through MCP."
         },
         {
           "name": "Батчинг",
-          "text": "Общий батчинг материалов между эффектами."
+          "text": "Общий батчинг материалов между эффектами.",
+          "nameEn": "Batching",
+          "textEn": "Shared material batching across effects."
         },
         {
           "name": "Импорт",
-          "text": "Модули Unity ParticleSystem и импорт эффектов из Unity."
+          "text": "Модули Unity ParticleSystem и импорт эффектов из Unity.",
+          "nameEn": "Import",
+          "textEn": "Unity ParticleSystem modules and effect import from Unity."
         }
       ],
       "enables": [
@@ -805,44 +1091,61 @@
         {
           "status": "done",
           "date": "2026-10-28",
-          "title": "Начало работы над системой эффектов"
+          "title": "Начало работы над системой эффектов",
+          "titleEn": "Start of work on the effects system"
         },
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Имя SpectraFX, публичный C++ API и формат ассетов"
+          "title": "Имя SpectraFX, публичный C++ API и формат ассетов",
+          "titleEn": "The SpectraFX name, public C++ API and asset format"
         },
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Общий батчинг между эффектами"
+          "title": "Общий батчинг между эффектами",
+          "titleEn": "Shared batching across effects"
         },
         {
           "status": "done",
           "date": "2026-11-19",
-          "title": "Постоянные атрибуты частиц на GPU"
+          "title": "Постоянные атрибуты частиц на GPU",
+          "titleEn": "Persistent particle attributes on GPU"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "GPU-конвейер scatter-kill и пример нативной ECS-интеграции",
-          "text": "Этап 36."
+          "text": "Этап 36.",
+          "titleEn": "GPU scatter-kill pipeline and a native ECS integration example",
+          "textEn": "Stage 36."
         },
         {
           "status": "done",
           "date": "2026-11-20",
-          "title": "Граф v2 в Inspector и проверенный жизненный цикл Metal"
+          "title": "Граф v2 в Inspector и проверенный жизненный цикл Metal",
+          "titleEn": "Graph v2 in the Inspector and a verified Metal lifecycle"
         },
         {
           "status": "in-progress",
           "target": null,
-          "title": "Полная связка GPU и CPU в продакшене"
+          "title": "Полная связка GPU и CPU в продакшене",
+          "titleEn": "Full GPU and CPU integration in production"
         },
         {
           "status": "planned",
           "target": null,
-          "title": "Автоматическое подключение к RTS и FPS"
+          "title": "Автоматическое подключение к RTS и FPS",
+          "titleEn": "Automatic hookup to RTS and FPS"
         }
+      ],
+      "taglineEn": "Particle effects",
+      "essenceEn": "Particles, ribbons, smoke, fire and explosions from effect graphs, with CPU and GPU emitters and ECS event bindings.",
+      "coverBriefEn": "A spectacular moment in a game scene: an explosion, magic or fire with smoke and light, not a test emitter on an empty field.",
+      "enablesEn": [
+        "Build fire, smoke, explosions and magic from a graph, not code.",
+        "Trigger effects from gameplay events without touching the deterministic simulation.",
+        "Bring effects over from Unity projects."
       ]
     },
     {
@@ -861,27 +1164,39 @@
       "includes": [
         {
           "name": "Графы анимации",
-          "text": "Клипы, блендспейсы, монтажи и root motion."
+          "text": "Клипы, блендспейсы, монтажи и root motion.",
+          "nameEn": "Animation graphs",
+          "textEn": "Clips, blend spaces, montages and root motion."
         },
         {
           "name": "IK и motion matching",
-          "text": "Инверсная кинематика, motion matching, инерциализация."
+          "text": "Инверсная кинематика, motion matching, инерциализация.",
+          "nameEn": "IK and motion matching",
+          "textEn": "Inverse kinematics, motion matching, inertialization."
         },
         {
           "name": "Ретаргет и LOD",
-          "text": "Ретаргет между ригами, LOD скелетов, сокеты и вложения."
+          "text": "Ретаргет между ригами, LOD скелетов, сокеты и вложения.",
+          "nameEn": "Retargeting and LOD",
+          "textEn": "Retargeting between rigs, skeleton LODs, sockets and attachments."
         },
         {
           "name": "Многопоточность",
-          "text": "Многопоточная подготовка моделей и презентации."
+          "text": "Многопоточная подготовка моделей и презентации.",
+          "nameEn": "Multithreading",
+          "textEn": "Multithreaded model and presentation preparation."
         },
         {
           "name": "Толпы",
-          "text": "LOD анимации и GPU-толпы."
+          "text": "LOD анимации и GPU-толпы.",
+          "nameEn": "Crowds",
+          "textEn": "Animation LOD and GPU crowds."
         },
         {
           "name": "Редактор",
-          "text": "ModelView и Studio: вложения, переимпорт с диска без потери анимации."
+          "text": "ModelView и Studio: вложения, переимпорт с диска без потери анимации.",
+          "nameEn": "Editor",
+          "textEn": "ModelView and Studio: attachments, reimport from disk without losing animation."
         }
       ],
       "enables": [
@@ -893,37 +1208,55 @@
         {
           "status": "done",
           "date": "2026-11-18",
-          "title": "Публичное имя и API MotionWeave"
+          "title": "Публичное имя и API MotionWeave",
+          "titleEn": "MotionWeave public name and API"
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Многопоточный импорт моделей",
-          "text": "Этап 103."
+          "text": "Этап 103.",
+          "titleEn": "Multithreaded model import",
+          "textEn": "Stage 103."
         },
         {
           "status": "done",
           "date": "2026-11-19",
           "title": "Контракт пакетов презентации",
-          "text": "Этап 152."
+          "text": "Этап 152.",
+          "titleEn": "Presentation packet contract",
+          "textEn": "Stage 152."
         },
         {
           "status": "done",
           "date": "2026-11-20",
           "title": "Переимпорт с диска и наблюдение за файлами",
-          "text": "Этап 157."
+          "text": "Этап 157.",
+          "titleEn": "Reimport from disk and file watching",
+          "textEn": "Stage 157."
         },
         {
           "status": "in-progress",
           "target": null,
           "title": "Тесты и визуальная проверка",
-          "text": "По документации отложены пользователем."
+          "text": "По документации отложены пользователем.",
+          "titleEn": "Tests and visual verification",
+          "textEn": "Deferred by the user per the docs."
         },
         {
           "status": "planned",
           "target": null,
-          "title": "Замеры производительности на CPU"
+          "title": "Замеры производительности на CPU",
+          "titleEn": "CPU performance measurements"
         }
+      ],
+      "taglineEn": "Character animation",
+      "essenceEn": "Animation graphs, retargeting between rigs, skeleton LODs and attachments — one animation system for every genre.",
+      "coverBriefEn": "A character in motion: blended animations, retargeting onto different rigs or a crowd with LOD; a still must read as motion.",
+      "enablesEn": [
+        "One animation system for RTS armies, FPS characters and cutscenes.",
+        "Reimport a model without breaking the animation that is playing.",
+        "Animate large crowds with LOD."
       ]
     },
     {

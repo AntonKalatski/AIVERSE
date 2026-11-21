@@ -27,7 +27,8 @@ fixes nobody can see get no entry.
    gets a new line there.
 4. Fill every `TODO` in Russian: `summary` (what became possible), `body` (how and where),
    `verified` (only commands and captures that really ran), `limits` (what is unverified),
-   `commit`, a caption for each frame, `links` to the handoff or doc.
+   `commit`, a caption for each frame, `links` to the handoff or doc. Then add the English
+   twins the site needs (`titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`, `limitsEn`, `captionEn`).
 5. `python3 tools/site/build.py check` must print `0 errors`. Optionally
    `python3 tools/site/build.py build && python3 -m http.server -d build/site 8000`.
 6. Commit the entry and media with the feature (or as the stage's handoff commit). Do not
@@ -39,7 +40,12 @@ If your stage belongs to a flagship system in `docs/devlog/systems.json`, update
 the same commit: move the finished `roadmap` item to `"status": "done"` with today's `date` (or
 add one), mark what you are starting as `in-progress`, add newly planned features from your
 handoff as `planned` with `"target": null` unless the user gave a date, and keep `includes` and
-`enables` true to what is merged. A new flagship system needs every field (see docs/devlog/README.md).
+`enables` true to what is merged, with their `En` twins. A new flagship system needs every field (see docs/devlog/README.md).
+
+## Documentation pages
+
+If your stage adds or rewrites a document game developers need (a system guide, a format, an
+API), list it in `site/docs.json` under the right section (`{id, source, title, titleEn, lead, leadEn}`).
 
 ## System cover (main page, "Системы движка")
 

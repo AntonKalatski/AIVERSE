@@ -59,6 +59,12 @@ River Valley review-project-v24 (приёмка шла через AiverseTerraQA
 Цель: взрыв, магия или огонь с дымом и светом в игровой сцене, не пустой тестовый эмиттер.
 Есть: графы v2, GPU-частицы Metal, пример нативной ECS-интеграции (этап 36), навык `aiverse-spectrafx`.
 Bloom и экспозиция — PRISMA.
+Снято (2026-11-21, обложка с `"approved": false`): хост `tools/site/fx_showcase.cpp` (ветка
+`feature/site-strata-showcase`) — процедурные рельеф и камни, `fx::ParticleSystem` (CPU-бэкенд)
+с эффектами `explosion_big` и `fire_smoke` из `templates/lua_lab/fx`, 2,85 с симуляции шагом 1/60,
+Linux, OpenGL через Mesa llvmpipe, 1920×1080. Без PRISMA (нет bloom), без света от частиц
+(в этих эффектах нет модуля `light`), не игровая сцена и не GPU-частицы Metal. На краю огненного
+шара видны полосы пересечения спрайтов с землёй. Осталось: кадр в игровой сцене на Metal с bloom.
 
 ### MotionWeave — анимация
 Цель: персонаж в движении (смешение, ретаргет на разные риги) или толпа с LOD; кадр читается как движение.

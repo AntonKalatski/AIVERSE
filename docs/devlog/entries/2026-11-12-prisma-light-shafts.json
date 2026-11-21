@@ -15,11 +15,13 @@
   "media": [
     {
       "src": "docs/images/readme/sponza-light-shafts.png",
-      "caption": "Выключено / включено"
+      "caption": "Выключено / включено",
+      "captionEn": "Off / on"
     },
     {
       "src": "docs/benchmarks/sponza-2026-11-12/haze-shafts-crop.png",
-      "caption": "Лучи крупно"
+      "caption": "Лучи крупно",
+      "captionEn": "Shafts close-up"
     }
   ],
   "links": [
@@ -28,5 +30,11 @@
       "href": "docs/prisma.md"
     }
   ],
-  "author": "prisma"
+  "author": "prisma",
+  "titleEn": "Light shafts through haze",
+  "summaryEn": "Volumetric sun shafts in haze in the Sponza scene: off / on comparison.",
+  "verifiedEn": "Frames captured by the engine in the Sponza scene.",
+  "bodyEn": [
+    "Frames from the Sponza benchmark of 2026-11-12. Scene settings are next to the frames in docs/benchmarks/sponza-2026-11-12."
+  ]
 }

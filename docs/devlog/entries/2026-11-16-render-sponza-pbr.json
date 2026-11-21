@@ -15,7 +15,8 @@
   "media": [
     {
       "src": "docs/images/readme/sponza.jpg",
-      "caption": "Sponza: PBR, тени, AO"
+      "caption": "Sponza: PBR, тени, AO",
+      "captionEn": "Sponza: PBR, shadows, AO"
     }
   ],
   "links": [
@@ -24,5 +25,11 @@
       "href": "docs/probe-gi.md"
     }
   ],
-  "author": "render"
+  "author": "render",
+  "titleEn": "Sponza: PBR, shadows and ambient occlusion",
+  "summaryEn": "The classic Sponza test scene fully rendered by AIVERSE: physically based materials, sun shadows and occlusion.",
+  "verifiedEn": "Frame captured by the engine in the Sponza scene.",
+  "bodyEn": [
+    "Captured by the engine; the lighting, GI probe and haze benchmarks in docs/benchmarks/sponza-2026-11-12 use the same scene."
+  ]
 }

@@ -33,7 +33,7 @@ branch reaches `main`, `.github/workflows/site.yml` rebuilds the site and pushes
 
 - `id` = `<date>-<system>-<slug>` (lowercase latin), file name = `<id>.json`.
 - `system` is an id from `systems.json`. A new engine system gets a new line there (with its doc).
-- Site text is Russian (the site language). Code identifiers stay as they are.
+- Text is Russian with English twins (`…En`, see Languages). Code identifiers stay as they are.
 - `media`: 1–4 shown per card; repository-relative paths. New screenshots go to
   `docs/devlog/media/<id>/`; existing ones (handoff assets, benchmarks) are referenced, not copied.
   PNG/JPG/WebP/GIF ≤ 3 MB, MP4/WebM ≤ 15 MB, a caption for every file.
@@ -62,12 +62,34 @@ or `null` — shown as "срок не назначен". Targets come from the u
 `coverBrief` says what the frame must show; the owning agent renders it and, if it has no cover
 yet, may set `cover` with `"approved": false`. Replacing an existing cover needs the user.
 
+## Languages
+
+The site is Russian at the root and English under `en/` (switch in the header). Every text field
+has an English twin with the `En` suffix; fill both, or the English page falls back to Russian:
+
+- entries: `titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`, `limitsEn`, `media[].captionEn`;
+- `systems.json`: `nameEn`, `taglineEn`, `essenceEn`, `enablesEn`, `coverBriefEn`,
+  `cover.captionEn`, `includes[].nameEn/textEn`, `roadmap[].titleEn/textEn`;
+- `showcase.json`: `titleEn`, `captionEn`.
+
+Interface strings (navigation, labels, statuses) live in `site/i18n/ru.json` and `site/i18n/en.json`;
+page chrome comes from `site/_layout.html`. The hand-written main and devlog pages exist twice:
+`site/index.html`, `site/devlog.html` and `site/en/index.html`, `site/en/devlog.html` — change both.
+
+## Documentation pages
+
+"Документация" (`docs.html`, `docs-<id>.html`) renders repository Markdown files listed in
+`site/docs.json`: `sections[] → {title, titleEn, pages[] → {id, source, title, titleEn, lead, leadEn}}`. Relative
+links to other listed docs become site links, other repository links go to GitHub, images to
+raw.githubusercontent. Docs are written in one language; the other page says so. A flagship
+system whose `article` is listed links to its docs page. `build.py check` fails on a missing `source`.
+
 ## Commands
 
 ```sh
 python3 tools/site/build.py add --system render --title "…" --media path/to/shot.png
 python3 tools/site/build.py check            # required before commit
-python3 tools/site/build.py build            # → build/site; open build/site/index.html via a local server
+python3 tools/site/build.py build            # → build/site (RU at the root, EN in build/site/en)
 python3 -m http.server -d build/site 8000
 ```
 
