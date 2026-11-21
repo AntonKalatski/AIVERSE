@@ -116,17 +116,21 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     s.post.setSettings(settings);s.post.setQuality(PrismaQuality::High);
     r.beginScene(s.camera,w,h);
     if(s.computeGiVerify) {
+        // AIVERSE_COMPUTE_GI_SCROLL_AWAY=x: how far the focus walks (default 6 cells).
         static int scrollAway=0;
+        static const float away=std::getenv("AIVERSE_COMPUTE_GI_SCROLL_AWAY")?
+            float(std::atof(std::getenv("AIVERSE_COMPUTE_GI_SCROLL_AWAY"))):6.0f;
         float3 focus{0,0,0};
-        if(s.computeGi.config().scroll && scrollAway<40){focus={6,0,0};++scrollAway;}
+        if(s.computeGi.config().scroll && scrollAway<40){focus={away,0,0};++scrollAway;}
         s.computeGi.updateFrame(focus);
         // Scrolling presents while probes update; the pixel check needs them traced.
         if(!s.computeGi.canPresent() || s.computeGi.pendingProbes() || (scrollAway<40 && s.computeGi.config().scroll)){
             waitFrame();return;}
         if(s.computeGi.config().scroll && s.gridProbe==test && s.frame==0) {
             const auto st=s.computeGi.scrollStats();
-            std::printf("GI scroll: %zu scrolls, %zu probes recycled\n",st.scrolls,st.recycledProbes);
-            if(st.scrolls<2){std::fprintf(stderr,"GI scroll FAIL\n");s.failed=true;return;}
+            std::printf("GI scroll: %zu scrolls, %zu probes recycled, %zu re-plans, resident %zu tris\n",
+                        st.scrolls,st.recycledProbes,st.residencyReplans,s.computeGi.residency().relevantTriangles);
+            if(st.scrolls<(away!=0?2u:0u)){std::fprintf(stderr,"GI scroll FAIL\n");s.failed=true;return;}
         }
     }
     // Case 1 intentionally does not reattach: beginScene must clear the previous view.
