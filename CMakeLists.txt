@@ -1188,6 +1188,17 @@ add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
 add_library(aiverse_client_runtime STATIC $<TARGET_OBJECTS:aiverse_runtime>)
 target_link_libraries(aiverse_client_runtime PUBLIC
     "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_LIBRARIES>")
+# The archive must carry every usage requirement of the runtime, not only its
+# libraries: Web link flags (-sUSE_WEBGL2, memory growth, idbfs) and public
+# definitions/includes are set on aiverse_runtime later in this file.
+target_link_options(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_OPTIONS>")
+target_compile_definitions(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_COMPILE_DEFINITIONS>")
+target_compile_options(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_COMPILE_OPTIONS>")
+target_include_directories(aiverse_client_runtime INTERFACE
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_INCLUDE_DIRECTORIES>")
 if(AIVERSE_VULKAN)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
 endif()
@@ -1241,8 +1252,17 @@ add_library(AIVERSE::view_visibility ALIAS aiverse_view_visibility)
 target_include_directories(aiverse_view_visibility PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(aiverse_view_visibility PUBLIC aiverse_models)
 
+# Spline roads, shared by every project and client (docs/roads.md): data + geometry (Fixed, no GPU) and the view.
+add_library(aiverse_roads STATIC engine/roads/RoadNet.cpp engine/roads/RoadTypes.cpp)
+add_library(AIVERSE::roads ALIAS aiverse_roads)
+target_include_directories(aiverse_roads PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(aiverse_roads PUBLIC aiverse_engine)
+add_library(aiverse_roads_view STATIC engine/roads/RoadView.cpp engine/roads/RoadKit.cpp)
+add_library(AIVERSE::roads_view ALIAS aiverse_roads_view)
+target_link_libraries(aiverse_roads_view PUBLIC aiverse_roads aiverse_models aiverse_render2d)
+
 add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/view/RtsTerrain.cpp
-    modules/rts/view/RtsRoadView.cpp modules/rts/view/RtsRoadKit.cpp modules/rts/view/RtsShoreView.cpp
+    modules/rts/view/RtsShoreView.cpp
     modules/rts/view/RtsShapes.cpp modules/rts/view/RtsLook.cpp modules/rts/view/RtsAnimate.cpp
     modules/rts/view/RtsViewDraw.cpp modules/rts/view/RtsPortrait.cpp
     modules/rts/view/RtsLights.cpp modules/rts/view/RtsLightsData.cpp modules/rts/view/RtsGroundFx.cpp modules/rts/view/RtsTerrainRender.cpp modules/rts/view/RtsTerrainDetailMesh.cpp
@@ -1254,7 +1274,7 @@ add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/vi
 # + the planet surface maths (RtsPlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
 add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp modules/rts/view/RtsPlanet.cpp modules/rts/view/RtsPlanetDetail.cpp)
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
-target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui)
+target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui aiverse_roads_view)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_view_visibility)
 # Transitional host adapter consumes the engine View. The dependency points
@@ -2046,9 +2066,21 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+# AIVERSE_GAME_WITH_TRAFFIC=OFF (packaging.engineModules without "traffic") compiles a small adapter instead:
+# rules with an enabled "traffic" block then fail at match start with a readable error. Packaged clients only:
+# the editor, tests, headless runner and servers keep the full simulation.
+option(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation" ON)
+if(AIVERSE_GAME_WITH_TRAFFIC)
+    target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+else()
+    if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_HEADLESS OR AIVERSE_BUILD_SERVER OR AIVERSE_BUILD_STUDIO_HTML5)
+        message(FATAL_ERROR "AIVERSE_GAME_WITH_TRAFFIC=OFF is for packaged clients only; turn off the editor, tests, headless runner and server")
+    endif()
+    target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficDisabled.cpp)
+endif()
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsRoadNet.cpp modules/rts/RtsRoadTypes.cpp modules/rts/RtsTrafficRoads.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficRoads.cpp)
+target_link_libraries(aiverse_game PUBLIC aiverse_roads)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
 target_sources(aiverse_game PRIVATE modules/rts/view/RtsWater.cpp)
 # the engine's standard Lua library (rule-level mechanics) is compiled in: modules/rts/lua/*.lua
@@ -2473,7 +2505,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_compile_definitions(aiverse_ecs_native_rts_integration_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME ecs_native_rts_integration_test COMMAND aiverse_ecs_native_rts_integration_test)
     add_executable(aiverse_rts_authored_pose_test tests/rts_authored_pose_test.cpp)
-    target_link_libraries(aiverse_rts_authored_pose_test PRIVATE aiverse_game aiverse_game_view)
+    target_link_libraries(aiverse_rts_authored_pose_test PRIVATE aiverse_runtime aiverse_game aiverse_game_view)
     target_compile_definitions(aiverse_rts_authored_pose_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME rts_authored_pose_test COMMAND aiverse_rts_authored_pose_test)
     add_executable(aiverse_ecs_native_persistence_test tests/ecs_native_persistence_test.cpp)

@@ -1,8 +1,8 @@
-#include "RtsRoadView.h"
-#include "RtsRoadKit.h"
-#include "../../../engine/render/FailedModelUpload.h"
+#include "RoadView.h"
+#include "RoadKit.h"
+#include "engine/render/FailedModelUpload.h"
 #include "engine/view/TriangleFacing.h"
-#include "../../../engine/platform/Platform.h"
+#include "engine/platform/Platform.h"
 #include <algorithm>
 #include <climits>
 #include <cmath>
@@ -14,7 +14,7 @@
 #include <tuple>
 #include <utility>
 
-namespace aiverse::game {
+namespace aiverse::roads {
 
 using namespace render;
 
@@ -39,15 +39,15 @@ float sidewalkHeight(const RoadSideDef& s) {
 }
 int surfaceMat(RoadSurface s) {
     switch (s) {
-    case RoadSurface::Asphalt: return RtsRoadView::kAsphalt;
-    case RoadSurface::Concrete: return RtsRoadView::kConcrete;
-    case RoadSurface::Cobble: return RtsRoadView::kCobble;
-    case RoadSurface::Paving: return RtsRoadView::kPaving;
-    case RoadSurface::Gravel: return RtsRoadView::kGravel;
-    case RoadSurface::Dirt: return RtsRoadView::kDirt;
-    case RoadSurface::Grass: return RtsRoadView::kGrass;
+    case RoadSurface::Asphalt: return RoadView::kAsphalt;
+    case RoadSurface::Concrete: return RoadView::kConcrete;
+    case RoadSurface::Cobble: return RoadView::kCobble;
+    case RoadSurface::Paving: return RoadView::kPaving;
+    case RoadSurface::Gravel: return RoadView::kGravel;
+    case RoadSurface::Dirt: return RoadView::kDirt;
+    case RoadSurface::Grass: return RoadView::kGrass;
     }
-    return RtsRoadView::kAsphalt;
+    return RoadView::kAsphalt;
 }
 bool inGaps2(const std::vector<std::pair<float, float>>& g, float s) {
     for (auto& [a, b] : g) if (s >= a && s <= b) return true;
@@ -97,7 +97,7 @@ public:
     std::vector<render::SpriteVertex> decals;   // road paint (4 vertices per quad)
     std::vector<render::SpriteVertex> verges;   // soft verges (4 vertices per quad)
     std::vector<render::SpriteVertex> film;     // the road surfaces once more, for the wet film (white, alpha 1)
-    std::vector<RtsRoadView::PuddleSpot> spots; // where puddles gather
+    std::vector<RoadView::PuddleSpot> spots; // where puddles gather
     std::vector<float3> surf;                   // upward faces that wheels and feet stand on (3 corners each)
 
     void build() {
@@ -174,7 +174,7 @@ public:
                     };
                     tri(pm, c, a0, b0, uvOf(c), uvOf(a0), uvOf(b0), {0, 1, 0});
                 } else {
-                    const float ku = road == RtsRoadView::kAsphalt ? um * 0.25f : um;   // the carriageways' scale
+                    const float ku = road == RoadView::kAsphalt ? um * 0.25f : um;   // the carriageways' scale
                     tri(road, c, a0, b0, {c.x * ku, c.z * ku}, {a0.x * ku, a0.z * ku}, {b0.x * ku, b0.z * ku}, {0, 1, 0});
                 }
                 if (A.softR || B.softL) continue;   // a soft side: the verge decals run round the bend on their own
@@ -185,7 +185,7 @@ public:
                     if (h > 0) {
                         const float3 out = normalize((a0 + b0) * 0.5f - c);
                         const float len = std::hypot(b0.x - a0.x, b0.z - a0.z), hh = wy(h);
-                        quad(RtsRoadView::kCurb, a0, a1, b1, b0, curbUv(0, 0), curbUv(0, hh), curbUv(len, hh), curbUv(len, 0), -out);
+                        quad(RoadView::kCurb, a0, a1, b1, b0, curbUv(0, 0), curbUv(0, hh), curbUv(len, hh), curbUv(len, 0), -out);
                     }
                 }
             }
@@ -213,7 +213,7 @@ private:
     int bare_ = 0;
     struct Bare { int& n; explicit Bare(int& c) : n(c) { ++n; } ~Bare() { --n; } };
     static bool standable(int mat) {
-        using V = RtsRoadView;
+        using V = RoadView;
         switch (mat) {
         case V::kMetal: case V::kWood: case V::kLeaves: case V::kBark: case V::kGlow: case V::kHedge: case V::kDark:
         case V::kSignalRed: case V::kSignalAmber: case V::kSignalGreen: case V::kSign: case V::kGlass: return false;
@@ -234,7 +234,7 @@ private:
         auto& V = A.v[size_t(mat)];
         auto& I = A.i[size_t(mat)];
         const uint32_t base = uint32_t(V.size());
-        const bool tint = mat >= RtsRoadView::kMatCount || mat == RtsRoadView::kAsphalt || mat == RtsRoadView::kAsphaltWorn;
+        const bool tint = mat >= RoadView::kMatCount || mat == RoadView::kAsphalt || mat == RoadView::kAsphaltWorn;
         for (auto [p, uv] : {std::pair{a, ua}, std::pair{b, ub}, std::pair{c, uc}}) {
             ModelVertex mv;
             mv.pos = p; mv.nrm = nrm; mv.uv = uv;
@@ -419,10 +419,10 @@ private:
             const float ct = curbTop();
             if (!gapL && L.sidewalk.raw > 0) {
                 pr.push_back({-(cwl + f(L.shoulder) + swL), hsL, -1, 2});
-                if (hsL > 0) { pr.push_back({-(cwl + f(L.shoulder) + ct), hsL, surfaceMat(L.sidewalkSurface), 1}); pr.push_back({-(cwl + f(L.shoulder)), hsL, RtsRoadView::kCurb, 1}); }
+                if (hsL > 0) { pr.push_back({-(cwl + f(L.shoulder) + ct), hsL, surfaceMat(L.sidewalkSurface), 1}); pr.push_back({-(cwl + f(L.shoulder)), hsL, RoadView::kCurb, 1}); }
                 else pr.push_back({-(cwl + f(L.shoulder)), hsL, surfaceMat(L.sidewalkSurface), 1});
             }
-            if (!gapL && hsL > 0 && !pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, RtsRoadView::kCurb, 1});
+            if (!gapL && hsL > 0 && !pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, RoadView::kCurb, 1});
             const bool softL = soft(L) && A.ground && B.ground, softR = soft(R) && A.ground && B.ground;   // verges as decals on the ground
             if (!gapL && L.shoulder.raw > 0 && !softL) { if (pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, -1, 1}); pr.push_back({-cwl, 0, surfaceMat(L.shoulderSurface), 1}); }
             if (pr.empty()) pr.push_back({-cwl, 0, -1, 1});
@@ -433,9 +433,9 @@ private:
                 const bool cut = inGaps2(zebra, sm);
                 const float h = cut ? 0.0f : hm;
                 pr.push_back({-m, 0, carr, 0});
-                if (h > 0) pr.push_back({-m, h, RtsRoadView::kCurb, 0});
-                pr.push_back({m, h, cut ? RtsRoadView::kConcrete : surfaceMat(t.medianSurface), 0});
-                if (h > 0) pr.push_back({m, 0, RtsRoadView::kCurb, 0});
+                if (h > 0) pr.push_back({-m, h, RoadView::kCurb, 0});
+                pr.push_back({m, h, cut ? RoadView::kConcrete : surfaceMat(t.medianSurface), 0});
+                if (h > 0) pr.push_back({m, 0, RoadView::kCurb, 0});
             }
             pr.push_back({cwr, 0, carr, 0});
             pr.push_back({cwr, 0, carr, 1});
@@ -462,7 +462,7 @@ private:
             }
             if (!gapR && R.sidewalk.raw > 0) {
                 const float o = cwr + f(R.shoulder);
-                if (hsR > 0) { pr.push_back({o, hsR, RtsRoadView::kCurb, 1}); pr.push_back({o + ct, hsR, RtsRoadView::kCurb, 1}); }
+                if (hsR > 0) { pr.push_back({o, hsR, RoadView::kCurb, 1}); pr.push_back({o + ct, hsR, RoadView::kCurb, 1}); }
                 pr.push_back({o + swR, hsR, surfaceMat(R.sidewalkSurface), 2});
             }
             const float minWalk = 1.5f / cm_;
@@ -521,7 +521,7 @@ private:
                 // the wet film over every driven surface: the carriageway with its bays and parking pockets, worn
                 // asphalt; not on sidewalks, kerbs, shoulders, nor in tunnels
                 if (!face && t.drivable() && std::min(A.e, B.e) > -0.5f && p1.h <= 1e-4f && p0.h <= 1e-4f &&
-                    (p1.mat == carr || p1.mat == road || p1.mat == RtsRoadView::kAsphalt || p1.mat == RtsRoadView::kAsphaltWorn))
+                    (p1.mat == carr || p1.mat == road || p1.mat == RoadView::kAsphalt || p1.mat == RoadView::kAsphaltWorn))
                     filmQuad(b0, b1, a1, a0, t.unpaved());
                 if (p1.mat == carr && carr != road) {   // painted carriageway: u across the type's carriageway, v per dash period
                     const float M = roadkit::paintMargin(t), tl = f(t.carriageway(-1)) + M, tw = std::max(0.01f, f(t.carriageway(-1)) + f(t.carriageway(1)) + 2 * M);
@@ -541,8 +541,8 @@ private:
                     continue;
                 }
                 // plain asphalt at the scale of the carriageway texture (the two must look alike side by side)
-                const float k = (p1.mat == RtsRoadView::kAsphalt || p1.mat == RtsRoadView::kAsphaltWorn) ? 0.25f : 1.0f;
-                if (!face && p1.mat != RtsRoadView::kAsphalt && p1.mat != RtsRoadView::kAsphaltWorn) {
+                const float k = (p1.mat == RoadView::kAsphalt || p1.mat == RoadView::kAsphaltWorn) ? 0.25f : 1.0f;
+                if (!face && p1.mat != RoadView::kAsphalt && p1.mat != RoadView::kAsphaltWorn) {
                     // paving, cobbles, gravel, grass: laid in the world, not along the road, so the pattern stays whole
                     // where the kerb bends round a bay or a corner (and matches the junction corners)
                     auto w = [&](float3 q) { return float2{q.x * um, q.z * um}; };
@@ -594,7 +594,7 @@ private:
                     float3 ba = ta, bb = tb;
                     if (bridge) { ba.y = A.y - wy(th); bb.y = B.y - wy(th); }
                     else { ba.y = gnd(ta.x, ta.z); bb.y = gnd(tb.x, tb.z); }
-                    quad(bridge ? RtsRoadView::kBridge : RtsRoadView::kConcrete, ta, tb, bb, ba, {0, sa * um}, {0, sb * um}, {1, sb * um}, {1, sa * um}, A.n * (side ? 1.0f : -1.0f));
+                    quad(bridge ? RoadView::kBridge : RoadView::kConcrete, ta, tb, bb, ba, {0, sa * um}, {0, sb * um}, {1, sb * um}, {1, sa * um}, A.n * (side ? 1.0f : -1.0f));
                     // railing on a bridge without a barrier of its own
                     const RoadSideDef& S = side ? R : L;
                     if (bridge && S.barrier == RoadBarrier::None) barrierSeg(RoadBarrier::Concrete, A, B, off, h, side ? 1.0f : -1.0f, 0);
@@ -602,7 +602,7 @@ private:
                 if (bridge) {
                     float3 a0 = at(A, lo, 0), a1 = at(A, hi, 0), b0 = at(B, lo, 0), b1 = at(B, hi, 0);
                     a0.y = a1.y = A.y - wy(th); b0.y = b1.y = B.y - wy(th);
-                    quad(RtsRoadView::kBridge, a0, a1, b1, b0, {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, -1, 0});
+                    quad(RoadView::kBridge, a0, a1, b1, b0, {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, -1, 0});
                 }
             }
             // barriers at the outer edges and in the median
@@ -782,7 +782,7 @@ private:
             const Pt P = sample(g, s);
             if (P.e < -0.5f || std::fabs(P.e) > 0.5f) return;   // tunnels, and decks: they drain
             for (auto& d : g.driveways) if (std::fabs(f(d.s) - s) < f(d.half) + f(d.flare) + len * 0.5f) return;
-            RtsRoadView::PuddleSpot p;
+            RoadView::PuddleSpot p;
             p.c = at(P, off, 0);
             p.dir = {P.t.x, P.t.z};
             const float tw = 0.85f + 0.3f * hash01(id, k * 5 + 4);
@@ -869,7 +869,7 @@ private:
                     if (end == 1 && e >= n) continue;   // the outer edge of the sidewalk: no face
                     const float3 top0 = at(A, o, h), top1 = at(B, o, h), bot0 = at(A, o, 0), bot1 = at(B, o, 0);
                     const float hh = wy(h);
-                    quad(RtsRoadView::kCurb, bot0, top0, top1, bot1, curbUv(A.s, 0), curbUv(A.s, hh), curbUv(B.s, hh), curbUv(B.s, 0), A.n * (float(side) * (end ? 1.0f : -1.0f)));
+                    quad(RoadView::kCurb, bot0, top0, top1, bot1, curbUv(A.s, 0), curbUv(A.s, hh), curbUv(B.s, hh), curbUv(B.s, 0), A.n * (float(side) * (end ? 1.0f : -1.0f)));
                 }
             k = e;
         }
@@ -887,11 +887,11 @@ private:
         case RoadBarrier::Guardrail: {
             const float hh = height > 0 ? height : 0.75f;
             const float3 a0 = up(A, hh - 0.32f), a1 = up(A, hh), b0 = up(B, hh - 0.32f), b1 = up(B, hh);
-            quad(RtsRoadView::kMetal, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, -nA);
-            quad(RtsRoadView::kMetal, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, nA);
+            quad(RoadView::kMetal, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, -nA);
+            quad(RoadView::kMetal, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, nA);
             if (std::fmod(A.s * cm_, 2.0f) < (B.s - A.s) * cm_ + 1e-3f) {   // a post every 2 m
                 const float3 c = at(A, o + 0.04f * (outward == 0 ? 1 : outward), h + hh * 0.5f);
-                box(RtsRoadView::kMetal, c, A.t * wy(0.08f), {0, wy(hh * 0.5f), 0}, A.n * wy(0.08f));
+                box(RoadView::kMetal, c, A.t * wy(0.08f), {0, wy(hh * 0.5f), 0}, A.n * wy(0.08f));
             }
             break;
         }
@@ -899,18 +899,18 @@ private:
             const float hh = height > 0 ? height : 0.85f, w0 = wy(0.3f), w1 = wy(0.1f);
             const float side = outward == 0 ? 0.0f : outward;
             const float c = side * w0;   // keeps the whole barrier on the outer side of the edge
-            Prof p[5] = {{c - w0, 0, -1}, {c - w1, hh, RtsRoadView::kConcrete}, {c + w1, hh, RtsRoadView::kConcrete}, {c + w0, 0, RtsRoadView::kConcrete}, {c - w0, 0, -1}};
+            Prof p[5] = {{c - w0, 0, -1}, {c - w1, hh, RoadView::kConcrete}, {c + w1, hh, RoadView::kConcrete}, {c + w0, 0, RoadView::kConcrete}, {c - w0, 0, -1}};
             for (int q = 1; q < 4; ++q) {
                 const float3 a0 = outer(A, p[q - 1].off, p[q - 1].h), a1 = outer(A, p[q].off, p[q].h), b0 = outer(B, p[q - 1].off, p[q - 1].h), b1 = outer(B, p[q].off, p[q].h);
                 const float3 hint = q == 2 ? float3{0, 1, 0} : A.n * (q == 1 ? -1.0f : 1.0f);
-                quad(RtsRoadView::kConcrete, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, hint);
+                quad(RoadView::kConcrete, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, hint);
             }
             break;
         }
         case RoadBarrier::Wall: case RoadBarrier::Hedge: case RoadBarrier::Fence: {
             const float hh = height > 0 ? height : b == RoadBarrier::Wall ? 2.2f : b == RoadBarrier::Hedge ? 1.2f : 1.6f;
             const float w = wy(b == RoadBarrier::Hedge ? 0.45f : b == RoadBarrier::Wall ? 0.25f : 0.03f);
-            const int mat = b == RoadBarrier::Hedge ? RtsRoadView::kHedge : b == RoadBarrier::Wall ? RtsRoadView::kConcrete : RtsRoadView::kDark;
+            const int mat = b == RoadBarrier::Hedge ? RoadView::kHedge : b == RoadBarrier::Wall ? RoadView::kConcrete : RoadView::kDark;
             const float side = outward == 0 ? 0.0f : outward;
             for (int sd = -1; sd <= 1; sd += 2) {
                 const float d = side * w + sd * w;
@@ -918,7 +918,7 @@ private:
             }
             quad(mat, outer(A, side * w - w, hh), outer(A, side * w + w, hh), outer(B, side * w + w, hh), outer(B, side * w - w, hh), {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 1, 0});
             if (b == RoadBarrier::Fence && std::fmod(A.s * cm_, 2.5f) < (B.s - A.s) * cm_ + 1e-3f)
-                box(RtsRoadView::kMetal, outer(A, side * w, hh * 0.5f), A.t * wy(0.05f), {0, wy(hh * 0.5f), 0}, A.n * wy(0.05f));
+                box(RoadView::kMetal, outer(A, side * w, hh * 0.5f), A.t * wy(0.05f), {0, wy(hh * 0.5f), 0}, A.n * wy(0.05f));
             break;
         }
         default: break;
@@ -1160,7 +1160,7 @@ private:
         const float walk = cwSide + f(S.shoulder) + f(S.sidewalk);
         const float out = walk + f(d.depth);
         const float lip = sidewalkHeight(S) * 0.12f + 0.006f;
-        const int mat = painted_ ? painted_(RtsRoadView::kDrivewaySurface, int(std::lround(W * 1000))) : -1;
+        const int mat = painted_ ? painted_(RoadView::kDrivewaySurface, int(std::lround(W * 1000))) : -1;
         const float um = 1.0f / (4.0f / cm_) * 0.25f;
         const float pv = cm_ / roadkit::kRoadPaintPeriod;
         const int n = 4;   // across (along the road): enough for a gentle bend
@@ -1170,7 +1170,7 @@ private:
             if (mat < 0) return float2{q.x * um, q.z * um};
             return float2{(W + x) / (3 * W), (o - in) * pv};   // the texture spans the apron plus a lane's margin each side
         };
-        const int m = mat >= 0 ? mat : RtsRoadView::kAsphalt;
+        const int m = mat >= 0 ? mat : RoadView::kAsphalt;
         const float rows[3] = {in, walk, out};
         for (int k = 0; k < n; ++k) {
             const float x0 = W * float(k) / float(n), x1 = W * float(k + 1) / float(n);
@@ -1196,11 +1196,11 @@ private:
                 const float3 i0b = P(sIn, o0, hAt(o0)), i1b = P(sIn, o1, r == 0 ? lip : 0.006f);
                 const float3 up{0, 1, 0};
                 const float L0 = (o0 - in), L1 = (o1 - in);
-                tri(RtsRoadView::kCurb, i0, i1, x1, curbUv(L0, 0), curbUv(L1, 0), curbUv(L1, 0.15f), up);
-                tri(RtsRoadView::kCurb, i0, x1, x0, curbUv(L0, 0), curbUv(L1, 0.15f), curbUv(L0, 0.15f), up);
+                tri(RoadView::kCurb, i0, i1, x1, curbUv(L0, 0), curbUv(L1, 0), curbUv(L1, 0.15f), up);
+                tri(RoadView::kCurb, i0, x1, x0, curbUv(L0, 0), curbUv(L1, 0.15f), curbUv(L0, 0.15f), up);
                 const float3 face = normalize(i0 - x0);   // the face towards the apron
-                tri(RtsRoadView::kCurb, i0b, i1b, i1, curbUv(L0, 0), curbUv(L1, 0), curbUv(L1, 0.1f), face);
-                tri(RtsRoadView::kCurb, i0b, i1, i0, curbUv(L0, 0), curbUv(L1, 0.1f), curbUv(L0, 0.1f), face);
+                tri(RoadView::kCurb, i0b, i1b, i1, curbUv(L0, 0), curbUv(L1, 0), curbUv(L1, 0.1f), face);
+                tri(RoadView::kCurb, i0b, i1, i0, curbUv(L0, 0), curbUv(L1, 0.1f), curbUv(L0, 0.1f), face);
             }
         }
     }
@@ -1240,7 +1240,7 @@ private:
     }
 
     // ------------------------------------------------------------ paint (decals)
-    uint32_t paintColor(int mat) const { return mat == RtsRoadView::kYellow ? 0xff2aa8e6u : 0xffe8e8e8u; }   // r | g << 8 | b << 16 | a << 24
+    uint32_t paintColor(int mat) const { return mat == RoadView::kYellow ? 0xff2aa8e6u : 0xffe8e8e8u; }   // r | g << 8 | b << 16 | a << 24
     void decalQuad(const float3 (&c)[4], float4 uv, uint32_t color) {   // corners: forward-left, forward-right, back-right, back-left
         const float2 tuv[4] = {{uv.x, uv.y}, {uv.z, uv.y}, {uv.z, uv.w}, {uv.x, uv.w}};
         for (int k = 0; k < 4; ++k) {
@@ -1309,7 +1309,7 @@ private:
                 off += f(lanes[k].width);
                 if (lanes[k].use == RoadLaneUse::Bus)
                     for (float sb = s0 + 8.0f / cm_; sb + 3.0f / cm_ < s1; sb += 50.0f / cm_)
-                        if (!none(sb)) paint(g, sb, sb + 3.0f / cm_, sgn * (off - f(lanes[k].width) * 0.5f), f(lanes[k].width) * 0.75f, roadkit::kMarkBus, paintColor(RtsRoadView::kWhite), dir * fs);
+                        if (!none(sb)) paint(g, sb, sb + 3.0f / cm_, sgn * (off - f(lanes[k].width) * 0.5f), f(lanes[k].width) * 0.75f, roadkit::kMarkBus, paintColor(RoadView::kWhite), dir * fs);
             }
             if (lanes.empty()) continue;
             const int sd = sgn > 0 ? 1 : -1;
@@ -1319,19 +1319,19 @@ private:
                     const float a = f(b.s1), z = f(b.s2), st = std::max(0.5f, f(b.stall));
                     const float in = b.inLane ? off - f(b.laneWidth) : off, out = b.inLane ? off : off + f(b.width);
                     const float w = 0.12f / cm_;
-                    if (!b.inLane) line(g, a, z, sgn * (off - 0.1f / cm_), 0.12f, 1, 0, RtsRoadView::kWhite, none);
+                    if (!b.inLane) line(g, a, z, sgn * (off - 0.1f / cm_), 0.12f, 1, 0, RoadView::kWhite, none);
                     const int n = std::max(1, int(std::floor((z - a) / st + 0.01f)));
                     const float sp = (z - a) / float(n);
                     for (int q = 0; q <= n; ++q) {
                         const float sq = std::clamp(a + sp * float(q), a, z - w);
                         if (none(sq)) continue;
-                        paint(g, sq, sq + w, sgn * (in + out) * 0.5f, out - in, roadkit::kMarkLine, paintColor(RtsRoadView::kWhite));
+                        paint(g, sq, sq + w, sgn * (in + out) * 0.5f, out - in, roadkit::kMarkLine, paintColor(RoadView::kWhite));
                     }
                     continue;
                 }
-                line(g, f(b.s0), f(b.s3), sgn * (off - 0.15f / cm_), 0.2f, 1, 1, RtsRoadView::kWhite, none);
+                line(g, f(b.s0), f(b.s3), sgn * (off - 0.15f / cm_), 0.2f, 1, 1, RoadView::kWhite, none);
                 const float mid = (f(b.s1) + f(b.s2)) * 0.5f, len = std::min(3.0f / cm_, (f(b.s2) - f(b.s1)) * 0.8f);
-                paint(g, mid - len * 0.5f, mid + len * 0.5f, sgn * (off + f(b.width) * 0.5f), f(b.width) * 0.7f, roadkit::kMarkBus, paintColor(RtsRoadView::kYellow), dir * fs);
+                paint(g, mid - len * 0.5f, mid + len * 0.5f, sgn * (off + f(b.width) * 0.5f), f(b.width) * 0.7f, roadkit::kMarkBus, paintColor(RoadView::kYellow), dir * fs);
             }
         }
     }
@@ -1353,13 +1353,13 @@ private:
                 const float half = (top - bottom) * 0.5f;
                 const float width = (cwl + cwr) * 0.5f;
                 // cap beam under the deck and one or two columns
-                box(RtsRoadView::kBridge, at(P, (cwr - cwl) * 0.5f, 0) + float3{0, -wy(0.9f) - wy(0.5f) - (P.y - at(P, (cwr - cwl) * 0.5f, 0).y), 0}, P.n * (width * 0.95f), {0, wy(0.5f), 0}, P.t * wy(0.7f));
+                box(RoadView::kBridge, at(P, (cwr - cwl) * 0.5f, 0) + float3{0, -wy(0.9f) - wy(0.5f) - (P.y - at(P, (cwr - cwl) * 0.5f, 0).y), 0}, P.n * (width * 0.95f), {0, wy(0.5f), 0}, P.t * wy(0.7f));
                 const int cols = width > 2.0f ? 2 : 1;
                 for (int c = 0; c < cols; ++c) {
                     const float off = cols == 1 ? (cwr - cwl) * 0.5f : (c ? cwr : -cwl) * 0.55f;
                     float3 base = P.c + P.n * off;
                     base.y = bottom + half;
-                    box(RtsRoadView::kBridge, base, P.n * wy(0.6f), {0, half, 0}, P.t * wy(0.6f));
+                    box(RoadView::kBridge, base, P.n * wy(0.6f), {0, half, 0}, P.t * wy(0.6f));
                 }
             }
         }
@@ -1379,11 +1379,11 @@ private:
                 for (int side : {-1, 1}) {
                     float3 c = P.c + P.n * ((side > 0 ? cwr : -cwl) + float(side) * wy(0.5f));
                     c.y = y0 + wy(h) * 0.5f;
-                    box(RtsRoadView::kConcrete, c, P.n * wy(0.5f), {0, wy(h) * 0.5f + wy(0.6f), 0}, P.t * wy(0.8f));
+                    box(RoadView::kConcrete, c, P.n * wy(0.5f), {0, wy(h) * 0.5f + wy(0.6f), 0}, P.t * wy(0.8f));
                 }
                 float3 top = P.c + P.n * ((cwr - cwl) * 0.5f);
                 top.y = y0 + wy(h) + wy(0.6f);
-                box(RtsRoadView::kConcrete, top, P.n * ((cwl + cwr) * 0.5f + wy(1.0f)), {0, wy(0.6f), 0}, P.t * wy(0.8f));
+                box(RoadView::kConcrete, top, P.n * ((cwl + cwr) * 0.5f + wy(1.0f)), {0, wy(0.6f), 0}, P.t * wy(0.8f));
             }
         }
     }
@@ -1495,7 +1495,7 @@ private:
         if (t.forward.empty() && t.backward.empty()) return;
         if (g.pts.size() < 2) return;
         const RoadEdge& E = N_.edges[size_t(ei)];
-        const uint32_t white = paintColor(RtsRoadView::kWhite);
+        const uint32_t white = paintColor(RoadView::kWhite);
         // nothing is painted on dirt or gravel, nor on a road drawn without lines (a quiet residential street);
         // signals and signs still stand
         const bool paints = !t.unpaved() && (t.laneLines || t.centre != RoadMarking::None);
@@ -1587,11 +1587,11 @@ private:
         const float3 base = at(P, sg * kerb, h);
         const float3 up{0, 1, 0}, across = P.n * sg, along = P.t * facing;   // across: away from the road centre
         const float pole = 6.0f;
-        box(RtsRoadView::kMetal, base + up * wy(pole * 0.5f), across * wy(0.1f), up * wy(pole * 0.5f), along * wy(0.1f));
+        box(RoadView::kMetal, base + up * wy(pole * 0.5f), across * wy(0.1f), up * wy(pole * 0.5f), along * wy(0.1f));
         // the arm reaches over the incoming lanes
         const float reach = kerb - f(t.median) * 0.5f;
         const float3 armMid = base + up * wy(pole - 0.3f) - across * (reach * 0.5f);
-        box(RtsRoadView::kMetal, armMid, across * (reach * 0.5f), up * wy(0.08f), along * wy(0.08f));
+        box(RoadView::kMetal, armMid, across * (reach * 0.5f), up * wy(0.08f), along * wy(0.08f));
         const auto& lanes = t.lanesOf(tdir);
         float off = f(t.median) * 0.5f;
         for (size_t k = 0; k < lanes.size(); ++k) {
@@ -1604,8 +1604,8 @@ private:
         head3(base + up * wy(2.6f) + along * wy(0.18f), up, across, along);   // on the pole, at eye height
     }
     void head3(float3 c, float3 up, float3 across, float3 along) {
-        box(RtsRoadView::kDark, c, across * wy(0.18f), up * wy(0.5f), along * wy(0.14f));
-        const int lamps[3] = {RtsRoadView::kSignalRed, RtsRoadView::kSignalAmber, RtsRoadView::kSignalGreen};
+        box(RoadView::kDark, c, across * wy(0.18f), up * wy(0.5f), along * wy(0.14f));
+        const int lamps[3] = {RoadView::kSignalRed, RoadView::kSignalAmber, RoadView::kSignalGreen};
         for (int i = 0; i < 3; ++i)
             box(lamps[i], c + up * wy(0.32f - 0.32f * float(i)) + along * wy(0.15f), across * wy(0.11f), up * wy(0.11f), along * wy(0.02f));
     }
@@ -1655,7 +1655,7 @@ private:
         const bool onGround = std::fabs(f(J.y) - (ground_ ? gnd(f(J.centre.x), f(J.centre.y)) * cm_ : 0.0f)) < 0.1f || !ground_;
         auto h = [&](float x, float z, float hm) { return (onGround ? gnd(x, z) + kLift : wy(f(J.y)) + kLift) + wy(hm); };
         // surface of the most important arm (the widest drivable one)
-        int mat = RtsRoadView::kAsphalt;
+        int mat = RoadView::kAsphalt;
         float widest = -1, curbAll = 0;
         for (int e : J.arms) {
             const RoadTypeDef& t = T_[size_t(N_.edges[size_t(e)].typeIndex)];
@@ -1666,16 +1666,16 @@ private:
         float cx = 0, cz = 0;
         for (auto& p : J.outline) { cx += f(p.x); cz += f(p.y); }
         cx /= float(J.outline.size()); cz /= float(J.outline.size());
-        const float um = 1.0f / (4.0f / cm_) * (mat == RtsRoadView::kAsphalt ? 0.25f : 1.0f);
+        const float um = 1.0f / (4.0f / cm_) * (mat == RoadView::kAsphalt ? 0.25f : 1.0f);
         const float3 c{cx, h(cx, cz, 0), cz};
         for (size_t i = 0; i < J.outline.size(); ++i) {
             const Vec2 a = J.outline[i], b = J.outline[(i + 1) % J.outline.size()];
             const float3 pa{f(a.x), h(f(a.x), f(a.y), 0), f(a.y)}, pb{f(b.x), h(f(b.x), f(b.y), 0), f(b.y)};
             tri(mat, c, pa, pb, {cx * um, cz * um}, {pa.x * um, pa.z * um}, {pb.x * um, pb.z * um}, {0, 1, 0});
-            filmQuad(c, pa, pb, pb, mat == RtsRoadView::kDirt || mat == RtsRoadView::kGravel);   // a triangle: the last two corners the same
+            filmQuad(c, pa, pb, pb, mat == RoadView::kDirt || mat == RoadView::kGravel);   // a triangle: the last two corners the same
         }
-        junctionPuddles(J, h, float3{cx, h(cx, cz, 0), cz}, mat == RtsRoadView::kDirt || mat == RtsRoadView::kGravel);
-        if (mat == RtsRoadView::kAsphalt || mat == RtsRoadView::kConcrete) junctionWear(J, h, cx, cz);
+        junctionPuddles(J, h, float3{cx, h(cx, cz, 0), cz}, mat == RoadView::kDirt || mat == RoadView::kGravel);
+        if (mat == RoadView::kAsphalt || mat == RoadView::kConcrete) junctionWear(J, h, cx, cz);
         // sidewalk corners: a raised strip and the curb face along the inner curve
         const float umw = 1.0f / (4.0f / cm_);
         for (size_t ci = 0; ci < J.corners.size(); ++ci) {
@@ -1704,20 +1704,20 @@ private:
                 const float3 at0 = a + outw0 * top, dt1 = d + outw1 * top;   // inner edge of the paving: behind the curb stone
                 const float3 b = P(o0, curb), cc = P(o1, curb);
                 auto w = [&](float3 v) { return float2{v.x * umw, v.z * umw}; };
-                quad(RtsRoadView::kPaving, at0, b, cc, dt1, w(at0), w(b), w(cc), w(dt1), {0, 1, 0});
+                quad(RoadView::kPaving, at0, b, cc, dt1, w(at0), w(b), w(cc), w(dt1), {0, 1, 0});
                 const float seg = std::hypot(d.x - a.x, d.z - a.z);
                 if (curb > 0) {
-                    quad(RtsRoadView::kCurb, a, at0, dt1, d, w(a), w(at0), w(dt1), w(d), {0, 1, 0});   // the stone's top
+                    quad(RoadView::kCurb, a, at0, dt1, d, w(a), w(at0), w(dt1), w(d), {0, 1, 0});   // the stone's top
                     const float3 a0 = P(i0, 0), d0 = P(i1, 0);
                     const float hh = wy(curb);
-                    quad(RtsRoadView::kCurb, a0, a, d, d0, curbUv(arc, 0), curbUv(arc, hh), curbUv(arc + seg, hh), curbUv(arc + seg, 0), -outw0);
+                    quad(RoadView::kCurb, a0, a, d, d0, curbUv(arc, 0), curbUv(arc, hh), curbUv(arc + seg, hh), curbUv(arc + seg, 0), -outw0);
                 }
                 arc += seg;
             }
         }
         // dirt arms: their seam with the box blended away, under the box's ruts
         for (size_t k = 0; k < J.arms.size(); ++k)
-            seamFeather(J.arms[k], J.armEnd[k], mat != RtsRoadView::kDirt && mat != RtsRoadView::kGravel, h, mat, um);
+            seamFeather(J.arms[k], J.armEnd[k], mat != RoadView::kDirt && mat != RoadView::kGravel, h, mat, um);
         junctionTracks(J, h);   // paved or dirt: the box carries the tracks / ruts of the roads it joins
     }
 
@@ -1768,7 +1768,7 @@ private:
         const uint32_t id = uint32_t(J.node) * 104729u + 7u;
         const float m = 1.0f / cm_;
         auto add = [&](float3 c, float2 dir, float len, float wid, float from) {
-            RtsRoadView::PuddleSpot p;
+            RoadView::PuddleSpot p;
             p.c = float3{c.x, h(c.x, c.z, 0), c.z};
             p.dir = dir; p.len = len; p.width = wid; p.from = from; p.dirt = dirt;
             spots.push_back(p);
@@ -1948,7 +1948,7 @@ private:
 
 } // namespace
 
-void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reader) {
+void RoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reader) {
     if(dev_) {
         shutdown(*dev_);
         if(dev_)throw std::runtime_error(
@@ -1998,7 +1998,7 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
     }
 }
 
-void RtsRoadView::inheritRuntimeStateForReload(const RtsRoadView& old) {
+void RoadView::inheritRuntimeStateForReload(const RoadView& old) {
     // No GPU handles or derived mesh caches are copied. In particular a
     // different ruleset may assign different road type IDs.
     hasNet_=old.hasNet_;
@@ -2018,7 +2018,7 @@ int64_t surfKey(int tx, int tz) { return (int64_t(tx) << 32) ^ (int64_t(tz) & 0x
 int floorDiv(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
 } // namespace
 
-void RtsRoadView::rasterSurface(const std::vector<float3>& tris, const std::function<float(float, float)>& heightAt) {
+void RoadView::rasterSurface(const std::vector<float3>& tris, const std::function<float(float, float)>& heightAt) {
     surface_.clear();
     // decks higher than a bridge's clearance are the simulation's (driving decks); kerbs and low embankments count
     const float limit = (f(kRoadBridgeAbove) + 0.5f) / cellMeters_;
@@ -2050,7 +2050,7 @@ void RtsRoadView::rasterSurface(const std::vector<float3>& tris, const std::func
     }
 }
 
-float RtsRoadView::surfaceSample(int sx, int sz, bool& ok) const {
+float RoadView::surfaceSample(int sx, int sz, bool& ok) const {
     const int tx = floorDiv(sx, kSurfSide), tz = floorDiv(sz, kSurfSide);
     auto it = surface_.find(surfKey(tx, tz));
     if (it == surface_.end()) { ok = false; return 0; }
@@ -2059,7 +2059,7 @@ float RtsRoadView::surfaceSample(int sx, int sz, bool& ok) const {
     return float(q) / kSurfScale;
 }
 
-float RtsRoadView::surfaceAt(float x, float z, float terrain) const {
+float RoadView::surfaceAt(float x, float z, float terrain) const {
     if (surface_.empty()) return terrain;
     const float gx = x * float(kSurfRes) - 0.5f, gz = z * float(kSurfRes) - 0.5f;
     const int sx = int(std::floor(gx)), sz = int(std::floor(gz));
@@ -2076,7 +2076,7 @@ float RtsRoadView::surfaceAt(float x, float z, float terrain) const {
     return top;
 }
 
-void RtsRoadView::release(gfx::Device& dev) {
+void RoadView::release(gfx::Device& dev) {
     // These resource handles may still be referenced by the previous
     // frame. Queue them instead of invoking immediate GPU destruction.
     retireSpriteBuffer(dev,decalMesh_);
@@ -2092,7 +2092,7 @@ void RtsRoadView::release(gfx::Device& dev) {
     retirement_.retireModel(dev,ghostModel_);
 }
 
-void RtsRoadView::shutdown(gfx::Device& dev) {
+void RoadView::shutdown(gfx::Device& dev) {
     if(!dev_)return;
     if(dev_!=&dev)throw std::logic_error("road View GPU owner mismatch");
     ++stateRevision_;
@@ -2124,7 +2124,7 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
     dev_ = nullptr;
 }
 
-void RtsRoadView::setMap(const Json& map) {
+void RoadView::setMap(const Json& map) {
     ++stateRevision_;
     hasNet_ = map["roadNetwork"].isObject();
     net_ = RoadNetwork{};
@@ -2145,7 +2145,7 @@ void RtsRoadView::setMap(const Json& map) {
     catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
 }
 
-int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
+int RoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
     // type kDrivewaySurface: a driveway's apron, `variant` its width in thousandths of a cell — the same asphalt as
     // the roads (grain, tint), without lines or tracks, dust and grime along both its edges
     RoadTypeDef drive;
@@ -2180,7 +2180,7 @@ int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
     return mat;
 }
 
-int RtsRoadView::propModel(gfx::Device& dev, const std::string& path) {
+int RoadView::propModel(gfx::Device& dev, const std::string& path) {
     for (size_t i = 0; i < propModels_.size(); ++i) if (propModels_[i].path == path) return propModels_[i].get() ? int(i) : -1;
     // Reserve before GPU allocation so inserting the successful prop cannot
     // throw and discard a Model that now owns native resources.
@@ -2283,7 +2283,7 @@ void addShapes(Acc& a, const std::string& shape, const mat4& xf, float worldPerM
 
 } // namespace
 
-void RtsRoadView::buildUnpublished(gfx::Device& dev,
+void RoadView::buildUnpublished(gfx::Device& dev,
         const std::function<float(float, float)>& heightAt) {
     // Build only on a private candidate; the currently published road GPU
     // models, materials, surface samples and decals must remain untouched.
@@ -2444,9 +2444,9 @@ void RtsRoadView::buildUnpublished(gfx::Device& dev,
     }
 }
 
-struct RtsRoadView::PreparedRebuild {
+struct RoadView::PreparedRebuild {
     gfx::Device* device=nullptr;
-    std::unique_ptr<RtsRoadView> staged;
+    std::unique_ptr<RoadView> staged;
     size_t priorImageCount=0;
     bool replaceGeometry=false,replaceFilm=false,replacePuddles=false,replaceGhost=false;
     bool committed=false;
@@ -2477,11 +2477,11 @@ struct RtsRoadView::PreparedRebuild {
     }
 };
 
-std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
+std::shared_ptr<RoadView::PreparedRebuild> RoadView::prepareRebuild(
         gfx::Device& dev,const std::function<float(float,float)>& heightAt,
         bool forceGround) {
     if(dev_!=&dev)
-        throw std::logic_error("RtsRoadView prepare: GPU owner mismatch");
+        throw std::logic_error("RoadView prepare: GPU owner mismatch");
     if(!needsVisualPreparation() && !forceGround)return {};
     auto candidate=std::make_shared<PreparedRebuild>();
     candidate->device=&dev;
@@ -2494,8 +2494,8 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     candidate->replacePuddles=candidate->replaceGeometry ||
         int(std::lround(puddles_*32.f))!=puddleStep_;
     candidate->replaceGhost=candidate->replaceGeometry || ghostDirty_;
-    candidate->staged=std::make_unique<RtsRoadView>();
-    RtsRoadView& staged=*candidate->staged;
+    candidate->staged=std::make_unique<RoadView>();
+    RoadView& staged=*candidate->staged;
     staged.dev_=&dev;
     staged.strictStaging_=true;
     staged.read_=read_;
@@ -2521,7 +2521,7 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     if(candidate->replaceGeometry) {
         staged.propSource_=&propModels_;
         struct ClearSource {
-            RtsRoadView& view;
+            RoadView& view;
             ~ClearSource(){view.propSource_=nullptr;}
         } clearSource{staged};
         staged.buildUnpublished(dev,heightAt);
@@ -2539,11 +2539,11 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     return candidate;
 }
 
-void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
+void RoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
     if(!candidate || candidate->committed)return;
     ++stateRevision_;
     candidate->committed=true;
-    RtsRoadView& staged=*candidate->staged;
+    RoadView& staged=*candidate->staged;
     // The candidate copied old kit handles with borrowed flags. Transfer
     // their original ownership policy back to the live owner at publication.
     for(size_t i=0;i<candidate->priorImageCount;++i)
@@ -2608,7 +2608,7 @@ void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noex
     ++surfaceGeneration_;
 }
 
-void RtsRoadView::rebuild(gfx::Device& dev,
+void RoadView::rebuild(gfx::Device& dev,
         const std::function<float(float,float)>& heightAt) {
     // Legacy direct draw path remains supported outside RtsView's global
     // prepare/commit frame phase.
@@ -2616,7 +2616,7 @@ void RtsRoadView::rebuild(gfx::Device& dev,
     commitRebuild(std::move(prepared));
 }
 
-void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
+void RoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
     if (!ghost_.on || ghost_.net.empty()) {
         ghostDirty_=false;
         retirement_.retireModel(dev,ghostModel_);
@@ -2649,19 +2649,19 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
     ghostDirty_=false;
 }
 
-void RtsRoadView::setWeather(float wet, float puddles) {
+void RoadView::setWeather(float wet, float puddles) {
     ++stateRevision_;
     weatherSet_ = true;
     wet_ = std::clamp(wet, 0.0f, 1.0f);
     puddles_ = std::clamp(puddles, 0.0f, 1.0f);
 }
 
-float RtsRoadView::puddleScale(const PuddleSpot& p, float puddles) {
+float RoadView::puddleScale(const PuddleSpot& p, float puddles) {
     if (puddles <= p.from) return 0.0f;
     return std::sqrt(std::clamp((puddles - p.from) / std::max(1.0f - p.from, 0.05f), 0.0f, 1.0f));   // grows fast, then slowly
 }
 
-void RtsRoadView::buildWeather(gfx::Device& dev) {
+void RoadView::buildWeather(gfx::Device& dev) {
     const int ws=int(std::lround(wet_*32)),ps=int(std::lround(puddles_*32));
     const bool updateFilm=ws!=wetStep_,updatePuddles=ps!=puddleStep_;
     if(!updateFilm && !updatePuddles)return;
@@ -2738,11 +2738,11 @@ void RtsRoadView::buildWeather(gfx::Device& dev) {
     }
 }
 
-float RtsRoadView::candidateSurfaceAt(const std::shared_ptr<PreparedRebuild>& c,
+float RoadView::candidateSurfaceAt(const std::shared_ptr<PreparedRebuild>& c,
         float x,float z,float terrain) const {
     return c && c->replaceGeometry ? c->staged->surfaceAt(x,z,terrain):surfaceAt(x,z,terrain);
 }
-void RtsRoadView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Renderer3D& r) {
+void RoadView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Renderer3D& r) {
     if(!c){drawPrepared(r);return;}
     if(c->committed || c->device!=dev_)throw std::logic_error("Road: stale candidate draw");
     auto& n=*c->staged;
@@ -2759,18 +2759,21 @@ void RtsRoadView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Render
     exchange();try {drawPrepared(r);}catch(...) {exchange();throw;}exchange();
 }
 
-void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt) {
+void RoadView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt) {
     if (!dev_) return;
     if (dirty_) rebuild(*dev_, heightAt);
     if (ghostDirty_) buildGhost(*dev_, heightAt);
     buildWeather(*dev_);
     drawPrepared(r);
 }
-void RtsRoadView::drawPrepared(Renderer3D& r) {
+void RoadView::drawPrepared(Renderer3D& r) {
+    const bool shifted = shift_.x != 0 || shift_.y != 0 || shift_.z != 0;   // floating-origin hosts (setWorldShift)
+    const mat4 shift = mat4::translate(shift_);
     for (auto& c : chunks_) {
         ModelDraw d;
         d.model = c.model.get();
         d.flags = kDrawStatic;
+        if (shifted) d.world = shift;
         r.drawModel(d);
     }
     if ((decalMesh_.vb.valid() && paint_.valid()) ||
@@ -2782,7 +2785,7 @@ void RtsRoadView::drawPrepared(Renderer3D& r) {
         const SpriteMesh decal=decalMesh_,verge=vergeMesh_;
         const SpriteMesh film=filmMesh_,puddle=puddleMesh_;
         const TextureRef paint=paint_,vergeTexture=verge_;
-        const mat4 projection=r.viewProj();
+        const mat4 projection=shifted?r.viewProj()*shift:r.viewProj();
         const bool receivesShadows=r.shadowQuality()>=ShadowQuality::Medium;
         SpriteBatch* spriteBatch=&decalBatch_; // pipeline owner, stable until idle-safe shutdown
         r.drawCustom([&r,spriteBatch,decal,verge,film,puddle,
@@ -2805,7 +2808,7 @@ void RtsRoadView::drawPrepared(Renderer3D& r) {
         ModelDraw d;
         d.model = propModels_[size_t(p.model)].get();
         if (!d.model) continue;
-        d.world = p.xf;
+        d.world = shifted ? shift * p.xf : p.xf;
         d.flags = kDrawStatic;
         r.drawModel(d);
     }
@@ -2814,8 +2817,9 @@ void RtsRoadView::drawPrepared(Renderer3D& r) {
         d.model = ghostModel_.get();
         d.tint = ghost_.ok ? float4{1, 1, 1, 0.75f} : float4{1.0f, 0.35f, 0.3f, 0.7f};
         d.flags = kDrawNoCastShadow | kDrawFadeDepth;
+        if (shifted) d.world = shift;
         r.drawModel(d);
     }
 }
 
-} // namespace aiverse::game
+} // namespace aiverse::roads

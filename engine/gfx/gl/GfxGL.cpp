@@ -1479,6 +1479,22 @@ public:
                 GLint oldPbo = 0;
                 glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &oldPbo);
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, read.pbo);
+#if defined(__EMSCRIPTEN__)
+                // WebGL2 has no buffer mapping; getBufferSubData copies the PBO
+                // after the fence, which is the browser's non-blocking path.
+                std::vector<uint8_t> staging(bytes);
+                for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; ++i) {}   // clear stale flags: only this copy decides
+                glGetBufferSubData(GL_PIXEL_PACK_BUFFER, 0, GLsizeiptr(bytes), staging.data());
+                const uint8_t* p = glGetError() == GL_NO_ERROR ? staging.data() : nullptr;
+                if (p) {
+                    result.width = read.width;
+                    result.height = read.height;
+                    result.pixels.resize(bytes);
+                    for (int y=0;y<read.height;++y)
+                        std::memcpy(result.pixels.data()+size_t(y)*row,
+                                    p+size_t(read.height-1-y)*row, row);
+                }
+#else
                 const uint8_t* p = static_cast<const uint8_t*>(
                     glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, GLsizeiptr(bytes), GL_MAP_READ_BIT));
                 if (p) {
@@ -1493,6 +1509,7 @@ public:
                         result.format = read.format;
                     }
                 }
+#endif
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(oldPbo));
             }
             glDeleteSync(read.fence);
