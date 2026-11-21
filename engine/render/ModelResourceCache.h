@@ -28,6 +28,8 @@
 
 namespace aiverse::render {
 
+class ModelAssetProvider;
+
 class ModelResourceCache final {
 public:
     // Observer registration has an independent lifetime marker. It expires
@@ -617,9 +619,25 @@ public:
         return done;
     }
 
-    // Explicitly release GPU assets before destroying the device.
-    // No async loader may still reference these objects at this barrier.
+    // Full shutdown requires true device-wide idle; external callers must
+    // NOT pass an arbitrary boolean claiming a fence was completed.
     void shutdown(gfx::Device& dev) {
+        shutdownImpl(dev,false);
+    }
+private:
+    friend class ModelAssetProvider;
+    // Reachable only through ModelAssetProvider's private, GPU-token
+    // approved whole-scene retirement path. No earlier Model retirement
+    // batches are allowed: they may own separate incomplete/failed tokens.
+    // This path releases all live cache Models and shared textures only
+    // once the OUTER scene token proved prior GPU command completion.
+    void shutdownAfterCompletedSceneToken(gfx::Device& dev) {
+        if(!retired_.empty())
+            throw std::logic_error(
+                "pending nested model retirements require full GPU-idle shutdown");
+        shutdownImpl(dev,true);
+    }
+    void shutdownImpl(gfx::Device& dev,bool completedSceneToken) {
         requireNoDetachCallback("shutdown");
         bindResourceDevice(dev);
         requireNoModelReaders("shutdown");
@@ -628,7 +646,7 @@ public:
 #endif
         // Fail closed: no GPU objects (nor borrowed CPU Model storage) may
         // be destroyed if the backend cannot prove prior GPU completion.
-        if(!dev.waitForResourceIdle())
+        if(!completedSceneToken && !dev.waitForResourceIdle())
             throw std::runtime_error("model cache shutdown: GPU retirement barrier failed");
         for(auto& [key,model]:models_) {
             (void)key;

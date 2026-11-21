@@ -4202,3 +4202,22 @@ without disabling NEREID underwater absorption. See [parameters and host contrac
 NEREID supplies read-only camera immersion; PRISMA owns bounded per-view wetness,
 post-exit drainage/drying and the shared GLSL/MSL composite. This is a screen-space
 approximation; see the separate stage handoff for actual GPU/test coverage.
+
+## Per-view physical-lens defocus (LENS P2, stage 96)
+
+`Prisma::setViewDepthOfField(viewId, DepthOfFieldOverride{enabled, focusDistance,
+focusRangeMeters, maxBlur})` replaces the metric focus plane, sharp interval and
+maximum blur of the **authored** `depthOfField` effect for one stable view, in the
+same way `setViewManualExposure` overrides the authored exposure. The override
+forces the metric (camera-linear) branch and keeps the effect's `intensity` and
+`occlusionToleranceMeters`. `enabled=false` switches defocus off for that view.
+Values are clamped to the catalog bounds on ingress; `clearViewDepthOfField` and
+`retireView` remove the override. It still requires the authored effect and
+`AIVERSE_PRISMA_DOF=1`; nothing is added to the profile implicitly.
+
+LENS drives it from `CameraLensComponent::driveDepthOfField` through
+`CameraPostFxPool`: the thin-lens sharp interval `[near, far]` becomes
+`focusDistance = (near+far)/2`, `focusRangeMeters = far-near` (an infinite far limit
+is capped at 500 m) and `maxBlur` = background disc radius at infinity in render
+pixels (clamped to 16). This is the same 8-tap screen-space defocus, not a physical
+bokeh. See `docs/handoffs/prisma-stage-96-lens-physical-dof.md`.
