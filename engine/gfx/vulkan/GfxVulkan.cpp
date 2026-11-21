@@ -623,10 +623,32 @@ void VulkanDevice::completeTextureCaptures(FrameSlot& slot,bool succeeded) {
     }
 }
 
+void VulkanDevice::failPendingReadsAfterDeviceLoss() {
+    // Staging buffers stay owned by their entries (released at shutdown):
+    // a lost device gives no completion point that proves them unused.
+    // Moving the callback out makes delivery exactly-once even if a later
+    // serial were ever observed complete.
+    std::vector<std::pair<TextureReadFn,PixelFormat>> textures;
+    for (auto& r : textureReads_)
+        if (r.callback) textures.emplace_back(std::move(r.callback), r.format);
+    std::vector<BufferReadFn> buffers;
+    for (auto& r : computeReads_)
+        if (r.callback) buffers.push_back(std::move(r.callback));
+    for (auto& r : textureReads_) r.callback = nullptr;
+    for (auto& r : computeReads_) r.callback = nullptr;
+    for (auto& [callback, format] : textures) {
+        TextureReadbackResult failed;
+        failed.format = format;
+        callback(std::move(failed));
+    }
+    for (auto& callback : buffers) callback({});
+}
+
 void VulkanDevice::deliverTextureReads() {
     // Completed serials are advanced only after a frame-slot fence is waited.
     // Never touch mapped staging data while the GPU can still write to it,
     // and never run the user's callback inside garbage collection.
+    if (!healthy_) { failPendingReadsAfterDeviceLoss(); return; }
     struct Done { TextureReadFn callback; TextureReadbackResult result; };
     std::vector<Done> ready;
     for (size_t i=0; i<textureReads_.size();) {

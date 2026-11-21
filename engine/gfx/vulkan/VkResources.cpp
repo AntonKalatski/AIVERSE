@@ -754,7 +754,8 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
 bool VulkanDevice::readTextureAsync(TextureHandle h, TextureReadbackDesc request,
                                     TextureReadFn callback) {
     const VTexture* texture = textures_.get(h.id);
-    if (!recording_ || inPass_ || !callback || !texture || !texture->image ||
+    // A lost device never completes the copy: refuse instead of accepting.
+    if (!healthy_ || !recording_ || inPass_ || !callback || !texture || !texture->image ||
         texture->samples != 1 || texture->compressed || texture->depth ||
         request.mipLevel < 0 || request.mipLevel >= texture->levels ||
         request.arrayLayer < 0 ||

@@ -269,6 +269,9 @@ private:
     void completeTextureCaptures(FrameSlot& slot,bool succeeded);
     void deliverTextureReads();
     void deliverComputeReadbacks();
+    // After device loss no fence signals again: complete every accepted
+    // texture / buffer readback exactly once with an empty failure result.
+    void failPendingReadsAfterDeviceLoss();
     void shutdownCompute();
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
