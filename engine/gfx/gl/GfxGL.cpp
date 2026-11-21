@@ -1483,6 +1483,7 @@ public:
                 // WebGL2 has no buffer mapping; getBufferSubData copies the PBO
                 // after the fence, which is the browser's non-blocking path.
                 std::vector<uint8_t> staging(bytes);
+                for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; ++i) {}   // clear stale flags: only this copy decides
                 glGetBufferSubData(GL_PIXEL_PACK_BUFFER, 0, GLsizeiptr(bytes), staging.data());
                 const uint8_t* p = glGetError() == GL_NO_ERROR ? staging.data() : nullptr;
                 if (p) {
