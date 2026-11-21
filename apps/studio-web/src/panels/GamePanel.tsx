@@ -27,9 +27,14 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
     });observer.observe(area.current);return ()=>observer.disconnect();
   },[]);
   const device=state?.device;
-  // A device preview keeps a margin so its frame stays visible around the screen.
+  // A device preview is drawn as the device (legacy Game window): a bezel around the screen; the native
+  // view draws the rounded screen corners, the camera cut-out and the safe area over the game.
   const framed=!!device?.width;
-  const fitted=gameViewportSize(areaSize.width-(framed?28:0),areaSize.height-(framed?28:0),device?.width||0,device?.height||0);
+  const bezel=framed?(device?.touch?14:6):0;
+  const fitted=gameViewportSize(areaSize.width-(framed?2*bezel+8:0),areaSize.height-(framed?2*bezel+8:0),device?.width||0,device?.height||0);
+  const screenScale=framed&&device?.width?fitted.width/device.width:0;
+  const surfaceStyle=framed?{...fitted,borderRadius:(device?.chrome?.corner??0)*screenScale,
+    boxShadow:`0 0 0 ${bezel}px #0c0c0e, 0 0 0 ${bezel+1}px #ffffff1f, 0 12px 32px ${bezel}px #0009`}:fitted;
   const loaded=connected && !!snapshot?.project.path;
   useEffect(()=>{
     let live=true,inFlight=false;
@@ -104,7 +109,7 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
       {!!device?.width && <StudioBadge>{device.width} × {device.height} · {device.touch?'Touch':'Mouse'}</StudioBadge>}
     </div>
     <div ref={area} className="studio-game__area">
-    <div style={fitted} ref={surface} className={'studio-game__surface'+(framed?' studio-game__surface--device':'')}
+    <div style={surfaceStyle} ref={surface} className={'studio-game__surface'+(framed?' studio-game__surface--device':'')}
       data-orientation={device?.landscape?'landscape':'portrait'} aria-label="Native Game viewport">
       {!state?.active && <StudioEmptyState title={loaded?'Ready to play':'Open a project'}
         description={loaded?'Run the saved map or open the project’s own menus. Stop returns to authoring without copying runtime changes into the map.':'Play uses the native game client and renderer.'}/>}

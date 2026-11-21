@@ -14,6 +14,15 @@ Branch `feature/studio-html5`.
 - **Game panel**: removed the duplicate Play / Pause / Step / Stop (they are in the title bar, ⌘P); the panel
   keeps *Project menu* and *Restart*. A device profile now shows a device frame around the screen area.
 - **Title bar**: Play / Pause / Step are in the exact centre (static below 1180 px wide).
+- **Device frame like the legacy Game window**: `StudioGameDevice::json()` carries `chrome` (screen corner
+  radius, camera cut-out rotated to the orientation, safe-area insets, in screen points). HTML draws the bezel
+  (14 px touch / 6 px desktop) around the screen; the native `StudioDeviceChromeView` (subview of the Game
+  Metal view, no input) draws the rounded screen corners, the cut-out and, with Safe area on, the shaded
+  safe area with its edge.
+- **Game HUD fix (engine)**: `engine/assets/ui/theme.rcss` had no scrollbar styles. An unstyled RmlUi
+  scrollbar is a full-width block, so when the selection `#card` (overflow-y: auto, max-height 62%)
+  overflowed, its content shrank to a few pixels: one word per line, overlapping button labels — at any
+  size, not only on phones. Scrollbars now have a 6dp width/height (all documents that link theme.rcss).
 
 ## Findings (not changed)
 - "Fire at start" in Iron and Gold: Scripted (`lua_lab`): the enemy AI casts the player ability *Ignite*
@@ -21,8 +30,6 @@ Branch `feature/studio-html5`.
   map's authored lights (lanterns, campfire, searchlight).
 - Publish workspace: only the panel layout exists; the build / branding / asset-audit windows are still
   legacy-only (listed under Window → Legacy editor).
-- Game HUD at iPhone landscape (874×402, touch): the `#card` (340dp) inline-block cells shrink to a word per
-  line and button labels overlap — engine `theme.rcss` touch layout, needs a repro outside Studio.
 
 ## Verified
 - tsc, test:web, tools/studio contracts; Mac rebuild: BUILD 0, session tests PASS, RTS pose test PASS.

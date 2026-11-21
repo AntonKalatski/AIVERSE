@@ -61,11 +61,50 @@
 @interface StudioGameView : StudioMetalView { NSTrackingArea* tracking_; }
 @end
 
+// Device frame drawn over the Game screen, like the legacy Game window: rounded screen corners,
+// the camera cut-out and (with Safe area on) the OS safe area. Never takes input.
+@interface StudioDeviceChromeView : NSView
+@property(nonatomic) BOOL active, showSafe;
+@property(nonatomic) CGFloat corner, cutoutRadius;
+@property(nonatomic) NSRect cutout;
+@property(nonatomic) NSEdgeInsets safe;
+@end
+@implementation StudioDeviceChromeView
+- (BOOL)isFlipped { return YES; }
+- (NSView*)hitTest:(NSPoint)point { (void)point; return nil; }
+- (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    if (!self.active) return;
+    const NSRect b=self.bounds;
+    NSColor* bezel=[NSColor colorWithSRGBRed:12/255.0 green:12/255.0 blue:14/255.0 alpha:1];
+    if (self.corner>0) { // everything outside the rounded display is bezel
+        NSBezierPath* p=[NSBezierPath bezierPathWithRect:b];
+        [p appendBezierPath:[NSBezierPath bezierPathWithRoundedRect:b xRadius:self.corner yRadius:self.corner]];
+        p.windingRule=NSWindingRuleEvenOdd;[bezel setFill];[p fill];
+    }
+    if (self.cutout.size.width>0 && self.cutout.size.height>0) {
+        [[NSColor blackColor] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:self.cutout xRadius:self.cutoutRadius yRadius:self.cutoutRadius] fill];
+    }
+    if (!self.showSafe) return;
+    const NSEdgeInsets in=self.safe;
+    if (in.left<=0 && in.top<=0 && in.right<=0 && in.bottom<=0) return;
+    const NSRect inner=NSMakeRect(in.left,in.top,b.size.width-in.left-in.right,b.size.height-in.top-in.bottom);
+    NSBezierPath* shade=[NSBezierPath bezierPathWithRect:b];
+    [shade appendBezierPath:[NSBezierPath bezierPathWithRect:inner]];
+    shade.windingRule=NSWindingRuleEvenOdd;
+    [[NSColor colorWithSRGBRed:1 green:70/255.0 blue:60/255.0 alpha:70/255.0] setFill];[shade fill];
+    NSBezierPath* edge=[NSBezierPath bezierPathWithRect:NSInsetRect(inner,.75,.75)];
+    edge.lineWidth=1.5;[[NSColor colorWithSRGBRed:1 green:210/255.0 blue:80/255.0 alpha:.9] setStroke];[edge stroke];
+}
+@end
+
 @interface StudioHost : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
     NSWindow* window_;
     WKWebView* web_;
     StudioMetalView* viewport_;
     StudioGameView* gameViewport_;
+    StudioDeviceChromeView* gameChrome_;
     std::unique_ptr<aiverse::studio::StudioGameSurface> game_;
     aiverse::studio::NativeViewportPlacement gamePlacement_;
     double gameFrameTime_;
@@ -464,6 +503,9 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         positioned:(htmlComposite_ ? NSWindowBelow : NSWindowAbove) relativeTo:web_];
     gameViewport_=[[StudioGameView alloc] initWithFrame:NSZeroRect];
     gameViewport_.host=self;gameViewport_.hidden=YES;
+    gameChrome_=[[StudioDeviceChromeView alloc] initWithFrame:NSZeroRect];
+    gameChrome_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    [gameViewport_ addSubview:gameChrome_];
     [window_.contentView addSubview:gameViewport_ positioned:NSWindowAbove relativeTo:web_];
     StudioWindowChrome* chrome=[[StudioWindowChrome alloc]
         initWithFrame:NSMakeRect(0,window_.contentView.bounds.size.height-44,80,44)];
@@ -1155,6 +1197,27 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     NSString* json=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding];
     if (json) [self evaluateInAllWebs:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json]];
 }
+- (void)updateGameChrome {
+    gameChrome_.frame=gameViewport_.bounds;
+    try {
+        const aiverse::Json state=[self gameState];
+        const auto& device=state["device"];
+        const auto& chrome=device["chrome"];
+        const double width=device["width"].toDouble(),k=width>0 ? gamePlacement_.width/width : 0;
+        gameChrome_.active=k>0;
+        if (k>0) {
+            gameChrome_.corner=chrome["corner"].toDouble()*k;
+            const auto& cut=chrome["cutout"];
+            gameChrome_.cutout=cut.isObject() ? NSMakeRect(cut["x"].toDouble()*k,cut["y"].toDouble()*k,
+                cut["width"].toDouble()*k,cut["height"].toDouble()*k) : NSZeroRect;
+            gameChrome_.cutoutRadius=cut.isObject() ? cut["radius"].toDouble()*k : 0;
+            const auto& in=chrome["insets"];
+            gameChrome_.safe=NSEdgeInsetsMake(in["top"].toDouble()*k,in["left"].toDouble()*k,in["bottom"].toDouble()*k,in["right"].toDouble()*k);
+            gameChrome_.showSafe=device.getBool("safeArea");
+        }
+    } catch (const std::exception&) { gameChrome_.active=NO; }
+    gameChrome_.needsDisplay=YES;
+}
 // Moves a native view into the window of the WebView that hosts its panel.
 // Returns NO for a stale report from a window that no longer hosts the view.
 - (BOOL)adoptNativeView:(NSView*)view forWeb:(WKWebView*)web visible:(BOOL)visible {
@@ -1175,8 +1238,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         gamePlacement_=aiverse::studio::viewportPlacement(rect,host.bounds.size.width,
             host.bounds.size.height,host.window.backingScaleFactor);
         if(gameViewport_.hidden!=!gamePlacement_.visible)gameViewport_.hidden=!gamePlacement_.visible;
-        if(gamePlacement_.visible) [self placeMetalView:gameViewport_ x:gamePlacement_.x y:gamePlacement_.y
-            width:gamePlacement_.width height:gamePlacement_.height pixelsW:gamePlacement_.pixelsW pixelsH:gamePlacement_.pixelsH];
+        if(gamePlacement_.visible) {
+            [self placeMetalView:gameViewport_ x:gamePlacement_.x y:gamePlacement_.y
+                width:gamePlacement_.width height:gamePlacement_.height pixelsW:gamePlacement_.pixelsW pixelsH:gamePlacement_.pixelsH];
+            [self updateGameChrome];
+        }
         else if(game_)game_->suspend();
         return;
     }
@@ -1418,6 +1484,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                     const auto profile=aiverse::studio::StudioGameDevice::parse(req["params"]);
                     if(!game_)game_=std::make_unique<aiverse::studio::StudioGameSurface>((__bridge void*)gameViewport_.layer);
                     game_->setDevice(profile);
+                    [self updateGameChrome];
                 }else if(gameMethod=="studio.gameStart") {
                     const auto entry=req["params"].getStr("entry");
                     if(entry!="map" && entry!="menu")throw std::runtime_error("Invalid game entry");
