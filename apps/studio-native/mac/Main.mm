@@ -23,6 +23,8 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #ifndef AIVERSE_STUDIO_SOURCE_DIR
 #define AIVERSE_STUDIO_SOURCE_DIR "."
@@ -129,6 +131,7 @@
     BOOL projectLoading_;           // a project opens on a background thread: no session access
     std::string pendingProject_;    // --project, opened once the WebView can show progress
     int lastLoadDone_, lastLoadTotal_;
+    CFTimeInterval nextAgentPoll_;
     BOOL loadingShown_;
     // Floating panel windows (Unity-style undocked tabs), one panel per window.
     NSMutableDictionary<NSString*,NSWindow*>* floatWindows_;
@@ -177,6 +180,7 @@
 - (BOOL)confirmDiscardChanges;
 - (void)gameEvent:(const aiverse::platform::Event&)event;
 - (void)tickGame;
+- (void)pollAgentRequests;
 - (aiverse::Json)gameState;
 - (void)saveMapSheetForRequestId:(int64_t)requestId;
 - (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
@@ -740,6 +744,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
     [self runWindShots];
+    [self pollAgentRequests];
     NSWindow* sceneWindow=viewport_.window ?: window_;
     if (!placement_.visible || viewport_.hidden || sceneWindow.isMiniaturized || !sceneWindow.visible) {
         session_->setFacialPreviewGpuStatus(
@@ -800,6 +805,38 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             preview_.reset();
         }
     }
+}
+// Agent snapshot handshake (MCP studio_character_snapshot): the tool writes
+// <project>/.aiverse/agent-requests/character-snapshot.json {id, view}; the
+// next shown character frame is saved as .aiverse/agent-snapshots/<id>.png.
+- (void)pollAgentRequests {
+    const CFTimeInterval now=CACurrentMediaTime();
+    if (now<nextAgentPoll_) return;
+    nextAgentPoll_=now+0.4;
+    namespace fs=std::filesystem;
+    const fs::path root=session_->workspace().project.dir;
+    const fs::path request=root/".aiverse"/"agent-requests"/"character-snapshot.json";
+    std::error_code ec;
+    if (!fs::is_regular_file(request,ec) || fs::file_size(request,ec)>4096) return;
+    std::string bytes;{std::ifstream in(request,std::ios::binary);bytes.assign(std::istreambuf_iterator<char>(in),{});}
+    fs::remove(request,ec);
+    try {
+        const auto req=aiverse::Json::parse(bytes);
+        const std::string id=req.getStr("id");
+        if (id.empty()||id.size()>40||id.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyz-")!=std::string::npos) return;
+        const fs::path out=root/".aiverse"/"agent-snapshots";
+        fs::create_directories(out,ec);
+        if (!preview_ || !session_->facialPreviewBinding().bound()) {
+            std::ofstream err(out/(id+".error"));err<<"Покажите персонажа во вьюпорте Character Creator";return;
+        }
+        const std::string view=req.getStr("view");
+        if (view=="face"||view=="torso"||view=="full") {
+            aiverse::Json r=aiverse::Json::object(),pr=aiverse::Json::object();pr.set("view",aiverse::Json::string(view));
+            r.set("id",aiverse::Json::number(int64_t(0)));r.set("method",aiverse::Json::string("studio.humanCamera"));r.set("params",pr);
+            (void)session_->dispatch(r);
+        }
+        preview_->captureFacialThumbnail((out/(id+".png")).string(),false);
+    } catch (const std::exception&) {}
 }
 - (void)runWindShots {
     auto& run=WindShotRunner::get();

@@ -54,7 +54,8 @@ public:
                     const vivid::HumanFaceShape& selection,vivid::HumanFaceHit& hit,
                     std::string* error=nullptr) const noexcept;
     // Next shown character frame → square PNG around the head (preset cards).
-    void captureFacialThumbnail(std::string path){thumbnailPath_=std::move(path);}
+    // crop=false: whole viewport (agent snapshots), at most 1280 px wide.
+    void captureFacialThumbnail(std::string path,bool crop=true){thumbnailPath_=std::move(path);thumbnailCrop_=crop;}
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -145,6 +146,7 @@ private:
     StudioFacialGpuPreview facialGpu_;
     std::string facialFramedGuid_; // character the camera was last framed on
     std::string thumbnailPath_;   // pending preset thumbnail capture
+    bool thumbnailCrop_=true;
     uint64_t facialCameraSerial_=0; // last applied character-editor camera view
     bool facialMode_=false,facialReady_=false;
     std::string facialError_;

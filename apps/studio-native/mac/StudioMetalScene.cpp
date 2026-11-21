@@ -1196,8 +1196,19 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             if(!thumbnailPath_.empty() && submitted && synced) {
                 // Square crop of the upper middle (the head in the face
                 // camera), box-filtered down to 256 px.
-                device_->captureNextFrame([path=std::move(thumbnailPath_)](int w,int h,std::vector<uint8_t> rgba) {
+                device_->captureNextFrame([path=std::move(thumbnailPath_),crop=thumbnailCrop_](int w,int h,std::vector<uint8_t> rgba) {
                     if(w<=0||h<=0||rgba.size()<size_t(w)*size_t(h)*4)return;
+                    if(!crop) {
+                        // Whole frame, integer box downscale to <= 1280 px wide.
+                        const int f=std::max(1,(w+1279)/1280),ow=w/f,oh=h/f;
+                        std::vector<uint8_t> px(size_t(ow)*oh*4);
+                        for(int y=0;y<oh;++y)for(int x=0;x<ow;++x){unsigned acc[3]{};
+                            for(int sy=0;sy<f;++sy)for(int sx=0;sx<f;++sx){const auto* p=&rgba[(size_t(y*f+sy)*w+x*f+sx)*4];for(int c=0;c<3;++c)acc[c]+=p[c];}
+                            auto* d=&px[(size_t(y)*ow+x)*4];for(int c=0;c<3;++c)d[c]=uint8_t(acc[c]/unsigned(f*f));d[3]=255;}
+                        (void)render::cameraWritePngRgba8(path+".pending.png",ow,oh,px);
+                        std::error_code ec;std::filesystem::rename(path+".pending.png",path,ec);
+                        return;
+                    }
                     const int side=std::max(1,std::min(w,h)*3/4),x0=(w-side)/2,y0=std::max(0,(h-side)/2-h/10);
                     const int out=256;std::vector<uint8_t> px(size_t(out)*out*4);
                     for(int y=0;y<out;++y)for(int x=0;x<out;++x){

@@ -5,14 +5,15 @@ import AssetReferencePicker from '../components/AssetReferencePicker';
 import {StudioField,StudioInput,StudioSelect,StudioButton,StudioAlert} from '../ui';
 import {HcCard,HcHeader,HcNote,HcSwitch} from './HumanCreatorUi';
 import {hexToRgb,rgbToHex} from './humanCreatorSchema';
+import {useOutfit,type Outfit} from './useOutfit';
 import {Shirt} from 'lucide-react';
-const empty=():HumanWardrobe=>({version:1,hiddenMeshes:[],items:[]});
 const SLOT_LABELS:Record<string,string>={top:'Верх',bottom:'Низ',feet:'Обувь',head:'Голова',neck:'Шея',wrist_left:'Левое запястье',wrist_right:'Правое запястье',ears:'Уши',accessory_1:'Аксессуар',accessory_2:'Аксессуар'};
 const slotLabel=(slot:string)=>SLOT_LABELS[slot]??slot;
 const assetLabel=(path:string)=>path?path.split('/').pop()!.replace(/\.(gltf|glb|fbx)$/i,'').replace(/([a-z])([A-Z])/g,'$1 $2'):'Без модели';
 const slots=['top','bottom','feet','head','neck','wrist_left','wrist_right','ears','accessory_1','accessory_2'];
-export default function HumanWardrobeControls({guid,look,face,onShow}:{guid:string;look:HumanLook;face:HumanFaceShape|null;onShow?:(guid:string)=>void}) {
- const [recipe,setRecipe]=useState<HumanWardrobe>(empty);
+export default function HumanWardrobeControls({guid,look,face,onShow,outfit}:{guid:string;look:HumanLook;face:HumanFaceShape|null;onShow?:(guid:string)=>void;outfit?:Outfit}) {
+ const own=useOutfit(outfit?'':guid);const o=outfit??own;
+ const {recipe,setRecipe,tryOn,setTryOn,trying}=o;
  const [history,setHistory]=useState<HumanWardrobe[]>([]);
  const [info,setInfo]=useState<{meshes:string[];bones:string[];materials:string[]}|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState('character_assembled');
@@ -28,17 +29,11 @@ export default function HumanWardrobeControls({guid,look,face,onShow}:{guid:stri
  useEffect(()=>{if(!recipe.items.some(i=>i.asset&&!paths[i.asset]))return;let live=true;void invoke('studio.assets',{}).then(r=>{if(live)setPaths(Object.fromEntries(r.files.filter(f=>f.guid).map(f=>[f.guid!,f.path])));}).catch(()=>{});return ()=>{live=false;};},[recipe.items,paths]);
  // Live try-on: every change of the outfit re-assembles the preview (small
  // textures, nothing written to disk) until the switch is turned off.
- const [tryOn,setTryOn]=useState(true),[trying,setTrying]=useState(false),[placed,setPlaced]=useState('');
- useEffect(()=>{
-  if(!guid||!recipe.items.length)return;
-  const timer=setTimeout(()=>{setTrying(true);void invoke('studio.humanTryOn',{wardrobe:tryOn?recipe:null}).catch(e=>setError(String(e).replace(/^Error: /,''))).finally(()=>setTrying(false));},350);
-  return ()=>clearTimeout(timer);
- },[recipe,tryOn,guid]);
- useEffect(()=>()=>{void invoke('studio.humanTryOn',{wardrobe:null}).catch(()=>{});},[]);
+ const [placed,setPlaced]=useState('');
  const toggle=(values:string[],value:string)=>values.includes(value)?values.filter(v=>v!==value):[...values,value];
  return <>
   <HcHeader title="Одежда" hint="Наденьте комплект модели или добавьте вещи — с примеркой они сразу видны во вьюпорте. Сборка запекает итог в новый ассет."/>
-  {error&&<HcNote tone="error">{error}</HcNote>}
+  {(error||o.error)&&<HcNote tone="error">{error||o.error}</HcNote>}
   <HcCard title="Комплект" hint={recipe.items.length?recipe.items.filter(i=>i.enabled).length+' из '+recipe.items.length+' вещей надето':'Загрузите комплект, который лежит рядом с моделью'}
    actions={<StudioButton size="sm" disabled={disabled||!history.length} onClick={()=>{setRecipe(history[history.length-1]);setHistory(history.slice(0,-1));}}>Отменить</StudioButton>}>
    <StudioButton variant={recipe.items.length?'secondary':'primary'} disabled={disabled||!guid} onClick={()=>void run(async()=>{setInfo(await invoke('studio.humanWardrobeInfo',{guid}));edit(await invoke('studio.humanWardrobeFromAsset',{guid}));})}><Shirt size={14}/> Загрузить комплект модели</StudioButton>

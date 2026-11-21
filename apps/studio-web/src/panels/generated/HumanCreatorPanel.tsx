@@ -5,7 +5,7 @@
 // an allowlisted native StudioSession call; React never touches files.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Brush, Eye, Lightbulb, PersonStanding, Redo2, ScanFace, Scissors, Shirt, Sparkles, Undo2,
-  UserRound, LayoutDashboard, Palette, SplitSquareHorizontal } from 'lucide-react';
+  UserRound, LayoutDashboard, Palette, SplitSquareHorizontal, Paintbrush } from 'lucide-react';
 import type { HumanFaceShape, HumanLook, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
 import { StudioPanel, StudioAlert, StudioEmptyState, StudioButton,
@@ -16,6 +16,9 @@ import HumanWardrobeControls from '../HumanWardrobeControls';
 import HumanPreviewAnimationControls from '../HumanPreviewAnimationControls';
 import HumanStudioLightingControls from '../HumanStudioLightingControls';
 import HumanSculptControls from '../HumanSculptControls';
+import HumanMakeupControls from '../HumanMakeupControls';
+import HumanHairstyleControls from '../HumanHairstyleControls';
+import { useOutfit } from '../useOutfit';
 import HumanFaceBlend from '../HumanFaceBlend';
 import { HcCard, HcHeader, HcSlider } from '../HumanCreatorUi';
 import HumanDnaCreator from '../HumanDnaCreator';
@@ -26,12 +29,13 @@ import './HumanCreatorPanel.css';
 
 type Source = 'model' | 'dna';
 type Camera = 'face' | 'torso' | 'full';
-type Category = 'presets' | 'face' | 'sculpt' | 'skin' | 'eyes' | 'hair' | 'body' | 'clothing' | 'pose';
+type Category = 'presets' | 'face' | 'sculpt' | 'skin' | 'makeup' | 'eyes' | 'hair' | 'body' | 'clothing' | 'pose';
 const CATEGORIES: { id: Category; label: string; icon: typeof Sparkles; camera: Camera }[] = [
   { id: 'presets', label: 'Пресеты', icon: Sparkles, camera: 'full' },
   { id: 'face', label: 'Лицо', icon: ScanFace, camera: 'face' },
   { id: 'sculpt', label: 'Скульпт', icon: Brush, camera: 'face' },
   { id: 'skin', label: 'Кожа', icon: Palette, camera: 'face' },
+  { id: 'makeup', label: 'Макияж', icon: Paintbrush, camera: 'face' },
   { id: 'eyes', label: 'Глаза', icon: Eye, camera: 'face' },
   { id: 'hair', label: 'Волосы', icon: Scissors, camera: 'face' },
   { id: 'body', label: 'Тело', icon: PersonStanding, camera: 'full' },
@@ -101,6 +105,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
     h.edit(look); if (f !== h.face) h.editFace(f);
     if (bound) await h.apply(f, look); else h.setStatus('Черновик готов — нажмите «Показать»');
   });
+  const outfit = useOutfit(h.guid);
   const [comparing, setComparing] = useState(false);
   const compare = (original: boolean) => { setComparing(original); void invoke('studio.humanCompare', { original }).catch(() => {}); };
   const applyNow = () => void h.apply(h.face, h.draft);
@@ -199,6 +204,8 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           : <HumanFaceControls key={'face' + project + h.guid} guid={h.guid} face={h.face}
               schema={h.info?.faceSchema ?? []} onChange={f => { h.editFace(f); if (autoApply && bound) void h.apply(f, h.draft); }}
               onImported={g => { h.setGuid(g); h.setFace(null); }}/>}</>;
+      case 'makeup': return <HumanMakeupControls info={h.info} draft={h.draft}
+          onChange={(look, live) => { h.edit(look); if (live && autoApply && bound) h.live(look, h.face); }}/>;
       case 'sculpt': return <HumanSculptControls face={h.info?.face ?? h.face} ready={ready} onChanged={refresh}
           prepare={async () => {
             // A freshly shown (e.g. assembled) model has no face selection yet:
@@ -214,10 +221,10 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
       case 'eyes': return <><HcHeader title="Глаза" hint="Цвет радужки, склера и блеск. Камера приближена к лицу."/>
         <HcCard title="Радужка и склера"><LookSliders groups={['eyes']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'hair': return <><HcHeader title="Волосы" hint="Цвет и финиш прядей, бровей и ресниц. Форму причёски задаёт модель волос."/>
-        <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h} live={autoApply && bound}/></HcCard></>;
+        <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h} live={autoApply && bound}/></HcCard><HumanHairstyleControls guid={h.guid} outfit={outfit}/></>;
       case 'body': return <><HcHeader title="Тело" hint="Рост и пропорции. Одежда следует за скелетом — при крайних значениях проверьте пересечения."/>
         <HcCard title="Пропорции"><LookSliders groups={['body']} h={h} live={autoApply && bound}/></HcCard></>;
-      case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face}
+      case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face} outfit={outfit}
         onShow={g => { h.setGuid(g); h.setFace(null); h.setStatus('Показан собранный персонаж'); }}/>;
       case 'pose': return <><HcHeader title="Поза и свет" hint="Мимика и поза для проверки лица в движении, студийный свет превью."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
         <details><summary>Роли материалов ({Object.keys(h.draft.materials).length})</summary><div className="hc-grid">
@@ -252,7 +259,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           <StudioButton size="sm" aria-label="Отменить (⌘Z)" title="Отменить (⌘Z)" disabled={h.busy || !h.undo.length} onClick={undo}><Undo2 size={14}/></StudioButton>
           <StudioButton size="sm" aria-label="Повторить (⇧⌘Z)" title="Повторить (⇧⌘Z)" disabled={h.busy || !h.redo.length} onClick={redo}><Redo2 size={14}/></StudioButton>
         </div>
-        <div className="hc-content" onPointerUp={() => { if (['skin', 'eyes', 'hair', 'body'].includes(category)) commit(); }}>{content()}</div>
+        <div className="hc-content" onPointerUp={() => { if (['skin', 'makeup', 'eyes', 'hair', 'body'].includes(category)) commit(); }}>{content()}</div>
       </div>
     </div>}
   </StudioPanel>;

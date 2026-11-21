@@ -21,7 +21,7 @@ int main() {
    auto r=Json::object();r.set("id",Json::number(int64_t(1)));r.set("method",Json::string(method));r.set("params",std::move(params));return session.dispatch(r);
   };
   const auto info=call("studio.humanAppearanceInfo");
-  AIVERSE_TEST_CHECK(!info.has("error")&&info["result"]["schema"].size()==75);
+  AIVERSE_TEST_CHECK(!info.has("error")&&info["result"]["schema"].size()==102);
   studio::StudioAssetCatalog catalog(project);catalog.rebuild();const auto asset=catalog.byPath("Ada/model.gltf");
   AIVERSE_TEST_CHECK(asset.has_value());
   auto params=Json::object();params.set("guid",Json::string(asset->guid));

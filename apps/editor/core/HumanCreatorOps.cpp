@@ -4,7 +4,9 @@
 #include <fstream>
 #include <iterator>
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 #include <stdexcept>
 
 namespace aiverse::editor {
@@ -251,6 +253,41 @@ void registerHumanCreatorOps(Workspace& ws) {
             r.set("look", checked.toJson());
             r.set("summary", Json::string("Saved look " + name));
             return r;
+        }});
+    ws.registerOp({"studio_character_snapshot",
+        "PNG of the character shown in the open Studio's Character Creator viewport (Studio must run with this game and "
+        "the character shown). view: face | torso | full (default face). Returns the PNG path; open it to SEE your edit "
+        "before reporting. Waits up to 15 s.",
+        Json::parse(R"({"properties": {"view": {"type": "string", "enum": ["face", "torso", "full"]}}})"),
+        [w](const Json& p) {
+            namespace fs = std::filesystem;
+            const fs::path root = projectDir(*w);
+            const std::string view = p.has("view") ? p.getStr("view") : "face";
+            if (view != "face" && view != "torso" && view != "full") throw std::invalid_argument("view: face | torso | full");
+            static int serial = 0;
+            const std::string id = "s" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()) + "-" + std::to_string(++serial);
+            const fs::path requests = root / ".aiverse" / "agent-requests", out = root / ".aiverse" / "agent-snapshots";
+            fs::create_directories(requests); fs::create_directories(out);
+            Json req = Json::object(); req.set("id", Json::string(id)); req.set("view", Json::string(view));
+            { std::ofstream f(requests / "character-snapshot.json.pending"); f << req.dump(); }
+            fs::rename(requests / "character-snapshot.json.pending", requests / "character-snapshot.json");
+            const auto png = out / (id + ".png"), err = out / (id + ".error");
+            for (int i = 0; i < 75; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                std::error_code ec;
+                if (fs::exists(err, ec)) {
+                    std::ifstream in(err); std::string msg((std::istreambuf_iterator<char>(in)), {});
+                    throw std::runtime_error("Studio: " + msg);
+                }
+                if (fs::is_regular_file(png, ec) && fs::file_size(png, ec) > 0) {
+                    Json r = Json::object();
+                    r.set("ok", Json::fromBool(true)); r.set("path", Json::string(png.string())); r.set("view", Json::string(view));
+                    return r;
+                }
+            }
+            std::error_code ec; fs::remove(requests / "character-snapshot.json", ec);
+            throw std::runtime_error("Studio did not answer: open this game in AIVERSE Studio and show the character in Character Creator");
         }});
     ws.registerOp({"human_validate", "Check a digital-human document (as written by hand) without saving: version 1, dna limits, "
         "rig corrections, skin weights, routes. Returns ok or the first error.",
