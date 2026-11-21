@@ -4,7 +4,7 @@
 // Optional second camera renders into its own target; CameraCompositor puts it
 // over the main frame as picture-in-picture. Capture with the platform hook:
 //   AIVERSE_CONTENT=<dir> AIVERSE_SCREENSHOT=out.ppm AIVERSE_EXIT_AFTER_FRAMES=N
-//   AIVERSE_PRISMA_DOF=1   (PRISMA defocus pass opt-in)
+//   AIVERSE_PRISMA_DOF=0   disables the PRISMA defocus pass (on by default)
 //   LENS_SCENE=scene.json  GeometryScene JSON relative to AIVERSE_CONTENT
 //   LENS_POST=post.json    PRISMA block; needs depthOfField (+ autoExposure, hdr on)
 //   LENS_EYE="x,y,z" LENS_AT="x,y,z"   main camera position and look-at/focus point

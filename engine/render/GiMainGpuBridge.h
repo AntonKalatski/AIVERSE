@@ -24,6 +24,16 @@ namespace aiverse::render {
 // k with spacing * 2^k and rays traceDistance * 2^k long. All of them live in
 // one atlas (probe offsets); each frame dispatches one cascade (finest first)
 // so the one job buffer is never rewritten while the GPU still reads it.
+//
+// Scrolling (config.scroll): each cascade follows the updateFrame focus in
+// whole cells (one cell of dead band). Probes keep their world cell through a
+// toroidal ring offset (GiUpdateScheduler::scroll, U6 ring.xyz); cells that
+// newly enter a cascade are zeroed on the GPU (GiGpuSmallScene::clear) and
+// re-traced, so they show no indirect light until traced, never stale light
+// from another place. The resident geometry is planned for the outer cascade
+// widened by half its size on each side and re-planned when the cascade leaves
+// that box. After the first full convergence the atlas stays presented while
+// probes update.
 class GiMainGpuBridge {
 public:
     static constexpr float kDefaultLightReach=64;
@@ -58,11 +68,23 @@ public:
             }
         } catch(const std::invalid_argument&) {levels_={};return false;}
         if(!gpu_.initialize(device,total)) {levels_={};return false;}
-        levelCount_=config.cascades;
+        levelCount_=config.cascades;converged_=false;scrolls_=recycled_=replans_=0;
         device_=&device;config_=config;lightReach_=lightReach;return true;
     }
     int cascadeCount() const {return levelCount_;}
-    GiMainCpuConfig cascade(int level) const {return cascadeConfig(config_,level);}
+    // Current lattice of a cascade (its origin moves when scrolling).
+    GiMainCpuConfig cascade(int level) const {
+        auto c=cascadeConfig(config_,level);
+        if(config_.scroll && levels_.at(size_t(level)).configured())c.origin=levels_[size_t(level)].origin();
+        return c;
+    }
+    // Toroidal slot offset of a cascade per axis (U6 ring.xyz).
+    std::array<int,3> cascadeRing(int level) const {
+        const auto& l=levels_.at(size_t(level));
+        return {l.ring(0),l.ring(1),l.ring(2)};
+    }
+    struct ScrollStats {size_t scrolls=0,recycledProbes=0,residencyReplans=0;};
+    ScrollStats scrollStats() const {return {scrolls_,recycled_,replans_};}
     uint32_t cascadeProbeOffset(int level) const {return offsets_.at(size_t(level));}
     // Same selection the bridge applies to a published scene; hosts use it to
     // decide between this GPU path and the CPU fallback before initialization.
@@ -70,7 +92,17 @@ public:
                                             const GiMainCpuConfig& config,
                                             float lightReach=kDefaultLightReach) {
         // The outermost cascade covers every inner one and has the longest rays.
-        const auto outer=cascadeConfig(config,std::clamp(config.cascades,1,kMaxCascades)-1);
+        return planLattice(scene,cascadeConfig(config,std::clamp(config.cascades,1,kMaxCascades)-1),
+                           config.scroll,lightReach);
+    }
+    // A scrolling volume plans for the lattice widened by half its size per side.
+    static GiGpuResidencyPlan planLattice(const GiChunkedGeometrySnapshot& scene,GiMainCpuConfig outer,
+                                          bool scroll,float lightReach) {
+        if(scroll) {
+            const int mx=(outer.nx+1)/2,my=(outer.ny+1)/2,mz=(outer.nz+1)/2;
+            outer.origin=outer.origin-float3{float(mx),float(my),float(mz)}*outer.spacing;
+            outer.nx+=2*mx;outer.ny+=2*my;outer.nz+=2*mz;
+        }
         return GiGpuResidencyPlanner::plan(scene,outer.origin,outer.spacing,
             outer.nx,outer.ny,outer.nz,outer.traceDistance,lightReach);
     }
@@ -109,23 +141,7 @@ private:
         }
         if(!canMutate())return false;
         try {
-            const float reach=std::max(lightReach_,requestedLightReach_);
-            auto plan=planResidency(*scene,config_,reach);
-            residency_=plan;residency_.selected.reset();
-            if(!plan.admitted) {
-                diagnostic_="GI GPU resident geometry exceeds the triangle budget";return false;
-            }
-            if(plan.selected->chunkCount()>GiGpuPagedBvhArena::kMaxChunks) {
-                diagnostic_="GI GPU resident chunk count exceeds the page table";return false;
-            }
-            chunkCache_.refresh(*plan.selected);
-            auto pages=pages_.plan(*plan.selected,chunkCache_);
-            if(!pages.accepted || !gpu_.setPackedGeometry(pages.packet,revision)) {
-                diagnostic_="GI GPU geometry capacity or upload rejected";return false;
-            }
-            pageStats_=pages.stats;
-            pages_.commit(std::move(pages));
-            residentReach_=reach;
+            if(!uploadResident(*scene))return false;
         } catch(const std::exception&) {
             diagnostic_="GI GPU geometry capacity or upload rejected";return false;
         }
@@ -136,6 +152,75 @@ private:
             else levels_[size_t(k)].invalidateAll(GiDirtyReason::Geometry);
         }
         blocked_=false;diagnostic_="";return true;
+    }
+    // Plans and uploads the resident set for the current outer lattice.
+    bool uploadResident(const GiChunkedGeometrySnapshot& scene) {
+        // GPU geometry revisions count uploads (a re-plan reuses the scene revision).
+        const uint64_t revision=gpuRevision_+1;
+        const float reach=std::max(lightReach_,requestedLightReach_);
+        const auto outer=cascade(levelCount_-1);
+        auto plan=planLattice(scene,outer,config_.scroll,reach);
+        residency_=plan;residency_.selected.reset();
+        if(!plan.admitted) {
+            diagnostic_="GI GPU resident geometry exceeds the triangle budget";return false;
+        }
+        if(plan.selected->chunkCount()>GiGpuPagedBvhArena::kMaxChunks) {
+            diagnostic_="GI GPU resident chunk count exceeds the page table";return false;
+        }
+        chunkCache_.refresh(*plan.selected);
+        auto pages=pages_.plan(*plan.selected,chunkCache_);
+        if(!pages.accepted || !gpu_.setPackedGeometry(pages.packet,revision)) {
+            diagnostic_="GI GPU geometry capacity or upload rejected";return false;
+        }
+        pageStats_=pages.stats;
+        pages_.commit(std::move(pages));
+        residentReach_=reach;gpuRevision_=revision;
+        // Box of probe positions the plan covers (scrolling re-plans past it).
+        const int mx=config_.scroll?(outer.nx+1)/2:0,my=config_.scroll?(outer.ny+1)/2:0,
+                  mz=config_.scroll?(outer.nz+1)/2:0;
+        plannedLo_=outer.origin-float3{float(mx),float(my),float(mz)}*outer.spacing;
+        plannedHi_=plannedLo_+float3{float(outer.nx+2*mx),float(outer.ny+2*my),float(outer.nz+2*mz)}*outer.spacing;
+        return true;
+    }
+    // Scrolls every cascade toward `focus` and zeroes the recycled probes.
+    // Only called when no GPU work reads or writes the atlas (canMutate).
+    bool recenter(float3 focus) {
+        std::vector<uint32_t> cleared;
+        for(int k=0;k<levelCount_;++k) {
+            const auto c=cascade(k);
+            const float3 extent{c.spacing*float(c.nx),c.spacing*float(c.ny),c.spacing*float(c.nz)};
+            const float3 f=(focus-extent*0.5f-c.origin)*(1.0f/c.spacing);
+            // Truncation toward zero: one cell of dead band, no flicker at a cell edge.
+            const auto cells=[](float v){return std::isfinite(v)?int(std::clamp(v,-1.0e6f,1.0e6f)):0;};
+            const int dx=cells(f.x),dy=cells(f.y),dz=cells(f.z);
+            if(!dx && !dy && !dz)continue;
+            const auto ids=levels_[size_t(k)].scroll(dx,dy,dz,GiDirtyReason::Geometry);
+            for(const auto id:ids)cleared.push_back(id+offsets_[size_t(k)]);
+            ++scrolls_;
+        }
+        if(cleared.empty())return true;
+        recycled_+=cleared.size();
+        const auto outer=cascade(levelCount_-1);
+        const float3 hi=outer.origin+float3{float(outer.nx),float(outer.ny),float(outer.nz)}*outer.spacing;
+        if(outer.origin.x<plannedLo_.x || outer.origin.y<plannedLo_.y || outer.origin.z<plannedLo_.z ||
+           hi.x>plannedHi_.x || hi.y>plannedHi_.y || hi.z>plannedHi_.z) {
+            // Probes still inside the old box were traced with every chunk they
+            // reach; only the recycled ones need the new resident set.
+            bool ok=false;
+            try {ok=uploadResident(*scene_);} catch(const std::exception&) {}
+            if(!ok) {
+                blocked_=true;geometryCurrent_=false;
+                if(!*diagnostic_)diagnostic_="GI GPU geometry capacity or upload rejected";
+                return false;
+            }
+            ++replans_;
+        }
+        const uint64_t fence=device_->gpuSubmissionFence();
+        if(!gpu_.clear(cleared).submitted) {
+            blocked_=true;diagnostic_="GI GPU probe clear rejected";return false;
+        }
+        pendingFence_=fence;
+        return true;
     }
 public:
     bool publishLights(std::vector<GiMovingLight> lights) {
@@ -178,13 +263,18 @@ public:
         if(device_->gpuCompletedFence()<pendingFence_)return;
         for(const auto& job:inFlight_)levels_[inFlightLevel_].complete(job);
         inFlight_.clear();pendingFence_=0;
+        if(!pendingProbes())converged_=true;
     }
     bool updateFrame(float3 focus,size_t maxProbes=32) {
         poll();
-        if(!ready() || !scene_ || !geometryCurrent_ || !lightsCurrent_ || !environmentCurrent_ || blocked_ || !canMutate())return false;
+        if(!ready() || !scene_ || !geometryCurrent_ || !lightsCurrent_ || !environmentCurrent_ || blocked_ ||
+           !canMutate(config_.scroll))return false;
+        if(config_.scroll && !recenter(focus))return false;
         int level=-1;
         for(int k=0;k<levelCount_;++k)if(levels_[size_t(k)].pending()){level=k;break;}
         if(level<0)return true;
+        // A clear submitted above shares this frame's fence and job-free
+        // completion; the trace uses its own job buffer.
         auto& scheduler=levels_[size_t(level)];
         auto jobs=scheduler.claim(std::min(maxProbes,GiGpuSmallScene::kMaxJobs),focus);
         if(jobs.empty())return false;
@@ -208,8 +298,13 @@ public:
     const GiGpuResidencyPlan& residency() const {return residency_;}
     const GiGpuPagedBvhArena::Stats& pageStats() const {return pageStats_;}
     bool canPresent() const {
-        return ready() && scene_ && geometryCurrent_ && lightsCurrent_ && environmentCurrent_ && !blocked_ && !pendingFence_ &&
-            !pendingProbes() && device_->gpuHealthy();
+        if(!(ready() && scene_ && geometryCurrent_ && lightsCurrent_ && environmentCurrent_ && !blocked_ &&
+             device_->gpuHealthy()))
+            return false;
+        // Scrolling: once converged, recycled probes are zero and the others
+        // hold light of their own cell, so updates never hide the GI.
+        if(config_.scroll && converged_)return true;
+        return !pendingFence_ && !pendingProbes();
     }
     // Called by renderer admission; its token covers every later draw in this
     // GPU frame, including other cameras. The host keeps this owner alive.
@@ -226,17 +321,23 @@ public:
         if(!gpu_.shutdownAfterGpuIdle())return false;
         scene_.reset();inFlight_.clear();levels_={};levelCount_=1;offsets_={};inFlightLevel_=0;
         chunkCache_={};pages_=GiGpuPagedBvhArena{};residency_={};pageStats_={};
-        residentReach_=requestedLightReach_=lightRadius_=0;
-        pendingFence_=sampledFence_=revision_=0;device_=nullptr;return true;
+        residentReach_=requestedLightReach_=lightRadius_=0;converged_=false;
+        scrolls_=recycled_=replans_=0;plannedLo_=plannedHi_={};
+        pendingFence_=sampledFence_=revision_=gpuRevision_=0;device_=nullptr;return true;
     }
 private:
     void invalidateAll(GiDirtyReason reason) {
         for(int k=0;k<levelCount_;++k)levels_[size_t(k)].invalidateAll(reason);
     }
-    bool canMutate() {
+    // gpuWritesOnly: the caller only changes the atlas from GPU compute
+    // (clear / trace dispatches), which the queue orders after every earlier
+    // draw that sampled it. Scrolling presents every frame, so waiting for the
+    // sampling fence there would starve updates with frames in flight. CPU
+    // writes (job / geometry buffers) still wait for the compute fence.
+    bool canMutate(bool gpuWritesOnly=false) {
         poll();
         if(!ready() || !device_->gpuHealthy() || !device_->gpuSubmissionFence())return false;
-        if(pendingFence_ || (sampledFence_ && device_->gpuCompletedFence()<sampledFence_)) {
+        if(pendingFence_ || (!gpuWritesOnly && sampledFence_ && device_->gpuCompletedFence()<sampledFence_)) {
             diagnostic_="GI waiting for prior GPU users";return false;
         }
         return true;
@@ -255,9 +356,11 @@ private:
     gfx::Device* device_=nullptr;
     std::shared_ptr<const GiChunkedGeometrySnapshot> scene_;
     std::vector<GiProbeTicket> inFlight_;
-    uint64_t revision_=0,pendingFence_=0;
+    uint64_t revision_=0,gpuRevision_=0,pendingFence_=0;
     mutable uint64_t sampledFence_=0;
-    bool blocked_=true,geometryCurrent_=false;
+    bool blocked_=true,geometryCurrent_=false,converged_=false;
+    size_t scrolls_=0,recycled_=0,replans_=0;
+    float3 plannedLo_{},plannedHi_{};
     bool lightsCurrent_=true,environmentCurrent_=true;
     const char* diagnostic_="";
 };
