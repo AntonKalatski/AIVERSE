@@ -10,6 +10,7 @@
 #include "engine/fx/SpectraFxGpuLod.h"
 #include "engine/fx/SpectraFxGpuBudgetGovernor.h"
 #include "engine/fx/SpectraFxGpuEmitterLibrary.h"
+#include "engine/fx/SpectraGpuCueBridge.h"
 
 using namespace aiverse;
 using namespace aiverse::fx;
@@ -192,6 +193,54 @@ int main() {
     expect(governor.spawnScale()<1,"over-budget GPU frames lower new-spawn scale");
     expect(governor.spawnScale()>=config.minSpawnScale,
            "spawn governor never goes below configured minimum");
+    {
+        // GpuCueBridge keeps cues the pool rejected (per-frame burst budget)
+        // for the next flush instead of losing them; bounded retries.
+        aiverse::spectra::PoolWorldBudgets poolBudgets;
+        poolBudgets.maxBurstsPerFrame=2;
+        aiverse::spectra::GpuPoolWorld pool;
+        expect(pool.init(nullptr,poolBudgets),"headless CPU pool world");
+        const Json graph=Json::parse(R"JSON({"version":1,"nodes":[
+            {"id":"spawn","type":"Spawn","properties":{"burst":1}},
+            {"id":"initialize","type":"Initialize","properties":{"life":1,"speed":0}},
+            {"id":"update","type":"Update","properties":{}},
+            {"id":"sprite","type":"SpriteOutput","properties":{"texture":"builtin:spark"}}],
+            "links":[{"from":"spawn","to":"initialize"},{"from":"initialize","to":"update"},
+                     {"from":"update","to":"sprite"}],"outputs":["sprite"]})JSON");
+        expect(pool.defineGraph("spark",graph),"pooled CPU effect defined");
+        aiverse::spectra::GpuCueBridge bridge(pool);
+        expect(bridge.bind(1,"spark"),"cue kind bound");
+        std::vector<aiverse::spectra::GpuCueEvent> events(5);
+        for(auto& e:events) e.kind=1;
+        expect(bridge.accept(1,events) && bridge.stats().queued==5,"five cues queued");
+        SpectraFxView poolView;
+        poolView.eye={0,5,-5};poolView.forward={0,0,1};poolView.right={1,0,0};
+        poolView.up={0,1,0};poolView.projectionYScale=1;poolView.width=64;poolView.height=64;
+        uint32_t emitted=0;
+        for(int frame=0;frame<3;++frame) {
+            expect(pool.beginPresentationFrame(poolView),"pool frame begins");
+            emitted+=bridge.flush();
+            expect(pool.step(1.0f/60),"pool steps");
+            pool.draw();
+            pool.endPresentationFrame();
+        }
+        expect(emitted==5 && bridge.stats().submitted==5 &&
+               bridge.stats().rejectedByWorld==0 && bridge.stats().queued==0,
+               "budget-rejected cues are emitted on later frames, not lost");
+        expect(bridge.stats().deferredByWorld>0,"deferrals are reported");
+        // A cue rejected every frame is dropped after bounded attempts.
+        expect(bridge.bind(2,"missing_effect"),"bind unknown pooled effect");
+        std::vector<aiverse::spectra::GpuCueEvent> bad(1);bad[0].kind=2;
+        expect(bridge.accept(2,bad),"bad cue queued");
+        for(int frame=0;frame<aiverse::spectra::GpuCueBridge::kMaxFlushAttempts;++frame) {
+            expect(pool.beginPresentationFrame(poolView),"pool frame begins");
+            bridge.flush();
+            pool.step(1.0f/60);pool.endPresentationFrame();
+        }
+        expect(bridge.stats().queued==0 && bridge.stats().rejectedByWorld==1,
+               "permanently rejected cue dropped after bounded retries");
+        pool.shutdown();
+    }
     if(failures) {
         std::fprintf(stderr,"%d SpectraFX contract failures\n",failures);
         return 1;
