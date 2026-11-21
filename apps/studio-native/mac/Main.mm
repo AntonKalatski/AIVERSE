@@ -24,6 +24,7 @@
 #include <vector>
 #include <filesystem>
 #include <deque>
+#include "apps/editor/core/Projects.h"
 #include <fstream>
 #include <iterator>
 
@@ -57,6 +58,7 @@
     BOOL dragged_;
     BOOL moveDrag_;
     BOOL terrainStroke_; // Terrain brush stroke in progress
+    BOOL splineDrag_;    // dragging a road node / river point
     BOOL marquee_;             // plain LMB drag on empty space: rectangle selection
     NSTrackingArea* hoverTracking_;
     NSTimeInterval lastHover_;
@@ -125,6 +127,9 @@
     BOOL htmlComposite_;
     BOOL agentShotInFlight_; // agent view_screenshot capture on its way
     CFTimeInterval nextGizmoPoll_;
+    std::vector<aiverse::studio::StudioMetalScene::OverlayShape> extShapes_; // extension gizmos
+    aiverse::Json splineCache_;  // Roads/Water node handles shown in the Scene
+    std::string splineDrag_;     // handle being dragged
     CFTimeInterval lastSceneFrame_; double sceneFrameMs_; uint64_t sceneFrameCount_;
     std::deque<std::pair<float,uint32_t>> frameHistory_; // last 240 Scene frames: ms between frames, draw calls
     BOOL closeApproved_;
@@ -164,6 +169,8 @@
 - (void)sceneMoveEnd;
 - (void)frameAllScene;
 - (BOOL)terrainBrushArmed;
+- (void)rebuildOverlay;
+- (BOOL)splineDrag:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)brushAdjust:(double)factor disarm:(BOOL)disarm;
 - (BOOL)updateBrushCursorAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (BOOL)terrainStroke:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
@@ -179,6 +186,7 @@
 - (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sceneSelectionAction:(const char*)method;
 - (void)openProjectPath:(const std::string&)path requestId:(int64_t)requestId;
+- (void)sendProjectSplash:(const std::string&)path;
 - (void)sendLoading:(const char*)phase message:(const std::string&)message done:(int)done total:(int)total;
 - (void)placeMetalView:(NSView*)view x:(double)x y:(double)y width:(double)width height:(double)height pixelsW:(int)pixelsW pixelsH:(int)pixelsH;
 - (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
@@ -197,6 +205,7 @@
 - (BOOL)confirmDiscardChanges;
 - (void)gameEvent:(const aiverse::platform::Event&)event;
 - (void)tickGame;
+- (void)runSkyShots;
 - (void)pollAgentRequests;
 - (aiverse::Json)gameState;
 - (void)saveMapSheetForRequestId:(int64_t)requestId;
@@ -285,8 +294,11 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
 }
 - (void)mouseDown:(NSEvent*)event {
     press_=[self convertPoint:event.locationInWindow fromView:nil];
-    dragged_=NO;marquee_=NO;terrainStroke_=NO;
+    dragged_=NO;marquee_=NO;terrainStroke_=NO;splineDrag_=NO;
     [self.window makeFirstResponder:self];
+    // Spline handles (Roads / Water "Edit nodes"): LMB on a handle drags it.
+    if (!(event.modifierFlags & NSEventModifierFlagOption) &&
+        [self.host splineDrag:0 atX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height]) { splineDrag_=YES; return; }
     // Terrain brush armed (Terrain panel): plain LMB sculpts; Alt still orbits.
     if (!(event.modifierFlags & NSEventModifierFlagOption) && [self.host terrainBrushArmed]) {
         terrainStroke_=[self.host terrainStroke:0 atX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height];
@@ -300,6 +312,11 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
 // (apps/studio-web/src/panels/sceneCamera.ts): LMB select, Alt+LMB orbit,
 // Alt+Cmd+LMB / MMB pan, RMB flythrough (WASD/QE), Alt+RMB zoom.
 - (void)mouseDragged:(NSEvent*)event {
+    if (splineDrag_) {
+        const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+        [self.host splineDrag:1 atX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+        return;
+    }
     if (terrainStroke_) {
         const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
         [self.host terrainStroke:1 atX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
@@ -329,6 +346,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     else [self.host orbitX:event.deltaX y:event.deltaY];
 }
 - (void)mouseUp:(NSEvent*)event {
+    if (splineDrag_) { splineDrag_=NO; [self.host splineDrag:2 atX:0 y:0 width:self.bounds.size.width height:self.bounds.size.height]; return; }
     if (terrainStroke_) { terrainStroke_=NO; [self.host terrainStroke:2 atX:0 y:0 width:self.bounds.size.width height:self.bounds.size.height]; return; }
     if (moveDrag_) { moveDrag_=NO; [self.host sceneMoveEnd]; return; }
     const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
@@ -504,6 +522,31 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
 // grabs the Metal Scene drawable as PPM files, then quits when
 // AIVERSE_STUDIO_SHOTS_EXIT=1. Camera: AIVERSE_STUDIO_SHOT_CAMERA="x y z dist yaw pitch".
 namespace {
+// Splash art (AIVERSE_STUDIO_SKY_SHOTS=<dir>): the engine's PhysicalSky at several times of day, captured
+// from an own window like the wind shots. The PNGs become the default project splash backgrounds.
+struct SkyShotRunner {
+    std::string dir;
+    int stage=0,frames=0;bool waiting=false,done=false;
+    std::shared_ptr<bool> captured=std::make_shared<bool>(false);
+    NSWindow* window=nil;NSView* view=nil;
+    std::unique_ptr<aiverse::studio::StudioMetalScene> scene;
+    struct Stage { const char* name; float elevation, azimuth, coverage, r, g, b, pitch; };
+    static const std::vector<Stage>& stages() {
+        static const std::vector<Stage> list={
+            {"sky-dawn",5,80,.42f,1,.78f,.58f,-.34f},
+            {"sky-golden",9,250,.55f,1,.84f,.62f,-.34f},
+            {"sky-day",38,200,.6f,1,.97f,.92f,-.42f},
+            {"sky-dusk",3,265,.5f,1,.6f,.42f,-.3f},
+            {"sky-clear",14,140,.85f,1,.92f,.8f,-.4f},
+            {"sky-storm",22,30,.3f,.9f,.92f,1,-.36f},
+        };
+        return list;
+    }
+    static SkyShotRunner& get() {
+        static SkyShotRunner r=[]{SkyShotRunner s;if(const char* d=std::getenv("AIVERSE_STUDIO_SKY_SHOTS"))s.dir=d;return s;}();
+        return r;
+    }
+};
 struct WindShotRunner {
     std::string dir;
     bool exitAfter=false;
@@ -833,7 +876,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 if (!g.isObject() || shapes.size()>=256) continue;
                 const std::string kind=g.getStr("kind");
                 aiverse::studio::StudioMetalScene::OverlayShape sh;
-                sh.kind=kind=="line"?1:kind=="circle"?2:kind=="point"?3:0;
+                sh.kind=kind=="line"?1:kind=="circle"?2:kind=="point"?3:kind=="label"?4:0;
+                if (sh.kind==4) { sh.text=g.getStr("text"); if (sh.text.empty()||sh.text.size()>200) continue; }
                 if (!sh.kind) continue;
                 auto f=[&](const char* k,double d){const double v=g[k].toDouble(d);return float(std::isfinite(v)?v:d);};
                 sh.a={f("x",0),f("y",0),f("z",0)};sh.b={f("x2",0),f("y2",0),f("z2",0)};
@@ -843,7 +887,10 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 shapes.push_back(sh);
             }
         } catch (...) {}
-        preview_->setOverlayShapes(std::move(shapes));
+        extShapes_=std::move(shapes);
+        if (!session_->splineEdit().empty() && splineDrag_.empty()) splineCache_=session_->splineHandles();
+        else if (session_->splineEdit().empty()) splineCache_=aiverse::Json();
+        [self rebuildOverlay];
     }
     if (session_->agentScreenshotPending() && !agentShotInFlight_) {
         if (!preview_ || !placement_.visible) session_->finishAgentScreenshot("",0,0,"The Scene panel is not visible in Studio; ask the user to show it");
@@ -881,6 +928,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         }
     }
     [self runWindShots];
+    [self runSkyShots];
     [self pollAgentRequests];
     NSWindow* sceneWindow=viewport_.window ?: window_;
     if (!placement_.visible || viewport_.hidden || sceneWindow.isMiniaturized || !sceneWindow.visible) {
@@ -990,6 +1038,49 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         }
         preview_->captureFacialThumbnail((out/(id+".png")).string(),false);
     } catch (const std::exception&) {}
+}
+- (void)runSkyShots {
+    auto& run=SkyShotRunner::get();
+    if(run.dir.empty()||run.done)return;
+    @autoreleasepool {
+    try {
+        if(!run.window) {
+            run.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(80,80,1600,900)
+                styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+            run.window.title=@"AIVERSE sky shots";run.window.releasedWhenClosed=NO;
+            run.view=[[StudioMetalView alloc] initWithFrame:NSMakeRect(0,0,1600,900)];
+            run.window.contentView=run.view;[run.window orderFront:nil];
+            run.view.layer.contentsScale=1.0;
+            run.scene=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)run.view.layer);
+            std::filesystem::create_directories(run.dir);
+        }
+        const auto& stages=SkyShotRunner::stages();
+        if(run.stage>=int(stages.size())){run.done=true;[run.window orderOut:nil];NSLog(@"[sky-shots] finished: %s",run.dir.c_str());return;}
+        const auto& st=stages[size_t(run.stage)];
+        const auto& map=session_->workspace().map;
+        {   // Every frame: the scene frames the freshly loaded map on its first frames and would move the camera.
+            aiverse::studio::StudioMetalScene::SkyShot shot;shot.elevationDeg=st.elevation;shot.azimuthDeg=st.azimuth;shot.coverage=st.coverage;
+            shot.sunColor={st.r,st.g,st.b};run.scene->setSkyShot(shot);
+            // High above the map centre, looking up past the horizon towards the sun: sky only, no map in frame.
+            run.scene->setShotCamera(map.data.w*.5f,320.f,map.data.h*.5f,6.f,st.azimuth*0.0174533f+3.14159f,st.pitch);
+        }
+        ((CAMetalLayer*)run.view.layer).drawableSize=CGSizeMake(1600,900);
+        run.scene->frame(1600,900,map,session_->workspace().project.isFps(),"","",aiverse::Json{},0,
+            float(session_->workspace().project.rules.levelHeight.toDouble()),session_->workspace().project.dir,session_->workspace().project.rulesJson);
+    } catch(const std::exception& e){NSLog(@"[sky-shots] failed: %s",e.what());run.done=true;return;}
+    }
+    ++run.frames;
+    const auto& st=SkyShotRunner::stages()[size_t(run.stage)];
+    if(!run.waiting&&run.frames>=90){
+        run.waiting=true;*run.captured=false;
+        const std::string path=run.dir+"/"+st.name+".ppm";auto flag=run.captured;
+        run.scene->captureNextFrame([path,flag](int w,int h,std::vector<uint8_t> rgba){
+            if(FILE* f=std::fopen(path.c_str(),"wb")){std::fprintf(f,"P6\n%d %d\n255\n",w,h);for(size_t i=0;i+3<rgba.size();i+=4)std::fwrite(&rgba[i],1,3,f);std::fclose(f);}
+            *flag=true;
+        });
+        return;
+    }
+    if(run.waiting&&*run.captured){NSLog(@"[sky-shots] %s captured",st.name);++run.stage;run.frames=0;run.waiting=false;}
 }
 - (void)runWindShots {
     auto& run=WindShotRunner::get();
@@ -1296,11 +1387,67 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 }
 // Opens a project on a background queue (the UI shows progress), then resumes the
 // Scene, which streams models in with a per-frame budget. requestId<0: --project.
+// Splash while a project opens: the game's own name, splash art (game.json "splash": background, image, first
+// logo) or icon, read straight from game.json before the project loads. Images go as small data URLs.
+- (void)sendProjectSplash:(const std::string&)path {
+    namespace fs=std::filesystem;
+    aiverse::Json payload=aiverse::Json::object();
+    std::error_code ec;
+    fs::path dir=fs::path(path);
+    if (fs::is_regular_file(dir,ec)) dir=dir.parent_path();
+    payload.set("path",aiverse::Json::string(dir.string()));
+    payload.set("name",aiverse::Json::string(dir.filename().string()));
+    auto image=[&](const std::string& rel,CGFloat maxSide,BOOL jpeg)->std::string{
+        if (rel.empty() || rel.find("..")!=std::string::npos) return {};
+        const fs::path file=dir/rel;
+        if (!fs::is_regular_file(file,ec) || fs::file_size(file,ec)>64ull*1024*1024) return {};
+        @autoreleasepool {
+            NSImage* img=[[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:file.string().c_str()]];
+            if (!img || img.size.width<1 || img.size.height<1) return {};
+            const CGFloat k=std::min<CGFloat>(1,maxSide/std::max(img.size.width,img.size.height));
+            const NSInteger w=std::max<NSInteger>(1,NSInteger(img.size.width*k)),h=std::max<NSInteger>(1,NSInteger(img.size.height*k));
+            NSBitmapImageRep* rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr pixelsWide:w pixelsHigh:h bitsPerSample:8
+                samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+            [NSGraphicsContext saveGraphicsState];
+            [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
+            [img drawInRect:NSMakeRect(0,0,w,h) fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1.0];
+            [NSGraphicsContext restoreGraphicsState];
+            NSData* data=jpeg?[rep representationUsingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor:@0.8}]
+                             :[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+            if (!data) return {};
+            return std::string(jpeg?"data:image/jpeg;base64,":"data:image/png;base64,")+[data base64EncodedStringWithOptions:0].UTF8String;
+        }
+    };
+    try {
+        const aiverse::Json m=aiverse::Json::parseFile((dir/"game.json").string());
+        if (!m.getStr("name").empty()) payload.set("name",aiverse::Json::string(m.getStr("name")));
+        payload.set("module",aiverse::Json::string(m.getStr("genre",m.getStr("module","rts"))));
+        payload.set("maps",aiverse::Json::number(int64_t(m["maps"].isArray()?m["maps"].size():0)));
+        const aiverse::Json& sp=m["splash"];
+        if (sp.isObject()) {
+            if (sp["background"].isString()) payload.set("background",aiverse::Json::string(sp.getStr("background")));
+            const std::string art=image(sp.getStr("image"),1280,YES);
+            if (!art.empty()) payload.set("art",aiverse::Json::string(art));
+            if (sp["logos"].isArray()) for (const auto& l:sp["logos"].items()) {
+                const std::string logo=image(l.getStr("image"),512,NO);
+                if (!logo.empty()) { payload.set("logo",aiverse::Json::string(logo)); break; }
+            }
+        }
+        if (!payload.has("logo")) {
+            const std::string icon=image(m.getStr("icon"),256,NO);
+            if (!icon.empty()) payload.set("logo",aiverse::Json::string(icon));
+        }
+    } catch (const std::exception&) {}
+    // Automation: keep the finished splash up for N seconds (screenshots of the splash design).
+    if (const char* hold=std::getenv("AIVERSE_STUDIO_SPLASH_HOLD")) payload.set("holdMs",aiverse::Json::number(std::atof(hold)*1000.0));
+    [self sendStudioEventPayload:"project.splash" payload:payload];
+}
 - (void)openProjectPath:(const std::string&)path requestId:(int64_t)requestId {
     if (projectLoading_) return;
     projectLoading_=YES;
     if (game_) game_->stop();
     const std::string name=std::filesystem::path(path).filename().string();
+    [self sendProjectSplash:path];
     [self sendLoading:"project" message:"Opening "+name done:0 total:0];
     aiverse::studio::StudioSession* session=session_.get();
     const std::string projectPath=path;
@@ -1374,6 +1521,68 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     const auto reply=session_->dispatch(request);
     if (reply.has("result")) [self sendStudioEventPayload:"brush.changed" payload:reply["result"]];
     if (disarm && preview_) preview_->setBrushCursor(false,{},0);
+}
+// Scene overlay: extension gizmos + spline handles (Roads / Water "Edit nodes").
+- (void)rebuildOverlay {
+    if (!preview_) return;
+    auto shapes=extShapes_;
+    for (const auto& seg:splineCache_["segments"].items()) {
+        aiverse::studio::StudioMetalScene::OverlayShape sh;sh.kind=1;sh.thickness=2;sh.r=255;sh.g=200;sh.bl=80;
+        sh.a={float(seg[0].toDouble()),0.15f,float(seg[1].toDouble())};sh.b={float(seg[2].toDouble()),0.15f,float(seg[3].toDouble())};
+        shapes.push_back(sh);
+    }
+    for (const auto& h:splineCache_["handles"].items()) {
+        aiverse::studio::StudioMetalScene::OverlayShape sh;sh.kind=3;sh.radius=h.getStr("id")==splineDrag_?6:4;
+        sh.r=255;sh.g=h.getStr("id")==splineDrag_?255:220;sh.bl=h.getStr("id")==splineDrag_?255:120;
+        sh.a={float(h["x"].toDouble()),0.2f,float(h["z"].toDouble())};
+        shapes.push_back(sh);
+    }
+    preview_->setOverlayShapes(std::move(shapes));
+}
+// phase 0 press (returns YES when a handle was hit), 1 drag, 2 release (commits the move).
+- (BOOL)splineDrag:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (projectLoading_ || !preview_ || !session_ || session_->splineEdit().empty()) return NO;
+    if (phase==0) {
+        float best=12.f;std::string hit;
+        for (const auto& h:splineCache_["handles"].items()) {
+            aiverse::render::float2 p;
+            if (!preview_->projectPoint({float(h["x"].toDouble()),0.2f,float(h["z"].toDouble())},float(width),float(height),p)) continue;
+            const float d=std::hypot(p.x-float(x),p.y-float(y));
+            if (d<best) {best=d;hit=h.getStr("id");}
+        }
+        splineDrag_=hit;
+        [self rebuildOverlay];
+        return !hit.empty();
+    }
+    if (splineDrag_.empty()) return NO;
+    aiverse::render::float3 at{};
+    const bool onGround=preview_->groundPoint(float(x),float(y),float(width),float(height),at);
+    if (phase==1) {
+        if (!onGround) return YES;
+        aiverse::Json handles=aiverse::Json::array();
+        for (const auto& h:splineCache_["handles"].items()) {
+            if (h.getStr("id")!=splineDrag_) { handles.push(h); continue; }
+            aiverse::Json m=h;m.set("x",aiverse::Json::number(double(at.x),3));m.set("z",aiverse::Json::number(double(at.z),3));handles.push(std::move(m));
+        }
+        splineCache_.set("handles",std::move(handles));
+        [self rebuildOverlay];
+        return YES;
+    }
+    // release: the cached handle holds the last ground position
+    double hx=0,hz=0;bool found=false;
+    for (const auto& h:splineCache_["handles"].items()) if (h.getStr("id")==splineDrag_) {hx=h["x"].toDouble();hz=h["z"].toDouble();found=true;}
+    std::string error;
+    const std::string id=splineDrag_;
+    splineDrag_.clear();
+    if (found && !session_->splineMove(id,hx,hz,&error)) {
+        aiverse::Json payload=aiverse::Json::object();
+        payload.set("message",aiverse::Json::string("Move node: "+error));
+        [self sendStudioEventPayload:"assets.importError" payload:payload];
+    }
+    splineCache_=session_->splineHandles();
+    [self rebuildOverlay];
+    [self sendStudioEvent:"document.changed" message:""];
+    return YES;
 }
 - (BOOL)terrainBrushArmed { return !projectLoading_ && session_ && preview_ && session_->sceneBrush().armed; }
 // phase 0 begin, 1 drag, 2 end. Map coordinates: world x, world z (the terrain ops' x, y).
@@ -2100,6 +2309,42 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 reply.set("result",[self gameState]);
             }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
             [self sendStudioReply:reply];return;
+        }
+        if ((req.getStr("method")=="studio.hubOpen" || req.getStr("method")=="studio.hubCreate") && req["id"].isNumber()) {
+            // Project hub: open a RECENT project (only folders the registry lists, never a path from JavaScript
+            // alone), or copy a template into a folder the user picks in AppKit, then open it.
+            const int64_t requestId=req["id"].integer();
+            auto fail=[&](const std::string& why){aiverse::Json r=aiverse::Json::object();r.set("id",req["id"]);r.set("error",aiverse::Json::string(why));[self sendStudioReply:r];};
+            if (projectLoading_) { fail("A project is loading"); return; }
+            if (![self confirmDiscardChanges]) { [self sendProjectCancelledReply:requestId]; return; }
+            if (req.getStr("method")=="studio.hubOpen") {
+                const std::string dir=req["params"].getStr("dir");
+                bool listed=false;
+                for (const auto& p:aiverse::editor::recentProjects()) if (p.dir==dir && p.exists) listed=true;
+                if (!listed) { fail("This project is not in the recent list"); return; }
+                [self openProjectPath:dir requestId:requestId];
+                return;
+            }
+            const std::string name=req["params"].getStr("name"),templ=req["params"].getStr("template");
+            if (name.empty() || name.size()>120) { fail("Give the project a name"); return; }
+            bool known=false;
+            for (const auto& t:aiverse::editor::listTemplates(session_->workspace().engineDir)) if (t.id==templ) known=true;
+            if (!known) { fail("Unknown template"); return; }
+            NSOpenPanel* panel=[NSOpenPanel openPanel];
+            panel.canChooseFiles=NO;panel.canChooseDirectories=YES;panel.canCreateDirectories=YES;panel.allowsMultipleSelection=NO;
+            panel.prompt=@"Create Here";
+            panel.message=[NSString stringWithFormat:@"Choose where to create \u201C%s\u201D",name.c_str()];
+            const std::string location=aiverse::editor::defaultProjectsDir();
+            std::error_code ec;std::filesystem::create_directories(location,ec);
+            panel.directoryURL=[NSURL fileURLWithPath:[NSString stringWithUTF8String:location.c_str()]];
+            [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse result) {
+                if (result!=NSModalResponseOK || !panel.URL.path.length) { [self sendProjectCancelledReply:requestId]; return; }
+                std::string error;
+                const std::string dir=aiverse::editor::createProject(session_->workspace().engineDir,templ,name,panel.URL.path.UTF8String,"",&error);
+                if (dir.empty()) { aiverse::Json r=aiverse::Json::object();r.set("id",aiverse::Json::number(requestId));r.set("error",aiverse::Json::string(error.empty()?"Could not create the project":error));[self sendStudioReply:r];return; }
+                [self openProjectPath:dir requestId:requestId];
+            }];
+            return;
         }
         if (req.getStr("method")=="studio.openProject" && req["id"].isNumber()) {
             // Path is chosen by AppKit, never accepted from untrusted JavaScript.

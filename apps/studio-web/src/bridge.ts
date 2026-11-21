@@ -32,6 +32,7 @@ let nextId = firstRequestId();
 
 window.__aiverseReceive = (message: NativeReply) => {
   if (message && typeof message.event === 'string') {
+    if (STICKY.has(message.event)) sticky.set(message.event, { payload: message.payload, at: Date.now() });
     listeners.forEach(listener => listener(message.event!, message.payload));
     return;
   }
@@ -51,8 +52,14 @@ export function nativeWindowAction(action: 'studio.windowDrag' | 'studio.windowZ
   try { native?.postMessage({ id: 0, method: action, params: {} }); }
   catch { /* not in the native host */ }
 }
+/** Events the host may send while React is still mounting (the startup project opens on didFinishNavigation):
+ *  a listener added within a few seconds still gets the latest one. */
+const STICKY = new Set(['project.splash', 'project.loading']);
+const sticky = new Map<string, { payload: unknown; at: number }>();
 export function onNativeEvent(listener: (event: string, payload: unknown) => void): () => void {
   listeners.add(listener);
+  const now = Date.now();
+  for (const [event, last] of sticky) if (now - last.at < 4000) queueMicrotask(() => { if (listeners.has(listener)) listener(event, last.payload); });
   return () => listeners.delete(listener);
 }
 export async function invoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {

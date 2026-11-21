@@ -1,5 +1,6 @@
 #include "apps/editor/AuthoringWater.h"
 #include "StudioMetalScene.h"
+#include "StudioFont6x11.h"
 #include "engine/render/CameraPng.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include "engine/render/GiModelGeometry.h"
@@ -705,6 +706,9 @@ void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int heig
     constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
     for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
 }
+bool StudioMetalScene::projectPoint(float3 world,float width,float height,float2& out) const {
+    return viewCamera().worldToScreen(world,width,height,out);
+}
 Json StudioMetalScene::textureResources() const {
     static const char* formats[]={"RGBA8","R8","Depth","RGBA32F","ETC2_RGB8","ETC2_RGBA8","BC1","BC3","BC7","ASTC_4x4","ASTC_6x6",
         "RGBA8_sRGB","RGBA16F","BC4","BC5","EAC_R11","RG8","R16F","RG16F","R32F","RG32F","BC6H_UFloat","BC6H_SFloat",
@@ -736,6 +740,27 @@ void StudioMetalScene::drawBrushCursor(const RTSCamera& view,int width,int heigh
         float2 a,b;
         if(!view.worldToScreen(s.a,W,H,a))continue;
         const float t=s.thickness*px;
+        if(s.kind==4){
+            // Bitmap text (6x11 glyphs), one horizontal run per lit row segment, with a dark outline pass.
+            const float cell=std::max(1.f,px*1.4f);
+            for(int pass=0;pass<2;++pass){
+                const uint32_t col=pass==0?rgba(0,0,0,170):color;const float off=pass==0?cell*0.6f:0;
+                float cx=a.x+6*cell;
+                for(unsigned char ch:s.text.substr(0,64)){
+                    if(ch<32||ch>126)ch='?';
+                    const unsigned char* g=kStudioFont6x11[ch-32];
+                    for(int row=0;row<11;++row)for(int col0=0;col0<6;){
+                        if(!((g[row]>>col0)&1)){++col0;continue;}
+                        int col1=col0;while(col1<6&&((g[row]>>col1)&1))++col1;
+                        const float y=a.y-6*cell+row*cell+cell*0.5f+off;
+                        o.segment(cx+col0*cell+off,y,cx+col1*cell+off,y,cell,col);
+                        col0=col1;
+                    }
+                    cx+=6*cell;
+                }
+            }
+            continue;
+        }
         if(s.kind==1&&view.worldToScreen(s.b,W,H,b))o.segment(a.x,a.y,b.x,b.y,t,color);
         else if(s.kind==2||s.kind==3){
             const float r=(s.kind==2?s.radius:std::max(1.f,s.radius))*px;constexpr int N=32;
@@ -1770,6 +1795,14 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
+    if(skyShot_) {
+        // Splash art: real PhysicalSky (atmosphere, clouds, god rays) lit by the requested sun.
+        PhysicalSkySettings sky;sky.enabled=true;sky.clouds=true;sky.godRays=true;sky.coverage=skyShot_->coverage;
+        post_.setPhysicalSky(sky);post_.setPhysicalSkyTime(30.0);
+        const float e=skyShot_->elevationDeg*0.0174533f,a=skyShot_->azimuthDeg*0.0174533f;
+        renderer_.lighting.sunDir={std::cos(e)*std::sin(a),std::sin(e),std::cos(e)*std::cos(a)};
+        renderer_.lighting.sunColor=skyShot_->sunColor;renderer_.lighting.sunIntensity=1.3f;
+    }
     renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):static_cast<PostProcess*>(&post_));
     renderer_.resolvePrisma();
     lightingRuntime_.presented();
