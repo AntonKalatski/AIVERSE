@@ -37,7 +37,7 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
         if(proxies.size()>=2000)break;
         if(!node.hasPosition)continue;
         StudioDocumentProxy p;
-        p.id=studioDocumentId(node.ref,map);
+        p.id=studioDocumentId(map,node.ref);
         p.center={float(node.position.x),float(node.position.y),float(node.position.z)};
         switch(node.ref.source) {
           case editor::DocumentEntityRef::Source::MapLight:
@@ -56,7 +56,7 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
            if(editor::authoredEntity(*source)) {
                const auto t=editor::authoredLocalTransform(*source);
                p.center.y=float(t.position.y.toDouble())+.6f;
-               p.yaw=float(source->extra["components"]["Transform"].getFx("yaw").toDouble()*3.141592653589793/180.0);
+               p.yaw=float(editor::authoredRotationDegrees(*source)[1]*3.141592653589793/180.0);
            }
             p.color=source->owner==0 ? render::float4{.65f,.75f,.84f,1} :
                     source->owner==1 ? render::float4{.44f,.70f,.98f,1} :

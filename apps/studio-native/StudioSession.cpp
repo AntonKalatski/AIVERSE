@@ -1,3 +1,4 @@
+#include <regex>
 #include "apps/editor/AuthoringWater.h"
 #include "StudioHumanCharacterBuild.h"
 #include "StudioSession.h"
@@ -53,7 +54,7 @@ Json numericProp(const char* key, const char* label, Json value, bool integer = 
     if (integer) r.set("integer", Json::fromBool(true));
     return r;
 }
-std::string nodeId(const editor::DocumentEntityRef& ref,const editor::MapDoc& map) { return studioDocumentId(ref,map); }
+std::string nodeId(const editor::MapDoc& map,const editor::DocumentEntityRef& ref) { return studioDocumentId(map,ref); }
 // Resolve native picker/CLI inputs before locating the project-local journal.
 // Workspace supports directories, manifest/project files and sample template IDs.
 std::string recoveredProjectDir(const editor::Workspace& ws,const std::string& input) {
@@ -90,21 +91,20 @@ Json StudioSession::propertiesFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     Json fields = Json::array();
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-        if (nodeId(node.ref,ws_.map) != entityId) continue;
+        if (nodeId(ws_.map,node.ref) != entityId) continue;
         if(node.ref.isLight()) {
-                const auto& light=*editor::documentLight(ws_.map,node.ref);
-                fields.push(prop("name","Name","text",str(light.getStr("name"))));
-                auto type=prop("type","Light type","text",str(light.getStr("type","point")));
-                type.set("options",Json::parse(R"([{"label":"Point","value":"point"},{"label":"Spot","value":"spot"}])"));fields.push(type);
-                for(const auto& [key,label,def,lo,hi]:std::vector<std::tuple<const char*,const char*,double,double,double>>{
-                    {"x","Position X",0,-1000000,1000000},
-                    {"height",ws_.project.isFps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
-                    auto field=numericProp(key,label,Json::number(light[key].toDouble(def),3));
-                    field.set("min",Json::number(lo));field.set("max",Json::number(hi));fields.push(field);
-                }
-                fields.push(prop("nightOnly","Night only","boolean",Json::fromBool(light.getBool("nightOnly"))));
-                fields.push(prop("electric","Electric","boolean",Json::fromBool(light.getBool("electric"))));
-            return fields;
+            const auto& light=*editor::documentLight(ws_.map,node.ref);
+            fields.push(prop("name","Name","text",str(light.getStr("name"))));
+            auto type=prop("type","Light type","text",str(light.getStr("type","point")));
+            type.set("options",Json::parse(R"([{"label":"Point","value":"point"},{"label":"Spot","value":"spot"}])"));fields.push(type);
+            for(const auto& [key,label,def,lo,hi]:std::vector<std::tuple<const char*,const char*,double,double,double>>{
+                {"x","Position X",0,-1000000,1000000},
+                {"height",ws_.project.isFps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
+                auto field=numericProp(key,label,Json::number(light[key].toDouble(def),3));
+                field.set("min",Json::number(lo));field.set("max",Json::number(hi));fields.push(field);
+            }
+            fields.push(prop("nightOnly","Night only","boolean",Json::fromBool(light.getBool("nightOnly"))));
+            fields.push(prop("electric","Electric","boolean",Json::fromBool(light.getBool("electric"))));
         } else if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
             const auto& e = ws_.map.data.entities.at(node.ref.index);
             fields.push(prop("type", "Type", "text", str(e.type)));
@@ -148,6 +148,9 @@ Json genericField(const std::string& key,const Json& value) {
     else {r.set("type",str("text"));r.set("value",str(value.dump(-1)));}
     return r;
 }
+// Map "facing" is clockwise degrees seen from above; Transform rotation Y is
+// right-handed (counter-clockwise). Both normalized to [0,360).
+double studioFacingToYaw(double facing){double y=std::fmod(360.0-std::fmod(facing,360.0),360.0);return y<0?y+360.0:y;}
 bool studioModelAssetPath(const std::string& path) {
     if(path.rfind("content/",0)!=0 || path.size()>512 || path.find("..")!=std::string::npos || path.find('\\')!=std::string::npos)
         return false;
@@ -156,10 +159,62 @@ bool studioModelAssetPath(const std::string& path) {
     return ext==".glb" || ext==".gltf" || ext==".obj";
 }
 }
+// Legacy map unit -> authored entity with an explicit Transform that keeps it
+// exactly where/how it stands now (terrain height, runtime facing).
+editor::DocEntity StudioSession::promotedAuthored(int index) const {
+    const auto& source=ws_.map.data.entities.at(size_t(index));
+    auto candidate=source;
+    if(editor::authoredEntity(source))return candidate;
+    Json t=Json::object();
+    t.set("y",Json::number(source.at.isNull()?double(terrainPreviewHeight(ws_.map.data,source.x,source.z,
+        float(ws_.project.rules.levelHeight.toDouble()))):0.0,4));
+    if(source.extra["facing"].isNumber())t.set("yaw",Json::number(studioFacingToYaw(source.extra["facing"].toDouble()),3));
+    auto components=candidate.extra["components"].isObject()?candidate.extra["components"]:Json::object();
+    components.set("Transform",t);candidate.extra.set("components",components);
+    return candidate;
+}
+Json StudioSession::componentCatalog(const std::string& entityId) const {
+    Json out=Json::array();
+    auto item=[&](const char* id,const char* title,const char* group,const char* hint,const char* action,bool available,const char* reason) {
+        Json o=Json::object();o.set("id",str(id));o.set("title",str(title));o.set("group",str(group));o.set("hint",str(hint));
+        o.set("action",str(action));o.set("available",Json::fromBool(available));if(reason&&*reason)o.set("reason",str(reason));out.push(o);
+    };
+    if(entityId.compare(0,7,"entity:")!=0) {
+        item("Transform","Transform","Core","Position, rotation, scale","native",false,"Already on this entity");
+        return out;
+    }
+    const auto& e=ws_.map.data.entities.at(size_t(indexFor(entityId)));
+    const auto& comps=e.extra["components"];
+    const bool water=comps.has("NereidWater");
+    item("Transform","Transform","Core","Position, rotation, scale","native",false,"Already on this entity");
+    item("MeshRenderer","Mesh Renderer","Rendering","Model and material slots (built-in cube by default)","native",
+        !comps.has("StaticModel") && !water,comps.has("StaticModel")?"Already on this entity":water?"Water entities are drawn by NEREID":
+        (editor::authoredEntity(e)?"":"Replaces the look from rules.json for this entity only"));
+    item("Light","Point Light","Rendering","Adds a light entity at this position","light",true,"");
+    item("NereidWater","NEREID Water","World","Rivers, lakes and sea are authored in World › NEREID Water","water",false,"Create water from the NEREID Water panel");
+    item("Unit","Unit","Gameplay","Type, owner and stats come from rules.json","native",false,"Defined by the entity type");
+    return out;
+}
+bool StudioSession::documentHas(const std::string& id) const {
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps()))
+        if (nodeId(ws_.map,node.ref) == id) return true;
+    return false;
+}
+std::vector<std::string> StudioSession::selectedObjectIds() const {
+    std::vector<std::string> out;
+    if(selected_.empty())return out;
+    for(const auto& id:selection_)if(id!=selected_ && documentHas(id) && std::find(out.begin(),out.end(),id)==out.end())out.push_back(id);
+    out.push_back(selected_);
+    return out;
+}
+void StudioSession::dropOrdinalFlags() {
+    auto prune=[](std::set<std::string>& set){for(auto it=set.begin();it!=set.end();)it=it->rfind("entity:@",0)==0?std::next(it):set.erase(it);};
+    prune(hidden_);prune(locked_);
+}
 Json StudioSession::inspectorFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-        if (nodeId(node.ref,ws_.map) != entityId) continue;
+        if (nodeId(ws_.map,node.ref) != entityId) continue;
         Json result=Json::object(),components=Json::array();
         result.set("id",str(entityId));result.set("name",str(node.label));
         if(node.ref.isLight()) {
@@ -181,32 +236,33 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
             result.set("kind",str(e.type));
             const auto& comps=e.extra["components"];
             Json transform=Json::array();
+            // Full 3D Transform for every map entity. Legacy units show their ground
+            // height and runtime facing; the first Y/rotation/scale edit writes an
+            // explicit components.Transform (see setProperty).
+            const double levelHeight=ws_.project.rules.levelHeight.toDouble();
+            const double ground=e.at.isNull()?terrainPreviewHeight(ws_.map.data,e.x,e.z,float(levelHeight)):0.0;
+            const auto rotation=authored?editor::authoredRotationDegrees(e):
+                std::array<double,3>{0.0,studioFacingToYaw(e.extra["facing"].toDouble(0)),0.0};
+            const auto scale=authored?editor::authoredScale3(e):std::array<double,3>{1.0,1.0,1.0};
+            const bool water=comps.has("NereidWater");
             transform.push(numericProp("x","Position X",Json::number(double(e.x),4)));
-            if(authored) {
-                const auto& t=comps["Transform"];
-                transform.push(numericProp("y","Position Y",t.has("y")?t["y"]:Json::number(0.0)));
-            } else {
-                // Map units stand on the terrain: Y is the ground height the Scene uses.
-                const double ground=e.at.isNull()?terrainPreviewHeight(ws_.map.data,e.x,e.z,
-                    float(ws_.project.rules.levelHeight.toDouble())):0.0;
-                auto y=readOnly(numericProp("y","Position Y",Json::number(ground,3)));
-                y.set("description",str("Terrain height: map units are placed on the ground."));
-                transform.push(y);
-            }
+            transform.push(numericProp("y","Position Y",authored?Json::number(comps["Transform"]["y"].toDouble(0),4):Json::number(ground,4)));
             transform.push(numericProp("z","Position Z",Json::number(double(e.z),4)));
-            if(authored && !comps.has("NereidWater")) {
-                const auto& t=comps["Transform"];
-                transform.push(numericProp("yaw","Rotation Y",t.has("yaw")?t["yaw"]:Json::number(0.0)));
-                auto scale=numericProp("scale","Scale",t.has("scale")?t["scale"]:Json::number(1.0));
-                scale.set("min",Json::number(.001));scale.set("max",Json::number(10000.0));transform.push(scale);
-            } else if(!authored) {
-                // Runtime reads map "facing" (degrees, clockwise from north) for initial rotation.
-                auto facing=numericProp("facing","Rotation Y",Json::number(e.extra["facing"].toDouble(0),3));
-                facing.set("min",Json::number(int64_t(0)));facing.set("max",Json::number(int64_t(360)));facing.set("step",Json::number(int64_t(1)));
-                transform.push(facing);
-                auto scale=readOnly(numericProp("scale","Scale",Json::number(1.0)));
-                scale.set("description",str("Map units use their type's scale; per-instance scale is not supported by the RTS runtime yet."));
-                transform.push(scale);
+            const char* rotKeys[3]={"rotationX","rotationY","rotationZ"};
+            const char* rotLabels[3]={"Rotation X","Rotation Y","Rotation Z"};
+            const char* scaleKeys[3]={"scaleX","scaleY","scaleZ"};
+            const char* scaleLabels[3]={"Scale X","Scale Y","Scale Z"};
+            for(int i=0;i<3;++i){
+                auto r=numericProp(rotKeys[i],rotLabels[i],Json::number(rotation[size_t(i)],3));
+                r.set("min",Json::number(int64_t(-360000)));r.set("max",Json::number(int64_t(360000)));r.set("step",Json::number(int64_t(1)));
+                if(water)r=readOnly(r);
+                transform.push(r);
+            }
+            for(int i=0;i<3;++i){
+                auto sc=numericProp(scaleKeys[i],scaleLabels[i],Json::number(scale[size_t(i)],4));
+                sc.set("min",Json::number(.001));sc.set("max",Json::number(10000.0));
+                if(water)sc=readOnly(sc);
+                transform.push(sc);
             }
             components.push(component("Transform","Transform",transform));
             // Mesh Renderer: authored StaticModel (editable) or the type's view (read-only).
@@ -214,16 +270,17 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
             Json mesh=Json::array();
             const Json library=editor::loadMaterialLibrary(ws_);
             Json options=Json::array();
-            {Json none=Json::object();none.set("label",str("(model default)"));none.set("value",str(""));options.push(none);}
+            {Json none=Json::object();none.set("label",str("Default (owner colour)"));none.set("value",str(""));options.push(none);}
             for(const auto& [name,value]:library.members()){(void)value;Json o=Json::object();o.set("label",str(name));o.set("value",str(name));options.push(o);}
             if(comps.has("StaticModel") || authored) {
                 const std::string asset=editor::authoredModelAsset(e);
-                Json field=prop("asset","Mesh","asset",str(asset),authored);
+                // No mesh = the built-in cube the Scene actually draws.
+                Json field=prop("asset","Mesh","asset",str(asset.empty()?"builtin:cube":asset),authored);
                 Json kinds=Json::array();kinds.push(str("model"));field.set("assetKinds",kinds);
                 mesh.push(field);
                 const Json& overrides=comps["StaticModel"]["materials"];
                 std::vector<std::string> slots;
-                if(materialSlots_ && !asset.empty())slots=materialSlots_(asset);
+                if(materialSlots_ && asset.rfind("content/",0)==0)slots=materialSlots_(asset);
                 if(slots.empty())slots.push_back("*");
                 for(const auto& [name,value]:overrides.members())
                     if(std::find(slots.begin(),slots.end(),name)==slots.end())slots.push_back(name);
@@ -233,13 +290,12 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
                     Json f=prop(key.c_str(),label.c_str(),"text",str(overrides[slot].isString()?overrides[slot].str():""),authored);
                     f.set("options",options);mesh.push(f);
                 }
-                components.push(component("MeshRenderer","Mesh Renderer",mesh,
-                    asset.empty()?"No mesh assigned: the Scene shows a proxy box.":""));
+                components.push(component("MeshRenderer","Mesh Renderer",mesh));
             } else {
                 const Json& model=view["model"];
                 std::string path=model.isString()?model.str():model.isArray()&&model.size()?
                     (model[size_t(0)].isString()?model[size_t(0)].str():model[size_t(0)].getStr("file")):"";
-                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"(none)":path))));
+                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"Cube (built-in)":path))));
                 for(const auto& [slot,ref]:view["materials"].members())
                     mesh.push(readOnly(prop(("material:"+slot).c_str(),(slot=="*"?std::string("Material (all slots)"):"Material · "+slot).c_str(),
                         "text",str(ref.isString()?ref.str():ref.dump(-1)))));
@@ -290,7 +346,8 @@ Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json&
     Json model=components["StaticModel"].isObject()?components["StaticModel"]:Json::object();
     if(key=="asset") {
         std::string path=value.str();
-        if(!path.empty() && path.rfind("content/",0)!=0) {
+        if(path=="builtin:cube")path.clear(); // default primitive: no explicit asset
+        if(!path.empty() && path!="builtin:sphere" && path.rfind("content/",0)!=0) {
             // The shared asset picker returns stable GUIDs; documents keep content paths.
             if(!studioValidGuid(path))throw std::runtime_error("Mesh must be a content/ path or asset GUID");
             StudioAssetCatalog catalog(ws_.project.dir);
@@ -298,7 +355,8 @@ Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json&
             if(!entry || entry->directory)throw std::runtime_error("Asset GUID not found; refresh Assets");
             path="content/"+entry->path;
         }
-        if(!path.empty()) {
+        if(path=="builtin:sphere") model.set("asset",str(path));
+        else if(!path.empty()) {
             if(!studioModelAssetPath(path))throw std::runtime_error("Mesh must be a .glb, .gltf or .obj file in content/");
             if(!std::filesystem::is_regular_file(std::filesystem::path(ws_.project.dir)/path))
                 throw std::runtime_error("Mesh file does not exist: "+path);
@@ -315,7 +373,8 @@ Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json&
         }
         if(materials.size())model.set("materials",materials); else model.erase("materials");
     } else throw std::runtime_error("Unknown Mesh Renderer property");
-    if(model.size())components.set("StaticModel",model); else components.erase("StaticModel");
+    // An empty StaticModel stays: it is the explicit Mesh Renderer drawing the built-in cube.
+    components.set("StaticModel",model);
     candidate.extra.set("components",components);
     if(candidate.extra!=source.extra) {
         ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
@@ -335,13 +394,16 @@ Json StudioSession::snapshot() const {
     const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps());
     for (const auto& node : nodes) {
         Json row = Json::object();
-        row.set("id", str(nodeId(node.ref,ws_.map)));
+        row.set("id", str(nodeId(ws_.map,node.ref)));
         row.set("name", str(node.label));
         // UI receives only generic display kind; document source names remain native.
         row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
             ? (node.ref.index < ws_.map.data.entities.size() ? ws_.map.data.entities[node.ref.index].type : "Entity")
             : node.ref.isLight()?"Light":node.ref.source == editor::DocumentEntityRef::Source::FpsCollider ? "Collider" : "Spawn"));
-        row.set("visible", Json::fromBool(true));
+        row.set("visible", Json::fromBool(!hidden_.count(nodeId(ws_.map,node.ref))));
+        if(locked_.count(nodeId(ws_.map,node.ref)))row.set("locked",Json::fromBool(true));
+        if(node.ref.source==editor::DocumentEntityRef::Source::MapEntity && node.ref.index<ws_.map.data.entities.size())
+            row.set("owner",num(int64_t(ws_.map.data.entities[node.ref.index].owner)));
         rows.push(std::move(row));
     }
     scene.set("entities", std::move(rows));
@@ -350,21 +412,12 @@ Json StudioSession::snapshot() const {
     bool valid = false;
     if (!selected_.empty()) {
         for (const auto& node : nodes) {
-            if (nodeId(node.ref,ws_.map) != selected_) continue;
+            if (nodeId(ws_.map,node.ref) != selected_) continue;
             valid = true;
+            fields = propertiesFor(selected_);
             if(node.ref.isLight()) {
-                const auto& light=*editor::documentLight(ws_.map,node.ref);
-                fields.push(prop("name","Name","text",str(light.getStr("name"))));
-                auto type=prop("type","Light type","text",str(light.getStr("type","point")));
-                type.set("options",Json::parse(R"([{"label":"Point","value":"point"},{"label":"Spot","value":"spot"}])"));fields.push(type);
-                for(const auto& [key,label,def,lo,hi]:std::vector<std::tuple<const char*,const char*,double,double,double>>{
-                    {"x","Position X",0,-1000000,1000000},
-                    {"height",ws_.project.isFps()?"Position Y":"Height above terrain",1,-1000,10000},{"z","Position Z",0,-1000000,1000000},{"radius","Radius",4,.001,100000},{"intensity","Intensity",1.5,0,10000}}) {
-                    auto field=numericProp(key,label,Json::number(light[key].toDouble(def),3));
-                    field.set("min",Json::number(lo));field.set("max",Json::number(hi));fields.push(field);
-                }
-                fields.push(prop("nightOnly","Night only","boolean",Json::fromBool(light.getBool("nightOnly"))));
-                fields.push(prop("electric","Electric","boolean",Json::fromBool(light.getBool("electric"))));
+                // Light entities expose Entity/Transform/Light components over the
+                // same canonical document object; no separate light state exists.
                 for(const auto& descriptor:editor::documentComponents(ws_.map,node.ref)) {
                     Json component=Json::object(),properties=Json::array();
                     component.set("id",str(descriptor.id));component.set("title",str(descriptor.title));
@@ -377,19 +430,12 @@ Json StudioSession::snapshot() const {
                     component.set("properties",properties);componentViews.push(component);
                 }
                 entityFields.push(fields[0]);fields=Json::array();
-            } else if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
-                fields=propertiesFor(selected_);
-            } else if (node.hasPosition) {
-                // Show authoritative collider/spawn coordinates, but don't pretend
-                // unsupported authoring operations are writable yet.
-                fields.push(numericProp("x", "Position X", Json::number(node.position.x, 3)));
-                fields.push(numericProp("y", "Position Y", Json::number(node.position.y, 3)));
-                fields.push(numericProp("z", "Position Z", Json::number(node.position.z, 3)));
             }
             break;
         }
     }
     result.set("selectedId", valid ? str(selected_) : Json());
+    {Json ids=Json::array();for(const auto& id:selectedObjectIds())ids.push(str(id));result.set("selectedIds",std::move(ids));}
     result.set("properties", std::move(fields));
     result.set("components",std::move(componentViews));
     result.set("entityProperties",std::move(entityFields));
@@ -451,7 +497,7 @@ Json StudioSession::openProject(const std::string& path) {
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
     (void)studioContentRoot(ws_.project.dir);
     pendingAssetTransfer_.reset();
-    selected_.clear();
+    clearSelection();hidden_.clear();locked_.clear();
     facialPreview_.reset(); // project identity may change; never reuse prior GUID
     previewMaterialName_.clear();
     refreshMaterialPreview();
@@ -468,6 +514,106 @@ int StudioSession::selectedEntityIndex() const {
     try { return indexFor(selected_); }
     catch (const std::exception&) { return -1; }
 }
+namespace {
+// Build panel targets (aiversebuild --target); "all" is left to the command line.
+const char* const kBuildTargets[][2] = {
+    {"macos", "macOS (.app)"}, {"ios", "iOS"}, {"android", "Android"}, {"web", "Web (HTML5)"},
+    {"windows", "Windows (.exe)"}, {"linux", "Linux"}};
+bool knownBuildTarget(const std::string& target) {
+    for (const auto& t : kBuildTargets) if (target == t[0]) return true;
+    return false;
+}
+}
+// Publish / Build: aiversebuild runs in the background through the Workspace build runner (the same
+// one the legacy Build window and the MCP build_start use); the panel polls the log by offset.
+Json StudioSession::buildRequest(const std::string& method, const Json& params) {
+    namespace fs = std::filesystem;
+    if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+    const fs::path builds = fs::path(ws_.project.dir) / "Builds";
+    if (method == "studio.buildInfo") {
+        Json out = Json::object(), targets = Json::array();
+        for (const auto& t : kBuildTargets) {
+            Json v = Json::object();
+            v.set("id", str(t[0])); v.set("name", str(t[1]));
+            std::error_code ec;
+            v.set("built", Json::fromBool(fs::is_directory(builds / t[0], ec)));
+            targets.push(std::move(v));
+        }
+        out.set("targets", targets);
+        std::error_code ec;
+        const bool toolFound = !ws_.buildTool.empty() && fs::is_regular_file(ws_.buildTool, ec);
+        out.set("toolFound", Json::fromBool(toolFound));
+        out.set("outDir", str(builds.string()));
+        out.set("running", Json::fromBool(ws_.building()));
+        out.set("label", str(ws_.runLabel()));
+        out.set("exitCode", Json::number(int64_t(ws_.buildResult())));
+        out.set("runs", Json::number(int64_t(ws_.runCount())));
+        out.set("dirty", Json::fromBool(ws_.map.dirty || ws_.project.rulesDirty || ws_.project.manifestDirty));
+        const Json& m = ws_.project.manifest;
+        Json identity = Json::object();
+        identity.set("name", str(m.getStr("name"))); identity.set("id", str(m.getStr("id")));
+        identity.set("version", str(m.getStr("version"))); identity.set("build", Json::number(m["build"].integer(0)));
+        identity.set("orientation", str(m.getStr("orientation")));
+        out.set("identity", std::move(identity));
+        return out;
+    }
+    const std::string target = params.getStr("target");
+    if (method == "studio.buildToolchain") {
+        if (!knownBuildTarget(target)) throw std::runtime_error("Unknown build target");
+        return ws_.toolchainCheck(target);
+    }
+    if (method == "studio.buildStart") {
+        if (!knownBuildTarget(target)) throw std::runtime_error("Unknown build target");
+        const std::string config = params.getStr("config", "Release");
+        if (config != "Release" && config != "Debug") throw std::runtime_error("Unknown build configuration");
+        // A build packs the files on disk: never save implicitly from here.
+        if (ws_.map.dirty || ws_.project.rulesDirty || ws_.project.manifestDirty)
+            throw std::runtime_error("Save the project before building");
+        if (params.getBool("estimate"))
+            ws_.startBuild(target, config, "--estimate --out '" + (builds / ".temp" / "estimate").string() + "'");
+        else ws_.startBuild(target, config, params.getBool("installMissing") ? "--install-missing" : "");
+        Json out = Json::object(); out.set("started", Json::fromBool(true));
+        return out;
+    }
+    if (method == "studio.buildLog") {
+        const std::string log = ws_.buildLog();
+        // Offsets are UTF-8 bytes (the log is Russian/English text): never split a character,
+        // the reply must stay valid UTF-8. The client continues from `next`.
+        size_t from = size_t(std::clamp<int64_t>(params["from"].integer(0), 0, int64_t(log.size())));
+        while (from < log.size() && (static_cast<unsigned char>(log[from]) & 0xC0) == 0x80) ++from;
+        constexpr size_t kChunk = 256 * 1024;
+        size_t end = std::min(log.size(), from + kChunk);
+        while (end < log.size() && end > from && (static_cast<unsigned char>(log[end]) & 0xC0) == 0x80) --end;
+        Json out = Json::object();
+        out.set("from", Json::number(int64_t(from)));
+        out.set("next", Json::number(int64_t(end)));
+        out.set("text", str(log.substr(from, end - from)));
+        out.set("size", Json::number(int64_t(log.size())));
+        out.set("running", Json::fromBool(ws_.building()));
+        out.set("label", str(ws_.runLabel()));
+        out.set("exitCode", Json::number(int64_t(ws_.buildResult())));
+        out.set("runs", Json::number(int64_t(ws_.runCount())));
+        out.set("logFile", str(ws_.lastLogFile()));
+        return out;
+    }
+    // studio.buildEstimate: the size report of the last estimate run for `target`.
+    if (!knownBuildTarget(target)) throw std::runtime_error("Unknown build target");
+    const fs::path report = builds / ".temp" / "estimate" / target / "size-report.json";
+    std::error_code ec;
+    if (!fs::is_regular_file(report, ec)) throw std::runtime_error("No size estimate yet for " + target);
+    const Json rep = Json::parseFile(report.string());
+    Json out = Json::object();
+    out.set("target", str(target));
+    out.set("pack", rep["pack"]); out.set("atlas", rep["atlas"]);
+    if (rep.has("split")) out.set("split", rep["split"]);
+    std::vector<const Json*> all;
+    for (const auto& f : rep["files"].items()) all.push_back(&f);
+    std::stable_sort(all.begin(), all.end(), [](const Json* a, const Json* b) { return (*a)["storedBytes"].integer() > (*b)["storedBytes"].integer(); });
+    Json files = Json::array();
+    for (size_t i = 0; i < all.size() && i < 25; ++i) files.push(*all[i]);
+    out.set("heaviest", files);
+    return out;
+}
 Json StudioSession::dispatch(const Json& request) {
     Json reply = Json::object();
     reply.set("id", request["id"]);
@@ -479,7 +625,7 @@ Json StudioSession::dispatch(const Json& request) {
             if(!params["entityId"].isString())throw std::runtime_error("Invalid light entity ID");
             bool found=false;
             for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
-                if(node.ref.isLight() && nodeId(node.ref,ws_.map)==params.getStr("entityId")) {
+                if(node.ref.isLight() && nodeId(ws_.map,node.ref)==params.getStr("entityId")) {
                     params.set("index",num(int64_t(node.ref.index)));found=true;break;
                 }
             if(!found)throw std::runtime_error("Light entity no longer exists");
@@ -607,7 +753,7 @@ Json StudioSession::dispatch(const Json& request) {
                 at.set("x",Json::number(double(ws_.map.data.w)/2));at.set("z",Json::number(double(ws_.map.data.h)/2));at.set("owner",Json::number(1.));
                 const Json put=ws_.call("entity_place",at,"studio");
                 placed=!put.has("error");
-                if(placed)selected_="entity:"+std::to_string(ws_.map.data.entities.size()-1);
+                if(placed)selectOnly("entity:"+std::to_string(ws_.map.data.entities.size()-1));
             }
             auto result=Json::object();result.set("type",Json::string(type));result.set("model",Json::string(viewPath));result.set("placed",Json::fromBool(placed));
             reply.set("result",std::move(result));
@@ -1010,6 +1156,14 @@ Json StudioSession::dispatch(const Json& request) {
             Json result=Json::object();
             result.set("library",library);
             reply.set("result",std::move(result));
+        } else if(method=="studio.nereidFlow"||method=="studio.nereidFlowSet"){
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(ws_.project.isFps())throw std::runtime_error("NEREID authoring currently requires a flat map");
+            if(method=="studio.nereidFlowSet"){
+                if(!params["mode"].isString())throw std::runtime_error("Choose current mode");
+                editor::editAuthoredWaterFlow(ws_.map,params);
+            }
+            reply.set("result",world::nereidFlowState(editor::authoredWaterDocument(ws_.map)));
         } else if(method=="studio.renderLighting" || method=="studio.renderLightingSet") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             const Json current=ws_.map.toJson();
@@ -1032,14 +1186,10 @@ Json StudioSession::dispatch(const Json& request) {
                 }
             }
             reply.set("result",settings);
-        } else if(method=="studio.nereidFlow"||method=="studio.nereidFlowSet"){
-            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
-            if(ws_.project.isFps())throw std::runtime_error("NEREID authoring currently requires a flat map");
-            if(method=="studio.nereidFlowSet"){
-                if(!params["mode"].isString())throw std::runtime_error("Choose current mode");
-                editor::editAuthoredWaterFlow(ws_.map,params);
-            }
-            reply.set("result",world::nereidFlowState(editor::authoredWaterDocument(ws_.map)));
+        } else if(method=="studio.wind"||method=="studio.windSet"){
+            // Presentation-only preview: never touches the map or project files.
+            if(method=="studio.windSet")applyStudioWindPatch(wind_,params);
+            reply.set("result",studioWindJson(wind_,ws_.project.dir,windSceneStats_));
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
@@ -1072,8 +1222,9 @@ Json StudioSession::dispatch(const Json& request) {
             } else if (method == "studio.lightAdd") {
                 Json input = Json::object();
                 // New authored lights go to map center for flat maps; FPS origin otherwise.
-                const double x = ws_.project.isFps() ? 0.0 : double(ws_.map.data.w) * 0.5;
-                const double z = ws_.project.isFps() ? 0.0 : double(ws_.map.data.h) * 0.5;
+                // Optional x/z (Inspector › Add Component › Light at the entity); else map center.
+                const double x = params["x"].isNumber() ? params["x"].toDouble() : ws_.project.isFps() ? 0.0 : double(ws_.map.data.w) * 0.5;
+                const double z = params["z"].isNumber() ? params["z"].toDouble() : ws_.project.isFps() ? 0.0 : double(ws_.map.data.h) * 0.5;
                 if (!validLightScalar("x",x) || !validLightScalar("z",z))
                     throw std::runtime_error("Map coordinates out of range");
                 input.set("x", Json::number(x,3));
@@ -1270,18 +1421,99 @@ Json StudioSession::dispatch(const Json& request) {
             item.set("settings",entry->settings);
             reply.set("result",std::move(item));
         } else if (method == "studio.select") {
-            const Json& id = params["id"];
-            if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
-            const std::string next = id.isNull() ? "" : id.str();
-            if (!next.empty()) {
-                bool found = false;
-                for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-                    if (nodeId(node.ref,ws_.map) == next) { found = true; break; }
-                }
-                if (!found) throw std::runtime_error("Selection refers to an unknown document entity");
+            // mode: replace (default) | add | toggle; `ids` selects several at once (marquee).
+            const std::string mode=params.getStr("mode","replace");
+            if(mode!="replace" && mode!="add" && mode!="toggle")throw std::runtime_error("Invalid selection mode");
+            std::vector<std::string> ids;
+            if(params["ids"].isArray()) {
+                if(params["ids"].size()>100000)throw std::runtime_error("Selection too large");
+                for(const auto& v:params["ids"].items()){if(!v.isString())throw std::runtime_error("Invalid selection");ids.push_back(v.str());}
+            } else {
+                const Json& id = params["id"];
+                if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
+                if(id.isString() && !id.str().empty())ids.push_back(id.str());
             }
-            selected_ = next;
+            for(const auto& id:ids)if(!documentHas(id))throw std::runtime_error("Selection refers to an unknown document entity");
+            std::vector<std::string> current=mode=="replace"?std::vector<std::string>{}:selectedObjectIds();
+            for(const auto& id:ids) {
+                const auto at=std::find(current.begin(),current.end(),id);
+                if(mode=="toggle" && at!=current.end()){current.erase(at);continue;}
+                if(at!=current.end())current.erase(at);
+                current.push_back(id); // last = primary
+            }
+            if(current.empty())clearSelection();
+            else {selected_=current.back();current.pop_back();selection_=std::move(current);}
             reply.set("result", snapshot());
+        } else if (method == "studio.entitiesDelete" || method == "studio.entitiesDuplicate") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            std::vector<int> indices;
+            for(const auto& v:params["entityIds"].items()) {
+                if(!v.isString() || v.str().compare(0,7,"entity:")!=0)continue; // lights/colliders: not map entities
+                const int index=indexFor(v.str());
+                if(std::find(indices.begin(),indices.end(),index)==indices.end())indices.push_back(index);
+            }
+            if(indices.empty())throw std::runtime_error("Select map entities first");
+            if(method=="studio.entitiesDuplicate") {
+                const auto copies=editor::worldedit::duplicate(ws_.map,indices);
+                if(copies.empty())throw std::runtime_error("Unable to duplicate entities");
+                std::vector<std::string> next;
+                for(const int c:copies)next.push_back(studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(c)),ws_.map));
+                selected_=next.back();next.pop_back();selection_=std::move(next);
+            } else {
+                std::sort(indices.rbegin(),indices.rend()); // highest first: lower indices stay valid
+                const size_t depth=ws_.map.undoDepth();
+                try {
+                    for(const int index:indices) {
+                        Json args=Json::object(); args.set("index",num(index));
+                        const Json result=ws_.call("entity_delete",args,"studio");
+                        if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                    }
+                } catch(...) { ws_.map.abandonSince(depth); throw; }
+                ws_.map.mergeUndoSince(depth);
+                clearSelection();dropOrdinalFlags();
+            }
+            reply.set("result",snapshot());
+        } else if (method == "studio.entityFlags") {
+            // Editor-only Hierarchy flags (not saved): hide from the Scene, lock against picking.
+            for(const auto& v:params["entityIds"].items()) {
+                if(!v.isString() || !documentHas(v.str()))throw std::runtime_error("Unknown document entity");
+                for(const auto& [key,set]:{std::pair<const char*,std::set<std::string>*>{"hidden",&hidden_},{"locked",&locked_}}) {
+                    const Json& flag=params[key];
+                    if(flag.isNull())continue;
+                    if(!(flag.boolean(false)==flag.boolean(true)))throw std::runtime_error("Flags must be booleans");
+                    if(flag.boolean())set->insert(v.str()); else set->erase(v.str());
+                }
+            }
+            reply.set("result",snapshot());
+        } else if (method == "studio.assetPlace") {
+            // Drop a model from Assets into the Scene: a new authored entity with
+            // Transform + StaticModel. Needs a scenery type in rules.json.
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            const std::string asset=params.getStr("asset");
+            for(const char* key:{"x","z"}){const double v=params[key].toDouble(NAN);if(!std::isfinite(v)||std::abs(v)>1000000)throw std::runtime_error("Drop position out of range");}
+            std::string type;
+            for(const char* candidate:{"prop","props","decor","decoration","scenery","doodad","static"})
+                if(ws_.project.rules.findType(candidate)>=0){type=candidate;break;}
+            if(type.empty() && !selected_.empty() && selected_.compare(0,7,"entity:")==0)
+                type=ws_.map.data.entities.at(size_t(indexFor(selected_))).type;
+            if(type.empty())throw std::runtime_error("Add a scenery type (\"prop\") to rules.json, or select an entity whose type to use");
+            Json place=Json::object();place.set("type",str(type));place.set("x",params["x"]);place.set("z",params["z"]);place.set("owner",num(int64_t(0)));
+            const size_t depth=ws_.map.undoDepth();
+            try {
+                const Json placed=ws_.call("entity_place",place,"studio");
+                if(placed.has("error"))throw std::runtime_error(placed.getStr("error"));
+                const int index=int(ws_.map.data.entities.size())-1;
+                auto candidate=promotedAuthored(index);
+                auto components=candidate.extra["components"];components.set("StaticModel",Json::object());candidate.extra.set("components",components);
+                ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
+                const std::string id=studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(index)));
+                if(!asset.empty())setMeshRenderer(index,"asset",str(asset)); // validates the path
+                selectOnly(id);
+            } catch(...) { ws_.map.abandonSince(depth); throw; }
+            ws_.map.mergeUndoSince(depth);
+            reply.set("result",snapshot());
         } else if (method == "studio.project") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             Json state=Json::object(),maps=Json::array();
@@ -1324,7 +1556,7 @@ Json StudioSession::dispatch(const Json& request) {
                 if (result.has("error")) throw std::runtime_error(result.getStr("error"));
                 ws_.map.touched();
             }
-            selected_.clear();previewMaterialName_.clear();refreshMaterialPreview();
+            clearSelection();hidden_.clear();locked_.clear();previewMaterialName_.clear();refreshMaterialPreview();
             reply.set("result",snapshot());
         } else if (method == "studio.entityCatalog") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
@@ -1356,7 +1588,7 @@ Json StudioSession::dispatch(const Json& request) {
                 for (const char* key : {"type","x","z","owner"}) args.set(key,params[key]);
                 const Json result=ws_.call("entity_place",args,"studio");
                 if (result.has("error")) throw std::runtime_error(result.getStr("error"));
-                selected_="entity:"+std::to_string(ws_.map.data.entities.size()-1);
+                selectOnly("entity:"+std::to_string(ws_.map.data.entities.size()-1));
             } else {
                 const std::string id=params.getStr("entityId");
                 if (selected_.empty() || id!=selected_) throw std::runtime_error("Selection changed while editing");
@@ -1365,11 +1597,11 @@ Json StudioSession::dispatch(const Json& request) {
                     Json args=Json::object(); args.set("index",num(index));
                     const Json result=ws_.call("entity_delete",args,"studio");
                     if (result.has("error")) throw std::runtime_error(result.getStr("error"));
-                    selected_.clear();
+                    clearSelection();dropOrdinalFlags();
                 } else {
                     const auto copies=editor::worldedit::duplicate(ws_.map,{index});
                     if (copies.empty()) throw std::runtime_error("Unable to duplicate entity");
-                    selected_=studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(copies.front())),ws_.map);
+                    selectOnly(studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(copies.front())),ws_.map));
                 }
             }
             reply.set("result",snapshot());
@@ -1398,7 +1630,7 @@ Json StudioSession::dispatch(const Json& request) {
                 entities=std::move(reordered);
                 for (auto& [a,b]:ws_.map.data.roads){a=newIndex[size_t(a)];b=newIndex[size_t(b)];}
                 ws_.map.touched();
-                selected_=studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(to)));
+                selectOnly(studioDocumentId(ws_.map,editor::DocumentEntityRef::mapEntity(size_t(to))));dropOrdinalFlags();
             }
             reply.set("result",snapshot());
         } else if (method == "studio.save") {
@@ -1411,17 +1643,90 @@ Json StudioSession::dispatch(const Json& request) {
         } else if (method == "studio.undo") {
             if (!ws_.map.canUndo()) throw std::runtime_error("Nothing to undo");
             ws_.map.undo();
-            selected_.clear();
+            clearSelection();dropOrdinalFlags();
             reply.set("result", snapshot());
         } else if (method == "studio.redo") {
             if (!ws_.map.canRedo()) throw std::runtime_error("Nothing to redo");
             ws_.map.redo();
-            selected_.clear();
+            clearSelection();dropOrdinalFlags();
             reply.set("result", snapshot());
         } else if (method == "studio.propertiesFor") {
             reply.set("result", propertiesFor(params.getStr("entityId")));
         } else if (method == "studio.inspect") {
             reply.set("result", inspectorFor(params.getStr("entityId")));
+        } else if (method == "studio.rules" || method == "studio.rulesSet") {
+            // Rules form: unit types as written (own fields) and resolved (with "extends").
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.rulesSet") {
+                const std::string path=params.getStr("path");
+                static const std::regex allowed(R"(^types\.[A-Za-z0-9_\-]+((\.[A-Za-z0-9_]+)|(\[[0-9]{1,4}\])){0,6}$)");
+                if (path.size()>200 || !std::regex_match(path,allowed)) throw std::runtime_error("Only unit type fields can be edited here");
+                Json args=Json::object();args.set("path",str(path));
+                const bool erase=params["value"].isNull();
+                if (!erase) args.set("value",params["value"]);
+                const Json changed=ws_.call(erase?"rules_delete":"rules_set",args,"studio");
+                if (changed.has("error")) throw std::runtime_error(changed.getStr("error"));
+            }
+            Json own=Json::object(),resolvedArgs=Json::object();own.set("path",str("types"));
+            resolvedArgs.set("path",str("types"));resolvedArgs.set("resolved",Json::fromBool(true));
+            const Json types=ws_.call("rules_get",own,"studio"), resolved=ws_.call("rules_get",resolvedArgs,"studio"),
+                       list=ws_.call("rules_list",Json::object(),"studio");
+            for (const auto* r:{&types,&resolved,&list}) if (r->has("error")) throw std::runtime_error(r->getStr("error"));
+            Json out=Json::object();
+            out.set("types",types["value"]);out.set("resolved",resolved["value"]);
+            out.set("resources",list["resources"]);out.set("summary",list["types"]);
+            out.set("dirty",Json::fromBool(ws_.project.rulesDirty));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.buildInfo" || method == "studio.buildToolchain" || method == "studio.buildStart" ||
+                   method == "studio.buildLog" || method == "studio.buildEstimate") {
+            reply.set("result", buildRequest(method, params));
+        } else if (method == "studio.componentCatalog") {
+            reply.set("result", componentCatalog(params.getStr("entityId")));
+        } else if (method == "studio.componentAdd" || method == "studio.componentRemove") {
+            const std::string entityId=params.getStr("entityId"),componentId=params.getStr("componentId");
+            if(entityId.compare(0,7,"entity:")!=0)throw std::runtime_error("Components can be changed on map entities only");
+            const int index=indexFor(entityId);
+            const auto& source=ws_.map.data.entities[size_t(index)];
+            auto candidate=source;
+            if(method=="studio.componentAdd") {
+                if(componentId!="MeshRenderer")throw std::runtime_error("This component cannot be added here");
+                if(source.extra["components"].has("StaticModel"))throw std::runtime_error("Mesh Renderer is already on this entity");
+                if(source.extra["components"].has("NereidWater"))throw std::runtime_error("Water entities are drawn by NEREID");
+                candidate=promotedAuthored(index);
+                auto components=candidate.extra["components"];components.set("StaticModel",Json::object());
+                candidate.extra.set("components",components);
+            } else {
+                const char* id=componentId=="MeshRenderer"?"StaticModel":componentId.c_str();
+                if(componentId=="Transform"||componentId=="Unit"||componentId=="NereidWater")
+                    throw std::runtime_error(componentId+" cannot be removed");
+                if(!source.extra["components"].has(id))throw std::runtime_error("Component is not on this entity");
+                auto components=candidate.extra["components"];components.erase(id);candidate.extra.set("components",components);
+            }
+            ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();
+            reply.set("result",snapshot());
+        } else if (method == "studio.setProperties") {
+            // Several properties of one component as ONE undo step (paste / reset).
+            const Json& values=params["values"];
+            if(!values.isObject() || values.members().empty())throw std::runtime_error("Missing property values");
+            if(values.members().size()>64)throw std::runtime_error("Too many properties");
+            std::vector<std::string> targets;
+            if(params["entityIds"].isArray()){for(const auto& v:params["entityIds"].items())if(v.isString())targets.push_back(v.str());}
+            else targets.push_back(params.getStr("entityId"));
+            if(targets.empty() || targets.size()>10000)throw std::runtime_error("Invalid entity list");
+            const size_t depth=ws_.map.undoDepth();
+            try {
+                for(const auto& target:targets) for(const auto& [key,value]:values.members()) {
+                    Json nested=Json::object(),input=Json::object();
+                    nested.set("id",request["id"]);nested.set("method",str("studio.setProperty"));
+                    input.set("entityId",str(target));input.set("key",str(key));input.set("value",value);
+                    if(params.has("componentId"))input.set("componentId",params["componentId"]);
+                    nested.set("params",input);
+                    const auto updated=dispatch(nested);
+                    if(updated.has("error"))throw std::runtime_error(key+": "+updated.getStr("error"));
+                }
+            } catch(...) { ws_.map.abandonSince(depth); throw; }
+            ws_.map.mergeUndoSince(depth);
+            reply.set("result",snapshot());
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
             // A pinned Inspector may edit its own explicitly addressed entity while
@@ -1437,7 +1742,7 @@ Json StudioSession::dispatch(const Json& request) {
             if(entityId.compare(0,6,"light:")==0) {
                 bool found=false;size_t index=0;
                 for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.isFps()))
-                    if(node.ref.isLight() && nodeId(node.ref,ws_.map)==entityId){index=node.ref.index;found=true;break;}
+                    if(node.ref.isLight() && nodeId(ws_.map,node.ref)==entityId){index=node.ref.index;found=true;break;}
                 if(!found)throw std::runtime_error("Light entity no longer exists");
                 const std::string owner=key=="name"?"Entity":
                     (key=="x" || key=="z" || key=="height")?"Transform":"Light";
@@ -1491,7 +1796,7 @@ Json StudioSession::dispatch(const Json& request) {
                 editor::DocumentEntityRef ref;
                 editor::DocumentTransform target{};
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, true)) {
-                    if (nodeId(node.ref,ws_.map) != entityId) continue;
+                    if (nodeId(ws_.map,node.ref) != entityId) continue;
                     if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity ||
                         !node.hasPosition)
                         throw std::runtime_error("Document position is unavailable");
@@ -1526,9 +1831,15 @@ Json StudioSession::dispatch(const Json& request) {
                 return reply;
             }
             const int index = indexFor(entityId);
-            if((key=="y"||key=="yaw"||key=="scale")&&editor::authoredEntity(ws_.map.data.entities[size_t(index)])) {
-               auto candidate=editor::editAuthoredPlacement(ws_.map.data.entities[size_t(index)],key,value);
-               if(candidate.extra!=ws_.map.data.entities[size_t(index)].extra){ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();}
+            if(editor::authoredTransformKey(key)) {
+               const auto& source=ws_.map.data.entities[size_t(index)];
+               const bool legacy=!editor::authoredEntity(source);
+               auto candidate=promotedAuthored(index);
+               candidate=editor::editAuthoredPlacement(candidate,key,value);
+               // The RTS runtime reads "facing" for the initial rotation: keep it in sync.
+               if((key=="rotationY"||key=="yaw") && (legacy || source.extra.has("facing")))
+                   candidate.extra.set("facing",Json::number(studioFacingToYaw(editor::authoredRotationDegrees(candidate)[1]),3));
+               if(candidate.extra!=source.extra){ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();}
                reply.set("result",snapshot());return reply;
            }
            if (key == "type") {

@@ -197,7 +197,7 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn('if (hasModel) continue;',scene)
         self.assertIn('clearDocumentModels();',scene)
         self.assertIn('model->skinned()',scene)
-        self.assertIn('material.alpha==render::AlphaMode::Blend',scene)
+        self.assertIn('material.alpha==render::AlphaMode::Blend',scene)  # masked rigid models are allowed
         self.assertIn('model->batching.autoLod=false',scene)
         self.assertIn('rejectedDocumentModels_',api)
         self.assertIn('documentModelTimes_',api)

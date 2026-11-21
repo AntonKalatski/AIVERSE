@@ -36,6 +36,7 @@ inline render::Material studioPbrPreviewMaterial(const Json& resolved,
     out.shadowDiffusion=previewScalar(resolved["shadowDiffusion"],0,0,1);
     out.sssStrength=previewScalar(resolved["sssStrength"],0,0,1);
     out.sssScale=previewScalar(resolved["sssScale"],.5f,0,1);
+    out.sssThickness=previewScalar(resolved["sssThickness"],0,0,1);
     out.sssColor=previewRgb(resolved["sssColor"],{1,1,1});
     out.normalScale=previewScalar(resolved["normalScale"],1,0,16);
     out.occlusionStrength=previewScalar(resolved["occlusionStrength"],1,0,1);

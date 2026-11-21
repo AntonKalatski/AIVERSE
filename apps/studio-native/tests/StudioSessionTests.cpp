@@ -1,4 +1,5 @@
 #include "apps/studio-native/StudioSession.h"
+#include "apps/editor/AuthoringComponents.h"
 #include "tests/TestCheck.h"
 #include "apps/studio-native/StudioGameLaunch.h"
 #include "apps/studio-native/StudioGameInput.h"
@@ -87,6 +88,108 @@ void authoredEntityWorkflow() {
    }
    AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
    AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))].extra["components"]["StaticModel"].has("materials"));
+   // Built-in primitives: builtin:sphere is stored, builtin:cube clears to the default cube.
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"builtin:sphere"})").has("error"));
+   AIVERSE_TEST_CHECK(session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))].extra["components"]["StaticModel"].getStr("asset")=="builtin:sphere");
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"builtin:cube"})").has("error"));
+   {
+       auto mesh=call("studio.inspect",R"({"entityId":"entity:@second"})");
+       std::string shown;
+       for(const auto& c:mesh["result"]["components"].items())if(c.getStr("id")=="MeshRenderer")
+           for(const auto& f:c["properties"].items())if(f.getStr("key")=="asset")shown=f.getStr("value");
+       AIVERSE_TEST_CHECK(shown=="builtin:cube");
+   }
+   // Batch edit (Inspector paste / reset): one undo step; a failing value rolls everything back.
+   {
+       const auto entity=[&]()->const editor::DocEntity&{return session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))];};
+       AIVERSE_TEST_CHECK(!call("studio.setProperties",R"({"entityId":"entity:@second","componentId":"Transform","values":{"rotationX":15,"scaleY":2,"y":3}})").has("error"));
+       AIVERSE_TEST_CHECK(editor::authoredRotationDegrees(entity())[0]==15 && editor::authoredScale3(entity())[1]==2);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+       AIVERSE_TEST_CHECK(editor::authoredRotationDegrees(entity())[0]==0 && editor::authoredScale3(entity())[1]==1);
+       const auto before=entity().extra.dump();
+       AIVERSE_TEST_CHECK(call("studio.setProperties",R"({"entityId":"entity:@second","componentId":"Transform","values":{"rotationX":15,"scaleY":0}})").has("error"));
+       AIVERSE_TEST_CHECK(entity().extra.dump()==before);
+       // Component catalog, remove and re-add the Mesh Renderer, each undoable.
+       const auto catalog=call("studio.componentCatalog",R"({"entityId":"entity:@second"})");
+       bool meshListed=false;for(const auto& c:catalog["result"].items())if(c.getStr("id")=="MeshRenderer")meshListed=!c.getBool("available");
+       AIVERSE_TEST_CHECK(meshListed);
+       AIVERSE_TEST_CHECK(call("studio.componentRemove",R"({"entityId":"entity:@second","componentId":"Transform"})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.componentRemove",R"({"entityId":"entity:@second","componentId":"MeshRenderer"})").has("error"));
+       AIVERSE_TEST_CHECK(!entity().extra["components"].has("StaticModel"));
+       AIVERSE_TEST_CHECK(!call("studio.componentAdd",R"({"entityId":"entity:@second","componentId":"MeshRenderer"})").has("error"));
+       AIVERSE_TEST_CHECK(entity().extra["components"]["StaticModel"].isObject());
+       AIVERSE_TEST_CHECK(call("studio.componentAdd",R"({"entityId":"entity:@second","componentId":"MeshRenderer"})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && !call("studio.undo").has("error"));
+       AIVERSE_TEST_CHECK(entity().extra["components"].has("StaticModel"));
+   }
+   // Multi-selection, group edit / duplicate / delete (one undo each), editor-only flags.
+   {
+       auto& map=session.workspace().map;
+       const size_t before=map.data.entities.size();
+       AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@second"})").has("error"));
+       const std::string other=map.data.entities[0].id=="second"?map.data.entities[1].id:map.data.entities[0].id;
+       const std::string otherId="entity:@"+other;
+       AIVERSE_TEST_CHECK(!call("studio.select",("{\"id\":\""+otherId+"\",\"mode\":\"add\"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(session.selectedObjectIds().size()==2 && session.selectedObjectId()==otherId);
+       auto snap=call("studio.snapshot");
+       AIVERSE_TEST_CHECK(snap["result"]["selectedIds"].size()==2);
+       AIVERSE_TEST_CHECK(!call("studio.select",("{\"id\":\""+otherId+"\",\"mode\":\"toggle\"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(session.selectedObjectIds().size()==1 && session.selectedObjectId()=="entity:@second");
+       AIVERSE_TEST_CHECK(call("studio.select",R"({"ids":["entity:@nope"]})").has("error"));
+       const std::string both="{\"entityIds\":[\"entity:@second\",\""+otherId+"\"]";
+       AIVERSE_TEST_CHECK(!call("studio.setProperties",(both+",\"componentId\":\"Transform\",\"values\":{\"scaleX\":3}}").c_str()).has("error"));
+       for(const auto& e:map.data.entities)AIVERSE_TEST_CHECK(editor::authoredScale3(e)[0]==3);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+       for(const auto& e:map.data.entities)AIVERSE_TEST_CHECK(editor::authoredScale3(e)[0]!=3);
+       AIVERSE_TEST_CHECK(!call("studio.entitiesDuplicate",(both+"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(map.data.entities.size()==before+2 && session.selectedObjectIds().size()==2);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
+       AIVERSE_TEST_CHECK(!call("studio.entitiesDelete",(both+"}").c_str()).has("error"));
+       AIVERSE_TEST_CHECK(map.data.entities.size()==before-2 && session.selectedObjectIds().empty());
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
+       AIVERSE_TEST_CHECK(!call("studio.entityFlags",R"({"entityIds":["entity:@second"],"hidden":true,"locked":true})").has("error"));
+       AIVERSE_TEST_CHECK(session.hiddenIds().count("entity:@second") && session.lockedIds().count("entity:@second"));
+       snap=call("studio.snapshot");
+       for(const auto& row:snap["result"]["scene"]["entities"].items())
+           if(row.getStr("id")=="entity:@second")AIVERSE_TEST_CHECK(!row.getBool("visible",true) && row.getBool("locked"));
+       AIVERSE_TEST_CHECK(!call("studio.entityFlags",R"({"entityIds":["entity:@second"],"hidden":false})").has("error") && !session.hiddenIds().count("entity:@second"));
+       // Asset drop needs a scenery type or a selected entity type; here the selection supplies "tree".
+       AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@second"})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.assetPlace",R"({"asset":"content/rock.glb","x":5,"z":6})").has("error"));
+       AIVERSE_TEST_CHECK(map.data.entities.size()==before+1 && map.data.entities.back().extra["components"]["StaticModel"].getStr("asset")=="content/rock.glb");
+       AIVERSE_TEST_CHECK(call("studio.assetPlace",R"({"asset":"content/missing.glb","x":5,"z":6})").has("error") && map.data.entities.size()==before+1);
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && map.data.entities.size()==before);
+   }
+   // Rules form: read own + resolved types, edit a type field (validated and saved), reject other paths.
+   {
+       auto rules=call("studio.rules");
+       AIVERSE_TEST_CHECK(!rules.has("error") && rules["result"]["types"].has("tree"));
+       AIVERSE_TEST_CHECK(!call("studio.rulesSet",R"({"path":"types.tree.health.max","value":150})").has("error"));
+       rules=call("studio.rules");
+       AIVERSE_TEST_CHECK(rules["result"]["resolved"]["tree"]["health"]["max"].integer()==150);
+       AIVERSE_TEST_CHECK(call("studio.rulesSet",R"({"path":"resources.gold","value":1})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.rulesSet",R"({"path":"types.tree.health.max","value":null})").has("error"));
+       AIVERSE_TEST_CHECK(!call("studio.rules")["result"]["types"]["tree"]["health"].has("max"));
+   }
+   // Build panel: targets and identity; unknown targets/configs rejected; a project with unsaved
+   // changes is never built (no implicit save); no estimate yet is an error, not an empty report.
+   {
+       const auto info=call("studio.buildInfo");
+       AIVERSE_TEST_CHECK(!info.has("error") && info["result"]["targets"].size()==6 && info["result"].has("identity"));
+       AIVERSE_TEST_CHECK(call("studio.buildToolchain",R"({"target":"amiga"})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.buildStart",R"({"target":"amiga","config":"Release"})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.buildStart",R"({"target":"web","config":"Fast"})").has("error"));
+       auto& buildDoc=const_cast<editor::Workspace&>(session.workspace()).map;
+       const bool wasDirty=buildDoc.dirty;buildDoc.dirty=true;
+       const auto dirty=call("studio.buildStart",R"({"target":"web","config":"Release"})");
+       AIVERSE_TEST_CHECK(dirty.has("error") && dirty.getStr("error").find("Save")!=std::string::npos);
+       AIVERSE_TEST_CHECK(!session.workspace().building());
+       buildDoc.dirty=wasDirty;
+       AIVERSE_TEST_CHECK(call("studio.buildEstimate",R"({"target":"ios"})").has("error"));
+       const auto log=call("studio.buildLog",R"({"from":999999})");
+       AIVERSE_TEST_CHECK(!log.has("error") && log["result"]["text"].str().empty());
+       AIVERSE_TEST_CHECK(log["result"]["next"].integer()==log["result"]["size"].integer());
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;
@@ -126,20 +229,56 @@ void entityWorkflow() {
             return session.dispatch(request);
         };
         {
-            // Legacy map entities expose a full Transform: X/Y(terrain)/Z, Rotation (facing), Scale.
+            // Every map entity exposes a full 3D Transform; the first Y/rotation/scale
+            // edit of a legacy unit writes components.Transform and keeps facing in sync.
             auto params=Json::object();params.set("entityId",Json::string("entity:0"));
             auto inspect=call("studio.inspect",params);
             AIVERSE_TEST_CHECK(!inspect.has("error"));
             std::set<std::string> keys;
             for(const auto& c:inspect["result"]["components"].items())
-                if(c.getStr("id")=="Transform")for(const auto& f:c["properties"].items())keys.insert(f.getStr("key"));
-            AIVERSE_TEST_CHECK(keys.count("x")&&keys.count("y")&&keys.count("z")&&keys.count("facing")&&keys.count("scale"));
-            auto set=Json::parse(R"({"entityId":"entity:0","componentId":"Transform","key":"facing","value":90})");
+                if(c.getStr("id")=="Transform")for(const auto& f:c["properties"].items())
+                    if(f.getBool("editable",true))keys.insert(f.getStr("key"));
+            for(const char* key:{"x","y","z","rotationX","rotationY","rotationZ","scaleX","scaleY","scaleZ"})
+                AIVERSE_TEST_CHECK(keys.count(key)==1);
+            auto set=Json::parse(R"({"entityId":"entity:0","componentId":"Transform","key":"rotationY","value":90})");
             AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
-            AIVERSE_TEST_CHECK(session.workspace().map.data.entities[0].extra["facing"].toDouble()==90);
-            set.set("value",Json::number(int64_t(400)));AIVERSE_TEST_CHECK(call("studio.setProperty",set).has("error"));
-            AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            {
+                const auto& e=session.workspace().map.data.entities[0];
+                AIVERSE_TEST_CHECK(e.extra["components"]["Transform"].isObject());
+                AIVERSE_TEST_CHECK(e.extra["facing"].toDouble()==270); // clockwise facing of a CCW 90° yaw
+            }
+            set=Json::parse(R"({"entityId":"entity:0","key":"rotationX","value":30})");
+            AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
+            set=Json::parse(R"({"entityId":"entity:0","key":"scaleZ","value":2})");
+            AIVERSE_TEST_CHECK(!call("studio.setProperty",set).has("error"));
+            {
+                const auto& t=session.workspace().map.data.entities[0].extra["components"]["Transform"];
+                AIVERSE_TEST_CHECK(t["rotation"].size()==3 && t["rotation"][size_t(0)].toDouble()==30 && t["rotation"][size_t(1)].toDouble()==90);
+                AIVERSE_TEST_CHECK(t["scale"].size()==3 && t["scale"][size_t(2)].toDouble()==2);
+            }
+            set=Json::parse(R"({"entityId":"entity:0","key":"scaleX","value":0})");
+            AIVERSE_TEST_CHECK(call("studio.setProperty",set).has("error"));
+            for(int i=0;i<3;++i)AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[0].extra.has("components"));
             AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[0].extra.has("facing"));
+            {
+            // «Ветер»: session-only preview wind; masks from wind/masks.json.
+            fs::create_directories(project/"wind");
+            std::ofstream(project/"wind"/"masks.json") << R"({"masks":{"palm_frond":[[0,0],[0.3,0.4],[1,1]]}})";
+            const auto before=session.workspace().map.toJson();
+            const bool dirtyBefore=session.workspace().map.dirty; // earlier checks may have edited the map
+            auto wind=call("studio.wind");
+            AIVERSE_TEST_CHECK(!wind.has("error") && wind["result"]["settings"].getBool("enabled"));
+            bool frond=false;
+            for(const auto& m:wind["result"]["library"]["masks"].items()) frond|=m.getStr("name")=="palm_frond";
+            AIVERSE_TEST_CHECK(frond);
+            auto set=call("studio.windSet",Json::parse(R"({"speed":12,"direction":90,"debug":"depth"})"));
+            AIVERSE_TEST_CHECK(!set.has("error") && set["result"]["settings"].getStr("debug")=="depth");
+            AIVERSE_TEST_CHECK(session.windPreview().speed==12.f);
+            AIVERSE_TEST_CHECK(call("studio.windSet",Json::parse(R"({"speed":12,"debug":"rainbow"})")).has("error"));
+            AIVERSE_TEST_CHECK(session.windPreview().debug==render::wind::WindDebugView::Depth);   // atomic
+            AIVERSE_TEST_CHECK(session.workspace().map.toJson()==before && session.workspace().map.dirty==dirtyBefore);
+            }
         }
         {
             auto state=call("studio.nereidFlow");AIVERSE_TEST_CHECK(!state.has("error")&&state["result"]["surfaces"].size()==1);

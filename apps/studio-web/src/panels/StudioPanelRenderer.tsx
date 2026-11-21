@@ -4,12 +4,14 @@
 import type { ReactNode } from 'react';
 import {
   Activity, Box, FolderOpen,
-  SlidersHorizontal, Focus, RotateCcw
+  Focus, RotateCcw
 } from 'lucide-react';
 import type { StudioEntity, StudioInspector, StudioSnapshot } from '../types';
 import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
+import SceneToolbar from '../components/SceneToolbar';
+import RulesPanel from './RulesPanel';
 import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
@@ -23,9 +25,11 @@ import GamePanel from './GamePanel';
 import ProjectPanel from './generated/ProjectPanel';
 
 import RuntimePanel from './generated/RuntimePanel';
+import BuildPanel from './BuildPanel';
 
 import NereidFlowPanel from './generated/NereidFlowPanel';
 
+import WindPanel from './generated/WindPanel';
 import HumanAppearancePanel from './generated/HumanAppearancePanel';
 
 import HumanCreatorPanel from './generated/HumanCreatorPanel';
@@ -44,8 +48,15 @@ export interface StudioPanelContext {
   inspector: StudioInspector | null;
   inspectorPinned: boolean;
   toggleInspectorPin: () => void;
-  select: (id: string | null) => Promise<void>;
+  select: (id: string | null, mode?: 'replace' | 'add' | 'toggle') => Promise<void>;
+  selectIds: (ids: string[], mode?: 'replace' | 'add' | 'toggle') => Promise<void>;
+  /** Scene object under the cursor (Scene or Hierarchy hover). */
+  hoverId: string;
   changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
+  /** Apply a snapshot from an Inspector action without dropping the Inspector pin. */
+  commitSnapshot: (value: StudioSnapshot) => void;
+  showPanel: (panel: StudioPanel) => void;
+  reportError: (message: string) => void;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
@@ -58,12 +69,15 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return <InspectorPanel {...ctx}/>;
+      case 'build':
+        return <BuildPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'rules':
+        return <RulesPanel projectPath={snapshot?.project.path ?? ''} onChanged={() => void invoke('studio.snapshot', {}).then(ctx.commitSnapshot).catch(() => {})}/>;
       case 'scene':
         return <>
           <div className="viewport-toolbar">
             <div className="viewport-tools">
-              <button className="viewport-control selected" title="Select tool">
-                <SlidersHorizontal size={15}/></button>
+              <SceneToolbar enabled={connected && sceneMode !== 'welcome'}/>
               <span className="toolbar-divider"/>
               <button type="button" className="viewport-control" title="Focus selected object (F)"
                 aria-label="Focus selected Scene object" disabled={!connected || !selected}
@@ -109,6 +123,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'runtime': return <RuntimePanel snapshot={snapshot}/>;
       case 'nereid_flow': return <NereidFlowPanel snapshot={snapshot}/>;
+      case 'wind': return <WindPanel snapshot={snapshot}/>;
       case 'human_appearance': return <HumanAppearancePanel snapshot={snapshot}/>;
       case 'human_creator': return <HumanCreatorPanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.

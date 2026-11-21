@@ -19,6 +19,13 @@ export interface AssetReferencePickerProps {
   allowClear?: boolean;
 }
 
+/** Engine built-in meshes offered by model pickers (no file in content/). */
+export const BUILTIN_MESHES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'builtin:cube', label: 'Cube' }, { value: 'builtin:sphere', label: 'Sphere' }];
+const builtinLabel = (value: string) => {
+  const item = BUILTIN_MESHES.find(entry => entry.value === value);
+  return item ? item.label + ' (built-in)' : value;
+};
 const emptyCatalog: StudioAssetList = { root: 'content', files: [], folders: [] };
 const normalized = (path: string) =>
   safeAssetPath(path.startsWith('content/') ? path.slice('content/'.length) : path);
@@ -114,11 +121,11 @@ export default function AssetReferencePicker({
 
   return <div className="studio-asset-reference" onDragOver={dragOver} onDrop={drop}>
     <div className="studio-asset-reference__control">
-      <input className="au-input" value={shown} readOnly aria-label={label}
+      <input className="au-input" value={builtinLabel(shown)} readOnly aria-label={label}
         placeholder="None (drop an asset)" title={value} disabled={disabled}/>
       <button type="button" disabled={disabled} title="Choose from Assets" aria-label={'Choose '+label}
         onClick={() => { setSearch(''); setOpen(true); }}><FolderSearch size={16}/></button>
-      {allowClear && value && <button type="button" disabled={disabled} onClick={() => onChange('')}
+      {allowClear && value && !value.startsWith('builtin:') && <button type="button" disabled={disabled} onClick={() => onChange('')}
         aria-label={'Clear '+label}><X size={14}/></button>}
     </div>
     {open && createPortal(<div className="studio-asset-reference__overlay" onMouseDown={event => {
@@ -136,7 +143,13 @@ export default function AssetReferencePicker({
         <div className="studio-asset-reference__results" role="listbox" aria-label="Available assets">
           {loading && <p>Loading assets…</p>}
           {error && <p role="alert">{error}</p>}
-          {!loading && !error && !files.length && <p>No matching assets.</p>}
+          {!loading && !error && !files.length && !kinds?.includes('model') && <p>No matching assets.</p>}
+          {kinds?.includes('model') && BUILTIN_MESHES
+            .filter(item => item.label.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
+            .map(item => <button type="button" key={item.value} role="option" aria-selected={value === item.value}
+              onClick={() => { if (!disabled) { onChange(item.value); setOpen(false); } }}>
+              <span>{item.label}</span><small>Built-in mesh</small>
+            </button>)}
           {!loading && files.map(asset => <button type="button" key={asset.path}
             role="option" aria-selected={value === asset.guid || value === asset.path || value === 'content/' + asset.path}
             onClick={() => choose(asset)}>
@@ -144,7 +157,8 @@ export default function AssetReferencePicker({
             <small>{asset.path}{asset.guid ? ' · '+asset.guid : ''}</small>
           </button>)}
         </div>
-        <footer>Only assets under project/content are selectable. Drag from Assets to assign.</footer>
+        <footer>{kinds?.includes('model') ? 'Built-in meshes or models under project/content.' :
+          'Only assets under project/content are selectable.'} Drag from Assets to assign.</footer>
       </section>
     </div>, document.body)}
   </div>;

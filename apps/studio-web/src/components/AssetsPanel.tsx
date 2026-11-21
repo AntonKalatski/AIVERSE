@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import {
@@ -128,7 +129,10 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [pinnedAssetGuid,setPinnedAssetGuid]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [mode,setMode]=useState<'grid'|'list'>('grid');
-  const [menu,setMenu]=useState<{x:number;y:number;path:string;directory:boolean}|null>(null);
+  const [menu,setMenu]=useState<{x:number;y:number;path:string;directory:boolean;background?:boolean}|null>(null);
+  const [creatingMaterial,setCreatingMaterial]=useState(false);
+  const [materialName,setMaterialName]=useState('');
+  const [materialPreset,setMaterialPreset]=useState<'matte'|'metal'|'glass'>('matte');
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
   const [loading,setLoading]=useState(true);
@@ -137,6 +141,24 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [folderName,setFolderName]=useState('');
   const [plan,setPlan]=useState<StudioAssetTransferPlan|null>(null);
   const [refreshToken,setRefreshToken]=useState(0);
+  // Folder tree width: drag the divider (persisted), double-click resets.
+  const [treeWidth,setTreeWidth]=useState<number>(()=>{
+    try{const v=Number(window.localStorage.getItem('aiverse.studio.assets.treeWidth'));return Number.isFinite(v)&&v>=110&&v<=900?v:170;}catch{return 170;}
+  });
+  useEffect(()=>{try{window.localStorage.setItem('aiverse.studio.assets.treeWidth',String(Math.round(treeWidth)));}catch{/* optional */}},[treeWidth]);
+  const startTreeResize=(event:React.PointerEvent<HTMLDivElement>)=>{
+    if(event.button!==0)return;
+    event.preventDefault();
+    const handle=event.currentTarget;handle.setPointerCapture(event.pointerId);
+    const layout=handle.parentElement?.getBoundingClientRect();
+    const startX=event.clientX,start=treeWidth;
+    const move=(e:PointerEvent)=>{
+      const max=Math.max(160,(layout?.width??800)-160);
+      setTreeWidth(Math.min(max,Math.max(110,start+e.clientX-startX)));
+    };
+    const up=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);};
+    handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
+  };
   const native=nativeConnected();
   const reload=useCallback(()=>setRefreshToken(t=>t+1),[]);
   useEffect(()=>onNativeEvent((event,payload)=>{
@@ -154,6 +176,17 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     }
   }),[reload]);
   useEffect(()=>{setFolder('');setSelected(null);setPinnedAssetGuid(null);setSearch('');setPlan(null);},[projectPath]);
+  // Command palette (# assets) reveals a file: open its folder and select it.
+  useEffect(()=>{
+    const reveal=(event:Event)=>{
+      const path=(event as CustomEvent<{path?:unknown}>).detail?.path;
+      if(typeof path!=='string'||!path)return;
+      const cut=path.lastIndexOf('/');
+      setSearch('');setFolder(cut>0?path.slice(0,cut):'');setSelected(path);
+    };
+    window.addEventListener('studio:reveal-asset',reveal);
+    return ()=>window.removeEventListener('studio:reveal-asset',reveal);
+  },[]);
   useEffect(()=>{
     let cancelled=false;
     setLoading(true);setError('');
@@ -227,7 +260,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   };
   const dragStart=(event:DragEvent<HTMLElement>,path:string)=>{
     event.dataTransfer.setData(ASSET_DRAG_MIME,path);
-    event.dataTransfer.effectAllowed='move';
+    // The native Scene view accepts plain text "aiverse-asset:<path>" (models → new entity).
+    if(assetKind(path)==='model')event.dataTransfer.setData('text/plain','aiverse-asset:'+path);
+    event.dataTransfer.effectAllowed='copyMove';
   };
   const acceptInternal=(event:DragEvent<HTMLElement>)=>{
     if(event.dataTransfer.types.includes(ASSET_DRAG_MIME)){
@@ -250,6 +285,26 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     const text='content/'+path;
     void navigator.clipboard?.writeText(text).then(()=>setMessage('Copied '+text),()=>setError('Clipboard unavailable'));
   };
+  const createMaterial=async()=>{
+    const name=materialName.trim();
+    if(!native||!projectPath||!name||busy)return;
+    setBusy(true);setError('');setMessage('');
+    try{
+      await invoke('studio.materialCreate',{name,preset:materialPreset});
+      setCreatingMaterial(false);setMaterialName('');
+      setMessage('Created material "'+name+'" in materials.json');
+    }catch(e){setError(String(e instanceof Error?e.message:e))}
+    finally{setBusy(false)}
+  };
+  // Right-click on empty space: create/import into the current folder.
+  const backgroundItems=():StudioMenuItem[]=>[
+    {id:'folder',label:'Create Folder',icon:<FolderPlus size={13}/>,disabled:!native||!projectPath||busy,onSelect:()=>setAddingFolder(true)},
+    {id:'material',label:'Create Material…',icon:<Library size={13}/>,disabled:!native||!projectPath||busy,
+      onSelect:()=>{setCreatingMaterial(true);setMaterialName('')}},
+    {id:'import',label:'Import Assets…',icon:<Upload size={13}/>,separator:true,disabled:!native||!projectPath||busy,onSelect:()=>void externalImport()},
+    {id:'copy',label:'Copy Folder Path',icon:<Search size={13}/>,separator:true,onSelect:()=>copyPath(folder)},
+    {id:'reload',label:'Reload',icon:<RefreshCw size={13}/>,onSelect:reload},
+  ];
   const menuItems=(target:{path:string;directory:boolean}):StudioMenuItem[]=>[
     target.directory
       ?{id:'open',label:'Open Folder',icon:<FolderOpen size={13}/>,onSelect:()=>goTo(target.path)}
@@ -309,10 +364,23 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
       <button type="submit" disabled={!folderName.trim()||busy}>Create</button>
       <button type="button" onClick={()=>{setAddingFolder(false);setFolderName('')}}>Cancel</button>
     </form>}
+    {creatingMaterial&&<form className="studio-assets-create-folder" onSubmit={event=>{
+      event.preventDefault();void createMaterial();
+    }}>
+      <Library size={13}/><span>New material in materials.json</span>
+      <input autoFocus aria-label="New material name" value={materialName}
+        onChange={event=>setMaterialName(event.target.value)} placeholder="Material name"/>
+      <select aria-label="Material preset" value={materialPreset}
+        onChange={event=>setMaterialPreset(event.target.value as 'matte'|'metal'|'glass')}>
+        <option value="matte">Matte</option><option value="metal">Metal</option><option value="glass">Glass</option>
+      </select>
+      <button type="submit" disabled={!materialName.trim()||busy}>Create</button>
+      <button type="button" onClick={()=>setCreatingMaterial(false)}>Cancel</button>
+    </form>}
     {message&&<div className="studio-assets-status" role="status">{message}</div>}
     {error&&<div className="studio-assets-status studio-assets-error" role="alert">{error}</div>}
     <div className="studio-assets-layout">
-      <nav className="studio-assets-folders" aria-label="Project asset folders">
+      <nav className="studio-assets-folders" aria-label="Project asset folders" style={{width:treeWidth,maxWidth:'none',minWidth:0}}>
         <button type="button" className={'studio-assets-folder'+(folder===''?' active':'')}
           {...folderDropProps('')} onClick={()=>goTo('')}>
           <Library size={13}/><span>content</span>
@@ -330,7 +398,12 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
             <span>{entry.name}</span><small>{entry.count}</small>
           </button>)}
       </nav>
-      <div className="studio-assets-content" {...folderDropProps(folder)}>
+      <div className="studio-assets-splitter" role="separator" aria-orientation="vertical" aria-label="Resize folder tree"
+        aria-valuenow={Math.round(treeWidth)} tabIndex={0} title="Drag to resize · double-click to reset"
+        onPointerDown={startTreeResize} onDoubleClick={()=>setTreeWidth(170)}
+        onKeyDown={event=>{if(event.key==='ArrowLeft')setTreeWidth(w=>Math.max(110,w-16));if(event.key==='ArrowRight')setTreeWidth(w=>Math.min(900,w+16));}}/>
+      <div className="studio-assets-content" {...folderDropProps(folder)}
+        onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,path:folder,directory:true,background:true})}}>
         {loading?<div className="studio-assets-state">Loading content/…</div>:
           shownFiles.length===0&&shownFolders.length===0?
             <div className="studio-assets-empty">
@@ -377,7 +450,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
         'content/'+selected:search?'Search in content/':folder?'content/'+folder:'content/'}</span>
     </footer>
     {menu&&<StudioContextMenu x={menu.x} y={menu.y} label="Asset actions"
-      items={menuItems(menu)} onClose={()=>setMenu(null)}/>}
+      items={menu.background?backgroundItems():menuItems(menu)} onClose={()=>setMenu(null)}/>}
     {plan&&<PreviewDialog key={plan.token} plan={plan} busy={busy}
       onCancel={()=>setPlan(null)} onCommit={decisions=>void applyTransfer(decisions)}/>}
   </section>;

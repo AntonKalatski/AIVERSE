@@ -10,6 +10,10 @@ export interface StudioMenuItem {
   danger?: boolean;
   /** Visual separator above this item. */
   separator?: boolean;
+  /** Shows a check mark (toggle items such as open panels). */
+  checked?: boolean;
+  /** Non-interactive section caption. */
+  caption?: boolean;
   onSelect: () => void;
 }
 
@@ -57,12 +61,12 @@ export function StudioContextMenu({ x, y, items, onClose, label = 'Context menu'
       next?.focus();
     }}>
     {items.map(item => <div key={item.id} className={item.separator ? 'au-menu__group' : undefined}>
-      <button type="button" role="menuitem" className={'au-menu__item' + (item.danger ? ' is-danger' : '')}
+      {item.caption ? <div className="au-menu__caption">{item.label}</div> : <button type="button" role="menuitem" className={'au-menu__item' + (item.danger ? ' is-danger' : '')}
         disabled={item.disabled} onClick={() => { onClose(); item.onSelect(); }}>
-        <span className="au-menu__icon">{item.icon}</span>
+        <span className="au-menu__icon">{item.checked ? '✓' : item.icon}</span>
         <span className="au-menu__label">{item.label}</span>
         {item.shortcut && <kbd className="au-menu__shortcut">{item.shortcut}</kbd>}
-      </button>
+      </button>}
     </div>)}
   </div>;
 }

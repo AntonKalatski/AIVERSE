@@ -42,7 +42,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `project` | `apps/editor/windows/ProjectWindow.cpp` | Partial: native map new/open/save/save-as and dirty close/quit protection (Stage 71); project creation/settings/import/FPS templates and visual QA pending |
 | `raid` | `apps/editor/windows/RaidWindow.cpp` | Missing functional HTML5 implementation |
 | `roads` | `apps/editor/windows/RoadsWindow.cpp` | Missing functional HTML5 implementation |
-| `rules` | `apps/editor/windows/RulesWindow.cpp` | Missing functional HTML5 implementation |
+| `rules` | `apps/editor/windows/RulesWindow.cpp` | Partial: unit-type form (health, move, vision, cost, weapons, flags) + raw JSON per type via rules_get/rules_set (stage 100); techs/resources/triggers/damage table pending |
 | `scene` | `apps/editor/windows/SceneWindow.cpp` | Partial: native rigid-model render/picking/hot reload merged, cache release corrected (78–79); Unity-style navigation + orientation gizmo with axis snap and Persp/Iso (91, web/Linux-checked, Mac build pending); transform gizmos, rect selection, broader authoring/model formats and visual parity pending |
 | `scripts` | `apps/editor/windows/ScriptsWindow.cpp` | Missing functional HTML5 implementation |
 | `shader_graph` | `apps/editor/windows/ShaderGraphWindow.cpp` | Partial; native visual parity pending |

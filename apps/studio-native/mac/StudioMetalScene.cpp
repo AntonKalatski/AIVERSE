@@ -10,6 +10,7 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
+#include "modules/rts/view/RtsShapeModels.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -48,6 +49,121 @@ float3 gizmoAxis(int arm) {
     return a;
 }
 }
+namespace {
+// Flat screen-space overlay drawn just beyond the near plane (always on top).
+struct Overlay2D {
+    Renderer3D& r; const RTSCamera& view; float W, H, depth;
+    bool at(float x,float y,float3& out) const {
+        float3 o,d; if(!view.screenRay(x,y,W,H,o,d))return false;
+        out=o+d*depth; return true;
+    }
+    void tri(float ax,float ay,float bx,float by,float cx,float cy,uint32_t col) const {
+        float3 a,b,c; if(at(ax,ay,a)&&at(bx,by,b)&&at(cx,cy,c))r.triangle(a,b,c,col);
+    }
+    void segment(float x0,float y0,float x1,float y1,float w,uint32_t col) const {
+        const float lx=x1-x0,ly=y1-y0,l=std::hypot(lx,ly); if(l<1e-3f)return;
+        const float nx=-ly/l*w*.5f,ny=lx/l*w*.5f;
+        tri(x0+nx,y0+ny,x1+nx,y1+ny,x1-nx,y1-ny,col);tri(x0+nx,y0+ny,x1-nx,y1-ny,x0-nx,y0-ny,col);
+    }
+};
+// Screen layout of the transform handles for a pivot along three axis directions.
+struct AxisHandles { bool valid=false; float px=0,py=0; float tip[3][2]{}; float pick=8; float lengthPx=1; float worldLength=1; };
+AxisHandles axisHandles(const RTSCamera& view,float3 pivot,const float3* axes,float W,float H) {
+    AxisHandles h; float2 p;
+    if(!view.worldToScreen(pivot,W,H,p))return h;
+    const float lengthPx=std::min(W,H)*0.16f;
+    // World length that projects to ~lengthPx at the pivot depth (foreshortened per axis).
+    float worldPerPixel;
+    if(view.ortho) worldPerPixel=2.0f*view.orthoHalfHeight()/H;
+    else {
+        const float3 eye=view.eye();const float3 fwd=normalize(view.target-eye);
+        const float depth=std::max(0.05f,dot(pivot-eye,fwd));
+        worldPerPixel=2.0f*depth*std::tan(view.fovY*0.5f)/H;
+    }
+    const float S=lengthPx*worldPerPixel;
+    for(int a=0;a<3;++a){
+        float2 q;
+        if(!view.worldToScreen(pivot+axes[a]*S,W,H,q))return h;
+        h.tip[a][0]=q.x;h.tip[a][1]=q.y;
+    }
+    h.px=p.x;h.py=p.y;h.pick=std::max(6.0f,lengthPx*0.09f);h.lengthPx=lengthPx;h.worldLength=S;h.valid=true;return h;
+}
+// Orthonormal basis (u, v) of the plane perpendicular to n.
+void ringBasis(float3 n,float3& u,float3& v){
+    const float3 ref=std::fabs(n.y)<0.9f?float3{0,1,0}:float3{1,0,0};
+    u=normalize(cross(n,ref));v=cross(n,u);
+}
+constexpr int kRingSegments=64;
+// Move plane handle (normal axis n): small square spanned by the two other axes.
+bool planeQuad(const RTSCamera& view,float3 pivot,const float3* axes,int n,float worldLength,float W,float H,float2 out[4]){
+    const float3 a=axes[(n+1)%3],b=axes[(n+2)%3];
+    const float s0=worldLength*0.18f,s1=worldLength*0.42f;
+    const float3 c[4]={pivot+a*s0+b*s0,pivot+a*s1+b*s0,pivot+a*s1+b*s1,pivot+a*s0+b*s1};
+    for(int i=0;i<4;++i)if(!view.worldToScreen(c[i],W,H,out[i]))return false;
+    return true;
+}
+bool insideQuad(const float2* q,float x,float y){
+    bool pos=false,neg=false;
+    for(int i=0;i<4;++i){const float2 a=q[i],b=q[(i+1)%4];
+        const float c=(b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x);pos|=c>0;neg|=c<0;}
+    return !(pos&&neg);
+}
+// Tiny 7-segment text for gizmo readouts ("-12.5°"): the Metal view covers HTML.
+float overlayTextWidth(const std::string& text,float h){
+    float w=0;for(char c:text)w+=(c=='.'?0.3f:c=='\xb0'?0.45f:c==' '?0.4f:0.7f)*h;return w;
+}
+bool rayPlane(float3 o,float3 d,float3 p,float3 n,float3& hit){
+    const float den=dot(d,n);if(std::fabs(den)<1e-5f)return false;
+    const float t=dot(p-o,n)/den;if(!(t>0)||!std::isfinite(t))return false;
+    hit=o+d*t;return true;
+}
+void overlayText(const Overlay2D& o,float x,float y,float h,const std::string& text,uint32_t col){
+    // segments: a top, b top-right, c bottom-right, d bottom, e bottom-left, f top-left, g middle
+    static const uint8_t digits[10]={0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
+    const float w=h*0.5f,t=std::max(1.2f,h*0.12f);
+    // dark plate for contrast
+    const float pw=overlayTextWidth(text,h)+h*0.5f;
+    o.tri(x-h*0.25f,y-h*0.25f,x+pw-h*0.25f,y-h*0.25f,x+pw-h*0.25f,y+h*1.25f,rgba(10,16,26,200));
+    o.tri(x-h*0.25f,y-h*0.25f,x+pw-h*0.25f,y+h*1.25f,x-h*0.25f,y+h*1.25f,rgba(10,16,26,200));
+    for(char c:text){
+        uint8_t m=0;
+        if(c>='0'&&c<='9')m=digits[c-'0']; else if(c=='-')m=0x40; else if(c=='+')m=0x40;
+        const float X=x,Y=y,M=y+h*0.5f,B=y+h;
+        if(m&0x01)o.segment(X,Y,X+w,Y,t,col);
+        if(m&0x02)o.segment(X+w,Y,X+w,M,t,col);
+        if(m&0x04)o.segment(X+w,M,X+w,B,t,col);
+        if(m&0x08)o.segment(X,B,X+w,B,t,col);
+        if(m&0x10)o.segment(X,M,X,B,t,col);
+        if(m&0x20)o.segment(X,Y,X,M,t,col);
+        if(m&0x40)o.segment(X,M,X+w,M,t,col);
+        if(c=='+')o.segment(X+w*0.5f,M-w*0.5f,X+w*0.5f,M+w*0.5f,t,col);
+        if(c=='.')o.segment(x,B-t*0.5f,x+t,B-t*0.5f,t,col);
+        if(c=='\xb0'){o.segment(X,Y,X+h*0.25f,Y,t*0.8f,col);o.segment(X+h*0.25f,Y,X+h*0.25f,Y+h*0.25f,t*0.8f,col);
+            o.segment(X+h*0.25f,Y+h*0.25f,X,Y+h*0.25f,t*0.8f,col);o.segment(X,Y+h*0.25f,X,Y,t*0.8f,col);}
+        if(c=='x'){o.segment(X,M-w*0.45f,X+w,M+w*0.55f,t,col);o.segment(X+w,M-w*0.45f,X,M+w*0.55f,t,col);} // ×
+        x+=(c=='.'?0.3f:c=='\xb0'?0.45f:c==' '?0.4f:0.7f)*h;
+    }
+}
+// "+1.25" / "-2" / "+0.5": signed, at most 2 decimals, no trailing zeros.
+std::string gizmoNumber(float v,bool sign=true){
+    char b[32];std::snprintf(b,sizeof b,sign?"%+.2f":"%.2f",double(v));
+    std::string s=b;
+    if(s.find('.')!=std::string::npos){while(s.back()=='0')s.pop_back();if(s.back()=='.')s.pop_back();}
+    if(s=="+0"||s=="-0")s="0";
+    return s;
+}
+float segmentDistance(float px,float py,float ax,float ay,float bx,float by){
+    const float vx=bx-ax,vy=by-ay,l2=vx*vx+vy*vy;
+    const float t=l2>0?std::clamp(((px-ax)*vx+(py-ay)*vy)/l2,0.0f,1.0f):0.0f;
+    return std::hypot(px-(ax+vx*t),py-(ay+vy*t));
+}
+// Parameter t of the point on the axis line (pivot + a*t) closest to a ray.
+bool axisParameter(float3 pivot,float3 a,float3 o,float3 d,float& t){
+    const float3 w0=pivot-o;const float b=dot(a,d),dw=dot(a,w0),ew=dot(d,w0);
+    const float denom=1.0f-b*b; if(std::fabs(denom)<1e-5f)return false;
+    t=(b*ew-dw)/denom; return std::isfinite(t);
+}
+}
 StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
@@ -55,6 +171,8 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     facialGpu_.setDeviceLease(deviceLifetime_->lease());
     renderer_.setGpuDeviceLease(deviceLifetime_->lease());
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
+    lodDiagnostics_=std::getenv("AIVERSE_LOD_DIAGNOSTICS")!=nullptr;
+    renderer_.setLodDiagnosticsEnabled(lodDiagnostics_);
     if (!post_.init(*device_)) throw std::runtime_error("Studio HDR init failed");
     PrismaSettings postSettings;postSettings.hdr=HdrMode::On;
     post_.setSettings(postSettings);post_.setQuality(PrismaQuality::High);
@@ -80,11 +198,30 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
 void StudioMetalScene::releasePreviewModel(render::Model& model) {
     // Retire CPU packets/layouts before the Model and its geometry disappear.
     renderer_.invalidateModelCachesFor(&model);
+    windRigs_.erase(&model);
     render::releaseModel(*device_,model);
+}
+const render::Model* StudioMetalScene::rtsShapeModel(const Json& type) {
+    if (!shapesBuilt_ && device_) {
+        shapesBuilt_=true;
+        for (auto& [name,model]:game::buildRtsShapeModels()) {
+            if (!model) continue;
+            render::prepareModelUpload(*model);
+            if (render::uploadModel(*device_,*model,true)) shapeModels_.emplace(name,std::move(model));
+        }
+    }
+    const bool structure=type.has("structure") && !type["structure"].isNull() && type["structure"].boolean(true);
+    std::string name=type["view"].getStr("shape",structure ? (type.has("resourceNode") ? "mine" : "structure") : "generic");
+    auto found=shapeModels_.find(name);
+    if (found==shapeModels_.end()) found=shapeModels_.find(structure ? "structure" : "generic");
+    return found==shapeModels_.end() ? nullptr : found->second.get();
 }
 void StudioMetalScene::clearDocumentModels() {
     if (device_) for (auto& [path,model]:documentModels_)
         if (model) releasePreviewModel(*model);
+    if (device_) for (auto& [name,model]:shapeModels_)
+        if (model) releasePreviewModel(*model);
+    shapeModels_.clear();shapesBuilt_=false;instanceTeams_.clear();
     modelInstances_.clear();
     documentModels_.clear();
     rejectedDocumentModels_.clear();
@@ -96,11 +233,17 @@ void StudioMetalScene::syncDocumentModels(
     const editor::MapDoc& doc,const std::string& projectPath,
     const Json& rules,const std::vector<StudioDocumentProxy>& proxies) {
     modelInstances_.clear();
-    if (projectPath.empty()) return;
+    instanceTeams_.clear();
+    if (projectPath.empty()) { loadProgress_={}; modelsPending_=false; return; }
+    // Streaming budget: always load at least one new model per frame, then stop
+    // after ~30 ms; the rest load on the following frames (progress is reported).
+    const auto loadStart=std::chrono::steady_clock::now();
+    int loadedThisFrame=0;bool pending=false;std::string lastLoaded;
     namespace fs=std::filesystem;
     const fs::path project=projectPath;
     const fs::path root=project/"content";
-    if (!fs::is_directory(root) || fs::is_symlink(fs::symlink_status(root))) return;
+    // Without a content/ folder only procedural RTS shapes can be shown.
+    const bool contentOk=fs::is_directory(root) && !fs::is_symlink(fs::symlink_status(root));
     // The proxy list is the authoritative list of actual document objects.
     // Only existing, explicitly authored content/ model paths are accepted.
     const auto& entities=doc.data.entities;
@@ -137,8 +280,34 @@ void StudioMetalScene::syncDocumentModels(
            if(raw.isString())path=raw.str();
            else if(raw.isArray()&&raw.size()){const auto& first=raw[size_t(0)];path=first.isString()?first.str():first.getStr("file");}
        }
+        // RTS types without a model file are drawn by the game as built-in procedural
+        // shapes: show the same shape here instead of a grey box.
+        if (path.empty() && !raw.isString() && !raw.isArray() && rules["types"].has(entity.type) &&
+            !entity.extra["components"].has("StaticModel")) {
+            const Json& type=rules["types"][entity.type];
+            const render::Model* shape=rtsShapeModel(type);
+            if (!shape) continue;
+            if (modelInstances_.size()>=2000) break;
+            const float k=float(std::clamp(view["scale"].isNumber() ? view["scale"].toDouble() : 1.0,.05,50.0));
+            const bool structure=type.has("structure") && !type["structure"].isNull() && type["structure"].boolean(true);
+            render::mat4 scale=render::mat4::scale({k,k,k});
+            if (structure) { // the game stretches structure shapes over their footprint
+                const Json& footprint=type["structure"]["footprint"];
+                const float sx=float(std::clamp(footprint.isArray() && footprint.size()>0 ? footprint[size_t(0)].toDouble() : 1.0,.25,64.0));
+                const float sz=float(std::clamp(footprint.isArray() && footprint.size()>1 ? footprint[size_t(1)].toDouble() : 1.0,.25,64.0));
+                scale=render::mat4::scale({sx*k,k*std::max(sx,sz)*.75f,sz*k});
+            }
+            const render::mat4 placement=editor::authoredEntity(entity) ? editor::authoredModelMatrix(entity) :
+                render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
+                (structure ? render::mat4{} : render::mat4::rotateY(proxy.yaw));
+            modelInstances_.push_back({proxy.id,shape,placement*scale});
+            instanceTeams_[proxy.id]=entity.owner==1 ? render::float3{.18f,.42f,.95f} :
+                                     entity.owner==2 ? render::float3{.9f,.22f,.16f} :
+                                     entity.owner==0 ? render::float3{.62f,.64f,.66f} : render::float3{.85f,.7f,.25f};
+            continue;
+        }
         // Never load project-root arbitrary files or external paths.
-        if (path.rfind("content/",0)!=0 || path.size()>512) continue;
+        if (!contentOk || path.rfind("content/",0)!=0 || path.size()>512) continue;
         const std::string relative=path.substr(8);
         const fs::path relativePath(relative);
         if (relativePath.empty() || relativePath.is_absolute()) continue;
@@ -155,8 +324,15 @@ void StudioMetalScene::syncDocumentModels(
         if (modelInstances_.size()>=2000) break;
         active.insert(path);
         std::error_code modifiedError;
-        const auto modified=fs::last_write_time(current,modifiedError);
+        auto modified=fs::last_write_time(current,modifiedError);
         if (modifiedError) continue;
+        // Hierarchical wind sidecar edits reload the model too.
+        {
+            std::error_code sidecarError;
+            fs::path sidecar=current; sidecar+=".wind.json";
+            const auto sidecarTime=fs::last_write_time(sidecar,sidecarError);
+            if(!sidecarError && sidecarTime>modified) modified=sidecarTime;
+        }
         const auto previousTime=documentModelTimes_.find(path);
         if (previousTime!=documentModelTimes_.end() &&
             previousTime->second!=modified) {
@@ -170,6 +346,8 @@ void StudioMetalScene::syncDocumentModels(
         documentModelTimes_[path]=modified;
         if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
             if (documentModels_.size()>=512) continue;
+            if (loadedThisFrame>0 && std::chrono::steady_clock::now()-loadStart>std::chrono::milliseconds(30)) { pending=true; continue; }
+            ++loadedThisFrame;lastLoaded=path;
             // Model loaders may request .bin, textures, MTL beside the model.
             // Resolve each request with the same root/symlink checks.
             auto read=[root](const std::string& name,std::string& out)->bool {
@@ -257,6 +435,15 @@ void StudioMetalScene::syncDocumentModels(
            render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
            render::mat4::rotateY(proxy.yaw)});
     }
+    {
+        int done=0;
+        for(const auto& path:active)done+=documentModels_.count(path)||rejectedDocumentModels_.count(path);
+        loadProgress_.done=done;loadProgress_.total=int(active.size());
+        if(!lastLoaded.empty())loadProgress_.current=lastLoaded;
+        // Lighting was built from the partial set: rebuild once everything is in.
+        if(modelsPending_ && !pending)lightingRevision_=std::numeric_limits<uint64_t>::max();
+        modelsPending_=pending;
+    }
     for (auto it=instanceMaterials_.begin();it!=instanceMaterials_.end();) {
         if (!overridden.count(it->first)) it=instanceMaterials_.erase(it);
         else ++it;
@@ -296,6 +483,8 @@ StudioMetalScene::~StudioMetalScene() {
             releasePreviewModel(*materialSphere_);
             materialSphere_.reset();
         }
+        for (auto* primitive:{&builtinCube_,&builtinSphere_})
+            if (*primitive) { releasePreviewModel(**primitive); primitive->reset(); }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         nereid_.shutdown(*device_);
@@ -332,10 +521,35 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     proxies.erase(std::remove_if(proxies.begin(),proxies.end(),[&](const auto& proxy){
         const int index=studioMapEntityIndex(proxy.id,map);
-        return index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater");
+        return hidden_.count(proxy.id) || locked_.count(proxy.id) ||
+            (index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater"));
     }),proxies.end());
     // These are the exact model instances submitted by the previous frame.
-    return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
+    if(hidden_.empty() && locked_.empty())return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
+    std::vector<StudioModelPickInstance> instances;
+    for(const auto& instance:modelInstances_)if(!hidden_.count(instance.id)&&!locked_.count(instance.id))instances.push_back(instance);
+    return studioPickSceneSurfaces(instances,proxies,origin,direction);
+}
+std::vector<std::string> StudioMetalScene::idsInRect(float x0,float y0,float x1,float y1,float width,float height,
+                                                     const editor::MapDoc& map,bool fpsProject) const {
+    std::vector<std::string> out;
+    if(materialMode_||!cameraInitialized_||width<2||height<2)return out;
+    const float lx=std::min(x0,x1),hx=std::max(x0,x1),ly=std::min(y0,y1),hy=std::max(y0,y1);
+    const auto view=viewCamera();
+    for(const auto& proxy:studioDocumentProxies(map,fpsProject,terrainLevelHeight_)) {
+        if(hidden_.count(proxy.id)||locked_.count(proxy.id))continue;
+        const int index=studioMapEntityIndex(proxy.id,map);
+        if(index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater"))continue;
+        float2 p;if(!view.worldToScreen(proxy.center,width,height,p))continue;
+        if(p.x>=lx&&p.x<=hx&&p.y>=ly&&p.y<=hy)out.push_back(proxy.id);
+    }
+    return out;
+}
+bool StudioMetalScene::groundPoint(float x,float y,float width,float height,float3& out) const {
+    float3 o,d;
+    if(!cameraInitialized_||!viewCamera().screenRay(x,y,width,height,o,d)||std::fabs(d.y)<1e-5f)return false;
+    const float t=-o.y/d.y; if(!(t>0)||!std::isfinite(t))return false;
+    out=o+d*t; return true;
 }
 render::RTSCamera StudioMetalScene::viewCamera() const {
     render::RTSCamera view=camera_;
@@ -373,6 +587,327 @@ void StudioMetalScene::setOrientation(float yaw,float pitch) {
     startTween(camera_.target,camera_.distance,yaw,std::clamp(pitch,-1.5707963f,1.5707963f));
 }
 void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; autoIso_=false; }
+void StudioMetalScene::captureSelectedBox(const mat4& world,float3 lo,float3 hi) {
+    for(int i=0;i<8;++i)
+        selectedBox_[i]=world.transformPoint({i&1?hi.x:lo.x,i&2?hi.y:lo.y,i&4?hi.z:lo.z});
+    selectedBoxValid_=true;
+}
+void StudioMetalScene::drawSelectionBox(const RTSCamera& view,int width,int height) {
+    if(!selectedBoxValid_)return;
+    const float W=float(width),H=float(height);
+    float2 p[8];
+    for(int i=0;i<8;++i)if(!view.worldToScreen(selectedBox_[i],W,H,p[i]))return;
+    Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.6f};
+    const float w=std::max(1.5f,std::min(W,H)*0.0025f);
+    constexpr int edges[12][2]={{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
+    for(const auto& e:edges)o.segment(p[e[0]].x,p[e[0]].y,p[e[1]].x,p[e[1]].y,w,rgba(255,150,40,230));
+}
+void StudioMetalScene::setSnap(bool enabled,float move,float rotate,float scale) {
+    snapEnabled_=enabled;
+    if(std::isfinite(move)&&move>0)snapMove_=std::clamp(move,0.001f,1000.0f);
+    if(std::isfinite(rotate)&&rotate>0)snapRotate_=std::clamp(rotate,0.1f,180.0f);
+    if(std::isfinite(scale)&&scale>0)snapScale_=std::clamp(scale,0.001f,10.0f);
+}
+void StudioMetalScene::handleAxes(float3 out[3]) const {
+    // Scale always uses the object's own axes (a world-axis scale of a rotated
+    // object would shear); Move/Rotate follow the Global/Local toggle.
+    const bool local=(tool_==TransformTool::Scale||localSpace_)&&selectedAxesValid_;
+    for(int a=0;a<3;++a)out[a]=local?selectedAxes_[a]:float3{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};
+}
+int StudioMetalScene::transformGizmoHit(float x,float y,float width,float height) const {
+    if(materialMode_||!gizmosVisible_||tool_==TransformTool::View||!selectedPivotValid_||width<4||height<4)return -1;
+    if(selectedIsLight_&&tool_!=TransformTool::Move)return -1;
+    const auto view=viewCamera();
+    float3 axes[3];handleAxes(axes);
+    const auto h=axisHandles(view,selectedPivot_,axes,width,height);
+    if(!h.valid)return -1;
+    int best=-1;float bestD=h.pick;
+    // Plane squares (all tools): Move = drag in the plane, Scale = both plane axes,
+    // Rotate = turn about the plane's normal (same as that axis's ring).
+    for(int n=0;n<3;++n){
+        float2 q[4];
+        if(planeQuad(view,selectedPivot_,axes,n,h.worldLength,width,height,q)&&insideQuad(q,x,y))
+            return tool_==TransformTool::Rotate?n:4+n;
+    }
+    if(tool_==TransformTool::Rotate) {
+        for(int a=0;a<3;++a){
+            float3 u,v;ringBasis(axes[a],u,v);float2 prev{};bool hasPrev=false;
+            for(int i=0;i<=kRingSegments;++i){
+                const float t=6.2831853f*float(i)/float(kRingSegments);
+                float2 q;if(!view.worldToScreen(selectedPivot_+(u*std::cos(t)+v*std::sin(t))*h.worldLength,width,height,q)){hasPrev=false;continue;}
+                if(hasPrev){const float d=segmentDistance(x,y,prev.x,prev.y,q.x,q.y);if(d<bestD){bestD=d;best=a;}}
+                prev=q;hasPrev=true;
+            }
+        }
+        return best;
+    }
+    for(int a=0;a<3;++a){const float d=segmentDistance(x,y,h.px,h.py,h.tip[a][0],h.tip[a][1]);if(d<bestD){bestD=d;best=a;}}
+    if(tool_==TransformTool::Scale && std::hypot(x-h.px,y-h.py)<h.pick*1.4f)best=3; // centre: uniform
+    return best;
+}
+bool StudioMetalScene::beginTransformDrag(float x,float y,float width,float height) {
+    const int axis=transformGizmoHit(x,y,width,height);
+    if(axis<0)return false;
+    const auto view=viewCamera();
+    float3 axes[3];handleAxes(axes);
+    const auto h=axisHandles(view,selectedPivot_,axes,width,height);
+    TransformDrag d;d.axis=axis;d.tool=tool_;d.id=selectedId_;d.pivot=selectedPivot_;
+    for(int a=0;a<3;++a)d.axes[a]=axes[a];
+    d.dir=axis<3?axes[axis]:float3{1,1,1};d.lengthPx=h.lengthPx;d.worldLength=h.worldLength;
+    d.startX=x;d.value=tool_==TransformTool::Scale?1.0f:0.0f;
+    if(tool_==TransformTool::Rotate) {
+        d.startAngle=d.lastAngle=std::atan2(y-h.py,x-h.px);
+        d.facing=dot(d.dir,view.eye()-d.pivot)>0;
+        d.screenPivot={h.px,h.py};
+        // Direction on the ring plane under the press: the angle readout starts there.
+        float3 ro,rd,hit;float3 bu,bv;ringBasis(d.dir,bu,bv);d.startVec=bu;
+        if(view.screenRay(x,y,width,height,ro,rd)&&rayPlane(ro,rd,d.pivot,d.dir,hit)){
+            const float3 v=hit-d.pivot;const float l=std::sqrt(dot(v,v));if(l>1e-5f)d.startVec=v*(1.0f/l);
+        }
+    } else if(axis>=4) {
+        d.planeNormal=axes[axis-4];
+        float3 o,dir;if(!view.screenRay(x,y,width,height,o,dir))return false;
+        if(!rayPlane(o,dir,d.pivot,d.planeNormal,d.startHit))return false;
+    } else if(axis<3) {
+        float3 o,dir;if(!view.screenRay(x,y,width,height,o,dir))return false;
+        if(!axisParameter(d.pivot,d.dir,o,dir,d.startT))return false;
+    }
+    tween_.active=false;
+    drag_=d;
+    return true;
+}
+void StudioMetalScene::updateTransformDrag(float x,float y,float width,float height,bool invertSnap) {
+    if(drag_.axis<0)return;
+    const bool snap=snapEnabled_!=invertSnap;
+    drag_.snapping=snap;
+    if(drag_.tool==TransformTool::Rotate) {
+        const float angle=std::atan2(y-drag_.screenPivot.y,x-drag_.screenPivot.x);
+        float step=angle-drag_.lastAngle;
+        if(step>3.14159265f)step-=6.2831853f; else if(step<-3.14159265f)step+=6.2831853f;
+        drag_.lastAngle=angle;drag_.accumulated+=step;
+        // Screen y points down: counter-clockwise on screen is a negative angle.
+        float degrees=drag_.accumulated*57.2957795f*(drag_.facing?-1.0f:1.0f);
+        if(snap)degrees=std::round(degrees/snapRotate_)*snapRotate_;
+        drag_.value=std::clamp(degrees,-36000.0f,36000.0f);
+        return;
+    }
+    if(drag_.tool==TransformTool::Scale && drag_.axis==3) {
+        float f=1.0f+(x-drag_.startX)/std::max(1.0f,drag_.lengthPx);
+        if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
+        drag_.value=std::clamp(f,0.01f,100.0f);
+        return;
+    }
+    float3 o,d;if(!viewCamera().screenRay(x,y,width,height,o,d))return;
+    if(drag_.axis>=4 && drag_.tool==TransformTool::Scale) {
+        float3 hit;if(!rayPlane(o,d,drag_.pivot,drag_.planeNormal,hit))return;
+        // Both in-plane axes grow together along the square's diagonal.
+        const float3 diag=normalize(drag_.axes[(drag_.axis-4+1)%3]+drag_.axes[(drag_.axis-4+2)%3]);
+        float f=1.0f+dot(hit-drag_.startHit,diag)/std::max(1e-4f,drag_.worldLength);
+        if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
+        drag_.value=std::clamp(f,0.01f,100.0f);
+        return;
+    }
+    if(drag_.axis>=4) {
+        float3 hit;if(!rayPlane(o,d,drag_.pivot,drag_.planeNormal,hit))return;
+        float3 delta=hit-drag_.startHit;
+        // Snap along the two plane axes (world or local).
+        if(snap) for(int k=1;k<=2;++k){const float3 a=drag_.axes[(drag_.axis-4+k)%3];const float c=dot(delta,a);
+            delta=delta+a*(std::round(c/snapMove_)*snapMove_-c);}
+        const float l=std::sqrt(dot(delta,delta));
+        drag_.moveOffset=l>100000.0f?delta*(100000.0f/l):delta;
+        drag_.value=l;
+        return;
+    }
+    float t=0;if(!axisParameter(drag_.pivot,drag_.dir,o,d,t))return;
+    float delta=std::clamp(t-drag_.startT,-100000.0f,100000.0f);
+    if(drag_.tool==TransformTool::Move) {
+        if(snap)delta=std::round(delta/snapMove_)*snapMove_;
+        drag_.value=delta;drag_.moveOffset=drag_.dir*delta;
+    } else {
+        float f=1.0f+delta/std::max(1e-4f,drag_.worldLength);
+        if(snap)f=1.0f+std::round((f-1.0f)/snapScale_)*snapScale_;
+        drag_.value=std::clamp(f,0.01f,100.0f);
+    }
+}
+render::mat4 StudioMetalScene::dragPreview() const {
+    if(drag_.axis<0)return mat4{};
+    const float3 p=drag_.pivot;
+    if(drag_.tool==TransformTool::Move)return mat4::translate(drag_.moveOffset);
+    if(drag_.tool==TransformTool::Rotate)
+        return mat4::translate(p)*mat4::rotate(quat::axisAngle(drag_.dir,drag_.value*0.017453292f))*mat4::translate(p*-1.0f);
+    // Scale about the pivot along the object's own axes: B * diag(f) * B^T.
+    mat4 basis,basisT;
+    for(int c=0;c<3;++c){const float3 a=drag_.axes[c];
+        basis.at(0,c)=a.x;basis.at(1,c)=a.y;basis.at(2,c)=a.z;basisT.at(c,0)=a.x;basisT.at(c,1)=a.y;basisT.at(c,2)=a.z;}
+    const float f=drag_.value;
+    auto on=[&](int a){return drag_.axis==3||drag_.axis==a||(drag_.axis>=4&&drag_.axis-4!=a);};
+    const float3 k{on(0)?f:1.f,on(1)?f:1.f,on(2)?f:1.f};
+    return mat4::translate(p)*basis*mat4::scale(k)*basisT*mat4::translate(p*-1.0f);
+}
+std::string StudioMetalScene::transformCaption() const {
+    if(drag_.axis<0)return {};
+    static const char* names[7]={"X","Y","Z","XYZ","YZ","XZ","XY"};
+    char text[96];
+    const char* space=(drag_.tool==TransformTool::Scale||localSpace_)?" (local)":"";
+    if(drag_.tool==TransformTool::Move&&drag_.axis>=4)std::snprintf(text,sizeof text,"Move %s (%+.3g, %+.3g, %+.3g)%s",names[drag_.axis],
+        double(drag_.moveOffset.x),double(drag_.moveOffset.y),double(drag_.moveOffset.z),space);
+    else if(drag_.tool==TransformTool::Move)std::snprintf(text,sizeof text,"Move %s %+.3g%s",names[drag_.axis],double(drag_.value),space);
+    else if(drag_.tool==TransformTool::Rotate)std::snprintf(text,sizeof text,"Rotate %s %+.4g°%s",names[drag_.axis],double(drag_.value),space);
+    else std::snprintf(text,sizeof text,"Scale %s ×%.3g",names[drag_.axis],double(drag_.value));
+    return text;
+}
+std::optional<StudioMetalScene::TransformCommit> StudioMetalScene::endTransformDrag() {
+    if(drag_.axis<0)return std::nullopt;
+    TransformCommit c;c.id=drag_.id;c.tool=drag_.tool;c.axis=drag_.axis;
+    if(drag_.tool==TransformTool::Move)c.move=drag_.moveOffset;
+    else if(drag_.tool==TransformTool::Rotate)c.degrees=drag_.value;
+    else c.factor=drag_.value;
+    // The host commits synchronously, then calls clearTransformPreview().
+    drag_.axis=-1;
+    return c;
+}
+void StudioMetalScene::drawTransformGizmo(const render::RTSCamera& view,int width,int height) {
+    if(!selectedPivotValid_||!gizmosVisible_||tool_==TransformTool::View)return;
+    if(selectedIsLight_&&tool_!=TransformTool::Move)return;
+    const float W=float(width),H=float(height);
+    const bool dragging=drag_.id==selectedId_ && !drag_.id.empty();
+    const float3 pivot=selectedPivot_+(dragging&&drag_.tool==TransformTool::Move?drag_.moveOffset:float3{});
+    float3 axes[3];handleAxes(axes);
+    const auto h=axisHandles(view,pivot,axes,W,H);
+    if(!h.valid)return;
+    Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.5f};
+    const uint32_t colors[3]={rgba(232,82,72),rgba(120,205,85),rgba(70,135,240)};
+    const uint32_t active=rgba(255,214,64);
+    const float u=std::min(W,H)*0.16f/110.0f;
+    auto drawPlanes=[&](){
+        for(int n=0;n<3;++n){
+            float2 q[4];if(!planeQuad(view,pivot,axes,n,h.worldLength,W,H,q))continue;
+            const bool hot=dragging&&(drag_.axis==4+n||(tool_==TransformTool::Rotate&&drag_.axis==n));
+            const uint32_t base=hot?active:colors[n];
+            const uint32_t fill=(base&0x00ffffffu)|(hot?0xa0000000u:0x55000000u);
+            o.tri(q[0].x,q[0].y,q[1].x,q[1].y,q[2].x,q[2].y,fill);o.tri(q[0].x,q[0].y,q[2].x,q[2].y,q[3].x,q[3].y,fill);
+            for(int i=0;i<4;++i)o.segment(q[i].x,q[i].y,q[(i+1)%4].x,q[(i+1)%4].y,1.4f*u,base);
+        }
+    };
+    if(tool_==TransformTool::Rotate) {
+        drawPlanes();
+        const float3 toEye=normalize(view.eye()-pivot);
+        for(int a=0;a<3;++a){
+            const bool hot=dragging&&drag_.axis==a;
+            float3 bu,bv;ringBasis(axes[a],bu,bv);
+            float2 prev{};bool hasPrev=false;
+            for(int i=0;i<=kRingSegments;++i){
+                const float t=6.2831853f*float(i)/float(kRingSegments);
+                const float3 dir=bu*std::cos(t)+bv*std::sin(t);
+                float2 q;if(!view.worldToScreen(pivot+dir*h.worldLength,W,H,q)){hasPrev=false;continue;}
+                // The half facing away from the camera is dimmed, like Unity.
+                const bool back=dot(dir,toEye)<-0.05f;
+                const uint32_t col=hot?active:back?((colors[a]&0x00ffffffu)|0x50000000u):colors[a];
+                if(hasPrev)o.segment(prev.x,prev.y,q.x,q.y,(hot?3.0f:2.2f)*u,col);
+                prev=q;hasPrev=true;
+            }
+        }
+        if(dragging && drag_.tool==TransformTool::Rotate && drag_.axis>=0 && drag_.axis<3) {
+            const float3 axis=drag_.dir,start=drag_.startVec;const float R=h.worldLength;
+            const float deg=drag_.value;
+            float2 c;if(!view.worldToScreen(pivot,W,H,c))return;
+            auto at=[&](float degrees,float radius,float2& out){
+                const float3 v=quat::axisAngle(axis,degrees*0.017453292f).rotate(start);
+                return view.worldToScreen(pivot+v*radius,W,H,out);
+            };
+            // Swept sector (how far it turned) + its two edges.
+            const int steps=std::clamp(int(std::fabs(deg)/4.0f)+1,1,180);
+            float2 prev;bool hasPrev=at(0,R,prev);
+            for(int i=1;i<=steps;++i){
+                float2 q;if(!at(deg*float(i)/float(steps),R,q)){hasPrev=false;continue;}
+                if(hasPrev)o.tri(c.x,c.y,prev.x,prev.y,q.x,q.y,rgba(255,214,64,70));
+                prev=q;hasPrev=true;
+            }
+            float2 a0,a1;
+            if(at(0,R,a0))o.segment(c.x,c.y,a0.x,a0.y,1.6f*u,rgba(255,214,64,200));
+            if(at(deg,R,a1))o.segment(c.x,c.y,a1.x,a1.y,2.2f*u,active);
+            // Snap divisions on the active ring.
+            if(drag_.snapping && snapRotate_>0.5f) {
+                const int count=std::min(720,int(std::round(360.0f/snapRotate_)));
+                for(int i=0;i<count;++i){
+                    const float t=float(i)*snapRotate_;
+                    const bool major=std::fmod(t,90.0f)<0.01f;
+                    float2 p0,p1;
+                    if(at(t,R*(major?0.86f:0.92f),p0)&&at(t,R*1.06f,p1))o.segment(p0.x,p0.y,p1.x,p1.y,(major?2.0f:1.3f)*u,rgba(255,240,190,major?230:170));
+                }
+            }
+            // Angle readout next to the moving edge.
+            char text[32];std::snprintf(text,sizeof text,"%+.1f\xb0",double(deg));
+            std::string label=text;
+            if(label.size()>3&&label.compare(label.size()-3,2,".0")==0)label.erase(label.size()-3,2); // "+15°" not "+15.0°"
+            float2 lp;if(!at(deg,R*1.25f,lp))lp={c.x+R,c.y};
+            const float th=std::max(10.0f,12.0f*u);
+            overlayText(o,lp.x-overlayTextWidth(label,th)*0.5f,lp.y-th*0.5f,th,label,rgba(255,240,190));
+        }
+        return;
+    }
+    int order[3]={0,1,2};
+    const float3 fwd=normalize(view.target-view.eye());
+    std::sort(order,order+3,[&](int l,int r){return std::fabs(dot(axes[l],fwd))>std::fabs(dot(axes[r],fwd));});
+    for(const int a:order){
+        const uint32_t col=dragging&&drag_.axis==a?active:colors[a];
+        float tipX=h.tip[a][0],tipY=h.tip[a][1];
+        if(tool_==TransformTool::Scale && dragging && (drag_.axis==a||drag_.axis==3||(drag_.axis>=4&&drag_.axis-4!=a))){
+            tipX=h.px+(tipX-h.px)*drag_.value;tipY=h.py+(tipY-h.py)*drag_.value;
+        }
+        const float dx=tipX-h.px,dy=tipY-h.py,l=std::hypot(dx,dy);
+        if(l<3*u)continue;
+        const float ux=dx/l,uy=dy/l;
+        if(tool_==TransformTool::Scale){
+            const float b=4.5f*u;
+            o.segment(h.px,h.py,tipX-ux*b,tipY-uy*b,2.4f*u,col);
+            o.tri(tipX-b,tipY-b,tipX+b,tipY-b,tipX+b,tipY+b,col);o.tri(tipX-b,tipY-b,tipX+b,tipY+b,tipX-b,tipY+b,col);
+            continue;
+        }
+        const float cone=std::min(l*0.4f,14*u),half=5*u;
+        const float bx=tipX-ux*cone,by=tipY-uy*cone;
+        o.segment(h.px,h.py,bx,by,2.4f*u,col);
+        o.tri(tipX,tipY,bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
+    }
+    drawPlanes();
+    const float c=(tool_==TransformTool::Scale?4.5f:3.0f)*u;
+    const uint32_t centre=tool_==TransformTool::Scale&&dragging&&drag_.axis==3?active:rgba(235,240,250);
+    o.tri(h.px-c,h.py-c,h.px+c,h.py-c,h.px+c,h.py+c,centre);
+    o.tri(h.px-c,h.py-c,h.px+c,h.py+c,h.px-c,h.py+c,centre);
+    // Live readout: how far it moved (per axis, axis colours) / how much it scaled.
+    if(dragging && drag_.axis>=0) {
+        const float th=std::max(10.0f,12.0f*u);
+        float tx=h.px+16*u,ty=h.py-34*u;
+        if(drag_.tool==TransformTool::Move) {
+            float2 from;
+            if(view.worldToScreen(drag_.pivot,W,H,from))o.segment(from.x,from.y,h.px,h.py,1.4f*u,rgba(255,214,64,180));
+            for(int a=0;a<3;++a){
+                const bool on=drag_.axis==a||(drag_.axis>=4&&drag_.axis-4!=a);
+                if(!on)continue;
+                const std::string text=gizmoNumber(dot(drag_.moveOffset,drag_.axes[a]));
+                overlayText(o,tx,ty,th,text,colors[a]);
+                tx+=overlayTextWidth(text,th)+th*0.6f;
+            }
+        } else if(drag_.tool==TransformTool::Scale) {
+            overlayText(o,tx,ty,th,"x"+gizmoNumber(drag_.value,false),drag_.axis<3?colors[drag_.axis]:rgba(255,240,190));
+        }
+    }
+}
+render::Model* StudioMetalScene::builtinPrimitive(bool sphere) {
+    auto& slot=sphere?builtinSphere_:builtinCube_;
+    if(slot)return slot.get();
+    render::MeshBuilder mesh;
+    mesh.color(render::rgba(255,255,255));
+    if(sphere) mesh.sphere({0,0,0},0.5f,24,32); else mesh.box({0,0,0},{1,1,1});
+    render::Material base;base.vertexColors=false;base.name="Default";
+    slot=render::modelFromParts(sphere?"builtin:sphere":"builtin:cube",
+        {{sphere?"Sphere":"Cube",&mesh,base,render::mat4{}}});
+    if(!slot)return nullptr;
+    slot->batching.autoLod=false;
+    render::prepareModelUpload(*slot);
+    if(!render::uploadModel(*device_,*slot)){releasePreviewModel(*slot);slot.reset();return nullptr;}
+    return slot.get();
+}
 std::vector<std::string> StudioMetalScene::modelMaterialSlots(const std::string& asset) const {
     std::vector<std::string> names;
     const auto found=documentModels_.find(asset);
@@ -478,8 +1013,9 @@ void StudioMetalScene::drawOrientationGizmo(const render::RTSCamera& view,int wi
 void StudioMetalScene::orbit(float dx, float dy) {
     tween_.active=false;
     if(autoIso_){camera_.ortho=false;autoIso_=false;}
-    camera_.yaw += dx * 0.007f;
-    camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, -1.52f, 1.52f);
+    // Unity: drag right turns the view right, drag up looks up (pivot stays centred).
+    camera_.yaw -= dx * 0.007f;
+    camera_.pitch = std::clamp(camera_.pitch + dy * 0.007f, -1.52f, 1.52f);
 }
 void StudioMetalScene::zoom(float wheel) {
     tween_.active=false;
@@ -502,8 +1038,8 @@ void StudioMetalScene::look(float dx, float dy) {
     tween_.active=false;
     if(autoIso_){camera_.ortho=false;autoIso_=false;}
     const float3 position=camera_.eye();
-    camera_.yaw += dx*0.007f;
-    camera_.pitch=std::clamp(camera_.pitch-dy*0.007f,-1.52f,1.52f);
+    camera_.yaw -= dx*0.007f;   // Unity: drag right looks right, drag up looks up
+    camera_.pitch=std::clamp(camera_.pitch+dy*0.007f,-1.52f,1.52f);
     const float cp=std::cos(camera_.pitch),sp=std::sin(camera_.pitch);
     const float3 fromTarget{std::sin(camera_.yaw)*cp,sp,std::cos(camera_.yaw)*cp};
     camera_.target=position-fromTarget*camera_.distance;
@@ -841,6 +1377,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     stepTween();
     const auto view=viewCamera();
+    // proxies/syncDocumentModels ran above: lighting needs modelInstances_ first.
     device_->beginFrame(framebufferWidth, framebufferHeight);
     StudioFrameScope scope{*device_};
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
@@ -849,7 +1386,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
     underwaterFrameTime_=opticalNow;
     renderer_.beginScene(view, framebufferWidth, framebufferHeight);
-    renderer_.setSceneSelectionOutline(true);
+    renderer_.setSceneSelectionOutline(true); // editor-only depth-tested silhouette
+    {
+        const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-windClock_).count();
+        renderer_.setSceneWind(wind_.sceneWind(seconds));
+        renderer_.setWindRigDebugView(wind_.debug==render::wind::WindDebugView::Skeleton ?
+            render::wind::WindDebugView::Off : wind_.debug);
+    }
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {
         renderer_.lights.setNightGlow(day.night*1.5f);
@@ -865,10 +1408,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const float w = float(std::max(map.w, 1));
     const float h = float(std::max(map.h, 1));
     if(lightingModel_) {
+        // Shared lit preview geometry (terrain + document proxies) owned by the lighting runtime.
         ModelDraw draw;draw.model=lightingModel_.get();renderer_.drawModel(draw);
     }
-    if(showTerrain && !lightingModel_){
-    if (terrain_.vb.valid() && terrain_.ib.valid()) {
+    if(showTerrain){
+    if(lightingModel_) {
+        // Terrain is already part of the lit preview model.
+    } else if (terrain_.vb.valid() && terrain_.ib.valid()) {
         renderer_.drawMesh(terrain_, mat4{}, {1,1,1,1}, kDrawNoCastShadow);
     } else {
         // Unsupported planet maps or empty terrain: basic plane only.
@@ -885,27 +1431,116 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
 
     } // external/Terra surface suppresses the default plane and grid
 
+    selectedId_=selectedId;
+    selectedPivotValid_=false;
+    selectedBoxValid_=false;
+    primitiveMaterials_.clear();
     for(const auto& entity:proxies) {
         const int sourceIndex=studioMapEntityIndex(entity.id,doc);
+        if(hidden_.count(entity.id))continue;
+        const bool dragged=!drag_.id.empty() && entity.id==drag_.id;
+        const mat4 preview=dragged?dragPreview():mat4{};
+        const float3 offset=dragged&&drag_.tool==TransformTool::Move?drag_.moveOffset:float3{};
+        if(entity.id==selectedId) {
+            selectedPivot_=entity.light?entity.center:float3{entity.center.x,entity.boundsMin.y,entity.center.z};
+            selectedPivotValid_=true;selectedIsLight_=entity.light;
+            selectedAxesValid_=false;
+        }
         if(sourceIndex>=0 && doc.data.entities[size_t(sourceIndex)].extra["components"].has("NereidWater"))continue;
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
         if (hasModel) continue;
-        if(!lightingModel_&&!entity.light){
-            const auto transform=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
-            if(entity.id==selectedId)renderer_.drawSelectionMesh(cube_,transform,entity.color,{.25f,.62f,1.f,1.f});
-            else renderer_.drawMesh(cube_,transform,entity.color,kDrawNoCastShadow);
+        // Authored entities use their full Transform (3D rotation, per-axis scale).
+        mat4 world=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+        mat4 frame=mat4::rotateY(entity.yaw);
+        if(sourceIndex>=0 && editor::authoredEntity(doc.data.entities[size_t(sourceIndex)])) {
+            try {
+                frame=editor::authoredModelMatrix(doc.data.entities[size_t(sourceIndex)]);
+                world=frame*mat4::translate({0,entity.half.y,0})*mat4::scale(entity.half*2.0f);
+            } catch(const std::exception&) {}
+        }
+        if(entity.id==selectedId && !entity.light) {
+            for(int a=0;a<3;++a){const float3 axis=frame.transformDir({a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f});
+                const float l=std::sqrt(dot(axis,axis));selectedAxes_[a]=l>1e-6f?axis*(1.0f/l):float3{a==0?1.f:0.f,a==1?1.f:0.f,a==2?1.f:0.f};}
+            selectedAxesValid_=true;
+        }
+        world=preview*world;
+        if(entity.id==selectedId && !entity.light) captureSelectedBox(world,{-.5f,-.5f,-.5f},{.5f,.5f,.5f});
+        // Mesh Renderer with a built-in primitive: sphere, or an assigned material,
+        // draws a PBR primitive Model; plain default cubes keep the cheap proxy path.
+        const auto* sourceEntity=sourceIndex>=0?&doc.data.entities[size_t(sourceIndex)]:nullptr;
+        const Json staticModel=sourceEntity?sourceEntity->extra["components"]["StaticModel"]:Json::object();
+        const bool sphere=staticModel.getStr("asset")=="builtin:sphere";
+        const Json& materialRef=staticModel["materials"]["*"];
+        if(!lightingModel_ && !entity.light && (sphere || materialRef.isString())) {
+            if(auto* primitive=builtinPrimitive(sphere)) {
+                auto& materials=primitiveMaterials_[entity.id];
+                Json resolved=Json::object();
+                if(materialRef.isString())
+                    resolved=view::AppearanceAuthoringService::resolveMaterial(materialLibrary_,materialRef);
+                if(!resolved["color"].isArray()){
+                    Json color=Json::array();
+                    for(float c:{entity.color.x,entity.color.y,entity.color.z})color.push(Json::number(double(c),3));
+                    resolved.set("color",color);
+                }
+                materials={studioPbrPreviewMaterial(resolved,materialRef.isString()?materialRef.str():"Default")};
+                render::ModelDraw draw;draw.model=primitive;draw.world=world;draw.materials=&materials;
+                if(entity.id==selectedId||selection_.count(entity.id))draw.outline={.25f,.62f,1.0f,.035f};
+                else if(entity.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
+                renderer_.drawModel(draw);
+                continue;
+            }
+        }
+        if(!lightingModel_ && !entity.light) {
+            if(entity.id==selectedId||selection_.count(entity.id)) renderer_.drawSelectionMesh(cube_,world,entity.color,{.25f,.62f,1.0f,1.0f});
+            else if(entity.id==hover_) renderer_.drawSelectionMesh(cube_,world,entity.color,{.62f,.8f,1.0f,.55f});
+            else renderer_.drawMesh(cube_,world,entity.color,kDrawNoCastShadow);
+        } else if(entity.id==selectedId && entity.light) {
+            const auto lo=entity.boundsMin+offset,hi=entity.boundsMax+offset;
+            const float3 p[8]={{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},
+                {hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,lo.z},
+                {hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}};
+            constexpr int edges[12][2]={{0,1},{1,2},{2,3},{3,0},
+                {4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+            for(const auto& edge:edges)
+                renderer_.line(p[edge[0]],p[edge[1]],rgba(64,158,255));
         }
 
     }
+    riggedInstances_=0; riggedParts_=0;
+    const double windSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-windClock_).count();
     for(const auto& instance:modelInstances_) {
+        if(hidden_.count(instance.id))continue;
         render::ModelDraw draw;
         draw.model=instance.model;
         draw.world=instance.world;
+        if(!drag_.id.empty() && instance.id==drag_.id) draw.world=dragPreview()*instance.world;
         if(auto custom=instanceMaterials_.find(instance.id);custom!=instanceMaterials_.end())
             draw.materials=&custom->second.materials;
-        if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
+        if(auto team=instanceTeams_.find(instance.id);team!=instanceTeams_.end())draw.team=team->second;
+        if(instance.id!=selectedId && selection_.count(instance.id))draw.outline={.25f,.62f,1.0f,.035f};
+        else if(instance.id!=selectedId && instance.id==hover_)draw.outline={.62f,.8f,1.0f,.02f};
+        if(instance.id==selectedId) {
+            draw.outline={.25f,.62f,1.0f,.035f};
+            if(instance.model)captureSelectedBox(draw.world,instance.model->boundsMin,instance.model->boundsMax);
+        }
         renderer_.drawModel(draw);
+        // Skeleton debug view: parts as lines (depth colour, mask brightness),
+        // displaced by the same reference math as the GPU.
+        auto cachedRig=windRigs_.find(instance.model);
+        if(cachedRig==windRigs_.end())
+            cachedRig=windRigs_.emplace(instance.model,render::wind::findWindRig(*instance.model)).first;
+        if(const auto& rig=cachedRig->second) {
+            ++riggedInstances_; riggedParts_+=rig->decoded.nodes.size();
+            if(wind_.debug==render::wind::WindDebugView::Skeleton &&
+               (selectedId.empty() || instance.id==selectedId || riggedInstances_<=32)) {
+                std::vector<render::wind::WindDebugLine> lines;
+                const auto params=render::wind::windRigParamsForDraw(wind_.sceneWind(windSeconds),draw.world);
+                render::wind::windRigDebugLines(*rig,draw.world,params,lines,6,1024);
+                for(const auto& l:lines)
+                    renderer_.line({l.a.x,l.a.y,l.a.z},{l.b.x,l.b.y,l.b.z},l.rgba);
+            }
+        }
     }
     nereid_.draw(renderer_);
     // Editor gizmos for authored lights; actual light contribution is passed through
@@ -918,7 +1553,19 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({at.x,at.y-extent,at.z},{at.x,at.y+extent,at.z},color);
         renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
-    if(orientationGizmo_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
+    if(gizmosVisible_)drawSelectionBox(view,framebufferWidth,framebufferHeight);
+    drawTransformGizmo(view,framebufferWidth,framebufferHeight);
+    if(orientationGizmo_&&gizmosVisible_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
+    if(marquee_.on) {
+        const float W=float(framebufferWidth),H=float(framebufferHeight);
+        Overlay2D o{renderer_,view,W,H,view.ortho?0.5f:view.zNear*1.4f};
+        const float x0=std::min(marquee_.x0,marquee_.x1)*W,x1=std::max(marquee_.x0,marquee_.x1)*W;
+        const float y0=std::min(marquee_.y0,marquee_.y1)*H,y1=std::max(marquee_.y0,marquee_.y1)*H;
+        o.tri(x0,y0,x1,y0,x1,y1,rgba(130,181,255,40));o.tri(x0,y0,x1,y1,x0,y1,rgba(130,181,255,40));
+        const float w=std::max(1.0f,std::min(W,H)*0.0015f);
+        o.segment(x0,y0,x1,y0,w,rgba(130,181,255,220));o.segment(x1,y0,x1,y1,w,rgba(130,181,255,220));
+        o.segment(x1,y1,x0,y1,w,rgba(130,181,255,220));o.segment(x0,y1,x0,y0,w,rgba(130,181,255,220));
+    }
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
@@ -933,5 +1580,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             (unsigned long long)stats.cameraLodNodes[0],(unsigned long long)stats.cameraLodNodes[1],(unsigned long long)stats.cameraLodNodes[2],(unsigned long long)stats.cameraLodNodes[3],
             (unsigned long long)stats.cameraLodChains,(unsigned long long)stats.cameraLodBlocked,(unsigned long long)stats.cameraShadowLimitedLod);
     }
+    // StudioFrameScope ends the pass and frame, including on exceptions.
+}
+Json StudioMetalScene::windStats() const {
+    Json j=Json::object();
+    j.set("riggedInstances",Json::number(int64_t(riggedInstances_)));
+    j.set("riggedParts",Json::number(int64_t(riggedParts_)));
+    j.set("models",Json::number(int64_t(documentModels_.size())));
+    return j;
 }
 }

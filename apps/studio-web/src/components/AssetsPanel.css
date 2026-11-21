@@ -207,3 +207,7 @@
 .studio-assets-create-folder,.studio-assets-status{padding:3px 6px;gap:6px}
 .studio-assets-create-folder input,.studio-assets-create-folder button{padding:2px 6px;height:22px}
 .studio-assets-footer{min-height:18px;padding:1px 8px}
+/* Resizable folder tree */
+.studio-assets-splitter{flex:none;width:5px;margin:0 -2px;cursor:col-resize;position:relative;z-index:2;touch-action:none}
+.studio-assets-splitter::after{content:"";position:absolute;top:0;bottom:0;left:2px;width:1px;background:var(--au-line)}
+.studio-assets-splitter:hover::after,.studio-assets-splitter:focus-visible::after{background:var(--au-accent);width:2px;left:1.5px}
