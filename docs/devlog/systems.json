@@ -99,7 +99,7 @@
           "status": "in-progress",
           "target": null,
           "title": "Проверка на GPU, в редакторе и по производительности",
-          "text": "По документации системы проверка GPU, интеграций и производительности ещё не завершена.",
+          "text": "Проверка на GPU, интеграций и производительности ещё не закончена.",
           "titleEn": "GPU, editor and performance verification",
           "textEn": "Per the system's docs, GPU, integration and performance verification is not complete yet."
         },
@@ -215,7 +215,7 @@
           "status": "in-progress",
           "target": null,
           "title": "Сборка и тесты в CI",
-          "text": "По документации компиляция и CTest в этой линии ещё не подтверждены.",
+          "text": "Сборка и автотесты на всех платформах ещё впереди.",
           "titleEn": "Build and tests in CI",
           "textEn": "Per the docs, compilation and CTest are not yet confirmed on this line."
         },
@@ -634,17 +634,13 @@
           "status": "planned",
           "target": null,
           "title": "Планировщик, стек камер, режиссёр и split-screen",
-          "text": "Приоритет P1 в документации.",
-          "titleEn": "Scheduler, camera stack, director and split-screen",
-          "textEn": "P1 priority in the docs."
+          "titleEn": "Scheduler, camera stack, director and split-screen"
         },
         {
           "status": "planned",
           "target": null,
           "title": "PostFX и слои отдельно для каждой камеры",
-          "text": "P1.",
-          "titleEn": "Per-camera PostFX and layers",
-          "textEn": "P1."
+          "titleEn": "Per-camera PostFX and layers"
         },
         {
           "status": "done",
@@ -666,9 +662,7 @@
           "status": "planned",
           "target": null,
           "title": "Стерео и OpenXR",
-          "text": "P2.",
-          "titleEn": "Stereo and OpenXR",
-          "textEn": "P2."
+          "titleEn": "Stereo and OpenXR"
         }
       ],
       "taglineEn": "Cameras and cinematic frames",
@@ -905,7 +899,7 @@
           "status": "planned",
           "target": null,
           "title": "Проверка на Metal-захватах, MSL и Android",
-          "text": "По документации проб GI эти пути не проверены.",
+          "text": "Эти пути для проб GI ещё не проверены.",
           "titleEn": "Verification of Metal captures, MSL and Android",
           "textEn": "Per the probe GI docs, these paths are unverified."
         }

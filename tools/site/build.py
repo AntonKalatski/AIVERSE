@@ -370,7 +370,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, roadmap_lines, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, fill_tokens)
 
@@ -515,11 +515,12 @@ def cmd_build(args):
                 sys.exit(f'site page missing: {f.relative_to(out)}')
             text = fill_tokens(f.read_text(encoding='utf-8'), ctx, name)
             if name == 'index.html':
-                for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->'):
+                for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->', '<!--ROADMAP_LINES-->'):
                     if mark not in text:
                         sys.exit(f'{lang}/index.html lost the {mark} placeholder')
                 text = text.replace('<!--SHOWCASE-->', showcase_html(frame, by_id, ctx))
                 text = text.replace('<!--SYSTEMS-->', systems_html(systems, ctx))
+                text = text.replace('<!--ROADMAP_LINES-->', roadmap_lines(flagships, ctx))
                 text = text.replace('<!--RELEASE_CHIP-->', release_chip(rel_data['releases'], ctx))
             f.write_text(text, encoding='utf-8')
         for s in flagships:

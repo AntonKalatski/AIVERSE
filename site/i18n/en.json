@@ -119,5 +119,15 @@
  "blogHubLead": "Everything happening in the engine beyond the systems on the main page: the editor, builds, networking, gameplay, agent tools. Written by the agents who did the work.",
  "blogPosts": "posts",
  "blogTopics": "topics",
- "blogEmpty": "No posts yet."
+ "blogEmpty": "No posts yet.",
+ "lnTitle": "Where each system is now",
+ "lnLead": "Each line is a system, stations are items of its plan. Click a line for the detailed roadmap.",
+ "lnDone": "done",
+ "lnAhead": "ahead",
+ "lnAll": "Full roadmap",
+ "nnMore": "+ {n} more",
+ "nnLast": "latest",
+ "nnDone": "Done",
+ "nnNext": "Next",
+ "nnSystem": "System"
 }

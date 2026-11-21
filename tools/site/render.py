@@ -344,22 +344,96 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
             f'<section class="sp-sec sp-others"><p class="eyebrow">{ctx.T["otherSystems"]}</p><div class="chips">{others}</div></section>')
 
 
+LINE_COLORS = ('#2F6FB0', '#3F8A55', '#1F8A9E', '#7A4FB0', '#B0562F', '#B0407A', '#C08A1E', '#8A4B26', '#C0392B', '#4B5E8A')
+
+
+def line_color(s, flagships):
+    return s.get('color') or LINE_COLORS[[f['id'] for f in flagships].index(s['id']) % len(LINE_COLORS)]
+
+
+def short(text, n):
+    return text if len(text) <= n else text[:n - 1].rstrip() + '…'
+
+
+def roadmap_lines(flagships, ctx):
+    """Main-page overview: one coloured line per system, stations for roadmap items."""
+    rows = []
+    for s in flagships:
+        rm = sorted_roadmap(s['roadmap'])
+        n = len(rm)
+        now = next((i for i, it in enumerate(rm) if it['status'] != 'done'), n)
+        col = line_color(s, flagships)
+        sts = []
+        for i, it in enumerate(rm):
+            x = 3 + 94 * i / max(n - 1, 1)
+            title = ctx.loc(it, 'title')
+            cls = 'done' if it['status'] == 'done' else ('cur' if i == now else 'plan')
+            lab = ''
+            if i == now:
+                lab = f'<span class="ln-l ln-cur">{esc(short(title, 40))}</span>'
+            elif it['status'] != 'done' and i == now + 1:
+                lab = f'<span class="ln-l ln-plan">{esc(short(title, 30))}</span>'
+            elif i == 0:
+                lab = f'<span class="ln-l">{esc(short(title, 30))}</span>'
+            sts.append(f'<span class="ln-st ln-{cls}" style="left:{x:.2f}%" title="{esc(title)}"><i></i>{lab}</span>')
+        xn = 3 + 94 * min(now, n - 1) / max(n - 1, 1) if now < n else 100
+        done = sum(1 for it in rm if it['status'] == 'done')
+        rows.append(f'<a class="ln" href="roadmap.html#{esc(s["id"])}" style="--c:{col};--x:{xn:.2f}%">'
+                    f'<span class="ln-n">{esc(s["name"])}<small>{esc(ctx.T["rmProgress"].format(d=done, n=n))}</small></span>'
+                    f'<span class="ln-track"><span class="ln-rail"></span>{"".join(sts)}</span></a>')
+    return (f'<section id="roadmap" class="section wrap ln-sec"><div class="ln-head"><div><p class="eyebrow">{ctx.T["navRoadmap"]}</p>'
+            f'<h2 class="h2">{ctx.T["lnTitle"]}</h2></div><div class="ln-side"><p>{ctx.T["lnLead"]}</p>'
+            f'<div class="ln-legend"><span><i class="lg-done"></i>{ctx.T["lnDone"]}</span><span><i class="lg-cur"></i>{ctx.T["rmNow"]}</span>'
+            f'<span><i class="lg-plan"></i>{ctx.T["lnAhead"]}</span></div></div></div>'
+            f'<div class="ln-list">{"".join(rows)}</div>'
+            f'<p class="ln-more"><a class="btn btn-line" href="roadmap.html">{ctx.T["lnAll"]} →</a></p></section>')
+
+
 def roadmap_page(flagships, ctx):
+    """Now / next / later: one row per system, done items folded, the current one highlighted."""
     chips = [f'<button class="filter" type="button" data-sys="" aria-pressed="true">{ctx.T["rmAll"]}</button>']
     chips += [f'<button class="filter" type="button" data-sys="{esc(s["id"])}" aria-pressed="false">{esc(s["name"])}</button>'
               for s in flagships]
-    lanes = ''.join(f'<section class="rml" id="{esc(s["id"])}" data-sys="{esc(s["id"])}"><div class="rml-head">'
-                    f'<a class="rml-name" href="system-{esc(s["id"])}.html">{esc(s["name"])}</a>'
-                    f'<span>{esc(ctx.loc(s, "tagline"))}</span></div>{rm_track(s["roadmap"], ctx)}</section>'
-                    for s in flagships)
+
+    def item(it, cls):
+        text = ctx.loc(it, 'text')
+        when = ctx.fmt_date(it['date']) if it['status'] == 'done' else (ctx.fmt_target(it['target']) if it.get('target') else '')
+        return (f'<li class="{cls}"><span class="nn-title">{esc(ctx.loc(it, "title"))}</span>'
+                f'{f"<span class=nn-text>{esc(text)}</span>" if text else ""}'
+                f'{f"<time class=mono>{esc(when)}</time>" if when else ""}</li>')
+    rows = []
+    for s in flagships:
+        rm = sorted_roadmap(s['roadmap'])
+        done = [it for it in rm if it['status'] == 'done']
+        cur = [it for it in rm if it['status'] == 'in-progress']
+        plan = [it for it in rm if it['status'] == 'planned']
+        pct = round(100 * len(done) / len(rm)) if rm else 0
+        last = ctx.fmt_date(done[-1]['date']) if done else '—'
+        recent = done[-2:][::-1]
+        older = done[:-2][::-1]
+        more = (f'<details class="nn-more"><summary>{ctx.T["nnMore"].format(n=len(older))}</summary>'
+                f'<ul class="nn-done">{"".join(item(it, "") for it in older)}</ul></details>') if older else ''
+        dash = '<span class="nn-none">—</span>'
+        cur_html = f'<ul class="nn-cur">{"".join(item(it, "") for it in cur)}</ul>' if cur else dash
+        rows.append(
+            f'<section class="nn-row" id="{esc(s["id"])}" data-sys="{esc(s["id"])}" style="--c:{line_color(s, flagships)}">'
+            f'<div class="nn-sys"><span class="nn-ring" style="--p:{pct}"><i>{len(done)}/{len(rm)}</i></span>'
+            f'<span><a class="nn-name" href="system-{esc(s["id"])}.html">{esc(s["name"])}</a>'
+            f'<span class="nn-last">{ctx.T["nnLast"]} {esc(last)}</span></span></div>'
+            f'<div class="nn-col" data-label="{ctx.T["nnDone"]}"><ul class="nn-done">{"".join(item(it, "") for it in recent)}</ul>{more}</div>'
+            f'<div class="nn-col" data-label="{ctx.T["rmNow"]}">'
+            f'{cur_html}</div>'
+            f'<div class="nn-col" data-label="{ctx.T["nnNext"]}"><ul class="nn-plan">{"".join(item(it, "") for it in plan)}</ul>'
+            f'{"" if plan else dash}</div></section>')
     total = sum(len(s['roadmap']) for s in flagships)
-    done = sum(1 for s in flagships for it in s['roadmap'] if it['status'] == 'done')
+    done_all = sum(1 for s in flagships for it in s['roadmap'] if it['status'] == 'done')
     return (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["rmEyebrow"]}</p><h1>{ctx.T["rmTitle"]}</h1>'
             f'<p>{ctx.T["rmLead"]}</p></div>'
             f'<div class="dl-stats"><div><strong>{len(flagships)}</strong><span>{ctx.T["rmSystems"]}</span></div>'
-            f'<div><strong>{done}/{total}</strong><span>{ctx.T["rmItems"]}</span></div></div></section>'
+            f'<div><strong>{done_all}/{total}</strong><span>{ctx.T["rmItems"]}</span></div></div></section>'
             f'<div class="dl-filters rm-filters" role="group" aria-label="{ctx.T["rmFilter"]}">{"".join(chips)}</div>'
-            f'<div class="rml-board">{lanes}</div>')
+            f'<div class="nn-board"><div class="nn-head"><span>{ctx.T["nnSystem"]}</span><span>{ctx.T["nnDone"]}</span>'
+            f'<span>{ctx.T["rmNow"]}</span><span>{ctx.T["nnNext"]}</span></div>{"".join(rows)}</div>')
 
 
 TRACK_JS = """<script>
@@ -370,9 +444,9 @@ t.querySelectorAll('.rmt-btn').forEach(function(b){b.addEventListener('click',fu
 sc.addEventListener('scroll',edges,{passive:true});window.addEventListener('resize',edges);edges();});})();
 </script>"""
 
-ROADMAP_JS = TRACK_JS + """<script>
+ROADMAP_JS = """<script>
 (function(){var b=document.querySelectorAll('.rm-filters .filter');function set(id){b.forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.sys===id));});
-document.querySelectorAll('.rml').forEach(function(l){l.hidden=!!id&&l.dataset.sys!==id;});
+document.querySelectorAll('.nn-row').forEach(function(l){l.hidden=!!id&&l.dataset.sys!==id;});
 history.replaceState(null,'',id?'#'+id:location.pathname);window.dispatchEvent(new Event('resize'));}
 b.forEach(function(x){x.addEventListener('click',function(){set(x.dataset.sys);});});
 var h=location.hash.slice(1);if(h&&document.querySelector('.rm-filters [data-sys="'+h+'"]'))set(h);})();
