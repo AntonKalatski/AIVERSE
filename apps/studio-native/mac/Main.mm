@@ -5,6 +5,7 @@
 #include <regex>
 #include <algorithm>
 #import <QuartzCore/CAMetalLayer.h>
+#import <QuartzCore/CATransaction.h>
 #import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioSession.h"
 #include "apps/studio-native/StudioHumanLookDocument.h"
@@ -13,6 +14,9 @@
 #include "apps/studio-native/mac/StudioMetalScene.h"
 #include "apps/studio-native/mac/StudioGameSurface.h"
 #include "apps/studio-native/StudioGameInput.h"
+#include "apps/studio-native/StudioRenderThread.h"
+#include <cstdlib>
+#include <functional>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -105,6 +109,41 @@
 }
 @end
 
+// Inputs of one map frame, snapshotted on the main thread for the render thread.
+struct StudioSceneFrameInputs {
+    int width=0,height=0;
+    std::shared_ptr<const aiverse::editor::MapDoc> map;
+    std::shared_ptr<const aiverse::Json> rules;
+    bool fps=false;
+    std::string selected,project,hover;
+    float levelHeight=1.5f;
+    std::set<std::string> selection,hidden,locked;
+    aiverse::studio::StudioWindState wind;
+};
+// Results of the last finished Scene frame, consumed by the main thread.
+struct StudioSceneFrameOutputs {
+    std::string error,facialError,lightingStatus;
+    bool facialReady=false;
+    aiverse::studio::StudioMetalScene::LoadProgress load;
+    aiverse::studio::StudioMetalScene::CameraState camera;
+    std::vector<std::string> thumbnails; // Assets panel model thumbnails finished since the last frame
+    uint32_t drawCalls=0;                // renderer draw calls of that frame
+};
+// Explicit Core Animation transaction for layer changes made on the render thread.
+struct StudioCaTransaction {
+    StudioCaTransaction() { [CATransaction begin]; [CATransaction setDisableActions:YES]; }
+    ~StudioCaTransaction() { [CATransaction commit]; }
+    StudioCaTransaction(const StudioCaTransaction&)=delete;
+    StudioCaTransaction& operator=(const StudioCaTransaction&)=delete;
+};
+// The render thread owns the Scene and its GPU resources: every Scene call from
+// the main thread runs there and waits for its result (inline before it exists).
+template<class F>
+static auto studioOnScene(aiverse::studio::StudioRenderThread* thread, F&& fn) -> decltype(fn()) {
+    if (!thread) return fn();
+    return thread->invoke(std::forward<F>(fn));
+}
+
 @interface StudioHost : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
     NSWindow* window_;
     WKWebView* web_;
@@ -120,6 +159,20 @@
     StudioAssetSchemeHandler* assets_;
     std::unique_ptr<aiverse::studio::StudioSession> session_;
     std::unique_ptr<aiverse::studio::StudioMetalScene> preview_;
+    // Scene render thread: sole owner of preview_ (created, used and destroyed there);
+    // the main thread reaches it through studioOnScene and never writes preview_.
+    std::unique_ptr<aiverse::studio::StudioRenderThread> renderThread_;
+    std::mutex renderIoMutex_;      // guards renderInputs_ / renderOutputs_
+    StudioSceneFrameInputs renderInputs_;
+    StudioSceneFrameOutputs renderOutputs_;
+    BOOL renderOutputsFresh_;
+    std::shared_ptr<const aiverse::editor::MapDoc> mapSnapshot_;
+    const aiverse::editor::MapDoc* mapSnapshotSource_;
+    CFTimeInterval nextMapSnapshot_;
+    std::shared_ptr<const aiverse::Json> rulesSnapshot_;
+    std::string rulesSnapshotProject_;
+    size_t rulesSnapshotHash_;
+    CFTimeInterval nextRulesCheck_;
     aiverse::studio::NativeViewportPlacement placement_;
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
@@ -157,6 +210,11 @@
 - (void)focusSceneSelection;
 - (void)resetSceneView;
 - (void)publishSceneCamera;
+- (void)publishSceneCameraState:(const aiverse::studio::StudioMetalScene::CameraState&)camera;
+- (void)publishSceneFrame:(const StudioSceneFrameOutputs&)out;
+- (void)tickSceneOnRenderThread;
+- (void)renderSceneFrame;
+- (void)failScene:(const std::string&)message;
 - (std::vector<std::string>)materialSlotsFor:(const std::string&)asset;
 - (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
@@ -843,14 +901,14 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 shapes.push_back(sh);
             }
         } catch (...) {}
-        preview_->setOverlayShapes(std::move(shapes));
+        studioOnScene(renderThread_.get(),[&]{ return preview_->setOverlayShapes(std::move(shapes)); });
     }
     if (session_->agentScreenshotPending() && !agentShotInFlight_) {
         if (!preview_ || !placement_.visible) session_->finishAgentScreenshot("",0,0,"The Scene panel is not visible in Studio; ask the user to show it");
         else {
             agentShotInFlight_=YES;
             __unsafe_unretained StudioHost* host=self;
-            preview_->captureNextFrame([host](int w,int h,std::vector<uint8_t> rgba) {
+            studioOnScene(renderThread_.get(),[&]{ preview_->captureNextFrame([host](int w,int h,std::vector<uint8_t> rgba) {
                 std::string encoded;
                 if (w>0 && h>0 && rgba.size()>=size_t(w)*size_t(h)*4) {
                     // At most 1280 px wide: enough for the agent, small for the MCP answer.
@@ -877,7 +935,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                     host->session_->finishAgentScreenshot("",0,0,"Scene capture failed");
                     host->agentShotInFlight_=NO;
                 });
-            });
+            }); });
         }
     }
     [self runWindShots];
@@ -890,74 +948,210 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     }
     @autoreleasepool {
         try {
-            if (!preview_) {
-                preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
-                // Default host: the Metal view covers HTML, so the renderer draws the
-                // orientation gizmo itself; composite mode uses the HTML gizmo.
-                preview_->setOrientationGizmo(!htmlComposite_);
+            if (!renderThread_) {
+                // The Scene renders on its own thread (Unreal-style render thread);
+                // AIVERSE_STUDIO_RENDER_THREAD=0 runs it on the main thread instead.
+                const char* threaded=std::getenv("AIVERSE_STUDIO_RENDER_THREAD");
+                __unsafe_unretained StudioHost* host=self; // joined in applicationWillTerminate
+                renderThread_=std::make_unique<aiverse::studio::StudioRenderThread>(
+                    [host]{ [host renderSceneFrame]; },!(threaded && std::string(threaded)=="0"));
             }
-            // StudioSession/renderer are owned and called on the main thread.
-            {
+            if (!preview_) {
+                void* layer=(__bridge void*)viewport_.layer;
+                const BOOL composite=htmlComposite_;
+                const char* continuous=std::getenv("AIVERSE_STUDIO_CONTINUOUS_REDRAW");
+                const bool always=continuous && std::string(continuous)=="1";
+                renderThread_->invoke([&]{
+                    // Created on its owner thread: GPU resource caches bind to it.
+                    auto created=std::make_unique<aiverse::studio::StudioMetalScene>(layer);
+                    // Default host: the Metal view covers HTML, so the renderer draws the
+                    // orientation gizmo itself; composite mode uses the HTML gizmo.
+                    created->setOrientationGizmo(!composite);
+                    // Interactive viewport: redraw on change only, debounce lighting rebuilds.
+                    // AIVERSE_STUDIO_CONTINUOUS_REDRAW=1 restores drawing every tick.
+                    created->setContinuousRedraw(always);
+                    preview_=std::move(created);
+                });
+            }
+            // Character and material previews read live session state (facial
+            // binding, material drafts): the main thread waits for those frames.
+            const bool facialBound=session_->facialPreviewBinding().bound();
+            const bool materialPreview=!session_->previewMaterialName().empty() &&
+                session_->previewMaterialFactors().isObject();
+            if (!facialBound && !materialPreview) {
+                [self tickSceneOnRenderThread];
+                return;
+            }
+            StudioSceneFrameOutputs out;
+            const bool wantClips=(lightingStatusTicks_ % 30)==0;
+            std::vector<std::string> clips;float baseHeight=0;
+            renderThread_->flush(); // the last asynchronous map frame finished
+            renderThread_->invoke([&]{
+                StudioCaTransaction transaction;
                 const auto ids=session_->selectedObjectIds();
                 preview_->setEditorState(std::set<std::string>(ids.begin(),ids.end()),session_->hiddenIds(),session_->lockedIds(),hoverId_);
-            }
-            preview_->setWindPreview(session_->windPreview());
+                preview_->setWindPreview(session_->windPreview());
+                preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
+                    session_->workspace().project.isFps(), session_->selectedObjectId(),
+                    session_->previewMaterialName(), session_->previewMaterialFactors(),
+                    session_->previewMaterialRevision(),
+                    float(session_->workspace().project.rules.levelHeight.toDouble()),
+                    session_->workspace().project.dir,
+                    session_->workspace().project.rulesJson,
+                    &session_->facialPreviewBinding());
+                out.facialReady=preview_->facialReady();
+                out.facialError=preview_->facialError();
+                if(wantClips){clips=preview_->facialClips();baseHeight=preview_->facialBaseHeight();}
+                out.lightingStatus=preview_->lightingStatus();
+                out.load=preview_->modelLoadProgress();
+                out.camera=preview_->cameraState();
+                out.thumbnails=preview_->takeFinishedThumbnails();
+                out.drawCalls=preview_->drawCalls();
+            });
             {
-                // Stats panel: smoothed time between Scene frames.
-                const CFTimeInterval now=CACurrentMediaTime();
-                if (lastSceneFrame_>0) sceneFrameMs_=sceneFrameMs_<=0 ? (now-lastSceneFrame_)*1000.0 : sceneFrameMs_*0.95+(now-lastSceneFrame_)*1000.0*0.05;
-                if (lastSceneFrame_>0) {
-                    frameHistory_.emplace_back(float((now-lastSceneFrame_)*1000.0),preview_->drawCalls());
-                    if (frameHistory_.size()>240) frameHistory_.pop_front();
-                }
-                lastSceneFrame_=now;
-                session_->setSceneFrameStats(sceneFrameMs_,++sceneFrameCount_);
+                // A map frame that finished before this one is superseded.
+                std::lock_guard<std::mutex> io(renderIoMutex_);
+                renderOutputsFresh_=NO;
             }
-            preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
-                session_->workspace().project.isFps(), session_->selectedObjectId(),
-                session_->previewMaterialName(), session_->previewMaterialFactors(),
-                session_->previewMaterialRevision(),
-                float(session_->workspace().project.rules.levelHeight.toDouble()),
-                session_->workspace().project.dir,
-                session_->workspace().project.rulesJson,
-                &session_->facialPreviewBinding());
-            session_->setFacialPreviewGpuStatus(
-                preview_->facialReady(),preview_->facialError());
-            if((lightingStatusTicks_ % 30)==0)session_->setFacialPreviewClips(preview_->facialClips(),preview_->facialBaseHeight());
-            if((lightingStatusTicks_++ % 60)==0)
-                [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
-            for (const auto& asset:preview_->takeFinishedThumbnails()) {
-                aiverse::Json payload=aiverse::Json::object();payload.set("path",aiverse::Json::string(asset));
-                [self sendStudioEventPayload:"asset.thumbnail" payload:payload];
-            }
-            {
-                // Scene model streaming progress (Unreal-style toast / status bar).
-                const auto& load=preview_->modelLoadProgress();
-                if (load.total>0 && load.done<load.total) {
-                    if (load.done!=lastLoadDone_ || load.total!=lastLoadTotal_) {
-                        lastLoadDone_=load.done;lastLoadTotal_=load.total;loadingShown_=YES;
-                        [self sendLoading:"models" message:load.current done:load.done total:load.total];
-                    }
-                } else if (loadingShown_) {
-                    loadingShown_=NO;lastLoadDone_=lastLoadTotal_=-1;
-                    [self sendLoading:"done" message:"" done:load.total total:load.total];
-                }
-            }
-            if (!readyEmitted_) {
-                [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
-                readyEmitted_=YES;
-                cameraSent_=NO;
-            }
-            [self publishSceneCamera];
+            if(wantClips)session_->setFacialPreviewClips(clips,baseHeight);
+            [self publishSceneFrame:out];
         } catch (const std::exception& e) {
-            NSLog(@"AIVERSE native Scene failed: %s",e.what());
-            [self sendStudioEvent:"viewport.error" message:e.what()];
-            readyEmitted_=NO;
-            viewport_.hidden=YES;
-            placement_.visible=false;
-            preview_.reset();
+            [self failScene:e.what()];
         }
     }
+}
+// Events of a finished Scene frame (main thread): GPU status, lighting status,
+// model streaming toast, viewport.ready and the HTML gizmo camera.
+- (void)publishSceneFrame:(const StudioSceneFrameOutputs&)out {
+    {
+        // Stats panel: smoothed time between finished Scene frames.
+        const CFTimeInterval now=CACurrentMediaTime();
+        if (lastSceneFrame_>0) sceneFrameMs_=sceneFrameMs_<=0 ? (now-lastSceneFrame_)*1000.0 : sceneFrameMs_*0.95+(now-lastSceneFrame_)*1000.0*0.05;
+        if (lastSceneFrame_>0) {
+            frameHistory_.emplace_back(float((now-lastSceneFrame_)*1000.0),out.drawCalls);
+            if (frameHistory_.size()>240) frameHistory_.pop_front();
+        }
+        lastSceneFrame_=now;
+        session_->setSceneFrameStats(sceneFrameMs_,++sceneFrameCount_);
+    }
+    for (const auto& asset:out.thumbnails) {
+        aiverse::Json payload=aiverse::Json::object();payload.set("path",aiverse::Json::string(asset));
+        [self sendStudioEventPayload:"asset.thumbnail" payload:payload];
+    }
+    session_->setFacialPreviewGpuStatus(out.facialReady,out.facialError);
+    if((lightingStatusTicks_++ % 60)==0)
+        [self sendStudioEvent:"lighting.status" message:out.lightingStatus.c_str()];
+    {
+        // Scene model streaming progress (Unreal-style toast / status bar).
+        const auto& load=out.load;
+        if (load.total>0 && load.done<load.total) {
+            if (load.done!=lastLoadDone_ || load.total!=lastLoadTotal_) {
+                lastLoadDone_=load.done;lastLoadTotal_=load.total;loadingShown_=YES;
+                [self sendLoading:"models" message:load.current done:load.done total:load.total];
+            }
+        } else if (loadingShown_) {
+            loadingShown_=NO;lastLoadDone_=lastLoadTotal_=-1;
+            [self sendLoading:"done" message:"" done:load.total total:load.total];
+        }
+    }
+    if (!readyEmitted_) {
+        [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
+        readyEmitted_=YES;
+        cameraSent_=NO;
+    }
+    [self publishSceneCameraState:out.camera];
+}
+- (void)failScene:(const std::string&)message {
+    NSLog(@"AIVERSE native Scene failed: %s",message.c_str());
+    [self sendStudioEvent:"viewport.error" message:message.c_str()];
+    readyEmitted_=NO;
+    viewport_.hidden=YES;
+    placement_.visible=false;
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        renderOutputsFresh_=NO;
+    }
+    try { studioOnScene(renderThread_.get(),[&]{ preview_.reset(); }); }
+    catch (const std::exception& e) { NSLog(@"AIVERSE native Scene release failed: %s",e.what()); }
+}
+// Main thread: snapshot what the map frame reads (document, rules, editor state),
+// hand it to the render thread and publish the last finished frame's results.
+- (void)tickSceneOnRenderThread {
+    const auto& ws=session_->workspace();
+    const CFTimeInterval now=CACurrentMediaTime();
+    const auto& map=ws.map;
+    // Copy only on change (and once a second for edits that did not bump the revision).
+    if (!mapSnapshot_ || mapSnapshotSource_!=&map || mapSnapshot_->revision!=map.revision ||
+        mapSnapshot_->path!=map.path || now>=nextMapSnapshot_) {
+        auto copy=std::make_shared<aiverse::editor::MapDoc>();
+        copy->data=map.data;copy->path=map.path;copy->revision=map.revision;
+        mapSnapshot_=std::move(copy);mapSnapshotSource_=&map;nextMapSnapshot_=now+1.0;
+    }
+    if (!rulesSnapshot_ || rulesSnapshotProject_!=ws.project.dir || now>=nextRulesCheck_) {
+        const size_t hash=std::hash<std::string>{}(ws.project.rulesJson.dump(-1));
+        if (!rulesSnapshot_ || rulesSnapshotProject_!=ws.project.dir || hash!=rulesSnapshotHash_) {
+            rulesSnapshot_=std::make_shared<const aiverse::Json>(ws.project.rulesJson);
+            rulesSnapshotHash_=hash;rulesSnapshotProject_=ws.project.dir;
+        }
+        nextRulesCheck_=now+1.0;
+    }
+    StudioSceneFrameInputs in;
+    in.width=placement_.pixelsW;in.height=placement_.pixelsH;
+    in.map=mapSnapshot_;in.rules=rulesSnapshot_;
+    in.fps=ws.project.isFps();
+    in.selected=session_->selectedObjectId();
+    in.levelHeight=float(ws.project.rules.levelHeight.toDouble());
+    in.project=ws.project.dir;
+    const auto ids=session_->selectedObjectIds();
+    in.selection=std::set<std::string>(ids.begin(),ids.end());
+    in.hidden=session_->hiddenIds();in.locked=session_->lockedIds();in.hover=hoverId_;
+    in.wind=session_->windPreview();
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        renderInputs_=std::move(in);
+    }
+    renderThread_->kick();
+    StudioSceneFrameOutputs out;
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        if (!renderOutputsFresh_) return;
+        out=renderOutputs_;renderOutputsFresh_=NO;
+    }
+    if (!out.error.empty()) { [self failScene:out.error]; return; }
+    [self publishSceneFrame:out];
+}
+// Render thread: one map frame from the latest published inputs.
+- (void)renderSceneFrame {
+    StudioSceneFrameInputs in;
+    {
+        std::lock_guard<std::mutex> io(renderIoMutex_);
+        in=renderInputs_;
+    }
+    if (!in.map || !in.rules || !preview_) return;
+    StudioSceneFrameOutputs out;
+    @autoreleasepool {
+        try {
+            // Layer changes off the main thread go into an explicit transaction.
+            StudioCaTransaction transaction;
+            preview_->setEditorState(std::move(in.selection),std::move(in.hidden),std::move(in.locked),std::move(in.hover));
+            preview_->setWindPreview(in.wind);
+            preview_->frame(in.width,in.height,*in.map,in.fps,in.selected,"",aiverse::Json::object(),0,
+                in.levelHeight,in.project,*in.rules,nullptr);
+            out.facialReady=preview_->facialReady();
+            out.facialError=preview_->facialError();
+            out.lightingStatus=preview_->lightingStatus();
+            out.load=preview_->modelLoadProgress();
+            out.camera=preview_->cameraState();
+            out.thumbnails=preview_->takeFinishedThumbnails();
+            out.drawCalls=preview_->drawCalls();
+        } catch (const std::exception& e) {
+            out.error=e.what();
+            if (out.error.empty()) out.error="Scene render failed";
+        }
+    }
+    std::lock_guard<std::mutex> io(renderIoMutex_);
+    renderOutputs_=std::move(out);
+    renderOutputsFresh_=YES;
 }
 // Agent snapshot handshake (MCP studio_character_snapshot): the tool writes
 // <project>/.aiverse/agent-requests/character-snapshot.json {id, view}; the
@@ -988,7 +1182,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             r.set("id",aiverse::Json::number(int64_t(0)));r.set("method",aiverse::Json::string("studio.humanCamera"));r.set("params",pr);
             (void)session_->dispatch(r);
         }
-        preview_->captureFacialThumbnail((out/(id+".png")).string(),false);
+        studioOnScene(renderThread_.get(),[&]{ return preview_->captureFacialThumbnail((out/(id+".png")).string(),false); });
     } catch (const std::exception&) {}
 }
 - (void)runWindShots {
@@ -1067,47 +1261,47 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 }
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy {
     if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
-        preview_->orbit(float(dx),float(dy));
+        studioOnScene(renderThread_.get(),[&]{ return preview_->orbit(float(dx),float(dy)); });
 }
 - (void)zoom:(CGFloat)amount {
-    if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
+    if (preview_ && std::isfinite(double(amount))) studioOnScene(renderThread_.get(),[&]{ return preview_->zoom(float(amount)); });
 }
 - (void)lookX:(CGFloat)dx y:(CGFloat)dy {
     if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
-        preview_->look(float(dx),float(dy));
+        studioOnScene(renderThread_.get(),[&]{ return preview_->look(float(dx),float(dy)); });
 }
 - (void)panX:(CGFloat)dx y:(CGFloat)dy {
     if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
-        preview_->pan(float(dx),float(dy));
+        studioOnScene(renderThread_.get(),[&]{ return preview_->pan(float(dx),float(dy)); });
 }
 - (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward {
     if (preview_ && std::isfinite(double(right)) && std::isfinite(double(up)) &&
         std::isfinite(double(forward)))
-        preview_->move(float(right),float(up),float(forward));
+        studioOnScene(renderThread_.get(),[&]{ return preview_->move(float(right),float(up),float(forward)); });
 }
 - (void)focusSceneSelection {
     if (projectLoading_) return;
-    if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
-        session_->workspace().project.isFps(),session_->selectedObjectId());
+    if (preview_ && session_) studioOnScene(renderThread_.get(),[&]{ return preview_->focusSelected(session_->workspace().map,
+        session_->workspace().project.isFps(),session_->selectedObjectId()); });
 }
-- (void)resetSceneView { if (preview_) preview_->resetView(); }
+- (void)resetSceneView { if (preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->resetView(); }); }
 - (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (projectLoading_) return NO;
-    return preview_ && preview_->beginTransformDrag(float(x),float(y),float(width),float(height));
+    return preview_ && studioOnScene(renderThread_.get(),[&]{ return preview_->beginTransformDrag(float(x),float(y),float(width),float(height)); });
 }
 - (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap {
     if (!preview_) return;
-    preview_->updateTransformDrag(float(x),float(y),float(width),float(height),invertSnap);
-    const std::string caption=preview_->transformCaption();
+    studioOnScene(renderThread_.get(),[&]{ return preview_->updateTransformDrag(float(x),float(y),float(width),float(height),invertSnap); });
+    const std::string caption=studioOnScene(renderThread_.get(),[&]{ return preview_->transformCaption(); });
     if (caption!=lastActionCaption_) { lastActionCaption_=caption; [self sendStudioEvent:"viewport.action" message:caption.c_str()]; }
 }
 - (void)setSceneTool:(int)tool {
     if (!preview_ || tool<0 || tool>3) return;
-    preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(tool));
+    studioOnScene(renderThread_.get(),[&]{ return preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(tool)); });
     static const char* names[4]={"view","move","rotate","scale"};
     [self sendStudioEvent:"viewport.tool" message:names[tool]];
 }
-- (int)sceneTool { return preview_ ? int(preview_->transformTool()) : 1; }
+- (int)sceneTool { return preview_ ? int(studioOnScene(renderThread_.get(),[&]{ return preview_->transformTool(); })) : 1; }
 // Assets panel thumbnails, cached outside the project (~/Library/Caches/AIVERSE/thumbnails):
 // images are scaled by AppKit, models are rendered offscreen by the Scene (asset.thumbnail event).
 - (aiverse::Json)assetThumbnail:(const std::string&)path {
@@ -1157,7 +1351,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     }
     if (ext==".glb" || ext==".gltf" || ext==".obj" || ext==".fbx" || ext==".dae" || ext==".ply" || ext==".stl") {
         if (!preview_) { out.set("pending",aiverse::Json::fromBool(false)); return out; }
-        preview_->requestThumbnail(ws.project.dir,path,file.string());
+        studioOnScene(renderThread_.get(),[&]{ preview_->requestThumbnail(ws.project.dir,path,file.string()); });
         out.set("pending",aiverse::Json::fromBool(true));
         return out;
     }
@@ -1166,13 +1360,13 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 }
 - (void)frameAllScene {
     if (projectLoading_ || !preview_ || !session_) return;
-    preview_->frameAll(session_->workspace().map,session_->workspace().project.isFps());
+    studioOnScene(renderThread_.get(),[&]{ return preview_->frameAll(session_->workspace().map,session_->workspace().project.isFps()); });
 }
-- (void)setScenePivotSnap:(BOOL)on { if (preview_) preview_->setPivotSnap(on); }
+- (void)setScenePivotSnap:(BOOL)on { if (preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->setPivotSnap(on); }); }
 - (void)sceneMoveEnd {
-    if (projectLoading_) { if (preview_) preview_->clearTransformPreview(); return; }
+    if (projectLoading_) { if (preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->clearTransformPreview(); }); return; }
     if (!preview_ || !session_) return;
-    const auto commit=preview_->endTransformDrag();
+    const auto commit=studioOnScene(renderThread_.get(),[&]{ return preview_->endTransformDrag(); });
     lastActionCaption_.clear();
     [self sendStudioEvent:"viewport.action" message:""];
     using Tool=aiverse::studio::StudioMetalScene::TransformTool;
@@ -1180,7 +1374,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         (commit->tool==Tool::Move && std::abs(commit->move.x)+std::abs(commit->move.y)+std::abs(commit->move.z)<1e-4f) ||
         (commit->tool==Tool::Rotate && (!std::isfinite(commit->degrees) || std::abs(commit->degrees)<1e-3f)) ||
         (commit->tool==Tool::Scale && (!std::isfinite(commit->factor) || std::abs(commit->factor-1.0f)<1e-4f));
-    if (unchanged) { preview_->clearTransformPreview(); return; }
+    if (unchanged) { studioOnScene(renderThread_.get(),[&]{ return preview_->clearTransformPreview(); }); return; }
     // Read current Transform values through the same inspector API the UI uses, then
     // write ONE undoable studio.setProperties (y promotes legacy units; lights use height).
     auto request=[&](const char* method,aiverse::Json params) {
@@ -1227,22 +1421,25 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         const auto outcome=request("studio.setProperties",set);
         if (outcome.has("error")) NSLog(@"AIVERSE transform: %s",outcome.getStr("error").c_str());
     }
-    preview_->clearTransformPreview();
+    studioOnScene(renderThread_.get(),[&]{ return preview_->clearTransformPreview(); });
     [self sendStudioEvent:"document.changed" message:""];
 }
 - (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return NO;
-    const int hit=preview_->orientationGizmoHit(float(x),float(y),float(width),float(height));
+    const int hit=studioOnScene(renderThread_.get(),[&]{ return preview_->orientationGizmoHit(float(x),float(y),float(width),float(height)); });
     if (hit<0) return NO;
-    preview_->activateOrientationGizmo(hit);
+    studioOnScene(renderThread_.get(),[&]{ return preview_->activateOrientationGizmo(hit); });
     return YES;
 }
 - (std::vector<std::string>)materialSlotsFor:(const std::string&)asset {
-    return preview_ ? preview_->modelMaterialSlots(asset) : std::vector<std::string>{};
+    return preview_ ? studioOnScene(renderThread_.get(),[&]{ return preview_->modelMaterialSlots(asset); }) : std::vector<std::string>{};
 }
 - (void)publishSceneCamera {
     if (!preview_ || !htmlComposite_) return;
-    const auto camera=preview_->cameraState();
+    [self publishSceneCameraState:studioOnScene(renderThread_.get(),[&]{ return preview_->cameraState(); })];
+}
+- (void)publishSceneCameraState:(const aiverse::studio::StudioMetalScene::CameraState&)camera {
+    if (!htmlComposite_) return;
     if (cameraSent_ && std::abs(camera.yaw-lastCameraYaw_)<1e-4 &&
         std::abs(camera.pitch-lastCameraPitch_)<1e-4 &&
         std::abs(camera.distance-lastCameraDistance_)<=1e-3*std::max(1.0,lastCameraDistance_) &&
@@ -1261,14 +1458,14 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 }
 - (void)sceneMarqueeFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height {
     if (!preview_ || width<2 || height<2) return;
-    preview_->setMarquee(true,float(a.x/width),float(a.y/height),float(b.x/width),float(b.y/height));
+    studioOnScene(renderThread_.get(),[&]{ return preview_->setMarquee(true,float(a.x/width),float(a.y/height),float(b.x/width),float(b.y/height)); });
 }
 - (void)sceneMarqueeEndFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode {
-    if (projectLoading_) { if (preview_) preview_->setMarquee(false); return; }
+    if (projectLoading_) { if (preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->setMarquee(false); }); return; }
     if (!preview_ || !session_) return;
-    preview_->setMarquee(false);
-    const auto ids=preview_->idsInRect(float(a.x),float(a.y),float(b.x),float(b.y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps());
+    studioOnScene(renderThread_.get(),[&]{ return preview_->setMarquee(false); });
+    const auto ids=studioOnScene(renderThread_.get(),[&]{ return preview_->idsInRect(float(a.x),float(a.y),float(b.x),float(b.y),float(width),float(height),
+        session_->workspace().map,session_->workspace().project.isFps()); });
     aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),list=aiverse::Json::array();
     for (const auto& id:ids) list.push(aiverse::Json::string(id));
     params.set("ids",list);params.set("mode",aiverse::Json::string(mode));
@@ -1277,10 +1474,10 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 }
 - (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (projectLoading_) return;
-    if (!preview_ || !session_ || preview_->transformDragActive()) return;
+    if (!preview_ || !session_ || studioOnScene(renderThread_.get(),[&]{ return preview_->transformDragActive(); })) return;
     if ([self updateBrushCursorAtX:x y:y width:width height:height]) return;
-    const std::string id=x<0||y<0?std::string():preview_->pick(float(x),float(y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps());
+    const std::string id=x<0||y<0?std::string():studioOnScene(renderThread_.get(),[&]{ return preview_->pick(float(x),float(y),float(width),float(height),
+        session_->workspace().map,session_->workspace().project.isFps()); });
     if (id==hoverId_) return;
     hoverId_=id;
     [self sendStudioEvent:"viewport.hover" message:id.c_str()];
@@ -1311,7 +1508,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         catch (const std::exception& e) { error=e.what(); }
         dispatch_async(dispatch_get_main_queue(),^{
             host->projectLoading_=NO;
-            if (host->preview_) host->preview_->resetCamera();
+            if (host->preview_) studioOnScene(host->renderThread_.get(),[&]{ return host->preview_->resetCamera(); });
+            host->mapSnapshot_.reset();host->rulesSnapshot_.reset();
             host->lastLoadDone_=host->lastLoadTotal_=-1;
             if (requestId>=0) {
                 aiverse::Json reply=aiverse::Json::object();
@@ -1356,12 +1554,12 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     if (!preview_ || !session_) return NO;
     const auto& b=session_->sceneBrush();
     aiverse::render::float3 at{};
-    if (!b.armed || x<0 || y<0 || !preview_->groundPoint(float(x),float(y),float(width),float(height),at)) {
-        preview_->setBrushCursor(false,{},0);
+    if (!b.armed || x<0 || y<0 || !studioOnScene(renderThread_.get(),[&]{ return preview_->groundPoint(float(x),float(y),float(width),float(height),at); })) {
+        studioOnScene(renderThread_.get(),[&]{ return preview_->setBrushCursor(false,{},0); });
         return b.armed;
     }
     const float r=b.kind=="road" ? 0.6f : b.kind=="river" ? float(b.width*0.5) : float(b.radius);
-    preview_->setBrushCursor(true,at,r);
+    studioOnScene(renderThread_.get(),[&]{ return preview_->setBrushCursor(true,at,r); });
     return YES;
 }
 - (void)brushAdjust:(double)factor disarm:(BOOL)disarm {
@@ -1373,7 +1571,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     request.set("id",aiverse::Json::number(int64_t(0)));request.set("method",aiverse::Json::string("studio.sceneBrush"));request.set("params",params);
     const auto reply=session_->dispatch(request);
     if (reply.has("result")) [self sendStudioEventPayload:"brush.changed" payload:reply["result"]];
-    if (disarm && preview_) preview_->setBrushCursor(false,{},0);
+    if (disarm && preview_) studioOnScene(renderThread_.get(),[&]{ return preview_->setBrushCursor(false,{},0); });
 }
 - (BOOL)terrainBrushArmed { return !projectLoading_ && session_ && preview_ && session_->sceneBrush().armed; }
 // phase 0 begin, 1 drag, 2 end. Map coordinates: world x, world z (the terrain ops' x, y).
@@ -1390,7 +1588,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         return YES;
     }
     aiverse::render::float3 at{};
-    if (!preview_->groundPoint(float(x),float(y),float(width),float(height),at)) return phase!=0 ? YES : NO;
+    if (!studioOnScene(renderThread_.get(),[&]{ return preview_->groundPoint(float(x),float(y),float(width),float(height),at); })) return phase!=0 ? YES : NO;
     [self updateBrushCursorAtX:x y:y width:width height:height];
     const bool ok=phase==0 ? session_->strokeBegin(at.x,at.z,&error) : session_->strokeDab(at.x,at.z,&error);
     if (!ok && !error.empty()) {
@@ -1404,7 +1602,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     if (projectLoading_) return NO;
     if (!preview_ || !session_) return NO;
     aiverse::render::float3 at{};
-    if (!preview_->groundPoint(float(x),float(y),float(width),float(height),at)) return NO;
+    if (!studioOnScene(renderThread_.get(),[&]{ return preview_->groundPoint(float(x),float(y),float(width),float(height),at); })) return NO;
     aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object();
     params.set("asset",aiverse::Json::string(asset));
     params.set("x",aiverse::Json::number(double(at.x),3));params.set("z",aiverse::Json::number(double(at.z),3));
@@ -1423,7 +1621,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 - (BOOL)placeType:(const std::string&)type atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (projectLoading_ || !preview_ || !session_ || type.empty() || type.size()>128) return NO;
     aiverse::render::float3 at{};
-    if (!preview_->groundPoint(float(x),float(y),float(width),float(height),at)) return NO;
+    if (!studioOnScene(renderThread_.get(),[&]{ return preview_->groundPoint(float(x),float(y),float(width),float(height),at); })) return NO;
     // Resources and scenery start neutral, everything else belongs to player 1.
     const auto& t=session_->workspace().project.rulesJson["types"][type];
     const int owner=(t.has("resourceNode") || t.getBool("invulnerable")) ? 0 : 1;
@@ -1451,7 +1649,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         aiverse::vivid::HumanFaceHit hit;
         aiverse::Json payload=aiverse::Json::object();
         std::string pickError;
-        if (face && preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError)) {
+        if (face && studioOnScene(renderThread_.get(),[&]{ return preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError); })) {
             aiverse::Json p=aiverse::Json::array();
             for(float v:{hit.point.x,hit.point.y,hit.point.z})p.push(aiverse::Json::number(double(v),5));
             payload.set("hit",aiverse::Json::fromBool(true));payload.set("point",std::move(p));
@@ -1468,7 +1666,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         aiverse::vivid::HumanFaceHit hit;
         aiverse::Json payload=aiverse::Json::object();
         std::string pickError;
-        if (face && preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError)) {
+        if (face && studioOnScene(renderThread_.get(),[&]{ return preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError); })) {
             aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),p=aiverse::Json::array(),n=aiverse::Json::array();
             for(float v:{hit.point.x,hit.point.y,hit.point.z})p.push(aiverse::Json::number(double(v),6));
             for(float v:{hit.normal.x,hit.normal.y,hit.normal.z})n.push(aiverse::Json::number(double(v),6));
@@ -1486,8 +1684,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         [self sendStudioEventPayload:"human.sculpt" payload:payload];
         return;
     }
-    const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
-        session_->workspace().map,session_->workspace().project.isFps());
+    const std::string objectId=studioOnScene(renderThread_.get(),[&]{ return preview_->pick(float(x),float(y),float(width),float(height),
+        session_->workspace().map,session_->workspace().project.isFps()); });
     // A modifier click on empty space keeps the current selection.
     if (objectId.empty() && std::string(mode)!="replace") return;
     aiverse::Json request=aiverse::Json::object();
@@ -1777,7 +1975,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     const CGFloat scale=(view.window ?: window_).backingScaleFactor;
     if (layer.contentsScale!=scale) layer.contentsScale=scale;
     const CGSize size=CGSizeMake(pixelsW,pixelsH);
-    if (!CGSizeEqualToSize(layer.drawableSize,size)) layer.drawableSize=size;
+    if (!CGSizeEqualToSize(layer.drawableSize,size)) {
+        // The Scene layer is drawn on the render thread: resize between its frames.
+        if (view==viewport_ && renderThread_) renderThread_->invoke([&]{ layer.drawableSize=size; });
+        else layer.drawableSize=size;
+    }
 }
 - (void)webView:(WKWebView*)view didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {
     (void)view; (void)navigation;
@@ -1895,7 +2097,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             try {
                 if (!preview_) throw std::runtime_error("Покажите персонажа во вьюпорте");
                 aiverse::Json result=aiverse::Json::object();
-                result.set("values",preview_->alignMakeup(session_->facialPreviewBinding()));
+                result.set("values",studioOnScene(renderThread_.get(),[&]{ return preview_->alignMakeup(session_->facialPreviewBinding()); }));
                 reply.set("result",std::move(result));
             } catch (const std::exception& ex) { reply.set("error",aiverse::Json::string(ex.what())); }
             [self sendStudioReply:reply];
@@ -1911,7 +2113,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                     throw std::runtime_error("Покажите персонажа во вьюпорте, чтобы снять превью");
                 const auto path=aiverse::studio::studioHumanLookThumbnailFile(
                     session_->workspace().project.dir,req["params"].getStr("name"),true);
-                preview_->captureFacialThumbnail(path.string());
+                studioOnScene(renderThread_.get(),[&]{ return preview_->captureFacialThumbnail(path.string()); });
                 aiverse::Json result=aiverse::Json::object();
                 result.set("ok",aiverse::Json::fromBool(true));
                 reply.set("result",std::move(result));
@@ -1965,7 +2167,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 const double yaw=input["yaw"].toDouble(),pitch=input["pitch"].toDouble();
                 if (!std::isfinite(yaw)||!std::isfinite(pitch)||std::abs(yaw)>100||std::abs(pitch)>1.5708)
                     reply.set("error",aiverse::Json::string("Invalid camera orientation"));
-                else { preview_->setOrientation(float(yaw),float(pitch));
+                else { studioOnScene(renderThread_.get(),[&]{ return preview_->setOrientation(float(yaw),float(pitch)); });
                        result.set("ok",aiverse::Json::fromBool(true)); }
             } else if (kind=="handle" && input["phase"].isString() && input["x"].isNumber() && input["y"].isNumber() &&
                        input["width"].isNumber() && input["height"].isNumber()) {
@@ -1991,10 +2193,10 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                     const double x=set["x"].toDouble(),y=set["y"].toDouble(),z=set["z"].toDouble(),dist=set["distance"].toDouble(),
                                  yaw=set["yaw"].toDouble(),pitch=set["pitch"].toDouble();
                     for (double v:{x,y,z,dist,yaw,pitch}) if (!std::isfinite(v) || std::abs(v)>1e6) throw std::runtime_error("Invalid camera");
-                    preview_->setOrthographic(set.getBool("ortho"));
-                    preview_->tweenCamera({float(x),float(y),float(z)},float(std::clamp(dist,0.5,100000.0)),float(yaw),float(pitch));
+                    studioOnScene(renderThread_.get(),[&]{ return preview_->setOrthographic(set.getBool("ortho")); });
+                    studioOnScene(renderThread_.get(),[&]{ return preview_->tweenCamera({float(x),float(y),float(z)},float(std::clamp(dist,0.5,100000.0)),float(yaw),float(pitch)); });
                 }
-                const auto cam=preview_->cameraState();
+                const auto cam=studioOnScene(renderThread_.get(),[&]{ return preview_->cameraState(); });
                 result.set("x",aiverse::Json::number(double(cam.target.x),3));result.set("y",aiverse::Json::number(double(cam.target.y),3));
                 result.set("z",aiverse::Json::number(double(cam.target.z),3));result.set("distance",aiverse::Json::number(double(cam.distance),3));
                 result.set("yaw",aiverse::Json::number(double(cam.yaw),5));result.set("pitch",aiverse::Json::number(double(cam.pitch),5));
@@ -2003,18 +2205,18 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 // Scene toolbar: tool, Global/Local, snapping, gizmo visibility.
                 static const char* names[4]={"view","move","rotate","scale"};
                 const std::string tool=input.getStr("tool");
-                for (int i=0;i<4;++i) if (tool==names[i]) preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(i));
-                if (input["local"].boolean(false)==input["local"].boolean(true)) preview_->setLocalSpace(input["local"].boolean());
-                if (input["gizmos"].boolean(false)==input["gizmos"].boolean(true)) preview_->setGizmosVisible(input["gizmos"].boolean());
+                for (int i=0;i<4;++i) if (tool==names[i]) studioOnScene(renderThread_.get(),[&]{ return preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(i)); });
+                if (input["local"].boolean(false)==input["local"].boolean(true)) studioOnScene(renderThread_.get(),[&]{ return preview_->setLocalSpace(input["local"].boolean()); });
+                if (input["gizmos"].boolean(false)==input["gizmos"].boolean(true)) studioOnScene(renderThread_.get(),[&]{ return preview_->setGizmosVisible(input["gizmos"].boolean()); });
                 if (input["surface"].boolean(false)==input["surface"].boolean(true)) surfaceSnap_=input["surface"].boolean();
                 if (input["snap"].boolean(false)==input["snap"].boolean(true))
-                    preview_->setSnap(input["snap"].boolean(),float(input["snapMove"].toDouble(0)),
-                        float(input["snapRotate"].toDouble(0)),float(input["snapScale"].toDouble(0)));
-                result.set("tool",aiverse::Json::string(names[int(preview_->transformTool())]));
+                    studioOnScene(renderThread_.get(),[&]{ return preview_->setSnap(input["snap"].boolean(),float(input["snapMove"].toDouble(0)),
+                        float(input["snapRotate"].toDouble(0)),float(input["snapScale"].toDouble(0))); });
+                result.set("tool",aiverse::Json::string(names[int(studioOnScene(renderThread_.get(),[&]{ return preview_->transformTool(); }))]));
                 result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="projection" &&
                        input["ortho"].boolean(false)==input["ortho"].boolean(true)) { // a real JSON bool
-                preview_->setOrthographic(input["ortho"].boolean());
+                studioOnScene(renderThread_.get(),[&]{ return preview_->setOrthographic(input["ortho"].boolean()); });
                 result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="zoom" && input["amount"].isNumber()) {
                 const double wheel=input["amount"].toDouble();
@@ -2085,7 +2287,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                     if(entry!="map" && entry!="menu")throw std::runtime_error("Invalid game entry");
                     auto plan=aiverse::studio::studioGameLaunch(session_->workspace(),entry=="map");
                     if(entry=="map" && req["params"].getBool("fromScene") && preview_) {
-                        const auto cam=preview_->cameraState();
+                        const auto cam=studioOnScene(renderThread_.get(),[&]{ return preview_->cameraState(); });
                         plan.camera=std::array<float,5>{cam.target.x,cam.target.z,cam.distance,
                             float(cam.pitch*57.29578),float(cam.yaw*57.29578)};
                     }
@@ -2156,8 +2358,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             result.set("history",history);
             result.set("frames",aiverse::Json::number(int64_t(sceneFrameCount_)));
             if (preview_) {
-                result.set("drawCalls",aiverse::Json::number(int64_t(preview_->drawCalls())));
-                if (req["params"].getBool("textures")) result.set("gpu",preview_->textureResources());
+                result.set("drawCalls",aiverse::Json::number(int64_t(studioOnScene(renderThread_.get(),[&]{ return preview_->drawCalls(); }))));
+                if (req["params"].getBool("textures")) result.set("gpu",studioOnScene(renderThread_.get(),[&]{ return preview_->textureResources(); }));
             } else result.set("error",aiverse::Json::string("The Scene panel is not visible"));
             reply.set("result",std::move(result));
         } else if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
@@ -2169,7 +2371,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             reply.set("result",std::move(result));
         } else {
             if (preview_ && (req.getStr("method")=="studio.wind" || req.getStr("method")=="studio.windSet"))
-                session_->setWindSceneStats(preview_->windStats());
+                session_->setWindSceneStats(studioOnScene(renderThread_.get(),[&]{ return preview_->windStats(); }));
             reply=session_->dispatch(req);
         }
         [self sendStudioReply:reply];
@@ -2177,7 +2379,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         if (!reply.has("error") && method=="studio.select" && floatWebs_.count)
             [self sendStudioEvent:"selection.changed" message:""];
         if (!reply.has("error") && preview_ && (method=="studio.openMap" || method=="studio.newMap"))
-            preview_->resetCamera();
+            { studioOnScene(renderThread_.get(),[&]{ return preview_->resetCamera(); }); mapSnapshot_.reset(); rulesSnapshot_.reset(); }
         if (!reply.has("error") && method=="studio.materialPreview") {
             [self sendStudioEvent:"material.preview" message:req["params"].getStr("name").c_str()];
         }
@@ -2202,6 +2404,12 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     [timer_ invalidate];
     timer_=nil;
     game_.reset(); // hosted client/device retire before native surface
+    if (renderThread_) {
+        // The Scene and its GPU resources are released on their owner thread.
+        try { renderThread_->invoke([&]{ preview_.reset(); }); } catch (const std::exception&) {}
+        renderThread_->stop();
+        renderThread_.reset();
+    }
     preview_.reset(); // release GPU resources before CAMetalLayer
     [web_.configuration.userContentController removeScriptMessageHandlerForName:@"aiverse"];
 }
