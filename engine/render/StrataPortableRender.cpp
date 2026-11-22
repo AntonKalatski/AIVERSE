@@ -58,7 +58,7 @@ bool safeSource(const Model& source){
 
 bool PortableSource::validFor(const Model& source) const {
     return source_==&source && device_ && device_->gpuHealthy() &&
-           asset_ && indexBuffer_.valid() &&
+           asset_ && (indexBuffer_.valid() || sidecarSkipped_) &&
            (!streaming_ ||
             (streaming_->valid() && streaming_->buffer()==indexBuffer_)) &&
            sourceGeometryRevision_==source.geometryRevision &&
@@ -67,10 +67,43 @@ bool PortableSource::validFor(const Model& source) const {
            source.vb==sourceVertexBuffer_ && source.ib==sourceIndexBuffer_ &&
            source.gpuBaseVertex==baseVertex_ &&
            source.gpuFirstIndex==sourceFirstIndex_ &&
-           (streaming_ ||
+           (streaming_ || sidecarSkipped_ ||
             (pooledIndices_.valid()
                 ? auxiliaryGeometryIndicesValidFor(pooledIndices_,source)
                 : dedicated_));
+}
+
+void CompressedIndexStore::build(const std::vector<uint32_t>& indices) {
+    clear();
+    size_=indices.size();
+    blocks_.reserve((indices.size()+kBlock-1)/kBlock);
+    for(size_t at=0;at<indices.size();at+=kBlock){
+        const size_t end=std::min(indices.size(),at+kBlock);
+        uint32_t lo=UINT32_MAX,hi=0;
+        for(size_t k=at;k<end;++k){lo=std::min(lo,indices[k]);hi=std::max(hi,indices[k]);}
+        Block b;
+        b.base=lo;
+        b.wide=hi-lo>0xffffu;
+        b.offset=uint32_t(b.wide?wide_.size():narrow_.size());
+        for(size_t k=at;k<end;++k){
+            if(b.wide)wide_.push_back(indices[k]);
+            else narrow_.push_back(uint16_t(indices[k]-lo));
+        }
+        blocks_.push_back(b);
+    }
+    narrow_.shrink_to_fit();wide_.shrink_to_fit();
+}
+void CompressedIndexStore::gather(uint32_t first,uint32_t count,std::vector<uint32_t>& out) const {
+    size_t at=first;
+    const size_t end=std::min<size_t>(size_,size_t(first)+count);
+    while(at<end){
+        const Block& b=blocks_[at/kBlock];
+        const size_t blockEnd=std::min(end,(at/kBlock+1)*size_t(kBlock));
+        const size_t inBlock=at%kBlock;
+        if(b.wide)out.insert(out.end(),wide_.begin()+b.offset+inBlock,wide_.begin()+b.offset+inBlock+(blockEnd-at));
+        else for(size_t k=0;k<blockEnd-at;++k)out.push_back(b.base+narrow_[b.offset+inBlock+k]);
+        at=blockEnd;
+    }
 }
 
 bool PortableSource::stage(gfx::Device& dev,const Model& source,
@@ -217,6 +250,12 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
         buffer=streaming->buffer();
         // The residency manager owns this dedicated index-only buffer.
         // Never hand it to the pooled allocator or destroy it twice.
+    }else if(compactSelection_){
+        // Compacted submission draws only from per-selection buffers built
+        // from the compressed CPU copy: the full index stream (every level
+        // of every cluster, as large as the whole hierarchy) is never needed
+        // on the GPU. No upload: saves its whole size in GPU memory.
+        sidecarSkipped_=true;
     }else if(source.geometryPoolPage &&
        uploadAuxiliaryGeometryIndices(dev,source,combined.data(),
                                       combined.size(),pooled)){
@@ -252,9 +291,10 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     pooledIndices_=std::move(pooled);
     dedicated_=dedicated;
     streaming_=std::move(streaming);
-    // Compacted submission gathers straight from the staged asset's indices
-    // (no second CPU copy: that copy was as large as the whole index set).
+    // Compacted submission gathers from a compressed copy of the combined
+    // stream; the owner may then release the asset's full 32-bit indices.
     cpuGather_=compactSelection_ && !streaming_;
+    if(cpuGather_)cpuIndices_.build(combined);
     stats_={};
     stats_.pooledIndices=pooledIndices_.valid();
     stats_.dedicatedIndices=dedicated || bool(streaming_);
@@ -409,6 +449,8 @@ bool PortableSource::prepareModel(
     size_t mergeEntry=SIZE_MAX;
     std::vector<SelectedCluster> debugPicks; // published only on success
     const bool compacting=compact && compactSelection() && !streaming_;
+    if(!compacting && sidecarSkipped_)
+        return reject("compacted-only Strata source needs a compact buffer");
     struct CompactRange { uint32_t first=0, count=0; };
     std::vector<std::vector<CompactRange>> compactRanges;
     std::vector<std::pair<float3,float3>> compactBounds;
@@ -589,11 +631,7 @@ bool PortableSource::prepareModel(
             Primitive prim=source_->meshes[entry.mesh].primitives[entry.primitive];
             uint32_t count=0;
             for(const auto& r:compactRanges[i]){
-                if(!sameSelection){
-                    const auto& src=entry.geometry.indices;
-                    const size_t at=size_t(r.first-primitiveOffsets_[i]);
-                    out.insert(out.end(),src.begin()+at,src.begin()+at+r.count);
-                }
+                if(!sameSelection)cpuIndices_.gather(r.first,r.count,out);
                 count+=r.count;
             }
             prim.firstIndex=cursor;
@@ -676,6 +714,8 @@ void PortableSource::shutdown(gfx::Device& dev){
     sourceGeometryRevision_=sourceMaterialRevision_=0;
     primitiveOffsets_.clear(); legacyMaterialMask_.clear();
     cpuGather_=false;
+    cpuIndices_.clear();
+    sidecarSkipped_=false;
     stats_={};
     std::vector<SelectedCluster>().swap(debugSelection_);
 }

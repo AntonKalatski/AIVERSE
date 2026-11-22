@@ -392,6 +392,20 @@ private:
     // present while preTransform (IDENTITY) differs from the display rotation (any landscape game).
     bool swapchainChanged();
     std::vector<VkImage> swapImages_;
+    // Android pre-rotation: when the display is rotated (landscape on a
+    // portrait panel) the swapchain is created in the panel's transform and
+    // present() rotates the frame with a compute pass, so the compositor
+    // does not rotate every frame. 0 = off, 1 = ROTATE_90, 2 = ROTATE_270.
+    int rotatePresent_ = 0;
+    std::vector<VkImageView> swapViews_;
+    VkDescriptorSetLayout rotLayout_ = VK_NULL_HANDLE;
+    VkPipelineLayout rotPipeLayout_ = VK_NULL_HANDLE;
+    VkPipeline rotPipe_ = VK_NULL_HANDLE;
+    VkDescriptorPool rotPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet rotSets_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkSampler rotSampler_ = VK_NULL_HANDLE;
+    bool rotFailed_ = false;
+    bool ensureRotatePipeline();
     std::vector<VkSemaphore> swapRendered_;
     uint32_t swapIndex_ = 0;
     int swapForW_ = 0, swapForH_ = 0;   // framebuffer size the swapchain was made for

@@ -12,7 +12,7 @@ namespace {
 constexpr char kMagic[8] = {'S', 'T', 'R', 'A', 'T', 'A', 'C', 'K'};
 constexpr uint32_t kVersion = 1;
 // Bumped whenever the builder's output for the same input may change.
-constexpr uint64_t kBuilderEpoch = 0x5354524154410004ull; // 4: + up to 16 levels
+constexpr uint64_t kBuilderEpoch = 0x5354524154410006ull; // 6: + coarse tail down to ~256 triangles
 
 struct Hasher {
     uint64_t h = 0x9e3779b97f4a7c15ull;
