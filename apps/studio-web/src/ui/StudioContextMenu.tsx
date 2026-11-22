@@ -38,15 +38,17 @@ export function StudioContextMenu({ x, y, items, onClose, label = 'Context menu'
   useEffect(() => {
     const down = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } };
+    // A long menu (Window) scrolls itself. Wheel over the menu must not dismiss it.
+    const wheel = (event: WheelEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
     window.addEventListener('pointerdown', down, true);
     window.addEventListener('keydown', key);
     window.addEventListener('blur', onClose);
-    window.addEventListener('wheel', onClose, { passive: true });
+    window.addEventListener('wheel', wheel, { passive: true });
     return () => {
       window.removeEventListener('pointerdown', down, true);
       window.removeEventListener('keydown', key);
       window.removeEventListener('blur', onClose);
-      window.removeEventListener('wheel', onClose);
+      window.removeEventListener('wheel', wheel);
     };
   }, [onClose]);
   return <div ref={ref} className="au-menu" role="menu" aria-label={label}
