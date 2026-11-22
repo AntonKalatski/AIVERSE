@@ -1262,6 +1262,21 @@ if(AIVERSE_PLATFORM MATCHES "^(windows|linux|android)$")
 endif()
 option(AIVERSE_VULKAN "Build the Vulkan RHI backend (Windows, Linux, Android)" ${_aiverse_vulkan_default})
 if(AIVERSE_VULKAN)
+    # SPIR-V optimizer (vendored SPIRV-Tools + SPIRV-Headers, third_party/spirv-tools): glslang runs the
+    # performance passes on every program. Mobile drivers (Adreno) barely optimise SPIR-V themselves:
+    # unoptimised shaders cost ~30% GPU time on a Galaxy A05s. Needs Python 3 on the build host (grammar tables).
+    option(AIVERSE_SPIRV_OPT "Optimize Vulkan SPIR-V with the vendored SPIRV-Tools" ON)
+    if(AIVERSE_SPIRV_OPT)
+        set(SPIRV-Headers_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spirv-headers)
+        # the table generators need Python >= 3.9: take the newest interpreter, not the first on PATH
+        set(Python3_FIND_STRATEGY VERSION)
+        set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
+        set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
+        set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
+        set(SKIP_SPIRV_TOOLS_INSTALL ON CACHE BOOL "" FORCE)
+        set(SPIRV_TOOLS_BUILD_STATIC ON CACHE BOOL "" FORCE)
+        add_subdirectory(third_party/spirv-tools EXCLUDE_FROM_ALL)
+    endif()
     add_subdirectory(third_party/glslang)
     add_library(aiverse_gfx_vulkan STATIC engine/gfx/vulkan/VkApi.cpp engine/gfx/vulkan/VkShaderCompiler.cpp engine/gfx/vulkan/VkSurface.cpp
         engine/gfx/vulkan/GfxVulkan.cpp engine/gfx/vulkan/VkResources.cpp engine/gfx/vulkan/VkDraw.cpp
@@ -2446,7 +2461,7 @@ endif()
 
 # Project import (shared Python pipeline + editor/MCP bridge).
 if(TARGET aiverse_editor_core)
-    target_sources(aiverse_editor_core PRIVATE apps/editor/core/PortOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/PortOps.cpp apps/editor/core/PackageOps.cpp)
 endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME project_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/port/test_port.py)
