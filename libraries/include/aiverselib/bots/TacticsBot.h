@@ -19,10 +19,10 @@ struct TacticsBotConfig{
 };
 inline bool valid(const TacticsBotConfig& c){return c.searchBudget>=1&&c.searchBudget<=100000&&c.damageWeight>=0&&c.killBonus>=0&&c.threatWeight>=0&&c.coverWeight>=0&&c.advanceWeight>=0&&c.overwatchValue>=0;}
 inline TacticsBotConfig tacticsBotConfig(const gameplay::GameplaySettings& s){TacticsBotConfig c;c.searchBudget=uint32_t(s.tactics.botSearchBudget);return c;}
-struct TacticsBotChoice{genre::TacticsAction action;int64_t score=0;uint32_t evaluated=0;};
+struct TacticsBotChoice{mechanics::TacticsAction action;int64_t score=0;uint32_t evaluated=0;};
 
-inline std::optional<TacticsBotChoice> tacticsBotChoose(const genre::TacticsScenario& sc,const genre::TacticsView& view,int32_t advanceTo=-1,const TacticsBotConfig& cfg=TacticsBotConfig{}){
-    using namespace genre;
+inline std::optional<TacticsBotChoice> tacticsBotChoose(const mechanics::TacticsScenario& sc,const mechanics::TacticsView& view,int32_t advanceTo=-1,const TacticsBotConfig& cfg=TacticsBotConfig{}){
+    using namespace mechanics;
     if(!valid(cfg)||!valid(sc)||!view.active||view.winner!=kTacticsNoWinner)return std::nullopt;
     const TacticsUnitView* me=nullptr;for(const auto& u:view.units)if(u.id==view.active)me=&u;
     if(!me||me->team!=view.team||me->hp<=0||!sc.defs.contains(me->def))return std::nullopt;

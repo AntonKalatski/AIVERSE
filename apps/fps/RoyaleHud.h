@@ -63,11 +63,11 @@ inline void drawRoyaleHud(const i18n::Localization& lang,const net::authority::S
     // Kill feed (right, under the minimap).
     float fy=y0+side+12;
     for(auto it=v.feed.rbegin();it!=v.feed.rend();++it){
-        const auto& e=*it;const char* key=e.kind==lib::genre::KillFeedKind::Knocked?"actor.royale.feed.knocked":e.kind==lib::genre::KillFeedKind::Eliminated?"actor.royale.feed.eliminated":
-            e.kind==lib::genre::KillFeedKind::Revived?"actor.royale.feed.revived":e.kind==lib::genre::KillFeedKind::TeamOut?"actor.royale.feed.teamOut":nullptr;
+        const auto& e=*it;const char* key=e.kind==lib::mechanics::KillFeedKind::Knocked?"actor.royale.feed.knocked":e.kind==lib::mechanics::KillFeedKind::Eliminated?"actor.royale.feed.eliminated":
+            e.kind==lib::mechanics::KillFeedKind::Revived?"actor.royale.feed.revived":e.kind==lib::mechanics::KillFeedKind::TeamOut?"actor.royale.feed.teamOut":nullptr;
         if(!key)continue;
         auto text=lang.tr(key,i18n::Args().num("victim",int(e.subject)).num("actor",int(e.actor)).num("place",int(e.value)));
-        if(e.kind!=lib::genre::KillFeedKind::TeamOut&&!e.actor)text=lang.tr("actor.royale.feed.environment",i18n::Args().num("victim",int(e.subject)));
+        if(e.kind!=lib::mechanics::KillFeedKind::TeamOut&&!e.actor)text=lang.tr("actor.royale.feed.environment",i18n::Args().num("victim",int(e.subject)));
         auto fs=ImGui::CalcTextSize(text.c_str());draw->AddText({w-16-fs.x,fy},e.subject==self.slot?IM_COL32(255,120,90,255):e.actor==self.slot?IM_COL32(255,230,120,255):IM_COL32(220,220,220,255),text.c_str());fy+=fs.y+3;
     }
     // Result banner.

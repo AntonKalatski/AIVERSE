@@ -8,7 +8,7 @@
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 namespace aiverse::actor {
-using namespace lib::genre;
+using namespace lib::mechanics;
 namespace {
 uint64_t seedFrom(Simulation& sim,uint32_t salt){Random g=sim.rng();uint64_t a=g.next(),b=g.next();return (a<<32|b)^(uint64_t(salt)*0x9e3779b97f4a7c15ull);}
 }

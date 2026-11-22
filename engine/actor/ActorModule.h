@@ -51,31 +51,31 @@ struct Config {
     bool friendlyFire=false;
     // Opt-in `fps.royale` (battle-royale package; a map's own `royale` block replaces it): phased zone, air
     // insertion, bombardment, supply drops and standings. `crate` = items of a landed supply drop.
-    std::optional<lib::genre::RoyaleRules> royale;
+    std::optional<lib::mechanics::RoyaleRules> royale;
     std::vector<Item> crate;
     // Opt-in `fps.gear` (gear-tiers package): tiered helmets / vests / backpacks as loot type 200 + id.
     lib::systems::GearCatalog gear;
     // Opt-in `fps.vehicleTypes` (vehicle-controllers JSON): map vehicles with a `type` drive with the package's
     // controller and seats (driver, passengers, gunners); vehicles without one keep the arcade car.
-    std::optional<lib::genre::VehicleDefinitions> vehicleTypes;
-    // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
+    std::optional<lib::mechanics::VehicleDefinitions> vehicleTypes;
+    // Opt-in `fps.bots` (bots-combatant settings): map players with "bot": true use the library controller with
     // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
     Json bots;
 };
 // Battle-royale run (empty when fps.royale is absent). Slot i-1 indexes divers / credit.
 struct RoyaleRun {
     bool enabled=false;
-    lib::genre::SafeZoneState zone;lib::genre::BombardmentState bombardment;lib::genre::SupplyDropState drops;
-    lib::genre::InsertionFlight flight;std::vector<lib::genre::SkydiverState> divers;lib::genre::RoyaleStandings standings;
+    lib::mechanics::SafeZoneState zone;lib::mechanics::BombardmentState bombardment;lib::mechanics::SupplyDropState drops;
+    lib::mechanics::InsertionFlight flight;std::vector<lib::mechanics::SkydiverState> divers;lib::mechanics::RoyaleStandings standings;
     std::vector<uint8_t> lastAttacker,lastWeapon;
-    std::vector<lib::genre::KillFeedEvent> feed;   // the last 6 kill-feed lines for the HUD
+    std::vector<lib::mechanics::KillFeedEvent> feed;   // the last 6 kill-feed lines for the HUD
     bool operator==(const RoyaleRun&)const=default;
 };
 // What one client needs to draw the battle royale (zone ring + timer, carrier, own phase, counts, hazards).
 struct RoyaleView {
     bool enabled=false;uint8_t stage=0,phase=0,divePhase=3;uint32_t ticksLeft=0;uint16_t alive=0,teamsIn=0,placement=0,kills=0;
-    lib::genre::RoyaleCircle circle,target;Vec3 carrier{};bool bombardment=false;lib::genre::RoyaleCircle bombArea;std::vector<Vec3> crates;
-    std::vector<lib::genre::KillFeedEvent> feed;bool finished=false,doorOpen=false,outside=false;int32_t winner=0;uint16_t teams=0;
+    lib::mechanics::RoyaleCircle circle,target;Vec3 carrier{};bool bombardment=false;lib::mechanics::RoyaleCircle bombArea;std::vector<Vec3> crates;
+    std::vector<lib::mechanics::KillFeedEvent> feed;bool finished=false,doorOpen=false,outside=false;int32_t winner=0;uint16_t teams=0;
     bool operator==(const RoyaleView&)const=default;
 };
 void io(Archive&,RoyaleView&);
@@ -200,7 +200,7 @@ private:
     std::map<uint32_t,Fixed> penetrable_;
     std::vector<Vehicle> initialVehicles_;
     std::vector<Loot> initialLoot_;
-    lib::genre::AttackSet meleeAttacks_;
+    lib::mechanics::AttackSet meleeAttacks_;
 
     Config config_;
     world::SpatialWorld collision_;

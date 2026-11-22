@@ -1,4 +1,4 @@
-// `fps.bots`: map players with "bot": true run the bots-fps controller (libraries/.../bots/Fps.h) inside the
+// `fps.bots`: map players with "bot": true run the bots-combatant controller (libraries/.../bots/Fps.h) inside the
 // authoritative tick instead of the reference fallback bot. Navigation: a navmesh per generated building
 // (doors, stairs, floors) plus straight steering in the open; outside a building a goal inside it is
 // replaced by its door. Goals besides fighting: the battle-royale zone (inside the controller), wanted
@@ -41,7 +41,7 @@ bool ActorHost::thinkBot(Simulation& sim,CharacterRef a) {
         if(useful){best=d;want=l;}
     }
     if(want)objective=want->pos;
-    else if(s.royale.enabled){auto t=lib::genre::safeZoneTarget(config_.royale->zone,s.royale.zone);
+    else if(s.royale.enabled){auto t=lib::mechanics::safeZoneTarget(config_.royale->zone,s.royale.zone);
         auto turn=Fixed::fromRatio(int64_t(a.slot)*37%100,100);auto r=t.radius*Fixed::fromRatio(int64_t(a.slot)%5+1,8);
         objective=Vec3{t.center.x+fxSinTurns(turn)*r,a.pos.y,t.center.y+fxCosTurns(turn)*r};}
     // Navigation: the building mesh the bot stands in; a goal inside another building goes through its door.

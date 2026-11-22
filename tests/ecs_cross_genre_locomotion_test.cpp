@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 static void require(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct ShooterTag {};
 struct StrategyTag {};

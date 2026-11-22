@@ -29,7 +29,7 @@
 // Combat actions: validated settings + hitbox data, one authoritative tick of hit collection and contact
 // resolution, then per-actor state in NativeState. Damage itself stays with the project's combat owner.
 static bool libraryCombatConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;using aiverse::Fixed;
+    using namespace aiverse::lib::mechanics;using aiverse::Fixed;
     auto dodge=dodgeConfig(settings);auto guard=guardConfig(settings);auto poise=poiseConfig(settings);auto lock=lockOnConfig(settings);
     if(!valid(dodge)||!valid(guard)||!valid(poise)||!valid(lock))return false;
     AttackSet attacks{{1,attackConfig(settings,1)}};
@@ -56,7 +56,7 @@ static bool libraryCombatConsumerExample(aiverse::game::NativeState& state,const
 // guard pair and an intruder (owner LOS/occlusion callbacks), then the versioned state in NativeState.
 // Bots read SensesReport::perceived (PerceivedTarget) and searchGoal; movement stays with their controllers.
 static bool librarySensesConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;using aiverse::Fixed;using aiverse::Vec3;
+    using namespace aiverse::lib::mechanics;using aiverse::Fixed;using aiverse::Vec3;
     if(!sensesSettingsErrors(settings).empty())return false;
     const auto config=sensesConfig(settings);
     auto defs=readSenseDefinitions(aiverse::Json::parse(R"({"disguises":[{"id":1,"factions":[1],"zones":[2],"blownBy":[1]}],
@@ -82,7 +82,7 @@ namespace {
 // attachments). The host's fire/reload commands later call stepFeed/stepCharge once per tick in the
 // authoritative handler; here only validated initial records are stored, one NativeState key each.
 bool weaponConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse;using namespace aiverse::lib::genre;
+    using namespace aiverse;using namespace aiverse::lib::mechanics;
     if(!weaponSettingsErrors(settings).empty())return false;
     auto defs=readWeaponDefinitions(Json::parse(R"({"materials":[{"id":1,"resistanceMilli":200,"damageFalloffMilli":100},{"id":2,"impenetrable":true}],
         "frame":{"slots":[1],"stats":[{"id":1,"baseMilli":25000,"minimumMilli":0,"maximumMilli":100000}]},
@@ -100,7 +100,7 @@ bool weaponConsumerExample(aiverse::game::NativeState& state,const aiverse::lib:
 // objective clock, outcomes awarded through the match owner (awardScore), records stored one key each.
 // Presence counts come from the project's own spatial query (insideZone here); deaths/pickups likewise.
 static bool libraryMatchObjectivesConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;using aiverse::Fixed;
+    using namespace aiverse::lib::mechanics;using aiverse::Fixed;
     if(!objectiveSettingsErrors(settings).empty())return false;
     auto layout=readObjectiveLayout(aiverse::Json::parse(R"({"zones":[{"id":1,"kind":"capture","center":[0,0,0],"radiusMilli":4000}],
         "payload":{"path":[[0,0,0],[20000,0,0],[20000,0,20000]],"checkpointsMilli":[20000]}})"));
@@ -125,7 +125,7 @@ static bool libraryMatchObjectivesConsumerExample(aiverse::game::NativeState& st
 // A real authoritative handler passes sim.rng() and applies the returned inputs through the same stepMelee/
 // stepDodge/stepGuard/stepLockOn/stepFeed path as player commands; bots never write combat or body state.
 static bool genreBotConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::bots;using aiverse::Fixed;using aiverse::operator""_fx;namespace g=aiverse::lib::genre;
+    using namespace aiverse::lib::bots;using aiverse::Fixed;using aiverse::operator""_fx;namespace g=aiverse::lib::mechanics;
     if(!genreBotSettingsErrors(settings).empty())return false;
     auto melee=meleeBotConfig(settings);auto shooter=shooterBotConfig(settings);auto squad=squadConfig(settings);auto weights=objectiveWeights(settings);
     aiverse::Random rng(0x9e3779b9u);uint32_t tick=0;
@@ -151,7 +151,7 @@ bool libraryProgressionConsumerExample(aiverse::game::NativeState& state,const a
 // consequence, cue requests, one bark) for one authoritative tick, then the state in NativeState. The legacy story
 // JSON loads through the same reader. Cinematic/UI owners consume report cues and bark lines; they never write state.
 static bool narrativeSceneConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings,const aiverse::Json& story){
-    using namespace aiverse::lib::genre;using C=NarrativeCommandKind;
+    using namespace aiverse::lib::mechanics;using C=NarrativeCommandKind;
     if(!narrativeSettingsErrors(settings).empty())return false;const auto config=narrativeConfig(settings);
     const auto legacy=readNarrativeWorld(story,config);
     const auto world=readNarrativeWorld(aiverse::Json::parse(R"({"facts":[{"id":1,"type":"bool","persistent":true}],
@@ -173,7 +173,7 @@ static bool narrativeSceneConsumerExample(aiverse::game::NativeState& state,cons
 // carry, door, platform and breakable policies against engine/world collision, states in NativeState. These
 // kinematic policies are authoritative; a Box3D world may only render the DebrisRequest output.
 static bool physicalInteractionConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;using aiverse::Fixed;using aiverse::Vec3;
+    using namespace aiverse::lib::mechanics;using aiverse::Fixed;using aiverse::Vec3;
     if(!interactionSettingsErrors(settings).empty())return false;
     const auto config=interactionConfig(settings);
     const auto defs=readInteractionDefinitions(aiverse::Json::parse(R"({"carryables":[{"id":1,"massMilli":6000,"halfMilli":[200,200,200]}],
@@ -203,7 +203,7 @@ static bool physicalInteractionConsumerExample(aiverse::game::NativeState& state
 // ticks of time domains feeding the scene runner (hit-stop preset on the world domain), versioned state in NativeState.
 // Presentation plays SceneEvents and reports line/marker progress back as tick-stamped SceneInput.
 static bool libraryCinematicConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;
+    using namespace aiverse::lib::mechanics;
     if(!cinematicSettingsErrors(settings).empty())return false;
     auto lib=readSceneLibrary(aiverse::Json::parse(R"({"scenes":[{"id":1,"trigger":42,"length":120,"checkpointBefore":true,
         "participants":[{"id":1,"lockInput":true}],
@@ -230,7 +230,7 @@ bool vehiclesSportsConsumerExample(aiverse::game::NativeState&,const aiverse::li
 // settlement-production + survival-ecology: ProductionSurvivalConsumer.cpp.
 bool libraryProductionSurvivalConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings);
 bool libraryGenreConsumerExample(aiverse::game::NativeState& state,const aiverse::Json& settings,const aiverse::Json& story){
-    using namespace aiverse::lib::genre;
+    using namespace aiverse::lib::mechanics;
     auto parsed=aiverse::lib::gameplay::readGameplaySettings(settings);if(!parsed.value)return false;
     if(!valid(motionConfig(*parsed.value))||!valid(matchConfig(*parsed.value)))return false;
     auto graph=readStory(story);auto initial=beginStory(graph,graph.begin()->first,{{1,1}});if(!initial)return false;

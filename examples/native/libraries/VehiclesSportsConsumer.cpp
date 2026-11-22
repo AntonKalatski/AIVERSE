@@ -13,7 +13,7 @@
 // tick of a 1v1 ball match with the positioning bot. Every record lives in NativeState (kinds 88..95); the owner
 // supplies contacts/collisions and player movement, the policies never touch engine physics.
 bool vehiclesSportsConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;using aiverse::Fixed;using aiverse::Vec3;using aiverse::Vec2;
+    using namespace aiverse::lib::mechanics;using aiverse::Fixed;using aiverse::Vec3;using aiverse::Vec2;
     if(!vehicleSettingsErrors(settings).empty()||!sportsSettingsErrors(settings).empty())return false;
     const auto defs=readVehicleDefinitions(aiverse::Json::parse(R"({"vehicles":[{"id":1,"kind":"wheeled",
         "zones":[{"id":1,"centerMilli":[0,500,-1500],"halfMilli":[900,500,700],"health":1000,"critical":true,"penalties":[{"stat":"engine","atZeroMilli":400}]}],

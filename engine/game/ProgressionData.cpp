@@ -10,7 +10,7 @@
 namespace aiverse::game {
 
 namespace {
-namespace lg = aiverse::lib::genre;
+namespace lg = aiverse::lib::mechanics;
 [[noreturn]] void bad(const std::string& where, const std::string& what) { throw std::runtime_error("progression" + (where.empty() ? "" : "." + where) + ": " + what); }
 
 void keysOnly(const Json& j, const std::string& where, std::initializer_list<const char*> names) {

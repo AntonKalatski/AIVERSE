@@ -12,7 +12,7 @@
 
 namespace aiverse::game {
 using namespace detail;
-namespace tl = lib::genre;
+namespace tl = lib::mechanics;
 
 namespace {
 Vec3 v3(Vec2 p) { return {p.x, Fixed{}, p.y}; }

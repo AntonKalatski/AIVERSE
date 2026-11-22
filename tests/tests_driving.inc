@@ -152,7 +152,7 @@ TEST(driving_autopilot_drives_a_car_nobody_sits_in) {
     Entity hero = mod(*sim).topDown()->heroOf(*sim, 1), car = firstOf(*sim, "sedan");
     run(*sim, 0.5);
     const Vec3 parked = tdPos(*sim, car);
-    aiverse::lib::genre::VehicleInput in;
+    aiverse::lib::mechanics::VehicleInput in;
     in.throttle = Fixed::fromInt(1);
     CHECK(drv(*sim).setAutopilot(*sim, car, in) && !drv(*sim).setAutopilot(*sim, hero, in));
     in.throttle = Fixed::fromInt(5);
@@ -175,7 +175,7 @@ TEST(driving_autopilot_drives_a_car_nobody_sits_in) {
 }
 
 TEST(driving_decks_tunnel_through_a_wall_and_bridge_over_a_parked_car) {
-    aiverse::lib::genre::VehicleInput go;
+    aiverse::lib::mechanics::VehicleInput go;
     go.throttle = Fixed::fromRatio(1, 2);
     // the map has a wall at x = 12; a tunnel crosses it
     const std::string cars = kDriveStart;
@@ -227,7 +227,7 @@ TEST(driving_decks_tunnel_through_a_wall_and_bridge_over_a_parked_car) {
     {
         auto s2 = makeSimJson(kDrivingRules, withDecks(cars, tunnel, true));
         Entity c2 = firstOf(*s2, "sedan");
-        aiverse::lib::genre::VehicleInput turn = go;
+        aiverse::lib::mechanics::VehicleInput turn = go;
         turn.steer = Fixed::fromInt(1);
         drv(*s2).setAutopilot(*s2, c2, go);
         for (int i = 0; i < 20 * 10; ++i) {

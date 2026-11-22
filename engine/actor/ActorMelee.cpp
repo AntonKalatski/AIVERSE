@@ -37,10 +37,10 @@ void ActorHost::tickMelee(Simulation& sim,CharacterRef actor,const Input& input)
     }
     const bool free=alive&&!actor.vehicle&&!block&&actor.activeAction==Action::None&&now>=actor.staggerUntil;
     int64_t requested=free&&(input.buttons&Melee)?1:0;
-    lib::genre::stepMelee(meleeAttacks_,actor.melee,now,requested,[&](int64_t){return free;});
-    auto phase=lib::genre::attackPhase(meleeAttacks_,actor.melee,now);
+    lib::mechanics::stepMelee(meleeAttacks_,actor.melee,now,requested,[&](int64_t){return free;});
+    auto phase=lib::mechanics::attackPhase(meleeAttacks_,actor.melee,now);
     if(actor.melee.attack&&actor.melee.started==now)sim.emit({3,actor.slot,{},{},actor.melee.attack,actor.pos});
-    if(phase!=lib::genre::AttackPhase::Active||!alive){actor.meleeHasTip=false;return;}
+    if(phase!=lib::mechanics::AttackPhase::Active||!alive){actor.meleeHasTip=false;return;}
     // Sweep the blade tip from its previous position so fast turns cannot skip a target.
     auto shoulder=actor.pos+Vec3{{},stanceHeight(actor,config_.motor)*Fixed::fromRatio(3,4),{}};
     auto tip=shoulder+direction(actor.yaw,{})*m.range;
@@ -53,10 +53,10 @@ void ActorHost::tickMelee(Simulation& sim,CharacterRef actor,const Input& input)
         Fixed fraction;Vec3 normal;
         bool inside=start.x>=bounds.min.x&&start.x<=bounds.max.x&&start.y>=bounds.min.y&&start.y<=bounds.max.y&&start.z>=bounds.min.z&&start.z<=bounds.max.z;
         if(inside)fraction=Fixed{};else if(!world::intersect(start,delta,bounds,fraction,normal))continue;
-        if(!lib::genre::recordMeleeHit(meleeAttacks_,actor.melee,now,target.slot))continue;
-        auto contact=lib::genre::resolveMeleeContact(false,now<target.parryUntil,target.blockHeld,guarded(target,actor,m.guardTurns));
-        if(contact==lib::genre::MeleeContact::Parried)actor.staggerUntil=now+m.staggerTicks;
-        else if(contact==lib::genre::MeleeContact::Hit){damage(sim,actor.slot,target,m.damage);target.staggerUntil=now+m.staggerTicks;}
+        if(!lib::mechanics::recordMeleeHit(meleeAttacks_,actor.melee,now,target.slot))continue;
+        auto contact=lib::mechanics::resolveMeleeContact(false,now<target.parryUntil,target.blockHeld,guarded(target,actor,m.guardTurns));
+        if(contact==lib::mechanics::MeleeContact::Parried)actor.staggerUntil=now+m.staggerTicks;
+        else if(contact==lib::mechanics::MeleeContact::Hit){damage(sim,actor.slot,target,m.damage);target.staggerUntil=now+m.staggerTicks;}
         sim.emit({4,actor.slot,{},{},int64_t(target.slot)|(int64_t(contact)<<8),start+delta*fraction});
     }
 }

@@ -99,7 +99,7 @@ configuration validable.
 |---|---|
 | **RTS, tower defense, jeux de conquête** | Module `rts` complet : unités et bâtiments définis par les données, A\* / HPA\* / flow fields pour des armées de milliers d’unités sur des cartes jusqu’à 2048², économie, construction, brouillard de guerre, IA, terrain et planètes, 26 modèles |
 | **FPS et TPS** | Module `fps` complet : client et serveur autoritaire, grands mondes en streaming jusqu’à 100 joueurs, bots, 4 modèles ; `weapon-policies` (recul, balistique, pénétration), `match-rules` (manches, escorte, bombe, extraction) |
-| **Action, combat, soulslike** | `combat-actions`, `melee-combat` : hitbox et hurtbox, combos et fenêtres d’annulation, invulnérabilité en esquive, parade, posture, verrouillage de cible ; `genre-bots` pour les adversaires |
+| **Action, combat, soulslike** | `combat-actions`, `melee-combat` : hitbox et hurtbox, combos et fenêtres d’annulation, invulnérabilité en esquive, parade, posture, verrouillage de cible ; `action-bots` pour les adversaires |
 | **Plateforme, metroidvania** | `character-locomotion` : coyote time, tampon de saut, rebords, échelles, nage, escalade, franchissement ; `zone-graph` : verrous de capacité, points de contrôle et preuve d’absence de blocage |
 | **Infiltration, immersive sim** | `stealth-senses` : cônes de vision, ouïe, soupçon et alerte, fouilles, déguisements ; `physical-interactions` : porter, lancer, cordes, portes, plateformes, objets destructibles |
 | **Jeux narratifs, visual novels** | `narrative-graphs` : dialogues conditionnels, relations, conséquences, historique et défilement automatique de VN ; `cinematic-gameplay` : timelines, QTE, ralenti |

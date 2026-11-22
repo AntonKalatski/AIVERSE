@@ -6,7 +6,7 @@
 #include "engine/game/Native.h"
 #include <array>
 bool libraryEncounterConsumerExample(aiverse::game::NativeState& state){
-    using namespace aiverse::lib::genre;using aiverse::Fixed;using aiverse::operator""_fx;
+    using namespace aiverse::lib::mechanics;using aiverse::Fixed;using aiverse::operator""_fx;
     auto source=aiverse::Json::parse(R"({"statuses":[{"id":1,"kind":"burn","duration":20,"interval":10,"damagePerTick":5}],
         "attacks":[{"id":1,"shape":"cone","radiusMilli":5000,"halfAngleMilli":167,"windup":4,"active":1,"recovery":4,"damage":30,"statuses":[1]}],
         "bosses":[{"id":1,"phases":[{"id":1,"pattern":[{"attack":1,"maxRangeMilli":3000}]}]}]})");

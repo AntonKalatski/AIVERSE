@@ -3,13 +3,13 @@ name: aiverse-action-bots
 description: Reuse AIVERSE action bot policies (melee spacing/attack timing/dodge-parry/lock-on, ranged aim/lead/burst/reload/overheat/cover, squad roles with formations, objective choice) whenever a project needs deterministic computer opponents for melee, ranged or team play.
 ---
 
-# Action bots (package `genre-bots`, legacy id)
+# Action bots (package `action-bots`, legacy id)
 
 Use when a project needs bot opponents for melee or ranged mechanics, squad/team roles or objective selection.
 Whole-side economy/army decisions are `aiverse-bots-commander`; the command-driven single-agent bot is
 `aiverse-bots-combatant`; all three may run in the same project. These policies are genre-independent and compose `combat-actions` and `weapon-policies`.
 
-1. Read `docs/mechanics-packages.md` (genre-bots section) and the catalog entry; inspect
+1. Read `docs/mechanics-packages.md` (action-bots section) and the catalog entry; inspect
    `libraries/include/aiverselib/bots/{MeleeBot,ShooterBot,SquadRoles,ObjectivePolicy}.h` for exact behavior.
 2. Responsibility: decisions only. `stepMeleeBot` returns `MeleeInput` (move wish, face yaw, attack request,
    dodge + direction, guard held, lock command); `stepShooterBot` returns `ShooterInput` (view yaw/pitch, move wish,
@@ -39,7 +39,7 @@ Whole-side economy/army decisions are `aiverse-bots-commander`; the command-driv
    Not implied: navigation/pathing (feed role goals to navmesh or RTS move commands), match/objective rules,
    senses/LOS, sports/racing/card/turn bots, learning or Elo-rated strength.
 
-Build selection: `AIVERSE::lib_genre_bots` (depends on `AIVERSE::lib_combat_actions`, `AIVERSE::lib_weapon_policies`,
+Build selection: `AIVERSE::lib_action_bots` (depends on `AIVERSE::lib_combat_actions`, `AIVERSE::lib_weapon_policies`,
 `AIVERSE::lib_configuration`, `AIVERSE::lib_stealth_senses`, `AIVERSE::lib_character_locomotion`,
 `AIVERSE::lib_match_rules`, `AIVERSE::lib_narrative_graphs` (shared genre save records), `aiverse_engine`, `aiverse_world`); native OBJECT modules call
-`aiverse_native_use_libraries(target genre-bots)`. Only this header library and its declared dependencies are selected.
+`aiverse_native_use_libraries(target action-bots)`. Only this header library and its declared dependencies are selected.

@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// Versioned save/load (genre::save/load from Persistence.h, version 1) and checksum hashing for vehicle-controllers.
+// Versioned save/load (mechanics::save/load from Persistence.h, version 1) and checksum hashing for vehicle-controllers.
 // Record kinds 88..95 are shared by vehicle-controllers and sports-rules: VehicleState 88, VehicleDamageState 89,
 // VehicleSeatState 90, RaceState 91, (sports) SportsState 92, 93 reserved, RaceBotState 94, (sports) SportsBotState 95.
 // RaceSessionState (RaceSession.h) is kind 128 (block 128..135: vehicle race sessions).
@@ -63,7 +63,7 @@ namespace aiverse::lib::bots {
 inline void io(Archive& a,RaceBotState& s){a(s.segment,s.lastTick,s.lane,s.laneTarget,s.overtaking,s.initialized);}
 inline void io(Archive& a,RaceLine& l){a(l.points,l.distance,l.curvature,l.length);}
 inline uint16_t stateKind(const RaceBotState&){return 94;}
-using genre::save;using genre::load;
+using mechanics::save;using mechanics::load;
 template<class T> uint64_t raceBotHash(const T& value){auto copy=value;std::string bytes;Archive a(&bytes);io(a,copy);Hasher h;h.str(bytes);return h.value();}
 inline uint64_t raceLineHash(const RaceLine& l){return raceBotHash(l);}
 }

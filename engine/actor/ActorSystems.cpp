@@ -87,7 +87,7 @@ void ActorHost::damage(Simulation& sim,uint8_t source,CharacterRef target,int32_
         if(teammate){releaseVehicles(target.slot);target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
     }
     // The same immediate integer HP commit as the generic ECS DamageResolutionSystem.
-    lib::genre::applyIntegerHitPointDamage(target.health,amount);
+    lib::mechanics::applyIntegerHitPointDamage(target.health,amount);
     if(target.health)return;
     target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
     if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
@@ -118,12 +118,12 @@ bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int
     if(!rewind)live=livePoses(sim);
     const auto& targets=rewind?*rewind:live;
     const World& view=sim.world();
-    lib::genre::HitscanIntentComponent shotIntent;
+    lib::mechanics::HitscanIntentComponent shotIntent;
     shotIntent.origin=eye;
     shotIntent.delta=delta;
     shotIntent.maximumFraction=best;
     shotIntent.requested=true;
-    const auto actorHit=lib::genre::resolveHitscanIntent(
+    const auto actorHit=lib::mechanics::resolveHitscanIntent(
         shotIntent,characterEntity(sim,source),targets,
         [&](const HitPose& target) {
             if(target.slot==source||target.health<=0)return false;
@@ -140,7 +140,7 @@ bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int
     // Vehicles after characters: an exact equal-distance hit keeps the character; nearer vehicles occlude.
     uint32_t vehicleId=0;
     const auto cars=vehicles(sim);
-    const auto vehicleHit=lib::genre::selectClosestHitscanCandidate(
+    const auto vehicleHit=lib::mechanics::selectClosestHitscanCandidate(
         cars,eye,delta,best,
         [&](const Vehicle& v) {return v.health>0 && v.driver!=source;},
         [&](const Vehicle& v) {
@@ -173,7 +173,7 @@ bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int
     // Accepted direct hits go through the shared ordered ECS impact policy; head / limb modifiers, armor,
     // knockdown, kill and replay side effects stay in damage(). A ray has no splash or deferred on-hit stage.
     const Entity victimEntity=characterEntity(sim,victim);
-    lib::genre::resolveOrderedProjectileImpact(
+    lib::mechanics::resolveOrderedProjectileImpact(
         {kNullEntity,characterEntity(sim,source),victimEntity,point,
          Fixed::fromInt(amount),Fixed{}},
         [&](Entity) { damage(sim,source,character(sim,victim),amount,head); },
@@ -329,7 +329,7 @@ bool ActorHost::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
         remove=now>=p.expires;
     } else if(now<p.expires) {
         // Physical bounce is a shared policy; fuse, blast, smoke and flash belong to the effect stages below.
-        lib::genre::stepBouncingProjectile(p.pos,p.velocity,
+        lib::mechanics::stepBouncingProjectile(p.pos,p.velocity,
                                             collision_,sim.dt());
     } else {
         if(p.kind==2) {

@@ -98,7 +98,7 @@ validierbarer Konfiguration.
 |---|---|
 | **RTS, Tower Defense, Eroberungsspiele** | Vollständiges `rts`-Modul: datengetriebene Einheiten und Gebäude, A\* / HPA\* / Flow Fields für Armeen aus Tausenden Einheiten auf Karten bis 2048², Wirtschaft, Bau, Nebel des Krieges, KI, Terrain und Planeten, 26 Vorlagen |
 | **FPS und TPS** | Vollständiges `fps`-Modul: Client und autoritativer Server, große gestreamte Welten für bis zu 100 Spieler, Bots, 4 Vorlagen; `weapon-policies` (Rückstoß, Ballistik, Durchschlag), `match-rules` (Runden, Payload, Bombe, Extraktion) |
-| **Action, Fighting, Soulslike** | `combat-actions`, `melee-combat`: Hitboxen und Hurtboxen, Kombos und Abbruchfenster, Unverwundbarkeit beim Ausweichen, Parade, Haltung, Zielerfassung; `genre-bots` für Gegner |
+| **Action, Fighting, Soulslike** | `combat-actions`, `melee-combat`: Hitboxen und Hurtboxen, Kombos und Abbruchfenster, Unverwundbarkeit beim Ausweichen, Parade, Haltung, Zielerfassung; `action-bots` für Gegner |
 | **Plattformer, Metroidvania** | `character-locomotion`: Coyote Time, Sprungpuffer, Kanten, Leitern, Schwimmen, Klettern, Überklettern; `zone-graph`: Fähigkeitssperren, Checkpoints und Nachweis, dass es keine Sackgassen gibt |
 | **Stealth, Immersive Sim** | `stealth-senses`: Sichtkegel, Gehör, Verdacht und Alarm, Suche, Verkleidung; `physical-interactions`: Tragen, Werfen, Seile, Türen, Plattformen, zerstörbare Objekte |
 | **Storyspiele, Visual Novels** | `narrative-graphs`: Dialoge mit Bedingungen, Beziehungen, Konsequenzen, VN-Verlauf und automatisches Weiterblättern; `cinematic-gameplay`: Zeitleisten, QTE, Zeitlupe |

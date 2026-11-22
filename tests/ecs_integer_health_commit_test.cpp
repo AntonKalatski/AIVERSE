@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 
 static void check(bool value,const char* message) {
     if(!value)throw std::runtime_error(message);

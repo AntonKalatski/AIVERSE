@@ -11,7 +11,7 @@
 namespace aiverse::game::script {
 
 namespace {
-namespace lg = aiverse::lib::genre;
+namespace lg = aiverse::lib::mechanics;
 
 Progression* progOf(Vm& vm) {
     Progression* p = vm.module ? vm.module->progression() : nullptr;

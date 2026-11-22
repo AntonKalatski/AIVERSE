@@ -1,17 +1,17 @@
 aiverse_native_module(ID library_demo VERSION 8 ENTRY createLibraryDemo SOURCES LibraryDemo.cpp AppConsumer.cpp ToolkitConsumer.cpp SystemsConsumer.cpp BotConsumer.cpp GenreConsumer.cpp PuzzlesConsumer.cpp CardsTurnsConsumer.cpp VehiclesSportsConsumer.cpp ProductionSurvivalConsumer.cpp EncounterConsumer.cpp ProgressionConsumer.cpp)
 aiverse_native_use_libraries(aiverse_native_library_demo
     graphs behavior logistics configuration tutorial
-    ui-binding screens themes app-lifecycle play-scenarios genre-kits change-planner
+    ui-binding screens themes app-lifecycle play-scenarios template-kits change-planner
     bounded-memory hot-reload work-budget state-diff attribute-modifiers status-effects
     tag-conditions object-interactions progression-curves reservations action-sequences
-    loot-tables ai-perception decision-explanations bots-rts bots-fps navmesh
+    loot-tables ai-perception decision-explanations bots-commander bots-combatant navmesh
     character-locomotion melee-combat weapon-policies match-rules narrative-graphs)
 # Combat actions (hitboxes, dodge, parry, poise, lock-on) compose melee-combat.
 aiverse_native_use_libraries(aiverse_native_library_demo combat-actions)
 # Stealth senses (sight, hearing, trails, suspicion, alerts, search, disguises, hiding).
 aiverse_native_use_libraries(aiverse_native_library_demo stealth-senses)
 # Genre bots (melee/shooter policies, squad roles, objective choice) compose combat-actions and weapon-policies.
-aiverse_native_use_libraries(aiverse_native_library_demo genre-bots)
+aiverse_native_use_libraries(aiverse_native_library_demo action-bots)
 # Match progression (perks, xp, offers, pickups, summons, battle deck).
 aiverse_native_use_libraries(aiverse_native_library_demo match-progression)
 # Physical interactions (carry/throw, push/pull, ropes, doors, moving platforms, breakables).

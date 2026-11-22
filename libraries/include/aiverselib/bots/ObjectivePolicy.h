@@ -1,5 +1,5 @@
 #pragma once
-// Objective policy hook (genre-bots): pick which objective a bot or squad works on from an owner-supplied list.
+// Objective policy hook (action-bots): pick which objective a bot or squad works on from an owner-supplied list.
 // ObjectiveInfo is deliberately small so a match/objective owner (capture points, hold zones, payloads, ...)
 // can fill it from its own authoritative state; the policy only scores and chooses. Integer scores, stable
 // tie-break by smaller id, optional stickiness for the current choice to avoid flip-flopping.

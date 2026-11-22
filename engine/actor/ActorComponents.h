@@ -78,7 +78,7 @@ struct CharacterInventory { std::vector<Item> bag;int32_t money=0; };
 struct CharacterControl { Input input{};uint32_t lastInputTick=0,lastSequence=0; };
 struct CharacterAction { Action activeAction=Action::None;uint32_t actionUntil=0,actionTarget=0;Vec3 actionOrigin{}; };
 struct CharacterMelee {
-    lib::genre::MeleeState melee;uint32_t parryUntil=0,staggerUntil=0;uint8_t lockTarget=0;
+    lib::mechanics::MeleeState melee;uint32_t parryUntil=0,staggerUntil=0;uint8_t lockTarget=0;
     bool blockHeld=false,meleeHasTip=false;Vec3 meleeTip{};
 };
 // lib::bots::saveFps bytes of a library-controlled bot (only with `fps.bots`).
@@ -170,7 +170,7 @@ struct CharacterSnapshot {
     uint32_t bleedUntil=0,blindUntil=0,vehicle=0,lastDamage=0;
     Action activeAction=Action::None;uint32_t actionUntil=0,actionTarget=0;Vec3 actionOrigin{};
     std::vector<Item> bag;
-    lib::genre::MeleeState melee;
+    lib::mechanics::MeleeState melee;
     uint32_t parryUntil=0,staggerUntil=0;uint8_t lockTarget=0;
     bool blockHeld=false,meleeHasTip=false;Vec3 meleeTip{};
 

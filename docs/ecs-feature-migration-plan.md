@@ -69,7 +69,7 @@ The following table inventories real `GameCore::setup` system names and groups t
 | Melee, block, lock-on | MeleeAttack, Hitbox/Hurtbox, Guard, Stagger, LockTarget | `melee-combat`, `combat-actions` systems |
 | Interactions, vault, doors, bomb/defuse | InteractionTarget, InteractionIntent, ActionProgress, Door, BombObjective | `physical-interactions`, `action-sequences`, `match-rules` |
 | Vehicles, seats, guns, driving | VehicleController, Wheel/BodyMotion, SeatSet, DriverInput, MountedWeapon | `vehicle-controllers` + same WeaponLaunch/Damage, not FPS-only car state |
-| Bots, aim, nav/cover, threat | Perception, Blackboard, BotIntent, NavigationAgent, SquadRole | `bots-fps`, `genre-bots`, `ai-perception`, `navmesh` |
+| Bots, aim, nav/cover, threat | Perception, Blackboard, BotIntent, NavigationAgent, SquadRole | `bots-combatant`, `action-bots`, `ai-perception`, `navmesh` |
 | Rounds, score, bomb, spectator, deathmatch | MatchState/Objective, TeamScore, RespawnTimer, SpectatorState | `match-rules`, Score, Victory, ObjectiveTick |
 | Royale zone/air insertion/drop/standings | SafeZone, Skydiver, DropRequest, RoyaleStanding | `battle-royale` ECS systems, host HUD only reads projection |
 | World stream, collision, large player counts | ChunkMembership, StreamingInterest, CollisionWorld (derived resource) | Streaming/Interest systems and authority snapshots; **renderer/streaming backends stay services** |
@@ -217,7 +217,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `balance-lab` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/app/Balance.h` |
 | `play-scenarios` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/app/Scenario.h` |
 | `performance-budgets` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/app/Performance.h` |
-| `genre-kits` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/app/Genre.h` |
+| `template-kits` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/app/Genre.h` |
 | `change-planner` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/app/Planner.h` |
 | `native-scaffold` | tools / tool-workflow | **T** | `tools/libraries/native_codegen.py` |
 | `typed-state` | tools / tool-workflow | **T** | `tools/libraries/native_codegen.py` |
@@ -239,8 +239,8 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `progression-curves` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/systems/Curves.h` |
 | `ai-perception` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/Perception.h` |
 | `decision-explanations` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/systems/Decisions.h` |
-| `bots-rts` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/Rts.h` |
-| `bots-fps` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/Fps.h` |
+| `bots-commander` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/Rts.h` |
+| `bots-combatant` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/Fps.h` |
 | `navmesh` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/bots/NavMesh.h` |
 | `building-gen` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/systems/BuildingGen.h` |
 | `bot-matches` | tools / tool-workflow | **T** | `examples/libraries/bots/main.cpp` |
@@ -253,7 +253,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `tactics-grid` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/TacticsTurns.h` |
 | `cards-turns-bots` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/CardBot.h` |
 | `weapon-policies` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/mechanics/Weapons.h` |
-| `genre-bots` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/GenreBots.h` |
+| `action-bots` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/GenreBots.h` |
 | `match-rules` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Match.h` |
 | `battle-royale` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/royale/BattleRoyale.h` |
 | `narrative-graphs` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Narrative.h` |

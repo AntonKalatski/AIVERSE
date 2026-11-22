@@ -17,8 +17,8 @@ namespace aiverse::spectra {
 
 // Scene attachments and one-shot events are presentation-only. These aliases
 // refer to exactly the same ECS types as the legacy Vfx* compatibility API.
-using SourceComponent = lib::genre::SpectraSourceComponent;
-using EventBinding = lib::genre::SpectraEventBinding;
-using PresentationSystem = lib::genre::SpectraPresentationSystem;
+using SourceComponent = lib::mechanics::SpectraSourceComponent;
+using EventBinding = lib::mechanics::SpectraEventBinding;
+using PresentationSystem = lib::mechanics::SpectraPresentationSystem;
 
 } // namespace aiverse::spectra

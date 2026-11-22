@@ -175,7 +175,7 @@ through the door, climb a floor with the real motor).
 
 ## Library bots (opt-in)
 
-`fps.bots` holds [bots-fps](../skills/ai/aiverse-bots-combatant/SKILL.md) settings (`{"preset":"normal","sightRange":120}`).
+`fps.bots` holds [bots-combatant](../skills/ai/aiverse-bots-combatant/SKILL.md) settings (`{"preset":"normal","sightRange":120}`).
 Map players with `"bot": true` then run that controller inside the authoritative tick instead of the reference
 fallback bot: perception, reaction, bounded aim, reload, retreat and the battle-royale zone (the announced circle).
 On top of it the module adds goals: wanted loot within 25 m (weapons it lacks, better gear, medkits, ammo) and

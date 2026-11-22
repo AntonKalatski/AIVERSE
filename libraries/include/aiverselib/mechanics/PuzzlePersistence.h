@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for puzzle-solvers state.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for puzzle-solvers state.
 // Record kinds 112..119 are reserved for this package (all used): Match3State 112, PuzzleFloodState 113,
 // PuzzlePipeState 114, PuzzleTilesState 115, PuzzleBlocksState 116, PuzzlePackState 117, PuzzleCspState 118,
 // PuzzleSokobanSession 119. The grid-puzzles PushHistory keeps its own strategy/Persistence.h record (kind 5).

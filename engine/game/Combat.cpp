@@ -286,16 +286,16 @@ void GameCore::sysProjectiles(Simulation& sim) {
                 return;
             }
             Vec3 aim = lift(sim, pr.aim, Fixed::fromRatio(4, 10));
-            if (lib::genre::advanceKinematicPursuit(tr.pos, aim, step)) impacts.push_back(p);
+            if (lib::mechanics::advanceKinematicPursuit(tr.pos, aim, step)) impacts.push_back(p);
             return;
         }
         if (w.alive(pr.target) && w.has<Unit>(pr.target)) { pr.aim = lift(sim, w.get<Transform>(pr.target).pos, Fixed::fromRatio(4, 10)); }
-        if (!lib::genre::advanceKinematicPursuit(tr.pos, pr.aim, pr.speed * dt)) return;
+        if (!lib::mechanics::advanceKinematicPursuit(tr.pos, pr.aim, pr.speed * dt)) return;
         const WeaponDef* pwd = projectileWeapon(pr);
         // Shared ECS impact dispatch retains the old per-projectile ordering:
         // direct damage, queued on-hit payload, then in-order splash damage.
         // RTS-specific armor, shields, factions and callbacks remain policies.
-        lib::genre::resolveOrderedProjectileImpact(
+        lib::mechanics::resolveOrderedProjectileImpact(
             {p, pr.source, pr.target, pr.aim, pr.damage, pr.splash},
             [&](Entity target) {
                 if (w.alive(target) && w.has<Unit>(target))

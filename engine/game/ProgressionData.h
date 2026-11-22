@@ -53,11 +53,11 @@ struct ProgFlightVariant {
 
 struct ProgressionRules {
     bool enabled = false;
-    lib::genre::PerkDefinitions defs;
-    lib::genre::PerkConfig perk;
-    lib::genre::PickupConfig pickup;
-    lib::genre::SummonConfig summon;
-    std::vector<lib::genre::SummonPointDef> points;
+    lib::mechanics::PerkDefinitions defs;
+    lib::mechanics::PerkConfig perk;
+    lib::mechanics::PickupConfig pickup;
+    lib::mechanics::SummonConfig summon;
+    std::vector<lib::mechanics::SummonPointDef> points;
     std::map<int64_t, uint16_t> unitType;      // deck unit id -> unit type ("units[].type")
     std::vector<int64_t> typeUnit;             // unit type -> deck unit id (0: none)
     std::vector<uint8_t> players;              // "players": slots taking part (empty: every player slot)

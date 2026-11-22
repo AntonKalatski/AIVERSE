@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for boss-encounters state.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for boss-encounters state.
 // Record kinds 112..119 are reserved for this package (112..117 used). Store each state under its own NativeState
 // key and bind encounterDataHash (EncounterData.h) in the save envelope: definitions are not saved.
 #include "BossEncounter.h"

@@ -1,5 +1,5 @@
 #pragma once
-// Melee/action bot policy (genre-bots): spacing band with approach/retreat/strafe, attack timing aware of
+// Melee/action bot policy (action-bots): spacing band with approach/retreat/strafe, attack timing aware of
 // attack phases, hit-confirmed combo cancels and punish windows, dodge/guard answers timed against the
 // opponent's telegraphed windup, and lock-on use. The output is MeleeInput: exactly what a player controller
 // feeds to stepMelee/stepDodge/stepGuard/stepLockOn and to the locomotion owner. The bot never changes
@@ -22,17 +22,17 @@ enum class MeleeMove:uint8_t {Hold,Approach,Retreat,Strafe};
 // Answer chosen for the opponent's current swing. Ignore = misread (acts as if nothing happened);
 // Retreat = read, but neither dodge nor guard is available (backs off).
 enum class MeleeDefense:uint8_t {None,Dodge,Guard,Ignore,Retreat};
-// Persisted bot memory (genre::save record kind 56). threatAttack/threatStarted identify the swing that was read.
+// Persisted bot memory (mechanics::save record kind 56). threatAttack/threatStarted identify the swing that was read.
 struct MeleeBotState {
     int64_t target=0,threatAttack=0;uint32_t noticedAt=0,threatStarted=0,lastDecision=0,lastTick=0;
     MeleeMove move=MeleeMove::Hold;MeleeDefense defense=MeleeDefense::None;bool threatRead=false,decided=false,initialized=false;
 };
 // Read-only copy of the bot's own authoritative state, supplied by the owner each tick before stepping it.
-struct MeleeBotSelf {int64_t id=0,team=0;genre::CombatPose pose{};genre::MeleeState melee{};genre::CombatActorState combat{};};
+struct MeleeBotSelf {int64_t id=0,team=0;mechanics::CombatPose pose{};mechanics::MeleeState melee{};mechanics::CombatActorState combat{};};
 // Player-equivalent inputs: move -> locomotion wish (world X/Z, |move| <= 1), face -> desired yaw (turns),
 // attack -> stepMelee request (0 none), dodge + dodgeDirection -> stepDodge request, guard -> stepGuard held,
 // lock -> stepLockOn command.
-struct MeleeInput {Vec2 move{};Fixed face{};int64_t attack=0;bool dodge=false;Vec2 dodgeDirection{};bool guard=false;genre::LockCommand lock{};};
+struct MeleeInput {Vec2 move{};Fixed face{};int64_t attack=0;bool dodge=false;Vec2 dodgeDirection{};bool guard=false;mechanics::LockCommand lock{};};
 
 inline bool valid(const MeleeBotConfig& c){
     return c.minRange>=Fixed{}&&c.minRange<=c.maxRange&&c.maxRange<=kBotCoordLimit&&c.attackRange>Fixed{}&&c.attackRange<=kBotCoordLimit
@@ -50,11 +50,11 @@ inline Fixed strafeSide(uint32_t tick,uint32_t strafeTicks){return strafeTicks&&
 // Once per bot per tick, before the owner applies inputs. nullopt: invalid config/definitions/self/targets,
 // a threat that starts in the future, or a repeated/backwards tick (state untouched). RNG is consumed only for
 // telegraph misreads, dodge-vs-guard choices and taking openings, each with chances strictly between 0 and 1000.
-inline std::optional<MeleeInput> stepMeleeBot(const MeleeBotConfig& c,const genre::AttackSet& attacks,const genre::DodgeConfig& dodge,const genre::GuardConfig& guard,
+inline std::optional<MeleeInput> stepMeleeBot(const MeleeBotConfig& c,const mechanics::AttackSet& attacks,const mechanics::DodgeConfig& dodge,const mechanics::GuardConfig& guard,
     MeleeBotState& state,uint32_t tick,const MeleeBotSelf& self,std::span<const PerceivedTarget> seen,Random& rng){
-    using genre::AttackPhase;
-    if(!valid(c)||!genre::valid(attacks)||!attacks.contains(c.opener)||!genre::valid(dodge)||!genre::valid(guard)||!valid(state)
-        ||self.id<=0||self.team<0||!genre::valid(self.pose)||(self.melee.attack&&!attacks.contains(self.melee.attack))||!validTargets(seen)
+    using mechanics::AttackPhase;
+    if(!valid(c)||!mechanics::valid(attacks)||!attacks.contains(c.opener)||!mechanics::valid(dodge)||!mechanics::valid(guard)||!valid(state)
+        ||self.id<=0||self.team<0||!mechanics::valid(self.pose)||(self.melee.attack&&!attacks.contains(self.melee.attack))||!validTargets(seen)
         ||(state.initialized&&tick<=state.lastTick))return std::nullopt;
     for(const auto& t:seen)if(t.threat.attack&&t.threat.started>tick)return std::nullopt;
     auto s=state;s.initialized=true;s.lastTick=tick;
@@ -67,8 +67,8 @@ inline std::optional<MeleeInput> stepMeleeBot(const MeleeBotConfig& c,const genr
     Vec2 away{-toward.x,-toward.y};auto side=strafeSide(tick,c.strafeTicks);
     out.face=yawToward(self.pose.position,t->position,self.pose.yaw);
     bool reacted=tick-s.noticedAt>=c.difficulty.reactionTicks;
-    bool stunned=genre::staggered(self.combat.poise,tick),dodgingNow=genre::dodging(dodge,self.combat.dodge,tick);
-    auto phase=genre::attackPhase(attacks,self.melee,tick);
+    bool stunned=mechanics::staggered(self.combat.poise,tick),dodgingNow=mechanics::dodging(dodge,self.combat.dodge,tick);
+    auto phase=mechanics::attackPhase(attacks,self.melee,tick);
 
     // Telegraph tracking: a new swing (attack id + start tick) must be read again after the reaction delay.
     const auto& th=t->threat;

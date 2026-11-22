@@ -12,49 +12,49 @@ using namespace aiverse;
 using namespace aiverse::lib;
 namespace {
 struct Outcome {bool complete=false;uint64_t hash=0;std::string log;};
-template<class State> bool persisted(const State& s){auto bytes=genre::save(s);State copy;return !bytes.empty()&&genre::load(bytes,copy)&&genre::save(copy)==bytes;}
+template<class State> bool persisted(const State& s){auto bytes=mechanics::save(s);State copy;return !bytes.empty()&&mechanics::load(bytes,copy)&&mechanics::save(copy)==bytes;}
 void line(std::string& log,const char* format,auto... args){char buffer[256];std::snprintf(buffer,sizeof buffer,format,args...);log+=buffer;log+='\n';}
 Outcome run(const Json& levels){
     Outcome out;Hasher hash;bool ok=true;
     // Match-3: seeded board, goals from data, a normal-strength bot (Best hints, 8% random swaps) plays every move.
     {
-        const auto level=genre::readMatch3Level(levels["match3"]);Random rng(20261112,1);
-        auto state=genre::match3Begin(level,rng);ok=ok&&state.has_value();
+        const auto level=mechanics::readMatch3Level(levels["match3"]);Random rng(20261112,1);
+        auto state=mechanics::match3Begin(level,rng);ok=ok&&state.has_value();
         auto skill=*bots::puzzleBotSkillPreset(1);uint32_t specials=0,cascades=0;
-        for(int step=0;state&&step<1000&&state->status==genre::Match3Status::Playing;++step){
+        for(int step=0;state&&step<1000&&state->status==mechanics::Match3Status::Playing;++step){
             auto cmd=bots::puzzleBotMatch3(level,*state,skill,rng);if(!cmd){ok=false;break;}
-            auto report=genre::match3Apply(level,*state,*cmd,rng);if(!report){ok=false;break;}
+            auto report=mechanics::match3Apply(level,*state,*cmd,rng);if(!report){ok=false;break;}
             specials+=uint32_t(report->created.size());cascades+=report->chains>1;
         }
-        const bool won=state&&state->status==genre::Match3Status::Won;ok=ok&&won&&persisted(*state);
+        const bool won=state&&state->status==mechanics::Match3Status::Won;ok=ok&&won&&persisted(*state);
         if(state){
             line(out.log,"match3: %s after %u moves, score %lld, collected c1=%u c3=%u, specials %u, cascades %u, shuffles %u, max chain %u",
                 won?"won":"not won",state->moves,(long long)state->score,state->collected[1],state->collected[3],specials,cascades,state->shuffles,state->maxChain);
-            hash.u64(genre::puzzleHash(*state));
+            hash.u64(mechanics::puzzleHash(*state));
         }
     }
     // Sokoban: solve once with A* (node budget), then replay the directions as player commands.
     {
-        const auto level=genre::readSokobanLevel(levels["sokoban"]);auto session=genre::puzzleSokobanBegin(level);
-        auto solution=genre::puzzleSokobanSolve(level,session.history.current,{200000,0});
-        const bool solvedBySearch=solution.status==genre::PuzzleSearch::Solved;
-        for(auto d:solution.directions)ok=ok&&genre::puzzleSokobanApply(level,session,{session.lastMove+1,genre::PuzzleSokobanAction::Move,d});
+        const auto level=mechanics::readSokobanLevel(levels["sokoban"]);auto session=mechanics::puzzleSokobanBegin(level);
+        auto solution=mechanics::puzzleSokobanSolve(level,session.history.current,{200000,0});
+        const bool solvedBySearch=solution.status==mechanics::PuzzleSearch::Solved;
+        for(auto d:solution.directions)ok=ok&&mechanics::puzzleSokobanApply(level,session,{session.lastMove+1,mechanics::PuzzleSokobanAction::Move,d});
         // Undo and redo the last move through the same command path, as a player would.
-        ok=ok&&genre::puzzleSokobanApply(level,session,{session.lastMove+1,genre::PuzzleSokobanAction::Undo,0})&&!session.solved;
-        ok=ok&&genre::puzzleSokobanApply(level,session,{session.lastMove+1,genre::PuzzleSokobanAction::Redo,0});
+        ok=ok&&mechanics::puzzleSokobanApply(level,session,{session.lastMove+1,mechanics::PuzzleSokobanAction::Undo,0})&&!session.solved;
+        ok=ok&&mechanics::puzzleSokobanApply(level,session,{session.lastMove+1,mechanics::PuzzleSokobanAction::Redo,0});
         ok=ok&&solvedBySearch&&session.solved&&persisted(session);
         line(out.log,"sokoban: %s, %zu moves (%u pushes), %llu nodes expanded",session.solved?"solved":"not solved",solution.directions.size(),session.pushes,(unsigned long long)solution.nodes);
-        hash.u64(genre::puzzleHash(session));
+        hash.u64(mechanics::puzzleHash(session));
     }
     // Sudoku: uniqueness proof, then the hard bot fills it one assignment at a time.
     {
-        const auto csp=genre::readSudoku(levels["sudoku"]);auto unique=genre::puzzleCspUnique(csp,{200000,0});
-        auto state=genre::puzzleCspBegin(csp);Random rng(7,3);auto skill=*bots::puzzleBotSkillPreset(2);uint32_t givens=0;
-        for(int32_t c=0;c<int32_t(csp.domains.size());++c)givens+=genre::puzzleCspGiven(csp,c);
-        for(int step=0;step<200&&!state.solved;++step){auto cmd=bots::puzzleBotCsp(csp,state,skill,rng);if(!cmd||!genre::puzzleCspApply(csp,state,*cmd)){ok=false;break;}}
+        const auto csp=mechanics::readSudoku(levels["sudoku"]);auto unique=mechanics::puzzleCspUnique(csp,{200000,0});
+        auto state=mechanics::puzzleCspBegin(csp);Random rng(7,3);auto skill=*bots::puzzleBotSkillPreset(2);uint32_t givens=0;
+        for(int32_t c=0;c<int32_t(csp.domains.size());++c)givens+=mechanics::puzzleCspGiven(csp,c);
+        for(int step=0;step<200&&!state.solved;++step){auto cmd=bots::puzzleBotCsp(csp,state,skill,rng);if(!cmd||!mechanics::puzzleCspApply(csp,state,*cmd)){ok=false;break;}}
         ok=ok&&unique.unique&&state.solved&&state.values==unique.values&&persisted(state);
         line(out.log,"sudoku: %s solution, %u givens, solved in %u moves, %llu search nodes",unique.unique?"unique":"non-unique",givens,state.moves,(unsigned long long)unique.nodes);
-        hash.u64(genre::puzzleHash(state));
+        hash.u64(mechanics::puzzleHash(state));
     }
     out.complete=ok;out.hash=hash.value();return out;
 }

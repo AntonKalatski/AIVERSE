@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for match-progression state.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for match-progression state.
 // Record kinds 104..111 are reserved for this package (104 PerkState, 105 PickupState, 106 SummonState used).
 // Store each state in its own NativeState key; bind perkDefinitionsHash plus the config hashes in the envelope.
 #include "Perks.h"

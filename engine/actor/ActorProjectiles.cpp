@@ -67,7 +67,7 @@ bool ActorHost::stepProgrammedProjectile(Simulation& sim,Projectile& p,
             // The same sweep query now serves FPS physical/projectile-program
             // flight and any other native genre. Endpoint hits and stable
             // target-ID ties preserve the original resolver semantics.
-            const auto swept=lib::genre::selectSweptProjectileContact(
+            const auto swept=lib::mechanics::selectSweptProjectileContact(
                 targets,p.pos,delta,extent,
                 [](const Candidate& t) {return t.bounds;},
                 [](const Candidate& a,const Candidate& b) {

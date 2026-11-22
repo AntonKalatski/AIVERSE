@@ -1,5 +1,5 @@
 #pragma once
-// Shared pieces of the genre bot adapters (genre-bots): difficulty knobs, the owner-supplied perception
+// Shared pieces of the genre bot adapters (action-bots): difficulty knobs, the owner-supplied perception
 // record, target selection and deterministic aim error. Bots never write simulation state: every policy
 // returns the same input struct a player controller produces, and the authoritative owner validates and
 // applies it through its ordinary command path. Fixed math, integer ticks, RNG only through the passed-in
@@ -65,9 +65,9 @@ inline bool validTargets(std::span<const PerceivedTarget> targets){
     std::sort(ids.begin(),ids.end());return std::adjacent_find(ids.begin(),ids.end())==ids.end();
 }
 // The threat a perceived attacker shows this tick: only windup/active phases are telegraphed.
-inline MeleeThreat meleeThreat(const genre::AttackSet& defs,const genre::MeleeState& s,uint32_t tick,Fixed reach,bool unblockable=false){
-    auto phase=genre::attackPhase(defs,s,tick);
-    if(phase!=genre::AttackPhase::Windup&&phase!=genre::AttackPhase::Active)return {};
+inline MeleeThreat meleeThreat(const mechanics::AttackSet& defs,const mechanics::MeleeState& s,uint32_t tick,Fixed reach,bool unblockable=false){
+    auto phase=mechanics::attackPhase(defs,s,tick);
+    if(phase!=mechanics::AttackPhase::Windup&&phase!=mechanics::AttackPhase::Active)return {};
     const auto& d=defs.at(s.attack);return {s.attack,s.started,d.windup,d.active,reach,unblockable};
 }
 

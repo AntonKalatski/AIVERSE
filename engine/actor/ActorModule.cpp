@@ -23,12 +23,12 @@ Vec3 vector(const Json& j) {
     for(int i=0;i<3;++i){if(!j[size_t(i)].isNumber())throw JsonError("actor: non-numeric coordinate");*p[i]=j[size_t(i)].fx();if(fxAbs(*p[i])>100000_fx)throw JsonError("actor: coordinate exceeds 100 km");}return v;
 }
 void royaleIo(Archive& a,RoyaleRun& r) {
-    using lib::genre::io;
+    using lib::mechanics::io;
     a(r.enabled);if(!r.enabled)return;
     io(a,r.zone);io(a,r.bombardment);io(a,r.drops);io(a,r.flight);
     uint32_t n=a.count(r.divers.size());if(n>256){a.fail();return;}if(!a.writing())r.divers.resize(n);for(auto& d:r.divers)io(a,d);
     io(a,r.standings);a(r.lastAttacker,r.lastWeapon);
-    uint32_t feed=a.count(r.feed.size());if(feed>6){a.fail();return;}if(!a.writing())r.feed.resize(feed);for(auto& e:r.feed)lib::genre::io(a,e);
+    uint32_t feed=a.count(r.feed.size());if(feed>6){a.fail();return;}if(!a.writing())r.feed.resize(feed);for(auto& e:r.feed)lib::mechanics::io(a,e);
 }
 }
 Config readConfig(const Json& root) {
@@ -107,7 +107,7 @@ Config readConfig(const Json& root) {
     c.zoneDamage=int32_t(integer(z,"damagePerSecond",5,1,100));
     if(j.has("royale")){
         if(c.mode!="battleRoyale")throw JsonError("actor.royale: requires fps.mode \"battleRoyale\"");
-        c.royale=lib::genre::readRoyale(j["royale"],"actor.royale");
+        c.royale=lib::mechanics::readRoyale(j["royale"],"actor.royale");
     }
     if(j.has("crate")){
         if(!j["crate"].isArray()||j["crate"].size()>16)throw JsonError("actor.crate: expected at most 16 items");
@@ -144,7 +144,7 @@ Config readConfig(const Json& root) {
     if(j.has("bots")){if(!j["bots"].isObject())throw JsonError("actor.bots: expected object");c.bots=j["bots"];}
     if(j.has("vehicleTypes")){
         if(!c.systems.enabled)throw JsonError("actor.vehicleTypes: requires mechanics.enabled");
-        c.vehicleTypes=lib::genre::readVehicleDefinitions(j["vehicleTypes"]);
+        c.vehicleTypes=lib::mechanics::readVehicleDefinitions(j["vehicleTypes"]);
         for(const auto& [id,d]:c.vehicleTypes->vehicles)if(d.seats.seats.empty())throw JsonError("actor.vehicleTypes: vehicle "+std::to_string(id)+" needs seats");
     }
     const auto& melee=j["melee"];auto& mel=c.melee;
@@ -320,7 +320,7 @@ void ActorHost::setup(Simulation& sim,const Json& rules,const Json& map) {
     if(config_.melee.enabled){
         const auto& m=config_.melee;auto total=m.windup+m.active+m.recovery;
         meleeAttacks_[1]={1,m.windup,m.active,m.recovery,total,m.bufferTicks,{1}};
-        if(!lib::genre::valid(meleeAttacks_))throw JsonError("actor.melee: invalid attack timing");
+        if(!lib::mechanics::valid(meleeAttacks_))throw JsonError("actor.melee: invalid attack timing");
     }
     Hasher hash;hash.str(rules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
     // Stage order: programmed projectiles, ordinary projectiles (bullets, grenades, smoke), then the
@@ -356,7 +356,7 @@ void ActorHost::shoot(Simulation& sim,CharacterRef p) {
     }
     auto eye=p.pos+Vec3{{},stanceHeight(p,config_.motor)-Fixed::fromRatio(1,10),{}};
     const auto& weapon=config_.weapons[p.weaponIndex];
-    lib::genre::commitAcceptedShot(p.ammo,p.nextFire,sim.tick(),weapon.interval,&p.shots);
+    lib::mechanics::commitAcceptedShot(p.ammo,p.nextFire,sim.tick(),weapon.interval,&p.shots);
     for(uint32_t pellet=0;pellet<weapon.pellets;++pellet) {
         auto yaw=p.yaw,pitch=p.pitch;
         if(config_.systems.enabled) {
@@ -448,9 +448,9 @@ void ActorHost::tick(Simulation& sim) {
         const auto& weapon=config_.weapons[a.weaponIndex];
         const int capacity=weapon.magazine+((a.attachments[a.weaponIndex]&4)?weapon.magazine/2:0);
         // Generic ECS hosts and the FPS host share the same reload algorithm.
-        lib::genre::WeaponStateComponent reloadWeapon{a.ammo,a.nextFire};
-        lib::genre::WeaponReloadComponent reloadState{a.reserve,capacity,weapon.reloadTicks,a.reloadUntil};
-        lib::genre::stepWeaponReload(reloadWeapon,reloadState,sim.tick(),(input.buttons&Reload)!=0);
+        lib::mechanics::WeaponStateComponent reloadWeapon{a.ammo,a.nextFire};
+        lib::mechanics::WeaponReloadComponent reloadState{a.reserve,capacity,weapon.reloadTicks,a.reloadUntil};
+        lib::mechanics::stepWeaponReload(reloadWeapon,reloadState,sim.tick(),(input.buttons&Reload)!=0);
         a.ammo=reloadWeapon.ammo;
         a.reserve=reloadState.reserve;
         a.reloadUntil=reloadState.finishesAt;
@@ -578,7 +578,7 @@ bool ActorHost::serializeState(Simulation& sim,Archive& archive) {
         if(!validRace(race,typed))return false;
     }
     if(s.royale.enabled){
-        using namespace lib::genre;const auto& r=s.royale;
+        using namespace lib::mechanics;const auto& r=s.royale;
         if(!valid(r.zone)||!valid(r.bombardment)||!valid(r.drops)||!valid(r.flight)||!valid(r.standings)||r.lastAttacker.size()!=n||r.lastWeapon.size()!=n||
            (r.divers.size()!=n&&!(r.divers.empty()&&!config_.royale->flight))||r.standings.players.size()!=n)return false;
         for(const auto& d:r.divers)if(!valid(d))return false;
