@@ -31,6 +31,7 @@ bool readContentFile(const std::string&, std::string&) { return false; }
 namespace {
 constexpr float kDt = 1.f / 60.f;
 constexpr float kDuration = 9.5f;
+constexpr float kTurnStart = 7.8f; // start of the turn-in-place segment
 constexpr float kContact = .004f; // planted-ankle tolerance (30 Hz key interpolation is ~3 mm)
 
 struct Command { float speed = 0, yawRate = 0; bool stopping = false, turnInPlace = false; const char* segment = ""; };
@@ -78,11 +79,11 @@ const char* kBlendGraph = R"({
 })";
 
 const char* kMotionGraph = R"({
-  "parameters":{"traj1":[0,0,0],"traj2":[0,0,0]},
+  "parameters":{"traj1":[0,0,0],"traj2":[0,0,0],"face1":[0,0,1],"face2":[0,0,1]},
   "nodes":[{"id":"mm","kind":"motionMatching","database":{
-    "root":"root","clips":["Idle","Walk","Run","Stop","TurnLeft"],
+    "root":"root","clips":["Idle","Walk","Run",{"clip":"Stop","loop":false},{"clip":"TurnLeft","loop":false}],
     "bones":["footL","footR"],
-    "trajectory":[{"time":0.3,"parameter":"traj1"},{"time":0.6,"parameter":"traj2"}],
+    "trajectory":[{"time":0.3,"parameter":"traj1","facing":"face1"},{"time":0.6,"parameter":"traj2","facing":"face2"}],
     "fps":30,"searchInterval":0.1,"blend":0.2,"stripRoot":true}}],
   "output":"mm"
 })";
@@ -103,15 +104,22 @@ void accumulate(Metrics& m, double slide, double dt, bool contact, double accel,
     if (rot > m.popRot) { m.popRot = rot; m.popRotAt = t; }
 }
 
-// Predicted host displacement (character space) after `ahead` seconds.
-float3 predict(float t, float ahead) {
+// Predicted host displacement and facing (character space) after `ahead`
+// seconds; `turnClock` >= 0 while a root-motion turn in place is running.
+Host predict(float t, float ahead, float turnClock) {
     Host h; const int steps = 12; const float dt = ahead / steps;
     for (int i = 0; i < steps; ++i) {
-        const Command c = commandAt(t + (float(i) + .5f) * dt);
-        h.yaw += c.yawRate * dt;
+        const float at = t + (float(i) + .5f) * dt;
+        const Command c = commandAt(at);
+        float yawRate = c.yawRate;
+        if (c.turnInPlace) {
+            const float k = at - kTurnStart; (void)turnClock;
+            yawRate = (fx::smooth01((k + dt) / .9f) - fx::smooth01(k / .9f)) * fx::kPi * .5f / dt;
+        }
+        h.yaw += yawRate * dt;
         h.pos = h.pos + fx::yawQ(h.yaw).rotate({0, 0, c.speed * dt});
     }
-    return h.pos;
+    return h;
 }
 
 SegmentStats run(const std::string& variant, const Model& model, const fx::HumanoidBones& b, const std::string& dir) {
@@ -145,8 +153,9 @@ SegmentStats run(const std::string& variant, const Model& model, const fx::Human
         }
         auto& p = inst.parameters();
         if (variant == "motion-matching") {
-            p.set("traj1", predict(t, .3f));
-            p.set("traj2", predict(t, .6f));
+            const Host a = predict(t, .3f, turnClock), b2 = predict(t, .6f, turnClock);
+            p.set("traj1", a.pos); p.set("traj2", b2.pos);
+            p.set("face1", fx::yawQ(a.yaw).rotate({0, 0, 1})); p.set("face2", fx::yawQ(b2.yaw).rotate({0, 0, 1}));
         } else {
             p.set("moving", c.speed > .05f && !c.stopping ? 1.f : 0.f);
             p.set("stopping", c.stopping ? 1.f : 0.f);
