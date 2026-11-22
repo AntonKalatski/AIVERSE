@@ -165,7 +165,7 @@ commits gameplay state. Call the normal MotionWeave scheduler
 after all input projection and optional view budget configuration.
 
 The original FPS event adapter has been moved out of the animation
-library to `modules/fps/view/FpsAnimationEvents.h`.
+library to `engine/view/ActorAnimationEvents.h`.
 The shared `<aiverselib/animation/AnimationActionEdges.h>` now
 processes only opaque named counters/boolean state transitions, with no
 FPS/RTS/action-type semantics. `playAnimationSlot` lives beside the
@@ -187,13 +187,13 @@ with no animation graph. View does not depend on RTS, FPS, camera
 controller, game rules, network, combat, map or terrain modules.
 
 A transition adapter still exists in
-`modules/rts/view/RtsView.cpp` and `RtsViewDraw.cpp`: it projects
+`engine/view/game/GameView.cpp` and `GameViewDraw.cpp`: it projects
 only simple, eligible compiled animation graphs into the generic
 View and delegates their **final ModelDraw submission** to
 `View::submitOne`. Complex RTS procedural animation, contact IK,
 genre-specific attachments/FX/fog/terrain remain in the game
 host until each has a generic render contract. The compatibility
-class `game::RtsView` remains for older game code; it is not the
+class `game::GameView` remains for older game code; it is not the
 canonical engine View and should not be used in new projects.
 
 ### Host migration status
@@ -202,7 +202,7 @@ Both existing game frontends now send at least their supported
 animated-model draws through the universal engine
 `aiverse::View::submitOne`:
 
-- The legacy game-side `game::RtsView` delegates a strictly
+- The legacy game-side `game::GameView` delegates a strictly
   eligible subset of pure AnimationGraph pose evaluation and the
   final styled model draw.
 - The FPS reference client projects its existing CPU Graph / GPU
@@ -234,8 +234,8 @@ host frame boundary, `collectRetired(device)` invokes the explicit
 whose previous GPU submissions are complete. Never derive completion
 from `frameSerial()` or a fixed number of frames in flight.
 
-Legacy `game::view_adapter::RtsModelResourceCache` and
-`RtsModelPreparationService` are aliases to the universal render
+Legacy `game::view_adapter::GameModelResourceCache` and
+`GameModelPreparationService` are aliases to the universal render
 classes. Material preview sphere/box resources in `game::Portrait`
 are the first independently owned real editor consumer. The complete
 RTS scene compatibility adapter is not yet retired. Deferred
@@ -297,7 +297,7 @@ The raw-model inspection path is not a parity replacement.
 
 **NOT RUN:** CMake/compiler, CTest, Metal/Vulkan/GL/WebGL2 GPU tests,
 native/editor preview, sanitizers and simulation/animation visual
-regressions. Keep stages independent and do not claim the old RtsView
+regressions. Keep stages independent and do not claim the old GameView
 has been removed.
 
 ### Stage 102: model source priorities and estimated GPU-retirement memory
@@ -325,7 +325,7 @@ The standalone `aiverse_modelview --provider --no-merge` is a second
 real generic `aiverse::View` consumer for static raw assets, alongside
 the editor's opt-in independent raw preview. Precomputed poses on the
 legacy animated modelview path remain authored by the existing host;
-View only submits them once. The game-specific `RtsView` adapter is
+View only submits them once. The game-specific `GameView` adapter is
 still in use elsewhere and has not been retired.
 
 **NOT RUN:** all CMake, CTest, native modelview/editor, GPU backend,
@@ -417,7 +417,7 @@ edge lines are routed through `aiverse::View::submitMesh/submitLine`
 with the legacy renderer-specific silhouette implementation
 preserved internally. This does not tick an animation graph or add
 gameplay selection components to MotionWeave.
-Full `game::RtsView` retirement is still unfinished.
+Full `game::GameView` retirement is still unfinished.
 
 **NOT RUN:** native build, CTest, desktop/mobile GPU tests, editor
 selection visual parity, CPU thread sanitizer and geometry pool
@@ -564,7 +564,7 @@ programs and does not evaluate or advance them.
 Authoring changes do not affect authoritative gameplay
 tick, movement, networking or serialization.
 
-The remaining legacy RtsView still chooses type/weapon,
+The remaining legacy GameView still chooses type/weapon,
 procedural animation, materials per entity and attachment
 policies. Full dynamic genre-neutral appearance state
 migration and real visual parity remain open.

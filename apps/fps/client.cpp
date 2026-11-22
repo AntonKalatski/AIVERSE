@@ -1,9 +1,9 @@
 #include <aiverselib/net/Admission.h>
+#include "engine/game/GameCore.h"
 #include "engine/net/authority/Session.h"
-#include "modules/fps/Project.h"
-#include "modules/fps/view/FirstPersonCamera.h"
+#include "engine/actor/Project.h"
+#include "engine/render/CameraBehavior.h"
 #include "RoyaleHud.h"
-#include "engine/render/ChaseCamera.h"
 #include "engine/ui/RaceHud.h"
 #include "engine/roads/RoadView.h"
 #include "engine/net/Udp.h"
@@ -22,7 +22,7 @@
 #include "libraries/include/aiverselib/animation/AnimationBackendPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
 #include "libraries/include/aiverselib/animation/AnimationAssetLoader.h"
-#include "modules/fps/view/FpsAnimationEvents.h"
+#include "engine/view/ActorAnimationEvents.h"
 #include "libraries/include/aiverselib/animation/AnimationPhaseTransfer.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/view/View.h"
@@ -52,7 +52,7 @@ namespace ein = aiverse::lib::gameplay::inputflow;
 namespace {
 render::float3 visual(Vec3 v){return {float(v.x.toDouble()),float(v.y.toDouble()),float(v.z.toDouble())};}
 struct App {
-    Json rules,map;fps::Config config;
+    Json rules,map;actor::Config config;
     std::unique_ptr<net::authority::Server> server;
     std::unique_ptr<net::authority::Client> client;
 #ifndef __EMSCRIPTEN__
@@ -82,7 +82,7 @@ struct App {
     }
     // Presents characters, vehicles and projectiles of the snapshot to the
     // shared SpectraFxEntityEffects; game code declares nothing here.
-    void presentEntityEffects(float dt,const fps::CharacterSnapshot& local,world::Cell origin) {
+    void presentEntityEffects(float dt,const actor::CharacterSnapshot& local,world::Cell origin) {
         auto& fxe=fxScene.entities();
         if(!fxe.enabled())return;
         const auto at=[&](Vec3 p){return visual(world::relativeTo(p,origin,32));};
@@ -172,7 +172,7 @@ struct App {
     ::aiverse::view::AppearanceAssetRegistry::Snapshot characterAppearance;
     std::map<uint8_t,Entity> characterEntities;
     std::map<uint8_t,uint32_t> characterLives;
-    std::map<uint8_t,fps::view::ReplicatedAnimationActions> characterActions;
+    std::map<uint8_t,actor::view::ReplicatedAnimationActions> characterActions;
     std::map<std::string,std::shared_ptr<const motionweave::MontageDefinition>> characterMontages;
     float characterScale=1.f,characterHeightOffset=0.f;
     bool characterBakedCrowd=false,characterBakeAvailable=false;
@@ -195,14 +195,14 @@ struct App {
     std::string rebindContext, settingsError;
     std::uint64_t rebindMapping=0;
     ein::RebindPolicy rebindPolicy=ein::RebindPolicy::Swap;
-    fps::Input input;
+    actor::Input input;
     bool fireHeld=false,fireQueued=false,jumpQueued=false,aimHeld=false,prone=false;uint32_t buySelection=0;
     audio::AudioEngine audio;double stepSound=0,viewTime=0;uint32_t lastReload=0;
     std::map<uint8_t,std::pair<uint32_t,uint32_t>> heardShots;
     uint32_t shownShots=0,shownHits=0,shownLife=0;
     double flash=0,hitFlash=0;
     double accumulated=0;bool listen=false;
-    fps::view::Look look;
+    render::CameraLook look;render::CameraChaseSettings chase;
     net::authority::Snapshot previousSnapshot,received;uint32_t lastSnapshotTick=0;double snapshotAge=0;
 
     // Data-driven semantic mapping: games may replace this context with their own JSON assets.
@@ -313,6 +313,14 @@ struct App {
         configureInput();
         loadInputConfig();
         renderer.setGpuDeviceLease(gpuLifetime->lease());
+        // LENS camera blocks (CameraBehavior.h, presets in CameraPresets.h): rules "camera", the map's on top.
+        const auto cameraBlock=[&](const char* key){
+            Json block=render::resolveCameraPreset(rules["camera"][key]);
+            if(!block.isObject())block=Json::object();
+            for(const auto& [k,v]:render::resolveCameraPreset(map["camera"][key]).members())block.set(k,v);
+            return block;};
+        look.settings=render::cameraLookFrom(cameraBlock("firstPerson"));
+        chase=render::cameraChaseFrom(cameraBlock("chase"));
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
         if(!fxScene.init(device,
              [this](const std::string& p,std::string& out) {
@@ -340,8 +348,8 @@ struct App {
         render::MeshBuilder builder;builder.color(render::rgba(255,255,255)).box({0,0.5f,0},{1,1,1});cube=builder.upload(device);
         loadAnimatedCharacter(device);
         lang.load([](const auto& path,auto& out){return platform::readContentFile(path,out);},"en",{"engine/assets/lang"});
-        Simulation sim({1,config.tickRate,0},std::make_unique<fps::Module>());sim.setup(rules,map);
-        geometry=static_cast<fps::Module&>(sim.module()).collision();
+        Simulation sim({1,config.tickRate,0},std::make_unique<game::GameCore>());sim.setup(rules,map);
+        geometry=actor::host(sim).collision();
         rotatedBoxes.clear();
         for(const auto& b:map["colliders"].items())if(b.has("yaw"))rotatedBoxes.push_back({world::worldVector(b["center"],100000_fx),world::worldVector(b["half"],100000_fx),b["yaw"].fx()});
         if(map["world"].getBool("async"))streamedScene=std::make_unique<world::WorldScene>(map["world"],contentReader);
@@ -545,7 +553,7 @@ struct App {
             characterMontages.clear();
         }
     }
-    bool showRemoteDeathMontage(const fps::CharacterSnapshot& remote) const {
+    bool showRemoteDeathMontage(const actor::CharacterSnapshot& remote) const {
         if(characterBakedCrowd || remote.health>0 || !characterModel)return false;
         const auto death=characterMontages.find("death");
         const auto actor=characterEntities.find(remote.slot);
@@ -557,7 +565,7 @@ struct App {
             if(player.active() && player.slot()==death->second->slot)return true;
         return false;
     }
-    void updateCharacterAnimations(double dt,const fps::CharacterSnapshot& local) {
+    void updateCharacterAnimations(double dt,const actor::CharacterSnapshot& local) {
         if (!characterModel || !characterGraph) return;
         const auto& actors=client->snapshot().characters;
         size_t remoteCount=0;
@@ -788,13 +796,13 @@ struct App {
         }
         if(e.type==E::FocusLost){
             platform::setPointerLock(false);inputAdapter.focusLost();
-            input.buttons=0;input.action=fps::Action::None;
+            input.buttons=0;input.action=actor::Action::None;
             fireHeld=fireQueued=jumpQueued=aimHeld=false;
             return;
         }
         if(e.type==E::KeyDown&&e.key==K::Escape){
             platform::setPointerLock(false);inputAdapter.focusLost();
-            input.buttons=0;input.action=fps::Action::None;
+            input.buttons=0;input.action=actor::Action::None;
             fireHeld=fireQueued=jumpQueued=aimHeld=false;
             return;
         }
@@ -849,36 +857,36 @@ struct App {
                 if(name=="Jump")jumpQueued=true;
                 else if(name=="Fire")fireQueued=true;
                 else if(name=="Prone")prone=!prone;
-                else if(name=="Frag")input.action=fps::Action::Frag;
-                else if(name=="Smoke")input.action=fps::Action::Smoke;
-                else if(name=="Flash")input.action=fps::Action::Flash;
-                else if(name=="Heal")input.action=fps::Action::Heal;
-                else if(name=="Interact")input.action=fps::Action::Interact;
-                else if(name=="Drop")input.action=fps::Action::Drop;
-                else if(name=="Plant")input.action=fps::Action::Plant;
-                else if(name=="Vault")input.action=fps::Action::Vault;
+                else if(name=="Frag")input.action=actor::Action::Frag;
+                else if(name=="Smoke")input.action=actor::Action::Smoke;
+                else if(name=="Flash")input.action=actor::Action::Flash;
+                else if(name=="Heal")input.action=actor::Action::Heal;
+                else if(name=="Interact")input.action=actor::Action::Interact;
+                else if(name=="Drop")input.action=actor::Action::Drop;
+                else if(name=="Plant")input.action=actor::Action::Plant;
+                else if(name=="Vault")input.action=actor::Action::Vault;
                 else if(name=="Buy"){
-                    input.action=fps::Action::Buy;input.argument=buySelection;
-                    input.buttons=(input.buttons&~uint32_t(fps::WeaponMask))|fps::selectWeapon(buySelection);
+                    input.action=actor::Action::Buy;input.argument=buySelection;
+                    input.buttons=(input.buttons&~uint32_t(actor::WeaponMask))|actor::selectWeapon(buySelection);
                 }else if(name=="Weapon1"||name=="Weapon2"||name=="Weapon3"||name=="Weapon4"){
                     buySelection=uint32_t(name.back()-'1');
-                    input.buttons=(input.buttons&~uint32_t(fps::WeaponMask))|fps::selectWeapon(buySelection);
+                    input.buttons=(input.buttons&~uint32_t(actor::WeaponMask))|actor::selectWeapon(buySelection);
                 }else if(name=="Attach1"||name=="Attach2"||name=="Attach3"){
-                    input.action=fps::Action::Attach;input.argument=6+uint32_t(name.back()-'1');
+                    input.action=actor::Action::Attach;input.argument=6+uint32_t(name.back()-'1');
                 }
             }
             auto held=[&](const char* name){const auto* state=actions.state(name);return state&&state->active;};
             fireHeld=held("Fire");aimHeld=held("Aim");
             if(const auto* mouse=actions.state("Look");mouse&&mouse->active)
-                look.motion(mouse->value.x,mouse->value.y,aimHeld?0.00015f:0.0004f);
+                look.motion(mouse->value.x,mouse->value.y,aimHeld);
             if(const auto* stick=actions.state("LookStick");stick&&stick->active){
                 const float pxPerSecond=1400.0f;
                 const float scaled=float(std::min(dt,0.25))*pxPerSecond;
-                look.motion(stick->value.x*scaled,stick->value.y*scaled,aimHeld?0.00015f:0.0004f);
+                look.motion(stick->value.x*scaled,stick->value.y*scaled,aimHeld);
             }
         }else{
             inputAdapter.focusLost();
-            input.buttons=0;input.action=fps::Action::None;
+            input.buttons=0;input.action=actor::Action::None;
             fireHeld=fireQueued=jumpQueued=aimHeld=false;
         }
         auto held=[&](const char* name){const auto* state=actions.state(name);return state&&state->active;};
@@ -887,18 +895,18 @@ struct App {
             const auto* move=actions.state("Move");
             input.forward=move?int32_t(std::clamp(move->value.y,-1.0f,1.0f)*1000):0;
             input.right=move?int32_t(std::clamp(move->value.x,-1.0f,1.0f)*1000):0;
-            input.buttons&=uint32_t(fps::WeaponMask);
-            if(jumpQueued)input.buttons|=fps::Jump;
-            if(aimHeld)input.buttons|=fps::Aim;
-            if(prone)input.buttons|=fps::Prone;
-            if(fireHeld||fireQueued)input.buttons|=fps::Fire;
-            if(held("Crouch"))input.buttons|=fps::Crouch;
-            if(held("Sprint"))input.buttons|=fps::Sprint;
-            if(held("Reload"))input.buttons|=fps::Reload;
+            input.buttons&=uint32_t(actor::WeaponMask);
+            if(jumpQueued)input.buttons|=actor::Jump;
+            if(aimHeld)input.buttons|=actor::Aim;
+            if(prone)input.buttons|=actor::Prone;
+            if(fireHeld||fireQueued)input.buttons|=actor::Fire;
+            if(held("Crouch"))input.buttons|=actor::Crouch;
+            if(held("Sprint"))input.buttons|=actor::Sprint;
+            if(held("Reload"))input.buttons|=actor::Reload;
             if(config.melee.enabled){
-                if(held("Melee"))input.buttons|=fps::Melee;
-                if(held("Block"))input.buttons|=fps::Block;
-                if(held("LockOn"))input.buttons|=fps::LockOn;
+                if(held("Melee"))input.buttons|=actor::Melee;
+                if(held("Block"))input.buttons|=actor::Block;
+                if(held("LockOn"))input.buttons|=actor::LockOn;
             }
             // Testing (screenshots): AIVERSE_FPS_WATCH=1 turns the view to the nearest living remote character.
             static const bool watchRemote=std::getenv("AIVERSE_FPS_WATCH")!=nullptr;
@@ -915,8 +923,8 @@ struct App {
             input.yaw=Fixed::fromRaw(int64_t(look.yaw*65536));input.pitch=Fixed::fromRaw(int64_t(look.pitch*65536));
             if(client->submit(input)){
                 fireQueued=jumpQueued=false;
-                input.action=fps::Action::None;
-                input.buttons&=~uint32_t(fps::Jump|fps::WeaponMask);
+                input.action=actor::Action::None;
+                input.buttons&=~uint32_t(actor::Jump|actor::WeaponMask);
             }
             if(server){server->poll(now);if(!server->step()){accumulated=0;break;}client->poll(now);}
             accumulated-=1.0/config.tickRate;
@@ -975,12 +983,12 @@ struct App {
         // If a reset could not safely run outside a GPU encoder, do not
         // enqueue or render VFX in mismatched floating-origin coordinates.
         // The next frame retries the reset before accepting new FX.
-        Vec3 eye=actor.pos+Vec3{{},fps::stanceHeight(actor,config.motor)-Fixed::fromRatio(1,10),{}};
+        Vec3 eye=actor.pos+Vec3{{},actor::stanceHeight(actor,config.motor)-Fixed::fromRatio(1,10),{}};
         auto localEye=visual(world::relativeTo(eye,origin,32));
         auto cameraLook=look;cameraLook.pitch+=float(actor.recoil.toDouble());
         auto cam=cameraLook.camera(localEye);
         // Race: chase camera behind the driven car, interpolated between the last two snapshots.
-        const fps::Vehicle* ride=nullptr;const fps::Vehicle* rideBefore=nullptr;
+        const actor::Vehicle* ride=nullptr;const actor::Vehicle* rideBefore=nullptr;
         if(actor.vehicle&&client->snapshot().race.enabled){
             for(const auto& v:received.vehicles)if(v.id==actor.vehicle)ride=&v;
             for(const auto& v:previousSnapshot.vehicles)if(v.id==actor.vehicle)rideBefore=&v;
@@ -988,7 +996,7 @@ struct App {
         if(ride){
             auto at=visual(world::relativeTo(ride->pos,origin,32));float yaw=float(ride->yaw.toDouble());
             if(rideBefore){auto from=visual(world::relativeTo(rideBefore->pos,origin,32));at=from+(at-from)*interpolation;yaw=render::lerpTurns(float(rideBefore->yaw.toDouble()),yaw,interpolation);}
-            cam=render::chaseCamera(at,yaw);localEye=cam.eye();
+            cam=render::chaseCamera(at,yaw,chase);localEye=cam.eye();
         }
         if(aimHeld)cam.fovY=(weapon.range>=700_fx||(actor.attachments[actor.weaponIndex]&1))?0.28f:0.65f;
         audio::ListenerPose listener;auto globalEye=visual(eye);listener.pos[0]=globalEye.x;listener.pos[1]=globalEye.y;listener.pos[2]=globalEye.z;auto forward=render::normalize(cam.target-cam.eye());listener.forward[0]=forward.x;listener.forward[1]=forward.y;listener.forward[2]=forward.z;audio.setListener(listener);
@@ -1029,8 +1037,8 @@ struct App {
             drawSceneMesh(transform,{0.4f,0.46f,0.5f,1});
         }
         for(auto id:geometry.query({actor.pos-extent,actor.pos+extent})) {
-            if(chunks.enabled()&&id!=1&&id<fps::kBuildingColliderBase)continue;   // generated buildings are not in the chunk files
-            if(id>=fps::kRotatedColliderBase&&!rotatedBoxes.empty())continue;      // triangles of rotated boxes: drawn above
+            if(chunks.enabled()&&id!=1&&id<actor::kBuildingColliderBase)continue;   // generated buildings are not in the chunk files
+            if(id>=actor::kRotatedColliderBase&&!rotatedBoxes.empty())continue;      // triangles of rotated boxes: drawn above
             const auto& b=geometry.colliders().at(id).bounds;
             // Draw relative to the observer before converting coordinates to floating point.
             auto base=Vec3{(b.min.x+b.max.x)/2,b.min.y,(b.min.z+b.max.z)/2};
@@ -1121,7 +1129,7 @@ struct App {
                 }
             }
             if(!animated) {
-                auto transform=render::mat4::translate(position)*render::mat4::scale({0.6f,float(fps::stanceHeight(remote,config.motor).toDouble()),0.6f});
+                auto transform=render::mat4::translate(position)*render::mat4::scale({0.6f,float(actor::stanceHeight(remote,config.motor).toDouble()),0.6f});
                 ::aiverse::view::MeshObject fallback;
                 fallback.mesh=&cube;
                 fallback.world=transform;
@@ -1171,7 +1179,7 @@ struct App {
         worldPackets.clear();
         // Preserve the original intermediate zone wall ordering. Its host
         // primitive adapter can migrate later without moving this pass.
-        fps::view::drawZoneWall(renderer,cube,client->snapshot().royale,actor.pos,origin,visual);
+        actor::view::drawZoneWall(renderer,cube,client->snapshot().royale,actor.pos,origin,visual);
         for(const auto& c:client->snapshot().royale.crates)box(c,{1.2f,1.2f,1.2f},{0.95f,0.6f,0.1f,1});
         genericSceneView.submitPackets(renderer,worldPackets);
         gfx::PassDesc pass;pass.clearColor[0]=0.2f;pass.clearColor[1]=0.28f;pass.clearColor[2]=0.36f;renderer.render(pass);
@@ -1210,7 +1218,7 @@ struct App {
             auto stats=lang.tr("fps.systems.status",i18n::Args().num("armor",actor.armor).num("money",actor.money));ImGui::TextUnformatted(stats.c_str());
             if(actor.downed)ImGui::TextUnformatted(lang.tr("fps.downed").c_str());
             if(actor.health<=0)ImGui::TextUnformatted(lang.tr("fps.dead").c_str());
-            if(actor.activeAction!=fps::Action::None){auto remaining=std::max(0,int(actor.actionUntil)-int(client->snapshot().tick));ImGui::TextUnformatted(lang.tr("fps.action",i18n::Args().num("seconds",(remaining+int(config.tickRate)-1)/int(config.tickRate))).c_str());}
+            if(actor.activeAction!=actor::Action::None){auto remaining=std::max(0,int(actor.actionUntil)-int(client->snapshot().tick));ImGui::TextUnformatted(lang.tr("fps.action",i18n::Args().num("seconds",(remaining+int(config.tickRate)-1)/int(config.tickRate))).c_str());}
             ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr("fps.systems.controls").c_str());ImGui::PopTextWrapPos();
             if(held("ShowInventory"))for(auto item:actor.bag)ImGui::TextUnformatted(lang.tr("fps.item",i18n::Args().str("name",lang.tr("fps.item."+std::to_string(item.type))).num("count",item.count)).c_str());
             if(config.mode=="bomb")ImGui::TextUnformatted(lang.tr("fps.round",i18n::Args().num("round",client->snapshot().round).num("a",client->snapshot().match.scoreA).num("b",client->snapshot().match.scoreB).num("bomb",client->snapshot().match.planted?std::max(0,int(client->snapshot().match.bombExplodes)-int(client->snapshot().tick))/int(config.tickRate):0)).c_str());
@@ -1239,7 +1247,7 @@ struct App {
         for(const auto& cloud:client->snapshot().projectiles)if(cloud.kind==4&&(actor.pos-cloud.pos).lengthSq()<config.systems.smokeRadius*config.systems.smokeRadius)draw->AddRectFilled({0,0},{w,h},IM_COL32(165,170,175,250));
         if(actor.blindUntil>client->snapshot().tick){auto remain=actor.blindUntil-client->snapshot().tick;auto alpha=int(std::min(1.0,double(remain)/std::max(1u,config.systems.flashTicks))*255);draw->AddRectFilled({0,0},{w,h},IM_COL32(255,255,255,alpha));}
         }   // !ride
-        fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
+        actor::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
         ui::drawRaceHud(lang,client->snapshot().race,client->snapshot().tick,config.tickRate);
         gui.render();device.endPass();device.endFrame();
         horizonFrameTiming.finish(streamedScene.get(),frameStarted);
@@ -1276,17 +1284,18 @@ struct App {
     }
 };
 }
-int aiverseMain(int argc,char** argv) {
+// Actor projects (game.json "module": "fps") in the one game client (apps/client/main.cpp dispatches here).
+int actorClientMain(int argc,char** argv) {
     try {
         App app;auto engineRoot=platform::resolveEngineDir(AIVERSE_SOURCE_DIR,argv[0]);
         std::string sessionTokenFile;std::string project=engineRoot+"/templates/fps_training",connect;
-        for(int i=1;i<argc;++i){std::string arg=argv[i];if(arg=="--project"&&i+1<argc)project=argv[++i];else if(arg=="--connect"&&i+1<argc)connect=argv[++i];else if(arg=="--session-token-file"&&i+1<argc)sessionTokenFile=argv[++i];else if(arg=="--listen")app.listen=true;else throw std::runtime_error("usage: aiverse_fps_client --project DIR [--connect udp://host:27100 | --listen] [--session-token-file FILE]");}
+        for(int i=1;i<argc;++i){std::string arg=argv[i];if(arg=="--project"&&i+1<argc)project=argv[++i];else if(arg=="--connect"&&i+1<argc)connect=argv[++i];else if(arg=="--session-token-file"&&i+1<argc)sessionTokenFile=argv[++i];else if(arg=="--listen")app.listen=true;else throw std::runtime_error("usage: AiverseGame --project DIR [--connect udp://host:27100 | --listen] [--session-token-file FILE]");}
         project=std::filesystem::absolute(project).string();
         std::filesystem::current_path(engineRoot);
         if(!sessionTokenFile.empty()&&(app.listen||connect.empty()))throw std::runtime_error("session token requires --connect");
         if(app.listen&&!connect.empty())throw std::runtime_error("choose --listen or --connect");
-        auto data=fps::readProject([&](const auto& file,auto& text){return platform::readContentFile(project+"/"+file,text);});
-        app.projectRoot=project;app.contentReader=platform::makeContentReader(project);app.rules=data.rules;app.map=data.map;app.config=fps::readConfig(app.rules);
+        auto data=actor::readProject([&](const auto& file,auto& text){return platform::readContentFile(project+"/"+file,text);});
+        app.projectRoot=project;app.contentReader=platform::makeContentReader(project);app.rules=data.rules;app.map=data.map;app.config=actor::readConfig(app.rules);
         if(connect.empty()) {
             app.server=std::make_unique<net::authority::Server>(app.rules,app.map,1,app.contentReader);
             auto pair=net::makeLoopbackPair();app.server->attach(1,std::move(pair.first));

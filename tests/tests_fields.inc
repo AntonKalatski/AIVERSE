@@ -1,5 +1,5 @@
-// Grid fields (G5, RtsGridFields.h, docs/fields.md): kernels, effects, Lua API, saves, rollback, perf.
-#include "modules/rts/RtsGridFields.h"
+// Grid fields (G5, GridFields.h, docs/fields.md): kernels, effects, Lua API, saves, rollback, perf.
+#include "engine/game/GridFields.h"
 
 namespace {
 // fire + fuel + water + creep on a 48x32 map; a few units for the per-cell effects
@@ -150,7 +150,7 @@ every(3, function() need(state.hits > 9 and state.falls > 0, "threshold hooks fi
 )LUA"));
     rules.set("$scriptSources", src);
     SimConfig cfg; cfg.seed = 2;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parse(fieldMap()));
     run(*sim, 4);
     auto& m = mod(*sim);

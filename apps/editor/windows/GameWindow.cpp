@@ -10,15 +10,15 @@
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 #include "../GameHud.h"
-#include "modules/rts/view/RegionSwipe.h"
-#include "modules/rts/view/ScriptHud.h"
+#include "engine/view/game/RegionSwipe.h"
+#include "engine/view/game/ScriptHud.h"
 #include "apps/client/RegionSettings.h"
 #include "engine/i18n/Localization.h"
 #include "engine/platform/InputFlow.h"
 #include <filesystem>
 #include <set>
 #include <string_view>
-#include "modules/rts/RtsScript.h"
+#include "engine/game/Script.h"
 
 namespace aiverse::editor {
 
@@ -658,7 +658,7 @@ private:
             }
         }
         if (gameHud_.blocked()) return;
-        auto* dl=ImGui::GetWindowDrawList();auto color=game::RtsView::playerColor(ed.humanSlot());
+        auto* dl=ImGui::GetWindowDrawList();auto color=game::GameView::playerColor(ed.humanSlot());
         auto packed=ImGui::ColorConvertFloat4ToU32(ImVec4(color.x,color.y,color.z,1));
         for(auto q:region_.controlFlags(cam,vp_.pointsW,vp_.pointsH)){
             const float x=q.x+vp_.originX,y=q.y+vp_.originY;

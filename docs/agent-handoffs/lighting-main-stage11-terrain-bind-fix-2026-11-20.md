@@ -2,7 +2,7 @@
 
 ## Branch, commits, files
 - `chromealex/AIVERSE` branch `integration/lighting-main-stage1-20261120`, DRAFT PR #91; **main not modified**.
-- Code commit `54069fc272ca0ed9120281fa4b38554ea3939f19`: `engine/render/Renderer3D.h`, `modules/rts/view/RtsTerrainRender.cpp`, `tests/render/lighting_model_gi_shader_contract.cpp`.
+- Code commit `54069fc272ca0ed9120281fa4b38554ea3939f19`: `engine/render/Renderer3D.h`, `engine/view/game/GameTerrainRender.cpp`, `tests/render/lighting_model_gi_shader_contract.cpp`.
 - Stage10: `18f25c93703ed2a82a3e8288f9c4192ed345ae94` (Metal/Vulkan terrain source GI variant). Stage11 is a necessary correction before treating it as functional.
 
 ## Concrete correctness issue fixed

@@ -61,7 +61,7 @@ Previous: [Stage 123](animation-stage123-compiled-retarget-cache-2026-11-19.md)
    failing target node and mapped/unbound counts. Do not call
    these diagnostics during every actor draw.
 4. `273438b2c4ce506fd000cd965397dbbad5da29d8` —
-   `modules/rts/view/RtsLook.cpp`:
+   `engine/view/game/GameLook.cpp`:
    only on `compileModelPoseRetarget` failure, prints a single
    per-type/per-LOD warning using the existing deduplicating
    `warn(t,...)` reporter. The warning includes offending visual
@@ -77,7 +77,7 @@ Previous: [Stage 123](animation-stage123-compiled-retarget-cache-2026-11-19.md)
    have no cross-model identity contract. Validate/compile the
    returned map at a safe asset publication boundary.
 6. `7b6594be5bd110d3308e716d8872dae8a5b56d22` —
-   `RtsLook.cpp`:
+   `GameLook.cpp`:
    the legacy RTS choice loader now reuses the same generic
    `makeNamedModelPoseRetarget` helper rather than duplicating
    model-node name lookup. It retains `lc.nodeMap` only for

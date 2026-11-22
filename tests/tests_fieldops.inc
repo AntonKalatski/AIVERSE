@@ -245,10 +245,10 @@ TEST(fieldops_metaltide_bots_use_the_mechanics) {
     Json rulesJson = readComposedJson(dir + "rules.json", fileReader());
     Json map = readComposedJson(dir + "maps/twin_craters.json", fileReader());
     SimConfig cfg; cfg.seed = 2;
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     sim.setup(rulesJson, map);
     CHECK(mod(sim).sensors() && mod(sim).fieldOps());
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, 2);
     std::set<std::string> built;
     int blipTicks = 0;

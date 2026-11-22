@@ -5,7 +5,7 @@ description: Build an AIVERSE campaign - campaign.json mission chain, briefings,
 
 # Campaign
 
-Format: `docs/game-format.md` "Campaigns", `modules/rts/RtsCampaign.h`.
+Format: `docs/game-format.md` "Campaigns", `engine/game/Campaign.h`.
 
 1. Maps first (`skills/world/aiverse-map-build`); players[0] of every mission map is the campaign player.
 2. `campaign_set` with `{"start", "missions": [{"id", "name", "map", "briefing", "next", "carry": {"resources", "tags", "types", "max"}}]}`. Briefings are lang keys (`game_file_write lang/*.json`), never hard-coded text.

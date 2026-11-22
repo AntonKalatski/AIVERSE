@@ -12,7 +12,7 @@ hashed, saved, copied by rollback snapshots). A game without a `progression` blo
 exactly as before.
 
 Code: `modules/rts/RtsProgressionData.*` (parsing, bullet variants), `RtsProgression.*` (store, system, hooks, bot),
-`RtsProgressionApi.cpp` (Lua `progression`). Sample: `templates/perk_arena`. Tests: `aiverse_tests progression_`.
+`ProgressionApi.cpp` (Lua `progression`). Sample: `templates/perk_arena`. Tests: `aiverse_tests progression_`.
 
 ## What is reused
 
@@ -126,7 +126,7 @@ milli units (add 1000 = +1 speed / hp / range).
 
 A stat without an effect on the unit stays exactly the engine's value (no milli rounding). `summonCharges`,
 `summonCooldown` and game stats (ids >= 16) are readable with `progression.stat(unit, stat, base)`.
-Techs, buffs, statuses, auras and the rest of `RtsModule::stat` apply first; the perk pipeline is the last step.
+Techs, buffs, statuses, auras and the rest of `GameCore::stat` apply first; the perk pipeline is the last step.
 
 ## Bullets and hits
 
@@ -160,7 +160,7 @@ card = 1, revision = r})`; MCP `play_command {"command": "progression", "op": "c
 in). A recruit card spawns the slot's unit next to the hero; a perk card applies at once (max health rescaled) and runs
 the perk's `hook` global: `hook({player, unit, x, z, args = {perk, id, slot, level}})`.
 
-**Bot.** `RtsAI` sends the library's `botOfferChoice` (lowest `aiPriority`; `aiPriorityLowHealth` under 35% health;
+**Bot.** `ComputerPlayer` sends the library's `botOfferChoice` (lowest `aiPriority`; `aiPriorityLowHealth` under 35% health;
 recruits `recruitAiPriority`), and an `open` when `autoOpen` is off.
 
 ## Summons and the squad

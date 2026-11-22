@@ -2,9 +2,9 @@
 
 ## Branch and commits
 - Branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- Implementation `1224a4a267f113652797249db9922094a95c0892`: `modules/rts/view/RtsSprites.cpp` — local noexcept RAII guard in secondary-camera sprite preparation, restoring emission target, replay mode, camera, basis and shadow quality on normal or exceptional exits.
+- Implementation `1224a4a267f113652797249db9922094a95c0892`: `engine/view/game/GameSprites.cpp` — local noexcept RAII guard in secondary-camera sprite preparation, restoring emission target, replay mode, camera, basis and shadow quality on normal or exceptional exits.
 - Implementation `4e2062a0e22be7ee51524a84a61f794287e4099f`: `engine/render/SpriteBatch.cpp` — prevent reinitialization, transactional GPU init rollback only after confirmed `waitForResourceIdle()`.
-- Implementation `888c13f25f45f03ef68ee28e29a4a55edb812ff5`: `modules/rts/view/RtsSprites.cpp` — clean texture cache for batch init failures; on exceptions during sprite/texture/type initialization, wait for GPU idle and clean all partially created resources, including when `ready_` was never set.
+- Implementation `888c13f25f45f03ef68ee28e29a4a55edb812ff5`: `engine/view/game/GameSprites.cpp` — clean texture cache for batch init failures; on exceptions during sprite/texture/type initialization, wait for GPU idle and clean all partially created resources, including when `ready_` was never set.
 - Previous stage: `docs/agent-handoffs/lens-motionweave-integration-stage17-dynamic-sprite-buffers-2026-11-20.md`.
 
 ## Architecture, contracts and compatibility
@@ -15,7 +15,7 @@
 - `engine/render` remains independent of game genres.
 
 ## Verification actually performed
-- Read and inspected feature-branch `SpriteBatch.cpp`, `RtsSprites.cpp`, `Rts2DView.h` and GPU barrier conventions.
+- Read and inspected feature-branch `SpriteBatch.cpp`, `GameSprites.cpp`, `Game2DView.h` and GPU barrier conventions.
 - Updated sources through GitHub and fetched them back; confirmed existence of RAII guard, rollback-after-idle path, and partial cleanup logic.
 - **NOT RUN**: CMake configuration, native C++ compilation, full or selective CTest, Metal/Vulkan/GLES GPU validation, fault-injection tests and runtime screenshots.
 - This stage is committed source code only; no passing build/test claim.

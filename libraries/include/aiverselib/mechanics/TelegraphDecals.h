@@ -3,7 +3,7 @@
 // Presentation (float OK, never fed back into the sim): ground triangles for a TelegraphView, the way Drone Fall's
 // TelegraphProgressCircle/Cone/Line modules draw a background shape plus a fill that grows with the windup
 // (circle and ring fill outward from the centre, cone from the apex, line from its start). Vertices are
-// x, y, z, rgba (0xRRGGBBAA) in world units: one ViewGroundVertex each for RtsGroundCanvas, or a Lua
+// x, y, z, rgba (0xRRGGBBAA) in world units: one ViewGroundVertex each for GameGroundCanvas, or a Lua
 // view.draw_ground() vertex list (docs/scripting.md). Own and enemy colours as TelegraphColorConfig.
 #include "Telegraphs.h"
 #include <cmath>

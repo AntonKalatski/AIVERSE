@@ -4,7 +4,7 @@
 #include "../EditorGenreUi.h"
 #include "../core/AnimationOps.h"
 #include "../core/AnimationDocument.h"
-#include "modules/rts/view/RtsPortrait.h"
+#include "engine/view/game/GamePortrait.h"
 #include "engine/render/AnimationGraph.h"
 #include "engine/render/AnimationRig.h"
 #include "engine/render/FullBodyIK.h"

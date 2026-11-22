@@ -18,18 +18,18 @@
 #include "engine/core/Random.h"
 #include "engine/sim/Replay.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsProgression.h"
-#include "modules/rts/gen/MapGen.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Tiles.h"
+#include "engine/game/Script.h"
+#include "engine/game/Progression.h"
+#include "engine/game/gen/MapGen.h"
 
 using namespace aiverse;
 namespace fs = std::filesystem;
 
 static std::unique_ptr<GameModule> makeModule(const std::string& name) {
-    if (name == "rts") return std::make_unique<game::RtsModule>();
+    if (name == "rts") return std::make_unique<game::GameCore>();
     return nullptr;
 }
 
@@ -47,7 +47,7 @@ static Json loadMap(const std::string& mapPath, const std::string& projectDir) {
     return map;
 }
 
-// rules.json with the game's scripts embedded (RtsScript.h)
+// rules.json with the game's scripts embedded (Script.h)
 static Json loadRules(const std::string& rulesPath, const Json& map, const std::string& projectDir) {
     Json rules = readComposedJson(rulesPath, fileReader());   // + included files, extends applied
     std::string err;
@@ -63,7 +63,7 @@ static Json loadRules(const std::string& rulesPath, const Json& map, const std::
 
 // Script log lines (errors always, prints unless --quiet).
 static void attachScriptLog(Simulation& sim, bool quiet) {
-    auto* m = sim.module().name() == "rts" ? static_cast<game::RtsModule*>(&sim.module()) : nullptr;
+    auto* m = sim.module().name() == "rts" ? static_cast<game::GameCore*>(&sim.module()) : nullptr;
     if (!m || !m->scripts()) return;
     for (auto& e : m->scripts()->log()) if (e.error || !quiet) std::printf("[script%s] %s\n", e.error ? " error" : "", e.text.c_str());
     m->scripts()->onLog = [quiet](const game::ScriptLogEntry& e) {
@@ -97,7 +97,7 @@ struct Args {
 };
 
 static void dumpTypes(Simulation& sim) {
-    auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+    auto* m = dynamic_cast<game::GameCore*>(&sim.module());
     for (auto& p : sim.players()) {
         std::map<std::string, int> n;
         sim.world().each<game::Unit, Owner>([&](Entity, game::Unit& u, Owner& o) { if (o.player == p.slot) n[m->rules().types[u.type].id]++; });
@@ -125,7 +125,7 @@ static void dumpTypes(Simulation& sim) {
 }
 
 static void status(Simulation& sim) {
-    auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+    auto* m = dynamic_cast<game::GameCore*>(&sim.module());
     auto& gs = m->state(sim);
     std::printf("  t=%4us", sim.tick() / sim.tickRate());
     for (auto& p : sim.players()) {
@@ -148,7 +148,7 @@ static void status(Simulation& sim) {
 // Path query benchmark: random start/goal pairs on passable ground cells (fixed seed), the same queries with
 // the map's pathing mode (HPA* on big maps) and with plain A* (any length, node limit as in the game).
 static int benchPaths(Simulation& sim, const Args& a) {
-    auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+    auto* m = dynamic_cast<game::GameCore*>(&sim.module());
     game::MapGrid& g = m->state(sim).grid;
     const uint8_t layer = game::kLayerGround;
     Random rng(a.seed);
@@ -207,7 +207,7 @@ static int benchPaths(Simulation& sim, const Args& a) {
 static int benchNav(Simulation& sim, const Args& a) {
     using clk = std::chrono::steady_clock;
     auto ms = [](clk::time_point t) { return std::chrono::duration<double, std::milli>(clk::now() - t).count(); };
-    auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+    auto* m = dynamic_cast<game::GameCore*>(&sim.module());
     game::MapGrid& g = m->state(sim).grid;
     if (g.surf) { std::printf("--bench-nav: flat maps only (planets keep the grid / HPA*)\n"); return 2; }
     const uint8_t layer = game::kLayerGround;
@@ -326,7 +326,7 @@ static void printProfile(Simulation& sim) {
 // Group movement benchmark: N units of the first mobile combat type of player 1 spread over a block, one move order to
 // the far corner (flat) / the antipode (planet). Reports ticks/s, path ms per tick, arrivals and the field cache size.
 static int benchGroup(Simulation& sim, const Args& a) {
-    auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+    auto* m = dynamic_cast<game::GameCore*>(&sim.module());
     auto& gs = m->state(sim);
     game::MapGrid& g = gs.grid;
     int type = -1;
@@ -414,9 +414,9 @@ static int benchGroup(Simulation& sim, const Args& a) {
 
 // External input producers are not part of SimSnapshot. Copy them so both
 // continuations submit identical inputs rather than restarting bot decisions.
-static bool verifyRestore(Simulation& sim, std::vector<game::RtsAI>& bots,
+static bool verifyRestore(Simulation& sim, std::vector<game::ComputerPlayer>& bots,
                           const SimSnapshot& snapshot, const std::string& bytes,
-                          const std::vector<game::RtsAI>& savedBots, uint64_t initialHash,
+                          const std::vector<game::ComputerPlayer>& savedBots, uint64_t initialHash,
                           const std::vector<uint64_t>& expected, const SimConfig& cfg,
                           const Json& rules, const Json& map) {
     for (int mode=0;mode<3;++mode) {
@@ -439,7 +439,7 @@ static bool verifyRestore(Simulation& sim, std::vector<game::RtsAI>& bots,
             target->step();
             if (target->checksum()!=checksum) { std::printf("Restore DESYNC (%s) at tick %u\n",name,target->tick());return false; }
         }
-        auto* rm=dynamic_cast<game::RtsModule*>(&target->module());
+        auto* rm=dynamic_cast<game::GameCore*>(&target->module());
         if (rm && rm->scripts() && rm->scripts()->errorCount()>0) { std::printf("Restore FAILED (%s): script errors\n",name);return false; }
         std::printf("Restore OK (%s): %zu per-tick checks, from tick %u\n",name,expected.size(),snapshot.tick);
     }
@@ -483,7 +483,7 @@ static int play(const Args& a) {
     attachScriptLog(sim, a.quiet);
     if (!a.quiet && (a.benchPaths > 0 || mapJson["world"].isObject()))   // planets / benchmarks: setup cost incl. the HPA* graphs
         std::printf("Setup: %.0f ms\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - setupT0).count());
-    if (auto* rm = dynamic_cast<game::RtsModule*>(&sim.module()); rm && rm->generatedMap()) {
+    if (auto* rm = dynamic_cast<game::GameCore*>(&sim.module()); rm && rm->generatedMap()) {
         const Json& gm = *rm->generatedMap();
         if (!a.quiet) {
             const Json& gi = gm["generated"];
@@ -507,7 +507,7 @@ static int play(const Args& a) {
     if (a.benchPaths > 0) return benchPaths(sim, a);
     if (a.benchNav > 0) return benchNav(sim, a);
     if (a.benchGroup > 0) return benchGroup(sim, a);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, a.seed);
 
     Replay rep;
@@ -537,7 +537,7 @@ static int play(const Args& a) {
         std::fprintf(stderr,"restore verification requires 1..100000 ticks within the match interval\n");return 2;
     }
     SimSnapshot restoreSnapshot;
-    std::vector<game::RtsAI> restoreBots;
+    std::vector<game::ComputerPlayer> restoreBots;
     std::vector<uint64_t> restoreChecks;
     std::string restoreBytes;
     uint64_t restoreHash=0;
@@ -585,7 +585,7 @@ static int play(const Args& a) {
     }
     if (a.verifyRestore) {
         if (!restoreVerified) { std::fprintf(stderr,"restore verification interval was not reached\n");return 2; }
-        auto* rm=dynamic_cast<game::RtsModule*>(&sim.module());
+        auto* rm=dynamic_cast<game::GameCore*>(&sim.module());
         if (rm && rm->scripts() && rm->scripts()->errorCount()>0) { std::fprintf(stderr,"restore verification encountered script errors\n");return 1; }
     }
     double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -607,11 +607,11 @@ static int play(const Args& a) {
     std::printf("Events: spawned=%d died=%d attacks=%d trained=%d built=%d gathered=%d captured=%d\n",
                 ev[game::kEvSpawned], ev[game::kEvDied], ev[game::kEvAttack], ev[game::kEvTrainDone], ev[game::kEvBuildDone],
                 ev[game::kEvGathered], ev[game::kEvCaptured]);
-    if (auto* rm = dynamic_cast<game::RtsModule*>(&sim.module()); rm && rm->raid() && rm->raid()->active())   // extraction raids
+    if (auto* rm = dynamic_cast<game::GameCore*>(&sim.module()); rm && rm->raid() && rm->raid()->active())   // extraction raids
         if (auto* rs = rm->raid()->store(sim))
             for (size_t i = 0; i < rs->players.size(); ++i)
                 std::printf("Raid receipt: %s\n", rs->receipts[i].empty() ? rm->raid()->receiptJson(sim, rs->players[i]).c_str() : rs->receipts[i].c_str());
-    if (auto* rm = dynamic_cast<game::RtsModule*>(&sim.module()); rm && rm->progression() && rm->progression()->active())   // in-match progression
+    if (auto* rm = dynamic_cast<game::GameCore*>(&sim.module()); rm && rm->progression() && rm->progression()->active())   // in-match progression
         if (auto* ps = rm->progression()->store(sim))
             for (auto& [player, p] : ps->perks.players) {
                 std::string perks;
@@ -673,7 +673,7 @@ static int replay(const Args& a) {
     return ok ? 0 : 1;
 }
 
-#include "FpsRunner.h"
+#include "ActorRunner.h"
 
 int main(int argc, char** argv) {
     Args a;

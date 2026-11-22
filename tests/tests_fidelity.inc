@@ -1,4 +1,4 @@
-// ------------------------------------------------------------------ foundations, traps, group teleports, charges (RtsFidelity.cpp)
+// ------------------------------------------------------------------ foundations, traps, group teleports, charges (Fidelity.cpp)
 // Included by tests.cpp after the fidelity helpers (spawnAt).
 
 static int pavedCells(Simulation& sim, uint8_t owner) {
@@ -61,12 +61,12 @@ TEST(fid_ai_paves_before_building) {
     auto& m = mod(*sim);
     const int base = pavedCells(*sim, 1);
     // the AI keeps a few cells paved and puts its buildings on them
-    game::RtsAI ai(1, 7);
+    game::ComputerPlayer ai(1, 7);
     for (int i = 0; i < 25 * 40; ++i) { ai.update(*sim); sim->step(); }
     CHECK(pavedCells(*sim, 1) > base);
     Vec3 p;
     CHECK(m.findAutoSpot(*sim, 1, uint16_t(m.rules().findType("plant")), p));
-    int x0, y0; game::RtsModule::footprintAt(m.rules().types[size_t(m.rules().findType("plant"))], p, x0, y0);
+    int x0, y0; game::GameCore::footprintAt(m.rules().types[size_t(m.rules().findType("plant"))], p, x0, y0);
     CHECK(m.bareCells(*sim, 1, x0, y0, 2, 2) < 4);           // the next building lands on concrete
 }
 
@@ -147,7 +147,7 @@ TEST(fid_group_teleport_chronosphere_and_recall) {
     Entity inf = spawnAt(*sim, "rifle", 1, 5.5, 6.5);
     Entity foe = spawnAt(*sim, "tank", 2, 5.5, 4.5);
     Command c; c.player = 1; c.type = game::kCmdPlayerAbility;
-    c.param = 0 | game::RtsModule::packPoint2({Fixed::fromInt(20), Fixed{}, Fixed::fromInt(12)});
+    c.param = 0 | game::GameCore::packPoint2({Fixed::fromInt(20), Fixed{}, Fixed::fromInt(12)});
     c.point = {Fixed::fromInt(6), Fixed{}, Fixed::fromRatio(55, 10)};
     sim->submit(c);
     run(*sim, 0.5);

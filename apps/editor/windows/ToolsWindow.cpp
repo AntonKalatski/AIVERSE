@@ -36,7 +36,7 @@ public:
     bool openByDefault() const override { return false; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.worldSpaceMaps()) {
+        if(ed.ws().map.data.worldSpace) {
             ImGui::TextWrapped("%s",engineText(ed.ws(),"fps.editor.hint").c_str());
             if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
             return;

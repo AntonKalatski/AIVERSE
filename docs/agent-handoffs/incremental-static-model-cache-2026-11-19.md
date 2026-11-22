@@ -18,7 +18,7 @@
 ## Exact scope / public API
 - No changes to ECS state, game serialization, network protocol, save files or shader ABIs.
 - No default change in graphics quality or draw mode. Metal ICB remains OFF unless independently enabled; this stage does not change GPU indirect commands or MDI thresholds.
-- Pure CPU rigid transform reuse only. Per-frame `RtsView` and `Renderer3D::drawModel` traversal, material selection, shadow and camera culling, runtime LOD, sorting, instancing and submission are retained.
+- Pure CPU rigid transform reuse only. Per-frame `GameView` and `Renderer3D::drawModel` traversal, material selection, shadow and camera culling, runtime LOD, sorting, instancing and submission are retained.
 - `ModelDraw::materials` / `nodeMaterial` no longer prevent an explicit compatible transform cache when current GPU material selection has no active vertex offset. This is a targeted relaxation of an older conservative restriction, not a material batching change.
 - `persistentId` uniqueness is caller-owned; each independent draw/attachment must use a distinct ID or stay transient.
 - `Model` can be edited in place without changing pointer / GPU handles; these edits require explicit `invalidateStaticModelCaches()`. Native projects and other asset-reload paths must add invalidation before opting in. If that cannot be guaranteed, leave the flag OFF.
@@ -131,7 +131,7 @@ With an explicitly revisioned immutable native `ModelDraw` fixture (set `staticP
 - `f054ef4`, `93d466`: extended `tests/render/model_batching_policy.cpp` for in-place material mutation, vector size/reallocation, compatible material copies, LOD eligibility, LOD selection threshold and crossfade rejection.
 - `fd53ae5`: new shared public header `engine/render/EcsStaticModelRender.h`, with `EcsStaticModelRender` integer-only presentation component, `visitEcsStaticModels` testable view system and `drawEcsStaticModels` native project wrapper. Uses `World::eachExistingConst` + existing `WorldTransform` / `hierarchyMatrix` after hierarchy barrier. Resolves model by caller-supplied asset key; nonzero namespaced persistent draw ID supplied by host; no Model pointers or floats stored in authoritative ECS. It is presentation-only; no deterministic simulation mutations or gameplay serialization changes.
 - `ce5565c`: CPU-only ECS adapter assertions for identity, transforms, missing components, hidden/unresolved entities, revision, render flags and recycled Entity generation.
-- `8e2bf7e`: small opt-in RTS presentation host adapter in `modules/rts/view/RtsViewDraw.cpp` sets `staticPacketRevision=1` only on existing finished stationary `kDrawStatic` candidates. The renderer still validates all real material/transform/LOD state, and the environment flag remains necessary; no RTS feature logic was moved into render core.
+- `8e2bf7e`: small opt-in RTS presentation host adapter in `engine/view/game/GameViewDraw.cpp` sets `staticPacketRevision=1` only on existing finished stationary `kDrawStatic` candidates. The renderer still validates all real material/transform/LOD state, and the environment flag remains necessary; no RTS feature logic was moved into render core.
 - `ee2e4c9`, `4b67a16`: `docs/geometry-performance.md` and `AGENTS.md` updated with API/eligibility, ECS architecture, limits, opt-in and ownership.
 
 ### Public API and contract
@@ -152,10 +152,10 @@ render::drawEcsStaticModels(world, renderer,
     },
     renderOrigin);
 ```
-The host ID must be stable, unique across all concurrently rendered Worlds and **all draws** in one renderer. A zero key/revision, unresolved asset, hidden entity or missing `WorldTransform` is skipped. The helper uses read-only ECS iteration. Cross-genre access is via public engine headers, not `RtsModule` or FPS modules.
+The host ID must be stable, unique across all concurrently rendered Worlds and **all draws** in one renderer. A zero key/revision, unresolved asset, hidden entity or missing `WorldTransform` is skipped. The helper uses read-only ECS iteration. Cross-genre access is via public engine headers, not `GameCore` or FPS modules.
 
 ### Files changed this stage
-`engine/render/StaticModelCachePolicy.h`, `engine/render/Renderer3D.h`, `engine/render/Renderer3D.cpp`, `engine/render/Renderer3DModels.cpp`, `engine/render/EcsStaticModelRender.h` (new), `modules/rts/view/RtsViewDraw.cpp`, `tests/render/model_batching_policy.cpp`, `docs/geometry-performance.md`, `AGENTS.md`, this handoff.
+`engine/render/StaticModelCachePolicy.h`, `engine/render/Renderer3D.h`, `engine/render/Renderer3D.cpp`, `engine/render/Renderer3DModels.cpp`, `engine/render/EcsStaticModelRender.h` (new), `engine/view/game/GameViewDraw.cpp`, `tests/render/model_batching_policy.cpp`, `docs/geometry-performance.md`, `AGENTS.md`, this handoff.
 
 ### Actually performed validation / outcomes
 - GitHub connector: fetched PR #34 head and base, main compare, source files and existing contract; wrote each code/doc commit to the existing feature branch successfully. The PR remains open Draft and was reported mergeable by GitHub at prior inspection.
@@ -1172,7 +1172,7 @@ The Studio Scene window previously set instancing, CPU multi-draw, GPU-authored 
 - No changes to GL/Metal/Vulkan RHI, GPU indirect command buffers, scene packet algorithms, GPU fences, LOD calculation, shaders or ECS components/serialization. GPU ICB still requires the independent process opt-in and all safe checks. New snapshot is purely host configuration; not a frame-state rollback.
 
 ### Host audit completed during this stage
-`RtsViewDraw.cpp` submits general `ModelDraw` packets for RTS objects, while the common `EcsStaticModelRender.h` visitor can submit models from any ECS World with per-host stable keys and appearance revisions. `apps/editor/Editor.cpp::renderScene` invokes RTS view for RTS, and `enqueueFpsSceneGeometry` for FPS; the FPS editor's current `SceneRenderable` extractor mainly uses debug Mesh geometry, which is not eligible for `ModelDraw` static packet caching by merely toggling policy flags. The generic batcher cannot combine arbitrary distinct vertex/index allocations or textures into one primitive; the shared GPU geometry page and exact material/pipeline checks remain necessary. Do not invent FPS packet hits or silently mark debug Mesh draw calls as immutable models.
+`GameViewDraw.cpp` submits general `ModelDraw` packets for RTS objects, while the common `EcsStaticModelRender.h` visitor can submit models from any ECS World with per-host stable keys and appearance revisions. `apps/editor/Editor.cpp::renderScene` invokes RTS view for RTS, and `enqueueFpsSceneGeometry` for FPS; the FPS editor's current `SceneRenderable` extractor mainly uses debug Mesh geometry, which is not eligible for `ModelDraw` static packet caching by merely toggling policy flags. The generic batcher cannot combine arbitrary distinct vertex/index allocations or textures into one primitive; the shared GPU geometry page and exact material/pipeline checks remain necessary. Do not invent FPS packet hits or silently mark debug Mesh draw calls as immutable models.
 
 ### Actual verification and unresolved work
 Read GitHub branch source and verified exact structural changes, constructed a two-file atomic Git tree, authored implementation commit and fast-forwarded the target branch using an expected SHA. No source files from other agents changed. **Native CMake/CTest NOT RUN; Metal/Vulkan visual/driver parity NOT RUN; CPU/GPU A/B/A NOT RUN**, as the user explicitly prioritizes all features before tests and this environment has no native project checkout. No measured speedup, performance regression or successful build claimed. PR stays Draft.

@@ -21,7 +21,7 @@ struct Target {
     world::Bounds hitbox{};
 };
 
-struct FpsStyle {};
+struct ActorStyle {};
 struct RtsStyle {};
 
 template<class HostTag>
@@ -99,7 +99,7 @@ static void exercise() {
 }
 
 int main() {
-    exercise<FpsStyle>();
+    exercise<ActorStyle>();
     exercise<RtsStyle>();
     std::cout<<"PASS shared hitscan selection, equal-distance ties, rewind eligibility and occlusion\n";
 }

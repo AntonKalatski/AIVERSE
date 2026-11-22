@@ -1,5 +1,5 @@
 #include <aiverselib/net/LocalTickets.h>
-#include "modules/fps/Project.h"
+#include "engine/actor/Project.h"
 #include <fstream>
 #include <iterator>
 #include <thread>
@@ -42,7 +42,7 @@ void authority(bool udpMode){
             auto accepted=gate.poll(now,[&](const std::string& token,const std::string& audience,uint64_t at)->std::optional<Principal>{if(token!="test-only-token"||server->occupied(1))return {};return Principal{"alice",audience,1,at+20000};});
             for(auto& peer:accepted){lease=peer.access;CHECK(server->attach(peer.access->principal.slot,std::move(peer.connection)));}
             server->poll(now);
-            if(now%20==0){fps::Input input;input.right=100;client->submit(input);server->step();}
+            if(now%20==0){actor::Input input;input.right=100;client->submit(input);server->step();}
         }
         CHECK(client->ready()&&client->connected()&&client->snapshot().localSlot==1);
         for(const auto& actor:client->snapshot().characters)if(actor.slot!=1)CHECK(actor.ammo==0&&actor.reserve==0&&actor.bag.empty());
@@ -59,12 +59,12 @@ void authority(bool udpMode){
     std::cout<<(udpMode?"UDP with 10% outgoing test loss":"loopback with jitter")<<": token admission, slot ownership, reconnect, server restore, private fields and revocation OK\n";
 }
 void remote(const std::string& project,const std::string& address,const std::string& tokenFile,bool expectRevoke=false){
-    auto data=fps::readProject([&](const auto& name,std::string& text){std::ifstream file(project+"/"+name);if(!file)return false;text.assign(std::istreambuf_iterator<char>(file),{});return true;});
+    auto data=actor::readProject([&](const auto& name,std::string& text){std::ifstream file(project+"/"+name);if(!file)return false;text.assign(std::istreambuf_iterator<char>(file),{});return true;});
     std::ifstream file(tokenFile);std::string token;std::getline(file,token);CHECK(file&&aiverse::lib::session::detail::tokenValid(token));
     auto connection=net::connectTo(address);CHECK(connection);
     net::authority::Client client(data.rules,data.map,std::make_unique<ClientAdmission>(std::move(connection),token));
     auto started=net::nowMs();bool ready=false;
-    while(net::nowMs()-started<4000){auto now=net::nowMs();client.poll(now);if(client.ready()){ready=true;fps::Input input;input.right=50;client.submit(input);}std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+    while(net::nowMs()-started<4000){auto now=net::nowMs();client.poll(now);if(client.ready()){ready=true;actor::Input input;input.right=50;client.submit(input);}std::this_thread::sleep_for(std::chrono::milliseconds(5));}
     CHECK(ready&&client.snapshot().localSlot==1&&client.snapshot().ack>20);
     CHECK(expectRevoke?!client.connected():client.connected());
     std::cout<<"Local profile ticket: authority slot 1, acknowledged inputs OK\n";

@@ -20,7 +20,7 @@
 #include "EditorProfile.h"
 #include "EditorTheme.h"
 #include "EditorNativeBuild.h"
-#include "modules/rts/view/RtsViewScript.h"
+#include "engine/view/game/GameViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
 #include "PhysisNaturePreview.h"
@@ -45,12 +45,12 @@
 #include "engine/render/NativePresentationRetirement.h"
 #include "engine/render/RetirementDiagnosticRing.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsMap.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/fx/RtsFx.h"
-#include "modules/rts/view/RtsView.h"
-#include "modules/rts/view/RtsModelDemandScheduler.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/MapGrid.h"
+#include "engine/game/GameCore.h"
+#include "engine/fx/GameFx.h"
+#include "engine/view/game/GameView.h"
+#include "engine/view/game/GameModelDemandScheduler.h"
 
 namespace aiverse::spectra {
 class GpuPoolWorld;
@@ -79,9 +79,9 @@ struct Selection {
                 Live,       // an object of the world tree that is not a map entity being edited (ref): created by the game, or play mode
                 MapBlock,   // a block of the map document's extra JSON (key = path: "lights[2]", "gridFields")
                 Road,       // map road (index)
-                FpsObject,  // FPS document collider/spawn, stable source key in ref
-                FpsActor,   // FPS runtime actor ECS identity, slot index for editor UI
-                FpsRuntimeObject, // FPS projectile, loot or vehicle ECS entity; stable kind/id key in ref
+                ActorObject,  // FPS document collider/spawn, stable source key in ref
+                ActorActor,   // FPS runtime actor ECS identity, slot index for editor UI
+                ActorRuntimeObject, // FPS projectile, loot or vehicle ECS entity; stable kind/id key in ref
                 Body } kind = None;   // planet map body (index)
     int index = -1;          // entity / player (0-based) / wave / trigger / road / body
     std::string key;         // area name, region letter, rule id, map block path
@@ -189,7 +189,7 @@ public:
         }
         return authoredWater_;
     }
-    game::RtsView& view() { return view_; }
+    game::GameView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
     // Pin a type that an editor panel or preview uses (also loads it lazily).
     void retainEditorType(uint16_t type);
@@ -230,7 +230,7 @@ public:
     const WorldModel& world() const { return world_; }
     bool worldLive() const { return worldLive_; }
     Simulation* worldSim();                            // the simulation the rows were read from (null: none)
-    game::RtsModule* worldModule();
+    game::GameCore* worldModule();
     const WorldPreview& worldPreview() const { return preview_; }
     const WorldConfig& worldConfig() const { return worldCfg_; }
     void refreshWorld() { previewKey_ = 0; previewForce_ = true; }
@@ -279,7 +279,7 @@ public:
     // play-test (Game window)
     bool playing() const { return sim_ != nullptr; }
     Simulation* sim() { return sim_.get(); }
-    game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
+    game::GameCore* simModule() { return sim_ ? dynamic_cast<game::GameCore*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
     void enqueueFpsSceneGeometry(const render::Camera&, bool editOverlays=true);
     const Json& fpsRuntimeSnapshot(); // FPS character / projectile / loot / vehicle entities; cached by document/rules revision
@@ -494,7 +494,7 @@ private:
     void drawActivityToasts();
     void handleShortcuts();
     void syncGrid();
-    void buildEditScene(game::RtsScene& out) const;
+    void buildEditScene(game::GameScene& out) const;
     void drawEditOverlays3D();
     void applyChanges();
     void pollVisualAssets(double dt); // editor-owned asset watcher, independent of windows
@@ -513,7 +513,7 @@ private:
     void syncSelection();
     void registerWorldOps();  // EditorWorld.cpp: world_entities, world_entity, editor_select
     void deliverShots(gfx::Device& dev);
-    void setOverlayContext(const Viewport& vp, const render::Camera& cam, bool play);   // input state for RtsOverlays
+    void setOverlayContext(const Viewport& vp, const render::Camera& cam, bool play);   // input state for GameOverlays
 
     Options opt_;
     Workspace ws_;
@@ -559,9 +559,9 @@ private:
     render::PrismaVolumeStack prismaVolumes_; // editor camera profiles, presentation-only
     std::string prismaVolumesSignature_;
     void refreshPrismaVolumes();
-    game::RtsView view_;
+    game::GameView view_;
     bool lazyEditorAssets_ = true;
-    game::view_adapter::RtsModelDemandScheduler modelDemand_;
+    game::view_adapter::GameModelDemandScheduler modelDemand_;
     VisualAssetDependencyService visualAssets_;
     bool showPicker_ = false;
     bool resetLayout_ = false;
@@ -586,7 +586,7 @@ private:
     uint64_t worldHash_ = 0;   // map world block as last given to the view (planets)
     double gridRebuildAt_ = 0;
     bool playTerrainBuilt_ = false;
-    game::RtsScene scene_;
+    game::GameScene scene_;
     // Opt-in edit-scene snapshot: immutable document-derived objects only.
     // Selection/hover and live world preview remain updated every frame.
     struct EditSceneCacheEntry {
@@ -659,7 +659,7 @@ private:
     std::array<float,8> spectraPreviewParams_{};
     fx::float3 spectraPreviewPosition_{};
     fx::ParticleSystem gameFx_;
-    game::RtsFx gameFxBridge_;
+    game::GameFx gameFxBridge_;
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
     double fxTime_ = -1;
     struct FxPreview { std::string name; fx::float3 pos{}; float scale = 1; fx::float4 tint{1, 1, 1, 1}; bool loop = false; fx::FxHandle h; double next = 0;
@@ -668,7 +668,7 @@ private:
     FxPreview fxPreview_;                      // fx_preview: the effect an agent is looking at
     bool fxFrozen_ = false;                    // fx_preview {freeze}: particles hold still for screenshots
     std::unique_ptr<Simulation> sim_;
-    std::vector<game::RtsAI> bots_;
+    std::vector<game::ComputerPlayer> bots_;
     int human_ = 0;
     std::map<std::string, Entity> playIds_;   // map entity "id" -> live entity of the play-test (play_command names)
     float lastSimMs_ = 0;
@@ -686,7 +686,7 @@ private:
     std::map<uint64_t, int> liveDocOf_;        // live ref -> map entity (liveLinks_ inverted)
     bool worldWanted() const { return time_ - worldWantAt_ < 0.5; }
     bool worldDataWanted() const { return time_ - worldDataAt_ < 0.5; }
-    void readLiveWorld(Simulation& live, game::RtsModule& mod);
+    void readLiveWorld(Simulation& live, game::GameCore& mod);
     void ensureWorld();                        // MCP: rows (with script data) current now
     int rulesRevision_ = 0;
     const Simulation* liveSim_ = nullptr;      // live world last read (setup refs belong to it)

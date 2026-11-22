@@ -1,6 +1,6 @@
 // AIVERSE LENS Stage 20: GPU allocation fault injection without a native GPU.
 #include "engine/render/SpriteBatch.h"
-#include "modules/rts/view/Rts2DView.h"
+#include "engine/view/game/Game2DView.h"
 #include "tests/cloth/FakeDevice.h"
 #include <stdexcept>
 #include <string>

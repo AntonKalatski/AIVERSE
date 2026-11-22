@@ -1,6 +1,6 @@
 # City planner (map generator preset `city`)
 
-`modules/rts/gen/GenCity.cpp` lays out a city for top-down games: a street network with a hierarchy, a river
+`engine/game/gen/GenCity.cpp` lays out a city for top-down games: a street network with a hierarchy, a river
 with bridges, roundabouts, zoned blocks with buildings, parks, car parks, street trees, lamps and furniture,
 parked cars, people and the hero. It is one of the map generator presets (docs/game-format.md "Map generation"),
 so it runs at match start (`"generate": {"preset": "city", "seed": "match"}`), in `aiverse_headless --generate city

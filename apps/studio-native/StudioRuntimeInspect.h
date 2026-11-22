@@ -12,7 +12,7 @@ public:
         if(offset<0 || limit<1 || limit>100 || query.size()>256)
             throw std::runtime_error("Invalid runtime query");
         Json out=Json::object(),rows=Json::array();int total=0;
-        auto* mod=sim?dynamic_cast<game::RtsModule*>(&sim->module()):nullptr;
+        auto* mod=sim?dynamic_cast<game::GameCore*>(&sim->module()):nullptr;
         out.set("active",Json::fromBool(mod!=nullptr));out.set("epoch",Json::string(epoch));
         out.set("tick",Json::number(int64_t(sim?sim->tick():0)));
         if(mod) {
@@ -38,7 +38,7 @@ public:
         uint64_t packed=0;auto parsed=std::from_chars(ref.data(),ref.data()+ref.size(),packed);
         if(parsed.ec!=std::errc{} || parsed.ptr!=ref.data()+ref.size() || packed==0)
             throw std::runtime_error("Invalid runtime entity reference");
-        auto* mod=sim?dynamic_cast<game::RtsModule*>(&sim->module()):nullptr;
+        auto* mod=sim?dynamic_cast<game::GameCore*>(&sim->module()):nullptr;
         if(!mod)throw std::runtime_error("No inspectable game is running");
         const Entity entity=editor::worldEntity(packed);
         if(!sim->world().alive(entity))throw std::runtime_error("Runtime entity no longer exists");

@@ -10,11 +10,11 @@
 - Previous handoff: `docs/agent-handoffs/lens-motionweave-integration-stage5-camera-lod-2026-11-20.md`.
 
 ## Dataflow / API
-1. GameClient's original main camera executes `RtsView::draw` once, which advances MotionWeave, handles visual events and composes final animated models, attachments and legacy model draws. No changes were made to the animation team's RtsView sources.
-2. When opt-in LENS cameras are active, `CameraModelSnapshot::beginCapture(r3d_)` installs `Renderer3D::setModelPacketTap` before the primary RtsView draw. This separate tap does NOT replace existing light-baker `setModelCapture`.
+1. GameClient's original main camera executes `GameView::draw` once, which advances MotionWeave, handles visual events and composes final animated models, attachments and legacy model draws. No changes were made to the animation team's GameView sources.
+2. When opt-in LENS cameras are active, `CameraModelSnapshot::beginCapture(r3d_)` installs `Renderer3D::setModelPacketTap` before the primary GameView draw. This separate tap does NOT replace existing light-baker `setModelCapture`.
 3. `Renderer3D::drawModel` calls the tap after validating Model handles, BEFORE primary-camera culling so packets invisible to the primary camera remain capturable for other cameras.
 4. `CameraModelSnapshot::record` copies `ModelDraw` values and any borrowed `nodeWorld`, `pose`, `baked`, `materials`, `nodeMaterial` containers. It deliberately clears `staticCache` and transient pointers. Model and GPU resources themselves are still borrowed and must survive until secondary submissions finish.
-5. `endCapture` clears tap before the GPU render; extra cameras call `lensCameras_.renderPrepared(snapshot,{simulationTick,incrementingPresentationFrame,time},dt,submit)`. Each draw constructs fresh pointers to snapshot-owned buffers, and invokes normal `Renderer3D::drawModel`. Neither `RtsView::draw` nor `MotionWeave::update` runs a second time.
+5. `endCapture` clears tap before the GPU render; extra cameras call `lensCameras_.renderPrepared(snapshot,{simulationTick,incrementingPresentationFrame,time},dt,submit)`. Each draw constructs fresh pointers to snapshot-owned buffers, and invokes normal `Renderer3D::drawModel`. Neither `GameView::draw` nor `MotionWeave::update` runs a second time.
 6. Original screen output stays owned by GameClient. LENS cameras still render available `worldScene_` static geometry and now include finalized model packets.
 
 ## Performance and correctness constraints
@@ -22,7 +22,7 @@
 - **Important limitation:** packet capture occurs AFTER the primary camera selects whole-model LODs. Independent camera-scoped LOD exists in MotionWeave View, but the copied final packets currently reflect the primary camera's chosen model/LOD. True independent per-camera model selection requires capturing a pre-LOD object/pose contract and calling `View::submitOne(...,cameraScope)`, not just finalized `ModelDraw`.
 - Other scene primitives (sprite batches, terrain/fog, transparent geometry via other renderer submission APIs, GPU particles, decals, trails, lights, UI) are NOT all included. This is a finalized **model** snapshot, not full immutable world render snapshot.
 - The capture is host-scoped and synchronous. Avoid concurrent submission, reentrancy or live resource reload between primary and secondary renders. `ModelDraw` points to a borrowed Model; pointer reuse across asset eviction must be guarded by the host's resource-retirement contract.
-- `CameraModelSnapshot::beginCapture` installs a callback capturing `this`. GameClient must always call `endCapture`; exceptions from RtsView draw would leave the callback armed until recovered. Add an RAII capture guard before production.
+- `CameraModelSnapshot::beginCapture` installs a callback capturing `this`. GameClient must always call `endCapture`; exceptions from GameView draw would leave the callback armed until recovered. Add an RAII capture guard before production.
 - Multiple primary World and standalone ModelDraw callbacks must not conflict with the light-baker hook. Test on hardware.
 - The model snapshot copies material overrides (which can be costly). Benchmark memory/capture overhead with thousands of draws before finalizing.
 

@@ -97,6 +97,6 @@ They use actual model shaders, framebuffer blending and PostFx, not a mocked ren
 - Android/GLES, WebGL, Windows and iOS were not built or run in this validation.
 
 The isolated branch starts at e3b79170. That base has an unrelated `<cmath>` /
-`<limits>` include inside `extern "C"` in `RtsScriptIeee.cpp`; compilation used
+`<limits>` include inside `extern "C"` in `ScriptIeee.cpp`; compilation used
 `-DCMAKE_CXX_FLAGS='-include cmath -include limits'` to work around it without
 changing simulation code. The main working tree already had its own fix.

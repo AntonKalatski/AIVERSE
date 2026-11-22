@@ -4,14 +4,14 @@ All pathing is deterministic integer code in `modules/rts` (no floats, ties by c
 10 per straight and 14 per diagonal step; a diagonal is legal only when both orthogonal detours are (no corner cutting);
 passability is per path layer (`UnitType::pathLayer` = move layer + slope class on heightfields); bodies larger than
 half a cell pay a clearance penalty in tight cells (A* only). Flat maps and planets (cube-sphere faces stacked in one
-grid, `RtsSurface.h`) share the same rules: on planets the 8 neighbours come from the surface's neighbour table, so
+grid, `Surface.h`) share the same rules: on planets the 8 neighbours come from the surface's neighbour table, so
 face seams and cube corners (7 neighbours) are ordinary steps.
 
 | what | where | used for |
 |---|---|---|
 | A* | `MapGrid::astarCells` (flat), `astarSphere` (planets) | every short path; long paths on small maps; refinement of HPA* routes |
-| HPA* | `RtsHpa.cpp` (flat, maps >= 256x256), `RtsHpaSphere.cpp` (planet bodies >= 65,536 cells) | one unit's long trip: entrance graph of 16x16 clusters, then A* between consecutive waypoints |
-| flow fields | `RtsFlowField.cpp` | many units to one goal: group orders >= `movement.flowField.minGroup`, map / lane waves with `waves: true` |
+| HPA* | `MapHpa.cpp` (flat, maps >= 256x256), `MapHpaSphere.cpp` (planet bodies >= 65,536 cells) | one unit's long trip: entrance graph of 16x16 clusters, then A* between consecutive waypoints |
+| flow fields | `FlowField.cpp` | many units to one goal: group orders >= `movement.flowField.minGroup`, map / lane waves with `waves: true` |
 | navigation mesh | `engine/nav/NavMesh.h` (genre-independent), `MapGrid::navPath` | opt-in `movement.pathfinding: "navmesh"`: one unit's path on flat maps, any angle (docs/navmesh.md) |
 | hybrid | `MapGrid::hybridPath` (HPA* graph + navmesh / grid per cluster) | opt-in `movement.pathfinding: "hybrid"`: big or mixed flat maps; flow fields on the same cluster graph |
 
@@ -22,7 +22,7 @@ face seams and cube corners (7 neighbours) are ordinary steps.
 
 `MapGrid::findPath` first asks the layer's navigation mesh (flat maps, goal passable, not a surround-allies search):
 
-- **Source.** `GridNavSource` in `RtsMap.cpp`: a cell is a span when `passable(x, y, layer)`; two orthogonal cells link
+- **Source.** `GridNavSource` in `MapGrid.cpp`: a cell is a span when `passable(x, y, layer)`; two orthogonal cells link
   when `canStep` allows both directions (cliff levels, ramps, slope classes). The mesh itself (`engine/nav`) knows no
   RTS types - the FPS bots feed the same mesh from AABB collision.
 - **Mesh.** Linked cells merge greedily into rectangles inside 32x32 tiles; portals between rectangles mark wall

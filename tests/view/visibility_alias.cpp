@@ -1,5 +1,5 @@
 #include "engine/view/VisibilityField.h"
-#include "modules/rts/view/RtsFog.h"
+#include "engine/view/game/GameFog.h"
 #include <type_traits>
 #include <span>
 #include <utility>

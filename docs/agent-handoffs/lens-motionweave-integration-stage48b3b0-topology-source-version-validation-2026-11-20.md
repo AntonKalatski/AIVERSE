@@ -8,17 +8,17 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3a1-terrain-
 
 ## Implemented
 
-The opt-in `RtsView::buildTerrainAtomic()` Terrain → Roads → Shores → GroundFX → Fog transaction now captures the same conservative MapGrid byte fingerprint that the LENS scene prewarm lease uses. It also captures all five published-owner state revisions plus the terrain-policy generation BEFORE staging any GPU candidate. Immediately after `OwnerPrepareCommit::prepareAll()` — and before any owner is allowed to publish — it compares current inputs against the originals.
+The opt-in `GameView::buildTerrainAtomic()` Terrain → Roads → Shores → GroundFX → Fog transaction now captures the same conservative MapGrid byte fingerprint that the LENS scene prewarm lease uses. It also captures all five published-owner state revisions plus the terrain-policy generation BEFORE staging any GPU candidate. Immediately after `OwnerPrepareCommit::prepareAll()` — and before any owner is allowed to publish — it compares current inputs against the originals.
 
 If a same-address map is edited by an editor/RHI callback during staging, if an owner is reconfigured/replaced, if the terrain generation changes, or if the device/planet mode changes, it explicitly rolls back the transaction in reverse owner order and throws a `std::runtime_error` describing the source change. Live height mesh, road/shore generations, GroundFX, Fog R8 and GPU retirement queue remain on the previously published versions. There is no partial commit.
 
-This reuses `mapLeaseFingerprint` from `RtsView.cpp` through a private `RtsView::mapSourceFingerprint` wrapper, avoiding independently drifting definitions in terrain and frame preparation. This is an intermediate correctness gate, **not** a complete unpublished topology+scene lease.
+This reuses `mapLeaseFingerprint` from `GameView.cpp` through a private `GameView::mapSourceFingerprint` wrapper, avoiding independently drifting definitions in terrain and frame preparation. This is an intermediate correctness gate, **not** a complete unpublished topology+scene lease.
 
 ## Files
 
-- `modules/rts/view/RtsView.h`: private common map fingerprint declaration.
-- `modules/rts/view/RtsView.cpp`: common fingerprint implementation.
-- `modules/rts/view/RtsTerrain.cpp`: pre/post prepare fingerprint and owner-revision validation, rollback before publication.
+- `engine/view/game/GameView.h`: private common map fingerprint declaration.
+- `engine/view/game/GameView.cpp`: common fingerprint implementation.
+- `engine/view/game/GameTerrain.cpp`: pre/post prepare fingerprint and owner-revision validation, rollback before publication.
 - `tests/tests.cpp`: `lens_stage48b3b0_topology_discards_mid_prepare_editor_mutation`; fake RHI device mutates an in-place height corner in `createBuffer`, asserts rejection, intact previously published height/road generation/retirement queue, then stable retry.
 
 ## Verification (actual)

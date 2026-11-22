@@ -168,13 +168,13 @@ public:
         // Comparison mode for historical authored LODs without an
         // accepted retarget plan. Visuals are unchanged by default.
         bool strictLegacyLod=ed.view().legacyLodFallbackMode()==
-            game::RtsView::LegacyLodFallbackMode::BindPose;
+            game::GameView::LegacyLodFallbackMode::BindPose;
         if(ImGui::Checkbox("RTS LOD: bind pose для несовместимых скелетов",
                            &strictLegacyLod))
             ed.view().setLegacyLodFallbackMode(
                 strictLegacyLod
-                    ?game::RtsView::LegacyLodFallbackMode::BindPose
-                    :game::RtsView::LegacyLodFallbackMode::PreserveWorldMatrices);
+                    ?game::GameView::LegacyLodFallbackMode::BindPose
+                    :game::GameView::LegacyLodFallbackMode::PreserveWorldMatrices);
         const auto legacyLod=ed.view().legacyLodFallbackStats();
         if(legacyLod.worldMatrixFallbacks || legacyLod.bindPoseFallbacks ||
            legacyLod.rejectedCompiledPlans)
@@ -380,7 +380,7 @@ public:
         const auto& hist = ed.playHistory;
         if (hist.size() < 2) return;
         for (size_t p = 0; p < hist.back().units.size(); ++p) {
-            render::float4 pc = game::RtsView::playerColor(int(p + 1));
+            render::float4 pc = game::GameView::playerColor(int(p + 1));
             const ImVec4 col(pc.x, pc.y, pc.z, 1);
             std::string name = p < s->players().size() ? s->players()[p].name : "?";
             const auto& last = hist.back();

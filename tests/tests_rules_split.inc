@@ -50,9 +50,9 @@ void splitSkirmish(const Dir& d) {
 
 uint64_t botChecksum(const Json& rules, const Json& map, uint32_t ticks) {
     SimConfig cfg; cfg.seed = 7;
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     sim.setup(rules, map);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, 7);
     for (uint32_t t = 0; t < ticks && sim.result() == 0; ++t) {
         for (auto& b : bots) b.update(sim);

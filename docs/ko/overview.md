@@ -416,7 +416,7 @@ audio.json 절에 있습니다. 개요:
 - **고급 애니메이션**: 걷기/달리기 블렌드 스페이스, 가산 클립(호흡, 반동), 지형에 맞춘 발 IK, 목표를 향한 머리, 경사에서의 차량 기울기, GPU
   모프 타깃(블렌드 셰이프).
 - **소켓**: 손에 든 무기, 등에 진 짐(운반 중인 자원에 따라), 투사체 발사 지점, 이펙트 위치(연기, 불, 배기). 클립 이벤트와
-  `RtsView::events()/effects()`를 소리와 파티클에 사용합니다.
+  `GameView::events()/effects()`를 소리와 파티클에 사용합니다.
 - **단계**: 비계와 건설 단계, 체력에 따른 손상 버전, 등장과 사망 시 디졸브, 선택 시 외곽선, 건물을 놓을 때의 반투명 고스트, 초상화.
 - **형식**: 추가로 **FBX**(ufbx)와 압축 텍스처 **KTX2**(ETC2/BC/ASTC, GPU에서도 압축된 상태). **Collada**, **3DS**, **PLY**, **STL**.
   복셀 **MagicaVoxel .vox**와 **.vxl/.hva**(Tiberian Sun, Red Alert 2). 사용자가 가진 게임 사본의 고전 RTS 모델: **Warcraft III .mdx/.mdl**
@@ -450,7 +450,7 @@ audio.json 절에 있습니다. 개요:
 - **에디터** — "Lighting" 창: 시각과 뇌우 미리 보기, 조명 품질 단계, 광원 목록. 에이전트용: `light_add`, `light_update`, `light_delete`,
   `light_list`, `lighting_set`, `view_lighting`.
 
-필드 형식은 `modules/rts/view/RtsLights.h` 헤더에 있습니다. 테스트 변수: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`,
+필드 형식은 `engine/view/game/GameLights.h` 헤더에 있습니다. 테스트 변수: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`,
 `AIVERSE_STORM`.
 
 ## MCP를 통한 메커니즘 검증

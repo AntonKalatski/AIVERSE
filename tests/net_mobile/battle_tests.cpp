@@ -11,8 +11,8 @@
 #include "apps/battle/BattleLoad.h"
 #include "apps/battle/HeroDuel.h"
 #include "apps/battle/RtsBattle.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/TopDown.h"
 #include "engine/net/BattleJoin.h"
 #include "engine/net/HeroInput.h"
 #include "engine/net/Conn.h"
@@ -398,9 +398,9 @@ TEST(hosted_battle_reports_desync) {
 }
 
 // An RTS-module battle (templates/topdown_arena rules, a small duel map) through the dedicated battle server:
-// RtsModule simulations on every client, heroes steered by the computer pilot with kCmdTopDown, ability taps with
+// GameCore simulations on every client, heroes steered by the computer pilot with kCmdTopDown, ability taps with
 // kCmdTopDownAbility, only those two allowed by the server, rollback corrections smoothed, and the frozen outcome
-// blob (RtsModule::outcomeBlob) as the result report that every client must agree on.
+// blob (GameCore::outcomeBlob) as the result report that every client must agree on.
 static std::string duelMap() {
     std::string rows;
     for (int y = 0; y < 10; ++y) rows += std::string(y ? "," : "") + "\"" + std::string(24, '.') + "\"";
@@ -438,7 +438,7 @@ TEST(rts_outcome_freezes_at_the_result_tick) {
     auto g = battle::rtsBattleGame(o);
     SimConfig sc; sc.seed = 3;
     auto sim = g->create(sc, nullptr, g->mapJson(2, 0));
-    auto& m = *static_cast<game::RtsModule*>(&sim->module());
+    auto& m = *static_cast<game::GameCore*>(&sim->module());
     CHECK(g->resultBlob(*sim).empty() && !m.outcome(*sim));
     battle::BotThumbs t1, t2;
     uint32_t decided = 0;

@@ -1,9 +1,9 @@
 // RTS-module battles on the hosted battle server (docs/battle-net.md, docs/topdown.md): a top-down game project
 // (templates/topdown_arena, templates/extraction, a Drone Fall port) behind the BattleLoad.h BattleGame interface.
-// Every client builds the RtsModule simulation from the project's rules + map, bots steer their heroes with the
+// Every client builds the GameCore simulation from the project's rules + map, bots steer their heroes with the
 // computer pilot (TopDown::botCommand -> kCmdTopDown) and tap hero abilities (kCmdTopDownAbility), the server lets
 // only those two command types through, and the result report is the module's frozen outcome blob
-// (RtsModule::outcomeBlob). Rollback corrections of heroes and squad members feed the correction smoother.
+// (GameCore::outcomeBlob). Rollback corrections of heroes and squad members feed the correction smoother.
 #pragma once
 #include <memory>
 #include <string>

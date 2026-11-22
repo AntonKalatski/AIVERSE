@@ -80,7 +80,7 @@ by a game's native module without the RTS module. Tests: `aiverse_tests traffic_
 
 ## The living city: incidents and services
 
-`modules/rts/RtsTrafficCity.cpp`. Things happen, and the service that answers that kind of thing sends a vehicle.
+`engine/game/TrafficCity.cpp`. Things happen, and the service that answers that kind of thing sends a vehicle.
 Tests: `aiverse_tests traffic_city`.
 
 | incident | raised when | answered by (`answers`) | what the service does |
@@ -126,7 +126,7 @@ team is hostile to the heroes' to fight them. Service keys default to `range` 90
 
 ## Population: homes, jobs, shifts
 
-`modules/rts/RtsTrafficPopulation.cpp` (who, where, when) and `RtsTrafficCommute.cpp` (how they get there), rules
+`engine/game/TrafficPopulation.cpp` (who, where, when) and `TrafficCommute.cpp` (how they get there), rules
 `traffic.population`. Tests: `aiverse_tests traffic_population`.
 
 - **Places** are homes and workplaces: map objects of the types in `objects` and the entries of the map's
@@ -244,7 +244,7 @@ to the point (within 3 cells) for traffic along that axis (default: the axis of 
 
 ## Gangs (crime that starts by itself)
 
-`modules/rts/RtsTrafficGangs.cpp`, rules `traffic.gangs` (needs `traffic.population`). Tests: `aiverse_tests traffic_gang`.
+`engine/game/TrafficGangs.cpp`, rules `traffic.gangs` (needs `traffic.population`). Tests: `aiverse_tests traffic_gang`.
 
 ```json
 "gangs": {"every": [120, 300], "size": [2, 4], "targets": {"shop": 400, "bank": 8000}, "rob": 8, "jail": 240,
@@ -293,7 +293,7 @@ several gangs at once, robbers as passengers the player can see in the car, a hi
 ## Spline roads
 
 With `"roads": {"network": true}` (or no `tiles`) and a map `roadNetwork` (docs/roads.md) the network comes from the
-spline roads instead of road tiles (`modules/rts/RtsTrafficRoads.cpp`):
+spline roads instead of road tiles (`engine/game/TrafficRoads.cpp`):
 
 - every drivable edge is a curved piece: its centre line between the junction cuts, lanes per direction from its road
   type (one-way roads have lanes one way only), the type's lane width and median; along runs over the curve, across

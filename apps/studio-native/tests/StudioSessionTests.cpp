@@ -496,7 +496,7 @@ void entityWorkflow() {
             session.openProject(project.string());
         }
         {
-            Simulation live({1,20,0},std::make_unique<game::RtsModule>());
+            Simulation live({1,20,0},std::make_unique<game::GameCore>());
             live.setup(session.workspace().project.rulesJson,session.workspace().map.toJson());
             studio::StudioRuntimeInspect inspector;
             const auto before=live.checksum();

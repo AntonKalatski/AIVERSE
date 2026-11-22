@@ -92,10 +92,10 @@ animation events (fire sounds / VFX from game events or view scripts), mirror, L
 
 - **Parameters** are the graph's `parameters` (Unity float / int / bool / trigger as numbers).
   Triggers latch when the value changes to non-zero and are consumed by the transition that used
-  them; because RtsView rebuilds parameters every frame, set a trigger by changing its value (a
+  them; because GameView rebuilds parameters every frame, set a trigger by changing its value (a
   counter works: 1, 2, 3, …).
 - **inputs** derive a parameter from another one every update: `target = clamp(from*scale+offset)`.
-  RtsView provides `speed`, `moving`, `dead`, `attacking`, `hasTarget` and, for imported controllers,
+  GameView provides `speed`, `moving`, `dead`, `attacking`, `hasTarget` and, for imported controllers,
   `moveX` / `moveZ` (unit move direction relative to the body, 0 when standing), `attackAge`,
   `hitAge`, `spawnAge` (seconds since the last such view event). Lua overrides
   (`view.animation(e, {Speed = s})`) win over defaults; an input overwrites its target.

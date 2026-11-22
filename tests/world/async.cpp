@@ -1,9 +1,10 @@
 #include "engine/world/CollisionStream.h"
+#include "engine/game/GameCore.h"
 #include "engine/pack/Sha256.h"
-#include "modules/fps/FpsModule.h"
+#include "engine/actor/ActorModule.h"
 #include "engine/net/authority/Session.h"
 #include "engine/platform/ContentReader.h"
-#include "modules/fps/Project.h"
+#include "engine/actor/Project.h"
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -60,11 +61,11 @@ void terrainCollision() {
     Bounds region{{0_fx,-10_fx,0_fx},{32_fx,10_fx,16_fx}};
     CHECK(!stream.covers(region));spin([&]{return stream.prepareRegions({&region,1});});CHECK(stream.covers(region));CHECK(world.colliders().size()==4);
     auto hit=world.cast({24_fx,10_fx,8_fx},{0_fx,-20_fx,0_fx});CHECK(hit.hit&&fxAbs(hit.fraction-Fixed::fromRatio(7,20))<Fixed::fromRatio(1,1000));
-    fps::CharacterSnapshot actor;actor.health=100;actor.pos={8_fx,3_fx,8_fx};fps::MotorConfig motor;
-    for(int i=0;i<120;++i)fps::moveActor(actor,{},motor,world,Fixed::fromRatio(1,60),1000_fx);
+    actor::CharacterSnapshot actor;actor.health=100;actor.pos={8_fx,3_fx,8_fx};actor::MotorConfig motor;
+    for(int i=0;i<120;++i)actor::moveActor(actor,{},motor,world,Fixed::fromRatio(1,60),1000_fx);
     CHECK(actor.grounded);CHECK(actor.pos.y>0_fx&&actor.pos.y<2_fx);
-    fps::Input input;input.yaw=Fixed::fromRatio(1,4);input.forward=1000;
-    auto before=actor.pos;for(int i=0;i<60;++i)fps::moveActor(actor,input,motor,world,Fixed::fromRatio(1,60),1000_fx);
+    actor::Input input;input.yaw=Fixed::fromRatio(1,4);input.forward=1000;
+    auto before=actor.pos;for(int i=0;i<60;++i)actor::moveActor(actor,input,motor,world,Fixed::fromRatio(1,60),1000_fx);
     CHECK(actor.pos.x>before.x+3_fx&&actor.pos.y>before.y);
     stream.prepareRegions({});CHECK(world.colliders().empty());
 }
@@ -80,7 +81,7 @@ void corruptionAndSeams() {
 }
 void exampleIntegration() {
     auto reader=platform::makeContentReader("examples/world/streamed");
-    auto project=fps::readProject(reader);
+    auto project=actor::readProject(reader);
     auto walk=[&](bool doorway){
         auto map=project.map;
         if(!doorway)map.member("spawns").at(0)=Json::parse("[25,2,32]");
@@ -91,7 +92,7 @@ void exampleIntegration() {
         while(server.simulation().tick()<1500){
             CHECK(std::chrono::steady_clock::now()<deadline);now+=17;
             client.updateStreaming();client.poll(now);server.poll(now);
-            fps::Input input;input.forward=1000;client.submit(input);server.poll(now);
+            actor::Input input;input.forward=1000;client.submit(input);server.poll(now);
             if(!server.step())std::this_thread::sleep_for(std::chrono::milliseconds(1));
             client.poll(now);
         }
@@ -106,17 +107,17 @@ void simulationGate() {
     std::map<std::string,std::string> files={{"a.json",R"({"terrain":{"resolution":2,"heights":[0,0,0,0]}})"}};
     auto rules=Json::parse(R"({"fps":{"tickRate":60,"maxPlayers":2,"mode":"deathmatch"}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[4,2,4],[12,2,12]],"colliders":[]})");map.set("world",manifest(files));
-    auto create=[&]{auto sim=std::make_unique<Simulation>(SimConfig{3,60,0},std::make_unique<fps::Module>());sim->setup(rules,map);return sim;};
+    auto create=[&]{auto sim=std::make_unique<Simulation>(SimConfig{3,60,0},std::make_unique<game::GameCore>());sim->setup(rules,map);return sim;};
     auto a=create(),b=create();auto initial=a->checksum();a->step();CHECK(a->tick()==0&&a->checksum()==initial);
     std::atomic<bool> allow=false;
     auto read=[&](const std::string& f,std::string& s){if(!allow)return false;s=files.at(f);return true;};
-    static_cast<fps::Module&>(a->module()).setContentReader(read);static_cast<fps::Module&>(b->module()).setContentReader(read);
-    fps::Input input;input.sequence=1;input.forward=1000;input.yaw=Fixed::fromRatio(1,4);
-    auto command=fps::command(1,input);command.tick=0;a->inject(command);b->inject(command);
+    actor::host(*a).setContentReader(read);actor::host(*b).setContentReader(read);
+    actor::Input input;input.sequence=1;input.forward=1000;input.yaw=Fixed::fromRatio(1,4);
+    auto command=actor::command(1,input);command.tick=0;a->inject(command);b->inject(command);
     a->step();CHECK(a->tick()==0&&a->executedCommands().empty());allow=true;
     auto step=[](Simulation& sim){auto before=sim.tick();spin([&]{sim.step();return sim.tick()!=before;});};
     for(int i=0;i<60;++i){step(*a);step(*b);CHECK(a->checksum()==b->checksum());}
-    auto save=a->serialize();auto restored=create();static_cast<fps::Module&>(restored->module()).setContentReader(read);CHECK(restored->deserialize(save));
+    auto save=a->serialize();auto restored=create();actor::host(*restored).setContentReader(read);CHECK(restored->deserialize(save));
     for(int i=0;i<30;++i){step(*a);step(*restored);CHECK(a->checksum()==restored->checksum());}
 }
 }

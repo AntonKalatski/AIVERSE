@@ -76,6 +76,7 @@ JSON допускает комментарии `//`. **Числа — обычн
 
 Необязательный блок `"camera"` (2D-игры, см. «2D-игры» ниже):
 `{"projection": "ortho", "pitch": 90, "yaw": 0, "fov": 43, "zoom": 20, "zoomMin": 8, "zoomMax": 40, "pixelsPerCell": 32, "rotate": false}`.
+Блок может начинаться с пресета (`{"preset": "overhead-pixel"}`; список: [camera-behaviors.md](camera-behaviors.md)).
 
 Необязательный `"playerColors"`: `[neutral, slot 1, ..., slot 8]` (синтаксис цвета оверлеев: `"#rrggbb"`, `[r, g, b]` 0..1 или
 0..255; `null` оставляет слот как есть) заменяет встроенную палитру игроков, используемую для командных цветов, оверлеев и

@@ -446,7 +446,7 @@ void StudioHost::tick() {
                 preview_->setEditorState(std::set<std::string>(ids.begin(), ids.end()), session_->hiddenIds(), session_->lockedIds(), hoverId_);
                 preview_->setWindPreview(session_->windPreview());
                 const auto& ws = session_->workspace();
-                preview_->frame(placement_.pixelsW, placement_.pixelsH, ws.map, ws.project.worldSpaceMaps(), session_->selectedObjectId(),
+                preview_->frame(placement_.pixelsW, placement_.pixelsH, ws.map, ws.map.data.worldSpace, session_->selectedObjectId(),
                     session_->previewMaterialName(), session_->previewMaterialFactors(), session_->previewMaterialRevision(),
                     float(ws.project.rules.levelHeight.toDouble()), ws.project.dir, ws.project.rulesJson, &session_->facialPreviewBinding());
                 out.facialReady = preview_->facialReady();
@@ -494,7 +494,7 @@ void StudioHost::tickScene() {
     FrameInputs in;
     in.width = placement_.pixelsW; in.height = placement_.pixelsH;
     in.map = mapSnapshot_; in.rules = rulesSnapshot_;
-    in.fps = ws.project.worldSpaceMaps();
+    in.fps = ws.map.data.worldSpace;
     in.selected = session_->selectedObjectId();
     in.levelHeight = float(ws.project.rules.levelHeight.toDouble());
     in.project = ws.project.dir;
@@ -631,12 +631,12 @@ void StudioHost::moveCamera(double right, double up, double forward) {
 }
 void StudioHost::focusSelection() {
     if (projectLoading_ || !preview_) return;
-    onScene([&] { preview_->focusSelected(session_->workspace().map, session_->workspace().project.worldSpaceMaps(), session_->selectedObjectId()); });
+    onScene([&] { preview_->focusSelected(session_->workspace().map, session_->workspace().map.data.worldSpace, session_->selectedObjectId()); });
 }
 void StudioHost::resetView() { if (preview_) onScene([&] { preview_->resetView(); }); }
 void StudioHost::frameAll() {
     if (projectLoading_ || !preview_) return;
-    onScene([&] { preview_->frameAll(session_->workspace().map, session_->workspace().project.worldSpaceMaps()); });
+    onScene([&] { preview_->frameAll(session_->workspace().map, session_->workspace().map.data.worldSpace); });
 }
 void StudioHost::setPivotSnap(bool on) { if (preview_) onScene([&] { preview_->setPivotSnap(on); }); }
 void StudioHost::setTool(int tool) {
@@ -732,7 +732,7 @@ void StudioHost::marqueeEnd(double ax, double ay, double bx, double by, double w
     const auto ids = onScene([&] {
         preview_->setMarquee(false);
         return preview_->idsInRect(float(ax), float(ay), float(bx), float(by), float(w), float(h),
-                                   session_->workspace().map, session_->workspace().project.worldSpaceMaps());
+                                   session_->workspace().map, session_->workspace().map.data.worldSpace);
     });
     Json params = Json::object(), list = Json::array();
     for (const auto& id : ids) list.push(Json::string(id));
@@ -744,7 +744,7 @@ void StudioHost::hover(double x, double y, double w, double h) {
     if (projectLoading_ || !preview_ || onScene([&] { return preview_->transformDragActive(); })) return;
     if (updateBrushCursor(x, y, w, h)) return;
     const std::string id = x < 0 || y < 0 ? std::string() : onScene([&] {
-        return preview_->pick(float(x), float(y), float(w), float(h), session_->workspace().map, session_->workspace().project.worldSpaceMaps()); });
+        return preview_->pick(float(x), float(y), float(w), float(h), session_->workspace().map, session_->workspace().map.data.worldSpace); });
     if (id == hoverId_) return;
     hoverId_ = id;
     sendEvent("viewport.hover", id);
@@ -946,7 +946,7 @@ void StudioHost::select(double x, double y, double w, double h, const std::strin
         return;
     }
     const std::string objectId = onScene([&] { return preview_->pick(float(x), float(y), float(w), float(h),
-        session_->workspace().map, session_->workspace().project.worldSpaceMaps()); });
+        session_->workspace().map, session_->workspace().map.data.worldSpace); });
     // A modifier click on empty space keeps the current selection.
     if (objectId.empty() && mode != "replace") return;
     Json params = Json::object();

@@ -8,7 +8,7 @@ add_library(genre_core STATIC ${ROOT}/engine/core/Fixed.cpp ${ROOT}/engine/core/
 target_include_directories(genre_core PUBLIC ${ROOT})
 add_library(genre_board STATIC ${ROOT}/modules/genres/BoardModule.cpp)
 target_link_libraries(genre_board PUBLIC genre_core)
-add_library(genre_motion STATIC ${ROOT}/modules/genres/MotionModule.cpp ${ROOT}/modules/fps/FpsMotor.cpp ${ROOT}/engine/world/SpatialWorld.cpp ${ROOT}/engine/world/TriangleCollision.cpp)
+add_library(genre_motion STATIC ${ROOT}/modules/genres/MotionModule.cpp ${ROOT}/engine/actor/ActorMotor.cpp ${ROOT}/engine/world/SpatialWorld.cpp ${ROOT}/engine/world/TriangleCollision.cpp)
 target_link_libraries(genre_motion PUBLIC genre_core)
 add_executable(aiverse_genre_tests tests.cpp)
 target_link_libraries(aiverse_genre_tests PRIVATE genre_board genre_motion)

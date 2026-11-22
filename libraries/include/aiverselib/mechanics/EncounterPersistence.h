@@ -43,7 +43,7 @@ inline uint16_t stateKind(const BossState&){return 114;}
 inline uint16_t stateKind(const ScheduleState&){return 115;}
 inline uint16_t stateKind(const MobState&){return 116;}
 inline uint16_t stateKind(const BossRotation&){return 117;}
-// Canonical record bytes folded into the simulation checksum (RtsModule / NativeState hashing).
+// Canonical record bytes folded into the simulation checksum (GameCore / NativeState hashing).
 template<class State> requires requires(Archive& a,State& s){stateKind(s);io(a,s);}
 void hashEncounterState(Hasher& h,const State& s){std::string bytes;Archive a(&bytes);auto copy=s;uint16_t kind=stateKind(copy);a(kind,copy);h.str(bytes);}
 template<class State> requires requires(Archive& a,State& s){stateKind(s);io(a,s);}

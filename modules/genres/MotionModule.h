@@ -1,11 +1,11 @@
 #pragma once
-#include "modules/fps/FpsModule.h"
+#include "engine/actor/ActorModule.h"
 
 namespace aiverse::genres {
 enum class MotionKind { Platformer, Racing };
 constexpr uint16_t kMotionInput=1;
 struct MotionActor {
-    fps::CharacterSnapshot body;
+    actor::CharacterSnapshot body;
     Fixed speed{};
     int32_t axis=0,steer=0,checkpoint=0,lap=0,deaths=0;
     uint32_t buttons=0,lastInput=0;
@@ -29,7 +29,7 @@ private:
     void tick(Simulation&);
     void race(MotionActor&,Fixed dt);
     MotionKind kind_=MotionKind::Platformer;
-    fps::MotorConfig motor_;
+    actor::MotorConfig motor_;
     world::SpatialWorld collision_;
     std::vector<world::Bounds> checkpoints_,hazards_;
     std::vector<bool> bots_;

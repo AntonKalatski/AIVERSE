@@ -12,7 +12,7 @@
 #include <vector>
 #include "MapDoc.h"
 #include "engine/data/Json.h"
-#include "modules/rts/RtsData.h"
+#include "engine/game/GameData.h"
 #include "engine/data/JsonCompose.h"
 
 namespace aiverse::editor {
@@ -39,8 +39,7 @@ struct Project {
     // genre; ask for the capability the code needs instead (below), and widen that capability, not the branch.
     std::string hostId() const { return manifest.getStr("module", "rts"); }
     // Capabilities (G2). Each says what the open project's data and host can do today.
-    bool worldSpaceMaps() const { return hostId() == "fps"; }      // maps are world-space scene documents (MapDoc data.fps)
-    bool gridMaps() const { return !worldSpaceMaps(); }            // maps are flat / planet grid documents (MapDoc data.extra)
+    // Map kind is a property of the document (MapDoc data.worldSpace), never of the project.
     bool actorSessionPlay() const { return hostId() == "fps"; }    // Play runs the actor-session client (separate process)
     bool actorSessionRules() const { return hostId() == "fps"; }   // rules are the actor-session config, not game::Rules
     bool reloadRules();           // parse rulesJson -> rules; false keeps the previous rules

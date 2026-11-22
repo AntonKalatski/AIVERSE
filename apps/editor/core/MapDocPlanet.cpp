@@ -6,8 +6,8 @@
 #include <filesystem>
 #include <stdexcept>
 #include "engine/core/Fixed.h"
-#include "modules/rts/RtsMap.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/MapGrid.h"
+#include "engine/game/Sphere.h"
 
 namespace aiverse::editor {
 

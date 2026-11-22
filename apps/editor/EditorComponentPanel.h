@@ -59,7 +59,7 @@ inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
 }
 
 inline bool drawDocumentColliderBoundsField(MapDoc& map, DocumentEntityRef ref) {
-    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    if (ref.source != DocumentEntityRef::Source::ActorCollider) return false;
     Json component;
     if (!readDocumentComponent(map, ref, DocumentComponentKind::Collider, component))
         return false;
@@ -155,7 +155,7 @@ inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
                 drawDocumentRotationScaleFields(map, ref);
                 break;
             case DocumentComponentKind::Collider: {
-                const Json* object = fpsDocumentEntity(map.data.fps, ref);
+                const Json* object = fpsDocumentEntity(map.data.extra, ref);
                 if (object && (*object)["yaw"].isNumber()) {
                     ImGui::TextDisabled("Oriented box uses the Transform rotation and scale.");
                     if ((*object)["id"].isNumber())

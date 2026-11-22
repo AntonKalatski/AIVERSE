@@ -24,5 +24,5 @@
 1. Run native `aiverse_tests`/CTest once the user-requested consolidated validation starts. Fix any harness linkage/compilation errors and assert the injection point corresponds to intended model/proxy buffer creation. The RecordingDevice mock does not track buffer cleanup or GPU submission lifetimes.
 2. Test HLOD proxy upload failure specifically via allocation labeling or tagged test-device instrumentation; the current first-allocation assumption is not a guaranteed HLOD identification contract.
 3. Cover GPU idle refusal and staged-retirement ownership: Stage 26's local `GeometryScene staged` may orphan pending models if GPU idle fails. Add host-owned retryable retirement storage rather than releasing references without proof.
-4. Finish staging remaining `RtsView` GPU owners (terrain/fog/overlays/roads/shores) and reconcile latest MotionWeave in a real conflict-aware merge.
+4. Finish staging remaining `GameView` GPU owners (terrain/fog/overlays/roads/shores) and reconcile latest MotionWeave in a real conflict-aware merge.
 5. Then run consolidated native configure/build/CTest plus Metal/Vulkan/GLES backend validation before considering main merge.

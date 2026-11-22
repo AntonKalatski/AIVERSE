@@ -2,9 +2,9 @@
 
 ## Branch, commits, files
 - Working branch `feature/lens-motionweave-integration`. `main` unchanged.
-- `8ca53dbcf58dfae096e207a6278bc22aa180c8c5`, `1c3949506c5875460fb2fff49e19cfd682465565`: `modules/rts/view/Rts2DView.h`, non-mutating-to-visual-clock prepared API declaration.
-- `a6c3fd2bbdcef31c5216f080cdc50958a7f663d0`: `modules/rts/view/RtsSprites.cpp`, `Rts2DView::submitPrepared(Renderer3D&)`.
-- `bb5d2418450b613d9d9870456109589b66eac820`, `9dd12e57a7b876c513fb149f95d9bf9337f3a9b8`: `modules/rts/view/RtsView.h/.cpp` forwards prepared sprite-only draw.
+- `8ca53dbcf58dfae096e207a6278bc22aa180c8c5`, `1c3949506c5875460fb2fff49e19cfd682465565`: `engine/view/game/Game2DView.h`, non-mutating-to-visual-clock prepared API declaration.
+- `a6c3fd2bbdcef31c5216f080cdc50958a7f663d0`: `engine/view/game/GameSprites.cpp`, `Rts2DView::submitPrepared(Renderer3D&)`.
+- `bb5d2418450b613d9d9870456109589b66eac820`, `9dd12e57a7b876c513fb149f95d9bf9337f3a9b8`: `engine/view/game/GameView.h/.cpp` forwards prepared sprite-only draw.
 - `83419fc44e1be4aa380dd7b56bdadf581299be75`: `engine/render/CameraRenderPipeline.h` adds optional after-scene callback after `renderer_.render` and before `resolvePostFx`.
 - `3a8bbc3a78f404fbb5870fdde7434e76cc9dee28`, `e6a84459f87d2c2e577e3f914f8bef1835a50bbd`: `engine/render/CameraRuntimeHost.h` and `CameraClientAdapter.h` forward optional callback via defaulted template parameter preserving previous call sites.
 - `6038d3a9fa7e2d5970171bfe17512eb2d395e0d7`, `54bc438a42bb170b524eae03f81f497d70c37e6c`: `apps/client/ClientFx.h/.cpp` `renderPrepared(Camera3D,viewProj,width,height,Lighting)`.

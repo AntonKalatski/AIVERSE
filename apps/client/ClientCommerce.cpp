@@ -1,4 +1,4 @@
-// The city economy in the client (rules "commerce", modules/rts/RtsCommerce.h): at a door the top bar names the
+// The city economy in the client (rules "commerce", engine/game/Commerce.h): at a door the top bar names the
 // place, E opens the list of deals, the number keys make them (kCmdCommerce). Walking away closes the list.
 #include "GameClient.h"
 #include <algorithm>

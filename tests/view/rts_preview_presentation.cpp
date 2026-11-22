@@ -1,4 +1,4 @@
-#include "modules/rts/view/RtsPreviewRenderProvider.h"
+#include "engine/view/game/GamePreviewRenderProvider.h"
 #include "../AlwaysCheck.h"
 #include <cmath>
 
@@ -29,9 +29,9 @@ int main() {
     AIVERSE_TEST_CHECK(std::fabs(previewFrameDt(9.,5.)-.1f)<.00001f);
     AIVERSE_TEST_CHECK(previewFrameDt(4.,5.)==0.f);
     // A separate host can render the same authored preview without linking
-    // against RtsView, its model loaders, or genre-specific renderer code.
+    // against GameView, its model loaders, or genre-specific renderer code.
     int readyCalls=0,ghostDraws=0,previewDraws=0;
-    bool submitted=RtsPreviewRenderProvider::submitGhost(
+    bool submitted=GamePreviewRenderProvider::submitGhost(
         17,{2,3,4},false,0.,
         [&](uint16_t type){++readyCalls;return type==17;},
         [&](const GhostPresentation& request){
@@ -40,13 +40,13 @@ int main() {
             AIVERSE_TEST_CHECK(request.tint.x==1.f);
         });
     AIVERSE_TEST_CHECK(submitted && readyCalls==1 && ghostDraws==1);
-    submitted=RtsPreviewRenderProvider::submitGhost(
+    submitted=GamePreviewRenderProvider::submitGhost(
         18,{2,3,4},true,0.,
         [&](uint16_t){++readyCalls;return false;},
         [&](const GhostPresentation&){++ghostDraws;});
     AIVERSE_TEST_CHECK(!submitted && readyCalls==2 && ghostDraws==1);
     int clockReads=0;
-    submitted=RtsPreviewRenderProvider::submitModelPreview(
+    submitted=GamePreviewRenderProvider::submitModelPreview(
         23,5,6.0,0.5f,
         [&](uint16_t type){return type==23;},
         [&](const ModelPreviewPresentation& request){
@@ -60,7 +60,7 @@ int main() {
             AIVERSE_TEST_CHECK(std::fabs(dt-.05f)<.00001f);
         });
     AIVERSE_TEST_CHECK(submitted && previewDraws==1 && clockReads==1);
-    submitted=RtsPreviewRenderProvider::submitModelPreview(
+    submitted=GamePreviewRenderProvider::submitModelPreview(
         24,5,6.0,0.5f,
         [&](uint16_t){return false;},
         [&](const ModelPreviewPresentation&){++clockReads;return 0.;},

@@ -1,9 +1,9 @@
-// Boss encounters (rules "encounters", RtsEncounters.h over the boss-encounters library): parsing and errors,
+// Boss encounters (rules "encounters", Encounters.h over the boss-encounters library): parsing and errors,
 // boss phases / patterns / adds / enrage on real units, telegraph strikes -> damage + rules statuses + immunity,
 // ability-bound attacks, mob wander / hunt / flee orders, the personal boss schedule, determinism, saves, rollback,
 // games without the block untouched, and the Golem Pit sample to a result.
-#include "modules/rts/RtsEncounters.h"
-#include "modules/rts/RtsAI.h"
+#include "engine/game/Encounters.h"
+#include "engine/game/ComputerPlayer.h"
 
 namespace {
 const char* kEncRules = R"J({
@@ -248,7 +248,7 @@ TEST(encounters_determinism_save_and_rollback) {
     const std::string map = encMap(R"({"type":"hero","owner":1,"pos":[20.5,4.5]},{"type":"golem","owner":2,"pos":[20.5,16.5]},
         {"type":"crawler","owner":2,"pos":[6.5,12.5]},{"type":"crawler","owner":2,"pos":[33.5,12.5]})");
     auto play = [&](Simulation& sim, int ticks, std::vector<uint64_t>* sums) {
-        game::RtsAI a(1, 7), b(2, 7);
+        game::ComputerPlayer a(1, 7), b(2, 7);
         for (int i = 0; i < ticks; ++i) {
             a.update(sim); b.update(sim);
             sim.step();
@@ -294,9 +294,9 @@ TEST(encounters_golem_pit_sample_ends_with_a_result) {
     rules.set("scripts", Json::array());   // the sample's story script needs the project reader (headless covers it)
     for (uint64_t seed : {1, 2}) {
         SimConfig cfg; cfg.seed = seed;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(rules, Json::parseFile(dir + "/maps/pit.json"));
-        game::RtsAI a(1, seed), b(2, seed);
+        game::ComputerPlayer a(1, seed), b(2, seed);
         int phases = 0, telegraphs = 0, statuses = 0;
         while (sim.result() == 0 && sim.tick() < 20u * 600) {
             a.update(sim); b.update(sim);

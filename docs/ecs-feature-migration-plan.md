@@ -8,7 +8,7 @@
 
 ## Goal, scope and non-goals
 
-Build games by composing independent, genre-neutral **components (authoritative state) + systems (behavior)**. RTS, FPS, racing, survival, RPG, board game and future genre presets only configure the same systems; a system must not require `RtsModule&`, `fps::Module&` or a genre enum.
+Build games by composing independent, genre-neutral **components (authoritative state) + systems (behavior)**. RTS, FPS, racing, survival, RPG, board game and future genre presets only configure the same systems; a system must not require `GameCore&`, `fps::Module&` or a genre enum.
 
 This is a **catalogue-based inventory plus a source inspection of the main RTS/FPS integration points**, not proof that every package was exhaustively line-reviewed or tested. Read `libraries/catalog.json` and referenced implementations when starting each implementation epic; update this document as actual integration is verified.
 
@@ -30,8 +30,8 @@ Snapshot totals by proposed destination: `P` 21; `A` 20; `D` 9; `S` 46; `T` 21; 
 ## Current integration reality — evidence, not aspiration
 
 1. **ECS infrastructure:** `engine/core/ECS.h` implements sparse-set entity pools, generation-safe entity handles and opt-in COW. `engine/sim/Simulation.h` manages deterministic commands, RNG, ordered systems, World snapshots/checksums and restored hooks. `engine/sim/CommonComponents.h` provides shared `Transform`, `Owner`, `Parent`, `LocalTransform`, `WorldTransform`. This is common infrastructure; it does not make individual genre algorithms universal by itself.
-2. **RTS:** `modules/rts/RtsModule.cpp::setup` registers systems into `Simulation` in a specified deterministic order, including `economy`, `fields`, `production`, `construction`, `settlers`, `lanes`, `garrison`, `orders`, `abilities`, `targeting`, `movement`, `weapons`, `projectiles`, `death`, `capture`, `vision`, `victory`, `triggers`, `traffic` and more. Many are closures on `this` or delegate to genre-specific objects. `GameState` also holds substantial state as a World resource. **Registered with the ECS scheduler ≠ independent ECS mechanic.**
-3. **FPS:** `modules/fps/FpsModule.h` has monolithic `Actor`, `State::actors/projectiles/loot/vehicles/history` and optional `fps.ecsAuthority`. `ActorRuntime` / `ProjectileRuntime` / `LootRuntime` / `VehicleRuntime` can be canonical between ticks; `Module::tick` still processes legacy workspaces, `Module::shoot` constructs its own shots and traces, and `Module::moveActorEcs` copies motor fields across an adapter. These are transition scaffolds, **not final feature-sized ECS components**.
+2. **RTS:** `engine/game/GameCore.cpp::setup` registers systems into `Simulation` in a specified deterministic order, including `economy`, `fields`, `production`, `construction`, `settlers`, `lanes`, `garrison`, `orders`, `abilities`, `targeting`, `movement`, `weapons`, `projectiles`, `death`, `capture`, `vision`, `victory`, `triggers`, `traffic` and more. Many are closures on `this` or delegate to genre-specific objects. `GameState` also holds substantial state as a World resource. **Registered with the ECS scheduler ≠ independent ECS mechanic.**
+3. **FPS:** `engine/actor/ActorModule.h` has monolithic `Actor`, `State::actors/projectiles/loot/vehicles/history` and optional `fps.ecsAuthority`. `ActorRuntime` / `ProjectileRuntime` / `LootRuntime` / `VehicleRuntime` can be canonical between ticks; `Module::tick` still processes legacy workspaces, `Module::shoot` constructs its own shots and traces, and `Module::moveActorEcs` copies motor fields across an adapter. These are transition scaffolds, **not final feature-sized ECS components**.
 4. **Shared projectile pipeline:** `libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h`, `EcsProjectileSystems.h`, `EcsDamageSystems.h` provide genre-neutral launch → spawn → flight → impact/damage stages and independent cross-genre fixtures. This pipeline **is not yet the authoritative FPS/RTS weapon path**. Reload, hitscan, spread/recoil, AoE, armor, factions and status effects require follow-on component/policy composition.
 5. **Existing policies:** `libraries/include/aiverselib/mechanics/Weapons.h`, `Locomotion.h`, `Melee.h`, `CombatActions.h`, `VehicleData.h`, `Senses.h` and the other catalogued C++ packages should be **reused**, not replaced with freshly duplicated algorithms.
 6. **Editor:** `apps/editor/EditorEntityAdapter.h` and `SceneRenderable.h` already unify some document identity, selection and scene submission, but `docs/editor-unification-handoff.md` explicitly reports incomplete native ECS reflection/writeback, transform gizmo and visual/build validation.
@@ -39,7 +39,7 @@ Snapshot totals by proposed destination: `P` 21; `A` 20; `D` 9; `S` 46; `T` 21; 
 
 ## Main RTS mechanic inventory — actual subsystem registrations
 
-The following table inventories real `RtsModule::setup` system names and groups their migration destinations. Do not move the order of effects (especially death/kill/trigger/victory) until replay parity is established.
+The following table inventories real `GameCore::setup` system names and groups their migration destinations. Do not move the order of effects (especially death/kill/trigger/victory) until replay parity is established.
 
 | Existing RTS systems / paths | Shared component families | Proposed independent ECS systems / owners |
 |---|---|---|
@@ -102,11 +102,11 @@ This is a **target dependency model**, NOT permission to reorder the current RTS
 | Epic | Priority | Deliverables / scope | Depends on | Acceptance and rollback gate |
 |---|---|---|---|---|
 | **E00** Feature baseline and ownership | **P0** | Freeze source branch/PR heads, list every existing host call, golden RTS/FPS saves/replays and checksum traces; no simultaneous gameplay edits from separate agents | none | Golden outputs + ownership map archived before modifying gameplay |
-| **E01** ECS runtime contract | **P0** | Public component registry/type IDs, schema/version, data-only state, explicit read/write/resource/structural sets, scheduler stages and command buffers | E00 | Determinism/COW/rollback/sanitizer; native project uses system without `RtsModule`/`fps::Module` |
+| **E01** ECS runtime contract | **P0** | Public component registry/type IDs, schema/version, data-only state, explicit read/write/resource/structural sets, scheduler stages and command buffers | E00 | Determinism/COW/rollback/sanitizer; native project uses system without `GameCore`/`fps::Module` |
 | **E02** Serialization and mapping | **P0** | Stable Entity references; old RTS IDs/FPS slot/id ↔ generation-safe Entity; serializer/hash per component/resource; network/save adapters; rollback history | E01 | FPS v9 + old RTS save load; zero lost entities, byte/checksum replay parity |
 | **E03** Universal weapon pipeline | **P0** | Adopt existing `ecs-weapon-launch` → flight → damage in real FPS and RTS. Add orthogonal hitscan, recoil/spread, reload, penetration, splash, guidance, team policies and destruction | E01-E02 | Same weapon policy in two host genres + gun on vehicle; old FPS/RTS fire/hit/kill parity |
 | **E04** FPS authority & actor split | **P0** | Remove gameplay dependence on tick-local `State::actors`: input, motor, health, gun/ammo, inventory, vehicles, loot, history, bots/match; retire `ecsHydrate/ecsMirror` only after parity | E01-E03 | Default vs `fps.ecsAuthority` deterministic parity; authoritative server, rewind, bot match, 100-player fixture |
-| **E05** RTS shared combat + orders | **P0** | `RtsCombat` launch/damage/abilities; `RtsUnits` orders/movement; no direct global `RtsModule&` for shared combat | E01-E03 | RTS skirmish, artillery, AoE, army pathing and canonical event order pass |
+| **E05** RTS shared combat + orders | **P0** | `RtsCombat` launch/damage/abilities; `RtsUnits` orders/movement; no direct global `GameCore&` for shared combat | E01-E03 | RTS skirmish, artillery, AoE, army pathing and canonical event order pass |
 | **E06** Movement + navigation | **P1** | Common NavigationAgent/PathRequest/Steering/Locomotion + terrain, crowd, boats/air, orbit transfer, climb/swim/ladder; world nav remains derived | E01,E02 | FPS/RTS/third-party native actor take same system without genre branch |
 | **E07** Vehicles, mounted weapons, traffic | **P1** | VehicleMotion/Seat/Passenger/Driver + TrafficAgent + attached shared WeaponLaunch; same code across FPS, RTS top-down and racing | E03,E06 | Exit/re-enter, seat authority, rollback, vehicle shooting, city traffic fixture |
 | **E08** Economy, inventory, production, construction | **P1** | ResourceStore, Storage, Gatherer, Recipe, ProductionQueue, BuildSite, Crafting, Trade; share `construction`, `inventory`, `production-networks` algorithms | E01,E02,E05 | RTS supply/capacity/field economy and survival crafting produce unchanged deterministic results |
@@ -150,7 +150,7 @@ Valid statuses: `not-started`, `policy-only`, `ecs-library-only`, `adapter-activ
 - **PR #7:** FPS runtime + Editor working branch. Use `docs/editor-unification-handoff.md`; log **every implementation** commit with a separate handoff documentation commit and exact SHA.
 - **PR #8/ECS experiments:** some infrastructure has been integrated; do not silently enable new scheduler/COW or overwrite FPS/editor changes using stale branch content. See `docs/ecs-agent-handoff.md`.
 - **PR #17:** renderer PCSS/TAA work, separate from ECS gameplay conversion. Avoid renderer collision, reconcile by diff/merge only when appropriate; it is **not** proof of ECS system compatibility.
-- Assign one owner at a time to `modules/fps/FpsModule.cpp`, `modules/rts/RtsCombat.cpp` and shared `engine/core/ECS.h`; other agents can work on independent public libraries/tests/skills.
+- Assign one owner at a time to `engine/actor/ActorModule.cpp`, `engine/game/Combat.cpp` and shared `engine/core/ECS.h`; other agents can work on independent public libraries/tests/skills.
 - Never reorder RTS `sim.addSystem` or FPS same-tick hit/death/score updates without **old vs new event sequence** evidence.
 - Avoid silently overwriting `AGENTS.md`, Editor adapter or handoff changes made by concurrent agents.
 
@@ -165,8 +165,8 @@ Account-level `engine/meta` shop, balances, offers, payments, social and LiveOps
 - `libraries/catalog.json` (120 packages and per-package sources)
 - `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `docs/mechanics-packages.md`
 - `engine/core/ECS.h`, `engine/sim/Simulation.h`, `engine/sim/CommonComponents.h`
-- `modules/rts/RtsModule.cpp`, `RtsModule.h`, `RtsData.h`
-- `modules/fps/FpsModule.cpp`, `FpsModule.h`, `FpsSystems.h`
+- `engine/game/GameCore.cpp`, `GameCore.h`, `GameData.h`
+- `engine/actor/ActorModule.cpp`, `ActorModule.h`, `ActorSystems.h`
 - `engine/meta/Meta.h`, `docs/editor-unification-handoff.md`, `docs/ecs-agent-handoff.md`, `docs/overview.md`
 
 ## Appendix A — complete package inventory (catalog snapshot)
@@ -179,7 +179,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `math` | simulation / engine-reference | **A** | `engine/core/FixedMath.h` |
 | `collections` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Collections.h` |
 | `graphs` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Graphs.h` |
-| `spatial` | simulation / engine-reference | **D** | `modules/rts/RtsModule.h` |
+| `spatial` | simulation / engine-reference | **D** | `engine/game/GameCore.h` |
 | `grid` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Grid.h` |
 | `navigation` | simulation / engine-reference | **D** | `docs/pathfinding.md` |
 | `behavior` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Behavior.h` |
@@ -188,7 +188,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `rules` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Rules.h` |
 | `progression` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Progression.h` |
 | `objectives` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Objectives.h` |
-| `generation` | simulation / engine-reference | **D** | `modules/rts/gen/MapGen.h` |
+| `generation` | simulation / engine-reference | **D** | `engine/game/gen/MapGen.h` |
 | `presentation` | presentation / cpp-foundation | **P** | `libraries/include/aiverselib/Presentation.h` |
 | `ui-patterns` | presentation / engine-reference | **P** | `engine/ui/templates/README.md` |
 | `verification` | tools / engine-reference | **T** | `tests/check_headless_restore.py` |

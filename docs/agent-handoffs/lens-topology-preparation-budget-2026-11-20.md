@@ -19,7 +19,7 @@ excluded. Other frame owners retain their separate budgets. Full Sprite/
 MotionWeave/Lighting/Overlay rollback and real GPU validation remain open.
 No save format change; additive Terrain budget APIs only.
 
-Paths: new budget header, RtsTerrainRender.h/.cpp, RtsTerrainDetailMesh.cpp,
+Paths: new budget header, GameTerrainRender.h/.cpp, GameTerrainDetailMesh.cpp,
 tests/tests.cpp. Tests cover overflow/shared leases, zero-budget rejection before
 GPU calls, aggregate candidates, prewarm rejection, rollback/retry and commit
 release for coarse and smooth maps. git diff --check PASS. Native tests for this
@@ -36,7 +36,7 @@ all failures before claiming readiness. See validation handoff for existing
 Commit `fcf72fafd934b226c3878684000d61a001baf263`: Terrain visibility is R8, so the allocator must admit
 R8 with one byte/pixel as well as RGBA8 with four. The initial source gate
 would have rejected valid map preparations (caught by review before tests).
-Added RtsView setTerrainTopologyPreparationBudgetBytes and usage accessor so
+Added GameView setTerrainTopologyPreparationBudgetBytes and usage accessor so
 hosts can tune the limit without accessing the private renderer. No save change.
 Previous aiverse_game_view native build PASS; this correction and budget tests
 NOT RUN yet. git diff --check PASS. All build outputs on KINGSTON.

@@ -11,7 +11,7 @@ place a feature works.
 
 1. Find the owner, not a host. `python3 tools/skills/catalog.py search <words>` (English and Russian), the library
    catalog and `docs/`; then `grep` the code for the data blocks and types. List every module that implements the
-   same thing (e.g. cars were `modules/fps/FpsVehicles.cpp` and `modules/rts/RtsDriving.cpp` before `engine/vehicles`).
+   same thing (e.g. cars were `engine/actor/ActorVehicles.cpp` and `engine/game/Driving.cpp` before `engine/vehicles`).
 2. Split the capability into: data format (rules / map blocks, one format for every project, in the map's own
    units), simulation policy (Fixed math, no module types), presentation (view, HUD, camera) and host glue (who owns
    the entities, the collision world, the input). Only host glue may stay per module.
@@ -38,6 +38,6 @@ Examples: races (`mechanics/RaceSession.h`, `RaceSessionData.h`, `docs/races.md`
 `engine/vehicles/VehicleRace.h`), the vehicle system (`engine/vehicles`: components + one step, hosts implement only
 `VehicleHost` / `RaceHost`; docs/driving.md), controls -> pedals (`mechanics/VehicleDrive.h`), spline roads
 (`engine/roads`, drawn by both clients; the old forwarders are deleted), the race HUD (`engine/ui/RaceHud.h`) and chase camera
-(`engine/render/ChaseCamera.h`).
+(`engine/render/CameraBehavior.h`).
 
 Runtime library: none (workflow).

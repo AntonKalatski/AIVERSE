@@ -51,7 +51,7 @@ inside components, no authoritative per-genre mirror.
   `ecs_cross_genre_projectile_test`, FPS/RTS parity fixtures,
   native linkage, save/load migration and editor lifecycle checks.
 - IMPORTANT: adding this public library does **not** switch either built-in
-  `fps::Module` or `RtsModule` to it. They still hold old gameplay state.
+  `fps::Module` or `GameCore` to it. They still hold old gameplay state.
   Migrate each path with a deliberate authoritative-state ownership transition
   and golden replay/save/network parity. Do not mark production-ready on
   static review; compile and execute CTest on target platforms.
@@ -68,7 +68,7 @@ authority**. Preserve exact same-tick reload completion, selection and
 fire conditions; verify `ecsReloadAuthorityParity` before extracting
 a dedicated scheduler stage.
 
-The built-in RTS `RtsModule::sysEconomy` updates its existing ECS
+The built-in RTS `GameCore::sysEconomy` updates its existing ECS
 `Unit.hp` and `Unit.energy` via
 `stepFixedResourceRegeneration` in `FixedRegeneration.h`.
 The generic ECS `EnergyRegenerationComponent` system uses that same

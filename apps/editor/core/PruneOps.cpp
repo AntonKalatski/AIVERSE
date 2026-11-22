@@ -10,8 +10,8 @@
 #include <set>
 #include <stdexcept>
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 
 namespace aiverse::editor {
 using namespace aiverse::game;
@@ -47,7 +47,7 @@ Log record(const Json& rules, const Json& map) {
     JsonAccessLog log;
     Json::setAccessLog(&log);
     try {
-        Simulation sim(SimConfig{}, std::make_unique<RtsModule>());
+        Simulation sim(SimConfig{}, std::make_unique<GameCore>());
         sim.setup(rules, map);
     } catch (...) {
         Json::setAccessLog(nullptr);
@@ -154,9 +154,9 @@ std::vector<Candidate> prune(Json& raw, const Json& map) {
 
 std::vector<uint64_t> botHashes(const Json& rules, const Json& map) {
     SimConfig cfg; cfg.seed = 11;
-    Simulation sim(cfg, std::make_unique<RtsModule>());
+    Simulation sim(cfg, std::make_unique<GameCore>());
     sim.setup(rules, map);
-    std::vector<RtsAI> bots;
+    std::vector<ComputerPlayer> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, 11);
     std::vector<uint64_t> h;
     for (uint32_t t = 0; t < 1200 && sim.result() == 0; ++t) {

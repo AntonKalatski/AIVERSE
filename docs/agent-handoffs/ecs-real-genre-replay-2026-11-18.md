@@ -10,7 +10,7 @@ Implementation commits:
 - `d5a719fddc3f71d1b61f0518bf1b62cdf7b9c9d9` — add `tests/ecs_real_genre_replay_test.cpp`
 - `8c4fdf733a57d8b6413df4587abf6a367796ea31` — register the test in root `CMakeLists.txt` as `ecs_real_genre_replay_test`
 
-Test uses actual `game::RtsModule` with `templates/mushrooms` garrison commands
+Test uses actual `game::GameCore` with `templates/mushrooms` garrison commands
 and actual `fps::Module` with `examples/fps/arena` movement/fire commands.
 Two independent instances accept same-tick commands in opposite arrival order,
 then compare every-tick checksums. At tick 20, snapshot + disk save are made,

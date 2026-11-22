@@ -289,7 +289,7 @@ inline uint16_t stateKind(const DodgeState&){return 33;}
 inline uint16_t stateKind(const GuardState&){return 34;}
 inline uint16_t stateKind(const PoiseState&){return 35;}
 inline uint16_t stateKind(const LockOnState&){return 36;}
-// Feed the canonical record bytes into the simulation checksum (e.g. RtsModule/NativeState hashing).
+// Feed the canonical record bytes into the simulation checksum (e.g. GameCore/NativeState hashing).
 template<class State> requires requires(Archive& a,State& s){stateKind(s);io(a,s);}
 void hashCombatState(Hasher& h,const State& s){std::string bytes;Archive a(&bytes);auto copy=s;uint16_t kind=stateKind(copy);a(kind,copy);h.str(bytes);}
 template<class State> requires requires(Archive& a,State& s){stateKind(s);io(a,s);}

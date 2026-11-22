@@ -18,10 +18,13 @@ Sky stays with PRISMA, climate with PHYSIS, VFX with SpectraFX; compose owners.
 
 Planets: the sea of cube-sphere bodies draws with NEREID's wave model from `engine/render/NereidWaveShaders.h`
 (shared with plane water; `nereidSphereNormal` / `nereidSpherePatch` / `nereidSphereFoam` sample it triplanar),
-colour by depth and coast foam (`modules/rts/view/RtsPlanetShaders.h` only calls them). Water bodies on spheres:
+colour by depth and coast foam (`engine/view/game/GamePlanetShaders.h` only calls them). Water bodies on spheres:
 `<aiverselib/water/NereidSphereWater.h>` (`WaterSphereComponent` shells, `sampleSphereWater`,
 `addSphereWaterSamplingSystem` / `addSphereWaterBuoyancySystem`, `registerNereidSphereWaterPersistence`; radial depth
-and up, a current about an axis). The RTS planet host creates them for bodies with `"nereid"` (docs/planets.md §1);
+and up, a current about an axis, optional `WaterSphereWavesComponent` swell, `waterSphereFromJson` / `spawnWaterSpheres`;
+events in `NereidSphereInteractions.h`: `attachSphereWaterActor`, `addSphereWaterInteractionSystem`; or
+`NativeWaterPipelineConfig::enableSphereWater`). Genre-neutral: any host may use them. The planet host creates them for
+bodies with `"nereid"` (docs/planets.md §1);
 extend sphere water there, not in the planet code. Test: `ecs_nereid_sphere_water_test`.
 
 
@@ -127,7 +130,7 @@ and record actual build/CTest results in `docs/nereid/HANDOFF.md`.
 ## Stage 5 — legacy waterNetwork / tile-map importer (experimental)
 
 For **existing** RTS/editor water, read
-`modules/rts/view/NereidLegacyWaterAdapter.h` and
+`engine/view/game/NereidLegacyWaterAdapter.h` and
 `docs/nereid/ARCHITECTURE.md`.
 
 Do not import control points directly: old `waterNetwork` uses

@@ -125,7 +125,7 @@ links `aiverse_grpc`. Developer tools and tests of the project can be plain `add
 
 ## API and execution order
 
-`modules/rts/RtsNative.h` contains the `NativeModule` interface:
+`engine/game/Native.h` contains the `NativeModule` interface:
 
 - `setup(game, sim, state, config)` — after the map, Lua and built-in systems are created. Settings are validated here;
   a load error is a `std::runtime_error` with the module ID.
@@ -133,7 +133,7 @@ links `aiverse_grpc`. Developer tools and tests of the project can be plain `add
   are visible.
 - `command(game, sim, state, cmd)` — when a command executes, before the tick systems.
 
-Between modules the engine runs `world.flush()`. A module may use the public `RtsModule` API (for example, `spawn`),
+Between modules the engine runs `world.flush()`. A module may use the public `GameCore` API (for example, `spawn`),
 existing components, `sim.rng()` and `sim.emit()`. Lua keeps working through the existing API and sees the changes in the
 shared world.
 
@@ -167,8 +167,8 @@ only the declared hooks, for the listed modules in rules.json order, so a game w
 
 | Bit | Method | Called |
 |---|---|---|
-| `kHookSpeed` | `unitSpeed(game, sim, state, unit, add, mul)` | from `RtsModule::stat` for `Stat::Speed`: change `add` (distance per second) / `mul`. Read-only and cheap: it runs for every moving unit every tick |
-| `kHookSend` | `allowSend(game, sim, state, from, to)` | `RtsModule::canSend`, the send command, bots: `false` refuses sending garrison units from one building to another |
+| `kHookSpeed` | `unitSpeed(game, sim, state, unit, add, mul)` | from `GameCore::stat` for `Stat::Speed`: change `add` (distance per second) / `mul`. Read-only and cheap: it runs for every moving unit every tick |
+| `kHookSend` | `allowSend(game, sim, state, from, to)` | `GameCore::canSend`, the send command, bots: `false` refuses sending garrison units from one building to another |
 | `kHookDamage` | `damage(game, sim, state, target, source, dmg)` | before damage is applied (`dealDamage`): the module may change `dmg` (0 = nothing happens). `true` stops asking later modules |
 | `kHookDeath` | `unitDied(game, sim, state, unit, owner, pos, silent)` | in the death system while the unit still exists (`silent`: removed without death effects) |
 | `kHookAssault` | `assault(game, sim, state, structure, attacker, defender, attackerLost, defenderLost)` | a unit hit an enemy garrison: units lost on both sides |
@@ -180,7 +180,7 @@ no hidden state. `unitSpeed`, `allowSend` and `allowDefeat` get the state read-o
 any number of times. For presentation a module emits `kEvNative` (`sim.emit`): `value`, `a`, `b`, `pos` are the
 module's own; view scripts and the client read them like any other event.
 
-`RtsModule::mapData()` is the map the match was set up from (kept only for games that list native modules): `setup`
+`GameCore::mapData()` is the map the match was set up from (kept only for games that list native modules): `setup`
 reads the module's own map blocks from it, `config` stays the place for rules-level defaults. Other engine systems a
 module may build on: `environment()` (weather, wind, zones, splines: `def()` / `state()`, `killedByWeather`),
 `payloadAccepts` (the unit filter of an ability's payload), `releaseUnit` (one unit leaves a garrison for a target the
@@ -206,7 +206,7 @@ keep their checksums. Hooks run inside the simulation in `nativeModules` order a
 | `kNativeHookGarrison` | `void garrisonGrowth(game, sim, state, structure, owner, Fixed& rate, int& cap)` | every garrison with a growth interval, every tick | `rate` multiplies the growth of this tick, `cap` is the garrison maximum. Neutral structures (owner 0) come in with rate 0: they grow only when a module raises it |
 | `kNativeHookUpgrade` | `bool upgradeOrder(game, sim, state, structure, player, uint16_t& type, Fixed& cost, Fixed& time)` | an upgrade order (`kCmdUpgrade`) that passed the built-in checks, before it is paid | replace `type` by another structure type; `cost` multiplies the resource and garrison cost (upfront cost model), `time` the build time; false refuses the order |
 
-Public `RtsModule` API for such rules:
+Public `GameCore` API for such rules:
 
 - `castPlayerAbilityFree(sim, player, ability, point, target)` applies the payload of a player ability at once: no cost,
   cooldown, charges or cast time (scripted casts).

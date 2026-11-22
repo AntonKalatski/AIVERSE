@@ -23,7 +23,7 @@ never writes cells, `waterNetwork`, saves or the checksum.
   converter-owned.
 - `TerrainRenderer::legacyWaterLayout` is the single computation of bodies, cells and
   levels; the legacy mesh is now built from it, so both renderers read identical data.
-- `legacyWaterToNereidManifest` (`modules/rts/view/RtsWaterNereid.h`) writes a canonical
+- `legacyWaterToNereidManifest` (`engine/view/game/GameWaterNereid.h`) writes a canonical
   `{"nereidWater": {"surfaces": [...]}}` and validates it with the ordinary NEREID parser:
   - sheet -> one `box` over the map plus its 12-cell apron at the sheet height;
   - body -> one `box` over its bounding cells when the terrain hides every other cell of

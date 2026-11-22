@@ -1,10 +1,10 @@
-// Real RtsModule + fps::Module integration gate, not only mock genre hosts.
+// Real GameCore + actor::ActorHost integration gate, not only mock genre hosts.
 // The same deterministic engine snapshot/save/replay contract must survive
 // actual genre adapters and gameplay commands (FPS state lives on ECS only).
 #include "engine/data/JsonCompose.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/fps/FpsModule.h"
+#include "engine/game/GameCore.h"
+#include "engine/actor/ActorModule.h"
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -30,14 +30,14 @@ std::unique_ptr<Simulation> make(Genre genre,bool cow) {
         const std::string base=root+"/templates/mushrooms/";
         rules=readComposedJson(base+"rules.json",fileReader());
         map=Json::parseFile(base+"maps/duel.json");
-        module=std::make_unique<game::RtsModule>();
+        module=std::make_unique<game::GameCore>();
     } else {
         const std::string base=root+"/examples/fps/arena/";
         rules=Json::parseFile(base+"rules.json");
         map=Json::parseFile(base+"map.json");
         rules.member("fps").set("mode",Json::string("deathmatch"));
-        tickRate=fps::readConfig(rules).tickRate;
-        module=std::make_unique<fps::Module>();
+        tickRate=actor::readConfig(rules).tickRate;
+        module=std::make_unique<game::GameCore>();
     }
     auto sim=std::make_unique<Simulation>(
         SimConfig{91,tickRate,0,true},std::move(module));
@@ -93,14 +93,14 @@ std::vector<Command> commands(Genre genre,uint32_t tick,
         }
     } else {
         for(uint8_t player:{uint8_t(1),uint8_t(6)}) {
-            fps::Input input;
+            actor::Input input;
             input.sequence=tick+1;
             input.viewTick=tick;
             input.forward=(tick%9<5)?400:0;
             input.right=(tick%7<3)?150:0;
             input.yaw=player==1?Fixed{}:Fixed::fromRatio(1,2);
-            if(tick%11==0)input.buttons=fps::Fire;
-            Command cmd=fps::command(player,input);
+            if(tick%11==0)input.buttons=actor::Fire;
+            Command cmd=actor::command(player,input);
             cmd.tick=tick;
             batch.push_back(std::move(cmd));
         }

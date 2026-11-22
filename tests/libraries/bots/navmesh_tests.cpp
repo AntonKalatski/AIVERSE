@@ -1,4 +1,5 @@
 #include <aiverselib/bots/NavMeshData.h>
+#include "engine/game/GameCore.h"
 #include <aiverselib/bots/Fps.h>
 #include <iostream>
 #include <stdexcept>
@@ -19,7 +20,7 @@ int main(){try{
     CHECK(!navPath(*around.mesh,w,{-5_fx,{},{}},{5_fx,{},{}},1));
     // Real motor follows generated cell corridors to an objective, with no hand-authored waypoints.
     auto rules=Json::parse(R"({"fps":{"roundTicks":10000}})");auto map=Json::parse(R"({"players":[{"name":"A","team":1},{"name":"B","team":1}],"spawns":[[-5,0.01,0],[-8,0.01,-8]],"colliders":[{"id":1,"min":[-20,-1,-20],"max":[20,0,20]},{"id":2,"min":[-1,0,-6],"max":[1,4,6]}]})");
-    Simulation sim({1,60,0},std::make_unique<fps::Module>());sim.setup(rules,map);auto& module=static_cast<fps::Module&>(sim.module());auto mesh=buildNavMesh(module.collision(),c);CHECK(mesh.mesh);FpsState state;FpsConfig bot;
+    Simulation sim({1,60,0},std::make_unique<game::GameCore>());sim.setup(rules,map);auto& module=actor::host(sim);auto mesh=buildNavMesh(module.collision(),c);CHECK(mesh.mesh);ActorState state;ActorConfig bot;
     for(int i=0;i<900;++i){auto cmd=fpsCommand(sim,module,1,bot,{},state,Vec3{5_fx,Fixed::fromRatio(1,100),0_fx},&*mesh.mesh);CHECK(cmd);sim.submit(*cmd);sim.step();}
     CHECK((module.character(sim,1).pos-Vec3{5_fx,Fixed::fromRatio(1,100),0_fx}).xz().length()<1_fx);
     // Disconnected platforms must not be bridged by a clear horizontal sweep.

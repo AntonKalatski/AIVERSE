@@ -214,7 +214,7 @@ public:
     // Length in seconds of a sound's file (variant 0-based), 0 if unknown.
     float clipSeconds(SoundId id, int variant = 0) const;
     // The bank's "scripted": true — the game's scripts own the music and the UI sounds: the client
-    // and RtsAudio never start or stop music by themselves and leaving a match keeps UI sounds.
+    // and GameAudio never start or stop music by themselves and leaving a match keeps UI sounds.
     bool scripted() const;
     void setVoicePosition(VoiceId v, float x, float z) { setVoicePosition(v, x, 0, z); }
     void setVoicePosition(VoiceId v, float x, float y, float z);

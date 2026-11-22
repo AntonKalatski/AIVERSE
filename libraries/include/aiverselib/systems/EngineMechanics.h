@@ -1,5 +1,5 @@
 #pragma once
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "Loot.h"
 #include <optional>
 #include <span>
@@ -24,20 +24,20 @@ inline std::optional<Command> interactionCommand(BuiltinInteraction action,std::
 }
 struct StatValue {game::Stat stat;Fixed value;};
 // Read effective values from the existing authoritative modifier pipeline, never a second evaluator.
-inline std::optional<std::vector<StatValue>> effectiveStats(game::RtsModule& module,Simulation& sim,Entity entity,std::span<const game::Stat> requested){
+inline std::optional<std::vector<StatValue>> effectiveStats(game::GameCore& module,Simulation& sim,Entity entity,std::span<const game::Stat> requested){
     if(!sim.world().has<game::Unit>(entity))return {};
     for(auto stat:requested)if(stat>=game::Stat::Count)return {};
     std::vector<StatValue> values;for(auto stat:requested)values.push_back({stat,module.stat(sim,entity,stat)});return values;
 }
 struct StatusSnapshot {std::uint32_t flags=0;std::vector<game::StatusInst> active;};
-inline std::optional<StatusSnapshot> statuses(game::RtsModule& module,Simulation& sim,Entity entity){
+inline std::optional<StatusSnapshot> statuses(game::GameCore& module,Simulation& sim,Entity entity){
     if(!sim.world().has<game::Unit>(entity))return {};
     StatusSnapshot snapshot;snapshot.flags=module.statusFlags(sim,entity);
     if(auto* status=sim.world().tryGet<game::Statuses>(entity))snapshot.active=status->list;
     return snapshot;
 }
 // Simulation command/system hook only, after game-specific authority/target validation.
-inline bool applyStatus(game::RtsModule& module,Simulation& sim,Entity target,int definition,Fixed duration,const game::EffectCtx& context){
+inline bool applyStatus(game::GameCore& module,Simulation& sim,Entity target,int definition,Fixed duration,const game::EffectCtx& context){
     if(!sim.world().has<game::Unit>(target)||definition<0||static_cast<std::size_t>(definition)>=module.rules().statuses.size()||duration<Fixed{})return false;
     module.addStatus(sim,target,definition,duration,context);return true;
 }

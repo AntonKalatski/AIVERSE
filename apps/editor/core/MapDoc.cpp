@@ -2,7 +2,7 @@
 #include "MapDoc.h"
 #include "TerrainOps.h"
 #include <cstring>
-#include "modules/rts/view/RtsTerrainDetail.h"
+#include "engine/view/game/GameTerrainDetail.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -11,7 +11,7 @@
 #include <mutex>
 #include <set>
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include <filesystem>
 #include <iterator>
 
@@ -158,7 +158,7 @@ bool MapDoc::load(const std::string& file, std::string* err) {
 bool MapDoc::loadJson(const Json& j, std::string* err) {
     try {
         MapData d;
-        if(j["colliders"].isArray()&&j["spawns"].isArray())d.fps=j;
+        d.worldSpace = j["colliders"].isArray() && j["spawns"].isArray();   // a world-space scene: kept verbatim
         d.name = j.getStr("name", "Untitled");
         d.w = std::clamp(int(j["size"][0].integer(64)), 4, game::kMaxMapSize);
         d.h = std::clamp(int(j["size"][1].integer(48)), 4, game::kMaxMapSize);
@@ -260,8 +260,9 @@ bool MapDoc::loadJson(const Json& j, std::string* err) {
         }
         d.extra = Json::object();
         for (auto& [k, v] : j.members()) if (!owned(k)) d.extra.set(k, v);
-        if (d.fps.isNull() && j["world"].isObject()) loadWorld(j["world"], d);
-        ensureDocumentLightIds(d.fps.isNull()?d.extra:d.fps,true);
+        if (d.worldSpace) d.extra = j;
+        if (!d.worldSpace && j["world"].isObject()) loadWorld(j["world"], d);
+        ensureDocumentLightIds(d.extra,true);
         data = std::move(d);
         dirty = false;
         ++revision;
@@ -275,16 +276,7 @@ bool MapDoc::loadJson(const Json& j, std::string* err) {
 
 Json MapDoc::toJson() const {
     const auto& d = data;
-    if(!d.fps.isNull()){
-        // The FPS document otherwise bypasses MapData::extra entirely.
-        // Sparse TerraWeave is genre-neutral and must round-trip in FPS
-        // files just as it does in flat RTS maps. Do not silently copy
-        // unrelated legacy grid fields into the FPS document.
-        Json result=d.fps;
-        if(d.extra.has("terraweaveSparse"))
-            result.set("terraweaveSparse",d.extra["terraweaveSparse"]);
-        return result;
-    }
+    if(d.worldSpace)return d.extra;
     Json j = Json::object();
     j.set("name", Json::string(d.name));
     Json size = Json::array();
@@ -784,7 +776,7 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
             std::string nm = d.entities[i].id.empty() ? d.entities[i].type : d.entities[i].id;
             if (t.structure) {
                 int x0 = 0, y0 = 0;
-                game::RtsModule::footprintAt(t, game::RtsModule::snapToFootprint(t, {Fixed::fromRaw(int64_t(std::lround(double(d.entities[i].x) * 65536))), Fixed{},
+                game::GameCore::footprintAt(t, game::GameCore::snapToFootprint(t, {Fixed::fromRaw(int64_t(std::lround(double(d.entities[i].x) * 65536))), Fixed{},
                                                                          Fixed::fromRaw(int64_t(std::lround(double(d.entities[i].z) * 65536)))}), x0, y0);
                 bool steep = false;
                 for (int yy = y0; yy < y0 + t.footprintH; ++yy)
@@ -801,11 +793,11 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
     if (!anyError) {
         try {
             SimConfig cfg;
-            Simulation sim(cfg, std::make_unique<game::RtsModule>());
+            Simulation sim(cfg, std::make_unique<game::GameCore>());
             sim.setup(rulesJson, toJson());
             for (int k = 0; k < 3; ++k) sim.step();
             if (d.planet()) {   // starts reachable: every pair of player key/first structures on one body by ground
-                auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+                auto* m = dynamic_cast<game::GameCore*>(&sim.module());
                 auto& gs = m->state(sim);
                 std::vector<std::pair<int, Vec3>> homes;   // player, position
                 sim.world().each<game::Unit, Owner, Transform>([&](Entity, game::Unit& u, Owner& o, Transform& tr) {

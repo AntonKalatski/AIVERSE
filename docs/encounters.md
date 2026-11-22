@@ -162,8 +162,8 @@ randomness from `sim.rng()`. Games without the block keep their checksums and sa
 
 ## Hooks (shared files, additive)
 
-`RtsModule.h` (include, events appended to `GameEvent`, member, accessor), `RtsModule.cpp` (setup, `encounters`
-system before `raid` / `death`, speed stat hook, hash), `RtsSave.cpp` (io), `RtsCombat.cpp` (`castAbility` ->
-`onAbility`), `RtsAI.cpp` (monster players skipped), `RtsScript.cpp` (event names), `RtsScriptApi.cpp` /
-`RtsScriptInternal.h` (`encounters` table + reference), `apps/client/GameClient.cpp` (ground decals),
+`GameCore.h` (include, events appended to `GameEvent`, member, accessor), `GameCore.cpp` (setup, `encounters`
+system before `raid` / `death`, speed stat hook, hash), `Save.cpp` (io), `Combat.cpp` (`castAbility` ->
+`onAbility`), `ComputerPlayer.cpp` (monster players skipped), `Script.cpp` (event names), `ScriptApi.cpp` /
+`ScriptInternal.h` (`encounters` table + reference), `apps/client/GameClient.cpp` (ground decals),
 `CMakeLists.txt` (sources, `AIVERSE::lib_boss_encounters`), `tests/tests.cpp` (include).

@@ -33,11 +33,11 @@ renaming it.
 `module` = `rts` | `fps` | `voxel` | `genres` (`MotionModule`, `BoardModule`) | `strategic` picks one of five
 separate simulations; each project gets only that host's features.
 - `apps/server/GameData.cpp:31` runs only `rts`; `engine/net/server/ServerMatch.cpp:452` defaults `module` to `rts`.
-- `apps/headless/main.cpp:66,453,723` — static cast to `RtsModule` by name, separate `playFps`.
-- `modules/fps/Project.h:14`, `modules/voxel/Project.h:13` reject other modules;
-  `modules/rts/view/RtsViewScript.cpp:838` view scripts only when `module().name()=="rts"`.
+- `apps/headless/main.cpp:66,453,723` — static cast to `GameCore` by name, separate `playFps`.
+- `engine/actor/Project.h:14`, `modules/voxel/Project.h:13` reject other modules;
+  `engine/view/game/GameViewScript.cpp:838` view scripts only when `module().name()=="rts"`.
 - `modules/genres/MotionModule.cpp:38` — `motion.kind` must be `platformer` or `racing` (genre names as a mode).
-- 36 `dynamic_cast<RtsModule*>` (campaign, scenario, AI, audio, fx, overlays, view).
+- 36 `dynamic_cast<GameCore*>` (campaign, scenario, AI, audio, fx, overlays, view).
 
 ### G2. Two map documents and editor gates
 Flat grid map (`MapDoc.data.extra`) vs world-space map (`MapDoc.data.fps`, 62 references). The editor and the
@@ -51,10 +51,10 @@ authoring, TerraWeave and earthworks, overlays, FX preview, map creation, rules 
 Direct-control heroes (`RtsTopDown`, rules `topDown`), driving (`RtsDriving`), road traffic and population
 (`RtsTraffic*`), spline roads model + view (moved to `engine/roads` by main; forwarders deleted in stage B), raids
 (`RtsRaid*`), commerce, careers, arsenal, encounters, in-match progression, campaigns (`RtsCampaign`),
-side commander bot (`RtsAI*`, `RtsBwAI*`), sensors / flow economy (`RtsSensors`, `RtsFieldOps`), grid fields,
+side commander bot (`ComputerPlayer*`, `RtsBwAI*`), sensors / flow economy (`RtsSensors`, `RtsFieldOps`), grid fields,
 skill objects, settlers, dungeon, planets, fog/vision (`RtsVision`), map generator incl. city planner
 (`modules/rts/gen`), terrain surface view, script HUD and entity action controls (`view/ScriptHud.h`,
-`view/EntityActionControls.h`), legacy water view adapter, Lua `rts` global (`RtsScriptStd.cpp:886`).
+`view/EntityActionControls.h`), legacy water view adapter, Lua `rts` global (`ScriptStd.cpp:886`).
 Game-specific code inside the engine host: `modules/rts/Kingston*` (move to the Kingston game's `native/`).
 
 ### G4. Capabilities hosted only by `modules/fps`
@@ -65,7 +65,7 @@ streaming (`FpsStreaming`), animation modes (`fps.visual.*`), ECS authority swit
 
 ### G5. One capability implemented twice
 - Vehicles: `RtsDriving` and `FpsVehicles` (both over `vehicle-controllers`). Stage B: one system `engine/vehicles`; the two files are host world queries.
-- Bots: `RtsAI` (side commander), `FpsBots` (combatant), `bots/` action bots.
+- Bots: `ComputerPlayer` (side commander), `FpsBots` (combatant), `bots/` action bots.
 - Match end: RTS victory, FPS rounds (`fps.mode`), `match-rules` objectives.
 - Movement / combat: FPS `moveActor` and RTS `sysMovement`, RTS `sysProjectiles` vs FPS projectiles — partly
   moved onto shared ECS policies (see `aiverse-ecs-*` skills), not finished.
@@ -100,7 +100,7 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 | E One scene document (G2) | not started |
 | A FPS host on ECS only | built + tested (stage 03): `modules/fps` ECS only, races ported |
 | B One vehicle system (G5) | built + tested (stage 04; CTest 365/367, checksums 95/96, road_race identical): `engine/vehicles` (`AIVERSE::vehicles`: `VehicleDrive` / `VehicleOccupant` components, `stepVehicles` over a `VehicleHost` world query, autopilot / lock API, one race adapter `VehicleRace` + `RaceState`); `RtsDriving` = grid-map world query + enter key + race seats, `FpsVehicles` = metre-map world query + seat-list glue + race seats; `DrivingStore`, `RtsRace.h`, `FpsRace.cpp`, `fps::VehicleDrive`, `CharacterRacer`, `State::race` and the road forwarders deleted. Left: rules `driving` and `vehicleTypes` are still two blocks (one parser each, one `DriveRules` result); getting in on foot keeps two seat models (driver's door vs seat list) inside the shared components |
-| C Shared systems out of `modules/rts` (G3) | C0a engine side done (stages 06-07, built + tested: CTest 409/410 then skill_audit fixed, checksums equal but boss_arena 2): no game ids or trigger-variable protocol in the core; GTA2 migration pending |
+| C Shared systems out of `modules/rts` (G3) | C0a engine side done (stages 06-07, built + tested: CTest 409/410 then skill_audit fixed, checksums equal but boss_arena 2): no game ids or trigger-variable protocol in the core; GTA2 migration pending; C0b data model, components, map grid in `engine/game` (stage 08, CTest 415/415) |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
 | D One simulation (G1) | not started |
 | 7 Template kits (G8) | nothing to do |
@@ -123,7 +123,7 @@ B. **One vehicle system (G5).** `RtsDriving` + `FpsVehicles` -> one ECS driving 
 C. **Shared gameplay systems out of `modules/rts` (G3).** Move each `Rts*` system to `engine/game/<capability>` with a
    capability name (roads, direct control, traffic, raids, commerce, careers, arsenal, encounters, progression,
    sensors, campaign, side commander bot, map generator), one or a few per stage, deleting the module copy.
-D. **One simulation (G1).** `RtsModule` and `fps::Module` dissolve into one ECS simulation that runs the systems a
+D. **One simulation (G1).** `GameCore` and `fps::Module` dissolve into one ECS simulation that runs the systems a
    project's data enables; `game.json` `module` is removed; server, headless, editor, Studio and tools run any
    project. `modules/rts`, `modules/fps`, `modules/genres`, `modules/strategic`, `modules/voxel` are emptied.
 E. **One scene document (G2b).** Grid and world-space maps become one entity document; `worldSpaceMaps()` /
@@ -141,7 +141,7 @@ concrete games: Kingston (`KingstonPolicePolicy.h`, `KingstonAmbulance.inc`, `Ki
 `KingstonPedestrianVehicles.inc`, `KingstonPedestrianCrossingPolicy.h`, `KingstonRocketCollision.h` 816 lines,
 `kingston/{CityTrafficAreas,DeckBroadphase,FireResponseDetour,FireResponseRoute,TrafficPriorityPolicy}.h`; trigger vars
 `police_custody_*`, `drive_*_phase` in `RtsTopDown`) and Bunker Wars (`RtsBwAI*`: rules `ai.controller "bw"` parsed in
-`RtsData.cpp`, `BwAIHolder` in `RtsAI`, `RtsBwAISim.cpp` compiled into every game, `RtsModes` garrison hook).
+`GameData.cpp`, `BwAIHolder` in `ComputerPlayer`, `RtsBwAISim.cpp` compiled into every game, `RtsModes` garrison hook).
 Moving the core into `engine/` with that code would put games into the engine. Order:
 
 - **C0a game hooks.** Generic extension points in the core (AI controller factory by name; traffic responder /
@@ -160,20 +160,20 @@ Each step: merge origin/main, KINGSTON build, CTest, template checksums, handoff
 
 Audit of origin/main: the shared render layers (`engine/render`, `gfx`, `view`, `fx`, `world`, `ui`, `character`)
 include nothing from `modules/` or `apps/`, and genre words there are comments only. The split is one level up:
-- `modules/rts/view` (87 files, ~28k lines, 40 drawing directly): `RtsView` is the presentation of grid maps;
+- `modules/rts/view` (87 files, ~28k lines, 40 drawing directly): `GameView` is the presentation of grid maps;
   `engine/view/View.h` itself calls it a compatibility adapter;
 - `apps/fps/client.cpp` and `apps/voxel/client.cpp` are separate game executables with their own render loops;
   `modules/fps/view` holds `FirstPersonCamera`, `FpsAnimationEvents`;
 - the editor picks render paths by `isFps()` (play-test render, field preview, planets, overlays) over two scene
-  documents (`data.fps` / `data.extra`); `apps/client` + `ClientFx` are built on `game::RtsView`.
+  documents (`data.fps` / `data.extra`); `apps/client` + `ClientFx` are built on `game::GameView`.
 Steps:
 1. done (8832de38a): `render::RTSCamera` alias removed, 109 files on `render::Camera`.
 2. done: CTest `genre_free_engine` (`tools/genre/check_engine_genre_free.py`): no `Rts*` / `Fps*` / `rts::` / `fps::`
    / `isFps` in engine code; debt only `engine/net/authority` (FPS host session) and `engine/net/city` (RTS host),
    52 names, the limits only shrink.
-3. Everything that draws the world goes through `engine/view` (`View`): reusable parts of `RtsView` (terrain,
+3. Everything that draws the world goes through `engine/view` (`View`): reusable parts of `GameView` (terrain,
    visibility / fog, units and models, overlays, planets, portraits, animation) move to `engine/view` or
-   `engine/<capability>/view` (like `engine/roads`); `RtsView` is deleted.
+   `engine/<capability>/view` (like `engine/roads`); `GameView` is deleted.
 4. One client for any project instead of `apps/client`, `apps/fps`, `apps/voxel`: the project's data enables
    capabilities, not the executable.
 5. Camera rigs in `engine` (overhead / orbit / chase / first person as modes of one camera component).
@@ -182,4 +182,4 @@ Steps:
 ## Rule for agents meanwhile
 
 A skill or plan that needs a capability from one legacy host includes its extraction (AGENTS.md). Do not add
-new `isFps()`, `module ==`, `dynamic_cast<RtsModule*>`, `fps.*` blocks or genre-named modes.
+new `isFps()`, `module ==`, `dynamic_cast<GameCore*>`, `fps.*` blocks or genre-named modes.

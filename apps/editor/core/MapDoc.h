@@ -11,7 +11,7 @@
 #include <vector>
 #include "engine/data/Json.h"
 #include "engine/i18n/Localization.h"
-#include "modules/rts/RtsData.h"
+#include "engine/game/GameData.h"
 
 namespace aiverse::editor {
 
@@ -66,7 +66,9 @@ struct DocBody {
 };
 
 struct MapData {
-    Json fps; // FPS documents round-trip verbatim; RTS grid tools never own these fields.
+    // One scene document: grid maps parse their layers into the fields below and keep every other key in `extra`;
+    // a world-space scene (colliders + spawns, metres) is kept whole in `extra` and the grid fields stay unused.
+    bool worldSpace = false;
     std::string name = "New map";
     int w = 64, h = 48;
     bool roadsOnly = false;

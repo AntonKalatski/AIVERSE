@@ -10,7 +10,7 @@
 #include <aiverselib/mechanics/TacticsPersistence.h>
 #include <aiverselib/bots/CardBot.h>
 #include <aiverselib/bots/TacticsBot.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 bool libraryCardsTurnsConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
     using namespace aiverse::lib::genre;namespace bots=aiverse::lib::bots;
     aiverse::Random rng(0x51ed270bu);

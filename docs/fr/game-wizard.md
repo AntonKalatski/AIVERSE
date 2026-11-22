@@ -102,5 +102,5 @@ Tests : `game_wizard_plan_picks_a_template_by_the_idea`, `game_wizard_makes_a_pl
 ## Modification du moteur
 
 Les commandes de script acceptent `"card": false` (pas de bouton / raccourci ; envoyées par les scripts de vue, les documents
-HUD, MCP) — le Suivant / Passer du tutoriel (`modules/rts/RtsScriptCommands.cpp`, cartes de commandes du client et de
+HUD, MCP) — le Suivant / Passer du tutoriel (`engine/game/ScriptCommands.cpp`, cartes de commandes du client et de
 l’éditeur).

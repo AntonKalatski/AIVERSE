@@ -4,15 +4,15 @@
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Script.h"
+#include "engine/game/Tiles.h"
+#include "engine/game/TopDown.h"
 
 namespace aiverse::battle {
 
 namespace {
-using game::RtsModule;
+using game::GameCore;
 
 void merge(Json& into, const Json& patch) {   // objects merge recursively, anything else replaces
     if (!patch.isObject() || !into.isObject()) { into = patch; return; }
@@ -50,7 +50,7 @@ public:
     // The project's map; its player count must equal the allocation's players per match.
     std::string mapJson(uint32_t, uint32_t) const override { return map_; }
     std::unique_ptr<Simulation> create(const SimConfig& cfg, const net::MatchPayloadMsg*, const std::string& map) override {
-        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<RtsModule>());
+        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<GameCore>());
         sim->setup(Json::parse(rules_), Json::parse(map));
         return sim;
     }
@@ -58,7 +58,7 @@ public:
     void bot(Simulation& sim, uint8_t slot, BotThumbs& t, uint64_t now, std::vector<Command>& out) override {
         game::TopDown* td = mod(sim).topDown();
         if (!td || !td->active()) return;
-        if (now >= t.nextInput) {   // the computer pilot (RtsAI's hero steering) sends kCmdTopDown on change only
+        if (now >= t.nextInput) {   // the computer pilot (ComputerPlayer's hero steering) sends kCmdTopDown on change only
             t.nextInput = now + opt_.steerEveryMs;
             Command c;
             if (td->botCommand(sim, slot, c)) out.push_back(c);
@@ -94,7 +94,7 @@ public:
     }
 
 private:
-    static RtsModule& mod(Simulation& sim) { return *static_cast<RtsModule*>(&sim.module()); }
+    static GameCore& mod(Simulation& sim) { return *static_cast<GameCore*>(&sim.module()); }
     RtsBattleOptions opt_;
     std::string map_, rules_, id_;
 };

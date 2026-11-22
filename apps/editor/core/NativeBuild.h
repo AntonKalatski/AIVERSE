@@ -66,7 +66,7 @@ std::string nativeBuildGitProblem(const std::string& buildDir);
 // a newer engine means a rebuild). `why` gets the reason when it is not up to date.
 bool nativeBuildUpToDate(const std::string& binary, const std::string& projectDir, const std::string& engineExe, std::string* why = nullptr);
 
-// Module ids the build in `buildDir` was configured with (its generated registry gen/RtsNativeRegistry.cpp;
+// Module ids the build in `buildDir` was configured with (its generated registry gen/NativeRegistry.cpp;
 // empty when not configured).
 std::vector<std::string> nativeBuildModules(const std::string& buildDir);
 // The build holds every id of `required` (by its registry); `why` lists what it lacks.

@@ -114,7 +114,7 @@ For local matches, `game.start(1, {initialVars={loadout_support_1=2}})` merges v
 
 Allowed: at most 128 entries, names 1–128 ASCII letters/digits/underscore/dot/hyphen, integer values −1000000..1000000. Invalid options fail before starting a match; invalid map values produce readable loading errors. The game must still validate semantic choices (unlocks, card counts, player slots). UI previews validate the arguments without starting a match.
 
-Implementation: `RtsInitialVars.h`, setup in `RtsModule`, local launch in `ClientScript.cpp` / `main.cpp`. No game-specific keys or mechanics are hardcoded in the engine.
+Implementation: `InitialVars.h`, setup in `GameCore`, local launch in `ClientScript.cpp` / `main.cpp`. No game-specific keys or mechanics are hardcoded in the engine.
 
 ## Clipping inside transformed elements
 

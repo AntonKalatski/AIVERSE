@@ -6,7 +6,7 @@ initial values live in the map, Lua reads and writes it through the `field` tabl
 overlay. Gap `G5` of `docs/lua-coverage.md`.
 
 Code: `modules/rts/RtsGridFieldData.*` (format), `RtsGridFields.*` (kernels, effects, hooks, hash, saves),
-`RtsGridFieldsApi.cpp` (Lua), `modules/rts/view/RtsFieldView.*` (overlay, GLSL + MSL),
+`GridFieldsApi.cpp` (Lua), `modules/rts/view/GameFieldView.*` (overlay, GLSL + MSL),
 `apps/editor/core/FieldOps.*` + `apps/editor/windows/FieldsWindow.cpp` (editor, MCP). Samples:
 `templates/wildfire` (forest fire + creep, data only), `templates/lua_lab` (`scripts/fire.lua`).
 
@@ -130,7 +130,7 @@ machine's cloud vCPU): see the commit / report numbers; a fully live 256x256 fie
 `fog` `explored` (default) / `visible` / `none`, `particles` {`effect` (fx/<name>.json), `above`, `max`,
 `every` seconds}. Per-player fields are tinted with the player colours. Weak GPUs (material quality Low or
 shadows off; `AIVERSE_FIELDS=low`): half-resolution texture, no animation, no particles. Shaders: GLSL + MSL in
-`RtsFieldView.cpp` (the Metal path is not compiled on Linux CI).
+`GameFieldView.cpp` (the Metal path is not compiled on Linux CI).
 
 ## Editor and MCP
 

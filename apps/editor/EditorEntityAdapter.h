@@ -13,27 +13,27 @@
 namespace aiverse::editor {
 
 struct DocumentEntityRef {
-    enum class Source : uint8_t { MapEntity, FpsCollider, FpsSpawn, MapLight, FpsLight };
+    enum class Source : uint8_t { MapEntity, ActorCollider, ActorSpawn, MapLight, ActorLight };
     Source source = Source::MapEntity;
     size_t index = 0;
 
     static DocumentEntityRef mapEntity(size_t i) { return {Source::MapEntity, i}; }
-    static DocumentEntityRef fpsCollider(size_t i) { return {Source::FpsCollider, i}; }
-    static DocumentEntityRef fpsSpawn(size_t i) { return {Source::FpsSpawn, i}; }
+    static DocumentEntityRef fpsCollider(size_t i) { return {Source::ActorCollider, i}; }
+    static DocumentEntityRef fpsSpawn(size_t i) { return {Source::ActorSpawn, i}; }
 
-    static DocumentEntityRef light(size_t i,bool fps) { return {fps?Source::FpsLight:Source::MapLight,i}; }
-    bool isLight() const { return source==Source::MapLight || source==Source::FpsLight; }
+    static DocumentEntityRef light(size_t i,bool fps) { return {fps?Source::ActorLight:Source::MapLight,i}; }
+    bool isLight() const { return source==Source::MapLight || source==Source::ActorLight; }
 
     // FPS refs use the high bit for spawns; zero is reserved for no entity.
     uint64_t fpsKey() const {
         if (source == Source::MapEntity || isLight()) return 0;
         if (uint64_t(index) >= (uint64_t(1) << 63) - 1) return 0;
-        return (source == Source::FpsSpawn ? (uint64_t(1) << 63) : 0)
+        return (source == Source::ActorSpawn ? (uint64_t(1) << 63) : 0)
                | (uint64_t(index) + 1);
     }
     static bool fromFpsKey(uint64_t key, DocumentEntityRef& out) {
         if (!key || (key & ~(uint64_t(1) << 63)) == 0) return false;
-        out.source = (key & (uint64_t(1) << 63)) ? Source::FpsSpawn : Source::FpsCollider;
+        out.source = (key & (uint64_t(1) << 63)) ? Source::ActorSpawn : Source::ActorCollider;
         out.index = size_t((key & ~(uint64_t(1) << 63)) - 1);
         return true;
     }
@@ -53,21 +53,21 @@ inline DocEntity* documentMapEntity(MapDoc& map, DocumentEntityRef ref) {
 }
 
 inline const char* fpsEntityCollection(DocumentEntityRef::Source source) {
-    return source == DocumentEntityRef::Source::FpsSpawn ? "spawns" : "colliders";
+    return source == DocumentEntityRef::Source::ActorSpawn ? "spawns" : "colliders";
 }
 
 // Shared JSON component access: a genre adapter can supply a different
 // component store without requiring a separate Inspector selection model.
 inline const Json* fpsDocumentEntity(const Json& fps, DocumentEntityRef ref) {
-    if (ref.source != DocumentEntityRef::Source::FpsCollider &&
-        ref.source != DocumentEntityRef::Source::FpsSpawn) return nullptr;
+    if (ref.source != DocumentEntityRef::Source::ActorCollider &&
+        ref.source != DocumentEntityRef::Source::ActorSpawn) return nullptr;
     const Json& entries = fps[fpsEntityCollection(ref.source)];
     if (!entries.isArray() || ref.index >= entries.size()) return nullptr;
     return &entries[ref.index];
 }
 inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
-    if (ref.source != DocumentEntityRef::Source::FpsCollider &&
-        ref.source != DocumentEntityRef::Source::FpsSpawn) return nullptr;
+    if (ref.source != DocumentEntityRef::Source::ActorCollider &&
+        ref.source != DocumentEntityRef::Source::ActorSpawn) return nullptr;
     const char* collection = fpsEntityCollection(ref.source);
     if (!fps[collection].isArray() || ref.index >= fps[collection].size()) return nullptr;
     return &fps.member(collection).at(ref.index);
@@ -76,12 +76,12 @@ inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
 // Legacy storage adapter: Transform and Light are views of one light payload.
 inline const Json* documentLight(const MapDoc& map,DocumentEntityRef ref) {
     if(!ref.isLight())return nullptr;
-    const auto& list=(ref.source==DocumentEntityRef::Source::FpsLight?map.data.fps:map.data.extra)["lights"];
+    const auto& list=map.data.extra["lights"];
     return list.isArray() && ref.index<list.size() && list[ref.index].isObject()?&list[ref.index]:nullptr;
 }
 inline Json* documentLight(MapDoc& map,DocumentEntityRef ref) {
     if(!documentLight(static_cast<const MapDoc&>(map),ref))return nullptr;
-    return &(ref.source==DocumentEntityRef::Source::FpsLight?map.data.fps:map.data.extra).member("lights").at(ref.index);
+    return &map.data.extra.member("lights").at(ref.index);
 }
 
 struct DocumentTransform {
@@ -95,7 +95,7 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
     if(ref.isLight()) {
         const auto* light=documentLight(map,ref);if(!light)return false;
         // Legacy map lights store "pos":[x,z]; the runtime reads it before x/z
-        // (RtsLights::parseMapLights), so the editor must too or a move teleports to 0.
+        // (GameLights::parseMapLights), so the editor must too or a move teleports to 0.
         const Json& pos=(*light)["pos"];
         const bool legacy=pos.isArray() && pos.size()>=2 && pos[0].isNumber() && pos[1].isNumber();
         out={legacy?pos[0].toDouble():(*light)["x"].toDouble(),(*light)["height"].toDouble(1),
@@ -107,9 +107,9 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
         try { out = {entity->x, authoredEntity(*entity)?authoredLocalTransform(*entity).position.y.toDouble():0.0, entity->z}; }
         catch(const std::exception&) { return false; }
     } else {
-        const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        const Json* object = fpsDocumentEntity(map.data.extra, ref);
         if (!object) return false;
-        if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
+        if (ref.source == DocumentEntityRef::Source::ActorSpawn) {
             if (!object->isArray() || object->size() < 3 ||
                 !(*object)[0].isNumber() || !(*object)[1].isNumber() || !(*object)[2].isNumber()) return false;
             out = {(*object)[0].toDouble(), (*object)[1].toDouble(), (*object)[2].toDouble()};
@@ -179,7 +179,7 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
             entity->at.set("y", Json::number(double(z), 3));
         }
     } else {
-        Json* entity = fpsDocumentEntity(map.data.fps, ref);
+        Json* entity = fpsDocumentEntity(map.data.extra, ref);
         if (!entity) return false;
         auto shifted = [&](const Json& xyz, Json& result) {
             if (!xyz.isArray() || xyz.size() < 3) return false;
@@ -195,7 +195,7 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
             }
             return true;
         };
-        if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
+        if (ref.source == DocumentEntityRef::Source::ActorSpawn) {
             Json moved;
             if (!shifted(*entity, moved)) return false;
             *entity = moved;
@@ -239,13 +239,13 @@ inline bool setDocumentPosition(MapDoc& map, DocumentEntityRef ref,
 inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
                                       DocumentTransform minimum,
                                       DocumentTransform maximum) {
-    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    if (ref.source != DocumentEntityRef::Source::ActorCollider) return false;
     const double lo[3] = {minimum.x, minimum.y, minimum.z};
     const double hi[3] = {maximum.x, maximum.y, maximum.z};
     for (size_t axis = 0; axis < 3; ++axis)
         if (!std::isfinite(lo[axis]) || !std::isfinite(hi[axis]) ||
             !(lo[axis] < hi[axis])) return false;
-    Json* collider = fpsDocumentEntity(map.data.fps, ref);
+    Json* collider = fpsDocumentEntity(map.data.extra, ref);
     if (!collider || !(*collider)["min"].isArray() ||
         !(*collider)["max"].isArray() ||
         (*collider)["min"].size() < 3 || (*collider)["max"].size() < 3)
@@ -264,12 +264,12 @@ inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
 }
 
 // Rotated FPS boxes have an explicit center, half-extents and yaw in turns.
-// These fields are already supported by fps::Module::setup and are persisted
+// These fields are already supported by actor::ActorHost::setup and are persisted
 // without converting the collider to a different map schema.
 inline bool setDocumentOrientedCollider(MapDoc& map, DocumentEntityRef ref,
                                        DocumentTransform centre,
                                        DocumentTransform half, double yawTurns) {
-    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    if (ref.source != DocumentEntityRef::Source::ActorCollider) return false;
     const double c[3] = {centre.x, centre.y, centre.z};
     const double h[3] = {half.x, half.y, half.z};
     if (!std::isfinite(yawTurns)) return false;
@@ -277,7 +277,7 @@ inline bool setDocumentOrientedCollider(MapDoc& map, DocumentEntityRef ref,
         if (!std::isfinite(c[axis]) || !std::isfinite(h[axis]) ||
             h[axis] <= 0.0 || (axis != 1 && h[axis] > 2048.0))
             return false;
-    Json* object = fpsDocumentEntity(map.data.fps, ref);
+    Json* object = fpsDocumentEntity(map.data.extra, ref);
     if (!object || !(*object)["yaw"].isNumber()) return false;
     Json centerJson = Json::array(), halfJson = Json::array();
     for (size_t axis = 0; axis < 3; ++axis) {
@@ -323,7 +323,7 @@ inline bool translateDocumentEntities(MapDoc& map,
             if (delta.y != 0 || !std::isfinite(float(next.x)) ||
                 !std::isfinite(float(next.z))) return false;
         } else {
-            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            const Json* object = fpsDocumentEntity(map.data.extra, ref);
             if (!object) return false;
             auto validCoords = [&](const Json& coords) {
                 if (!coords.isArray() || coords.size() < 3) return false;
@@ -336,7 +336,7 @@ inline bool translateDocumentEntities(MapDoc& map,
                 }
                 return true;
             };
-            if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
+            if (ref.source == DocumentEntityRef::Source::ActorSpawn) {
                 if (!validCoords(*object)) return false;
             } else if ((*object)["yaw"].isNumber()) {
                 const Json& centre = (*object)["center"];
@@ -384,7 +384,7 @@ inline std::vector<DocumentComponentDescriptor> documentComponents(
     components.push_back({DocumentComponentKind::Transform, "Transform", "Transform", true});
     switch (ref.source) {
     case DocumentEntityRef::Source::MapLight:
-    case DocumentEntityRef::Source::FpsLight:
+    case DocumentEntityRef::Source::ActorLight:
         components.push_back({DocumentComponentKind::Light,"Light","Light",true});break;
     case DocumentEntityRef::Source::MapEntity: {
         const DocEntity* entity = documentMapEntity(map, ref);
@@ -392,15 +392,15 @@ inline std::vector<DocumentComponentDescriptor> documentComponents(
         components.push_back({DocumentComponentKind::Renderable, "Renderable", "Renderable", false});
         break;
     }
-    case DocumentEntityRef::Source::FpsCollider: {
-        const Json* object = fpsDocumentEntity(map.data.fps, ref);
+    case DocumentEntityRef::Source::ActorCollider: {
+        const Json* object = fpsDocumentEntity(map.data.extra, ref);
         const bool rotated = object && (*object)["yaw"].isNumber();
         components.push_back({DocumentComponentKind::Collider,
                               rotated ? "OrientedBoxCollider" : "BoxCollider",
                               rotated ? "Oriented Box Collider" : "Box Collider", true});
         break;
     }
-    case DocumentEntityRef::Source::FpsSpawn:
+    case DocumentEntityRef::Source::ActorSpawn:
         components.push_back({DocumentComponentKind::Spawn, "SpawnPoint", "Spawn Point", true});
         break;
     }
@@ -426,8 +426,8 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
                 result.set("rotationY",
                     Json::number(entity->extra["facing"].toDouble(), 3));
         }
-        if (ref.source == DocumentEntityRef::Source::FpsCollider) {
-            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        if (ref.source == DocumentEntityRef::Source::ActorCollider) {
+            const Json* object = fpsDocumentEntity(map.data.extra, ref);
             if (object && (*object)["yaw"].isNumber()) {
                 result.set("rotationY",
                     Json::number((*object)["yaw"].toDouble() * 360.0, 3));
@@ -461,10 +461,10 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         for(const char* key:{"entityId","name","x","z","height","pos"})result.erase(key);
         return true;
     }
-    const Json* object = fpsDocumentEntity(map.data.fps, ref);
+    const Json* object = fpsDocumentEntity(map.data.extra, ref);
     if (!object) return false;
     if (kind == DocumentComponentKind::Collider &&
-        ref.source == DocumentEntityRef::Source::FpsCollider) {
+        ref.source == DocumentEntityRef::Source::ActorCollider) {
         if ((*object)["yaw"].isNumber()) {
             result.set("center", (*object)["center"]);
             result.set("half", (*object)["half"]);
@@ -476,7 +476,7 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         return true;
     }
     if (kind == DocumentComponentKind::Spawn &&
-        ref.source == DocumentEntityRef::Source::FpsSpawn) {
+        ref.source == DocumentEntityRef::Source::ActorSpawn) {
         result.set("position", *object);
         return true;
     }
@@ -560,8 +560,8 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
             if (hasPosition) changed = setDocumentPosition(map, ref, position) || changed;
             return changed;
         }
-        if (ref.source == DocumentEntityRef::Source::FpsCollider) {
-            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        if (ref.source == DocumentEntityRef::Source::ActorCollider) {
+            const Json* object = fpsDocumentEntity(map.data.extra, ref);
             if (object && (*object)["yaw"].isNumber()) {
                 DocumentTransform position, half;
                 if (!readDocumentTransform(map, ref, position) ||
@@ -587,13 +587,13 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
                setDocumentPosition(map, ref, position);
     }
     if (kind == DocumentComponentKind::Collider &&
-        ref.source == DocumentEntityRef::Source::FpsCollider) {
+        ref.source == DocumentEntityRef::Source::ActorCollider) {
         DocumentTransform lo, hi;
         return readVec3(value["min"], lo) && readVec3(value["max"], hi) &&
                setDocumentColliderBounds(map, ref, lo, hi);
     }
     if (kind == DocumentComponentKind::Spawn &&
-        ref.source == DocumentEntityRef::Source::FpsSpawn) {
+        ref.source == DocumentEntityRef::Source::ActorSpawn) {
         DocumentTransform position;
         return readVec3(value["position"], position) &&
                setDocumentPosition(map, ref, position);

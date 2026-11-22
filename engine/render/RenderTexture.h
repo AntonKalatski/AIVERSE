@@ -13,7 +13,7 @@ namespace aiverse::render {
 class RenderTexture {
 public:
     struct Stroke { float ax, ay, bx, by, radius, softness; std::array<float,4> color; };
-    // Shared lifetime owner is usually RtsPaintLayers, and must outlive
+    // Shared lifetime owner is usually GamePaintLayers, and must outlive
     // every canvas borrowing it. Bind before init; never change an active owner.
     void setRetirementOwner(CanvasGpuRetirement* owner) {
         if(dev_)throw std::logic_error("RenderTexture: change retirement owner while active");

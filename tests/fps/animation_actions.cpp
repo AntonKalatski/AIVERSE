@@ -1,6 +1,6 @@
-#include "modules/fps/view/FpsAnimationEvents.h"
+#include "engine/view/ActorAnimationEvents.h"
 #include <cassert>
-using namespace aiverse::fps::view;
+using namespace aiverse::actor::view;
 int main() {
     ReplicatedAnimationActions actions;
     auto t=actions.observe({50,1,8,0,100});

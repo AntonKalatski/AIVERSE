@@ -3,7 +3,7 @@
 ## Repository, branch and commits
 - Repository: chromealex/AIVERSE
 - Branch: feature/lens-motionweave-integration. Not merged into main.
-- Source commit: c4ab82c134505b59853eeb7c4ce537ff2f55cc47 — modules/rts/view/RtsTerrainRender.cpp
+- Source commit: c4ab82c134505b59853eeb7c4ce537ff2f55cc47 — engine/view/game/GameTerrainRender.cpp
 - Test commit: d19b7fbffcc82e041741e14284d7d5126caa2d6b — tests/tests.cpp
 - Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage36-mesh-retirement-2026-11-20.md.
 
@@ -22,7 +22,7 @@ New case: terrain_full_map_stages_all_chunks_apron_and_water_before_publish in t
 - Retry successfully, assert three chunks and deferred old chunk + apron retirement, then successful shutdown.
 
 ## Actual validation
-- Inspected the Stage 35/36 handoffs, RtsTerrainRender.h/.cpp, RtsTerrainDetailMesh.cpp, RenderDeviceLifetime.h, tests/tests.cpp and fogfaulttest fake RHI.
+- Inspected the Stage 35/36 handoffs, GameTerrainRender.h/.cpp, GameTerrainDetailMesh.cpp, RenderDeviceLifetime.h, tests/tests.cpp and fogfaulttest fake RHI.
 - Committed implementation and regression test through connected GitHub.
 - NOT RUN: CMake configure, C++ build, aiverse_tests, CTest, real Metal/Vulkan/GLES compile, GPU tests, pixel-parity, performance profiling. The newly authored tests are not proof of a passing build.
 
@@ -30,7 +30,7 @@ New case: terrain_full_map_stages_all_chunks_apron_and_water_before_publish in t
 1. The transaction currently covers full-map MESH upload, not entire GPU presentation. updateCellTextures / updateDynamic run after mesh publication. In particular map-resize still destroys old cell/dynamic/splat/vision textures in place, so texture failure may leave mixed state. Stage 38: build replacement GPU textures + CPU pixels privately and publish texture handles with geometry; retire old textures only after GPU completion tokens. Inject late texture allocation/upload failures.
 2. Detail terrain remains non-atomic: detail CPU height/splat, multiple LODs, normal/splat textures and hash updates need their own transaction.
 3. Ordinary incremental changes across many chunks and grouped GroundFX setMesh updates still may partially publish. Use a batch transaction or journal rollback where frame-atomicity is required.
-4. RtsView-wide reload across multiple owners is not yet atomic; reconcile current MotionWeave branch feature/universal-ecs-animation-pipeline via actual merge-base and per-file conflict resolution.
+4. GameView-wide reload across multiple owners is not yet atomic; reconcile current MotionWeave branch feature/universal-ecs-animation-pipeline via actual merge-base and per-file conflict resolution.
 5. Device loss without a proven GPU idle barrier requires persistent RHI-owner lease and deferred-retirement safety. No age-based destruction.
 6. Stage 37 assumes build runs on presentation owner thread outside camera render/capture recording. Staged buffers are never submitted and may be destroyed immediately on a staging failure, while old published buffers require deferred retirement.
 7. After finishing feature work, perform the requested SINGLE consolidated CMake/CTest run plus supported Metal/Vulkan/GLES compile checks, fix failures and only then consider merging into main.

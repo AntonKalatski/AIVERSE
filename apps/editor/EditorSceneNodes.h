@@ -18,7 +18,7 @@ struct EditorSceneNode {
 };
 
 inline std::vector<EditorSceneNode> enumerateDocumentSceneNodes(
-    const MapDoc& map, bool fpsProject) {
+    const MapDoc& map) {
     std::vector<EditorSceneNode> nodes;
     auto add = [&](DocumentEntityRef ref, const char* group, std::string label) {
         EditorSceneNode node;
@@ -28,14 +28,14 @@ inline std::vector<EditorSceneNode> enumerateDocumentSceneNodes(
         node.hasPosition = readDocumentTransform(map, ref, node.position);
         nodes.push_back(std::move(node));
     };
-    const auto& lights=(fpsProject?map.data.fps:map.data.extra)["lights"];
+    const auto& lights=map.data.extra["lights"];
     if(lights.isArray())for(size_t i=0;i<lights.size();++i) {
         if(!lights[i].isObject())continue;
         const auto name=lights[i].getStr("name");
-        add(DocumentEntityRef::light(i,fpsProject),"Lights",name.empty()?"Light #"+std::to_string(i+1):name);
+        add(DocumentEntityRef::light(i,map.data.worldSpace),"Lights",name.empty()?"Light #"+std::to_string(i+1):name);
     }
-    if (fpsProject) {
-        const Json& fps = map.data.fps;
+    if (map.data.worldSpace) {
+        const Json& fps = map.data.extra;
         const Json& colliders = fps["colliders"];
         if (colliders.isArray())
             for (size_t i = 0; i < colliders.size(); ++i)

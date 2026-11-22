@@ -96,7 +96,7 @@ include directories и compile definitions. Реестр генерируетс�
 
 ## API и порядок исполнения
 
-`modules/rts/RtsNative.h` содержит интерфейс `NativeModule`:
+`engine/game/Native.h` содержит интерфейс `NativeModule`:
 
 - `setup(game, sim, state, config)` — после создания карты, Lua и встроенных систем.
   Здесь проверяются настройки; ошибка загрузки — `std::runtime_error` с ID модуля.
@@ -105,7 +105,7 @@ include directories и compile definitions. Реестр генерируетс�
 - `command(game, sim, state, cmd)` — при выполнении команды, до систем тика.
 
 Между модулями движок выполняет `world.flush()`. Модуль может пользоваться
-публичным API `RtsModule` (например, `spawn`), существующими компонентами, `sim.rng()`
+публичным API `GameCore` (например, `spawn`), существующими компонентами, `sim.rng()`
 и `sim.emit()`. Lua продолжает работать через существующий API и видит изменения
 общего мира.
 

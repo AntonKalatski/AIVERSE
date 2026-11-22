@@ -20,11 +20,11 @@
 #include "engine/net/city/CityMeta.h"
 #include "engine/net/city/CityMirror.h"
 #include "engine/net/city/CityNet.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsTopDown.h"
-#include "modules/rts/RtsTraffic.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Script.h"
+#include "engine/game/Tiles.h"
+#include "engine/game/TopDown.h"
+#include "engine/game/Traffic.h"
 
 using namespace aiverse;
 namespace city = aiverse::net::city;
@@ -279,7 +279,7 @@ int runBots(const Args& a) {
     std::unique_ptr<Simulation> local;
     std::unique_ptr<city::Mirror> mirror;
     if (a.mirror) {
-        local = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>());
+        local = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>());
         local->setup(rules, map);
         mirror = std::make_unique<city::Mirror>(*local, *clients[0]);
     }
@@ -307,7 +307,7 @@ int runBots(const Args& a) {
         size_t units = 0, moving = 0;
         local->world().each<game::Unit, Transform>([&](Entity e, game::Unit& u, Transform& t) {
             (void)e;
-            if (!static_cast<game::RtsModule&>(local->module()).rules().types[u.type].structure) { ++units; moving += t.prevPos.x != t.pos.x || t.prevPos.z != t.pos.z; }
+            if (!static_cast<game::GameCore&>(local->module()).rules().types[u.type].structure) { ++units; moving += t.prevPos.x != t.pos.x || t.prevPos.z != t.pos.z; }
         });
         const Entity hero = mirror->hero();
         const Vec3 at = hero.valid() ? local->world().get<Transform>(hero).pos : Vec3{};

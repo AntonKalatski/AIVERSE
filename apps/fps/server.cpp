@@ -1,6 +1,6 @@
 #include "engine/net/authority/Session.h"
 #include <aiverselib/net/LocalTickets.h>
-#include "modules/fps/Project.h"
+#include "engine/actor/Project.h"
 #include "engine/platform/ContentReader.h"
 #include <fstream>
 #include <iterator>
@@ -28,7 +28,7 @@ int main(int argc,char** argv) {
         }
         if(audience.size()>128)throw std::runtime_error("match audience exceeds 128 bytes");
         if(admissionFile.empty()!=audience.empty())throw std::runtime_error("admission file and match audience must be specified together");
-        auto data=aiverse::fps::readProject([&](const auto& file,std::string& text){std::ifstream input(project+"/"+file);if(!input)return false;text.assign(std::istreambuf_iterator<char>(input),{});return true;});
+        auto data=aiverse::actor::readProject([&](const auto& file,std::string& text){std::ifstream input(project+"/"+file);if(!input)return false;text.assign(std::istreambuf_iterator<char>(input),{});return true;});
         auto rules=data.rules,map=data.map;
         aiverse::net::authority::Server server(rules,map,1,aiverse::platform::makeContentReader(project));
         aiverse::net::UdpListener udp;aiverse::net::WsListener ws;

@@ -1,4 +1,5 @@
 #include "Session.h"
+#include "engine/game/GameCore.h"
 #include "libraries/include/aiverselib/mechanics/VehiclePersistence.h"
 #include <algorithm>
 #include <utility>
@@ -10,8 +11,8 @@ enum class Message:uint8_t { Hello=1,Input=2,Snapshot=3,SnapshotDelta=4 };
 Bytes bytes(const std::string& s){return Bytes(s.begin(),s.end());}
 std::string string(const Bytes& b){return std::string(b.begin(),b.end());}
 void header(Archive& a,Message& type) {uint32_t m=magic,v=kProtocol;a(m,v,type);if(m!=magic||v!=kProtocol)a.fail();}
-Bytes inputPacket(fps::Input input){std::string s;Archive a(&s);Message type=Message::Input;header(a,type);a(input);return bytes(s);}
-bool validCharacter(const fps::CharacterSnapshot& a) {
+Bytes inputPacket(actor::Input input){std::string s;Archive a(&s);Message type=Message::Input;header(a,type);a(input);return bytes(s);}
+bool validCharacter(const actor::CharacterSnapshot& a) {
     if(a.weaponIndex>=4||a.bag.size()>24||a.armor<0||a.armor>100||a.money<0||a.money>16000||a.owned>15)return false;
     for(int i=0;i<4;++i)if(a.storedAmmo[i]<0||a.storedAmmo[i]>1500||a.storedReserve[i]<0||a.storedReserve[i]>100000)return false;
     for(auto item:a.bag)if(item.type<1||item.type>9||item.count<1||item.count>20)return false;
@@ -34,7 +35,7 @@ bool decodeSnapshot(const Bytes& b,Snapshot& out) {
     if(!a.ok()||type!=Message::Snapshot||count==0||count>200||v.localSlot==0||v.localSlot>200)return false;
     bool own=false;uint8_t previous=0;
     for(uint32_t i=0;i<count;++i) {
-        fps::CharacterSnapshot character;a(character);if(!a.ok()||!validCharacter(character)||character.slot<=previous)return false;
+        actor::CharacterSnapshot character;a(character);if(!a.ok()||!validCharacter(character)||character.slot<=previous)return false;
         previous=character.slot;own|=character.slot==v.localSlot;v.characters.push_back(character);
     }
     a(v.projectiles,v.loot,v.vehicles,v.match,v.round,v.royale,v.gear,v.race);
@@ -66,17 +67,17 @@ bool recordsSnapshot(const lib::delta::RecordSet& records,Snapshot& out) {
     {Archive a(g->second);a(v.tick,v.ack,v.localSlot,v.winner,v.match,v.round,v.royale,v.gear,v.race);if(!a.ok()||a.remaining())return false;}
     for(const auto& [id,bytes]:records){
         if(id==kGlobals)continue;Archive a(bytes);auto kind=id&~kIdMask;
-        if(kind==kActor){fps::CharacterSnapshot x;a(x);v.characters.push_back(x);}
-        else if(kind==kProjectile){fps::Projectile x;a(x);v.projectiles.push_back(x);}
-        else if(kind==kLoot){fps::Loot x;a(x);v.loot.push_back(x);}
-        else if(kind==kVehicle){fps::Vehicle x;a(x);v.vehicles.push_back(x);}
+        if(kind==kActor){actor::CharacterSnapshot x;a(x);v.characters.push_back(x);}
+        else if(kind==kProjectile){actor::Projectile x;a(x);v.projectiles.push_back(x);}
+        else if(kind==kLoot){actor::Loot x;a(x);v.loot.push_back(x);}
+        else if(kind==kVehicle){actor::Vehicle x;a(x);v.vehicles.push_back(x);}
         else return false;
         if(!a.ok()||a.remaining())return false;
     }
     return decodeSnapshot(encodeSnapshot(v),out);
 }
 Server::Server(const Json& rules,const Json& map,uint64_t seed,world::AssetReader reader):
-    simulation_({seed,fps::readConfig(rules).tickRate,0,false},std::make_unique<fps::Module>()),content_(contentId(rules,map)) {simulation_.setup(rules,map);if(map["world"].getBool("async")){if(!reader)throw JsonError("world: server content reader required");module().setContentReader(std::move(reader));}}
+    simulation_({seed,actor::readConfig(rules).tickRate,0,false},std::make_unique<game::GameCore>()),content_(contentId(rules,map)) {simulation_.setup(rules,map);if(map["world"].getBool("async")){if(!reader)throw JsonError("world: server content reader required");module().setContentReader(std::move(reader));}}
 bool Server::occupied(uint8_t slot) const {for(const auto& p:peers_)if(p.slot==slot&&p.conn->state()!=ConnState::Closed)return true;return false;}
 bool Server::attach(uint8_t slot,std::unique_ptr<Conn> conn) {
     if(!conn||slot==0||slot>module().characterCount(simulation_)||occupied(slot))return false;
@@ -96,10 +97,10 @@ void Server::poll(uint64_t now) {
                 if(!a.ok()||a.remaining()||id!=content_){++rejected_;p.conn->close();break;}
                 p.ready=true;continue;
             }
-            fps::Input input;a(input);
+            actor::Input input;a(input);
             if(p.ready&&type==Message::Input&&a.ok()&&!a.remaining()&&input.viewTick<=simulation_.tick())p.delta.acknowledge(input.viewTick);
-            fps::Input validated;
-            if(!p.ready||type!=Message::Input||!a.ok()||a.remaining()||!fps::decodeInput(fps::command(p.slot,input),validated)||
+            actor::Input validated;
+            if(!p.ready||type!=Message::Input||!a.ok()||a.remaining()||!actor::decodeInput(actor::command(p.slot,input),validated)||
                input.sequence<=p.lastReceived||uint64_t(input.sequence)>uint64_t(p.lastReceived)+256||
                input.viewTick>simulation_.tick()||p.inputs.size()>=8) {++rejected_;continue;}
             p.lastReceived=input.sequence;p.inputs.push_back(input);
@@ -108,15 +109,15 @@ void Server::poll(uint64_t now) {
     for(auto it=peers_.begin();it!=peers_.end();)if(it->conn->state()==ConnState::Closed) {
         auto actor=module().character(std::as_const(simulation_),it->slot);
         // Release through the same authoritative input path, never leave a disconnected trigger held.
-        fps::Input release;release.sequence=actor.lastSequence+1;release.yaw=actor.yaw;release.pitch=actor.pitch;
-        auto c=fps::command(it->slot,release);c.tick=simulation_.tick();simulation_.inject(c);
+        actor::Input release;release.sequence=actor.lastSequence+1;release.yaw=actor.yaw;release.pitch=actor.pitch;
+        auto c=actor::command(it->slot,release);c.tick=simulation_.tick();simulation_.inject(c);
         it=peers_.erase(it);
     }else ++it;
 }
 bool Server::step() {
     if(!module().readyToStep(simulation_))return false;
     for(auto& p:peers_)if(p.ready&&!p.inputs.empty()) {
-        auto c=fps::command(p.slot,p.inputs.front());p.inputs.pop_front();c.tick=simulation_.tick();simulation_.inject(c);
+        auto c=actor::command(p.slot,p.inputs.front());p.inputs.pop_front();c.tick=simulation_.tick();simulation_.inject(c);
     }
     simulation_.step();
     auto& cfg=module().config();
@@ -127,7 +128,7 @@ void Server::broadcast() {
     const auto actors=module().snapshots(simulation_);
     world::SpatialWorld index(64);
     const auto projectiles=module().projectiles(simulation_);const auto loot=module().loot(simulation_);const auto vehicles=module().vehicles(simulation_);
-    for(const auto& a:actors)index.add({a.slot,fps::actorBounds(a,module().config().motor)});
+    for(const auto& a:actors)index.add({a.slot,actor::actorBounds(a,module().config().motor)});
     auto radius=module().config().interestRadius;Vec3 extent{radius,radius,radius};
     for(auto& p:peers_)if(p.ready) {
         const auto& own=actors[p.slot-1];Snapshot s;s.tick=simulation_.tick();s.ack=own.lastSequence;s.localSlot=p.slot;s.winner=simulation_.result();
@@ -136,7 +137,7 @@ void Server::broadcast() {
             auto actor=actors[id-1];
             if(id!=p.slot&&(actor.pos-own.pos).lengthSq()>radius*radius)continue;
             // Remote control intent is never replicated; spectators need their own authorization policy.
-            if(id!=p.slot){actor.input={};actor.reserve=0;actor.ammo=0;for(int i=0;i<4;++i){actor.storedAmmo[i]=0;actor.storedReserve[i]=0;}actor.hits=0;actor.bag.clear();actor.money=0;actor.activeAction=fps::Action::None;actor.actionTarget=0;actor.actionUntil=0;}
+            if(id!=p.slot){actor.input={};actor.reserve=0;actor.ammo=0;for(int i=0;i<4;++i){actor.storedAmmo[i]=0;actor.storedReserve[i]=0;}actor.hits=0;actor.bag.clear();actor.money=0;actor.activeAction=actor::Action::None;actor.actionTarget=0;actor.actionUntil=0;}
             s.characters.push_back(actor);
         }
         const auto& state=module().state(simulation_);
@@ -150,9 +151,9 @@ void Server::broadcast() {
         p.conn->sendLatest(bytes(packet));
     }
 }
-Client::Client(const Json& rules,const Json& map,std::unique_ptr<Conn> conn,world::AssetReader reader):config_(fps::readConfig(rules)),conn_(std::move(conn)),content_(contentId(rules,map)) {
-    Simulation local({1,config_.tickRate,0},std::make_unique<fps::Module>());local.setup(rules,map);
-    collision_=static_cast<fps::Module&>(local.module()).collision();
+Client::Client(const Json& rules,const Json& map,std::unique_ptr<Conn> conn,world::AssetReader reader):config_(actor::readConfig(rules)),conn_(std::move(conn)),content_(contentId(rules,map)) {
+    Simulation local({1,config_.tickRate,0},std::make_unique<game::GameCore>());local.setup(rules,map);
+    collision_=actor::host(local).collision();
     if(map["world"].getBool("async")){if(!reader)throw JsonError("world: client content reader required");streamedCollision_=std::make_unique<world::CollisionStream>(map["world"],std::move(reader),collision_);predicted_.pos=world::worldVector(map["spawns"][0],100000_fx);}
 }
 void Client::updateStreaming() {
@@ -162,14 +163,14 @@ void Client::updateStreaming() {
     for(const auto& actor:latest_.characters)if(actor.slot==latest_.localSlot)regions[1]={actor.pos-extent,actor.pos+extent};
     streamedCollision_->prepareRegions(regions);
 }
-void Client::predict(const fps::Input& input) {
+void Client::predict(const actor::Input& input) {
     // Never predict into a missing cell; keep authoritative pose until collision is available.
     const auto radius=config_.motor.sprintSpeed/Fixed::fromInt(config_.tickRate)+8_fx;
     Vec3 extent{radius,radius,radius};
     if(streamedCollision_&&!streamedCollision_->covers({predicted_.pos-extent,predicted_.pos+extent}))return;
     if(latest_.royale.enabled&&latest_.royale.divePhase!=3)return;   // skydive is server-driven: keep the authoritative pose
     if(predicted_.vehicle)return;   // a seated actor rides with its vehicle: the server drives the pose
-    fps::moveActor(predicted_,input,config_.motor,collision_,Fixed::fromRatio(1,config_.tickRate),config_.worldLimit);
+    actor::moveActor(predicted_,input,config_.motor,collision_,Fixed::fromRatio(1,config_.tickRate),config_.worldLimit);
 }
 void Client::poll(uint64_t now) {
     conn_->update(now);
@@ -194,10 +195,10 @@ void Client::poll(uint64_t now) {
         ready_=true;
     }
 }
-bool Client::submit(fps::Input input) {
+bool Client::submit(actor::Input input) {
     if(!ready_||!connected()||pending_.size()>=256||sequence_==UINT32_MAX)return false;
     input.sequence=sequence_+1;input.viewTick=latest_.tick;
-    fps::Input validated;if(!fps::decodeInput(fps::command(latest_.localSlot,input),validated))return false;
+    actor::Input validated;if(!actor::decodeInput(actor::command(latest_.localSlot,input),validated))return false;
     ++sequence_;pending_.push_back(input);conn_->send(inputPacket(input));
     predict(input);return true;
 }

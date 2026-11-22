@@ -19,7 +19,7 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
    `onImpact=enqueueProjectileDamage`, then
    `addDamageResolutionSystem(sim, ... , onApplied, policy)`.
    Register flight before damage. Neither system requires
-   `game::RtsModule` or `fps::Module`.
+   `game::GameCore` or `fps::Module`.
 3. **No parallel side effects.** Projectile traversal produces a canonical
    ordered event list; the damage queue is swapped and consumed at the
    explicit resolution barrier. A callback's newly queued damage is

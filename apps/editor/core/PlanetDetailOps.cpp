@@ -1,5 +1,5 @@
 // Planet detail grids in the editor core (docs/terrain.md "Detail surface", planets): create a body's detail
-// grid from the surface the view draws (same synthesis: RtsPlanetDetail.cpp), sculpt it with 3D brushes that
+// grid from the surface the view draws (same synthesis: GamePlanetDetail.cpp), sculpt it with 3D brushes that
 // cross the face seams (duplicated seam samples written equal), keep the corners on it, and the MCP side
 // (terrain_detail / terrain_sculpt with body).
 #include <algorithm>
@@ -8,9 +8,9 @@
 #include <map>
 #include <stdexcept>
 #include "PlanetOps.h"
-#include "modules/rts/RtsMap.h"
-#include "modules/rts/RtsSphere.h"
-#include "modules/rts/view/RtsPlanet.h"
+#include "engine/game/MapGrid.h"
+#include "engine/game/Sphere.h"
+#include "engine/view/game/GamePlanet.h"
 
 namespace aiverse::editor {
 

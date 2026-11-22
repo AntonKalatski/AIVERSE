@@ -127,7 +127,7 @@ canonical quiet NaN `0x7fc00000` / `0x7ff8000000000000`), so results are identic
 
 Arguments must be integers (`f32` ones in range), otherwise the call is an error. Both tables exist in
 simulation and view scripts. (Built on the host's IEEE operations with one operation per call, no FMA
-contraction and a check of the default floating-point environment: `modules/rts/RtsScriptIeee.cpp`.)
+contraction and a check of the default floating-point environment: `engine/game/ScriptIeee.cpp`.)
 
 ### State: `state`, `game.data(h)`, not upvalues
 
@@ -220,7 +220,7 @@ road_built lanes_changed status_start status_end area_start area_trigger area_en
 impact chain_jump cast_start channel_start channel_end alert garrison_changed transit_start
 transit_end trigger_fired loaded unloaded cycle_phase traded diplomacy item merged objective dialog
 camera mission_end learned crew_killed crewed infected submerged trap_fired group_teleport paved
-morale turn` (what `unit` / `other` / `value` mean per event: `GameEvent` in modules/rts/RtsModule.h).
+morale turn` (what `unit` / `other` / `value` mean per event: `GameEvent` in engine/game/GameCore.h).
 View scripts get the same names with `view.on` (read-only).
 
 **Before-hooks** — global functions the engine calls *before* something happens, in the middle of
@@ -336,7 +336,7 @@ read and write them: `field.get(id, x, z [, player])`, `field.set` / `field.add`
 
 ## The `services` table (traffic services)
 
-State of the city services (`traffic.services`, RtsServiceState.h) and the handles a script uses to take a person,
+State of the city services (`traffic.services`, ServiceState.h) and the handles a script uses to take a person,
 a vehicle or a hero over for a while. Queries work in view scripts too; the actions only in simulation scripts.
 
 | Query | Returns |
@@ -567,14 +567,14 @@ engine (`embed.cmake` turns them into a header, so every platform loads them wit
 and run by every game, before the game's own scripts, in the same deterministic VM. The C++ core
 keeps everything hot (ECS, commands, movement, pathfinding, avoidance, targeting and weapons,
 projectiles, vision, hashing, data parsing) and offers aggregate queries and primitives in the
-low-level `rts` table (`modules/rts/RtsScriptStd.cpp`); Lua decides the rules.
+low-level `rts` table (`engine/game/ScriptStd.cpp`); Lua decides the rules.
 
 | module | replaces (C++) | called |
 |---|---|---|
-| `victory.lua` (`std.victory`) | `RtsModule::sysVictory` | "victory" system, every 10 ticks (`std.period.victory`) |
-| `waves.lua` (`std.waves`) | `RtsModule::sysWaves` (+ wave objective scan, kept as `rts.wave_objective`) | "waves" system, only in games with waves |
-| `triggers.lua` (`std.triggers`) | `RtsModule::sysTriggers`, `triggerConditions`, `runTriggerActions` (parsing stays in `RtsTriggers.cpp`) | "triggers" system, only in games with triggers |
-| `commands.lua` (`std.auto_build`, `std.sell`) | the `kCmdAutoBuild` and `kCmdSell` branches of `RtsModule::applyCommand` | from `applyCommand` |
+| `victory.lua` (`std.victory`) | `GameCore::sysVictory` | "victory" system, every 10 ticks (`std.period.victory`) |
+| `waves.lua` (`std.waves`) | `GameCore::sysWaves` (+ wave objective scan, kept as `rts.wave_objective`) | "waves" system, only in games with waves |
+| `triggers.lua` (`std.triggers`) | `GameCore::sysTriggers`, `triggerConditions`, `runTriggerActions` (parsing stays in `Triggers.cpp`) | "triggers" system, only in games with triggers |
+| `commands.lua` (`std.auto_build`, `std.sell`) | the `kCmdAutoBuild` and `kCmdSell` branches of `GameCore::applyCommand` | from `applyCommand` |
 
 Every module is **bit-identical** to the C++ it replaced: same iteration order (ECS order comes from
 the C++ helpers), the same `Fixed` operations (`fx` metamethods call the engine's `Fixed`), the same
@@ -608,8 +608,8 @@ in `tests/checksums/games` (seeds 1-3) with `baseline.txt`, recorded from the C+
 
 ## Engine side
 
-`modules/rts/RtsScript.h` (design notes), `RtsScript.cpp` (VM, sandbox, fx, serialization),
-`RtsScriptEngine.cpp` (handlers, dispatch, `state`), `RtsScriptApi.cpp` (`game` table and
+`engine/game/Script.h` (design notes), `Script.cpp` (VM, sandbox, fx, serialization),
+`ScriptEngine.cpp` (handlers, dispatch, `state`), `ScriptApi.cpp` (`game` table and
 `scriptApiReference()`), `modules/rts/view/RtsViewScript.*` (view VM). Loaders call
 `game::embedScripts(rules, map, reader)` next to `applyTilesToMap`: script sources travel inside the
 rules JSON, so the simulation needs no file access. Lua 5.4.7 is vendored in `third_party/lua`
@@ -693,7 +693,7 @@ put it a few hundredths above the ground). The triangles are drawn inside the 3D
 translucent meshes, depth tested without depth writes and with a small bias towards the camera, so units and buildings
 standing on a mark hide it (the screen canvas above draws over them). Batches are sorted by `layer`, then call order;
 same image and layer merge; one frame only; the texture alpha below .02 is cut (vertex alpha is free). Same limits and
-errors as `view.draw` (1048576 vertices a frame). Client only; presentation only (`modules/rts/view/RtsGroundCanvas.*`).
+errors as `view.draw` (1048576 vertices a frame). Client only; presentation only (`modules/rts/view/GameGroundCanvas.*`).
 OpenWar draws its ground ability areas, railways and nuclear target rings with it, as Unity's ground canvases under
 the units. Test: `view_draw_ground_world_triangles`.
 
@@ -703,7 +703,7 @@ view scripts' `draw_ground` batches of layer >= 0): `"groundShadow": {"image": "
 model's frame (the drawn model's rotation, without its scale), `color` multiplies the image (default black at alpha
 .55), the image's u runs along the model's +x and its top lies towards the model's -z unless flipped. It follows the
 interpolated position and facing and replaces the default blob of air units. OpenWar ports Unity's footprint
-sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `RtsView::drawGround`). Test:
+sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `GameView::drawGround`). Test:
 `view_ground_shadow_option`.
 
 ### Entity scale and opacity (view scripts)
@@ -712,7 +712,7 @@ sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `RtsV
  to another entity's final rendered frame. Offsets are in cells: +X forward, +Y up, +Z right;
  yaw is in degrees. Nested attachments inherit translation, rotation, tilt and scale. Cycles
  and non-finite offsets are rejected. `view.entity_parent(child, nil)` detaches. Native hosts
- may provide `RtsScene::entityFrames` for physics-driven chassis after their visual update.
+ may provide `GameScene::entityFrames` for physics-driven chassis after their visual update.
  Children use that same frame rather than independently interpolated simulation positions.
  This is a **presentation-only** hierarchy: collision, ownership and simulation positions do
  not change. Links are cleared with the view and when either entity dies; rebuild them from
@@ -744,8 +744,8 @@ for up to 10 s after it left the simulation; then they are dropped. They apply o
 share the model shaders: `ModelDraw::tint.w`, `teamGlow` = instance `draw.w`), on planets, and to 2D sprites (`scale`
 x = width, y = height, `opacity`). Scripts that run per frame can also set values every frame from their own clock
 (OpenWar computes Unity's per-tick curves from the match time it publishes in `state`). Presentation only: the
-simulation and its checksum never see them; the headless server has no view scripts. Store: `modules/rts/view/EntityFx.h`
-(`ViewScripts::entityFx()` -> `RtsScene::entityFx`, client and editor play-test). Tests: `view_entity_fx_script_api`,
+simulation and its checksum never see them; the headless server has no view scripts. Store: `engine/view/game/EntityFx.h`
+(`ViewScripts::entityFx()` -> `GameScene::entityFx`, client and editor play-test). Tests: `view_entity_fx_script_api`,
 `view_entity_fx_renders_scaled_translucent`, `view_entity_fx_ground_shadow`, `view_entity_fx_pitch_roll`.
 
 View script budget: every handler call (`view.on`, `view.on_frame`, `ui.on`) has its own budget of 5,000,000 VM

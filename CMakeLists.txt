@@ -226,47 +226,49 @@ if(AIVERSE_ENABLE_PHYSICS)
 endif()
 add_subdirectory(engine/meta)
 
-# Generic data-driven RTS gameplay (units, orders, economy, combat, garrisons, AI)
+# The one gameplay host: grid systems (units, orders, economy, combat, garrisons, AI) and, on world-space maps, actor systems
 add_library(aiverse_game STATIC
-    modules/rts/RtsData.cpp
-    modules/rts/RtsMap.cpp
-    modules/rts/RtsHpa.cpp
-    modules/rts/RtsMapSphere.cpp
-    modules/rts/RtsHpaSphere.cpp
-    modules/rts/RtsFlowField.cpp
-    modules/rts/RtsSphere.cpp
-    modules/rts/RtsSurface.cpp
-    modules/rts/RtsModule.cpp
-    modules/rts/RtsPlanets.cpp
-    modules/rts/RtsEconomy.cpp
-    modules/rts/RtsUnits.cpp
-    modules/rts/RtsProjectilePrograms.cpp
-    modules/rts/RtsCombat.cpp
-    modules/rts/RtsWorld.cpp
-    modules/rts/RtsVision.cpp
-    modules/rts/RtsTriggers.cpp
-    modules/rts/RtsDungeon.cpp
-    modules/rts/RtsSettlers.cpp
-    modules/rts/RtsLanes.cpp
-    modules/rts/RtsAvoidance.cpp
-    modules/rts/RtsEffectsData.cpp
-    modules/rts/RtsEffects.cpp
-    modules/rts/RtsSkillObjects.cpp
-    modules/rts/RtsSkills.cpp
-    modules/rts/RtsAI.cpp
-    modules/rts/RtsOriginalsData.cpp
-    modules/rts/RtsOriginals.cpp
-    modules/rts/RtsFidelityData.cpp
-    modules/rts/RtsFidelity.cpp
-    modules/rts/RtsModesData.cpp
-    modules/rts/RtsModes.cpp
-    modules/rts/RtsAIOriginals.cpp
-    modules/rts/RtsAIFidelity.cpp
-    modules/rts/RtsAITerrain.cpp
-    modules/rts/RtsAITactics.cpp)
+    engine/game/GameActorHost.cpp   # world-space maps: actor systems (engine/actor)
+    engine/game/GameData.cpp
+    engine/game/MapGrid.cpp
+    engine/game/MapHpa.cpp
+    engine/game/MapGridSphere.cpp
+    engine/game/MapHpaSphere.cpp
+    engine/game/FlowField.cpp
+    engine/game/Sphere.cpp
+    engine/game/Surface.cpp
+    engine/game/GameCore.cpp
+    engine/game/Planets.cpp
+    engine/game/Economy.cpp
+    engine/game/Units.cpp
+    engine/game/ProjectilePrograms.cpp
+    engine/game/Combat.cpp
+    engine/game/World.cpp
+    engine/game/Vision.cpp
+    engine/game/Triggers.cpp
+    engine/game/Dungeon.cpp
+    engine/game/Settlers.cpp
+    engine/game/Lanes.cpp
+    engine/game/Avoidance.cpp
+    engine/game/EffectsData.cpp
+    engine/game/Effects.cpp
+    engine/game/SkillObjects.cpp
+    engine/game/Skills.cpp
+    engine/game/ComputerPlayer.cpp
+    engine/game/OriginalsData.cpp
+    engine/game/Originals.cpp
+    engine/game/FidelityData.cpp
+    engine/game/Fidelity.cpp
+    engine/game/ModesData.cpp
+    engine/game/Modes.cpp
+    engine/game/ComputerPlayerOriginals.cpp
+    engine/game/ComputerPlayerFidelity.cpp
+    engine/game/ComputerPlayerTerrain.cpp
+    engine/game/ComputerPlayerTactics.cpp)
+target_link_libraries(aiverse_game PUBLIC aiverse_fps)   # actor systems: defined in engine/actor/CMakeLists.txt
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
-# the race adapter. The grid-map host (modules/rts/RtsDriving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
+# the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (engine/actor/ActorVehicles.cpp)
 # only implement its world queries.
 add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
 add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
@@ -300,9 +302,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
 endif()
 include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
-file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsMech*.cpp)
-target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} modules/rts/RtsSave.cpp modules/rts/RtsCampaign.cpp   # + save states, campaigns
-    modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on RtsModule
+file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/Mech*.cpp)
+target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} engine/game/Save.cpp engine/game/Campaign.cpp   # + save states, campaigns
+    modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on GameCore
 # Optional simulation systems of packaged clients (packaging.engineModules, tools/aiversebuild).
 # A system that runs only when its rules block is present can be left out: OFF compiles the adapter
 # `stub` (modules/rts/disabled/) instead of its sources; the adapter keeps the system inactive and
@@ -323,7 +325,7 @@ endfunction()
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
 # Every game: hypnotised sends, per point counters, the controller registry and the registration point.
-target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp modules/rts/RtsAIControllers.cpp modules/rts/RtsGameExtensions.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Hypnosis.cpp engine/game/AIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
@@ -333,7 +335,7 @@ add_library(aiverse_i18n STATIC
     engine/i18n/Localization.cpp
     engine/i18n/GameLanguage.cpp
     engine/i18n/SystemLanguage.cpp
-    modules/rts/RtsLocalize.cpp)
+    engine/game/Localize.cpp)
 target_link_libraries(aiverse_i18n PUBLIC aiverse_game)
 if(APPLE)
     target_link_libraries(aiverse_i18n PUBLIC "-framework CoreFoundation")
@@ -517,7 +519,7 @@ elseif(AIVERSE_PLATFORM STREQUAL "linux" OR AIVERSE_PLATFORM STREQUAL "android")
     endif()
 endif()
 
-add_library(aiverse_game_audio STATIC modules/rts/audio/RtsAudio.cpp modules/rts/audio/AudioScriptSound.cpp)
+add_library(aiverse_game_audio STATIC engine/audio/GameAudio.cpp engine/audio/AudioScriptSound.cpp)
 target_link_libraries(aiverse_game_audio PUBLIC aiverse_game aiverse_audio)
 
 # Particles: CPU simulation + RHI rendering (presentation only), and the RTS event bridge.
@@ -535,7 +537,7 @@ target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuCueBridge.cpp)
 target_link_libraries(aiverse_fx PUBLIC aiverse_engine aiverse_shader_graph)
 # SpectraFX is the official public name; retain aiverse_fx for existing clients.
 add_library(AIVERSE::spectrafx ALIAS aiverse_fx)
-add_library(aiverse_game_fx STATIC modules/rts/fx/RtsFx.cpp)
+add_library(aiverse_game_fx STATIC engine/fx/GameFx.cpp)
 target_link_libraries(aiverse_game_fx PUBLIC aiverse_game aiverse_fx)
 
 # ---------------------------------------------------------------------------
@@ -1199,14 +1201,14 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_geometry_bounds COMMAND aiverse_view_geometry_bounds_tests)
 endif()
 
-# RTS presentation adapter uses Rules but never constructs the legacy RtsView.
+# RTS presentation adapter uses Rules but never constructs the legacy GameView.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_rts_selection_presentation_tests tests/view/rts_selection_presentation.cpp)
     target_link_libraries(aiverse_rts_selection_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
     add_test(NAME view_rts_selection_presentation COMMAND aiverse_rts_selection_presentation_tests)
 endif()
 
-# RTS preview authoring is independent of the legacy RtsView renderer.
+# RTS preview authoring is independent of the legacy GameView renderer.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_rts_preview_presentation_tests tests/view/rts_preview_presentation.cpp)
     target_link_libraries(aiverse_rts_preview_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
@@ -1449,18 +1451,18 @@ add_library(aiverse_roads_view STATIC engine/roads/RoadView.cpp engine/roads/Roa
 add_library(AIVERSE::roads_view ALIAS aiverse_roads_view)
 target_link_libraries(aiverse_roads_view PUBLIC aiverse_roads aiverse_models aiverse_render2d)
 
-add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/view/RtsTerrain.cpp
-    modules/rts/view/RtsShoreView.cpp
-    modules/rts/view/RtsShapes.cpp modules/rts/view/RtsLook.cpp modules/rts/view/RtsAnimate.cpp
-    modules/rts/view/RtsViewDraw.cpp modules/rts/view/RtsPortrait.cpp
-    modules/rts/view/RtsLights.cpp modules/rts/view/RtsLightsData.cpp modules/rts/view/RtsGroundFx.cpp modules/rts/view/RtsTerrainRender.cpp modules/rts/view/RtsTerrainDetailMesh.cpp
-    modules/rts/view/RtsFieldView.cpp
-    modules/rts/view/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
-    modules/rts/view/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
-    modules/rts/view/RtsPlanetRender.cpp modules/rts/view/RtsPlanetView.cpp modules/rts/view/RtsPlanetGroundFx.cpp modules/rts/view/RtsPlanetFlora.cpp)
+add_library(aiverse_game_view STATIC engine/view/game/GameView.cpp engine/view/game/GameTerrain.cpp
+    engine/view/game/GameShoreView.cpp
+    engine/view/game/GameShapes.cpp engine/view/game/GameLook.cpp engine/view/game/GameAnimate.cpp
+    engine/view/game/GameViewDraw.cpp engine/view/game/GamePortrait.cpp
+    engine/view/game/GameLights.cpp engine/view/game/GameLightsData.cpp engine/view/game/GameGroundFx.cpp engine/view/game/GameTerrainRender.cpp engine/view/game/GameTerrainDetailMesh.cpp
+    engine/view/game/GameFieldView.cpp
+    engine/view/game/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
+    engine/view/game/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
+    engine/view/game/GamePlanetRender.cpp engine/view/game/GamePlanetView.cpp engine/view/game/GamePlanetGroundFx.cpp engine/view/game/GamePlanetFlora.cpp)
 # visual terrain detail surface (agent-terrain): shared by the view and the editor core (sculpt, validate)
-# + the planet surface maths (RtsPlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
-add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp modules/rts/view/RtsPlanet.cpp modules/rts/view/RtsPlanetDetail.cpp)
+# + the planet surface maths (GamePlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
+add_library(aiverse_terrain_detail STATIC engine/view/game/GameTerrainDetail.cpp engine/view/game/GamePlanet.cpp engine/view/game/GamePlanetDetail.cpp)
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui aiverse_roads_view)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
@@ -1468,6 +1470,7 @@ target_link_libraries(aiverse_game_view PUBLIC aiverse_view_visibility)
 # Transitional host adapter consumes the engine View. The dependency points
 # from the game module into the engine, never back into an RTS implementation.
 target_link_libraries(aiverse_game_view PUBLIC AIVERSE::view)
+target_link_libraries(aiverse_game_view PUBLIC aiverse_world)   # GameWaterNereid.h: NEREID manifest parsing (engine/world)
 
 # Helper: package content + platform metadata around an executable.
 include(platform/cmake/ThirdPartyNotices.cmake)
@@ -1632,6 +1635,9 @@ if(AIVERSE_BUILD_CLIENT)
         target_link_libraries(aiverse_client PRIVATE aiverse_game_audio)
         aiverse_package_app(aiverse_client)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
+        target_compile_definitions(aiverse_client PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")   # actor / voxel hosts: engine dir in a dev build
+        # actor (first / third person) and voxel projects run in the same client (apps/client/main.cpp dispatches
+        # on game.json "module"); their hosts are added in engine/actor and modules/voxel (aiverse_client_hosts)
     endif()
     # Mach-O keeps otherwise unused functions from directly linked client
     # objects unless dead stripping is requested explicitly. Static archives
@@ -1946,6 +1952,10 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_camera_rig_tests tests/render/camera_rig.cpp)
     target_include_directories(aiverse_camera_rig_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rig COMMAND aiverse_camera_rig_tests)
+    add_executable(aiverse_camera_behavior_tests tests/render/camera_behavior.cpp)
+    target_include_directories(aiverse_camera_behavior_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_camera_behavior_tests PRIVATE aiverse_engine)
+    add_test(NAME camera_behavior COMMAND aiverse_camera_behavior_tests)
     add_executable(aiverse_camera_rail_path_tests tests/render/camera_rail_path.cpp)
     target_include_directories(aiverse_camera_rail_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rail_path COMMAND aiverse_camera_rail_path_tests)
@@ -2075,15 +2085,15 @@ endforeach()
 # 2D games (2D-mode agent): tile maps + autotiling (deterministic, part of the game library),
 # sprite batch + textures (RHI only), sprite/tile presentation in the RTS view.
 # ---------------------------------------------------------------------------
-target_sources(aiverse_game PRIVATE modules/rts/RtsTiles.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Tiles.cpp)
 # terrain / map generator (agent-terrain-gen): integer noise, erosion, biomes, fair starts, presets, planets
 aiverse_game_module(AIVERSE_GAME_WITH_MAPGEN "Include the map generator (map \"generate\" blocks)"
-    modules/rts/disabled/MapGen.cpp
-    modules/rts/gen/GenNoise.cpp modules/rts/gen/GenField.cpp modules/rts/gen/GenTerrain.cpp
-    modules/rts/gen/GenContent.cpp modules/rts/gen/GenCity.cpp modules/rts/gen/GenPlanet.cpp modules/rts/gen/GenWorld.cpp modules/rts/gen/MapGen.cpp)
+    engine/game/disabled/MapGen.cpp
+    engine/game/gen/GenNoise.cpp engine/game/gen/GenField.cpp engine/game/gen/GenTerrain.cpp
+    engine/game/gen/GenContent.cpp engine/game/gen/GenCity.cpp engine/game/gen/GenPlanet.cpp engine/game/gen/GenWorld.cpp engine/game/gen/MapGen.cpp)
 add_library(aiverse_render2d STATIC engine/render/SpriteBatch.cpp engine/render/TextureCache.cpp)
 target_include_directories(aiverse_render2d PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
-target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsSprites.cpp modules/rts/view/RtsTileView.cpp modules/rts/view/RtsSpriteShadow.cpp)
+target_sources(aiverse_game_view PRIVATE engine/view/game/GameSprites.cpp engine/view/game/GameTileView.cpp engine/view/game/GameSpriteShadow.cpp)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_render2d)
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/TileOps.cpp)
@@ -2122,7 +2132,7 @@ if(TARGET aiverse_editor_core) # lighting agent: light_* / lighting_set operatio
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PlanetOps.cpp apps/editor/core/PlanetDetailOps.cpp)   # planet-render agent: planet sculpt / paint
 endif()
 if(TARGET aiverse_tests) # lighting agent: GPU-free lighting logic under test
-    target_sources(aiverse_tests PRIVATE modules/rts/view/RtsLightsData.cpp engine/render/QualityGovernor.cpp)
+    target_sources(aiverse_tests PRIVATE engine/view/game/GameLightsData.cpp engine/render/QualityGovernor.cpp)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -2130,10 +2140,10 @@ endif()
 # numbers, bars). aiverse_overlay_data: GPU-free schema / validation / templates, shared by the view and
 # the editor core (MCP overlay_* operations); the evaluator + renderer live in aiverse_game_view.
 # ---------------------------------------------------------------------------
-add_library(aiverse_overlay_data STATIC modules/rts/view/RtsOverlayData.cpp)
+add_library(aiverse_overlay_data STATIC engine/view/game/GameOverlayData.cpp)
 target_link_libraries(aiverse_overlay_data PUBLIC aiverse_game)
 target_include_directories(aiverse_overlay_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsOverlays.cpp modules/rts/view/RtsOverlaysDraw.cpp)
+target_sources(aiverse_game_view PRIVATE engine/view/game/GameOverlays.cpp engine/view/game/GameOverlaysDraw.cpp)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_overlay_data)
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/OverlayOps.cpp)
@@ -2268,68 +2278,68 @@ endif()
 if(UNIX)
     target_compile_definitions(aiverse_lua PRIVATE LUA_USE_POSIX)  # os.tmpname via mkstemp (the linker warns about tmpnam)
 endif()
-target_sources(aiverse_game PRIVATE modules/rts/RtsScriptTerritory.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsScriptGrid.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsScript.cpp modules/rts/RtsScriptEngine.cpp modules/rts/RtsScriptApi.cpp modules/rts/RtsScriptCommands.cpp
-    modules/rts/RtsScriptStd.cpp modules/rts/RtsScriptIeee.cpp)
+target_sources(aiverse_game PRIVATE engine/game/ScriptTerritory.cpp)
+target_sources(aiverse_game PRIVATE engine/game/ScriptGrid.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Script.cpp engine/game/ScriptEngine.cpp engine/game/ScriptApi.cpp engine/game/ScriptCommands.cpp
+    engine/game/ScriptStd.cpp engine/game/ScriptIeee.cpp)
 if(NOT MSVC)
-    # one IEEE operation per binding: never contract into FMA (RtsScriptIeee.cpp)
-    set_source_files_properties(modules/rts/RtsScriptIeee.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+    # one IEEE operation per binding: never contract into FMA (ScriptIeee.cpp)
+    set_source_files_properties(engine/game/ScriptIeee.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 # grid fields (G5): data, kernels, Lua `field` table (docs/fields.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/GridFields.cpp engine/game/GridFieldData.cpp engine/game/GridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
-target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp modules/rts/RtsPrompt.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Raid.cpp engine/game/RaidData.cpp engine/game/RaidBot.cpp engine/game/RaidApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/DrivingApi.cpp engine/game/ServicesApi.cpp engine/game/Prompts.cpp engine/game/PromptApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
-    modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
+    engine/game/disabled/Commerce.cpp engine/game/Commerce.cpp engine/game/CommerceApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
-    modules/rts/disabled/Career.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsSensors.cpp modules/rts/RtsFieldOps.cpp)   # radar / sonar / jammers, field operations
+    engine/game/disabled/Career.cpp engine/game/Career.cpp engine/game/CareerApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Sensors.cpp engine/game/FieldOps.cpp)   # radar / sonar / jammers, field operations
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsTopDown.cpp)
+target_sources(aiverse_game PRIVATE engine/game/TopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsProgression.cpp modules/rts/RtsProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Progression.cpp engine/game/ProgressionData.cpp engine/game/ProgressionApi.cpp)
 # boss encounters (agent-df-encounters-glue): rules "encounters" over the boss-encounters library package (docs/encounters.md)
 aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules \"encounters\")"
-    modules/rts/disabled/Encounters.cpp modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
+    engine/game/disabled/Encounters.cpp engine/game/Encounters.cpp engine/game/EncountersApi.cpp)
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsMapRules.cpp)
+target_sources(aiverse_game PRIVATE engine/game/MapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
-target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_nereid_buoyancy)   # planet seas (RtsPlanets: world body "nereid")
+target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_nereid_buoyancy)   # planet seas (GamePlanets: world body "nereid")
 # map environment (weather, wind, zones, trample fields, auto skills on splines, fog options)
-target_sources(aiverse_game PRIVATE modules/rts/RtsEnv.cpp modules/rts/RtsEnvData.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Environment.cpp engine/game/EnvironmentData.cpp)
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Driving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
-target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Routes.cpp engine/game/RoutesData.cpp engine/game/ScriptRoutes.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_ARSENAL "Include hero weapons (rules \"arsenal\")"
-    modules/rts/disabled/Arsenal.cpp modules/rts/RtsArsenal.cpp)
+    engine/game/disabled/Arsenal.cpp engine/game/Arsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
 aiverse_game_module(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation"
-    modules/rts/disabled/Traffic.cpp
-    modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+    engine/game/disabled/Traffic.cpp
+    engine/game/Traffic.cpp engine/game/TrafficCity.cpp engine/game/TrafficPopulation.cpp engine/game/TrafficCommute.cpp engine/game/TrafficGangs.cpp)
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficRoads.cpp)
+target_sources(aiverse_game PRIVATE engine/game/TrafficRoads.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_roads)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
-target_sources(aiverse_game PRIVATE modules/rts/view/RtsWater.cpp)
-# the engine's standard Lua library (rule-level mechanics) is compiled in: modules/rts/lua/*.lua
-file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/*.lua)
-set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/RtsStdLua.h)
+target_sources(aiverse_game PRIVATE engine/view/game/GameWater.cpp)
+# the engine's standard Lua library (rule-level mechanics) is compiled in: engine/game/lua/*.lua
+file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/*.lua)
+set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/StdLua.h)
 add_custom_command(OUTPUT ${AIVERSE_STD_LUA_H}
-    COMMAND ${CMAKE_COMMAND} -DOUT=${AIVERSE_STD_LUA_H} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua -P ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/embed.cmake
-    DEPENDS ${AIVERSE_STD_LUA} ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/embed.cmake VERBATIM)
+    COMMAND ${CMAKE_COMMAND} -DOUT=${AIVERSE_STD_LUA_H} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua -P ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/embed.cmake
+    DEPENDS ${AIVERSE_STD_LUA} ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/embed.cmake VERBATIM)
 target_sources(aiverse_game PRIVATE ${AIVERSE_STD_LUA_H})
 target_include_directories(aiverse_game PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen)
 target_link_libraries(aiverse_game PUBLIC aiverse_lua)
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/ScriptOps.cpp)
 endif()
-target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsViewScript.cpp modules/rts/view/ScriptSound.cpp)
+target_sources(aiverse_game_view PRIVATE engine/view/game/GameViewScript.cpp engine/view/game/ScriptSound.cpp)
 
 # Generic GPU canvases and Lua world-space paint layers.
-target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp modules/rts/view/RtsPaintLayers.cpp modules/rts/view/RtsGroundCanvas.cpp)
+target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp engine/view/game/GamePaintLayers.cpp engine/view/game/GameGroundCanvas.cpp)
 
 # Shared region gesture input; gameplay remains in project Lua ability effects.
 option(AIVERSE_CLIENT_WITH_CITY "Include persistent city server client in packaged clients" ON)
@@ -2563,7 +2573,7 @@ if(AIVERSE_BUILD_TESTS)
 endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
-add_subdirectory(modules/fps)
+add_subdirectory(engine/actor)
 
 # Host-only offline TerraWeave atlas baker: not linked into any game module.
 # Uses the same optional WorldScene Horizon manifest and pure C++20 bake API.
@@ -2572,7 +2582,7 @@ if(AIVERSE_BUILD_TOOLS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_horizon_bake PRIVATE aiverse_world aiverse_models aiverse_zstd_dec)
 endif()
 # Opt-in additive scene collision namespaces use the existing
-# aiverse_world / CollisionStream library. Define these after modules/fps
+# aiverse_world / CollisionStream library. Define these after engine/actor
 # has created aiverse_world, not in the early aiverse_engine-only test group.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_ecs_scene_collision_namespaces_test
@@ -2685,7 +2695,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     # Link only legacy water's data source rather than all RTS/editor/renderer.
     add_executable(aiverse_ecs_nereid_legacy_raster_test
         tests/ecs_nereid_legacy_raster_test.cpp
-        modules/rts/view/RtsWater.cpp)
+        engine/view/game/GameWater.cpp)
     target_link_libraries(aiverse_ecs_nereid_legacy_raster_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_legacy_raster_test
@@ -2715,11 +2725,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
-    # Legacy RTS cell water -> NEREID conversion (CPU-only).
-    add_executable(aiverse_rts_water_nereid_test tests/rts_water_nereid_test.cpp)
-    target_link_libraries(aiverse_rts_water_nereid_test PRIVATE
+    # Legacy cell water -> NEREID conversion (CPU-only).
+    add_executable(aiverse_game_water_nereid_test tests/game_water_nereid_test.cpp)
+    target_link_libraries(aiverse_game_water_nereid_test PRIVATE
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
-    add_test(NAME rts_water_nereid_test COMMAND aiverse_rts_water_nereid_test)
+    add_test(NAME game_water_nereid_test COMMAND aiverse_game_water_nereid_test)
     # NEREID large-world ocean LOD: legacy coverage, stitched rings (CPU-only).
     add_executable(aiverse_ecs_nereid_ocean_lod_test
         tests/ecs_nereid_ocean_lod_test.cpp)
@@ -2748,7 +2758,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_review_fixes_test PRIVATE
         aiverse_world aiverse_models aiverse_zstd_dec AIVERSE::lib_nereid_water)
     add_test(NAME terraweave_review_fixes COMMAND aiverse_terraweave_review_fixes_test)
-    # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
+    # Real NativeModule instantiated by GameCore, exercising GameSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
     target_compile_definitions(aiverse_ecs_native_rts_integration_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

@@ -48,14 +48,14 @@ Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage43-owner
 
 ## Known limitations and risks
 
-1. Roads now stage/publish as ONE owner inside rebuild(), but RtsView still calls Road/Fog/Shore and other owners sequentially during its primary draw. A late Fog or animation failure may occur after Roads already committed. True global all-owner atomicity remains incomplete.
+1. Roads now stage/publish as ONE owner inside rebuild(), but GameView still calls Road/Fog/Shore and other owners sequentially during its primary draw. A late Fog or animation failure may occur after Roads already committed. True global all-owner atomicity remains incomplete.
 2. This staging path rebuilds the entire road network and duplicates its temporary CPU/GPU geometry and variant material arrays. No fixed hard global upload budget or resumable multi-frame staging yet exists; evaluate busy worlds with thousands of road chunks.
 3. The candidate's borrowed textures rely on the parent RtsRoadView kit remaining alive during staging, all pending camera submissions, and retirement. TextureCache hot-reload and device-loss generation should be audited before claiming cross-owner rollback.
 4. GPU/backend failures after a Model upload has begun may need quarantine when the device cannot prove GPU completion; existing abortFailedModelUpload logic remains responsible. Real GPU fault injection and resource-lease behavior are NOT validated.
 5. The exact C++ fixture behavior (initial drivable asphalt mesh, weather film allocation, GPU buffer order) is not confirmed; adjust the new regression test assertions during the consolidated native run.
-6. Older RtsRoadView::init, ghost-only material/texture creation and direct setNetwork/setMap calls do not yet participate in the FramePublicationEpoch invalidation automatically unless RtsView's host adapter invalidates its epoch. Follow up with a shared owner mutation generation.
+6. Older RtsRoadView::init, ghost-only material/texture creation and direct setNetwork/setMap calls do not yet participate in the FramePublicationEpoch invalidation automatically unless GameView's host adapter invalidates its epoch. Follow up with a shared owner mutation generation.
 7. Draw callbacks still borrow a live SpriteBatch pipeline owner. The host must not destroy/reinitialize it until queued custom commands and GPU work complete; copying GPU handles alone does not extend RHI owner lifetime.
-8. The generic Stage 43 two-phase OwnerPrepareCommit is not yet used directly by RoadView's owner-local rebuild. To join the full RtsView graph, externalize Road candidate ownership and separate prepare from no-throw commit.
+8. The generic Stage 43 two-phase OwnerPrepareCommit is not yet used directly by RoadView's owner-local rebuild. To join the full GameView graph, externalize Road candidate ownership and separate prepare from no-throw commit.
 
 ## Exact next stage — Stage 45
 

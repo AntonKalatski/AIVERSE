@@ -8,7 +8,7 @@ Earlier: docs/agent-handoffs/lens-motionweave-integration-stage47a1-resident-gro
 
 ## Changed
 
-- RtsGroundFx::init catch now preserves original exception with std::exception_ptr; releases only unpublished prepared shader/pipeline, white fallback, and staged TextureCache references directly without calling published-owner shutdown's full-GPU-idle barrier. No GPU submission could have referenced these newly created kit resources. The live old kit is never touched on failed reload.
+- GameGroundFx::init catch now preserves original exception with std::exception_ptr; releases only unpublished prepared shader/pipeline, white fallback, and staged TextureCache references directly without calling published-owner shutdown's full-GPU-idle barrier. No GPU submission could have referenced these newly created kit resources. The live old kit is never touched on failed reload.
 - This fixes an existing risk from the previous init staging code: when reload's waitForResourceIdle() explicitly refused, calling staged->shutdown() would itself refuse cleanup, leaving staged textures/shaders allocated and preventing the cleanup-count test from being valid.
 - Added two generated material textures in previous Stage47A.1; their private ownership now releases on refused idle, allocation failure or invalid kit.
 

@@ -18,7 +18,7 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
 4. TerraWeave on spheres (`skills/workflow/aiverse-terra-first/SKILL.md` applies to planets too):
    relief and land biomes come from `engine/world/TerraWeaveSphere.h` (`heightAtSphere`, `climateAtSphere`,
    `placeOnSphere`); never write a separate planet noise or tree placer. Trees and rocks are TerraWeave
-   Arbor / rock prototypes placed per cell by the planet view (`modules/rts/view/RtsPlanetFlora.*`): body
+   Arbor / rock prototypes placed per cell by the planet view (`engine/view/game/GamePlanetFlora.*`): body
    `visual.flora` `{"density": 0..1 (0.22 planets, 0 moons), "scale": world units per metre (0.06)}` or `false`.
    Check them on a close screenshot (`AIVERSE_PLANET_CAM=40,20`): trees on land, none in the sea or on steep rock.
 5. Water: oceans of planets belong to NEREID (`skills/gameplay/aiverse-nereid-water/SKILL.md`). The planet sea
@@ -29,7 +29,8 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
    the sea (ships, swimmers, floating wrecks) add `"nereid": true` or `{"depth", "current", "axis"}` to the body:
    the sea becomes a NEREID sphere water body (`NereidSphereWater.h`, docs/planets.md §1). Give the floating
    entities `WaterProbeComponent` + `WaterSphereContactComponent` (+ buoyancy components) from a native module;
-   depth, up and buoyancy are radial, the current flows east about the axis. Never write planet-only water code.
+   depth, up and buoyancy are radial, the current flows east about the axis, `waves` adds a swell. Naval units get
+   probes and splash / wake events automatically. Never write planet-only water code.
 6. Cube-sphere terrain: relief and materials with the heightfield tools; check seams between faces on screenshots (`view_focus` on edges).
 7. Bots: `rules.ai.invasionSize` sets the orbit fleet; bots build orbital yards when the enemy is reachable only through orbit. `match_run` must show transfers between bodies and a winner (`skills/ai/aiverse-bots-debug` otherwise).
 8. Determinism: same seed -> same checksum; `templates/` checksums unchanged when engine code is touched.

@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parents[2]
 validator=shutil.which('glslangValidator')
 if not validator:raise SystemExit('glslangValidator required')
 source=r'''
-#include "modules/rts/view/RtsTerrainShaders.h"
+#include "engine/view/game/GameTerrainShaders.h"
 #include "engine/gfx/ColorSpace.h"
 #include <fstream>
 int main(){for(int es=0;es<2;++es)for(int tier=0;tier<3;++tier)for(int detail=0;detail<2;++detail)for(int atlas=0;atlas<2;++atlas)for(int hdr=0;hdr<2;++hdr){

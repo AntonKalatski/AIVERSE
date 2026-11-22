@@ -454,7 +454,7 @@ Ein Typ wird aus seinem Block `"view"` gezeichnet: eine eingebaute Form (`"shape
 - **Fortgeschrittene Animation**: Blend Space Gehen/Laufen, additive Clips (Atmen, Rückstoß), Fuß-IK auf dem Gelände,
   Kopfdrehung zum Ziel, Neigung von Fahrzeugen am Hang, Morph Targets (Blend Shapes) auf der GPU.
 - **Sockets**: Waffe in der Hand, Last auf dem Rücken (nach getragener Ressource), Abschusspunkte von Projektilen,
-  Effektpunkte (Rauch, Feuer, Auspuff); Clip-Ereignisse und `RtsView::events()/effects()` für Ton und Partikel.
+  Effektpunkte (Rauch, Feuer, Auspuff); Clip-Ereignisse und `GameView::events()/effects()` für Ton und Partikel.
 - **Stufen**: Gerüst und Bauphasen, beschädigte Variante nach Lebenspunkten, Auflösen beim Erscheinen und Sterben,
   Auswahlumriss, durchscheinender Geist beim Platzieren eines Gebäudes, Porträts.
 - **Formate**: außerdem **FBX** (ufbx) und komprimierte **KTX2**-Texturen (ETC2/BC/ASTC, bleiben auf der GPU komprimiert);
@@ -496,7 +496,7 @@ schweren Schlacht eine Stufe wieder an; manuelle Schattenwahl im Menü schaltet 
 - **Editor** — das Fenster „Lighting“: Vorschau von Tageszeit und Gewitter, Lichtqualitätsstufe, Liste der Lichter. Für
   Agenten: `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-Das Feldformat steht im Kopf von `modules/rts/view/RtsLights.h`. Testvariablen: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`,
+Das Feldformat steht im Kopf von `engine/view/game/GameLights.h`. Testvariablen: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`,
 `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Mechaniken über MCP prüfen

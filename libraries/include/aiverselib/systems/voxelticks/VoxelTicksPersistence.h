@@ -1,7 +1,7 @@
 #pragma once
 // voxel-ticks save record (kind 121) in NativeState arrays: pending updates in queue order plus counters.
 #include "VoxelTicks.h"
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 namespace aiverse::lib::systems {
 inline constexpr std::int64_t kVoxelTicksRecord=121;
 inline bool storeVoxelTicks(game::NativeState& state,const std::string& key,const VoxelTickState& s){

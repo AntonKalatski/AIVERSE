@@ -11,7 +11,7 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
-#include "modules/rts/view/RtsShapeModels.h"
+#include "engine/view/game/GameShapeModels.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -1541,10 +1541,10 @@ void StudioScene::frame(int framebufferWidth, int framebufferHeight, const edito
             {
                 proxies_=studioDocumentProxies(doc,fpsProject,levelHeight);
                 showTerrain_=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
-                lightingSettings_=renderLightingSettings((fpsProject?doc.data.fps:doc.data.extra)["renderLighting"]);
+                lightingSettings_=renderLightingSettings(doc.data.extra["renderLighting"]);
                 useLighting_=lightingSettings_.getStr("indirect")!="off" || lightingSettings_.getStr("direct")!="legacy";
-                activeLights_=studioAuthoredLights(doc,fpsProject,levelHeight,std::numeric_limits<size_t>::max());
-                day_=previewDocumentDay(doc,fpsProject);
+                activeLights_=studioAuthoredLights(doc,levelHeight,std::numeric_limits<size_t>::max());
+                day_=previewDocumentDay(doc);
                 nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
             }
             sceneCacheValid_=false; // stays invalid if the sync below throws
@@ -1579,7 +1579,7 @@ void StudioScene::frame(int framebufferWidth, int framebufferHeight, const edito
     const auto& activeLights=activeLights_;
     Lighting environment;
     const auto& day=day_;
-    const Json& lightingSource=fpsProject ? doc.data.fps["lighting"] : doc.data.extra["lighting"];
+    const Json& lightingSource=doc.data.extra["lighting"];
     if(lightingSource.isObject()) {
         environment.sunIntensity=day.sun;
         environment.skyColor={.5f*day.ambient,.58f*day.ambient,.7f*day.ambient};

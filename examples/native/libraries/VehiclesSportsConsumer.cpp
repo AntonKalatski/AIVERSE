@@ -4,7 +4,7 @@
 #include <aiverselib/mechanics/SportsConfigured.h>
 #include <aiverselib/mechanics/SportsData.h>
 #include <aiverselib/mechanics/SportsPersistence.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <array>
 #include <span>
 #include <vector>

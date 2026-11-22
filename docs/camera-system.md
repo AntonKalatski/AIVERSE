@@ -1,6 +1,9 @@
 # AIVERSE LENS — genre-independent ECS cameras and multi-camera capture
 Updated: 2026-11-21. Current integration: `main`; P2 work on `feature/aiv20261121_lens_p2`.
 
+View camera bodies (overhead, follow, chase, first person), the ECS rig modes that share their math and the named
+presets: [camera-behaviors.md](camera-behaviors.md).
+
 ## Current implementation and validation
 
 LENS now includes ECS camera assets, scheduling and dependency checks, managed
@@ -87,6 +90,7 @@ The existing aiversemcp server and native editor share these Workspace operation
 | `lens_scene_set` | scene, expectedRevision or expectedScene | validated complete asset replacement |
 | `lens_camera_set` | camera, expectedRevision or expectedScene | create/replace one complete record by stable id |
 | `lens_camera_delete` | id, expectedRevision or expectedScene | remove one existing record |
+| `lens_camera_presets` | optional name | named camera presets: body and keys ([camera-behaviors.md](camera-behaviors.md)) |
 
 Call open_game first. Pass the last get response's **revision** (an opaque hash of
 the file bytes, `"missing"` without a file) as expectedRevision; successful writes
@@ -160,7 +164,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 - `Renderer3D::beginScene(camera, w, h) -> draw* -> render(gfx::PassDesc, PostProcess*) -> [resolvePostFx()] -> gfx::Device::endPass()`.
 - `gfx::PassDesc` already supports separate `colorTarget` / `depthTarget` textures.
 - `apps/editor/Editor.h::Viewport` already contains independent render-target pair for Scene/Game windows.
-- `engine/render/PortraitRenderer.h` is a genre-free offscreen Renderer3D + model-pose capture host (Stage 2); `modules/rts/view/RtsPortrait.cpp` is its RTS-specific adapter.
+- `engine/render/PortraitRenderer.h` is a genre-free offscreen Renderer3D + model-pose capture host (Stage 2); `engine/view/game/GamePortrait.cpp` is its RTS-specific adapter.
 - `engine/render/Prisma`, `ScreenLighting`, `Lights`, existing Metal, GL, Vulkan RHI are reused rather than replaced.
 - Shared `aiverselib/gameplay/Camera.h` is a camera controller helper, not a render/capture scheduler; avoid conflating the concepts.
 
@@ -175,7 +179,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 - `engine/render/CameraView.h` — immutable `RenderView` snapshot (Camera, viewport, output, masks, clip overrides, quality, temporal key, clear).
 - **Implemented Stage 5:** `engine/render/RenderTargetPool.h` — managed color/depth, HDR, resize and GPU-serial deferred destruction. MSAA, format negotiation, asset persistence and host integration remain planned.
 - **Implemented Stage 5:** `engine/render/CameraRenderPipeline.h` — offscreen and primary screen camera execution using existing Renderer3D, GPU target readiness and dependency checks. It is opt-in by native code; not yet wired to Studio cameras or game clients.
-- `engine/render/PortraitRenderer.h/.cpp` — purely model/pose/material preview renderer without `RtsView`, `UnitType` or `modules/rts` includes. RTS stays a thin adapter and other hosts call directly.
+- `engine/render/PortraitRenderer.h/.cpp` — purely model/pose/material preview renderer without `GameView`, `UnitType` or `modules/rts` includes. RTS stays a thin adapter and other hosts call directly.
 - `apps/editor/windows/CameraWindow.cpp` — per-entity camera inspector, selection, live preview/RT visualization, capture flags and instrumentation.
 - `engine/camera/CaptureAsset.h` (later) — named RT assets exposed to materials, UI and scripts without raw transient texture handles in save data.
 

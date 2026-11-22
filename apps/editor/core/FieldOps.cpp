@@ -1,5 +1,5 @@
 #include "FieldOps.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/game/GameView.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -91,7 +91,7 @@ int paintMapField(MapDoc& doc, const game::Rules& rules, const std::string& id, 
     }
 }
 
-void FieldPreview::fill(const game::Rules& rules, const MapDoc& doc, game::RtsScene& scene) {
+void FieldPreview::fill(const game::Rules& rules, const MapDoc& doc, game::GameScene& scene) {
     scene.fields.clear();
     scene.fieldDefs = nullptr;
     if (rules.gridFields.empty() && !doc.data.extra["gridFields"].isObject()) return;

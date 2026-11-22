@@ -18,17 +18,17 @@ void projectileSpawnsCase(bool cow) {
     if(cow)sim->world().enableCowSnapshots(true);
     auto ordered=[&]() {
         const auto shots=projectilesOf(*sim);
-        CHECK(shots.size()==sim->world().countExisting<fps::Projectile>());
+        CHECK(shots.size()==sim->world().countExisting<actor::Projectile>());
         for(size_t i=1;i<shots.size();++i)CHECK(shots[i-1].id<shots[i].id);
         for(const auto& shot:shots)CHECK(shot.id<state(*sim).nextObject);
     };
-    auto tick=[&](uint32_t t,uint32_t buttons,fps::Action action) {
-        fps::Input input;
+    auto tick=[&](uint32_t t,uint32_t buttons,actor::Action action) {
+        actor::Input input;
         input.sequence=t+1;
         input.viewTick=t;
         input.buttons=buttons;
         input.action=action;
-        auto cmd=fps::command(1,input);
+        auto cmd=actor::command(1,input);
         cmd.tick=t;
         sim->inject(cmd);
         sim->step();
@@ -36,7 +36,7 @@ void projectileSpawnsCase(bool cow) {
     };
     // First accepted shot is created in the character stage, after the flight
     // stage, so it must not advance until the next tick.
-    tick(0,fps::Fire,fps::Action::None);
+    tick(0,actor::Fire,actor::Action::None);
     CHECK(projectilesOf(*sim).size()==1);
     const uint32_t weaponShotId=projectilesOf(*sim)[0].id;
     CHECK(projectilesOf(*sim)[0].kind==0);
@@ -46,9 +46,9 @@ void projectileSpawnsCase(bool cow) {
     live.damage=17;
     CHECK(projectilesOf(*sim)[0].damage==17);
     // All three throwable actions use the same production spawn adapter.
-    tick(1,0,fps::Action::Frag);
-    tick(2,0,fps::Action::Smoke);
-    tick(3,0,fps::Action::Flash);
+    tick(1,0,actor::Action::Frag);
+    tick(2,0,actor::Action::Smoke);
+    tick(3,0,actor::Action::Flash);
     bool frag=false,smoke=false,flash=false;
     for(const auto& shot:projectilesOf(*sim)) {
         if(shot.kind==1)frag=true;
@@ -64,14 +64,14 @@ void projectileSpawnsCase(bool cow) {
     CHECK(restored->checksum()==sim->checksum());
     std::vector<uint64_t> hashes;
     for(uint32_t t=4;t<14;++t){
-        tick(t,t==4?fps::Fire:0,fps::Action::None);
+        tick(t,t==4?actor::Fire:0,actor::Action::None);
         hashes.push_back(sim->checksum());
     }
     const auto finalChecksum=sim->checksum();
     sim->loadState(checkpoint);
     ordered();
     for(uint32_t t=4;t<14;++t){
-        tick(t,t==4?fps::Fire:0,fps::Action::None);
+        tick(t,t==4?actor::Fire:0,actor::Action::None);
         CHECK(sim->checksum()==hashes[t-4]);
     }
     CHECK(sim->checksum()==finalChecksum);
@@ -100,16 +100,16 @@ void projectileRoundResetCase(bool cow) {
     })");
     auto sim=simulation(rules,map);
     if(cow)sim->world().enableCowSnapshots(true);
-    auto tick=[&](uint32_t t,fps::Action action) {
-        fps::Input input;input.sequence=t+1;input.viewTick=t;
+    auto tick=[&](uint32_t t,actor::Action action) {
+        actor::Input input;input.sequence=t+1;input.viewTick=t;
         input.action=action;
-        auto cmd=fps::command(1,input);cmd.tick=t;
+        auto cmd=actor::command(1,input);cmd.tick=t;
         sim->inject(cmd);
         sim->step();
-        CHECK(projectilesOf(*sim).size()==sim->world().countExisting<fps::Projectile>());
+        CHECK(projectilesOf(*sim).size()==sim->world().countExisting<actor::Projectile>());
     };
-    tick(0,fps::Action::None); // freeze phase
-    tick(1,fps::Action::Frag); // create a real grenade entity
+    tick(0,actor::Action::None); // freeze phase
+    tick(1,actor::Action::Frag); // create a real grenade entity
     CHECK(projectilesOf(*sim).size()==1);
     const uint32_t previousId=projectilesOf(*sim)[0].id;
     const auto lootBefore=lootOf(*sim).size();
@@ -121,9 +121,9 @@ void projectileRoundResetCase(bool cow) {
     state(*sim).match.end=sim->tick();
     SimSnapshot before;
     sim->saveState(before);
-    tick(2,fps::Action::None);
+    tick(2,actor::Action::None);
     CHECK(projectilesOf(*sim).empty());
-    CHECK(sim->world().countExisting<fps::Projectile>()==0);
+    CHECK(sim->world().countExisting<actor::Projectile>()==0);
     CHECK(lootOf(*sim).size()==lootBefore);
     CHECK(fpsModule(*sim).vehicleEntities(*sim)==vehiclesBefore);
     const uint64_t resetChecksum=sim->checksum();
@@ -132,9 +132,9 @@ void projectileRoundResetCase(bool cow) {
     CHECK(restored->checksum()==resetChecksum);
 
     sim->loadState(before);
-    tick(2,fps::Action::None);
+    tick(2,actor::Action::None);
     CHECK(sim->checksum()==resetChecksum);
-    tick(3,fps::Action::Frag); // new object after entity destruction/recycle
+    tick(3,actor::Action::Frag); // new object after entity destruction/recycle
     CHECK(projectilesOf(*sim).size()==1);
     CHECK(projectilesOf(*sim)[0].id>previousId);
 }

@@ -7,11 +7,11 @@ Goal: **every authoritative gameplay feature is an opt-in composition of reusabl
 **Do not convert all 120 catalog entries to ECS**: 78 simulation / 21 presentation / 21 tools. Algorithms (math/graphs), packaging/editor/MCP, GPU/graphics/UI, network transport and persistent meta-service keep their own architecture. Presentation may consume read-only ECS projections. Meta-game/player-account data stays in an externally transactional service; only in-match mechanics use World components.
 
 ### Present state, grounded in source
-- `modules/rts/RtsModule.cpp` registers 41 named ordered system stages, but module-aware systems still use `RtsModule&`, `GameState` and `Unit`, with a large `applyCommand` dispatcher.
-- `modules/fps/FpsModule.cpp` stages `fps.ecsHydrate -> fps -> fps.ecsMirror` when `fps.ecsAuthority` is on, with `ActorRuntime`, `ProjectileRuntime`, `LootRuntime` and `VehicleRuntime` storage. The `fps` tick itself still runs many algorithms through `State::actors` and dynamic vectors; legacy saves are v9.
+- `engine/game/GameCore.cpp` registers 41 named ordered system stages, but module-aware systems still use `GameCore&`, `GameState` and `Unit`, with a large `applyCommand` dispatcher.
+- `engine/actor/ActorModule.cpp` stages `fps.ecsHydrate -> fps -> fps.ecsMirror` when `fps.ecsAuthority` is on, with `ActorRuntime`, `ProjectileRuntime`, `LootRuntime` and `VehicleRuntime` storage. The `fps` tick itself still runs many algorithms through `State::actors` and dynamic vectors; legacy saves are v9.
 - Generic public components/systems exist in three opt-in packages: `ecs-weapon-launch`, `ecs-projectile-systems`, `ecs-impact-damage`. These have not replaced real FPS/RTS gameplay. Native test success is **unverified**.
 - `engine/core/ECS.h` supports deterministic sparse-set World and experimental COW; `engine/sim/CommonComponents.h` has `Transform`, `Owner`, `Parent`, `LocalTransform`, `WorldTransform`. ECS is the substrate, not evidence that a module is fully universal.
-- In-match `RtsModule` and `fps::Module` must become composition/adapters. `modules/rts` and `modules/fps` remain for template compatibility until snapshots/replays/network pass.
+- In-match `GameCore` and `fps::Module` must become composition/adapters. `modules/rts` and `modules/fps` remain for template compatibility until snapshots/replays/network pass.
 
 ## Non-negotiable sequencing and guarantees
 1. Freeze per-game golden inputs, snapshots, checksums, save bytes, authoritative network streams and relevant performance baselines **before** switching a mechanic.
@@ -61,7 +61,7 @@ Work from command dispatch, queues and phase ordering toward small neutral syste
 ### P2 — 11 packages
 | ID | Existing code | Disposition | Action |
 |---|---|---|---|
-| `spatial` | `modules/rts/RtsModule.h` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
+| `spatial` | `engine/game/GameCore.h` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
 | `grid` | `libraries/include/aiverselib/Grid.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `navigation` | `docs/pathfinding.md` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
 | `navmesh` | `libraries/include/aiverselib/bots/NavMesh.h` | ECS | Extract state+systems; preserve and reuse existing policy |
@@ -137,7 +137,7 @@ Work from command dispatch, queues and phase ordering toward small neutral syste
 | `graphs` | `libraries/include/aiverselib/Graphs.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `behavior` | `libraries/include/aiverselib/Behavior.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
 | `rules` | `libraries/include/aiverselib/Rules.h` | POLICY + ECS adapter | Extract state+systems; preserve and reuse existing policy |
-| `generation` | `modules/rts/gen/MapGen.h` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
+| `generation` | `engine/game/gen/MapGen.h` | POLICY + ECS adapter | Inspect existing implementation; do not duplicate |
 | `presentation` | `libraries/include/aiverselib/Presentation.h` | ADAPTER | Extract state+systems; preserve and reuse existing policy |
 | `ui-patterns` | `engine/ui/templates/README.md` | ADAPTER | Inspect existing implementation; do not duplicate |
 | `verification` | `tests/check_headless_restore.py` | KEEP | Inspect existing implementation; do not duplicate |
@@ -192,7 +192,7 @@ Track `id`, `owner source path`, `legacy state`, `ECS canonical state`, `compone
 1. Implement component/system adapters and native cross-genre tests for reload, health/status and projectile options. **Do not prematurely call them migrated in FPS/RTS.**
 2. Wire authoritative FPS firing or RTS weapon flight to the shared ECS weapon pipeline one stage per commit, preserving exact existing ticks/shot IDs, rewind, AoE and team filtering.
 3. Replace FPS `State::actors` authority field by field (rather than keeping `ActorRuntime{Actor}` as the final design), then vehicles, loot, projectiles. No two mutable owners.
-4. Split RTS `GameState` into world resources for match/global grids and Entity components for per-entity state; remove `RtsModule&` dependency from shared mechanics.
+4. Split RTS `GameState` into world resources for match/global grids and Entity components for per-entity state; remove `GameCore&` dependency from shared mechanics.
 5. Extend inspector/schemas and reflect from actual registered components; test mixed RTS/FPS/native entities.
 
 
@@ -394,7 +394,7 @@ shared-mechanics integration before any default enablement.
 
 ## FPS projectile end-of-tick one-way ECS mirror (2026-11-18)
 
-The live `fps.ecsMirror` in `modules/fps/FpsModule.cpp` now calls
+The live `fps.ecsMirror` in `engine/actor/ActorModule.cpp` now calls
 `syncDynamicEntities(sim,config_.ecsAuthority)` instead of always
 importing `State::projectiles` into `ProjectileRuntime`.
 

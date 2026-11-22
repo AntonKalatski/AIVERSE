@@ -60,7 +60,7 @@ public:
     };
     // `parameters` are the graph defaults; every referenced scalar must be declared there.
     // Derived inputs: target = clamp(from * scale + offset, min, max), applied before each update
-    // (maps RtsView built-ins such as `speed` onto imported parameter names).
+    // (maps GameView built-ins such as `speed` onto imported parameter names).
     struct Input { std::string target, from; float scale = 1, offset = 0, min = -1000000, max = 1000000; };
     static std::shared_ptr<const AnimationController> compile(const Model& model, const Json& definition, const AnimationParameters& parameters);
     const std::vector<Layer>& layers() const { return layers_; }

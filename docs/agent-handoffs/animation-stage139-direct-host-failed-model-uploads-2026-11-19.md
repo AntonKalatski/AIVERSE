@@ -39,7 +39,7 @@ This is a **rare failure-path-only synchronous fallback**, intended for native d
 - Road chunk generation pre-reserves `chunks_` and checks `uploadModel` for each chunk, skipping incomplete chunks. On failure or exception, it safely aborts the partial GPU Model and writes an explanatory warning.
 - Editor road-ghost upload now checks the result and uses the same fail-closed cleanup path, without publishing a broken preview Model.
 
-### RTS shores: `modules/rts/view/RtsShoreView.cpp`
+### RTS shores: `engine/view/game/GameShoreView.cpp`
 - Direct prop imports now check `uploadModel` and safely abort partial GPU uploads; the prop vector is reserved before GPU allocation.
 - Generated shoreline chunks and transparent foam meshes check upload success. Vector capacity is reserved in advance, and failed partially uploaded models are aborted rather than inserted into the draw lists.
 - The old `-1` failed-prop result is retained, and generated-geometry failures are reported through `warnings_`.
@@ -53,7 +53,7 @@ All changes are in host adapters or the genre-neutral render helper. No MotionWe
 
 ## Important unresolved feature boundary
 
-**Routine destruction of successfully uploaded road/shore geometry is NOT solved by Stage 139.** `RtsRoadView::release`, `buildGhost`, `RtsShoreView::release`, their `shutdown` paths and some custom decal meshes currently call `releaseModel` / destroy native resources directly while replacing geometry. Their host renderer ownership/frame submission boundary and any existing GPU completion policy must be inspected before converting to an explicit per-host fenced retirement queue. Do not replace this with a per-frame `waitForResourceIdle` stall. This is a key Stage 140 feature.
+**Routine destruction of successfully uploaded road/shore geometry is NOT solved by Stage 139.** `RtsRoadView::release`, `buildGhost`, `GameShoreView::release`, their `shutdown` paths and some custom decal meshes currently call `releaseModel` / destroy native resources directly while replacing geometry. Their host renderer ownership/frame submission boundary and any existing GPU completion policy must be inspected before converting to an explicit per-host fenced retirement queue. Do not replace this with a per-frame `waitForResourceIdle` stall. This is a key Stage 140 feature.
 
 Other direct `uploadModel` calls in editor/ModelAssetProvider/geometry/scenes/tools may ignore bool and need a separate source audit. `abortFailedModelUpload` on an unresponsive GPU intentionally leaks CPU Model storage; it does not claim recovering the Device, reporting actual driver VRAM or providing a bounded retry queue.
 

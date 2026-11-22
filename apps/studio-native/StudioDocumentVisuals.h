@@ -31,7 +31,7 @@ struct StudioDocumentProxy {
 inline std::vector<StudioDocumentProxy> studioDocumentProxies(
     const editor::MapDoc& map, bool fpsProject, float levelHeight=1.5f) {
     std::vector<StudioDocumentProxy> proxies;
-    const auto nodes=editor::enumerateDocumentSceneNodes(map,fpsProject);
+    const auto nodes=editor::enumerateDocumentSceneNodes(map);
     proxies.reserve(std::min(size_t(2000),nodes.size()));
     for(const auto& node:nodes) {
         if(proxies.size()>=2000)break;
@@ -41,7 +41,7 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
         p.center={float(node.position.x),float(node.position.y),float(node.position.z)};
         switch(node.ref.source) {
           case editor::DocumentEntityRef::Source::MapLight:
-          case editor::DocumentEntityRef::Source::FpsLight:
+          case editor::DocumentEntityRef::Source::ActorLight:
             p.light=true;p.half={.25f,.25f,.25f};p.color={1,.8f,.4f,1};
             if(!fpsProject)p.center.y+=terrainPreviewHeight(map.data,p.center.x,p.center.z,levelHeight);
             break;
@@ -64,8 +64,8 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
                                        render::float4{.83f,.76f,.48f,1};
             break;
           }
-          case editor::DocumentEntityRef::Source::FpsCollider: {
-            const Json* object=editor::fpsDocumentEntity(map.data.fps,node.ref);
+          case editor::DocumentEntityRef::Source::ActorCollider: {
+            const Json* object=editor::fpsDocumentEntity(map.data.extra,node.ref);
             if(!object)continue;
             if((*object)["yaw"].isNumber()) {
                 const Json& half=(*object)["half"];
@@ -82,7 +82,7 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
             p.color={.65f,.63f,.97f,1};
             break;
           }
-          case editor::DocumentEntityRef::Source::FpsSpawn:
+          case editor::DocumentEntityRef::Source::ActorSpawn:
             p.half={.42f,.9f,.42f};
             p.color={.48f,.89f,.63f,1};
             break;

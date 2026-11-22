@@ -15,7 +15,7 @@
 - No ECS schema or save file changes; additive public C++ API `LightSystem::capturePrepared()` / `replayPrepared(const PreparedFrame&)`. No RTS/FPS dependencies introduced into `engine/render`.
 
 ## Validation actually done
-- Inspected current `Lights.h/.cpp`, `RtsLights.cpp`, `RtsView.cpp`, `GameClient.cpp` on the feature branch and committed the edits via GitHub.
+- Inspected current `Lights.h/.cpp`, `GameLights.cpp`, `GameView.cpp`, `GameClient.cpp` on the feature branch and committed the edits via GitHub.
 - CMake configure/build: **NOT RUN**.
 - CTest: **NOT RUN** (user requested consolidated tests later).
 - Metal, Vulkan, GLES compile/runtime or visual parity: **NOT RUN**.

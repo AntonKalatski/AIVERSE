@@ -5,7 +5,7 @@
 **    come from time() / ASLR. Simulation scripts must behave identically on every machine and
 **    every run (lockstep, replays), so both are constants.
 ** 2. Float guard: every float arithmetic primitive calls aiverse_lua_floatop(L) first. For a state
-**    whose RtsLuaCtx has noFloats set (simulation scripts) it raises a Lua error, so float math
+**    whose LuaCtx has noFloats set (simulation scripts) it raises a Lua error, so float math
 **    can never influence the simulation. Presentation scripts (noFloats = 0) are unaffected.
 */
 #ifndef AIVERSE_LUACONF_H
@@ -15,10 +15,10 @@
 #define l_randomizePivot()	(0u)
 
 /* Per-state context stored in lua_getextraspace(L) (a pointer to it). */
-typedef struct RtsLuaCtx {
+typedef struct LuaCtx {
   int noFloats;		/* 1: float arithmetic raises an error */
   void *user;		/* owner (engine side) */
-} RtsLuaCtx;
+} LuaCtx;
 
 #if defined(LUA_CORE)
 struct lua_State;

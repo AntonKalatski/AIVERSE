@@ -395,7 +395,7 @@ audio.json 一节；简要示例：
 - **人群**：动画片段烘焙进纹理，相同单位用实例化绘制（300 个带动画的单位 —— 61 次绘制调用，而不是 1801 次）；模型按距离使用 LOD；屏幕外和
   远处的动画更新频率更低。
 - **高级动画**：走/跑混合空间、叠加片段（呼吸、后坐）、地形上的脚部 IK、头部转向目标、载具随坡度倾斜、GPU 上的变形目标（blend shapes）。
-- **挂点**：手中的武器、背上的货物（按携带的资源）、弹体发射点、特效点（烟、火、尾气）；片段事件和 `RtsView::events()/effects()` 用于音效和粒子。
+- **挂点**：手中的武器、背上的货物（按携带的资源）、弹体发射点、特效点（烟、火、尾气）；片段事件和 `GameView::events()/effects()` 用于音效和粒子。
 - **阶段**：脚手架和建造阶段、按生命值显示的损坏版本、出现和死亡时的溶解效果、选中描边、放置建筑时的半透明虚影、头像。
 - **格式**：还支持 **FBX**（ufbx）和压缩纹理 **KTX2**（ETC2/BC/ASTC，在 GPU 上保持压缩）；**Collada**、**3DS**、**PLY**、**STL**；
   体素 **MagicaVoxel .vox** 和 **.vxl/.hva**（Tiberian Sun、Red Alert 2）；来自用户游戏副本的经典 RTS 模型：**Warcraft III .mdx/.mdl**
@@ -426,7 +426,7 @@ audio.json 一节；简要示例：
 - **编辑器** —— “Lighting”窗口：预览一天中的时间和雷暴、光照质量档位、光源列表。智能体可使用：`light_add`、`light_update`、
   `light_delete`、`light_list`、`lighting_set`、`view_lighting`。
 
-字段格式见 `modules/rts/view/RtsLights.h` 的文件头。测试变量：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、`AIVERSE_CLOUDS`、`AIVERSE_STORM`。
+字段格式见 `engine/view/game/GameLights.h` 的文件头。测试变量：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、`AIVERSE_CLOUDS`、`AIVERSE_STORM`。
 
 ## 通过 MCP 检查机制
 

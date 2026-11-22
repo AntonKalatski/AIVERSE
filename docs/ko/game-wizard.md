@@ -88,4 +88,4 @@ ambersands(바위 위에만 건설 가능), planets와 underlord(특수 지형�
 ## 엔진 변경
 
 스크립트 명령은 `"card": false`를 받습니다(버튼 / 단축키 없음, 뷰 스크립트, HUD 문서, MCP에서 전송). 튜토리얼의 "다음 / 건너뛰기"에
-사용됩니다(`modules/rts/RtsScriptCommands.cpp`, 클라이언트와 에디터의 명령 카드).
+사용됩니다(`engine/game/ScriptCommands.cpp`, 클라이언트와 에디터의 명령 카드).

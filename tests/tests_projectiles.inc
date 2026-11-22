@@ -133,14 +133,14 @@ TEST(projectile_program_loads_real_v4_projectile_save) {
     const std::string dir=std::string(AIVERSE_SOURCE_DIR)+"/tests/data/projectiles/";
     auto rules=Json::parseFile(dir+"v4-rules.json");auto map=Json::parseFile(dir+"v4-map.json");
     SimConfig cfg;cfg.seed=1;
-    Simulation restored(cfg,std::make_unique<game::RtsModule>());restored.setup(rules,map);
+    Simulation restored(cfg,std::make_unique<game::GameCore>());restored.setup(rules,map);
     std::ifstream in(dir+"v4-shot.bin",std::ios::binary);std::string bytes((std::istreambuf_iterator<char>(in)),{}),error;
     CHECK(!bytes.empty());CHECK(restored.deserialize(bytes,&error));
     CHECK(restored.world().count<game::Projectile>()==1);
     CHECK(programEntities(restored).empty());
     run(restored,10);CHECK(hpAt(restored,15,10)==990_fx);
     auto upgraded=restored.serialize();CHECK(!upgraded.empty());
-    Simulation copy(cfg,std::make_unique<game::RtsModule>());copy.setup(rules,map);
+    Simulation copy(cfg,std::make_unique<game::GameCore>());copy.setup(rules,map);
     CHECK(copy.deserialize(upgraded,&error));CHECK(copy.checksum()==restored.checksum());
 }
 

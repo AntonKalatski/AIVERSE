@@ -50,7 +50,7 @@ int aiverseMain(int argc, char** argv) {
         renderer.lighting.fogDensity=0;
         renderer.lights.setQuality(render::LightQuality::High);
         floor=render::MeshBuilder().box({0,-.1f,0},{60,.2f,60}).upload(d);
-        materials=model->materials; // Match RtsView's per-type material-copy path.
+        materials=model->materials; // Match GameView's per-type material-copy path.
         for (const auto& mesh:model->meshes) batchCounts.push_back(mesh.shadowBatch.indexCount);
     };
     cb.frame=[&](gfx::Device& d,double) {

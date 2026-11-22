@@ -9,7 +9,7 @@ mechanic.
 Read with `AGENTS.md` and
 `skills/workflow/aiverse-new-mechanic/SKILL.md`. This document overrides
 older instructions saying every new mechanic belongs in
-`modules/rts/Rts<Mechanic>.cpp` or requires `RtsModule&`.
+`modules/rts/Rts<Mechanic>.cpp` or requires `GameCore&`.
 
 ## Required shape
 
@@ -193,7 +193,7 @@ Existing reusable building blocks:
 `libraries/include/aiverselib/mechanics/Weapons.h` (trajectory, recoil, spread),
 `engine/world/SpatialWorld.h` (a collision adapter). Extract adapters
 incrementally; do not pretend that existing `fps::Module::shoot` and
-`RtsModule` combat implementations are already one system.
+`GameCore` combat implementations are already one system.
 
 **Ordering is part of behavior:** command intake; deterministic spawn IDs;
 parallel read-only planning; canonical collision/hit ordering (tick, entity,
@@ -220,7 +220,7 @@ parity is proven.
   systems remain opt-in, and disabling a mechanic does not change old games.
 - A library function is reusable only if it accepts neutral state, parameters
   and dependency callbacks or a neutral interface; an API requiring
-  `game::RtsModule&` or `fps::Module&` is **an adapter**, not a reusable core.
+  `game::GameCore&` or `fps::Module&` is **an adapter**, not a reusable core.
 
 ## Native C++ usage
 
@@ -280,7 +280,7 @@ RTS/FPS mechanics comply.
 | Generic locomotion, recoil, melee, vehicle, projectile policies | Public C++ policy headers exist | Wire every concrete gameplay consumer to the same systems and state |
 | Race session (vehicle-controllers `genre/RaceSession.h`) | Host-independent policy: grid/countdown, bot or player pedals, checkpoints, laps, standings, respawns, phases; same rules / map `"race"` in every project (docs/races.md); one adapter `engine/vehicles/VehicleRace.h` (state: `vehicles::RaceState`; hosts implement only `vehicles::RaceHost`) | Stage B (no-genre): one vehicle system (`engine/vehicles`), the session in the `RaceState` world resource; racers are the car entities in `RaceState::racers` (no per-racer component) |
 | FPS authority | Opt-in full ECS runtime payloads at tick boundaries; direct motor partially migrated | Remove `State::actors` and dynamic workspace authority from all combat, AI, shooting, vehicles, loot, projectile, history and net paths |
-| RTS mechanics | Many systems and native hooks refer to `RtsModule&` | Extract neutral feature components/policies/systems, retain adapters during parity |
+| RTS mechanics | Many systems and native hooks refer to `GameCore&` | Extract neutral feature components/policies/systems, retain adapters during parity |
 | Editor/serialization | Generic runtime component views exist; many genre-specific cards remain | Component registration/schema and versioned, cross-genre save/rollback |
 | Shader post-processing | Rendering feature, not simulation gameplay | Keep renderer capabilities separate; validate Metal/GLES independently |
 

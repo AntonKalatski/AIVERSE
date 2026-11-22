@@ -21,7 +21,7 @@ presentation ECS World. Reuse its graph, IK, retarget, clip and
 scheduler algorithms for all genres. The game host alone owns
 gameplay meaning and authority.
 
-The old `game::RtsView` is a legacy compatibility adapter for
+The old `game::GameView` is a legacy compatibility adapter for
 terrain/fog/roads and rich procedural effects; do not put new
 common rendering functionality in it. Migrate reusable features
 toward engine View, keeping old behavior until parity is proven.
@@ -45,7 +45,7 @@ Call `init(gfx::Device&)`, `setLook(VisibilityLook)`,
 `draw(renderer,time,lowTier)` on the renderer thread.
 Call `shutdown()` before destroying the graphics device.
 Game compatibility aliases remain in
-`modules/rts/view/RtsFog.h` and should not be imported
+`engine/view/game/GameFog.h` and should not be imported
 by new general-purpose code.
 
 Use `SceneLayerProviders.h` to collect host-owned

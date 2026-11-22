@@ -8,16 +8,16 @@ Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage48b1-fog
 
 ## Implemented / public API
 
-- `RtsView::prepareMapFrame(Renderer3D&, const RtsScene&, double time, const vector<uint8_t>* vision, const MapGrid&)` is an **optional scene-aware warmup** for an already built map. It can be called at render-owner pre-render boundaries to prepare camera-visible GroundFX meshes and the current Roads, Shores, Fog sheet/R8 and Terrain COW/LOD/trace/pipeline resources **without drawing**.
-- `RtsView::publishSurfaceFrame(...)` is a private shared helper extracted from `RtsView::draw`. Both `draw` and the optional prewarm execute EXACTLY ONE implementation of the five-owner `render::OwnerPrepareCommit`: GroundFX -> Roads -> Shores -> Fog -> Terrain per-camera packet. All candidates prepare before any owner publishes; a late failure rolls back earlier staged owners.
-- The optional prewarm **invalidates** the previous `FramePublicationEpoch` immediately but never marks a new epoch as ready. Only a subsequent successful **primary** `RtsView::draw` can finish that camera epoch. This blocks stale previous-frame secondary RenderTexture/capture reuse after prewarming new GPU handles.
+- `GameView::prepareMapFrame(Renderer3D&, const GameScene&, double time, const vector<uint8_t>* vision, const MapGrid&)` is an **optional scene-aware warmup** for an already built map. It can be called at render-owner pre-render boundaries to prepare camera-visible GroundFX meshes and the current Roads, Shores, Fog sheet/R8 and Terrain COW/LOD/trace/pipeline resources **without drawing**.
+- `GameView::publishSurfaceFrame(...)` is a private shared helper extracted from `GameView::draw`. Both `draw` and the optional prewarm execute EXACTLY ONE implementation of the five-owner `render::OwnerPrepareCommit`: GroundFX -> Roads -> Shores -> Fog -> Terrain per-camera packet. All candidates prepare before any owner publishes; a late failure rolls back earlier staged owners.
+- The optional prewarm **invalidates** the previous `FramePublicationEpoch` immediately but never marks a new epoch as ready. Only a subsequent successful **primary** `GameView::draw` can finish that camera epoch. This blocks stale previous-frame secondary RenderTexture/capture reuse after prewarming new GPU handles.
 - `prepareMapFrame` returns false without mutation when Terrain is not built, the requested grid dimensions are different from published terrain, the view is in planet mode, or the scene has hierarchy-based entity transforms that need primary draw graph resolution; normal `draw` remains the supported fallback.
 - It throws on an attempt during an active primary frame publication or on a GPU resource staging error. It requires the same GPU/render owner thread and should be called between RHI frame submissions. The current 16-visible-GroundFX-chunk/128 MiB per-call budget remains intact and work can be spread over repeated warmup calls.
 
 ## Modified paths
 
-- `modules/rts/view/RtsView.h`: one public prewarm API and private shared owner transaction helper.
-- `modules/rts/view/RtsView.cpp`: relocate the existing full five-owner transaction to the shared helper, call it from normal `draw`, implement optional map-frame prewarm with explicit frame-epoch invalidation.
+- `engine/view/game/GameView.h`: one public prewarm API and private shared owner transaction helper.
+- `engine/view/game/GameView.cpp`: relocate the existing full five-owner transaction to the shared helper, call it from normal `draw`, implement optional map-frame prewarm with explicit frame-epoch invalidation.
 - `tests/tests.cpp`: new tests `lens_stage48b2a_scene_prewarm_invalidates_secondary_epoch_until_primary` and `lens_stage48b2a_late_fog_failure_rolls_back_scene_prewarm`.
 - This handoff document.
 

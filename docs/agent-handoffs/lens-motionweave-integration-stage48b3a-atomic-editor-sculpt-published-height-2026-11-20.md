@@ -14,7 +14,7 @@ The synchronous editor can edit a MapGrid in-place, and the old terrain must rem
 
 ## API / architectural changes
 
-1. `RtsView::buildTerrainAtomic(gfx::Device&, const MapGrid&)` (RtsView.h / RtsTerrain.cpp)
+1. `GameView::buildTerrainAtomic(gfx::Device&, const MapGrid&)` (GameView.h / GameTerrain.cpp)
    - Preserves current `buildTerrain()` signature and its fast incremental sculpting behavior. `buildTerrainAtomic()` delegates to common `buildTerrainImpl(...,forceAtomic=true)`.
    - For already built maps even when width/height are unchanged, stages the full candidate Terrain with `TerrainRenderer::prepareMap()`, then builds Road and Shore from `TerrainRenderer::preparedSurfaceAt`, prepares GroundFX grid reset, and prepares the Fog sheet. Only once all five owners succeed does the generic OwnerPrepareCommit publish, with no full-GPU-idle requirement.
    - Full-size map transitions continue to use the existing new-map unexplored Fog R8 field. Same-size edits with a matching published Fog sheet **do not reset visibility**: they stage the new height sheet only, retaining the processed R8 and fade/target/cur viewer memory. If there is no matching Fog sheet yet (e.g. editor calls before first primary draw), they fall back to the correctly sized initial R8 baseline.
@@ -23,20 +23,20 @@ The synchronous editor can edit a MapGrid in-place, and the old terrain must rem
 2. `VisibilityField::commitPreparedSheet(unique_ptr<PreparedSheet>) noexcept` (engine/view/VisibilityField.h/.cpp)
    - Read-only matching size/owner/device/revision validation before commit, fail-closed if the candidate was for a map resize. Retires prior sheet VB/IB via NativePresentationRetirement; transfers new sheet handles; **does not change** R8 texture, blurred/target/current fog field, fade clock, or explorer knowledge. Increments the owner revision.
 
-3. `RtsGroundFx::prepareMapReset(const MapGrid&,bool forceSameSize=false)` (RtsGroundFx.h/.cpp)
+3. `GameGroundFx::prepareMapReset(const MapGrid&,bool forceSameSize=false)` (GameGroundFx.h/.cpp)
    - The full source ownership reset can now be forced even on equal dimensions. A same-size forced reset retains the player's last observed territory/dig/room/mark and blend memory, resets only mesh geometry and marks it dirty for scene-aware first-primary preparation. A cancelled candidate leaves old GPU buffers and memory untouched.
 
-4. **Published immutable CPU terrain height source** (RtsTerrainRender.h/.cpp, RtsTerrainDetailMesh.cpp, RtsTerrain.cpp)
+4. **Published immutable CPU terrain height source** (GameTerrainRender.h/.cpp, GameTerrainDetailMesh.cpp, GameTerrain.cpp)
    - The editor modifies `MapGrid` **before** `buildTerrainAtomic()`; querying its mutable corners directly previously exposed new heights against old published GPU geometry, including after failed uploads. Now TerrainRenderer owns a minimal snapshot of **only** flags, level, fine heights and heightfield corners (no gameplay/navigation/network arrays). A snapshot is copied **before** any terrain build attempt, installed only on successful build, and swapped with the full staged Terrain owner in `commitMap()` without allocations.
-   - `TerrainRenderer::surfaceAt` and `RtsView::heightAt` now use the actually published surface (or published detail), independent of in-place editor source changes. Before the first build they still fall back to the supplied source.
+   - `TerrainRenderer::surfaceAt` and `GameView::heightAt` now use the actually published surface (or published detail), independent of in-place editor source changes. Before the first build they still fall back to the supplied source.
    - Trade-off: snapshot copy is O(map cells) per terrain build, even on a potentially unchanged build. Optimize through cached source revision, editor change sets or COW snapshots once native correctness is proven.
 
 ## Modified code
 
 - engine/view/VisibilityField.h, engine/view/VisibilityField.cpp
-- modules/rts/view/RtsGroundFx.h, modules/rts/view/RtsGroundFx.cpp
-- modules/rts/view/RtsView.h, modules/rts/view/RtsTerrain.cpp
-- modules/rts/view/RtsTerrainRender.h, modules/rts/view/RtsTerrainRender.cpp, modules/rts/view/RtsTerrainDetailMesh.cpp
+- engine/view/game/GameGroundFx.h, engine/view/game/GameGroundFx.cpp
+- engine/view/game/GameView.h, engine/view/game/GameTerrain.cpp
+- engine/view/game/GameTerrainRender.h, engine/view/game/GameTerrainRender.cpp, engine/view/game/GameTerrainDetailMesh.cpp
 - tests/tests.cpp
 - This handoff
 

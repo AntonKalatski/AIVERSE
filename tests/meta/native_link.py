@@ -9,11 +9,11 @@ cmake = sys.argv[1] if len(sys.argv) > 1 else 'cmake'
 with tempfile.TemporaryDirectory(prefix='rts-meta-native-') as tmp:
     root = pathlib.Path(tmp)
     src, native, build = root / 'host', root / 'project' / 'native', root / 'build'
-    (src / 'modules/rts').mkdir(parents=True)
+    (src / 'engine/game').mkdir(parents=True)
     native.mkdir(parents=True)
     # Isolate the link contract: real Build.cmake and meta, minimal sim host types.
-    (src / 'modules/rts/RtsNative.cpp').write_text('')
-    (src / 'modules/rts/RtsNative.h').write_text('''#pragma once
+    (src / 'engine/game/Native.cpp').write_text('')
+    (src / 'engine/game/Native.h').write_text('''#pragma once
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,7 +24,7 @@ std::vector<NativeDefinition> compiledNativeModules();
 }
 ''')
     (src / 'stub.cpp').write_text('')
-    (native / 'Module.cpp').write_text('''#include "modules/rts/RtsNative.h"
+    (native / 'Module.cpp').write_text('''#include "engine/game/Native.h"
 #include "engine/meta/Meta.h"
 #include "engine/meta/Client.h"
 #include "engine/meta/Rating.h"
@@ -51,7 +51,7 @@ aiverse_native_module(ID meta_probe VERSION 1 ENTRY createMetaProbe SOURCES Modu
 aiverse_native_use_meta(aiverse_native_meta_probe native_meta)
 aiverse_native_use_meta(aiverse_native_meta_probe CLIENT)
 ''')
-    (src / 'main.cpp').write_text('''#include "modules/rts/RtsNative.h"
+    (src / 'main.cpp').write_text('''#include "engine/game/Native.h"
 int metaProbe();
 int main() { return metaProbe()==7 && aiverse::game::compiledNativeModules().size()==1 ? 0 : 1; }
 ''')

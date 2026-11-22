@@ -52,6 +52,8 @@
           "lead": "Виртуализированная геометрия.", "leadEn": "Virtualized geometry." },
         { "id": "lens", "source": "docs/camera-system.md", "title": "LENS", "titleEn": "LENS",
           "lead": "Камеры в ECS и захват кадров.", "leadEn": "ECS cameras and frame capture." },
+        { "id": "camera-behaviors", "source": "docs/camera-behaviors.md", "title": "LENS: поведение камер", "titleEn": "LENS: camera behaviours",
+          "lead": "Тела камер, режимы рига и пресеты.", "leadEn": "Camera bodies, rig modes and presets." },
         { "id": "prisma", "source": "docs/prisma.md", "title": "PRISMA", "titleEn": "PRISMA",
           "lead": "Постобработка и атмосфера.", "leadEn": "Post-processing and atmosphere." },
         { "id": "spectrafx", "source": "docs/spectrafx.md", "title": "SpectraFX", "titleEn": "SpectraFX",

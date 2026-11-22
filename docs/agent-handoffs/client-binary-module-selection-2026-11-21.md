@@ -407,7 +407,7 @@ block is registered — identical to the full build for rules without
 `aiversebuild` rejects them unless `traffic` (or `auto`) is selected; `auto`
 selects it from an enabled `traffic` block in the composed rules. CMake fails
 if OFF is combined with editor, tests, headless, server or HTML5 Studio.
-`RtsTrafficRoads.cpp` (road nets) is unaffected.
+`TrafficRoads.cpp` (road nets) is unaffected.
 
 Verification actually run (cloud Linux x86_64, Emscripten 3.1.50 from source
 with Ubuntu LLVM 18.1.3 and binaryen 116; `templates/skirmish` content,
@@ -436,8 +436,8 @@ Engine texture PNG/KTX2 files changed on main after e61a56c75 were not copied
 to the build host; they affect `index.data`, not `index.wasm`.
 
 Remaining wasm (B, pre-optimisation code 16.2 MB): `aiverse::game` ~40%.
-Rule-gated systems following the same pattern, by code size: RtsAI 0.37 MB,
-Encounters 0.14, TopDown 0.14, Planet (RtsPlanetGroundFx + PlanetRenderer)
+Rule-gated systems following the same pattern, by code size: ComputerPlayer 0.37 MB,
+Encounters 0.14, TopDown 0.14, Planet (GamePlanetGroundFx + PlanetRenderer)
 ~0.14, city generator + roadkit + road geometry ~0.22, Progression 0.08,
 Driving 0.08, FieldOps 0.08, BwImpl 0.07, RegionSwipe 0.06, Arsenal 0.06,
 Raid 0.06, Commerce 0.06; also ImGui ~0.36 MB and RmlUi Debugger 0.04 MB.
@@ -519,11 +519,11 @@ product decision for the editor owners.
 CMake `aiverse_game_module(var description stub sources...)` replaces a
 system's sources with an adapter from `modules/rts/disabled/` when the option
 is OFF (FATAL with editor, tests, headless, server or HTML5 Studio). Traffic
-moved to it (`modules/rts/disabled/Traffic.cpp`). New switches:
+moved to it (`engine/game/disabled/Traffic.cpp`). New switches:
 
 | engineModules | CMake | needed when | adapter |
 |---|---|---|---|
-| `bw-ai` | `AIVERSE_GAME_WITH_BWAI` | rules `ai.controller: "bw"` | controller "bw" not registered: such rules fail on load ("unknown controller"); hypnotised sends and point counters (`RtsHypnosis.cpp`) stay in every build |
+| `bw-ai` | `AIVERSE_GAME_WITH_BWAI` | rules `ai.controller: "bw"` | controller "bw" not registered: such rules fail on load ("unknown controller"); hypnotised sends and point counters (`Hypnosis.cpp`) stay in every build |
 | `encounters` | `AIVERSE_GAME_WITH_ENCOUNTERS` | rules `encounters` | inactive; Lua `encounters` = {active=false} |
 | `commerce` | `AIVERSE_GAME_WITH_COMMERCE` | rules `commerce` | inactive; Lua `commerce` = {active=false} |
 | `careers` | `AIVERSE_GAME_WITH_CAREERS` | rules `careers` | inactive; Lua `career` = {active=false} |

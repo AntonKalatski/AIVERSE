@@ -100,4 +100,4 @@ Tests: `game_wizard_plan_picks_a_template_by_the_idea`, `game_wizard_makes_a_pla
 ## Änderung an der Engine
 
 Skriptbefehle akzeptieren `"card": false` (kein Knopf / Hotkey; gesendet von View-Skripten, HUD-Dokumenten, MCP) — das
-Weiter / Überspringen des Tutorials (`modules/rts/RtsScriptCommands.cpp`, Befehlskarten in Client und Editor).
+Weiter / Überspringen des Tutorials (`engine/game/ScriptCommands.cpp`, Befehlskarten in Client und Editor).

@@ -9,7 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include "SimTools.h"
-#include "modules/rts/RtsAI.h"
+#include "engine/game/ComputerPlayer.h"
 
 namespace aiverse::editor {
 
@@ -41,7 +41,7 @@ struct Run {
     explicit Run(Workspace& w) : ws(w) {}
     Workspace& ws;
     std::unique_ptr<Simulation> sim;
-    RtsModule* mod = nullptr;
+    GameCore* mod = nullptr;
     std::unique_ptr<SimRefs> refs;
     std::map<std::string, int64_t> eventCounts;
     std::map<std::string, int64_t> triggerCounts;
@@ -214,9 +214,9 @@ Json scenarioRun(Workspace& ws, const Json& p) {
     Run r(ws);
     SimConfig cfg;
     cfg.seed = uint64_t(std::max<int64_t>(0, p["seed"].integer(1)));
-    r.sim = std::make_unique<Simulation>(cfg, std::make_unique<RtsModule>());
+    r.sim = std::make_unique<Simulation>(cfg, std::make_unique<GameCore>());
     r.sim->setup(ws.project.rulesJson, map);
-    r.mod = dynamic_cast<RtsModule*>(&r.sim->module());
+    r.mod = dynamic_cast<GameCore*>(&r.sim->module());
     r.refs = std::make_unique<SimRefs>(SimRefs{*r.sim, *r.mod, mapEntityIds(*r.sim, *r.mod, map)});
     std::map<std::string, std::vector<Entity>> groups;   // "squad" -> squad#1..N
     for (auto& [name, idx] : spawnNames) {
@@ -263,7 +263,7 @@ Json scenarioRun(Workspace& ws, const Json& p) {
     std::stable_sort(checks.begin(), checks.end(), [](const Timed& a, const Timed& b) { return a.tick < b.tick; });
 
     // bots
-    std::vector<RtsAI> bots;
+    std::vector<ComputerPlayer> bots;
     AIConfig ai;
     const Json& bj = p["bots"];
     for (auto& pl : r.sim->players()) {

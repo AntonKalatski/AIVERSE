@@ -23,14 +23,14 @@ supersede the old RTS-only instructions.
    other necessary capabilities. Use Fixed/integer math, generation-safe
    Entity references, one source of truth, explicit version handling and
    settings validation. A mechanic does not live in a monolithic
-   `State::actors`, `RtsModule` field, global singleton or render object.
+   `State::actors`, `GameCore` field, global singleton or render object.
 4. **Implement reusable systems.** Each system provides one feature/stage
    with explicit component/resource Read/Write access and a deterministic
    execution order. Missing components mean the Entity does not participate.
    Use a deterministic deferred command/event barrier for creation,
    destruction, damage, shared RNG and other order-dependent side effects.
    The core system must not branch on genre names or require
-   `game::RtsModule&` / `fps::Module&`.
+   `game::GameCore&` / `fps::Module&`.
 5. **Separate shared policy from adapters.** Put neutral calculations in
    `libraries/include/aiverselib/` or shared `engine/`. Genre modules
    register systems, map existing input/config, preserve external save/network

@@ -29,10 +29,10 @@
 #include <fstream>
 #include <iterator>
 #include <unordered_map>
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/view/RtsCamera.h"
-#include "modules/rts/view/RtsOverlayData.h"
-#include "modules/rts/view/RtsSelectionPresentation.h"
+#include "engine/game/Tiles.h"
+#include "engine/render/CameraBehavior.h"
+#include "engine/view/game/GameOverlayData.h"
+#include "engine/view/game/GameSelectionPresentation.h"
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -375,9 +375,9 @@ void Editor::openGame(const std::string& idOrDir) {
     fitScene();
     status = "Игра: " + ws_.project.manifest.getStr("name", idOrDir);
     checkNativeModules(false);
-    if(ws_.project.worldSpaceMaps()) {
+    if(ws_.map.data.worldSpace) {
         focusWindow("fps");
-        const auto& spawn=doc().data.fps["spawns"][0];
+        const auto& spawn=doc().data.extra["spawns"][0];
         sceneCam.target={float(spawn[0].toDouble()),0,float(spawn[2].toDouble())};sceneCam.distance=35;
     }
 }
@@ -450,7 +450,7 @@ size_t Editor::reloadVisualModelSources(
         const std::vector<std::string>& paths) {
     if(!dev_ || playing() || clientPlaying() || paths.empty())return 0;
     // The caller runs at the editor frame boundary, after the previous
-    // render submission. TypeLook/animation sources are detached by RtsView
+    // render submission. TypeLook/animation sources are detached by GameView
     // before the independent resource owner destroys GPU allocations.
     const size_t invalidated=view_.reloadModelSources(paths);
     if(invalidated) {
@@ -598,7 +598,7 @@ void Editor::retainEditorType(uint16_t type) {
         modelDemand_.resize(rules().types.size());
     modelDemand_.touch(type,time_,game::view_adapter::ModelDemandPriority::Interactive);
     // The Model/Materials windows and model_info must work when the type has
-    // no instances on the map. The RtsView loader caches this call per type.
+    // no instances on the map. The GameView loader caches this call per type.
     // Eager mode already has resident types; still consume the demand
     // queue to avoid retaining stale requests across editor frames.
     modelDemand_.drain(modelDemand_.pendingCount(),
@@ -705,7 +705,7 @@ void Editor::fitScene() {
         return;
     }
     // 2D games: projection and angle of game.json "camera" (zoom stays the editor's)
-    game::CameraSetup cs = game::cameraSetupFrom(ws_.project.manifest);
+    render::CameraOverhead cs = render::overheadCameraFrom(ws_.project.manifest);
     sceneCam.ortho = cs.ortho;
     if (cs.present) { sceneCam.pitch = std::min(cs.pitch, 1.5707f); sceneCam.yaw = cs.yaw; sceneCam.fovY = cs.fovY; }
 }
@@ -738,7 +738,7 @@ bool Editor::groundAt(const Viewport& vp, const Camera& cam, float sx, float sy,
         return true;
     }
     // the drawn surface under the cursor (high ground, detail relief): march the view ray against
-    // RtsView::heightAt, then bisect; the y = 0 plane only when the ray never meets it
+    // GameView::heightAt, then bisect; the y = 0 plane only when the ray never meets it
     float3 o, d;
     if (cam.screenRay(sx - vp.originX, sy - vp.originY, vp.pointsW, vp.pointsH, o, d) && d.y < -1e-4f) {
         const game::MapGrid& gr = editGrid();
@@ -911,7 +911,7 @@ void Editor::syncGrid() {
             const int ti = rules().findType(e.type);
             if (e.owner <= 0 || e.owner > 8 || ti < 0 || !rules().types[size_t(ti)].structure) continue;
             const game::UnitType& t = rules().types[size_t(ti)];
-            int x0, y0; game::RtsModule::footprintAt(t, {Fixed::fromRatio(int64_t(std::lround(e.x * 1000)), 1000), Fixed{}, Fixed::fromRatio(int64_t(std::lround(e.z * 1000)), 1000)}, x0, y0);   // editor only: float -> fixed
+            int x0, y0; game::GameCore::footprintAt(t, {Fixed::fromRatio(int64_t(std::lround(e.x * 1000)), 1000), Fixed{}, Fixed::fromRatio(int64_t(std::lround(e.z * 1000)), 1000)}, x0, y0);   // editor only: float -> fixed
             for (int y = y0 - r; y < y0 + t.footprintH + r; ++y)
                 for (int x = x0 - r; x < x0 + t.footprintW + r; ++x) {
                     if (!grid_.inside(x, y)) continue;
@@ -986,7 +986,7 @@ std::string Editor::planetBodyId(int body) const {
     return body >= 0 && size_t(body) < W.bodies.size() ? W.bodies[size_t(body)].id : std::string();
 }
 
-void Editor::buildEditScene(game::RtsScene& out) const {
+void Editor::buildEditScene(game::GameScene& out) const {
     const auto& d = ws_.map.data;
     out.objects.clear();
     out.roads.clear();
@@ -1064,7 +1064,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
             if(e.extra["components"].has("NereidWater"))continue;
             const auto local=authoredLocalTransform(e);o.pos.y=float(local.position.y.toDouble());o.parented=true;o.parentFrame=authoredModelMatrix(e);
         }
-        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as RtsModule spawns it: 0 north, 90 east, 180 south
+        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as GameCore spawns it: 0 north, 90 east, 180 south
             const float a = float(e.extra["facing"].toDouble()) * 3.14159265f / 180.0f;
             o.facing = {std::sin(a), 0, -std::cos(a)};
         }
@@ -1153,7 +1153,7 @@ void Editor::drawEditOverlays3D() {
         }
     for (size_t p = 0; p < d.players.size(); ++p) {
         if (!d.players[p].hasStart) continue;
-        float4 c = game::RtsView::playerColor(int(p + 1));
+        float4 c = game::GameView::playerColor(int(p + 1));
         float sx = d.players[p].startX, sz = d.players[p].startZ, gy = view_.heightAt(grid_, sx, sz);
         r3d_.circleXZ({sx, 0, sz}, 1.2f, rgbaf({c.x, c.y, c.z, 1}), 24, gy + 0.15f);
         r3d_.line({sx, gy, sz}, {sx, gy + 2.5f, sz}, rgbaf({c.x, c.y, c.z, 1}));
@@ -1736,7 +1736,7 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     if (playing() && !ws_.project.actorSessionPlay()) { renderGame(vp, cam, 1ULL); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto stageStart = std::chrono::steady_clock::now();
-    if (!ws_.project.worldSpaceMaps()) {
+    if (!ws_.map.data.worldSpace) {
         buildEditScene(scene_);
         if(!editOverlays)for(auto& object:scene_.objects)object.selected=object.hovered=false;
         scene_.gameplayOverlays=false;
@@ -1748,9 +1748,9 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
         }
     }
     const auto afterBuild = std::chrono::steady_clock::now();
-    if (!ws_.project.worldSpaceMaps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
+    if (!ws_.map.data.worldSpace) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
     const auto afterFields = std::chrono::steady_clock::now();
-    const bool planets = !ws_.project.worldSpaceMaps() && view_.planetMode();
+    const bool planets = !ws_.map.data.worldSpace && view_.planetMode();
     // A map undo may have removed the TerraWeave recipe since last frame.
     // Release stale preview buffers even when the Terrain panel is closed.
     if (terraWeaveForestPreview_.enabled() &&
@@ -1821,10 +1821,10 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
     r3d_.setSceneSelectionOutline(editOverlays);
-    if (!ws_.project.worldSpaceMaps()) setOverlayContext(vp, useCam, false);
+    if (!ws_.map.data.worldSpace) setOverlayContext(vp, useCam, false);
     // Scene-only silhouette outline through the existing ModelDraw outline path.
     // Keep the Game view unaffected by restoring the flag after draw.
-    if (ws_.project.worldSpaceMaps()) {
+    if (ws_.map.data.worldSpace) {
         enqueueFpsSceneGeometry(useCam,editOverlays);
     } else {
         view_.setSelectionOutline(editOverlays);
@@ -1834,12 +1834,12 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     nereidPreview_.draw(r3d_);
     visualPickCacheGeneration_=view_.modelResources().generation();
     const auto afterView = std::chrono::steady_clock::now();
-    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.project.worldSpaceMaps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
+    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.map.data.worldSpace && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
-    if (editOverlays && !planets && !ws_.project.worldSpaceMaps()) drawEditOverlays3D();
+    if (editOverlays && !planets && !ws_.map.data.worldSpace) drawEditOverlays3D();
     // Editor-only TerraWeave forest overlay. Explicit opt-in from TerrainWindow:
     // shares the standard Renderer3D model/instancing path, no gameplay state.
-    if (!planets && !ws_.project.worldSpaceMaps() && terraWeaveForestPreview_.enabled()) {
+    if (!planets && !ws_.map.data.worldSpace && terraWeaveForestPreview_.enabled()) {
         try {
             const auto cameraPosition = r3d_.cameraPos();
             const double xCm = double(cameraPosition.x) * 100.0;
@@ -1865,7 +1865,7 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     }
     // PHYSIS «Живая природа»: wildfire on TerraWeave grass, wind, smoke and
     // sound without a play-test (private preview World or read-only live sim).
-    if (!planets && !ws_.project.worldSpaceMaps() && physisNaturePreview_.settings.enabled) {
+    if (!planets && !ws_.map.data.worldSpace && physisNaturePreview_.settings.enabled) {
         try {
             physisNaturePreview_.setWater(authoredWater());
             physisNaturePreview_.draw(*dev_, r3d_, gameFx_, projectReader(ws_.project.dir), doc(),
@@ -1902,7 +1902,7 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
             status=std::string("TerraWeave sparse terrain: ")+e.what();
         }
     }
-    if (!planets && !ws_.project.worldSpaceMaps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
+    if (!planets && !ws_.map.data.worldSpace) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     tickSpectraGpuPreview(useCam,renderW,renderH,false);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
@@ -1928,7 +1928,7 @@ void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     if (postActiveForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
-    if (!ws_.project.worldSpaceMaps() && !r3d_.studioDebugMode()) {
+    if (!ws_.map.data.worldSpace && !r3d_.studioDebugMode()) {
         gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
         // Scene-view particle reactive coverage; per-scene callback is
         // consumed synchronously by resolvePrisma and never persists.
@@ -1981,7 +1981,7 @@ void Editor::renderGame(Viewport& vp, const Camera& cam, uint64_t prismaViewId) 
         view_.buildTerrain(*dev_, gs.grid);
         playTerrainBuilt_ = true;
     }
-    game::RtsScene sc;
+    game::GameScene sc;
     game::sceneFromSim(*sim_, sc, float(sim_->alpha()), uint8_t(human_));
     sc.paintLayers = paintLayers;
     sc.entityFx = entityFx;
@@ -2142,7 +2142,7 @@ void Editor::startPlay(int humanSlot) {
     try {
         SimConfig cfg;
         cfg.seed = uint64_t(std::time(nullptr));
-        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         Json mapJson = doc().toJson();
         std::string terr, dir = ws_.project.dir;
         auto read = [&dir](const std::string& p, std::string& out) {
@@ -2168,7 +2168,7 @@ void Editor::startPlay(int humanSlot) {
     fxPreview_ = {};
     fxFrozen_ = false;
     gameFxBridge_.setHeightFn([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : 0.0f; });
-    gameFxBridge_.setPlayerColorFn([](int p) { return game::RtsView::playerColor(p); });
+    gameFxBridge_.setPlayerColorFn([](int p) { return game::GameView::playerColor(p); });
     gameFxBridge_.setAttackOriginFn([this](Entity e, fx::float3& pos, fx::float3& dir) { return view_.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     gameFxBridge_.attach(*sim_, uint8_t(human_));
     fxTime_ = -1;
@@ -2186,7 +2186,7 @@ void Editor::startPlay(int humanSlot) {
         if (size_t(human_ - 1) < d.players.size() && d.players[size_t(human_ - 1)].hasStart) gameCam.target = {d.players[size_t(human_ - 1)].startX, 0, d.players[size_t(human_ - 1)].startZ};
         gameCam.distance = 24;
     }
-    game::applyCameraSetup(game::cameraSetupFrom(ws_.project.manifest), gameCam, 720.0f);
+    render::applyOverheadCamera(render::overheadCameraFrom(ws_.project.manifest), gameCam, 720.0f);
     focusWindow("game");
     status = human_ ? "Тест: вы играете за игрока " + std::to_string(human_) : "Тест: боты играют на карте";
 }

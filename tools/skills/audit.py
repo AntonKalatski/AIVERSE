@@ -4,7 +4,7 @@
   python3 tools/skills/audit.py [--skills id,id] [--strict]
 
 Scans skills/<category>/<id>/SKILL.md. In backticks it checks
-  - repository paths (`modules/rts/RtsAI.cpp`, `docs/x.md`, `skills/ai/...`, `tools/...`; globs like `Rts*.cpp` must
+  - repository paths (`engine/game/ComputerPlayer.cpp`, `docs/x.md`, `skills/ai/...`, `tools/...`; globs like `Rts*.cpp` must
     match something; placeholders with <...> are skipped);
   - MCP tool names: a backticked word that starts like a tool (`map_`, `rules_`, ...) must be registered by the
     editor or MCP server (`add("name"` / `registerOp({"name"` in apps/ and tools/mcp).

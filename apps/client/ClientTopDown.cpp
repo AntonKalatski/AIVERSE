@@ -1,6 +1,6 @@
 // Top-down heroes in the client (rules / game.json "topDown"): touch sticks and ability buttons, WASD / arrows +
 // mouse aim (held left button) + Space / keys, the follow camera, and the commands they send (kCmdTopDown on
-// change, kCmdTopDownAbility per press). The model is modules/rts/view/TopDownControls.h; the sim side RtsTopDown.h.
+// change, kCmdTopDownAbility per press). The model is engine/view/game/TopDownControls.h; the sim side TopDown.h.
 #include "GameClient.h"
 #include <cmath>
 #include <cstdlib>

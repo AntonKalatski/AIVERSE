@@ -24,7 +24,7 @@ state into AnimationInputsComponent every frame, then call
 `stepAnimationPresentation(world, frameDt)`. Render
 AnimationPoseComponent::local/matrices if valid.
 
-This host does not yet replace existing RtsView or automatically attach to
+This host does not yet replace existing GameView or automatically attach to
 FPS characters. Do not snapshot presentation World: AnimationPlayerComponent
 owns a shared mutable graph instance. See docs/agent-handoffs/animation-universal.md.
 

@@ -22,8 +22,8 @@
 #include "engine/net/server/ServerExtension.h"
 #include "engine/pack/http/HttpRequest.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 
 using namespace aiverse;
 using namespace aiverse::meta;
@@ -238,7 +238,7 @@ struct Player {
     std::string name;
     std::unique_ptr<Simulation> sim;
     std::unique_ptr<net::NetClient> net;
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     bool ended = false;
     int result = 0;
 };

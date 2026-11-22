@@ -8,12 +8,12 @@ Previous: docs/agent-handoffs/lens-motionweave-integration-stage48b3a-atomic-edi
 
 ## Changed source
 
-- `modules/rts/view/RtsTerrain.cpp`: after Stage48B.3A introduced immutable published height snapshots, `RtsView::heightAt` must continue to use the old Rules-derived height calculation when no Terrain mesh has yet been built or when the view is in planet mode. In those two conditions return `terrain::heightAt(grid, rules_->levelHeight, x,z)`; only a built flat-map Terrain uses `terrain_.surfaceAt()` to guard against in-place editor mutations before the next atomic commit.
+- `engine/view/game/GameTerrain.cpp`: after Stage48B.3A introduced immutable published height snapshots, `GameView::heightAt` must continue to use the old Rules-derived height calculation when no Terrain mesh has yet been built or when the view is in planet mode. In those two conditions return `terrain::heightAt(grid, rules_->levelHeight, x,z)`; only a built flat-map Terrain uses `terrain_.surfaceAt()` to guard against in-place editor mutations before the next atomic commit.
 - This prevents a regression for a nondefault rules.levelHeight before the first Terrain build, and prevents a stale published flat-map height snapshot being applied when the same view is used for planet/cube-sphere rendering.
 
 ## Test added (NOT RUN)
 
-- `tests/tests.cpp`: `lens_stage48b3a1_unbuilt_terrain_uses_rules_level_height` creates a Rules with levelHeight=4, initializes RtsView without calling buildTerrain, and checks a level-1 ground cell yields height 4 before teardown.
+- `tests/tests.cpp`: `lens_stage48b3a1_unbuilt_terrain_uses_rules_level_height` creates a Rules with levelHeight=4, initializes GameView without calling buildTerrain, and checks a level-1 ground cell yields height 4 before teardown.
 - Planet/cube-sphere runtime parity remains a separate pending GPU test, and is not claimed tested by this fixture.
 
 ## Actual verification

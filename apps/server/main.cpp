@@ -22,7 +22,7 @@
 #include "engine/net/server/ServerExtension.h"
 #include <utility>
 #include <vector>
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 
 using namespace aiverse;
 

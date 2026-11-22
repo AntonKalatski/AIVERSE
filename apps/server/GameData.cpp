@@ -3,9 +3,9 @@
 #include <fstream>
 #include <iterator>
 #include "engine/sim/Replay.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsScript.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Tiles.h"
+#include "engine/game/Script.h"
 
 namespace aiverse::netgame {
 
@@ -28,7 +28,7 @@ MatchData loadMatchData(const std::string& gameDir, const std::string& mapFile) 
 }
 
 std::unique_ptr<Simulation> makeSimulation(const std::string& module, const SimConfig& cfg) {
-    if (module == "rts") return std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    if (module == "rts") return std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     return nullptr;
 }
 

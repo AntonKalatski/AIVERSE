@@ -614,7 +614,7 @@ packages, then occurrence id and effect index; Multiply is milli and truncates p
 folded product); the result is clamped; `steps` lists every applied effect with the value after it (explainable
 builds). Slot-scoped perks reach only queries for that deck slot, player-scoped perks reach every slot; a bearer
 (owner kind: robot/weapon/bullet/hero...) filters effects. `scaleAmount` applies damage multipliers with saturation;
-`rescaleHealth` keeps the health fraction when max health grows and clamps when it shrinks. Built-in RtsModule
+`rescaleHealth` keeps the health fraction when max health grows and clamps when it shrinks. Built-in GameCore
 stats keep their own owner: this pipeline is for native/host games and custom stats.
 
 **Stacking and selection.** `maxSelections` (0 = unlimited) counts per player or per slot; `requires` /
@@ -692,7 +692,7 @@ native module export, platform runtimes, performance at bullet-heaven densities,
 
 **Engine integration.** RTS games use the package without native code through the rules block `progression`
 ([progression.md](progression.md), `modules/rts/RtsProgression*`): kills of real units drop orbs, offers are chosen by
-`kCmdProgression` (UI / bot / Lua), perk stats feed `RtsModule::stat`, `dealDamage` and the shot hooks, bullet perks
+`kCmdProgression` (UI / bot / Lua), perk stats feed `GameCore::stat`, `dealDamage` and the shot hooks, bullet perks
 extend projectile programs, summon circles spawn real allies, and the battle deck comes from the map's
 `players[i].deck` (match start payload). The library headers are unchanged.
 
@@ -1539,7 +1539,7 @@ phase, three personal boss windows at 3:00 / 6:00 / 9:00 with rotation. Bind `en
 
 **Views.** `telegraphDecal(view, groundY, own, colors)` returns x, y, z, rgba triangles: background shape plus a fill
 growing with `progressMilli` (circle / ring outward, cone from the apex, line from its start), own vs enemy colours
-as Drone Fall's `TelegraphColorConfig`. Feed them to `RtsGroundCanvas` (`ViewGroundBatch`) or a Lua
+as Drone Fall's `TelegraphColorConfig`. Feed them to `GameGroundCanvas` (`ViewGroundBatch`) or a Lua
 `view.draw_ground` list. Status visuals: one view per `StatusViewEvent` serial (Started / Refreshed / Ended) at the
 Ground or ModelTop anchor.
 
@@ -1554,7 +1554,7 @@ it: with the default 4-tick reaction the hero beats the giant through all three 
 telegraphs); with `--reaction 100000` (no dodging) the hero dies — the telegraphs decide the fight.
 
 **Not covered.** Projectiles in flight (weapon-policies), knockback/push physics, navigation, loot and rewards,
-HUD banners and network authority (wiring into RtsModule units: below).
+HUD banners and network authority (wiring into GameCore units: below).
 
 **RTS games** use the package through rules `encounters` (`modules/rts/RtsEncounters.*`): bosses, mobs, telegraphs
 and the schedule on real units with rules statuses, orders, flow fields, events, saves and checksums; see

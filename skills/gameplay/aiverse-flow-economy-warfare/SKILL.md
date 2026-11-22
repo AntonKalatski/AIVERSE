@@ -10,7 +10,7 @@ flow economy (`flow` resources, `costModel: "progressive"`). Data only: no game 
 `modules/rts` (debt G3 in `docs/no-genre-split-audit.md`).
 
 Authority: `docs/game-format.md` § Radar, sonar and jammers and § Field operations; engine code
-`modules/rts/RtsSensors.cpp`, `modules/rts/RtsFieldOps.cpp`; sample `templates/metaltide`.
+`engine/game/Sensors.cpp`, `engine/game/FieldOps.cpp`; sample `templates/metaltide`.
 
 1. Rules: `radar.targeting`, `repair`, `reclaim`, `selfDestruct`, `ambient` (map `ambient` overrides it). Types:
    `radar` / `sonar` / `jammer` / `stealth` / `underwater` (+ weapon `underwater`), builders `assist` + `patrolWork`,

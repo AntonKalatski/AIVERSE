@@ -6,7 +6,7 @@
 #include <cstdio>
 
 #include "GameClient.h"
-#include "modules/rts/view/ScriptHud.h"
+#include "engine/view/game/ScriptHud.h"
 
 namespace aiverse::client {
 
@@ -190,7 +190,7 @@ bool GameClient::toolMouseDown(const Event& e) {
         }
         if (pair && groundAt(e.x, e.y, g)) {
             Command c; c.type = kCmdPlayerAbility;
-            c.param = abilityIndex_ | RtsModule::packPoint2({fx(g.x), Fixed{}, fx(g.z)});
+            c.param = abilityIndex_ | GameCore::packPoint2({fx(g.x), Fixed{}, fx(g.z)});
             c.point = {fx(pairX_), Fixed{}, fx(pairZ_)};
             issue(c);
             pairFirst_ = false;

@@ -4,7 +4,7 @@
   python3 tools/bots/sweep.py --headless build/linux-release/aiverse_headless --project templates/skirmish \
       [--seeds 1,2,3] [--max-seconds 1800] [--maps valley,forest] [--json out.json] [--jobs 2]
 
-Runs aiverse_headless once per map and seed (the headless runner automates every slot with RtsAI) and reports,
+Runs aiverse_headless once per map and seed (the headless runner automates every slot with ComputerPlayer) and reports,
 per run: winner, game seconds, commands per slot, checksum, and a class:
   win      - a winner before the limit
   draw     - the simulation ended in a draw

@@ -147,7 +147,7 @@ Passengers and gunners keep Fire / Aim / Reload / weapon keys; the driver does n
 thrown-out occupants are ejected; a destroyed vehicle kills everyone inside. Vehicles without `type` keep the
 legacy car. Typed vehicles run on the one vehicle system of every host (`engine/vehicles`, docs/driving.md): the
 entity carries `vehicles::VehicleDrive`, `fps.vehicleTypes` become shared vehicle types (metres, seat lists; a hard
-crash costs (impact - 8 m/s) x 10 health), and `modules/fps/FpsVehicles.cpp` is only the metre-map world query
+crash costs (impact - 8 m/s) x 10 health), and `engine/actor/ActorVehicles.cpp` is only the metre-map world query
 (ground cast, box sweep against the triangle world, seat-list glue). An empty typed vehicle at rest sleeps (not
 stepped) like every parked vehicle. FPS save version 10 stores the shared VehicleDrive record. `templates/fps_survival` has ten four-seat cars
 (`rules/vehicles.json`). Test: `typedVehicles` in `tests/fps/tests.cpp`.
@@ -156,12 +156,13 @@ stepped) like every parked vehicle. FPS save version 10 stores the shared Vehicl
 
 A map `"race"` block makes the typed map vehicles race: the shared race capability of every project, documented in
 [races.md](races.md) (data, behaviour, HUD). The adapter is the shared `vehicles::VehicleRace` (engine/vehicles);
-this module only seats the racers (`RaceSeats` in `modules/fps/FpsVehicles.cpp`): player `i` is seated as the driver
+this module only seats the racers (`RaceSeats` in `engine/actor/ActorVehicles.cpp`): player `i` is seated as the driver
 of the `i`-th typed map vehicle (ascending vehicle id); the race decides the round (at the round limit the leader
 wins). ECS shape: the `vehicles::RaceState` world resource (racer `i` = slot `i`, `racers[i - 1]` = its car), the
 cars are `Vehicle` + `vehicles::VehicleDrive` entities. FPS save version 10 appends the RaceState record only on
 maps with a race; snapshots carry the player's `lib::mechanics::RaceView` (authority protocol 6). The client
-shows the chase camera and the race HUD at the wheel and hides the weapon UI.
+shows the chase camera (rules / map `"camera": {"chase": {...}}`, first-person look: `"firstPerson"`; presets in
+[camera-behaviors.md](camera-behaviors.md)) and the race HUD at the wheel and hides the weapon UI.
 
 ## Generated buildings (opt-in)
 
