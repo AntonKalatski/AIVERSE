@@ -24,6 +24,7 @@ public:
     void applyCommand(Simulation&, const Command&) override {}
     void hashState(Simulation&, Hasher&) override {}
     int result(Simulation&) override { return 0; }
+    bool serializeState(Simulation&, Archive& archive) override { return archive.ok(); }
 private:
     bool self_;
 };
@@ -61,6 +62,7 @@ void autoInstall() {
     auto c = make(mapWith());
     std::string error;
     CHECK(c->deserialize(bytes, &error));
+    if (!error.empty()) std::printf("deserialize: %s\n", error.c_str());
     CHECK(c->checksum() == a->checksum());
 
     // Opt-outs and the module-owned path.
@@ -125,7 +127,8 @@ void vegetationWind() {
     CHECK(huge.xCmPerSec == 5000);                   // clamped to TerraWeave's limit
 
     const auto field = world::forestWindFieldFromNature(windFrame(5, -2), 8);
-    CHECK(field && field->columns == 8 && field->rows == 8 && field->samples.size() == 64);
+    // 4x3 cells of 32 m: 8 nodes across X, fewer along the shorter Z.
+    CHECK(field && field->columns == 8 && field->rows == 7 && field->samples.size() == 56);
     CHECK(field && field->originXcm == -2 * 3200 && field->originZcm == 3200);
     CHECK(field && field->samples.front().xCmPerSec == 500);
     CHECK(field && field->samples.back().xCmPerSec > 500);   // the gusty corner shows
@@ -143,7 +146,7 @@ void liveFrame() {
     const auto frame = world::buildNaturePresentation(sim->world(), p);
     CHECK(frame.valid && frame.width == 4 && frame.height == 3);
     const auto field = world::forestWindFieldFromNature(frame, 4);
-    CHECK(field && field->samples.size() == 16);
+    CHECK(field && field->columns == 4 && field->rows == 4);   // 96 m / 42.7 m -> 4 nodes
 }
 } // namespace
 

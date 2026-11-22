@@ -140,17 +140,22 @@ inline std::shared_ptr<const terraweave::ForestWindField> forestWindFieldFromNat
     if (field->originXcm < -lim || field->originZcm < -lim ||
         field->originXcm + spacingCm * (n - 1) > lim ||
         field->originZcm + spacingCm * (n - 1) > lim) return nullptr;
+    // Same spacing on both axes; the shorter axis gets fewer nodes.
+    const auto axisNodes = [&](double extent) {
+        return std::clamp(int(std::ceil(extent / spacingM - 1e-6)) + 1, 2, n);
+    };
+    const int cols = axisNodes(spanX), rows = axisNodes(spanZ);
     field->spacingCm = std::int32_t(spacingCm);
-    field->columns = std::uint32_t(n);
-    field->rows = std::uint32_t(n);
-    field->samples.resize(std::size_t(n) * std::size_t(n));
-    for (int z = 0; z < n; ++z)
-        for (int x = 0; x < n; ++x) {
+    field->columns = std::uint32_t(cols);
+    field->rows = std::uint32_t(rows);
+    field->samples.resize(std::size_t(cols) * std::size_t(rows));
+    for (int z = 0; z < rows; ++z)
+        for (int x = 0; x < cols; ++x) {
             const float px = float(minX + spacingM * x), pz = float(minZ + spacingM * z);
             const auto s = frame.sample(px, pz);
             const float wx = s.valid ? s.windX : frame.meanWindX;
             const float wz = s.valid ? s.windZ : frame.meanWindZ;
-            auto& out = field->samples[std::size_t(z) * std::size_t(n) + std::size_t(x)];
+            auto& out = field->samples[std::size_t(z) * std::size_t(cols) + std::size_t(x)];
             out.xCmPerSec = cmPerSec(wx);
             out.zCmPerSec = cmPerSec(wz);
             out.gustPermille = gustPermille(std::hypot(wx, wz));
