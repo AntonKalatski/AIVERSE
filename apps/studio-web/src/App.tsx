@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shortcutKey } from './keyboard';
+import { deleteLayoutPreset, factoryPresets, readSavedPresets, saveLayoutPreset, type LayoutPreset } from './layoutPresets.ts';
 import { ChevronDown, Search, Settings2 } from 'lucide-react';
 import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
 import {
@@ -84,6 +85,8 @@ export default function App() {
     const stored = Number(window.localStorage.getItem('aiverse.studio.uiScale'));
     return Number.isFinite(stored) && stored >= 0.75 && stored <= 2 ? stored : 1;
   });
+  const [savedPresets, setSavedPresets] = useState<LayoutPreset[]>(() => readSavedPresets(null));
+  const [presetTitle, setPresetTitle] = useState('');
   const [inspectorPin, setInspectorPin] = useState<{
     entity: StudioEntity; inspector: StudioInspector | null;
   } | null>(null);
@@ -436,6 +439,8 @@ export default function App() {
       ...WORKSPACES.map(id => ({ id: 'ws-' + id, label: WORKSPACE_INFO[id].title, shortcut: menuShortcut(WORKSPACE_INFO[id].key),
         checked: workspace === id, onSelect: () => switchWorkspace(id) })),
       { id: 'reset', label: 'Reset ' + WORKSPACE_INFO[workspace].title + ' Layout', separator: true, onSelect: () => setDock(workspaceDockTree(workspace)) },
+      ...factoryPresets(workspace).map(preset => ({ id: 'preset-' + preset.id, label: 'Layout: ' + preset.title, onSelect: () => setDock(preset.tree) })),
+      ...savedPresets.filter(preset => preset.workspace === workspace).map(preset => ({ id: 'saved-' + preset.id, label: 'Layout: ' + preset.title, onSelect: () => setDock(preset.tree) })),
       ...(!FLOAT && floating.length ? [{ id: 'dock-floating', label: 'Dock All Floating Windows (' + floating.length + ')',
         onSelect: () => { for (const item of floating) void invoke('studio.windowClose', { window: item.key }).catch(console.warn); } }] : []),
       { id: 'palette', label: 'Command Palette…', shortcut: menuShortcut('K'), onSelect: () => setPalette('') },
@@ -491,7 +496,7 @@ export default function App() {
     return out;
     // menus are rebuilt each render from the same state listed here
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot, paletteAssets, dock, floating, workspace, busy, connected, switchWorkspace]);
+  }, [snapshot, paletteAssets, dock, floating, workspace, busy, connected, switchWorkspace, savedPresets]);
 
   // Floating window: its own small dock, no header, menus or workspaces.
   if (FLOAT) return <div className={'studio compact-shell floating-shell'+(connected?' compact-shell--native':'')}>
@@ -543,7 +548,28 @@ export default function App() {
           onChange={e => setUiScale(Number(e.target.value) / 100)}/>
       </label>
       <button type="button" onClick={() => setUiScale(1)}>Reset scale to 100%</button>
-      <button type="button" onClick={() => setDock(workspaceDockTree(workspace))}>Reset panel layout</button>
+      <strong>Layouts</strong>
+      {factoryPresets(workspace).map(preset =>
+        <button key={preset.id} type="button" onClick={() => setDock(preset.tree)}>{preset.title}</button>)}
+      {savedPresets.filter(preset => preset.workspace === workspace).map(preset =>
+        <div key={preset.id} className="studio-editor-settings__preset">
+          <button type="button" onClick={() => setDock(preset.tree)}>{preset.title}</button>
+          <button type="button" aria-label={'Delete layout ' + preset.title}
+            onClick={() => setSavedPresets(deleteLayoutPreset(preset.id))}>×</button>
+        </div>)}
+      <label>Save current layout
+        <input value={presetTitle} maxLength={40} placeholder="Name"
+          onChange={event => setPresetTitle(event.target.value)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter' || !presetTitle.trim()) return;
+            setSavedPresets(saveLayoutPreset(presetTitle, workspace, dock));
+            setPresetTitle('');
+          }}/>
+      </label>
+      <button type="button" disabled={!presetTitle.trim()} onClick={() => {
+        setSavedPresets(saveLayoutPreset(presetTitle, workspace, dock));
+        setPresetTitle('');
+      }}>Save layout</button>
     </section>}
     {!connected && <div className="demo-banner"><span>Preview mode:</span> interface and edits
       are demonstrated locally. Native C++ Workspace and GPU renderer are not connected yet.</div>}
