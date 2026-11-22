@@ -660,7 +660,7 @@ a.badge-ink { color: var(--on-ink); }
 .cat-card.is-open .cat-media { aspect-ratio: auto; min-height: min(72vh, 760px); }
 .cat-card.is-open .cat-body { border-left: 1px solid var(--line); }
 @media (max-width: 900px) {
-  .cat-card.is-open { grid-template-columns: 1fr; }
+  .cat-card.is-open { grid-template-columns: 1fr; scroll-margin-top: 150px; }
   .cat-card.is-open .cat-media { min-height: 78vh; }
   .cat-card.is-open .cat-body { border-left: 0; border-top: 1px solid var(--line); }
 }

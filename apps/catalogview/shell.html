@@ -113,7 +113,8 @@
       });
       if (info.generatedLevels) h += '<div class="muted">' + L.gen + '</div>';
       var s = info.strata || {};
-      if (s.state === 'ready') h += '<div' + (info.mode === 'strata' ? ' class="on"' : '') + '>STRATA · ' + num(s.clusters) + ' ' + L.strataReady + ' · ' + s.stageMs + ' ' + L.strataMs + '</div>';
+      if (s.state === 'ready') h += '<div' + (info.mode === 'strata' ? ' class="on"' : '') + '>STRATA · ' + num(s.clusters) + ' ' + L.strataReady +
+        (info.mode === 'strata' && s.drawnTriangles ? ' · ' + num(s.drawnTriangles) + ' ' + L.tris + ' · ' + L.shown : '') + ' · ' + s.stageMs + ' ' + L.strataMs + '</div>';
       else if (s.state === 'declined' || s.state === 'failed') h += '<div class="muted">STRATA: ' + esc(s.reason || s.state) + '</div>';
       h += '<div class="muted" style="margin-top:4px">' + L.textures + '</div>' + texLines(info.textures);
     }
@@ -140,9 +141,10 @@
       for (var l = 0; l < levels; ++l) (function (l) { button(modes, L.lod + l, state.lod === l, function () { setLod(l); }); })(l);
       var s = info && info.strata;
       button(modes, L.strata, state.lod === -2, function () { setLod(-2); }, s && (s.state === 'declined' || s.state === 'failed'));
-      sep(modes);
-      button(modes, L.wire, state.wire, function () { state.wire = !state.wire; Module._cv_wire(state.wire ? 1 : 0); renderModes(); });
-      if (state.lod === -2) button(modes, L.clusters, state.clusters, function () { state.clusters = !state.clusters; Module._cv_clusters(state.clusters ? 1 : 0); renderModes(); });
+      if (state.lod === -2 && s && s.state === 'ready') {
+        sep(modes);
+        button(modes, L.clusters, state.clusters, function () { state.clusters = !state.clusters; Module._cv_clusters(state.clusters ? 1 : 0); renderModes(); });
+      }
     }
     modes.hidden = false;
   }
@@ -178,6 +180,7 @@
     busy = true; busyOn(L.loading);
     fetchAll(view.items[i].files || []).then(function () {
       Module._cv_select(i); busyOff();
+      if (window.parent !== window) window.parent.postMessage({ cv: 'item', item: i }, '*');   // the catalog page links to it
       bar.querySelectorAll('button').forEach(function (b, k) { b.setAttribute('aria-pressed', String(k === i)); });
     }).catch(function (e) { fail(String(e.message || e)); }).then(function () { busy = false; });
   }

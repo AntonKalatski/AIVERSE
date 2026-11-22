@@ -280,7 +280,8 @@ struct App {
     int item = -1, requested = 0, shape = kSphere, lod = kLodAuto;
     bool clusters = false, wire = false;
     Wire wireData;
-    int shownLevel = -1;         // LOD level the renderer drew last frame (from its stats)
+    int shownLevel = -1;
+    uint64_t strataTrisTotal = 0, strataDrawnTris = 0;   // triangles of the cluster cut drawn last frame         // LOD level the renderer drew last frame (from its stats)
     enum class StrataState { Off, Ready, Declined, Failed } strataState = StrataState::Off;
     std::string strataError;
     std::string maps;            // JSON array of the textures of the shown item
@@ -326,7 +327,8 @@ struct App {
             case StrataState::Off: j += "off\""; break;
             case StrataState::Ready:
                 j += "ready\",\"clusters\":" + std::to_string(s.strataMeshlets) + ",\"nodes\":" + std::to_string(s.strataNodes) +
-                     ",\"indexBytes\":" + std::to_string(s.strataIndexBytes) + ",\"stageMs\":" + std::to_string(int(s.strataStageMs));
+                     ",\"indexBytes\":" + std::to_string(s.strataIndexBytes) + ",\"stageMs\":" + std::to_string(int(s.strataStageMs)) +
+                     ",\"drawnTriangles\":" + std::to_string(strataDrawnTris);
                 break;
             case StrataState::Declined: j += "declined\",\"reason\":" + jsonString(strataError); break;
             case StrataState::Failed: j += "failed\",\"reason\":" + jsonString(strataError); break;
@@ -359,6 +361,7 @@ struct App {
         if (strataState != StrataState::Off) strata.clear(*dev);
         strataState = StrataState::Off;
         strataError.clear();
+        strataTrisTotal = strataDrawnTris = 0;
     }
 
     void showMaterial(const Json& it) {
@@ -393,6 +396,8 @@ struct App {
         for (size_t i = 0; i < list.size(); ++i) maps += (i ? "," : "") + list[i];
         maps += "]";
         replaceModel(std::move(next));
+        if (shape == kPlane) r3d.setShadowBounds({-4.2f, -0.1f, -4.2f}, {4.2f, 0.3f, 4.2f});
+        else r3d.setShadowBounds({-1.2f, -0.1f, -1.2f}, {1.2f, 2.2f, 1.2f});
         if (shape == kPlane) {
             cam.target = {0, 0, 0};
             cam.distance = 4.5f;
@@ -410,6 +415,8 @@ struct App {
         auto next = loadModel(path(it.getStr("model")), readFile, &warn);
         for (auto& w : warn) log(w);
         if (!next) { log("cannot load " + it.getStr("model")); return; }
+        // the camera alone picks the LOD on screen; the shadow map (fixed to the model bounds) picks its own
+        next->batching.independentShadowLod = true;
         prepareModelUpload(*next);
         wireData.build(*next);   // the CPU geometry is released by the upload
         shownLevel = -1;
@@ -423,9 +430,12 @@ struct App {
         const float3 c = (next->boundsMin + next->boundsMax) * 0.5f;
         const float r = std::max(0.25f, length(next->boundsMax - next->boundsMin) * 0.5f);
         cam.target = c;
+        // the sun's shadow map covers the model itself, not a frustum fitted to the camera: the
+        // shadow must not come and go as the camera turns
+        r3d.setShadowBounds(next->boundsMin - float3{r, r, r} * 0.05f, next->boundsMax + float3{r, r, r} * 0.05f);
         cam.distance = r * 2.6f;
         cam.minDistance = r * 0.3f;
-        cam.maxDistance = r * 30.0f;
+        cam.maxDistance = r * 80.0f;   // far enough for the coarsest LOD (switches near 30 px on screen)
         replaceModel(std::move(next));
     }
 
@@ -457,9 +467,9 @@ struct App {
     void applyClusters() {
         if (strataState != StrataState::Ready) return;
         strata::DebugViewOptions o;
-        o.enabled = clusters || wire;
+        o.enabled = clusters;      // one switch: coloured clusters with their edges
         o.clusterBounds = false;
-        o.clusterWireframe = wire;
+        o.clusterWireframe = clusters;
         o.clusterFill = clusters;
         o.instanceBounds = false;
         o.fillAlpha = 0.55f;
@@ -521,7 +531,9 @@ struct App {
         else if (e.type == T::MouseUp || e.type == T::TouchEnd || e.type == T::TouchCancel) { dragging = false; idle = 0; }
         else if ((e.type == T::MouseMove || e.type == T::TouchMove) && dragging) {
             cam.yaw -= (e.x - lastX) * 0.01f;
-            cam.pitch = std::clamp(cam.pitch + (e.y - lastY) * 0.01f, -0.2f, 1.45f);
+            // models and shapes are seen from below too; the ground slab only from above
+            const float low = materials() && shape == kPlane ? 0.05f : -1.45f;
+            cam.pitch = std::clamp(cam.pitch + (e.y - lastY) * 0.01f, low, 1.45f);
             lastX = e.x; lastY = e.y;
         } else if (e.type == T::MouseWheel) {
             cam.distance = std::clamp(cam.distance * std::pow(1.1f, -e.wheelY), cam.minDistance, cam.maxDistance);
@@ -537,6 +549,14 @@ struct App {
         r3d.beginScene(cam, d.framebufferWidth(), d.framebufferHeight());
         if (lod == kLodStrata && strataState == StrataState::Ready) {
             strata.draw(r3d);
+            // the cut STRATA chose for this view (it changes with the distance): report it when it changes
+            const uint64_t total = strata.stats().strataPortableTriangles;
+            const uint64_t drawn = total - std::min(total, strataTrisTotal);
+            strataTrisTotal = total;
+            if (drawn && drawn != strataDrawnTris) {
+                strataDrawnTris = drawn;
+                report();
+            }
         } else if (model) {
             ModelDraw md;
             md.model = model.get();
