@@ -37,3 +37,7 @@ See the stage log appended below (Mac build, ctest, frames).
   topdown_arena with follow / follow-overhead / follow-telephoto; only the preset line differs. The telephoto preset
   frames a small arena far off-centre (it is meant for large maps).
 - Devlog entry `2026-11-22-lens-camera-presets` (in-progress), LENS roadmap item (in-progress) + planned next step.
+- After merging the architecture branch again (`local/no-genre` a8dc77891, "one gameplay host", not yet pushed by
+  its owner — fetched from the Mac repo) at `462a1d715`: Mac build OK, ctest 434/434 pass (lens_metal_frame skipped
+  without AIVERSE_LENS_METAL_VALIDATE). The TerraWeave sparse editor test was moved to the world-space scene
+  document (`MapData::worldSpace` + `extra`), rebuilt and passed with camera_behavior and aiverse_tests.
