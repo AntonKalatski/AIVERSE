@@ -74,7 +74,7 @@ if(EXISTS "${_native_dir}/CMakeLists.txt")
 endif()
 get_property(_decls GLOBAL PROPERTY AIVERSE_NATIVE_DECLS)
 get_property(_defs GLOBAL PROPERTY AIVERSE_NATIVE_DEFS)
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gen/RtsNativeRegistry.cpp" CONTENT
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gen/NativeRegistry.cpp" CONTENT
 "#include \"engine/game/Native.h\"\n${_decls}
 namespace aiverse::game {
 std::vector<NativeDefinition> compiledNativeModules() {
@@ -82,5 +82,5 @@ std::vector<NativeDefinition> compiledNativeModules() {
 ${_defs}    return result;
 }
 }")
-target_sources(aiverse_game PRIVATE "${AIVERSE_NATIVE_ENGINE_ROOT}/modules/rts/Native.cpp" "${CMAKE_CURRENT_BINARY_DIR}/gen/RtsNativeRegistry.cpp")
+target_sources(aiverse_game PRIVATE "${AIVERSE_NATIVE_ENGINE_ROOT}/engine/game/Native.cpp" "${CMAKE_CURRENT_BINARY_DIR}/gen/NativeRegistry.cpp")
 endmacro()

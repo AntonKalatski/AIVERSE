@@ -23,6 +23,7 @@ namespace aiverse { class Simulation; class Hasher; class Archive; struct Comman
 namespace aiverse::game {
 
 class GameHost;
+class GameCore;
 
 enum class RaidPhase : uint8_t { Briefing = 0, Running = 1, Over = 2 };
 enum class RaidPointPhase : uint8_t { Locked = 0, Sleep = 1, Inbound = 2, Open = 3, Departing = 4 };
@@ -125,6 +126,6 @@ private:
 
 // Raid bot (headless matches, match_run, raid_run): a player with raiders loots, completes required
 // objectives and extracts. Pure function of the state; submits Commands like a human.
-void raidBotThink(Simulation& sim, GameHost& m, uint8_t player);
+void raidBotThink(Simulation& sim, GameCore& m, uint8_t player);
 
 } // namespace aiverse::game
