@@ -1,6 +1,9 @@
 # AIVERSE LENS — genre-independent ECS cameras and multi-camera capture
 Updated: 2026-11-21. Current integration: `main`; P2 work on `feature/aiv20261121_lens_p2`.
 
+View camera bodies (overhead, follow, chase, first person), the ECS rig modes that share their math and the named
+presets: [camera-behaviors.md](camera-behaviors.md).
+
 ## Current implementation and validation
 
 LENS now includes ECS camera assets, scheduling and dependency checks, managed
