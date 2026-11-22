@@ -404,7 +404,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, roadmap_lines, FEATURE_JS, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, core_html, fill_tokens)
 
@@ -641,16 +641,23 @@ def cmd_build(args):
             layout, ctx, 'releases.html', T['relPageTitle'], T['relLead'],
             releases_page(rel_data, loc_entries, systems, ctx, manifest['repo']), nav='releases', script=rel_script),
             encoding='utf-8')
+        ds_script = (f'<script>window.DS_L={json.dumps({"none": T["docsSearchNone"]}, ensure_ascii=False)};</script>'
+                     + DOCS_SEARCH_JS)
         (d / 'docs.html').write_text(render_page(layout, ctx, 'docs.html', T['docsPageTitle'], T['docsLead'],
-                                                 docs_index(manifest_docs, ctx), nav='docs'), encoding='utf-8')
+                                                 docs_index(manifest_docs, ctx), nav='docs', script=ds_script), encoding='utf-8')
+        search_index = []
         for sec in manifest_docs['sections']:
             for pg in sec['pages']:
                 body, heads = doc_page(pg, manifest_docs, ctx, ROOT, manifest['repo'], doc_pages)
                 title = ctx.loc(pg, 'title')
+                art = re.search(r'<article class="doc"[^>]*>(.*)</article>', body, re.S)
+                search_index += doc_sections(pg['id'], title, art.group(1) if art else body)
                 (d / f'docs-{pg["id"]}.html').write_text(render_page(
                     layout, ctx, f'docs-{pg["id"]}.html', f'{title} — AIVERSE', ctx.loc(pg, 'lead') or title,
-                    body, nav='docs', main_class=' docs-main'), encoding='utf-8')
+                    body, nav='docs', main_class=' docs-main', script=ds_script), encoding='utf-8')
                 pages += 1
+        (d / 'docs-search.json').write_text(json.dumps(search_index, ensure_ascii=False, separators=(',', ':')),
+                                            encoding='utf-8')
         public = [{'id': s['id'], 'name': ctx.loc(s, 'name')} for s in systems]
         data = {'generated': generated, 'lang': lang, 'repo': manifest['repo'], 'systems': public,
                 'entries': loc_entries}

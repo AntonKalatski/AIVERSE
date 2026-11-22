@@ -492,7 +492,47 @@ def docs_nav(manifest, ctx, current=None):
         links = ''.join(f'<a href="docs-{esc(p["id"])}.html"{" aria-current=\"page\"" if p["id"] == current else ""}>'
                         f'{esc(ctx.loc(p, "title"))}</a>' for p in sec['pages'])
         parts.append(f'<div class="dn-sec"><span>{esc(ctx.loc(sec, "title"))}</span>{links}</div>')
-    return f'<nav class="docs-nav" aria-label="{ctx.T["navDocs"]}">{"".join(parts)}</nav>'
+    search = (f'<div class="ds-box"><input class="ds-input" type="search" placeholder="{esc(ctx.T["docsSearch"])}" '
+              f'aria-label="{esc(ctx.T["docsSearch"])}" autocomplete="off" spellcheck="false">'
+              f'<div class="ds-results" hidden></div></div>')
+    return f'<nav class="docs-nav" aria-label="{ctx.T["navDocs"]}">{search}{"".join(parts)}</nav>'
+
+
+def doc_sections(page_id, title, body_html):
+    """Search records of one doc page: one per heading (h1..h4) with the plain text under it."""
+    out = []
+    parts = re.split(r'<h([1-4])(?: [^>]*)? id="([^"]+)"[^>]*>(.*?)</h\1>', body_html, flags=re.S)
+    def plain(h):
+        t = re.sub(r'<a class="anchor"[^>]*>.*?</a>', '', h)
+        t = re.sub(r'</?(?:span|code|a|em|strong|b|i|mark|kbd)\b[^>]*>', '', t)   # inline: no gap
+        t = re.sub(r'<[^>]+>', ' ', t)
+        return re.sub(r'\s+', ' ', html.unescape(t)).strip()
+    if plain(parts[0]):
+        out.append({'p': page_id, 't': title, 'h': '', 'a': '', 'x': plain(parts[0])[:4000]})
+    for i in range(1, len(parts) - 3, 4):
+        out.append({'p': page_id, 't': title, 'h': plain(parts[i + 2]), 'a': parts[i + 1],
+                    'x': plain(parts[i + 3])[:4000]})
+    return out
+
+
+DOCS_SEARCH_JS = """<script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>"""
 
 
 def doc_page(page, manifest, ctx, root, repo, doc_pages):
@@ -555,8 +595,11 @@ def docs_index(manifest, ctx):
                         f'<span>{esc(ctx.loc(p, "lead") or "")}</span><code>{esc(p["source"])}</code></a>'
                         for p in sec['pages'])
         secs.append(f'<section class="sp-sec"><h2 class="h2">{esc(ctx.loc(sec, "title"))}</h2><div class="doc-cards">{cards}</div></section>')
+    search = (f'<div class="ds-box ds-hero"><input class="ds-input" type="search" placeholder="{esc(ctx.T["docsSearch"])}" '
+              f'aria-label="{esc(ctx.T["docsSearch"])}" autocomplete="off" spellcheck="false">'
+              f'<div class="ds-results" hidden></div></div>')
     return (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["docsEyebrow"]}</p><h1>{ctx.T["docsTitle"]}</h1>'
-            f'<p>{ctx.T["docsLead"]}</p></div></section>' + ''.join(secs) + '<div style="height:96px"></div>')
+            f'<p>{ctx.T["docsLead"]}</p>{search}</div></section>' + ''.join(secs) + '<div style="height:96px"></div>')
 
 
 def localized_entries(entries, ctx):
