@@ -227,33 +227,45 @@ inline const char* physisTornadoDebrisEffectJson() {
 // dust funnel), a glowing core with fire light, sparks thrown out of the
 // spiral and dark smoke above. Tint alpha = fireness share.
 inline const char* physisTornadoFireEffectJson() {
+    // CC0 flipbooks (engine/assets/fx/physis): tall flame tongues aligned to
+    // their spiral motion (twisted licks), a fireball core glow with the fire
+    // light, sparks thrown out, dark smoke above (alpha). Additive parts keep
+    // moderate alpha so the column does not burn out to white.
     return R"({
   "emitters": [
-    { "texture": "builtin:smoke", "blend": "additive", "align": "camera", "space": "local", "rate": 150, "loop": true,
-      "prewarm": true, "life": [0.9, 1.5], "speed": [0, 0.2], "shape": "disc", "radius": 0.45,
-      "size": [0.7, 1.2], "sizeOverLife": [[0, 0.5], [0.3, 1], [1, 0.35]], "rotation": [0, 360], "spin": [-120, 120],
+    { "texture": "engine/fx/physis/flame_tall_16x4.png", "frames": [16, 4], "fps": 0, "startFrame": [0, 15],
+      "blend": "additive", "align": "velocity", "aspect": [1.8, 1.8], "space": "local",
+      "rate": 120, "loop": true, "prewarm": true, "life": [0.9, 1.4], "speed": [0, 0.2],
+      "shape": "disc", "radius": 0.45, "size": [0.42, 0.7], "sizeOverLife": [[0, 0.6], [0.3, 1], [1, 0.55]],
       "velocityOverLife": { "y": { "curve": [[0, 5], [1, 8]] }, "orbital": [0, 380, 0],
                             "radial": { "curve": [[0, 0.05], [0.5, 0.35], [1, 0.9]] }, "space": "local" },
-      "noise": { "strength": 0.5, "frequency": 0.9, "scroll": 1.2 },
-      "color": [[0, "#fff4c000"], [0.08, "#ffe08af0"], [0.35, "#ff9a30d8"], [0.7, "#ff4a1290"], [1, "#40100000"]],
-      "light": { "color": "#ff8a3a", "radius": 14, "intensity": 2.6, "ratio": 0.04, "max": 6,
+      "noise": { "strength": 0.4, "frequency": 0.9, "scroll": 1.2 },
+      "color": [[0, "#ffffff00"], [0.1, "#ffe8ccb0"], [0.45, "#ffc89098"], [0.8, "#ff9a5a60"], [1, "#ff603000"]] },
+    { "texture": "engine/fx/physis/flame_16x4.png", "frames": [16, 4], "fps": 0, "startFrame": [0, 15],
+      "blend": "additive", "align": "upright", "aspect": [2, 2], "pivot": [0, 0.5, 0], "space": "local",
+      "rate": 26, "loop": true, "prewarm": true, "life": [0.7, 1.1], "speed": [0, 0.2],
+      "shape": "ring", "radius": 1.1, "size": [0.5, 0.8],
+      "velocityOverLife": { "y": 0.8, "orbital": [0, 240, 0], "space": "local" },
+      "color": [[0, "#ffffff00"], [0.15, "#ffe0c0b0"], [1, "#ff703000"]] },
+    { "texture": "engine/fx/physis/fireball_8x8.png", "frames": [8, 8], "fps": 0, "startFrame": [0, 30],
+      "blend": "additive", "align": "camera", "space": "local", "rate": 10, "loop": true, "prewarm": true,
+      "life": [0.8, 1.2], "speed": [0, 0.1], "shape": "disc", "radius": 0.3, "size": [1.4, 2.0],
+      "velocityOverLife": { "y": 2.5, "orbital": [0, 200, 0], "space": "local" },
+      "color": [[0, "#ff905000"], [0.2, "#ff9a5a50"], [1, "#ff502000"]],
+      "light": { "color": "#ff8a3a", "radius": 14, "intensity": 2.0, "ratio": 0.2, "max": 4,
                  "useParticleColor": false, "alphaAffectsIntensity": true } },
-    { "texture": "builtin:soft", "blend": "additive", "align": "camera", "space": "local", "rate": 40, "loop": true,
-      "prewarm": true, "life": [0.5, 0.9], "speed": [0, 0.1], "shape": "disc", "radius": 0.6,
-      "size": [1.6, 2.6], "sizeOverLife": [[0, 0.6], [0.4, 1], [1, 0.4]],
-      "velocityOverLife": { "y": 1.2, "orbital": [0, 200, 0], "space": "local" },
-      "color": [[0, "#ff700000"], [0.2, "#ff7a2a70"], [1, "#ff300000"]] },
-    { "texture": "builtin:spark", "blend": "additive", "align": "velocity", "rate": 36, "loop": true,
+    { "texture": "builtin:spark", "blend": "additive", "align": "velocity", "rate": 30, "loop": true,
       "life": [0.9, 1.8], "speed": [4, 9], "spread": 70, "shape": "disc", "radius": 1.2,
-      "gravity": [0, 1.5, 0], "drag": 0.5, "stretch": 0.06, "size": [0.06, 0.14],
+      "gravity": [0, 1.5, 0], "drag": 0.5, "stretch": 0.06, "size": [0.04, 0.09],
       "noise": { "strength": 1.6, "frequency": 1.3, "scroll": 1.0 },
       "color": [[0, "#fff0b0ff"], [0.5, "#ff8a2ae0"], [1, "#ff200000"]], "minQuality": "medium" },
-    { "texture": "builtin:smoke", "blend": "alpha", "align": "camera", "space": "local", "rate": 22, "loop": true,
+    { "texture": "engine/fx/physis/smoke_8x8.png", "frames": [8, 8], "fps": 0, "startFrame": [0, 20],
+      "blend": "alpha", "align": "camera", "space": "local", "rate": 20, "loop": true,
       "prewarm": true, "life": [2.5, 4.0], "speed": [0, 0.2], "shape": "disc", "radius": 1.2,
-      "size": [2.2, 3.4], "sizeOverLife": [[0, 0.6], [1, 2.6]], "rotation": [0, 360], "spin": [-30, 30],
+      "size": [2.4, 3.6], "sizeOverLife": [[0, 0.6], [1, 2.6]], "rotation": [0, 360], "spin": [-30, 30],
       "velocityOverLife": { "y": { "curve": [[0, 6], [1, 4]] }, "orbital": [0, 90, 0],
                             "radial": { "curve": [[0, 0.2], [1, 1.6]] }, "space": "local" },
-      "color": [[0, "#1c181500"], [0.25, "#26211cb0"], [1, "#3a353000"]], "minQuality": "medium" }
+      "color": [[0, "#1c181500"], [0.25, "#24201cc0"], [1, "#3a353000"]], "minQuality": "medium" }
   ]
 })";
 }

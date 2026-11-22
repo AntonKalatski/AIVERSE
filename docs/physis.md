@@ -293,6 +293,13 @@ alpha = fireness, 6 levels — a level change starts the new emitter while the o
 `addPhysisTornadoSounds`), volume by fireness × intensity. Projects override any of them in `fx/` /
 `audio.json`.
 
+Fire textures: the built-in `physis_flame`, `physis_smoke` and `physis_tornado_fire` use CC0
+flipbooks from Unity's free VFX image sequences (`engine/assets/fx/physis/`: `flame_16x4.png`,
+`flame_tall_16x4.png`, `fireball_8x8.png`, `smoke_8x8.png`; source, licence and processing in
+`LICENSE-fx.txt`). Ground flames are small upright additive licks standing on the ground (base pivot),
+the whirl's tongues are aligned to their spiral motion, smoke is alpha-blended. A project overrides any
+of them with `fx/<name>.json`.
+
 Sample: `templates/skirmish/maps/firestorm_valley.json` ("Firestorm Valley", map index 3): a meadow
 fire, a tornado that becomes a fire whirl, crosses the river and dies over the north-east lake, and a
 waterspout on the lake that breaks up ashore. Tests: `physis_firestorm` (growth by amount, small fire
