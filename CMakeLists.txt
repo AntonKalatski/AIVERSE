@@ -988,6 +988,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_api COMMAND aiverse_motionweave_api_tests)
 endif()
 
+# MotionWeave core: sampling, blend/sync, morph-free path, IK, rig, motion matching, foot slide.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_core_tests tests/animation/motionweave_core.cpp)
+    target_link_libraries(aiverse_motionweave_core_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_core COMMAND aiverse_motionweave_core_tests)
+endif()
+
 # MotionWeave persistent host workers (no worker startup in simulation).
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_motionweave_worker_tests tests/animation/motionweave_workers.cpp)
