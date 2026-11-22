@@ -195,9 +195,11 @@ void MotionPlayer::update(float dt,const AnimationParameters& parameters){
     size_t selected = db_->search(query_, clip_, time_, cost_);
     const auto &f = db_->frames[selected];
     if (std::isfinite(cost_) && (clip_ < 0 || f.clip != clip_ || std::abs(f.time - time_) > 2 / db_->fps)) {
-      Pose frozen;  // crossfade from the pose shown this frame (may itself be mid-fade)
-      evaluate(frozen);
-      source_ = std::move(frozen);
+      if (clip_ >= 0) {
+        Pose frozen;  // crossfade from the pose shown this frame (may itself be mid-fade)
+        evaluate(frozen);
+        source_ = std::move(frozen);
+      } else source_.clear();  // first selection: start on the match, never fade in from the bind pose
       clip_ = f.clip;
       time_ = f.time;
       fade_ = 0;

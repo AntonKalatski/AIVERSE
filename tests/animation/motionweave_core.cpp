@@ -214,6 +214,12 @@ void motionMatching() {
     inst.parameters().set("t1", float3{0, 0, .36f}); inst.parameters().set("t2", float3{0, 0, .72f});
     for (int i = 0; i < 30; ++i) { inst.update(1.f / 60.f); inst.evaluate(p); }
     CHECK(inst.motion("mm")->clip() == m.findClip("Walk"));
+    {   // First selection starts on the matched frame: no fade-in from the bind pose.
+        AnimationGraphInstance fresh; fresh.reset(g); fresh.update(1.f / 60.f); fresh.evaluate(p);
+        const auto* mp = fresh.motion("mm"); Pose direct; bindPose(m, direct);
+        sampleClip(m.clips[size_t(mp->clip())], mp->time(), direct);
+        CHECK(std::abs(dot(p[size_t(b.shin[0])].r, direct[size_t(b.shin[0])].r)) > .99999f);
+    }
     inst.reset(g);
     inst.parameters().set("f1", fx::yawQ(fx::kPi * .3f).rotate({0, 0, 1}));
     inst.parameters().set("f2", fx::yawQ(fx::kPi * .5f).rotate({0, 0, 1}));
