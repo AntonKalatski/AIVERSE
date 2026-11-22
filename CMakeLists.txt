@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AIVERSE VERSION 3.0.0 LANGUAGES C CXX)
+project(AIVERSE VERSION 3.1.0 LANGUAGES C CXX)
 # Apple ld: the same static library listed twice in a link line is harmless (CMake repeats them for dependencies)
 if(APPLE)
     include(CheckLinkerFlag)
