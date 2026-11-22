@@ -2046,6 +2046,26 @@ This overrides earlier local/worktree build examples and release paths in this f
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
 
+### Mac launcher scripts from a VM / Cowork session (all agents)
+
+**Owner instruction (2026-11-22): a `.command` handed to the user must open on the first
+double-click.** Finder runs only executable files; otherwise it shows "could not be executed
+because you do not have appropriate access privileges".
+
+- Writing a script through the mounted folder (`sed -i`, the Write/commit tools, a Python
+  rewrite, `git checkout`) replaces the file and **drops its execute bit**, and a `chmod`
+  issued right after the rewrite is sometimes lost in the sync. After every change to a
+  `.command` / `.sh` the user or Finder will run:
+  `chmod +x <files>; sleep 5; stat -c '%a %n' <files>` — every mode must be `7xx`; repeat
+  the `chmod` until it is. Check this before asking the user to run anything, and again
+  before each double-click you make yourself.
+- Prefer editing launchers in place (`open(path, "r+")`, write, `truncate()`), which keeps
+  the mode; never assume a rewritten script is still executable.
+- KINGSTON can remount under another name (`/Volumes/KINGSTON 1` after a reconnect). Keep
+  the drive root in one place per script (a variable or the link
+  `~/Projects/AIVERSE/build/kingston`), re-point it when the name changes, and give the
+  moved sources new CMake/package build directories: old caches keep the old path.
+
 Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
 
 **Never create builds in the shared engine checkout's `build/` folder** (the user's main
