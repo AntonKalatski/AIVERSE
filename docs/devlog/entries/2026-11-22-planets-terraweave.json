@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-22-planets-terraweave",
+  "date": "2026-11-22",
+  "system": "planets",
+  "title": "Планеты на TerraWeave: рельеф, биомы, деревья и камни",
+  "summary": "Рельеф планет теперь строят поля TerraWeave, пересчитанные на сферу, а на суше растут деревья и лежат камни TerraWeave — по климату каждого места.",
+  "body": [
+    "Генератор планет (пресеты rocky, ocean и moon) берёт высоты и биомы из TerraWeave: та же сумма октав и та же модель климата, что на плоских картах, только поля считаются в трёх измерениях на сфере. Грани куба поэтому стыкуются без швов, а у полюсов холоднее, чем на экваторе.",
+    "На суше появились деревья и камни: ели и сосны в холодных местах, дубы и берёзы в лесах и степях, ивы на болотах, валуны и плиты в пустынях и на скалах. Модели — из генератора деревьев Arbor и генератора камней TerraWeave, место и вид для каждой клетки выбираются детерминированно. Плотность и масштаб задаются в карте ключом visual.flora."
+  ],
+  "status": "done",
+  "verified": "Кадры сняты в игровом клиенте (OpenGL) на перегенерированной Big Planet; проверки генератора — стыки граней, разнесённые старты, симметрия и детерминизм — проходят с новыми эталонами.",
+  "limitsEn": "Planet seas are still their own, not NEREID: no waves or shore foam yet. Trees ignore fog of war, and the Metal shaders have not been run on a Mac yet.",
+  "limits": "Море на планетах пока своё, не NEREID: волн и пены у берега ещё нет. Деревья не учитывают туман войны, а шейдеры для Metal на Маке ещё не запускались.",
+  "branch": "main",
+  "commit": "",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-terraweave/trees.jpg",
+      "caption": "Берег крупным планом: деревья TerraWeave на суше, у воды пусто",
+      "captionEn": "The coast up close: TerraWeave trees on land, the shore left clear"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-terraweave/orbit.jpg",
+      "caption": "Big Planet с орбиты: рельеф и моря из полей TerraWeave",
+      "captionEn": "Big Planet from orbit: relief and seas from TerraWeave fields"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/planets.md",
+      "href": "docs/planets.md"
+    }
+  ],
+  "author": "planets",
+  "titleEn": "Planets on TerraWeave: relief, biomes, trees and rocks",
+  "summaryEn": "Planet relief is now built by TerraWeave fields carried over to the sphere, and TerraWeave trees and rocks grow on land according to the climate of each place.",
+  "bodyEn": [
+    "The planet generator (rocky, ocean and moon presets) takes heights and biomes from TerraWeave: the same octave sum and climate model as on flat maps, with the fields evaluated in 3D on the sphere. Cube faces therefore join without seams, and the poles are colder than the equator.",
+    "Trees and rocks now cover the land: spruce and pine in cold places, oak and birch in forests and grassland, willow in wetlands, boulders and slabs in deserts and on rock. The models come from the Arbor tree generator and the TerraWeave rock generator; the place and species for every cell are chosen deterministically. Density and scale are set in the map with visual.flora."
+  ],
+  "verifiedEn": "Frames taken in the game client (OpenGL) on the regenerated Big Planet; generator checks — face seams, separated starts, symmetry and determinism — pass with the new reference hashes."
+}

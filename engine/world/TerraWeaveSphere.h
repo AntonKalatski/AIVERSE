@@ -76,4 +76,44 @@ inline ClimateSample climateAtSphere(const SphereSettings& sph, const BiomeSetti
     return out;
 }
 
+// One cosmetic plant or rock for a point on a sphere (a cell of a cube-sphere body, or any lattice the host
+// picks): the same species rules as scatter() (biome mask, height, slope, weights), the biome from the sphere
+// climate. `key` is the stable id of the site (e.g. the cell id mixed with the body), so the choice does not
+// depend on draw order or LOD. Returns the index into `species`, or -1 for an empty site.
+struct SpherePlacement {
+    int32_t species = -1;
+    uint32_t yawMilliDegrees = 0, scalePermille = 1000;
+    uint32_t offsetU = 500, offsetV = 500;   // position inside the site, 0..1000
+    Biome biome = Biome::Grassland;
+};
+inline SpherePlacement placeOnSphere(const SphereSettings& sph, const BiomeSettings& b, SpherePoint p, int32_t heightCm,
+                                     int32_t slopePermille, uint64_t key, uint32_t densityPermille,
+                                     const std::vector<FoliageSpecies>& species) {
+    SpherePlacement out;
+    out.biome = climateAtSphere(sph, b, p, heightCm).biome;
+    const uint64_t h = detail::mix64(key ^ 0x7c3f1d2e9a5b4c61ULL);
+    if (densityPermille == 0 || species.empty() || (h % 1000) >= densityPermille) return out;
+    uint64_t weightSum = 0;
+    for (const auto& s : species)
+        if ((s.biomeMask & biomeBit(out.biome)) && heightCm >= s.minHeightCm && heightCm <= s.maxHeightCm &&
+            slopePermille <= s.maxSlopePermille) weightSum += s.weight;
+    if (!weightSum) return out;
+    uint64_t pick = detail::mix64(h ^ 0x55ad31dbd6a80fefULL) % weightSum;
+    for (size_t i = 0; i < species.size(); ++i) {
+        const auto& s = species[i];
+        if (!(s.biomeMask & biomeBit(out.biome)) || heightCm < s.minHeightCm || heightCm > s.maxHeightCm ||
+            slopePermille > s.maxSlopePermille) continue;
+        if (pick < s.weight) { out.species = int32_t(i); break; }
+        pick -= s.weight;
+    }
+    if (out.species < 0) return out;
+    const auto& s = species[size_t(out.species)];
+    const uint64_t v = detail::mix64(h ^ 0x96325a3b789abd12ULL);
+    out.yawMilliDegrees = uint32_t(v % 360000ULL);
+    out.scalePermille = s.scaleMinPermille + uint32_t((v >> 20) % (uint64_t(s.scaleMaxPermille - std::min(s.scaleMaxPermille, s.scaleMinPermille)) + 1));
+    out.offsetU = 200 + uint32_t((v >> 40) % 600);
+    out.offsetV = 200 + uint32_t((v >> 50) % 600);
+    return out;
+}
+
 } // namespace aiverse::terraweave

@@ -2151,6 +2151,7 @@ The bodies themselves are described in `docs/planets.md` §1-2 (`world.bodies`, 
             "atmosphere": {"color": [110, 170, 255], "height": 0.08}}}   // or false; default: on for planets, off for moons
 ```
 
+- `visual.flora`: TerraWeave trees and rocks on the body (one site per land cell, species from the sphere climate): `{"density": 0..1, "scale": world units per metre}` or `false`; default density 0.22 on planets, none on moons, scale 0.06.
 - `visual.atmosphere.height`: shell thickness as a fraction of the radius (0.005..0.5). The shell and the haze use the
   colour; the shell is drawn from the Medium material tier up.
 - `terrain.faces[f].material`: rows of digits `0`..`3` per face (`.` = by cell kind), like the flat map's

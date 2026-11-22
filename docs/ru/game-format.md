@@ -2173,6 +2173,7 @@ MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_
             "atmosphere": {"color": [110, 170, 255], "height": 0.08}}}   // or false; default: on for planets, off for moons
 ```
 
+- `visual.flora`: деревья и камни TerraWeave на теле (одно место на клетку суши, вид по климату сферы): `{"density": 0..1, "scale": мировых единиц на метр}` или `false`; по умолчанию плотность 0.22 на планетах, на лунах нет, масштаб 0.06.
 - `visual.atmosphere.height`: толщина оболочки как доля радиуса (0.005..0.5). Оболочка и дымка используют этот
   цвет; оболочка рисуется начиная с уровня материалов Medium.
 - `terrain.faces[f].material`: строки цифр `0`..`3` на каждую грань (`.` = по виду клетки), как

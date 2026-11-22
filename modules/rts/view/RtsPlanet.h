@@ -35,6 +35,8 @@ struct PlanetBody {
     bool atmosphere = false;
     render::float3 atmoColor{0.45f, 0.65f, 1.0f};
     float atmoHeight = 0.06f;         // shell thickness as a fraction of the radius
+    float floraDensity = 0;           // TerraWeave trees / rocks per cell (visual.flora), 0 = none
+    float floraScale = 0.06f;         // world units per metre of the plant models
     std::vector<int16_t> corners;     // 6 * (N+1)^2, 1/16 units, faces 0..5 row-major
     std::vector<uint8_t> flags;       // 6 * N * N cell flags (cellFlagsFromChar of the face rows)
     // sub-cell detail surface (docs/terrain.md "Detail surface", planets): body terrain keys

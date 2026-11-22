@@ -616,6 +616,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     paintLayers_.shutdown();
     groundCanvas_.shutdown();
     planetGroundFx_.shutdown(dev);
+    planetFlora_.shutdown(dev);
     planets_.shutdown(dev);
     overlays_.shutdown(dev);
 }
