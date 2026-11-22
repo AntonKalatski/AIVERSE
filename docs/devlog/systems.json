@@ -2147,6 +2147,36 @@
     "Работать вместе с агентом в одном проекте.",
     "Проверить вёрстку на экранах разных телефонов."
    ],
+   "roadmap": [
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Studio на Windows",
+     "titleEn": "Studio on Windows",
+     "text": "Общее с Mac ядро редактора, интерфейс в WebView2, сцена и игра на Vulkan. Приложение собирается, первый запуск на Windows впереди.",
+     "textEn": "An editor core shared with the Mac, the interface in WebView2, Scene and Game on Vulkan. The application builds; the first run on Windows is ahead."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Плавающие окна панелей на Windows",
+     "titleEn": "Floating panel windows on Windows"
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Перетаскивание файлов и ассетов на Windows",
+     "titleEn": "Dragging files and assets on Windows",
+     "text": "Из Проводника в Assets и из Assets в сцену.",
+     "textEn": "From Explorer into Assets and from Assets into the Scene."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Режим без Vulkan на Windows",
+     "titleEn": "A mode without Vulkan on Windows"
+    }
+   ],
    "enablesEn": [
     "Make and test a game without leaving the editor.",
     "Work together with an agent on one project.",
