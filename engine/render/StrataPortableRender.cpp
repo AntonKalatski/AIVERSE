@@ -564,11 +564,17 @@ bool PortableSource::prepareModel(
         // One primitive per source primitive, indices gathered into the
         // instance's dynamic stream (rewritten only on a new selection).
         auto& out=compact->scratch;
-        // Dynamic buffers are versioned per frame by the backends: a frame
-        // that does not write its copy must not read it. Rewrite every
-        // prepared frame (scratch is reused when the selection is unchanged).
-        const bool sameSelection=compact->signature==compactSignature && !compact->scratch.empty();
-        const bool reuse=false;
+        // The gathered indices live in an IMMUTABLE buffer per selection. An
+        // unchanged selection (static camera, distant objects, hysteresis)
+        // reuses it: no gather, no upload. A new selection gets a new buffer;
+        // the old one is retired and destroyed some frames later. (Dynamic
+        // buffers are versioned per frame and would need a rewrite every
+        // frame: ~10 MB/frame for 20 dense objects, the main cost on phones.)
+        ++compact->prepares;
+        compact->collect(*device_);
+        const bool sameSelection=compact->signature==compactSignature && !compact->scratch.empty() && compact->buffer.valid();
+        const bool reuse=sameSelection;
+        if(reuse)++compact->reuses;
         if(!sameSelection)out.clear();
         uint32_t cursor=0;
         for(size_t i=0;i<compactRanges.size();++i){
@@ -590,21 +596,19 @@ bool PortableSource::prepareModel(
         }
         if(!reuse){
             const size_t bytes=out.size()*sizeof(uint32_t);
-            if(!compact->buffer.valid() || compact->capacityBytes<bytes){
-                if(compact->buffer.valid())device_->destroyBuffer(compact->buffer);
-                gfx::BufferDesc desc{};
-                desc.type=gfx::BufferType::Index;
-                desc.usage=gfx::Usage::Dynamic;
-                desc.size=bytes+bytes/4;
-                desc.label="Strata compacted selection";
-                desc.discardOnUpdate=true;
-                compact->buffer=device_->createBuffer(desc);
-                compact->capacityBytes=desc.size;
-                if(!compact->buffer.valid()){compact->capacityBytes=0;return reject("compacted Strata index buffer allocation failed");}
-            }
-            device_->updateBuffer(compact->buffer,out.data(),bytes,0);
+            if(compact->buffer.valid())compact->retired.push_back({compact->buffer,compact->prepares});
+            compact->buffer={};
+            gfx::BufferDesc desc{};
+            desc.type=gfx::BufferType::Index;
+            desc.usage=gfx::Usage::Immutable;
+            desc.size=bytes;
+            desc.data=out.data();
+            desc.label="Strata compacted selection";
+            compact->buffer=device_->createBuffer(desc);
+            compact->capacityBytes=bytes;
+            if(!compact->buffer.valid()){compact->capacityBytes=0;compact->signature=0;return reject("compacted Strata index buffer allocation failed");}
             compact->signature=compactSignature;
-            if(sameSelection)++compact->reuses; else ++compact->uploads;
+            ++compact->uploads;
         }
         alias.ib=compact->buffer;
         alias.gpuFirstIndex=0;

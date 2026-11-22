@@ -13,12 +13,14 @@ void GeometryScene::validate(const Json& j){
     const auto& st=j["strata"];
     if(!st.isNull()){
         if(!st.isObject())throw std::runtime_error("geometry scene: strata must be object");
-        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale"&&k!="select"&&k!="minTriangles")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
+        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale"&&k!="select"&&k!="minTriangles"&&k!="cooked"&&k!="triangleBudget")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
         if(st.has("mergeClusters")&&st["mergeClusters"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.mergeClusters must be boolean");
         if(st.has("reflections")&&st.getStr("reflections")!="finest"&&st.getStr("reflections")!="main")throw std::runtime_error("geometry scene: strata.reflections must be finest or main");
         if(st.has("enabled")&&st["enabled"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.enabled must be boolean");
         if(st.has("select")&&st.getStr("select")!="auto"&&st.getStr("select")!="all")throw std::runtime_error("geometry scene: strata.select must be auto or all");
         number(st,"minTriangles",0,100000000);
+        number(st,"triangleBudget",0,1000000000);
+        if(st.has("cooked")){if(!st["cooked"].isString())throw std::runtime_error("geometry scene: strata.cooked must be a content folder");path(st.getStr("cooked"));}
         number(st,"hysteresis",0,.45);
         number(st,"shadowErrorScale",1,64);
     }

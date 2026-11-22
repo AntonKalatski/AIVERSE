@@ -128,6 +128,10 @@ bool Renderer3D::init(gfx::Device& dev) {
             lp.depthWrite = false;
             linePipe_ = dev.createPipeline(lp);
             lp.primitive = gfx::Primitive::Triangles;
+            // Flat overlay triangles usually lie ON a surface (debug views of
+            // clusters, decals of tools): pull them slightly towards the camera
+            // so they do not z-fight with that surface.
+            lp.depthBiasConstant = -2.0f; lp.depthBiasSlope = -2.0f;
             triPipe_ = dev.createPipeline(lp);
 
             gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic; vb.size = 64 * 1024;
