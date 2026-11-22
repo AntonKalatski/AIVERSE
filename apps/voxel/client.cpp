@@ -3,9 +3,9 @@
 //   AiverseGame [--project DIR] [--listen | --connect udp://host:27200]
 // Controls: mouse look (click to capture), WASD, Space jump / swim, Shift sprint, Ctrl sneak, LMB dig / hit,
 // RMB place, 1-9 or wheel pick a hotbar slot, F3 debug, Esc release the mouse.
-#include "modules/voxel/VoxelSession.h"
-#include "modules/voxel/Project.h"
-#include "modules/voxel/view/VoxelView.h"
+#include "engine/voxel/VoxelSession.h"
+#include "engine/voxel/Project.h"
+#include "engine/voxel/view/VoxelView.h"
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"

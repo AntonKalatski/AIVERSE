@@ -1924,6 +1924,7 @@ the *engine* add mechanics generically — never a special case for one game.
 | `engine/platform` | Cocoa, UIKit, Android NativeActivity, Emscripten, Win32, X11 | `Platform.h` is the only API |
 | `engine/services`, `plugins/` | store / ads / analytics / privacy APIs over native plugins (Java, Obj-C, JS, C++); ready plugins: App Store, Google Play, RuStore, Yandex Games, Steam, Yandex Ads, AdMob, AppLovin MAX, ironSource LevelPlay, GameAnalytics, Facebook, AppMetrica, ATT; a build carries only the plugins the game selects (CI: check-plugin-isolation.py) | docs/plugins.md |
 | `engine/assets` | fonts, default assets copied into every build | data only (no code: it is bundled) |
+| `tools/pkg` | package catalog client `aiverse_pkg.py`: search / add / install / verify optional content from AIVERSE-PACKAGES into projects (`game.json` "packages" + `aiverse.lock`); `engine/pack/Packages.h` finds cached packages for host tools | docs/packages.md, skill `aiverse-packages` |
 | `engine/atlas` | texture atlas manifest + `.rtex` pages, `TextureLibrary` (path -> texture + uv + trim) | packer in `tools/atlas` (host only) |
 | `engine/pack` | resource packs `.rpak`: reader (`Pack`), writer (`PackWriter`, host tools only) | zstd, reproducible output |
 | `modules/rts` | generic RTS gameplay: data model (`RtsData`), map/pathfinding (`RtsMap`), module (`GameCore*.cpp`, `RtsEconomy`, `RtsUnits`, `RtsCombat`, `RtsWorld`, `RtsTriggers`), AI (`ComputerPlayer`) | deterministic |
@@ -2013,6 +2014,15 @@ the *engine* add mechanics generically — never a special case for one game.
 **Licenses/assets:** only vendor code/assets with permissive licenses and keep their license files.
 Original assets of commercial games are never committed; importers read them from the user's own
 copy and builds mark them external.
+
+**Heavy content lives in the package catalog, not here (owner's rule, 2026-11-22).** Material and
+texture libraries, their bake sources, project templates, model / sound / effect packs go to
+[AIVERSE-PACKAGES](https://github.com/chromealex/AIVERSE-PACKAGES) by pull request (owner approves), in
+`<category>/<id>/` (templates, materials, textures, models, audio, vfx, ui, scripts, plugins, tools).
+Projects install them with `tools/pkg/aiverse_pkg.py add <id> --project P`; tools read bake inputs with
+`aiverse_pkg.package_dir('<id>')`; a skill that needs one lists it in its frontmatter
+`packages: a, b`. The engine keeps only minimal defaults (fonts, UI, the checkerboard terrain).
+See docs/packages.md and skills/workflow/aiverse-packages.
 
 **Model packs: every texture once.** A pack of models (`.glb`) that share materials must not embed the
 same images in every file: a 4-texture path kit became 1.4 GB (31 files x 42 MB of identical PNGs, 6 MB of
@@ -2244,7 +2254,7 @@ The worktree folder follows the branch: `.worktrees/feature/aiv142_city_traffic`
 | Vulkan RHI backend (Windows, Linux, Android; opt-in, GL fallback): device, swapchain + offscreen back buffer, memory, versioned dynamic buffers, GLSL → SPIR-V at run time (vendored glslang), offscreen backend test | `engine/gfx/vulkan`, `third_party/glslang`, `third_party/vulkan`, `tests/render/vulkan_tests.cpp`, `docs/vulkan.md`; hooks: `Gfx.h` (`Backend::Vulkan`), `engine/platform/GraphicsSettings.h` + `AppConfig::graphics`, device choice in `PlatformLinux` / `PlatformWin32` / `PlatformAndroid`, client `--gfx` + game.json `graphics`, CMake `AIVERSE_VULKAN`, CI lavapipe step, notices | agent-vulkan (MAIN merges) |
 | Other areas | as assigned by the user | the agent the user assigned |
 | Bunker Wars energy skills: skill objects (`origins`/`consume`, `goal`, `onArrive`/`onExpire`/`onDeath`, `pull`), BW skill converter + modificator table | `engine/game/SkillObjects.cpp`, `tools/importers/bunkerwars/skills/`, `docs/bunkerwars-skills.md`, `tests/tests_skillobjects.inc`; hooks: `Effects.cpp` (area / projectile spawn), `Units.cpp` (Enter), `Combat.cpp` (deaths), `Save.cpp` | agent-bw-skills (MAIN merges) |
-| Voxel worlds: chunked mutable block world, block JSON, codec / regions / parking, ray and box queries (`voxel-world`), sky and block light (`voxel-light`), chunk meshes (`voxel-mesh`), chunk generator (`voxel-gen`), fluids / falling / growth (`voxel-ticks`), mob A* and spawning (`voxel-nav`), chunk streaming to clients (`voxel-replication`); save record kinds 120..127 | `libraries/include/aiverselib/systems/{voxel,voxellight,voxelmesh,voxelgen,voxelticks}/`, `libraries/include/aiverselib/bots/voxelnav/`, `libraries/include/aiverselib/net/voxel/`, `tests/libraries/voxel_tests.cpp`, `tools/libraries/voxel_main.cpp` (`aiverse_voxel`), `examples/libraries/voxel/`, `docs/voxel.md`, `skills/*/aiverse-voxel-*`; the voxel game: `modules/voxel/`, `apps/voxel/`, `tests/voxel/`, `templates/voxel_sandbox/`; additive hooks: `add_subdirectory(modules/voxel)` in `CMakeLists.txt`, `voxel.*` keys in `engine/assets/lang/{en,ru}.json`, catalog entries, test / tool blocks in `CMakeLists.txt` and `tests/libraries/CMakeLists.txt`, skill aliases | agent-voxel (MAIN merges) |
+| Voxel worlds: chunked mutable block world, block JSON, codec / regions / parking, ray and box queries (`voxel-world`), sky and block light (`voxel-light`), chunk meshes (`voxel-mesh`), chunk generator (`voxel-gen`), fluids / falling / growth (`voxel-ticks`), mob A* and spawning (`voxel-nav`), chunk streaming to clients (`voxel-replication`); save record kinds 120..127 | `libraries/include/aiverselib/systems/{voxel,voxellight,voxelmesh,voxelgen,voxelticks}/`, `libraries/include/aiverselib/bots/voxelnav/`, `libraries/include/aiverselib/net/voxel/`, `tests/libraries/voxel_tests.cpp`, `tools/libraries/voxel_main.cpp` (`aiverse_voxel`), `examples/libraries/voxel/`, `docs/voxel.md`, `skills/*/aiverse-voxel-*`; the voxel game: `engine/voxel/`, `apps/voxel/`, `tests/voxel/`, `templates/voxel_sandbox/`; additive hooks: `add_subdirectory(engine/voxel)` in `CMakeLists.txt`, `voxel.*` keys in `engine/assets/lang/{en,ru}.json`, catalog entries, test / tool blocks in `CMakeLists.txt` and `tests/libraries/CMakeLists.txt`, skill aliases | agent-voxel (MAIN merges) |
 
 If your task is not in this table, the user's first message to you defines your area: write it
 here in your branch (one row) so the integrator sees it.

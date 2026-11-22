@@ -426,7 +426,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, ROOT_LANG, MENU_SPY_JS, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, ROOT_LANG, MENU_SPY_JS, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, CATALOG_JS, catalog_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, core_html, fill_tokens)
 
@@ -667,6 +667,12 @@ def cmd_build(args):
             layout, ctx, 'releases.html', T['relPageTitle'], T['relLead'],
             releases_page(rel_data, loc_entries, systems, ctx, manifest['repo']), nav='releases', script=rel_script),
             encoding='utf-8')
+        cat = manifest['catalog']
+        cat_cfg = {'index': cat['index'], 'lang': lang, 't': T['catJs'], 'cats': T['catNames'], 'kinds': T['catKinds']}
+        cat_script = f'<script>window.CAT_CFG={json.dumps(cat_cfg, ensure_ascii=False)};</script>' + CATALOG_JS
+        (d / 'catalog.html').write_text(render_page(layout, ctx, 'catalog.html', T['catPageTitle'], T['catLead'],
+                                                    catalog_page(cat, ctx), nav='catalog', script=cat_script),
+                                        encoding='utf-8')
         ds_script = (f'<script>window.DS_L={json.dumps({"none": T["docsSearchNone"]}, ensure_ascii=False)};</script>'
                      + DOCS_SEARCH_JS)
         (d / 'docs.html').write_text(render_page(layout, ctx, 'docs.html', T['docsPageTitle'], T['docsLead'],

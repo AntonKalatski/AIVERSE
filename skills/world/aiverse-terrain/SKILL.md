@@ -1,6 +1,7 @@
 ---
 name: aiverse-terrain
 description: Change AIVERSE terrain of a map - cliff levels, heightfield simulation, sub-cell detail surface, materials and splat, heightmap PNG import/export, planet relief - through MCP and the «Рельеф» window, keeping old games' checksums.
+packages: terrain-pbr
 ---
 
 # Terrain: levels, heightfield, detail, materials

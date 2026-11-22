@@ -4,7 +4,7 @@ All new environment generation uses TerraWeave for terrain, plants and rocks,
 and NEREID for water. Project recipes choose composition; they must not contain
 replacement terrain/noise/water solvers.
 
-`aiverse_terraweave_landscape --recipe recipe.json --out NEW_DIR --materials engine/assets/materials/terrain/textures`
+`aiverse_terraweave_landscape --recipe recipe.json --out NEW_DIR --materials "$(python3 tools/pkg/aiverse_pkg.py fetch terrain-pbr)/textures"`
 uses TerrainSettings, Earthworks brushes and bakeEarthworksTerrainPatch. Tiles
 are 64 metres with 65 samples. The output is ordinary glTF terrain, a shared
 PBR pack, vegetation/rock placements and a ground snapshot. This offline export

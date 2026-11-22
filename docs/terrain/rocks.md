@@ -69,7 +69,7 @@ same native three-mesh LOD chain in `extras.rtsLods`.
 cmake --build /path/to/build --target aiverse_terraweave_rocks
 /path/to/build/aiverse_terraweave_rocks \
   --out /absolute/path/to/new-rock-pack \
-  --materials /path/to/AIVERSE/engine/assets/materials/terrain/textures \
+  --materials "$(python3 tools/pkg/aiverse_pkg.py fetch terrain-pbr)/textures" \
   --seed 42 --count 12
 ```
 

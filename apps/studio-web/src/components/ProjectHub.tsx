@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Clock, FolderOpen, Loader2, Plus, Sparkles } from 'lucide-react';
+import { Clock, FolderOpen, Plus, Sparkles } from 'lucide-react';
 import { invoke } from '../bridge';
+import { StudioLoader } from '../ui';
 import type { StudioHub, StudioSnapshot } from '../types';
 import './ProjectHub.css';
 
@@ -41,11 +42,11 @@ export default function ProjectHub({ onOpened, openOther, compact }: {
     <div className="hub__cols">
       <section>
         <h3><Clock size={13}/>Recent</h3>
-        {!hub && <p className="hub__muted"><Loader2 size={13} className="hub__spin"/> Loading…</p>}
+        {!hub && <p className="hub__muted"><StudioLoader size={22} label="Loading…"/></p>}
         {hub && !recent.length && <p className="hub__muted">No recent projects yet.</p>}
         {recent.map(p => <button key={p.dir} type="button" className="hub__item" disabled={!!busy} onClick={() => void open(p.dir)} title={p.dir}>
           <b>{p.name || p.dir.split('/').pop()}</b><span>{p.dir}</span><small>{ago(p.lastOpened)}</small>
-          {busy === p.dir && <Loader2 size={13} className="hub__spin"/>}</button>)}
+          {busy === p.dir && <StudioLoader size={14}/>}</button>)}
       </section>
       <section>
         <h3><Sparkles size={13}/>New from template</h3>
@@ -57,7 +58,7 @@ export default function ProjectHub({ onOpened, openOther, compact }: {
         {templ && <form className="hub__create" onSubmit={e => { e.preventDefault(); void create(); }}>
           <input className="au-input" autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Project name"/>
           <button type="submit" className="au-button au-button--sm au-button--primary" disabled={!name.trim() || !!busy}>
-            {busy === 'create' ? <Loader2 size={13} className="hub__spin"/> : <Plus size={13}/>}Create…</button>
+            {busy === 'create' ? <StudioLoader size={14}/> : <Plus size={13}/>}Create…</button>
         </form>}
         {templ && <p className="hub__muted">A copy of the template goes to a folder you choose (default {hub?.defaultLocation}); the template itself is never changed.</p>}
       </section>

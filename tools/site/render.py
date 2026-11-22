@@ -13,6 +13,20 @@ import re
 from mdhtml import Converter
 
 _ARM = '-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58'
+# Animated AIVERSE mark for every loading state of the site (copy kept in sync by tools/branding/logo/loader.py).
+LOADER_SVG = (
+    # aiverse-loader:begin (tools/branding/logo/loader.py)
+"<svg class=\"aiv-mark\" viewBox=\"0 60 1000 880\" role=\"img\" aria-label=\"Loading\"><style>.aiv-mark{display:block;overflow:visible}.aiv-mark .aiv-b{fill:var(--aiv-mark-ink,#141210);opacity:0;animation:.55s cubic-bezier(.2,.7,.25,1) forwards}.aiv-mark .aiv-t{animation-name:aiv-t}.aiv-mark .aiv-l{animation-name:aiv-l;animation-delay:.1s}.aiv-mark .aiv-r{animation-name:aiv-r;animation-delay:.2s}.aiv-mark .aiv-d{fill:var(--aiv-mark-accent,#E9C3A4);opacity:0;transform-box:view-box;transform-origin:500px 588px;animation:aiv-d .5s .55s cubic-bezier(.2,.7,.25,1) forwards,aiv-p 1.6s 1.05s ease-in-out infinite}@keyframes aiv-t{from{opacity:0;transform:translate(0,-70px)}to{opacity:1;transform:none}}@keyframes aiv-l{from{opacity:0;transform:translate(-60px,32px)}to{opacity:1;transform:none}}@keyframes aiv-r{from{opacity:0;transform:translate(60px,32px)}to{opacity:1;transform:none}}@keyframes aiv-d{from{opacity:0;transform:rotate(-90deg) scale(.3)}to{opacity:1;transform:none}}@keyframes aiv-p{0%,100%{opacity:1;transform:none}50%{opacity:1;transform:scale(1.07)}}@media (prefers-reduced-motion:reduce){.aiv-mark .aiv-b,.aiv-mark .aiv-d{animation:none;opacity:1}}</style><polygon class=\"aiv-b aiv-t\" points=\"500,94 373,179 373,476 500,397 627,476 627,179\"/><polygon class=\"aiv-b aiv-l\" points=\"433,741 147,907 23,833 23,719 307,561 307,663\"/><polygon class=\"aiv-b aiv-r\" points=\"567,741 853,907 977,833 977,719 693,561 693,663\"/><polygon class=\"aiv-d\" points=\"500,438 350,588 500,738 650,588\"/></svg>"
+    # aiverse-loader:end
+)
+
+
+def loader(cls='aiv-loader', label=''):
+    """Loading indicator: the animated mark, optionally with a caption under it."""
+    cap = f'<span>{label}</span>' if label else ''
+    return f'<span class="{cls}" role="status">{LOADER_SVG}{cap}</span>'
+
+
 MARK_LIGHT = ('<svg width="72" height="68" viewBox="-280 -280 560 530"><g fill="#F3EFE8">'
               f'<polygon points="{_ARM}"/><polygon points="{_ARM}" transform="rotate(120)"/>'
               f'<polygon points="{_ARM}" transform="rotate(240)"/></g>'
@@ -701,7 +715,7 @@ def releases_page(data, entries, systems, ctx, repo):
             + (f'<ul class="rel-hl">{hl}</ul>' if hl else '')
             + (f'<p class="rel-verified"><b>{ctx.T["relVerified"]}</b> {esc(ver)}</p>' if ver else '') +
             f'<div class="rel-dl" data-version="{esc(r["version"])}"><span class="rel-dl-title">{ctx.T["relDownloads"]}</span>'
-            f'<div class="rel-dl-list"><a class="btn btn-line btn-sm" href="{esc(builds["branch"])}">{ctx.T["relBuildsBranch"]}</a></div></div>'
+            f'<div class="rel-dl-list">{loader("aiv-loader aiv-loader-inline")}<a class="btn btn-line btn-sm" href="{esc(builds["branch"])}">{ctx.T["relBuildsBranch"]}</a></div></div>'
             f'<a class="rel-notes" href="{notes}">{ctx.T["relNotes"]}</a></div></article>')
     other = (f'<section class="rel-other" hidden><h2>{ctx.T["relOtherTitle"]}</h2><p>{ctx.T["relOtherLead"]}</p>'
              f'<div class="rel-other-list"></div></section>')
@@ -763,5 +777,82 @@ if(other.length){var box=document.querySelector('.rel-other'),list=box.querySele
 other.forEach(function(p){var k=p.version+' · '+p.commit;(g[k]=g[k]||[]).push(p);});
 Object.keys(g).forEach(function(k){var row=document.createElement('div');row.className='rel-other-row';
 var c=document.createElement('code');c.textContent=k;row.appendChild(c);g[k].forEach(function(p){row.appendChild(btn(p));});list.appendChild(row);});
-box.hidden=false;}}).catch(function(){});})();
+box.hidden=false;}}).catch(function(){}).then(function(){document.querySelectorAll('.rel-dl .aiv-loader').forEach(function(e){e.remove();});});})();
+</script>"""
+
+
+def catalog_page(cfg, ctx):
+    """Package catalog: the cards are filled in the browser from AIVERSE-PACKAGES index.json."""
+    T = ctx.T
+    return (f'<section class="dl-hero"><div><p class="eyebrow">{T["catEyebrow"]}</p><h1>{T["catTitle"]}</h1>'
+            f'<p>{T["catLead"]}</p></div>'
+            f'<div class="dl-stats"><div><strong class="cat-n">—</strong><span>{T["catCount"]}</span></div>'
+            f'<div><strong class="cat-c">—</strong><span>{T["catCategories"]}</span></div></div></section>'
+            f'<div class="cat-bar"><div class="dl-filters cat-filters" role="group" aria-label="{T["catFilter"]}">'
+            f'<button class="filter" type="button" data-cat="" aria-pressed="true">{T["catAll"]}</button></div>'
+            f'<label class="dl-search cat-search"><span aria-hidden="true">⌕</span>'
+            f'<input type="search" placeholder="{T["catSearch"]}" aria-label="{T["catSearch"]}"></label></div>'
+            f'<p class="cat-status">{loader("aiv-loader", T["catLoading"])}</p>'
+            f'<div class="cat-grid"></div>'
+            f'<section class="cat-howto"><div><h2>{T["catHowTitle"]}</h2><p>{T["catHowLead"]}</p>'
+            f'<pre><code>python3 tools/pkg/aiverse_pkg.py search terrain\n'
+            f'python3 tools/pkg/aiverse_pkg.py add terrain-pbr --project ~/Games/MyGame</code></pre></div>'
+            f'<div id="add"><h2>{T["catAddTitle"]}</h2><p>{T["catAddLead"]}</p>'
+            f'<ol class="cat-steps">{"".join(f"<li>{x}</li>" for x in T["catAddSteps"])}</ol>'
+            f'<p><a class="btn btn-ink btn-sm" href="docs-packages.html#{T["catAddAnchor"]}">{T["catAddBtn"]}</a> '
+            f'<a class="btn btn-line btn-sm" href="{esc(cfg["repo"])}/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> '
+            f'<a class="btn btn-line btn-sm" href="{esc(cfg["repo"])}">GitHub</a></p></div></section>')
+
+
+CATALOG_JS = """<script>
+(function(){var cfg=window.CAT_CFG;if(!cfg)return;var T=cfg.t,lang=cfg.lang;
+function loc(o,k){return (lang!=='en'&&o[k+'-'+lang])||o[k]||'';}
+function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+function mb(n){return n>=1048576?(n/1048576).toFixed(n>=104857600?0:1)+' MB':Math.max(1,Math.round(n/1024))+' KB';}
+var grid=document.querySelector('.cat-grid'),status=document.querySelector('.cat-status'),bar=document.querySelector('.cat-filters'),
+search=document.querySelector('.cat-search input'),cur='',cards=[];
+function apply(){var q=(search.value||'').toLowerCase().trim(),n=0;cards.forEach(function(c){var ok=(!cur||c.cat===cur)&&(!q||c.hay.indexOf(q)>=0);
+c.el.hidden=!ok;if(ok)n++;});status.textContent=n?'':T.none;status.hidden=!!n;}
+function card(p){var v=p.versions[p.latest],a=el('article','cat-card');a.id='pkg-'+p.id;
+var media=el('div','cat-media'),img=el('img');img.loading='lazy';img.alt=loc(p,'title');img.src=(p.previews||[])[0]||'';media.appendChild(img);
+if((p.previews||[]).length>1){var th=el('div','cat-thumbs');p.previews.forEach(function(src,i){var b=el('button','cat-thumb');b.type='button';
+b.setAttribute('aria-label',(i+1)+'/'+p.previews.length);var t=el('img');t.src=src;t.alt='';t.loading='lazy';b.appendChild(t);
+b.onclick=function(){img.src=src;};th.appendChild(b);});media.appendChild(th);}a.appendChild(media);
+var body=el('div','cat-body'),meta=el('div','cat-meta');meta.appendChild(el('span','chip',cfg.cats[p.category]||p.category));
+meta.appendChild(el('span','cat-ver','v'+p.latest));body.appendChild(meta);
+body.appendChild(el('h2',null,loc(p,'title')));body.appendChild(el('p','cat-summary',loc(p,'summary')));
+var d=loc(p,'description');if(d){var det=el('details','cat-more');det.appendChild(el('summary',null,T.more));det.appendChild(el('p',null,d));body.appendChild(det);}
+var facts=el('dl','cat-facts');[[T.engine,(v.minEngine||'—')+'+'],[T.size,mb(v.size)],[T.license,p.license||'—'],[T.kind,cfg.kinds[p.kind]||p.kind]].forEach(function(f){
+var w=el('div');w.appendChild(el('dt',null,f[0]));w.appendChild(el('dd',null,f[1]));facts.appendChild(w);});body.appendChild(facts);
+var cmd=(p.kind==='content'?'add '+p.id+' --project <project>':p.kind==='template'?'create '+p.id+' <folder>':'fetch '+p.id);
+var pre=el('div','cat-cmd'),code=el('code',null,'python3 tools/pkg/aiverse_pkg.py '+cmd),cp=el('button','cat-copy',T.copy);cp.type='button';
+cp.onclick=function(){navigator.clipboard&&navigator.clipboard.writeText(code.textContent).then(function(){cp.textContent=T.copied;setTimeout(function(){cp.textContent=T.copy;},1500);});};
+pre.appendChild(code);pre.appendChild(cp);body.appendChild(pre);
+var act=el('div','cat-actions'),dl=el('a','btn btn-ink btn-sm',T.download+' · '+mb(v.size));dl.href=v.url;dl.title='sha256 '+v.sha256;act.appendChild(dl);
+if(p.readme){var r=el('a','btn btn-line btn-sm',T.readme);r.href=p.readme;act.appendChild(r);}
+if(p.viewer){var v3=el('button','btn btn-accent btn-sm cat-3d',T.view3d);v3.type='button';v3.onclick=function(){
+var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;return;}
+f=el('iframe','cat-frame');f.src=p.viewer+(p.viewer.indexOf('?')<0?'?':'&')+'lang='+lang;f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
+img.hidden=true;media.appendChild(f);v3.textContent=T.view3dClose;};act.insertBefore(v3,act.firstChild);}
+body.appendChild(act);a.appendChild(body);
+cards.push({el:a,cat:p.category,hay:[p.id].concat(Object.keys(p).filter(function(k){return /^(title|summary)(-|$)/.test(k);}).map(function(k){return p[k];}),
+(p.tags||[]).join(' '),JSON.stringify(p.provides||{})).join(' ').toLowerCase()});
+return a;}
+function json(u){return fetch(u,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();});}
+var base=cfg.index.replace(/[^/]*$/,'');
+// index.json lists {id, category, path}; each package folder has aiverse.package.json + versions.json
+json(cfg.index).then(function(d){return Promise.all((d.packages||[]).map(function(it){
+return Promise.all([json(base+it.path+'/aiverse.package.json'),json(base+it.path+'/versions.json')]).then(function(r){
+var p=r[0];['latest','versions','previews','readme','viewer'].forEach(function(k){if(r[1][k]!=null)p[k]=r[1][k];});p.category=it.category;return p;},
+function(){return null;});}));}).then(function(list){
+var pk=list.filter(function(p){return p&&p.versions&&p.versions[p.latest];}),used={};pk.forEach(function(p){used[p.category]=1;grid.appendChild(card(p));});
+Object.keys(cfg.cats).forEach(function(c){if(!used[c])return;var b=el('button','filter',cfg.cats[c]);b.type='button';b.dataset.cat=c;b.setAttribute('aria-pressed','false');bar.appendChild(b);});
+bar.querySelectorAll('.filter').forEach(function(b){b.onclick=function(){cur=b.dataset.cat;bar.querySelectorAll('.filter').forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
+history.replaceState(null,'',cur?'#cat='+cur:location.pathname);apply();};});
+document.querySelector('.cat-n').textContent=pk.length;document.querySelector('.cat-c').textContent=Object.keys(used).length;
+var h=location.hash.match(/^#cat=([a-z]+)/);if(h){var b=bar.querySelector('[data-cat="'+h[1]+'"]');if(b)b.click();}
+status.textContent='';apply();
+var m=location.hash.match(/^#pkg-([a-z0-9-]+)/);if(m){var t=document.getElementById('pkg-'+m[1]);if(t)t.scrollIntoView();}
+}).catch(function(){status.textContent=T.error;});
+search.addEventListener('input',apply);})();
 </script>"""

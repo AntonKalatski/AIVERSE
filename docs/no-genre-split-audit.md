@@ -34,7 +34,7 @@ renaming it.
 separate simulations; each project gets only that host's features.
 - `apps/server/GameData.cpp:31` runs only `rts`; `engine/net/server/ServerMatch.cpp:452` defaults `module` to `rts`.
 - `apps/headless/main.cpp:66,453,723` — static cast to `GameCore` by name, separate `playFps`.
-- `engine/actor/Project.h:14`, `modules/voxel/Project.h:13` reject other modules;
+- `engine/actor/Project.h:14`, `engine/voxel/Project.h:13` reject other modules;
   `engine/view/game/GameViewScript.cpp:838` view scripts only when `module().name()=="rts"`.
 - `modules/genres/MotionModule.cpp:38` — `motion.kind` must be `platformer` or `racing` (genre names as a mode).
 - 36 `dynamic_cast<GameCore*>` (campaign, scenario, AI, audio, fx, overlays, view).
@@ -102,7 +102,7 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 | B One vehicle system (G5) | built + tested (stage 04; CTest 365/367, checksums 95/96, road_race identical): `engine/vehicles` (`AIVERSE::vehicles`: `VehicleDrive` / `VehicleOccupant` components, `stepVehicles` over a `VehicleHost` world query, autopilot / lock API, one race adapter `VehicleRace` + `RaceState`); `RtsDriving` = grid-map world query + enter key + race seats, `FpsVehicles` = metre-map world query + seat-list glue + race seats; `DrivingStore`, `RtsRace.h`, `FpsRace.cpp`, `fps::VehicleDrive`, `CharacterRacer`, `State::race` and the road forwarders deleted. Left: rules `driving` and `vehicleTypes` are still two blocks (one parser each, one `DriveRules` result); getting in on foot keeps two seat models (driver's door vs seat list) inside the shared components |
 | C Shared systems out of `modules/rts` (G3) | done (stages 06-09): every system in `engine/game`, view in `engine/view/game`, audio / fx in `engine/audio` / `engine/fx`; `modules/rts` keeps only BwAI (Bunker Wars bot) and game extensions. GTA2 migration is separate work |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
-| D One simulation (G1) | done in code (stage 10): one `GameModule`, `game::GameCore`; actor systems (`actor::ActorHost`) run on world-space maps; `actor::host(sim)`. Board / Motion / Voxel / Strategic modules are still separate hosts |
+| D One simulation (G1) | done (stages 10-11): one `GameModule`, `game::GameCore`. Whole-match systems chosen by data (`HostSystems`): actor systems on world-space maps (`actor::host(sim)`), voxel worlds on rules `voxelGame` (`voxelgame::host(sim)`, `engine/voxel`). The unbuilt Board / Motion prototypes (`modules/genres`) are deleted; Strategic already runs on GameCore |
 | 7 Template kits (G8) | nothing to do |
 
 Every stage above is unverified until the Mac build and tests in the latest `docs/handoffs/no-genre-split-stage-NN.md` pass.
@@ -125,7 +125,7 @@ C. **Shared gameplay systems out of `modules/rts` (G3).** Move each `Rts*` syste
    sensors, campaign, side commander bot, map generator), one or a few per stage, deleting the module copy.
 D. **One simulation (G1).** `GameCore` and `fps::Module` dissolve into one ECS simulation that runs the systems a
    project's data enables; `game.json` `module` is removed; server, headless, editor, Studio and tools run any
-   project. `modules/rts`, `modules/fps`, `modules/genres`, `modules/strategic`, `modules/voxel` are emptied.
+   project. `modules/rts`, `modules/fps`, `modules/genres`, `modules/strategic`, `engine/voxel` are emptied.
 E. **One scene document (G2b).** Grid and world-space maps become one entity document; `worldSpaceMaps()` /
    `actorSessionPlay()` capability queries are deleted with the second format.
 F. **Names (G7 rest).** Package ids `bots-rts` -> `bots-commander`, `bots-fps` -> `bots-combatant`, `genre-bots` ->

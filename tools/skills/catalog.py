@@ -91,6 +91,7 @@ WORKFLOWS=[
  ('aiverse-lens-native','LENS native multi-camera scheduling, prepared-frame replay and GPU capture ownership','docs/camera-system.md'),
 
  ('aiverse-scene-entities','Native scene entity and component MCP authoring with stable light identity','docs/studio-light-entities.md'),
+ ('aiverse-packages','Optional content from the AIVERSE-PACKAGES catalog: search, install into projects, lock, verify, publish by PR','docs/packages.md'),
  ('aiverse-lighting','Light entity authoring, probe GI and Luma through native MCP and shared runtime','docs/dynamic-gi.md'),
  ('studio-ui','HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA','docs/studio-design-system.md'),
  ('aiverse-human-creator','VIVID digital humans: DNA skin/eyes/hair/proportions, 52 rest channels, routes, rig and skin edits via human_* MCP or Studio Human Creator','docs/vivid.md'),
@@ -167,6 +168,7 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-packages':'package packages catalog plugins download install asset store marketplace pbr textures materials template пакет пакеты каталог плагины скачать установить магазин ассетов материалы текстуры шаблон',
  'aiverse-lens':'lens camera cameras capture offscreen minimap камер захват линз',
  'aiverse-lens-native':'lens native camera replay snapshot gpu capture натив камер захват',
 
@@ -245,6 +247,22 @@ WORKFLOW_ALIASES={
  'aiverse-main-merge':'main merge integrate checksums мердж слияни интеграц',
 }
 
+PACKAGE_REF=re.compile(r'^[a-z0-9][a-z0-9-]{1,62}(@[\^~>=]*[0-9][0-9.]*)?$')
+
+def skill_packages(path):
+    """Content packages a skill needs, from its frontmatter line `packages: a, b@^1.2` (AIVERSE-PACKAGES
+    catalog ids; agents install them with tools/pkg/aiverse_pkg.py skill <id> --project P)."""
+    text=(ROOT/path).read_text(encoding='utf-8')
+    if not text.startswith('---\n'):return []
+    head=text[4:text.find('\n---',4)]
+    for line in head.splitlines():
+        if line.startswith('packages:'):
+            refs=[x.strip() for x in line[len('packages:'):].replace('[','').replace(']','').split(',') if x.strip()]
+            for r in refs:
+                if not PACKAGE_REF.match(r):raise ValueError(f'{path}: bad package reference {r!r}')
+            return refs
+    return []
+
 def skill_path(skill):
     hits=sorted((ROOT/'skills').glob(f'*/{skill}/SKILL.md'))
     if len(hits)!=1:raise ValueError('skill folder not found exactly once: '+skill)
@@ -287,7 +305,9 @@ def generate():
     for name,summary,source in WORKFLOWS:
         entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=summary,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source=source))
-    for entry in entries:entry['keywords']=(ALIASES.get(entry['id'],'')+' '+WORKFLOW_ALIASES.get(entry['id'],'')).split()
+    for entry in entries:
+        entry['keywords']=(ALIASES.get(entry['id'],'')+' '+WORKFLOW_ALIASES.get(entry['id'],'')).split()
+        entry['contentPackages']=skill_packages(entry['path'])
     return dict(schema=1,skills=sorted(entries,key=lambda e:e['id']))
 
 def validate(data):
@@ -356,7 +376,10 @@ def plan(entries,roots,side):
     if policies:commands.append('aiverse_add_meta_server(game_meta MODULES '+' '.join(policies)+')')
     if 'meta-client' in order:commands.append('target_link_libraries(game_client PRIVATE AIVERSE::meta_client)')
     if gameplay:commands.append('aiverse_native_use_libraries(aiverse_native_GAME '+' '.join(gameplay)+')')
+    content=sorted({p for e in choices for p in e.get('contentPackages',[])})
     return dict(requested=original,side=side,read=[e['path'] for e in choices],
+        contentPackages=content,
+        installPackages=[f'python3 tools/pkg/aiverse_pkg.py add {p} --project <project>' for p in content],
         selection=[{k:e.get(k) for k in ('id','side','runtime','target','dependencies','requiresOwner')} for e in choices],
         cmake=commands,nativeCmake=(["aiverse_native_use_meta(aiverse_native_GAME game_meta)"] if policies else [])+(["aiverse_native_use_meta(aiverse_native_GAME CLIENT)"] if 'meta-client' in order else []),serverModules=policies,clientFeatures=[entries[key]['package'] for key in original if entries[key]['domain']=='meta'] if side in ('client','both') else [])
 
@@ -377,7 +400,7 @@ def main():
             if data!=expected:raise ValueError('stale skill catalog; run generate')
             print(f'Validated {len(entries)} skills and isolated library mappings');return
         if args.command=='list':result=[{k:e[k] for k in ('id','summary','side','runtime','target')} for e in entries.values() if args.domain=='all' or e['domain']==args.domain]
-        elif args.command=='search':result=[dict(score=score,**{k:e[k] for k in ('id','summary','side','path','target')}) for score,e in search(entries,args.query,args.domain)][:12]
+        elif args.command=='search':result=[dict(score=score,**{k:e.get(k) for k in ('id','summary','side','path','target','contentPackages')}) for score,e in search(entries,args.query,args.domain)][:12]
         else:
             if args.skills:roots=[x.strip() for x in args.skills.split(',') if x.strip()]
             else:

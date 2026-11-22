@@ -228,7 +228,7 @@ add_subdirectory(engine/meta)
 
 # The one gameplay host: grid systems (units, orders, economy, combat, garrisons, AI) and, on world-space maps, actor systems
 add_library(aiverse_game STATIC
-    engine/game/GameActorHost.cpp   # world-space maps: actor systems (engine/actor)
+    engine/game/HostSystems.cpp   # whole-match systems chosen by data: actor (engine/actor), voxel (engine/voxel)
     engine/game/GameData.cpp
     engine/game/MapGrid.cpp
     engine/game/MapHpa.cpp
@@ -265,7 +265,7 @@ add_library(aiverse_game STATIC
     engine/game/ComputerPlayerFidelity.cpp
     engine/game/ComputerPlayerTerrain.cpp
     engine/game/ComputerPlayerTactics.cpp)
-target_link_libraries(aiverse_game PUBLIC aiverse_fps)   # actor systems: defined in engine/actor/CMakeLists.txt
+target_link_libraries(aiverse_game PUBLIC aiverse_fps aiverse_voxelgame)   # actor / voxel systems: engine/actor, engine/voxel CMakeLists
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
 # the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (engine/actor/ActorVehicles.cpp)
@@ -1262,6 +1262,21 @@ if(AIVERSE_PLATFORM MATCHES "^(windows|linux|android)$")
 endif()
 option(AIVERSE_VULKAN "Build the Vulkan RHI backend (Windows, Linux, Android)" ${_aiverse_vulkan_default})
 if(AIVERSE_VULKAN)
+    # SPIR-V optimizer (vendored SPIRV-Tools + SPIRV-Headers, third_party/spirv-tools): glslang runs the
+    # performance passes on every program. Mobile drivers (Adreno) barely optimise SPIR-V themselves:
+    # unoptimised shaders cost ~30% GPU time on a Galaxy A05s. Needs Python 3 on the build host (grammar tables).
+    option(AIVERSE_SPIRV_OPT "Optimize Vulkan SPIR-V with the vendored SPIRV-Tools" ON)
+    if(AIVERSE_SPIRV_OPT)
+        set(SPIRV-Headers_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spirv-headers)
+        # the table generators need Python >= 3.9: take the newest interpreter, not the first on PATH
+        set(Python3_FIND_STRATEGY VERSION)
+        set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
+        set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
+        set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
+        set(SKIP_SPIRV_TOOLS_INSTALL ON CACHE BOOL "" FORCE)
+        set(SPIRV_TOOLS_BUILD_STATIC ON CACHE BOOL "" FORCE)
+        add_subdirectory(third_party/spirv-tools EXCLUDE_FROM_ALL)
+    endif()
     add_subdirectory(third_party/glslang)
     add_library(aiverse_gfx_vulkan STATIC engine/gfx/vulkan/VkApi.cpp engine/gfx/vulkan/VkShaderCompiler.cpp engine/gfx/vulkan/VkSurface.cpp
         engine/gfx/vulkan/GfxVulkan.cpp engine/gfx/vulkan/VkResources.cpp engine/gfx/vulkan/VkDraw.cpp
@@ -1637,7 +1652,7 @@ if(AIVERSE_BUILD_CLIENT)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
         target_compile_definitions(aiverse_client PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")   # actor / voxel hosts: engine dir in a dev build
         # actor (first / third person) and voxel projects run in the same client (apps/client/main.cpp dispatches
-        # on game.json "module"); their hosts are added in engine/actor and modules/voxel (aiverse_client_hosts)
+        # on game.json "module"); their hosts are added in engine/actor and engine/voxel (aiverse_client_hosts)
     endif()
     # Mach-O keeps otherwise unused functions from directly linked client
     # objects unless dead stripping is requested explicitly. Static archives
@@ -1846,6 +1861,24 @@ if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
         apps/modelview/NativeScenePreview.cpp
         $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
+endif()
+
+# Catalog preview (docs/packages.md § Web viewer): materials / models of catalog packages through
+# Renderer3D. Web: the website's catalog/viewer page (own shell, files fetched by the page into /view);
+# desktop: the same viewer for checks and screenshots (--src <view folder>).
+option(AIVERSE_BUILD_CATALOGVIEW "Build the package catalog preview (web page / desktop)" OFF)
+if(AIVERSE_BUILD_CATALOGVIEW AND (AIVERSE_DESKTOP OR EMSCRIPTEN))
+    add_executable(aiverse_catalogview apps/catalogview/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_catalogview PRIVATE aiverse_runtime AIVERSE::View)
+    if(EMSCRIPTEN)
+        set_target_properties(aiverse_catalogview PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
+        target_link_options(aiverse_catalogview PRIVATE
+            "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/apps/catalogview/shell.html"
+            "-sFORCE_FILESYSTEM=1"
+            "-sEXPORTED_FUNCTIONS=['_main','_cv_select','_cv_shape','_cv_lod','_cv_wire','_cv_clusters']"
+            "-sEXPORTED_RUNTIME_METHODS=['FS','ccall','UTF8ToString']")
+        set_property(TARGET aiverse_catalogview APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/apps/catalogview/shell.html")
+    endif()
 endif()
 
 if(AIVERSE_BUILD_TOOLS)
@@ -2428,7 +2461,7 @@ endif()
 
 # Project import (shared Python pipeline + editor/MCP bridge).
 if(TARGET aiverse_editor_core)
-    target_sources(aiverse_editor_core PRIVATE apps/editor/core/PortOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/PortOps.cpp apps/editor/core/PackageOps.cpp)
 endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME project_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/port/test_port.py)
@@ -2440,6 +2473,9 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     if(TARGET aiverse_headless)
         set_tests_properties(world_importer PROPERTIES ENVIRONMENT "AIVERSE_PORT_HEADLESS=$<TARGET_FILE:aiverse_headless>")
     endif()
+    # Package catalog client (tools/pkg): local index, no network
+    add_test(NAME aiverse_pkg COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/pkg/test_aiverse_pkg.py)
+    add_test(NAME branding_loader COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/branding/logo/loader.py --check)
     # Total Annihilation importer + HPI unpacker on made-up data (tools/importers/ta)
     add_test(NAME ta_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/ta/test_ta.py)
     if(TARGET aiverse_headless)
@@ -2795,7 +2831,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_test(NAME ecs_fixed_regeneration_policy_test
         COMMAND aiverse_ecs_fixed_regeneration_policy_test)
 endif()
-add_subdirectory(modules/voxel)
+add_subdirectory(engine/voxel)
 
 # Opt-in end-to-end reusable library host, excluded from normal builds.
 option(AIVERSE_BUILD_LIBRARY_SHOWCASE "Build native library integration showcase" OFF)
