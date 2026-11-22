@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VIVID: Character Creator и MetaHuman — AIVERSE</title>
+<meta name="description" content="Редактор внешности цифровых людей в Studio и адаптер экспорта MetaHuman.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="en" href="en/docs-vivid-creator.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2817312ec9">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Системы</a>
+<a href="./#genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="devlog.html" data-nav="devlog">Ход разработки</a>
+<a href="blog.html" data-nav="blog">Блог</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Документация</a>
+</div>
+<a class="lang-switch" href="en/docs-vivid-creator.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap docs-main">
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html" aria-current="page">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><h1 id="vivid-character-creator-и-адаптер-metahuman">VIVID Character Creator и адаптер MetaHuman<a class="anchor" href="#vivid-character-creator-и-адаптер-metahuman" aria-label="#">#</a></h1>
+<p>Character Creator — редактор внешности цифрового человека в AIVERSE Studio. Он работает с персонажем проекта (glTF / GLB / FBX) или с процедурной ДНК VIVID и показывает результат в нативном вьюпорте. Открывается в рабочем пространстве <strong>Character</strong> (⌘7 или вкладка вверху).</p>
+<p><img src="https://raw.githubusercontent.com/chromealex/AIVERSE/main/docs/devlog/media/2026-11-22-vivid-creator-metahuman/metahuman-adapter.jpg" alt="Адаптер MetaHuman в Studio" loading="lazy"></p>
+<h2 id="быстрый-старт">Быстрый старт<a class="anchor" href="#быстрый-старт" aria-label="#">#</a></h2>
+<ol><li><strong>Пресеты → Персонаж:</strong> выберите модель, нажмите «Загрузить профиль» и «Показать».</li><li>Для экспорта MetaHuman нажмите <strong>«Проверить и настроить»</strong>: роли материалов и меши лица выставятся сами (см. ниже).</li><li>Меняйте категории слева: Лицо, Скульпт, Кожа, Макияж, Глаза, Волосы, Тело, Одежда, Поза и свет. При включённом «Применять изменения сразу» вьюпорт обновляется на ходу.</li><li>Сохраните образ в «Образах» (с превью), соберите персонажа в «Одежде» и нажмите <strong>«В игру»</strong>.</li></ol>
+<h2 id="категории">Категории<a class="anchor" href="#категории" aria-label="#">#</a></h2>
+<ul><li><strong>Пресеты.</strong> Образы-карточки с превью, смешивание двух образов, возраст одним ползунком, случайный персонаж с замками, черновик по описанию («пожилой рыбак, седые волосы…») и запрос для агента, толпа из N вариантов, пакет персонажа <code>.aivchar</code> для переноса между проектами.</li><li><strong>Лицо.</strong> Круг смешивания шести архетипов; отдельные части (нос, рот, глаза, брови, челюсть, скулы) получают свою ручку — кнопкой или кликом по лицу во вьюпорте. Пропорции и импорт лица из скана, фото или отдельной головы. Полупрозрачный референс поверх вьюпорта.</li><li><strong>Скульпт.</strong> Кисть «вытянуть / вдавить» протяжкой по лицу, круг кисти, симметрия, история.</li><li><strong>Кожа, глаза, волосы.</strong> Тон, фактура, поры, веснушки; радужка и склера; цвет и седина прядей.</li><li><strong>Макияж.</strong> Помада, румяна, тени, щетина — слои на текстуре кожи. «Разместить по лицу» находит губы, щёки и веки по геометрии; положение можно поправить вручную.</li><li><strong>Тело.</strong> Рост в сантиметрах, пропорции, линейка с делениями по 10 см во вьюпорте.</li><li><strong>Одежда.</strong> Комплект модели и вещи с примеркой во вьюпорте, цвет каждой вещи, причёски из проекта. Сборка пишет <code>content/Characters/&lt;имя&gt;/model.glb</code> с LOD для скинованных частей и показывает бюджет треугольников; «В игру» добавляет тип юнита с этой моделью.</li><li><strong>Поза и свет.</strong> Мимика для проверки (улыбка, смех, удивление, речь…), позы, клипы модели и анимации из файлов (через <code>&lt;модель&gt;.clips.json</code>), восемь световых пресетов.</li></ul>
+<p>Сверху: камера Лицо / Торс / Рост, «До/после» (удерживайте — исходная модель), ⌘Z / ⇧⌘Z.</p>
+<h2 id="адаптер-metahuman">Адаптер MetaHuman<a class="anchor" href="#адаптер-metahuman" aria-label="#">#</a></h2>
+<p>Без Unreal и без <code>.dna</code> в рантайме. Адаптер читает обычный экспорт MetaHuman и:</p>
+<ul><li>узнаёт скелет UE5 (<code>spine_05</code>, <code>neck_02</code>, <code>head</code>), FaceMesh и кости <code>FACIAL_*</code>;</li><li>расставляет роли материалов: кожа головы и тела, глаза, ресницы, волосы и брови, одежда; оболочки глаз, слёзы, слюна и хрящ скрываются, зубы сохраняют исходный материал;</li><li>выбирает меши лица и считает, сколько из 52 мимических каналов ARKit есть в модели;</li><li>в превью ведёт суставы <code>*_half</code> (половина сгиба) и твисты предплечья, а челюсть и глаза — по каналам ARKit, если морфы их ещё не двигают.</li></ul>
+<p>Проверено на экспортах Ada и Bruce (тест <code>vivid_metahuman_adapter</code>).</p>
+<p><strong>Не поддерживается:</strong> полный RigLogic (корректоры bulge, in/out, fwd/bck стоят в bind pose), анимация остальных лицевых костей (мимика идёт через морфы), грум прядями (только карточки), чтение <code>.dna</code> в игре (только офлайн-инструмент <code>tools/vivid-dna-import</code>). GLB со сжатием Draco распакуйте офлайн: <code>node tools/vivid-dna-import/decompress_draco.cjs &lt;tooling&gt; in.glb out.glb</code>.</p>
+<h2 id="для-агентов-mcp">Для агентов (MCP)<a class="anchor" href="#для-агентов-mcp" aria-label="#">#</a></h2>
+<ul><li><code>human_metahuman_check {path, save_look?}</code> — отчёт адаптера и образ с ролями.</li><li><code>human_look_schema</code>, <code>human_look_list</code>, <code>human_look_get</code>, <code>human_look_save</code> — образы.</li><li><code>studio_character_snapshot {view}</code> — PNG вьюпорта Character Creator (Studio должна быть открыта).</li><li><code>human_schema</code>, <code>human_create</code>, <code>human_edit</code> … — процедурная ДНК VIVID.</li></ul>
+<p>Подробный журнал разработки: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/vivid.md">vivid.md</a>.</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/vivid-creator.md">Исходник на GitHub: docs/vivid-creator.md</a></p></article><aside class="doc-toc" aria-label="На странице"><span>На странице</span><a class="toc-2" href="#быстрый-старт">Быстрый старт</a><a class="toc-2" href="#категории">Категории</a><a class="toc-2" href="#адаптер-metahuman">Адаптер MetaHuman</a><a class="toc-2" href="#для-агентов-mcp">Для агентов (MCP)</a></aside></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+
+</body>
+</html>
