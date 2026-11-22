@@ -18194,6 +18194,7 @@ TEST(graphics_setting_from_game_json_and_command_line) {
     CHECK(platform::graphicsSettingsProblems(Json::string("gl")).empty());
 }
 
+#ifdef AIVERSE_TESTS_EDITOR_CORE   // dropForeignCMakeCache is in the editor core
 TEST(native_build_drops_cache_of_another_engine_folder) {
     namespace fs = std::filesystem;
     using namespace aiverse::editor;
@@ -18215,3 +18216,4 @@ TEST(native_build_drops_cache_of_another_engine_folder) {
     CHECK(!dropForeignCMakeCache(bd.string(), eng));                 // nothing left to drop
     fs::remove_all(bd);
 }
+#endif   // AIVERSE_TESTS_EDITOR_CORE

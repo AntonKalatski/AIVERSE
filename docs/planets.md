@@ -29,12 +29,19 @@ A map either describes today's flat battlefield (implicitly one body of kind `pl
   in the parent's orbital plane (XZ plane of the parent). A body without `orbit` is fixed at the world origin
   (or at `"pos": [x, y, z]`).
 - All gameplay quantities are Fixed; sizes in world units (the flat-map cell is 1 unit).
-- `"nereid": true | {"depth": d, "current": v, "axis": [x, y, z], "priority": p}` on a planet or moon makes its sea a
+- `"nereid": true | {"depth": d, "current": v, "axis": [x, y, z], "priority": p, "kind": "ocean" | "lake",
+  "waves": {"amplitude": a, "period": s, "cycles": c, "direction": [x, y, z]}}` on a planet or moon makes its sea a
   NEREID water body on the sphere (`libraries/include/aiverselib/water/NereidSphereWater.h`): one entity with
   `WaterSphereComponent` (centre = the body anchor, surface = `radius + seaLevel`, floor = surface - `depth`,
   default radius / 4; `current` m/s eastward about `axis`, default still water). Entities with a `WaterProbeComponent`
   and `WaterSphereContactComponent` get radial depth, the current and (with `WaterBuoyancyComponent`) buoyancy along
-  the radial up; native modules add the probes. Maps without the key register nothing (saves and checksums unchanged).
+  the radial up. `waves` adds a deterministic swell: the surface radius moves by `amplitude * sin(t / period + cycles *
+  dot(up, direction))` turns, so depth, submersion and buoyancy rise and fall with it (the renderer's wave look stays
+  separate). Naval units spawned on such a map get a probe and entry / exit / wake events
+  (`NereidSphereInteractions.h`, the shared `WaterInteractionOutputComponent`, so SpectraFX / ripple bridges read them
+  like plane water). Any other host (shooter, sim, tool) uses the same header: `waterSphereFromJson`,
+  `spawnWaterSpheres`, `attachSphereWaterActor`, or `NativeWaterPipelineConfig::enableSphereWater`. Maps without the
+  key register nothing (saves and checksums unchanged).
 
 ## 2. Cube-sphere surface
 
