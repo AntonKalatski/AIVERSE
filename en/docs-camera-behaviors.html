@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LENS: camera behaviours — AIVERSE</title>
+<meta name="description" content="Camera bodies, rig modes and presets.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../docs-camera-behaviors.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=7413c28eeb">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Docs</a>
+</div>
+<a class="lang-switch" href="../docs-camera-behaviors.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap docs-main">
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html" aria-current="page">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="lens-camera-behaviours-and-presets">LENS camera behaviours and presets<a class="anchor" href="#lens-camera-behaviours-and-presets" aria-label="#">#</a></h1>
+<p>Every view camera in AIVERSE comes from one set of camera bodies (<code>CameraSphereOrbit.h</code> holds the sphere orbit) in <code>engine/render/CameraBehavior.h</code>, and the ECS camera rig (<code>CameraRigComponent</code>, <code>engine/render/CameraRig.h</code>) runs the same math. A project picks a body by the camera block it writes and starts from a named preset; there are no per-game camera classes.</p>
+<div class="table"><table><thead><tr><th>Body</th><th>Block</th><th>What it does</th></tr></thead><tbody><tr><td>overhead</td><td>game.json <code>&quot;camera&quot;</code></td><td>Free map camera: projection, pitch, yaw, lens, zoom limits, pixel-perfect ortho zoom</td></tr><tr><td>follow</td><td>game.json <code>topDown.camera</code>, a map's <code>&quot;camera&quot;</code></td><td>Keeps a focus point in frame: smoothing, look-ahead along the move and the aim, speed zoom, velocity lead, map bounds, lens and clip planes</td></tr><tr><td>chase</td><td>rules / map <code>&quot;camera&quot;: {&quot;chase&quot;: {...}}</code></td><td>Behind and above a heading (vehicles): distance, height, pitch, lead, lens</td></tr><tr><td>first person</td><td>rules / map <code>&quot;camera&quot;: {&quot;firstPerson&quot;: {...}}</code></td><td>Eyes with mouse look: sensitivity (and while aiming), pitch limit, lens</td></tr><tr><td>sphere orbit</td><td>planet maps (<code>engine/render/CameraSphereOrbit.h</code>)</td><td>Orbit over a sphere's surface, zooming out to the whole sphere and the system; parallel-transported heading (no poles), smooth focus changes, a view frame with the focus at the origin</td></tr></tbody></table></div>
+<h2 id="presets">Presets<a class="anchor" href="#presets" aria-label="#">#</a></h2>
+<p><code>engine/render/CameraPresets.h</code> holds the named presets as JSON. A block names one and overrides any key:</p>
+<pre><code class="lang-json">&quot;camera&quot;: {&quot;preset&quot;: &quot;overhead-pixel&quot;}
+&quot;topDown&quot;: {&quot;camera&quot;: {&quot;preset&quot;: &quot;follow-speed&quot;, &quot;distance&quot;: 20}}
+&quot;camera&quot;: {&quot;chase&quot;: {&quot;preset&quot;: &quot;chase-low&quot;}, &quot;firstPerson&quot;: {&quot;preset&quot;: &quot;first-person&quot;, &quot;sensitivity&quot;: 0.0005}}</code></pre>
+<div class="table"><table><thead><tr><th>Preset</th><th>Body</th><th>Framing</th></tr></thead><tbody><tr><td><code>overhead</code></td><td>overhead</td><td>Perspective map camera, 54° pitch, rotatable</td></tr><tr><td><code>overhead-flat</code></td><td>overhead</td><td>Steeper perspective, fixed rotation</td></tr><tr><td><code>overhead-pixel</code></td><td>overhead</td><td>Top-down orthographic, 32 px per cell (sprite games)</td></tr><tr><td><code>overhead-isometric</code></td><td>overhead</td><td>Orthographic 35.264° / 45° (true isometric)</td></tr><tr><td><code>follow</code></td><td>follow</td><td>Third-person top-down follow with stick and aim look-ahead</td></tr><tr><td><code>follow-overhead</code></td><td>follow</td><td>Straight-down follow, short look-ahead</td></tr><tr><td><code>follow-speed</code></td><td>follow</td><td>Straight-down follow that pulls back and leads with speed</td></tr><tr><td><code>follow-telephoto</code></td><td>follow</td><td>Narrow 20° lens from far away, fog scaled to the lens</td></tr><tr><td><code>chase</code></td><td>chase</td><td>The default vehicle camera (11 m behind, 1.4 m up)</td></tr><tr><td><code>chase-low</code></td><td>chase</td><td>Closer and lower, wider lens</td></tr><tr><td><code>first-person</code></td><td>first person</td><td>The default first-person look</td></tr></tbody></table></div>
+<p>Unknown preset names are reported by <code>resolveCameraPreset</code> and the block's own keys are used. Adding a preset is a data change in <code>CameraPresets.h</code>; the keys are those of the body's block.</p>
+<h2 id="studio-and-mcp">Studio and MCP<a class="anchor" href="#studio-and-mcp" aria-label="#">#</a></h2>
+<p><code>lens_camera_presets</code> (MCP / Studio agent) lists every preset with its body and keys, or one by <code>name</code>. The Studio cameras window has a <strong>Follow Body</strong> section: it switches a camera to the follow body and applies any follow preset; the fields stay editable after that.</p>
+<h2 id="ecs-rig-modes">ECS rig modes<a class="anchor" href="#ecs-rig-modes" aria-label="#">#</a></h2>
+<p><code>CameraRigComponent::mode</code>: <code>Static</code>, <code>LookAt</code>, <code>Follow</code>, <code>Orbit</code>, <code>Rail</code>, <code>Chase</code>, <code>FirstPerson</code>. <code>Chase</code> uses <code>distance</code>, <code>pitch</code>, <code>offset.y</code> (height), <code>offset.z</code> (lead) and <code>yaw</code> (turn around the heading); <code>FirstPerson</code> puts the eye at the target plus <code>offset</code> (turning with the target) and looks along the target's +Z with <code>yaw</code> / <code>pitch</code> added. A <code>Follow</code> rig with a <code>CameraFollowComponent</code> (cameras.json <code>&quot;follow&quot;</code> block, presets allowed, <code>&quot;bounds&quot;: [minX, minZ, maxX, maxZ]</code>) runs the follow body itself: angle, distance, smoothing, velocity lead, speed zoom, lens and bounds, the same code as the game follow camera. Shake (<code>CameraShakeComponent</code>) and the physical lens (<code>CameraLensComponent</code>) apply on top of every mode. Test: <code>camera_behavior</code> (presets, every body, ECS Chase / FirstPerson against the view chase camera).</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/camera-behaviors.md">Source on GitHub: docs/camera-behaviors.md</a></p></article><aside class="doc-toc" aria-label="On this page"><span>On this page</span><a class="toc-2" href="#presets">Presets</a><a class="toc-2" href="#studio-and-mcp">Studio and MCP</a><a class="toc-2" href="#ecs-rig-modes">ECS rig modes</a></aside></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+
+</body>
+</html>
