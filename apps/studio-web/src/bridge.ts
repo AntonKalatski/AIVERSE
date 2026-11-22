@@ -47,7 +47,7 @@ window.__aiverseReceive = (message: NativeReply) => {
 
 export const nativeConnected = (): boolean => !!window.webkit?.messageHandlers?.aiverse;
 /** Native window chrome actions (no reply): drag the window from the title bar, zoom on double-click. */
-export function nativeWindowAction(action: 'studio.windowDrag' | 'studio.windowZoom'): void {
+export function nativeWindowAction(action: 'studio.windowDrag' | 'studio.windowZoom' | 'studio.windowMinimize' | 'studio.windowClose'): void {
   const native = window.webkit?.messageHandlers?.aiverse;
   try { native?.postMessage({ id: 0, method: action, params: {} }); }
   catch { /* not in the native host */ }

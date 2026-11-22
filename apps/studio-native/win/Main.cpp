@@ -172,8 +172,10 @@ public:
 
         const UINT dpi = GetDpiForSystem();
         RECT r{0, 0, MulDiv(1440, int(dpi), 96), MulDiv(900, int(dpi), 96)};
-        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
-        main_ = CreateWindowExW(0, kMainClass, L"AIVERSE", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
+        // No WS_CAPTION: the HTML title bar is the window chrome. Thick frame keeps resize.
+        constexpr DWORD kFrame = WS_OVERLAPPED | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN;
+        AdjustWindowRectExForDpi(&r, kFrame, FALSE, 0, dpi);
+        main_ = CreateWindowExW(0, kMainClass, L"AIVERSE", kFrame, CW_USEDEFAULT, CW_USEDEFAULT,
                                 r.right - r.left, r.bottom - r.top, nullptr, nullptr, instance, nullptr);
         if (!main_) { fatal("The main window could not be created"); return 1; }
         for (int i = 0; i < 2; ++i) {
@@ -347,6 +349,8 @@ public:
             return result;
         }
         if (method == "studio.windowZoom") { ShowWindow(main_, IsZoomed(main_) ? SW_RESTORE : SW_MAXIMIZE); return result; }
+        if (method == "studio.windowMinimize") { ShowWindow(main_, SW_MINIMIZE); return result; }
+        if (method == "studio.windowClose") { PostMessageW(main_, WM_CLOSE, 0, 0); return result; }
         // Floating panel windows are macOS-only for now: the UI keeps the tab docked.
         if (method == "studio.windowOpen") { result.set("opened", Json::fromBool(false)); return result; }
         if (method == "studio.windowClose") { result.set("closed", Json::fromBool(false)); return result; }
@@ -370,6 +374,19 @@ public:
         case WM_SIZE:
             s->resizeWeb();
             return 0;
+        case WM_GETMINMAXINFO: {
+            // Without a caption the maximized window would cover the taskbar.
+            HMONITOR mon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO info{sizeof(info)};
+            if (GetMonitorInfoW(mon, &info)) {
+                auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
+                mmi->ptMaxPosition.x = info.rcWork.left - info.rcMonitor.left;
+                mmi->ptMaxPosition.y = info.rcWork.top - info.rcMonitor.top;
+                mmi->ptMaxSize.x = info.rcWork.right - info.rcWork.left;
+                mmi->ptMaxSize.y = info.rcWork.bottom - info.rcWork.top;
+            }
+            return 0;
+        }
         case WM_DPICHANGED: {
             const RECT* r = reinterpret_cast<const RECT*>(lp);
             SetWindowPos(h, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);

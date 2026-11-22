@@ -1,6 +1,11 @@
 /* Approved single-header layout, 2026-11-20. */
 .compact-shell .titlebar {height:44px;padding:0 14px;gap:14px;justify-content:flex-start;background:var(--au-shell-header);box-shadow:none;position:relative;z-index:30}
 .compact-shell--native .titlebar {padding-left:84px}
+.compact-shell--windows .titlebar {padding-left:14px}
+.window-controls{display:flex;align-self:stretch;margin-left:8px}
+.window-controls button{width:46px;border:0;background:transparent;color:var(--au-text);font-size:16px;cursor:pointer}
+.window-controls button:hover{background:var(--au-hover)}
+.window-controls button.is-close:hover{background:#c42b1c;color:#fff}
 .compact-shell .wordmark {gap:9px;flex:none}
 .compact-shell .wordmark strong {font-size:14px;color:var(--au-text)}
 .engine-mark {width:21px;height:21px;object-fit:contain}

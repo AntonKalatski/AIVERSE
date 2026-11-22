@@ -36,8 +36,8 @@ import {
 import './components/FloatingShell.css';
 
 /** Menu shortcut glyph. Windows shows Ctrl; macOS keeps the command mark. */
-const menuShortcut = (key: string) =>
-  (typeof navigator !== 'undefined' && /Win/i.test(navigator.platform + navigator.userAgent) ? 'Ctrl+' : '⌘') + key;
+const windowsHost = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform + navigator.userAgent);
+const menuShortcut = (key: string) => (windowsHost ? 'Ctrl+' : '⌘') + key;
 
 /** Set when this WebView is a floating window (`?window=…&panels=…`), null in the main window. */
 const FLOAT = floatingParams();
@@ -508,7 +508,7 @@ export default function App() {
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;
 
-  return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')+(game?.active?' is-playing':'')}>
+  return <div className={'studio compact-shell'+(windowsHost?' compact-shell--windows':connected?' compact-shell--native':'')+(game?.active?' is-playing':'')}>
     <header className="titlebar"
       onMouseDown={event => {
         // Empty title-bar areas move the native window (like the macOS title bar).
@@ -538,6 +538,11 @@ export default function App() {
       <div className="title-actions">
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
+      {windowsHost && <div className="window-controls">
+        <button type="button" aria-label="Minimize" onClick={() => nativeWindowAction('studio.windowMinimize')}>–</button>
+        <button type="button" aria-label="Maximize" onClick={() => nativeWindowAction('studio.windowZoom')}>□</button>
+        <button type="button" className="is-close" aria-label="Close" onClick={() => nativeWindowAction('studio.windowClose')}>×</button>
+      </div>}
       </div>
       </div>
     </header>
