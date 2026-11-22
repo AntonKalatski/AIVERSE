@@ -142,6 +142,13 @@ Unknown fields, duplicate IDs, broken edges and invalid integer values are rejec
   collision sweep lets the body fall through. `oneWaySupports(top, previousFeet, feet, vy, ignoreOneWay)`
   is the owner's landing test: only from above, not while rising, not during drop-through.
 
+- **Glide (0.3.0):** airborne, falling, no wall, `jumpHeld` (a level, not the jump press): fall speed is capped at
+  glideFallSpeed and the body moves at glideForwardSpeed along wish (or `facing`). Ends on release, ground or a wall.
+- **Same wall (0.3.0):** `env.wallId` (0 = unknown) blocks the wall the body just jumped off for wallReattachTicks and
+  a wall whose run timed out until the body lands; `env.wallRunnable=false` walls only allow sliding.
+- **Actor host:** rules `locomotion` drives engine/actor characters through this machine with client prediction
+  (docs/fps.md § Locomotion modes). The earlier separate traversal-moves package was folded in here (one owner).
+
 All moves need their own input edge or environment report, so 0.2.0 callers behave bit-identically; the
 0.2.0 configuration hash and state hash are unchanged while the new fields keep their defaults (the
 test pins the 0.2.0 configuration hash).
