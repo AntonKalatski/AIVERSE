@@ -45,6 +45,7 @@ out vec3 v_wpos;
 out vec3 v_col;
 out vec2 v_uv;
 out vec4 v_splat;
+out float v_sea;
 void main() {
     vec3 wp = (p_model * vec4(a_pos, 1.0)).xyz;
     vec3 wm = (p_model * vec4(a_morph, 1.0)).xyz;
@@ -52,6 +53,7 @@ void main() {
     float k = clamp((dist - p_morph.x) / max(p_morph.y - p_morph.x, 0.001), 0.0, 1.0);
     wp = mix(wp, wm, k);
     vec3 n = mat3(p_model) * a_nrm;
+    v_sea = length(wp - p_body.xyz) - p_morph.z;   // ground height above the sea (ocean: shoreline cut per pixel)
     if (p_morph.w > 0.5) { // ocean: the same chunk projected onto the sea sphere
         n = normalize(wp - p_body.xyz);
         wp = p_body.xyz + n * p_morph.z;
@@ -86,6 +88,7 @@ in vec3 v_wpos;
 in vec3 v_col;
 in vec2 v_uv;
 in vec4 v_splat;
+in float v_sea;
 out vec4 o_color;
 
 #if PLANET_TIER >= 1
@@ -96,6 +99,8 @@ void main() {
     vec3 n = normalize(v_nrm);
     vec3 up = normalize(v_wpos - p_body.xyz);
     bool ocean = p_morph.w > 0.5;
+    // ocean: only where the ground is under the sea; the coast follows the height, not the chunk
+    if (ocean && v_sea > 0.0) discard;
     vec3 albedoS = ocean ? p_water.rgb : v_col;
 #if PLANET_DETAIL
     // per-pixel normal of the detail grid (body-local in the atlas), cavity darkens hollows
@@ -143,6 +148,7 @@ void main() {
     col = rtsToneScene(col, u_skyColor.w > 0.5);
     vec3 outc = rtsEncodeScene(col);
     float alpha = ocean ? mix(p_water.a, 1.0, pow(1.0 - max(dot(n, V), 0.0), 4.0)) : 1.0;
+    if (ocean) alpha *= mix(0.35, 1.0, smoothstep(0.0, -0.35, v_sea));   // shallow water near the coast
     if (p_opts.z > 0.5) {
         vec2 uv = v_uv;
         if (p_fogColor.w > 0.5) uv = (floor(uv * p_fog.zw) + 0.5) / p_fog.zw;
@@ -164,7 +170,7 @@ struct VIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 co
              float2 duv [[attribute(6)]];
 #endif
 };
-struct VOut { float4 pos [[position]]; float3 nrm; float3 wpos; float3 col; float2 uv; float4 splat; float2 duv; };
+struct VOut { float4 pos [[position]]; float3 nrm; float3 wpos; float3 col; float2 uv; float4 splat; float2 duv; float sea; };
 vertex VOut vs_main(VIn in [[stage_in]], constant PU0& u [[buffer(1)]], constant U1& f [[buffer(2)]]) {
     VOut o;
     float3 wp = (u.model * float4(in.pos, 1.0)).xyz;
@@ -173,6 +179,7 @@ vertex VOut vs_main(VIn in [[stage_in]], constant PU0& u [[buffer(1)]], constant
     float k = clamp((dist - u.morph.x) / max(u.morph.y - u.morph.x, 0.001), 0.0, 1.0);
     wp = mix(wp, wm, k);
     float3 n = (u.model * float4(in.nrm, 0.0)).xyz;
+    o.sea = length(wp - u.body.xyz) - u.morph.z;   // ground height above the sea (ocean: shoreline cut per pixel)
     if (u.morph.w > 0.5) {
         n = normalize(wp - u.body.xyz);
         wp = u.body.xyz + n * u.morph.z;
@@ -210,6 +217,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant PU0& u [[buffer(1)]], con
     float3 n = normalize(in.nrm);
     float3 up = normalize(in.wpos - u.body.xyz);
     bool ocean = u.morph.w > 0.5;
+    if (ocean && in.sea > 0.0) discard_fragment();
     float3 albedoS = ocean ? u.water.rgb : in.col;
 #if PLANET_DETAIL
     float4 dt = tex3.sample(s3, in.duv);
@@ -256,6 +264,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant PU0& u [[buffer(1)]], con
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = rtsEncodeScene(col);
     float alpha = ocean ? mix(u.water.a, 1.0, pow(1.0 - max(dot(n, V), 0.0), 4.0)) : 1.0;
+    if (ocean) alpha *= mix(0.35, 1.0, smoothstep(0.0, -0.35, in.sea));   // shallow water near the coast
     if (u.opts.z > 0.5) {
         float2 uv = in.uv;
         if (u.fogColor.w > 0.5) uv = (floor(uv * u.fog.zw) + 0.5) / u.fog.zw;
