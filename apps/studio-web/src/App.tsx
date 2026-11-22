@@ -88,12 +88,12 @@ export default function App() {
     entity: StudioEntity; inspector: StudioInspector | null;
   } | null>(null);
   useEffect(() => {
-    // CSS zoom scales the entire web layout, including dialogs and dock tabs.
-    // The native viewport continues using getBoundingClientRect() screen pixels.
-    document.documentElement.style.zoom = String(uiScale);
-    window.dispatchEvent(new Event('resize'));
+    // Scale type, not the page. CSS zoom grew the layout past the monitor and
+    // moved the native scene view, which is placed from unzoomed CSS pixels.
+    document.documentElement.style.zoom = '';
+    document.documentElement.style.setProperty('--au-ui-scale', String(uiScale));
     window.localStorage.setItem('aiverse.studio.uiScale', String(uiScale));
-    return () => { document.documentElement.style.zoom = ''; };
+    return () => { document.documentElement.style.removeProperty('--au-ui-scale'); };
   }, [uiScale]);
 
   // Store browser-only layout (not engine state) with bounded write frequency.
