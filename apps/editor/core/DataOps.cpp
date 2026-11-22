@@ -9,7 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include "modules/rts/RtsScript.h"
+#include "engine/game/Script.h"
 
 namespace fs = std::filesystem;
 

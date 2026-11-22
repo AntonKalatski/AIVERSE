@@ -158,7 +158,7 @@ int main() {
     AIVERSE_TEST_CHECK(std::abs(resumedPlayer->instance->stateTime()-.1f)<.0001f);
 
     // Scene compositor is now invoked through canonical View rather
-    // than the historical RtsView host. Keep submitted order and exactly
+    // than the historical GameView host. Keep submitted order and exactly
     // one execution of each layer, with disabled layers never invoked.
     view::ViewLayerQueue layers;
     std::vector<int> drawOrder;

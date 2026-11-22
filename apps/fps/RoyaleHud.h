@@ -9,7 +9,7 @@
 #include "third_party/imgui/imgui.h"
 #include <cmath>
 #include <string>
-namespace aiverse::fps::view {
+namespace aiverse::actor::view {
 // Wall segments of the current circle within `reach` metres of the viewer (the rest is too far to matter).
 template<class Visual>
 void drawZoneWall(render::Renderer3D& renderer,const render::Mesh& cube,const RoyaleView& v,Vec3 viewer,world::Cell origin,Visual visual,float reach=400){

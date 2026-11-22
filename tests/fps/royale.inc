@@ -10,10 +10,10 @@ void royale() {
     auto map=Json::parse(R"({"players":[{"team":1,"bot":true},{"team":1,"bot":true},{"team":2,"bot":true},{"team":2,"bot":true}],
       "spawns":[[-50,0.01,-50],[-40,0.01,-50],[50,0.01,50],[40,0.01,50]],"colliders":[{"id":1,"min":[-1000,-2,-1000],"max":[1000,0,1000]}]})");
     auto bad=rules;bad.member("fps").set("mode",Json::string("deathmatch"));
-    try{fps::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.royale: requires")!=std::string::npos);}
+    try{actor::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.royale: requires")!=std::string::npos);}
     auto sim=simulation(rules,map),twin=simulation(rules,map);
     auto& s=state(*sim);CHECK(s.royale.enabled&&s.royale.divers.size()==4&&character(*sim,1).pos.y==100_fx);
-    auto& module=static_cast<fps::Module&>(sim->module());
+    auto& module=static_cast<actor::Module&>(sim->module());
     auto view=module.royaleView(*sim,1);CHECK(view.enabled&&view.divePhase==0&&view.alive==4&&view.teamsIn==2&&view.target.radius==300_fx);
     // snapshot round trip carries the royale view
     net::authority::Snapshot snap;snap.tick=1;snap.localSlot=1;snap.characters={fpsModule(*sim).snapshot(*sim,1)};snap.royale=view;

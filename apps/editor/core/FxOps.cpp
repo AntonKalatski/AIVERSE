@@ -12,7 +12,7 @@
 #include <set>
 #include <stdexcept>
 #include "engine/fx/ParticleSystem.h"
-#include "modules/rts/fx/RtsFx.h"
+#include "engine/fx/GameFx.h"
 
 namespace fs = std::filesystem;
 
@@ -89,7 +89,7 @@ struct Loader {
 
 std::vector<std::string> bindingWarnings(const Workspace& ws, const Json& bank) {
     Loader l(ws);
-    game::RtsFx bridge;
+    game::GameFx bridge;
     std::string err;
     std::vector<std::string> w;
     if (!bridge.init(l.ps, ws.project.rules, bank, &err)) w.push_back(err);
@@ -283,7 +283,7 @@ void registerFxOps(Workspace& ws) {
     });
 
     add("fx_get", "Read an effect (name without .json; 'fx' = the event bindings): raw text and the parsed JSON. Format: engine/fx/FxEffect.h "
-        "(top comment lists every key incl. trails, sub-emitters, noise, lights), bindings: modules/rts/fx/RtsFx.h.",
+        "(top comment lists every key incl. trails, sub-emitters, noise, lights), bindings: engine/fx/GameFx.h.",
         R"({"properties": {"name": {"type": "string"}}, "required": ["name"]})", [&ws](const Json& p) {
         needGame(ws);
         const std::string n = needName(p);

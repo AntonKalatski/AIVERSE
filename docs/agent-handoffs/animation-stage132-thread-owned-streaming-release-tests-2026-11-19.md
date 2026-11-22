@@ -64,5 +64,5 @@ For the death fixtures, verify parent reports normal success when its children d
 1. **Run and fix** the native test target first, especially POSIX child spawning, RelWithDebInfo checks and the owner-thread insertion contract. Attach actual logs and compiler warnings.
 2. Audit all remaining model-cache mutation and access entry points for render-owner-thread consistency, including host streaming publication and source detach paths; do not introduce a false global thread-safety guarantee.
 3. Resolve PR-base divergence with a deliberate reviewed merge plan, keeping feature branch isolated from other agents until validated.
-4. Finish any remaining universal View/RtsView migration and run full FPS/RTS/editor visual parity and benchmarks before marking PR #22 ready.
+4. Finish any remaining universal View/GameView migration and run full FPS/RTS/editor visual parity and benchmarks before marking PR #22 ready.
 5. Append a separate Stage 133 handoff with actual test results, exact code SHAs, limitations and next step. Update `AGENTS.md` and `docs/agent-handoffs/animation-universal.md`.

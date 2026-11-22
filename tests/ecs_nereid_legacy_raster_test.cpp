@@ -1,5 +1,5 @@
 // NEREID stage 5: read-only legacy waterNetwork raster parity, native ECS.
-#include "modules/rts/view/NereidLegacyWaterAdapter.h"
+#include "engine/view/game/NereidLegacyWaterAdapter.h"
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <iostream>
 #include <memory>

@@ -1,6 +1,6 @@
-// Driving (rules "driving", RtsDriving.h): getting in / out, pedals from the hero's stick, walls, crash damage,
+// Driving (rules "driving", Driving.h): getting in / out, pedals from the hero's stick, walls, crash damage,
 // running people over, car against car, wrecks, determinism, saves and rollback snapshots.
-#include "modules/rts/RtsDriving.h"
+#include "engine/game/Driving.h"
 
 namespace {
 const char* kDrivingRules = R"J({

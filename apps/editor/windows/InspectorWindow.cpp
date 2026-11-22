@@ -79,9 +79,9 @@ public:
         ImGui::Separator();
         ImGui::Spacing();
         switch (s.kind) {
-            case Selection::FpsObject:
-            case Selection::FpsActor:
-            case Selection::FpsRuntimeObject:
+            case Selection::ActorObject:
+            case Selection::ActorActor:
+            case Selection::ActorRuntimeObject:
             case Selection::Entity:
             case Selection::Live: details_.draw(ed); break;   // «Детали»: one or many world objects
             case Selection::MapBlock: mapJson(ed, s.key, ICON_BRACES, s.key, "Блок карты (JSON)"); break;
@@ -113,7 +113,7 @@ private:
     }
     static ImVec4 ownerColor(int owner) {
         if (owner <= 0) return ImVec4(0, 0, 0, 0);   // accent
-        const render::float4 c = game::RtsView::playerColor(owner);
+        const render::float4 c = game::GameView::playerColor(owner);
         return ImVec4(c.x, c.y, c.z, 1);
     }
 

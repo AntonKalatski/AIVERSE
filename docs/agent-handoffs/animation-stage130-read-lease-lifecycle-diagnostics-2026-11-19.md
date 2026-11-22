@@ -24,7 +24,7 @@ Previous: [Stage 129](animation-stage129-model-cache-read-leases-2026-11-19.md)
 4. `212f51f16aee589eb10b533ff6ffdd0e3f16a66c` —
    `ModelResourceCache.h`: `modelReadSafetyStats()` returns `ModelReadSafetyStats { activeReaders, peakReaders, blockedMutations }`. Every failed `requireNoModelReaders` increments `blockedMutations` BEFORE throwing `logic_error`. Counts all mutation attempts that are prohibited while leases are active: `invalidateSources`, `replace`, `trimUnused`, `shutdown`; do not interpret the count as successfully completed evictions or unique Model objects.
 5. `125ff30330c6a4d020394bab3298bed5b9e57ac6` —
-   `modules/rts/view/RtsView.h`: forwards Model cache reader diagnostics to RTS/editor via `modelReadSafetyStats()`, without affecting the engine-level View or simulation ECS.
+   `engine/view/game/GameView.h`: forwards Model cache reader diagnostics to RTS/editor via `modelReadSafetyStats()`, without affecting the engine-level View or simulation ECS.
 6. `ab343fa48d639ddfafef6aaca84af3451c980ea3` and
    `ccb8f54ee3a9d1f312606a806855f9b273f7488c` —
    `apps/editor/windows/StatsWindow.cpp`: the Editor reports active/peak Model read guards and cumulative denied cache mutations, with terminology that covers replacement, invalidation, trim and shutdown, not just eviction.
@@ -55,7 +55,7 @@ The cache's `RenderDeviceLifetime::Lease` remains separate from this reader guar
 - NOT RUN: native checkout/build/C++ compiler/linker/CMake, CTest/CI, real GPU Metal/Vulkan/GL, FPS/RTS/editor visual parity, GPU fence failure injection, ownership/rebind and thread-exit tests, ASan/TSan/UBSan or frame-time benchmarks. Source is UNVERIFIED FOR COMPILATION OR RUNTIME.
 - Destruction of a live ModelReadLease on a different thread, and cache destruction while readers remain, deliberately terminate the process. Test these cases in isolated/subprocess fixture (never inside the primary Test runner).
 - Counters are cumulative for the current ModelResourceCache instance and atomic. No automatic reset is performed at device shutdown; a new owner can inspect historical blocked attempts and peak readers.
-- `RtsView::draw` still holds a coarse guard after its upfront synchronous type load. Callbacks performing eviction during the guard now get exceptions: validate the full streaming and editor pipeline during GPU parity tests.
+- `GameView::draw` still holds a coarse guard after its upfront synchronous type load. Callbacks performing eviction during the guard now get exceptions: validate the full streaming and editor pipeline during GPU parity tests.
 - The PR base `feature/universal-entity-inspector-fps` is divergent from this feature branch: investigate and resolve with proper ownership before merging. Being 0 behind `main` is NOT sufficient proof of readiness.
 
 ## Exact next Stage 131

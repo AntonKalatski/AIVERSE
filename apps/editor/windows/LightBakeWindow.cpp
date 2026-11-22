@@ -21,7 +21,7 @@
 #include "engine/bake/SceneBuilder.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/BakedLighting.h"
-#include "modules/rts/view/RtsLights.h"
+#include "engine/view/game/GameLights.h"
 
 namespace aiverse::editor {
 
@@ -216,10 +216,10 @@ private:
         const MapDoc& doc = ed.doc();
         // map lights marked "bake": mixed / baked
         const Json mapJson = doc.toJson();
-        auto lights = game::RtsLights::parseMapLights(mapJson["lights"]);
+        auto lights = game::GameLights::parseMapLights(mapJson["lights"]);
         for (const auto& ml : lights) {
             if (!ml.bake) continue;
-            const PointLight p = game::RtsLights::glowLight(ml, {ml.x, ed.view().heightAt(grid, ml.x, ml.z), ml.z}, 0, 1, 0, 0);
+            const PointLight p = game::GameLights::glowLight(ml, {ml.x, ed.view().heightAt(grid, ml.x, ml.z), ml.z}, 0, 1, 0, 0);
             bake::BakeLight bl;
             bl.pos = p.pos; bl.color = p.color * p.intensity; bl.radius = p.radius;
             bl.dir = p.dir; bl.cosOuter = p.cosOuter; bl.cosInner = p.cosInner;

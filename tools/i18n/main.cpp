@@ -10,7 +10,7 @@
 #include "engine/data/JsonCompose.h"
 #include "engine/i18n/GameLanguage.h"
 #include "engine/i18n/Localization.h"
-#include "modules/rts/RtsLocalize.h"
+#include "engine/game/Localize.h"
 
 #include <cctype>
 #include <cstdio>
@@ -208,7 +208,7 @@ int extract(const Game& g, const std::string& tagIn, bool write) {
     if (existing.isObject()) have.merge(existing);
 
     std::ostringstream o;
-    o << "// " << g.manifest.getStr("name") << " — " << tag << ". Keys: see modules/rts/RtsLocalize.h.\n{\n";
+    o << "// " << g.manifest.getStr("name") << " — " << tag << ". Keys: see engine/game/Localize.h.\n{\n";
     std::string self = have.meta().count("@language") ? have.meta().at("@language") : std::string();
     std::vector<std::string> lines;
     if (!self.empty()) lines.push_back("  \"@language\": " + quote(self));

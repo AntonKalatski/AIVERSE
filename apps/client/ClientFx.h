@@ -5,18 +5,18 @@
 #include <cstdio>
 #include <string>
 #include "engine/render/Renderer3D.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/game/GameView.h"
 namespace aiverse::client {
 class ClientFx {
 public:
     void setGpuDeviceLease(render::RenderDeviceLifetime::Lease) {}
     void init(gfx::Device&, const game::Rules&) {}
     void shutdown() {}
-    void startMatch(Simulation&, uint8_t, const game::RtsView&, const game::MapGrid&) {}
+    void startMatch(Simulation&, uint8_t, const game::GameView&, const game::MapGrid&) {}
     void configureEntityEffects(const Json&, const Json&) {}
     void stopMatch() {}
-    void setPlanetView(const game::RtsView*) {}
-    void update(Simulation&, const game::RtsScene&, const render::Camera&, const render::mat4&, int, int, float) {}
+    void setPlanetView(const game::GameView*) {}
+    void update(Simulation&, const game::GameScene&, const render::Camera&, const render::mat4&, int, int, float) {}
     void addLights(render::LightSystem&) {}
     void prepareGpuFrame(float, const render::Camera&) {}
     void renderGpu(const render::mat4&, const render::Camera&) {}
@@ -44,8 +44,8 @@ public:
 #include <unordered_set>
 #include "engine/render/Renderer3D.h"
 #include "engine/render/TextureCache.h"
-#include "modules/rts/fx/RtsFx.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/fx/GameFx.h"
+#include "engine/view/game/GameView.h"
 
 namespace aiverse::client {
 
@@ -56,7 +56,7 @@ public:
     }
     void init(gfx::Device& dev, const game::Rules& rules);
     void shutdown();
-    void startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& view, const game::MapGrid& grid);
+    void startMatch(Simulation& sim, uint8_t viewer, const game::GameView& view, const game::MapGrid& grid);
     // Data-declared entity effects (shared SpectraFxEntityEffects): rules /
     // map "spectraFx" blocks and inline "spectraFx" on rules types (selector
     // "type:<id>"), their weapons ("weapon:<id>") and abilities
@@ -64,10 +64,10 @@ public:
     void configureEntityEffects(const Json& rulesJson, const Json& map);
     const fx::SpectraFxEntityEffects& entityEffects() const { return entities_; }
     void stopMatch();
-    // Planet maps: particles in the camera body's local space (RtsView::planetFxSpace); call before update().
-    void setPlanetView(const game::RtsView* view);
+    // Planet maps: particles in the camera body's local space (GameView::planetFxSpace); call before update().
+    void setPlanetView(const game::GameView* view);
     // After Renderer3D::beginScene (needs its viewProj); dt = 0 while paused.
-    void update(Simulation& sim, const game::RtsScene& scene, const render::Camera& cam, const render::mat4& viewProj,
+    void update(Simulation& sim, const game::GameScene& scene, const render::Camera& cam, const render::mat4& viewProj,
                 int fbW, int fbH, float dt);
     // After update(), before Renderer3D::render(): lights carried by particles ("light" module).
     void addLights(render::LightSystem& lights);
@@ -133,7 +133,7 @@ private:
         std::deque<Event> pending;
     };
     bool ensureGpuPlayback(gfx::Device& dev);
-    void presentEntityEffects(Simulation& sim, const game::RtsScene& scene, float dt);
+    void presentEntityEffects(Simulation& sim, const game::GameScene& scene, float dt);
     int entityRule(uint64_t key, const std::vector<std::string>& selectors);
     fx::SpectraFxEntityEffects entities_;
     std::unordered_map<uint64_t,int> entityRules_;
@@ -141,12 +141,12 @@ private:
     const game::Rules* rules_ = nullptr;
     gfx::Device* dev_ = nullptr;
     fx::ParticleSystem ps_;
-    game::RtsFx bridge_;
+    game::GameFx bridge_;
     render::TextureCache textures_;   // sprite textures of effects: the same loader (and atlas) as sprites
     bool attached_ = false;
     std::vector<fx::FxPointLight> lightBuf_;
     bool preparedLightsValid_ = false;
-    const game::RtsView* planet_ = nullptr;   // planet maps: the view placing effects (null on flat maps)
+    const game::GameView* planet_ = nullptr;   // planet maps: the view placing effects (null on flat maps)
     int planetBody_ = -1;
     render::mat4 space_;
 };

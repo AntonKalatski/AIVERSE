@@ -9,9 +9,9 @@ animation note appended to `docs/agent-handoffs/animation-universal.md`.
 
 | # | Sev | Status | Commit | Files |
 |---|---|---|---|---|
-| 1 | HIGH | FIXED | 52c7e66 | modules/rts/view/RtsLook.cpp |
+| 1 | HIGH | FIXED | 52c7e66 | engine/view/game/GameLook.cpp |
 | 2 | MED | FIXED | 02802c6 | engine/render/Prisma.{h,cpp} |
-| 3 | MED/PERF | FIXED (immediate-publish path); capture-mode repeats DEFERRED | bcde4bf | modules/rts/view/RtsView.{h,cpp} |
+| 3 | MED/PERF | FIXED (immediate-publish path); capture-mode repeats DEFERRED | bcde4bf | modules/rts/view/GameView.{h,cpp} |
 | 4 | MED/PERF | FIXED | c0c1331 | engine/view/View.h, tests/view/packets.cpp |
 | 5 | LOW | FIXED | 50538fb | tests/view/camera_lod.cpp |
 | 6 | LOW/PERF | FIXED | 89f9e2e | modules/rts/view/RtsRoadView.{h,cpp} |
@@ -31,16 +31,16 @@ Details:
    `setQuality()` change or `init()` retries. `fallbackReason` = "HDR target allocation failed: <lastError>".
 3. `stageSurfaceFrame(..., fingerprint)`; `publishSurfaceFrame` stages with `false` (lease is published
    at once and marked `!fingerprinted`, so `matches()` can never accept it). DEFERRED: LENS capture-mode
-   `matches()` (prewarm consume + draw-end guard) still runs full fingerprints; MapGrid / RtsScene have no
+   `matches()` (prewarm consume + draw-end guard) still runs full fingerprints; MapGrid / GameScene have no
    revision counters (sim side, outside this area).
 4. `View::scheduler_` is a `shared_ptr<SharedScheduler>` shared with `cloneForPreparation()` candidates
    (scheduler holds only threads + per-frame scratch). Atomic `busy` flag: a concurrent second update takes a
-   private scheduler instead of re-entering. Additive diagnostic `View::sharesAnimationScheduler()`. RtsView
+   private scheduler instead of re-entering. Additive diagnostic `View::sharesAnimationScheduler()`. GameView
    unchanged.
 5. `AIVERSE_TEST_CHECK` + try/catch main.
 6. `PropModel::borrowed` (non-owning) + `get()`; candidate sees the owner's props via `propSource_`
    during `buildUnpublished`; `commitRebuild` moves ownership of borrowed Models; draw skips null.
-   Same pattern in `RtsShoreView` (not in this area) -> follow-up.
+   Same pattern in `GameShoreView` (not in this area) -> follow-up.
 7. `View::update` builds sources and runs `bridge_.sync` (which preflights the whole batch before World
    mutation) before resetting stats / frameStamp_ / lodState_.
 8. `composite()` takes an optional precomputed key; `resolve()` dumps the graph once. No graph revision exists.
@@ -50,8 +50,8 @@ Details:
 
 ## Verification actually run
 - `g++ -std=c++20 -fsyntax-only -Wall -Wextra -I. -Iengine -Ilibraries/include -Ithird_party [-Ithird_party/imgui]` on
-  RtsLook.cpp, Prisma.cpp, RtsView.cpp, RtsAnimate.cpp, RtsRoadView.cpp, RtsRoadKit.cpp, RtsShoreView.cpp: no errors;
-  only pre-existing warnings (RtsView.cpp: 3 before and after).
+  GameLook.cpp, Prisma.cpp, GameView.cpp, GameAnimate.cpp, RtsRoadView.cpp, RtsRoadKit.cpp, GameShoreView.cpp: no errors;
+  only pre-existing warnings (GameView.cpp: 3 before and after).
 - Scratch targeted build (not a full build): `cmake -S . -B /tmp/pv_build -G Ninja -DCMAKE_BUILD_TYPE=Release
   -DAIVERSE_BUILD_TESTS=ON`, then `ninja` of 18 targets only and run each:
   aiverse_motionweave_{api,worker,hybrid,cost,backend,cache,worker_reuse,parallel_rig,phase,source_bridge,action_edges}_tests,
@@ -63,7 +63,7 @@ Details:
   with no reports; old header hangs (timeout 10 s, rc 124).
 
 ## UNVERIFIED
-- Full build, full CTest, editor/client runtime, Metal/GPU behaviour. No runtime test of #1 (RtsView reload, needs
+- Full build, full CTest, editor/client runtime, Metal/GPU behaviour. No runtime test of #1 (GameView reload, needs
   tests/deferred_loading.cpp with the full runtime), #2 (Prisma needs the runtime library), #3, #6 (tests/tests.cpp),
   #8. No shader changes were made.
 
@@ -72,6 +72,6 @@ No new test files; nothing to register (all regression checks were added to alre
 
 ## Next step
 Integrator: merge, full build + CTest on KINGSTON (watch view_*, motionweave_*, deferred_loading, the core road
-tests in tests/tests.cpp). Follow-ups: revision counters for MapGrid/RtsScene to drop capture-mode fingerprints (#3);
-shader-graph revision for the composite key (#8); prop borrowing in RtsShoreView (#6); pre-existing
+tests in tests/tests.cpp). Follow-ups: revision counters for MapGrid/GameScene to drop capture-mode fingerprints (#3);
+shader-graph revision for the composite key (#8); prop borrowing in GameShoreView (#6); pre-existing
 motionweave_backend_phase_transfer failure.

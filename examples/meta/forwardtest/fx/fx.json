@@ -1,4 +1,4 @@
-// Visual effects for "Iron and Gold": which effect plays for which event (see modules/rts/fx/RtsFx.h).
+// Visual effects for "Iron and Gold": which effect plays for which event (see engine/fx/GameFx.h).
 // Every effect is a file next to this one (fx/<name>.json). They only use the built-in particle
 // textures (builtin:soft|spark|ring|smoke), so the example ships no images.
 {

@@ -5,7 +5,7 @@
 // the host must make the same chunks resident again (unpark edited ones, regenerate the rest) before the next
 // tick; then hash() equals the saved world's hash.
 #include "VoxelWorld.h"
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 namespace aiverse::lib::systems {
 inline constexpr std::int64_t kVoxelWorldRecord=120;
 inline void voxelPackBytes(std::vector<std::int64_t>& out,const std::vector<std::uint8_t>& b){

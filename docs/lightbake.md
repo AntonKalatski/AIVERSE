@@ -94,7 +94,7 @@ other file). Settings live in the map's `"bake"` block.
 - Models: automatic (`Renderer3D::drawModel`, `ModelShaders.h` variants `LIGHTMAP` / `PROBES`).
 - Terrain and other custom lit shaders: `AIVERSE_GLSL_BAKED_TERRAIN(block, lmTex, maskTex)` /
   `AIVERSE_MSL_BAKED_TERRAIN` (`engine/render/BakedShaders.h`) and `Renderer3D::bindBakedTerrain(uniformSlot,
-  lightmapSlot, maskSlot)`; the flat terrain (`RtsTerrainShaders.h`) uses U3 + tex19 / tex20. The baker's
+  lightmapSlot, maskSlot)`; the flat terrain (`GameTerrainShaders.h`) uses U3 + tex19 / tex20. The baker's
   terrain covers [0, w] × [0, h] of the map.
 
 ## Example (templates/showcase, valley)

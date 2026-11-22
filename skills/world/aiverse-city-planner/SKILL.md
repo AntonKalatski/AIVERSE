@@ -6,11 +6,11 @@ description: Generate an AIVERSE city map for any project with the map generator
 # City planner (generator preset `city`)
 
 Use when a project needs a whole city laid out procedurally. The generator writes the flat grid map format of the
-legacy `modules/rts` host (`modules/rts/gen`); other map formats are debt G2/G3 in `docs/no-genre-split-audit.md`. Hand-made spline roads are
+legacy `modules/rts` host (`engine/game/gen`); other map formats are debt G2/G3 in `docs/no-genre-split-audit.md`. Hand-made spline roads are
 `skills/world/aiverse-roads`; spline water `skills/world/aiverse-water`; city systems on top (commerce, careers,
 arsenal) `skills/gameplay/aiverse-city-economy`; traffic and heroes `skills/gameplay/aiverse-special-modes`.
 
-Authority: `docs/city-planner.md`. Code: `modules/rts/gen/GenCity.cpp`.
+Authority: `docs/city-planner.md`. Code: `engine/game/gen/GenCity.cpp`.
 
 1. The planner takes building, tree, prop and car types from the game's own rules (see the doc's "What it takes
    from the rules"); add types first, then generate.

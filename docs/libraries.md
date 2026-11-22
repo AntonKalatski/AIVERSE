@@ -15,7 +15,7 @@ target_link_libraries(aiverse_native_my_game PRIVATE AIVERSE::libraries)
 In `<project>/native/MyGame.cpp`:
 
 ```cpp
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <aiverselib/Graphs.h>
 
 // For example, inside setup():
@@ -118,7 +118,7 @@ aiversebuild remain separate tasks.
 On macOS/AppleClang: standalone compilation of all headers with -Wall -Wextra -Werror, C++ unit tests (Release),
 ASan/UBSan, an external native object target through the real engine CMake and the relocatable source-export layout.
 CLI pin/verify detects mismatches. The headless build was fixed: C++ headers and helpers moved out of extern "C" in
-RtsScriptIeee.cpp. The native example passed snapshot, serialized and fresh-serialized restoration over 200 ticks; the
+ScriptIeee.cpp. The native example passed snapshot, serialized and fresh-serialized restoration over 200 ticks; the
 standard check_headless_restore.py passed too. All 26 templates with seed=3 finished without crashes: 25 with a winner,
 fourages hit the 1800 game-second limit without a winner. Full aiverse_tests: 5771 checks, 0 failures; the AppleClang
 build has no warnings. Windows, Metal, iOS, Android and web checks have not been run yet.

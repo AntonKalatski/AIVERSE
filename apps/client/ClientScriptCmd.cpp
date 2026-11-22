@@ -1,12 +1,12 @@
 // Script commands (rules "commands", docs/scripting.md § Script commands) in the client: a command card
 // section for the selection, hotkeys, target picking for the first point / unit argument, and the
 // commands view scripts send with view.send. Everything goes out as kCmdScript through issue(); the
-// simulation validates it again (RtsScriptCommands.cpp).
+// simulation validates it again (ScriptCommands.cpp).
 #include <algorithm>
 #include <cstdio>
 
 #include "GameClient.h"
-#include "modules/rts/RtsScript.h"
+#include "engine/game/Script.h"
 
 namespace aiverse::client {
 

@@ -102,7 +102,7 @@ Previous warm sample agrees: objects=8.824, state=1.432, animate=2.113, drawObje
 
 ## Latest animation CPU optimization (commit `3a03f93`)
 
-In `modules/rts/view/RtsAnimate.cpp`, computing procedural ground normal used four `heightAt` calls and a rotation even when the model had no procedural modifiers. The calculation now runs only when `!ch.procs.empty() && !st.graph.hasContacts()`, the same condition that consumes `ProcInputs` in `applyProcedural`. The previously resolved `kingstonStride` is also reused during pose correction instead of a repeated FX map lookup. **No animation states or idle clips are skipped.**
+In `engine/view/game/GameAnimate.cpp`, computing procedural ground normal used four `heightAt` calls and a rotation even when the model had no procedural modifiers. The calculation now runs only when `!ch.procs.empty() && !st.graph.hasContacts()`, the same condition that consumes `ProcInputs` in `applyProcedural`. The previously resolved `kingstonStride` is also reused during pose correction instead of a repeated FX map lookup. **No animation states or idle clips are skipped.**
 
 Benchmark warm `[view-objects]` `animate` and `[view-stages]` `objects` against the previous ~2.1 ms and ~8.6 ms, with 14,772 objects. This change has not yet been compiled or measured on the owner's Mac; do not assert a performance win before checking. Keep testing programmable graphs, procedural models, contacts, foot IK and weapon poses.
 
@@ -114,13 +114,13 @@ The next most promising targets are `drawObject` (~2.2 ms), remaining ~3 ms of t
 
 ## Latest drawObject fast path (commit `5c8d3bc`)
 
-In `modules/rts/view/RtsViewDraw.cpp`, the attachments/effect-anchor block previously calculated `stateBits()` even when a model had neither attachments nor effects. The block now executes only when `!ch.attach.empty()` or a relevant `show->fx` list is nonempty. This preserves state calculation and effect submission for models that actually consume it, including stage choices and tint overrides. It does **not** skip `animate`, `stateFor`, `r.drawModel`, or any geometry.
+In `engine/view/game/GameViewDraw.cpp`, the attachments/effect-anchor block previously calculated `stateBits()` even when a model had neither attachments nor effects. The block now executes only when `!ch.attach.empty()` or a relevant `show->fx` list is nonempty. This preserves state calculation and effect submission for models that actually consume it, including stage choices and tint overrides. It does **not** skip `animate`, `stateFor`, `r.drawModel`, or any geometry.
 
 This is a targeted low-risk optimization, **not yet benchmarked or compiled on the owner's Mac**. Compare warm `[view-objects]` drawObject (~2.1–2.2 ms baseline), `[view-stages]` objects (~7.6–7.8 ms), and full `[scene-stages]` view (~9.6–10.0 ms). Test attachments, weapons, FX anchors and staged model choices visually. If no gain, focus on the remaining uninstrumented ~3 ms object-loop cost; avoid broad static caching until invalidation rules are defined.
 
 ## Latest procedural-input fast path (2026-11-17)
 
-Commits `d10016f` and `f39b62a` change `modules/rts/view/RtsAnimate.cpp`: `ProcInputs` initialization, target-angle calculations and terrain-normal samples are now inside the `!ch.procs.empty() && !st.graph.hasContacts()` branch, the only branch that invokes `applyProcedural`. `st.objXf` is reset on every call, and regular pose updates, IK, animation graphs and events remain outside this branch. The second commit fixes the block scope of the first; **use the final branch head**.
+Commits `d10016f` and `f39b62a` change `engine/view/game/GameAnimate.cpp`: `ProcInputs` initialization, target-angle calculations and terrain-normal samples are now inside the `!ch.procs.empty() && !st.graph.hasContacts()` branch, the only branch that invokes `applyProcedural`. `st.objXf` is reset on every call, and regular pose updates, IK, animation graphs and events remain outside this branch. The second commit fixes the block scope of the first; **use the final branch head**.
 
 This optimization has not been built or benchmarked by the owner yet. Compare warm `[view-objects]` animate (~1.30–1.35 ms) and `[view-stages]` objects (~7.6–7.8 ms), as well as model/animation correctness. If CPU improvement is negligible, investigate remaining uninstrumented object-loop cost rather than repeating speculative micro-optimizations.
 
@@ -348,7 +348,7 @@ The renderer still has the independent `AIVERSE_GPU_ICB_ADAPTIVE=1` group-size h
 
 ## RTS upstream CPU preparation: validated per-entity rigid placement cache (2026-11-17)
 
-Commits `0b587bd`, `886f5a2`, `b62a22d`, `72fe4a6`, `235fbbf`, `b06168d`, `3c129a3`, `0782910`, `3498183`, `69b97a0` introduce an **opt-in** `AIVERSE_RTS_PLACEMENT_CACHE=1` for immutable non-animated scenery transforms held directly in the existing `RtsView::EntityAnim` per-object state. Cache hits reuse both `ModelDraw.world` and `EntityAnim.drawn` and avoid recalculating translate/rotate/scale/world matrices. Candidate objects must have no FX, procedural animation, graph, CPU pose/baked skinning, attachments, FX anchors, LOD alternatives, construction/damage stages, parent transform, planet placement, tint preview, movement, death or incomplete construction; must be stationary/structure and have identity procedural whole-object transform. Cache signature validates model pointer, position xyz, ground level, yaw, scale, shape footprint, air/flight-height settings and `ModelChoice::fix`; any mismatch rebuilds. Authored clips without a CPU pose are not automatically excluded, because they cannot change the cached whole-object transform under these guards. All other objects follow the existing unchanged path.
+Commits `0b587bd`, `886f5a2`, `b62a22d`, `72fe4a6`, `235fbbf`, `b06168d`, `3c129a3`, `0782910`, `3498183`, `69b97a0` introduce an **opt-in** `AIVERSE_RTS_PLACEMENT_CACHE=1` for immutable non-animated scenery transforms held directly in the existing `GameView::EntityAnim` per-object state. Cache hits reuse both `ModelDraw.world` and `EntityAnim.drawn` and avoid recalculating translate/rotate/scale/world matrices. Candidate objects must have no FX, procedural animation, graph, CPU pose/baked skinning, attachments, FX anchors, LOD alternatives, construction/damage stages, parent transform, planet placement, tint preview, movement, death or incomplete construction; must be stationary/structure and have identity procedural whole-object transform. Cache signature validates model pointer, position xyz, ground level, yaw, scale, shape footprint, air/flight-height settings and `ModelChoice::fix`; any mismatch rebuilds. Authored clips without a CPU pose are not automatically excluded, because they cannot change the cached whole-object transform under these guards. All other objects follow the existing unchanged path.
 
 A second, independently opt-in `AIVERSE_RTS_STATIC_ANIMATE_FAST=1` (commits `42bf9c3`, `e1b1516`, `801d3d5`, `8b2eae6`) short-circuits expensive animation-graph/clip/IK logic for **unchanged finished stationary scenery** when the chosen model has no clips, graph, procedural inputs, pose, baked animation, attachments or FX anchors; no programmable FX store is present, entity position and yaw are unchanged and the object is not moving, dead, parented or under construction. It still advances event/cast clocks, preserves speed/turn-rate decay and resets object-level procedural transform to identity. Log `[rts-static-animate]` reports average fast-path entities/frame when `AIVERSE_FRAME_TRACE=1`. Because this skips much more work, verify scene/FX/animation correctness before considering enabling by default. Keep both RTS cache flags disabled until measurements.
 
@@ -356,7 +356,7 @@ Minor independent RTS upstream fast paths skip FX lookup when `EntityFxStore::en
 
 With both `AIVERSE_RTS_PLACEMENT_CACHE=1` and `AIVERSE_FRAME_TRACE=1`, per-120-frame `[rts-placement]` logs avg hits/misses and rate, alongside `[view-objects]` and `[scene-stages]`. To test correctly, run **two separate editor processes** with same scene and camera: first `env -u AIVERSE_RTS_PLACEMENT_CACHE ...`, then `AIVERSE_RTS_PLACEMENT_CACHE=1 ...`, with **otherwise identical flags** and same renderer mode. The trace has measurement overhead; the editor's balanced Scene CPU benchmark is a separate metric. Keep Metal ICB off while isolating this CPU change. No owner Mac build or performance evidence yet.
 
-**Scope boundary:** this optimizes repeated transforms for a deliberately narrow scenery subset and some empty FX lookups; the engine still calls `RtsView::drawObject`, `Renderer3D::drawModel` and builds `modelItems_` per object. Engine `StaticModelCache` cannot simply be applied to overridden RTS materials without displacement/material validity review. Fully persistent draw-submission graph with immutable scene objects, per-entity dirty generations, dynamic visibility and reuse of GPU resource identifiers is still future architecture, as is GPU-native grouping. Do not call the 14,772-object scene fully GPU-driven or claim a speedup before measured A/B.
+**Scope boundary:** this optimizes repeated transforms for a deliberately narrow scenery subset and some empty FX lookups; the engine still calls `GameView::drawObject`, `Renderer3D::drawModel` and builds `modelItems_` per object. Engine `StaticModelCache` cannot simply be applied to overridden RTS materials without displacement/material validity review. Fully persistent draw-submission graph with immutable scene objects, per-entity dirty generations, dynamic visibility and reuse of GPU resource identifiers is still future architecture, as is GPU-native grouping. Do not call the 14,772-object scene fully GPU-driven or claim a speedup before measured A/B.
 
 ## Completion criteria
 
@@ -369,7 +369,7 @@ Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demo
 
 ### Implemented code and commits
 
-- `f41645e`: lazy event lookup in `RtsAnimate.cpp` for attack events (avoid eager whole-scene map on every tick).
+- `f41645e`: lazy event lookup in `GameAnimate.cpp` for attack events (avoid eager whole-scene map on every tick).
 - `905ff6e`, `b5e02aa`: restrict RTS shadow FX lookup and timing to actual shadow-producing draws; avoid measurement overhead per object.
 - `2edc343`, `91cd62a`, `03b2f2e`: cache actor-reveal type flags rather than compare string prefixes each draw.
 - `f03b6ee` experimented with geometry-pool-first MDI sorting enabled by default; **reversed to opt-in in `c3c434b`** because GPU MDI was disabled and sort cost rose with no accepted indirect draws. `c3c434b` also introduced `[model-mdi-gate]` diagnostics.
@@ -422,7 +422,7 @@ For a clean CPU benchmark, disable `AIVERSE_MODEL_BATCH_PROFILE`; retain compara
 ### Follow-up engineering work (not yet implemented)
 
 1. Real incremental CPU scene/render-record cache with stable IDs and dirty generations, preserving camera-dependent culling, edits, selection, visibility, construction, animation and material/FX changes. `PersistentGpuScene` is not equivalent to a persistent CPU render-item cache.
-2. Breakdown of the remaining ~2.9 ms `buildEditScene` and ~7.2 ms `RtsView` object phase; verify a repeated same-camera benchmark before modifying architecture.
+2. Breakdown of the remaining ~2.9 ms `buildEditScene` and ~7.2 ms `GameView` object phase; verify a repeated same-camera benchmark before modifying architecture.
 3. A more informative Scene > Batching UI and Draw Calls legend splitting model passes, real API submissions and instances, and explaining road material splits.
 4. Safe Metal ICB driver-level validation before ever enabling MDI by default.
 5. Fix missing/invalid GLB and texture assets separately; do not confuse fallback geometry with real batching success.
@@ -438,13 +438,13 @@ Validation still required: compile SceneWindow on macOS and verify popup layout,
 
 ## Revisioned static-ground cache experiment (2026-11-17)
 
-Commits `b85d87d`, `183a0c8` and `f82eb9e` add an opt-in **incremental placement-height cache** in `RtsView::EntityAnim::GroundCache`. Enable with `AIVERSE_RTS_GROUND_CACHE=1`; default remains the original per-frame `heightAt/groundAt` path. Only stationary, unparented static/zero-speed objects participate. A hit reuses the previously sampled ground height when the entity type, horizontal position, road-vs-terrain surface mode, MapGrid address, terrain generation and road-surface generation all match; moving or parented objects fall back to ordinary sampling. Other per-entity dynamic render values, animation, FX, visibility and GPU submissions are still evaluated each frame. **This is not a persistent render-command cache or a complete incremental scene graph.**
+Commits `b85d87d`, `183a0c8` and `f82eb9e` add an opt-in **incremental placement-height cache** in `GameView::EntityAnim::GroundCache`. Enable with `AIVERSE_RTS_GROUND_CACHE=1`; default remains the original per-frame `heightAt/groundAt` path. Only stationary, unparented static/zero-speed objects participate. A hit reuses the previously sampled ground height when the entity type, horizontal position, road-vs-terrain surface mode, MapGrid address, terrain generation and road-surface generation all match; moving or parented objects fall back to ordinary sampling. Other per-entity dynamic render values, animation, FX, visibility and GPU submissions are still evaluated each frame. **This is not a persistent render-command cache or a complete incremental scene graph.**
 
 Terrain generation increments at `setTerrainDetail` and `buildTerrain` (including edits with the same grid pointer). Road-surface generation increments at `RtsRoadView::rebuild`, including rebuilding a removed/empty road network. The view now invokes road draw when either the network is active or a rebuild is pending, so deleted roads release their old sampled surface. `[rts-ground-cache]` prints average hits, misses and hit rate once per 120 frames when `AIVERSE_FRAME_TRACE=1` is set.
 
 One-build A/B (same camera, fixed scene, separate processes): run with the previously validated RTS flags and `AIVERSE_RTS_GROUND_CACHE=1`, then with `AIVERSE_RTS_GROUND_CACHE=0`. Compare steady-state `[view-stages]`, `[view-objects]`, `[scene-stages]`, `[rts-ground-cache]`; verify editing road geometry, terrain sculpting, moving units, road removal and game mode transitions. **The assistant has not built or measured these commits locally; the performance gain is unverified.** If height caching does not materially improve warm `view`, do not enable it by default.
 
-Outstanding: the full `buildEditScene` (~2.9 ms) and `RtsView` (~8.3 ms) traversal remain; a true persistent draw-submission graph requires generation-aware invalidation of material, animation, FX, model streaming, visibility and camera-dependent culling. Do not conflate this first height memoization with a finished persistent scene cache.
+Outstanding: the full `buildEditScene` (~2.9 ms) and `GameView` (~8.3 ms) traversal remain; a true persistent draw-submission graph requires generation-aware invalidation of material, animation, FX, model streaming, visibility and camera-dependent culling. Do not conflate this first height memoization with a finished persistent scene cache.
 
 
 ## 2026-11-17 — CPU MDI opt-in and explicit GPU-encoded ICB resources
@@ -544,7 +544,7 @@ work above never reached them. Not compiled or measured on a Mac by the assistan
 - **On by default**, each with a kill switch: `AIVERSE_RTS_PLACEMENT_CACHE=0`,
   `AIVERSE_RTS_STATIC_ANIMATE_FAST=0`, `AIVERSE_RTS_GROUND_CACHE=0` (owner run with all
   three on: ~14,205 placement hits / 0 misses, ~13,956 static fast-path objects of 14,772).
-- **Camera culling in `RtsView::draw`** (`AIVERSE_RTS_VIEW_CULL=0` disables): before ground
+- **Camera culling in `GameView::draw`** (`AIVERSE_RTS_VIEW_CULL=0` disables): before ground
   sampling, `animate` and `drawObject`, an object is skipped when the sphere around its last
   submitted model bounds (radius ×1.25 + 1 m, following the current position) together with
   its ground shadow away from the sun (shadow length capped at ~6.7× height) is outside the

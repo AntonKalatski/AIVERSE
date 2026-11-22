@@ -1,4 +1,4 @@
-// Static colliders (type "collider": true, RtsColliders.h): map entities that are circles in a grid, not units.
+// Static colliders (type "collider": true, Colliders.h): map entities that are circles in a grid, not units.
 // Walkers go round them (ORCA static obstacles) and never step into one, heroes and cars are stopped by them,
 // saves keep working.
 

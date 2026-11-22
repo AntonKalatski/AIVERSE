@@ -4,8 +4,8 @@
 #include <functional>
 #include <map>
 #include <stdexcept>
-#include "modules/rts/RtsMap.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/MapGrid.h"
+#include "engine/game/Sphere.h"
 
 namespace aiverse::editor {
 

@@ -842,6 +842,6 @@ private:
 } // namespace aiverse::view
 
 // Preferred user-facing type: aiverse::View.
-// Legacy game::RtsView remains a compatibility adapter until all RTS-specific
+// Legacy game::GameView remains a compatibility adapter until all RTS-specific
 // terrain/fog/unit event authoring is moved to the owning game module.
 namespace aiverse {using View=view::View;}

@@ -16,7 +16,7 @@ target_link_libraries(aiverse_native_my_game PRIVATE AIVERSE::libraries)
 В `<project>/native/MyGame.cpp`:
 
 ```cpp
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <aiverselib/Graphs.h>
 
 // For example, inside setup():
@@ -126,7 +126,7 @@ MCP library_* и автоматическая проверка lock в aiversebu
 На macOS/AppleClang: самостоятельная компиляция всех headers с -Wall -Wextra -Werror,
 C++ unit tests (Release), ASan/UBSan, внешний native object target через настоящий
 engine CMake и переносимый source-export layout. CLI pin/verify проверяет несовпадение.
-Сборка headless исправлена: C++ headers и helpers вынесены из extern "C" в RtsScriptIeee.cpp.
+Сборка headless исправлена: C++ headers и helpers вынесены из extern "C" в ScriptIeee.cpp.
 Native-пример прошёл snapshot, serialized и fresh-serialized восстановление по 200 тиков;
 штатный check_headless_restore.py также прошёл. Все 26 шаблонов seed=3 завершились
 без аварий: 25 с победителем, fourages по лимиту 1800 игровых секунд без победителя.

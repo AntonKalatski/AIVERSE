@@ -8,9 +8,9 @@
 #include "ldebug.h"
 
 int aiverse_lua_floatop(lua_State *L) {
-  RtsLuaCtx *c;
+  LuaCtx *c;
   if (L == NULL) return 0;
-  c = *(RtsLuaCtx **)lua_getextraspace(L);
+  c = *(LuaCtx **)lua_getextraspace(L);
   if (c != NULL && c->noFloats) {
     /* arithmetic fast paths don't save the state: do what 'savestate' does so the error unwinds
        cleanly (the reported line is the last saved one, usually the current line) */

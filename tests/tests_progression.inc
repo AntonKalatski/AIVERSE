@@ -1,7 +1,7 @@
-// In-match progression on real units (rules "progression", RtsProgression.h; match-progression library package):
+// In-match progression on real units (rules "progression", Progression.h; match-progression library package):
 // kills -> xp orbs -> pickup -> level-up offer -> command / bot choice, perk stats on the unit pipelines, bullet perks
 // through the projectile programs, on-hit payloads, recruits + summon circles, determinism, saves, rollback, Lua.
-#include "modules/rts/RtsProgression.h"
+#include "engine/game/Progression.h"
 
 namespace {
 const char* kProgRules = R"J({
@@ -211,12 +211,12 @@ on("progression_offer", function(e) state.offers = state.offers + 1 end)
     rj.member("$scriptSources").set("prog.lua", Json::string(lua));
     auto make = [&](uint64_t seed) {
         SimConfig cfg; cfg.seed = seed;
-        auto s = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        auto s = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         s->setup(rj, Json::parse(map));
         return s;
     };
     auto play = [&](Simulation& sim, int ticks, std::vector<uint64_t>* sums) {
-        game::RtsAI a(1, 7);
+        game::ComputerPlayer a(1, 7);
         for (int i = 0; i < ticks; ++i) {
             a.update(sim);
             sim.step();
@@ -273,7 +273,7 @@ on("progression_recruit", function(e) state.recruited = e.value end)
     Json rj = Json::parse(rules);
     rj.member("$scriptSources").set("prog.lua", Json::string(lua));
     SimConfig cfg; cfg.seed = 2;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rj, Json::parse(progMap(R"({"type":"drone","owner":1,"pos":[4.5,8.5]})")));
     CHECK(prog(*sim).grantXp(*sim, 1, 3, false));
     run(*sim, 0.1);
@@ -319,7 +319,7 @@ TEST(progression_bot_hero_collects_orbs_and_walks_to_a_circle) {
     rules.replace(rules.find("\"victory\": \"noStructures\","), 26, "\"victory\": \"noStructures\", \"topDown\": {\"heroes\": [\"drone\"], \"bot\": {\"progression\": true}},");
     auto sim = makeSimJson(rules, progMap(R"({"type":"drone","owner":1,"pos":[4.5,8.5]})"));
     CHECK(mod(*sim).topDown()->active() && mod(*sim).topDown()->heroOf(*sim, 1).valid());
-    game::RtsAI bot(1, 3);
+    game::ComputerPlayer bot(1, 3);
     auto play = [&](double s) { for (int i = 0; i < int(s * 20); ++i) { bot.update(*sim); sim->step(); } };
     // an orb 6 units away: the hero walks over it
     prog(*sim).store(*sim)->orbQueue.push_back({1, 2, {Fixed::fromRatio(105, 10), Fixed{}, Fixed::fromRatio(85, 10)}});

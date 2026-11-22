@@ -243,7 +243,7 @@ After the full prior test suite passed, new code was committed in PR #8:
 
 - `9d84ca7` — `PersistentWorkers::parallelFor` now rejects nested calls on the **same** pool from its worker or caller lanes rather than deadlocking. This is defensive only; calling two distinct pools recursively is not yet subjected to a general concurrency audit.
 - `12ad169` — `tests/ecs_experiments_test.cpp` verifies nested parallel submissions are rejected and worker pool remains usable.
-- `942ff3b` — `modules/rts/RtsUnits.cpp` gains an **off-by-default** `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS` path for the independent `Transform.prevPos = Transform.pos` work in `sysMovement`. The spatial-hash insertion stays **sequential in original Unit dense order**. It processes at most one Transform per Unit and does not change the rest of RTS movement.
+- `942ff3b` — `engine/game/Units.cpp` gains an **off-by-default** `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS` path for the independent `Transform.prevPos = Transform.pos` work in `sysMovement`. The spatial-hash insertion stays **sequential in original Unit dense order**. It processes at most one Transform per Unit and does not change the rest of RTS movement.
 - `ed7ed90` — `CMakeLists.txt` defines the default-OFF option `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS` and applies it privately to `aiverse_game`. It **must not** be enabled for every game without validation.
 - `ac8dfa3` — `tests/run_ecs_gameplay_compare.sh` builds a baseline and opt-in version of the **real RTS** headless runner and FPS tests. Runs RTS at fixed seed with `--verify-restore-at` and compares `--checksum-log` checkpoint files. FPS tests run in each build; FPS gameplay is still sequential and its authoritative State/actors/RNG must not be parallelized without a separate dependency redesign.
 - `c06c48a`, `df98896` — registered `ecs_experiments_test`, `ecs_wave_executor_test`, `ecs_guarded_world_test`, `ecs_wave_replay_test`, `ecs_simulation_bridge_test` in CMake/CTest, linked to `aiverse_engine` and `Threads::Threads`.
@@ -383,8 +383,8 @@ User requested full FPS parallelization and production incremental rollback. The
 
 ### FPS motor stage
 
-- `b559900`: `modules/fps/FpsModule.cpp` adds `AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR` opt-in two-phase motor path. Only when 32+ actors, deathmatch, no bots, weapons firing, vehicles, melee, systems, royale, streaming or active interactions: precompute per-actor movement concurrently on copies and commit position/velocity/orientation/stance back in original actor order. Other FPS combat/AI/projectiles/authority logic still runs sequentially. This does **NOT** implement full FPS parallel gameplay.
-- `39066c5`: `modules/fps/CMakeLists.txt` exposes the feature as OFF by default; links Threads when enabled.
+- `b559900`: `engine/actor/ActorModule.cpp` adds `AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR` opt-in two-phase motor path. Only when 32+ actors, deathmatch, no bots, weapons firing, vehicles, melee, systems, royale, streaming or active interactions: precompute per-actor movement concurrently on copies and commit position/velocity/orientation/stance back in original actor order. Other FPS combat/AI/projectiles/authority logic still runs sequentially. This does **NOT** implement full FPS parallel gameplay.
+- `39066c5`: `engine/actor/CMakeLists.txt` exposes the feature as OFF by default; links Threads when enabled.
 - `c463308` / `37bcffe`: `tests/fps/tests.cpp` generates a 100-player movement-only fixture for 120 ticks with command-driven movement, jump, crouch and sprint, checks snapshot restore and prints `FPS_MOTOR_PARITY_HASH`. This exercises the optional path when enabled and the legacy sequential path otherwise.
 - `7273dd2`: `tests/run_ecs_gameplay_compare.sh` now also builds FPS motor OFF/ON and compares the full-tick hash produced by this fixture; FPS combat/authority regressions run in both builds. `--full` adds game and network suites.
 
@@ -553,7 +553,7 @@ Known remaining scope: page COW covers ordinary ECS components, but snapshot all
 
 ## 2026-11-18 — Generic ECS Parent hierarchy and transform graph (NEW)
 
-User requested efficient nested objects with `Parent` component and derived world transforms. Added an **opt-in generic engine API**, separate from the legacy RTS world-space `Transform` and the existing presentation-only `modules/rts/view/EntityHierarchy.h`.
+User requested efficient nested objects with `Parent` component and derived world transforms. Added an **opt-in generic engine API**, separate from the legacy RTS world-space `Transform` and the existing presentation-only `engine/view/game/EntityHierarchy.h`.
 
 ### Commits and files
 

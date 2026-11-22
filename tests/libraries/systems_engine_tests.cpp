@@ -7,10 +7,10 @@
 using namespace aiverse;using namespace aiverse::lib::systems;
 #define CHECK(x) do{if(!(x)){std::cerr<<"failed "<<__LINE__<<": "<<#x<<'\n';std::exit(1);}}while(false)
 int main(){
-    Simulation sim({},std::make_unique<game::RtsModule>());
+    Simulation sim({},std::make_unique<game::GameCore>());
     sim.setup(Json::parse(R"({"victory":"noUnits","statuses":{"slow":{"mods":[{"stat":"speed","mul":0.5}]}},"types":{"unit":{"health":{"max":100},"move":{"speed":4}}}})"),Json::parse(R"({"size":[8,8],"players":[{"name":"A","team":1},{"name":"B","team":2}],"terrain":{"rows":["........","........","........","........","........","........","........","........"]},"entities":[{"type":"unit","owner":1,"pos":[2,2]},{"type":"unit","owner":2,"pos":[6,6]}]})"));
     Entity unit;sim.world().each<game::Unit>([&](Entity e,auto&){if(!unit.valid())unit=e;});CHECK(unit.valid());
-    auto& module=static_cast<game::RtsModule&>(sim.module());std::array stats{game::Stat::Speed};
+    auto& module=static_cast<game::GameCore&>(sim.module());std::array stats{game::Stat::Speed};
     CHECK(effectiveStats(module,sim,unit,stats)->front().value==Fixed::fromInt(4));
     game::EffectCtx context;context.caster=unit;context.owner=1;context.target=unit;
     CHECK(!applyStatus(module,sim,unit,999,Fixed::fromInt(2),context));

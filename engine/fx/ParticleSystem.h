@@ -121,7 +121,7 @@ public:
     void setFileReader(FileReader r) { reader_ = std::move(r); }
     void setTextureLoader(TextureLoader l);
     void setMeshLoader(MeshLoader l);
-    // Ground height for "collision" (world y = 0 without it): RtsView::heightAt in the apps.
+    // Ground height for "collision" (world y = 0 without it): GameView::heightAt in the apps.
     void setGroundHeight(std::function<float(float x, float z)> fn);
     // Wind (world units / s^2) acting on emitters with "externalForces" (Unity wind zones).
     void setWind(float3 wind);

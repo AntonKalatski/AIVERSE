@@ -6,8 +6,8 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
-#include "modules/rts/view/RtsTerrainDetail.h"
-#include "modules/rts/view/RtsTerrainSurface.h"
+#include "engine/view/game/GameTerrainDetail.h"
+#include "engine/view/game/GameTerrainSurface.h"
 
 // Private copies (static functions) of stb_image (16-bit PNG decode) and stb_image_write (zlib for
 // the 16-bit PNG encoder), so this file links next to the other copies.

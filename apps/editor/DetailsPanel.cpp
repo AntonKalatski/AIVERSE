@@ -77,7 +77,7 @@ std::string inlineText(const Json& v) {
 
 ImVec4 ownerColor(int owner) {
     if (owner <= 0) return ImVec4(0, 0, 0, 0);
-    const render::float4 c = game::RtsView::playerColor(owner);
+    const render::float4 c = game::GameView::playerColor(owner);
     return ImVec4(c.x, c.y, c.z, 1);
 }
 } // namespace
@@ -200,8 +200,8 @@ void DetailsPanel::prepare() {
 }
 
 void DetailsPanel::draw(Editor& ed) {
-    if (ed.selection.kind == Selection::FpsActor ||
-        ed.selection.kind == Selection::FpsRuntimeObject) {
+    if (ed.selection.kind == Selection::ActorActor ||
+        ed.selection.kind == Selection::ActorRuntimeObject) {
         const auto runtime = enumerateEditorRuntimeEntities(ed);
         const auto found = std::find_if(runtime.begin(), runtime.end(),
             [&](const EditorRuntimeEntity& item) {
@@ -242,7 +242,7 @@ void DetailsPanel::draw(Editor& ed) {
     // FPS authored objects are document sources; they do not have ECS snapshot
     // rows yet. They nevertheless use the same Inspector panel and registered
     // document-component card drawers as any other authored entity.
-    if (ed.selection.kind == Selection::FpsObject) {
+    if (ed.selection.kind == Selection::ActorObject) {
         DocumentEntityRef ref;
         if (!documentEntityFromSelection(ed.selection, ref)) {
             ui::hint("Invalid scene object reference");
@@ -253,7 +253,7 @@ void DetailsPanel::draw(Editor& ed) {
             ui::hint("Scene object no longer exists");
             return;
         }
-        const bool collider = ref.source == DocumentEntityRef::Source::FpsCollider;
+        const bool collider = ref.source == DocumentEntityRef::Source::ActorCollider;
         ImGui::TextDisabled("SCENE OBJECT");
         ImGui::Text("%s #%zu", collider ? "Box Collider" : "Spawn Point", ref.index + 1);
         ImGui::Separator();

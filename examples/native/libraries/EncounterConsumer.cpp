@@ -3,7 +3,7 @@
 // authoritative handler passes sim.rng(), applies the hits through the game's damage owner and draws the views.
 #include <aiverselib/mechanics/EncounterData.h>
 #include <aiverselib/mechanics/EncounterPersistence.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <array>
 bool libraryEncounterConsumerExample(aiverse::game::NativeState& state){
     using namespace aiverse::lib::genre;using aiverse::Fixed;using aiverse::operator""_fx;

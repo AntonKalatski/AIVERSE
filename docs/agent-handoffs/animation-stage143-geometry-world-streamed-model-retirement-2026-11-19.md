@@ -17,13 +17,13 @@ Commits, in order:
 
 1. `a18d4d49cb866f7fd1ff6cedb83e0979e64f6f17` — `engine/render/GeometryScene.h`, adds generic native Model/HLOD retirement queue and owner API.
 2. `acd626b41a6117a0cbf6204e90d7814e5e43976e` — `engine/render/GeometryScene.cpp`, moves resident/HLOD Models into GPU retirement on reload and exception rollback.
-3. `0de4b4b09656e4ffedf1024693d316b4a6509807` — `modules/rts/view/RtsView.cpp`, polls static GeometryScene at the existing owner frame boundary.
+3. `0de4b4b09656e4ffedf1024693d316b4a6509807` — `engine/view/game/GameView.cpp`, polls static GeometryScene at the existing owner frame boundary.
 4. `da01812f51fee3e0bea838a18dfb058293f9a870` — `engine/world/WorldScene.h`, adds managed shared-owner candidates and dedicated ordered retirement queue API.
 5. `9bd40a83391b549cc2ed452a2937181b743ea171` — `engine/world/WorldScene.cpp`, defers GPU release until no other resident chunk or background CPU worker borrows shared Model data.
 6. `84374b13308ad892fbcc91136ef06d4578450e65` — `apps/client/GameClient.cpp`, polls WorldScene GPU retirements from its pre-render Device-owner frame hook.
 7. `fa11c32160ed62f8ecc3db50f83cea1b8d24355d` — `apps/fps/client.cpp`, polls WorldScene before `Device::beginFrame`.
 8. `867e64347b8775f30f8e05a9c5ce3ecf2be234fd` — `GeometryScene.h`, adds source reload `clear(device)` that does NOT force GPU idle.
-9. `e0bfadf4c29eacc40f295eb9c64b429bf8ab4159` — `RtsView.cpp`, uses nonblocking GeometryScene `clear()` for rules/project reload instead of blocking shutdown.
+9. `e0bfadf4c29eacc40f295eb9c64b429bf8ab4159` — `GameView.cpp`, uses nonblocking GeometryScene `clear()` for rules/project reload instead of blocking shutdown.
 10. `1777cce83a9e6187c3a8e40472487d35eba3456d` — `apps/fps/client.cpp`, polls FPS static GeometryScene HLOD retirement at the explicit owner frame boundary.
 11. `cde50eaf945d1eeb463594abe7b3dacda45e48b6` — `WorldScene.cpp`, returns a retryable false on queue/device callback failures without approving unsafe GPU deletion.
 
@@ -41,7 +41,7 @@ New genre-neutral engine API:
 - `GeometryScene::collectRetired(gfx::Device&)`: schedule/poll explicit hardware retirement markers, with ordinary NativePresentationRetirement fallback semantics.
 - `GeometryScene::shutdown(gfx::Device&)`: detach active Models, wait for real full-GPU-idle completion, and drain both pending token batches and active Model resources before final destruction. An unsuccessful proof raises `std::runtime_error` rather than destroying potentially in-flight allocations.
 - `loadImpl` now `retireResident(dev)` before loading and also on exceptions, including partial Model/HLOD GPU uploads. It no longer calls blocking `shutdown(dev)` during ordinary live reload.
-- `RtsView::init` calls `geometryScene_.clear(dev)` when resetting rules/project and does not force per-reload GPU idle. `RtsView::collectRetiredModels` / `pendingModelRetirements` incorporate GeometryScene alongside ModelResourceCache, rollback images and road/shore scene queues. FPS `staticGeometry` now also polls in its own pre-frame hook.
+- `GameView::init` calls `geometryScene_.clear(dev)` when resetting rules/project and does not force per-reload GPU idle. `GameView::collectRetiredModels` / `pendingModelRetirements` incorporate GeometryScene alongside ModelResourceCache, rollback images and road/shore scene queues. FPS `staticGeometry` now also polls in its own pre-frame hook.
 
 **Limit:** This safely handles ownership after reload and rejection; it does not promise a last-good GeometryScene swap if a replacement file is malformed. Old visual source pointers are detached, and a failed reload can leave an empty scene. A later feature may stage the whole new geometry before replacing the old, if needed.
 
@@ -62,7 +62,7 @@ New engine-only lifetime:
 
 ## Actual validation versus deferred work
 
-**ACTUALLY PERFORMED:** connected GitHub source reads for `GeometryScene.h/.cpp`, `WorldScene.h/.cpp`, `AsyncChunkStream.h`, generic retirement APIs, RtsView and native client/FPS frame/shutdown call sites; source SHA-guarded commits and readback of updated branch files; branch/main/PR base ancestry comparison. No other agent branches modified.
+**ACTUALLY PERFORMED:** connected GitHub source reads for `GeometryScene.h/.cpp`, `WorldScene.h/.cpp`, `AsyncChunkStream.h`, generic retirement APIs, GameView and native client/FPS frame/shutdown call sites; source SHA-guarded commits and readback of updated branch files; branch/main/PR base ancestry comparison. No other agent branches modified.
 
 **NOT RUN:** native CMake/C++ compiler/link, CTest, green CI for the Stage 143 head, Metal/Vulkan/OpenGL, source-reload HLOD parity, chunk streaming CPU-worker interleavings with ThreadSanitizer, real GPU token failure/fence rollback, FPS/RTS/editor screenshots, performance/VRAM profiling, or the combined final-validation script. Tests remain deferred until feature freeze by the user's explicit request.
 

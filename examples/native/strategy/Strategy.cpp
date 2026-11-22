@@ -1,12 +1,12 @@
 #include "Definitions.h"
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <stdexcept>
 namespace {
 using namespace aiverse;
 using namespace aiverse::lib::strategy;
 class StrategyDemo final:public game::NativeModule {
 public:
-    void setup(game::RtsModule&,Simulation& sim,game::NativeState& s,const Json& config)const override {
+    void setup(game::GameCore&,Simulation& sim,game::NativeState& s,const Json& config)const override {
         auto rate=config.getInt("rate",1);if(rate<1||rate>1000)throw std::runtime_error("strategy_demo.rate: expected 1..1000");
         s.values["rate"]=rate;
         auto machine=beginMachine(strategy_demo::program());
@@ -18,7 +18,7 @@ public:
         PushHistory puzzle{{6,{7}},{},{}};
         if(!storeState(s,"machine",machine)||!run||!storeState(s,"run",*run)||!zones||!rhythm||!storeState(s,"zones",*zones)||!storeState(s,"rhythm",*rhythm)||!turns||!cards||!storeState(s,"turns",*turns)||!storeState(s,"cards",*cards)||!storeState(s,"puzzle",puzzle)||!storeState(s,"factory",factory)||!storeState(s,"offline",OfflineState{0,{0,0}})||!storeState(s,"number",BigNumber{1}))throw std::runtime_error("strategy_demo: state initialization failed");
     }
-    void tick(game::RtsModule&,Simulation& sim,game::NativeState& s)const override {
+    void tick(game::GameCore&,Simulation& sim,game::NativeState& s)const override {
         MachineState machine;if(restoreState(s,"machine",machine)){runMachine(strategy_demo::program(),machine,1);storeState(s,"machine",machine);}
         if(s.values.contains("rhythmOrigin")){
             RhythmState rhythm;
@@ -30,7 +30,7 @@ public:
         auto next=number.plus(BigNumber{1});if(!next)return;
         storeState(s,"offline",offline);storeState(s,"factory",factory);storeState(s,"number",*next);
     }
-    void command(game::RtsModule&,Simulation& sim,game::NativeState& s,const Command& cmd)const override {
+    void command(game::GameCore&,Simulation& sim,game::NativeState& s,const Command& cmd)const override {
         if(cmd.player<1||cmd.player>2)return;
         // Example wire protocol: param 1 = push right, 2 = play first card, 3 = pass,
         // 4 = queue attack, 5 = resolve pending attack. The engine owns command ID routing.

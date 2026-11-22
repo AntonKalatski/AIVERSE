@@ -8,13 +8,13 @@ namespace aiverse::editor {
 inline std::string documentEntityId(DocumentEntityRef ref) {
     switch (ref.source) {
         case DocumentEntityRef::Source::MapLight:
-        case DocumentEntityRef::Source::FpsLight:
+        case DocumentEntityRef::Source::ActorLight:
             return "light:legacy:"+std::to_string(ref.index);
         case DocumentEntityRef::Source::MapEntity:
             return "entity:" + std::to_string(ref.index);
-        case DocumentEntityRef::Source::FpsCollider:
+        case DocumentEntityRef::Source::ActorCollider:
             return "collider:" + std::to_string(ref.index);
-        case DocumentEntityRef::Source::FpsSpawn:
+        case DocumentEntityRef::Source::ActorSpawn:
             return "spawn:" + std::to_string(ref.index);
     }
     return {};

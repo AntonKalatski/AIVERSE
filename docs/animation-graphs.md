@@ -22,7 +22,7 @@
 Обычные типы без графа сохраняют прежнюю анимацию и GPU baked skinning.
 Ошибки компиляции попадают в предупреждения модели; тип использует прежнюю систему.
 
-В редакторе и клиенте используется один RtsView. Внешние FPS/native-хосты подключают
+В редакторе и клиенте используется один GameView. Внешние FPS/native-хосты подключают
 C++ API самостоятельно; автоматическое подключение к FPS-персонажам не реализовано.
 
 ## Формат
@@ -98,7 +98,7 @@ view.animation(character, nil) -- удалить все переопределе
 
 `character` — обычный entity handle из game API. Изменение таблицы атомарно: при
 некорректном поле не применяется ни одно поле. Пропущенные поля сохраняют значения.
-Встроенные параметры RtsView: `speed`, `moving`, `dead`, `attacking`, `hasTarget`.
+Встроенные параметры GameView: `speed`, `moving`, `dead`, `attacking`, `hasTarget`.
 Объявляйте их в parameters при использовании. Lua-переопределения имеют приоритет;
 удаление переопределений восстанавливает defaults и автоматические значения.
 Записи удаляются через 10 секунд после исчезновения сущности, как entity_fx.
@@ -118,14 +118,14 @@ Montage, extract-only Motion Warping, фиксированный ECS Root Motion
 `kind:"clip"` теперь поддерживает массив
 `"notifies":[{"time":0.35,"name":"step"}]`; экземпляр графа
 возвращает `notifies()` после update, но не дублирует legacy clip events
-`RtsView`. Эти события предназначены для звука/VFX, не для авторитетного
-урона или hit detection. Старые `RtsView` terrain foot IK/procedural
+`GameView`. Эти события предназначены для звука/VFX, не для авторитетного
+урона или hit detection. Старые `GameView` terrain foot IK/procedural
 модификаторы применяются после графа и должны учитывать порядок IK.
 LOD и construction stage используют старый mapping костей.
 
 Проверки: `aiverse_animation_tests` (CPU pose, blending, transitions, IK, validation),
 основной `aiverse_tests` и сборка клиента. Визуальная проверка должна использовать
-реальный RtsView и скелет с подходящими именами, а не только JSON-пример.
+реальный GameView и скелет с подходящими именами, а не только JSON-пример.
 
 ## Запускаемый пример
 
@@ -151,7 +151,7 @@ build/<config>/aiverse_modelview --game /tmp/aiverse-animation-demo --types foot
 и вычисляет позу. Вызов evaluate без update не продвигает анимацию.
 
 C++ может передать в `AnimationGraph::compile(model, json, operations)` реестр
-`AnimationOperations`. В RtsView его задают через `setAnimationOperations()` **до init**.
+`AnimationOperations`. В GameView его задают через `setAnimationOperations()` **до init**.
 Узел `{kind:"native", id:"custom", input:"base", operation:"myOperation", config:{...}}`
 использует зарегистрированную операцию. Неизвестные операции отклоняются.
 
@@ -186,7 +186,7 @@ Mirroring и Control Rig; появился UAF AnimGen.
   индексов операций на состояние; отдельной универсальной VM нет.
 - [FAnimNextGraphInstance](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Plugins/UAFAnimGraph/FAnimNextGraphInstance)
   отделяет граф от экземпляра и связывает его с модулем; AIVERSE пока имеет только граф/instance
-  и хост RtsView; вложенные графы и назначение Lua-графа реализованы,
+  и хост GameView; вложенные графы и назначение Lua-графа реализованы,
   полного аналога UAF System/Module нет.
 
 ## Trait stacks и вложенные графы
@@ -217,7 +217,7 @@ auto graph = AnimationGraph::compile(model, definition, {}, traits);
 // definition: stack with traits: [{"trait":"bob", "config":{}}]
 ```
 
-RtsView принимает C++ реестр через `setAnimationTraits()` до init. Не изменяйте
+GameView принимает C++ реестр через `setAnimationTraits()` до init. Не изменяйте
 реализацию после регистрации и не сохраняйте переданные spans/ссылки.
 Lua callbacks исполняются только на потоке владельца VM; worker scheduling не добавлен.
 
@@ -527,17 +527,17 @@ AnimationRig принимает необязательный `AnimationRigState*
 сбрасывает фиксацию. `contactReport()` проверяет итоговую позу, включая смешивание
 родительского графа; для вложенных графов диагностика отражает их собственный результат.
 
-В RtsView плоских карт окружение подключено автоматически: terrain через heightAt,
+В GameView плоских карт окружение подключено автоматически: terrain через heightAt,
 соседние видимые объекты — AABB по bounds основного варианта модели (до 64 ближайших).
 Это приблизительные presentation-коллайдеры, не точная геометрия анимированного mesh;
 они не учитывают entity_fx, construction stages и нестандартные формы всех объектов.
 Для точных запросов собственного физического мира используйте
-`RtsView::setAnimationEnvironment(callback(Entity, AnimationEnvironment&))`: callback
+`GameView::setAnimationEnvironment(callback(Entity, AnimationEnvironment&))`: callback
 заменяет raycast/sphereContact готового окружения с modelToWorld. Для планет автоматический
 адаптер пока не подключён; C++ графы могут получать собственное окружение.
 
 Графы с contacts управляют позой целиком: старые procedural modifiers и отдельный
-terrain foot IK в RtsView отключаются, чтобы не испортить найденные контакты.
+terrain foot IK в GameView отключаются, чтобы не испортить найденные контакты.
 Контактный rig размещайте **после** blending/других модификаторов, у выхода графа.
 Crossfade и частичный вес могут снова нарушить контакт; diagnostics показывают остаток.
 Для сильного LOD/быстрого движения возможен пропуск препятствий между кадрами:
@@ -634,7 +634,7 @@ shape. No new evaluator or timing source is allocated by
 MotionWeave / legacy animation state remains the only pose writer.
 Changed graphs and incompatible choices retain the existing reset path.
 
-`RtsView::shutdown` detaches generic View poses and clears model
+`GameView::shutdown` detaches generic View poses and clears model
 borrowing animation state and appearance snapshots before the
 ModelResourceCache GPU release barrier. Standalone RTS GameClient and
 the Editor's embedded GameClient now use a host-owned GPU lifetime
@@ -661,7 +661,7 @@ do not replace explicit resource retirement and shutdown ordering.
 
 ## Stage 113 — scratch model imports preserve last-good animation
 
-`RtsView::reloadAppearanceTypes` stages new (previously
+`GameView::reloadAppearanceTypes` stages new (previously
 nonresident) models as independent scratch resource owners, as
 well as staging new material images. On failed graph/material
 authoring, it leaves the active TypeLooks and their graph/pose
@@ -684,7 +684,7 @@ In the RTS/editor appearance reload path, authored CPU materials,
 AnimationGraph programs, shared GPU image ownership and native GPU
 shader/pipeline readiness must be prepared **before** the live TypeLook
 and animation graph sources are replaced. The host can supply
-`RtsView::setAppearancePipelineValidator`, normally forwarding to
+`GameView::setAppearancePipelineValidator`, normally forwarding to
 its existing `Renderer3D::warmModelPipelinesChecked`.
 
 - Ready: candidate may proceed through shared texture/Model commit.
@@ -1267,7 +1267,7 @@ road and shore adapters now do so on rebuild, editor ghost and weather
 changes, while preserving the same MotionWeave animation writer and
 presentation-only source/graph clocks.
 
-Collection is currently called at top-level `RtsView::draw` entry,
+Collection is currently called at top-level `GameView::draw` entry,
 before scene provider callbacks; **the host must validate that this is
 a legitimate GPU frame/submission boundary**, not merely a second View
 draw within one in-progress graphics frame. Failure to prove GPU idle
@@ -1283,10 +1283,10 @@ boundary/owner review:
 ## Stage 141 — unified Model, canvas and native scene retirement frame hook
 
 Animation and presentation hosts must separate their View draw call from
-their GPU completion lifetime. `RtsView::draw` no longer schedules GPU
+their GPU completion lifetime. `GameView::draw` no longer schedules GPU
 retirement; it can execute more than once in a Device frame, including
 editor and offscreen preview passes. Existing pre-render client/editor
-`RtsView::collectRetiredModels` now polls the generic Model cache,
+`GameView::collectRetiredModels` now polls the generic Model cache,
 image rollback and native roads/shorelines retirement queues, including
 standalone SpriteMesh buffers. `pendingModelRetirements` aggregates all
 these Model + native scene resource queues, retaining the old API name.
@@ -1294,7 +1294,7 @@ these Model + native scene resource queues, retaining the old API name.
 Modelview Gallery and the generic native ModelAssetProvider are now
 polled explicitly before `Device::beginFrame`, not from either portrait
 or main-scene draw. Modelview and Gallery teardown enforce GPU idle
-before freeing still-live preview textures and Models; `RtsView`
+before freeing still-live preview textures and Models; `GameView`
 teardown enforces GPU completion before `GeometryScene::shutdown`.
 
 These are source-level contracts, not evidence of correct hardware
@@ -1344,7 +1344,7 @@ share the same GPU-completion constraint, but **not the same CPU
 ownership**. `render::GeometryScene` uniquely owns Models/HLOD proxies:
 a rules reload now calls `clear(device)` to detach its borrowed scene
 pointers and enqueue GPU assets behind actual completion tokens. Its
-pre-frame `collectRetired` is polled by RtsView and FPS native hosts;
+pre-frame `collectRetired` is polled by GameView and FPS native hosts;
 final `shutdown` requires a full GPU idle barrier, not a frame timer.
 A malformed new GeometryScene still may leave the scene empty; a
 last-good whole-scene transaction is not promised.
@@ -1375,7 +1375,7 @@ result indicates successful clock recovery; an incompatible state or
 clip starts cleanly. Previous Model pointers, poses, rig/IK contacts,
 native operation state, root motion and notify queues NEVER transfer.
 
-Legacy `RtsView` source and appearance reload adapters previously
+Legacy `GameView` source and appearance reload adapters previously
 erased affected EntityAnim instances (correct GPU/Model lifetime, but
 lost compatible playback). They now capture one short-lived, Model-free
 value snapshot per full logical entity ID before model/graph/LOD

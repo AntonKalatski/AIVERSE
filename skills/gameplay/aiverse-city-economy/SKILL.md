@@ -13,9 +13,9 @@ multiplayer city is `docs/city-server.md`.
 
 | System | Rules / map | Code | Lua | Tests | Add to a city project |
 |---|---|---|---|---|---|
-| Commerce (`docs/commerce.md`) | rules `"commerce"`, map `"premises"` | `modules/rts/RtsCommerce.cpp` | table `commerce` | `aiverse_tests commerce` | `tools/citygen/add_commerce.py` |
-| Careers (`docs/careers.md`) | rules `"careers"` | `modules/rts/RtsCareer.cpp` | table `career` | `aiverse_tests career` | `tools/citygen/add_careers.py` |
-| Arsenal (`docs/arsenal.md`) | rules weapons / pickups of the hero | `modules/rts/RtsArsenal.cpp` | - | `aiverse_tests arsenal_` | `tools/citygen/add_arsenal.py` (run by `tools/citygen/make_city.py`) |
+| Commerce (`docs/commerce.md`) | rules `"commerce"`, map `"premises"` | `engine/game/Commerce.cpp` | table `commerce` | `aiverse_tests commerce` | `tools/citygen/add_commerce.py` |
+| Careers (`docs/careers.md`) | rules `"careers"` | `engine/game/Career.cpp` | table `career` | `aiverse_tests career` | `tools/citygen/add_careers.py` |
+| Arsenal (`docs/arsenal.md`) | rules weapons / pickups of the hero | `engine/game/Arsenal.cpp` | - | `aiverse_tests arsenal_` | `tools/citygen/add_arsenal.py` (run by `tools/citygen/make_city.py`) |
 
 1. Prefer the citygen helper for an existing city project; it is safe to run again.
 2. Otherwise add the rules block by the doc, then the map data, then Lua glue for UI and missions

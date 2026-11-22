@@ -8,18 +8,18 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3b0-topology
 
 ## Implemented
 
-- `RtsView::buildTerrainAtomicScene(dev,grid,renderer,scene,time,vision)` explicitly opts into staging the **camera-visible GroundFX GPU meshes** at the same time as unpublished full-map Terrain, Road, Shore and Fog resources. The existing synchronous `buildTerrain()` and `buildTerrainAtomic()` signatures and semantics remain unchanged.
-- `RtsGroundFx::prepareMapSceneFrame` fills the private `prepareMapReset` clone **in place** by reusing the existing bounded frame mesh builder (`16 chunks / 128 MiB`); `prepareFrame` now shares that builder through `prepareSceneIntoCandidate`. It avoids two private mesh clones and preserves the full-reset old-lane retirement marker.
-- A strictly scoped, non-owning height override in `RtsView::heightAt`, valid only for the exact `MapGrid` address during GroundFX staging, samples `TerrainRenderer::preparedSurfaceAt` instead of old published geometry. It is cleared on success AND exceptions; no changes to generic OwnerPrepareCommit or RHI backend APIs.
+- `GameView::buildTerrainAtomicScene(dev,grid,renderer,scene,time,vision)` explicitly opts into staging the **camera-visible GroundFX GPU meshes** at the same time as unpublished full-map Terrain, Road, Shore and Fog resources. The existing synchronous `buildTerrain()` and `buildTerrainAtomic()` signatures and semantics remain unchanged.
+- `GameGroundFx::prepareMapSceneFrame` fills the private `prepareMapReset` clone **in place** by reusing the existing bounded frame mesh builder (`16 chunks / 128 MiB`); `prepareFrame` now shares that builder through `prepareSceneIntoCandidate`. It avoids two private mesh clones and preserves the full-reset old-lane retirement marker.
+- A strictly scoped, non-owning height override in `GameView::heightAt`, valid only for the exact `MapGrid` address during GroundFX staging, samples `TerrainRenderer::preparedSurfaceAt` instead of old published geometry. It is cleared on success AND exceptions; no changes to generic OwnerPrepareCommit or RHI backend APIs.
 - `buildTerrainImpl` skips the post-transaction `groundFx_.invalidate()` for scene-prepared geometry. Remaining off-camera dirty chunks use the existing future-frame lazy budget. Map input fingerprints and five-owner revisions from Stage 48B.3B.0 are still checked after ALL preparation and before publication.
-- Post-implementation hardening: scene, camera and visibility fingerprints from the existing LENS prewarm path are now also validated for the new scene-aware map commit. A fake-RHI callback that mutates `RtsScene::viewer` during a GroundFX mesh upload is covered by the authored regression, which must reject the private topology cohort without changing live Terrain, Roads or retirements.
+- Post-implementation hardening: scene, camera and visibility fingerprints from the existing LENS prewarm path are now also validated for the new scene-aware map commit. A fake-RHI callback that mutates `GameScene::viewer` during a GroundFX mesh upload is covered by the authored regression, which must reject the private topology cohort without changing live Terrain, Roads or retirements.
 - Primary frame publication remains draw-only. This is **a synchronous map+partial-scene cohort**, not a persistent unpublished cross-call lease; only visible GroundFX is included so far.
 
 ## Source files
 
-- `modules/rts/view/RtsGroundFx.h/.cpp`: explicit map-scene candidate API and shared builder.
-- `modules/rts/view/RtsView.h/.cpp`: explicit scene map entry point, transient height staging fields and shared scene/camera/visibility fingerprint wrappers.
-- `modules/rts/view/RtsTerrain.cpp`: local height override, six-input overload and GroundFX participant integration.
+- `engine/view/game/GameGroundFx.h/.cpp`: explicit map-scene candidate API and shared builder.
+- `engine/view/game/GameView.h/.cpp`: explicit scene map entry point, transient height staging fields and shared scene/camera/visibility fingerprint wrappers.
+- `engine/view/game/GameTerrain.cpp`: local height override, six-input overload and GroundFX participant integration.
 - `tests/tests.cpp`: `lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back`.
 
 ## Regression test authored (NOT RUN)

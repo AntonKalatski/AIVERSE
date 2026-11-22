@@ -100,4 +100,4 @@ Pruebas: `game_wizard_plan_picks_a_template_by_the_idea`, `game_wizard_makes_a_p
 ## Cambio en el motor
 
 Las órdenes de script aceptan `"card": false` (sin botón / atajo; las envían scripts de vista, documentos del HUD, MCP): el
-Siguiente / Saltar del tutorial (`modules/rts/RtsScriptCommands.cpp`, tarjetas de órdenes del cliente y del editor).
+Siguiente / Saltar del tutorial (`engine/game/ScriptCommands.cpp`, tarjetas de órdenes del cliente y del editor).

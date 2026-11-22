@@ -5,7 +5,7 @@
 #include <aiverselib/mechanics/Colony.h>
 #include <aiverselib/mechanics/SurvivalEcology.h>
 #include <aiverselib/bots/ColonyPlannerData.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <string>
 bool libraryProductionSurvivalConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
     using namespace aiverse::lib::genre;namespace bots=aiverse::lib::bots;

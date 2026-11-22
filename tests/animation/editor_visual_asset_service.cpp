@@ -29,7 +29,7 @@ int main() {
     }
 
     VisualAssetDependencyService service;
-    RtsModelResourceCache cache;
+    GameModelResourceCache cache;
     std::vector<TestType> types{{
         Json::parse(R"({"model":"models/hero.glb",
                        "animationGraph":"animation/hero.json"})")}};

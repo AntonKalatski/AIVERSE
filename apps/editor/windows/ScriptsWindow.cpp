@@ -8,8 +8,8 @@
 #include "../Editor.h"
 #include "../EditorIcons.h"
 #include "../EditorUtil.h"
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/view/RtsViewScript.h"
+#include "engine/game/Script.h"
+#include "engine/view/game/GameViewScript.h"
 
 namespace fs = std::filesystem;
 

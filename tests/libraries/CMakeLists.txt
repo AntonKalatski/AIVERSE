@@ -73,8 +73,8 @@ set(AIVERSE_LIBRARY_WORLD_SOURCES
     ../../engine/world/WorldAssets.cpp ../../engine/world/CollisionStream.cpp
     ../../engine/world/ChunkStreamer.cpp ../../engine/world/AsyncChunkStream.cpp
     ../../engine/pack/Sha256.cpp)
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../modules/fps/FpsModule.cpp")
-    file(GLOB AIVERSE_LIBRARY_FPS_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../../modules/fps/Fps*.cpp")
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/actor/ActorModule.cpp")
+    file(GLOB AIVERSE_LIBRARY_FPS_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../../engine/actor/Actor*.cpp")
     # the FPS host's vehicles run on the shared vehicle system (engine/vehicles)
     list(APPEND AIVERSE_LIBRARY_FPS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/../../engine/vehicles/Vehicles.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../../engine/vehicles/VehicleRace.cpp")

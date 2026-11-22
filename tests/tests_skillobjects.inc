@@ -1,4 +1,4 @@
-// ------------------------------------------------------------------ skill objects (agent-bw-skills, RtsSkillObjects.cpp)
+// ------------------------------------------------------------------ skill objects (agent-bw-skills, SkillObjects.cpp)
 // Rolling stones, jumping heads, mines left by units, magnets, souls: generic delivery keys `origins` / `consume` /
 // `goal` / `onArrive` / `onExpire` / `onDeath`, effect `pull`.
 

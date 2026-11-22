@@ -26,7 +26,7 @@ not a second live Terra simulation. Existing unknown JSON fields round-trip.
 Studio HTML5 identifies these objects as `entity:@<id>`; legacy objects keep their
 ordinal protocol. Deleting an earlier array entry does not change authored IDs.
 Hierarchy, Inspector, selection, duplicate, Undo and save use the same document.
-The model asset is read-only in Inspector for this stage. The legacy RtsView host
+The model asset is read-only in Inspector for this stage. The legacy GameView host
 uses generated per-prototype rules bindings matching StaticModel; those bindings
 are a compatibility adapter, not another editable asset owner.
 

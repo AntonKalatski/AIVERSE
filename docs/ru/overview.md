@@ -479,7 +479,7 @@ docker build -f apps/server/Dockerfile -t aiverse-server .             # сер�
 - **Сложная анимация**: blend space ходьба/бег, аддитивные клипы (дыхание, отдача), IK ног по
   рельефу, поворот головы к цели, наклон техники по склону, morph targets (blend shapes) на GPU.
 - **Сокеты**: оружие в руке, груз на спине (по переносимому ресурсу), точки вылета снарядов,
-  точки эффектов (дым, огонь, выхлоп); события клипов и `RtsView::events()/effects()` для звука и
+  точки эффектов (дым, огонь, выхлоп); события клипов и `GameView::events()/effects()` для звука и
   частиц.
 - **Стадии**: строительные леса и стадии постройки, повреждённый вариант по здоровью, появление и
   смерть растворением, обводка выделения, полупрозрачный призрак при постановке здания, портреты.
@@ -524,7 +524,7 @@ docker build -f apps/server/Dockerfile -t aiverse-server .             # сер�
   список источников. Для агентов: `light_add`, `light_update`, `light_delete`, `light_list`,
   `lighting_set`, `view_lighting`.
 
-Формат полей — в шапке `modules/rts/view/RtsLights.h`. Тестовые переменные: `AIVERSE_TIME_OF_DAY`,
+Формат полей — в шапке `engine/view/game/GameLights.h`. Тестовые переменные: `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Проверка механик через MCP

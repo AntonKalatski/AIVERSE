@@ -17,8 +17,8 @@ What was changed on the way in:
   (`trafficWideExit` for types in `traffic.wideRoads`, `trafficLocalDetour`, `sweptBoxCircle`, `polylineBounds`);
 - what was hard-wired is data: map `traffic.noParking`, `traffic.services.<id>.officers`, `traffic.incidents.patient`
   and `.unarmed`, type `walls` with weapon `hitsWalls` / `wrecks` (was the 816-line rocket wall table);
-- the custody / carry / pedestrian code is `RtsServiceCustody.h/.inc`, `RtsServiceCarry.inc`, `RtsPedestrianVehicles.inc`;
-- 108 repeated `#include "Kingston*.inc"` lines in `RtsTrafficCity.cpp` (the patcher appended a pair on every
+- the custody / carry / pedestrian code is `ServiceCustody.h/.inc`, `ServiceCarry.inc`, `PedestrianVehicles.inc`;
+- 108 repeated `#include "Kingston*.inc"` lines in `TrafficCity.cpp` (the patcher appended a pair on every
   configure) were reduced to one pair.
 
 Still game-specific: the trigger variable names the game scripts read and write (`police_*`, `resident_*`, `tow_*`,
@@ -33,6 +33,6 @@ New engine changes for the game go into the engine sources directly, not into pa
 
 The scripts still run when the game is configured against a copy of the engine. Checked on a copy of this tree
 (2026-11-14): they leave it alone except for two harmless things: `prepare_vehicle_repairs.py` swaps the
-`kingston/` includes in `RtsTraffic.cpp` for the project's own headers, and the ambulance / police scripts add
-their include pair before `switch (c.task)` in `RtsTrafficCity.cpp` once more (ungated, which is what the game
+`kingston/` includes in `Traffic.cpp` for the project's own headers, and the ambulance / police scripts add
+their include pair before `switch (c.task)` in `TrafficCity.cpp` once more (ungated, which is what the game
 wants). When a script starts changing other engine files, that change belongs here as a commit.

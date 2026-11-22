@@ -8,7 +8,7 @@
 
 ## Architecture
 - `CameraModelSnapshot::CaptureGuard` begins a per-frame synchronous `Renderer3D::ModelPacketTap` and removes it during explicit `end()` or destructor unwinding.
-- GameClient creates one stack guard before `RtsView::draw`; starts it only when LENS is active, ends it after primary geometry/preview submissions, and releases automatically on exceptions. No heap allocation for the guard.
+- GameClient creates one stack guard before `GameView::draw`; starts it only when LENS is active, ends it after primary geometry/preview submissions, and releases automatically on exceptions. No heap allocation for the guard.
 - Original primary renderer and MotionWeave update occur once. The recording payload is a bounded, deep-copied per-frame set of finalized ModelDraw packets, including skinned pose/matrices/baked sample/material overrides and attachments.
 - This does not yet solve camera-specific **whole-model visual LOD** because final packets already reflect main-view LOD. Terrain/decals/fog/VFX/sprites are not in this snapshot.
 

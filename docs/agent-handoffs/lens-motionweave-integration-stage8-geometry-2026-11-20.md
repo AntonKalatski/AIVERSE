@@ -12,13 +12,13 @@
 ## Architecture / API
 - `CameraGeometryCommand` is a value type with enum `Mesh`, `Line`, `Triangle` and authored transforms, colors and flags. Mesh pointer is borrowed from owning host and requires matching GPU resource retirement.
 - `Renderer3D::setGeometryPacketTap` is independent from the model capture tap and static light-baker capture. `drawMesh`, `line`, `triangle` each record their submitted geometry when enabled, without reentering scene/simulation/animation systems.
-- `CameraModelSnapshot::beginCapture` now installs both geometry and model taps; its RAII `CaptureGuard::end` clears both. A single primary `RtsView::draw` fills both streams.
+- `CameraModelSnapshot::beginCapture` now installs both geometry and model taps; its RAII `CaptureGuard::end` clears both. A single primary `GameView::draw` fills both streams.
 - `CameraModelSnapshot::recordGeometry`, `geometryCount`, `forEachGeometry` own the parameter copies, preserving insertion order **within the geometry stream**, with a bounded maximum; `submit(renderer,cameraScope)` emits captured simple geometry then fallback models and scoped MotionWeave packets.
-- The current GameClient Stage 7 `renderPrepared` pathway automatically reuses these packets in extra ECS cameras without another call to `RtsView::draw`, `MotionWeave::update` or `handleEvents`.
+- The current GameClient Stage 7 `renderPrepared` pathway automatically reuses these packets in extra ECS cameras without another call to `GameView::draw`, `MotionWeave::update` or `handleEvents`.
 - Original primary camera still uses its normal Render3D pipeline.
 
 ## Scope / important limits
-- This is a **basic geometry packet** capture, not all terrain/fog/lighting/VFX/2D sprite systems. Only subpasses already emitting `Renderer3D::drawMesh/line/triangle` while capture is active are included. RtsView's early streamed-world draw happens before capture and is already independently submitted from `worldScene_`; dedicated terrain, water and GPU sprite/particle renderers still need explicit integration.
+- This is a **basic geometry packet** capture, not all terrain/fog/lighting/VFX/2D sprite systems. Only subpasses already emitting `Renderer3D::drawMesh/line/triangle` while capture is active are included. GameView's early streamed-world draw happens before capture and is already independently submitted from `worldScene_`; dedicated terrain, water and GPU sprite/particle renderers still need explicit integration.
 - `drawNereidRippleMesh` special water flags are excluded from the plain mesh tap, because its ripple/wake and hydraulic data cannot be expressed correctly with the base mesh packet. A full water capture packet must preserve its extra material state.
 - `drawSelectionMesh` uses `drawMesh` and a post-call selection override; current geometry snapshot captures the plain mesh, not the extra selection outline attribute. Camera-facing tracers/line billboards baked for the primary camera are not yet recomputed per secondary viewpoint.
 - Mixed geometry/model ordering is not exactly preserved (geometry is replayed ahead of model streams); opacity/ordering and missing secondary-camera-specific layers require pixel parity tests.

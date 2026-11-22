@@ -2,7 +2,7 @@
 
 TrailRenderer: Unity adds a point every `minVertexDistance` the object moves and drops points older than `time`.
 The engine equivalent is an emitter of hidden particles spawned per metre moved (`perMeter`), living `time`, joined
-into one ribbon: when the effect is moved (RtsFx trails, ParticleSystem::move) the ribbon follows, when it stops the
+into one ribbon: when the effect is moved (GameFx trails, ParticleSystem::move) the ribbon follows, when it stops the
 ribbon shrinks away in `time` like Unity's (autodestruct). Width curve / multiplier, colour gradient, material
 (texture, blend), texture mode carry over.
 

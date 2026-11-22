@@ -1,6 +1,6 @@
 #pragma once
 // Presentation for data-defined HUD panels. No gameplay rules live here.
-#include "modules/rts/view/ScriptHud.h"
+#include "engine/view/game/ScriptHud.h"
 #include <cmath>
 #include <imgui.h>
 #include "engine/render/TextureCache.h"

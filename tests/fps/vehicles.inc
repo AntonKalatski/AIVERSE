@@ -10,21 +10,21 @@ void typedVehicles(const std::string& root) {
     auto sim=simulation(rules,map),twin=simulation(rules,map);
     CHECK(sim->world().countExisting<vehicles::VehicleDrive>()==1&&vehiclesOf(*sim).size()==2);
     uint32_t seq=0;
-    auto send=[&](uint8_t slot,fps::Input i){i.sequence=++seq;i.viewTick=sim->tick();auto c=fps::command(slot,i);c.tick=sim->tick();sim->inject(c);twin->inject(c);};
+    auto send=[&](uint8_t slot,actor::Input i){i.sequence=++seq;i.viewTick=sim->tick();auto c=actor::command(slot,i);c.tick=sim->tick();sim->inject(c);twin->inject(c);};
     auto step=[&](int n){for(int i=0;i<n;++i){sim->step();twin->step();CHECK(sim->checksum()==twin->checksum());}};
-    fps::Input enter;enter.action=fps::Action::Interact;
+    actor::Input enter;enter.action=actor::Action::Interact;
     send(1,enter);step(1);CHECK(character(*sim,1).vehicle==vehiclesOf(*sim)[0].id&&vehiclesOf(*sim)[0].driver==1);
     send(2,enter);step(1);CHECK(character(*sim,2).vehicle==vehiclesOf(*sim)[0].id);
     auto start=vehiclesOf(*sim)[0].pos;
-    for(int i=0;i<80;++i){fps::Input d;d.forward=1000;d.buttons=fps::Fire;send(1,d);fps::Input p;p.buttons=fps::Fire;p.yaw=Fixed::fromRatio(1,4);send(2,p);step(1);
+    for(int i=0;i<80;++i){actor::Input d;d.forward=1000;d.buttons=actor::Fire;send(1,d);actor::Input p;p.buttons=actor::Fire;p.yaw=Fixed::fromRatio(1,4);send(2,p);step(1);
         if(i==40){auto bytes=sim->serialize();auto copy=simulation(rules,map);CHECK(copy->deserialize(bytes)&&copy->checksum()==sim->checksum());}}
     CHECK(vehiclesOf(*sim)[0].pos.z>start.z+10_fx);                       // drove forward (+Z at yaw 0)
     CHECK(character(*sim,1).shots==0&&character(*sim,2).shots>0);               // the driver steers, the passenger shoots
     CHECK((character(*sim,2).pos-vehiclesOf(*sim)[0].pos).length()<3_fx);       // the passenger rides along
-    for(int i=0;i<400;++i){fps::Input d;d.forward=1000;send(1,d);step(1);}
+    for(int i=0;i<400;++i){actor::Input d;d.forward=1000;send(1,d);step(1);}
     CHECK(vehiclesOf(*sim)[0].pos.z<80_fx);                               // the wall stops the car
-    for(int i=0;i<120;++i){fps::Input d;d.forward=-1000;send(1,d);step(1);}
-    for(int i=0;i<400;++i){auto vz=vehiclesOf(*sim)[0].velocity.z;if(fxAbs(vz)<Fixed::fromRatio(1,2))break;fps::Input d;d.forward=vz>Fixed{}?-1000:1000;send(1,d);step(1);}   // brake to a stop: exits need a slow car
+    for(int i=0;i<120;++i){actor::Input d;d.forward=-1000;send(1,d);step(1);}
+    for(int i=0;i<400;++i){auto vz=vehiclesOf(*sim)[0].velocity.z;if(fxAbs(vz)<Fixed::fromRatio(1,2))break;actor::Input d;d.forward=vz>Fixed{}?-1000:1000;send(1,d);step(1);}   // brake to a stop: exits need a slow car
     send(1,enter);step(1);CHECK(character(*sim,1).vehicle==0&&(character(*sim,1).pos-vehiclesOf(*sim)[0].pos).length()<4_fx);
     CHECK(vehiclesOf(*sim)[0].driver==0||vehiclesOf(*sim)[0].driver==2);
 }
@@ -34,20 +34,20 @@ void typedVehicles(const std::string& root) {
 // (racer i = slot i), the cars are Vehicle + vehicles::VehicleDrive entities driven by their character.
 void raceMode(const std::string& root) {
     auto dir=root+"/../../../templates/racing/";
-    auto project=fps::readProject([&](const std::string& f,std::string& text){std::ifstream in(dir+f);if(!in)return false;text.assign(std::istreambuf_iterator<char>(in),{});return true;});
+    auto project=actor::readProject([&](const std::string& f,std::string& text){std::ifstream in(dir+f);if(!in)return false;text.assign(std::istreambuf_iterator<char>(in),{});return true;});
     auto rules=project.rules,map=project.map;
-    auto sim=simulation(rules,map),twin=simulation(rules,map);auto S=[&]()->fps::State&{return state(*sim);};auto R=[&]()->const vehicles::RaceState&{return *vehicles::VehicleRace::state(static_cast<const World&>(sim->world()));};
+    auto sim=simulation(rules,map),twin=simulation(rules,map);auto S=[&]()->actor::State&{return state(*sim);};auto R=[&]()->const vehicles::RaceState&{return *vehicles::VehicleRace::state(static_cast<const World&>(sim->world()));};
     const auto& module=fpsModule(*sim);
     CHECK(module.racing()&&R().started&&module.characterCount(*sim)==4&&sim->world().countExisting<vehicles::VehicleDrive>()==4);
     for(uint8_t k=1;k<=4;++k){                                                        // everybody starts at the wheel of its own car
         const Entity car=R().racers.at(k-1);const auto* drive=vehicles::driveOf(static_cast<const World&>(sim->world()),car);
-        CHECK(drive&&drive->driver==module.characterEntity(*sim,k)&&drive->locked&&character(*sim,k).vehicle==sim->world().tryGetConst<fps::Vehicle>(car)->id);
+        CHECK(drive&&drive->driver==module.characterEntity(*sim,k)&&drive->locked&&character(*sim,k).vehicle==sim->world().tryGetConst<actor::Vehicle>(car)->id);
     }
     CHECK(R().session.phase==lib::mechanics::RacePhase::Countdown);
     auto grid=vehiclesOf(*sim)[0].pos;uint32_t seq=0;
-    auto send=[&](fps::Input i){i.sequence=++seq;i.viewTick=sim->tick();auto c=fps::command(1,i);c.tick=sim->tick();sim->inject(c);twin->inject(c);};
+    auto send=[&](actor::Input i){i.sequence=++seq;i.viewTick=sim->tick();auto c=actor::command(1,i);c.tick=sim->tick();sim->inject(c);twin->inject(c);};
     // The countdown holds the brakes even with the throttle floored; Interact never leaves the car.
-    for(int i=0;i<170;++i){fps::Input d;d.forward=1000;if(i==5)d.action=fps::Action::Interact;send(d);sim->step();twin->step();}
+    for(int i=0;i<170;++i){actor::Input d;d.forward=1000;if(i==5)d.action=actor::Action::Interact;send(d);sim->step();twin->step();}
     CHECK((vehiclesOf(*sim)[0].pos-grid).length()<Fixed::fromRatio(1,2)&&character(*sim,1).vehicle==vehiclesOf(*sim)[0].id);
     CHECK(sim->checksum()==twin->checksum());
     auto view=fpsModule(*sim).raceView(*sim,1);
@@ -55,7 +55,7 @@ void raceMode(const std::string& root) {
     // Race: player 1 holds the throttle for a while (then lets go), the bots run three laps.
     bool restored=false;uint32_t lapEvents=0,lastLap=0;
     while(!S().winner&&sim->tick()<20000){
-        if(sim->tick()<400){fps::Input d;d.forward=1000;send(d);}
+        if(sim->tick()<400){actor::Input d;d.forward=1000;send(d);}
         sim->step();twin->step();
         if(sim->tick()%97==0)CHECK(sim->checksum()==twin->checksum());
         uint32_t lap=0;for(const auto& st:R().session.standings)lap=std::max(lap,st.lap);if(lap>lastLap){++lapEvents;lastLap=lap;}

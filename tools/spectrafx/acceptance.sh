@@ -77,7 +77,7 @@ if stage configure cmake "${opts[@]}"; then
     target_ok=0
     stage spectrafx_core_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target "${targets[@]}" && target_ok=1 || true
     stage architecture python3 "$ROOT/tools/spectrafx/check_boundaries.py" || true
-    stage host_integration_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target aiverse_editor aiverse_fps_client aiverse_client || true
+    stage host_integration_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target aiverse_editor aiverse_client || true
     full_ok=0
     stage full_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" && full_ok=1 || true
     if (( full_ok )); then

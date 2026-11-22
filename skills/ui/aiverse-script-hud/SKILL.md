@@ -10,9 +10,9 @@ Full screens and menus are `skills/ui/aiverse-game-screens`.
 
 | Block | Authority | Code | Test |
 |---|---|---|---|
-| `scriptHud` (+ `scriptHudOptions`) | `docs/script-hud.md` | `modules/rts/view/ScriptHud.h`, `apps/editor/ScriptHudDraw.h` | client and editor preview |
+| `scriptHud` (+ `scriptHudOptions`) | `docs/script-hud.md` | `engine/view/game/ScriptHud.h`, `apps/editor/ScriptHudDraw.h` | client and editor preview |
 | `worldCounters` | `docs/world-counters.md` | client / editor game view | aiverse_tests world_counter_script_bindings |
-| Entity actions | `docs/entity-action-controls.md` | `modules/rts/view/EntityActionControls.h` | region-input paths |
+| Entity actions | `docs/entity-action-controls.md` | `engine/view/game/EntityActionControls.h` | region-input paths |
 
 1. Values come from `game.set_var` (already hashed and replayed); strings are localization keys
    (`skills/ui/aiverse-localization`).

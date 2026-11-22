@@ -24,7 +24,7 @@ No changes to `main`.
 
 ## Risks / next step for another agent
 1. Read `AGENTS.md`, `docs/metal-batching-agent-handoff.md`, `docs/editor-unification-handoff.md`, Stage 1 handoff, and `docs/camera-system.md`.
-2. Complete the next bounded **implementation** stage: split `modules/rts/view/RtsPortrait` into genre-free `engine/render/PortraitRenderer` (scene+texture+model pose) and a thin `game::Portrait` adapter for `RtsView`/material settings. Update CMake linkage, editor/animation/modelview callers as appropriate. Preserve existing public `game::Portrait` adapters while de-RTS-ifying common code.
+2. Complete the next bounded **implementation** stage: split `modules/rts/view/RtsPortrait` into genre-free `engine/render/PortraitRenderer` (scene+texture+model pose) and a thin `game::Portrait` adapter for `GameView`/material settings. Update CMake linkage, editor/animation/modelview callers as appropriate. Preserve existing public `game::Portrait` adapters while de-RTS-ifying common code.
 3. Commit implementation, then separately commit a detailed stage handoff before another stage.
 4. Continue camera registry and multi-target renderer using `gfx::PassDesc`, with tests in one later consolidated hardware pass if requested by the owner.
 5. Ensure a full `git grep RTSCamera` sweep and real compiler check; Github code search may have omitted hidden usages, code generation and scripts. Never claim tests passed until executed.

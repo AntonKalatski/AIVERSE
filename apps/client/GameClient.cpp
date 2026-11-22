@@ -2,7 +2,7 @@
 #include "engine/platform/WindowSettings.h"
 #include "engine/render/PrismaVolumeData.h"
 #include "engine/render/PrismaDlss.h"
-#include "modules/rts/RtsInitialVars.h"
+#include "engine/game/InitialVars.h"
 #include "engine/data/JsonCompose.h"
 // Generic RTS game client. Everything game-specific comes from the project's data (game.json,
 // rules.json, maps): the same executable plays a Warcraft-like, a Red-Alert-like or a
@@ -35,14 +35,14 @@
 #include "ClientSplash.h"
 #include "GameClient.h"
 #include "StartPlayers.h"
-#include "modules/rts/view/EncounterDecals.h"   // boss encounters: ground marks
+#include "engine/view/game/EncounterDecals.h"   // boss encounters: ground marks
 #include "engine/platform/ContentReader.h"
 #include "engine/platform/EnhancedInputConfig.h"
 #include "RegionSettings.h"
-#include "modules/rts/RtsLocalize.h"
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/view/RtsCamera.h"
-#include "modules/rts/view/RtsOverlayData.h"
+#include "engine/game/Localize.h"
+#include "engine/game/Tiles.h"
+#include "engine/render/CameraModes.h"
+#include "engine/view/game/GameOverlayData.h"
 
 using namespace aiverse;
 using platform::Event;
@@ -231,7 +231,7 @@ void GameClient::updateAudio(double dt) {
         }
         const float3 eye = cam_.eye();
         const float target[3] = {cam_.target.x, cam_.target.y, cam_.target.z}, eyeP[3] = {eye.x, eye.y, eye.z};
-        audio_.setListener(RtsAudio::cameraListener(target, eyeP));
+        audio_.setListener(GameAudio::cameraListener(target, eyeP));
     }
     if (volume_ != boundVolume_ || musicVolume_ != boundMusicVolume_ || sfxVolume_ != boundSfxVolume_ ||
         musicOn_ != boundMusicOn_ || sfxOn_ != boundSfxOn_) { // changed from the pause menu / settings screen
@@ -412,7 +412,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         cfg.seed = uint64_t(std::time(nullptr));
         if (const char* sd = std::getenv("AIVERSE_SEED")) cfg.seed = uint64_t(std::strtoull(sd, nullptr, 10));   // testing: reproducible matches
         city_.reset();
-        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<RtsModule>());
+        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<GameCore>());
         Json rules = rulesJson_;
         if (!embedScripts(rules, map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
         cityPrepare(rules, map);   // AIVERSE_CITY: a seat in a city on a server (ClientCity.cpp)
@@ -466,7 +466,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
             std::printf("[script%s] t=%u %s\n", e.error ? " error" : "", unsigned(e.tick), e.text.c_str()); std::fflush(stdout); };
     if (const char* ff = std::getenv("AIVERSE_FAST_FORWARD")) { // testing (screenshots): bots play N game seconds first
         const uint32_t ticks = uint32_t(std::max(0.0, std::atof(ff)) * sim_->tickRate());
-        std::vector<RtsAI> ffBots = bots_;   // the human slot is played by a bot too while fast-forwarding
+        std::vector<ComputerPlayer> ffBots = bots_;   // the human slot is played by a bot too while fast-forwarding
         if (!spectator_) ffBots.emplace_back(human_, sim_->config().seed, AIConfig{});
         for (uint32_t i = 0; i < ticks && sim_->result() == 0; ++i) { for (auto& b : ffBots) b.update(*sim_); sim_->step(); }
         bots_.assign(ffBots.begin(), ffBots.begin() + long(bots_.size()));
@@ -496,7 +496,7 @@ void GameClient::fitCamera() {
     cam_.maxDistance = std::max(40.0f, float(std::max(g.w, g.h)) * 1.3f);
     float aspect = platform::windowHeight() > 0 ? platform::windowWidth() / platform::windowHeight() : 1.6f;
     cam_.distance = small ? std::max(g.w / aspect, float(g.h)) * 1.05f + 4 : 24.0f;
-    applyCameraSetup(cameraSetupFrom(manifest_), cam_, float(platform::framebufferHeight())); // game.json "camera" (2D games)
+    render::applyCameraSetup(render::cameraSetupFrom(manifest_), cam_, float(platform::framebufferHeight())); // game.json "camera" (2D games)
     if (const char* e = std::getenv("AIVERSE_CAM")) { // testing (close-up screenshots): "x,z,distance[,pitchDeg[,yawDeg]]"
         float v[5] = {c.x, c.z, cam_.distance, cam_.pitch * 57.2958f, cam_.yaw * 57.2958f};
         int n = std::sscanf(e, "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]);
@@ -515,10 +515,10 @@ void GameClient::fitCamera() {
 // ------------------------------------------------------------------ picking / selection
 
 bool GameClient::groundAt(float sx, float sy, float3& out) const {
-    if (planet()) { // planet picking -> sim-space point (anchor(body) + body-local, RtsSurface.h)
+    if (planet()) { // planet picking -> sim-space point (anchor(body) + body-local, Surface.h)
         int body; float3 local;
         if (!view_.pickPlanet(cam_, sx, sy, platform::windowWidth(), platform::windowHeight(), body, local)) return false;
-        out = RtsView::bodyToSim(body, local);
+        out = GameView::bodyToSim(body, local);
         return true;
     }
     return cam_.screenToGround(sx, sy, platform::windowWidth(), platform::windowHeight(), out);
@@ -531,7 +531,7 @@ Entity GameClient::pick(float sx, float sy) const {
     for (auto& o : scene_.objects) {
         if (!o.visible || o.isProjectile) continue;
         const UnitType& t = rules_.types[o.type];
-        if (view_.spriteHit(cam_, o, static_cast<RtsModule&>(sim_->module()).state(*sim_).grid, sx, sy, platform::windowWidth(), platform::windowHeight())) {
+        if (view_.spriteHit(cam_, o, static_cast<GameCore&>(sim_->module()).state(*sim_).grid, sx, sy, platform::windowWidth(), platform::windowHeight())) {
             if (bestD > 0.01f) { best = o.entity; bestD = 0.01f; } // sprites stand above their ground point
             continue;
         }
@@ -547,7 +547,7 @@ Entity GameClient::pick(float sx, float sy) const {
         float d = std::hypot(g.x - o.pos.x, g.z - o.pos.z);
         if (planet()) { // same body, 3D distance between the picked ground point and the object's (body-local)
             int gb; float3 gl;
-            if (o.body < 0 || !RtsView::simToBody(g, gb, gl) || gb != o.body) continue;
+            if (o.body < 0 || !GameView::simToBody(g, gb, gl) || gb != o.body) continue;
             d = length(gl - o.pos);
         }
         if (d < r && d < bestD) { best = o.entity; bestD = d; }
@@ -1117,7 +1117,7 @@ bool GameClient::requestHostStep() {
 
 namespace {
 // AIVERSE_CLIENT_PROFILE=1: average time of the client frame stages, printed every 120 frames
-// ("[client-stages] ..."): sim, scene, ui (update), view (RtsView::draw), fx, render (scene + PRISMA),
+// ("[client-stages] ..."): sim, scene, ui (update), view (GameView::draw), fx, render (scene + PRISMA),
 // hud (overlays, RmlUi), other. Used for the Android benchmarks (tools/perf/android-bench.sh).
 struct ClientStageProfile {
     static constexpr int kStages = 8;
@@ -1403,10 +1403,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             view_.setOverlayContext(oc);
         }
         render::CameraModelSnapshot::CaptureGuard lensCaptureGuard;
-        // Automatically clear the borrowed RtsView capture pointer if
+        // Automatically clear the borrowed GameView capture pointer if
         // any rendering/animation callback throws before the normal end.
         struct PreparedCaptureReset {
-            game::RtsView* view=nullptr;
+            game::GameView* view=nullptr;
             ~PreparedCaptureReset() {
                 if(view)view->setCameraPreparedCapture(nullptr);
             }
@@ -1482,7 +1482,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     g_stages.lap(6);   // hud
     g_stages.endFrame();
     // A separate offscreen path after the already presented scene/UI pass.
-    // Never replay RtsView::draw: its animation, event and appearance updates
+    // Never replay GameView::draw: its animation, event and appearance updates
     // are stateful, even with MotionWeave's universal View adapter.
     if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy() &&
        view_.visualFrameReadyFor(mod().state(*sim_).grid,time_)) {
@@ -1509,7 +1509,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 // Reuse primary-frame particle lights without collecting FX again.
                 renderer.lights.replayPrepared(lensLightingSnapshot);
                 // Re-submit final pose/material/attachment packets directly.
-                // RtsView::draw and MotionWeave::update are NOT repeated.
+                // GameView::draw and MotionWeave::update are NOT repeated.
                 snapshot.submit(renderer,camera.entity.packed());
             },{},[&](const render::EcsCameraView& camera,
                      render::Renderer3D& renderer,int width,int height) {

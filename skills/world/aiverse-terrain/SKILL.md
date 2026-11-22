@@ -18,10 +18,10 @@ Authority: `docs/terrain.md` (contract and branches), `docs/game-format.md` (key
 3. Visual relief: `terrain_detail {action: create, scale}`, then `terrain_sculpt` (raise / lower / smooth /
    flatten / noise / set / erode / stamp) and `terrain_paint_material`; per-cell materials with
    `terrain_material` / `terrain_paint`. Code: `apps/editor/core/TerrainDetailOps.cpp`,
-   `modules/rts/view/RtsTerrainSurface.h`.
+   `engine/view/game/GameTerrainSurface.h`.
 4. Heightmaps: `heightmap_export` / `heightmap_import` (16-bit PNG; `detail: true` for the detail grid).
 5. Planets: the same tools with `body` and `face` (`apps/editor/core/PlanetDetailOps.cpp`,
-   `modules/rts/view/RtsPlanetDetail.cpp`); planet bodies themselves - `skills/world/aiverse-planets`.
+   `engine/view/game/GamePlanetDetail.cpp`); planet bodies themselves - `skills/world/aiverse-planets`.
 6. Check: `map_validate` (slopes, visual surface vs simulated ground on walkable cells), `view_screenshot`,
    a bot match (`match_run`); 2D tile games must look unchanged (`templates/tiles2d`, `templates/km2d`).
 

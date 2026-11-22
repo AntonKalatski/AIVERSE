@@ -62,7 +62,7 @@
       "version": "0.1.0",
       "layer": "simulation",
       "status": "engine-reference",
-      "source": "modules/rts/RtsModule.h",
+      "source": "engine/game/GameCore.h",
       "skill": "skills/world/aiverse-spatial-queries/SKILL.md",
       "summary": "Existing game spatial queries",
       "notes": "Read current game query API; batch queries. Never infer visibility from presentation. New spatial index adapter remains planned.",
@@ -193,7 +193,7 @@
       "version": "0.1.0",
       "layer": "simulation",
       "status": "engine-reference",
-      "source": "modules/rts/gen/MapGen.h",
+      "source": "engine/game/gen/MapGen.h",
       "skill": "skills/world/aiverse-map-generation/SKILL.md",
       "summary": "Existing deterministic map generator",
       "notes": "Reuse generation presets and engine seeds. Validate fair starts and connectivity. New Poisson/WFC adapters remain planned.",
@@ -1072,14 +1072,14 @@
       "status": "cpp-subsystem",
       "source": "libraries/include/aiverselib/bots/Rts.h",
       "skill": "skills/ai/aiverse-bots-commander/SKILL.md",
-      "summary": "RTS bot profiles and transactional checkpoints over the existing RtsAI",
-      "notes": "Use existing RtsAI for economy, build/research, combat, garrisons and terrain/planet play. Host calls update before sim.step. rules.ai may override profiles. Preserve the legacy knowledge policy; do not claim fog-fairness. Save bot state with simulation; exact player/seed/settings must match.",
+      "summary": "RTS bot profiles and transactional checkpoints over the existing ComputerPlayer",
+      "notes": "Use existing ComputerPlayer for economy, build/research, combat, garrisons and terrain/planet play. Host calls update before sim.step. rules.ai may override profiles. Preserve the legacy knowledge policy; do not claim fog-fairness. Save bot state with simulation; exact player/seed/settings must match.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_bots_rts",
       "dependencies": [
         "docs/bots.md",
-        "modules/rts/RtsAI.h",
-        "modules/rts/RtsAITactics.cpp"
+        "engine/game/ComputerPlayer.h",
+        "engine/game/ComputerPlayerTactics.cpp"
       ],
       "runtime": "header",
       "linkDependencies": [],
@@ -1101,7 +1101,7 @@
         "docs/bots.md",
         "libraries/include/aiverselib/bots/Persistence.h",
         "libraries/include/aiverselib/bots/Waypoints.h",
-        "modules/fps/FpsModule.h"
+        "engine/actor/ActorModule.h"
       ],
       "runtime": "header",
       "linkDependencies": [
@@ -2034,7 +2034,7 @@
       "source": "libraries/include/aiverselib/mechanics/Telegraphs.h",
       "skill": "skills/gameplay/aiverse-boss-encounters/SKILL.md",
       "summary": "Telegraphed area attacks (windup/active/recovery, circle/cone/line/ring fixed-point hit tests, periodic and sweeping strikes, falloff, statuses on the strike tick, progress-telegraph view records and ground decals), slow/root/stun/burn status instances with stacking and immunity, boss phases by HP or time with range-band/sequence/weighted attack patterns, enrage and add waves, encounter windows with personal requests and archetype rotation, and mob wander/hunt/flee/leash/swarm behaviour",
-      "notes": "Read docs/mechanics-packages.md (boss-encounters) for exact coverage and authority boundaries. Decisions and outcomes only: the owner applies damage, moves bodies (steering, flow field or navmesh), places bosses/adds and renders the TelegraphView / StatusViewEvent records (TelegraphDecals.h -> RtsGroundCanvas or view.draw_ground). Inside RtsModule games the engine statuses stay authoritative (rtsStatusRules maps the definitions). Fixed math, integer ticks, repeated/backwards ticks rejected, RNG only through the passed Random&. Persist states via genre::save/load (record kinds 112..119, 112..117 used), hash with encounterHash and bind encounterDataHash. aiverse_encounter validates data and runs the headless hero-vs-boss reference fight.",
+      "notes": "Read docs/mechanics-packages.md (boss-encounters) for exact coverage and authority boundaries. Decisions and outcomes only: the owner applies damage, moves bodies (steering, flow field or navmesh), places bosses/adds and renders the TelegraphView / StatusViewEvent records (TelegraphDecals.h -> GameGroundCanvas or view.draw_ground). Inside GameCore games the engine statuses stay authoritative (rtsStatusRules maps the definitions). Fixed math, integer ticks, repeated/backwards ticks rejected, RNG only through the passed Random&. Persist states via genre::save/load (record kinds 112..119, 112..117 used), hash with encounterHash and bind encounterDataHash. aiverse_encounter validates data and runs the headless hero-vs-boss reference fight.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_boss_encounters",
       "dependencies": [
@@ -2067,7 +2067,7 @@
       "source": "libraries/include/aiverselib/mechanics/Perks.h",
       "skill": "skills/gameplay/aiverse-match-progression/SKILL.md",
       "summary": "In-match progression: perk/modifier packages with an ordered Set/Add/Multiply stat pipeline (incoming/outgoing damage, speed, fire interval, max health rescale), hero/player xp with a level table or curve, seeded level-up offers of N alternatives (recruit a deck slot, slot perk, player perk, explicit picks, rerolls, revisions), stacking limits, prerequisites, exclusions and upgrade chains, xp orb pickups (radius, magnet, homing attraction, orb budget), summon circles, charges and summoned ally lifecycle, and the pre-match battle deck with limits from the match start payload",
-      "notes": "Read docs/mechanics-packages.md (match-progression) for exact coverage and authority boundaries. Pure policy: the owner applies effect values to its units through evaluateStat (never a parallel evaluator for built-in RtsModule stats), spawns recruits and summons and confirms them with entity ids, and dispatches PerkEvent hooks (e.g. to Lua). Offers draw from the state's own PCG32 stream (seedPerks) with ascending-id candidate order; stale revisions and invalid choices are rejected without changes. Level curves reuse progression-curves (systems/Curves.h) and weighted choice semantics from Progression.h. Persist PerkState/PickupState/SummonState via genre::save/load (record kinds 104..111 reserved, 104..106 used) and hash with progressionHash; bind perkDefinitionsHash and progressionConfigHash. Optional `perks` settings section; definitions/deck JSON via genre/PerksData.h. Headless check: aiverse_progression --verify.",
+      "notes": "Read docs/mechanics-packages.md (match-progression) for exact coverage and authority boundaries. Pure policy: the owner applies effect values to its units through evaluateStat (never a parallel evaluator for built-in GameCore stats), spawns recruits and summons and confirms them with entity ids, and dispatches PerkEvent hooks (e.g. to Lua). Offers draw from the state's own PCG32 stream (seedPerks) with ascending-id candidate order; stale revisions and invalid choices are rejected without changes. Level curves reuse progression-curves (systems/Curves.h) and weighted choice semantics from Progression.h. Persist PerkState/PickupState/SummonState via genre::save/load (record kinds 104..111 reserved, 104..106 used) and hash with progressionHash; bind perkDefinitionsHash and progressionConfigHash. Optional `perks` settings section; definitions/deck JSON via genre/PerksData.h. Headless check: aiverse_progression --verify.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_match_progression",
       "dependencies": [

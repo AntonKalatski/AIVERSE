@@ -2,7 +2,7 @@
 #include "../EditorUtil.h"
 #include "../EditorGenreUi.h"
 namespace aiverse::editor {
-class FpsWindow : public EditorWindow {
+class ActorWindow : public EditorWindow {
 public:
     const char* id()const override{return "fps";}
     const char* title()const override{return "FPS";}
@@ -78,5 +78,5 @@ public:
     }
 private:int collider_=0;std::string project_,path_,rules_,map_,error_,address_="udp://127.0.0.1:27100";
 };
-AIVERSE_EDITOR_WINDOW(FpsWindow);
+AIVERSE_EDITOR_WINDOW(ActorWindow);
 }

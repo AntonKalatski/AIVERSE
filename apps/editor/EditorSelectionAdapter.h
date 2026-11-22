@@ -1,5 +1,5 @@
 // Central conversion between authoring scene source IDs and Editor selections.
-// Existing Selection::Entity and Selection::FpsObject representations remain
+// Existing Selection::Entity and Selection::ActorObject representations remain
 // compatible with other editor tools during the universal-entity migration.
 #pragma once
 #include "Editor.h"
@@ -17,7 +17,7 @@ inline Selection selectionForDocumentEntity(DocumentEntityRef ref) {
     } else {
         const uint64_t key = ref.fpsKey();
         if (!key) return selection;
-        selection.kind = Selection::FpsObject;
+        selection.kind = Selection::ActorObject;
         selection.ref = key;
     }
     return selection;
@@ -29,7 +29,7 @@ inline bool documentEntityFromSelection(const Selection& selection,
         out = DocumentEntityRef::mapEntity(size_t(selection.index));
         return true;
     }
-    if (selection.kind == Selection::FpsObject)
+    if (selection.kind == Selection::ActorObject)
         return DocumentEntityRef::fromFpsKey(selection.ref, out);
     return false;
 }

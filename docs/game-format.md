@@ -101,7 +101,7 @@ editor reads it. Details: docs/editor-world-tree.md § Game hooks.
 |---|---|
 | `supplyCap` | max supply/population (default 200) |
 | `modes`, `matchModes`, `timedRules`, `matchStats`, `ruleSets` | match modes (domination, king of the hill, time limit, sudden death, battle-royal zones), presets picked by map `matchMode`, player statuses by time slots, match statistics: see "Match modes" |
-| `ai` | `{"controller":"builtin"}` (default) or `{"controller":"scripted"}`. Scripted control makes the generic RtsAI submit no commands in client, editor and headless. The game must provide its own controller; Lua handlers, human/network commands, combat, production and victory remain enabled. This is not the `waves` player flag and does not exempt players from defeat. |
+| `ai` | `{"controller":"builtin"}` (default) or `{"controller":"scripted"}`. Scripted control makes the generic ComputerPlayer submit no commands in client, editor and headless. The game must provide its own controller; Lua handlers, human/network commands, combat, production and victory remain enabled. This is not the `waves` player flag and does not exempt players from defeat. |
 | `maxQueue` | production queue length (5) |
 | `costModel` | `"upfront"` (pay when ordering) or `"progressive"` (Total Annihilation: pay while building; stalls when short) |
 | `sellRefund` | fraction refunded when selling a structure (0.5) |
@@ -279,7 +279,7 @@ any tag in `deficitDisables`).
 |---|---|
 | `structure` | `{"footprint": [w, h], "on": "geyser", "takesOverNode": true, "terrain": "rock"\|"creep"\|"any", "extendsBase": true}` — `on`: must be built exactly on an object of that type (refinery on a geyser, TA extractor on a metal spot); `takesOverNode` inherits its resource |
 | `invulnerable` | can't be damaged (trees, mines, decorations) |
-| `collider` | `true`: map entities of this type are static circles (`move.radius`, the type's layer), not units: no ECS cost, no model. Walkers treat them as ORCA obstacles and never step into one, separation pushes overlapping units out, top-down heroes and cars are stopped by them like any body that never moves. For thousands of invisible bollards / benches / flower beds. Needs `move.radius`, no `structure`; not for things scripts query or damage (`modules/rts/RtsColliders.h`) |
+| `collider` | `true`: map entities of this type are static circles (`move.radius`, the type's layer), not units: no ECS cost, no model. Walkers treat them as ORCA obstacles and never step into one, separation pushes overlapping units out, top-down heroes and cars are stopped by them like any body that never moves. For thousands of invisible bollards / benches / flower beds. Needs `move.radius`, no `structure`; not for things scripts query or damage (`engine/game/Colliders.h`) |
 | `energy` | `{"max": 200, "regen": 0.5, "start": 50}` — mana for abilities |
 | `abilities` | list, see "Abilities" |
 | `hero` | `{"levels": [200, 500, 900], "perLevel": [{"stat": "maxHp", "add": 50}, {"stat": "damage", "add": 0.1}]}` — gains xp from kills nearby; unique per player |
@@ -416,7 +416,7 @@ values fail loading with `map players[i].ai...`. Only decisions change, never st
 ### Per-map rules overrides (map `rules`)
 
 A map may override tuning blocks of the rules for its matches: `"rules": {"<block>": {...}}` is merged over rules.json
-before anything parses it (`modules/rts/RtsMapRules.cpp`), so every block validates the merged result with its usual
+before anything parses it (`engine/game/MapRules.cpp`), so every block validates the merged result with its usual
 errors. Objects merge key by key (recursively); any other value — numbers, strings, lists such as an xp table —
 replaces the rules value; `null` removes the key (`"escape": null` switches the escape off on that map).
 
@@ -801,25 +801,25 @@ Hand-authored routes between garrison structures, sends in rows, and a screen-si
   nodes within `trim` of both ends are cut (lines start and end a little off the points). Lanes keep the route
   direction (`Lane::a` = `from`), offsets are -1, +1, -2, +2... in line order (`lanesBetween` returns line 0 first).
   Lanes exist for the whole match (stable indices).
-- Sends need an open route: `kCmdSend` between garrisons without one is ignored; `RtsModule::canSend` /
+- Sends need an open route: `kCmdSend` between garrisons without one is ignored; `GameCore::canSend` /
   `routeLength` (line 0) / `routeAiLength` and Lua `game.can_send(a, b)` / `game.route_length(a, b)` tell. A closed route
   (a blocker alive) only refuses new sends; units already on it keep walking. The built-in AI only sends along routes.
 - Every line is walked at the progress of line 0 (lane speed x length k / length 0), so a row stays abreast in bends.
 - Units on crossing or shared routes do not fight each other by themselves; a skill can make walkers shoot with
-  `RtsModule::routeWalkerTargets` (hostile walkers in an ellipse / forward sector, nearest first) and
+  `GameCore::routeWalkerTargets` (hostile walkers in an ellipse / forward sector, nearest first) and
   `routeWalkerDistances` (walked / left along the line). Walkers are ordinary unit entities with a `LaneWalker`.
 - A route between entities whose `screenGroups` (map entity key, list of ints) do not match does not exist: both empty
   match, one empty does not, else any shared group.
 - `zone` (game-defined bits, 2 = slowdown) / `slowdown` per point feed `routeAiLength` only.
 - `towersCoverage` (for computer players): per tower entity the route length inside its range, for ranges 0, 1, 2 ...
-  x `routes.coverageStep` (at most 21 values, the last holds beyond). `RtsModule::towerCoverage` interpolates;
+  x `routes.coverageStep` (at most 21 values, the last holds beyond). `GameCore::towerCoverage` interpolates;
   `towerUnitsDamage` / `towerDamageBySpline` estimate losses of a group passing it.
 - Walkers get a random diagonal offset (`routes.jitter`, one `sim.rng()` draw per unit) that fades in over `routes.fade`
   from both route ends; the same fade is the unit's opacity in the view (`SceneObject::fade`, `routeAlpha`).
 - **Flying sends**: a garrison with a status carrying the `flying` flag sends along a straight flying route made on
   first use for that pair (in / out points `routes.inOut` from the ends, columns `flyColumnPadding`), even where no
   ground route exists or it is closed; rows are `flyRowSpacing` apart. `groups.flyAll`: such a send takes the whole
-  garrison; `groups.flySingle`: one flying group per garrison at a time. `RtsModule::sendsFlying(from)` tells.
+  garrison; `groups.flySingle`: one flying group per garrison at a time. `GameCore::sendsFlying(from)` tells.
 
 **Rules** (all optional, inside `"lanes"`):
 
@@ -849,7 +849,7 @@ Without `groups` sends work as before (`pendingOut`, two per tick).
 
 The playable window over a larger map: `size`, start `center` (default the map centre), `bounds` = [left, right, top,
 bottom] how far the centre may move from its start (top = towards -z). Garrisons off the screen do not grow;
-`RtsModule::onScreen` is public (King of the Hill and Domination use it when there are no player zones). A map without
+`GameCore::onScreen` is public (King of the Hill and Domination use it when there are no player zones). A map without
 `screen` but with an environment `mapScroller.screen` uses that screen for the same checks (`onScreen`, `screenView`,
 `setScreenCenter`, Lua); with both, the scroller moves the map `screen`. Scripts: `game.set_screen(x, z)` (clamped),
 `game.screen()` -> x, z, w, h, `game.on_screen(x, z)`. The client camera follows the centre (`smooth` per second) and
@@ -861,7 +861,7 @@ garrisons, or within `maxDistance`), `screen_set`; the Scene view draws the line
 
 ## Terrain overlays (visual `terrain` block)
 
-Presentation only (`modules/rts/view/RtsGroundFx.*`): the view reads the territory, dig, room and road layers and
+Presentation only (`modules/rts/view/GameGroundFx.*`): the view reads the territory, dig, room and road layers and
 the lanes and never writes them. All keys are optional; put them under `terrain` in rules.json or game.json (game.json
 wins per block; sim keys like `model` live in the same block). Each block may be `false` to switch the overlay off.
 Colours are `[r, g, b]` (0..1) or `"#rrggbb"`. `texture` paths go through `TextureCache::resolve` (atlases work);
@@ -956,7 +956,7 @@ The same keys work inside effects of type `projectile`, `area` and `chain`, whic
 
 #### Skill objects (objects spawned from units, goals, magnets, souls)
 
-Optional delivery keys of `area` / `projectile` effects and the `pull` effect (`modules/rts/RtsSkillObjects.cpp`):
+Optional delivery keys of `area` / `projectile` effects and the `pull` effect (`engine/game/SkillObjects.cpp`):
 
 | key | meaning |
 |---|---|
@@ -1204,7 +1204,7 @@ them as `bw_flying_tower`.
 
 ## Match modes (domination, king of the hill, time limit, sudden death, zones)
 
-Rule-level victory modes and match clocks as data (`RtsModes.cpp`). Every block is optional; games without them keep
+Rule-level victory modes and match clocks as data (`Modes.cpp`). Every block is optional; games without them keep
 their exact checksums and save format.
 
 ```json
@@ -1241,7 +1241,7 @@ per team; a king-of-the-hill score is shared by the team).
 | `suddenDeath` | at `at` real seconds: preview (`preview` s, game speed `previewSpeed`), then every player gets `status` (e.g. `incomeMult` and `cooldownRate` mods). With `end` > 0 the side with most points wins `end` s later (all equal: draw; a tie of some: they win, the others draw — the match result is a draw). `counter` s before the start / the end `ModesState::sdCounter` is on (a countdown screen). One of `ruleSets` is picked with the match RNG and joins `timedRules` (time slots shifted by `zones.suddenDeathDelay`) |
 | `zones` | each player's zone is the `start` rect holding its first structure; a rect stays `stay` s, then morphs linearly into `steps[next]` over `move` s (real time). A point outside its owner's current rect turns neutral (and into `neutralType`; garrison kept). Rects are `[x, z, w, h]` in cells, half-open |
 
-Clocks: a tick stays one tick. `RtsModule::speedScale()` (= time limit speed x preview speed) makes
+Clocks: a tick stays one tick. `GameCore::speedScale()` (= time limit speed x preview speed) makes
 `Simulation::advance` run that many ticks per real tick; game timers (hold, king of the hill, time limit) use game
 time, zones / sudden death / `timedRules` use `ModesState::realTime` (sum of dt / speed). Network play: each client
 reports the speed of its simulation (`Msg::ClockRate`); when every player asks for the same rate the server re-bases
@@ -1271,7 +1271,7 @@ drops by `amount` if nothing was gained for more than `after` seconds.
 `matchStats` (on with any mode): per player counters `ModesState::stats` (`MatchStat`: kills, lost, produced,
 captured, capturedNeutral, structuresLost, upgrades, abilities, maxUnits, maxPoints, points, levelUps, levelDowns,
 maxLevel, modeScore) and `abilityUses` per player ability. `ModesState::outcome` per player: 1 won, 2 lost, 3 draw.
-Read with `RtsModule::matchStat`, `modeZone` (camera of a zone map), `speedScale`; events `kEvModePhase`
+Read with `GameCore::matchStat`, `modeZone` (camera of a zone map), `speedScale`; events `kEvModePhase`
 (`ModePhaseEvent`: counter, preview, start, end, time step, time up, king-of-the-hill alarm, domination held, zone
 lost / changed); defeats by a mode carry `kDefeatMode`.
 
@@ -1334,7 +1334,7 @@ Optional blocks; a game without them plays exactly as before (stances and retrea
 ```
 
 - **Detection**: invisible objects (status flag `invisible`) can be targeted by a side only when `revealed` or within
-  `detects` of one of its (or an ally's) detectors. `RtsModule::canSee(sim, e, viewer)` is the query for the view/UI.
+  `detects` of one of its (or an ally's) detectors. `GameCore::canSee(sim, e, viewer)` is the query for the view/UI.
 - **Toggle abilities**: casting switches the status on (until toggled off) and off; `drain` energy per second turns
   it off when energy runs out. Cloak, burrow, submerge, siege mode (a status with mods / flags) are data.
 - **Veterancy** (ordinary units; heroes keep `hero`): the unit that dealt the last hit gets the victim's `xp`;
@@ -1602,7 +1602,7 @@ altitude yet.
 
 ## Radar, sonar and jammers
 
-Type keys (all optional; `modules/rts/RtsSensors.h`). Radii are in cells.
+Type keys (all optional; `engine/game/Sensors.h`). Radii are in cells.
 
 ```jsonc
 "radar_tower": {"radar": 30, "income": {"energy": -20}},        // enemies inside the circle are contacts of its side
@@ -1618,15 +1618,15 @@ Type keys (all optional; `modules/rts/RtsSensors.h`). Radii are in cells.
 - A contact is an enemy inside the radar (sonar, for underwater units) circle of the viewer or an ally, not inside a
   jammer circle of its own side and not stealthy. Unpowered (`kUnitDisabled`), unfinished or carried sources are off.
 - The view draws contacts outside sight as red dots (no model: the viewer does not know the type). Native code:
-  `RtsModule::sensors()->onRadar(sim, e, viewer)`, `blips(sim, viewer)`.
+  `GameCore::sensors()->onRadar(sim, e, viewer)`, `blips(sim, viewer)`.
 - `radar.targeting`: artillery and long-range towers fire at what radar or allies see. Without it nothing changes.
-- Bots build one structure with `radar` once their base runs (`RtsAI`); contacts feed their long-range guns.
+- Bots build one structure with `radar` once their base runs (`ComputerPlayer`); contacts feed their long-range guns.
 - No state: contacts are recomputed from the units, so saves and replays carry nothing extra; games without these
   keys keep their checksums.
 
 ## Field operations
 
-Optional blocks for flow-economy wars (`modules/rts/RtsFieldOps.h`; state in the `FieldOpsStore` resource: hashed,
+Optional blocks for flow-economy wars (`engine/game/FieldOps.h`; state in the `FieldOpsStore` resource: hashed,
 saved). Games without them have no extra system and keep their checksums.
 
 ```jsonc
@@ -1668,7 +1668,7 @@ saved). Games without them have no extra system and keep their checksums.
 - **Repair pads**: units standing still within `radius` of an own or allied `repairPad` heal `heal` hp/s for free;
   `seekRepair` sends an idle unit below that health share to the nearest own pad.
 - Events `kEvFieldOp`: `value & 0xFF` = `kFieldOpArmed` (data = ticks left) / `Disarmed` / `Stockpiled` (data = charges) /
-  `Intercepted` / `Wind` (data = strength). Native code: `RtsModule::fieldOps()` (`stockpile`, `selfDestructAt`, `wind`).
+  `Intercepted` / `Wind` (data = strength). Native code: `GameCore::fieldOps()` (`stockpile`, `selfDestructAt`, `wind`).
 
 ## Save states (agent-mech)
 
@@ -1678,7 +1678,7 @@ seed and checks the state checksum stored in the file. Saved: tick, RNG, players
 commands (replays continue), the entity allocator, every component pool in dense order and the dynamic part of
 `GameState` (per-cell layers run-length encoded). Not saved: rules, triggers, the planet surface (from setup) and derived
 caches (clearance, HPA*, rebuilt on demand). The computer players keep their own memory, so bots resume from the loaded
-state with fresh plans. Module side: `RtsModule::serializeState` (`modules/rts/RtsSave.cpp`); a component type missing from
+state with fresh plans. Module side: `GameCore::serializeState` (`engine/game/Save.cpp`); a component type missing from
 its list makes saving fail. `aiverse_headless --save F --save-at S` / `--load F`; MCP `match_run` with `saveCheck` (seconds).
 A skirmish match at 90 s is ~150 KB. Since save version 9 the frozen match outcome (`MatchOutcome`) is saved too: a
 state from before the end, loaded into a simulation that had already finished, no longer keeps the old result (the
@@ -1687,7 +1687,7 @@ older saves load with no outcome, latched again on the next tick.
 
 ## Campaigns (agent-mech)
 
-`campaign.json` in the game folder chains missions; see `modules/rts/RtsCampaign.h`:
+`campaign.json` in the game folder chains missions; see `engine/game/Campaign.h`:
 
 ```json
 {"start": "m1", "missions": [
@@ -1715,7 +1715,7 @@ per-player receipts for the meta. Full reference: [raid.md](raid.md); sample: `t
 
 ## Commands (for tools and network code)
 
-Besides the unit commands (`RtsModule.h`): `kCmdSurrender` (the issuing player is defeated, event value 1),
+Besides the unit commands (`GameCore.h`): `kCmdSurrender` (the issuing player is defeated, event value 1),
 `kCmdDig` / `kCmdPaintRoom` (point = first cell, `param = rectParam(w, h, extra)`: dig `extra` 0 mark / 1 unmark;
 room `extra` = room index or -1 erase), `kCmdPickUp` (units), `kCmdDrop` (point; units or `param` = count),
 `kCmdSlap` (units), `kCmdPossess` (units[0]; empty = release), `kCmdDirect` (point = direction, `param` bit 0 = fire,
@@ -2085,7 +2085,7 @@ kind. Painted with the editor's **Рельеф** window or `terrain_material`.
 **Quality tiers** (pause menu *Ground textures*, `Renderer3D::materialQuality()`, capped by the device default;
 `AIVERSE_TERRAIN=low|medium|high` overrides for testing): Low = vertex colours (weak Mali / Adreno / PowerVR, also every
 game without `layers`), Medium = splat textures + cliff texture, High = + normal maps and triplanar cliffs. Shaders:
-`modules/rts/view/RtsTerrainShaders.h` (GLSL + MSL, sun + soft shadows + point lights + clouds as the lit shader).
+`engine/view/game/GameTerrainShaders.h` (GLSL + MSL, sun + soft shadows + point lights + clouds as the lit shader).
 
 **Performance**: the terrain is cut into 32x32-cell chunks, frustum-culled; the editor rebuilds only chunks whose cells
 changed; during a match nothing is rebuilt: resource fields, creep and (heightfield maps) fog of war are read by the
@@ -2138,7 +2138,7 @@ Everything is integer / fixed point and deterministic.
 
 MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_heightfield {"enabled"}` adds a flat
 heightfield or removes it, `map_validate` warns when the model is heightfield but the map has no corners and flags
-units/structures standing on slopes too steep for them. Sculpting: `terrain_sculpt`, heightmap PNG import/export (see Terrain materials). The view draws the relief from the corners (two triangles per cell, diagonal (0,0)-(1,1)); `RtsView::heightAt` follows the same triangles, so models and overlays sit on the drawn ground.
+units/structures standing on slopes too steep for them. Sculpting: `terrain_sculpt`, heightmap PNG import/export (see Terrain materials). The view draws the relief from the corners (two triangles per cell, diagonal (0,0)-(1,1)); `GameView::heightAt` follows the same triangles, so models and overlays sit on the drawn ground.
 
 ## Planets: visual keys (map `world` block)
 
@@ -2240,7 +2240,7 @@ into a static map.
   the route between starts (an unblock pass removes them); the result is validated with the pathfinder. `"connect": "none"`
   keeps islands separate (naval / air games).
 - **Determinism**: integers / `Fixed` only (no float), seeded hashing, ordered containers; the generator runs inside
-  `RtsModule::setup` before the map is loaded, so replays and the server arbiter regenerate identically. Golden hashes of
+  `GameCore::setup` before the map is loaded, so replays and the server arbiter regenerate identically. Golden hashes of
   the presets are in `tests/tests.cpp` (`gen_golden_maps` and friends): a change of the generator's output shows there.
   Same seed + params + engine version = same map.
 
@@ -2338,7 +2338,7 @@ agent-mech spellings of the same mechanics (`armorModel`, type `shields`, `upkee
 Recipes of `storage: "player"` games (no goods in buildings) take their inputs from the player stock and credit the
 outputs to it: buildings that gather around them (They Are Billions sawmills, Northgard lodges).
 
-### Foundations, traps, group teleports, charges (`RtsFidelity.cpp`)
+### Foundations, traps, group teleports, charges (`Fidelity.cpp`)
 
 ```json
 "foundation": {"startHp": 0.5, "decay": 0.25, "floor": 0.5, "lostWithBuilding": true},   // or just true
@@ -2369,7 +2369,7 @@ outputs to it: buildings that gather around them (They Are Billions sawmills, No
   enemies (not targeted, not drawn) except for `revealFor` seconds after firing and to detectors. Event `kEvTrapFired`
   (a = trap, b = victim). The AI builds a few traps at the front of its base, more as the match goes on.
 - **Group teleport**: see the `teleportGroup` effect; `pointPair` player abilities take two clicks (from, to); the second
-  point travels in `kCmdPlayerAbility` param bits 16..48 (`RtsModule::packPoint2`). Event `kEvGroupTeleport` (a = unit,
+  point travels in `kCmdPlayerAbility` param bits 16..48 (`GameCore::packPoint2`). Event `kEvGroupTeleport` (a = unit,
   value 1 = return trip). The AI shifts its biggest matching group next to the nearest enemy structure.
 - **Smart rule `ownProducer`**: autocast / AI target: an own structure without the payload's status that has larva
   charges (when the payload, or the status it gives, adds charges) or something in production (chrono boost:
@@ -2586,7 +2586,7 @@ Events: `kEvEnv` (value = `EnvEventKind << 16 | data`): weather phases, lightnin
 for lightning on buildings.
 
 Game-specific actors on top of the environment (bosses, scripted directors, special buildings) are native modules
-(`docs/native-modules.md` § Gameplay hooks): they read `RtsModule::environment()` (zones, splines, weather state,
+(`docs/native-modules.md` § Gameplay hooks): they read `GameCore::environment()` (zones, splines, weather state,
 `killedByWeather`) and their own keys of the same map block through `mapData()`.
 
 ## Fog of war look
@@ -2845,7 +2845,7 @@ model. Format, parameters, tiers and MCP tools: `docs/postfx.md`.
 ### Initial script variables (local match setup)
 
 Optional map `initialVars` is an object of integer trigger variables loaded before user scripts. Example: `"initialVars": {"loadout_support_1": 2}`. At most 128 keys, ASCII letters/digits/underscore/dot/hyphen, length 1–128; integers −1000000..1000000. Values enter ordinary `trig.vars` hashing. Client UI can pass overrides with `game.start(..., {initialVars=...})`; see docs/ui-scripting.md. Saved map/replay setup retains the options, and omitted options preserve old behavior.
-## Computer player (`RtsAI`, agent-ai-terrain)
+## Computer player (`ComputerPlayer`, agent-ai-terrain)
 
 The bot reads the state and submits commands like a player (replays don't re-run it). Generic for every template;
 knobs in rules `ai` (above). What it does with the terrain:
@@ -2882,7 +2882,7 @@ knobs in rules `ai` (above). What it does with the terrain:
   reached only through orbit; towers that hit the orbit when attacks come from there.
 - **Per-slot styles**: map `players[i].ai` (see "Maps") gives one slot a preset and its own knobs; applied before
   the first think (and again identically after a load), so `thinkTicks` from the slot is used from the start.
-- **Save states**: `RtsAI::saveState()` / `loadState()` (headless `--save F` writes `F.ai` next to the sim state,
+- **Save states**: `ComputerPlayer::saveState()` / `loadState()` (headless `--save F` writes `F.ai` next to the sim state,
   `--load F` reads it): a restored bot plays on exactly like the saved one.
 
 

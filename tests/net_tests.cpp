@@ -24,8 +24,8 @@
 #include "engine/net/WebSocket.h"
 #include "engine/sim/Simulation.h"
 #include <thread>
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 
 using namespace aiverse;
 
@@ -43,7 +43,7 @@ static const std::string kMushrooms = std::string(AIVERSE_SOURCE_DIR) + "/templa
 
 static std::unique_ptr<Simulation> makeSim(const std::string& game, const std::string& map, uint64_t seed) {
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(Json::parseFile(game + "/rules.json"), Json::parseFile(game + "/" + map));
     return sim;
 }
@@ -51,7 +51,7 @@ static std::unique_ptr<Simulation> makeSim(const std::string& game, const std::s
 // ---------------- snapshots ----------------
 static void snapshotRoundTrip(const std::string& game, const std::string& map) {
     auto sim = makeSim(game, map, 5);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim->players()) bots.emplace_back(p.slot, 5);
     auto botsStep = [&](uint32_t n) { for (uint32_t i = 0; i < n && sim->result() == 0; ++i) { for (auto& b : bots) b.update(*sim); sim->step(); } };
     botsStep(600);
@@ -172,7 +172,7 @@ struct NetPlayer {
     std::string name, gameDir;
     std::unique_ptr<Simulation> sim;            // declared first: must outlive the client's session
     std::unique_ptr<net::NetClient> net;
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     bool ended = false, desync = false;
     int endResult = 0;
     std::vector<std::string> log;
@@ -273,7 +273,7 @@ static bool verifyLatestReplay(uint64_t expectHash, std::string* name = nullptr,
     if (name) *name = latest.filename().string();
     if (hashFileContents({rep.rulesPath, rep.mapPath}) != rep.dataHash) return false;
     SimConfig cfg; cfg.seed = rep.seed; cfg.tickRate = rep.tickRate; cfg.inputDelayTicks = rep.inputDelay;
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     sim.setup(Json::parseFile(rep.rulesPath), Json::parseFile(rep.mapPath));
     for (auto& c : rep.commands) sim.inject(c);
     if (truth) {
@@ -586,7 +586,7 @@ TEST(net_server_verdict_matches_offline_on_a_tile_map) {
     SimConfig cfg; cfg.seed = 9;
     auto sim = netgame::makeSimulation(data.module, cfg);
     sim->setup(data.rules, data.map);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim->players()) bots.emplace_back(p.slot, 9);
     std::vector<std::pair<uint32_t, uint64_t>> checks;
     while (sim->tick() < 3000 && sim->result() == 0) {

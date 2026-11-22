@@ -1,6 +1,6 @@
-// Careers (rules "careers", RtsCareer.h): ladders, ranks and perks, several careers at once, open careers by
+// Careers (rules "careers", Career.h): ladders, ranks and perks, several careers at once, open careers by
 // command and closed ones by script only, saves, the Lua table; fines of the commerce module.
-#include "modules/rts/RtsCareer.h"
+#include "engine/game/Career.h"
 
 namespace {
 const char* kCareerRules = R"J({
@@ -79,7 +79,7 @@ TEST(career_lua_table) {
     rules.set("scripts", list);
     rules.set("$scriptSources", src);
     SimConfig cfg;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parse(flatMap(32, 16, kCareerMap)));
     for (int i = 0; i < 5; ++i) sim->step();
     for (auto& e : mod(*sim).scripts()->log()) if (e.error) std::printf("  log: %s\n", e.text.c_str());
@@ -107,7 +107,7 @@ TEST(prompts_show_pick_and_interact) {
     rules.set("scripts", list);
     rules.set("$scriptSources", src);
     SimConfig cfg;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parse(flatMap(32, 16, kCareerMap)));
     auto& pr = *mod(*sim).prompts();
     auto send = [&](uint8_t player, int64_t param) {
@@ -126,7 +126,7 @@ TEST(prompts_show_pick_and_interact) {
     send(2, 0);                                   // somebody else's prompt: ignored
     CHECK(pr.of(*sim, 1) && pr.of(*sim, 1)->id == "hello");
     std::string save = sim->serialize(), err;
-    auto copy = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto copy = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     copy->setup(rules, Json::parse(flatMap(32, 16, kCareerMap)));
     CHECK(copy->deserialize(save, &err) && copy->checksum() == sim->checksum() && mod(*copy).prompts()->of(*copy, 1));
     send(1, 0);                                   // "Ask about work": the script opens the next one

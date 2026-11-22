@@ -8,7 +8,7 @@ description: Map Bunker Wars / Mushroom Wars 2 energy skills onto AIVERSE rules 
 Use when porting BW / MW2 skills into an AIVERSE project (the primitives run on the legacy `modules/rts` host, debt G3). Playable HTML5 ads are a different engine and skill
 (BunkerWarsPlayables). Ability primitives: `docs/game-format.md` (abilities and effects, skill objects).
 
-Authority: `docs/bunkerwars-skills.md` (mapping of every skill). Engine code: `modules/rts/RtsSkillObjects.cpp`.
+Authority: `docs/bunkerwars-skills.md` (mapping of every skill). Engine code: `engine/game/SkillObjects.cpp`.
 The converter (convert.py, test_convert.py) left the engine repository with the game (commit 7b707de1); the doc's
 paths under tools/importers/bunkerwars point to the game's own repository now.
 

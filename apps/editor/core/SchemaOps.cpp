@@ -19,7 +19,7 @@
 #include <sstream>
 #include <stdexcept>
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 
 namespace aiverse::editor {
 
@@ -52,7 +52,7 @@ Access record(const Json& rules, const Json& map, std::string* err) {
     Json::setAccessLog(&log);
     try {
         SimConfig cfg;
-        Simulation sim(cfg, std::make_unique<RtsModule>());
+        Simulation sim(cfg, std::make_unique<GameCore>());
         sim.setup(rules, map);
     } catch (const std::exception& e) {
         if (err) *err = e.what();

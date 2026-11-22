@@ -1,6 +1,6 @@
 // A persistent city on an authoritative server (docs/city-server.md).
 //
-// The server runs the one simulation of the city (an RtsModule project with top-down heroes). A client never runs
+// The server runs the one simulation of the city (an GameCore project with top-down heroes). A client never runs
 // it: it sends its hero's commands and receives what is near its hero — the entities within `radius` cells, the
 // incidents that happened in view, and its own account. Background life that nobody touched may be simulated by
 // the client itself (Replicate::Involved sends only the players, what they drive and what an incident involves).
@@ -15,7 +15,7 @@
 #include "engine/net/Conn.h"
 #include "engine/sim/Simulation.h"
 
-namespace aiverse::game { class RtsModule; }
+namespace aiverse::game { class GameCore; }
 
 namespace aiverse::net::city {
 constexpr uint32_t kProtocol = 4;
@@ -108,7 +108,7 @@ public:
     // false: he is in the city now, or the server does not know him.
     bool sellOut(const std::string& player);
     Simulation& simulation() { return *sim_; }
-    game::RtsModule& module();
+    game::GameCore& module();
     const Stats& stats() const { return stats_; }
     size_t clients() const { return peers_.size(); }
     uint64_t content() const { return content_; }

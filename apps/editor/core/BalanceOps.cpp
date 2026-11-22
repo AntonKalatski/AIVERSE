@@ -9,8 +9,8 @@
 #include <memory>
 #include <stdexcept>
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 
 namespace aiverse::editor {
 
@@ -50,7 +50,7 @@ int typeOrThrow(const Rules& R, const std::string& id) {
 std::unique_ptr<Simulation> makeSim(const Json& rules, const Json& map, uint64_t seed) {
     SimConfig cfg;
     cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<GameCore>());
     sim->setup(rules, map);
     return sim;
 }
@@ -89,7 +89,7 @@ Json batch(Workspace& ws, const Json& p) {
         AIConfig ai;
         const int diff = int(p["difficulty"].integer(1));
         ai.thinkTicks = diff == 0 ? 20 : diff == 2 ? 6 : 10;
-        std::vector<RtsAI> bots;
+        std::vector<ComputerPlayer> bots;
         for (auto& pl : sim->players()) bots.emplace_back(pl.slot, uint64_t(firstSeed + k), ai);
         const uint32_t limit = uint32_t(seconds * double(sim->tickRate()));
         while (sim->tick() < limit && sim->result() == 0) {

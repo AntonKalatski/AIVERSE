@@ -19,7 +19,7 @@ int main(int argc,char** argv) {
             for(uint64_t now=1;now<15000;now+=5) {
                 auto peers=websocket?ws.poll(now):udp.poll(now);for(auto& peer:peers)server.attach(1,std::move(peer));
                 client.poll(now);server.poll(now);
-                if(now%20==1){fps::Input input;input.right=now<3000?1000:0;client.submit(input);server.step();}
+                if(now%20==1){actor::Input input;input.right=now<3000?1000:0;client.submit(input);server.step();}
             }
             net::setUdpTestFaults({});
             if(!client.ready()||client.snapshot().ack<300||!client.connected())throw std::runtime_error("transport failed to deliver authority updates");

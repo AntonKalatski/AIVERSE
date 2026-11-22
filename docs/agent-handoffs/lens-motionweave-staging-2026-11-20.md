@@ -13,14 +13,14 @@
 - `CMakeLists.txt` lacks camera_* test registrations.
 - `engine/render/Math3D.h` lacks LENS asymmetric frustum API and pose camera modifications.
 - `engine/gfx/Gfx.h` lacks `captureTexture` and `waitIdle`; camera headers will not compile until the RHI contract is merged.
-- `apps/client/GameClient.{h,cpp}`, `apps/editor/Editor.cpp`, `engine/gfx/{metal,gl,vulkan}` need careful semantic merge. Animation changes in `RtsView.{h,cpp}`, `RtsViewDraw.cpp`, `RtsAnimate.cpp` are source of truth; do not overwrite them with the LENS branch.
-- `RtsView::drawFrozenModels` is a temporary LENS-only path and is NOT in the animation base. Replace it with immutable packet capture + per-camera submit over the animation branch's universal View API, not a second animation evaluation.
+- `apps/client/GameClient.{h,cpp}`, `apps/editor/Editor.cpp`, `engine/gfx/{metal,gl,vulkan}` need careful semantic merge. Animation changes in `GameView.{h,cpp}`, `GameViewDraw.cpp`, `GameAnimate.cpp` are source of truth; do not overwrite them with the LENS branch.
+- `GameView::drawFrozenModels` is a temporary LENS-only path and is NOT in the animation base. Replace it with immutable packet capture + per-camera submit over the animation branch's universal View API, not a second animation evaluation.
 - New Studio camera file is staged but editor build and renderer integration are **not compiled**.
 
 ## Integration rules
 1. Preserve animation team's `genericView_->update`, `submitOne`, `View::submitModel`, attachment composition, appearance generation and reload contract.
 2. Integrate generic LENS-only RHI, Math3D, scheduler and ECS changes by targeted three-way reconciliation, not wholesale source replacement.
-3. Produce a genuine immutable camera frame after the single MotionWeave update, then submit to N cameras independently (per-camera LOD and culling). Do not replay mutable `RtsView::draw`.
+3. Produce a genuine immutable camera frame after the single MotionWeave update, then submit to N cameras independently (per-camera LOD and culling). Do not replay mutable `GameView::draw`.
 4. Ensure texture source and animation model/material lifetime through GPU fence completion.
 5. Run the consolidated build/CTest and backend tests before claiming integration complete or merging to main.
 

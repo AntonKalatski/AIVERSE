@@ -1,7 +1,7 @@
 #include "RaidOps.h"
 #include "SimTools.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 #include <stdexcept>
 
 namespace aiverse::editor {
@@ -90,13 +90,13 @@ Json raidRun(const Workspace& ws, uint64_t seed, double seconds) {
     needProject(ws);
     SimConfig cfg;
     cfg.seed = seed;
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     const Json simMap = mapForSim(ws.map.toJson(), ws.project.dir);
     sim.setup(ws.project.simRules(simMap), simMap);
-    auto& mod = *dynamic_cast<game::RtsModule*>(&sim.module());
+    auto& mod = *dynamic_cast<game::GameCore*>(&sim.module());
     game::Raid* raid = mod.raid();
     if (!raid || !raid->active()) throw std::runtime_error("the game has no rules \"raid\" block (docs/raid.md)");
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& pl : sim.players()) bots.emplace_back(pl.slot, seed);
     const uint32_t limit = uint32_t(seconds * double(sim.tickRate()));
     Json timeline = Json::array();

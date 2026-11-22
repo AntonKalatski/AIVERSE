@@ -42,7 +42,7 @@ public:
     // Safe for hosts without a prior full-device completion proof. A refused
     // idle barrier leaves all published handles owned and retryable.
     bool shutdownAfterGpuIdle();
-    // Caller must already have established GPU idle (RtsView::shutdown does).
+    // Caller must already have established GPU idle (GameView::shutdown does).
     void shutdown();
     bool ready() const { return pipe_.valid(); }
     void setLook(const VisibilityLook& look) { look_ = look; dirty_ = true; ++revision_; }

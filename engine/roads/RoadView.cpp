@@ -2105,7 +2105,7 @@ void RoadView::shutdown(gfx::Device& dev) {
     if(!retirement_.completeForShutdown(dev)) {
         warnings_.push_back(
             "road View shutdown: GPU idle unproven, resources held fail-closed");
-        // Do not let RtsView::shutdown() continue and tear down other GPU
+        // Do not let GameView::shutdown() continue and tear down other GPU
         // owners after this host failed to establish a completion barrier.
         throw std::runtime_error("road View GPU retirement barrier failed");
     }
@@ -2610,7 +2610,7 @@ void RoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcep
 
 void RoadView::rebuild(gfx::Device& dev,
         const std::function<float(float,float)>& heightAt) {
-    // Legacy direct draw path remains supported outside RtsView's global
+    // Legacy direct draw path remains supported outside GameView's global
     // prepare/commit frame phase.
     auto prepared=prepareRebuild(dev,heightAt);
     commitRebuild(std::move(prepared));

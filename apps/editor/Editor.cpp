@@ -29,10 +29,10 @@
 #include <fstream>
 #include <iterator>
 #include <unordered_map>
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/view/RtsCamera.h"
-#include "modules/rts/view/RtsOverlayData.h"
-#include "modules/rts/view/RtsSelectionPresentation.h"
+#include "engine/game/Tiles.h"
+#include "engine/render/CameraModes.h"
+#include "engine/view/game/GameOverlayData.h"
+#include "engine/view/game/GameSelectionPresentation.h"
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -450,7 +450,7 @@ size_t Editor::reloadVisualModelSources(
         const std::vector<std::string>& paths) {
     if(!dev_ || playing() || clientPlaying() || paths.empty())return 0;
     // The caller runs at the editor frame boundary, after the previous
-    // render submission. TypeLook/animation sources are detached by RtsView
+    // render submission. TypeLook/animation sources are detached by GameView
     // before the independent resource owner destroys GPU allocations.
     const size_t invalidated=view_.reloadModelSources(paths);
     if(invalidated) {
@@ -598,7 +598,7 @@ void Editor::retainEditorType(uint16_t type) {
         modelDemand_.resize(rules().types.size());
     modelDemand_.touch(type,time_,game::view_adapter::ModelDemandPriority::Interactive);
     // The Model/Materials windows and model_info must work when the type has
-    // no instances on the map. The RtsView loader caches this call per type.
+    // no instances on the map. The GameView loader caches this call per type.
     // Eager mode already has resident types; still consume the demand
     // queue to avoid retaining stale requests across editor frames.
     modelDemand_.drain(modelDemand_.pendingCount(),
@@ -705,7 +705,7 @@ void Editor::fitScene() {
         return;
     }
     // 2D games: projection and angle of game.json "camera" (zoom stays the editor's)
-    game::CameraSetup cs = game::cameraSetupFrom(ws_.project.manifest);
+    render::CameraSetup cs = render::cameraSetupFrom(ws_.project.manifest);
     sceneCam.ortho = cs.ortho;
     if (cs.present) { sceneCam.pitch = std::min(cs.pitch, 1.5707f); sceneCam.yaw = cs.yaw; sceneCam.fovY = cs.fovY; }
 }
@@ -738,7 +738,7 @@ bool Editor::groundAt(const Viewport& vp, const Camera& cam, float sx, float sy,
         return true;
     }
     // the drawn surface under the cursor (high ground, detail relief): march the view ray against
-    // RtsView::heightAt, then bisect; the y = 0 plane only when the ray never meets it
+    // GameView::heightAt, then bisect; the y = 0 plane only when the ray never meets it
     float3 o, d;
     if (cam.screenRay(sx - vp.originX, sy - vp.originY, vp.pointsW, vp.pointsH, o, d) && d.y < -1e-4f) {
         const game::MapGrid& gr = editGrid();
@@ -911,7 +911,7 @@ void Editor::syncGrid() {
             const int ti = rules().findType(e.type);
             if (e.owner <= 0 || e.owner > 8 || ti < 0 || !rules().types[size_t(ti)].structure) continue;
             const game::UnitType& t = rules().types[size_t(ti)];
-            int x0, y0; game::RtsModule::footprintAt(t, {Fixed::fromRatio(int64_t(std::lround(e.x * 1000)), 1000), Fixed{}, Fixed::fromRatio(int64_t(std::lround(e.z * 1000)), 1000)}, x0, y0);   // editor only: float -> fixed
+            int x0, y0; game::GameCore::footprintAt(t, {Fixed::fromRatio(int64_t(std::lround(e.x * 1000)), 1000), Fixed{}, Fixed::fromRatio(int64_t(std::lround(e.z * 1000)), 1000)}, x0, y0);   // editor only: float -> fixed
             for (int y = y0 - r; y < y0 + t.footprintH + r; ++y)
                 for (int x = x0 - r; x < x0 + t.footprintW + r; ++x) {
                     if (!grid_.inside(x, y)) continue;
@@ -986,7 +986,7 @@ std::string Editor::planetBodyId(int body) const {
     return body >= 0 && size_t(body) < W.bodies.size() ? W.bodies[size_t(body)].id : std::string();
 }
 
-void Editor::buildEditScene(game::RtsScene& out) const {
+void Editor::buildEditScene(game::GameScene& out) const {
     const auto& d = ws_.map.data;
     out.objects.clear();
     out.roads.clear();
@@ -1064,7 +1064,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
             if(e.extra["components"].has("NereidWater"))continue;
             const auto local=authoredLocalTransform(e);o.pos.y=float(local.position.y.toDouble());o.parented=true;o.parentFrame=authoredModelMatrix(e);
         }
-        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as RtsModule spawns it: 0 north, 90 east, 180 south
+        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as GameCore spawns it: 0 north, 90 east, 180 south
             const float a = float(e.extra["facing"].toDouble()) * 3.14159265f / 180.0f;
             o.facing = {std::sin(a), 0, -std::cos(a)};
         }
@@ -1153,7 +1153,7 @@ void Editor::drawEditOverlays3D() {
         }
     for (size_t p = 0; p < d.players.size(); ++p) {
         if (!d.players[p].hasStart) continue;
-        float4 c = game::RtsView::playerColor(int(p + 1));
+        float4 c = game::GameView::playerColor(int(p + 1));
         float sx = d.players[p].startX, sz = d.players[p].startZ, gy = view_.heightAt(grid_, sx, sz);
         r3d_.circleXZ({sx, 0, sz}, 1.2f, rgbaf({c.x, c.y, c.z, 1}), 24, gy + 0.15f);
         r3d_.line({sx, gy, sz}, {sx, gy + 2.5f, sz}, rgbaf({c.x, c.y, c.z, 1}));
@@ -1981,7 +1981,7 @@ void Editor::renderGame(Viewport& vp, const Camera& cam, uint64_t prismaViewId) 
         view_.buildTerrain(*dev_, gs.grid);
         playTerrainBuilt_ = true;
     }
-    game::RtsScene sc;
+    game::GameScene sc;
     game::sceneFromSim(*sim_, sc, float(sim_->alpha()), uint8_t(human_));
     sc.paintLayers = paintLayers;
     sc.entityFx = entityFx;
@@ -2142,7 +2142,7 @@ void Editor::startPlay(int humanSlot) {
     try {
         SimConfig cfg;
         cfg.seed = uint64_t(std::time(nullptr));
-        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         Json mapJson = doc().toJson();
         std::string terr, dir = ws_.project.dir;
         auto read = [&dir](const std::string& p, std::string& out) {
@@ -2168,7 +2168,7 @@ void Editor::startPlay(int humanSlot) {
     fxPreview_ = {};
     fxFrozen_ = false;
     gameFxBridge_.setHeightFn([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : 0.0f; });
-    gameFxBridge_.setPlayerColorFn([](int p) { return game::RtsView::playerColor(p); });
+    gameFxBridge_.setPlayerColorFn([](int p) { return game::GameView::playerColor(p); });
     gameFxBridge_.setAttackOriginFn([this](Entity e, fx::float3& pos, fx::float3& dir) { return view_.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     gameFxBridge_.attach(*sim_, uint8_t(human_));
     fxTime_ = -1;
@@ -2186,7 +2186,7 @@ void Editor::startPlay(int humanSlot) {
         if (size_t(human_ - 1) < d.players.size() && d.players[size_t(human_ - 1)].hasStart) gameCam.target = {d.players[size_t(human_ - 1)].startX, 0, d.players[size_t(human_ - 1)].startZ};
         gameCam.distance = 24;
     }
-    game::applyCameraSetup(game::cameraSetupFrom(ws_.project.manifest), gameCam, 720.0f);
+    render::applyCameraSetup(render::cameraSetupFrom(ws_.project.manifest), gameCam, 720.0f);
     focusWindow("game");
     status = human_ ? "Тест: вы играете за игрока " + std::to_string(human_) : "Тест: боты играют на карте";
 }

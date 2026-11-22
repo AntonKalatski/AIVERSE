@@ -40,7 +40,7 @@ Previously `ModelResourceCache::publishPrepared` called `render::uploadModel(dev
 
 ## Host integration
 
-- `modules/rts/view/RtsLook.cpp` `RtsView::prepareType` now handles `publishPrepared=false` for a missing cache key by logging a warning (without warning on expected duplicate arrivals). Caught upload/publish `std::exception` is logged and the worker-preparation cursor still advances rather than repeatedly blocking on the same failed source.
+- `engine/view/game/GameLook.cpp` `GameView::prepareType` now handles `publishPrepared=false` for a missing cache key by logging a warning (without warning on expected duplicate arrivals). Caught upload/publish `std::exception` is logged and the worker-preparation cursor still advances rather than repeatedly blocking on the same failed source.
 - The host may subsequently use its existing synchronous fallback, but this stage does **not** claim a full retry policy, automatic backoff, or ready native rendering.
 
 ## Test source added (authored, NOT yet run)
@@ -52,7 +52,7 @@ Extended existing `tests/render/device_epoch.cpp` target `aiverse_device_epoch_t
 
 ## Actual work vs deferred validation
 
-**ACTUAL:** connected GitHub source review of `ModelResourceCache.h`, `Model.cpp`, `Model.h`, `AsyncResourceRetirementQueue.h`, `ModelPreparationService.h`, `RtsLook.cpp`, `device_epoch.cpp`, Stage 135 handoff and branch metadata; exact current-blob-SHA edits/commits; readback of updated code and test source; main/base comparisons and recent GitHub Actions status lookup; attempted local git access, which failed DNS.
+**ACTUAL:** connected GitHub source review of `ModelResourceCache.h`, `Model.cpp`, `Model.h`, `AsyncResourceRetirementQueue.h`, `ModelPreparationService.h`, `GameLook.cpp`, `device_epoch.cpp`, Stage 135 handoff and branch metadata; exact current-blob-SHA edits/commits; readback of updated code and test source; main/base comparisons and recent GitHub Actions status lookup; attempted local git access, which failed DNS.
 
 **NOT RUN:** local AIVERSE CMake configure/compile/link, CTest, full CI green for Stage 136 HEAD, Metal/Vulkan/OpenGL, FPS/RTS/editor visuals, ASan/TSan/UBSan, real failed-GPU-fence injection, real partial GPU allocation or benchmark. Last queried Actions runs for this branch were queued/cancelled on *older* SHAs. Do not claim this code passes or is release-ready.
 

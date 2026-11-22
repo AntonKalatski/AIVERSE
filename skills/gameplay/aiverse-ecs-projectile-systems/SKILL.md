@@ -14,7 +14,7 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
    + generation-safe `owner` + stable `shotId`) on project Entities.
 2. Register `addProjectileFlightSystem(sim,name,collisionProvider,onImpact)`
    from any GameModule. The collision provider returns a read-only
-   `world::SpatialWorld`; no `RtsModule` / `fps::Module` dependency is
+   `world::SpatialWorld`; no `GameCore` / `fps::Module` dependency is
    allowed in the shared projectile stage.
 3. The default `BallisticFlightPolicy` calls the existing
    `genre::stepProjectile`: fixed-point gravity, radius, lifetime and
@@ -60,7 +60,7 @@ primitive rather than reimplementing capsule/swept-box targeting in FPS,
 RTS artillery, ships or ability systems.
 
 The **real FPS programmed-projectile** update in
-`modules/fps/FpsProjectiles.cpp` now calls this shared sweep selector. It
+`engine/actor/ActorProjectiles.cpp` now calls this shared sweep selector. It
 retains its existing terrain-wall blocking, penetration, on-hit effects and
 spawn sequencing. The programmed projectile's core trajectory and damage
 are still part of the compatibility code; do not claim full ownership
@@ -106,7 +106,7 @@ When implementing another mechanic, repeat the same decomposition:
 
 ## Built-in FPS projectile ownership
 
-The FPS host is ECS-only (`modules/fps/FpsComponents.h`): every projectile,
+The FPS host is ECS-only (`engine/actor/ActorComponents.h`): every projectile,
 loot item and vehicle is an entity with a `Projectile` / `Loot` / `Vehicle`
 component; there is no `State::projectiles` vector, mirror stage or
 `fps.ecsAuthority` switch. Deterministic order is ascending `id`
@@ -114,7 +114,7 @@ component; there is no `State::projectiles` vector, mirror stage or
 `Module::projectiles` copies.
 
 * `fps.projectilePrograms` (`Module::stepProgrammedProjectile` in
-  `modules/fps/FpsProjectiles.cpp`) composes the projectile modifier policy
+  `engine/actor/ActorProjectiles.cpp`) composes the projectile modifier policy
   with `selectSweptProjectileContact`; no second physical solver. Collision,
   damage, on-hit / loot side effects and branching happen synchronously while
   the source projectile is stepped; entity destroys / spawns happen after the

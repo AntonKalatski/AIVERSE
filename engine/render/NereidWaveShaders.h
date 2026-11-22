@@ -1,5 +1,5 @@
 // NEREID wave model shared by every water surface: the plane water in the lit shader (Shaders.h) and the
-// sea of cube-sphere planets (RtsPlanetShaders.h, sampled triplanar on the sphere). GLSL and MSL twins.
+// sea of cube-sphere planets (GamePlanetShaders.h, sampled triplanar on the sphere). GLSL and MSL twins.
 #pragma once
 
 #define AIVERSE_GLSL_NEREID_WAVES \

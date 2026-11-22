@@ -4,7 +4,7 @@
 
 | Package | Coverage | Target |
 |---|---|---|
-| bots-rts | Full existing RtsAI through a project-local configuration/restore adapter | AIVERSE::aiverse_bots |
+| bots-rts | Full existing ComputerPlayer through a project-local configuration/restore adapter | AIVERSE::aiverse_bots |
 | bots-fps | Perception, remembered target, reaction, bounded aim, firing/reload, retreat, patrol, safe-zone movement | AIVERSE::fps_bots |
 | navmesh | Automatic layered polygon mesh from static AABB collision; agent clearance/erosion, step links, connected regions, bounded routes | AIVERSE::navmesh |
 | bot-matches | Headless actual-engine match runner and deterministic restoration scenarios | aiverse_bot_match |
@@ -33,7 +33,7 @@ host AI. Bot difficulty never changes damage, health, resource balances or weapo
 Set map player `bot:false` for slots controlled by the new FPS adapter: `bot:true` selects the
 reference FPS module's fallback bot until its first sequenced input. The library does not silently
 replace this separate controller or editor/client ownership policy. Only one controller may own a slot.
-Native C++ access is available, but the existing RtsNative hook itself belongs to RtsModule; it is
+Native C++ access is available, but the existing RtsNative hook itself belongs to GameCore; it is
 not an automatic FPS NativeModule lifecycle. Connect FPS controllers in the project's FPS host.
 
 ## RTS profiles and knowledge
@@ -46,17 +46,17 @@ Use `RtsBot(player, seed, settings)` with a project-owned JSON object:
 
 Presets: `easy`, `normal`, `hard`, `rush`, `defender`, `economist`. Overrides include worker count,
 wave sizes/growth, aggression, towers and scouts. Unknown keys and out-of-range values fail loading.
-Existing `rules.ai` overrides still win when RtsAI applies its data configuration. The preset table is the engine's
-(`game::applyAIPreset`, `RtsAI.h`); games can also pick a preset per slot in data with map `players[i].ai`
-(`docs/game-format.md` "Maps"), which RtsAI applies after `rules.ai`.
+Existing `rules.ai` overrides still win when ComputerPlayer applies its data configuration. The preset table is the engine's
+(`game::applyAIPreset`, `ComputerPlayer.h`); games can also pick a preset per slot in data with map `players[i].ai`
+(`docs/game-format.md` "Maps"), which ComputerPlayer applies after `rules.ai`.
 The adapter reuses the engine's economy, construction, production, research, combat, garrison,
 terrain and planet tactics instead of implementing another strategy AI. Not every mechanic exists
 in every game's data. Scripted AI remains the owner when the rules request it.
 
 The existing RTS AI's knowledge policy is unchanged: this wrapper does **not** certify fog-fair
-competitive behavior. FPS LOS/FOV guarantees below do not apply to RtsAI. Tests cover actual RTS
+competitive behavior. FPS LOS/FOV guarantees below do not apply to ComputerPlayer. Tests cover actual RTS
 command production and restoration rather than claiming human-level play or competitive strength.
-RtsAI retains its existing seeded host RNG, saved by its own serializer; the adapter adds no RNG.
+ComputerPlayer retains its existing seeded host RNG, saved by its own serializer; the adapter adds no RNG.
 
 `RtsBot::save/load` binds player, seed and exact settings JSON. Load is transactional through a
 candidate AI object. Save/restore the simulation and every bot together. The terrain-cache snapshot

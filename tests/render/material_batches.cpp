@@ -568,7 +568,7 @@ int aiverseMain(int argc, char** argv) {
         if (const char* q=std::getenv("AIVERSE_PALETTE_TEST_QUALITY")) renderer.setMaterialQuality(render::MaterialQuality(std::atoi(q)));
         renderer.lights.setQuality(render::LightQuality::High);
         floor=render::MeshBuilder().box({0,-.1f,0},{60,.2f,60}).upload(d);
-        materials=model->materials; // Match RtsView's per-type material-copy path.
+        materials=model->materials; // Match GameView's per-type material-copy path.
         if (scenario=="overrides") for(size_t i=0;i<materials.size();++i) {
             materials[i].baseColor.x*=.731234f; materials[i].metallic=float(i%3)*.27913f;
             materials[i].roughness=.1213f+float(i%4)*.174321f;

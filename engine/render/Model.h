@@ -6,7 +6,7 @@
 // renderer, the animation system and the game view treat them identically.
 //
 // Conventions: Y up, right-handed, metres = map cells. glTF assets face +Z; the game view rotates
-// them to the engine's +X forward (see RtsView "forward").
+// them to the engine's +X forward (see GameView "forward").
 #pragma once
 #include <cstdint>
 #include <functional>

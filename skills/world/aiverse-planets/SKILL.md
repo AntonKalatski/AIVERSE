@@ -18,7 +18,7 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
 4. TerraWeave on spheres (`skills/workflow/aiverse-terra-first/SKILL.md` applies to planets too):
    relief and land biomes come from `engine/world/TerraWeaveSphere.h` (`heightAtSphere`, `climateAtSphere`,
    `placeOnSphere`); never write a separate planet noise or tree placer. Trees and rocks are TerraWeave
-   Arbor / rock prototypes placed per cell by the planet view (`modules/rts/view/RtsPlanetFlora.*`): body
+   Arbor / rock prototypes placed per cell by the planet view (`engine/view/game/GamePlanetFlora.*`): body
    `visual.flora` `{"density": 0..1 (0.22 planets, 0 moons), "scale": world units per metre (0.06)}` or `false`.
    Check them on a close screenshot (`AIVERSE_PLANET_CAM=40,20`): trees on land, none in the sea or on steep rock.
 5. Water: oceans of planets belong to NEREID (`skills/gameplay/aiverse-nereid-water/SKILL.md`). The planet sea

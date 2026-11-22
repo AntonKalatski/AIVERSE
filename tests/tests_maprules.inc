@@ -1,7 +1,7 @@
-// Per-map overrides of rules blocks (map "rules", RtsMapRules.h, docs/game-format.md § Per-map rules overrides):
+// Per-map overrides of rules blocks (map "rules", MapRules.h, docs/game-format.md § Per-map rules overrides):
 // top-down escape / squad tuning, raid keys, progression offerAt + xp table, encounters tuning; merge semantics
 // (objects merge, lists replace, null removes) and the errors for blocks / keys a map may not touch.
-#include "modules/rts/RtsMapRules.h"
+#include "engine/game/MapRules.h"
 
 namespace {
 std::string withMapRules(const std::string& map, const std::string& patch) { return "{\"rules\":" + patch + "," + map.substr(1); }

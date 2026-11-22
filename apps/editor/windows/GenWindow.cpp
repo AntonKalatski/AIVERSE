@@ -4,7 +4,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "../core/GenOps.h"
-#include "modules/rts/gen/MapGen.h"
+#include "engine/game/gen/MapGen.h"
 
 namespace aiverse::editor {
 

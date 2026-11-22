@@ -18,7 +18,7 @@ Created `integration/spectrafx-main-sync-20261120` from the green SpectraFX SHA,
 Against current main the result differs in exactly **88 expected SpectraFX files** (checked through GitHub compare), with no unrelated paths:
 
 - **77 files added:** independent SpectraFX engine, Editor Windows, tests, CI workflow, utilities and agent handoffs.
-- **5 modified files on paths unchanged in main since the common ancestor:** `apps/client/ClientFx.cpp`, `apps/client/ClientFx.h`, `engine/fx/ParticleSystem.cpp`, `engine/fx/ParticleSystem.h`, `modules/fps/CMakeLists.txt`.
+- **5 modified files on paths unchanged in main since the common ancestor:** `apps/client/ClientFx.cpp`, `apps/client/ClientFx.h`, `engine/fx/ParticleSystem.cpp`, `engine/fx/ParticleSystem.h`, `engine/actor/CMakeLists.txt`.
 - **6 files changed by both main and SpectraFX:** `CMakeLists.txt`, `apps/client/GameClient.cpp`, `apps/fps/client.cpp`, `engine/gfx/Gfx.h`, `engine/gfx/metal/GfxMetal.mm`, `skills/visuals/aiverse-spectrafx/SKILL.md`.
 
 For each concurrent file, the exact original main and feature contents were reconstructed independently from base-to-branch line edits before applying combined changes. **Five of these six files had no line-overlapping edits**, so both sets of changes were preserved by line-wise three-way merging.

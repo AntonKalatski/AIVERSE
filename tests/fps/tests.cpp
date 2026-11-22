@@ -9,29 +9,29 @@
 #include "engine/net/LatestChannel.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/net/Udp.h"
-#include "modules/fps/view/FirstPersonCamera.h"
+#include "engine/render/CameraModes.h"
 #include <stdexcept>
 #include <optional>
 #include <fstream>
-#include "modules/fps/Project.h"
+#include "engine/actor/Project.h"
 using namespace aiverse;
 #define CHECK(x) do {if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);} while(0)
 namespace {
 std::unique_ptr<Simulation> simulation(Json rules,Json map) {
-    auto sim=std::make_unique<Simulation>(SimConfig{7,fps::readConfig(rules).tickRate,0},std::make_unique<fps::Module>());sim->setup(rules,map);return sim;
+    auto sim=std::make_unique<Simulation>(SimConfig{7,actor::readConfig(rules).tickRate,0},std::make_unique<actor::Module>());sim->setup(rules,map);return sim;
 }
-fps::State& state(Simulation& sim){return *sim.world().resource<fps::State>();}
-fps::Module& fpsModule(Simulation& sim){return static_cast<fps::Module&>(sim.module());}
+actor::State& state(Simulation& sim){return *sim.world().resource<actor::State>();}
+actor::Module& fpsModule(Simulation& sim){return static_cast<actor::Module&>(sim.module());}
 // Writable view of the character in `slot` (1..; the former State::actors[slot-1]).
-fps::CharacterRef character(Simulation& sim,uint8_t slot){return fpsModule(sim).character(sim,slot);}
+actor::CharacterRef character(Simulation& sim,uint8_t slot){return fpsModule(sim).character(sim,slot);}
 // Copies of the dynamic objects in id order (the former State vectors).
-std::vector<fps::Projectile> projectilesOf(Simulation& sim){return fpsModule(sim).projectiles(sim);}
-std::vector<fps::Loot> lootOf(Simulation& sim){return fpsModule(sim).loot(sim);}
-std::vector<fps::Vehicle> vehiclesOf(Simulation& sim){return fpsModule(sim).vehicles(sim);}
+std::vector<actor::Projectile> projectilesOf(Simulation& sim){return fpsModule(sim).projectiles(sim);}
+std::vector<actor::Loot> lootOf(Simulation& sim){return fpsModule(sim).loot(sim);}
+std::vector<actor::Vehicle> vehiclesOf(Simulation& sim){return fpsModule(sim).vehicles(sim);}
 // Writable component of the i-th object in id order (the entity is the state).
-fps::Projectile& projectileAt(Simulation& sim,size_t i){return *sim.world().tryGet<fps::Projectile>(fpsModule(sim).projectileEntities(sim).at(i));}
-fps::Loot& lootAt(Simulation& sim,size_t i){return *sim.world().tryGet<fps::Loot>(fpsModule(sim).lootEntities(sim).at(i));}
-fps::Vehicle& vehicleAt(Simulation& sim,size_t i){return *sim.world().tryGet<fps::Vehicle>(fpsModule(sim).vehicleEntities(sim).at(i));}
+actor::Projectile& projectileAt(Simulation& sim,size_t i){return *sim.world().tryGet<actor::Projectile>(fpsModule(sim).projectileEntities(sim).at(i));}
+actor::Loot& lootAt(Simulation& sim,size_t i){return *sim.world().tryGet<actor::Loot>(fpsModule(sim).lootEntities(sim).at(i));}
+actor::Vehicle& vehicleAt(Simulation& sim,size_t i){return *sim.world().tryGet<actor::Vehicle>(fpsModule(sim).vehicleEntities(sim).at(i));}
 // Adds a dynamic object entity with the next object id (spawned outside the gameplay code).
 template<class T> Entity spawnObject(Simulation& sim,T value){value.id=state(sim).nextObject++;const Entity e=sim.world().create();sim.world().add<T>(e,std::move(value));return e;}
 void spatial() {
@@ -58,11 +58,11 @@ void audioBank(const std::string& path) {
 void cameraControls() {
     using namespace render;
     for(float yaw:{0.f,0.25f,0.5f,0.75f}) {
-        fps::view::Look look{yaw,0};auto before=look.camera({});auto forward=normalize(before.target-before.eye());auto right=normalize(cross(forward,{0,1,0}));
+        render::Look look{yaw,0};auto before=look.camera({});auto forward=normalize(before.target-before.eye());auto right=normalize(cross(forward,{0,1,0}));
         look.motion(10,0);auto camera=look.camera({});auto changed=normalize(camera.target-camera.eye());CHECK(dot(changed,right)>0);
         look={yaw,0};look.motion(0,-10);camera=look.camera({});CHECK((camera.target-camera.eye()).y>0);
-        fps::CharacterSnapshot actor;fps::Input input;input.yaw=Fixed::fromRaw(int64_t(yaw*65536));input.right=1000;
-        world::SpatialWorld empty;fps::moveActor(actor,input,{},empty,Fixed::fromRatio(1,60),1000_fx);
+        actor::CharacterSnapshot actor;actor::Input input;input.yaw=Fixed::fromRaw(int64_t(yaw*65536));input.right=1000;
+        world::SpatialWorld empty;actor::moveActor(actor,input,{},empty,Fixed::fromRatio(1,60),1000_fx);
         float3 movement{float(actor.pos.x.toDouble()),0,float(actor.pos.z.toDouble())};CHECK(dot(movement,right)>0);
     }
 }
@@ -89,7 +89,7 @@ void stress(Json rules,Json map) {
     auto start=std::chrono::steady_clock::now();
     for(uint32_t tick=0;tick<300;++tick) {
         auto now=uint64_t(tick)*34;
-        for(auto& c:clients){c->poll(now);fps::Input input;input.forward=tick<150?1000:0;c->submit(input);}
+        for(auto& c:clients){c->poll(now);actor::Input input;input.forward=tick<150?1000:0;c->submit(input);}
         server.poll(now);server.step();
     }
     for(const auto& c:clients){CHECK(c->ready());CHECK(c->snapshot().ack>200);CHECK(c->snapshot().characters.size()<10);}
@@ -128,14 +128,14 @@ void parallelMotorParityFixture(Json rules,Json map) {
     const auto movementStart=std::chrono::steady_clock::now();
     for(uint32_t t=0;t<120;++t) {
         for(uint32_t i=0;i<100;++i) {
-            fps::Input input;
+            actor::Input input;
             input.sequence=t+1;
             input.forward=500;
             input.right=(int(i%3)-1)*200;
-            input.buttons=(t==10?fps::Jump:0u) |
-                          (t>=30&&t<40?fps::Crouch:0u) |
-                          (t>=60?fps::Sprint:0u);
-            auto command=fps::command(uint8_t(i+1),input);
+            input.buttons=(t==10?actor::Jump:0u) |
+                          (t>=30&&t<40?actor::Crouch:0u) |
+                          (t>=60?actor::Sprint:0u);
+            auto command=actor::command(uint8_t(i+1),input);
             command.tick=t;
             sim->inject(command);
         }
@@ -159,13 +159,13 @@ void parallelMotorParityFixture(Json rules,Json map) {
     Hasher combatHistory;
     for(uint32_t t=0;t<80;++t) {
         for(uint32_t i=0;i<100;++i) {
-            fps::Input input;
+            actor::Input input;
             input.sequence=t+1;
             input.viewTick=t;
             input.yaw=i<50?Fixed{}:Fixed::fromRatio(1,2);
             input.forward=300;
-            if(i%6==0)input.buttons=fps::Fire;
-            auto cmd=fps::command(uint8_t(i+1),input);
+            if(i%6==0)input.buttons=actor::Fire;
+            auto cmd=actor::command(uint8_t(i+1),input);
             cmd.tick=t;
             combatSim->inject(cmd);
         }
@@ -180,12 +180,12 @@ void cowSnapshotsFps(Json rules,Json map) {
     auto baseline=simulation(rules,map),incremental=simulation(rules,map);
     incremental->world().enableCowSnapshots(true);
     for(uint32_t tick=0;tick<120;++tick) {
-        fps::Input input;
+        actor::Input input;
         input.sequence=tick+1;
         input.forward=tick<70?700:0;
         input.right=tick>=70?200:0;
-        input.buttons=(tick==20?uint32_t(fps::Jump):0u);
-        auto cmd=fps::command(1,input);
+        input.buttons=(tick==20?uint32_t(actor::Jump):0u);
+        auto cmd=actor::command(1,input);
         cmd.tick=tick;
         baseline->inject(cmd);
         incremental->inject(cmd);
@@ -236,11 +236,11 @@ void incrementalRollbackFps(Json rules,Json map) {
             for(int i=0;i<5;++i)
                 session.update(tickDuration,uint64_t(i)*17);
             CHECK(sim.tick()==5);
-            fps::Input input;
+            actor::Input input;
             input.forward=600;
             input.sequence=1;
             input.viewTick=2;
-            auto delayed=fps::command(1,input);
+            auto delayed=actor::command(1,input);
             delayed.tick=2;delayed.seq=1;
             session.confirm(0,3,{delayed});
             session.update(0,85);
@@ -268,19 +268,19 @@ void reloadTimeline(Json rules,Json map) {
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
 
-    std::vector<fps::Input> inputByTick(25);
+    std::vector<actor::Input> inputByTick(25);
     for(uint32_t tick=0;tick<inputByTick.size();++tick) {
         auto& input=inputByTick[tick];
         input.sequence=tick+1;input.viewTick=tick;
-        if(tick==0 || tick==3 || tick==5 || tick==14)input.buttons=fps::Fire;
-        if(tick==2 || tick==12)input.buttons=fps::Reload;
-        if(tick==7)input.buttons=fps::selectWeapon(1);
-        if(tick==10)input.buttons=fps::selectWeapon(0);
+        if(tick==0 || tick==3 || tick==5 || tick==14)input.buttons=actor::Fire;
+        if(tick==2 || tick==12)input.buttons=actor::Reload;
+        if(tick==7)input.buttons=actor::selectWeapon(1);
+        if(tick==10)input.buttons=actor::selectWeapon(0);
     }
     SimSnapshot beforeFinish;
-    std::vector<std::vector<fps::CharacterSnapshot>> timeline(inputByTick.size());
+    std::vector<std::vector<actor::CharacterSnapshot>> timeline(inputByTick.size());
     auto runTick=[&](uint32_t tick) {
-        auto cmd=fps::command(1,inputByTick[tick]);
+        auto cmd=actor::command(1,inputByTick[tick]);
         cmd.tick=tick;
         sim->inject(cmd);
         sim->step();
@@ -317,9 +317,9 @@ void damageScoring(Json rules,Json map) {
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
     for(uint32_t tick=0;tick<30;++tick) {
-        fps::Input input;
-        input.sequence=tick+1;input.viewTick=tick;input.buttons=fps::Fire;
-        auto cmd=fps::command(1,input);cmd.tick=tick;
+        actor::Input input;
+        input.sequence=tick+1;input.viewTick=tick;input.buttons=actor::Fire;
+        auto cmd=actor::command(1,input);cmd.tick=tick;
         sim->inject(cmd);
         sim->step();
     }
@@ -339,21 +339,21 @@ void simultaneousHitscanRollback(Json rules,Json map) {
     map.member("players").at(1).set("team",Json::number(int64_t(2)));
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
-    std::vector<std::array<fps::Input,2>> inputs(12);
+    std::vector<std::array<actor::Input,2>> inputs(12);
     for(uint32_t tick=0;tick<inputs.size();++tick) {
         for(uint32_t player=0;player<2;++player) {
             auto& in=inputs[tick][player];
             in.sequence=tick+1;
             in.viewTick=tick>1?tick-1:0; // intentionally rewound target poses
-            in.buttons=tick<8?fps::Fire:0u;
+            in.buttons=tick<8?actor::Fire:0u;
             in.yaw=player==0?Fixed{}:Fixed::fromRatio(1,2);
         }
     }
-    std::vector<std::vector<fps::CharacterSnapshot>> timeline(inputs.size());
+    std::vector<std::vector<actor::CharacterSnapshot>> timeline(inputs.size());
     std::vector<uint64_t> hashes(inputs.size());
     const auto runTick=[&](uint32_t tick) {
         for(uint32_t player=0;player<2;++player) {
-            auto cmd=fps::command(uint8_t(player+1),inputs[tick][player]);
+            auto cmd=actor::command(uint8_t(player+1),inputs[tick][player]);
             cmd.tick=tick;
             sim->inject(cmd);
         }
@@ -393,15 +393,15 @@ void dynamicObjectEntities(Json rules,Json map) {
     auto& world=sim->world();
     const size_t loot0=module.loot(*sim).size(),vehicles0=module.vehicles(*sim).size();
     const auto initial=sim->checksum();
-    fps::Projectile projectile;
+    actor::Projectile projectile;
     projectile.owner=1;projectile.expires=1000;
     projectile.pos={40_fx,10_fx,40_fx};
-    fps::Loot loot;
+    actor::Loot loot;
     loot.type=3;loot.count=2;loot.pos={40_fx,0_fx,40_fx};
-    fps::Vehicle vehicle;
+    actor::Vehicle vehicle;
     vehicle.health=450;vehicle.pos={50_fx,0_fx,50_fx};
     const Entity p=spawnObject(*sim,projectile),l=spawnObject(*sim,loot),v=spawnObject(*sim,vehicle);
-    const uint32_t projectileId=world.tryGetConst<fps::Projectile>(p)->id,lootId=world.tryGetConst<fps::Loot>(l)->id,vehicleId=world.tryGetConst<fps::Vehicle>(v)->id;
+    const uint32_t projectileId=world.tryGetConst<actor::Projectile>(p)->id,lootId=world.tryGetConst<actor::Loot>(l)->id,vehicleId=world.tryGetConst<actor::Vehicle>(v)->id;
     CHECK(projectileId<lootId&&lootId<vehicleId);
     CHECK(sim->checksum()!=initial); // the new entities are state without a tick
     {
@@ -413,7 +413,7 @@ void dynamicObjectEntities(Json rules,Json map) {
         CHECK(module.loot(*sim).size()==loot0+1&&module.loot(*sim).back().id==lootId);
         CHECK(module.vehicles(*sim).size()==vehicles0+1&&module.vehicles(*sim).back().id==vehicleId);
     }
-    auto findLoot=[&](uint32_t id)->std::optional<fps::Loot>{for(const auto& item:module.loot(*sim))if(item.id==id)return item;return std::nullopt;};
+    auto findLoot=[&](uint32_t id)->std::optional<actor::Loot>{for(const auto& item:module.loot(*sim))if(item.id==id)return item;return std::nullopt;};
     SimSnapshot snapshot;
     sim->saveState(snapshot);
     for(int i=0;i<8;++i) {
@@ -421,7 +421,7 @@ void dynamicObjectEntities(Json rules,Json map) {
         CHECK(findLoot(lootId).has_value());
         CHECK(module.vehicleEntity(*sim,vehicleId)==v);
     }
-    auto* liveLoot=world.tryGet<fps::Loot>(l);
+    auto* liveLoot=world.tryGet<actor::Loot>(l);
     CHECK(liveLoot);
     const auto beforeEdit=sim->checksum();
     liveLoot->count=9;
@@ -439,35 +439,35 @@ void dynamicObjectEntities(Json rules,Json map) {
     // A snapshot taken before the removal still restores all objects.
     sim->loadState(snapshot);
     CHECK(sim->world().alive(l));
-    CHECK(sim->world().tryGetConst<fps::Loot>(l)!=nullptr);
-    CHECK(sim->world().tryGetConst<fps::Projectile>(p)!=nullptr);
-    CHECK(sim->world().tryGetConst<fps::Vehicle>(v)!=nullptr);
+    CHECK(sim->world().tryGetConst<actor::Loot>(l)!=nullptr);
+    CHECK(sim->world().tryGetConst<actor::Projectile>(p)!=nullptr);
+    CHECK(sim->world().tryGetConst<actor::Vehicle>(v)!=nullptr);
     CHECK(findLoot(lootId)&&findLoot(lootId)->count==2);
 }
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
     for(uint32_t t=0;t<240;++t) {
-        fps::Input in;in.sequence=t+1;in.forward=t<100?1000:0;in.buttons=t==130?uint32_t(fps::Jump):0u;
-        auto cmd=fps::command(1,in);cmd.tick=t;a->inject(cmd);b->inject(cmd);a->step();b->step();CHECK(a->checksum()==b->checksum());
+        actor::Input in;in.sequence=t+1;in.forward=t<100?1000:0;in.buttons=t==130?uint32_t(actor::Jump):0u;
+        auto cmd=actor::command(1,in);cmd.tick=t;a->inject(cmd);b->inject(cmd);a->step();b->step();CHECK(a->checksum()==b->checksum());
     }
     CHECK(character(*a,1).pos.y<1_fx);CHECK(character(*a,1).pos.z> -12_fx);
     auto saved=a->serialize();CHECK(!saved.empty());auto restored=simulation(rules,map);CHECK(restored->deserialize(saved));CHECK(restored->checksum()==a->checksum());
     SimSnapshot snapshot;a->saveState(snapshot);auto hash=a->checksum();a->step();a->loadState(snapshot);CHECK(hash==a->checksum());
     for(int i=0;i<120;++i){a->step();restored->step();CHECK(a->checksum()==restored->checksum());}
-    auto before=fpsModule(*a).snapshot(*a,1);fps::Input bad;bad.forward=1001;bad.sequence=10000;
-    auto c=fps::command(1,bad);a->module().applyCommand(*a,c);CHECK(before==fpsModule(*a).snapshot(*a,1));
-    c=fps::command(201,{});a->module().applyCommand(*a,c);CHECK(before==fpsModule(*a).snapshot(*a,1));
+    auto before=fpsModule(*a).snapshot(*a,1);actor::Input bad;bad.forward=1001;bad.sequence=10000;
+    auto c=actor::command(1,bad);a->module().applyCommand(*a,c);CHECK(before==fpsModule(*a).snapshot(*a,1));
+    c=actor::command(201,{});a->module().applyCommand(*a,c);CHECK(before==fpsModule(*a).snapshot(*a,1));
 }
 void combat(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto& players=map.member("players").itemsMut();players.resize(2);players[1].set("team",Json::number(int64_t(2)));
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
-    for(uint32_t t=0;t<25;++t){fps::Input i;i.buttons=fps::Fire;i.sequence=t+1;i.viewTick=t;auto c=fps::command(1,i);c.tick=t;sim->inject(c);sim->step();}
+    for(uint32_t t=0;t<25;++t){actor::Input i;i.buttons=actor::Fire;i.sequence=t+1;i.viewTick=t;auto c=actor::command(1,i);c.tick=t;sim->inject(c);sim->step();}
     CHECK(character(*sim,2).health==0);CHECK(character(*sim,1).kills==1);CHECK(character(*sim,1).ammo<30);
     map.set("spawns",Json::parse("[[0,0.01,-10],[0,0.01,10]]"));sim=simulation(rules,map);
-    for(uint32_t t=0;t<25;++t){fps::Input i;i.buttons=fps::Fire;i.sequence=t+1;auto c=fps::command(1,i);c.tick=t;sim->inject(c);sim->step();}
+    for(uint32_t t=0;t<25;++t){actor::Input i;i.buttons=actor::Fire;i.sequence=t+1;auto c=actor::command(1,i);c.tick=t;sim->inject(c);sim->step();}
     CHECK(character(*sim,2).health==100);
 }
 void weapons(Json rules,Json map) {
@@ -476,20 +476,20 @@ void weapons(Json rules,Json map) {
     map.member("players").itemsMut().resize(2);map.member("players").at(1).set("team",Json::number(int64_t(2)));
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
-    auto step=[&](uint32_t buttons){fps::Input i;i.buttons=buttons;i.sequence=sim->tick()+1;i.viewTick=sim->tick();auto c=fps::command(1,i);c.tick=sim->tick();sim->inject(c);sim->step();};
-    for(int i=0;i<5;++i)step(fps::Fire);
+    auto step=[&](uint32_t buttons){actor::Input i;i.buttons=buttons;i.sequence=sim->tick()+1;i.viewTick=sim->tick();auto c=actor::command(1,i);c.tick=sim->tick();sim->inject(c);sim->step();};
+    for(int i=0;i<5;++i)step(actor::Fire);
     CHECK(character(*sim,1).shots==1);CHECK(character(*sim,2).health==90);
-    step(0);step(fps::Fire);CHECK(character(*sim,1).ammo==1);
-    step(fps::Reload);step(0);step(0);step(0);CHECK(character(*sim,1).ammo==3);CHECK(character(*sim,1).reserve==118);
-    step(fps::selectWeapon(1)|fps::Fire);CHECK(character(*sim,1).shots==2);
-    step(fps::Fire);step(fps::Fire);step(fps::Fire);CHECK(character(*sim,1).shots==4);
-    step(fps::selectWeapon(0));CHECK(character(*sim,1).ammo==3);
-    step(fps::selectWeapon(1));CHECK(character(*sim,1).ammo==6);
-    auto before=character(*sim,1).weaponIndex;step(fps::selectWeapon(3));CHECK(character(*sim,1).weaponIndex==before);
+    step(0);step(actor::Fire);CHECK(character(*sim,1).ammo==1);
+    step(actor::Reload);step(0);step(0);step(0);CHECK(character(*sim,1).ammo==3);CHECK(character(*sim,1).reserve==118);
+    step(actor::selectWeapon(1)|actor::Fire);CHECK(character(*sim,1).shots==2);
+    step(actor::Fire);step(actor::Fire);step(actor::Fire);CHECK(character(*sim,1).shots==4);
+    step(actor::selectWeapon(0));CHECK(character(*sim,1).ammo==3);
+    step(actor::selectWeapon(1));CHECK(character(*sim,1).ammo==6);
+    auto before=character(*sim,1).weaponIndex;step(actor::selectWeapon(3));CHECK(character(*sim,1).weaponIndex==before);
     auto bytes=sim->serialize();auto restored=simulation(rules,map);CHECK(restored->deserialize(bytes));CHECK(restored->checksum()==sim->checksum());
-    auto invalid=rules;invalid.member("fps").set("weapons",Json::parse("[]"));bool rejected=false;try{fps::readConfig(invalid);}catch(const std::exception&){rejected=true;}CHECK(rejected);
+    auto invalid=rules;invalid.member("fps").set("weapons",Json::parse("[]"));bool rejected=false;try{actor::readConfig(invalid);}catch(const std::exception&){rejected=true;}CHECK(rejected);
     // Shotgun consumes one shell per nine independently occluded rays.
-    step(fps::selectWeapon(2));step(0);step(fps::Fire);CHECK(character(*sim,1).ammo==7);
+    step(actor::selectWeapon(2));step(0);step(actor::Fire);CHECK(character(*sim,1).ammo==7);
 }
 #include "systems.inc"
 #include "projectiles.inc"
@@ -503,7 +503,7 @@ void network(Json rules,Json map) {
     CHECK(server.attach(1,std::move(pair.first)));net::authority::Client client(rules,map,std::move(pair.second));
     for(uint64_t now=0;now<6000;now+=5) {
         client.poll(now);server.poll(now);
-        if(now%20==0){fps::Input i;i.right=now<2000?1000:0;i.buttons=fps::selectWeapon(1);client.submit(i);server.step();}
+        if(now%20==0){actor::Input i;i.right=now<2000?1000:0;i.buttons=actor::selectWeapon(1);client.submit(i);server.step();}
     }
     CHECK(client.ready());CHECK(client.predicted().weaponIndex==1);CHECK(client.predicted().storedAmmo[0]==12);CHECK(client.snapshot().ack>100);CHECK(client.predicted().pos.x< -4_fx);
     CHECK(server.rejected()==0);CHECK(client.pending()<20);

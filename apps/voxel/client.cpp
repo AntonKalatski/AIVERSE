@@ -1,6 +1,6 @@
-// aiverse_voxel_client: the voxel sandbox game (templates/voxel_sandbox). Single player runs a local authoritative
+// Voxel host of the game client (AiverseGame): the voxel sandbox game (templates/voxel_sandbox). Single player runs a local authoritative
 // server over a loopback; --listen also accepts friends (UDP 27200 / WebSocket 27201); --connect joins a server.
-//   aiverse_voxel_client [--project DIR] [--listen | --connect udp://host:27200]
+//   AiverseGame [--project DIR] [--listen | --connect udp://host:27200]
 // Controls: mouse look (click to capture), WASD, Space jump / swim, Shift sprint, Ctrl sneak, LMB dig / hit,
 // RMB place, 1-9 or wheel pick a hotbar slot, F3 debug, Esc release the mouse.
 #include "modules/voxel/VoxelSession.h"
@@ -129,12 +129,13 @@ struct App{
     void shutdown(gfx::Device& device){chunks.shutdown(device);server.reset();client.reset();platform::setPointerLock(false);gui.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);renderer.shutdown();}
 };
 }
-int aiverseMain(int argc,char** argv){
+// Voxel projects (game.json "module": "voxel") in the one game client (apps/client/main.cpp dispatches here).
+int voxelClientMain(int argc,char** argv){
     try{
         App app;auto engineRoot=platform::resolveEngineDir(AIVERSE_SOURCE_DIR,argv[0]);
         std::string project=engineRoot+"/templates/voxel_sandbox",connect;
         for(int i=1;i<argc;++i){std::string a=argv[i];if(a=="--project"&&i+1<argc)project=argv[++i];else if(a=="--connect"&&i+1<argc)connect=argv[++i];else if(a=="--listen")app.listen=true;
-            else throw std::runtime_error("usage: aiverse_voxel_client [--project DIR] [--listen | --connect udp://host:27200]");}
+            else throw std::runtime_error("usage: AiverseGame [--project DIR] [--listen | --connect udp://host:27200]");}
         project=std::filesystem::absolute(project).string();std::filesystem::current_path(engineRoot);
         if(app.listen&&!connect.empty())throw std::runtime_error("choose --listen or --connect");
         auto data=voxelgame::readProject([&](const auto& file,auto& text){return platform::readContentFile(project+"/"+file,text);});

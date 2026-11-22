@@ -4,7 +4,7 @@
 // float maths became Fixed, "#AI6FIX" notes mark where a BW crash path (division by zero, -1 routes) is guarded.
 #include "RtsBwAIInternal.h"
 #include "../../engine/core/Archive.h"
-#include "RtsAI.h"
+#include "../../engine/game/ComputerPlayer.h"
 
 namespace aiverse::game {
 
@@ -724,7 +724,8 @@ void BwImpl::resetBot(Ctx& c) {
     ai.ashleyTimer_ = Fixed{}; ai.activeTargets_.clear();
 }
 
-void BwAI::update(Simulation& sim, RtsModule& m) {
+void BwAI::update(Simulation& sim) {
+    GameCore& m = static_cast<GameCore&>(sim.module());
     cfg_ = std::dynamic_pointer_cast<const BwAIConfig>(m.aiConfig());
     if (!cfg_) return;
     const BwProfile& prof = cfg_->profileFor(player_);
@@ -772,9 +773,9 @@ void BwAI::update(Simulation& sim, RtsModule& m) {
     BwImpl::triggers(c);   // Module.TickBots: triggers after the bots
 }
 
-// ---- save state (next to Simulation::serialize; RtsAI::saveState v4)
+// ---- save state (next to Simulation::serialize; ComputerPlayer::saveState v4)
 namespace {
-void ioPs(Archive& a, BwAI::PS& p) {   // not "io": game::io overloads (RtsModule.h) would hide it from qualified lookup
+void ioPs(Archive& a, BwAI::PS& p) {   // not "io": game::io overloads (GameCore.h) would hide it from qualified lookup
     aiverse::io(a, p.total); aiverse::io(a, p.attackers); aiverse::io(a, p.defenders); aiverse::io(a, p.firstEnemy); aiverse::io(a, p.byPlayer);
     aiverse::io(a, p.available); aiverse::io(a, p.attackOnWay); aiverse::io(a, p.defenseOnWay); aiverse::io(a, p.attack); aiverse::io(a, p.defense);
     aiverse::io(a, p.minTimeAttack); aiverse::io(a, p.minTimeDefense); aiverse::io(a, p.lastTimeAttack); aiverse::io(a, p.lastTimeDefense);

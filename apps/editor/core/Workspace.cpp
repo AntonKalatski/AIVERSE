@@ -3,7 +3,7 @@
 #include "ShaderGraphOps.h"
 #include "AnimationOps.h"
 #include "GeometryOps.h"
-#include "modules/fps/FpsModule.h"
+#include "engine/actor/ActorModule.h"
 #include "ScenarioOps.h"
 #include "SchemaOps.h"
 namespace aiverse::editor { void registerFpsOps(Workspace& ws); }
@@ -55,8 +55,8 @@ namespace aiverse::editor { void registerPhysisOps(Workspace&); }
 #endif
 #include "engine/pack/FileCopy.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 
 namespace fs = std::filesystem;
 
@@ -180,7 +180,7 @@ bool Project::load(const std::string& d, std::string* err) {
             for (size_t i = 0; i < parts.size(); ++i) origin.text[i] = parts[i].second.dump() + "\n";
         }
         game::Rules parsed;
-        if(m.getStr("module", "rts")=="fps")fps::readConfig(r);else parsed=game::loadRules(r);   // == actorSessionRules() of the manifest being loaded
+        if(m.getStr("module", "rts")=="fps")actor::readConfig(r);else parsed=game::loadRules(r);   // == actorSessionRules() of the manifest being loaded
         dir = d; manifest = std::move(m); rulesJson = std::move(r); rulesOrigin = std::move(origin); rules = std::move(parsed);
         rulesError.clear();
         rulesDirty = manifestDirty = false;
@@ -191,7 +191,7 @@ bool Project::load(const std::string& d, std::string* err) {
     }
 }
 bool Project::reloadRules() {
-    try { if(actorSessionRules()){fps::readConfig(rulesJson);rules=game::Rules{};}else rules = game::loadRules(rulesJson); rulesError.clear(); return true; }
+    try { if(actorSessionRules()){actor::readConfig(rulesJson);rules=game::Rules{};}else rules = game::loadRules(rulesJson); rulesError.clear(); return true; }
     catch (const std::exception& e) { rulesError = e.what(); return false; }
 }
 bool Project::saveRules(std::string* err) {
@@ -1294,14 +1294,14 @@ void Workspace::registerCoreOps() {
             needProject();
             SimConfig cfg;
             cfg.seed = uint64_t(std::max(0, pi(p, "seed", 1)));
-            Simulation sim(cfg, std::make_unique<game::RtsModule>());
+            Simulation sim(cfg, std::make_unique<game::GameCore>());
             const Json simMap = mapForSim(map.toJson(), project.dir);
             sim.setup(project.simRules(simMap), simMap);
-            auto& mod = *dynamic_cast<game::RtsModule*>(&sim.module());
+            auto& mod = *dynamic_cast<game::GameCore*>(&sim.module());
             game::AIConfig ai;
             int diff = pi(p, "difficulty", 1);
             ai.thinkTicks = diff == 0 ? 20 : diff == 2 ? 6 : 10;
-            std::vector<game::RtsAI> bots;
+            std::vector<game::ComputerPlayer> bots;
             for (auto& pl : sim.players()) bots.emplace_back(pl.slot, cfg.seed, ai);
             const uint32_t limit = uint32_t(pf(p, "seconds", 900) * float(sim.tickRate()));
             Json timeline = Json::array();
@@ -1323,7 +1323,7 @@ void Workspace::registerCoreOps() {
                     saveCheck = Json::object();
                     const std::string bytes = sim.serialize();
                     saveCheck.set("bytes", Json::number(int64_t(bytes.size())));
-                    Simulation twin(cfg, std::make_unique<game::RtsModule>()), copy(cfg, std::make_unique<game::RtsModule>());
+                    Simulation twin(cfg, std::make_unique<game::GameCore>()), copy(cfg, std::make_unique<game::GameCore>());
                     twin.setup(project.rulesJson, simMap);
                     copy.setup(project.rulesJson, simMap);
                     std::string err;

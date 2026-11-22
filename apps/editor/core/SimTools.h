@@ -8,7 +8,7 @@
 #include <vector>
 #include "engine/data/Json.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 
 namespace aiverse::editor {
 
@@ -23,7 +23,7 @@ std::string commandNames();
 // "near": [x, z], "radius"} matching every live object.
 struct SimRefs {
     Simulation& sim;
-    game::RtsModule& mod;
+    game::GameCore& mod;
     std::map<std::string, Entity> ids;               // named objects
     void resolve(const Json& ref, std::vector<Entity>& out) const;   // throws on unknown names
     Entity one(const Json& ref) const;               // first match (kNullEntity if a filter matches nothing)
@@ -33,7 +33,7 @@ struct SimRefs {
 
 // Map entities that carry an "id" -> the live entity spawned for them (same type and owner,
 // nearest to the map position). Call right after Simulation::setup.
-std::map<std::string, Entity> mapEntityIds(Simulation& sim, game::RtsModule& mod, const Json& map);
+std::map<std::string, Entity> mapEntityIds(Simulation& sim, game::GameCore& mod, const Json& map);
 
 // Player command from JSON (keys documented in play_command). defPlayer: slot when "player" is absent.
 Command commandFromJson(const SimRefs& refs, const Json& p, uint8_t defPlayer);

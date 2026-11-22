@@ -50,7 +50,7 @@ void Minimap::release(gfx::Device& dev) {
     tex_ = {};
 }
 
-void Minimap::update(gfx::Device& dev, const GameState& gs, const Rules& rules, const RtsScene& scene, const std::vector<uint8_t>* vision,
+void Minimap::update(gfx::Device& dev, const GameState& gs, const Rules& rules, const GameScene& scene, const std::vector<uint8_t>* vision,
                      const float3 (&q)[4], bool haveQuad, const std::vector<OverlayMinimapMark>* marks) {
     if (!tex_.valid() || gs.grid.w != gridW_ || gs.grid.h != gridH_) return;
     const float ppc = 1.0f / cellsPerPx_;
@@ -83,7 +83,7 @@ void Minimap::update(gfx::Device& dev, const GameState& gs, const Rules& rules, 
         const UnitType& t = rules.types[o.type];
         const bool node = o.owner == 0 && t.resourceNode >= 0;
         if (node && t.footprintW <= 1) continue; // trees: too many dots
-        const float4 pc = RtsView::playerColor(o.owner);
+        const float4 pc = GameView::playerColor(o.owner);
         const uint32_t c = node ? rgba(255, 216, 50) : rgba(int(pc.x * 255), int(pc.y * 255), int(pc.z * 255));
         const float r = t.structure ? std::max(1.0f, float(std::max(t.footprintW, t.footprintH)) * 0.5f) : 0.6f;
         fill(o.pos.x, o.pos.z, std::max(r, cellsPerPx_ * 0.75f), c);

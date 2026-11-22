@@ -47,7 +47,7 @@ static bool mechRoundTrip(Simulation& a, const std::string& rules, const std::st
     std::string bytes = a.serialize();
     if (bytes.empty()) { std::printf("  round trip: serialize failed\n"); return false; }
     SimConfig cfg; cfg.seed = a.config().seed;
-    Simulation b(cfg, std::make_unique<game::RtsModule>());
+    Simulation b(cfg, std::make_unique<game::GameCore>());
     b.setup(Json::parse(rules), Json::parse(map));
     std::string err;
     if (!b.deserialize(bytes, &err)) { std::printf("  round trip: %s\n", err.c_str()); return false; }
@@ -579,14 +579,14 @@ TEST(mech_save_states_all_games) {
         Json rules = Json::parseFile(dir + "/rules.json");
         Json map = mechLoadMap(dir, file);
         SimConfig cfg; cfg.seed = 7;
-        Simulation a(cfg, std::make_unique<game::RtsModule>());
+        Simulation a(cfg, std::make_unique<game::GameCore>());
         a.setup(rules, map);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : a.players()) bots.emplace_back(p.slot, 7);
         for (int i = 0; i < 20 * 40 && a.result() == 0; ++i) { for (auto& b : bots) b.update(a); a.step(); }
         const std::string bytes = a.serialize();
         CHECK(!bytes.empty());
-        Simulation b(cfg, std::make_unique<game::RtsModule>());
+        Simulation b(cfg, std::make_unique<game::GameCore>());
         b.setup(rules, map);
         std::string err;
         const bool ok = b.deserialize(bytes, &err);
@@ -603,7 +603,7 @@ TEST(mech_save_states_all_games) {
         CHECK(a.serialize() == b.serialize());
     }
     // corrupt input never crashes
-    Simulation s(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation s(SimConfig{}, std::make_unique<game::GameCore>());
     s.setup(Json::parseFile(kSkirmish + "/rules.json"), Json::parseFile(kSkirmish + "/maps/valley.json"));
     std::string bytes = s.serialize(), err;
     CHECK(!s.deserialize(bytes.substr(0, bytes.size() / 2), &err) && !err.empty());
@@ -639,7 +639,7 @@ TEST(mech_campaign) {
     CHECK(carry["units"].size() == 1 && carry["units"][size_t(0)].getInt("rank") == 2);
     Json next = Json::parse(flatMap(30, 10, R"(,"entities":[])", R"([{"name":"A","team":1,"start":[3,5]},{"name":"B","team":2}])"));
     game::applyCarry(next, carry, 1);
-    auto sim2 = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>());
+    auto sim2 = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>());
     sim2->setup(Json::parse(rules), next);
     game::restoreCarry(*sim2, carry, 1);
     Entity hero = findType(*sim2, "hero", 1);
@@ -769,7 +769,7 @@ TEST(mech_ai_staffing) {
         "mill": {"structure": {"footprint": [2, 2]}, "health": {"max": 300}, "income": {"gold": 10}, "staff": {"count": 2, "accepts": ["worker"]}}}})";
     auto sim = makeSimJson(rules, flatMap(30, 20, R"(,"entities":[{"type":"mill","owner":1,"pos":[2,15]},{"type":"mill","owner":2,"pos":[10,4]},
         {"type":"villager","owner":2,"pos":[20,7]},{"type":"villager","owner":2,"pos":[21,7]},{"type":"villager","owner":2,"pos":[22,7]}])"));
-    game::RtsAI bot(2, 7);
+    game::ComputerPlayer bot(2, 7);
     for (int i = 0; i < 20 * 10; ++i) { bot.update(*sim); sim->step(); }
     Entity mill = findType(*sim, "mill", 2);
     CHECK(mod(*sim).staffFraction(*sim, mill) == Fixed::fromInt(1));
@@ -1115,7 +1115,7 @@ TEST(mech_turns) {
     CHECK(mechRoundTrip(*sim, rules, map, 60));
     // bots take turns and finish the match
     auto ai = makeSimJson(rules, map);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : ai->players()) bots.emplace_back(p.slot, 7);
     int turnsSeen = 0, shots = 0;
     for (int i = 0; i < 20 * 120 && ai->result() == 0; ++i) {

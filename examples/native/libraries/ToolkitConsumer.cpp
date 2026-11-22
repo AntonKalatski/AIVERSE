@@ -1,4 +1,4 @@
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <aiverselib/runtime/Bounded.h>
 #include <aiverselib/runtime/HotReload.h>
 #include <aiverselib/runtime/WorkBudget.h>

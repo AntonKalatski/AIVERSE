@@ -16,7 +16,7 @@ description: Find and fix AIVERSE determinism breaks - checksum mismatches betwe
    - float math or platform libm in simulation (use Fixed/integers, `fx()` in Lua);
    - iteration over unordered containers or pointer order (sort by entity index / id);
    - wall clock, platform RNG, `math.random` (use `sim.rng()` / the bot's saved RNG);
-   - state not saved or not hashed (new field missing from save/hash, `RtsAI::saveState`, NativeState);
+   - state not saved or not hashed (new field missing from save/hash, `ComputerPlayer::saveState`, NativeState);
    - presentation feeding the simulation (view, UI, audio, fx).
 5. Fix at the cause, never by excluding the field from the hash.
 6. Prove: repeated seeds equal, save/load mid-match equal, `templates/` checksums unchanged (or changed on purpose and recorded with a reason), CI `determinism`.

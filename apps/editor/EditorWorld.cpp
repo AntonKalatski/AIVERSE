@@ -118,7 +118,7 @@ bool Editor::selectionPos(const Selection& s, float& x, float& z) const {
         if (s.index < 0 || s.index >= int(d.entities.size())) return false;
         x = d.entities[size_t(s.index)].x; z = d.entities[size_t(s.index)].z;
         return true;
-    case Selection::FpsObject: {
+    case Selection::ActorObject: {
         DocumentEntityRef ref;
         DocumentTransform transform;
         if (!documentEntityFromSelection(s, ref) ||
@@ -126,8 +126,8 @@ bool Editor::selectionPos(const Selection& s, float& x, float& z) const {
         x = float(transform.x); z = float(transform.z);
         return true;
     }
-    case Selection::FpsActor:
-    case Selection::FpsRuntimeObject: {
+    case Selection::ActorActor:
+    case Selection::ActorRuntimeObject: {
         const auto runtime = enumerateEditorRuntimeEntities(
             *const_cast<Editor*>(this));
         for (const auto& item : runtime)
@@ -182,9 +182,9 @@ Simulation* Editor::worldSim() {
     return preview_.sim();
 }
 
-game::RtsModule* Editor::worldModule() {
+game::GameCore* Editor::worldModule() {
     Simulation* s = worldSim();
-    return s ? dynamic_cast<game::RtsModule*>(&s->module()) : nullptr;
+    return s ? dynamic_cast<game::GameCore*>(&s->module()) : nullptr;
 }
 
 Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, float sx, float sy) const {
@@ -196,13 +196,13 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
         if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
         if (fpsSceneObjects_[size_t(index)].runtimeObject != 0) {
             Selection object;
-            object.kind = Selection::FpsRuntimeObject;
+            object.kind = Selection::ActorRuntimeObject;
             object.ref = fpsSceneObjects_[size_t(index)].runtimeObject;
             return object;
         }
         if (fpsSceneObjects_[size_t(index)].runtimeActor >= 0) {
             Selection actor;
-            actor.kind = Selection::FpsActor;
+            actor.kind = Selection::ActorActor;
             actor.index = fpsSceneObjects_[size_t(index)].runtimeActor;
             return actor;
         }
@@ -230,7 +230,7 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
             const int owner = !o ? 0 : o->player == game::kHostileNeutral ? -1 : int(o->player);
             const std::string& tid = rules().types[u.type].id;
             if (objectHidden(owner, tid) || objectLocked(owner, tid)) return;
-            const float rad = const_cast<game::RtsView&>(view_).selectionRadius(u.type) + 0.2f;
+            const float rad = const_cast<game::GameView&>(view_).selectionRadius(u.type) + 0.2f;
             const float dd = std::hypot(x - float(tr.pos.x.toDouble()), z - float(tr.pos.z.toDouble()));
             if (dd < rad && dd < bestD) { bestE = e; bestD = dd; }
         });
@@ -245,7 +245,7 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
         if (!r.hasPos || r.type < 0 || (!worldLive_ && r.doc >= 0) || (r.flags & game::kUnitOffMap)) continue;
         const std::string& tid = rules().types[size_t(r.type)].id;
         if (objectHidden(r.owner, tid) || objectLocked(r.owner, tid)) continue;
-        const float rad = const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(r.type)) + 0.2f;
+        const float rad = const_cast<game::GameView&>(view_).selectionRadius(uint16_t(r.type)) + 0.2f;
         const float dd = std::hypot(x - r.x, z - r.z);
         if (dd < rad && dd < bestD) { best = &r; bestD = dd; }
     }
@@ -260,7 +260,7 @@ namespace {
 uint64_t mix(uint64_t h, uint64_t v) { return (h ^ v) * 1099511628211ull; }
 }
 
-void Editor::readLiveWorld(Simulation& live, game::RtsModule& mod) {
+void Editor::readLiveWorld(Simulation& live, game::GameCore& mod) {
     const bool data = worldDataWanted();
     if (data) { auto ps = prof.scope(EditorProfile::Snapshot); live.module().prepareSnapshot(live); }   // observation only (as every checksum does)
     auto rs = prof.scope(EditorProfile::ReadWorld);
@@ -284,7 +284,7 @@ void Editor::updateWorld() {
     auto profScope = prof.scope(EditorProfile::WorldUpdate);
     Simulation* live = sim_ ? sim_.get() : clientHost_.active() ? clientHost_.simulation() : nullptr;
     if (live) {
-        auto* mod = dynamic_cast<game::RtsModule*>(&live->module());
+        auto* mod = dynamic_cast<game::GameCore*>(&live->module());
         if (!mod) return;
         const bool fresh = live != liveSim_ || (worldLive_ && live->tick() < world_.tick);
         if (fresh) {
@@ -421,7 +421,7 @@ bool Editor::worldDetails(const Selection& s, WorldRow& row, Json* data) {
     if (worldLive_) {
         if (s.kind != Selection::Live) return false;
         Simulation* sim = worldSim();
-        game::RtsModule* mod = worldModule();
+        game::GameCore* mod = worldModule();
         const Entity e = worldEntity(s.ref);
         if (!sim || !mod || !readWorldRow(*sim, *mod, worldCfg_, e, row, WorldReadOptions{false})) return false;
         if (auto it = liveDocOf_.find(row.ref); it != liveDocOf_.end()) { row.doc = it->second; row.origin = WorldOrigin::Map; }
@@ -441,7 +441,7 @@ bool Editor::worldDetails(const Selection& s, WorldRow& row, Json* data) {
     row = *r;
     if (data) {
         Simulation* sim = worldSim();
-        game::RtsModule* mod = worldModule();
+        game::GameCore* mod = worldModule();
         if (sim && mod) *data = inspectEntity(*sim, *mod, r->e, ws_.project.rulesJson);
     }
     return true;
@@ -522,7 +522,7 @@ void Editor::registerWorldOps() {
             ensureWorld();
             const WorldRow* r = p.has("ref") ? world_.find(uint64_t(p["ref"].integer())) : p.has("doc") ? world_.findDoc(int(p["doc"].integer())) : nullptr;
             Simulation* s = worldSim();
-            game::RtsModule* m = worldModule();
+            game::GameCore* m = worldModule();
             if (!r || !s || !m) throw std::runtime_error("no such object in the world tree (world_entities lists them)");
             Json j = inspectEntity(*s, *m, r->e, ws_.project.rulesJson);
             j.set("row", rowJson(*r));

@@ -92,4 +92,4 @@ Tests: `game_wizard_plan_picks_a_template_by_the_idea`, `game_wizard_makes_a_pla
 ## Engine change
 
 Script commands take `"card": false` (no button / hotkey; sent by view scripts, HUD documents, MCP) — the tutorial's
-Next / Skip (`modules/rts/RtsScriptCommands.cpp`, client and editor command cards).
+Next / Skip (`engine/game/ScriptCommands.cpp`, client and editor command cards).

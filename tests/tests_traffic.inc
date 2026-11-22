@@ -1,7 +1,7 @@
-// City traffic (rules "traffic", RtsTraffic.h, libraries/include/aiverselib/mechanics/Traffic.h): the road network from
+// City traffic (rules "traffic", Traffic.h, libraries/include/aiverselib/mechanics/Traffic.h): the road network from
 // tile characters, signal phases, traffic cars that keep their lanes and stop on red, pedestrians who cross on walk,
 // hijacking a traffic car, determinism, saves and rollback snapshots.
-#include "modules/rts/RtsTraffic.h"
+#include "engine/game/Traffic.h"
 
 namespace {
 namespace tl = lib::genre;

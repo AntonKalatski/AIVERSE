@@ -19,7 +19,7 @@ New tests and GUI interaction have not yet been verified as passing.
 
 Presentation-only particle effects: CPU simulation (`engine/fx/ParticleSystem`), drawn through the
 RHI with one dynamic vertex buffer per frame. The simulation never sees them; effects are started from
-`SimEvent`s by `modules/rts/fx/RtsFx` (the same read-only event collector as `RtsAudio`).
+`SimEvent`s by `modules/rts/fx/GameFx` (the same read-only event collector as `GameAudio`).
 
 ## Data (per game)
 
@@ -29,7 +29,7 @@ RHI with one dynamic vertex buffer per frame. The simulation never sees them; ef
 ```
 
 - Effect format: comment at the top of `engine/fx/FxEffect.h` (unknown fields are errors).
-- Bindings format and lookup order: comment at the top of `modules/rts/fx/RtsFx.h`.
+- Bindings format and lookup order: comment at the top of `engine/fx/GameFx.h`.
 - Cues: `attack hit miss died spawned ready buildPlaced buildDone gathered captured levelUp ability
   upgraded sold regionClaimed wave trail damaged`; `died.structure|air|unit` style keys pick by category.
 - Textures: `builtin:soft|spark|ring|smoke` need no files. Anything else is an image path in the game
@@ -237,7 +237,7 @@ dropped items are 57 % soft particles.
 `lines.py` (called by `import.py`): a **TrailRenderer** becomes an emitter of hidden particles spawned per metre moved
 (`perMeter` = 1 / minVertexDistance), living the trail `time`, joined into one ribbon (`trail.mode: "ribbon"`; width
 curve × multiplier, colour gradient, material texture / blend, texture mode). Played as a projectile trail (moved by
-RtsFx) it follows the projectile and shrinks away after the hit like Unity's autodestruct trail. A **LineRenderer**
+GameFx) it follows the projectile and shrinks away after the hit like Unity's autodestruct trail. A **LineRenderer**
 becomes a `line` or `ring` of evenly spread particles (`arcMode: "spread"`, which the line shape follows too) joined
 into a ribbon; other polylines → the straight line through their ends. Lines whose points scripts set (aim lines,
 range circles) are better as overlays (`overlay_set`): the report says so.
@@ -254,7 +254,7 @@ range circles) are better as overlays (`overlay_set`): the report says so.
   `ProjectileTrailViewModule` without `retainAfterRelease` → `clear`); scripted emitters and target-side hit
   effects are listed as notes. Ids are the config names (the game port maps them to its rules ids).
 
-Binding options (`modules/rts/fx/RtsFx.h`, `fx_bind`): `upright: true` plays along +Y instead of the attack
+Binding options (`engine/fx/GameFx.h`, `fx_bind`): `upright: true` plays along +Y instead of the attack
 direction (explosions), `clear: true` makes a projectile trail vanish with its projectile instead of fading out.
 
 `aiverse_tests fx_external_import_dir_loads` with `AIVERSE_FX_CHECK_DIR=<project>` loads every effect of an

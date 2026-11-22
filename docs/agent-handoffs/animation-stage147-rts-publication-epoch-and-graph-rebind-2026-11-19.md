@@ -7,11 +7,11 @@ Previous: [Stage 146](animation-stage146-pre-retirement-playback-rebind-2026-11-
 
 ## Objective
 
-Make the Stage 146 opt-in pre-retirement named playback handoff functional for the existing RTS `RtsView` adapter, not merely exposed as a generic API. Audit found that although `RtsLook.cpp::loadChoice` already assigns every published `ModelChoice::modelGeneration` from the nonzero monotonic `view::ModelPublicationEpoch::next()`, the `View::Object` packets sent to generic MotionWeave omitted `animationModelGeneration`, so it defaulted to zero. Stage 146 correctly rejected all cross-detach phase restoration in this host. A second gap concerned graph-only authoring reload: the immutable CPU Model and epoch may remain unchanged while its compiled AnimationGraph is replaced.
+Make the Stage 146 opt-in pre-retirement named playback handoff functional for the existing RTS `GameView` adapter, not merely exposed as a generic API. Audit found that although `GameLook.cpp::loadChoice` already assigns every published `ModelChoice::modelGeneration` from the nonzero monotonic `view::ModelPublicationEpoch::next()`, the `View::Object` packets sent to generic MotionWeave omitted `animationModelGeneration`, so it defaulted to zero. Stage 146 correctly rejected all cross-detach phase restoration in this host. A second gap concerned graph-only authoring reload: the immutable CPU Model and epoch may remain unchanged while its compiled AnimationGraph is replaced.
 
 ## Exact code SHAs and source paths
 
-1. `69b5d2e1f783caa7d1408b6881e8eafa7ff81d4f` — `modules/rts/view/RtsView.cpp`:
+1. `69b5d2e1f783caa7d1408b6881e8eafa7ff81d4f` — `engine/view/game/GameView.cpp`:
    - Set `packet.animationModelGeneration=ch.modelGeneration` when submitting eligible compiled graph sources to the genre-neutral View.
    - Reject any model choice with `modelGeneration==0` from this accelerated generic path (keep legacy animation instead).
    - Reject presentation inputs lacking a stable `SceneObject::entity` ID, because an index-derived fallback ID can be reused by a different logical object after a model reimport; keep these on legacy presentation. Existing packed valid ECS entity ID remains the stable source key and embeds entity generation.
@@ -30,7 +30,7 @@ The zero epoch fallback for OTHER hosts remains source-compatible but cannot saf
 
 ## Actual verification vs NOT RUN
 
-**ACTUAL:** read connected GitHub sources `RtsView.cpp`, `RtsView.h`, `RtsLook.cpp`, `View.h`, `MotionWeaveSourceBridge.h`; confirmed `RtsLook::loadChoice` sets `out.modelGeneration=view::ModelPublicationEpoch::next()` and the original `RtsView::Object` packet failed to propagate that value. Submitted two exact GitHub source commits using fetched content SHA guards.
+**ACTUAL:** read connected GitHub sources `GameView.cpp`, `GameView.h`, `GameLook.cpp`, `View.h`, `MotionWeaveSourceBridge.h`; confirmed `RtsLook::loadChoice` sets `out.modelGeneration=view::ModelPublicationEpoch::next()` and the original `GameView::Object` packet failed to propagate that value. Submitted two exact GitHub source commits using fetched content SHA guards.
 
 **NOT RUN:** native compile/link, CMake, CTest, source-reimport end-to-end running scene, current SHA CI green, Metal/OpenGL/Vulkan, visual parity, ASan/TSan, high-crowd benchmarks or final test runner, following the user's feature-first/test-once instruction. Do not claim successful runtime phase restoration or ready-to-merge status.
 

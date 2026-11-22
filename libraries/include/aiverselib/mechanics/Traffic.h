@@ -2,7 +2,7 @@
 #include <aiverselib/mechanics/Namespace.h>
 // traffic: deterministic city-traffic kernels (road network from a cell mask, lanes, junction turns, signal phases,
 // pedestrian "walk" windows, the bot driver's pedals and the sidewalk walker's paths). Fixed math and integers only,
-// no engine state: the owner (modules/rts/RtsTraffic.cpp, or a game's native module) keeps the entities, steps the
+// no engine state: the owner (engine/game/Traffic.cpp, or a game's native module) keeps the entities, steps the
 // vehicles (VehicleControllers.h) and calls these functions.
 //
 // Coordinates are map cells: cell (x, z) covers [x, x + 1) x [z, z + 1); a point is Vec2{x, z} (Vec2::y is world z).

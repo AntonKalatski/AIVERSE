@@ -21,7 +21,7 @@
 #include <aiverselib/mechanics/InteractionConfigured.h>
 #include <aiverselib/mechanics/InteractionData.h>
 #include <aiverselib/mechanics/InteractionPersistence.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <array>
 #include <span>
 #include <string>

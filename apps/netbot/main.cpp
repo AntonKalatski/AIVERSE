@@ -19,8 +19,8 @@
 #include "engine/i18n/GameLanguage.h"
 #include "engine/net/NetClient.h"
 #include "engine/net/NetLocalize.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
 
 using namespace aiverse;
 
@@ -34,7 +34,7 @@ struct BotClient {
     std::string name;
     std::unique_ptr<Simulation> sim;            // must outlive the session inside `net`
     std::unique_ptr<net::NetClient> net;
-    std::vector<game::RtsAI> ai;
+    std::vector<game::ComputerPlayer> ai;
     bool requested = false, roomSetUp = false, started = false;
     uint32_t matchesDone = 0;
     uint64_t lastStatus = 0;

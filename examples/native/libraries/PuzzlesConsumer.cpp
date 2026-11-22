@@ -1,6 +1,6 @@
 #include <aiverselib/mechanics/PuzzleSolvers.h>
 #include <aiverselib/bots/PuzzleBot.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 // puzzle-solvers in a native module: validated level data, the authoritative command path shared by the player
 // and the puzzle bot, then per-puzzle records in NativeState (record kinds 112..119) plus their checksums.
 // A real game routes Match3Swap / PuzzleSokobanCommand / PuzzleCspAssign from its command handler instead.

@@ -19,7 +19,7 @@ Previous docs/agent-handoffs/lens-motionweave-integration-stage47b3a-detail-lod-
 GitHub source examined; commit authored and mechanically checked. No CMake/native C++ build, CTest, Metal/Vulkan/GLES compile or real GPU screenshot/parity test executed. Tests are UNEXECUTED.
 
 ## Remaining
-- Terrain map topology / editor same-map detail changes are still published by RtsView::buildTerrain before per-frame owner transaction. Full editor multi-owner map change cohort is a separate stage.
+- Terrain map topology / editor same-map detail changes are still published by GameView::buildTerrain before per-frame owner transaction. Full editor multi-owner map change cohort is a separate stage.
 - Terrain LRU retirement after draw remains allowed, but new resource allocation/upload for staged primary Terrain is now removed from its draw path. Initial GPU material-kit loading occurs via TerrainRenderer::build outside the frame cohort.
 - No GPU memory staging budget or shader compile warmup telemetry yet; backend compile/test and runtime quality need validating.
 - Later stage: unify editor map source transactions, then Sprite/MotionWeave, lighting, overlays and full multi-camera parity. Perform one consolidated CMake/CTest before merging.

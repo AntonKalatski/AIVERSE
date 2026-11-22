@@ -11,7 +11,7 @@ by hand; a game only gives its own textures and prop models.
 | Part | Where |
 |---|---|
 | Data, built-in shore types, banks, auto shores, cells (float: editor-time / presentation) | `modules/rts/view/RtsWater.{h,cpp}` |
-| Look: shore meshes, props, foam | `modules/rts/view/RtsShoreView.{h,cpp}` (drawn by `RtsView` after the roads) |
+| Look: shore meshes, props, foam | `modules/rts/view/GameShoreView.{h,cpp}` (drawn by `GameView` after the roads) |
 | Operations (MCP) and baking | `apps/editor/core/WaterOps.{h,cpp}` |
 | Editor window «Вода» (Мир) | `apps/editor/windows/WaterWindow.cpp` |
 | Tests | `tests/tests_water.inc` |

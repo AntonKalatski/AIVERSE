@@ -1,6 +1,6 @@
 # Careers (paths with ranks and perks)
 
-Rules block `"careers"`. Code: `modules/rts/RtsCareer.{h,cpp}`, Lua table `career` (`RtsCareerApi.cpp`), tests
+Rules block `"careers"`. Code: `modules/rts/RtsCareer.{h,cpp}`, Lua table `career` (`CareerApi.cpp`), tests
 `aiverse_tests career`.
 
 A career is a ladder of ranks. A rank is reached at a number of points and brings perks: plain names that

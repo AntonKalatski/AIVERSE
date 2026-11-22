@@ -1,6 +1,6 @@
 // Lighting: time-of-day / weather preview, the map's "lighting" block, decorative map lights, and the
 // light quality tier (to see what weak Android GPUs get). Also registers the light_* MCP operations.
-// Data format: modules/rts/view/RtsLights.h.
+// Data format: engine/view/game/GameLights.h.
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -27,7 +27,7 @@ public:
 
     void update(Editor& ed, double) override {
         if (!registered_) { registerOps(ed); registered_ = true; }
-        game::RtsLights& L = ed.view().lights();
+        game::GameLights& L = ed.view().lights();
         L.setPreview(preview_, time_, clouds_, storm_);
         // Scene view: follow the open map (play mode configures itself from the saved JSON too)
         const uint64_t rev = ed.doc().revision;
@@ -125,7 +125,7 @@ public:
         for (size_t i = 0; i < arr.size(); ++i) {
             ImGui::PushID(int(i));
             Json l = arr[i];
-            const auto ml = game::RtsLights::parseMapLights([&] { Json a = Json::array(); a.push(l); return a; }());
+            const auto ml = game::GameLights::parseMapLights([&] { Json a = Json::array(); a.push(l); return a; }());
             const auto& m = ml.front();
             const std::string head = (l.getStr("name").empty() ? "Свет " + std::to_string(i + 1) : l.getStr("name")) +
                                      "  (" + std::to_string(int(m.x)) + ", " + std::to_string(int(m.z)) + ")";
@@ -217,7 +217,7 @@ private:
         auto ground = [&](float x, float z) { return ed.view().heightAt(grid, x, z); };
         ImDrawList* dl = ImGui::GetForegroundDrawList();
         dl->PushClipRect(ImVec2(vp->originX, vp->originY), ImVec2(vp->originX + vp->pointsW, vp->originY + vp->pointsH), true);
-        const auto lights = game::RtsLights::parseMapLights(arr);
+        const auto lights = game::GameLights::parseMapLights(arr);
         for (size_t i = 0; i < lights.size(); ++i) {
             const auto& m = lights[i];
             const float gy = ground(m.x, m.z);
@@ -235,7 +235,7 @@ private:
                     prev = q;
                 }
             } else {       // cone: centre and edge rays down to the ground (base direction, no sweep)
-                const render::PointLight base = game::RtsLights::glowLight(m, {m.x, gy, m.z}, 0, 1, 0, 0);
+                const render::PointLight base = game::GameLights::glowLight(m, {m.x, gy, m.z}, 0, 1, 0, 0);
                 const float half = m.angle * 0.5f * 0.0174532925f;
                 for (int e = -1; e <= 1; ++e) {
                     const float yawR = m.yaw * 0.0174532925f + float(e) * half, pitch = m.pitch * 0.0174532925f - float(e == 0 ? 0 : 1) * 0.0f;

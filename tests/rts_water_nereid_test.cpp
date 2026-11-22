@@ -1,7 +1,7 @@
-// Legacy cell water -> NEREID conversion (modules/rts/view/RtsWaterNereid.h).
+// Legacy cell water -> NEREID conversion (engine/view/game/GameWaterNereid.h).
 // CPU only: synthetic layouts in the exact form TerrainRenderer::legacyWaterLayout
 // produces; the parsed result must match the legacy footprint and levels.
-#include "modules/rts/view/RtsWaterNereid.h"
+#include "engine/view/game/GameWaterNereid.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

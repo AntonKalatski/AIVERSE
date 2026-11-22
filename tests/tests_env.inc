@@ -1,6 +1,6 @@
-// Map environment (RtsEnv.h, docs/game-format.md § Map environment): weather, wind, zones, trample fields, auto
+// Map environment (Environment.h, docs/game-format.md § Map environment): weather, wind, zones, trample fields, auto
 // skills on splines, fog options, saves and determinism; gameplay hooks of native modules (docs/native-modules.md).
-#include "modules/rts/RtsEnv.h"
+#include "engine/game/Environment.h"
 
 namespace {
 const char* kEnvRules = R"J({
@@ -192,31 +192,31 @@ TEST(env_fog_ellipse_start_reveal_and_no_memory) {
     CHECK(gs.vision[1][size_t(g.index(20, 14))] == 0);      // ... but not 4 along z (4 x 2 > 6)
 }
 
-// ---- gameplay hooks of native modules (RtsNative.h): only the declared ones are called
+// ---- gameplay hooks of native modules (Native.h): only the declared ones are called
 namespace {
 class HookProbe final : public game::NativeModule {
 public:
-    void setup(game::RtsModule& m, Simulation&, game::NativeState& s, const Json& cfg) const override {
+    void setup(game::GameCore& m, Simulation&, game::NativeState& s, const Json& cfg) const override {
         s.values["mask"] = cfg.getInt("hooks", 0);
         s.values["entities"] = int64_t(m.mapData()["entities"].size());   // the setup map is readable
         const_cast<HookProbe*>(this)->mask_ = uint32_t(cfg.getInt("hooks", 0));
     }
     uint32_t hooks() const override { return mask_; }
-    void unitSpeed(game::RtsModule&, Simulation& sim, const game::NativeState&, Entity e, Fixed&, Fixed& mul) const override {
+    void unitSpeed(game::GameCore&, Simulation& sim, const game::NativeState&, Entity e, Fixed&, Fixed& mul) const override {
         if (sim.world().get<Owner>(e).player == 1) mul = mul / 2;
     }
-    bool allowSend(game::RtsModule&, Simulation& sim, const game::NativeState&, Entity, Entity to) const override {
+    bool allowSend(game::GameCore&, Simulation& sim, const game::NativeState&, Entity, Entity to) const override {
         return sim.world().get<Owner>(to).player != 0;   // neutral buildings take nobody
     }
-    bool damage(game::RtsModule&, Simulation& sim, game::NativeState& s, Entity target, Entity, Fixed& dmg) const override {
+    bool damage(game::GameCore&, Simulation& sim, game::NativeState& s, Entity target, Entity, Fixed& dmg) const override {
         if (sim.world().get<Owner>(target).player != 2) return false;
         ++s.values["hits"]; dmg = Fixed{};
         return true;
     }
-    void unitDied(game::RtsModule&, Simulation&, game::NativeState& s, Entity, uint8_t, Vec3, bool silent) const override { ++s.values[silent ? "entered" : "died"]; }
-    void assault(game::RtsModule&, Simulation&, game::NativeState& s, Entity, uint8_t, uint8_t, int a, int d) const override { s.values["lostA"] += a; s.values["lostD"] += d; }
-    bool allowDefeat(game::RtsModule&, Simulation&, const game::NativeState&, uint8_t player) const override { return player != 1; }
-    void sceneBodies(game::RtsModule& m, Simulation&, const game::NativeState&, std::vector<Body>& out) const override {
+    void unitDied(game::GameCore&, Simulation&, game::NativeState& s, Entity, uint8_t, Vec3, bool silent) const override { ++s.values[silent ? "entered" : "died"]; }
+    void assault(game::GameCore&, Simulation&, game::NativeState& s, Entity, uint8_t, uint8_t, int a, int d) const override { s.values["lostA"] += a; s.values["lostD"] += d; }
+    bool allowDefeat(game::GameCore&, Simulation&, const game::NativeState&, uint8_t player) const override { return player != 1; }
+    void sceneBodies(game::GameCore& m, Simulation&, const game::NativeState&, std::vector<Body>& out) const override {
         out.push_back({uint16_t(m.rules().findType("marker")), Vec3{Fixed::fromInt(3), Fixed{}, Fixed::fromInt(3)}, Vec3{Fixed::fromInt(1), Fixed{}, Fixed{}}, true});
     }
 private:
@@ -227,7 +227,7 @@ std::unique_ptr<Simulation> hookSim(int mask) {
     Json rules = Json::parse(kEnvRules);
     rules.set("nativeModules", Json::parse(R"([{"id":"hooks","config":{"hooks":)" + std::to_string(mask) + "}}]"));
     std::vector<game::NativeDefinition> defs{{"hooks", 1, hookProbe}};
-    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>(std::move(defs)));
+    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>(std::move(defs)));
     sim->setup(rules, Json::parse(envMap("null", 40, 20, R"(,{"type":"shroom","owner":1,"pos":[8,5]},{"type":"shroom","owner":2,"pos":[30,5]})")));
     return sim;
 }
@@ -249,7 +249,7 @@ TEST(native_hooks_are_called_only_when_declared) {
     CHECK(hookValue(*on, "entities") == 6);
     for (Simulation* s : {off.get(), on.get()}) {
         const bool h = s == on.get();
-        RtsModule& m = mod(*s);
+        GameCore& m = mod(*s);
         Entity mine = hookUnit(*s, 1), theirs = hookUnit(*s, 2), home = envPoint(*s, 0), enemy = envPoint(*s, 1), north = envPoint(*s, 2);
         CHECK(m.stat(*s, mine, Stat::Speed) == Fixed::fromInt(h ? 1 : 2));          // kHookSpeed
         CHECK(m.stat(*s, theirs, Stat::Speed) == Fixed::fromInt(2));
@@ -274,7 +274,7 @@ TEST(native_hooks_are_called_only_when_declared) {
     auto again = hookSim(kHookSpeed | kHookSend | kHookDamage | kHookDeath | kHookAssault | kHookDefeat | kHookScene);
     CHECK(again->checksum() != on->checksum());
     {
-        RtsModule& m = mod(*again);
+        GameCore& m = mod(*again);
         m.dealDamage(*again, hookUnit(*again, 2), Fixed::fromInt(4), 0, hookUnit(*again, 1), 1, nullptr);
         envSendCmd(*again, 1, envPoint(*again, 0), envPoint(*again, 2), 100);
         run(*again, 0.5);

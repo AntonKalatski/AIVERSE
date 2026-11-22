@@ -2,9 +2,9 @@
 
 ## Branch, implementation commits
 - Branch `feature/lens-motionweave-integration` (NOT main).
-- `acb4179127f36a3f4a363270a3a39123464d0e77`: `modules/rts/view/RtsTerrainRender.h` declares `drawPrepared` + shared `drawInternal`.
-- `e528c67b42f0a4cbf7dc427e7fa3f08da5cc1bf6`, `c96dc82ba0813ef8c7ffc594711c16a0af71f1b4`, `eb318287fa434336bc96c9e3e61c3263bb3966b7`: `RtsTerrainRender.cpp` separates update/LOD cache maintenance from render-only camera pass.
-- `78001c019bd8e6cab35e203e8a23129181a8f9ba`, `48f375f7ba8c25f024a8723dac500fad1931c51c`: `modules/rts/view/RtsView.{h,cpp}` expose `drawPreparedTerrainFog`.
+- `acb4179127f36a3f4a363270a3a39123464d0e77`: `engine/view/game/GameTerrainRender.h` declares `drawPrepared` + shared `drawInternal`.
+- `e528c67b42f0a4cbf7dc427e7fa3f08da5cc1bf6`, `c96dc82ba0813ef8c7ffc594711c16a0af71f1b4`, `eb318287fa434336bc96c9e3e61c3263bb3966b7`: `GameTerrainRender.cpp` separates update/LOD cache maintenance from render-only camera pass.
+- `78001c019bd8e6cab35e203e8a23129181a8f9ba`, `48f375f7ba8c25f024a8723dac500fad1931c51c`: `modules/rts/view/GameView.{h,cpp}` expose `drawPreparedTerrainFog`.
 - `251cbca4495c368e49b57cd91a1383c96f84aad4`: `apps/client/GameClient.cpp` invokes prepared terrain/fog in each LENS offscreen camera before snapshot model/geometry replay.
 - `4a6868063f71531215384e32b02f7ac195c0ec5a`: `tests/render/camera_terrain_prepared_api.cpp` compile-only method signature check.
 - `064e5c9551f75cb546d7a3d5a7c5f17343d38e8c`: CMake registered `camera_terrain_prepared_api`.
@@ -13,7 +13,7 @@
 ## Architecture
 - The legacy `TerrainRenderer::draw` remains the primary stage: uploads dynamic cell state/vision, may lazily build detail LODs, ages LRU, tracks terrain stats and updates the traced heightfield. It also emits custom opaque render commands, culls terrain chunks and selects LOD per camera.
 - The new `TerrainRenderer::drawPrepared(Renderer3D&,MapGrid&,vision)` shares the same renderer command path but NEVER calls updateDynamic/updateVision/buildDetailLod/updateHeightField or increments terrain frame/LRU/stats. It selects per-camera visibility and distance-based LOD from buffers already uploaded by the primary pass; missing prebuilt detail levels fall back to available levels instead of allocating. It only looks up already valid pipeline handles; no shader compilation in secondary passes.
-- `RtsView::drawPreparedTerrainFog` never calls `RtsView::draw`, `VisibilityField::update`, `VisibilityField::build`, terrain rebuild, animation or game event handling. It queues the already prepared fog sheet through `VisibilityField::draw` when shader fog isn't used. The fog sheet uses each secondary camera's viewProj and the primary frame's fog texture and elapsed-time uniform.
+- `GameView::drawPreparedTerrainFog` never calls `GameView::draw`, `VisibilityField::update`, `VisibilityField::build`, terrain rebuild, animation or game event handling. It queues the already prepared fog sheet through `VisibilityField::draw` when shader fog isn't used. The fog sheet uses each secondary camera's viewProj and the primary frame's fog texture and elapsed-time uniform.
 - Primary terrain water mesh is captured by `CameraModelSnapshot` as an ordinary mesh; `drawPrepared` avoids drawing it a second time.
 - GameClient offscreen path calls static streamed-world draw, prepared terrain/fog, then the existing camera model/geometry snapshot. The main screen remains unchanged.
 

@@ -315,7 +315,7 @@ public:
                     // Do not run a second genre-specific picker or overwrite a
                     // cleared FPS selection with a stale RTS selection.
                     fpsGizmoAxis_ = -1;
-                    if (ed.tool == Tool::Select && ed.selection.kind == Selection::FpsObject) {
+                    if (ed.tool == Tool::Select && ed.selection.kind == Selection::ActorObject) {
                         DocumentEntityRef selectedRef;
                         DocumentTransform position;
                         if (DocumentEntityRef::fromFpsKey(ed.selection.ref, selectedRef) &&
@@ -325,7 +325,7 @@ public:
                             const float extent = std::max(0.35f, ed.sceneCam.distance * 0.075f);
                             const Json* source = fpsDocumentEntity(ed.doc().data.fps, selectedRef);
                             const bool oriented = selectedRef.source ==
-                                DocumentEntityRef::Source::FpsCollider && source &&
+                                DocumentEntityRef::Source::ActorCollider && source &&
                                 (*source)["yaw"].isNumber();
                             if (ed.transformTool == TransformTool::Rotate && oriented) {
                                 fpsGizmoAxis_ = pickRotateYawGizmoRing(
@@ -360,7 +360,7 @@ public:
                     fpsDragActive_ = ed.tool == Tool::Select &&
                         !io.KeyCtrl && !io.KeySuper &&
                         (fpsGizmoAxis_ >= 0 ||
-                         (hovered.kind == Selection::FpsObject &&
+                         (hovered.kind == Selection::ActorObject &&
                           (ed.selection == hovered || fpsDragKeepSelection_)));
                     fpsDragEdited_ = false;
                     fpsDragSnapshot_ = false;
@@ -373,7 +373,7 @@ public:
                 if (ed.transformTool != TransformTool::Move && fpsGizmoAxis_ >= 0) {
                     DocumentEntityRef ref;
                     const bool validRef = documentEntityFromSelection(ed.selection, ref) &&
-                        ref.source == DocumentEntityRef::Source::FpsCollider;
+                        ref.source == DocumentEntityRef::Source::ActorCollider;
                     const Json* source = validRef
                         ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
                     if (source && (*source)["yaw"].isNumber()) {
@@ -449,7 +449,7 @@ public:
             }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                 if (fpsDragKeepSelection_ && !fpsDragEdited_ &&
-                    fpsDragClicked_.kind == Selection::FpsObject)
+                    fpsDragClicked_.kind == Selection::ActorObject)
                     ed.select(fpsDragClicked_);
                 fpsDragKeepSelection_ = false;
                 fpsDragActive_ = false;
@@ -1257,7 +1257,7 @@ private:
             DocumentEntityRef ref;
             const bool hasDocRef = documentEntityFromSelection(ed.selection, ref);
             const Json* fpsSource = hasDocRef && ref.source ==
-                DocumentEntityRef::Source::FpsCollider
+                DocumentEntityRef::Source::ActorCollider
                 ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
             const bool fpsOriented = fpsSource && (*fpsSource)["yaw"].isNumber();
             const DocEntity* rtsSource = hasDocRef && ref.source ==

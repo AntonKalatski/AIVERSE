@@ -64,7 +64,7 @@ add_executable(aiverse_terraweave_review_fixes_test tests/terraweave_review_fixe
 target_link_libraries(aiverse_terraweave_review_fixes_test PRIVATE aiverse_world aiverse_models aiverse_zstd_dec)
 add_test(NAME terraweave_review_fixes COMMAND aiverse_terraweave_review_fixes_test)
 ```
-(`aiverse_world` is defined in `modules/fps/CMakeLists.txt`; place the lines where it is visible.)
+(`aiverse_world` is defined in `engine/actor/CMakeLists.txt`; place the lines where it is visible.)
 Existing tests extended (already registered): `physis_remote_edit`, `physis_admin_journal`, `physis_box3d` (needs `AIVERSE_ENABLE_PHYSICS`).
 
 ## Next step

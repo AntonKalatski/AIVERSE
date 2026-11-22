@@ -90,19 +90,19 @@ Previous: [Stage 128](animation-stage128-native-model-lifetime-pins-2026-11-19.m
    deliberately conservative; it does not attempt a brittle
    per-object count in old genre adapters.
 6. `5866d5bfa7ec05ebd9f3cbfe564937ad6d9117d7` —
-   `modules/rts/view/RtsView.cpp`:
-   - `RtsView::draw` now acquires an RAII cache-wide read
+   `engine/view/game/GameView.cpp`:
+   - `GameView::draw` now acquires an RAII cache-wide read
      scope AFTER its initial synchronous `loadType` loop
      and holds the scope while resolving scene objects,
      MotionWeave graph pose evaluation and synchronous
      Renderer3D model packet submission.
-   - Existing RTS `RtsView::shutdown` and hot reload already
+   - Existing RTS `GameView::shutdown` and hot reload already
      detach graphs/Models before eviction. New runtime guards
      throw instead of silently invalidating active draw pointers.
      Deferred GPU retirement is still handled by the original
      `ModelResourceCache::retired_` queue.
 7. `606a065ec2ea08fdd3f5bd3029a4f63e8efb4f25` —
-   `RtsView.h`: read-only `activeModelReadLeases()` for
+   `GameView.h`: read-only `activeModelReadLeases()` for
    host lifecycle diagnostics.
 8. `bc272c70ba2291ddd0dc3fd656f9d65a64ac5a24` —
    `apps/editor/windows/StatsWindow.cpp`: shows currently
@@ -157,7 +157,7 @@ Performed:
   handoff; inspected ModelResourceCache's unique ownership,
   source invalidation, replacement, trim, shutdown and GPU
   retirement contracts.
-- Inspected `RtsView::draw` initial sync load and ordering, then
+- Inspected `GameView::draw` initial sync load and ordering, then
   inserted the cache-wide guard after the known early load loop.
 - Updated source through eight exact-branch GitHub commits with
   fresh blob SHAs and re-read edited interfaces/source.
@@ -186,7 +186,7 @@ MUST remain Draft. No measured performance benefit claimed.
    `ModelResourceCache` destruction with active leases is a
    fatal host bug and deliberately terminates instead of allowing
    borrowed use-after-free.
-4. Existing `RtsView::draw` has a global scope, so asset loads
+4. Existing `GameView::draw` has a global scope, so asset loads
    that INSERT brand-new models are still permitted; any
    REPLACEMENT/trim during the scope now fails closed. The native
    visual parity and potential streaming interaction need testing.

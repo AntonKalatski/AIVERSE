@@ -1,7 +1,7 @@
 #include <aiverselib/bots/Rts.h>
 #include <aiverselib/bots/Persistence.h>
 #include <aiverselib/bots/Waypoints.h>
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 // Engine-specific bot hosts call the adapters before stepping; this TU verifies project-native access.
 bool libraryBotConsumerExample(aiverse::game::NativeState& state) {
     using namespace aiverse::lib::bots;

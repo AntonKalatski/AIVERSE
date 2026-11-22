@@ -18,7 +18,7 @@
 #include "MapDoc.h"
 #include "engine/data/Json.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 
 // Background preview builds need threads: everywhere but a web build without pthreads.
 #if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
@@ -139,21 +139,21 @@ struct WorldReadOptions { bool scriptData = true; };
 // Map document entity i -> worldRef of the entity spawned for it (0: none). Call right after Simulation::setup:
 // map entities are spawned in document order (after the faction start units); type, owner and (flat maps)
 // position must agree.
-std::vector<uint64_t> linkMapEntities(Simulation& sim, game::RtsModule& mod, const MapData& doc);
+std::vector<uint64_t> linkMapEntities(Simulation& sim, game::GameCore& mod, const MapData& doc);
 
 // Rebuilds `out` from the world. links: doc index -> packed (linkMapEntities); setupRefs: sorted packed
 // refs of the entities that existed when the world was first seen (origin Setup), may be empty.
 // Rows are reused (their buffers survive), so reading the same world again allocates little.
-void readWorld(Simulation& sim, game::RtsModule& mod, const WorldConfig& cfg, const std::vector<uint64_t>& links,
+void readWorld(Simulation& sim, game::GameCore& mod, const WorldConfig& cfg, const std::vector<uint64_t>& links,
                const std::vector<uint64_t>& setupRefs, const MapData* doc, WorldModel& out, const WorldReadOptions& opt = {});
 // Script data of a row from a ScriptData blob (game.data scalars + the configured label).
 void setWorldRowData(const WorldConfig& cfg, const std::string& blob, WorldRow& r);
 // One object's row (false: not alive); origin / doc are left as they are (the caller knows them).
-bool readWorldRow(Simulation& sim, game::RtsModule& mod, const WorldConfig& cfg, Entity e, WorldRow& r, const WorldReadOptions& opt = {});
+bool readWorldRow(Simulation& sim, game::GameCore& mod, const WorldConfig& cfg, Entity e, WorldRow& r, const WorldReadOptions& opt = {});
 
 // Everything about one object: {"components": {id: {...}}, "stats": {...}, "script": {...}, "rules": {...}}.
 // Entity references inside are {"$entity": packed, "label": "..."}.
-Json inspectEntity(Simulation& sim, game::RtsModule& mod, Entity e, const Json& rulesJson);
+Json inspectEntity(Simulation& sim, game::GameCore& mod, Entity e, const Json& rulesJson);
 
 // Lua entity data / state blob (ScriptData::blob) as JSON; fx values become numbers.
 Json decodeScriptBlob(const std::string& blob);
@@ -190,7 +190,7 @@ public:
     bool busy() const { return job_ != nullptr; }
     void clear() { sim_.reset(); links_.clear(); }
     Simulation* sim() const { return sim_.get(); }
-    game::RtsModule* module();
+    game::GameCore* module();
     const std::vector<uint64_t>& links() const { return links_; }
     const std::vector<uint64_t>& setupRefs() const { return setupRefs_; }
     const std::string& error() const { return error_; }

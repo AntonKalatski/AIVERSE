@@ -1,7 +1,7 @@
-// Arsenal (rules "arsenal", RtsArsenal.h): weapon slots and ammo, free fire along the aim (walls stop it, the first
+// Arsenal (rules "arsenal", Arsenal.h): weapon slots and ammo, free fire along the aim (walls stop it, the first
 // body takes it, passive neutral cars too), hit-scan fists, running dry, switching, crates (ammo, money, health, gun
 // shop) and their respawn, money for kills, losing the weapons on death, determinism, saves and rollback snapshots.
-#include "modules/rts/RtsArsenal.h"
+#include "engine/game/Arsenal.h"
 
 namespace {
 const char* kArsenalRules = R"J({

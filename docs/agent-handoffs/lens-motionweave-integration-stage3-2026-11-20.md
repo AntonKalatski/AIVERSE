@@ -16,7 +16,7 @@
 - Reused MotionWeave Editor's existing `waitForResourceIdle()` before `EditorWindow::shutdownAfterGpuIdle()`, allowing LENS camera previews to safely retire at Editor shutdown.
 - GameClient now optionally reads `game.json` `lens.enabled`, packaged `cameras.json`, refuses screen outputs and renders additional offscreen camera targets after the normal GameClient screen/UI pass.
 - Client native API exposes frame-scoped `lensColorTarget`, `lensDepthTarget`, `lensTargetInfo`, and `bindLensColorTarget`.
-- **Do not use RtsView::drawFrozenModels** from the old LENS branch: this newer branch leaves the MotionWeave RtsView untouched and intentionally renders available static streamed-world geometry only until pure visual snapshots exist.
+- **Do not use GameView::drawFrozenModels** from the old LENS branch: this newer branch leaves the MotionWeave GameView untouched and intentionally renders available static streamed-world geometry only until pure visual snapshots exist.
 
 ## Important remaining work
 1. The additional client RTs do **not** yet contain all animated RTS entities; additional camera rendering calls must read an immutable, material/pointer-lifetime-safe MotionWeave VisualFrame after exactly one animation update.

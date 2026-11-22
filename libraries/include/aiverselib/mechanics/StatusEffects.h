@@ -2,7 +2,7 @@
 #include <aiverselib/mechanics/Namespace.h>
 // Custom status owner for native/host actors (boss-encounters): slow, root, stun and burn instances with
 // Independent / Refresh / Reject stacking, immunity by kind or id, periodic damage on exact ticks and view
-// events (one per instance, Ground or ModelTop anchor) for status visuals. Inside RtsModule games the engine's
+// events (one per instance, Ground or ModelTop anchor) for status visuals. Inside GameCore games the engine's
 // statuses stay authoritative: use rtsStatusRules to express the same definition as a rules.json status instead.
 #include "engine/core/Fixed.h"
 #include <algorithm>
