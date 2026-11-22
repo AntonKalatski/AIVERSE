@@ -18,7 +18,7 @@
     "Block buildings break for real: a large block splits into pieces, everything that loses support collapses, and debris falls the same way for every player. Portals carry a body through together with its speed, and rewind takes the game back a few seconds at the cost of an energy budget.",
     "Role-playing games get items with prefixes and suffixes, gem sockets, elemental reactions and quests with stages, branches, time limits and a journal. Survival gets bleeding and infected wounds, diseases with incubation and immunity, herds with a leader and panic, and animal taming. Colonists form families, friendships and rivalries, and towns and colonies run pressurised pipes, room heating and trains with signals and stations."
   ],
-  "status": "done",
+  "status": "in-progress",
   "verified": "Каждая механика проверена отдельным тестом: сценарии движения, обрушения, путей, квестов и поездов, повтор с тем же результатом и сохранение с загрузкой.",
   "verifiedEn": "Each mechanic has its own test: movement, collapse, path, quest and train scenarios, identical repeat runs and save/load.",
   "limits": "Пока это правила без готовых экранов: интерфейс журнала, анимации новых движений и примеры уровней ещё впереди. Сборка на macOS и Windows и производительность на телефонах не проверялись.",

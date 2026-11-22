@@ -20,4 +20,4 @@ Presentation policy for the host camera (float math); works in any project.
 
 ## Limits
 
-No collision with moving bodies unless the sweep reports them; no automatic vehicle profile switching.
+LENS (engine/render/CameraBehavior.h, docs/camera-behaviors.md) owns view cameras: register this boom as a LENS body (`shoulder`) and an ECS rig mode before using it in a game - not done yet. No collision with moving bodies unless the sweep reports them.

@@ -70,24 +70,26 @@ status file had not been updated. Before writing "missing":
 
 1. Grep headers and engine code for the concept in English (and the obvious class names):
    `git grep -liE '<words>' -- engine libraries modules ':!*.md' ':!*.json'`; read the top comment of each hit.
-2. Read the area's `code` list in `docs/capability-status.json` (paths of what exists) and its `remaining`.
+2. Read the area's `code` list in `docs/capability-status.json` (paths of what exists) and its `gameReady`.
 3. If the code exists but the status, the library catalog or a skill does not say so, fix them in the same
-   change: `remaining`/`status`/`code` in the status file, an entry in `libraries/catalog.json`
+   change: `gameReady`/`status`/`code`/`tests` in the status file, an entry in `libraries/catalog.json`
    (`python3 tools/libraries/catalog.py check`), the feature skill and the search aliases in
    `tools/skills/catalog.py` (then `python3 tools/skills/catalog.py generate` and `check`).
 
-### Gaps confirmed in code on 2026-11-22 (main 02f9337af)
+### Policy packages added 2026-11-22 and what is still open
 
-No implementation found: off-mesh navmesh links and volumetric 3D navigation (F2, R5); wall-run, grapple,
-dash, one-way platforms (F1, P1); third-person camera with obstacle avoidance (P2); arbitrary geometry
-destruction with collision/navmesh rebuild and debris replication (F3); audio-driven lip-sync and live scene
-binding of MotionWeave (A3); item affixes/sockets (A2); quest journal (A4); wounds/diseases (S1); herds and
-taming (S2); families/relationships of colonists (C1); pressure, heat, railways (C2); zoning, households,
-budgets (C3); public transport timetables (C4); multi-storey tactical cells (T2); treaties and 4X AI (T3);
-generic search bot (T4); draft/ban, in-match shop, recall, courier (M1); boats as vehicles and aerodynamics
-beyond drag (V2); secret-state transport for cards (K2); portals and gameplay time rewind (Q4; the actor
-rewind history is lag compensation only); touch/controller UX and accessibility beyond QTE scaling (U1).
-Re-check before reusing this list.
+Branch `agent-mechanics-audit` added 23 packages for the gaps the code audit confirmed (one test suite,
+CTest `library_policy_mechanics`; registration script `tools/skills/policy_packages.py`): traversal-moves,
+follow-camera, nav-links, volume-nav, structure-destruction, portals-rewind, item-affixes, quest-journal,
+wounds-disease, herds-taming, colonist-relations, utility-networks, railways, city-policy, transit-schedules,
+tactics-levels, diplomacy, turn-search, hero-match, watercraft, secret-state, lip-sync, touch-accessibility.
+Search them with `python3 tools/skills/catalog.py search <words>`.
+
+Still open after them (re-check before reuse): mission/tutorial campaigns as data (R3, the only `planned` area);
+host integration of the new policies (engine/actor prediction of traversal modes, the follow camera as a LENS
+body, MotionWeave in live scenes); UI for journal, shop, budget and tactics; arbitrary mesh destruction and soft
+bodies; phoneme recognition for lip-sync; crypto hashes and engine/net transport for secret state; performance
+budgets on target devices (R4). Every area's own list is its `gameReady` field.
 
 ## Worked example: voxel sandbox (Minecraft-like), main at 2026-11-16
 

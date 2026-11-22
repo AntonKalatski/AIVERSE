@@ -1643,7 +1643,7 @@ Third-person camera boom: orbit, shoulder offset and swap, obstacle avoidance by
 - Push temporary profiles (aim, vehicle, cinematic) with `pushProfile(stack, state, base, id, profile)` and pop them by id; changes blend over `stack.blendSeconds`.
 - Use `pose.eye`, `pose.lookAt`, `pose.fov` for the host camera.
 
-Limits: No collision with moving bodies unless the sweep reports them; no automatic vehicle profile switching.
+Limits: LENS (engine/render/CameraBehavior.h, docs/camera-behaviors.md) owns view cameras: register this boom as a LENS body (`shoulder`) and an ECS rig mode before using it in a game - not done yet. No collision with moving bodies unless the sweep reports them.
 
 ### Off-mesh navigation links and cover generation (nav-links 0.1.0, F2)
 
@@ -1795,5 +1795,134 @@ Trains on a track graph with block signalling, acceleration and braking, looping
 - Persist RailState (kind 213).
 
 Limits: No junction pathfinding (routes are explicit), no chain signals, no train length.
+
+### City economy and politics (city-policy 0.1.0, C3)
+
+`libraries/include/aiverselib/mechanics/CityPolicy.h`, target `AIVERSE::lib_city_policy`, skill `skills/gameplay/aiverse-city-policy/SKILL.md`.
+
+City economy and politics: zoned lots that grow by demand, residents and jobs, taxes, service coverage, budget with loans, policies, faction approval and elections.
+
+- Zone lots with commands (`CityCommand::Zone` with a position); each tick `stepCity(config, data, state, tick, commands)`.
+- Demand per zone comes from jobs, workers and taxes; lots grow or shrink one level per review day; services cover residents within their radius.
+- Daily budget: taxes in, service and policy upkeep and loan interest out; `bankrupt` when the balance stays negative with a loan.
+- Factions rate service coverage, taxes and policies; elections every `electionDays` return the winner.
+- Persist CityState (kind 214). Traffic stays in city-traffic, transit in transit-schedules.
+
+Limits: Aggregated lots (no individual citizens); land value is data the owner sets.
+
+### Transit schedules (transit-schedules 0.1.0, C4)
+
+`libraries/include/aiverselib/mechanics/TransitSchedules.h`, target `AIVERSE::lib_transit_schedules`, skill `skills/gameplay/aiverse-transit-schedules/SKILL.md`.
+
+Public transport and freight lines with timetables, earliest-arrival route planning with transfers, boarding by capacity and stop congestion diagnostics.
+
+- Lines: stops, travel ticks, first departure, headway, capacity. `planTransit(network, from, to, time)` returns legs with transfers.
+- Each tick `stepTransit(network, demand, state, tick)`: groups spawn at their origin, board in FIFO order up to capacity, transfer and arrive.
+- The report lists waiting units and the oldest wait per stop and the peak load of each line: use it for congestion overlays.
+- Persist TransitState (kind 215).
+
+Limits: Vehicles are timetable entities (the owner moves bodies along roads/rails); no fares.
+
+### Multi-level tactics boards (tactics-levels 0.1.0, T2)
+
+`libraries/include/aiverselib/mechanics/TacticsLevels.h`, target `AIVERSE::lib_tactics_levels`, skill `skills/gameplay/aiverse-tactics-levels/SKILL.md`.
+
+Multi-storey tactical boards: stacked tactics-grid levels with stairs and ladders, movement across levels, sight through open floors, height advantage and undoable move plans.
+
+- Build a `LevelBoard` (levels of the same size, floor slabs per level, connectors).
+- `levelReachable` / `levelPath` for movement, `levelCanSee` and `levelPreviewShot` for line of fire with height bonus.
+- Plans: `planStep`, `planUndo`, `planCancel`, `planCommit` keep previews and the final order consistent.
+- Persist TacticsPlan (kind 216). Square/hex boards, cover and WeGo stay in tactics-grid.
+
+Limits: Destructible floors are left to structure-destruction plus a board rebuild.
+
+### Diplomacy and strategy AI (diplomacy 0.1.0, T3)
+
+`libraries/include/aiverselib/mechanics/Diplomacy.h`, target `AIVERSE::lib_diplomacy`, skill `skills/gameplay/aiverse-diplomacy/SKILL.md`.
+
+Relations from decaying modifiers, treaties with truce and break penalties, defensive alliances that join wars, deal evaluation and a strategy advisor for AI factions.
+
+- Each turn `stepDiplomacy(config, state, turn, commands, facts, values)`; commands add factions, modifiers, proposals, breaks and war declarations.
+- AI factions accept a deal when `dealUtility` >= 0 (relation, power, threats, value of items).
+- `adviseStrategy(state, config, facts, faction)` gives a stance and proposals for the AI turn.
+- Persist DiplomacyState (kind 217).
+
+Limits: No espionage or vassal tribute flows; the economic value of items comes from the owner.
+
+### Turn search bots (turn-search 0.1.0, T4)
+
+`libraries/include/aiverselib/bots/TurnSearch.h`, target `AIVERSE::lib_turn_search`, skill `skills/ai/aiverse-turn-search/SKILL.md`.
+
+Generic game-tree search for any turn rules: iterative-deepening alpha-beta with a node budget and seeded MCTS, both explaining the chosen move.
+
+- Write a rules adapter with actions, apply, side, terminal and evaluate (see the header).
+- `alphaBeta(rules, state, maxDepth, nodeBudget)` or `mcts(rules, state, playouts, seed)`.
+- `result.why` holds the score of every root action and the principal variation for move explanations.
+
+Limits: Two-sided games; hidden information needs determinization by the owner (see card-games CardBot).
+
+### Hero match (draft, shop, credit) (hero-match 0.1.0, M1)
+
+`libraries/include/aiverselib/mechanics/HeroMatch.h`, target `AIVERSE::lib_hero_match`, skill `skills/gameplay/aiverse-hero-match/SKILL.md`.
+
+Hero match rules: pick/ban draft with timeouts, in-match shop with recipes, sell-back and courier delivery, recall channel, last hits, denies, assists, bounties and respawn timers.
+
+- Draft: `DraftRules` turns, `stepDraft(rules, state, tick, actions)`; timeouts pick or ban the lowest free hero.
+- Match: `stepHeroMatch(config, state, tick, commands)` with Buy, Sell, Recall, Damage, UnitKilled and HeroKilled commands.
+- Recipes consume owned components; courier deliveries arrive after `courierTicks`.
+- Persist DraftState (kind 218) and HeroMatchState (kind 219).
+
+Limits: Lanes, creeps and towers are ordinary units of the host; no MMR here (see meta-matchmaking).
+
+### Boats, ships and aircraft (watercraft 0.1.0, V2)
+
+`libraries/include/aiverselib/mechanics/Watercraft.h`, target `AIVERSE::lib_watercraft`, skill `skills/gameplay/aiverse-watercraft/SKILL.md`.
+
+Boats and ships from assembled hull blocks with point buoyancy, water drag, thrust and rudder, capsize and sinking, plus an aircraft model with lift, drag, stall and control surfaces.
+
+- `assembleHull(blocks)` builds mass, centre of mass and buoyancy points; reassemble after a block is destroyed.
+- Each tick `stepBoat(config, hull, state, input, tick, dt, water)`; `water(point)` returns the NEREID surface height and current.
+- `stepAircraft(config, state, input, tick, dt, wind)` for planes; arcade aircraft stay in vehicle-controllers.
+- Seats and passengers use VehicleSeats.h; persist BoatState (kind 220) and AircraftState (kind 221).
+
+Limits: Simplified rigid model (no wave slamming, no propeller wash); multi-seat network play is not verified here.
+
+### Secret state and commit/reveal (secret-state 0.1.0, K2)
+
+`libraries/include/aiverselib/mechanics/SecretState.h`, target `AIVERSE::lib_secret_state`, skill `skills/network/aiverse-secret-state/SKILL.md`.
+
+Hidden information for authoritative servers: zones with visibility rules, per-seat opaque handles re-keyed on shuffle, reveal events, reconnect snapshots and commit/reveal rounds.
+
+- Server: `addZone`, `placeObject` (collect RevealEvents), `shuffleZone`; send each seat only `projectForSeat(state, seat)`.
+- Clients refer to hidden objects by handle; the server maps them with `resolveHandle`.
+- Reconnect: send `snapshotForSeat` and continue from its version.
+- Simultaneous decisions: `CommitRound` with `submitCommit`, `submitReveal`, `resolveRound`; pass a cryptographic hash when the server is not trusted.
+- Persist SecretState (kind 222, server only) and CommitRound (kind 223).
+
+Limits: Transport and encryption belong to engine/net; the default FNV commitment is not cryptographic.
+
+### Lip-sync from audio or text (lip-sync 0.1.0, A3)
+
+`libraries/include/aiverselib/animation/LipSync.h`, target `AIVERSE::lib_lip_sync`, skill `skills/visuals/aiverse-lip-sync/SKILL.md`.
+
+Lip-sync viseme tracks from recorded speech (loudness, zero crossings, band energy, closed-lip gaps) or from text, with attack/release smoothing and sampling for the face rig.
+
+- Audio: `analyseSpeech(pcm, sampleRate)`; text: `visemesFromText(line, seconds)`.
+- Each frame `sampleVisemes(keys, time)` returns weights; drive VIVID `Face::setViseme(static_cast<vivid::Viseme>(i), weight)`.
+- Presentation only; keep the keys with the dialogue line asset.
+
+Limits: Energy/spectral heuristics, not a phoneme recogniser; Latin text only.
+
+### Touch controls and accessibility (touch-accessibility 0.1.0, U1)
+
+`libraries/include/aiverselib/gameplay/TouchAccessibility.h`, target `AIVERSE::lib_touch_accessibility`, skill `skills/ui/aiverse-touch-accessibility/SKILL.md`.
+
+Touch controls (fixed and floating sticks, hold/toggle buttons, tap, double tap, long press, swipe, pinch, rotate, pan) and accessibility settings (colour vision, scales, subtitles, reduced motion, remapping with conflicts).
+
+- Touch: define a `Layout`; each frame `updateTouch(layout, state, touches, dt)` gives stick vectors, button states and gestures; map them to InputFlow actions.
+- Accessibility: keep a `Settings` per player; `validate` names the first bad field; `bindingConflicts` and `rebind` for remapping.
+- `compensate(colorVision, rgb)` for UI/palette colours, `shakeScale` / `flashScale` for camera shake and flashes.
+
+Limits: No on-screen widgets (draw them with the UI layer); colour compensation is per colour, not a post-process pass.
 
 <!-- policy-packages:end -->

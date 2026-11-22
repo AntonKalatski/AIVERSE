@@ -69,7 +69,9 @@
       "libraries": [
         "volume-nav"
       ],
-      "tests": [],
+      "tests": [
+        "library_policy_mechanics"
+      ],
       "gameReady": "Есть объёмная сетка препятствий, детерминированный A* по 26 соседям со сглаживанием, локальное избегание стаи и 3D-слоты формаций (volume-nav). Осталось: иерархические и стримящиеся объёмы, ввод высоты в интерфейсе, согласованное представление кораблей.",
       "code": [
         "libraries/include/aiverselib/bots/VolumeNav.h"
@@ -90,7 +92,8 @@
       ],
       "tests": [
         "library_genre",
-        "ecs_cross_genre_locomotion_test"
+        "ecs_cross_genre_locomotion_test",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть Ground/Air со склонами, Ledge, Ladder, Swim, Climb, Mantle/Vault (LocomotionModes.h), движущиеся платформы (Platforms.h), ступени Box3D-персонажа, а также wall-run, wall-slide, wall jump, dash с зарядами в воздухе, grapple hook, планирование и односторонние платформы (traversal-moves). Осталось: вращающиеся опоры, prediction и камера новых режимов в engine/actor, анимации режимов.",
       "code": [
@@ -117,7 +120,8 @@
       "tests": [
         "library_fps_bots",
         "library_navmesh",
-        "library_genre"
+        "library_genre",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть off-mesh links (прыжок, спрыгивание, лестница, лазание, дверь, телепорт) в общем планировщике с любым навмешем и прохождение связей по тикам, генерация точек укрытий от коробок (nav-links), выбор укрытия ботом, роли отряда, слоистый навмеш. Осталось: автоматическое извлечение связей из геометрии, стриминг навмеша, задачи конкретного режима.",
       "code": [
@@ -138,7 +142,9 @@
         "physics",
         "structure-destruction"
       ],
-      "tests": [],
+      "tests": [
+        "library_policy_mechanics"
+      ],
       "gameReady": "Есть разрушаемые конструкции из коробок: урон по области, раскол на фрагменты, обрушение без опоры, авторитетные обломки для репликации и грязные области для коллизий, навмеша и видимости (structure-destruction); разрушаемые объекты и события PHYSIS. Осталось: разрезание произвольных мешей, расчёт напряжений, soft-body транспорт.",
       "code": [
         "libraries/include/aiverselib/mechanics/Breakables.h",
@@ -210,7 +216,8 @@
         "weapon-policies"
       ],
       "tests": [
-        "library_progression"
+        "library_progression",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть генерация предметов по пулам аффиксов (префиксы/суффиксы, группы, тиры, уровень предмета), крафт, сокеты с цветами и камнями, элементальные ауры и реакции, миграция предметов (item-affixes), модификаторы и перки. Осталось: редактор связей и UI предметов.",
       "code": [
@@ -227,12 +234,14 @@
       "status": "partial",
       "libraries": [
         "cinematic-gameplay",
+        "lip-sync",
         "motionweave"
       ],
       "tests": [
-        "library_genre"
+        "library_genre",
+        "library_policy_mechanics"
       ],
-      "gameReady": "Есть MotionWeave: монтажи с секциями и масками, notifies клипов, root motion (запекание и фиксированный адаптер мотора), motion warping, гуманоидный и общий retargeting, инерциализация поз, ragdoll через Box3D (animation/); таймлайны сцен с точками синхронизации и QTE (CinematicScene.h); виземы лица Vivid задаются вручную (Face.h). Осталось: lip-sync из аудио, подключение к живым игровым сценам и префабам (SceneLoadCoordinator), вьюпорт HTML5 Studio, сохранение состояния сцены.",
+      "gameReady": "Есть MotionWeave: монтажи, notifies, root motion, motion warping, retargeting, инерциализация, ragdoll; таймлайны сцен с QTE; lip-sync по записанной речи или тексту для виз VIVID (lip-sync). Осталось: подключение MotionWeave к живым игровым сценам и префабам, вьюпорт HTML5 Studio, распознавание фонем.",
       "code": [
         "engine/animation/AnimationMontage.h",
         "engine/animation/AnimationPlayback.h",
@@ -244,7 +253,8 @@
         "engine/animation/PoseInertialization.h",
         "libraries/include/aiverselib/animation/PhysicsRagdollBridge.h",
         "libraries/include/aiverselib/mechanics/CinematicScene.h",
-        "engine/character/vivid/Face.h"
+        "engine/character/vivid/Face.h",
+        "libraries/include/aiverselib/animation/LipSync.h"
       ]
     },
     {
@@ -260,7 +270,8 @@
         "world-calendar"
       ],
       "tests": [
-        "library_genre"
+        "library_genre",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть квесты как данные: этапы, счётчики, ветки, требования, лимиты времени, провал и повтор, отслеживаемый квест, журнал и миграция версий (quest-journal); факты, отношения и сцены (narrative-graphs). Осталось: UI журнала и маркеры квестов на карте.",
       "code": [
@@ -317,7 +328,8 @@
         "wounds-disease"
       ],
       "tests": [
-        "library_genre_production_survival"
+        "library_genre_production_survival",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть температура тела, одежда, укрытие, влажность и голод (Survival.h), раны с кровотечением, болью, заживлением, инфекцией и лечением, болезни с инкубацией, заразностью, лечением и иммунитетом (wounds-disease). Осталось: потеря функций конечностей, агрегирование дальних процессов, медицинский UI.",
       "code": [
@@ -338,7 +350,8 @@
       ],
       "tests": [
         "library_genre_production_survival",
-        "library_production_survival_example"
+        "library_production_survival_example",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть популяции, поведение отдельных животных, мобы, стада с вожаком, связностью, общей паникой и сменой вожака, агрегированные стада вдали от игрока и приручение по доверию с приказами (herds-taming). Осталось: разведение прирученных, верховая езда, суточные расписания животных.",
       "code": [
@@ -421,7 +434,8 @@
       ],
       "tests": [
         "library_genre_production_survival",
-        "library_production_survival_example"
+        "library_production_survival_example",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть потребности, расписания, настроение, работы и резервирование колонистов, семьи, воспоминания, мнения, дружба и соперничество, пары, владение предметами и социальное настроение (colonist-relations). Осталось: рождение и старение, многоуровневое размещение.",
       "code": [
@@ -444,7 +458,8 @@
       ],
       "tests": [
         "strategy_libraries",
-        "library_genre_production_survival"
+        "library_genre_production_survival",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть рецепты, буферы, транспорт, электричество и простые жидкости (ColonyPower.h), трубы с давлением, насосами, клапанами и баками, теплообмен комнат с дверями и термостатами (utility-networks), поезда с блочной сигнализацией и станциями (railways). Осталось: поиск маршрутов поездов по развилкам, цепные сигналы, смешивание газов и полноценная интеграция в игру.",
       "code": [
@@ -458,10 +473,17 @@
       "area": "Городская экономика и политика",
       "scope": "Участки/зонирование, домохозяйства, бюджеты, услуги, классы/фракции и голосования как общие политики; детали законов — данные",
       "acceptance": "Изменение налогов/услуги объяснимо меняет бюджет и население; сохранение не меняет расчёт",
-      "status": "planned",
-      "libraries": [],
-      "tests": [],
-      "gameReady": "Участки/зонирование, домохозяйства, бюджеты, услуги, классы/фракции и голосования как общие политики; детали законов — данные"
+      "status": "partial",
+      "libraries": [
+        "city-policy"
+      ],
+      "tests": [
+        "library_policy_mechanics"
+      ],
+      "gameReady": "Есть зонирование с ростом участков по спросу, жители и рабочие места, налоги, покрытие службами, бюджет с займами, политики, одобрение фракций и выборы (city-policy); торговля и карьеры города (aiverse-city-economy). Осталось: отдельные домохозяйства и классы как агенты, стоимость земли из окружения, UI бюджета.",
+      "code": [
+        "libraries/include/aiverselib/mechanics/CityPolicy.h"
+      ]
     },
     {
       "id": "C4",
@@ -470,13 +492,17 @@
       "acceptance": "Часы пик, перекрытая улица и новый маршрут корректно перераспределяют поток при измеримом бюджете",
       "status": "partial",
       "libraries": [
-        "city-traffic"
+        "city-traffic",
+        "transit-schedules"
       ],
-      "tests": [],
-      "gameReady": "Есть полосы, повороты на перекрёстках, фазы светофоров, окна для пешеходов, бот-водитель и пешеходы (Traffic.h, engine/game/Traffic.cpp). Осталось: расписания и пересадки общественного транспорта, товарные потоки, агрегирование населения, диагностика заторов.",
+      "tests": [
+        "library_policy_mechanics"
+      ],
+      "gameReady": "Есть полосы, перекрёстки, светофоры и пешеходы (city-traffic), линии с расписаниями, планирование маршрутов с пересадками, посадка по вместимости и диагностика перегруженных остановок (transit-schedules). Осталось: агрегирование населения города в спрос, связь транспорта расписаний с телами на дорогах, тарифы.",
       "code": [
         "libraries/include/aiverselib/mechanics/Traffic.h",
-        "engine/game/Traffic.cpp"
+        "engine/game/Traffic.cpp",
+        "libraries/include/aiverselib/mechanics/TransitSchedules.h"
       ]
     },
     {
@@ -501,15 +527,18 @@
       "acceptance": "Предпросмотр совпадает с результатом команды; корректная навигация на ступенях/гексах",
       "status": "partial",
       "libraries": [
-        "tactics-grid"
+        "tactics-grid",
+        "tactics-levels"
       ],
       "tests": [
-        "library_cards_turns"
+        "library_cards_turns",
+        "library_policy_mechanics"
       ],
-      "gameReady": "Есть квадратные и гексовые поля, взвешенный путь, половинное и полное укрытие с флангом, целочисленная линия огня и превью шанса попадания (TacticsGrid.h), одновременные ходы WeGo с overwatch и реакционным огнём (TacticsWeGo.h). Осталось: многоэтажные клетки, согласованная отмена, UI.",
+      "gameReady": "Есть квадратные и гексовые поля, укрытия, линия огня, превью выстрела, WeGo с overwatch (tactics-grid), многоэтажные поля с лестницами, видимость через открытые перекрытия, бонус высоты и план хода с отменой (tactics-levels). Осталось: UI тактики и разрушаемые перекрытия.",
       "code": [
         "libraries/include/aiverselib/mechanics/TacticsGrid.h",
-        "libraries/include/aiverselib/mechanics/TacticsWeGo.h"
+        "libraries/include/aiverselib/mechanics/TacticsWeGo.h",
+        "libraries/include/aiverselib/mechanics/TacticsLevels.h"
       ]
     },
     {
@@ -518,13 +547,18 @@
       "scope": "Договоры, торговля, города/районы, политические системы, генерация галактики и AI долгого планирования по выбранной 4X",
       "acceptance": "AI завершает полную кампанию, соблюдает договоры; битва и обратный перенос потерь воспроизводятся",
       "status": "partial",
-      "libraries": [],
-      "tests": [],
-      "gameReady": "Есть рынок, торговля, дань и дипломатия союзов в общем ядре игры (engine/game MechEconomy, kCmdDiplomacy) и стратегическая кампания (modules/strategic). Осталось: договоры, города и районы, политические системы, генерация галактики, AI долгого планирования.",
+      "libraries": [
+        "diplomacy"
+      ],
+      "tests": [
+        "library_policy_mechanics"
+      ],
+      "gameReady": "Есть рынок, дань и союзы в ядре игры, стратегическая кампания, отношения из затухающих модификаторов, договоры с перемирием и штрафами за разрыв, оборонительные союзы, оценка сделок и советник стратегии ИИ (diplomacy). Осталось: города и районы, политические системы, генерация галактики, шпионаж.",
       "code": [
         "engine/game/MechEconomy.cpp",
         "engine/game/Components.h",
-        "modules/strategic"
+        "modules/strategic",
+        "libraries/include/aiverselib/mechanics/Diplomacy.h"
       ]
     },
     {
@@ -535,17 +569,20 @@
       "status": "partial",
       "libraries": [
         "cards-turns-bots",
-        "tactics-grid"
+        "tactics-grid",
+        "turn-search"
       ],
       "tests": [
         "library_cards_turns",
-        "library_cards_turns_example"
+        "library_cards_turns_example",
+        "library_policy_mechanics"
       ],
-      "gameReady": "Есть перечисление легальных действий (tacticsLegalActions, cardLegalActions) и ограниченный lookahead по видимому состоянию с бюджетом узлов (CardBot.h), тактический бот. Осталось: общий поиск для любых правил и объяснение хода.",
+      "gameReady": "Есть перечисление легальных действий в тактике и картах, бот карт с поиском и универсальный поиск по любым пошаговым правилам: alpha-beta с итеративным углублением и бюджетом узлов, MCTS с сидом и объяснением хода (turn-search). Осталось: детерминизация скрытой информации в общем виде, игры больше чем на двух игроков.",
       "code": [
         "libraries/include/aiverselib/bots/CardBot.h",
         "libraries/include/aiverselib/bots/TacticsBot.h",
-        "libraries/include/aiverselib/mechanics/TacticsTurns.h"
+        "libraries/include/aiverselib/mechanics/TacticsTurns.h",
+        "libraries/include/aiverselib/bots/TurnSearch.h"
       ]
     },
     {
@@ -557,15 +594,18 @@
       "libraries": [
         "abilities",
         "battle-royale",
+        "hero-match",
         "match-rules"
       ],
       "tests": [
         "library_genre",
-        "library_royale"
+        "library_royale",
+        "library_policy_mechanics"
       ],
-      "gameReady": "Есть жизни и волны респавна, элиминация и цели матча (MatchObjectives.h), способности; магазин есть только в мета-слое (meta-economy, engine/ui/templates/shop.rml). Осталось: draft/ban, магазин внутри матча, recall, courier, assists/deny, командные роли AI, честная видимость.",
+      "gameReady": "Есть цели матча, респаун волнами, способности, драфт с пиками и банами, магазин с рецептами, продажа, курьер, recall, ластхиты, денаи, ассисты, награды за серии и таймеры возрождения (hero-match). Осталось: командные роли ИИ, линии и крипы как данные шаблона, честная видимость.",
       "code": [
-        "libraries/include/aiverselib/mechanics/MatchObjectives.h"
+        "libraries/include/aiverselib/mechanics/MatchObjectives.h",
+        "libraries/include/aiverselib/mechanics/HeroMatch.h"
       ]
     },
     {
@@ -580,7 +620,8 @@
         "traversal-moves"
       ],
       "tests": [
-        "library_genre"
+        "library_genre",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть движущиеся платформы, wall jump, wall-slide, dash, планирование и односторонние платформы с проваливанием вниз (traversal-moves). Осталось: петли и гравитация по поверхности, авторские метрики движения, 2D-камера платформера.",
       "code": [
@@ -603,7 +644,8 @@
         "traversal-moves"
       ],
       "tests": [
-        "library_genre"
+        "library_genre",
+        "library_policy_mechanics"
       ],
       "gameReady": "Есть камера третьего лица: орбита, плечо со сменой стороны, обход препятствий сферическим свипом владельца, возврат за спину, стек профилей с плавными переходами (follow-camera); хват за уступ и планирование (LocomotionModes, traversal-moves). Осталось: особые гравитации и привязка камеры к хосту engine/actor.",
       "code": [
@@ -648,16 +690,19 @@
       "status": "partial",
       "libraries": [
         "nereid-buoyancy",
-        "vehicle-controllers"
+        "vehicle-controllers",
+        "watercraft"
       ],
       "tests": [
-        "library_vehicles_sports"
+        "library_vehicles_sports",
+        "library_policy_mechanics"
       ],
-      "gameReady": "Есть аркадный самолёт, места водителя, пассажиров и стрелков (VehicleSeats.h, общий engine/vehicles), плавучесть и сопротивление NEREID (nereid-buoyancy, experimental), квадратичное аэродинамическое сопротивление ветра PHYSIS (PhysisForces.h). Осталось: лодка как транспорт (связать плавучесть с vehicle-controllers), аэродинамика сверх сопротивления, сборные корпуса, проверка многоместности в сети.",
+      "gameReady": "Есть аркадный самолёт и места в транспорте (vehicle-controllers), плавучесть NEREID, лодки и корабли из сборных блоков корпуса с плавучестью по точкам, сопротивлением, тягой, рулём, опрокидыванием и затоплением, самолёт с подъёмной силой, сопротивлением, сваливанием и рулями (watercraft). Осталось: проверка многоместности в сети, удары волн, связка с NEREID в хосте.",
       "code": [
         "libraries/include/aiverselib/mechanics/VehicleSeats.h",
         "engine/vehicles/Vehicles.h",
-        "engine/physis/PhysisForces.h"
+        "engine/physis/PhysisForces.h",
+        "libraries/include/aiverselib/mechanics/Watercraft.h"
       ]
     },
     {
@@ -700,13 +745,18 @@
       "status": "partial",
       "libraries": [
         "card-games",
-        "card-runtime"
+        "card-runtime",
+        "secret-state"
       ],
       "tests": [
         "library_cards_turns",
-        "strategy_libraries"
+        "strategy_libraries",
+        "library_policy_mechanics"
       ],
-      "gameReady": "Есть приватная проекция руки и публичных зон. Остались authoritative transport, защита секретного состояния, reconnect и сетевые проверки; RTS lockstep сам по себе секретности не обеспечивает."
+      "gameReady": "Есть приватная проекция руки (card-runtime), зоны с правилами видимости, непрозрачные дескрипторы на игрока с перешифровкой при тасовке, события раскрытия, снимки для переподключения и раунды commit/reveal (secret-state). Осталось: транспорт в engine/net и криптографический хеш при недоверии к серверу.",
+      "code": [
+        "libraries/include/aiverselib/mechanics/SecretState.h"
+      ]
     },
     {
       "id": "K3",
@@ -799,7 +849,9 @@
       "libraries": [
         "portals-rewind"
       ],
-      "tests": [],
+      "tests": [
+        "library_policy_mechanics"
+      ],
       "gameReady": "Есть связанные порталы с переносом позиции, скорости и направления, преобразования для рекурсивного вида и игровая перемотка времени по истории снимков с запасом энергии (portals-rewind). Осталось: локальные пузыри времени для отдельных объектов, перспективные и неевклидовы миры, рендер рекурсии в View.",
       "code": [
         "libraries/include/aiverselib/mechanics/PortalsRewind.h"
@@ -870,10 +922,17 @@
       "area": "Специализированные редакторы и устройства ввода",
       "scope": "Специализированные редакторы полей/трасс/графов, touch/controller UX, accessibility и публикация пользовательских данных по потребности",
       "acceptance": "Полный цикл создать/проверить/сыграть/сохранить/упаковать на выбранной платформе без ручной правки C++",
-      "status": "planned",
-      "libraries": [],
-      "tests": [],
-      "gameReady": "Специализированные редакторы полей/трасс/графов, touch/controller UX, accessibility и публикация пользовательских данных по потребности"
+      "status": "partial",
+      "libraries": [
+        "touch-accessibility"
+      ],
+      "tests": [
+        "library_policy_mechanics"
+      ],
+      "gameReady": "Есть тач-управление (стики, кнопки, жесты) и настройки доступности: цветовое зрение, масштабы, субтитры, меньше движения, переназначение с конфликтами (touch-accessibility); масштаб окон QTE. Осталось: экранные виджеты, геймпад-UX меню, специализированные редакторы полей, трасс и графов.",
+      "code": [
+        "libraries/include/aiverselib/gameplay/TouchAccessibility.h"
+      ]
     }
   ],
   "verification": {
@@ -911,6 +970,6 @@
     "date": "2026-11-22",
     "commit": "02f9337af",
     "note": "Statuses checked against code, not only skills. Areas still planned after the audit have no implementation found: R1-R5, C3, K2 (partial), Q4, U1. Paths of the code that exists are in each area under \"code\".",
-    "policyPackages": "batch1-2"
+    "policyPackages": "batch1-4"
   }
 }

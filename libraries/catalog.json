@@ -2792,7 +2792,7 @@
       "source": "libraries/include/aiverselib/gameplay/ThirdPersonCamera.h",
       "skill": "skills/gameplay/aiverse-follow-camera/SKILL.md",
       "summary": "Third-person camera boom: orbit, shoulder offset and swap, obstacle avoidance by owner sphere sweep, recenter behind the target, profile stack with blends",
-      "notes": "Capability P2. No collision with moving bodies unless the sweep reports them; no automatic vehicle profile switching. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "notes": "Capability P2. LENS (engine/render/CameraBehavior.h, docs/camera-behaviors.md) owns view cameras: register this boom as a LENS body (`shoulder`) and an ECS rig mode before using it in a game - not done yet. No collision with moving bodies unless the sweep reports them. Tests: tests/libraries/policy_mechanics_tests.cpp.",
       "verifiedPlatforms": [],
       "runtime": "header",
       "cmakeTarget": "AIVERSE::lib_follow_camera",
@@ -2983,6 +2983,178 @@
       "verifiedPlatforms": [],
       "runtime": "header",
       "cmakeTarget": "AIVERSE::lib_railways",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "city-policy",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/CityPolicy.h",
+      "skill": "skills/gameplay/aiverse-city-policy/SKILL.md",
+      "summary": "City economy and politics: zoned lots that grow by demand, residents and jobs, taxes, service coverage, budget with loans, policies, faction approval and elections",
+      "notes": "Capability C3. Aggregated lots (no individual citizens); land value is data the owner sets. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_city_policy",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "transit-schedules",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/TransitSchedules.h",
+      "skill": "skills/gameplay/aiverse-transit-schedules/SKILL.md",
+      "summary": "Public transport and freight lines with timetables, earliest-arrival route planning with transfers, boarding by capacity and stop congestion diagnostics",
+      "notes": "Capability C4. Vehicles are timetable entities (the owner moves bodies along roads/rails); no fares. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_transit_schedules",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "tactics-levels",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/TacticsLevels.h",
+      "skill": "skills/gameplay/aiverse-tactics-levels/SKILL.md",
+      "summary": "Multi-storey tactical boards: stacked tactics-grid levels with stairs and ladders, movement across levels, sight through open floors, height advantage and undoable move plans",
+      "notes": "Capability T2. Destructible floors are left to structure-destruction plus a board rebuild. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_tactics_levels",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "tactics-grid"
+      ]
+    },
+    {
+      "id": "diplomacy",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/Diplomacy.h",
+      "skill": "skills/gameplay/aiverse-diplomacy/SKILL.md",
+      "summary": "Relations from decaying modifiers, treaties with truce and break penalties, defensive alliances that join wars, deal evaluation and a strategy advisor for AI factions",
+      "notes": "Capability T3. No espionage or vassal tribute flows; the economic value of items comes from the owner. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_diplomacy",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "turn-search",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/bots/TurnSearch.h",
+      "skill": "skills/ai/aiverse-turn-search/SKILL.md",
+      "summary": "Generic game-tree search for any turn rules: iterative-deepening alpha-beta with a node budget and seeded MCTS, both explaining the chosen move",
+      "notes": "Capability T4. Two-sided games; hidden information needs determinization by the owner (see card-games CardBot). Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_turn_search",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "hero-match",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/HeroMatch.h",
+      "skill": "skills/gameplay/aiverse-hero-match/SKILL.md",
+      "summary": "Hero match rules: pick/ban draft with timeouts, in-match shop with recipes, sell-back and courier delivery, recall channel, last hits, denies, assists, bounties and respawn timers",
+      "notes": "Capability M1. Lanes, creeps and towers are ordinary units of the host; no MMR here (see meta-matchmaking). Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_hero_match",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "watercraft",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/Watercraft.h",
+      "skill": "skills/gameplay/aiverse-watercraft/SKILL.md",
+      "summary": "Boats and ships from assembled hull blocks with point buoyancy, water drag, thrust and rudder, capsize and sinking, plus an aircraft model with lift, drag, stall and control surfaces",
+      "notes": "Capability V2. Simplified rigid model (no wave slamming, no propeller wash); multi-seat network play is not verified here. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_watercraft",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "secret-state",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/SecretState.h",
+      "skill": "skills/network/aiverse-secret-state/SKILL.md",
+      "summary": "Hidden information for authoritative servers: zones with visibility rules, per-seat opaque handles re-keyed on shuffle, reveal events, reconnect snapshots and commit/reveal rounds",
+      "notes": "Capability K2. Transport and encryption belong to engine/net; the default FNV commitment is not cryptographic. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_secret_state",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "lip-sync",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/animation/LipSync.h",
+      "skill": "skills/visuals/aiverse-lip-sync/SKILL.md",
+      "summary": "Lip-sync viseme tracks from recorded speech (loudness, zero crossings, band energy, closed-lip gaps) or from text, with attack/release smoothing and sampling for the face rig",
+      "notes": "Capability A3. Energy/spectral heuristics, not a phoneme recogniser; Latin text only. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_lip_sync",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "touch-accessibility",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/gameplay/TouchAccessibility.h",
+      "skill": "skills/ui/aiverse-touch-accessibility/SKILL.md",
+      "summary": "Touch controls (fixed and floating sticks, hold/toggle buttons, tap, double tap, long press, swipe, pinch, rotate, pan) and accessibility settings (colour vision, scales, subtitles, reduced motion, remapping with conflicts)",
+      "notes": "Capability U1. No on-screen widgets (draw them with the UI layer); colour compensation is per colour, not a post-process pass. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_touch_accessibility",
       "linkDependencies": [
         "aiverse_engine"
       ],
