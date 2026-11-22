@@ -62,13 +62,14 @@ int main() {
           "invalid brush partially modified saved sparse terrain");
 
     // Same authored chunks must survive FPS document save/load too:
-    // generic MapDoc::toJson historically returned fps verbatim.
+    // MapDoc::toJson returns a world-space document whole.
     Workspace fps;
     fps.project.dir=".";
     fps.map.reset(4,4);
-    fps.map.data.fps=Json::object();
-    fps.map.data.fps.set("colliders",Json::array());
-    fps.map.data.fps.set("spawns",Json::array());
+    fps.map.data.worldSpace=true;   // a world-space document is kept whole in extra
+    fps.map.data.extra=Json::object();
+    fps.map.data.extra.set("colliders",Json::array());
+    fps.map.data.extra.set("spawns",Json::array());
     auto fpsCreate=fps.call("terraweave_sparse_paint",
                             cmd("create",-6401,-6401),"mcp");
     check(fpsCreate.getBool("ok") &&
