@@ -35,4 +35,6 @@ External repositories (GTA2, Kingston) must rename their game.json / rules the s
 
 ## Tests
 
-See the table below (filled after the Mac run).
+| Commit | Result |
+|---|---|
+| a25556920 (Mac, KINGSTON) | build PASS; CTest 432/433, failed `ta_importer` (TA importer wrote `"module": "rts"`; fixed after the run in the importers); checksums equal to the previous run except the known boss_arena seed 2 |

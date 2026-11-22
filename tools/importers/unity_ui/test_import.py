@@ -84,7 +84,7 @@ class ImportTests(unittest.TestCase):
         fixture.build(cls.src, FONT)
         os.makedirs(cls.out)
         with open(os.path.join(cls.out, 'game.json'), 'w') as f:
-            json.dump({'name': 'Fixture', 'module': 'rts', 'languages': ['en']}, f)
+            json.dump({'name': 'Fixture', 'module': 'game', 'languages': ['en']}, f)
         cls.res = importer.run(cls.src, cls.out, prefabs=['UI/Plain/Popup.prefab'])
         cls.shop = cls.read('ui/screens/shop.rml')
 
@@ -202,7 +202,7 @@ class ImportTests(unittest.TestCase):
         game = os.path.join(self.tmp.name, 'render')
         importer.run(self.src, game, prefabs=['UI/Plain/Popup.prefab'])
         with open(os.path.join(game, 'game.json'), 'w') as f:
-            json.dump({'name': 'Fixture', 'module': 'rts', 'languages': ['en', 'ru'], 'sourceLanguage': 'en', 'rules': 'rules.json',
+            json.dump({'name': 'Fixture', 'module': 'game', 'languages': ['en', 'ru'], 'sourceLanguage': 'en', 'rules': 'rules.json',
                        'maps': []}, f)
         shot = os.path.join(self.tmp.name, 'shot.ppm')
         env = dict(os.environ, AIVERSE_CONTENT=game, AIVERSE_SCREENSHOT=shot, AIVERSE_EXIT_AFTER_FRAMES='20', AIVERSE_SPLASH='off',

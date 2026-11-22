@@ -205,7 +205,7 @@ def emit(model, out, scale=1, mapping=None, mode='auto'):
     rules = dict(victory='noEntities',resources={'gold':{'name':'Gold','kind':'stock','start':0}},types=types)
     if terrain_rules: rules['terrain'] = terrain_rules
     writer.rules(rules)
-    manifest = dict(name=model['name'],id='com.aiverse.'+ident(model['name']),version='0.1.0',module='rts',rules='rules.json',maps=map_list,external=True)
+    manifest = dict(name=model['name'],id='com.aiverse.'+ident(model['name']),version='0.1.0',module='game',rules='rules.json',maps=map_list,external=True)
     if is2d: manifest['camera'] = dict(projection='ortho',pitch=90,yaw=0,rotate=False)
     if material_report.get('packaging'): manifest['packaging'] = material_report.pop('packaging')
     writer.json('game.json',manifest)
