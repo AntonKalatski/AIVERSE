@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include "VkShaderCompiler.h"
+#ifndef ENABLE_OPT
+#define ENABLE_OPT 0
+#endif
 #include "../ColorSpace.h"
 
 #include <glslang/Public/ResourceLimits.h>
@@ -272,7 +275,11 @@ bool compileProgram(const std::string& vertexBody, const std::string& fragmentBo
         }
         if (result.error.empty()) {
             glslang::SpvOptions opt;
-            opt.disableOptimizer = true;
+            // SPIRV-Tools performance passes when built in (ENABLE_OPT, AIVERSE_SPIRV_OPT);
+            // AIVERSE_VK_SPV_OPT=0 turns them off at run time for comparisons.
+            static const bool optimize = [] { const char* e = std::getenv("AIVERSE_VK_SPV_OPT"); return !(e && e[0] == '0'); }();
+            opt.disableOptimizer = !(ENABLE_OPT && optimize);
+            opt.optimizePerformance = !opt.disableOptimizer;
             opt.validate = false;
             glslang::GlslangToSpv(*program.getIntermediate(EShLangVertex), result.vertex, &opt);
             glslang::GlslangToSpv(*program.getIntermediate(EShLangFragment), result.fragment, &opt);
