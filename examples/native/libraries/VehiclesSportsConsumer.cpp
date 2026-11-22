@@ -1,9 +1,9 @@
-#include <aiverselib/genre/VehicleConfigured.h>
-#include <aiverselib/genre/VehicleData.h>
-#include <aiverselib/genre/VehiclePersistence.h>
-#include <aiverselib/genre/SportsConfigured.h>
-#include <aiverselib/genre/SportsData.h>
-#include <aiverselib/genre/SportsPersistence.h>
+#include <aiverselib/mechanics/VehicleConfigured.h>
+#include <aiverselib/mechanics/VehicleData.h>
+#include <aiverselib/mechanics/VehiclePersistence.h>
+#include <aiverselib/mechanics/SportsConfigured.h>
+#include <aiverselib/mechanics/SportsData.h>
+#include <aiverselib/mechanics/SportsPersistence.h>
 #include "modules/rts/RtsNative.h"
 #include <array>
 #include <span>

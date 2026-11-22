@@ -813,6 +813,106 @@ public:
         bufferReads_.push_back(std::move(read));
         return true;
     }
+    bool readTexturePixelAsync(TextureHandle h,int x,int y,PixelReadFn callback) override {
+        auto* source=textures_.get(h.id);
+        if(!cmd_ || enc_ || compute_ || !source || !source->tex ||
+           source->fmt!=PixelFormat::RGBA8 || !callback ||
+           (source->tex.usage & MTLTextureUsageRenderTarget)==0 ||
+           source->tex.sampleCount!=1 ||
+           x<0 || y<0 || x>=int(source->tex.width) ||
+           y>=int(source->tex.height) ||
+           bufferReads_.size()>=32)return false;
+        const MTLPixelFormat format=source->tex.pixelFormat;
+        if(format!=MTLPixelFormatBGRA8Unorm &&
+           format!=MTLPixelFormatRGBA8Unorm)return false;
+        // Metal texture->buffer blits require a padded row on many devices.
+        // Copy a single top-left-origin pixel; the command buffer keeps both
+        // texture and staging buffer alive through GPU completion.
+        constexpr NSUInteger rowBytes=256;
+        id<MTLBuffer> staging=[device_ newBufferWithLength:rowBytes
+                                options:MTLResourceStorageModeShared];
+        if(!staging)return false;
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit)return false;
+        [blit copyFromTexture:source->tex sourceSlice:0 sourceLevel:0
+                sourceOrigin:MTLOriginMake(NSUInteger(x),NSUInteger(y),0)
+                  sourceSize:MTLSizeMake(1,1,1)
+                    toBuffer:staging destinationOffset:0
+      destinationBytesPerRow:rowBytes destinationBytesPerImage:rowBytes];
+        [blit endEncoding];
+        auto read=std::make_shared<BufferRead>();
+        read->bytes.resize(4);
+        read->callback=std::move(callback);
+        const bool bgra=format==MTLPixelFormatBGRA8Unorm;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if(completed.status!=MTLCommandBufferStatusCompleted) {
+                read->bytes.clear();
+            }else{
+                const auto* px=static_cast<const uint8_t*>(staging.contents);
+                if(bgra) {
+                    read->bytes[0]=px[2];read->bytes[1]=px[1];
+                    read->bytes[2]=px[0];read->bytes[3]=px[3];
+                }else{
+                    std::copy_n(px,4,read->bytes.begin());
+                }
+            }
+            read->ready.store(true,std::memory_order_release);
+        }];
+        bufferReads_.push_back(std::move(read));
+        return true;
+    }
+    bool readTextureDepthPixelAsync(TextureHandle h,int x,int y,
+                                    DepthPixelReadFn callback) override {
+        // Valid handle must reference an explicit retained offscreen depth
+        // attachment; invalid handle refers ONLY to the current screen
+        // depth buffer. Never substitute a missing model/ID target.
+        id<MTLTexture> source=nil;
+        if(h.valid()) {
+            auto* t=textures_.get(h.id);
+            if(!t || t->fmt!=PixelFormat::Depth)return false;
+            source=t->tex;
+        }else source=depth_;
+        if(!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !source ||
+           !callback || !gpuHealthy_->load() ||
+           source.pixelFormat!=MTLPixelFormatDepth32Float ||
+           source.sampleCount!=1 ||
+           x<0 || y<0 || x>=int(source.width) ||
+           y>=int(source.height) ||
+           bufferReads_.size()>=32)return false;
+        // Depth32Float native bits are read back as one IEEE-754 float.
+        // Metal texture-to-buffer blits require 256-byte row alignment.
+        constexpr NSUInteger rowBytes=256;
+        id<MTLBuffer> staging=[device_ newBufferWithLength:rowBytes
+                                options:MTLResourceStorageModeShared];
+        if(!staging)return false;
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit)return false;
+        [blit copyFromTexture:source sourceSlice:0 sourceLevel:0
+                sourceOrigin:MTLOriginMake(NSUInteger(x),NSUInteger(y),0)
+                  sourceSize:MTLSizeMake(1,1,1)
+                    toBuffer:staging destinationOffset:0
+      destinationBytesPerRow:rowBytes destinationBytesPerImage:rowBytes];
+        [blit endEncoding];
+        auto read=std::make_shared<BufferRead>();
+        read->bytes.resize(sizeof(float));
+        read->callback=[fn=std::move(callback)](std::vector<uint8_t> bytes) {
+            float depth=0.f;
+            if(bytes.size()!=sizeof(depth)) {
+                fn(false,depth);
+                return;
+            }
+            std::memcpy(&depth,bytes.data(),sizeof(depth));
+            fn(std::isfinite(depth) && depth>=0.f && depth<=1.f,depth);
+        };
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if(completed.status!=MTLCommandBufferStatusCompleted)
+                read->bytes.clear();
+            else std::memcpy(read->bytes.data(),staging.contents,sizeof(float));
+            read->ready.store(true,std::memory_order_release);
+        }];
+        bufferReads_.push_back(std::move(read));
+        return true;
+    }
     void deliverBufferReads(){
         // Move ready entries before callbacks, allowing callbacks to enqueue other work.
         std::vector<std::shared_ptr<BufferRead>> ready;
@@ -1809,7 +1909,7 @@ public:
         if (!cmd_ || enc_ || !dst) return false;
         id<MTLTexture> src = nil;
         if (from.valid()) { if (auto* s = textures_.get(from.id)) src = s->tex; }
-        else if (drawable_) src = drawable_.texture;
+        else if (acquireDrawable()) src = drawable_.texture;
         if (!src || src.framebufferOnly || src.pixelFormat != dst->tex.pixelFormat ||
             src.width != dst->tex.width || src.height != dst->tex.height) return false;
         id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
@@ -1911,7 +2011,13 @@ public:
         uniformPage_=uniformOffset_=0;
         gpuIcbInstanceUploadedBytes_ = 0;
         layer_.drawableSize = CGSizeMake(w, h);
-        drawable_ = [layer_ nextDrawable];
+        // Opt-in late drawable acquisition (AIVERSE_METAL_LATE_DRAWABLE=1): the
+        // drawable is taken at the first screen pass, after offscreen passes and
+        // the game's CPU work. Default stays here: on the owner's Mac it showed no
+        // gain and one run measured ~8 ms vs ~4 ms frames (2026-11-21, unresolved).
+        drawable_ = nil;
+        drawablePending_ = true;
+        if (!lateDrawable_) acquireDrawable();
         if (!depth_ || int(depth_.width) != w || int(depth_.height) != h) {
             MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
                 width:NSUInteger(w) height:NSUInteger(h) mipmapped:NO];
@@ -2245,6 +2351,7 @@ public:
         }
         cmd_ = nil;
         drawable_ = nil;
+        drawablePending_ = false;
     }
 
     bool bindingCacheEnabled_=true;
@@ -2433,7 +2540,7 @@ public:
             pipelineId_ = 0;
             return;
         }
-        if (!drawable_) return;
+        if (!acquireDrawable()) return;
         rp.colorAttachments[0].texture = drawable_.texture;
         rp.colorAttachments[0].loadAction = d.clearColorEnabled ? MTLLoadActionClear : (firstPass_ ? MTLLoadActionDontCare : MTLLoadActionLoad);
         rp.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -3734,6 +3841,18 @@ private:
     std::shared_ptr<std::atomic<uint64_t>> completedFrame_=
         std::make_shared<std::atomic<uint64_t>>(0);
     id<CAMetalDrawable> drawable_;
+    bool drawablePending_ = false;   // beginFrame ran, nextDrawable not yet called
+    const bool lateDrawable_ = [] {
+        const char* v = std::getenv("AIVERSE_METAL_LATE_DRAWABLE");
+        return v && std::strcmp(v, "1") == 0;
+    }();
+    id<CAMetalDrawable> acquireDrawable() {
+        if (!drawable_ && drawablePending_) {
+            drawablePending_ = false;
+            drawable_ = [layer_ nextDrawable];
+        }
+        return drawable_;
+    }
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;

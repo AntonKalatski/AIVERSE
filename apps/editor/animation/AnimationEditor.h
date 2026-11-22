@@ -134,7 +134,7 @@ public:
         ui::hint(tr("help").c_str());ImGui::EndChild();
     }
 private:
-    std::string text(const char* key)const{return genreText(*ws_,("animationEditor."+std::string(key)).c_str());}
+    std::string text(const char* key)const{return engineText(*ws_,("animationEditor."+std::string(key)).c_str());}
     Json& graph(){if(scope_.empty()||!doc_["graphs"].has(scope_)){scope_.clear();return doc_;}return doc_.member("graphs").member(scope_);}
     static Json* node(Json& g,const std::string& id){for(auto& n:g.member("nodes").itemsMut())if(n.getStr("id")==id)return &n;return nullptr;}
     static void stripEditorNodePositions(Json& g) {

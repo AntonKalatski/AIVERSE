@@ -39,6 +39,19 @@ platform/    packaging templates (Info.plist, Gradle project, HTML shell)
 
 ## Quick start (macOS)
 
+The editor on macOS is **AIVERSE Studio** (HTML5 UI over the native engine, `apps/studio-native` +
+`apps/studio-web`): `./studio_mac.command [project]` builds and opens it. Workspaces Scene / World / Look /
+Animate / Character / Logic / Publish hold every former editor window as a panel; the Scene has transform
+tools and brushes (terrain, paint, tiles, fields, objects, roads, rivers), Play runs the game in place, the
+Agent panel drives the project with Claude Code, Publish builds. The ImGui editor below stays for Linux
+(and as a fallback on Windows).
+
+On **Windows** the same Studio runs as `AiverseStudio.exe` (WebView2 UI, Vulkan Scene and Game views):
+`studio_windows.cmd [project]` builds and opens it (Visual Studio 2022, CMake, Node.js; at run time the
+WebView2 Runtime, built into Windows 11, and a Vulkan driver). Both shells are thin: everything else is the
+shared `apps/studio-native/StudioHost` (`mac/Main.mm` Cocoa + Metal, `win/Main.cpp` Win32 + Vulkan).
+Floating panel windows and drag-and-drop from Explorer are macOS-only for now.
+
 ```bash
 cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release      # requires Xcode and CMake
 cmake --build build/mac -j 8
@@ -148,7 +161,7 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 For packaged client builds, `packaging.engineModules` can select optional native
 engine modules. Omitting the field keeps the historical defaults; an explicit
-empty array disables all twelve selectable modules. The supported names are
+empty array disables every selectable module. The supported names are
 `auto` (detect modules from project assets and settings),
 `strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
 at runtime), `vulkan` (Windows, Linux, Android only), `spine` (Spine UI
@@ -157,10 +170,15 @@ animation and its Lua API), `gamepad` (controller input and action bindings),
 import using ufbx), `legacy-models` (runtime VOX/VXL, PLY/STL, 3DS,
 DAE, MDX/MDL, 3DO and W3D loaders), `obj` (runtime OBJ loader), `blp`
 (BLP1/BLP2 texture decoding), `city-client` (persistent city server client),
-and `traffic` (city traffic simulation, rules `"traffic"`).
+and the simulation systems that run only when their data asks for them:
+`traffic` (rules `"traffic"`), `bw-ai` (rules `ai.controller: "bw"`),
+`encounters`, `commerce`, `careers`, `arsenal` (rules blocks of those names)
+and `mapgen` (maps or world bodies with a `"generate"` block).
 `["auto"]` selects Spine and gamepad from `game.json`, FX from project JSON
-and FX assets, model importers/BLP from source files, and traffic from an
-enabled `traffic` block in the composed rules. A model with a
+and FX assets, model importers/BLP from source files, and the simulation systems from the
+composed rules, per-map `rules` overrides and map blocks (every JSON under
+`maps/` and the maps `game.json` lists). The packager rejects data that needs
+an excluded simulation system. A model with a
 `<source>.glb` sidecar does not need its source-format loader. Detection is
 conservative: unused source files may keep a loader in the build, while
 runtime-generated paths, script-only calls, city connections, Strata and
@@ -195,17 +213,32 @@ by model files. Without it, convert those textures before packaging. Host
 conversion tools retain BLP support.
 Declare `city-client` if the game uses the `AIVERSE_CITY` server connection.
 With the module excluded, setting `AIVERSE_CITY` produces an error when a match starts.
-Declare `traffic` (or use `auto`) if the rules enable `traffic`. Without it the
-simulation compiles a small adapter: games without traffic run, hash and save
-exactly as before, the `game.traffic_*` Lua queries return nil, and rules that
-enable traffic fail at match start with a readable error. The packager rejects
-such rules when the module is excluded. The switch (`AIVERSE_GAME_WITH_TRAFFIC`)
-is for packaged clients only; the editor, tests, headless runner and servers
-keep the full simulation.
+Declare the simulation systems the data uses (or use `auto`). Each excluded
+system is replaced by an adapter in `modules/rts/disabled/` (CMake
+`aiverse_game_module`, options `AIVERSE_GAME_WITH_*`). The adapter keeps the
+system inactive, so games that do not use it run, hash and save exactly as
+with the full module; data that needs it fails at match start with a readable
+error (Web builds do not catch C++ exceptions, so there it stops the client
+with a numeric error in the console). The
+Lua tables `encounters`, `commerce` and `career` keep only `active()` (false);
+`game.traffic_*` queries return nil. These switches are for packaged clients
+only; the editor, tests, headless runner, servers and HTML5 Studio always
+build every system.
 Measured Web Release `index.wasm` (Emscripten 3.1.50, `templates/skirmish`,
 2026-11-21): legacy defaults 17.22 MB (brotli 4.10 MB); the eleven
 earlier switches off 15.43 MB (brotli 3.62 MB); `[]` including `traffic` off
-14.95 MB (brotli 3.50 MB).
+14.95 MB (brotli 3.50 MB); every module off, including the simulation systems,
+14.00 MB (brotli 3.27 MB). With the default `-Oz` + LTO (`AIVERSE_WEB_OPTIMIZE_SIZE`):
+traffic off 8.34 MB (brotli 2.41 MB), every module off 7.99 MB (brotli 2.29 MB).
+A `"module": "scene"` project (docs/game-format.md) ships about 150 KB.
+The content pack leaves out `engine/roads/markings.png` (328 KB, stored
+uncompressed) when the project has no `roads/` folder, rules `roadTypes` or map
+`roadNetwork`; the road view then draws its generated paint atlas.
+It also leaves out `engine/materials` (terrain and vegetation PBR libraries,
+about 145 MB): projects copy the materials they use into their own `materials/`
+(`tools/terrain/install_pbr_pack.py`, the editor's empty project) and the runtime
+never reads `engine/materials`. A project whose data names an `engine/materials/`
+path keeps the folder.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

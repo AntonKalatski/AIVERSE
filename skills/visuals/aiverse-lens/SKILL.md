@@ -46,6 +46,23 @@ Minimal lens_camera_set arguments after reading an absent cameras.json:
 ```
 
 FOV is in radians. Set rotation as an authored quaternion, not Euler angles.
+
+Optional cinematic blocks on a camera record (all keys optional, defaults keep
+the old behaviour; invalid values reject the whole write before any entity):
+
+- `lens`: `physicalFov`, `focalLengthMm`, `sensorHeightMm`, `fNumber`,
+  `focusDistance` (metres), `shutterSeconds`, `iso`, plus `driveExposure`
+  (manual EV = stops relative to f/2.8, 1/60 s, ISO 100, plus
+  `exposureCompensation`), `driveDepthOfField` (thin-lens sharp interval) and
+  `circleOfConfusionMm` (0 = sensor height / 800). Exposure needs an authored
+  PRISMA `autoExposure` effect and HDR; defocus needs a `depthOfField` effect
+  (no opt-in flag since 2026-11-21). The lens never adds PRISMA effects by itself.
+- `rail`: `points` (up to 8 `[x,y,z]`), `duration` (> 0 s), `loop`,
+  `interpolation` (`linear` | `catmullRom`), `constantSpeed`, `ease`
+  (`none` | `inOut`). Use with `rig.mode` 4 (Rail).
+- `shake`: `positionAmplitude` (m), `rotationAmplitude` (rad), `frequency`,
+  `startTime`, `duration`, `style` (`sine` | `noise`), `seed`, `fadeExponent`.
+  Times are presentation seconds; shake never touches gameplay.
 The complete version-1 format is implemented by `engine/sim/CameraSceneAsset.h`.
 Files are limited to 1 MiB; symlink assets are refused. Only cameras.json is
 written. Validation occurs in a scratch World, never the authoritative game.

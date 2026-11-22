@@ -26,7 +26,7 @@ public:
     void shutdown(gfx::Device& dev);
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
-    void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
+    bool collectRetired(gfx::Device& dev) { return retirement_.collect(dev); }
     size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     uint64_t stateRevision() const noexcept {return stateRevision_;}
     void setMap(const Json& map);   // its "waterNetwork"; rebuilt on the next draw
@@ -61,7 +61,7 @@ public:
     }
     const std::vector<std::string>& warnings() const { return warnings_; }
 
-    // extra materials after the road kit's (RtsRoadView::Mat)
+    // extra materials after the road kit's (roads::RoadView::Mat)
     enum Mat : int { kStone = 100, kRock, kSand, kFoam, kCanvas, kPaint, kShoreMatEnd };
 
 private:

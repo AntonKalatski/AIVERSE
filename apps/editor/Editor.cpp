@@ -12,8 +12,8 @@
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/fx/SpectraGpuPoolWorld.h"
 #include "engine/fx/SpectraDiagnosticBundle.h"
-#include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
-#include "libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h"
+#include "libraries/include/aiverselib/mechanics/SpectraGpuCaptureMailbox.h"
+#include "libraries/include/aiverselib/mechanics/SpectraGpuRecoveryHost.h"
 #include "engine/fx/SpectraDiagnosticReport.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
@@ -240,7 +240,7 @@ void Editor::init(gfx::Device& dev) {
         out = {r.tex, r.u0, r.v0, r.u1, r.v1};
         return true;
     });
-    gameFx_.setGroundHeight([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : view_.heightAt(grid_, x, z); });
+    gameFx_.setGroundHeight([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : surfaceHeightAt(x, z); });
     gameFx_.setMeshLoader([this](const std::string& name, fx::FxMesh& out) { return fx::meshFromModelFile(name, projectReader(ws_.project.dir), out); });
     gameFx_.setGpuDeviceLease(gpuDeviceLease());
     if (!gameFx_.init(&dev)) ws_.log("fx", gameFx_.lastError(), true);
@@ -292,6 +292,9 @@ void Editor::shutdown() {
     else if (!dev_->gpuHealthy())
         clientHost_.abandonOnDeviceLoss();
     gameFxBridge_.detach();
+    // Nature preview retires grass Models through previewModelRetirement_
+    // and stops its particles while gameFx_ is still alive.
+    physisNaturePreview_.release(*dev_, gameFx_);
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
@@ -360,13 +363,14 @@ void Editor::openGame(const std::string& idOrDir) {
     ws_.changes.clear();
     if (dev_) terraWeaveForestPreview_.release(*dev_);
     terraWeaveForestPreview_.setEnabled(false);
+    if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
     reloadRules();
     selection = {};
     showPicker_ = false;
     fitScene();
     status = "Игра: " + ws_.project.manifest.getStr("name", idOrDir);
     checkNativeModules(false);
-    if(ws_.project.isFps()) {
+    if(ws_.project.worldSpaceMaps()) {
         focusWindow("fps");
         const auto& spawn=doc().data.fps["spawns"][0];
         sceneCam.target={float(spawn[0].toDouble()),0,float(spawn[2].toDouble())};sceneCam.distance=35;
@@ -507,7 +511,7 @@ bool Editor::convertVisualModelSource(const std::string& src) {
 }
 
 void Editor::pollVisualAssets(double dt) {
-    if(!dev_ || ws_.project.dir.empty() || ws_.project.isFps()) {
+    if(!dev_ || ws_.project.dir.empty() || ws_.project.actorSessionRules()) {
         visualAssets_.reset();
         return;
     }
@@ -600,7 +604,7 @@ void Editor::retainEditorType(uint16_t type) {
 
 void Editor::reclaimEditorAssets(bool force) {
     if (!lazyEditorAssets_ || !dev_ || playing() || clientPlaying() ||
-        ws_.project.isFps()) return;
+        ws_.project.actorSessionRules()) return;
     constexpr double kSweepInterval = 5.0;
     constexpr double kUnusedGrace = 15.0;
     if (!modelDemand_.shouldSweep(time_,kSweepInterval,force)) return;
@@ -641,6 +645,7 @@ void Editor::reclaimEditorAssets(bool force) {
 void Editor::newMap(int w, int h) {
     if (dev_) terraWeaveForestPreview_.release(*dev_);
     terraWeaveForestPreview_.setEnabled(false);
+    if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
     doc().reset(w, h);
     selection = {};
     syncGrid();
@@ -655,6 +660,7 @@ void Editor::openMap(const std::string& file) {
     if (doc().load(ec ? file : norm, &err)) {
         if (dev_) terraWeaveForestPreview_.release(*dev_);
         terraWeaveForestPreview_.setEnabled(false);
+        if (dev_) physisNaturePreview_.release(*dev_, gameFx_);
         status = "Открыто: " + ws_.relative(doc().path);
         selection = {};
         syncGrid();
@@ -718,7 +724,7 @@ void Editor::focusScene(float x, float z, float distance) {
 
 void Editor::flash(float x0, float z0, float x1, float z1, double seconds) { flashes_.push_back({x0, z0, x1, z1, time_ + seconds, seconds}); }
 
-bool Editor::groundAt(const Viewport& vp, const RTSCamera& cam, float sx, float sy, float& x, float& z) const {
+bool Editor::groundAt(const Viewport& vp, const Camera& cam, float sx, float sy, float& x, float& z) const {
     float3 g;
     if (view_.planetMode()) { // cells on the face under the cursor (planet tools use planetPosAt)
         const Json at = planetPosAt(vp, sx, sy);
@@ -761,7 +767,7 @@ float Editor::snapCoord(float v, int typeIdx) const {
     return std::round(v * 4) / 4;
 }
 
-int Editor::pickEntity(const Viewport& vp,const RTSCamera& cam,float sx,float sy) const {
+int Editor::pickEntity(const Viewport& vp,const Camera& cam,float sx,float sy) const {
     float3 origin{},direction{};
     const auto& pickCamera=view_.planetMode()?view_.planetCamera().camera():cam;
     if(!pickCamera.screenRay(sx-vp.originX,sy-vp.originY,vp.pointsW,vp.pointsH,origin,direction))return -1;
@@ -786,7 +792,77 @@ int Editor::pickEntity(const Viewport& vp,const RTSCamera& cam,float sx,float sy
     return nearest;
 }
 
-int Editor::pickRoad(const Viewport& vp, const RTSCamera& cam, float sx, float sy) const {
+float Editor::surfaceHeightAt(float x,float z) const {
+    const float legacy=view_.heightAt(grid_,x,z);
+    const auto& d=doc().data;
+    if(d.extra.getStr("terrainPresentation","legacy")!="entities"||!std::isfinite(x)||!std::isfinite(z))return legacy;
+    const auto& owner=view_.modelResources();
+    if(owner.generation()!=visualPickCacheGeneration_)return legacy;
+    // Rebuild with the document and the pick cache (models, transforms):
+    // rasterize every terrain-tile triangle top-down into a 0.5 m grid once.
+    const uint64_t key=doc().revision*1000003ull^visualPickCacheGeneration_^(uint64_t(visualPickModelCount_)<<40);
+    constexpr float kStep=.5f;
+    if(key!=surfaceHeightCacheKey_){
+        surfaceHeightCacheKey_=key;
+        surfaceGridW_=std::clamp(int(std::ceil(float(d.w)/kStep))+1,1,8192);
+        surfaceGridH_=std::clamp(int(std::ceil(float(d.h)/kStep))+1,1,8192);
+        surfaceGrid_.assign(size_t(surfaceGridW_)*size_t(surfaceGridH_),-std::numeric_limits<float>::infinity());
+        for(size_t i=0;i<visualPickModelCount_;++i){
+            const auto& packet=visualPickModels_[i];
+            if(packet.documentIndex>=d.entities.size())continue;
+            const auto& entity=d.entities[packet.documentIndex];
+            if(entity.type.rfind("TerraTerrain",0)!=0&&!entity.extra["components"].has("TerraTerrain"))continue;
+            const auto lease=owner.acquireModelRead(packet.model);
+            if(!lease)continue;
+            const auto& m=*lease.get();
+            if(m.bindWorld.size()!=m.nodes.size())continue;
+            for(size_t n=0;n<m.nodes.size();++n){
+                const auto& node=m.nodes[n];
+                if(node.mesh<0||size_t(node.mesh)>=m.meshes.size())continue;
+                const mat4 xf=packet.world*(packet.nodes.size()==m.nodes.size()?packet.nodes[n]:m.bindWorld[n]);
+                for(const auto& prim:m.meshes[size_t(node.mesh)].primitives){
+                    if(prim.firstIndex>m.indices.size()||prim.indexCount>m.indices.size()-prim.firstIndex)continue;
+                    for(size_t t=0;t+2<prim.indexCount;t+=3){
+                        float3 v[3];bool ok=true;
+                        for(int k=0;k<3;++k){const uint32_t idx=m.indices[prim.firstIndex+t+size_t(k)];if(idx>=m.vertices.size()){ok=false;break;}v[k]=xf.transformPoint(m.vertices[idx].pos);}
+                        if(!ok)continue;
+                        const float area=(v[1].x-v[0].x)*(v[2].z-v[0].z)-(v[1].z-v[0].z)*(v[2].x-v[0].x);
+                        if(std::fabs(area)<1e-8f)continue;
+                        const int x0=std::max(0,int(std::floor(std::min({v[0].x,v[1].x,v[2].x})/kStep)));
+                        const int x1=std::min(surfaceGridW_-1,int(std::ceil(std::max({v[0].x,v[1].x,v[2].x})/kStep)));
+                        const int z0=std::max(0,int(std::floor(std::min({v[0].z,v[1].z,v[2].z})/kStep)));
+                        const int z1=std::min(surfaceGridH_-1,int(std::ceil(std::max({v[0].z,v[1].z,v[2].z})/kStep)));
+                        for(int gz=z0;gz<=z1;++gz)for(int gx=x0;gx<=x1;++gx){
+                            const float px=float(gx)*kStep,pz=float(gz)*kStep;
+                            const float w0=((v[1].x-px)*(v[2].z-pz)-(v[1].z-pz)*(v[2].x-px))/area;
+                            const float w1=((v[2].x-px)*(v[0].z-pz)-(v[2].z-pz)*(v[0].x-px))/area;
+                            const float w2=1.f-w0-w1;
+                            if(w0<-1e-4f||w1<-1e-4f||w2<-1e-4f)continue;
+                            float& cell=surfaceGrid_[size_t(gz)*size_t(surfaceGridW_)+size_t(gx)];
+                            cell=std::max(cell,w0*v[0].y+w1*v[1].y+w2*v[2].y);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if(surfaceGrid_.empty())return legacy;
+    // Bilinear over covered samples; uncovered -> the legacy surface.
+    const float fx=x/kStep,fz=z/kStep;
+    const int gx=int(std::floor(fx)),gz=int(std::floor(fz));
+    float sum=0,weight=0;
+    for(int dz=0;dz<2;++dz)for(int dx=0;dx<2;++dx){
+        const int cx=gx+dx,cz=gz+dz;
+        if(cx<0||cz<0||cx>=surfaceGridW_||cz>=surfaceGridH_)continue;
+        const float h=surfaceGrid_[size_t(cz)*size_t(surfaceGridW_)+size_t(cx)];
+        if(!std::isfinite(h))continue;
+        const float w=(dx?fx-float(gx):1.f-(fx-float(gx)))*(dz?fz-float(gz):1.f-(fz-float(gz)));
+        sum+=h*w;weight+=w;
+    }
+    return weight>1e-6f?sum/weight:legacy;
+}
+
+int Editor::pickRoad(const Viewport& vp, const Camera& cam, float sx, float sy) const {
     float x, z;
     if (!groundAt(vp, cam, sx, sy, x, z)) return -1;
     int best = -1;
@@ -1461,7 +1537,7 @@ void Editor::collectRetiredSpectraPreviews() {
         return owner.fence && owner.fence<=done;
     });
 }
-void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
+void Editor::tickSpectraGpuPreview(const Camera& cam,int w,int h,bool game) {
     collectRetiredSpectraPreviews();
     if(spectraPreviewStop_) {
         if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
@@ -1650,12 +1726,12 @@ void Editor::drawSpectraGpuPreview() {
     spectraPreviewGpu_->draw({r3d_.lighting.fogColor,r3d_.lighting.fogDensity});
 }
 
-void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
+void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
-    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam, 1ULL); return; }
+    if (playing() && !ws_.project.actorSessionPlay()) { renderGame(vp, cam, 1ULL); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto stageStart = std::chrono::steady_clock::now();
-    if (!ws_.project.isFps()) {
+    if (!ws_.project.worldSpaceMaps()) {
         buildEditScene(scene_);
         if(!editOverlays)for(auto& object:scene_.objects)object.selected=object.hovered=false;
         scene_.gameplayOverlays=false;
@@ -1667,16 +1743,16 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         }
     }
     const auto afterBuild = std::chrono::steady_clock::now();
-    if (!ws_.project.isFps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
+    if (!ws_.project.worldSpaceMaps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
     const auto afterFields = std::chrono::steady_clock::now();
-    const bool planets = !ws_.project.isFps() && view_.planetMode();
+    const bool planets = !ws_.project.worldSpaceMaps() && view_.planetMode();
     // A map undo may have removed the TerraWeave recipe since last frame.
     // Release stale preview buffers even when the Terrain panel is closed.
     if (terraWeaveForestPreview_.enabled() &&
         !doc().data.extra["terraweave"].isObject())
         setTerraWeaveForestPreviewEnabled(false);
     // planet maps: the orbit camera of the view (Scene window input drives it)
-    const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
+    const Camera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     refreshPrismaVolumes();
     prisma_.setViewId(1ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
@@ -1708,7 +1784,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         shot.metadata.set("render_width",Json::number(int64_t(renderW)));
         shot.metadata.set("render_height",Json::number(int64_t(renderH)));
     }
-    const RTSCamera renderCam = postEnabledForScene
+    const Camera renderCam = postEnabledForScene
         ? prisma_.jitteredCamera(useCam,renderW,renderH) : useCam;
     // Existing map extra is the presentation manifest, not a new water solver.
     try {
@@ -1740,10 +1816,10 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
     r3d_.setSceneSelectionOutline(editOverlays);
-    if (!ws_.project.isFps()) setOverlayContext(vp, useCam, false);
+    if (!ws_.project.worldSpaceMaps()) setOverlayContext(vp, useCam, false);
     // Scene-only silhouette outline through the existing ModelDraw outline path.
     // Keep the Game view unaffected by restoring the flag after draw.
-    if (ws_.project.isFps()) {
+    if (ws_.project.worldSpaceMaps()) {
         enqueueFpsSceneGeometry(useCam,editOverlays);
     } else {
         view_.setSelectionOutline(editOverlays);
@@ -1753,12 +1829,12 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     nereidPreview_.draw(r3d_);
     visualPickCacheGeneration_=view_.modelResources().generation();
     const auto afterView = std::chrono::steady_clock::now();
-    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
+    if (const auto& oc = view_.overlays().context(); editOverlays && !ws_.project.worldSpaceMaps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
-    if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
+    if (editOverlays && !planets && !ws_.project.worldSpaceMaps()) drawEditOverlays3D();
     // Editor-only TerraWeave forest overlay. Explicit opt-in from TerrainWindow:
     // shares the standard Renderer3D model/instancing path, no gameplay state.
-    if (!planets && !ws_.project.isFps() && terraWeaveForestPreview_.enabled()) {
+    if (!planets && !ws_.project.worldSpaceMaps() && terraWeaveForestPreview_.enabled()) {
         try {
             const auto cameraPosition = r3d_.cameraPos();
             const double xCm = double(cameraPosition.x) * 100.0;
@@ -1767,6 +1843,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
                 std::abs(xCm) > double(terraweave::kWorldLimitCm) ||
                 std::abs(zCm) > double(terraweave::kWorldLimitCm))
                 throw std::out_of_range("TerraWeave forest camera outside world extent");
+            terraWeaveForestPreview_.setEngineDir(ws_.engineDir);
             terraWeaveForestPreview_.draw(*dev_, r3d_, doc(),
                 int64_t(std::llround(xCm)), int64_t(std::llround(zCm)),
                 [this](int64_t x, int64_t z) -> int32_t {
@@ -1781,13 +1858,38 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
             terraWeaveForestPreview_.setEnabled(false);
         }
     }
-    if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
+    // PHYSIS «Живая природа»: wildfire on TerraWeave grass, wind, smoke and
+    // sound without a play-test (private preview World or read-only live sim).
+    if (!planets && !ws_.project.worldSpaceMaps() && physisNaturePreview_.settings.enabled) {
+        try {
+            physisNaturePreview_.setWater(authoredWater());
+            physisNaturePreview_.draw(*dev_, r3d_, gameFx_, projectReader(ws_.project.dir), doc(),
+                sim_ ? &sim_->world() : nullptr, useCam, time_,
+                [this](float x, float z) { return surfaceHeightAt(x, z); },
+                [this](std::unique_ptr<render::Model>& model) { retirePreviewModel(model); });
+        } catch (const std::exception& e) {
+            status = std::string("PHYSIS природа: ") + e.what();
+            physisNaturePreview_.settings.enabled = false;
+            physisNaturePreview_.release(*dev_, gameFx_);
+        }
+    } else if (physisNaturePreview_.hasPreviewWorld() || physisNaturePreview_.flames())
+        physisNaturePreview_.release(*dev_, gameFx_);
+    // Models with <model>.wind.json sway with the PHYSIS preview wind.
+    r3d_.setSceneWind(physisNaturePreview_.sceneWind(time_));
+    if (!planets && !ws_.project.worldSpaceMaps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     tickSpectraGpuPreview(useCam,renderW,renderH,false);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.13f; pass.clearColor[1] = 0.15f; pass.clearColor[2] = 0.17f;
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
+    // Clean captures (agent beauty shots) have no UI: show the horizon/fog
+    // colour instead of the editor's neutral backdrop.
+    else if (cleanSceneCaptureRequested()) {
+        pass.clearColor[0] = r3d_.lighting.fogColor.x;
+        pass.clearColor[1] = r3d_.lighting.fogColor.y;
+        pass.clearColor[2] = r3d_.lighting.fogColor.z;
+    }
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
     const bool postActiveForScene = postEnabledForScene && prisma_.active();
@@ -1800,7 +1902,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (postActiveForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
-    if (!ws_.project.isFps() && !r3d_.studioDebugMode()) {
+    if (!ws_.project.worldSpaceMaps() && !r3d_.studioDebugMode()) {
         gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
         // Scene-view particle reactive coverage; per-scene callback is
         // consumed synchronously by resolvePrisma and never persists.
@@ -1841,7 +1943,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     }
 }
 
-void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewId) {
+void Editor::renderGame(Viewport& vp, const Camera& cam, uint64_t prismaViewId) {
     if (!vp.color.valid() || !sim_) return;
     auto& gs = simModule()->state(*sim_);
     // fields / creep changing during play are read by the terrain shader: build once per play session
@@ -1890,7 +1992,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     prisma_.setExternalGeometryPoolGpuMemory(
         render::geometryPoolStats(*dev_).allocatedBytes);
     const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
-    const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
+    const Camera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
     try {
         nereidPreview_.configure(authoredWaterDocument(doc()));
         nereidPreview_.prepare(*dev_,cam.eye());
@@ -1941,7 +2043,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
 
 // Overlays get what the player does in this view: cursor, held keys, the structure being placed
 // (Scene: the Place tool; both: overlay_preview), pause / match over.
-void Editor::setOverlayContext(const Viewport& vp, const RTSCamera& cam, bool play) {
+void Editor::setOverlayContext(const Viewport& vp, const Camera& cam, bool play) {
     game::OverlayContext oc;
     oc.sim = play ? sim_.get() : nullptr;
     oc.player = uint8_t(play ? std::max(0, human_) : 1);
@@ -2000,7 +2102,7 @@ void Editor::applyChanges() {
 // ============================ play-test ============================
 
 void Editor::startPlay(int humanSlot) {
-    if(ws_.project.isFps()){startFpsPlay();return;}
+    if(ws_.project.actorSessionPlay()){startFpsPlay();return;}
     if (checkNativeModules(true)) return;   // the banner offers to build an editor with them
     stopClientPlay();
     auto issues = doc().validate(rules(), ws_.project.rulesJson);
@@ -2272,7 +2374,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
     // slow upload can overrun the advisory time budget, so also cap count.
     // Interactive Inspector and viewport requests still load immediately.
     if(lazyEditorAssets_ && !playing() && !clientPlaying() &&
-       !ws_.project.isFps()) {
+       !ws_.project.actorSessionRules()) {
         modelDemand_.drainBudget(1.0,2,[&](size_t type){
             if(type<rules().types.size() && !view_.typeLoaded(uint16_t(type)))
                 view_.loadType(uint16_t(type));

@@ -242,9 +242,18 @@ namespace aiverse::render::shaders {
     "    return sm.sample_compare(compareSampler, uv, d);\n" \
     "}\n"
 
+// AIVERSE_HW_SHADOW (GL prelude, weak mobile GPUs): tex0 is the shadow map through a compare sampler, one
+// hardware 2x2 PCF fetch per tap instead of 4 texelFetch + textureSize. No raw depth: sunDepth is a stub
+// (the blocker search and the nearest-fetch path are not used with it).
 #define AIVERSE_GLSL_SHADOW \
+    "#ifdef AIVERSE_HW_SHADOW\n" \
+    "uniform highp sampler2DShadow tex0;\n" \
+    "float sunDepth(vec2 uv) { return 1.0; }\n" \
+    "float sunCompare(vec2 uv, float d) { return texture(tex0, vec3(uv, d)); }\n" \
+    "#else\n" \
     "uniform highp sampler2D tex0;\n" \
     AIVERSE_GLSL_SUN_FILTER("tex0") \
+    "#endif\n" \
     "// Soft shadows: rotated Poisson-disc PCF over bilinear 2x2 compare taps.\n" \
     "//   u_quality.x taps (1 / 4 / 8 / 16), u_quality.z filter radius in shadow UV, u_quality.w normal offset (world)\n" \
     "const vec2 kDisk[24] = vec2[24](\n" \
@@ -293,17 +302,29 @@ namespace aiverse::render::shaders {
     "    if (u_quality.y < 0.5) return 1.0;\n" \
     "    vec3 L = normalize(u_sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);          // grazing surfaces need the most offset\n" \
-    "    vec4 lp = u_lightViewProj * vec4(wpos + n * u_quality.w * (0.35 + k), 1.0);\n" \
+    "    // A deforming surface crosses many curved triangle planes inside a wide PCF disk.\n" \
+    "    // Bound its normal bias to four texel offsets; rigid planar receivers retain slope correction.\n" \
+    "    float offset = u_quality.w;\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    offset *= u_quality.y < 1.5 ? clamp(u_quality.z / max(u_shadow.w, 1e-7) * 0.15, 1.0, 4.0) : 1.0;\n" \
+    "#endif\n" \
+    "    vec4 lp = u_lightViewProj * vec4(wpos + n * offset * (0.35 + k), 1.0);\n" \
     "    vec3 p = lp.xyz / lp.w;\n" \
     "    vec2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
     "    float d = p.z * u_shadow.y + u_shadow.z;\n" \
+    "    bool outside = uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0;\n" \
+    "    // single tap (weak mobile GPUs): uniform branches before the derivatives, no receiver-plane gradient\n" \
+    "    if (u_quality.x < 0.9) return outside ? 1.0 : step(d, sunDepth(uv));\n" \
+    "    if (u_quality.x < 2.0) return outside ? 1.0 : sunCompare(uv, d);\n" \
     "    vec2 dx = dFdx(uv), dy = dFdy(uv);\n" \
     "    float zx = dFdx(d), zy = dFdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
     "    vec2 gradient = abs(det) > 1e-10 ? vec2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : vec2(0.0);\n" \
-    "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    if (u_quality.y < 1.5) gradient = vec2(0.0);\n" \
+    "#endif\n" \
+    "    if (outside) return 1.0;\n" \
     "    float r = u_quality.z;\n" \
-    "    if (u_quality.x < 2.0) return sunCompare(uv, d);\n" \
     "    if (u_quality.x < 5.0) { // weak GPUs: fixed 4 taps, no blocker search\n" \
     "        float s = sunCompare(uv + vec2(-0.5, -0.5) * r, d + dot(gradient, vec2(-0.5, -0.5) * r));\n" \
     "        s += sunCompare(uv + vec2( 0.5, -0.5) * r, d + dot(gradient, vec2( 0.5, -0.5) * r));\n" \
@@ -336,6 +357,7 @@ namespace aiverse::render::shaders {
     "    }\n" \
     "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
     "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
+    "    // fract 0.75: mobile budget, fixed unrotated disk of int(taps) samples (no 64/128-tap stable disk)\n" \
     "    if (fract(u_quality.x) <= 0.25) {\n" \
     "        int count = u_quality.x > 16.0 ? 128 : 64;\n" \
     "        int stride = count == 128 ? 1 : 2;\n" \
@@ -347,8 +369,8 @@ namespace aiverse::render::shaders {
     "        }\n" \
     "        return total / float(count);\n" \
     "    }\n" \
-    "    float temporal = fract(u_quality.x) > 0.25 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
-    "    float a = fract(u_quality.x) <= 0.25 || r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
+    "    float temporal = fract(u_quality.x) > 0.25 && fract(u_quality.x) < 0.6 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
+    "    float a = fract(u_quality.x) <= 0.25 || fract(u_quality.x) > 0.6 || r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
     "    vec2 cs = vec2(cos(a), sin(a));\n" \
     "    int n_ = int(u_quality.x);\n" \
     "    float s = 0.0;\n" \
@@ -410,7 +432,11 @@ namespace aiverse::render::shaders {
     "    if (f.quality.y < 0.5) return 1.0;\n" \
     "    float3 L = normalize(f.sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);\n" \
-    "    float4 lp = f.lightViewProj * float4(wpos + n * f.quality.w * (0.35 + k), 1.0);\n" \
+    "    float offset = f.quality.w;\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    offset *= f.quality.y < 1.5 ? clamp(f.quality.z / max(f.shadow.w, 1e-7) * 0.15, 1.0, 4.0) : 1.0;\n" \
+    "#endif\n" \
+    "    float4 lp = f.lightViewProj * float4(wpos + n * offset * (0.35 + k), 1.0);\n" \
     "    float3 p = lp.xyz / lp.w;\n" \
     "    float2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (f.shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
@@ -418,8 +444,12 @@ namespace aiverse::render::shaders {
     "    float2 dx = dfdx(uv), dy = dfdy(uv);\n" \
     "    float zx = dfdx(d), zy = dfdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
     "    float2 gradient = abs(det) > 1e-10 ? float2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : float2(0.0);\n" \
+    "#if defined(SKINNED) || defined(BAKED)\n" \
+    "    if (f.quality.y < 1.5) gradient = float2(0.0);\n" \
+    "#endif\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = f.quality.z;\n" \
+    "    if (f.quality.x < 0.9) return step(d, sunDepth(sm, uv));\n" \
     "    if (f.quality.x < 2.0) return sunCompare(sm, uv, d);\n" \
     "    if (f.quality.x < 5.0) {\n" \
     "        float s = sunCompare(sm, uv + float2(-0.5, -0.5) * r, d + dot(gradient, float2(-0.5, -0.5) * r));\n" \
@@ -450,6 +480,7 @@ namespace aiverse::render::shaders {
     "    }\n" \
     "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
     "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
+    "    // fract 0.75: mobile budget, fixed unrotated disk of int(taps) samples (no 64/128-tap stable disk)\n" \
     "    if (fract(f.quality.x) <= 0.25) {\n" \
     "        int count = f.quality.x > 16.0 ? 128 : 64;\n" \
     "        int stride = count == 128 ? 1 : 2;\n" \
@@ -461,8 +492,8 @@ namespace aiverse::render::shaders {
     "        }\n" \
     "        return total / float(count);\n" \
     "    }\n" \
-    "    float temporal = fract(f.quality.x) > 0.25 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
-    "    float a = fract(f.quality.x) <= 0.25 || r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
+    "    float temporal = fract(f.quality.x) > 0.25 && fract(f.quality.x) < 0.6 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
+    "    float a = fract(f.quality.x) <= 0.25 || fract(f.quality.x) > 0.6 || r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
     "    float2 cs = float2(cos(a), sin(a));\n" \
     "    int cnt = int(f.quality.x);\n" \
     "    float s = 0.0;\n" \
@@ -779,7 +810,10 @@ void main() {
                     float thickness = v_wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         vec3 background = texture(tex4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u_color.r * clamp(albedo.a,0.0,1.0));
+                        // Light reaches the bed through the full column and returns along the
+                        // slanted view ray: the same optical path PRISMA uses under water.
+                        float opticalPath = thickness + length(v_wpos - opaquePos);
+                        float transmission = exp(-opticalPath * u_color.r * clamp(albedo.a,0.0,1.0));
 #if AIVERSE_NEREID_DIAGNOSTIC == 4
                         diagnosticTransmission=transmission;
 #endif
@@ -819,6 +853,13 @@ void main() {
 #if AIVERSE_NEREID_DIAGNOSTIC == 5
     if(u_params.x < -0.5){ vec3 diagnostic=vec3((opticsResolved?1.0:albedo.a)*shoreCoverage); o_color=vec4(diagnostic,1.0); return; }
 #endif
+    // NEREID optics replace the fogged surface colour with depth tint,
+    // refraction, reflection and foam: fog the final water colour once more
+    // so distant water fades into the haze like the terrain around it.
+    if (opticsResolved) {
+        float waterFog = 1.0 - exp(-dist * u_fog.w);
+        outc = mix(outc, rtsEncodeScene(rtsToneScene(rtsDecodeScene(u_fog.rgb), u_skyColor.w > 0.5)), waterFog);
+    }
     o_color = vec4(outc, (opticsResolved?1.0:albedo.a)*shoreCoverage);
 }
 )";
@@ -1106,7 +1147,10 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                     float thickness = in.wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         float3 background = tex4.sample(s4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u.color.r * clamp(albedo.a,0.0,1.0));
+                        // Light reaches the bed through the full column and returns along the
+                        // slanted view ray: the same optical path PRISMA uses under water.
+                        float opticalPath = thickness + length(in.wpos - opaquePos);
+                        float transmission = exp(-opticalPath * u.color.r * clamp(albedo.a,0.0,1.0));
 #if AIVERSE_NEREID_DIAGNOSTIC == 4
                         diagnosticTransmission=transmission;
 #endif
@@ -1147,6 +1191,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
 #if AIVERSE_NEREID_DIAGNOSTIC == 5
     if(u.params.x < -0.5){ float3 diagnostic=float3((opticsResolved?1.0:albedo.a)*shoreCoverage); return float4(diagnostic,1.0); }
 #endif
+    // NEREID optics replace the fogged surface colour: fog the result too.
+    if (opticsResolved) {
+        float waterFog = 1.0 - exp(-dist * f.fog.w);
+        outc = mix(outc, rtsEncodeScene(rtsToneScene(rtsDecodeScene(f.fog.rgb), f.skyColor.w > 0.5)), waterFog);
+    }
     return float4(outc, (opticsResolved?1.0:albedo.a)*shoreCoverage);
 }
 )";

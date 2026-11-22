@@ -1,5 +1,5 @@
 // In-match progression on real units (rules "progression", docs/progression.md): the match-progression library
-// package (libraries/include/aiverselib/genre/{Perks,XpPickups,Summons,BattleDeck}.h) connected to the RTS
+// package (libraries/include/aiverselib/mechanics/{Perks,XpPickups,Summons,BattleDeck}.h) connected to the RTS
 // simulation. Hero xp from kills and xp orbs (ground pickups with a magnet), a level curve, seeded level-up offers
 // chosen by a player command or by the bot, perk stat effects on the unit pipelines (damage, incoming damage, move
 // speed, fire interval, range, max health, splash, crits, regen), bullet modifiers (split / ricochet / fly-through
@@ -19,9 +19,9 @@
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
 #include "../../engine/sim/ProjectileData.h"
-#include "libraries/include/aiverselib/genre/Perks.h"
-#include "libraries/include/aiverselib/genre/XpPickups.h"
-#include "libraries/include/aiverselib/genre/Summons.h"
+#include "libraries/include/aiverselib/mechanics/Perks.h"
+#include "libraries/include/aiverselib/mechanics/XpPickups.h"
+#include "libraries/include/aiverselib/mechanics/Summons.h"
 
 namespace aiverse::game {
 

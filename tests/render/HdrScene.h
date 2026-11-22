@@ -21,6 +21,7 @@ void drawLumaScene(HdrScene&,gfx::Device&,int,int);
 void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
 void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
+void drawPrismaEffects(HdrScene&,gfx::Device&,int,int,const char*);
 
 void initFogLandscape(HdrScene&,gfx::Device&,const std::string&);
 void drawFogLandscape(HdrScene&);
@@ -41,7 +42,7 @@ struct HdrScene {
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
-    RTSCamera camera;
+    Camera camera;
     Mesh floor, cube, water;
     bool fogLandscape=false;
     Mesh fogTerrain,fogTrees,fogRocks;
@@ -75,7 +76,16 @@ struct HdrScene {
         MeshBuilder sphere; sphere.sphere({0,0,0},0.7f,24,32);
         std::vector<ModelPart> parts;
         const char* sssTest=std::getenv("AIVERSE_SSS_TEST");
-        for (int i=0;i<5;++i) {
+        const char* thicknessTest=std::getenv("AIVERSE_SSS_THICKNESS_TEST");
+        const bool backlightTest=std::getenv("AIVERSE_SSS_BACKLIGHT_TEST")!=nullptr;
+        if (backlightTest) {
+            camera.target={0,0.8f,0};camera.distance=7;camera.pitch=0;camera.yaw=0;
+            renderer.lighting.sunDir={0,0,-1};
+            renderer.lighting.sunIntensity=4;
+            renderer.lighting.skyColor={.15f,.15f,.15f};
+            renderer.lighting.groundColor={.12f,.12f,.12f};
+        }
+        for (int i=0;i<(backlightTest?2:5);++i) {
             Material m; m.baseColor={0.7f,0.38f,0.12f,1}; m.metallic=i/4.0f; m.roughness=0.1f+i*0.19f;
             if (sssTest) {
                 m.metallic=0;
@@ -83,6 +93,8 @@ struct HdrScene {
                 m.sssStrength=std::clamp(std::strtof(sssTest,nullptr),0.0f,1.0f);
                 m.sssScale=0.8f;
                 m.sssColor={1.0f,0.35f,0.22f};
+                if (thicknessTest)
+                    m.sssThickness=std::clamp(std::strtof(thicknessTest,nullptr),0.0f,1.0f);
             }
             // Integration fixture controls: the two PBR effects must not
             // alias one U2 slot or alter unlit fixed-light parameters.
@@ -95,7 +107,11 @@ struct HdrScene {
                 const auto direction=normalize(float3{.55f,1,.35f});
                 m.fixedLight={direction.x,direction.y,direction.z,1};m.fixedShade={.2f,.8f};
             }
-            parts.push_back({"sphere",&sphere,m,mat4::translate({float(i-2)*2.0f,0.75f,-2.5f})});
+            const mat4 transform=backlightTest
+                ? mat4::translate({i?1.1f:-1.1f,0.8f,0})*
+                  mat4::scale({1,1,i?1.0f:0.08f})
+                : mat4::translate({float(i-2)*2.0f,0.75f,-2.5f});
+            parts.push_back({"sphere",&sphere,m,transform});
         }
         if(const char* library=std::getenv("AIVERSE_MATERIAL_LIBRARY")) {
             materialGallery=true;parts.clear();auto materials=Json::parseFile(library)["materials"];
@@ -208,6 +224,7 @@ struct HdrScene {
         if (failed) return;
         if (lumaVerify) { drawLumaScene(*this,d,w,h); return; }
         if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
+        if (const char* effect=std::getenv("AIVERSE_PRISMA_EFFECT_TEST")) { drawPrismaEffects(*this,d,w,h,effect); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
@@ -221,7 +238,7 @@ struct HdrScene {
         else renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});
         if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) drawContactShadowScene(*this); else {
         ModelDraw md; md.model=spheres.get(); renderer.drawModel(md);
-        if(!materialGallery){
+        if(!materialGallery && !std::getenv("AIVERSE_SSS_BACKLIGHT_TEST")){
         // Same albedo, increasing radiance: LDR clamps before bloom, HDR retains differences.
         for(int i=0;i<5;++i) renderer.drawMesh(cube,mat4::translate({float(i-2)*2,0,-4.5f}),{0.6f,0.24f,0.06f,1},kDrawUnlit,0,float(1<<i));
         renderer.drawMesh(cube,mat4::translate({-2.8f,0,1}),{0.08f,0.5f,0.95f,0.5f},kDrawUnlit,0,0);
@@ -475,5 +492,6 @@ struct HdrScene {
 #include "DynamicGiScene.h"
 
 #include "LumaScene.h"
+#include "PrismaEffectsScene.h"
 
 #include "FogLandscape.h"

@@ -15,10 +15,10 @@ public:
     void startMatch(Simulation&, uint8_t, const game::RtsView&, const game::MapGrid&) {}
     void stopMatch() {}
     void setPlanetView(const game::RtsView*) {}
-    void update(Simulation&, const game::RtsScene&, const render::RTSCamera&, const render::mat4&, int, int, float) {}
+    void update(Simulation&, const game::RtsScene&, const render::Camera&, const render::mat4&, int, int, float) {}
     void addLights(render::LightSystem&) {}
-    void prepareGpuFrame(float, const render::RTSCamera&) {}
-    void renderGpu(const render::mat4&, const render::RTSCamera&) {}
+    void prepareGpuFrame(float, const render::Camera&) {}
+    void renderGpu(const render::mat4&, const render::Camera&) {}
     void render(const render::Lighting&) {}
     void renderPrepared(const render::Camera3D&, const render::mat4&, int, int, const render::Lighting&) {}
     int quality() const { return 0; }
@@ -58,7 +58,7 @@ public:
     // Planet maps: particles in the camera body's local space (RtsView::planetFxSpace); call before update().
     void setPlanetView(const game::RtsView* view);
     // After Renderer3D::beginScene (needs its viewProj); dt = 0 while paused.
-    void update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
+    void update(Simulation& sim, const game::RtsScene& scene, const render::Camera& cam, const render::mat4& viewProj,
                 int fbW, int fbH, float dt);
     // After update(), before Renderer3D::render(): lights carried by particles ("light" module).
     void addLights(render::LightSystem& lights);
@@ -67,9 +67,9 @@ public:
     void addPreparedLights(render::LightSystem& lights) const;
     // Opt-in SpectraFX GPU effects: call once before Renderer3D::beginScene,
     // inside beginFrame and outside all GPU render/compute passes.
-    void prepareGpuFrame(float dt,const render::RTSCamera& camera);
+    void prepareGpuFrame(float dt,const render::Camera& camera);
     // Draw GPU-owned billboards in the still open scene pass, after render().
-    void renderGpu(const render::mat4& viewProj, const render::RTSCamera& camera);
+    void renderGpu(const render::mat4& viewProj, const render::Camera& camera);
     // After Renderer3D::render(): draws into the still open main pass.
     void render(const render::Lighting& lighting);
     // Reorient and draw already updated particles for another LENS camera.

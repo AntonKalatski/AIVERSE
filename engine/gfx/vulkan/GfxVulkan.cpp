@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace aiverse::gfx::vk {
 namespace {
@@ -45,6 +46,11 @@ bool VulkanDevice::createInstance(bool wantSurface, std::string& error) {
         want.push_back(platformExt);
         surfaceInstance_ = true;
     }
+    // Vendor libraries (e.g. NVIDIA NGX) may ask for extra instance extensions.
+    for (const auto& name : vulkanExtensionRequests().instance)
+        if (hasExtension(exts, name.c_str()) &&
+            std::find_if(want.begin(), want.end(), [&](const char* w) { return name == w; }) == want.end())
+            want.push_back(name.c_str());
     std::vector<const char*> layers;
     const bool validation = envOn("AIVERSE_VK_VALIDATION");
     if (validation) {
@@ -155,7 +161,14 @@ bool VulkanDevice::pickDevice(std::string& error) {
     std::vector<VkExtensionProperties> ex(en);
     vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, ex.data());
     swapchainExt_ = surfaceInstance_ && hasExtension(ex, swapExt);
-    if (swapchainExt_) { di.enabledExtensionCount = 1; di.ppEnabledExtensionNames = &swapExt; }
+    std::vector<const char*> deviceExts;
+    if (swapchainExt_) deviceExts.push_back(swapExt);
+    for (const auto& name : vulkanExtensionRequests().device)
+        if (hasExtension(ex, name.c_str())) deviceExts.push_back(name.c_str());
+    if (!deviceExts.empty()) {
+        di.enabledExtensionCount = uint32_t(deviceExts.size());
+        di.ppEnabledExtensionNames = deviceExts.data();
+    }
     if (vkCreateDevice(gpu_, &di, nullptr, &device_) != VK_SUCCESS) { error = "Vulkan: vkCreateDevice failed"; return false; }
     if (!loadDeviceFunctions(device_)) {
         if (vkDestroyDevice) vkDestroyDevice(device_, nullptr);
@@ -292,6 +305,13 @@ bool VulkanDevice::waitIdle() {
 
 void VulkanDevice::destroyDeviceObjects() {
     vkDeviceWaitIdle(device_);
+    // Pending staging is safe to destroy only after the GPU idle barrier.
+    // Do not invoke editor callbacks during device teardown.
+    for(auto& read:pixelReads_) {
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+    }
+    pixelReads_.clear();
     destroySwapchain();
     completed_ = ~uint64_t(0);
     for(auto& slot:slots_)completeTextureCaptures(slot,false);
@@ -366,6 +386,10 @@ bool VulkanDevice::createSwapchain() {
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu_, surface_, &caps) != VK_SUCCESS) return false;
     VkExtent2D ext = caps.currentExtent;
     if (ext.width == 0xFFFFFFFFu) ext = {uint32_t(std::max(1, fbW_)), uint32_t(std::max(1, fbH_))};
+    // Android: any extent within min/max, the compositor scales it to the window. The platform renders at a
+    // lower resolution than the screen (PlatformAndroid applyRenderScale): the swapchain follows the frame size.
+    if (window_.kind == VulkanWindow::Kind::Android && fbW_ > 0 && fbH_ > 0)
+        ext = {uint32_t(fbW_), uint32_t(fbH_)};
     ext.width = std::clamp(ext.width, caps.minImageExtent.width, caps.maxImageExtent.width);
     ext.height = std::clamp(ext.height, caps.minImageExtent.height, caps.maxImageExtent.height);
     if (ext.width == 0 || ext.height == 0) return false;   // minimized
@@ -409,6 +433,8 @@ bool VulkanDevice::createSwapchain() {
     swapchain_ = next;
     swapFormat_ = fmt.format;
     swapExtent_ = ext;
+    swapTransform_ = caps.currentTransform;
+    swapCapsExtent_ = caps.currentExtent;
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, nullptr);
     swapImages_.resize(n);
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, swapImages_.data());
@@ -419,6 +445,14 @@ bool VulkanDevice::createSwapchain() {
     if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) std::fprintf(stderr, "[gfx] Vulkan: swapchain format can't be a blit target\n");
     swapDirty_ = false;
     return true;
+}
+
+bool VulkanDevice::swapchainChanged() {
+    VkSurfaceCapabilitiesKHR caps;
+    if (!surface_ || vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu_, surface_, &caps) != VK_SUCCESS) return true;
+    if (caps.currentTransform != swapTransform_) return true;
+    if (caps.currentExtent.width == 0xFFFFFFFFu) return false;   // the extent follows the swapchain
+    return caps.currentExtent.width != swapCapsExtent_.width || caps.currentExtent.height != swapCapsExtent_.height;
 }
 
 void VulkanDevice::destroySwapchain() {
@@ -542,12 +576,19 @@ void VulkanDevice::prepareSlot() {
 }
 
 void VulkanDevice::collectGarbage() {
-    size_t keep = 0;
-    for (size_t i = 0; i < garbage_.size(); ++i) {
-        if (garbage_[i].serial <= completed_) garbage_[i].fn();
-        else garbage_[keep++] = std::move(garbage_[i]);
+    // A deferred destructor may defer more work (back buffer -> framebuffers): it must not push into
+    // the vector being walked (reallocation moved the running std::function away, a later entry was
+    // then called empty: bad_function_call on Android). Walk a detached list, keep newcomers.
+    std::vector<Garbage> pending;
+    pending.swap(garbage_);
+    std::vector<Garbage> keep;
+    keep.reserve(pending.size());
+    for (auto& g : pending) {
+        if (g.serial <= completed_) { if (g.fn) g.fn(); }
+        else keep.push_back(std::move(g));
     }
-    garbage_.resize(keep);
+    for (auto& g : garbage_) keep.push_back(std::move(g));
+    garbage_.swap(keep);
 }
 
 VkCommandBuffer VulkanDevice::transferCmd() {
@@ -693,9 +734,81 @@ bool VulkanDevice::waitForSubmittedGpuWork() {
     return true;
 }
 
+// Called on the gfx device-owner thread. A frame-slot fence, never a serial
+// alone, is the authority to read the asynchronous GPU transfer destination.
+void VulkanDevice::deliverPixelReads() {
+    std::vector<PixelRead> completed;
+    for(auto it=pixelReads_.begin();it!=pixelReads_.end();) {
+        if(!healthy_ || it->serial<=completed_) {
+            completed.push_back(std::move(*it));
+            it=pixelReads_.erase(it);
+        }else ++it;
+    }
+    for(auto& read:completed) {
+        std::vector<uint8_t> bytes;
+        if(healthy_ && read.serial<=completed_ && read.alloc.mapped) {
+            const auto* data=static_cast<const uint8_t*>(read.alloc.mapped);
+            bytes.assign(data,data+4);
+        }
+        // Pending record is already removed; callbacks may schedule work.
+        // A device-lost path reports an empty buffer, never fake pixels.
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+        if(read.callback)read.callback(std::move(bytes));
+    }
+}
+
+bool VulkanDevice::readTexturePixelAsync(TextureHandle texture,
+                                         int x,int y,PixelReadFn callback) {
+    if(!recording_ || inPass_ || !healthy_ || !callback ||
+       pixelReads_.size()>=32u || x<0 || y<0)return false;
+    const VTexture* image=textures_.get(texture.id);
+    if(!image || !image->renderTarget || image->compressed ||
+       image->depth || image->format!=PixelFormat::RGBA8 ||
+       image->levels!=1 || x>=image->width || y>=image->height)
+        return false;
+    VkBuffer staging=VK_NULL_HANDLE;
+    Allocation alloc;
+    if(!createBufferObject(4,VK_BUFFER_USAGE_TRANSFER_DST_BIT,true,
+                           staging,alloc))return false;
+    if(!staging || !alloc.mapped) {
+        if(staging)vkDestroyBuffer(device_,staging,nullptr);
+        memory_.release(alloc);
+        return false;
+    }
+    VkCommandBuffer cb=slots_[size_t(slot_)].main;
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,1u,0u);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset=0;
+    copy.bufferRowLength=0;
+    copy.bufferImageHeight=0;
+    copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+    // Vulkan's current pass uses a bottom-left-oriented viewport, matching
+    // the legacy GL rendering contract. Public readback pixels are top-left.
+    copy.imageOffset={x,image->height-1-y,0};
+    copy.imageExtent={1,1,1};
+    vkCmdCopyImageToBuffer(cb,image->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           staging,1,&copy);
+    auto visibility=vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+    visibility.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    visibility.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT,0,1,&visibility,
+                         0,nullptr,0,nullptr);
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,1u,0u);
+    pixelReads_.push_back({staging,alloc,serial_,std::move(callback)});
+    return true;
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
     deliverTextureReads();
+    deliverPixelReads(); // previous frame-slot fence proved completion
     FrameSlot& s = slots_[size_t(slot_)];
     auto bi = vkStruct<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -710,7 +823,7 @@ void VulkanDevice::beginFrame(int w, int h) {
         if (swapDirty_ || !swapchain_) { swapForW_ = w; swapForH_ = h; createSwapchain(); }
         for (int attempt = 0; swapchain_ && attempt < 2; ++attempt) {
             const VkResult r = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, s.acquired, VK_NULL_HANDLE, &swapIndex_);
-            if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) { swapAcquired_ = true; if (r == VK_SUBOPTIMAL_KHR) swapDirty_ = true; break; }
+            if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) { swapAcquired_ = true; if (r == VK_SUBOPTIMAL_KHR && swapchainChanged()) swapDirty_ = true; break; }
             if (r != VK_ERROR_OUT_OF_DATE_KHR || !createSwapchain()) break;
         }
     }
@@ -774,7 +887,7 @@ void VulkanDevice::endFrame() {
         pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &swapRendered_[swapIndex_];
         pi.swapchainCount = 1; pi.pSwapchains = &swapchain_; pi.pImageIndices = &swapIndex_;
         const VkResult r = vkQueuePresentKHR(queue_, &pi);
-        if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) swapDirty_ = true;
+        if (r == VK_ERROR_OUT_OF_DATE_KHR || (r == VK_SUBOPTIMAL_KHR && swapchainChanged())) swapDirty_ = true;
         swapAcquired_ = false;
     }
     if (capture_) {

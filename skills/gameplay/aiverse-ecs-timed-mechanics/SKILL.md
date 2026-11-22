@@ -19,7 +19,7 @@ Read `AGENTS.md`, `docs/ecs-all-features-migration-plan.md` and
 - `TimedExpiryComponent` requests deterministic despawn at the specified tick.
 
 ## Registration / order
-Include `<aiverselib/genre/EcsTimedMechanics.h>` and link
+Include `<aiverselib/mechanics/EcsTimedMechanics.h>` and link
 `AIVERSE::lib_ecs_timed_mechanics` in a native project.
 
 ```cpp
@@ -61,8 +61,8 @@ inside components, no authoritative per-genre mirror.
 
 The opt-in `addWeaponReloadSystem` and real `fps::Module::tick`
 both call `stepWeaponReload` from `EcsTimedMechanics.h`. In FPS,
-the adapter builds temporary typed values from the same canonical legacy
-`ActorRuntime` weapon fields, at the original per-actor tick location.
+the adapter builds temporary typed values from the character's
+`CharacterWeapons` component, at the original per-character tick location.
 **This is shared-policy adoption, not standalone per-feature component
 authority**. Preserve exact same-tick reload completion, selection and
 fire conditions; verify `ecsReloadAuthorityParity` before extracting

@@ -2,7 +2,7 @@
 #include "../../engine/data/JsonCompose.h"
 #include "RtsEffectsData.h"
 #include "RtsProgressionData.h"
-#include "RtsBwAI.h"   // agent-bw-ai
+#include "RtsAIControllers.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -187,11 +187,17 @@ Rules loadRules(const Json& j) {
         const auto controller = j["ai"].getStr("controller", "builtin");
         if (j["ai"].has("controller") && !j["ai"]["controller"].isString())
             throw std::runtime_error("ai.controller: expected string");
-        if (controller != "builtin" && controller != "scripted" && controller != "bw")
-            throw std::runtime_error("ai.controller: unknown '" + controller + "' (builtin, scripted, bw)");
+        if (controller != "builtin" && controller != "scripted" && !findAIController(controller)) {
+            std::string known;
+            for (auto& n : aiControllerNames()) known += (known.empty() ? "" : ", ") + n;
+            throw std::runtime_error("ai.controller: unknown '" + controller + "' (this build has: " + known +
+                "; a packaged client adds optional controllers through packaging.engineModules)");
+        }
         r.scriptedAI = controller == "scripted";
-        r.bwAI = controller == "bw";
-        if (j["ai"].has("bw") && !r.bwAI) throw std::runtime_error("ai.bw: needs \"controller\": \"bw\"");
+        r.aiController = controller;
+        for (auto& n : aiControllerNames())   // ai.<name> settings belong to that controller only
+            if (n != "builtin" && n != "scripted" && j["ai"].has(n) && controller != n)
+                throw std::runtime_error("ai." + n + ": needs \"controller\": \"" + n + "\"");
     }
     r.supplyCap = j.getFx("supplyCap", r.supplyCap);
     r.maxQueue = int(j.getInt("maxQueue", r.maxQueue));
@@ -432,6 +438,10 @@ Rules loadRules(const Json& j) {
             t.armorType = armorIdx(h.getStr("armorType", "none"));
         }
         t.invulnerable = tj.getBool("invulnerable", false);
+        for (const Json& b : tj["walls"].items()) {
+            if (!b.isArray() || b.size() != 4) fail(where + " walls", "[x, z, w, d]");
+            t.walls.push_back({b[0].fx(), b[1].fx(), b[2].fx(), b[3].fx()});
+        }
         if (const Json& vj = tj["vision"]; vj.isObject()) {
             t.visionBlock = fxMax(Fixed{}, vj.getFx("blocks"));
             t.eyeHeight = fxMax(Fixed{}, vj.getFx("eye"));
@@ -478,6 +488,9 @@ Rules loadRules(const Json& j) {
                 if (w.projectileSpeed <= Fixed{} || w.projectileSpeed > Fixed::fromInt(1024)) fail(where, "flight requires projectileSpeed in (0,1024]");
             }
             w.splash = wj.getFx("splash");
+            w.hitsWalls = wj.getBool("hitsWalls", false);
+            w.attackLight = wj.getBool("attackLight", true);
+            w.wrecksTag = wj.getStr("wrecks", "");
             w.damageType = damageIdx(wj.getStr("damageType", "normal"));
             w.chargeTime = wj.getFx("chargeTime");
             w.rangeAspect = wj.getFx("rangeAspect", w.rangeAspect);
@@ -873,7 +886,7 @@ Rules loadRules(const Json& j) {
     r.armor.plainFloor = !r.originals && !r.mech.any && !j.has("armor") && !j.has("armorModel");   // old games: damage - armor, at least raw / 5
     loadGridFieldRules(r, j);   // RtsGridFieldData.cpp: rules "fields", type "field" emitters, "field" effects
     loadRaidRules(r, j);        // RtsRaidData.cpp: rules "raid" (extraction raids)
-    if (r.bwAI) loadBwAIConfig(j["ai"], Json(), r);   // agent-bw-ai: validate ai.bw now (map part at setup)
+    if (auto* k = findAIController(r.aiController); k && k->load) k->load(j["ai"], Json(), r);   // validate the controller settings now (map part at setup)
     return r;
 }
 

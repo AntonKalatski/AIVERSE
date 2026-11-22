@@ -224,6 +224,7 @@ public:
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
     bool captureTexture(TextureHandle source,CaptureFn callback) override;
+    bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) override;
 
     void beginPass(const PassDesc& d) override;
     bool supportsRenderTargetPasses() const override { return true; }
@@ -264,6 +265,7 @@ private:
     void ensureBackBuffer(int w, int h);
     void prepareSlot();                          // waits for the slot's previous frame, resets its pools
     void collectGarbage();
+    void deliverPixelReads();  // called on owner thread at next beginFrame
     void present();
     void readBackBuffer();
     void completeTextureCaptures(FrameSlot& slot,bool succeeded);
@@ -303,6 +305,34 @@ private:
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
 
+public:   // native access for vendor libraries (Gfx.h NativeVulkanContext)
+    bool nativeVulkanContext(NativeVulkanContext& out) override {
+        if (!device_ || !recording_ || inPass_ || !healthy_) return false;
+        out.instance = instance_;
+        out.physicalDevice = gpu_;
+        out.device = device_;
+        out.commandBuffer = transferCmd();
+        out.getInstanceProcAddr = reinterpret_cast<void*>(vkGetInstanceProcAddr);
+        out.queueFamily = queueFamily_;
+        return true;
+    }
+    bool nativeVulkanImage(TextureHandle h, NativeVulkanImage& out) const override {
+        const VTexture* t = textures_.get(h.id);
+        if (!t || !t->image) return false;
+        out.image = t->image;
+        out.view = t->view;
+        out.format = uint32_t(t->vkFormat);
+        out.width = t->width; out.height = t->height;
+        out.depth = t->depth; out.storage = t->storage;
+        return true;
+    }
+    bool nativeVulkanImageBarrier(TextureHandle h, uint32_t fromLayout, uint32_t toLayout) override {
+        const VTexture* t = textures_.get(h.id);
+        if (!t || !t->image || !recording_ || inPass_) return false;
+        barrierImage(transferCmd(), t->image, t->depth, VkImageLayout(fromLayout), VkImageLayout(toLayout));
+        return true;
+    }
+
 public:   // helpers shared by the translation units
     VkCommandBuffer transferCmd();               // main command buffer outside passes, else the pre-frame one
     void barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels = VK_REMAINING_MIP_LEVELS,
@@ -340,6 +370,11 @@ private:
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     VkFormat swapFormat_ = VK_FORMAT_B8G8R8A8_UNORM;
     VkExtent2D swapExtent_{};
+    VkSurfaceTransformFlagBitsKHR swapTransform_ = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;   // caps.currentTransform at creation
+    VkExtent2D swapCapsExtent_{};   // caps.currentExtent at creation (the swapchain may be smaller: Android)
+    // VK_SUBOPTIMAL_KHR means "recreate" only when the surface really changed: Android reports it on every
+    // present while preTransform (IDENTITY) differs from the display rotation (any landscape game).
+    bool swapchainChanged();
     std::vector<VkImage> swapImages_;
     std::vector<VkSemaphore> swapRendered_;
     uint32_t swapIndex_ = 0;
@@ -359,6 +394,13 @@ private:
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;
     CaptureFn capture_;
+    struct PixelRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc{};
+        uint64_t serial = 0;
+        PixelReadFn callback;
+    };
+    std::vector<PixelRead> pixelReads_;
 
     // resources
     Pool<VBuffer> buffers_;

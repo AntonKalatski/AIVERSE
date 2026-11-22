@@ -181,13 +181,29 @@ Imported materials keep their PBR values. Overrides per material name, `"*"` for
 | `sssStrength` | Artistic subsurface diffuse response, 0..1; default 0 (disabled). |
 | `sssColor` | Linear RGB scattering tint; default [1,1,1]. |
 | `sssScale` | Wrap width and backlight falloff, 0..1; default 0.5. |
+| `sssThickness` | Maximum transmitted sun path in world units, 0..1. Zero keeps the earlier artistic backlight; try 0.03–0.08 for fingers in a meter-scale model. |
 
-SSS in this stage is an opt-in, single-pass PBR approximation. It adds tinted
-diffuse light near the sun-facing silhouette and on the backlit side; specular
-lighting remains unchanged. It does not measure mesh thickness, diffuse light
-through the volume, or sample a thickness map. `sssStrength: 0` preserves
-the previous shader result. Studio Materials accepts `sssColor` as three
-comma-separated linear RGB values and saves the array in `materials.json`.
+SSS is an opt-in, single-pass PBR approximation. It adds tinted diffuse light
+near the sun-facing silhouette and on the backlit side; specular lighting
+remains unchanged. With `sssThickness > 0`, the backlit term reads the
+existing sun-shadow depth and fades out when the light path through the model
+exceeds that world-space limit. A model must cast and receive sun shadows for
+this estimate. It works best on closed meshes and can confuse a nearby
+occluder with the same mesh. It is not a volume transport simulation or a
+thickness texture. `sssStrength: 0` preserves the previous shader result.
+Studio Materials accepts `sssColor` as three comma-separated linear RGB
+values and saves the array in `materials.json`.
+
+For a meter-scale hand model, start with a skin material like:
+
+```json
+{"sssStrength":0.25,"sssColor":[1,0.35,0.22],"sssScale":0.8,"sssThickness":0.06}
+```
+
+The fingers must be closed, shadow-casting geometry; tune
+`sssThickness` to the model's actual world-space size. A directional sun
+behind the hand reveals the transmission. With sun shadows off the
+thickness-limited backlight is suppressed.
 | `emissive`, `emissiveStrength` | glow (linear colour × strength) |
 | `alpha` | `opaque`, `mask` (alpha test, `cutoff`), `blend` (sorted, no shadow) |
 | `doubleSided`, `unlit`, `castShadow`, `receiveShadow`, `vertexColors` | switches |

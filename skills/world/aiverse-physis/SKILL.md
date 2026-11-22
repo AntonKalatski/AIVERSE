@@ -46,6 +46,10 @@ Neither certifies full live-host or reference-image visual acceptance.
 | Debug palette (non-authoritative) | `PhysisDebugPalette.h` | `DebugColor`, `debugColor`, `diagnosticColor` |
 | Dockable editor debug | `apps/editor/windows/PhysisWindow.cpp` | `AIVERSE_EDITOR_WINDOW(PhysisWindow)`, read-only live / private demo |
 | Generic native host | `PhysisIntegration.h` | `InstallOptions`, `install`, `forEachPresentationCell` |
+| Fire/wind presentation frame (host) | `engine/world/PhysisNaturePresentation.h` | `buildNaturePresentation`, `NaturePresentationFrame::sample/signature` |
+| Fire FX / audio planners (host) | `engine/world/PhysisNatureCues.h`, `PhysisNatureFxHost.h`, `PhysisNatureAudioHost.h` | `PhysisNatureFxHost`, `PhysisNatureAudioHost`, `addPhysisNatureSounds` |
+| TerraWeave grass burn + wind (host) | `engine/world/PhysisNatureGrass.h` | `applyPhysisGrassPresentation`, `applyPhysisGrassWind` |
+| Editor live nature preview | `apps/editor/PhysisNaturePreview.h` | PHYSIS window «Живая природа», MCP `physis_nature_preview` |
 | Optional Box3D consumption | `engine/physics/PhysisBox3D.h` | `applyPhysisToBody`, `PhysisBodyMaterial` |
 
 Install PHYSIS once from `GameModule::setup` before the persistence registry seals. `InstallOptions.enableStorms`, `enableForces`, `enableWindZones`, and `enableGravityFields` default false, so existing games retain their behaviour. PHYSIS updates precisely once per authoritative `Simulation::step` (never once per render frame); the optional force pass **only publishes** ECS outputs and does not move bodies.
@@ -77,7 +81,7 @@ Link `AIVERSE::physics` and enable `AIVERSE_ENABLE_PHYSICS=ON` only in opt-in na
 
 ## Current status and tests
 
-Implemented fields are simple authored wind/vortex/gravity policies; they are **not** CFD weather, N-body gravitational physics, full destruction, water storm surge, GPU storm effects or foliage wind deformation. No automatic Terra/NEREID coupling is claimed. Native compilation and tests are **NOT RUN** for connector-authored stages, so keep PR #25 draft until validated.
+Implemented fields are simple authored wind/vortex/gravity policies; they are **not** CFD weather, N-body gravitational physics, full destruction, water storm surge, GPU storm effects or foliage wind deformation. No automatic NEREID coupling is claimed; the opt-in nature host (2026-11-21) couples fire/wind to TerraWeave grass, SpectraFX and audio — see `docs/agent-handoffs/physis-nature-host-2026-11-21.md`. Native compilation and tests are **NOT RUN** for connector-authored stages, so keep PR #25 draft until validated.
 
 ```sh
 ./run-tests.sh --filter '^physis_'
@@ -243,7 +247,7 @@ Enable mouse marker editing for W/S/G field assets and optionally enable
 rectangle selection starting from empty Scene space. Ctrl/Shift adds
 projected centre markers. Pivot modes: Active, Average, Bounds Centre,
 World Origin or Custom XYZ. The world X/Y/Z handles are projected for
-hit testing but position changes use RTSCamera::screenRay and exact
+hit testing but position changes use Camera::screenRay and exact
 closestRayAxisParameter. Degenerate rays must not move fields.
 
 Rotate Y and Uniform Scale each have a horizontal projected ring.

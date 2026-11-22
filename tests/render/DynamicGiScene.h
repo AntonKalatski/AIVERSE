@@ -15,10 +15,46 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
         builder.replace(1,{{{-8,-8,2},{8,-8,2},{8,8,2},0},
                            {{-8,-8,2},{8,8,2},{-8,8,2},0}},{{1,1,1}});
         auto scene=std::make_shared<GiChunkedGeometrySnapshot>(builder.publish());
-        if(s.computeGiVerify && (!s.computeGi.initialize(d,cfg) ||
-           !s.computeGi.publishGeometry(scene,1))) {
+        // AIVERSE_COMPUTE_GI_FAR_WORLD: the GPU scene also holds a chunk far
+        // beyond any GI ray, larger than the GPU triangle budget on its own.
+        // Residency must leave it out, so GPU lighting still matches the CPU
+        // reference (which never sees it) and no CPU fallback is needed.
+        auto gpuScene=scene;
+        const bool farWorld=s.computeGiVerify && std::getenv("AIVERSE_COMPUTE_GI_FAR_WORLD");
+        if(farWorld) {
+            std::vector<StaticShadowGeometry::Triangle> far;
+            for(unsigned i=0;i<9000;++i) {
+                const float x=5000.f+float(i%100),y=float(i/100);
+                far.push_back({{x,y,2},{x+1,y,2},{x,y+1,2},0});
+            }
+            GiChunkedGeometryBuilder gpuBuilder;
+            gpuBuilder.replace(1,{{{-8,-8,2},{8,-8,2},{8,8,2},0},
+                                  {{-8,-8,2},{8,8,2},{-8,8,2},0}},{{1,1,1}});
+            gpuBuilder.replace(2,std::move(far),{{1,1,1}});
+            gpuScene=std::make_shared<GiChunkedGeometrySnapshot>(gpuBuilder.publish());
+        }
+        // AIVERSE_COMPUTE_GI_CASCADES=2|3: the GPU side runs nested cascades in
+        // one atlas; the sampled point is inside cascade 0, so the pixel must
+        // still match the single-lattice CPU reference.
+        auto gpuCfg=cfg;
+        if(const char* c=std::getenv("AIVERSE_COMPUTE_GI_CASCADES"))gpuCfg.cascades=std::atoi(c);
+        // AIVERSE_COMPUTE_GI_SCROLL: scrolling cascades; the focus first moves
+        // away (every probe recycled, zeroed) and comes back, so the checked
+        // pixel needs the re-traced probes at the original cells.
+        if(std::getenv("AIVERSE_COMPUTE_GI_SCROLL"))gpuCfg.scroll=true;
+        if(s.computeGiVerify && (!s.computeGi.initialize(d,gpuCfg) ||
+           !s.computeGi.publishGeometry(gpuScene,1))) {
             std::fprintf(stderr,"GI compute setup FAIL: %s / %s\n",d.lastError().c_str(),s.computeGi.diagnostic());
             s.failed=true;return;}
+        if(farWorld) {
+            const auto& r=s.computeGi.residency();
+            std::printf("GI GPU residency: source %zu tris, resident %zu, excluded %zu\n",
+                        r.sourceTriangles,r.relevantTriangles,r.excludedRemoteTriangles);
+            if(r.sourceTriangles<=GiGpuSmallScene::kMaxTriangles || r.excludedRemoteTriangles!=9000 ||
+               r.relevantTriangles!=2) {
+                std::fprintf(stderr,"GI GPU residency FAIL\n");s.failed=true;return;
+            }
+        }
         if(!s.dynamicGi.publishGeometry(scene,1)) {
             s.failed=true;return;
         }
@@ -80,8 +116,31 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     s.post.setSettings(settings);s.post.setQuality(PrismaQuality::High);
     r.beginScene(s.camera,w,h);
     if(s.computeGiVerify) {
-        s.computeGi.updateFrame({0,0,0});
-        if(!s.computeGi.canPresent()){waitFrame();return;}
+        // AIVERSE_COMPUTE_GI_SCROLL_AWAY=x: how far the focus walks (default 6 cells).
+        static int scrollAway=0;
+        static const float away=std::getenv("AIVERSE_COMPUTE_GI_SCROLL_AWAY")?
+            float(std::atof(std::getenv("AIVERSE_COMPUTE_GI_SCROLL_AWAY"))):6.0f;
+        float3 focus{0,0,0};
+        if(s.computeGi.config().scroll && scrollAway<40){focus={away,0,0};++scrollAway;}
+        s.computeGi.updateFrame(focus);
+        // Scrolling presents while probes update; the pixel check needs them
+        // traced and every cascade back at its home lattice (the return scroll
+        // waits for the GPU to finish with the atlas, a frame or more later).
+        bool home=true;
+        for(int k=0;k<s.computeGi.cascadeCount();++k) {
+            const auto now=s.computeGi.cascade(k).origin;
+            const auto want=GiMainGpuBridge::cascadeConfig(s.computeGi.config(),k).origin;
+            home &= now.x==want.x && now.y==want.y && now.z==want.z;
+        }
+        if(!s.computeGi.canPresent() || s.computeGi.pendingProbes() || !home ||
+           (scrollAway<40 && s.computeGi.config().scroll)){
+            waitFrame();return;}
+        if(s.computeGi.config().scroll && s.gridProbe==test && s.frame==0) {
+            const auto st=s.computeGi.scrollStats();
+            std::printf("GI scroll: %zu scrolls, %zu probes recycled, %zu re-plans, resident %zu tris\n",
+                        st.scrolls,st.recycledProbes,st.residencyReplans,s.computeGi.residency().relevantTriangles);
+            if(st.scrolls<(away!=0?2u:0u)){std::fprintf(stderr,"GI scroll FAIL\n");s.failed=true;return;}
+        }
     }
     // Case 1 intentionally does not reattach: beginScene must clear the previous view.
     if(test!=1 && !(s.computeGiVerify?r.setDynamicGiOverlay(s.computeGi):r.setDynamicGiOverlay(s.dynamicGi))){s.failed=true;return;}

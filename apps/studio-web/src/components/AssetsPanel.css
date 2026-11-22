@@ -171,3 +171,55 @@
   background:var(--au-field);overflow-wrap:anywhere}
 .studio-asset-usage span{color:var(--au-text-soft)}
 .studio-asset-usage small{color:var(--au-text-faint)}
+
+/* ---- Compact, content-first density (user request 2026-11-21) ----
+   Overrides above geometry only; tokens/colors unchanged. */
+.studio-assets{font-size:var(--au-font-sm)}
+.studio-assets-toolbar{min-height:28px;gap:4px;padding:3px 4px}
+.studio-assets-crumb button{padding:2px 4px;font-size:var(--au-font-sm)}
+.studio-assets-search{width:min(34%,240px);padding:0 6px;height:22px;border-radius:var(--au-radius-xs);
+  border-color:var(--au-line);gap:5px}
+.studio-assets-search input{font-size:var(--au-font-sm)}
+.studio-assets-search svg{width:12px;height:12px}
+.studio-assets-views button,.studio-assets-reload,.studio-assets-tool-action{height:22px;width:22px;
+  border-radius:var(--au-radius-xs)}
+.studio-assets-tool-action{background:transparent;border-color:transparent}
+.studio-assets-tool-action svg,.studio-assets-views svg,.studio-assets-reload svg{width:14px;height:14px}
+.studio-assets-folders{width:170px;min-width:110px;padding:2px 0}
+.studio-assets-sidebar-title{display:none}
+.studio-assets-folder{gap:5px;padding:0 6px;height:20px;border-radius:0;border:0;font-size:var(--au-font-sm)}
+.studio-assets-folder svg{width:13px;height:13px}
+.studio-assets-folder.active{background:var(--au-active);border:0}
+.studio-assets-content{padding:6px}
+.studio-assets-items--grid{grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:4px}
+.studio-assets-items--grid .studio-assets-item{padding:4px;gap:3px;border-color:transparent;background:transparent;
+  border-radius:var(--au-radius-xs)}
+.studio-assets-items--grid .studio-assets-icon{height:46px;border-radius:var(--au-radius-xs)}
+.studio-assets-items--grid .studio-assets-meta{display:none}
+.studio-assets-item:hover{background:var(--au-hover);border-color:transparent}
+.studio-assets-item.active{box-shadow:none;border-color:var(--au-accent);background:var(--au-active)}
+.studio-assets-items--list{gap:0}
+.studio-assets-items--list .studio-assets-item{height:20px;padding:0 6px;gap:6px;border:0;border-radius:0;background:transparent}
+.studio-assets-items--list .studio-assets-icon{width:16px;height:16px;border:0;background:transparent}
+.studio-assets-items--list .studio-assets-icon svg{width:14px;height:14px}
+.studio-assets-empty,.studio-assets-state{min-height:80px;padding:10px;gap:4px}
+.studio-assets-empty strong{font-size:var(--au-font-md)}
+.studio-assets-create-folder,.studio-assets-status{padding:3px 6px;gap:6px}
+.studio-assets-create-folder input,.studio-assets-create-folder button{padding:2px 6px;height:22px}
+.studio-assets-footer{min-height:18px;padding:1px 8px}
+/* Resizable folder tree */
+.studio-assets-splitter{flex:none;width:5px;margin:0 -2px;cursor:col-resize;position:relative;z-index:2;touch-action:none}
+.studio-assets-splitter::after{content:"";position:absolute;top:0;bottom:0;left:2px;width:1px;background:var(--au-line)}
+.studio-assets-splitter:hover::after,.studio-assets-splitter:focus-visible::after{background:var(--au-accent);width:2px;left:1.5px}
+.studio-assets-thumb{display:grid;place-items:center;width:100%;height:100%}
+.studio-assets-thumb img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;image-rendering:auto}
+.studio-assets-tool-action.is-on{background:var(--au-active);color:var(--au-text)}
+.studio-assets-refs{position:fixed;left:50%;top:20%;transform:translateX(-50%);z-index:70;width:min(720px,90vw);max-height:60vh;display:flex;flex-direction:column;
+  border:1px solid var(--au-line-strong);border-radius:var(--au-radius-md);background:var(--au-panel-raised);box-shadow:0 20px 50px #000a}
+.studio-assets-refs header{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--au-line);font-size:var(--au-font-sm)}
+.studio-assets-refs header span{color:var(--au-text-muted);font-size:var(--au-font-xs)}
+.studio-assets-refs header button{margin-left:auto;border:0;background:none;color:var(--au-text-muted);cursor:pointer}
+.studio-assets-refs ul{list-style:none;margin:0;padding:6px 10px;overflow:auto;font-size:var(--au-font-xs)}
+.studio-assets-refs li{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--au-line)}
+.studio-assets-refs code{color:var(--au-accent);white-space:nowrap}
+.studio-assets-refs li span{color:var(--au-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -14,6 +14,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "ClientHost.h"
 #include "EditorProfile.h"
@@ -22,6 +23,7 @@
 #include "modules/rts/view/RtsViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
+#include "PhysisNaturePreview.h"
 #include "engine/world/NereidManifestHost.h"
 #include "core/FileAssoc.h"
 #include "core/Net.h"
@@ -175,6 +177,17 @@ public:
         terraWeaveForestPreview_.setEnabled(enabled);
     }
     size_t terraWeaveForestPreviewCount() const { return terraWeaveForestPreview_.visibleInstances(); }
+    // PHYSIS «Живая природа» Scene preview (PhysisWindow, physis_nature_preview op).
+    PhysisNaturePreview& physisNaturePreview() { return physisNaturePreview_; }
+    // Authored NEREID water of the open map, rebuilt when the document changes.
+    const AuthoredWaterQuery& authoredWater() {
+        if (authoredWaterRevision_ != doc().revision || authoredWaterMap_ != &doc()) {
+            authoredWater_ = AuthoredWaterQuery::fromDoc(doc());
+            authoredWaterRevision_ = doc().revision;
+            authoredWaterMap_ = &doc();
+        }
+        return authoredWater_;
+    }
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
     // Pin a type that an editor panel or preview uses (also loads it lazily).
@@ -250,7 +263,7 @@ public:
     int roadStart = -1;
 
     // camera of the Scene window (agents fly it with view_focus)
-    render::RTSCamera sceneCam;
+    render::Camera sceneCam;
     void focusScene(float x, float z, float distance = -1);
     // planet maps (world block): the Scene camera is the view's orbit camera; picking returns a body point
     bool planetMap() const { return view_.planetMode(); }
@@ -267,9 +280,9 @@ public:
     Simulation* sim() { return sim_.get(); }
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
-    void enqueueFpsSceneGeometry(const render::RTSCamera&, bool editOverlays=true);
-    const Json& fpsRuntimeSnapshot(); // FPS World resource actors; cached by document/rules revision
-    int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
+    void enqueueFpsSceneGeometry(const render::Camera&, bool editOverlays=true);
+    const Json& fpsRuntimeSnapshot(); // FPS character / projectile / loot / vehicle entities; cached by document/rules revision
+    int pickFpsSceneObject(const Viewport&, const render::Camera&, float sx, float sy) const;
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
     bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;
     bool moveSelectedFpsSceneObject(float dx, float dy, float dz);
@@ -285,7 +298,7 @@ public:
     int humanSlot() const { return human_; }
     float playSpeed = 1.0f;
     bool playPaused = false;
-    render::RTSCamera gameCam;
+    render::Camera gameCam;
     std::vector<aiverse::Entity> gameSelection;
     std::string gameDevice = "none";           // simulator preset (Devices.h)
     bool gameLandscape = true;
@@ -319,10 +332,10 @@ public:
     void showProjectHub(int tab);   // 0: recent projects, 1: new project, 2: make a game (EditorProjects.cpp)
 
     // rendering a map view into a Viewport (used by Scene and Game windows)
-    void renderScene(Viewport& vp, const render::RTSCamera& cam, bool editOverlays);
+    void renderScene(Viewport& vp, const render::Camera& cam, bool editOverlays);
     bool cleanSceneCaptureRequested() const;
     std::pair<int,int> sceneCaptureSize(int width,int height) const;
-    void renderGame(Viewport& vp, const render::RTSCamera& cam, uint64_t prismaViewId = 2);
+    void renderGame(Viewport& vp, const render::Camera& cam, uint64_t prismaViewId = 2);
 
     // overlays (Overlays window / overlay_preview): ids drawn regardless of their conditions, and a
     // structure type whose ghost overlays (build grid, placement) are previewed at the cursor
@@ -422,12 +435,17 @@ public:
     int fxRevision = 0;                        // bumped when fx files change (agents): the Effects window re-reads
 
     // helpers for windows
-    bool groundAt(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy, float& x, float& z) const;
-    int pickEntity(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const;
+    bool groundAt(const Viewport& vp, const render::Camera& cam, float sx, float sy, float& x, float& z) const;
+    int pickEntity(const Viewport& vp, const render::Camera& cam, float sx, float sy) const;
+    // Display ground height at x,z (metres): the heightfield / levels surface,
+    // or on maps whose terrain is entity tiles (terrainPresentation
+    // "entities", e.g. TerraWeave exports) a vertical ray against those tile
+    // meshes. Cached per 0.5 m; used by the PHYSIS nature preview and gizmos.
+    float surfaceHeightAt(float x, float z) const;
     // Any object under the cursor: map entities (not hidden / locked) and the world tree's objects shown in
     // the Scene (game-created objects in edit mode, live objects in play mode). None when nothing is hit.
-    Selection pickObject(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const;
-    int pickRoad(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const;
+    Selection pickObject(const Viewport& vp, const render::Camera& cam, float sx, float sy) const;
+    int pickRoad(const Viewport& vp, const render::Camera& cam, float sx, float sy) const;
     float snapCoord(float v, int typeIdx) const;
     void flash(float x0, float z0, float x1, float z1, double seconds = 1.6);
     std::string status;                        // status bar text
@@ -486,15 +504,15 @@ private:
     void registerFxPreviewOps();   // EditorFxOps.cpp: fx_preview
     // Particles of the Scene / Game views (EditorFxOps.cpp): after beginScene (dt, previews, event bridge,
     // particle lights into r3d_.lights); render them after Renderer3D::render.
-    void tickFx(const render::RTSCamera& cam, int w, int h, const std::vector<game::SceneObject>* objects);
-    void tickSpectraGpuPreview(const render::RTSCamera& cam,int w,int h,bool game);
+    void tickFx(const render::Camera& cam, int w, int h, const std::vector<game::SceneObject>* objects);
+    void tickSpectraGpuPreview(const render::Camera& cam,int w,int h,bool game);
     void drawSpectraGpuPreview();
     void samplePlayStats();
     void updateWorld();       // EditorWorld.cpp: preview / live rows, selection kept across rebuilds
     void syncSelection();
     void registerWorldOps();  // EditorWorld.cpp: world_entities, world_entity, editor_select
     void deliverShots(gfx::Device& dev);
-    void setOverlayContext(const Viewport& vp, const render::RTSCamera& cam, bool play);   // input state for RtsOverlays
+    void setOverlayContext(const Viewport& vp, const render::Camera& cam, bool play);   // input state for RtsOverlays
 
     Options opt_;
     Workspace ws_;
@@ -506,6 +524,7 @@ private:
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
     TerraWeaveForestPreview terraWeaveForestPreview_;
+    PhysisNaturePreview physisNaturePreview_;
     world::NereidManifestHost nereidPreview_;
     struct VisualPickModel {
         const render::Model* model=nullptr; // identity only until cache read lease acquired
@@ -519,6 +538,12 @@ private:
     std::vector<VisualPickModel> visualPickModels_;
     size_t visualPickModelCount_=0;
     uint64_t visualPickCacheGeneration_=0;
+    AuthoredWaterQuery authoredWater_;
+    uint64_t authoredWaterRevision_ = ~uint64_t(0);
+    const MapDoc* authoredWaterMap_ = nullptr;
+    mutable std::vector<float> surfaceGrid_;
+    mutable int surfaceGridW_=0, surfaceGridH_=0;
+    mutable uint64_t surfaceHeightCacheKey_=0;
 
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;

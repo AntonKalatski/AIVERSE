@@ -234,7 +234,7 @@ public:
         return point;
     }
     // Control markers follow land ownership independently of the fixed building icon.
-    std::vector<render::float2> controlFlags(const render::RTSCamera& camera,float w,float h) const {
+    std::vector<render::float2> controlFlags(const render::Camera& camera,float w,float h) const {
         std::vector<render::float2> out;
         if(!config_.getBool("showControlFlags",false))return out;
         for(const auto& [region,a]:anchors)if(a.owner==me_&&me_!=0&&(grid_->territory.empty()||a.landCells>0)){
@@ -244,7 +244,7 @@ public:
         return out;
     }
     struct Stroke {render::float2 a,b;float width=5,alpha=1,highlight=0;bool shadow=false;};
-    std::vector<Stroke> strokes(const render::RTSCamera& camera,float w,float h,double time,
+    std::vector<Stroke> strokes(const render::Camera& camera,float w,float h,double time,
                                const std::function<float(float,float)>& groundHeight={}){
         arrows.erase(std::remove_if(arrows.begin(),arrows.end(),[&](const Arrow&a){return a.until<=time;}),arrows.end());
         std::vector<Stroke> out;
@@ -325,7 +325,7 @@ public:
             }
         }return out;
     }
-    void fit(render::RTSCamera& camera,float width,float height,bool reset=false){
+    void fit(render::Camera& camera,float width,float height,bool reset=false){
         if(!grid_||width<=0||height<=0)return;
         const float distance=std::max(float(grid_->h)*std::sin(camera.pitch),float(grid_->w)*height/width)*.56f/std::tan(camera.fovY*.5f);
         camera.maxDistance=distance;camera.minDistance=distance/3;

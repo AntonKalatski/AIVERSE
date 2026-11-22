@@ -1,7 +1,6 @@
 // Setup, commands, shared queries and state hashing for the generic RTS module.
 #include "RtsInternal.h"
 #include "../../engine/data/JsonCompose.h"
-#include "RtsBwAI.h"   // agent-bw-ai
 #include "RtsInitialVars.h"
 #include "RtsMapRules.h"
 #include "../../engine/core/FixedMath.h"
@@ -35,7 +34,8 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
         if (!(gm == map)) generated_ = std::move(gm);
     }
     const Json& mapIn = generated_.isObject() ? generated_ : map;
-    if (rules_.bwAI) bwAI_ = loadBwAIConfig(rulesJson["ai"], mapIn, rules_);   // agent-bw-ai: rules ai.bw + map "ai"
+    aiKind_ = findAIController(rules_.aiController);   // null for builtin / scripted
+    aiConfig_ = aiKind_ && aiKind_->load ? aiKind_->load(rulesJson["ai"], mapIn, rules_) : nullptr;   // rules ai.<controller> + map "ai"
     matchMap_ = mapIn;
     setupMap(sim, mapIn);
     loadTriggers(rules_, rulesJson, mapIn, triggers_);
@@ -68,6 +68,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     fieldOps_ = std::make_unique<FieldOps>();   // repair / reclaim / stockpiles / ambient income ... ; nothing without the blocks
     fieldOps_->setup(sim, *this, rulesJson, mapIn);
     driving_->loadMap(sim, mapIn, rulesJson["roadTypes"]);   // bridges and tunnels as second levels (map "decks", spline roads)
+    driving_->loadRace(sim, rulesJson, mapIn);   // rules "race" + map "race": the map's cars race (docs/races.md)
     arsenal_ = std::make_unique<Arsenal>();   // the hero's weapon slots, ammo, crates and money (rules "arsenal"); nothing without the block
     arsenal_->setup(sim, *this, rulesJson);
     traffic_ = std::make_unique<Traffic>();   // city traffic (rules "traffic"); nothing without the block
@@ -460,6 +461,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         gs.roads.adj[size_t(ib)].push_back(uint16_t(ia));
     }
     gs.colliders.build(gs.grid.w, gs.grid.h);
+    mapPlaced_ = placed;
     setupRoutes(sim, map, placed);   // map "routes" / "screen" (RtsRoutes.cpp)
 
     // starting regions: explicit list, else regions containing the player's structures/start
@@ -1162,7 +1164,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
     if (cmd.type == kCmdScript) { script_->runCommand(sim, cmd); return; }   // rules "commands" (RtsScriptCommands.cpp)
     if (cmd.type == kCmdAutoBuild) { script_->callStd(sim, StdFn::AutoBuild, {cmd.player, cmd.param}); return; }   // lua/commands.lua
 
-    if (cmd.type == kCmdSend && hypnotisedFlagSend(sim, cmd)) return;   // agent-bw-ai: BW PointsHypnosis
+    if (cmd.type == kCmdSend && hypnotisedSend(sim, cmd)) return;   // send out of a hypnotised garrison
     std::vector<Entity> sel;
     if (cmd.type == kCmdSend && rules_.advancedEffects && hypnoticSend(sim, cmd)) return;   // a hypnotised garrison (RtsSkillObjects.cpp)
     for (Entity e : cmd.units) {

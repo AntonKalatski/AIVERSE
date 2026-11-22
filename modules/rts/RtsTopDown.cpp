@@ -7,6 +7,7 @@
 #include "RtsEncounters.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
+#include "RtsServiceState.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -279,6 +280,7 @@ void TopDown::hash(Simulation& sim, Hasher& h) const {
     for (auto& p : st->pilots) {
         h.u64(p.hero.packed()); h.u32(p.heroType); h.v3(p.home); h.u32(p.respawnAt);
         h.u64(uint64_t(topdown::pack(p.input))); h.u32(p.inputTick);
+        if (p.controlHeld) h.u32(1);
         h.v3(p.vel); h.u64(p.target.packed()); h.u32(p.retargetAt);
         if (!rules_.extended) continue;   // games without squads / escape / holds / windups keep their checksums
         h.i32(p.held); h.i32(p.heldAngle); h.u32(p.heldDir); h.i32(p.casting); h.u32(p.castAt);
@@ -296,7 +298,7 @@ void TopDown::io(Simulation& sim, Archive& a) {
     if (!a.writing() && n != st->pilots.size()) { a.fail(); return; }
     for (auto& p : st->pilots) {
         int64_t in = topdown::pack(p.input);
-        a(p.hero, p.heroType, p.home, p.respawnAt, in, p.inputTick, p.vel, p.target, p.retargetAt);
+        a(p.hero, p.heroType, p.home, p.respawnAt, in, p.inputTick, p.controlHeld, p.vel, p.target, p.retargetAt);
         if (!a.writing()) p.input = topdown::unpack(in);
         if (!rules_.extended) continue;   // the save layout of plain top-down games is unchanged
         a(p.held, p.heldAngle, p.heldDir, p.casting, p.castAt, p.castTarget, p.castPoint, p.escapeReadyAt);
@@ -315,9 +317,7 @@ bool TopDown::command(Simulation& sim, const Command& cmd) {
     if (!st || cmd.player == 0 || cmd.player >= st->pilots.size()) return true;
     TopDownPilot& p = st->pilots[cmd.player];
     if (cmd.type == kCmdTopDown) {
-        // Kingston door interaction owns movement until it ends or is cancelled.
-        auto door=m_->state(sim).trig.vars.find("drive_"+std::to_string(cmd.player)+"_phase");
-        if(door!=m_->state(sim).trig.vars.end()&&door->second.raw){p.inputTick=sim.tick();return true;}
+        if (p.controlHeld) { p.inputTick = sim.tick(); return true; }   // somebody else moves him (TopDownPilot::controlHeld)
         p.input = requantize(topdown::unpack(cmd.param));
         p.inputTick = sim.tick();
         return true;
@@ -723,10 +723,7 @@ void TopDown::tick(Simulation& sim) {
     for (size_t pl = 1; pl < st->pilots.size(); ++pl) {
         TopDownPilot& p = st->pilots[pl];
         if (!w.alive(p.hero) || w.get<Unit>(p.hero).hp.raw <= 0) { p.casting = -1; p.held = -1; continue; }
-        const auto& custodyVars=m_->state(sim).trig.vars;
-        auto held=custodyVars.find("police_custody_"+std::to_string(p.hero.packed()));
-        auto dead=custodyVars.find("police_dead_"+std::to_string(p.hero.packed()));
-        if((held!=custodyVars.end()&&held->second.raw)||(dead!=custodyVars.end()&&dead->second.raw)){p.input={};p.vel={};p.target=kNullEntity;continue;}
+        if (w.has<InCustody>(p.hero) || w.has<StandIn>(p.hero)) { p.input = {}; p.vel = {}; p.target = kNullEntity; continue; }   // held (RtsServiceState.h)
         if (m_->driving() && m_->driving()->isDriving(sim, p.hero)) continue;   // at the wheel: RtsDriving.cpp reads the stick
         if (rules_.extended) tickCasts(sim, p);
         moveHero(sim, p);

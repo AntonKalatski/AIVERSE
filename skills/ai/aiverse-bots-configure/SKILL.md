@@ -5,7 +5,7 @@ description: Configure the computer player of an AIVERSE game through MCP - rule
 
 # Configure bots
 
-Game-data work through the engine MCP; no engine code. Native host integration of `RtsBot` presets is `skills/ai/rts-bots-rts`.
+Game-data work through the engine MCP; no engine code. Native host integration of `RtsBot` presets is `skills/ai/aiverse-bots-commander`.
 
 ## 0. Pick the controller
 

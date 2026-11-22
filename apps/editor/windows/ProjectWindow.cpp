@@ -21,9 +21,9 @@ public:
     const char* dockArea() const override { return "bottom"; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            ImGui::TextWrapped("%s",genreText(ed.ws(),"fps.editor.hint").c_str());
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+        if(ed.ws().project.worldSpaceMaps()) {
+            ImGui::TextWrapped("%s",engineText(ed.ws(),"fps.editor.hint").c_str());
+            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
             return;
         }
         auto& ws = ed.ws();

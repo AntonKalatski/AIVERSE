@@ -999,7 +999,7 @@ paths can continue using the existing generic callback.
 
 `PostFrame` now carries the camera's actual projection near/far
 planes and perspective/orthographic mode. The renderer populates
-these from its `RTSCamera`; orthographic near/far match its
+these from its `Camera`; orthographic near/far match its
 explicit -200..1000 projection.
 
 `motionBlur` adds two optional settings:
@@ -1965,14 +1965,14 @@ The effect adds two optional float parameters:
 
 **C++ camera contract:** Call `setViewId(id)`, then
 `applyCameraVolumes(stack, camera.eye())`, then
-`RTSCamera renderCamera = prisma.jitteredCamera(camera,w,h)` immediately
+`Camera renderCamera = prisma.jitteredCamera(camera,w,h)` immediately
 **before** `renderer.beginScene(renderCamera,w,h)`. `jitteredCamera`
 returns a copy and never mutates `camera` itself: keep the original
-`RTSCamera` for mouse picking, editor gizmos, UI, and touch input.
+`Camera` for mouse picking, editor gizmos, UI, and touch input.
 The standard GameClient, Editor Scene and Editor Game rendering paths
 have been updated to follow this sequence. ShaderGraph, FX and native
 preview owners may opt in separately. The real render projection uses
-`RTSCamera::jitter`, and the renderer's shadow-camera strips jitter
+`Camera::jitter`, and the renderer's shadow-camera strips jitter
 already, avoiding artificial shadow-map projection shifts.
 
 **Shader behavior:** Each view ID maintains its own 8-step Halton (2,3)
@@ -4202,3 +4202,84 @@ without disabling NEREID underwater absorption. See [parameters and host contrac
 NEREID supplies read-only camera immersion; PRISMA owns bounded per-view wetness,
 post-exit drainage/drying and the shared GLSL/MSL composite. This is a screen-space
 approximation; see the separate stage handoff for actual GPU/test coverage.
+
+## Per-view physical-lens defocus (LENS P2, stage 96)
+
+`Prisma::setViewDepthOfField(viewId, DepthOfFieldOverride{enabled, focusDistance,
+focusRangeMeters, maxBlur})` replaces the metric focus plane, sharp interval and
+maximum blur of the **authored** `depthOfField` effect for one stable view, in the
+same way `setViewManualExposure` overrides the authored exposure. The override
+forces the metric (camera-linear) branch and keeps the effect's `intensity` and
+`occlusionToleranceMeters`. `enabled=false` switches defocus off for that view.
+Values are clamped to the catalog bounds on ingress; `clearViewDepthOfField` and
+`retireView` remove the override. It still requires the authored effect; nothing is added to the profile
+implicitly.
+
+LENS drives it from `CameraLensComponent::driveDepthOfField` through
+`CameraPostFxPool`: the thin-lens sharp interval `[near, far]` becomes
+`focusDistance = (near+far)/2`, `focusRangeMeters = far-near` (an infinite far limit
+is capped at 500 m) and `maxBlur` = background disc radius at infinity in render
+pixels (clamped to 16). This is the same 8-tap screen-space defocus, not a physical
+bokeh. See `docs/handoffs/prisma-stage-96-lens-physical-dof.md`.
+
+## Stage 67 — Depth of Field and Motion Blur as regular effects (2026-11-21)
+
+`depthOfField` and `motionBlur` no longer need `AIVERSE_PRISMA_DOF=1` /
+`AIVERSE_PRISMA_MOTION_BLUR=1`: they run whenever a camera profile lists them
+(enabled, quality at least the effect's `minQuality`, which defaults to High;
+Motion Blur still needs an HDR scene). The variables remain as kill switches:
+`=0` turns the pass off. One helper (`prismaOptIn` in `Prisma.cpp`) decides this
+for the render passes, the object-velocity request and the effect report.
+Temporal resolve, auto exposure and the graph passes keep their `=1` opt-ins.
+
+GPU acceptance on the real backends: `prisma_dof_gpu` / `prisma_motion_gpu`
+(Metal), `_gl` (macOS GL), `_vulkan` (headless Vulkan host). The test renders the
+default HDR scene and measures frame sharpness (mean squared luminance step): DoF
+focused on the scene keeps it, focus near the camera softens it by at least 40%; a
+turning camera with motion blur is at least 20% softer than the same turn without, a still camera with blur stays within 5% of no effect; every
+effect phase must report `encoded`. Handoff: `docs/handoffs/prisma-stage-67.md`.
+
+## Stage 97 — AO, SSR, lens flare + dirt, SMAA, lens distortion, streaks, halation, heat haze, FSR 1, DLSS route, histogram metering, stylization (2026-11-22)
+
+Ten new catalog effects, one new Auto Exposure mode and six stylization presets.
+All are data (`postfx.effects`, camera volumes, MCP `postfx_*`, the editor window),
+GLSL + MSL from one body, quality-tiered, reported per view by `effectReport`.
+Shaders of the multi-pass effects live in `engine/render/PrismaShadersExtra.h`
+(shared uniform block `ExtraU`: view-projection, its inverse, camera, `p0..p3`).
+
+| Effect | Runs | Passes / where | Notes |
+|---|---|---|---|
+| `ambientOcclusion` | Medium+ | AO buffer at size/2 (directions x steps per `aoPlan`), 9-tap depth-aware upsample + apply | normals reconstructed from depth; world radius, `maxPixels` cap, `maxDistance` fade, occlusion colour |
+| `screenSpaceReflections` | High | 1 full-size pass | depth-buffer ray march in world space + binary refine; surfaces chosen by reconstructed normal (`minNormalY`), Schlick fresnel, edge/distance fade, cheap `roughness` |
+| `lensFlare` | Medium+ | bright pass, ghosts + halo, blur at size/4 (High: /2) | composite adds it before tone mapping; `dirt` multiplies flare **and bloom** by a dirt texture (`dirtTexture`, PNG) or procedural smudges |
+| `smaa` | Medium+ | edges, weights, blend after the composite (display-referred) | SMAA 1x (luma edges, orthogonal search, corner rounding; no diagonals), lookup textures `third_party/smaa` (MIT); replaces FXAA when both are listed |
+| `lensDistortion` | Low+ | composite | barrel (+) / pincushion (-), Panini (half-FOV from the frame's inverse view-projection), zoom `scale`, chromatic fringe; black outside |
+| `anamorphicStreaks` | Medium+ | bright pass + 3–4 horizontal blurs at w/4 x h/8 | tinted streaks added before tone mapping |
+| `halation` | Medium+ | bright pass + separable blur at size/2 | warm glow around bright edges |
+| `heatHaze` | Low+ | composite | animated refraction (`amplitude` px, `scale`, `speed`, `screenTop`); plus up to 4 shockwave rings per view from `Prisma::setShockwaves(viewId, waves)` (world centre, radius, thickness, strength) |
+| `fsr` | Medium+ | EASU + RCAS after the composite | AMD FSR 1 port (MIT, `third_party/fsr`). The host must call `renderSizeForOutput` before `beginScene` (client, editor do); the composite then runs at internal size, EASU upscales the display-referred image, RCAS sharpens. Temporal / external upscaling take priority |
+| `dlss` | High, HDR | external upscaler | `Prisma::setExternalUpscaler(std::shared_ptr<PrismaExternalUpscaler>)`. Prisma provides HDR colour, depth, velocity, jitter (Halton 2,3), the output target (storage on Vulkan) and the reset flag. `engine/render/PrismaDlss.h`: NVIDIA NGX provider, built only with `-DAIVERSE_DLSS_SDK_DIR=<DLSS SDK>` on Windows + Vulkan (proprietary SDK, never vendored); the game client registers it automatically. Without a provider the effect reports why and FSR / temporal / bilinear are used |
+
+`autoExposure` gains `histogram` (+ `histogramLow`, `histogramHigh`): the first
+pyramid level that fits 64 x 64 is binned into 64 log-luminance bins (between
+`minMeterLogL` and `maxMeterLogL`), and only the weight between the two
+percentiles is averaged. The adapt pass is unchanged. Old profiles keep the
+log-average meter.
+
+Shader Graph `postfx` gains `sceneColor` (the scene at any screen uv,
+display-referred: exposure, ACES, sRGB; not auto exposure or grading) and may set
+`sampleBudget` up to 16. Stylization presets generated by
+`tools/prisma/make_style_presets.py` into `engine/render/PrismaStylePresets.h`:
+`toon`, `sketch`, `crt`, `scanlines`, `dither`, `kuwahara`; new presets `lens`
+(flare + dirt, streaks, halation, slight distortion) and `realistic` (AO, SSR,
+SMAA, bloom). Edit the generator, not the header (`prisma_style_presets_fresh`).
+
+RHI: `gfx::Device::nativeVulkanContext / nativeVulkanImage /
+nativeVulkanImageBarrier` and `gfx::vulkanExtensionRequests()` (opt-in vendor
+access; other backends return false).
+
+Tests: `prisma_new_effects` (GPU-free catalog/plans/cost/presets/shader contracts),
+`prisma_<fx>_gpu` / `_gl` / `_vulkan` for `ao ssr flare smaa distort streaks
+halation haze fsr histogram` (phase 0 without, phase 1 with the effect; it must be
+encoded and change the frame in its direction), `prisma_style_presets_fresh`.
+Handoff: `docs/handoffs/prisma-stage-97-new-effects.md`.

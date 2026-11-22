@@ -1,6 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CAMetalLayer.h>
-#include "apps/studio-native/mac/StudioMetalScene.h"
+#include "apps/studio-native/StudioScene.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include <filesystem>
 #include <fstream>
@@ -18,7 +18,7 @@ int aiverseMain(int argc,char** argv) { @autoreleasepool {
         CAMetalLayer* layer=[CAMetalLayer layer];layer.framebufferOnly=NO;
         window.contentView.wantsLayer=YES;window.contentView.layer=layer;
         [window orderFront:nil];
-        studio::StudioMetalScene scene((__bridge void*)layer);
+        studio::StudioScene scene(gfx::createMetalDevice((__bridge void*)layer));
         editor::MapDoc doc;doc.reset(8,8);
         // This GPU fixture explicitly authors a legacy terrain receiver.
         doc.data.extra.set("terrainPresentation",Json::string("legacy"));
@@ -99,6 +99,21 @@ int aiverseMain(int argc,char** argv) { @autoreleasepool {
         if(scene.lightingStatus().find("Material preview")!=std::string::npos)
             throw std::runtime_error("scene status not restored");
         std::cout<<"Negative-coordinate FPS and material transition PASS\n";
+        // Interactive viewport: an unchanged scene is not redrawn; a camera or
+        // document change is drawn on the next frame.
+        scene.setContinuousRedraw(false);
+        for(int i=0;i<400 && scene.framesSkipped()==0;++i){frame();std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+        if(scene.framesSkipped()==0)throw std::runtime_error("idle viewport never skipped a frame: "+scene.lightingStatus());
+        {
+            const auto drawn=scene.framesDrawn(),skipped=scene.framesSkipped();
+            frame();frame();
+            if(scene.framesDrawn()!=drawn || scene.framesSkipped()!=skipped+2)throw std::runtime_error("idle frames redrawn");
+            scene.orbit(.05f,0);frame();
+            if(scene.framesDrawn()!=drawn+1)throw std::runtime_error("camera change not redrawn");
+            doc.touched();frame();
+            if(scene.framesDrawn()!=drawn+2)throw std::runtime_error("document change not redrawn");
+        }
+        std::cout<<"Idle frame skipping PASS\n";
         std::cout<<"Studio Metal lighting PASS\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Studio Metal lighting FAIL: "<<e.what()<<"\n";return 1;}
 } }

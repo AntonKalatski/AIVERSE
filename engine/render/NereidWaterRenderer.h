@@ -14,7 +14,8 @@ namespace aiverse::render {
 // tints the wave surface toward foam; shader animates normals/reflections.
 inline uint32_t nereidWaterVertexColor(
         const lib::nereid::WaterSurfaceVertex& vertex,
-        const lib::nereid::WaterSurfaceStyle& style={}) {
+        const lib::nereid::WaterSurfaceStyle& authored={}) {
+    const auto style=lib::nereid::resolvedWaterOptics(authored);
     const float foam=std::clamp(vertex.shore*style.foamStrength,0.0f,1.0f);
     auto channel=[foam](float deep,float rim) {
         const float x=std::clamp(deep+(rim-deep)*foam,0.0f,1.0f);
@@ -38,6 +39,8 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
            std::isfinite(s.rapidNoiseScale)&&
            std::isfinite(s.rapidFoamR)&&std::isfinite(s.rapidFoamG)&&
            std::isfinite(s.rapidFoamB)&&
+           std::isfinite(s.turbidity)&&s.turbidity>=0.f&&s.turbidity<=1.f&&
+           std::isfinite(s.siltR)&&std::isfinite(s.siltG)&&std::isfinite(s.siltB)&&
            s.opacity>0 && s.opacity<0.99f &&
            s.specular>=0.85f && s.specular<=1.f &&
            s.foamStrength>=0 && s.foamStrength<=1 &&
@@ -80,6 +83,7 @@ inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
         const std::array<float4,16>& wakeShapes={},
         float4 wind={},float4 hydraulics={},NereidFlowBinding flow={}) {
     if(mesh.indexCount==0 || !validNereidWaterStyle(style))return;
+    style=lib::nereid::resolvedWaterOptics(style);
     renderer.drawNereidRippleMesh(mesh,transform,
                       {style.absorption,style.shoreFoamDepth,
                        style.depthTint,style.opacity},

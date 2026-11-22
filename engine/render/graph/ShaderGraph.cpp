@@ -15,7 +15,11 @@ bool supports(const Op& op, const std::string& domain) {
 }
 const std::vector<Op>& catalog() {
     static const std::vector<Op> ops = {
-        {"constant",0},{"parameter",0},{"uv",0},{"input",0,7,false},{"texture",1,7,false},{"sampleTexture",1,7,false},{"sampleTextureLod",2,1,true},
+        {"constant",0},{"parameter",0},{"uv",0},{"input",0,7,false},{"texture",1,7,false},
+        // postfx only: display-referred scene colour at a screen uv (exposure, tone mapping
+        // and sRGB applied like the composite; colour grading is not). Lets neighbourhood
+        // filters (outlines, Kuwahara, CRT) work the same in HDR and LDR frames.
+        {"sceneColor",1,2,false},{"sampleTexture",1,7,false},{"sampleTextureLod",2,1,true},
         // Material-only fragment node. Renderer assigns two free slots
         // for physical atlas/page table (no separate graph source path).
         {"sampleVirtualTexture",1,1,false},
@@ -72,8 +76,18 @@ Program compile(const Json& g, const std::string& expected) {
             }
         }
     }
+    // Default 128 nodes. Layered material graphs (Terra detail with
+    // anti-tiling) may opt into up to 192, like the material sampleBudget.
+    size_t nodeBudget=128;
+    if(g.has("nodeBudget")) {
+        const auto& budget=g["nodeBudget"];
+        if(p.domain!="material" || !budget.isNumber() ||
+           budget.toDouble()!=budget.integer() || budget.integer()<1 || budget.integer()>192)
+            fail("nodeBudget must be an integer 1..192 for material graphs only");
+        nodeBudget=size_t(budget.integer());
+    }
     const auto& ns = g["nodes"];
-    if (!ns.isArray() || ns.size() == 0 || ns.size() > 128) fail("expected 1..128 nodes");
+    if (!ns.isArray() || ns.size() == 0 || ns.size() > nodeBudget) fail("expected 1.."+std::to_string(nodeBudget)+" nodes");
     std::map<std::string,size_t> ids;
     for (size_t i=0;i<ns.size();++i) {
         const auto& n=ns[i]; const auto id=n.getStr("id");
@@ -140,6 +154,8 @@ Program compile(const Json& g, const std::string& expected) {
                     else {if(!v.isArray()||v.size()!=4)fail("constant/parameter value must be a number or RGBA array");e=vec+"("+number(v[0])+","+number(v[1])+","+number(v[2])+","+number(v[3])+")";}
                 } else if(op=="sampleVirtualTexture") {
                     e="SG_SAMPLE_VIRTUAL("+arg(0)+".xy)";
+                } else if(op=="sceneColor") {
+                    e="SG_SCENE("+arg(0)+".xy)";
                 } else if(op=="texture" || op=="sampleTexture" || op=="sampleTextureLod") {
                     std::string sample="SG_SAMPLE";
                     if(op=="sampleTexture" || op=="sampleTextureLod")sample=std::string(op=="sampleTextureLod"?"SG_TEXTURE_LOD":"SG_TEXTURE")+std::to_string(std::find(p.textures.begin(),p.textures.end(),n.getStr("texture"))-p.textures.begin());
@@ -160,7 +176,7 @@ Program compile(const Json& g, const std::string& expected) {
     for(const auto& n:ns.items()) {
         const auto op=n.getStr("op");
         if(op=="texture" || op=="sampleTexture" || op=="sampleTextureLod" ||
-           op=="sampleVirtualTexture") ++p.samples;
+           op=="sampleVirtualTexture" || op=="sceneColor") ++p.samples;
         if(op=="constant" || op=="parameter") {
             const auto& v=n["value"];if(v.isNumber())number(v);else {if(!v.isArray()||v.size()!=4)fail("constant/parameter value must be RGBA");for(auto& c:v.items())number(c);}
         }
@@ -168,9 +184,10 @@ Program compile(const Json& g, const std::string& expected) {
     int sampleBudget=8;
     if(g.has("sampleBudget")) {
         const auto& budget=g["sampleBudget"];
-        if(p.domain!="material" || !budget.isNumber() ||
+        // postfx graphs may also raise it (neighbourhood filters: Kuwahara, outlines).
+        if(p.domain=="particle" || !budget.isNumber() ||
            budget.toDouble()!=budget.integer() || budget.integer()<1 || budget.integer()>16)
-            fail("sampleBudget must be an integer 1..16 for material graphs only");
+            fail("sampleBudget must be an integer 1..16 for material and postfx graphs");
         sampleBudget=int(budget.integer());
     }
     if(p.samples>sampleBudget) fail("texture sample budget exceeded");

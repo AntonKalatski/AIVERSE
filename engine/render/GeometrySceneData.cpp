@@ -8,7 +8,15 @@ void path(const std::string& s){if(s.empty()||s.front()=='/'||s.find(':')!=std::
 }
 void GeometryScene::validate(const Json& j){
     if(!j.isObject()||j.getInt("version")!=1||!j["instances"].isArray()||j["instances"].size()>4096)throw std::runtime_error("geometry scene: version 1 and up to 4096 instances required");
-    for(auto& [k,v]:j.members())if(k!="version"&&k!="instances"&&k!="hlod")throw std::runtime_error("geometry scene: unknown key '"+k+"'");
+    for(auto& [k,v]:j.members())if(k!="version"&&k!="instances"&&k!="hlod"&&k!="strata")throw std::runtime_error("geometry scene: unknown key '"+k+"'");
+    // Opt-in STRATA virtual geometry for this scene (presentation only).
+    const auto& st=j["strata"];
+    if(!st.isNull()){
+        if(!st.isObject())throw std::runtime_error("geometry scene: strata must be object");
+        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
+        if(st.has("enabled")&&st["enabled"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.enabled must be boolean");
+        number(st,"hysteresis",0,.45);
+    }
     const auto& h=j["hlod"];
     if(!h.isNull()){
         if(!h.isObject())throw std::runtime_error("geometry scene: hlod must be object");
@@ -19,9 +27,14 @@ void GeometryScene::validate(const Json& j){
     std::set<std::string> ids;
     for(auto& i:j["instances"].items()){
         if(!i.isObject())throw std::runtime_error("geometry scene: instance must be object");
-        for(auto& [k,v]:i.members())if(k!="id"&&k!="model"&&k!="position"&&k!="rotation"&&k!="scale"&&k!="geometry"&&k!="proxy")throw std::runtime_error("geometry scene: unknown instance key '"+k+"'");
+        for(auto& [k,v]:i.members())if(k!="id"&&k!="model"&&k!="position"&&k!="rotation"&&k!="scale"&&k!="geometry"&&k!="proxy"&&k!="layers")throw std::runtime_error("geometry scene: unknown instance key '"+k+"'");
         if(i.getStr("id").empty()||!ids.insert(i.getStr("id")).second)throw std::runtime_error("geometry scene: unique nonempty instance id required");
         path(i.getStr("model"));parseGeometryPolicy(i["geometry"]);
+        if(i.has("layers")){
+            const auto& l=i["layers"];const double v=l.isNumber()?l.toDouble():0;
+            if(!(v>=1&&v<=4294967295.0)||v!=std::floor(v))throw std::runtime_error("geometry scene: 'layers' must be a nonzero 32-bit layer mask");
+            if(j["hlod"].getBool("enabled")&&v!=1)throw std::runtime_error("geometry scene: instance 'layers' needs hlod off (HLOD proxies merge instances)");
+        }
         if(i.has("proxy")){
             const auto& p=i["proxy"];if(!p.isObject())throw std::runtime_error("geometry scene: proxy must be object");
             for(auto& [k,v]:p.members())if(k!="model"&&k!="maxPixels")throw std::runtime_error("geometry scene: unknown proxy key '"+k+"'");

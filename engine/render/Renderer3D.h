@@ -8,7 +8,10 @@
 #include "Geometry.h"
 #include <algorithm>
 #include <array>
+#include <array>
+#include <span>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <utility>
 #include <string>
@@ -33,6 +36,7 @@
 #include "GpuSceneDrawCommands.h"
 #include "RenderDeviceLifetime.h"
 #include "GpuProgramRetirement.h"
+#include "WindRigShader.h"
 #include <memory>
 #include <utility>
 #include <map>
@@ -306,6 +310,22 @@ struct ModelDraw {
     float4 vertexParameters{0, 0, 0, 0};
     // Bounded vertexOffset (metres), zero means unknown displacement.
     float maxVertexOffsetMetres = 0;
+    // Host-chosen level of every node's MeshDef::lods chain (0 = base mesh,
+    // n = lods[n-1], clamped). Skips projected-size selection and crossfade;
+    // used by hosts with their own distance tiers (TerraWeave FloraView).
+    // -1 = renderer picks by projected size.
+    int lodLevel = -1;
+    // Opt-in full ModelVertex (60 bytes) dynamic GPU stream for THIS instance.
+    // Bind only on the same gfx::Device, after compute submission and before
+    // render passes. Owner keeps resource alive through all colour/shadow draws.
+    // Experimental path: Metal dedicated per-model buffers only; no pooled
+    // geometry, GPU ICB/MDI, instancing, LOD or legacy shader morph blending.
+    gfx::BufferHandle vertexOverride{};
+    uint32_t vertexOverrideCount = 0;
+    // Visibility layers (bit set) of this draw. A camera draws it only when
+    // (layers & Renderer3D::visibilityMask()) != 0; skipped draws also cast
+    // no shadow in that view. Default layer 0 (bit 1).
+    uint32_t layers = 1;
 };
 
 enum DrawFlags : uint32_t {
@@ -493,6 +513,11 @@ public:
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
     void setShadowBounds(float3 lo, float3 hi) { shadowBoundsMin_=lo; shadowBoundsMax_=hi; hasShadowBounds_=true; }
     void clearShadowBounds() { hasShadowBounds_=false; }
+    // Scoped capture override: one shared light frustum for every face of a
+    // cubemap (or any view set) so shadows meet at the face seams.
+    struct ShadowBoundsState { bool set=false; float3 lo{}, hi{}; };
+    ShadowBoundsState shadowBoundsState() const { return {hasShadowBounds_, shadowBoundsMin_, shadowBoundsMax_}; }
+    void restoreShadowBounds(const ShadowBoundsState& s) { shadowBoundsMin_=s.lo; shadowBoundsMax_=s.hi; hasShadowBounds_=s.set; }
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
@@ -515,12 +540,33 @@ public:
                (shadowMap_.valid() && shadowSize_==size);
     }
     ShadowQuality shadowQuality() const { return quality_; }
+    // Mobile GPUs: Medium / High filter the sun shadow with a fixed 8 / 12-tap disk instead of the
+    // 64 / 128-tap stable disk (4 fetches each); the blocker search stays. Set by touch-device hosts.
+    void setMobileShadowFilter(bool on) { mobileShadowFilter_ = on; }
+    // GL hosts that set gfx::Device::setGlslPrelude("#define AIVERSE_HW_SHADOW ...") before init:
+    // the lit shaders read the shadow map through a compare sampler (Shaders.h). Call before init.
+    void setHardwareShadowCompare(bool on) { hwShadowCompare_ = on; }
+    bool hardwareShadowCompare() const { return hwShadowCompare_; }
+    // The sun shadow map for the lit shaders' slot (a compare view with hardwareShadowCompare).
+    void bindShadowMap(int slot);
+    bool mobileShadowFilter() const { return mobileShadowFilter_; }
+    // Mobile Low: hosts draw units without casting into the shadow map (contact blobs instead).
+    // AIVERSE_UNIT_SHADOWS=1 keeps them casting.
+    bool blobUnitShadows() const {
+        static const bool keep = [] { const char* e = std::getenv("AIVERSE_UNIT_SHADOWS"); return e && *e == '1'; }();
+        return mobileShadowFilter_ && quality_ == ShadowQuality::Low && !keep;
+    }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     // Shader presentation clock only; never changes simulation/current velocity.
     // Negative resumes the steady clock. Set before beginScene on the render thread.
     void setPresentationTime(float seconds);
     void beginScene(const Camera3D& cam, int fbW, int fbH);
+    // Camera layer mask for model draws of the current view (LENS
+    // CameraComponent::visibilityMask). beginScene resets it to all layers;
+    // set it after beginScene. Meshes, sprites and terrain ignore it.
+    void setVisibilityMask(uint32_t mask) { visibilityMask_ = mask; }
+    uint32_t visibilityMask() const { return visibilityMask_; }
     // Before render only: drop borrowed packets/callbacks of a failed host
     // preparation before destroying its private CPU owners. No RHI work.
     void discardSceneSubmission() noexcept;
@@ -703,6 +749,16 @@ public:
     // before starting another draw submission; no GPU resources are owned here.
     void invalidateStaticModelCache(uint64_t persistentId);
     void invalidateModelCachesFor(const Model* model);
+    // Hierarchical wind masks (WindRigShader.h). Scene wind drives every
+    // rigged draw that does not supply its own vertexParameters; the debug
+    // view (editors only) recolours rigged materials by part/depth/weight.
+    void setSceneWind(const wind::SceneWind& value) { sceneWind_ = value; }
+    const wind::SceneWind& sceneWind() const { return sceneWind_; }
+    void setWindRigDebugView(wind::WindDebugView view) {
+        if (view != windDebugView_) windDebugMaterials_.clear();
+        windDebugView_ = view;
+    }
+    wind::WindDebugView windRigDebugView() const { return windDebugView_; }
     // Drop one shared material-owner signature before its native source is
     // replaced or destroyed. Existing packets automatically rebuild when the
     // owner returns with a new signature serial; other owners are unaffected.
@@ -727,6 +783,97 @@ public:
         s.retainedBytes = staticRenderPacketBytes_;
         return s;
     }
+    // Frame-local provenance of Renderer3D's ACTUAL drawModel geometry/LOD
+    // decisions, taken after a source model was submitted to this scene.
+    // It is pre-render submission data, NOT proof an eventual draw passed
+    // GPU occlusion or pipeline compilation. Never cache pointers across
+    // beginScene, asset republish or Device resource retirement.
+    struct ModelViewPrimitive {
+        const Model* model=nullptr;
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0; // one renderer drawModel() instance
+        uint32_t firstIndex=0,indexCount=0;
+        gfx::BufferHandle vertexOverride{};
+        uint32_t vertexOverrideCount=0;
+        bool visible=false,colourCandidate=false;
+        bool gpuLodConditional=false,lodFade=false,batched=false;
+        bool alternativeMeshLod=false;
+        bool skinning=false,baked=false,shaderVertexOffset=false;
+        bool translucent=false; // real colour-pass tint/material/flag classification
+        bool customGpuStream=false;
+        // Stage 7BA: exact sampled Mask state used by the normal colour
+        // draw. No raw Material* escapes the frame. A later model/material
+        // hot-reload must NOT silently alter VIVID's alpha/depth source.
+        bool maskedMaterial=false,maskVertexColors=true;
+        gfx::TextureHandle maskBaseTexture{};
+        float maskAlpha=1.f,maskCutoff=.5f,maskUvRotation=0.f;
+        float2 maskUvOffset{0,0},maskUvScale{1,1};
+        mat4 world{};
+    };
+    struct ModelViewProvenance {
+        uint64_t frameSerial=0;
+        bool hasModel=false;
+        bool complete=false; // false if renderer source view is unsuitable
+        std::vector<ModelViewPrimitive> primitives;
+    };
+    // Source-owned introspection; no cached parallel picking scene database.
+    // Does not dereference async data or issue RHI operations.
+    ModelViewProvenance modelViewProvenance(const Model& model) const;
+    // Stage 7AW: opt-in, frame-local record of *encoded main-colour*
+    // indexed commands, not an extrapolation from staged ModelItems.
+    // Only one queried model is tracked, avoiding a per-world audit cost.
+    enum class ModelSubmissionKind : uint8_t {
+        Direct, DirectInstanced, IndexedIndirect, GpuIndirect, GpuIcb
+    };
+    struct ModelSubmittedPrimitive {
+        ModelViewPrimitive source{};
+        ModelSubmissionKind kind=ModelSubmissionKind::Direct;
+        uint8_t phase=0; // 1 opaque main, 2 blended, 4 transparent depth
+        gfx::PipelineHandle pipeline{};
+    };
+    struct ModelSubmissionProvenance {
+        uint64_t frameSerial=0;
+        bool mainPassEncoded=false;
+        bool truncated=false;
+        std::vector<ModelSubmittedPrimitive> commands;
+    };
+    // Stage 7BA: at most 1 selected model + 4 candidate blockers.
+    // Opt-in bounded, frame-local diagnostics; no global scene registry.
+    // The producer supplies candidate model identities before staging
+    // draws. Every unique pointer is borrowed only through this frame.
+    static constexpr std::size_t kMaxTrackedSubmissionModels=5u;
+    void trackModelSubmissionsMany(
+        std::span<const Model* const> models) noexcept {
+        trackedModelCount_=0;
+        for(auto& model:trackedModels_)model=nullptr;
+        modelSubmitted_.clear();
+        modelSubmissionTruncated_=
+            modelDrawInvocation_!=0 || modelSubmissionMainEncoded_ ||
+            models.empty() || models.size()>trackedModels_.size();
+        if(modelSubmissionTruncated_)return;
+        for(const auto* model:models) {
+            if(!model) {
+                modelSubmissionTruncated_=true;
+                return;
+            }
+            for(std::size_t i=0;i<trackedModelCount_;++i)
+                if(trackedModels_[i]==model) {
+                    modelSubmissionTruncated_=true;
+                    return;
+                }
+            trackedModels_[trackedModelCount_++]=model;
+        }
+    }
+    // Compatible with existing 7AW single and 7AZ paired callers.
+    void trackModelSubmissions(const Model* model,
+                               const Model* occluder=nullptr) noexcept {
+        const std::array<const Model*,2> models{{model,occluder}};
+        trackModelSubmissionsMany(
+            std::span<const Model* const>(models.data(),
+                                        occluder?2u:1u));
+    }
+    ModelSubmissionProvenance modelSubmissionProvenance(
+        const Model& model) const;
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -1479,6 +1626,11 @@ public:
     void bindBakedTerrain(int uniformSlot, int lightmapSlot, int maskSlot);
 
 private:
+    wind::SceneWind sceneWind_{};
+    wind::WindDebugView windDebugView_ = wind::WindDebugView::Off;
+    struct WindDebugMaterials { uint64_t revision = 0; size_t count = 0; std::vector<Material> materials; };
+    std::unordered_map<const void*, WindDebugMaterials> windDebugMaterials_;
+    bool applyWindRig(const ModelDraw& d);
     struct DrawItem {
         const Mesh* mesh; mat4 model; float4 color;
         uint32_t flags; float specular, emissive;
@@ -1494,6 +1646,14 @@ private:
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
         int32_t materialIndex = -1; // remap material pointers on packet replay
+        // Captured at selection time, before colour/LOD batching. Stores
+        // real renderer-selected mesh and source primitive ordinals.
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0;
+        uint32_t vertexOverrideCount=0;
+        bool displacedVertexSource=false;
+        // Full per-instance ModelVertex buffer; empty for the legacy path.
+        gfx::BufferHandle vertexOverride{};
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
         // Copied by value from a transient ModelDraw into this frame's
@@ -1519,7 +1679,7 @@ private:
         float dissolve, teamGlow;
         float lodThreshold=1; bool lodInvert=false;
         float4 outline;
-        int32_t morph;      // offset into morphData_ (8 weights), -1 = none
+        int32_t morph;      // offset into morphData_ (sparse weights + channels + count), -1 = none
         int16_t lmPage = -1;  // baked lightmap page (anim = uv2 scale / offset), -1 = none
         uint8_t gi = 0;       // 0 realtime ambient, 1 lightmap, 2 light probes
         const std::vector<Material>* paletteMaterials = nullptr;
@@ -1537,6 +1697,9 @@ private:
     void retireModelPrograms();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
                                       bool gpuInstances = false, bool instancePalette = false);
+    void recordModelSubmission(const ModelItem& item,int phase,
+                               ModelSubmissionKind kind,
+                               gfx::PipelineHandle pipeline);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
                         bool submit = true, bool gpuInstances = false,
                         bool instancePalette = false);
@@ -1605,6 +1768,11 @@ private:
     bool hasShadowBounds_ = false;
     float3 shadowBoundsMin_{}, shadowBoundsMax_{};
     ShadowQuality quality_ = ShadowQuality::Medium;
+    bool mobileShadowFilter_ = false;
+    bool hwShadowCompare_ = false;
+    gfx::TextureViewHandle shadowCompareView_{};
+    uint32_t shadowCompareViewFor_ = 0;
+    gfx::SamplerHandle shadowCompareSampler_{};
     std::vector<DrawItem> items_;
     std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;
@@ -1912,6 +2080,12 @@ private:
     gfx::ShaderHandle objectMotionReactiveBakedShader_;
     gfx::PipelineHandle objectMotionReactiveBakedPipeline_;
 
+    uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
+    std::array<const Model*,kMaxTrackedSubmissionModels> trackedModels_{};
+    std::size_t trackedModelCount_=0;
+    std::vector<ModelSubmittedPrimitive> modelSubmitted_;
+    bool modelSubmissionTruncated_=false;
+    bool modelSubmissionMainEncoded_=false;
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
@@ -2053,9 +2227,10 @@ private:
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
     // One-view borrowed atlas; beginScene drops it before the next view.
-    // U6 (three float4): origin+inverseSpacing, dimensions, ring offset=0.
+    // U6 (nine float4, GiDynamicShaders.h): per cascade origin+1/spacing,
+    // dimensions+probe offset, ring(+cascade count in cascade 0).
     gfx::TextureHandle dynamicGiAtlas_{};
-    std::array<float,12> dynamicGiUniforms_{};
+    std::array<float,36> dynamicGiUniforms_{};
     gfx::PipelineHandle currentPipe_;
     std::string modelError_;
     // baked lighting (Renderer3DBaked.cpp)
@@ -2068,6 +2243,7 @@ private:
     bool suppressGeometryTap_=false;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
+    uint32_t visibilityMask_ = ~0u;
 };
 
 } // namespace aiverse::render

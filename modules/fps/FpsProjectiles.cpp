@@ -1,7 +1,6 @@
-// FPS projectile collision/damage adapter with a single deterministic solver
-// invoked from either direct ProjectileRuntime ECS ownership or legacy vectors.
+// FPS programmed projectiles (projectile programs: homing, split, bounce, pierce) over Projectile entities.
 #include "FpsModule.h"
-#include "libraries/include/aiverselib/genre/EcsSweepQuerySystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsSweepQuerySystems.h"
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -24,14 +23,16 @@ bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
         struct Candidate {Entity id;Vec3 centre;world::Bounds bounds;};
         auto candidates=[&](){
             std::vector<Candidate> out;
-            for(const auto& actor:state_.actors){
+            const auto poses=livePoses(sim);
+            const uint8_t ownerTeam=poses[p.owner-1].team;
+            for(const auto& actor:poses){
                 const Entity id{actor.slot,actor.life};
                 if(actor.slot==p.owner||actor.health<=0||projectile::seen(s,id))continue;
-                if(!config_.friendlyFire&&actor.team==state_.actors[p.owner-1].team)continue;
+                if(!config_.friendlyFire&&actor.team==ownerTeam)continue;
                 auto bounds=actorBounds(actor,config_.motor);
                 out.push_back({id,(bounds.min+bounds.max)/2_fx,bounds});
             }
-            for(const auto& v:state_.vehicles)if(v.health>0&&v.driver!=p.owner){
+            for(const auto& v:vehicles(sim))if(v.health>0&&v.driver!=p.owner){
                 const Entity id{201u+v.id,0};
                 if(!projectile::seen(s,id))out.push_back({id,v.pos+up, {v.pos-Vec3{1_fx,Fixed{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}}});
             }
@@ -116,7 +117,7 @@ bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
                 if(branch)spawn(std::move(*branch));
                 int32_t amount=int32_t((Fixed::fromInt(p.damage)*scale).floorInt());
                 if(victim->id.gen){
-                    auto& actor=state_.actors[victim->id.index-1];bool head=false;
+                    auto actor=character(sim,uint8_t(victim->id.index));bool head=false;
                     if(config_.systems.enabled){
                         auto relative=p.pos.y-actor.pos.y;auto height=stanceHeight(actor,config_.motor);
                         head=relative>height*Fixed::fromRatio(4,5);
@@ -124,10 +125,7 @@ bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
                         else if(relative<height*Fixed::fromRatio(2,5))amount=int32_t((Fixed::fromInt(amount)*weapon.limbMultiplier).floorInt());
                     }
                     damage(sim,p.owner,actor,amount,head);
-                }else for(auto& vehicle:state_.vehicles)if(vehicle.id+201u==victim->id.index){
-                    vehicle.health=std::max(0,vehicle.health-amount);
-                    if(!vehicle.health&&vehicle.driver){auto& driver=state_.actors[vehicle.driver-1];vehicle.driver=0;driver.vehicle=0;damage(sim,p.owner,driver,1000);}
-                }
+                }else damageVehicle(sim,p.owner,victim->id.index-201u,amount);
                 sim.emit({1,p.owner,{}, {},int32_t(victim->id.index),p.pos});
                 alive=!branch&&projectile::pass(s,f);
             }
@@ -142,82 +140,22 @@ bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
 }
 
 void Module::tickProjectilePrograms(Simulation& sim) {
-    auto& state_=state(sim);
-    std::vector<Projectile> children;
-
-    if(!config_.ecsAuthority) {
-        // Legacy default keeps the original source vector and immediate
-        // erase/append ordering; no changes to save v9 or game mode.
-        for(auto it=state_.projectiles.begin();it!=state_.projectiles.end();) {
-            if(!it->program.enabled){++it;continue;}
-            const bool alive=stepProgrammedProjectile(
-                sim,*it,children,state_.projectiles.size());
-            if(!alive)it=state_.projectiles.erase(it);else ++it;
-        }
-        for(auto& child:children)state_.projectiles.push_back(std::move(child));
-        return;
-    }
-
-    // ECS-authoritative path: iteration and writable projectile state are
-    // sourced from ProjectileRuntime components, never from State vectors.
-    // Source order is explicit and preserved across pool swap-remove/COW.
+    // Ascending id (creation order). A projectile that ends is removed after the pass (no other projectile is
+    // read meanwhile); branches spawned this tick are appended after all existing ones, in spawn order.
     World& world=sim.world();
-    auto* index=world.resource<DynamicEntityIndex>();
-    if(!index)throw std::logic_error("FPS DynamicEntityIndex missing in ECS projectile stage");
-
-    struct OrderedProjectile {Entity entity;uint32_t order,id;};
-    std::vector<OrderedProjectile> ordered;
-    world.eachExistingConst<ProjectileRuntime>(
-        [&](Entity e,const ProjectileRuntime& runtime) {
-            if(world.alive(e))
-                ordered.push_back({e,runtime.order,runtime.value.id});
-        });
-    auto less=[](const OrderedProjectile& a,const OrderedProjectile& b) {
-        return a.order!=b.order ? a.order<b.order : a.id<b.id;
-    };
-    std::sort(ordered.begin(),ordered.end(),less);
-
+    std::vector<Projectile> children;
+    const auto ordered=projectileEntities(sim);
     std::size_t liveCount=ordered.size();
-    std::vector<std::pair<Entity,uint32_t>> expired;
-    for(const auto& item:ordered) {
-        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
-        if(!runtime)throw std::logic_error("FPS projectile runtime vanished during update");
-        if(!runtime->value.program.enabled)continue;
-        if(!stepProgrammedProjectile(sim,runtime->value,children,liveCount)) {
-            expired.emplace_back(item.entity,item.id);
-            --liveCount; // legacy erase happens before processing next shot
+    std::vector<Entity> expired;
+    for(const Entity e:ordered) {
+        auto* p=world.tryGet<Projectile>(e);
+        if(!p||!p->program.enabled)continue;
+        if(!stepProgrammedProjectile(sim,*p,children,liveCount)) {
+            expired.push_back(e);
+            --liveCount;   // the removed shot no longer counts against the limit for later branches
         }
     }
-
-    // Structural mutations take place only after the stable source traversal.
-    // Remove old IDs before creating children; free slots may be recycled.
-    for(const auto& [entity,id]:expired) {
-        world.destroy(entity);
-        index->byKey.erase((uint64_t(1)<<32)|id);
-    }
-
-    // State::projectiles is a read/compatibility projection after this point:
-    // grenade/round-mode logic is not yet migrated and can still add/remove
-    // objects during the main FPS tick. Its writes are reconciled at mirror.
-    state_.projectiles.clear();
-    state_.projectiles.reserve(liveCount+children.size());
-    uint32_t position=0;
-    for(const auto& item:ordered) {
-        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
-        if(!runtime)continue; // removed by the preceding structural barrier
-        runtime->order=position++;
-        state_.projectiles.push_back(runtime->value);
-    }
-    for(auto& child:children) {
-        const uint32_t id=child.id;
-        const uint64_t key=(uint64_t(1)<<32)|id;
-        if(!id || (index->byKey.contains(key) &&
-                    world.alive(index->byKey.at(key))))
-            throw std::logic_error("FPS duplicate ECS spawned projectile ID");
-        const Entity e=world.create();
-        world.add<ProjectileRuntime>(e,ProjectileRuntime{std::move(child),position++});
-        index->byKey[key]=e;
-        state_.projectiles.push_back(world.get<ProjectileRuntime>(e).value);
-    }
+    for(const Entity e:expired)world.destroy(e);
+    for(auto& child:children)spawnProjectile(sim,std::move(child));
 }
 }

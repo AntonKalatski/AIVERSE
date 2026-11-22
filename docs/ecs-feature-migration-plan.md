@@ -32,8 +32,8 @@ Snapshot totals by proposed destination: `P` 21; `A` 20; `D` 9; `S` 46; `T` 21; 
 1. **ECS infrastructure:** `engine/core/ECS.h` implements sparse-set entity pools, generation-safe entity handles and opt-in COW. `engine/sim/Simulation.h` manages deterministic commands, RNG, ordered systems, World snapshots/checksums and restored hooks. `engine/sim/CommonComponents.h` provides shared `Transform`, `Owner`, `Parent`, `LocalTransform`, `WorldTransform`. This is common infrastructure; it does not make individual genre algorithms universal by itself.
 2. **RTS:** `modules/rts/RtsModule.cpp::setup` registers systems into `Simulation` in a specified deterministic order, including `economy`, `fields`, `production`, `construction`, `settlers`, `lanes`, `garrison`, `orders`, `abilities`, `targeting`, `movement`, `weapons`, `projectiles`, `death`, `capture`, `vision`, `victory`, `triggers`, `traffic` and more. Many are closures on `this` or delegate to genre-specific objects. `GameState` also holds substantial state as a World resource. **Registered with the ECS scheduler ≠ independent ECS mechanic.**
 3. **FPS:** `modules/fps/FpsModule.h` has monolithic `Actor`, `State::actors/projectiles/loot/vehicles/history` and optional `fps.ecsAuthority`. `ActorRuntime` / `ProjectileRuntime` / `LootRuntime` / `VehicleRuntime` can be canonical between ticks; `Module::tick` still processes legacy workspaces, `Module::shoot` constructs its own shots and traces, and `Module::moveActorEcs` copies motor fields across an adapter. These are transition scaffolds, **not final feature-sized ECS components**.
-4. **Shared projectile pipeline:** `libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h`, `EcsProjectileSystems.h`, `EcsDamageSystems.h` provide genre-neutral launch → spawn → flight → impact/damage stages and independent cross-genre fixtures. This pipeline **is not yet the authoritative FPS/RTS weapon path**. Reload, hitscan, spread/recoil, AoE, armor, factions and status effects require follow-on component/policy composition.
-5. **Existing policies:** `libraries/include/aiverselib/genre/Weapons.h`, `Locomotion.h`, `Melee.h`, `CombatActions.h`, `VehicleData.h`, `Senses.h` and the other catalogued C++ packages should be **reused**, not replaced with freshly duplicated algorithms.
+4. **Shared projectile pipeline:** `libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h`, `EcsProjectileSystems.h`, `EcsDamageSystems.h` provide genre-neutral launch → spawn → flight → impact/damage stages and independent cross-genre fixtures. This pipeline **is not yet the authoritative FPS/RTS weapon path**. Reload, hitscan, spread/recoil, AoE, armor, factions and status effects require follow-on component/policy composition.
+5. **Existing policies:** `libraries/include/aiverselib/mechanics/Weapons.h`, `Locomotion.h`, `Melee.h`, `CombatActions.h`, `VehicleData.h`, `Senses.h` and the other catalogued C++ packages should be **reused**, not replaced with freshly duplicated algorithms.
 6. **Editor:** `apps/editor/EditorEntityAdapter.h` and `SceneRenderable.h` already unify some document identity, selection and scene submission, but `docs/editor-unification-handoff.md` explicitly reports incomplete native ECS reflection/writeback, transform gizmo and visual/build validation.
 7. **Meta:** `engine/meta/Meta.h` has transactional profile/offer/currency/track/daily policies external to the deterministic match World. They must remain account/server authority; only match-local gameplay state and typed result events belong in ECS.
 
@@ -163,7 +163,7 @@ Account-level `engine/meta` shop, balances, offers, payments, social and LiveOps
 ## Source references for this audit
 
 - `libraries/catalog.json` (120 packages and per-package sources)
-- `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `docs/genre-packages.md`
+- `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `docs/mechanics-packages.md`
 - `engine/core/ECS.h`, `engine/sim/Simulation.h`, `engine/sim/CommonComponents.h`
 - `modules/rts/RtsModule.cpp`, `RtsModule.h`, `RtsData.h`
 - `modules/fps/FpsModule.cpp`, `FpsModule.h`, `FpsSystems.h`
@@ -244,23 +244,23 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `navmesh` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/bots/NavMesh.h` |
 | `building-gen` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/systems/BuildingGen.h` |
 | `bot-matches` | tools / tool-workflow | **T** | `examples/libraries/bots/main.cpp` |
-| `character-locomotion` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Locomotion.h` |
-| `melee-combat` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Melee.h` |
-| `combat-actions` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/CombatActions.h` |
-| `stealth-senses` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Senses.h` |
-| `cinematic-gameplay` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Cinematic.h` |
-| `card-games` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/CardGame.h` |
-| `tactics-grid` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/TacticsTurns.h` |
+| `character-locomotion` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Locomotion.h` |
+| `melee-combat` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Melee.h` |
+| `combat-actions` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/CombatActions.h` |
+| `stealth-senses` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Senses.h` |
+| `cinematic-gameplay` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Cinematic.h` |
+| `card-games` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/CardGame.h` |
+| `tactics-grid` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/TacticsTurns.h` |
 | `cards-turns-bots` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/CardBot.h` |
-| `weapon-policies` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/genre/Weapons.h` |
+| `weapon-policies` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/mechanics/Weapons.h` |
 | `genre-bots` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/bots/GenreBots.h` |
-| `match-rules` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Match.h` |
-| `battle-royale` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/royale/BattleRoyale.h` |
-| `narrative-graphs` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Narrative.h` |
+| `match-rules` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Match.h` |
+| `battle-royale` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/royale/BattleRoyale.h` |
+| `narrative-graphs` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Narrative.h` |
 | `turn-scheduler` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/Turns.h` |
 | `card-runtime` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/Cards.h` |
 | `grid-puzzles` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/Puzzles.h` |
-| `puzzle-solvers` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/genre/PuzzleSolvers.h` |
+| `puzzle-solvers` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/mechanics/PuzzleSolvers.h` |
 | `big-numbers` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/strategy/BigNumber.h` |
 | `offline-production` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/Offline.h` |
 | `production-networks` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/Production.h` |
@@ -270,20 +270,20 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `puzzle-machine` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/PuzzleMachine.h` |
 | `session-admission` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/net/Admission.h` |
 | `snapshot-delta` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/net/SnapshotDelta.h` |
-| `physical-interactions` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/PhysicalInteractions.h` |
-| `vehicle-controllers` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Vehicles.h` |
-| `sports-rules` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Sports.h` |
-| `settlement-production` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Colony.h` |
-| `survival-ecology` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/SurvivalEcology.h` |
-| `boss-encounters` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Telegraphs.h` |
-| `match-progression` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Perks.h` |
+| `physical-interactions` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/PhysicalInteractions.h` |
+| `vehicle-controllers` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Vehicles.h` |
+| `sports-rules` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Sports.h` |
+| `settlement-production` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Colony.h` |
+| `survival-ecology` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/SurvivalEcology.h` |
+| `boss-encounters` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Telegraphs.h` |
+| `match-progression` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Perks.h` |
 | `physics` | presentation / engine-reference | **P** | `engine/physics/World.h` |
 | `world-calendar` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/Calendar.h` |
 | `weather-timeline` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/systems/WeatherTimeline.h` |
-| `vehicle-fx` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/genre/vehicle-fx/VehicleLights.h` |
+| `vehicle-fx` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/mechanics/vehicle-fx/VehicleLights.h` |
 | `swept-shapes` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/SweptShapes.h` |
 | `derived-keys` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/runtime/DerivedKeys.h` |
-| `city-traffic` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/genre/Traffic.h` |
+| `city-traffic` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Traffic.h` |
 | `rules-files` | tools / tool-workflow | **T** | `tools/rules/rules_io.py` |
 | `voxel-world` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/systems/voxel/VoxelWorld.h` |
 | `voxel-light` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/systems/voxellight/VoxelLight.h` |
@@ -292,9 +292,9 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `voxel-ticks` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/voxelticks/VoxelTicks.h` |
 | `voxel-nav` | simulation / cpp-subsystem | **D** | `libraries/include/aiverselib/bots/voxelnav/VoxelNav.h` |
 | `voxel-replication` | tools / cpp-subsystem | **T** | `libraries/include/aiverselib/net/voxel/VoxelReplication.h` |
-| `ecs-projectile-systems` | simulation / cpp-subsystem | **S*** | `libraries/include/aiverselib/genre/EcsProjectileSystems.h` |
-| `ecs-impact-damage` | simulation / cpp-subsystem | **S*** | `libraries/include/aiverselib/genre/EcsDamageSystems.h` |
-| `ecs-weapon-launch` | simulation / cpp-subsystem | **S*** | `libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h` |
+| `ecs-projectile-systems` | simulation / cpp-subsystem | **S*** | `libraries/include/aiverselib/mechanics/EcsProjectileSystems.h` |
+| `ecs-impact-damage` | simulation / cpp-subsystem | **S*** | `libraries/include/aiverselib/mechanics/EcsDamageSystems.h` |
+| `ecs-weapon-launch` | simulation / cpp-subsystem | **S*** | `libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h` |
 
 ## Appendix B — verification status
 

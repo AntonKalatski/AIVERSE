@@ -1,9 +1,32 @@
 # Driving (the top-down hero at the wheel)
 
-The hero of a top-down game (docs/topdown.md) gets into vehicles and drives them. Simulation:
-`modules/rts/RtsDriving.{h,cpp}`; the vehicle dynamics are the wheeled controller of the vehicle-controllers
-library (`libraries/include/aiverselib/genre/VehicleControllers.h`, docs/genre-packages.md § Vehicles).
-Tests: `aiverse_tests driving_`.
+The hero of a top-down game (docs/topdown.md) gets into vehicles and drives them. There is **one vehicle system**
+for every host (AGENTS.md "no genre split"): `engine/vehicles/Vehicles.{h,cpp}` (target `AIVERSE::vehicles`) and the
+race adapter `engine/vehicles/VehicleRace.{h,cpp}`. The vehicle dynamics are the controllers of the
+vehicle-controllers library (`libraries/include/aiverselib/mechanics/VehicleControllers.h`, docs/mechanics-packages.md
+§ Vehicles). Tests: `aiverse_tests driving_`, `traffic_`; FPS `typedVehicles`, `raceMode`.
+
+## The vehicle system (engine/vehicles)
+
+- **Components.** A vehicle is an entity with `vehicles::VehicleDrive`: the controller state (metres, library yaw),
+  `driver` / `player`, `doorUntil`, `locked`, `deck` (level), `autopilot` + `pilot` pedals, a seat list state
+  (`seats`, for types with passengers / gunners) and the transient seat `requests`. Whoever drives carries
+  `vehicles::VehicleOccupant` (the car and its last pose), so the driver is put out where the car was when the
+  car entity disappears.
+- **Types.** `vehicles::VehicleType` (`type` = the host's id, `length` / `width` in host units, controller def,
+  optional seat list) in `vehicles::DriveRules`: the rules block `driving` (`parseDriving`, grid maps) or
+  `fps.vehicleTypes` (metre maps: metres, seat lists, crash 8 m/s x 10) become the same list.
+- **One step** (`vehicles::stepVehicles`, ascending entity index): pedals = race session > the driver's controls
+  (shared mappings, mechanics/VehicleDrive.h) > a host bot (traffic) > autopilot > parked; empty resting vehicles
+  sleep; controller step; the host's sweep; crash / run-over damage (`VehicleImpacts`).
+- **Host interface** (`vehicles::VehicleHost`): `active`, `driverPedals`, `botPedals`, `parked`, `controllable`,
+  `ground` (height / normal), `sweep` (body against the host's static world and other bodies), `placed` (host pose,
+  occupants), `damage`. Hosts today: the grid map (`modules/rts/RtsDriving.cpp`: cells <-> metres, three-circle sweep
+  over grid / units / colliders / decks, the hero's stick, `kCmdTopDownEnter`) and the metre map
+  (`modules/fps/FpsVehicles.cpp`: `collision_` casts, `groundBelow`, seat-list glue). A new host implements this
+  interface; it never steps controllers itself.
+- **API for traffic and scripts**: `vehicles::setAutopilot` / `clearAutopilot` / `setLocked` / `isLocked` /
+  `speedOf` / `vehicleOf(driver)` / `vehicleEntities` (the grid-map `Driving` wrappers call them).
 
 ## How it works
 
@@ -27,12 +50,23 @@ Tests: `aiverse_tests driving_`.
   or swept at all; a collision gives it a velocity and wakes it. A city with hundreds of parked cars costs the same
   as an empty one.
 - **Wrecks.** A destroyed vehicle throws its driver out on the spot with `wreckDamage`.
-- **State / determinism.** `DrivingStore` world resource: hashed, saved after the top-down heroes, copied by
-  rollback snapshots. Fixed maths only. Games without the block keep their checksums and save layout.
+- **State / determinism.** `VehicleDrive` / `VehicleOccupant` components (saved with the RTS pools; the RTS
+  hash keeps the former layout: count, then per vehicle entity, driver, player, door, [deck], controller, flags,
+  pilot), decks in the `DrivingDecks` resource, the race in the `RaceState` resource; all copied by rollback
+  snapshots. Fixed maths only. Games without the block keep their checksums. Saves written before the vehicle
+  system (stage B, 2026-11-21) do not load.
+
+## Races
+
+A map `"race"` block makes the map's cars race (the shared race capability, [races.md](races.md)): racer `i` is the
+`i`-th car (entity order) of player `i + 1`, whose hero is seated in it at the start; players marked `"bot"` or
+without a hero race with the race bot. Adapter: the shared `vehicles::VehicleRace` (engine/vehicles/VehicleRace.h);
+the grid map only seats the racers (`Driving::Seats`); state: `vehicles::RaceState`, hashed and saved only on maps
+with a race. Tests: `aiverse_tests driving_race_`.
 
 ## Computer drivers
 
-`Driving::setAutopilot(sim, vehicle, VehicleInput)` gives a vehicle nobody drives its pedals (throttle, brake,
+`vehicles::setAutopilot(world, vehicle, VehicleInput)` (grid map: `Driving::setAutopilot`) gives a vehicle nobody drives its pedals (throttle, brake,
 steer, handbrake); `clearAutopilot` parks it again. It is simulation state (hashed, saved): call it from a system or
 a script effect, never from the view. A hero who gets in takes over, and the autopilot input applies again when he
 gets out. A parked car at rest is skipped by the controller, a car on autopilot never is. Traffic and traffic lights

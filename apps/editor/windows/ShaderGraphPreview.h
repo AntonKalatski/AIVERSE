@@ -79,7 +79,7 @@ public:
             render::PostFrame f;f.width=f.height=256;post_.resolve(*dev_,out,f);dev_->endPass();
             error=post_.lastError();
         } else {
-            render::RTSCamera cam;cam.target={0,0.3f,0};cam.distance=3;cam.minDistance=0.1f;
+            render::Camera cam;cam.target={0,0.3f,0};cam.distance=3;cam.minDistance=0.1f;
             const auto vp=cam.proj(1.f,dev_->info().clipDepthZeroToOne)*cam.view();
             particles_.setView(cam,vp,256,256);particles_.update(dt);
             dev_->beginPass(out);dev_->setViewport({0,0,256,256});particles_.render({});dev_->endPass();

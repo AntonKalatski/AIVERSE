@@ -1,5 +1,5 @@
 // Common ECS locomotion policy in unrelated shooter and strategy hosts.
-#include <aiverselib/genre/EcsLocomotionSystems.h>
+#include <aiverselib/mechanics/EcsLocomotionSystems.h>
 #include <cstdint>
 #include <iostream>
 #include <memory>

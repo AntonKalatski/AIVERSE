@@ -15,6 +15,8 @@ export interface FieldDescriptor {
   description?: string;
   /** Optional asset kinds accepted by reference-picker fields. */
   assetKinds?: Array<'image' | 'model' | 'audio' | 'code' | 'document'>;
+  /** Multi-selection: values differ between the selected objects (shown as "—"). */
+  mixed?: boolean;
 }
 export type ParsedField = { ok: true; value: string | number | boolean } | { ok: false; error: string };
 
@@ -53,4 +55,22 @@ export function validateBooleanChange(field: FieldDescriptor, checked: boolean):
 
 export function isSameFieldValue(previous: string | number | boolean, next: string | number | boolean): boolean {
   return typeof previous === typeof next && previous === next;
+}
+
+export interface ScrubOptions { step?: number; min?: number; max?: number; integer?: boolean; fine?: boolean; snap?: number }
+/**
+ * Unity-style drag-to-scrub: value after dragging a label `dx` CSS pixels.
+ * One pixel moves one step (default 0.1; ×0.1 with `fine`); `snap` rounds to that grid.
+ * The result is clamped to min/max and printed to a sane precision.
+ */
+export function scrubValue(start: number, dx: number, options: ScrubOptions = {}): number {
+  const step = options.step && options.step > 0 ? options.step : options.integer ? 1 : 0.1;
+  let value = start + dx * step * (options.fine ? 0.1 : 1);
+  if (options.snap && options.snap > 0) value = Math.round(value / options.snap) * options.snap;
+  if (options.integer) value = Math.round(value);
+  const decimals = Math.min(6, Math.max(0, -Math.floor(Math.log10(step * (options.fine ? 0.1 : 1)))));
+  value = Number(value.toFixed(decimals));
+  if (typeof options.min === 'number' && value < options.min) value = options.min;
+  if (typeof options.max === 'number' && value > options.max) value = options.max;
+  return value;
 }

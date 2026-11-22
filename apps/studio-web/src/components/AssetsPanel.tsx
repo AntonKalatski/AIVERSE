@@ -1,19 +1,23 @@
+import { copyText } from '../clipboard';
+import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import {
   FileAudio, Box, FileCode2, FileImage, FileText, Folder, FolderOpen,
-  Grid2X2, List, RefreshCw, Search, ChevronRight, Library, Upload, FolderPlus, X
+  Grid2X2, List, RefreshCw, Search, ChevronRight, Library, Upload, FolderPlus, X, Link2, Unlink
 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import type {
   StudioAsset, StudioAssetList, StudioAssetTransferPlan,
   StudioAssetConflictAction, StudioAssetTransferItem
 } from '../types';
+import AssetThumb from './AssetThumb';
 import { assetKind, assetFolders, assetFileName, assetBreadcrumbs,
   childFolders, visibleAssetFiles, safeAssetPath } from '../assetTree';
 import type { AssetFolder, AssetKind } from '../assetTree';
 import './AssetsPanel.css';
 import AssetImportSettings from './AssetImportSettings';
+import { StudioContextMenu, type StudioMenuItem } from '../ui';
 
 const ASSET_DRAG_MIME='application/x-aiverse-content-path';
 const EMPTY:StudioAssetList={root:'content',files:[],folders:[]};
@@ -126,7 +130,24 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [selected,setSelected]=useState<string|null>(null);
   const [pinnedAssetGuid,setPinnedAssetGuid]=useState<string|null>(null);
   const [search,setSearch]=useState('');
+  // Usage: files no project data names (filter) and "Find References" for one asset.
+  const [unusedOnly,setUnusedOnly]=useState(false);
+  const [unused,setUnused]=useState<Set<string>|null>(null);
+  const [mentions,setMentions]=useState<{path:string;rows:Array<{file:string;line:number;text:string}>}|null>(null);
+  const findReferences=async(path:string)=>{
+    try{const r=await invoke('studio.assetUsage',{path});setMentions({path,rows:r.mentions??[]});}
+    catch(e){setError(String(e instanceof Error?e.message:e))}
+  };
+  const toggleUnused=async()=>{
+    if(unusedOnly){setUnusedOnly(false);return;}
+    try{const r=await invoke('studio.assetUsage',{});setUnused(new Set(r.unused??[]));setUnusedOnly(true);}
+    catch(e){setError(String(e instanceof Error?e.message:e))}
+  };
   const [mode,setMode]=useState<'grid'|'list'>('grid');
+  const [menu,setMenu]=useState<{x:number;y:number;path:string;directory:boolean;background?:boolean}|null>(null);
+  const [creatingMaterial,setCreatingMaterial]=useState(false);
+  const [materialName,setMaterialName]=useState('');
+  const [materialPreset,setMaterialPreset]=useState<'matte'|'metal'|'glass'>('matte');
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
   const [loading,setLoading]=useState(true);
@@ -135,6 +156,24 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [folderName,setFolderName]=useState('');
   const [plan,setPlan]=useState<StudioAssetTransferPlan|null>(null);
   const [refreshToken,setRefreshToken]=useState(0);
+  // Folder tree width: drag the divider (persisted), double-click resets.
+  const [treeWidth,setTreeWidth]=useState<number>(()=>{
+    try{const v=Number(window.localStorage.getItem('aiverse.studio.assets.treeWidth'));return Number.isFinite(v)&&v>=110&&v<=900?v:170;}catch{return 170;}
+  });
+  useEffect(()=>{try{window.localStorage.setItem('aiverse.studio.assets.treeWidth',String(Math.round(treeWidth)));}catch{/* optional */}},[treeWidth]);
+  const startTreeResize=(event:React.PointerEvent<HTMLDivElement>)=>{
+    if(event.button!==0)return;
+    event.preventDefault();
+    const handle=event.currentTarget;handle.setPointerCapture(event.pointerId);
+    const layout=handle.parentElement?.getBoundingClientRect();
+    const startX=event.clientX,start=treeWidth;
+    const move=(e:PointerEvent)=>{
+      const max=Math.max(160,(layout?.width??800)-160);
+      setTreeWidth(Math.min(max,Math.max(110,start+e.clientX-startX)));
+    };
+    const up=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);};
+    handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
+  };
   const native=nativeConnected();
   const reload=useCallback(()=>setRefreshToken(t=>t+1),[]);
   useEffect(()=>onNativeEvent((event,payload)=>{
@@ -152,6 +191,17 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     }
   }),[reload]);
   useEffect(()=>{setFolder('');setSelected(null);setPinnedAssetGuid(null);setSearch('');setPlan(null);},[projectPath]);
+  // Command palette (# assets) reveals a file: open its folder and select it.
+  useEffect(()=>{
+    const reveal=(event:Event)=>{
+      const path=(event as CustomEvent<{path?:unknown}>).detail?.path;
+      if(typeof path!=='string'||!path)return;
+      const cut=path.lastIndexOf('/');
+      setSearch('');setFolder(cut>0?path.slice(0,cut):'');setSelected(path);
+    };
+    window.addEventListener('studio:reveal-asset',reveal);
+    return ()=>window.removeEventListener('studio:reveal-asset',reveal);
+  },[]);
   useEffect(()=>{
     let cancelled=false;
     setLoading(true);setError('');
@@ -166,7 +216,11 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
 
   const folders=useMemo(()=>allFolders(catalog),[catalog]);
   const shownFolders=useMemo(()=>search.trim()?[]:childFolders(folders,folder),[folders,folder,search]);
-  const shownFiles=useMemo(()=>visibleAssetFiles(catalog.files,folder,search),[catalog.files,folder,search]);
+  const shownFiles=useMemo(()=>{
+    // "Unused" lists matching files of the whole project, wherever the folder is.
+    if(unusedOnly&&unused)return catalog.files.filter(f=>unused.has(f.path)&&(!search||f.path.toLowerCase().includes(search.toLowerCase())));
+    return visibleAssetFiles(catalog.files,folder,search);
+  },[catalog.files,folder,search,unusedOnly,unused]);
   const crumbs=useMemo(()=>assetBreadcrumbs(folder),[folder]);
   // Asset identities survive renames/moves; a pinned Import Settings panel
   // must follow GUID, never a stale path or a new external selection.
@@ -225,7 +279,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   };
   const dragStart=(event:DragEvent<HTMLElement>,path:string)=>{
     event.dataTransfer.setData(ASSET_DRAG_MIME,path);
-    event.dataTransfer.effectAllowed='move';
+    // The native Scene view accepts plain text "aiverse-asset:<path>" (models → new entity).
+    if(assetKind(path)==='model')event.dataTransfer.setData('text/plain','aiverse-asset:'+path);
+    event.dataTransfer.effectAllowed='copyMove';
   };
   const acceptInternal=(event:DragEvent<HTMLElement>)=>{
     if(event.dataTransfer.types.includes(ASSET_DRAG_MIME)){
@@ -244,6 +300,49 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     onDrop:(event:DragEvent<HTMLElement>)=>dropInternal(event,target)
   });
 
+  const copyPath=(path:string)=>{
+    const text='content/'+path;
+    void copyText(text).then(ok=>ok?setMessage('Copied '+text):setError('Clipboard unavailable'));
+  };
+  const createMaterial=async()=>{
+    const name=materialName.trim();
+    if(!native||!projectPath||!name||busy)return;
+    setBusy(true);setError('');setMessage('');
+    try{
+      await invoke('studio.materialCreate',{name,preset:materialPreset});
+      setCreatingMaterial(false);setMaterialName('');
+      setMessage('Created material "'+name+'" in materials.json');
+    }catch(e){setError(String(e instanceof Error?e.message:e))}
+    finally{setBusy(false)}
+  };
+  // Right-click on empty space: create/import into the current folder.
+  const backgroundItems=():StudioMenuItem[]=>[
+    {id:'folder',label:'Create Folder',icon:<FolderPlus size={13}/>,disabled:!native||!projectPath||busy,onSelect:()=>setAddingFolder(true)},
+    {id:'material',label:'Create Material…',icon:<Library size={13}/>,disabled:!native||!projectPath||busy,
+      onSelect:()=>{setCreatingMaterial(true);setMaterialName('')}},
+    {id:'import',label:'Import Assets…',icon:<Upload size={13}/>,separator:true,disabled:!native||!projectPath||busy,onSelect:()=>void externalImport()},
+    {id:'copy',label:'Copy Folder Path',icon:<Search size={13}/>,separator:true,onSelect:()=>copyPath(folder)},
+    {id:'reload',label:'Reload',icon:<RefreshCw size={13}/>,onSelect:reload},
+  ];
+  const menuItems=(target:{path:string;directory:boolean}):StudioMenuItem[]=>[
+    target.directory
+      ?{id:'open',label:'Open Folder',icon:<FolderOpen size={13}/>,onSelect:()=>goTo(target.path)}
+      :{id:'settings',label:'Import Settings',icon:<Library size={13}/>,disabled:!native,onSelect:()=>setSelected(target.path)},
+    {id:'copy',label:'Copy Path',icon:<Search size={13}/>,onSelect:()=>copyPath(target.path)},
+    ...(target.directory?[]:[{id:'refs',label:'Find References',icon:<Link2 size={13}/>,disabled:!native||!projectPath,
+      onSelect:()=>void findReferences(target.path)} as StudioMenuItem]),
+    {id:'folder',label:'New Folder Here',icon:<FolderPlus size={13}/>,separator:true,disabled:!native||!projectPath||busy,
+      onSelect:()=>{if(target.directory)goTo(target.path);setAddingFolder(true)}},
+    {id:'import',label:'Import Into Here…',icon:<Upload size={13}/>,disabled:!native||!projectPath||busy,
+      onSelect:()=>{if(target.directory)goTo(target.path);void externalImport()}},
+    {id:'reload',label:'Reload',icon:<RefreshCw size={13}/>,separator:true,onSelect:reload},
+  ];
+  const openMenu=(event:React.MouseEvent,path:string,directory:boolean)=>{
+    event.preventDefault();event.stopPropagation();
+    if(!directory)setSelected(path);
+    setMenu({x:event.clientX,y:event.clientY,path,directory});
+  };
+
   return <section className="studio-assets" aria-label="Project Assets"
       data-content-drop-root="true" data-content-drop-target={folder}>
     <div className="studio-assets-toolbar">
@@ -260,6 +359,10 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
         <input value={search} onChange={e=>setSearch(e.target.value)}
           aria-label="Search project assets" placeholder="Find assets…"/>
       </label>
+      <button type="button" className={'studio-assets-tool-action'+(unusedOnly?' is-on':'')} aria-pressed={unusedOnly}
+        disabled={!native||!projectPath} onClick={()=>void toggleUnused()}
+        title="Show only files no rules, map, material, script or UI file names (paths built in scripts are not followed)"
+        aria-label="Show unused assets"><Unlink size={16}/></button>
       <button type="button" className="studio-assets-tool-action"
         disabled={!native||!projectPath||busy} onClick={()=>setAddingFolder(true)}
         title="New folder in content" aria-label="Create content folder"><FolderPlus size={16}/></button>
@@ -286,14 +389,26 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
       <button type="submit" disabled={!folderName.trim()||busy}>Create</button>
       <button type="button" onClick={()=>{setAddingFolder(false);setFolderName('')}}>Cancel</button>
     </form>}
+    {creatingMaterial&&<form className="studio-assets-create-folder" onSubmit={event=>{
+      event.preventDefault();void createMaterial();
+    }}>
+      <Library size={13}/><span>New material in materials.json</span>
+      <input autoFocus aria-label="New material name" value={materialName}
+        onChange={event=>setMaterialName(event.target.value)} placeholder="Material name"/>
+      <select aria-label="Material preset" value={materialPreset}
+        onChange={event=>setMaterialPreset(event.target.value as 'matte'|'metal'|'glass')}>
+        <option value="matte">Matte</option><option value="metal">Metal</option><option value="glass">Glass</option>
+      </select>
+      <button type="submit" disabled={!materialName.trim()||busy}>Create</button>
+      <button type="button" onClick={()=>setCreatingMaterial(false)}>Cancel</button>
+    </form>}
     {message&&<div className="studio-assets-status" role="status">{message}</div>}
     {error&&<div className="studio-assets-status studio-assets-error" role="alert">{error}</div>}
     <div className="studio-assets-layout">
-      <nav className="studio-assets-folders" aria-label="Project asset folders">
-        <div className="studio-assets-sidebar-title">CONTENT / PROJECT ASSETS</div>
+      <nav className="studio-assets-folders" aria-label="Project asset folders" style={{width:treeWidth,maxWidth:'none',minWidth:0}}>
         <button type="button" className={'studio-assets-folder'+(folder===''?' active':'')}
           {...folderDropProps('')} onClick={()=>goTo('')}>
-          <Library size={15}/><span>content</span>
+          <Library size={13}/><span>content</span>
           <small>{catalog.files.length}</small>
         </button>
         {folders.slice(0,300).map(entry=>
@@ -301,13 +416,19 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
             draggable onDragStart={e=>dragStart(e,entry.path)}
             {...folderDropProps(entry.path)}
             className={'studio-assets-folder'+(folder===entry.path?' active':'')}
-            style={{paddingLeft:12+entry.depth*13}}
+            style={{paddingLeft:6+entry.depth*12}}
+            onContextMenu={event=>openMenu(event,entry.path,true)}
             onClick={()=>goTo(entry.path)}>
-            {folder===entry.path?<FolderOpen size={15}/>:<Folder size={15}/>}
+            {folder===entry.path?<FolderOpen size={13}/>:<Folder size={13}/>}
             <span>{entry.name}</span><small>{entry.count}</small>
           </button>)}
       </nav>
-      <div className="studio-assets-content" {...folderDropProps(folder)}>
+      <div className="studio-assets-splitter" role="separator" aria-orientation="vertical" aria-label="Resize folder tree"
+        aria-valuenow={Math.round(treeWidth)} tabIndex={0} title="Drag to resize · double-click to reset"
+        onPointerDown={startTreeResize} onDoubleClick={()=>setTreeWidth(170)}
+        onKeyDown={event=>{if(event.key==='ArrowLeft')setTreeWidth(w=>Math.max(110,w-16));if(event.key==='ArrowRight')setTreeWidth(w=>Math.min(900,w+16));}}/>
+      <div className="studio-assets-content" {...folderDropProps(folder)}
+        onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,path:folder,directory:true,background:true})}}>
         {loading?<div className="studio-assets-state">Loading content/…</div>:
           shownFiles.length===0&&shownFolders.length===0?
             <div className="studio-assets-empty">
@@ -322,8 +443,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
                   title={entry.path} role="listitem" draggable
                   onDragStart={e=>dragStart(e,entry.path)}
                   {...folderDropProps(entry.path)}
+                  onContextMenu={event=>openMenu(event,entry.path,true)}
                   onClick={()=>goTo(entry.path)}>
-                  <span className="studio-assets-icon"><Folder size={mode==='grid'?37:22}/></span>
+                  <span className="studio-assets-icon"><Folder size={mode==='grid'?28:14}/></span>
                   <span className="studio-assets-name">{entry.name}</span>
                   <span className="studio-assets-meta">{entry.count} files</span>
                 </button>)}
@@ -333,8 +455,11 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
                   onDragStart={e=>dragStart(e,asset.path)}
                   className={'studio-assets-item'+(selected===asset.path?' active':'')}
                   data-kind={kind} aria-selected={selected===asset.path}
-                  title={'content/'+asset.path} onClick={()=>setSelected(asset.path)}>
-                  <span className="studio-assets-icon"><AssetIcon kind={kind} size={mode==='grid'?32:20}/></span>
+                  title={'content/'+asset.path} onClick={()=>setSelected(asset.path)}
+                  onContextMenu={event=>openMenu(event,asset.path,false)}>
+                  <span className="studio-assets-icon">{mode==='grid' && (kind==='model'||kind==='image')
+                    ? <AssetThumb path={'content/'+asset.path} fallback={<AssetIcon kind={kind} size={24}/>}/>
+                    : <AssetIcon kind={kind} size={mode==='grid'?24:14}/>}</span>
                   <span className="studio-assets-name">{assetFileName(asset.path)}</span>
                   <span className="studio-assets-meta">{formatBytes(asset.bytes)}</span>
                 </button>;
@@ -347,10 +472,17 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
         onSaved={reload} onError={setError}/>}
     </div>
     <footer className="studio-assets-footer">
-      <span>{catalog.files.length} assets in content/ · metadata indexed by GUID</span>
+      <span>{catalog.files.length} assets</span>
       <span className="studio-assets-current">{selected?
         'content/'+selected:search?'Search in content/':folder?'content/'+folder:'content/'}</span>
     </footer>
+    {mentions&&<div className="studio-assets-refs" role="dialog" aria-label={'References to '+mentions.path} data-native-overlay>
+      <header><Link2 size={13}/><b>content/{mentions.path}</b><span>{mentions.rows.length?mentions.rows.length+' mention(s)':'not named by any project file'}</span>
+        <button type="button" aria-label="Close" onClick={()=>setMentions(null)}><X size={13}/></button></header>
+      <ul>{mentions.rows.map((r,i)=><li key={i}><code>{r.file}:{r.line}</code><span>{r.text}</span></li>)}</ul>
+    </div>}
+    {menu&&<StudioContextMenu x={menu.x} y={menu.y} label="Asset actions"
+      items={menu.background?backgroundItems():menuItems(menu)} onClose={()=>setMenu(null)}/>}
     {plan&&<PreviewDialog key={plan.token} plan={plan} busy={busy}
       onCancel={()=>setPlan(null)} onCommit={decisions=>void applyTransfer(decisions)}/>}
   </section>;

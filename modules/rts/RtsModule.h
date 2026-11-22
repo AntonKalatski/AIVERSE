@@ -14,6 +14,7 @@
 #include "../../engine/sim/CommonComponents.h"
 #include "../../engine/sim/Simulation.h"
 #include "RtsData.h"
+#include "RtsAIControllers.h"
 #include "RtsMap.h"
 #include "RtsColliders.h"
 #include "RtsTriggers.h"
@@ -340,8 +341,12 @@ struct AuthoredPose {
     Fixed y{};
     Fixed rotX{}, rotZ{};
     Vec3 scale{Fixed::fromInt(1), Fixed::fromInt(1), Fixed::fromInt(1)};
+    // Hidden friend: found by ADL only, so it never hides aiverse::io for other types in this namespace.
+    friend void io(Archive& a, AuthoredPose& x) {
+        using aiverse::io;
+        io(a, x.hasY); io(a, x.y); io(a, x.rotX); io(a, x.rotZ); io(a, x.scale);
+    }
 };
-inline void io(Archive& a, AuthoredPose& x) { io(a, x.hasY); io(a, x.y); io(a, x.rotX); io(a, x.rotZ); io(a, x.scale); }
 
 struct Garrison {
     int count = 0;
@@ -604,6 +609,9 @@ public:
     RtsModule();
     explicit RtsModule(std::vector<NativeDefinition> nativeDefinitions);
     const std::vector<NativeDefinition>& nativeDefinitions() const { return nativeDefinitions_; }
+    // Entity spawned for each map "entities" item of the last setup (kNullEntity for static colliders). Editor
+    // tooling only (Studio "Keep play changes"); not part of the simulation state or its checksum.
+    const std::vector<Entity>& mapPlaced() const { return mapPlaced_; }
     ~RtsModule() override;
     std::string name() const override { return "rts"; }
     void setup(Simulation& sim, const Json& rules, const Json& map) override;
@@ -696,13 +704,14 @@ public:
     Vec3 screenCenter(Simulation& sim) const;
     void setScreenCenter(Simulation& sim, Vec3 c);
     Fixed stat(Simulation& sim, Entity e, Stat s) const;          // effective stat with techs/levels/buffs
-    // agent-bw-ai (RtsBwAIWorld.cpp): stat of a type for a player without an entity, + moraleDelta perUnit levels
-    Fixed bwTypeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, int moraleDelta) const;
-    // agent-bw-ai: Bunker Wars bot settings (rules ai.bw + map "ai"), null unless rules ai.controller is "bw"
-    const std::shared_ptr<const struct BwAIConfig>& bwAI() const { return bwAI_; }
-    // agent-bw-ai: slots played by BW bots in this process (not sim state: the bots' action detector ignores them)
-    void bwRegisterBot(uint8_t slot) const { if (std::find(bwBots_.begin(), bwBots_.end(), slot) == bwBots_.end()) bwBots_.push_back(slot); }
-    const std::vector<uint8_t>& bwBots() const { return bwBots_; }
+    // stat of a type for a player without an entity (RtsModule::stat without per-entity parts), + moraleDelta perUnit levels
+    Fixed typeStatWithMorale(Simulation& sim, uint8_t player, uint16_t type, Stat s, int moraleDelta) const;
+    // settings of the computer player controller of rules ai.controller (null for builtin / scripted), RtsAIControllers.h
+    const std::shared_ptr<const AIControllerConfig>& aiConfig() const { return aiConfig_; }
+    const AIControllerKind* aiKind() const { return aiKind_; }
+    // slots played by computer controllers in this process (not sim state: controllers may tell them from humans)
+    void registerBotSlot(uint8_t slot) const { if (std::find(botSlots_.begin(), botSlots_.end(), slot) == botSlots_.end()) botSlots_.push_back(slot); }
+    const std::vector<uint8_t>& botSlots() const { return botSlots_; }
     Fixed typeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, Fixed base) const;
     int membersAlive(Simulation& sim, Entity e) const;
     int levelAt(Simulation& sim, Vec3 p) const;
@@ -903,10 +912,11 @@ private:
     void sysMatchStats(Simulation& sim);
     void hashModes(Simulation& sim, Hasher& h);
     friend bool ioModesState(RtsModule& m, Simulation& sim, Archive& a);
-    std::shared_ptr<const struct BwAIConfig> bwAI_;   // agent-bw-ai
-    mutable std::vector<uint8_t> bwBots_;             // agent-bw-ai: bot slots of this process (presentation-like, never read by the sim)
-    void bwNoteProduced(Simulation& sim, Entity e, int n);   // RtsBwAISim.cpp: per point produced units
-    bool hypnotisedFlagSend(Simulation& sim, const Command& cmd);  // RtsBwAISim.cpp: kCmdSend out of a hypnotised garrison
+    std::shared_ptr<const AIControllerConfig> aiConfig_;   // rules ai.controller settings (RtsAIControllers.h)
+    const AIControllerKind* aiKind_ = nullptr;
+    mutable std::vector<uint8_t> botSlots_;            // controller bot slots of this process (never read by the sim)
+    void notePointProduced(Simulation& sim, Entity e, int n);   // RtsHypnosis.cpp: per point produced units (controllers with pointStats)
+    bool hypnotisedSend(Simulation& sim, const Command& cmd);   // RtsHypnosis.cpp: kCmdSend out of a hypnotised garrison
     Json generated_;                 // generated map (see generatedMap())
     void setupMap(Simulation& sim, const Json& map);
     // ---- planets (RtsPlanets.cpp)
@@ -1084,12 +1094,13 @@ private:
     std::unique_ptr<Commerce> commerce_;   // rules "commerce" (state: CommerceStore resource)
     std::unique_ptr<Arsenal> arsenal_;     // rules "arsenal" (state: ArsenalStore resource)
     std::unique_ptr<Traffic> traffic_;     // rules "traffic" (state: TrafficStore resource)
-    std::unique_ptr<Driving> driving_;     // rules "driving" (state: DrivingStore resource)
+    std::unique_ptr<Driving> driving_;     // rules "driving": the grid-map host of the vehicle system (engine/vehicles)
     std::unique_ptr<TopDown> topDown_;     // rules "topDown" (state: TopDownStore resource)
     std::unique_ptr<Progression> progression_;   // rules "progression" (state: ProgressionStore resource)
     std::unique_ptr<Encounters> encounters_;   // rules "encounters" (state: EncounterStore resource)
     std::unique_ptr<Environment> env_;     // map environment (RtsEnv.h; state: EnvState resource)
     std::vector<NativeDefinition> nativeDefinitions_;
+    std::vector<Entity> mapPlaced_;
     NativeModules native_;
     bool nativeFiltering_ = false;   // inside NativeModule::filterCommand's re-entry (never set between commands)
     Json matchMap_;                  // see matchMap()

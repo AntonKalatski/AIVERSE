@@ -19,7 +19,7 @@ template<class F> void throwsWith(F&& f,const std::string& needle){
     try{f();}catch(const JsonError& e){if(std::string(e.what()).find(needle)==std::string::npos)throw std::runtime_error("unexpected error: "+std::string(e.what())+" (wanted "+needle+")");return;}
     throw std::runtime_error("expected JsonError containing "+needle);
 }
-Json levels(const std::string& root){return Json::parseFile(root+"/examples/libraries/genre/puzzles/levels.json");}
+Json levels(const std::string& root){return Json::parseFile(root+"/examples/libraries/mechanics/puzzles/levels.json");}
 std::vector<Match3Tile> board(const std::vector<std::string>& rows){
     std::vector<Match3Tile> t;for(const auto& r:rows)for(char c:r)t.push_back(c=='#'?Match3Tile{kMatch3Blocked,Match3Special::None}:Match3Tile{uint8_t(c-'0'),Match3Special::None});return t;
 }

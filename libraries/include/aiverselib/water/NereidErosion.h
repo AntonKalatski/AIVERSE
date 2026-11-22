@@ -128,6 +128,12 @@ inline ShoreErosionResult erodeShore(const ShoreErosionCell& source,
     const uint32_t speed=shoreFlowSpeedCmPerSec(forcing.flow);
     const uint32_t critical=shoreCriticalSpeedCmPerSec(source.soil);
     const uint32_t excess=speed>critical?speed-critical:0u;
+    // Rock is the explicit non-erodible boundary: wave splash and bank slope
+    // must not cut it either (they used to, a few cm per minute).
+    if(source.soil==ShoreSoil::Rock){
+        out.cell.erosionCarryMilliCm=0;
+        return out;
+    }
     // Roots protect the bank without changing water velocity. A steep bank
     // erodes more rapidly; wave splash can erode low-flow sand shores.
     const uint32_t shock=excess+

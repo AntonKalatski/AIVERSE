@@ -81,7 +81,7 @@ you. AIVERSE ships the mechanics themselves — and makes the game something an 
 | **Multiplayer means endless desyncs.** One `float` is enough for a match on an iPhone and an Android phone to drift apart. | The simulation is bit-identical everywhere: fixed-point instead of floats, its own RNG, checksums. CI compares matches across Linux x64/ARM64, Windows and macOS on every push. Only commands go over the network; there is rollback lockstep and a server with matchmaking and replay-based verdicts. |
 | **Mobile GPUs are weak, yet the game must look good.** | Every expensive feature — shadows, particles, terrain, post-effects — has quality tiers and adapts to the GPU, from old Mali and Adreno to Apple Silicon. |
 | **Shipping on every platform is a project of its own.** Signing, icons, store and ads SDKs. | `aiversebuild` makes an .app, an Xcode project, Gradle/APK, web and .exe in one command. Icons and splash screens are generated. Plugins for the App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin and more — a build carries only the ones the game selects. |
-| **Every new game starts from zero.** | 30+ playable templates, genre kits with acceptance checklists, 236 skills for agents. A new game starts from a working one. |
+| **Every new game starts from zero.** | 30+ playable templates, genre kits with acceptance checklists, 238 skills for agents. A new game starts from a working one. |
 | **Meta and LiveOps get rewritten in every project.** | `aiverse::meta`: shop, currencies, quests, passes, daily rewards, energy, clans, tournaments, chests with pity — configured in JSON. |
 
 ---
@@ -104,10 +104,11 @@ from the mechanics libraries — each one deterministic, tested, with save/resto
 | **Roguelikes** | `run-graph`: seeded runs and encounter budgets; `loot-tables` with a guaranteed rare drop |
 | **Idle, factory, colony** | `big-numbers`, `offline-production` (exact offline progress), `production-networks`, `logistics`, `tasks` |
 | **Rhythm games** | `rhythm-timing`: tempo maps and frame-independent hit judgement |
+| **Racing, vehicles** | `vehicle-controllers`: cars (torque, gears, traction, drift), tanks, hovercraft, planes, seats, damage zones; race session: grid, countdown, ordered checkpoints, laps, standings, wrong way, race bots; map `race` block in any project, shared HUD and chase camera, 2 templates |
 | **Any mobile game** | `aiverse::meta` and LiveOps, tutorials, UI screens, store and ads plugins |
 
-Racing, sports and vehicles are still on the [roadmap](docs/genre-mechanics-roadmap.md). Full list of
-libraries: [`libraries/catalog.json`](libraries/catalog.json) and [genre packages](docs/genre-packages.md).
+Sports games, boats, pit stops and penalties are still on the [roadmap](docs/genre-mechanics-roadmap.md). Full list of
+libraries: [`libraries/catalog.json`](libraries/catalog.json) and [genre packages](docs/mechanics-packages.md).
 
 ---
 
@@ -183,6 +184,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 | Economy and building | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D and experiments | **Crystal Dunes** (tiles, Dune II) · **Green Hills** (2D sprites on 3D terrain) · **Planets** (spherical planets and orbits) · **Wildfire** (fields: wildfires and creep) |
 | FPS | **Crossfire Arena** (5v5) · **Breach Protocol** (tactical rounds) · **Last Survivor** (100-player battle royale) · **Aim Lab** (shooting range) |
+| Racing | **Oval Sprint** (lap race against three bots) · **Road Circuit** (race on a spline road) |
 
 ---
 
@@ -220,7 +222,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 - Unity-style docking editor: scene, inspector, terrain, effects, lighting, UI, play test and device simulator
 - `aiversemcp` — MCP server for agents — PHYSIS map configuration, validation and Undo/Redo
 - **Make a game** wizard
-- 236 skills for agents and genre kits with acceptance checklists
+- 238 skills for agents and genre kits with acceptance checklists
 - Importers for assets of classic games from your own copy
 
 </td>
@@ -245,10 +247,16 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 **1. Build the engine** (macOS; requires Xcode and CMake):
 
 ```bash
-cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
-cmake --build build/mac -j 8
-open build/mac/AiverseEditor.app        # editor: project hub and templates
+./studio_mac.command                    # AIVERSE Studio, the editor (needs Xcode, CMake, Node.js)
+./studio_mac.command templates/mushrooms   # ...on another project
 ```
+
+Windows: `studio_windows.cmd [project]` builds and opens `AiverseStudio.exe` (needs Visual Studio 2022,
+CMake, Node.js; runs on the WebView2 Runtime and Vulkan).
+
+`studio_mac.command` builds the web UI and the native Studio and opens it. The engine alone:
+`cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`. The previous
+ImGui editor (`build/mac/AiverseEditor.app`) is still built and works on Linux and Windows.
 
 Linux: `cmake --preset linux-release && cmake --build build/linux-release`. If you'd rather not compile,
 the `builds` branch has a prebuilt editor and tools
@@ -257,7 +265,7 @@ the `builds` branch has a prebuilt editor and tools
 **2. Make a game.** In the hub, click **Make a game** or create a project from a template. You can
 play it with bots right away in the Game window.
 
-**3. Connect an AI agent.** The **Agent** window in the editor shows a ready-made config. For Claude Code:
+**3. Connect an AI agent.** In Studio the **Agent** panel runs Claude Code on the open project directly (every edit is an undo step). To connect your own client, the ImGui editor's **Agent** window shows a ready-made config. For Claude Code:
 
 ```bash
 claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
@@ -297,7 +305,7 @@ Reference documents are in English. The overview, the game wizard, Unity migrati
 |---|---|
 | [**Full overview**](docs/overview.md) | every subsystem, building, platforms, CI, releases |
 | [Game format](docs/game-format.md) | `game.json`, `rules.json`, maps and all data blocks |
-| [Genre packages](docs/genre-packages.md) · [Libraries](docs/libraries.md) | mechanics for any genre |
+| [Genre packages](docs/mechanics-packages.md) · [Libraries](docs/libraries.md) | mechanics for any genre |
 | [Make a game wizard](docs/game-wizard.md) | how an idea plus art becomes a finished project |
 | [Scripting](docs/scripting.md) · [C++ modules](docs/native-modules.md) | when data isn't enough |
 | [Terrain](docs/terrain.md) · [Planets](docs/planets.md) · [Pathfinding](docs/pathfinding.md) | world and movement |

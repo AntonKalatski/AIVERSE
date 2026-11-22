@@ -40,6 +40,14 @@ const fieldsFor = (id: string): StudioSnapshot['properties'] => {
   entityFields.set(id, fields);
   return fields;
 };
+// DEMO inspector: the demo has no document components, only these fields.
+const demoInspector = (id: string): NonNullable<StudioSnapshot['inspector']> => {
+  const entity = snapshot.scene.entities.find(item => item.id === id);
+  if (!entity) throw Error('Unknown entity: ' + id);
+  const fields = structuredClone(fieldsFor(id)).filter(field => field.key !== 'name');
+  return { id, name: entity.name, kind: entity.kind, nameEditable: true,
+    components: [{ id: 'Transform', title: 'Transform', note: 'Browser DEMO data, not a project document.', properties: fields }] };
+};
 const undoStack: StudioSnapshot[] = [];
 const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
@@ -81,10 +89,18 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.materialPatch' || method === 'studio.materialCreate') {
     throw Error('Editing materials requires the native AIVERSE host');
   }
-  if (method === 'studio.renderLighting') return { version: 1, indirect: 'off', direct: 'legacy', quality: 'high', probes: 8, layers: 4, spacing: 4, samples: 32, distance: 32, cpuBudgetMs: 2 } as StudioResult['studio.renderLighting'];
-  if (method === 'studio.renderLightingSet') throw new Error('Open the native Studio to edit lighting');
+  if(method==='studio.wind'){
+    const curve=(f:(t:number)=>number)=>Array.from({length:32},(_,i)=>Math.round(f(i/31)*1000)/1000);
+    return {settings:{enabled:true,speed:6,direction:0,gust:.35,scale:.035,debug:'off'},
+      library:{masks:[{name:'trunk',index:2,samples:curve(t=>t<.25?t*.12:t<.6?.03+(t-.25)*.77:.3+(t-.6)*1.75)},
+        {name:'branch',index:3,samples:curve(t=>t*t)},{name:'leaf',index:5,samples:curve(t=>Math.min(1,.5+t*.5))}],
+        profiles:[],uniqueMasks:8,warnings:[]},scene:{}} as StudioResult['studio.wind'];
+  }
+  if(method==='studio.windSet')throw Error('Wind preview requires the native host');
   if(method==='studio.nereidFlow')return {surfaces:[],computed:[]};
   if(method==='studio.nereidFlowSet')throw Error('NEREID flow editing requires the native host');
+  if (method === 'studio.renderLighting') return { version: 1, indirect: 'off', direct: 'legacy', quality: 'high', probes: 8, layers: 4, spacing: 4, samples: 32, distance: 32, cpuBudgetMs: 2 } as StudioResult['studio.renderLighting'];
+  if (method === 'studio.renderLightingSet') throw new Error('Open the native Studio to edit lighting');
   if (method === 'studio.lighting') {
     return { lighting: null, lights: [] };
   }
@@ -109,13 +125,44 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.
   }
+  if (method === 'studio.rules') return { types: { soldier: { name: 'Soldier', health: { max: 60 }, move: { speed: 2.5 }, sight: 7, cost: { gold: 50, time: 10 }, weapons: [{ id: 'sword', damage: 6, range: 1, cooldown: 1 }] } },
+    resolved: { soldier: { name: 'Soldier', health: { max: 60 }, move: { speed: 2.5, radius: 0.4 }, sight: 7, cost: { gold: 50, time: 10 }, weapons: [{ id: 'sword', damage: 6, range: 1, cooldown: 1 }] } },
+    resources: ['gold'], summary: [], dirty: false } as StudioResult['studio.rules'];
+  if (method === 'studio.rulesSet') throw new Error('Open the native Studio to edit rules');
+  // The browser preview has a single window: panels stay docked.
+  if (method === 'studio.windowOpen') return { opened: false } as StudioResult['studio.windowOpen'];
+  if (method === 'studio.windowClose') return { closed: false } as StudioResult['studio.windowClose'];
+  if (method === 'studio.windowBroadcast') return { ok: true } as StudioResult['studio.windowBroadcast'];
+  if (method === 'studio.windowTitle') return { ok: true } as StudioResult['studio.windowTitle'];
+  if (method.startsWith('studio.build')) throw new Error('Builds run in the native Studio');
+  if (method === 'studio.assetThumbnail') return { none: true } as StudioResult['studio.assetThumbnail'];
+  if (method === 'studio.assetUsage') return { unused: [], mentions: [] } as StudioResult['studio.assetUsage'];
+  if (method === 'studio.hub') return { recent: [], templates: [{ id: 'empty', name: 'Empty', description: '', genre: '', maps: 1 }], defaultLocation: '~/AiverseProjects' } as StudioResult['studio.hub'];
+  if (method === 'studio.hubOpen' || method === 'studio.hubCreate') throw new Error('Open the native Studio');
+  if (method === 'studio.ops') return { panel: String((params as { panel?: string })?.panel ?? ''), ops: [] } as StudioResult['studio.ops'];
+  if (method === 'studio.op' || method === 'studio.inputGet' || method === 'studio.inputSet' || method === 'studio.assetAudit' ||
+    method === 'studio.agentInfo' || method === 'studio.sceneBrush' || method === 'studio.splineEdit' || method === 'studio.stats' || method === 'studio.gpuStats' || method === 'studio.keepPlayChanges' || method === 'studio.extensions' || method === 'studio.extensionAction' || method === 'studio.extensionCreate' || method === 'studio.attachmentsGet' || method === 'studio.attachmentsSet' || method === 'studio.agentStart' || method === 'studio.agentStop' || method === 'studio.agentReset')
+    throw new Error('Open the native Studio');
+  if (method === 'studio.history') return { steps: [], position: 0 } as StudioResult['studio.history'];
+  if (method === 'studio.historyJump' || method === 'studio.entitiesAlign') throw new Error('Open the native Studio');
+  if (method === 'studio.componentCatalog') return [
+    { id: 'MeshRenderer', title: 'Mesh Renderer', group: 'Rendering', hint: 'Model and material slots', action: 'native', available: false, reason: 'Already on this entity' },
+    { id: 'Light', title: 'Point Light', group: 'Rendering', hint: 'Adds a light entity at this position', action: 'light', available: true },
+  ] as StudioResult['studio.componentCatalog'];
+  if (method === 'studio.componentAdd' || method === 'studio.componentRemove' || method === 'studio.setProperties')
+    throw new Error('Open the native Studio to change components');
+  if (method === 'studio.inspect') {
+    return demoInspector((params as StudioParams['studio.inspect']).entityId);
+  }
   if (method === 'studio.propertiesFor') {
     const id = (params as StudioParams['studio.propertiesFor']).entityId;
     return structuredClone(fieldsFor(id));
   }
   if (method === 'studio.select') {
-    const id = (params as StudioParams['studio.select']).id;
+    const select = params as StudioParams['studio.select'];
+    const id = select.ids?.length ? select.ids[select.ids.length - 1] : select.id ?? null;
     if (id !== null && !snapshot.scene.entities.some(entity => entity.id === id)) throw Error('Unknown entity: ' + id);
+    snapshot.selectedIds = id === null ? [] : select.ids?.length ? [...select.ids] : [id];
     if (snapshot.selectedId && !entityFields.has(snapshot.selectedId)) {
       entityFields.set(snapshot.selectedId, structuredClone(snapshot.properties));
     }
@@ -150,8 +197,21 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
       if (entity) entity.name = String(value);
     }
     snapshot.project.dirty = true;
+  } else if (method === 'studio.entityMove') {
+    const { entityId, targetId, placement } = params as StudioParams['studio.entityMove'];
+    const list = snapshot.scene.entities;
+    const from = list.findIndex(e => e.id === entityId);
+    if (from < 0) throw Error('Unknown entity: ' + entityId);
+    undoStack.push(clone()); redoStack.length = 0;
+    const [moved] = list.splice(from, 1);
+    let to = targetId ? list.findIndex(e => e.id === targetId) : list.length;
+    if (to < 0) to = list.length; else if (targetId && placement === 'after') to += 1;
+    list.splice(to, 0, moved);
+    snapshot.selectedId = entityId;
   } else if (method !== 'studio.snapshot') {
     throw Error('Unsupported operation');
   }
-  return clone();
+  const result = clone();
+  if (result.selectedId) result.inspector = demoInspector(result.selectedId);
+  return result;
 }

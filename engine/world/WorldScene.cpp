@@ -74,7 +74,7 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
         confluences_.setConfluences(confluence.sources);
     // Opt-in only. The existing WorldScene codepath is identical when the
     // manifest has no terraweaveForest block.
-    terraForest_=forestSceneFromManifest(manifest);
+    terraForest_=forestSceneFromManifest(manifest,reader);
     terraHorizon_=horizonSceneFromManifest(manifest,terraForest_.get(),reader);
     if(terraHorizon_) {
         // Honor optional manifest presentationQuality in the WorldScene

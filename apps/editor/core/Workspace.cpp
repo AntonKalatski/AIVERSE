@@ -24,6 +24,7 @@ namespace aiverse::editor { void registerPhysisOps(Workspace&); }
 #include "ScriptOps.h"
 #include "PostFxOps.h"
 #include "LightBakeOps.h"   // agent-lightbake
+#include "HumanCreatorOps.h"   // VIVID human_* ops
 #include "PlanetOps.h"
 #include "OverlayOps.h"
 #include "FieldOps.h"
@@ -179,7 +180,7 @@ bool Project::load(const std::string& d, std::string* err) {
             for (size_t i = 0; i < parts.size(); ++i) origin.text[i] = parts[i].second.dump() + "\n";
         }
         game::Rules parsed;
-        if(m.getStr("module", "rts")=="fps")fps::readConfig(r);else parsed=game::loadRules(r);
+        if(m.getStr("module", "rts")=="fps")fps::readConfig(r);else parsed=game::loadRules(r);   // == actorSessionRules() of the manifest being loaded
         dir = d; manifest = std::move(m); rulesJson = std::move(r); rulesOrigin = std::move(origin); rules = std::move(parsed);
         rulesError.clear();
         rulesDirty = manifestDirty = false;
@@ -190,7 +191,7 @@ bool Project::load(const std::string& d, std::string* err) {
     }
 }
 bool Project::reloadRules() {
-    try { if(isFps()){fps::readConfig(rulesJson);rules=game::Rules{};}else rules = game::loadRules(rulesJson); rulesError.clear(); return true; }
+    try { if(actorSessionRules()){fps::readConfig(rulesJson);rules=game::Rules{};}else rules = game::loadRules(rulesJson); rulesError.clear(); return true; }
     catch (const std::exception& e) { rulesError = e.what(); return false; }
 }
 bool Project::saveRules(std::string* err) {
@@ -221,7 +222,7 @@ bool Project::saveManifest(std::string* err) {
 // ================================================================= workspace
 
 void registerLensOps(Workspace& ws);
-Workspace::Workspace() { registerLensOps(*this); registerGeometryOps(*this); registerModelingOps(*this); registerAnimationOps(*this); registerShaderGraphOps(*this); registerFpsOps(*this); registerCoreOps(); registerPortOps(*this); registerTileOps(*this); registerTerrainOps(*this); registerGenOps(*this); registerDataOps(*this); registerBalanceOps(*this); registerLightOps(*this); registerPhysisOps(*this); registerFxOps(*this); registerOverlayOps(*this); registerBrandingOps(*this); registerPlanetOps(*this); registerScenarioOps(*this); registerCampaignOps(*this); registerSchemaOps(*this); registerMaterialOps(*this); registerPostFxOps(*this); registerScriptOps(*this); registerToolchainOps(*this); registerNativeBuildOps(*this); registerStrategicOps(*this); registerUiOps(*this); registerFieldOps(*this); registerRaidOps(*this); registerRouteOps(*this); registerRoadOps(*this); registerWaterOps(*this); registerWizardOps(*this); registerLightBakeOps(*this);
+Workspace::Workspace() { registerLensOps(*this); registerGeometryOps(*this); registerModelingOps(*this); registerAnimationOps(*this); registerShaderGraphOps(*this); registerFpsOps(*this); registerCoreOps(); registerPortOps(*this); registerTileOps(*this); registerTerrainOps(*this); registerGenOps(*this); registerDataOps(*this); registerBalanceOps(*this); registerLightOps(*this); registerPhysisOps(*this); registerFxOps(*this); registerOverlayOps(*this); registerBrandingOps(*this); registerPlanetOps(*this); registerScenarioOps(*this); registerCampaignOps(*this); registerSchemaOps(*this); registerMaterialOps(*this); registerPostFxOps(*this); registerScriptOps(*this); registerToolchainOps(*this); registerNativeBuildOps(*this); registerStrategicOps(*this); registerUiOps(*this); registerFieldOps(*this); registerRaidOps(*this); registerRouteOps(*this); registerRoadOps(*this); registerWaterOps(*this); registerWizardOps(*this); registerLightBakeOps(*this); registerHumanCreatorOps(*this);
 #ifdef AIVERSE_BATTLE_OPS
     registerBattleNetOps(*this);
 #endif

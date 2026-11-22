@@ -1,54 +1,43 @@
-// Driving (agent-gta2): the top-down hero gets into a vehicle and drives it. rules "driving" (docs/driving.md).
-//
-// Vehicles are ordinary units of the types listed in driving.vehicles. Each one owns a kinematic VehicleState of the
-// vehicle-controllers library (libraries/include/aiverselib/genre/VehicleControllers.h, wheeled arcade-sim: torque
-// curve, gears, tyre grip, handbrake, drift) in metres; this file is the collision owner the library asks for: it
-// reports the ground, sweeps the body (three circles along the car) over the map grid and other units, resolves the
-// hits (vehicleResolveCollision), turns impact speed into damage and runs pedestrians over.
+// Driving on a grid map (rules "driving", docs/driving.md): the grid-map host of the one vehicle system
+// (engine/vehicles/Vehicles.h). Vehicles are ordinary units of the types listed in driving.vehicles with the shared
+// VehicleDrive component; whoever drives carries VehicleOccupant. This file is only what the grid map knows:
+// unit types <-> vehicle types, cells <-> metres, the sweep of the body (three circles along the car) over the map
+// grid, the units and the static colliders, decks (bridges / tunnels: map "decks" and spline-road spans), the hero's
+// sticky top-down input as the driver's controls, kCmdTopDownEnter wiring, damage through the RTS combat code, and the
+// race seats (engine/vehicles/VehicleRace.h runs the race).
 //
 // kCmdTopDownEnter toggles: on foot the hero gets into the nearest free vehicle in range, in a car it gets out (slow
 // enough, next to a door, on a passable spot). While driving the hero is off the map (kUnitInCargo) and follows the
-// car; the hero's sticky kCmdTopDown input steers it ("tank": stick up = throttle, down = brake / reverse, sideways
-// = steering; "stick": the car turns toward the stick direction), the fire bit is the handbrake.
+// car; the hero's kCmdTopDown input steers it ("tank" / "stick", mechanics/VehicleDrive.h), the fire bit is the handbrake.
 //
-// State lives in the DrivingStore world resource: hashed, saved after the top-down heroes, copied by rollback
-// snapshots. Games without the block keep their checksums and save layout.
+// State: VehicleDrive / VehicleOccupant components (saved with the RTS pools), the DrivingDecks and RaceState world
+// resources. Games without the block keep their checksums and save layout.
 #pragma once
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
-#include "../../libraries/include/aiverselib/genre/VehicleControllers.h"
+#include "../../engine/vehicles/Vehicles.h"
+#include "../../engine/vehicles/VehicleRace.h"
 
 namespace aiverse { class Simulation; class Hasher; class Archive; struct Command; }
 
 namespace aiverse::game {
 
+// A walker waiting at the kerb for vehicles (RtsPedestrianVehicles.inc; kept only in games with traffic, which
+// registers it).
+// reason: 0 walking, 1 a vehicle is coming, 2 peeking past a parked one.
+struct CrossingWait {
+    uint8_t reason = 0;
+    bool peeked = false;
+    uint32_t clearUntil = 0, peekUntil = 0;
+    friend void io(Archive& a, CrossingWait& c) { using aiverse::io; io(a, c.reason); io(a, c.peeked); io(a, c.clearUntil); io(a, c.peekUntil); }
+};
+
 class RtsModule;
-
-enum class DriveControls : uint8_t { Tank, Stick };
-
-struct DrivingVehicleType {
-    uint16_t type = UINT16_MAX;
-    Fixed length = Fixed::fromInt(1), width = Fixed::fromRatio(1, 2);   // cells
-    lib::genre::VehicleControllerDef def;
-};
-
-struct DrivingRules {
-    bool enabled = false;
-    Fixed metersPerCell = Fixed::fromInt(4);
-    Fixed enterRange = Fixed::fromInt(1);          // cells between the hero and the car body
-    Fixed exitSpeed = Fixed::fromInt(3);           // m/s: faster than this the doors stay shut
-    DriveControls controls = DriveControls::Tank;
-    Fixed crashMinSpeed = Fixed::fromInt(5), crashDamage = Fixed::fromInt(4), restitution = Fixed::fromRatio(2, 10);
-    Fixed runOverMinSpeed = Fixed::fromInt(4), runOverDamage = Fixed::fromInt(15);
-    Fixed wreckDamage{};                           // damage to the driver when the car is destroyed under him
-    uint32_t doorTicks = 0;                        // how long a door stays open after getting in / out (view)
-    Fixed doorSeconds = Fixed::fromRatio(1, 2);
-    std::vector<DrivingVehicleType> vehicles;      // sorted by type
-};
 
 // A deck is a second level of the map: a bridge over a road, a tunnel under houses (map "decks", docs/driving.md).
 // A car gets on at either end and stays between the walls until it leaves through an end; while it is on the
@@ -60,33 +49,12 @@ struct DrivingDeck {
     std::vector<Fixed> at;                         // distance along the centre line at each point, cells
     Fixed length() const { return at.empty() ? Fixed{} : at.back(); }
 };
-
-struct DrivingCar {
-    Entity e = kNullEntity;
-    Entity driver = kNullEntity;
-    uint8_t player = 0;                            // slot of the driver (0: nobody)
-    uint32_t doorUntil = 0;                        // the driver's door is open until this tick
-    bool locked = false;                           // nobody gets in until it is unlocked (Driving::setLocked)
-    int16_t deck = -1;                             // index into DrivingStore::decks while on a bridge / in a tunnel
-    bool autopilot = false;                        // pedals come from `pilot` (traffic, scripts) while no hero drives
-    lib::genre::VehicleInput pilot;
-    lib::genre::VehicleState st;
-};
-
-struct DrivingStore {
-    std::vector<DrivingCar> cars;                  // ascending entity index
-    std::vector<DrivingDeck> decks;                // from the map, in map order
-    // Lookup cache only (never hashed or saved): entity index -> its lower_bound position in `cars`.
-    // Each use is verified against the neighbouring entries, so a stale slot just falls back to the
-    // binary search; results are always those of std::lower_bound.
-    mutable std::vector<uint32_t> slotOf;
-};
+struct DrivingDecks { std::vector<DrivingDeck> decks; };   // world resource, map order (VehicleDrive::deck indexes it)
 
 class Driving {
 public:
     bool active() const { return rules_.enabled; }
-    const DrivingRules& rules() const { return rules_; }
-    static DrivingRules parse(const Json& j, const std::vector<std::string>& typeIds);   // throws readable errors
+    const vehicles::DriveRules& rules() const { return rules_; }
     void setup(Simulation& sim, RtsModule& m, const Json& rulesJson);
     // map "decks" and the bridges / tunnels of its spline roads ("roadNetwork", rules "roadTypes"); throws readable errors
     void loadMap(Simulation& sim, const Json& map, const Json& roadTypes = Json());
@@ -94,18 +62,15 @@ public:
     void tick(Simulation& sim);                          // after the top-down heroes moved
     void hash(Simulation& sim, Hasher& h) const;
     void io(Simulation& sim, Archive& a);
-    DrivingStore* store(Simulation& sim) const;
-    const DrivingCar* carOf(Simulation& sim, Entity driver) const;      // the car this unit drives, or null
-    const DrivingCar* car(Simulation& sim, Entity vehicle) const;       // the state of a vehicle unit, or null
+    const std::vector<DrivingDeck>* decks(Simulation& sim) const;                 // null without the block
+    const vehicles::VehicleDrive* carOf(Simulation& sim, Entity driver) const;   // the car this unit drives, or null
+    Entity vehicleOf(Simulation& sim, Entity driver) const;                       // its entity, or kNullEntity
+    const vehicles::VehicleDrive* car(Simulation& sim, Entity vehicle) const;    // the state of a vehicle unit, or null
     bool isDriving(Simulation& sim, Entity hero) const { return carOf(sim, hero) != nullptr; }
-    Fixed speed(Simulation& sim, Entity vehicle) const;                 // forward speed, m/s (0: not a vehicle)
-    // Computer drivers (traffic): the pedals of a vehicle nobody drives. Call it from simulation code only (a system,
-    // a script effect), every tick or on change: it is state, hashed and saved. A hero who gets in takes over; when he
-    // gets out the autopilot input applies again. false: not a vehicle, or the input is out of range.
-    bool setAutopilot(Simulation& sim, Entity vehicle, const lib::genre::VehicleInput& input);
-    bool clearAutopilot(Simulation& sim, Entity vehicle);              // back to parked (handbrake)
-    // Locked cars: the enter key does nothing at them. The game decides which cars are locked and who can open
-    // them (a skill, a key); simulation code only. locked(): false for anything that is not a vehicle.
+    Fixed speed(Simulation& sim, Entity vehicle) const;                           // forward speed, m/s (0: not a vehicle)
+    // Computer drivers (traffic, scripts) and locks: the shared API (vehicles::setAutopilot / setLocked), simulation code only.
+    bool setAutopilot(Simulation& sim, Entity vehicle, const lib::mechanics::VehicleInput& input);
+    bool clearAutopilot(Simulation& sim, Entity vehicle);
     bool setLocked(Simulation& sim, Entity vehicle, bool locked);
     bool locked(Simulation& sim, Entity vehicle) const;
     // The vehicle the enter key of this hero would take now (the nearest free one in reach, locked or not), or null.
@@ -117,28 +82,34 @@ public:
     int deckIndex(Simulation& sim, const std::string& id) const;
     Fixed height(Simulation& sim, Entity vehicle) const;
     bool setDeck(Simulation& sim, Entity vehicle, int deck);
+    // Races (rules "race" + map "race", docs/races.md): racer i + 1 is the i-th car of the map (entity order) and
+    // belongs to player i + 1 (bots and players without a hero race with the race bot). racing(): this map has a race.
+    bool racing(Simulation& sim) const;
+    void loadRace(Simulation& sim, const Json& rules, const Json& map);   // after loadMap; throws readable errors
+    lib::mechanics::RaceView raceView(Simulation& sim, uint8_t player) const;
     // takes a just spawned vehicle unit now (instead of at its next tick), rolling forward at `speed` m/s (traffic)
     bool adopt(Simulation& sim, Entity vehicle, Fixed speed);
+    // the police pull the hero out of a slow car (false: too fast)
+    bool policeExit(Simulation& sim, Entity hero);
 
-    bool policeExit(Simulation& sim, Entity hero) {
-        auto* st=store(sim);if(!st)return false;
-        for(auto& c:st->cars)if(c.driver==hero){if(fxAbs(speed(sim,c.e))>rules_.exitSpeed)return false;return leave(sim,c,true);}
-        return true;
-    }
 private:
-    const DrivingVehicleType* typeOf(uint16_t unitType) const;
-    void adoptAndDrop(Simulation& sim, DrivingStore& st);
-    void adoptOne(Simulation& sim, DrivingStore& st, Entity e);
-    void enter(Simulation& sim, DrivingStore& st, uint8_t player, Entity hero);
-    bool leave(Simulation& sim, DrivingCar& c, bool forced);
-    void drive(Simulation& sim, DrivingStore& st, size_t index);
-    bool collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& posCells);
-    lib::genre::VehicleInput inputOf(Simulation& sim, const DrivingCar& c) const;
+    class Host;
+    class Seats;
+    friend class Host;
+    friend class Seats;
+    const vehicles::VehicleType* typeOf(uint16_t unitType) const { return rules_.type(unitType); }
+    void adoptAndDrop(Simulation& sim);
+    void adoptOne(Simulation& sim, Entity e);
+    void enter(Simulation& sim, uint8_t player, Entity hero);
+    void seat(Simulation& sim, Entity car, uint8_t player, Entity hero);   // put the hero at the wheel (no checks)
+    bool leave(Simulation& sim, Entity car, Entity hero, bool forced);
+    bool collide(Simulation& sim, Entity car, Vec3& posCells, vehicles::VehicleImpacts& impacts);
+    lib::mechanics::VehicleInput heroPedals(Simulation& sim, const vehicles::VehicleDrive& c, bool& ok) const;
 
     RtsModule* m_ = nullptr;
-    DrivingRules rules_;
-    std::vector<int32_t> vehicleOf_;                // per unit type: index into rules_.vehicles, -1: not a vehicle (derived)
+    vehicles::DriveRules rules_;
     std::vector<Fixed> reach_;                      // per unit type: the farthest its body gets from its centre (derived)
+    std::shared_ptr<const vehicles::VehicleRace> race_;   // rules + map course (derived); state: RaceState resource
 };
 
 } // namespace aiverse::game

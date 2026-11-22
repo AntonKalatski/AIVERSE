@@ -1,4 +1,7 @@
-// LumaWeave screen-space Metal direct-light + denoiser runtime.
+// LumaWeave screen-space direct-light + denoiser runtime (Metal, Vulkan).
+// Vulkan uses the GLSL kernels of LumaWeaveVulkanShaders.h on the
+// TextureResources compute layout; clusters and candidate indices share one
+// storage buffer there (four buffer bindings).
 // Explicit HDR DEPTH input only; no implicit G-buffer or legacy light ownership.
 // One command buffer orders direct compute -> denoise compute -> (optional)
 // composition. GPU readback fence acknowledges the batch on a later frame.
@@ -10,6 +13,7 @@
 #include "LumaWeaveFullscreenMetalShader.h"
 #include "LumaWeavePbrMetalShader.h"
 #include "LumaWeaveDenoiseMetalShader.h"
+#include "LumaWeaveVulkanShaders.h"
 #include "GiGpuBvh.h"
 #include "GiGpuBvhValidator.h"
 #include "LumaWeaveTextureRetirement.h"
@@ -90,25 +94,26 @@ public:
 
     bool initialize(gfx::Device& dev,LumaScreenSettings settings={}) {
         if(!shutdown())return false;
-        if(dev.info().backend!=gfx::Backend::Metal || !dev.supportsCompute() ||
+        const auto backend=dev.info().backend;
+        if((backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan) || !dev.supportsCompute() ||
            !dev.supports(gfx::PixelFormat::RGBA16F) || !validate(settings))
             return false;
-        auto direct=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_FULLSCREEN,nullptr,
+        auto direct=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_FULLSCREEN,luma_vk::kDirect,
                                        "LumaWeave screen direct"});
         if(!direct.valid())return false;
-        auto denoise=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_DENOISE,nullptr,
+        auto denoise=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_DENOISE,luma_vk::kDenoise,
                                         "LumaWeave screen denoiser"});
         if(!denoise.valid()){dev.destroyCompute(direct);return false;}
         // Optional PBR shader: failure does not disable existing diffuse path.
-        auto pbr=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_SCREEN_PBR,nullptr,
+        auto pbr=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_SCREEN_PBR,luma_vk::kDirectPbr,
                                      "LumaWeave screen direct GGX"});
         gfx::ComputeHandle pbrDenoise{};
         if(pbr.valid()) {
             pbrDenoise=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_DENOISE_PBR,
-                nullptr,"LumaWeave GGX surface-normal temporal resolve"});
+                luma_vk::kDenoisePbr,"LumaWeave GGX surface-normal temporal resolve"});
             if(!pbrDenoise.valid()){dev.destroyCompute(pbr);pbr={};}
         }
-        dev_=&dev;direct_=direct;denoise_=denoise;
+        dev_=&dev;vulkan_=backend==gfx::Backend::Vulkan;direct_=direct;denoise_=denoise;
         pbr_=pbr;pbrDenoise_=pbrDenoise;settings_=settings;
         const uint32_t marker=kMarker;
         marker_=allocate(sizeof marker,&marker);
@@ -142,7 +147,7 @@ public:
             if(pbr_.valid())dev_->destroyCompute(pbr_);
             if(pbrDenoise_.valid())dev_->destroyCompute(pbrDenoise_);
         }
-        dev_=nullptr;direct_={};denoise_={};pbr_={};pbrDenoise_={};marker_={};
+        dev_=nullptr;vulkan_=false;direct_={};denoise_={};pbr_={};pbrDenoise_={};marker_={};
         lightBuffer_={};clusterBuffer_={};indexBuffer_={};
         triangleBuffer_={};nodeBuffer_={};
         raw_={};for(auto& t:filtered_)t={};for(auto& t:normalDepth_)t={};
@@ -212,8 +217,18 @@ public:
                              sizeof(LumaGpuLight),
                              packet.lights.empty()?nullptr:packet.lights.data());
         if(!lights.valid())return false;
-        auto cells=allocate(std::max<size_t>(1,packet.cells.size())*
-                            sizeof(LumaGpuClusterEntry),packet.cells.data());
+        // Vulkan has four buffer bindings: candidates follow the cells there.
+        std::vector<uint8_t> packed;
+        if(vulkan_) {
+            const size_t cellBytes=packet.cells.size()*sizeof(LumaGpuClusterEntry);
+            const size_t refBytes=packet.candidateIndices.size()*sizeof(uint32_t);
+            packed.assign(cellBytes+(refBytes+15)/16*16,0);
+            std::memcpy(packed.data(),packet.cells.data(),cellBytes);
+            if(refBytes)std::memcpy(packed.data()+cellBytes,packet.candidateIndices.data(),refBytes);
+        }
+        auto cells=vulkan_?allocate(packed.size(),packed.data()):
+            allocate(std::max<size_t>(1,packet.cells.size())*
+                     sizeof(LumaGpuClusterEntry),packet.cells.data());
         if(!cells.valid()){dev_->destroyBuffer(lights);return false;}
         auto indices=allocate(std::max<size_t>(1,packet.candidateIndices.size())*
                               sizeof(uint32_t),
@@ -324,27 +339,44 @@ public:
         p.grid=sourcePacket_.uniforms;
         p.grid.limits[2]=uint32_t(pixels);
         p.grid.limits[3]=samples;
-        p.control={nodeCount_,frameSeed,width_,0};
+        p.control={nodeCount_,frameSeed,width_,dev_->info().clipDepthZeroToOne?1u:0u};
         const bool shaded=surface.complete() && pbrAvailable();
         // A diffuse history is not compatible with a newly material-reflected
         // GGX output, nor vice versa. Never reproject across mode switches.
         if(historyValid_ && confirmedShaded_!=shaded)historyValid_=false;
         if(!dev_->beginCompute(shaded?pbr_:direct_))return result;
-        dev_->setComputeBuffer(0,lightBuffer_);
-        dev_->setComputeBuffer(1,clusterBuffer_);
-        dev_->setComputeBuffer(2,indexBuffer_);
-        dev_->setComputeBuffer(3,triangleBuffer_);
-        dev_->setComputeBuffer(4,nodeBuffer_);
+        bool directEncoded=false;
         dev_->setComputeUniforms(&p,sizeof(p));
-        dev_->setComputeTexture(0,raw_);
-        dev_->setComputeTexture(1,sceneDepth);
-        if(shaded) {
-            dev_->setComputeTexture(2,surface.material);
-            dev_->setComputeTexture(3,surface.normalRoughness);
-            dev_->setComputeTexture(4,surface.depth);
+        if(vulkan_) {
+            // Storage image 0; sampled 0.. = bindings 4..; buffers 0..3 = 12..15.
+            dev_->setComputeBuffer(0,lightBuffer_);
+            dev_->setComputeBuffer(1,clusterBuffer_);
+            dev_->setComputeBuffer(2,triangleBuffer_);
+            dev_->setComputeBuffer(3,nodeBuffer_);
+            dev_->setComputeTexture(0,sceneDepth);
+            if(shaded) {
+                dev_->setComputeTexture(1,surface.material);
+                dev_->setComputeTexture(2,surface.normalRoughness);
+                dev_->setComputeTexture(3,surface.depth);
+            }
+            directEncoded=dev_->bindComputeStorageTexture(0,raw_) &&
+                          dev_->dispatchChecked(uint32_t(pixels));
+        } else {
+            dev_->setComputeBuffer(0,lightBuffer_);
+            dev_->setComputeBuffer(1,clusterBuffer_);
+            dev_->setComputeBuffer(2,indexBuffer_);
+            dev_->setComputeBuffer(3,triangleBuffer_);
+            dev_->setComputeBuffer(4,nodeBuffer_);
+            dev_->setComputeTexture(0,raw_);
+            dev_->setComputeTexture(1,sceneDepth);
+            if(shaded) {
+                dev_->setComputeTexture(2,surface.material);
+                dev_->setComputeTexture(3,surface.normalRoughness);
+                dev_->setComputeTexture(4,surface.depth);
+            }
+            dev_->dispatch(uint32_t(pixels));
+            directEncoded=dev_->computeDispatchSucceeded();
         }
-        dev_->dispatch(uint32_t(pixels));
-        const bool directEncoded=dev_->computeDispatchSucceeded();
         dev_->endCompute();
 
         if(!directEncoded) { queueFence(currentVP,eye,confirmedIndex_,false);return result; }
@@ -363,16 +395,28 @@ public:
             queueFence(currentVP,eye,confirmedIndex_,false);
             return result;
         }
-        dev_->setComputeTexture(0,filtered_[dst]);
-        dev_->setComputeTexture(1,normalDepth_[dst]);
-        dev_->setComputeTexture(2,raw_);
-        dev_->setComputeTexture(3,filtered_[confirmedIndex_]);
-        dev_->setComputeTexture(4,normalDepth_[confirmedIndex_]);
-        dev_->setComputeTexture(5,sceneDepth);
-        if(shaded)dev_->setComputeTexture(6,surface.normalRoughness);
+        bool denoiseEncoded=false;
         dev_->setComputeUniforms(&denoise,sizeof(denoise));
-        dev_->dispatch(uint32_t(pixels));
-        const bool denoiseEncoded=dev_->computeDispatchSucceeded();
+        if(vulkan_) {
+            dev_->setComputeTexture(0,raw_);
+            dev_->setComputeTexture(1,filtered_[confirmedIndex_]);
+            dev_->setComputeTexture(2,normalDepth_[confirmedIndex_]);
+            dev_->setComputeTexture(3,sceneDepth);
+            if(shaded)dev_->setComputeTexture(4,surface.normalRoughness);
+            denoiseEncoded=dev_->bindComputeStorageTexture(0,filtered_[dst]) &&
+                           dev_->bindComputeStorageTexture(1,normalDepth_[dst]) &&
+                           dev_->dispatchChecked(uint32_t(pixels));
+        } else {
+            dev_->setComputeTexture(0,filtered_[dst]);
+            dev_->setComputeTexture(1,normalDepth_[dst]);
+            dev_->setComputeTexture(2,raw_);
+            dev_->setComputeTexture(3,filtered_[confirmedIndex_]);
+            dev_->setComputeTexture(4,normalDepth_[confirmedIndex_]);
+            dev_->setComputeTexture(5,sceneDepth);
+            if(shaded)dev_->setComputeTexture(6,surface.normalRoughness);
+            dev_->dispatch(uint32_t(pixels));
+            denoiseEncoded=dev_->computeDispatchSucceeded();
+        }
         dev_->endCompute();
         if(!denoiseEncoded) { queueFence(currentVP,eye,confirmedIndex_,false);return result; }
 
@@ -515,6 +559,7 @@ private:
     }
 
     gfx::Device* dev_=nullptr;
+    bool vulkan_=false;
     gfx::ComputeHandle direct_{},denoise_{},pbr_{},pbrDenoise_{};
     gfx::TextureHandle raw_{},filtered_[2]{},normalDepth_[2]{};
     gfx::BufferHandle marker_{},lightBuffer_{},clusterBuffer_{},

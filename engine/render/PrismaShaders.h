@@ -102,6 +102,15 @@ PF_FN float prismaDofViewDepth(float d, vec4 info) {
     float denominator = max(info.y-d*(info.y-info.x),0.0001);
     return info.x*info.y/denominator;
 }
+// Normalized circle of confusion (0..1) of a view-space distance.
+PF_FN float prismaDofCoc(float dist, vec4 focus, float intensity) {
+    float range = max(focus.y,0.01);
+    return clamp((abs(dist-focus.x)-range*0.5)/range,0.0,1.0)*intensity;
+}
+// Share of a tap whose blur circle (cocPx) reaches a pixel offsetPx away.
+PF_FN float prismaDofReach(float cocPx, float offsetPx) {
+    return clamp(cocPx-offsetPx+1.0,0.0,1.0);
+}
 )";
 inline const char* kDepthOfField = R"(
     vec2 uv = TUV(s);
@@ -124,39 +133,44 @@ inline const char* kDepthOfField = R"(
     }
 
     // Metric mode: the same focus plane works in perspective and ortho.
-    // Depth 1 is background/sky on the existing non-reversed RHI path;
-    // do not let background bleed across foreground silhouettes.
+    // Scatter-as-gather over the full blur radius: a tap contributes when
+    // its own blur circle reaches this pixel. Taps nearer than this pixel
+    // use their own circle, so an out-of-focus foreground spreads over the
+    // background and over the sharp zone (no hard cutout on its outline).
+    // Taps at the same depth or behind are limited by the smaller of the two
+    // circles, so the background never bleeds onto a sharper foreground; in
+    // the near field the background shows through the blurred edge.
+    // Depth 1 is background/sky (non-reversed RHI depth): treated as far.
     vec4 center = TEX0(uv);
+    float maxPx = p0.z*p0.w;
+    if (maxPx <= 0.00001) RETURN(center);
     float rawDepth = TEX1(uv).r;
-    if (rawDepth >= 0.99999) RETURN(center);
-    float centerDistance = prismaDofViewDepth(rawDepth,depthInfo);
-    float range = max(focusInfo.y,0.01);
-    float coc = clamp((abs(centerDistance-focusInfo.x)-range*0.5) /
-                      range,0.0,1.0)*p0.w;
-    if (coc <= 0.00001 || p0.z <= 0.00001) RETURN(center);
-    vec2 radius = px.xy * p0.z * coc;
-    vec3 sum = center.rgb * 2.0;
-    float weight = 2.0;
+    float centerDistance = rawDepth >= 0.99999 ? depthInfo.y
+                         : prismaDofViewDepth(rawDepth,depthInfo);
+    float centerPx = prismaDofCoc(centerDistance,focusInfo,p0.w)*p0.z;
     float tolerance = max(focusInfo.z,0.001);
-    for (int i=0; i<8; ++i) {
-        vec2 direction =
-            i==0 ? vec2(1.0,0.0) :
-            i==1 ? vec2(-1.0,0.0) :
-            i==2 ? vec2(0.0,1.0) :
-            i==3 ? vec2(0.0,-1.0) :
-            i==4 ? vec2(0.7071,0.7071) :
-            i==5 ? vec2(-0.7071,0.7071) :
-            i==6 ? vec2(0.7071,-0.7071) :
-                   vec2(-0.7071,-0.7071);
-        vec2 sampleUv = TUV(clamp(s + radius*direction,
+    // A pixel in front of the sharp zone is a blurred foreground edge: the
+    // background shows through it, so taps behind use this pixel's circle.
+    float nearField = step(centerDistance,
+                           focusInfo.x-max(focusInfo.y,0.01)*0.5);
+    vec3 sum = center.rgb;
+    float weight = 1.0;
+    for (int i=0; i<24; ++i) {
+        // Three rings of 8 taps, each ring turned by 15 degrees.
+        float ring = float(i/8)+1.0;
+        float angle = float(i-(i/8)*8)*0.785398+ring*0.261799;
+        float offsetPx = maxPx*ring/3.0;
+        vec2 sampleUv = TUV(clamp(s + px.xy*offsetPx*vec2(cos(angle),sin(angle)),
                                   vec2(0.0),vec2(1.0)));
         float tapDepth = TEX1(sampleUv).r;
-        if (tapDepth >= 0.99999) continue;
-        float tapDistance = prismaDofViewDepth(tapDepth,depthInfo);
-        // Reject both background->foreground and foreground->background
-        // contributions across occlusion edges, with a soft transition.
-        float difference = abs(tapDistance-centerDistance);
-        float w = 1.0-smoothstep(tolerance,tolerance*2.0,difference);
+        float tapDistance = tapDepth >= 0.99999 ? depthInfo.y
+                          : prismaDofViewDepth(tapDepth,depthInfo);
+        float tapPx = prismaDofCoc(tapDistance,focusInfo,p0.w)*p0.z;
+        float nearer = 1.0-smoothstep(0.0,tolerance,centerDistance-tapDistance);
+        // nearer: 0 when the tap is clearly in front of this pixel.
+        float w = mix(prismaDofReach(tapPx,offsetPx),
+                      prismaDofReach(mix(min(tapPx,centerPx),centerPx,nearField),
+                                     offsetPx),nearer);
         if (w <= 0.00001) continue;
         sum += TEX0(sampleUv).rgb*w;
         weight += w;
@@ -556,6 +570,81 @@ PF_FN float pfLensHash(vec2 p) {
     q+=dot(q,q.yzx+33.33);
     return fract((q.x+q.y)*q.z);
 }
+// Waterline (lensWater "waterline"): world point on the view ray through
+// screen position sp at clip depth z, from four inverse view-projection columns.
+PF_FN vec3 pfUnprojectWater(vec4 c0, vec4 c1, vec4 c2, vec4 c3, vec2 sp, float z) {
+    vec4 h = c0 * (sp.x * 2.0 - 1.0) + c1 * (sp.y * 2.0 - 1.0) + c2 * z + c3;
+    return h.xyz / max(abs(h.w), 0.000001) * sign(h.w + 0.0000001);
+}
+// Shader Graph "sceneColor": the scene at another uv, display-referred like `col` before
+// grading (exposure, ACES when tone mapping is on, sRGB). Auto exposure is not applied.
+PF_FN vec3 pfDisplay(vec3 c, vec4 filt) {
+    if (filt.x > 0.5) {
+        c = max(c * filt.z, vec3(0.0));
+        if (filt.y > 0.5) c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+        c = rtsSrgbEncode(clamp(c, vec3(0.0), vec3(1.0)));
+    }
+    return c;
+}
+// Lens distortion (lensDistortion): d0 = (k, panini, scale, aspect), d1 = (tan half fov x, y, chromatic, -).
+// Panini_Generic of the Unity/UE post stacks; then radial barrel (k > 0) / pincushion (k < 0).
+PF_FN vec2 pfLensDistort(vec2 sp, vec4 d0, vec4 d1) {
+    vec2 c = (sp - vec2(0.5)) * 2.0 / max(d0.z, 0.0001);
+    if (d0.y > 0.0001) {
+        vec2 v = c * d1.xy;
+        float dd = d0.y;
+        float viewDist = 1.0 + dd;
+        float hyp = v.x * v.x + viewDist * viewDist;
+        float isectD = v.x * dd;
+        float discrim = max(hyp - isectD * isectD, 0.0);
+        float cylMinusD = (-isectD * v.x + viewDist * sqrt(discrim)) / hyp;
+        float cyl = cylMinusD + dd;
+        v = v * (cyl / viewDist) / max(cyl - dd, 0.0001);
+        c = v / max(d1.xy, vec2(0.0001));
+    }
+    vec2 a = c * vec2(d0.w, 1.0);
+    float r2 = dot(a, a) / (d0.w * d0.w + 1.0);
+    c *= 1.0 + d0.x * r2;
+    return c * 0.5 + vec2(0.5);
+}
+// Shockwave ring offset (heatHaze): w = (centre uv, radius, thickness), uv units of height.
+PF_FN vec2 pfShockOffset(vec2 sp, vec4 w, float strength, float aspect) {
+    if (w.z <= 0.0 || strength == 0.0) return vec2(0.0);
+    vec2 d = (sp - w.xy) * vec2(aspect, 1.0);
+    float r = length(d);
+    float x = (r - w.z) / max(w.w, 0.0001);
+    float ring = exp(-x * x * 3.0) * x;
+    return d / max(r, 0.0001) * vec2(1.0 / max(aspect, 0.0001), 1.0) * ring * strength;
+}
+// Procedural lens dirt: three layers of soft random smudges (lensFlare without a dirt texture).
+PF_FN float pfDirtLayer(vec2 p, float scale, float seed) {
+    vec2 g = p * scale;
+    vec2 c = floor(g), f = fract(g);
+    float v = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 cell = vec2(float(x), float(y));
+            vec2 id = c + cell + vec2(seed);
+            float h = pfLensHash(id);
+            vec2 o = vec2(pfLensHash(id + vec2(7.1, 2.3)), pfLensHash(id + vec2(3.7, 9.1)));
+            float r = 0.25 + 0.55 * pfLensHash(id + vec2(11.3, 5.9));
+            float dd = length(cell + o - f);
+            v = max(v, (1.0 - smoothstep(r * 0.3, r, dd)) * step(0.5, h) * (0.35 + 0.65 * h));
+        }
+    }
+    return v;
+}
+PF_FN float pfDirt(vec2 p) {
+    return clamp(pfDirtLayer(p, 2.5, 1.0) * 0.6 + pfDirtLayer(p, 6.0, 13.0) * 0.45 +
+                 pfDirtLayer(p, 15.0, 29.0) * 0.3, 0.0, 1.0);
+}
+// Three travelling waves; w = (surfaceOffset, height, length, speed).
+PF_FN float pfWaterWave(vec2 p, float t, vec4 w) {
+    float k = 6.2831853 / max(w.z, 0.05);
+    float c = t * w.w * k;
+    return w.y * (0.6 * sin(p.x * k + c) + 0.4 * sin(p.y * k * 0.71 - c * 1.3) +
+                  0.25 * sin((p.x + p.y) * k * 1.9 + c * 0.7));
+}
 )";
 inline const char* kComposite = R"(
     // When output-history reconstruction fails after a jittered scene frame,
@@ -563,6 +652,30 @@ inline const char* kComposite = R"(
     // graphFrame.zw remains zero on normal frames; the caller owns this
     // uniform and leaves HUD/UI rasterization untouched.
     vec2 sp = clamp(s + graphFrame.zw,vec2(0.0),vec2(1.0));
+    float pfEdgeMask = 1.0;
+#ifdef PF_DISTORT
+    sp = pfLensDistort(sp, distort0, distort1);
+    pfEdgeMask = step(0.0, sp.x) * step(sp.x, 1.0) * step(0.0, sp.y) * step(sp.y, 1.0);
+#endif
+#ifdef PF_HAZE
+    {
+        float t = graphFrame.x * haze.z;
+        float m = haze.w >= 0.999 ? 1.0 : 1.0 - smoothstep(haze.w - 0.12, haze.w, sp.y);
+        vec2 nn = vec2(sin(sp.y * haze.y * 6.2831853 + t * 3.1 + sin(sp.x * haze.y * 2.3 + t)),
+                       cos(sp.x * haze.y * 4.7 - t * 2.3 + sin(sp.y * haze.y * 3.1 - t * 0.7)));
+        sp += nn * haze.x * px.xy * m;
+    }
+#endif
+#ifdef PF_SHOCK
+    {
+        float aspect = px.y / px.x;
+        sp += pfShockOffset(sp, shock0, shockS.x, aspect) + pfShockOffset(sp, shock1, shockS.y, aspect) +
+              pfShockOffset(sp, shock2, shockS.z, aspect) + pfShockOffset(sp, shock3, shockS.w, aspect);
+    }
+#endif
+#if defined(PF_DISTORT) || defined(PF_HAZE) || defined(PF_SHOCK)
+    sp = clamp(sp, vec2(0.0), vec2(1.0));
+#endif
 #ifdef PF_PIXELATE
     {
         vec2 cell = px.xy * grade1.w;
@@ -570,8 +683,15 @@ inline const char* kComposite = R"(
     }
 #endif
     vec2 uv = TUV(sp);
+#if defined(PF_CA) || defined(PF_DISTORT)
+    vec2 cd = vec2(0.0);
 #ifdef PF_CA
-    vec2 cd = TDIR((sp - 0.5) * (vig.w * 0.012));
+    cd += (sp - 0.5) * (vig.w * 0.012);
+#endif
+#ifdef PF_DISTORT
+    cd += (sp - 0.5) * (distort1.z * 0.02);
+#endif
+    cd = TDIR(cd);
     vec3 col = vec3(TEX0(uv + cd).r, TEX0(uv).g, TEX0(uv - cd).b);
 #else
     vec3 col = TEX0(uv).rgb;
@@ -595,6 +715,26 @@ inline const char* kComposite = R"(
 #endif
 #ifdef PF_SHAFTS
     col += TEX3(uv).rgb * shafts.rgb;
+#endif
+#ifdef PF_FLARE
+    {
+        // Lens dirt lights up where flare / bloom light reaches the lens.
+#ifdef PF_DIRT_TEX
+        float dirtMask = TEX11(vec2(s.x, 1.0 - s.y)).r;
+#else
+        float dirtMask = pfDirt(s * vec2(px.y / px.x, 1.0));
+#endif
+        col += TEX10(uv).rgb * flare.rgb * (1.0 + flare.w * dirtMask);
+#ifdef PF_BLOOM
+        col += TEX1(uv).rgb * bloom.rgb * (flare.w * dirtMask);
+#endif
+    }
+#endif
+#ifdef PF_STREAKS
+    col += TEX12(uv).rgb * streaks.rgb;
+#endif
+#ifdef PF_HALATION
+    col += TEX13(uv).rgb * halation.rgb;
 #endif
 #ifdef PF_AUTO_EXPOSURE
     // HDR-only 1x1 GPU-adapted exposure, before ACES/sRGB. A fourth
@@ -652,6 +792,11 @@ inline const char* kComposite = R"(
         col += vec3((pfHash(g + px.w * vec2(17.0, 31.0)) - 0.5) * gain.w);
     }
 #endif
+    // Lens fraction that is out of the water; only that part carries drops.
+    float pfLensDry = 1.0;
+#ifdef PF_WATERLINE
+    vec3 pfAboveWater = col;
+#endif
 #ifdef PF_UNDERWATER
     {
         // Prisma owns the full-screen composite. All distortion samples use
@@ -674,8 +819,10 @@ inline const char* kComposite = R"(
         vec2 warped = clamp(uv + TDIR(wave * strength),
                             vec2(0.002), vec2(0.998));
         if (strength > 0.00001) {
+            // Shift the already graded colour by the refraction difference;
+            // mixing the raw TEX0 sample in would undo grading (orange sand).
             vec3 warpedColor = TEX0(warped).rgb;
-            col = mix(col, warpedColor, clamp(underwater0.w + pulse * 0.35,0.0,1.0));
+            col += (warpedColor - TEX0(uv).rgb) * clamp(underwater0.w + pulse * 0.35,0.0,1.0);
         }
         // Screen-space approximation: near-depth haze and environmental
         // scattering. No per-object depth/caustics are claimed here.
@@ -724,10 +871,53 @@ inline const char* kComposite = R"(
         col *= 1.0 - underwater0.w * clamp(underwater1.y * 0.012, 0.0, 0.35);
     }
 #endif
+#ifdef PF_WATERLINE
+    {
+        // Camera at the surface: the lens is tested against the (waving) water
+        // plane, pixel by pixel. Below the line keeps the underwater optics,
+        // above it the dry image; a bright refracting meniscus follows the line.
+        float zNear = waterline1.w > 0.5 ? 0.0 : -1.0;
+        vec2 s1 = s + vec2(0.0, px.y);
+        vec3 n0 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s, zNear);
+        vec3 f0 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s, 1.0);
+        vec3 n1 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s1, zNear);
+        vec3 f1 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s1, 1.0);
+        vec3 d0 = normalize(f0 - n0), d1 = normalize(f1 - n1);
+        float lens = waterline1.y;
+        float t = graphFrame.x;
+        vec3 l0 = underwaterCamera.xyz + d0 * lens, l1 = underwaterCamera.xyz + d1 * lens;
+        // > 0: the water surface is above this lens point (submerged pixel).
+        float h0 = waterline0.x + pfWaterWave(l0.xz, t, waterline0) - d0.y * lens;
+        float h1 = waterline0.x + pfWaterWave(l1.xz, t, waterline0) - d1.y * lens;
+        float signedPx = h0 / max(abs(h1 - h0), 0.000001);
+        float wet = clamp(signedPx * 0.5 + 0.5, 0.0, 1.0);
+        col = mix(pfAboveWater, col, wet);
+        pfLensDry = 1.0 - wet;
+        float meniscus = waterline1.x;
+        if (meniscus > 0.01) {
+            float band = 1.0 - smoothstep(0.0, meniscus, abs(signedPx));
+            float side = signedPx > 0.0 ? 1.0 : -1.0;
+            vec2 bendUv = clamp(uv + TDIR(vec2(0.0, side * band * meniscus * px.y * 0.8)),
+                                vec2(0.002), vec2(0.998));
+            vec3 bent = TEX0(bendUv).rgb;
+            col = mix(col, bent * 1.08 + vec3(0.05), band * 0.7);
+            col += vec3(0.22) * pow(band, 6.0) * (0.4 + 0.6 * waterline1.z);
+        }
+    }
+#endif
 #ifdef PF_LENS_WATER
     {
         // Stable lens-space droplets: no water-world simulation or history texture.
         vec2 lensPixel=px.xy*vec2(1.0,lensWater1.w);
+        // Just emerged: everything that was under water is one refracting film
+        // whose ragged top edge drains down (gravity, ease-in) to the water level.
+        float lensAge=lensWater1.y;
+        // First third: the film clings to the lens; then it drains (ease-in).
+        float sheetT=lensWater2.z>0.001?clamp((lensAge-0.33*lensWater2.z)/(0.67*lensWater2.z),0.0,1.0):1.0;
+        float sheetEdge=0.035*sin(s.x*23.0+lensAge*3.0)+0.02*sin(s.x*57.0-lensAge*5.0)+
+                        0.05*(pfLensHash(vec2(floor(s.x*9.0),3.0))-0.5);
+        float sheetTop=1.08-1.25*pow(sheetT,1.6)+sheetEdge*(0.4+sheetT);
+        float inSheet=smoothstep(0.0,0.012,sheetTop-s.y)*clamp(lensWater2.w,0.0,1.0)*step(0.0001,lensWater2.w);
         vec2 cellSize=max(lensPixel*lensWater0.y*4.0,vec2(0.0001));
         vec2 moving=s/cellSize+vec2(0.0,lensWater1.y*lensWater1.x/max(lensWater0.y*4.0,1.0));
         vec2 cell=floor(moving),local=fract(moving);
@@ -752,13 +942,68 @@ inline const char* kComposite = R"(
                 glint=rim*max(0.0,-q.x+q.y);
             }
         }
+        // Meandering rivulets left by the draining film (lensWater "streaks"):
+        // a thin refracting tube, bright on one side, with a drop at its head.
+        if(lensWater2.x>0.001){
+            vec2 bigCell=max(lensPixel*lensWater0.y*vec2(10.0,30.0),vec2(0.0001));
+            vec2 slide=s/bigCell+vec2(0.0,lensAge*lensWater1.x*1.2/max(lensWater0.y*30.0,1.0));
+            vec2 bid=floor(slide),bl=fract(slide);
+            if(pfLensHash(bid+vec2(5.3,91.1))<lensWater2.x*0.55){
+                float ph=pfLensHash(bid)*6.2831;
+                float centre=0.5+0.26*sin(bl.y*5.0+ph)+0.09*sin(bl.y*13.0+ph*1.7);
+                float width=0.05*(0.6+0.8*pfLensHash(bid+vec2(2.0,7.0)));
+                float headY=0.12;
+                float along=clamp((bl.y-headY)/0.8,0.0,1.0);
+                float w=width*mix(1.0,0.45,along);
+                float d=bl.x-centre;
+                float tube=(1.0-smoothstep(w*0.5,w,abs(d)))*step(headY,bl.y)*(1.0-smoothstep(0.75,0.95,bl.y));
+                float hr=width*1.8;
+                vec2 hq=vec2((bl.x-(0.5+0.26*sin(headY*5.0+ph)+0.09*sin(headY*13.0+ph*1.7)))/hr,
+                             (bl.y-headY)/(hr*bigCell.x/bigCell.y));
+                float hd=dot(hq,hq);
+                float head=1.0-smoothstep(0.55,1.0,hd);
+                float c2=max(tube,head);
+                if(c2>coverage){
+                    coverage=c2;
+                    float nx=clamp(d/max(w,0.0001),-1.0,1.0);
+                    refractOffset=tube>head?vec2(nx*1.3*(1.0-0.5*nx*nx),0.0):hq*(1.0-clamp(hd,0.0,1.0));
+                    rim=tube>head?tube*smoothstep(0.35,1.0,abs(nx))*0.9:head*smoothstep(0.5,0.95,hd);
+                    glint=max(glint,tube>head?tube*smoothstep(0.1,0.8,-nx)*0.9:head*smoothstep(0.2,0.8,max(0.0,-hq.x+hq.y)*0.6));
+                }
+            }
+        }
         float film=pow(max(0.0,sin(s.x*53.0+sin(s.y*11.0+lensWater1.y*lensWater1.x/max(lensWater0.y,1.0)))),12.0)*lensWater1.z;
         vec2 offset=(refractOffset*coverage+vec2(film*0.25,film*0.08))*lensWater0.w*lensPixel;
+        // Water-covered lens (below the waterline) has no drops, trails or film.
+        float lensAmount=lensWater0.x*pfLensDry*(1.0-inSheet);
         vec3 original=TEX0(uv).rgb;
         vec3 bent=TEX0(clamp(uv+TDIR(offset),vec2(0.002),vec2(0.998))).rgb;
-        col+=(bent-original)*lensWater0.x;
-        col*=1.0-0.055*rim*lensWater0.x;
-        col+=vec3(0.035)*glint*lensWater0.x;
+        col+=(bent-original)*lensAmount;
+        col*=1.0-0.055*rim*lensAmount;
+        col+=vec3(0.035)*glint*lensAmount;
+        col+=vec3(1.0,0.96,0.86)*pow(glint,3.0)*lensWater2.y*0.8*lensAmount;
+        if(inSheet>0.001){
+            // Fine flowing ripples (draining downward), moderate refraction.
+            float fy=s.y*lensWater1.w;
+            vec2 flowN=0.6*vec2(sin(fy*90.0+lensAge*16.0+sin(s.x*41.0)*1.5),cos(s.x*83.0-fy*37.0+lensAge*9.0))+
+                       0.4*vec2(sin(s.x*173.0+fy*121.0+lensAge*21.0),sin(fy*157.0-s.x*61.0+lensAge*17.0));
+            float edgeBand=1.0-smoothstep(0.0,0.03,abs(sheetTop-s.y));
+            vec2 sheetOffset=(flowN*1.1+vec2(0.0,-2.2*edgeBand))*lensPixel*lensWater0.w;
+            // Applied as a refraction difference over the graded colour, like the
+            // drops: no raw-HDR leak, the film only bends and brightens light.
+            vec3 sheetOriginal=TEX0(uv).rgb;
+            vec3 sheetBent=TEX0(clamp(uv+TDIR(sheetOffset),vec2(0.002),vec2(0.998))).rgb;
+            vec3 sheetCol=col+(sheetBent-sheetOriginal);
+            // Flowing glare streaks along the draining water (not a dot grid).
+            float streak=pow(clamp(0.5+0.5*sin(s.x*61.0+flowN.x*2.2+lensAge*2.0),0.0,1.0),24.0)*
+                         clamp(0.5+0.5*flowN.y,0.0,1.0);
+            sheetCol+=vec3(0.20,0.21,0.21)*streak*(0.4+0.6*lensWater2.y);
+            // A water layer on the glass: slightly darker, cooler, less contrast.
+            sheetCol=mix(sheetCol,sheetCol*vec3(0.88,0.94,0.97)+vec3(0.02,0.03,0.035),0.6);
+            sheetCol+=vec3(0.30)*pow(edgeBand,3.0)*(0.5+0.5*lensWater2.y);
+            sheetCol*=1.0-0.18*smoothstep(0.03,0.0,abs(sheetTop-0.04-s.y));
+            col=mix(col,sheetCol,inSheet*pfLensDry*clamp(lensWater0.x*1.4,0.0,1.0));
+        }
     }
 #endif
 #ifdef PF_FADE
@@ -767,6 +1012,7 @@ inline const char* kComposite = R"(
 #ifdef PF_LETTERBOX
     if (s.y < lbox.w * 0.5 || s.y > 1.0 - lbox.w * 0.5) col = lbox.rgb;
 #endif
+    col *= pfEdgeMask;   // lensDistortion: black outside the distorted image
     col += vec3((pfHash(s * 1931.0 + px.w) - 0.5) / 255.0);   // dither: no banding in gradients / vignette
     RETURN(vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0));
 )";

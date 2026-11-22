@@ -19,6 +19,47 @@
       "keywords": []
     },
     {
+      "id": "aiverse-action-bots",
+      "package": "genre-bots",
+      "path": "skills/ai/aiverse-action-bots/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Deterministic genre bot policies: melee spacing/attack timing/dodge-parry/lock-on, shooter aim/lead/burst/reload/overheat/cover, squad roles with formations and an objective choice hook",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_genre_bots",
+      "dependencies": [
+        "aiverse-combat-actions",
+        "aiverse-weapon-policies",
+        "aiverse-configuration",
+        "aiverse-stealth-senses",
+        "aiverse-character-locomotion",
+        "aiverse-match-rules",
+        "aiverse-narrative-graphs"
+      ],
+      "backendDependencies": [
+        "aiverse_engine",
+        "aiverse_world"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/bots/GenreBots.h",
+      "keywords": [
+        "bot",
+        "opponent",
+        "squad",
+        "role",
+        "formation",
+        "objective",
+        "melee",
+        "shooter",
+        "бот",
+        "противник",
+        "отряд",
+        "роль",
+        "формаци",
+        "цел"
+      ]
+    },
+    {
       "id": "aiverse-action-sequences",
       "package": "action-sequences",
       "path": "skills/gameplay/aiverse-action-sequences/SKILL.md",
@@ -236,7 +277,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/royale/BattleRoyale.h",
+      "source": "libraries/include/aiverselib/mechanics/royale/BattleRoyale.h",
       "keywords": [
         "battle",
         "royale",
@@ -334,7 +375,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Telegraphs.h",
+      "source": "libraries/include/aiverselib/mechanics/Telegraphs.h",
       "keywords": [
         "boss",
         "telegraph",
@@ -387,6 +428,51 @@
       "requiresOwner": null,
       "source": "examples/libraries/bots/main.cpp",
       "keywords": []
+    },
+    {
+      "id": "aiverse-bots-combatant",
+      "package": "bots-fps",
+      "path": "skills/ai/aiverse-bots-combatant/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Command-driven FPS bots with perception, reaction, aiming, reload, retreat, zone and patrol",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_bots_fps",
+      "dependencies": [
+        "aiverse-navmesh"
+      ],
+      "backendDependencies": [
+        "aiverse_fps",
+        "aiverse_world"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/bots/Fps.h",
+      "keywords": [
+        "fps",
+        "bot",
+        "фпс",
+        "бот"
+      ]
+    },
+    {
+      "id": "aiverse-bots-commander",
+      "package": "bots-rts",
+      "path": "skills/ai/aiverse-bots-commander/SKILL.md",
+      "domain": "gameplay",
+      "summary": "RTS bot profiles and transactional checkpoints over the existing RtsAI",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_bots_rts",
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": "aiverse_game",
+      "source": "libraries/include/aiverselib/bots/Rts.h",
+      "keywords": [
+        "rts",
+        "bot",
+        "ртс",
+        "бот"
+      ]
     },
     {
       "id": "aiverse-bots-configure",
@@ -449,31 +535,6 @@
         "застрял",
         "команд",
         "механик"
-      ]
-    },
-    {
-      "id": "aiverse-bots-fps",
-      "package": "bots-fps",
-      "path": "skills/ai/aiverse-bots-fps/SKILL.md",
-      "domain": "gameplay",
-      "summary": "Command-driven FPS bots with perception, reaction, aiming, reload, retreat, zone and patrol",
-      "side": "simulation",
-      "runtime": "header",
-      "target": "AIVERSE::lib_bots_fps",
-      "dependencies": [
-        "aiverse-navmesh"
-      ],
-      "backendDependencies": [
-        "aiverse_fps",
-        "aiverse_world"
-      ],
-      "requiresOwner": null,
-      "source": "libraries/include/aiverselib/bots/Fps.h",
-      "keywords": [
-        "fps",
-        "bot",
-        "фпс",
-        "бот"
       ]
     },
     {
@@ -558,6 +619,31 @@
       ]
     },
     {
+      "id": "aiverse-bunkerwars-skills",
+      "package": null,
+      "path": "skills/gameplay/aiverse-bunkerwars-skills/SKILL.md",
+      "domain": "workflow",
+      "summary": "Convert Bunker Wars energy skills into rules player abilities",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/bunkerwars-skills.md",
+      "keywords": [
+        "bunker",
+        "wars",
+        "mushroom",
+        "energy",
+        "skills",
+        "converter",
+        "бункер",
+        "скилл",
+        "энерг",
+        "конвертер"
+      ]
+    },
+    {
       "id": "aiverse-cables",
       "package": null,
       "path": "skills/visuals/aiverse-cables/SKILL.md",
@@ -637,7 +723,7 @@
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "docs/genre-implementation.json",
+      "source": "docs/capability-status.json",
       "keywords": [
         "capability",
         "audit",
@@ -671,7 +757,7 @@
     {
       "id": "aiverse-card-games",
       "package": "card-games",
-      "path": "skills/genres/aiverse-card-games/SKILL.md",
+      "path": "skills/gameplay/aiverse-card-games/SKILL.md",
       "domain": "gameplay",
       "summary": "Card and board game rules: data-defined cards (units/spells/instants with targets and ordered effects: damage, heal, draw, energy, buff, counter, reveal, mill) and rule variants (hand/health/energy curve, draw per turn, first-player skip, fatigue, overdraw burn, board limit, turn limit, separate combat phase, rush, partial/full mulligan); seeded deck shuffles, draw/mulligan, phases, legal action generation, LIFO effect stack with priority passing, counters and fizzling on invalid targets, guard attacks, per-seat hidden information with a non-leaking cardViewFor projection and redacted/reveal events",
       "side": "simulation",
@@ -685,7 +771,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/CardGame.h",
+      "source": "libraries/include/aiverselib/mechanics/CardGame.h",
       "keywords": [
         "card",
         "deck",
@@ -714,7 +800,7 @@
     {
       "id": "aiverse-card-runtime",
       "package": "card-runtime",
-      "path": "skills/genres/aiverse-card-runtime/SKILL.md",
+      "path": "skills/gameplay/aiverse-card-runtime/SKILL.md",
       "domain": "gameplay",
       "summary": "Card zones, priority stack and private views",
       "side": "simulation",
@@ -799,7 +885,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Locomotion.h",
+      "source": "libraries/include/aiverselib/mechanics/Locomotion.h",
       "keywords": []
     },
     {
@@ -816,7 +902,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Cinematic.h",
+      "source": "libraries/include/aiverselib/mechanics/Cinematic.h",
       "keywords": [
         "cinematic",
         "cutscene",
@@ -976,7 +1062,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Traffic.h",
+      "source": "libraries/include/aiverselib/mechanics/Traffic.h",
       "keywords": [
         "traffic",
         "cars",
@@ -1062,7 +1148,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/CombatActions.h",
+      "source": "libraries/include/aiverselib/mechanics/CombatActions.h",
       "keywords": [
         "hitbox",
         "hurtbox",
@@ -1319,7 +1405,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsHitscanSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsHitscanSystems.h",
       "keywords": []
     },
     {
@@ -1336,7 +1422,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsHitscanResolutionSystems.h",
       "keywords": []
     },
     {
@@ -1353,7 +1439,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsDamageSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsDamageSystems.h",
       "keywords": []
     },
     {
@@ -1370,7 +1456,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsImpactQueueSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsImpactQueueSystems.h",
       "keywords": []
     },
     {
@@ -1387,7 +1473,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsInventorySystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsInventorySystems.h",
       "keywords": []
     },
     {
@@ -1404,7 +1490,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsKinematicProjectileSystems.h",
       "keywords": []
     },
     {
@@ -1421,7 +1507,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsLocomotionSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsLocomotionSystems.h",
       "keywords": []
     },
     {
@@ -1438,7 +1524,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h",
       "keywords": []
     },
     {
@@ -1457,7 +1543,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsProjectileSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsProjectileSystems.h",
       "keywords": []
     },
     {
@@ -1518,7 +1604,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsTimedMechanics.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsTimedMechanics.h",
       "keywords": []
     },
     {
@@ -1535,7 +1621,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h",
       "keywords": []
     },
     {
@@ -1577,6 +1663,62 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/gameplay/Feedback.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-flow-economy-warfare",
+      "package": null,
+      "path": "skills/gameplay/aiverse-flow-economy-warfare/SKILL.md",
+      "domain": "workflow",
+      "summary": "Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/game-format.md",
+      "keywords": [
+        "total",
+        "annihilation",
+        "ta",
+        "flow",
+        "radar",
+        "sonar",
+        "jammer",
+        "stealth",
+        "submarine",
+        "reclaim",
+        "repair",
+        "assist",
+        "patrol",
+        "nuke",
+        "anti-nuke",
+        "stockpile",
+        "intercept",
+        "wind",
+        "tidal",
+        "geothermal",
+        "bomber",
+        "self-destruct",
+        "hpi",
+        "радар",
+        "сонар",
+        "глушилк",
+        "стелс",
+        "подлодк",
+        "разбор",
+        "ремонт",
+        "помощь",
+        "патрул",
+        "ядерк",
+        "противоракет",
+        "накоплен",
+        "перехват",
+        "ветер",
+        "прилив",
+        "геотерм",
+        "бомбардировщ",
+        "самоуничтож"
+      ]
     },
     {
       "id": "aiverse-fx",
@@ -1707,62 +1849,6 @@
       ]
     },
     {
-      "id": "aiverse-genre-bots",
-      "package": "genre-bots",
-      "path": "skills/ai/aiverse-genre-bots/SKILL.md",
-      "domain": "gameplay",
-      "summary": "Deterministic genre bot policies: melee spacing/attack timing/dodge-parry/lock-on, shooter aim/lead/burst/reload/overheat/cover, squad roles with formations and an objective choice hook",
-      "side": "simulation",
-      "runtime": "header",
-      "target": "AIVERSE::lib_genre_bots",
-      "dependencies": [
-        "aiverse-combat-actions",
-        "aiverse-weapon-policies",
-        "aiverse-configuration",
-        "aiverse-stealth-senses",
-        "aiverse-character-locomotion",
-        "aiverse-match-rules",
-        "aiverse-narrative-graphs"
-      ],
-      "backendDependencies": [
-        "aiverse_engine",
-        "aiverse_world"
-      ],
-      "requiresOwner": null,
-      "source": "libraries/include/aiverselib/bots/GenreBots.h",
-      "keywords": [
-        "bot",
-        "opponent",
-        "squad",
-        "role",
-        "formation",
-        "objective",
-        "melee",
-        "shooter",
-        "бот",
-        "противник",
-        "отряд",
-        "роль",
-        "формаци",
-        "цел"
-      ]
-    },
-    {
-      "id": "aiverse-genre-kits",
-      "package": "genre-kits",
-      "path": "skills/genres/aiverse-genre-kits/SKILL.md",
-      "domain": "gameplay",
-      "summary": "Reusable capability and acceptance recipes for sixteen genres",
-      "side": "tools",
-      "runtime": "header",
-      "target": "AIVERSE::lib_genre_kits",
-      "dependencies": [],
-      "backendDependencies": [],
-      "requiresOwner": null,
-      "source": "libraries/include/aiverselib/app/Genre.h",
-      "keywords": []
-    },
-    {
       "id": "aiverse-geometry",
       "package": "geometry",
       "path": "skills/world/aiverse-geometry/SKILL.md",
@@ -1810,7 +1896,7 @@
     {
       "id": "aiverse-grid-puzzles",
       "package": "grid-puzzles",
-      "path": "skills/genres/aiverse-grid-puzzles/SKILL.md",
+      "path": "skills/gameplay/aiverse-grid-puzzles/SKILL.md",
       "domain": "gameplay",
       "summary": "Sokoban moves, undo/redo, simple-deadlock cells and freeze deadlocks, BFS and A* solvers with node budgets, hints",
       "side": "simulation",
@@ -1840,6 +1926,44 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/runtime/HotReload.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-human-creator",
+      "package": null,
+      "path": "skills/editor/aiverse-human-creator/SKILL.md",
+      "domain": "workflow",
+      "summary": "VIVID digital humans: DNA skin/eyes/hair/proportions, 52 rest channels, routes, rig and skin edits via human_* MCP or Studio Human Creator",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/vivid.md",
+      "keywords": [
+        "human",
+        "character",
+        "digital",
+        "human",
+        "face",
+        "skin",
+        "eyes",
+        "iris",
+        "hair",
+        "groom",
+        "dna",
+        "creator",
+        "vivid",
+        "metahuman",
+        "avatar",
+        "персонаж",
+        "человек",
+        "лицо",
+        "кожа",
+        "глаза",
+        "волосы",
+        "причёска",
+        "цифровой"
+      ]
     },
     {
       "id": "aiverse-input",
@@ -2134,6 +2258,21 @@
       ]
     },
     {
+      "id": "aiverse-map-generation",
+      "package": "generation",
+      "path": "skills/world/aiverse-map-generation/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Existing deterministic map generator",
+      "side": "simulation",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "modules/rts/gen/MapGen.h",
+      "keywords": []
+    },
+    {
       "id": "aiverse-match-bridge",
       "package": "match-bridge",
       "path": "skills/meta/aiverse-match-bridge/SKILL.md",
@@ -2165,7 +2304,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Perks.h",
+      "source": "libraries/include/aiverselib/mechanics/Perks.h",
       "keywords": [
         "perk",
         "modifier",
@@ -2207,7 +2346,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Match.h",
+      "source": "libraries/include/aiverselib/mechanics/Match.h",
       "keywords": []
     },
     {
@@ -2237,7 +2376,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Melee.h",
+      "source": "libraries/include/aiverselib/mechanics/Melee.h",
       "keywords": []
     },
     {
@@ -2337,7 +2476,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Narrative.h",
+      "source": "libraries/include/aiverselib/mechanics/Narrative.h",
       "keywords": [
         "story",
         "narrative",
@@ -2744,6 +2883,21 @@
       ]
     },
     {
+      "id": "aiverse-pathfinding",
+      "package": "navigation",
+      "path": "skills/world/aiverse-pathfinding/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Existing pathfinding, navigation mesh and flow fields",
+      "side": "simulation",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "docs/pathfinding.md",
+      "keywords": []
+    },
+    {
       "id": "aiverse-performance-budgets",
       "package": "performance-budgets",
       "path": "skills/verification/aiverse-performance-budgets/SKILL.md",
@@ -2775,7 +2929,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/PhysicalInteractions.h",
+      "source": "libraries/include/aiverselib/mechanics/PhysicalInteractions.h",
       "keywords": [
         "carry",
         "pickup",
@@ -3179,7 +3333,7 @@
     {
       "id": "aiverse-puzzle-machine",
       "package": "puzzle-machine",
-      "path": "skills/genres/aiverse-puzzle-machine/SKILL.md",
+      "path": "skills/gameplay/aiverse-puzzle-machine/SKILL.md",
       "domain": "gameplay",
       "summary": "Bounded deterministic integer VM for programming puzzles",
       "side": "simulation",
@@ -3194,7 +3348,7 @@
     {
       "id": "aiverse-puzzle-solvers",
       "package": "puzzle-solvers",
-      "path": "skills/genres/aiverse-puzzle-solvers/SKILL.md",
+      "path": "skills/gameplay/aiverse-puzzle-solvers/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic puzzle rules and bounded solvers: match-3 (swap validation, line/L/T detection, special pieces from data rules, gravity + seeded refill, ordered cascades, no-move detection, shuffles that always leave a legal move, goals, hints); flood fill and region counting, color-flood game with IDA*, rotatable pipe/wire connectivity with leak checks; N-puzzle parity, always-solvable shuffles and IDA*, sliding blocks of any rectangle size (BFS), polyomino packing with rotations/flips (exact-cover backtracking, solution counting); Sokoban sessions over grid-puzzles (deadlocks, A*, undo); generic CSP over small grids (AllDifferent/Sum/Count/Runs as data: sudoku, nonogram) with propagation, bounded backtracking and uniqueness checks; puzzle bot playing through player commands",
       "side": "simulation",
@@ -3207,7 +3361,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/PuzzleSolvers.h",
+      "source": "libraries/include/aiverselib/mechanics/PuzzleSolvers.h",
       "keywords": [
         "puzzle",
         "match3",
@@ -3234,6 +3388,43 @@
         "судоку",
         "японский",
         "кроссворд"
+      ]
+    },
+    {
+      "id": "aiverse-racing",
+      "package": null,
+      "path": "skills/gameplay/aiverse-racing/SKILL.md",
+      "domain": "workflow",
+      "summary": "Races in any project: rules and map \"race\" (grid, countdown, ordered checkpoints, laps, standings, wrong way, respawn, race bots, shared HUD and chase camera), racegen tracks",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/races.md",
+      "keywords": [
+        "racing",
+        "race",
+        "racer",
+        "lap",
+        "laps",
+        "track",
+        "circuit",
+        "kart",
+        "grid",
+        "countdown",
+        "checkpoint",
+        "finish",
+        "standings",
+        "chase",
+        "гонк",
+        "гонщик",
+        "трасс",
+        "круг",
+        "финиш",
+        "старт",
+        "заезд",
+        "кольцев"
       ]
     },
     {
@@ -3328,7 +3519,7 @@
     {
       "id": "aiverse-rhythm-timing",
       "package": "rhythm-timing",
-      "path": "skills/genres/aiverse-rhythm-timing/SKILL.md",
+      "path": "skills/gameplay/aiverse-rhythm-timing/SKILL.md",
       "domain": "gameplay",
       "summary": "Integer tempo maps and frame-independent tap/hold judgement",
       "side": "simulation",
@@ -3354,7 +3545,7 @@
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "modules/rts/RtsRoadNet.cpp",
+      "source": "engine/roads/RoadNet.cpp",
       "keywords": [
         "road",
         "roads",
@@ -3546,7 +3737,7 @@
     {
       "id": "aiverse-settlement-production",
       "package": "settlement-production",
-      "path": "skills/genres/aiverse-settlement-production/SKILL.md",
+      "path": "skills/gameplay/aiverse-settlement-production/SKILL.md",
       "domain": "gameplay",
       "summary": "Colony simulation policies: colonist needs with decay, thresholds and mood bands (breaks, work speed), hour-block schedules (work/sleep/leisure), job preferences 1..4 with deterministic assignment (lib::claim, stable tie-break, stock reservations per stockpile), production recipes at workstations with bills and power requirements, haul jobs between stockpiles, construction and gathering orders, disaster alerts (fire/flood/raid) with response jobs and priority overrides/preemption, power and fluid graphs (producers/consumers/storage per connected component, deterministic brownout shedding by priority with hysteresis), and a colony planner bot that issues player-equivalent commands",
       "side": "simulation",
@@ -3562,7 +3753,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Colony.h",
+      "source": "libraries/include/aiverselib/mechanics/Colony.h",
       "keywords": [
         "colony",
         "settlement",
@@ -3629,6 +3820,49 @@
       ]
     },
     {
+      "id": "aiverse-shared-capability",
+      "package": null,
+      "path": "skills/workflow/aiverse-shared-capability/SKILL.md",
+      "domain": "workflow",
+      "summary": "Make a module-only feature usable by every project: move to engine/libraries, data blocks instead of genre modes, no compatibility headers, thin host adapters, checksum A/B",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "AGENTS.md",
+      "keywords": [
+        "genre",
+        "split",
+        "shared",
+        "capability",
+        "any",
+        "project",
+        "module",
+        "only",
+        "extract",
+        "move",
+        "engine",
+        "library",
+        "adapter",
+        "host",
+        "compatibility",
+        "header",
+        "no",
+        "genre",
+        "mode",
+        "жанр",
+        "разделение",
+        "общий",
+        "любой",
+        "проект",
+        "вынести",
+        "перенести",
+        "модуль",
+        "адаптер"
+      ]
+    },
+    {
       "id": "aiverse-skill-authoring",
       "package": null,
       "path": "skills/workflow/aiverse-skill-authoring/SKILL.md",
@@ -3684,6 +3918,21 @@
         "канал",
         "репликац"
       ]
+    },
+    {
+      "id": "aiverse-spatial-queries",
+      "package": "spatial",
+      "path": "skills/world/aiverse-spatial-queries/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Existing game spatial queries",
+      "side": "simulation",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "modules/rts/RtsModule.h",
+      "keywords": []
     },
     {
       "id": "aiverse-special-modes",
@@ -3751,7 +4000,7 @@
     {
       "id": "aiverse-sports-rules",
       "package": "sports-rules",
-      "path": "skills/genres/aiverse-sports-rules/SKILL.md",
+      "path": "skills/gameplay/aiverse-sports-rules/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic ball-sport rules: possession with pickup radius and possession lock, tackles contested with the passed RNG, passes with receiver leading and shots with power and seeded accuracy error, interception at the closest approach along the ball path, goals, out of bounds and generic restarts (kickoff, throw-in, corner, goal kick, free kick, penalty, face-off), walls/rebound fields, periods with running/stopped/added-stoppage clocks and golden-goal overtime, fouls from contact rules; role-based formations with stable slot assignment; positioning bot (formation slots, press/mark/chase, keeper line, pass/shot choice)",
       "side": "simulation",
@@ -3764,7 +4013,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Sports.h",
+      "source": "libraries/include/aiverselib/mechanics/Sports.h",
       "keywords": [
         "sport",
         "football",
@@ -3856,7 +4105,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Senses.h",
+      "source": "libraries/include/aiverselib/mechanics/Senses.h",
       "keywords": [
         "stealth",
         "sight",
@@ -3933,7 +4182,7 @@
     {
       "id": "aiverse-survival-ecology",
       "package": "survival-ecology",
-      "path": "skills/genres/aiverse-survival-ecology/SKILL.md",
+      "path": "skills/gameplay/aiverse-survival-ecology/SKILL.md",
       "domain": "gameplay",
       "summary": "Survival and ecology policies: body model (core temperature from owner environment, clothing insulation/windproofing/waterproofing, shelter and heat sources, wetness, hunger/thirst/stamina interplay, condition and death) with weather modifiers for bodies, solar/wind power, growth and animal activity; population ecosystems per species per region (logistic growth, carrying capacity, saturating predation, starvation, migration, integer accumulators); animal behavior states wander/graze/flee/hunt/sleep from stealth-senses PerceivedTarget records; renewable resource nodes with depletion and regrowth timers",
       "side": "simulation",
@@ -3947,7 +4196,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/SurvivalEcology.h",
+      "source": "libraries/include/aiverselib/mechanics/SurvivalEcology.h",
       "keywords": [
         "survival",
         "temperature",
@@ -4024,7 +4273,7 @@
     {
       "id": "aiverse-tactics-grid",
       "package": "tactics-grid",
-      "path": "skills/genres/aiverse-tactics-grid/SKILL.md",
+      "path": "skills/gameplay/aiverse-tactics-grid/SKILL.md",
       "domain": "gameplay",
       "summary": "Turn strategy on square/hex grids: weighted 8-way/hex movement with deterministic reachable sets and paths, half/full cover from the owner grid with a flank angle, integer line of fire and shot previews (hit chance milli), action points, per-round initiative with speed modifiers and stable-id ties, delay, overwatch reservations firing reaction shots, per-team visibility projection, and WeGo simultaneous resolution (collected orders, lockstep movement with contested-cell/swap rules, simultaneous fire)",
       "side": "simulation",
@@ -4037,7 +4286,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/TacticsTurns.h",
+      "source": "libraries/include/aiverselib/mechanics/TacticsTurns.h",
       "keywords": [
         "tactics",
         "tactical",
@@ -4094,6 +4343,21 @@
       "backendDependencies": [],
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/Tasks.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-template-kits",
+      "package": "genre-kits",
+      "path": "skills/gameplay/aiverse-template-kits/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Reusable capability and acceptance recipes for sixteen genres",
+      "side": "tools",
+      "runtime": "header",
+      "target": "AIVERSE::lib_genre_kits",
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/app/Genre.h",
       "keywords": []
     },
     {
@@ -4406,7 +4670,7 @@
       "package": "vehicle-controllers",
       "path": "skills/gameplay/aiverse-vehicle-controllers/SKILL.md",
       "domain": "gameplay",
-      "summary": "Deterministic kinematic vehicle controllers: wheeled arcade-sim (torque curve, auto/manual gears with shift time, per-wheel traction with slip/grip curves, weight transfer, handbrake, drift), tracked differential steering, hover altitude hold with drift damping, arcade flight with banked turns and stall; damage zones with per-zone performance penalties and critical disable; driver/passenger/gunner seats with validated enter/exit/switch/eject and owner-checked exit points; ordered checkpoints, laps, race positions, wrong-way detection and respawn at the last checkpoint; race bot (racing line, corner braking, overtaking lanes, rubber band)",
+      "summary": "Deterministic kinematic vehicle controllers: wheeled arcade-sim (torque curve, auto/manual gears with shift time, per-wheel traction with slip/grip curves, weight transfer, handbrake, drift), tracked differential steering, hover altitude hold with drift damping, arcade flight with banked turns and stall; damage zones with per-zone performance penalties and critical disable; driver/passenger/gunner seats with validated enter/exit/switch/eject and owner-checked exit points; ordered checkpoints, laps, race positions, wrong-way detection and respawn at the last checkpoint; race bot (racing line, corner braking, overtaking lanes, rubber band); race session from grid to results (countdown, bot/player pedals, phases, finish grace, timeout, winner)",
       "side": "simulation",
       "runtime": "header",
       "target": "AIVERSE::lib_vehicle_controllers",
@@ -4418,7 +4682,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Vehicles.h",
+      "source": "libraries/include/aiverselib/mechanics/Vehicles.h",
       "keywords": [
         "vehicle",
         "car",
@@ -4460,7 +4724,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/vehicle-fx/VehicleLights.h",
+      "source": "libraries/include/aiverselib/mechanics/vehicle-fx/VehicleLights.h",
       "keywords": [
         "headlight",
         "brake",
@@ -4858,7 +5122,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Weapons.h",
+      "source": "libraries/include/aiverselib/mechanics/Weapons.h",
       "keywords": []
     },
     {
@@ -4888,6 +5152,34 @@
         "лужи",
         "мокр",
         "небо"
+      ]
+    },
+    {
+      "id": "aiverse-wind-masks",
+      "package": null,
+      "path": "skills/visuals/aiverse-wind-masks/SKILL.md",
+      "domain": "workflow",
+      "summary": "Hierarchical wind masks: shared mask library, per-class profiles, model sidecars, Arbor tree rigs, one GPU graph",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/wind-masks.md",
+      "keywords": [
+        "wind",
+        "sway",
+        "foliage",
+        "tree",
+        "branch",
+        "mask",
+        "vegetation",
+        "ветер",
+        "маска",
+        "колыхание",
+        "дерево",
+        "ветка",
+        "листва"
       ]
     },
     {
@@ -5537,152 +5829,6 @@
         "clanwar",
         "войн"
       ]
-    },
-    {
-      "id": "rts-bots-rts",
-      "package": "bots-rts",
-      "path": "skills/ai/rts-bots-rts/SKILL.md",
-      "domain": "gameplay",
-      "summary": "RTS bot profiles and transactional checkpoints over the existing RtsAI",
-      "side": "simulation",
-      "runtime": "header",
-      "target": "AIVERSE::lib_bots_rts",
-      "dependencies": [],
-      "backendDependencies": [],
-      "requiresOwner": "aiverse_game",
-      "source": "libraries/include/aiverselib/bots/Rts.h",
-      "keywords": [
-        "rts",
-        "bot",
-        "ртс",
-        "бот"
-      ]
-    },
-    {
-      "id": "rts-bunkerwars-skills",
-      "package": null,
-      "path": "skills/gameplay/rts-bunkerwars-skills/SKILL.md",
-      "domain": "workflow",
-      "summary": "Convert Bunker Wars energy skills into rules player abilities",
-      "side": "tools",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "source": "docs/bunkerwars-skills.md",
-      "keywords": [
-        "bunker",
-        "wars",
-        "mushroom",
-        "energy",
-        "skills",
-        "converter",
-        "бункер",
-        "скилл",
-        "энерг",
-        "конвертер"
-      ]
-    },
-    {
-      "id": "rts-flow-war",
-      "package": null,
-      "path": "skills/gameplay/rts-flow-war/SKILL.md",
-      "domain": "workflow",
-      "summary": "Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import",
-      "side": "tools",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "source": "docs/game-format.md",
-      "keywords": [
-        "total",
-        "annihilation",
-        "ta",
-        "flow",
-        "radar",
-        "sonar",
-        "jammer",
-        "stealth",
-        "submarine",
-        "reclaim",
-        "repair",
-        "assist",
-        "patrol",
-        "nuke",
-        "anti-nuke",
-        "stockpile",
-        "intercept",
-        "wind",
-        "tidal",
-        "geothermal",
-        "bomber",
-        "self-destruct",
-        "hpi",
-        "радар",
-        "сонар",
-        "глушилк",
-        "стелс",
-        "подлодк",
-        "разбор",
-        "ремонт",
-        "помощь",
-        "патрул",
-        "ядерк",
-        "противоракет",
-        "накоплен",
-        "перехват",
-        "ветер",
-        "прилив",
-        "геотерм",
-        "бомбардировщ",
-        "самоуничтож"
-      ]
-    },
-    {
-      "id": "rts-generation",
-      "package": "generation",
-      "path": "skills/world/rts-generation/SKILL.md",
-      "domain": "gameplay",
-      "summary": "Existing deterministic map generator",
-      "side": "simulation",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "requiresOwner": null,
-      "source": "modules/rts/gen/MapGen.h",
-      "keywords": []
-    },
-    {
-      "id": "rts-navigation",
-      "package": "navigation",
-      "path": "skills/world/rts-navigation/SKILL.md",
-      "domain": "gameplay",
-      "summary": "Existing pathfinding, navigation mesh and flow fields",
-      "side": "simulation",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "requiresOwner": null,
-      "source": "docs/pathfinding.md",
-      "keywords": []
-    },
-    {
-      "id": "rts-spatial",
-      "package": "spatial",
-      "path": "skills/world/rts-spatial/SKILL.md",
-      "domain": "gameplay",
-      "summary": "Existing game spatial queries",
-      "side": "simulation",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "requiresOwner": null,
-      "source": "modules/rts/RtsModule.h",
-      "keywords": []
     },
     {
       "id": "studio-ui",

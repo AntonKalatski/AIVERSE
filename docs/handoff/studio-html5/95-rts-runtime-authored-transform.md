@@ -1,6 +1,6 @@
 # 95 — RTS runtime applies the Studio Transform (Y, 3D rotation, 3D scale)
 
-Date: 2026-11-21. Branch: feature/studio-html5, cherry-picked to main.
+Date: 2026-11-21. Branch: feature/studio-html5 (main merged in 768aeacb7).
 
 ## Before
 Studio edits `components.Transform` (`y`, `rotation:[x,y,z]` or `yaw`, `scale`
@@ -36,3 +36,7 @@ number or `[x,y,z]`), but the RTS runtime ignored the component: only the legacy
 - **Not yet run on macOS** (computer was busy): build `aiverse_rts_authored_pose_test`
   and run it; open a map with a tilted/scaled entity in the Game panel.
 
+## Merge note (same stage)
+main's `thinTransmission` and the branch's `sssThickness` both used PBR uniform
+`light.w`; packed together by `gpuPackThinSss` (floor = thin·255, fract = SSS depth),
+decoded in GL and Metal shaders. Needs a visual check of foliage/SSS on the Mac.

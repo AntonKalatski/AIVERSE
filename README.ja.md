@@ -81,7 +81,7 @@ AIVERSE はメカニクスそのものを提供し、エージェントがゲー
 | **マルチプレイは同期ズレとの終わりなき戦い。** `float` がひとつあるだけで、iPhone と Android の対戦はずれていきます。 | シミュレーションはどこでもビット単位で同一です。浮動小数点ではなく固定小数点、独自の乱数生成器、チェックサム。CI はプッシュのたびに Linux x64/ARM64、Windows、macOS の対戦結果を照合します。ネットワークに流れるのはコマンドだけ。ロールバック付きロックステップと、マッチメイキングとリプレイ判定を備えたサーバーがあります。 |
 | **モバイル GPU は非力なのに、ゲームは美しくなければならない。** | 影、パーティクル、地形、ポストエフェクトなど、負荷の高い機能はすべて品質レベルを持ち、古い Mali や Adreno から Apple Silicon まで GPU に合わせて自動調整されます。 |
 | **全プラットフォームでのリリースはそれだけで一大プロジェクト。** 署名、アイコン、ストアや広告の SDK。 | `aiversebuild` ひとつのコマンドで .app、Xcode プロジェクト、Gradle/APK、Web、.exe を作成。アイコンとスプラッシュ画面は自動生成。App Store、Google Play、RuStore、Yandex Games、Steam、AdMob、AppLovin などのプラグインを用意し、ビルドにはゲームが選んだものだけが含まれます。 |
-| **新しいゲームは毎回ゼロから。** | 30 以上のプレイ可能なテンプレート、受け入れチェックリスト付きのジャンルキット、エージェント向けの 236 のスキル。新しいゲームは動くゲームから始まります。 |
+| **新しいゲームは毎回ゼロから。** | 30 以上のプレイ可能なテンプレート、受け入れチェックリスト付きのジャンルキット、エージェント向けの 238 のスキル。新しいゲームは動くゲームから始まります。 |
 | **メタと LiveOps はプロジェクトごとに書き直し。** | `aiverse::meta`：ショップ、通貨、クエスト、パス、デイリー報酬、スタミナ、クラン、トーナメント、天井付きの宝箱。JSON で設定します。 |
 
 ---
@@ -105,10 +105,11 @@ AIVERSE はメカニクスそのものを提供し、エージェントがゲー
 | **ローグライク** | `run-graph`：シード付きのラン、エンカウント予算。レア確定枠付きの `loot-tables` |
 | **放置、工場、コロニー** | `big-numbers`、`offline-production`（正確なオフライン進行）、`production-networks`、`logistics`、`tasks` |
 | **リズムゲーム** | `rhythm-timing`：テンポマップとフレームレートに依存しない判定 |
+| **レース、乗り物** | `vehicle-controllers`：車（トルク、ギア、トラクション、ドリフト）、戦車、ホバークラフト、飛行機、座席、ダメージゾーン；レースセッション：スターティンググリッド、カウントダウン、順番どおりのチェックポイント、周回、順位、逆走、レースボット；どのプロジェクトでも使えるマップの `race` ブロック、共通 HUD とチェイスカメラ、テンプレート 2 個 |
 | **あらゆるモバイルゲーム** | `aiverse::meta` と LiveOps、チュートリアル、UI 画面、ストアと広告のプラグイン |
 
-レース、スポーツ、乗り物はまだ[ロードマップ](docs/genre-mechanics-roadmap.md)上にあります。ライブラリの全一覧：
-[`libraries/catalog.json`](libraries/catalog.json) と[ジャンルパッケージ](docs/genre-packages.md)。
+スポーツゲーム、ボート、ピットストップ、ペナルティはまだ[ロードマップ](docs/genre-mechanics-roadmap.md)上にあります。ライブラリの全一覧：
+[`libraries/catalog.json`](libraries/catalog.json) と[ジャンルパッケージ](docs/mechanics-packages.md)。
 
 ---
 
@@ -183,6 +184,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 | 経済と建設 | **Hearth and Haul**（Knights and Merchants）· **Underlord**（Dungeon Keeper） |
 | 2D と実験 | **Crystal Dunes**（タイル、Dune II）· **Green Hills**（3D 地形上の 2D スプライト）· **Planets**（球体の惑星と軌道）· **Wildfire**（フィールド：山火事とクリープ） |
 | FPS | **Crossfire Arena**（5 対 5）· **Breach Protocol**（タクティカルラウンド）· **Last Survivor**（100 人バトルロイヤル）· **Aim Lab**（射撃場） |
+| レース | **Oval Sprint**（3 体のボットと競う周回レース）· **Road Circuit**（スプライン道路でのレース） |
 
 ---
 
@@ -220,7 +222,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 - Unity 風のドッキング式エディター：シーン、インスペクター、地形、エフェクト、ライティング、UI、テストプレイ、デバイスシミュレーター
 - `aiversemcp`：エージェント向け MCP サーバー — マップの PHYSIS 設定、検証、Undo/Redo
 - **「ゲームを作る」**ウィザード
-- エージェント向けの 236 のスキルと、受け入れチェックリスト付きのジャンルキット
+- エージェント向けの 238 のスキルと、受け入れチェックリスト付きのジャンルキット
 - 手持ちのコピーから名作ゲームのアセットを取り込むインポーター
 
 </td>
@@ -297,7 +299,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 |---|---|
 | [**詳細な概要**](docs/ja/overview.md) | 全サブシステム、ビルド、プラットフォーム、CI、リリース |
 | [ゲームフォーマット](docs/game-format.md) | `game.json`、`rules.json`、マップと全データブロック |
-| [ジャンルパッケージ](docs/genre-packages.md) · [ライブラリ](docs/libraries.md) | あらゆるジャンルのメカニクス |
+| [ジャンルパッケージ](docs/mechanics-packages.md) · [ライブラリ](docs/libraries.md) | あらゆるジャンルのメカニクス |
 | [「ゲームを作る」ウィザード](docs/ja/game-wizard.md) | アイデアとアートが完成プロジェクトになるまで |
 | [スクリプト](docs/scripting.md) · [C++ モジュール](docs/native-modules.md) | データで足りないとき |
 | [地形](docs/terrain.md) · [惑星](docs/planets.md) · [経路探索](docs/pathfinding.md) | 世界と移動 |

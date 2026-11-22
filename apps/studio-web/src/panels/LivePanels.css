@@ -1,0 +1,33 @@
+.live{display:flex;flex-direction:column;height:100%;min-height:0}
+.live__switch{display:flex;align-items:center;gap:4px;padding:4px 6px;flex:none;border-bottom:1px solid var(--au-line);background:color-mix(in srgb,var(--au-accent) 10%,transparent)}
+.live__switch button{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 9px;border-radius:var(--au-radius-sm);border:1px solid transparent;background:none;color:var(--au-text-muted);font-size:var(--au-font-xs);cursor:pointer}
+.live__switch button.is-on{background:var(--au-active);border-color:var(--au-line-strong);color:var(--au-text)}
+.live__hint{margin-left:auto;color:var(--au-text-faint);font-size:var(--au-font-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live__body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.live__body>*{flex:1;min-height:0}
+.live__empty{padding:14px;color:var(--au-text-muted);font-size:var(--au-font-sm)}
+.live__error{padding:6px 10px;color:#ff9a8a;font-size:var(--au-font-xs)}
+.live__count{padding:6px 10px;color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.live__ref{color:var(--au-accent)}
+.live-hier{display:flex;flex-direction:column;min-height:0}
+.live-hier__search{display:flex;align-items:center;gap:6px;margin:6px;padding:0 8px;height:26px;border:1px solid var(--au-line);border-radius:var(--au-radius-sm);background:var(--au-field);color:var(--au-text-faint)}
+.live-hier__search input{flex:1;min-width:0;border:0;background:none;color:var(--au-text);font-size:var(--au-font-xs);outline:none}
+.live-hier__rows{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.live-hier__row{display:flex;align-items:center;gap:7px;padding:3px 10px;border:0;background:none;color:var(--au-text);text-align:left;font-size:var(--au-font-sm);cursor:pointer}
+.live-hier__row:hover{background:var(--au-hover)}
+.live-hier__row.is-selected{background:var(--au-active)}
+.live-hier__row small{margin-left:auto;color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.live-hier__owner{width:7px;height:7px;border-radius:50%;background:#8a96a6;flex:none}
+.live-hier__owner--1{background:#4f8df7}.live-hier__owner--2{background:#f06a55}.live-hier__owner--3{background:#d8b84a}.live-hier__owner--4{background:#5fc28a}
+.live-insp{overflow:auto;padding:6px 10px;font-size:var(--au-font-sm)}
+.live-insp header{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.live-insp header small{color:var(--au-text-faint)}
+.live-insp__comp{border-bottom:1px solid var(--au-line);padding:4px 0}
+.live-insp__comp>summary{font-weight:600;cursor:pointer;padding:2px 0}
+.live__fields{margin:4px 0 4px 8px}
+.live__fields>div{display:grid;grid-template-columns:minmax(70px,1fr) minmax(0,1.6fr);gap:8px;padding:1px 0}
+.live__fields dt{color:var(--au-text-muted);overflow-wrap:anywhere}
+.live__fields dd{margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+/* Play mode tint (Unity): the editor shows that a game is running. */
+.studio.is-playing .titlebar{box-shadow:inset 0 -2px 0 var(--au-accent)}
+.studio.is-playing .nested-tabs{background:color-mix(in srgb,var(--au-accent) 9%,transparent)}

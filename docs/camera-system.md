@@ -1,5 +1,5 @@
 # AIVERSE LENS — genre-independent ECS cameras and multi-camera capture
-Updated: 2026-11-20. Current integration: `codex/lens-completion`.
+Updated: 2026-11-21. Current integration: `main`; P2 work on `feature/aiv20261121_lens_p2`.
 
 ## Current implementation and validation
 
@@ -33,8 +33,39 @@ Legacy material-paint and field-visual caches are host providers outside that
 transaction. The ordinary noncapture host path is preserved. Vulkan/GLES
 runtime parity, broad genre acceptance and camera-count performance stress
 must be verified on their target platforms before making those claims.
-Physical exposure/DOF, EXR/video export, stereo/OpenXR and the complete P2 list
-below are roadmap items, not implied by completion of this integration.
+LENS P2 (2026-11-21, branch `feature/aiv20261121_lens_p2`) adds: a physical
+lens that drives per-camera PRISMA manual exposure and defocus
+(`CameraLensPhysics.h`, `CameraLensComponent::driveExposure/driveDepthOfField`),
+cinematic rails with centripetal Catmull-Rom, closed loops, constant speed and
+ease, seeded noise shake on six axes (`CameraRailPath.h`), and linear HDR EXR
+frame sequences from RGBA16F targets (`CameraExr.h`, `CameraHdrFrameRecorder`).
+The `lens`, `rail` and `shake` blocks are part of cameras.json. Exposure is
+relative to the default lens (f/2.8, 1/60 s, ISO 100), because AIVERSE scenes
+are not photometrically calibrated. Video encoding, stereo/OpenXR runtime
+integration and physical bokeh remain roadmap items. Status and tests:
+[LENS P2 handoff](agent-handoffs/lens-p2-2026-11-21.md).
+LENS P3 (2026-11-22, branch `feature/aiv20261121_lens_p3`) closes the view
+layer on the GPU: model **visibility layers** (`ModelDraw::layers`, GeometryScene
+instance `"layers"`, `Renderer3D::setVisibilityMask` applied from
+`CameraComponent::visibilityMask` by `CameraRenderPipeline` and hosts), **own PRISMA
+settings per camera** (`CameraPostFxPool::setCameraSettings/clearCameraSettings`), and
+a fixed vertical orientation of `CameraPanorama` (zenith at the top row). The site
+host `tools/site/lens_showcase.cpp` now renders split-screen with two differently
+processed cameras and a layer mask, a CameraDirector blend, cubemap faces into an
+equirectangular panorama, mirror and portal cameras with oblique clipping, and stereo
+eyes from `makeStereoCameraViews` and from runtime-style `makeXrCameraViews` data,
+all checked on Metal. Layer masks apply to model draws only (meshes, sprites, terrain
+and particles ignore them); HLOD scenes reject non-default layers. No OpenXR runtime
+is linked: swapchain import, frame submission and reprojection stay with an XR host.
+Status: [LENS P3 handoff](agent-handoffs/lens-p3-2026-11-22.md).
+
+Cube captures share one sun shadow map: `makeCubemapCameraViews(..., shadowRadius=40)`
+marks every face with the same light-frustum box around the capture point
+(`CameraCaptureView::shadowBounds/shadowMin/shadowMax`); `CameraRenderPipeline::renderCaptures`
+applies it with `Renderer3D::setShadowBounds` and restores the host's previous bounds
+(`shadowBoundsState/restoreShadowBounds`). Without it each face fitted its own map and
+shadows broke at the face seams of the panorama. `shadowRadius=0` keeps the old
+per-face fit. [Handoff](agent-handoffs/lens-cube-shadows-2026-11-22.md).
 
 The sections below retain the original design and staged implementation
 history. Their older “planned / NOT RUN” labels describe those checkpoints;
@@ -79,7 +110,7 @@ CameraFrameRecorder from a native host and inspect the real output.
 
 The reusable core has now been committed in the feature branch (NOT hardware-validated):
 
-- `engine/render/CameraRenderScheduler.h`: ECS entity-driven scheduling with priorities, dependency DAG, duplicate-output and cycle diagnostics; `EveryFrame`, `EveryNFrames`, `FixedRate`, `OnDirty`, `Manual`. The highest-priority screen camera is last, after offscreen cameras. Until split-screen is implemented, additional full-screen cameras are suppressed.
+- `engine/render/CameraRenderScheduler.h`: ECS entity-driven scheduling with priorities, dependency DAG, duplicate-output and cycle diagnostics; `EveryFrame`, `EveryNFrames`, `FixedRate`, `OnDirty`, `Manual`. The highest-priority screen camera is last, after offscreen cameras. Full-screen cameras without a viewport or overlay stack are suppressed; viewport/overlay cameras are composited by `CameraCompositor` (split-screen, picture-in-picture).
 - `engine/render/RenderTargetPool.h`: on-demand RGBA8/RGBA16F and depth attachment allocation by asset key; lazy resize; completion-token deferred retirement; unknown completion retains targets until confirmed GPU-idle teardown.
 - `engine/render/CameraRenderPipeline.h`: executes `CameraRenderPlan` into `Renderer3D::render(gfx::PassDesc)`, lets the host submit scene geometry and supply per-camera postprocess instances, and exposes sampleable color/depth textures.
 - CTest source fixtures (NOT RUN): `ecs_camera`, `camera_scheduler`, `camera_rt_pool`. GPU pixel tests and full editor/native integration remain pending.
@@ -125,7 +156,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 9. Avoid duplicating immutable geometry uploads per camera. Plan shadow, culling and LOD reuse without sharing view-dependent visibility incorrectly.
 
 ## 2. Existing implementation to preserve
-- `engine/render/Math3D.h`: new `render::Camera` value type (formerly `RTSCamera`) with target/distance/orbit, perspective/orthographic, near/far and jitter.
+- `engine/render/Math3D.h`: new `render::Camera` value type (formerly `Camera`) with target/distance/orbit, perspective/orthographic, near/far and jitter.
 - `Renderer3D::beginScene(camera, w, h) -> draw* -> render(gfx::PassDesc, PostProcess*) -> [resolvePostFx()] -> gfx::Device::endPass()`.
 - `gfx::PassDesc` already supports separate `colorTarget` / `depthTarget` textures.
 - `apps/editor/Editor.h::Viewport` already contains independent render-target pair for Scene/Game windows.
@@ -167,7 +198,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 ## 5. Roadmap
 - **P0**: generic `Camera` (stage 1 source migration, not compile validated), portrait extraction, ECS camera entities (Stage 3 snapshot bridge), RenderTarget asset, camera-to-RT, independent screen camera, manual/every-frame capture, two-camera output example, tests.
 - **P1**: policy scheduler, camera stack, director and rigs, persistent ECS schema/serialization, editor camera window, per-view PostFX and temporal state, layer masks/culling and profiling, split-screen.
-- **P2**: physical lens/DOF, cubemap and panoramas, HDR EXR/capture sequences, planar mirrors/portals, camera shakes and cinematic rails, stereo/OpenXR.
+- **P2**: physical lens/DOF (done: exposure + thin-lens DoF through PRISMA), cubemap and panoramas (`CameraPanorama.h`), HDR EXR/capture sequences (done: `CameraExr.h`, `CameraHdrFrameRecorder`), planar mirrors/portals (`CameraCaptureViews.h`), camera shakes and cinematic rails (done: `CameraRailPath.h`), stereo/OpenXR (SDK-independent eye views in `CameraXrViews.h`; runtime integration open).
 - Capture output should support environment-dependent clear/load/store, MSAA resolve, high-DPI size, orientation and backend Y-flip rules.
 
 ## 6. External libraries

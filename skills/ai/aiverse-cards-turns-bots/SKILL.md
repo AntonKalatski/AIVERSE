@@ -9,7 +9,7 @@ Use for computer opponents in `card-games` and `tactics-grid` games. Bots return
 the owner applies it through `stepCardGame` / `stepTactics`, so bots can never bypass validation. Real-time bots
 (melee/shooter/squad) are `genre-bots`; RTS AI is RtsAI.
 
-1. Read `libraries/include/aiverselib/bots/CardBot.h` and `bots/TacticsBot.h`, and `docs/genre-packages.md`
+1. Read `libraries/include/aiverselib/bots/CardBot.h` and `bots/TacticsBot.h`, and `docs/mechanics-packages.md`
    (Cards and turn strategy section).
 2. Card evaluator: `cardBotChoose(lib, cardViewFor(lib, state, seat), cardBotConfig(settings))`. It reads only the
    view: legal actions come from it and lookahead runs on `cardStateFromView` (unknown hands/decks absent). Each
@@ -22,7 +22,7 @@ the owner applies it through `stepCardGame` / `stepTactics`, so bots can never b
    data, never an unseen enemy position); `searchBudget` bounds evaluations; no RNG. Call again after every
    accepted action. If stepTactics rejects a move (an unseen unit holds the cell), submit EndTurn.
 4. Bots are stateless: nothing extra to save; determinism follows from state + view. Verify with the bot-vs-bot
-   games in `tests/libraries/genre_cards_turns_tests.cpp` and `examples/libraries/genre/cards-turns/main.cpp`
+   games in `tests/libraries/genre_cards_turns_tests.cpp` and `examples/libraries/mechanics/cards-turns/main.cpp`
    (identical hashes across runs; choices unchanged when hidden cards/unseen units change).
 
 Build selection: `AIVERSE::lib_cards_turns_bots` (depends on `lib_card_games`, `lib_tactics_grid`);

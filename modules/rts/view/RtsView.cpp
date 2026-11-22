@@ -2,9 +2,10 @@
 #include "RtsSelectionPresentation.h"
 #include "engine/view/View.h"
 #include "engine/view/GeometryBounds.h"
+#include "engine/view/Frustum.h"
 #include "engine/view/SceneLayers.h"
 #include "engine/view/SceneLayerProviders.h"
-#include "RtsRoadView.h"
+#include "../../../engine/roads/RoadView.h"
 #include "RtsShoreView.h"
 #include "engine/render/OwnerPrepareCommit.h"
 #include "engine/render/CameraModelSnapshot.h"
@@ -158,7 +159,7 @@ struct RtsView::PreparedSurfaceLease final {
     bool topology=false,preserveFogHistory=false;
     std::shared_ptr<TerrainRenderer::PreparedMap> topologyCandidate;
     std::shared_ptr<RtsGroundFx::PreparedFrame> groundCandidate;
-    std::shared_ptr<RtsRoadView::PreparedRebuild> roadCandidate;
+    std::shared_ptr<roads::RoadView::PreparedRebuild> roadCandidate;
     std::shared_ptr<RtsShoreView::PreparedRebuild> shoreCandidate;
     std::unique_ptr<FogOfWar::PreparedSheet> fogSheet;
     std::unique_ptr<FogOfWar::PreparedUpdate> fogUpdate;
@@ -188,7 +189,7 @@ struct RtsView::PreparedSurfaceLease final {
     }
 };
 
-RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
+RtsView::RtsView() : roads_(std::make_unique<roads::RoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
 RtsView::~RtsView() { pendingSurfaceLease_.reset(); }
 void RtsView::discardPendingSurfaceLease() noexcept {
     pendingSurfaceLease_.reset();
@@ -421,7 +422,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         overlays_.initGpu(dev);
         // Prepare BOTH GPU kits before replacing the live map views. The
         // old road and shore instances remain drawable if either kit fails.
-        auto nextRoad=std::make_unique<RtsRoadView>();
+        auto nextRoad=std::make_unique<roads::RoadView>();
         auto nextShore=std::make_unique<RtsShoreView>();
         nextRoad->inheritRuntimeStateForReload(*roads_);
         nextShore->inheritRuntimeStateForReload(*shores_);
@@ -570,7 +571,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     overlays_.shutdown(dev);
 }
 
-bool RtsView::spriteHit(const RTSCamera& cam, const SceneObject& o, const MapGrid& grid, float sx, float sy, float w, float h) const {
+bool RtsView::spriteHit(const Camera& cam, const SceneObject& o, const MapGrid& grid, float sx, float sy, float w, float h) const {
     return twoD_ && !o.isProjectile && twoD_->hasSprite(o.type) && twoD_->hit(cam, o, heightAt(grid, o.pos.x, o.pos.z), sx, sy, w, h);
 }
 
@@ -1438,6 +1439,27 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     placementCacheHits_ = placementCacheMisses_ = 0;
     groundCacheHits_ = groundCacheMisses_ = 0;
     staticAnimateFastHits_ = 0;
+    // Camera culling before ground sampling, animation and submission, like Unity's
+    // "Cull Completely" / Unreal's "Only Tick Pose When Rendered". The test sphere
+    // covers the object's last submitted bounds and its ground shadow away from the
+    // sun. Off: secondary camera captures (they reuse these packets), planets,
+    // AIVERSE_RTS_VIEW_CULL=0.
+    static const bool viewCullSetting = [] {
+        const char* v = std::getenv("AIVERSE_RTS_VIEW_CULL");
+        return !(v && std::strcmp(v, "0") == 0);
+    }();
+    const bool viewCull = viewCullSetting && !cameraPreparedCapture_ && !planets_.active();
+    const auto cullFrustum = ::aiverse::view::SideFrustum::fromViewProjection(viewProj_);
+    float3 sunAway{0, 0, 0};
+    {
+        float3 sun = r.lighting.sunDir;
+        const float len = std::sqrt(dot(sun, sun));
+        if (len > 1e-6f) sun = sun * (1.0f / len);
+        // Shadow offset per metre of height (long shadows capped at ~6.7x).
+        const float up = std::max(sun.y, 0.15f);
+        sunAway = {-sun.x / up, 0, -sun.z / up};
+    }
+    size_t culledObjects = 0;
     double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0, objectShadowMs = 0.0;
     size_t tracedObjects = 0;
     for (size_t i = 0; i < s.objects.size(); ++i) {
@@ -1490,8 +1512,9 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const TypeLook& L = looks_[o.type];
         const bool roadSurface = !rules_->types[o.type].structure && !L.air;
         static const bool cacheGround = [] {
+            // On by default; AIVERSE_RTS_GROUND_CACHE=0 samples the ground every frame.
             const char* setting = std::getenv("AIVERSE_RTS_GROUND_CACHE");
-            return setting && std::strcmp(setting, "1") == 0;
+            return !(setting && std::strcmp(setting, "0") == 0);
         }();
         const bool groundEligible = cacheGround && !o.moving && !o.parented &&
             (L.structure || rules_->types[o.type].speed <= Fixed{});
@@ -1518,8 +1541,28 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 cachedGround.height = ground;
             }
         } else cachedGround.valid = false;
+        float animateDt = dt;
+        if (viewCull && st.cullValid && !o.selected && !o.hovered) {
+            // Bounds follow the object's current ground point; the radius gets a
+            // margin for rotation and animation since the last submission.
+            const float baseY = ground;
+            const float3 centre = float3{o.pos.x, baseY, o.pos.z} + st.cullOffset;
+            const float radius = st.cullRadius * 1.25f + 1.0f;
+            const float height = std::max(0.0f, centre.y + radius - baseY);
+            const float3 shadow{sunAway.x * height, 0, sunAway.z * height};
+            const float3 mid = centre + shadow * 0.5f;
+            const float reach = radius + 0.5f * std::sqrt(dot(shadow, shadow));
+            if (!cullFrustum.visibleSphere(mid, reach)) {
+                // Not drawn: animation clocks (events, decay) still advance, 4x a second.
+                st.culledDt += dt;
+                if (st.culledDt >= 0.25f) { animate(st, o, st.culledDt, &grid); st.culledDt = 0; }
+                ++culledObjects;
+                continue;
+            }
+        }
+        if (st.culledDt > 0) { animateDt += st.culledDt; st.culledDt = 0; }
         const auto beforeAnimate = traceView ? std::chrono::steady_clock::now() : viewStart;
-        animate(st, o, dt, &grid);
+        animate(st, o, animateDt, &grid);
         const auto beforeDraw = traceView ? std::chrono::steady_clock::now() : viewStart;
         drawObject(r, st, o, ground, 1.0f);
         // Reuse the draw end timestamp as the shadow start timestamp.
@@ -1659,6 +1702,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         static uint64_t placementHits = 0, placementMisses = 0;
         static uint64_t groundHits = 0, groundMisses = 0;
         static uint64_t staticFastHits = 0;
+        static uint64_t culledTotal = 0;
         static uint64_t uniqueTypes = 0, contactFrames = 0;
         uniqueTypes += drawTypes_.size();
         contactFrames += contacts ? 1 : 0;
@@ -1678,7 +1722,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         groundHits += groundCacheHits_;
         groundMisses += groundCacheMisses_;
         staticFastHits += staticAnimateFastHits_;
+        culledTotal += culledObjects;
         if (++samples == 120) {
+            std::fprintf(stderr, "[rts-view-cull] avg/120 culled=%.1f objects/frame (AIVERSE_RTS_VIEW_CULL=0 disables)\n",
+                         double(culledTotal)/samples);
             std::fprintf(stderr,
                 "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\n",
                 totals[0]/samples, totals[1]/samples, totals[2]/samples,
@@ -1704,7 +1751,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 double(uniqueTypes) / samples, looks_.size(),
                 100.0 * double(contactFrames) / samples);
             uniqueTypes = contactFrames = 0;
-            placementHits = placementMisses = groundHits = groundMisses = staticFastHits = 0;
+            placementHits = placementMisses = groundHits = groundMisses = staticFastHits = culledTotal = 0;
             samples = 0;
             for (double& v : totals) v = 0.0;
             for (double& v : objectTotals) v = 0.0;
@@ -1713,12 +1760,12 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
 }
 
-void RtsView::drawOverlays(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
+void RtsView::drawOverlays(const Camera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
     // bars, garrison counts, labels, damage numbers: RtsOverlays (built-in overlays reproduce the old look)
     if(s.gameplayOverlays)overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
 }
 
-bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {
+bool RtsView::overlayTop(const Camera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {
     if (!rules_ || o.type >= rules_->types.size() || o.type >= looks_.size()) return false;
     const UnitType& t = rules_->types[o.type];
     if (planets_.active()) // anchors computed by drawPlanets (view world; hidden behind the planet / far away)
@@ -1731,20 +1778,6 @@ bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, 
     float top = t.structure ? 1.6f * looks_[o.type].scale * std::max(1.0f, std::max(t.footprintW, t.footprintH) * 0.6f) : 1.2f * looks_[o.type].scale;
     if (looks_[o.type].air) top += 2.4f;
     return cam.worldToScreen({o.pos.x, top, o.pos.z}, w, h, sp);
-}
-
-mat4 authoredPoseFrame(const SceneObject& o, float facingYaw, float3 p) {
-    if (!o.posed) return mat4{};
-    const bool tilt = o.poseRotX != 0.0f || o.poseRotZ != 0.0f;
-    const bool scaled = o.poseScale.x != 1.0f || o.poseScale.y != 1.0f || o.poseScale.z != 1.0f;
-    if (!tilt && !scaled) return mat4{};
-    // Studio order R = Ry(yaw) * Rx * Rz with yaw the authored Y rotation; the
-    // RTS draw already applies Ry(facingYaw) = Ry(yaw + 90 deg), so tilt/scale
-    // are expressed in the authored frame and conjugated by the authored yaw.
-    constexpr float kDeg = 0.017453292f;
-    const float yaw = facingYaw - 1.5707963f;
-    return mat4::translate(p) * mat4::rotateY(yaw) * mat4::rotateX(o.poseRotX * kDeg) *
-           mat4::rotateZ(o.poseRotZ * kDeg) * mat4::scale(o.poseScale) * mat4::rotateY(-yaw) * mat4::translate(-p);
 }
 
 void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
@@ -1839,7 +1872,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         if (auto* c = w.tryGet<Cargo>(e)) { so.carry = float(c->amount.toDouble()); so.carryRes = c->res; }
         if (auto* od = w.tryGet<Orders>(e); od && !od->queue.empty()) so.order = uint8_t(od->queue.front().type) + 1;
         if (auto* mb = w.tryGet<Mobile>(e)) so.moving = mb->moving;
-        if (drivingCars) if (const DrivingCar* car = drivingCars->car(sim, e)) so.steer = float(car->st.steer.toDouble()) * 6.2831853f;
+        if (drivingCars) if (const vehicles::VehicleDrive* car = drivingCars->car(sim, e)) so.steer = float(car->controller.steer.toDouble()) * 6.2831853f;
         if (auto* pr = w.tryGet<Production>(e)) so.producing = !pr->queue.empty();
         if (auto* cb = w.tryGet<Combat>(e); cb && cb->target.valid() && w.alive(cb->target)) {
             if (auto* tt = w.tryGet<Transform>(cb->target)) { so.hasTarget = true; so.target = lerp(toF(tt->prevPos), toF(tt->pos), alpha); }

@@ -5,33 +5,22 @@
 #include <deque>
 #include <map>
 #include "FpsSystems.h"
+#include "FpsComponents.h"
 #include "engine/world/CollisionStream.h"
-#include "libraries/include/aiverselib/genre/Melee.h"
-#include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
+#include "libraries/include/aiverselib/mechanics/Melee.h"
+#include "libraries/include/aiverselib/mechanics/royale/BattleRoyale.h"
 #include "libraries/include/aiverselib/systems/Gear.h"
 #include "libraries/include/aiverselib/systems/BuildingGen.h"
-#include "libraries/include/aiverselib/genre/VehicleData.h"
+#include "libraries/include/aiverselib/mechanics/VehicleData.h"
+#include "libraries/include/aiverselib/mechanics/RaceSessionData.h"
+#include "engine/vehicles/VehicleRace.h"
 #include <optional>
+#include <span>
+#include <utility>
 
 namespace aiverse::fps {
-constexpr uint16_t kInputCommand=1;
 constexpr uint32_t kBuildingColliderBase=0x40000000;
 constexpr uint32_t kRotatedColliderBase=0x50000000;   // triangles of map colliders with a "yaw" (12 per box)   // collider ids of map `buildings` (building-gen)
-enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096 };
-constexpr uint32_t kButtonBits=8191;
-constexpr uint32_t selectWeapon(uint32_t index) { return (index+1)<<5; }
-// Weapon selection occupies bits 5..7; zero means keep the equipped weapon.
-struct Input {
-    int32_t forward=0, right=0; // [-1000,1000], relative to yaw
-    Fixed yaw{},pitch{};       // turns; pitch positive up
-    uint32_t buttons=0,viewTick=0,sequence=0;
-    Action action=Action::None;uint32_t argument=0;
-    bool operator==(const Input&) const = default;
-};
-struct MotorConfig {
-    Fixed radius=Fixed::fromRatio(3,10),height=Fixed::fromRatio(18,10),crouchHeight=1_fx;
-    Fixed speed=5_fx,sprintSpeed=8_fx,jumpSpeed=6_fx,gravity=20_fx,stepHeight=Fixed::fromRatio(3,10);
-};
 struct WeaponConfig {
     int32_t damage=25,magazine=30,reserve=120;
     uint32_t interval=6,reloadTicks=120;
@@ -55,7 +44,7 @@ struct Config {
     Fixed interestRadius=250_fx,worldLimit=100000_fx;
     MotorConfig motor; WeaponConfig weapon;SystemsConfig systems;MeleeConfig melee;
     std::vector<WeaponConfig> weapons;
-    std::string mode="deathmatch"; // deathmatch / elimination / battleRoyale
+    std::string mode="deathmatch"; // deathmatch / elimination / battleRoyale / bomb (a map "race" decides the round itself)
     uint32_t respawnTicks=180,roundTicks=7200,zoneStart=1800,zoneDuration=7200;
     Vec3 zoneCenter{};Fixed zoneRadius=2000_fx,zoneEndRadius=10_fx;
     int32_t zoneDamage=5;
@@ -67,39 +56,13 @@ struct Config {
     // Opt-in `fps.gear` (gear-tiers package): tiered helmets / vests / backpacks as loot type 200 + id.
     lib::systems::GearCatalog gear;
     // Opt-in `fps.vehicleTypes` (vehicle-controllers JSON): map vehicles with a `type` drive with the package's
-    // controller and seats (driver, passengers, gunners); vehicles without one keep the legacy arcade car.
+    // controller and seats (driver, passengers, gunners); vehicles without one keep the arcade car.
     std::optional<lib::genre::VehicleDefinitions> vehicleTypes;
     // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
     // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
     Json bots;
-    bool ecsAuthority=false; // opt-in: full actor state canonical in ECS, legacy vector is tick workspace
 };
-struct Actor {
-    uint8_t slot=0,team=0;
-    Vec3 pos{},velocity{};
-    Fixed yaw{},pitch{};
-    int32_t health=100,ammo=30,reserve=120,kills=0;
-    uint32_t life=1;
-    uint8_t weaponIndex=0;
-    int32_t storedAmmo[4]{},storedReserve[4]{};
-    uint32_t shots=0,hits=0,switchUntil=0;
-    bool fireHeld=false;
-    uint32_t reloadUntil=0,nextFire=0,respawnAt=0,lastInputTick=0,lastSequence=0;
-    bool grounded=false,crouched=false;
-    Input input{};
-    int32_t armor=0,money=0;uint8_t owned=15,attachments[4]{};
-    Fixed recoil{};bool aiming=false,prone=false,downed=false,climbing=false,frozen=false;
-    uint32_t bleedUntil=0,blindUntil=0,vehicle=0,lastDamage=0;
-    Action activeAction=Action::None;uint32_t actionUntil=0,actionTarget=0;Vec3 actionOrigin{};
-    std::vector<Item> bag;
-    // Melee (saved from FPS save version 7; zero when fps.melee is disabled).
-    lib::genre::MeleeState melee;
-    uint32_t parryUntil=0,staggerUntil=0;uint8_t lockTarget=0;
-    bool blockHeld=false,meleeHasTip=false;Vec3 meleeTip{};
-
-    bool operator==(const Actor&) const = default;
-};
-// Battle-royale run (saved from FPS save version 8; empty when fps.royale is absent). Slot i-1 indexes divers / credit.
+// Battle-royale run (empty when fps.royale is absent). Slot i-1 indexes divers / credit.
 struct RoyaleRun {
     bool enabled=false;
     lib::genre::SafeZoneState zone;lib::genre::BombardmentState bombardment;lib::genre::SupplyDropState drops;
@@ -116,95 +79,26 @@ struct RoyaleView {
     bool operator==(const RoyaleView&)const=default;
 };
 void io(Archive&,RoyaleView&);
-// One typed vehicle (FPS save version 9): controller and seat state of the vehicle with id `vehicle`.
-struct VehicleRun {
-    uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
-    std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
-};
-// Full gameplay Actor payload. In fps.ecsAuthority mode this ECS component
-// is canonical between tick barriers, and State::actors is a temporary
-// compatibility workspace for older simulation algorithms/save v9.
-struct ActorRuntime { Actor value; };
-
-// Stable ECS identities for FPS actors. In default mode, State::actors
-// remains the gameplay authority and these are read-only ECS projections.
-// With fps.ecsAuthority=true, ActorRuntime holds canonical full actor payloads
-// between ticks; State::actors is a contiguous gameplay compatibility workspace.
-// Identity/Transform/Vitals remain lightweight editor projections.
-struct ActorEntityIdentity {
-    uint8_t slot = 0, team = 0;
-    uint32_t life = 0;
-};
-struct ActorEntityTransform {
-    Vec3 position{}, velocity{};
-    Fixed yaw{}, pitch{};
-};
-struct ActorEntityVitals {
-    int32_t health = 0, armor = 0, ammo = 0, reserve = 0;
-    bool downed = false, crouched = false, prone = false;
-};
-struct ActorEntityIndex {
-    std::vector<Entity> bySlot; // slot 1 -> index 0; stable across ticks
-};
- 
-// Spawned FPS objects have ECS identities as well. IDs are stable source IDs
-// already present in the legacy save/net protocol. The ECS view is derived
-// until the authoritative simulation has migrated off State vectors.
-struct ProjectileEntity {
-    uint32_t id = 0;
-    uint8_t owner = 0, kind = 0;
-    Vec3 position{}, velocity{};
-    int32_t damage = 0;
-};
-struct LootEntity {
-    uint32_t id = 0;
-    Vec3 position{};
-    int32_t type = 0, count = 0;
-};
-struct VehicleEntity {
-    uint32_t id = 0;
-    Vec3 position{}, velocity{};
-    Fixed yaw{};
-    int32_t health = 0;
-    uint8_t driver = 0;
-};
-// Full authoritative dynamic object payloads. The order field preserves
-// legacy vector iteration order (important for deterministic hits/drops).
-// When ecsAuthority is enabled, State arrays are tick-local workspaces only.
-struct ProjectileRuntime { Projectile value; uint32_t order=0; };
-struct LootRuntime { Loot value; uint32_t order=0; };
-struct VehicleRuntime { Vehicle value; uint32_t order=0; };
-
-struct DynamicEntityIndex {
-    // Packed key: top 8 bits = kind, low 32 bits = existing object ID.
-    std::map<uint64_t, Entity> byKey;
-};
-
-
-struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
+// One rewind frame: every character as it was at `tick` (lag-compensated hitscan).
+struct HistoryFrame { uint32_t tick=0; std::vector<CharacterSnapshot> characters; };
+// World resource with the match-level data. Characters, projectiles, loot and vehicles are entities
+// (FpsComponents.h); read them through the Module accessors.
 struct State {
-    std::vector<Actor> actors;
     std::deque<HistoryFrame> history;
     uint32_t round=1; int32_t winner=0;
-    uint32_t nextObject=1;std::vector<Projectile> projectiles;std::vector<Loot> loot;std::vector<Vehicle> vehicles;RoundState match;
+    uint32_t nextObject=1;   // next id of a projectile / loot item / vehicle (ascending id = deterministic order)
+    RoundState match;
     RoyaleRun royale;
-    std::vector<lib::systems::GearLoadout> gear;   // per slot when fps.gear is set (FPS save version 9)
-    std::vector<VehicleRun> vehicleRuns;
-    std::vector<std::string> botStates;   // lib::bots::saveFps bytes per slot when fps.bots is set (save version 9)
-
 };
 Config readConfig(const Json& rules);
 Command command(uint8_t slot,const Input& input);
 bool decodeInput(const Command& command,Input& input);
 Vec3 direction(Fixed yaw,Fixed pitch);
-world::Bounds actorBounds(const Actor& a,const MotorConfig& config);
-void moveActor(Actor& actor,const Input& input,const MotorConfig& config,const world::SpatialWorld& world,Fixed dt,Fixed limit);
-void io(Archive&,Input&);
-void io(Archive&,Actor&);
-Fixed stanceHeight(const Actor&,const MotorConfig&);
 struct BotHost;   // FpsBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
 class Module final : public GameModule {
 public:
+    // Limits of the dynamic object pools (spawns beyond them are dropped).
+    static constexpr size_t kMaxProjectiles=256,kMaxLoot=256,kMaxVehicles=32;
     std::string name() const override { return "fps"; }
     void setup(Simulation&,const Json&,const Json&) override;
     void applyCommand(Simulation&,const Command&) override;
@@ -212,58 +106,93 @@ public:
     bool serializeState(Simulation&,Archive&) override;
     int result(Simulation& sim) override { return state(sim).winner; }
     const Config& config() const { return config_; }
-    // Debug counters (do not affect deterministic game checksums).
-    uint64_t experimentalMotorBatches() const { return experimentalMotorBatches_; }
-    uint64_t experimentalMotorCommits() const { return experimentalMotorCommits_; }
 
     const world::SpatialWorld& collision() const { return collision_; }
     void setContentReader(world::AssetReader);
     bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
+    // Match-level data (round, winner, nextObject, match, royale, history).
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
-    bool actorEcsAuthority() const { return config_.ecsAuthority; }
-    Entity actorEntity(Simulation& sim, uint8_t slot) const;
-    void syncActorEntities(Simulation& sim) const; // rebuild ECS actor state and inspector projections
-    void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
-    void syncDynamicEntities(Simulation& sim) const; // retain original native ABI for setup/v9 legacy restore
-    void syncDynamicEntities(Simulation& sim,bool projectProjectilesFromEcs) const; // ECS -> State projectile projection at mirror
-    void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
-    State authoritativeStateCopy(Simulation& sim) const; // v9 save/hash assembled from ECS payloads
+    const State& state(const Simulation& sim) const { return *sim.world().resourceConst<State>(); }
+    // Characters: one entity per player slot (1..characterCount), iterated in slot order.
+    size_t characterCount(const Simulation& sim) const;
+    Entity characterEntity(const Simulation& sim,uint8_t slot) const;   // kNullEntity for an invalid slot
+    CharacterRef character(Simulation& sim,uint8_t slot) const;          // throws std::out_of_range for an invalid slot
+    ConstCharacterRef character(const Simulation& sim,uint8_t slot) const;
+    CharacterSnapshot snapshot(const Simulation& sim,uint8_t slot) const;
+    std::vector<CharacterSnapshot> snapshots(const Simulation& sim) const;
+    template<class Fn> void forEachCharacter(Simulation& sim,Fn&& fn) const {
+        for(size_t slot=1,n=characterCount(sim);slot<=n;++slot)fn(character(sim,uint8_t(slot)));
+    }
+    template<class Fn> void forEachCharacter(const Simulation& sim,Fn&& fn) const {
+        for(size_t slot=1,n=characterCount(sim);slot<=n;++slot)fn(character(sim,uint8_t(slot)));
+    }
+    // Per-slot gear (nullptr without `fps.gear`).
+    lib::systems::GearLoadout* gear(Simulation& sim,uint8_t slot) const;
+    const lib::systems::GearLoadout* gear(const Simulation& sim,uint8_t slot) const;
+    // Dynamic objects in ascending id (= creation order). Entities carry Projectile / Loot / Vehicle
+    // (+ VehicleDrive on typed vehicles); the value variants return copies for read-only consumers.
+    std::vector<Entity> projectileEntities(const Simulation& sim) const;
+    std::vector<Entity> lootEntities(const Simulation& sim) const;
+    std::vector<Entity> vehicleEntities(const Simulation& sim) const;
+    std::vector<Projectile> projectiles(const Simulation& sim) const;
+    std::vector<Loot> loot(const Simulation& sim) const;
+    std::vector<Vehicle> vehicles(const Simulation& sim) const;
+    Entity vehicleEntity(const Simulation& sim,uint32_t id) const;   // kNullEntity when absent
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
+    lib::mechanics::RaceView raceView(Simulation&,uint8_t slot) const;   // racer id = slot
+    bool racing() const { return race_!=nullptr; }   // this map has a race (map "race": vehicles::RaceState resource)
 private:
     void tick(Simulation&);
-    void moveActorEcs(Simulation&,Actor&,const Input&); // direct ECS motor, legacy workspace updated for other systems
-    void shoot(Simulation&,Actor&);
-    void spawnProjectile(Simulation&,Projectile); // native ECS authority on spawn; legacy State remains tick projection
-    void clearProjectiles(Simulation&); // synchronous round-reset ECS despawn barrier
-    void equipInitial(Actor&) const;
-    void setupSystems(Simulation&,const Json&,State&);
-    void tickOrdinaryProjectiles(Simulation&); // original same-tick impact stage
-    bool stepOrdinaryProjectile(Simulation&,Projectile&); // shared legacy/ECS solver
+    void shoot(Simulation&,CharacterRef);
+    void spawnProjectile(Simulation&,Projectile);   // caller checks kMaxProjectiles
+    void spawnLoot(Simulation&,Loot);               // caller checks kMaxLoot
+    Entity spawnVehicle(Simulation&,Vehicle);
+    void clearProjectiles(Simulation&);
+    void resetLootAndVehicles(Simulation&);         // round reset: initial loot, initial vehicle values
+    void equipInitial(CharacterSnapshot&) const;
+    void setupSystems(Simulation&,const Json&);
+    void tickOrdinaryProjectiles(Simulation&);
+    bool stepOrdinaryProjectile(Simulation&,Projectile&);
     void tickSystems(Simulation&);
     void tickProjectilePrograms(Simulation&);
     bool stepProgrammedProjectile(Simulation&,Projectile&,std::vector<Projectile>&,std::size_t liveCount);
-    void actorSystems(Simulation&,Actor&,Input&);
-    bool traceShot(Simulation&,uint8_t,Vec3,Vec3,int32_t,const WeaponConfig&,const std::vector<Actor>&,Projectile* projectile=nullptr);
-    void damage(Simulation&,uint8_t,Actor&,int32_t,bool head=false);
-    void action(Simulation&,Actor&,Action,uint32_t);
-    void tickMelee(Simulation&,Actor&,const Input&);
+    void actorSystems(Simulation&,CharacterRef,Input&);
+    std::vector<HitPose> livePoses(Simulation&) const;
+    // rewind = lag-compensated poses, nullptr = the live characters at the time of the call
+    bool traceShot(Simulation&,uint8_t,Vec3,Vec3,int32_t,const WeaponConfig&,const std::vector<HitPose>* rewind,Projectile* projectile=nullptr);
+    void damage(Simulation&,uint8_t,CharacterRef,int32_t,bool head=false);
+    void damageVehicle(Simulation&,uint8_t source,uint32_t vehicleId,int32_t amount);
+    void action(Simulation&,CharacterRef,Action,uint32_t);
+    void tickMelee(Simulation&,CharacterRef,const Input&);
     void finishRound(Simulation&,int32_t);
-    void setupRoyale(Simulation&,const Json&,State&);
-    bool skydive(Simulation&,Actor&);
+    void setupRoyale(Simulation&,const Json&);
+    bool skydive(Simulation&,CharacterRef);
     void tickRoyale(Simulation&);
     void settleRoyale(Simulation&);
-    void steerRoyaleBot(Simulation&,Actor&);
+    void steerRoyaleBot(Simulation&,CharacterRef);
     Fixed groundBelow(Vec3) const;
     std::vector<Loot> buildMapBuildings(const Json& map);
-    void setupVehicles(Simulation&,const Json&,State&);
-    void tickVehicles(Simulation&);
-    bool vehicleInteract(Simulation&,Actor&);
-    VehicleRun* vehicleRun(State&,uint32_t vehicle) const;
-    bool canFireFromVehicle(State&,const Actor&) const;
-    void setupBots(Simulation&,const Json&,State&);
-    bool thinkBot(Simulation&,Actor&);
+    void setupVehicles(Simulation&,const Json&);
+    // race: the race session's pedals this tick (countdown, race bots: vehicles::VehicleRace::pedals).
+    void tickVehicles(Simulation&,std::span<const vehicles::RacePedals> race={});
+    lib::mechanics::VehicleInput driverInput(const ConstCharacterRef&,uint32_t now) const;
+    void setupRace(Simulation&,const Json& rules,const Json& map);
+    void tickRace(Simulation&);
+    bool validRace(const vehicles::RaceState&,const std::vector<Entity>& typedVehicles) const;
+    bool vehicleInteract(Simulation&,CharacterRef);
+    vehicles::VehicleDrive* vehicleDrive(Simulation&,uint32_t vehicle) const;
+    friend class VehicleWorld;
+    friend class RaceSeats;
+    bool canFireFromVehicle(Simulation&,const CharacterRef&) const;
+    void setupBots(Simulation&,const Json&);
+    bool thinkBot(Simulation&,CharacterRef);
+    template<class T> std::vector<Entity> orderedById(const Simulation&) const;
     std::shared_ptr<BotHost> botHost_;
+    // The vehicle system (engine/vehicles): fps.vehicleTypes as shared vehicle types (metres, seat lists), and the
+    // race adapter (rules "race" + map "race", docs/races.md); derived, never saved.
+    vehicles::DriveRules drive_;
+    std::shared_ptr<const vehicles::VehicleRace> race_;
     struct BuildingRegion{world::Bounds bounds;Vec3 door{};std::vector<std::pair<Vec3,Vec3>> stairs,halls;};
     std::vector<BuildingRegion> buildingRegions_;   // generated buildings: footprint (+margin), door, stair flights
     std::vector<world::Bounds> ladders_,sites_;
@@ -272,7 +201,6 @@ private:
     std::vector<Loot> initialLoot_;
     lib::genre::AttackSet meleeAttacks_;
 
-    uint64_t experimentalMotorBatches_=0, experimentalMotorCommits_=0;
     Config config_;
     world::SpatialWorld collision_;
     std::vector<Vec3> spawns_;

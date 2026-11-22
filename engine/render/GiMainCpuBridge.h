@@ -22,6 +22,14 @@ struct GiMainCpuConfig {
     float traceDistance=12;
     double cpuBudgetMs=GiCpuTraceBudget::kDefaultTargetMs;
     size_t maxProbesPerFrame=GiCpuTraceBudget::kDefaultMaxProbes;
+    // GPU bridge only: 1..3 nested probe cascades around the same center.
+    // Cascade k has spacing * 2^k and traces rays traceDistance * 2^k long.
+    // All cascades share one atlas; the CPU bridge supports one cascade.
+    int cascades=1;
+    // GPU bridge only: the cascades follow the updateFrame focus (scrolling
+    // lattices); recycled probes are zeroed and re-traced, the rest keep their
+    // light. Once converged the GI stays presented while probes update.
+    bool scroll=false;
 };
 class GiMainCpuBridge {
 public:
@@ -37,7 +45,7 @@ public:
     // Explicit opt-in. Changing device or lattice requires full GPU-idle
     // shutdown and all borrowed render samplers must be detached first.
     bool initialize(gfx::Device& device,GiMainCpuConfig config) {
-        if(ready_)return false;
+        if(ready_ || config.cascades!=1 || config.scroll)return false;
         cpu_.configure(config.origin,config.spacing,config.nx,config.ny,
                        config.nz,config.samples,config.traceDistance);
         budget_.configure(config.cpuBudgetMs,config.maxProbesPerFrame);
@@ -76,6 +84,26 @@ public:
         geometryCurrent_=true;
         (void)atlas_.uploadAll(cpu_); // clear old irradiance, even if frame budget is zero
         safe_=true;
+        return true;
+    }
+    // Local edit: only probes whose rays can reach `changed` are cleared and
+    // re-traced; the rest keep their light. Needs a current scene, otherwise
+    // this is a full publication.
+    bool publishGeometryRegion(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
+                               uint64_t revision,GiBounds changed) {
+        if(!ready()||!scene||!revision||revision<=geometryRevision_) {
+            safe_=false;geometryCurrent_=false;return false;
+        }
+        if(!geometry_||!geometryCurrent_)return publishGeometry(std::move(scene),revision);
+        const bool coherent=safe_;
+        safe_=false;
+        std::vector<uint32_t> cleared;
+        try {cpu_.setTraceGeometryRegion(scene->traceView(),revision,changed,0,&cleared);}
+        catch(const std::invalid_argument&) {geometryCurrent_=false;return false;}
+        geometry_=std::move(scene); // retain borrowed BVH until next update
+        geometryRevision_=revision;
+        if(!cleared.empty())(void)atlas_.upload(cpu_,std::move(cleared));
+        safe_=coherent;
         return true;
     }
     bool publishLights(std::vector<GiMovingLight> lights) {
