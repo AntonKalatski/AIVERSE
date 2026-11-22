@@ -189,15 +189,8 @@ public:
             // same TerraWeave seeds, so the forest continues to the horizon.
             if (!horizon_ || horizonRecipe_ != recipeKey) {
                 if (horizon_) horizon_->shutdown(device);
-                terraweave::HorizonSettings hs;
-                hs.closeForestEndCm = kHorizonCloseCm;
-                // Map ground covers the camera neighbourhood; far proxy ground
-                // starts where the authored map usually ends.
-                hs.terrainBeginCm = std::clamp<int32_t>(int32_t(std::min(doc.data.w, doc.data.h)) * origin.cellSizeCm / 2,
-                                                       kHorizonCloseCm, 110000);
-                hs.crownDetail = 3;
-                hs.orientationViews = 2;
-                hs.atlasTilePixels = 64;
+                const terraweave::HorizonSettings hs = editorHorizonSettings(
+                    doc.data.w, doc.data.h, origin.cellSizeCm);
                 horizon_ = std::make_unique<terraweave::TerraWeaveHorizonScene>(
                     terraweave_ops_detail::terrain(recipe), terraweave::BiomeSettings{}, hs);
                 horizonRecipe_ = recipeKey;
@@ -208,6 +201,21 @@ public:
         }
     }
     bool horizon() const { return horizonEnabled_; }
+    // Horizon HLOD settings of the editor preview: the High quality preset
+    // (two canopy views, crown detail 3, 48 px atlas tiles - 64 px tiles with
+    // two views exceed the 2048 px / 16 MiB atlas budget and made the whole
+    // forest overlay switch itself off) with the near/far ownership of the map.
+    static terraweave::HorizonSettings editorHorizonSettings(int mapW, int mapH, int32_t cellSizeCm) {
+        terraweave::HorizonSettings hs =
+            terraweave::horizonSettingsForQuality(terraweave::HorizonQualityPreset::High);
+        hs.closeForestEndCm = kHorizonCloseCm;
+        // Map ground covers the camera neighbourhood; far proxy ground
+        // starts where the authored map usually ends.
+        hs.terrainBeginCm = std::clamp<int32_t>(int32_t(std::min(mapW, mapH)) * cellSizeCm / 2,
+                                               kHorizonCloseCm, 110000);
+        terraweave::validateHorizonSettings(hs);
+        return hs;
+    }
     void setHorizon(bool on) { horizonEnabled_ = on; }
 
 private:

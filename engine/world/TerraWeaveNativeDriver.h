@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveNativeWorldBinding.h"
 #include "engine/world/TerraWeaveNavMeshBridge.h"
+#include "engine/world/TerraWeaveStreaming.h"
 #include "engine/world/NereidFloodVisualScene.h"
 #include <cstddef>
 #include <functional>
@@ -81,6 +82,36 @@ inline NativeTerrainPublishResult publishNativeTerraWeaveFrame(
             status.grassUploads=terrain.publishGrass(
                 device,grassArea);
     }
+    return status;
+}
+
+// Automatic variant: the host passes its observers (camera, players, AI,
+// server interest points) instead of hand-computed tiles; the planner keeps
+// hysteresis state between frames and orders tiles nearest-first, so the
+// per-frame upload budget always fills the ground under the observers first.
+// planner.settings().tileSizeCm must equal the coordinator tile size.
+inline NativeTerrainPublishResult publishNativeTerraWeaveFrameAuto(
+        const World& ecs,NativeTerraWeaveWorldBinding& binding,
+        TerrainMutationCoordinator& terrain,
+        world::WorldScene& worldScene,gfx::Device& device,
+        world::SpatialWorld& spatial,nav::Mesh& navmesh,
+        const EarthworksNavSource& navSource,
+        TerraWeaveStreamingPlanner& planner,
+        std::span<const TerraStreamObserver> observers,
+        const TerrainMutationCoordinator::ColliderIdForCell& ids,
+        TerraStreamingPlan* planOut=nullptr,
+        std::string* navError=nullptr,
+        size_t terrainUploadBudget=2u,bool forceRehydrate=false) {
+    if(observers.empty())
+        throw std::invalid_argument("TerraWeave automatic streaming needs an observer");
+    if(int64_t(planner.settings().tileSizeCm)!=
+       int64_t(terrain.terrainCellSizeMetres())*100)
+        throw std::invalid_argument("TerraWeave streaming tile size differs from terrain tiles");
+    TerraStreamingPlan plan=planner.update(observers);
+    auto status=publishNativeTerraWeaveFrame(ecs,binding,terrain,worldScene,
+        device,spatial,navmesh,navSource,plan.pinnedCells,plan.grassArea,ids,
+        navError,terrainUploadBudget,forceRehydrate);
+    if(planOut)*planOut=std::move(plan);
     return status;
 }
 

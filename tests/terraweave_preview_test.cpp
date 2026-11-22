@@ -8,6 +8,15 @@ using namespace aiverse::editor;
 
 int main() {
     TerraWeaveForestPreview preview;
+    // Regression: the editor Horizon preview must fit the Horizon atlas
+    // budget for any map size (64 px x two views used to throw and silently
+    // disable the forest overlay as soon as horizon=true was requested).
+    for (int side : {16, 192, 512, 2048})
+        for (int32_t cell : {50, 100, 400}) {
+            const auto hs = TerraWeaveForestPreview::editorHorizonSettings(side, side, cell);
+            aiverse::terraweave::validateHorizonSettings(hs);
+            assert(hs.orientationViews == 2 && hs.crownDetail == 3);
+        }
     assert(!preview.enabled());
     assert(preview.generatedInstances() == 0);
     assert(preview.visibleInstances() == 0);
