@@ -131,8 +131,11 @@ stats("overview", x=256, y=0, z=256, distance=260, pitch=40, yaw=200)
 if os.environ.get("CASTLE_SHOT"):
     # Static castle from the geometry scene: near / mid / far.
     cx, cy, cz = [float(t) for t in os.environ["CASTLE_SHOT"].split(",")]
-    for tag, d, up in (("castle-near", 70, 18), ("castle-mid", 160, 40), ("castle-far", 380, 80)):
-        stats(tag, **look((cx + d * 0.8, cy + up, cz + d * 0.6), (cx, cy + 8, cz)))
+    if os.environ.get("CASTLE_INSIDE"):
+        stats("castle-inside", **look((cx - 13, cy + 1.7, cz + 0.5), (cx + 12, cy + 6, cz)))
+        stats("castle-gallery", **look((cx - 12, cy + 7.5, cz - 6), (cx + 14, cy + 4, cz + 4)))
+    for tag, d, up in (("castle-near", 45, 14), ("castle-mid", 120, 35), ("castle-far", 320, 70)):
+        stats(tag, **look((cx + d * 0.8, cy + up, cz + d * 0.6), (cx, cy + 6, cz)))
 if os.environ.get("REFLECT_SHOT"):
     # Looking down at the water: far-bank trees above the frame show only as reflections.
     for k, ii in enumerate((10, 16, 22)):

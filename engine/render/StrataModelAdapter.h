@@ -39,7 +39,8 @@ struct ModelAsset {
 // Does NOT automatically activate Strata in the production renderer.
 bool buildModelAsset(const Model& model, const BuildOptions& options,
                      ModelAsset& out, std::string* error = nullptr,
-                     bool allowPreparedRootLods = false);
+                     bool allowPreparedRootLods = false,
+                     bool tolerateSourceSeamDefects = false);
 
 // Per-GeometryScene optional CPU staging. Keeps exactly one Strata asset per
 // *source model*, independent of the number of scene instances. No GPU handles,
@@ -67,8 +68,8 @@ public:
     // of triangles); the geometry scene's own vertex budget still applies.
     // A skipped or failed source never prevents the existing renderer drawing it.
     struct Limits {
-        size_t maxVerticesPerSource = 1500000;
-        size_t maxIndicesPerSource = 4500000;
+        size_t maxVerticesPerSource = 8000000;
+        size_t maxIndicesPerSource = 24000000;
     };
     SceneStaging() = default;
     explicit SceneStaging(const BuildOptions& options) : options_(options) {}
@@ -92,11 +93,14 @@ public:
     // meshes referenced directly by source nodes, not generated LOD children.
     // Default false retains older diagnostic import exclusion rules.
     void setAllowPreparedRootLods(bool value) { allowPreparedRootLods_ = value; }
+    // Production scenes: see auditModelSourceSeams(tolerant).
+    void setTolerateSourceSeamDefects(bool value) { tolerateSourceSeamDefects_ = value; }
 private:
     BuildOptions options_{};
     Limits limits_{};
     StagingStats stats_{};
     bool allowPreparedRootLods_ = false;
+    bool tolerateSourceSeamDefects_ = false;
     std::map<std::string, ModelAsset> assets_;
     std::vector<std::string> warnings_;
 };

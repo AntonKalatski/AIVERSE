@@ -63,8 +63,8 @@ bool build(const BuildInput& input, const BuildOptions& options,
            Asset& out, std::string* error) {
     if (error) error->clear();
     if (!input.indices || !input.positions || input.indexCount == 0 ||
-        input.indexCount % 3 || input.indexCount > 3000000 ||
-        input.vertexCount == 0 || input.vertexCount > 1000000 ||
+        input.indexCount % 3 || input.indexCount > 30000000 ||
+        input.vertexCount == 0 || input.vertexCount > 16000000 ||
         input.positionStride < 12 || input.positionStride % 4 ||
         input.positionStride > 4096 ||
         options.maxVertices < 3 || options.maxVertices > 255 ||

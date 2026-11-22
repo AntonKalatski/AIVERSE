@@ -306,6 +306,9 @@ struct ModelDraw {
     // Main branch ShaderGraph/source material selector; append to keep
     // all prior positional ModelDraw initializers backward-compatible.
     int primitiveMaterialFilter = -1;
+    // Optional per-material draw mask (index = Primitive::material, 0 = skip).
+    // Used to draw only the parts of a model another path does not cover.
+    const std::vector<uint8_t>* materialMask = nullptr;
     bool useVertexParameters = false;
     float4 vertexParameters{0, 0, 0, 0};
     // Bounded vertexOffset (metres), zero means unknown displacement.

@@ -89,7 +89,7 @@ bool nearbyOnSegment(const Point& p,const Segment& s,
 } // namespace
 
 bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
-                           SourceSeamAudit& report,std::string* error) {
+                           SourceSeamAudit& report,std::string* error,bool tolerant) {
     if(error)error->clear();
     if(asset.primitives.empty() || model.vertices.empty() ||
        model.indices.empty() ||
@@ -109,7 +109,7 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
     }
 
     std::vector<Segment> segments;
-    constexpr size_t kMaximumSourceBoundarySegments=250000;
+    const size_t kMaximumSourceBoundarySegments=tolerant?4000000:250000;
     for(const auto& staged:asset.primitives){
         if(staged.mesh>=model.meshes.size() ||
            staged.primitive>=model.meshes[staged.mesh].primitives.size() ||
@@ -148,13 +148,24 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
             for(uint32_t index:tri)
                 if(index>=model.vertices.size())
                     return fail(error,"source seam audit vertex out of bounds");
+            // Degenerate triangles (repeated vertex ids, common in scans
+            // and dense authored meshes) have no area and open no seam.
+            if(tri[0]==tri[1]||tri[1]==tri[2]||tri[2]==tri[0]){
+                if(!tolerant)return fail(error,"source seam audit degenerate triangle");
+                continue;
+            }
             for(unsigned k=0;k<3;++k){
                 const uint32_t a=tri[k],b=tri[(k+1)%3];
-                if(a==b)return fail(error,"source seam audit degenerate triangle");
                 auto& incidence=edges[{std::min(a,b),std::max(a,b)}];
                 uint8_t& count=incidence.direction[a<b?0:1];
-                if(++count>1)
-                    return fail(error,"source seam audit has nonmanifold material border");
+                // Non-manifold edges are never simplification borders that
+                // can drift: the builder locks such vertices. Treat them as
+                // interior for the cross-material audit.
+                if(++count>1){
+                    if(!tolerant)return fail(error,"source seam audit has nonmanifold material border");
+                    incidence.direction={1,1};
+                    ++next.nonmanifoldEdges;
+                }
                 if(incidence.firstTriangle==UINT32_MAX)
                     incidence.firstTriangle=t;
                 else
@@ -176,8 +187,14 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
                 }
                 Segment s{point(model,edge.first,transform),
                           point(model,edge.second,transform),it->second};
-                if(!finite(s.a)||!finite(s.b)||s.a==s.b)
+                if(!finite(s.a)||!finite(s.b))
                     return fail(error,"source seam audit encountered invalid transformed edge");
+                // A zero-length border edge (collapsed vertices, common in
+                // scans and dense authored meshes) cannot open a crack.
+                if(s.a==s.b){
+                    if(!tolerant)return fail(error,"source seam audit encountered invalid transformed edge");
+                    continue;
+                }
                 if(segments.size()>=kMaximumSourceBoundarySegments)
                     return fail(error,"source seam audit exceeds bounded boundary budget");
                 segments.push_back(s);
@@ -204,8 +221,12 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
     for(auto& [edge,parts]:geometric) {
         std::sort(parts.begin(),parts.end());
         parts.erase(std::unique(parts.begin(),parts.end()),parts.end());
-        if(parts.size()>2)
-            return fail(error,"more than two material borders share one spatial edge");
+        // Three or more partitions on one spatial edge (fins, duplicated
+        // shells): each keeps its own locked border, nothing to match.
+        if(parts.size()>2){
+            if(!tolerant)return fail(error,"more than two material borders share one spatial edge");
+            ++next.crowdedEdges;continue;
+        }
         if(parts.size()==2)++next.matchedSegments;
     }
     // Relative distance is used ONLY as a suspicious-neighbor filter.
@@ -286,7 +307,7 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
         if(collision(collision,root,segment.a,segment.partition) ||
            collision(collision,root,segment.b,segment.partition)){
             ++next.rejectedNearJunctions;
-            return fail(error,
+            if(!tolerant)return fail(error,
                 "cross-material seam has a split, near-offset or T-junction border");
         }
     }
