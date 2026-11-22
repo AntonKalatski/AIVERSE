@@ -1413,7 +1413,13 @@
     "Move armies of thousands of units over maps up to 2048².",
     "Pick the solver per game or map with one key, movement.pathfinding.",
     "Build and dig mid-match: paths update by themselves."
-   ]
+   ],
+   "cover": {
+    "src": "docs/devlog/media/systems/navigation-flow-field.jpg",
+    "caption": "Поле потоков: волна обходит озеро с двух сторон и сходится за ним",
+    "captionEn": "Flow field: a wave splits around a lake and joins again behind it",
+    "approved": false
+   }
   },
   {
    "id": "network",
@@ -1521,7 +1527,13 @@
     "Add physical debris, doors and vehicles to a game.",
     "Keep physics on the server and send the results to clients.",
     "Hang flags and cloth on hundreds of objects with one draw call."
-   ]
+   ],
+   "cover": {
+    "src": "docs/devlog/media/systems/physics-sandbox.jpg",
+    "caption": "Песочница Box3D: башня из ящиков, наклонная плоскость, шар, капсула и маятник",
+    "captionEn": "The Box3D sandbox: a tower of boxes, a slope, a ball, a capsule and a pendulum",
+    "approved": false
+   }
   },
   {
    "id": "ecs",
@@ -1809,7 +1821,13 @@
     "Make a strategy game on planets with an orbital layer.",
     "Get a new map for every match.",
     "Check a map's fairness with bot matches."
-   ]
+   ],
+   "cover": {
+    "src": "docs/devlog/media/systems/planets-surface.jpg",
+    "caption": "Планета на кубе-сфере: атмосфера, море и рельеф",
+    "captionEn": "A cube-sphere planet: atmosphere, sea and terrain",
+    "approved": false
+   }
   },
   {
    "id": "voxel",

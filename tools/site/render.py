@@ -144,12 +144,14 @@ def systems_html(systems, ctx):
 def core_html(systems, ctx):
     """Compact cards of the other big engine systems (no cover, no roadmap line)."""
     cards = []
-    for s in systems:
-        if not s.get('core'):
-            continue
+    core = sorted((s for s in systems if s.get('core')), key=lambda s: not s.get('cover'))
+    for s in core:
         sid = esc(s['id'])
+        c = s.get('cover')
+        thumb = (f'<span class="core-thumb"><img src="{esc(ctx.media(c["src"]))}" alt="{esc(ctx.loc(c, "caption"))}" loading="lazy"></span>'
+                 if c else '')
         tags = ''.join(f'<span>{esc(ctx.loc(it, "name"))}</span>' for it in s['includes'][:4])
-        cards.append(f'<a class="core-card" href="system-{sid}.html" id="sys-{sid}"><h3>{esc(ctx.loc(s, "name"))}</h3>'
+        cards.append(f'<a class="core-card{" has-thumb" if c else ""}" href="system-{sid}.html" id="sys-{sid}">{thumb}<h3>{esc(ctx.loc(s, "name"))}</h3>'
                      f'<p class="core-tag">{esc(ctx.loc(s, "tagline"))}</p><p>{esc(ctx.loc(s, "essence"))}</p>'
                      f'<div class="core-inc">{tags}</div><span class="sys-link">{ctx.T["coreMore"]}</span></a>')
     return '\n'.join(cards)
