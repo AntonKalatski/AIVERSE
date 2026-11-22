@@ -172,7 +172,7 @@ int aiverseMain(int argc,char** argv) {
     const std::vector<terra::FloraBatch> farBatches{
         {profile.speciesId,terra::TreeLOD::Impostor,{instance}}};
 
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={0,5,0};
     camera.distance=27;
     camera.yaw=0.12f;
