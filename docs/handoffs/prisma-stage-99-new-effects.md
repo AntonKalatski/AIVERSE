@@ -1,4 +1,4 @@
-# PRISMA Stage 97 — new effects (2026-11-22)
+# PRISMA Stage 99 — new effects (2026-11-22)
 
 Branch `feature/aiv20261122_prisma_effects`; code `3d381e09`, docs `7b8b2808`, merged with
 `origin/main` and pushed to `main` as `b8ac8683` (owner's request).
