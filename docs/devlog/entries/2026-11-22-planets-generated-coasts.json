@@ -1,0 +1,48 @@
+{
+  "id": "2026-11-22-planets-generated-coasts",
+  "date": "2026-11-22",
+  "system": "planets",
+  "title": "Планеты: берега по рельефу вместо квадратных морей",
+  "summary": "Море на планете теперь режется по высоте земли в каждой точке, а карта Big Planet собрана встроенным генератором: шумовой рельеф, заливы и острова.",
+  "body": [
+    "Раньше на Big Planet были моря с прямыми краями. Дело было в самой карте: её высоты считала ручная формула с полосами по широте, и низины на гранях куба получались прямоугольными. Карта теперь строится генератором движка с пресетом rocky — тем же, что и в окне «Генерация»: шум рельефа, уровень моря по доле воды, ровные площадки под базы и честные старты.",
+    "Сама вода тоже стала аккуратнее: каждый пиксель моря проверяет, есть ли под ним земля выше уровня моря, и у берега вода плавно мелеет. Береговая линия идёт точно по рельефу на любом уровне детализации и не зависит от точности буфера глубины."
+  ],
+  "status": "done",
+  "verified": "Кадры сняты в игровом клиенте (OpenGL); матч ботов на новой карте доходит до победителя.",
+  "limits": "Шейдер для Metal обновлён, но на Маке ещё не запускался. Маленькая карта Two Worlds пока на старых высотах: на неё завязаны тесты.",
+  "branch": "main",
+  "commit": "",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-generated-coasts/coasts.jpg",
+      "caption": "Big Planet из генератора: заливы, острова и мелководье у берега",
+      "captionEn": "Big Planet from the generator: bays, islands and shallow water at the coast"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-generated-coasts/orbit.jpg",
+      "caption": "Та же планета с орбиты",
+      "captionEn": "The same planet from orbit"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-generated-coasts/before.jpg",
+      "caption": "Было: море квадратом на старой карте",
+      "captionEn": "Before: a square sea on the old map"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/planets.md",
+      "href": "docs/planets.md"
+    }
+  ],
+  "author": "planets",
+  "titleEn": "Planets: coasts that follow the relief instead of square seas",
+  "summaryEn": "The sea on a planet is now cut by the ground height at every pixel, and the Big Planet map is built by the engine's generator: noise relief, bays and islands.",
+  "bodyEn": [
+    "Big Planet used to have seas with straight edges. The cause was the map itself: its heights came from a hand-made formula with latitude bands, and lowlands on the cube faces came out rectangular. The map is now built by the engine's generator with the rocky preset — the same one as in the Generation window: noise relief, sea level by water share, flat base areas and fair starts.",
+    "The water itself is neater too: every sea pixel checks whether the ground under it is above sea level, and the water turns shallow towards the coast. The coastline follows the relief exactly at any level of detail and no longer depends on depth buffer precision."
+  ],
+  "verifiedEn": "Frames taken in the game client (OpenGL); a bot match on the new map plays to a winner.",
+  "limitsEn": "The Metal shader is updated but has not been run on a Mac yet. The small Two Worlds map keeps its old heights for now: tests depend on it."
+}
