@@ -68,7 +68,7 @@
  "docsLangNote": "",
  "docsLangNoteRu": "This document is maintained in Russian.",
  "docsUpdated": "Built from",
- "docsSearch": "Filter by title",
+ "docsSearch": "Search the docs  /",
  "systemDocs": "System reference",
  "navReleases": "Releases",
  "relChip": "Release {v} →",
@@ -145,8 +145,8 @@
  "catHowTitle": "How to install",
  "catHowLead": "A package is copied into the project folder; its version and file hashes go to aiverse.lock. Downloads are kept once per computer.",
  "catAddTitle": "Add your package",
- "catAddLead": "Packages are added by pull request to the catalog repository. Once reviewed and merged, the package appears here and in the engine by itself.",
- "catAddBtn": "How to add a package",
+ "catAddLead": "Anyone can offer a package: a pull request to the catalog repository, reviewed by the owner. After the merge it appears here and in the engine by itself.",
+ "catAddBtn": "Full instructions",
  "catJs": {
   "more": "More",
   "engine": "Engine",
@@ -187,6 +187,13 @@
  "galTitle": "Gallery: screenshots from development",
  "galLead": "Every engine frame that appeared during development, newest first. Click a frame to open it large, or its caption to read the entry.",
  "galShots": "frames",
- "docsSearch": "Search the docs  /",
- "docsSearchNone": "Nothing found"
+ "docsSearchNone": "Nothing found",
+ "catAddAnchor": "adding-your-package-to-the-catalog",
+ "catAddSteps": [
+  "Fork <code>AIVERSE-PACKAGES</code> and create the folder <code>&lt;category&gt;/&lt;id&gt;/</code>.",
+  "Write <code>aiverse.package.json</code>: English <code>title</code> and <code>summary</code>, translations as <code>title-ru</code>, <code>summary-de</code>…, licence, <code>minEngine</code>, <code>install.mount</code>.",
+  "Add <code>README.md</code> and a <code>preview.jpg</code> (a real engine frame or the asset itself).",
+  "Put the files into <code>files/</code> (up to 25 MB) or host a zip and fill <code>archive</code>. Textures of another package are not copied: depend on it.",
+  "Run <code>python3 tools/catalog.py check</code> (0 errors) and open a pull request."
+ ]
 }

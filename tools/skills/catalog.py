@@ -91,7 +91,7 @@ WORKFLOWS=[
  ('aiverse-lens-native','LENS native multi-camera scheduling, prepared-frame replay and GPU capture ownership','docs/camera-system.md'),
 
  ('aiverse-scene-entities','Native scene entity and component MCP authoring with stable light identity','docs/studio-light-entities.md'),
- ('aiverse-packages','Optional content from the AIVERSE-PLUGINS catalog: search, install into projects, lock, verify, publish by PR','docs/packages.md'),
+ ('aiverse-packages','Optional content from the AIVERSE-PACKAGES catalog: search, install into projects, lock, verify, publish by PR','docs/packages.md'),
  ('aiverse-lighting','Light entity authoring, probe GI and Luma through native MCP and shared runtime','docs/dynamic-gi.md'),
  ('studio-ui','HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA','docs/studio-design-system.md'),
  ('aiverse-human-creator','VIVID digital humans: DNA skin/eyes/hair/proportions, 52 rest channels, routes, rig and skin edits via human_* MCP or Studio Human Creator','docs/vivid.md'),
@@ -250,7 +250,7 @@ WORKFLOW_ALIASES={
 PACKAGE_REF=re.compile(r'^[a-z0-9][a-z0-9-]{1,62}(@[\^~>=]*[0-9][0-9.]*)?$')
 
 def skill_packages(path):
-    """Content packages a skill needs, from its frontmatter line `packages: a, b@^1.2` (AIVERSE-PLUGINS
+    """Content packages a skill needs, from its frontmatter line `packages: a, b@^1.2` (AIVERSE-PACKAGES
     catalog ids; agents install them with tools/pkg/aiverse_pkg.py skill <id> --project P)."""
     text=(ROOT/path).read_text(encoding='utf-8')
     if not text.startswith('---\n'):return []

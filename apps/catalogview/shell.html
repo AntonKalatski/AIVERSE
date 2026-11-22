@@ -50,7 +50,12 @@
   var q = new URLSearchParams(location.search);
   var src = (q.get('src') || '').replace(/\/+$/, '');
   var first = parseInt(q.get('item') || '0', 10) || 0;
-  var ru = (q.get('lang') || navigator.language || '').toLowerCase().indexOf('ru') === 0;
+  var lang = q.get('lang') || navigator.language || 'en';
+  var ru = lang.toLowerCase().indexOf('ru') === 0;
+  // item titles: "title" is English, translations are "title-<lang>" (title-ru, title-zh-CN, ...)
+  function itemTitle(it) {
+    return it['title-' + lang] || it['title-' + lang.split('-')[0]] || it.title || it.id;
+  }
   var L = ru ? {
     loading: 'Загружаем…', building: 'Строим кластеры STRATA…', webgl: 'В этом браузере нет WebGL 2', nosrc: 'Не указан пакет (?src=)',
     error: 'Ошибка: подробности в консоли браузера', hint: 'перетаскивание · колесо',
@@ -195,7 +200,7 @@
           return fetchAll((view.shared || []).concat(view.items[first].files || []));
         })
         .then(function () {
-          view.items.forEach(function (it, k) { button(bar, it.title || it.id, k === first, function () { select(k); }); });
+          view.items.forEach(function (it, k) { button(bar, itemTitle(it), k === first, function () { select(k); }); });
           if (view.items.length < 2) bar.hidden = true;
           if (state.lod === -2) statusEl.textContent = L.building;
           renderModes();

@@ -3,7 +3,7 @@
 // a tiled ground slab, or glTF / GLB models with a LOD / STRATA switch, through the engine's own
 // Renderer3D (the same PBR path games use), with an orbit camera. Textures are shown as published.
 //
-// Input is a view folder (built by AIVERSE-PLUGINS tools/catalog.py for every package that has a
+// Input is a view folder (built by AIVERSE-PACKAGES tools/catalog.py for every package that has a
 // "viewer" block): <src>/view.json + the files it lists, laid out with the project-relative paths
 // the package uses (materials.json texture paths resolve as they would inside a project).
 //
@@ -22,10 +22,11 @@
 //
 // view.json:
 //   {"schema":1,"kind":"materials","library":"materials.json",
-//    "items":[{"id":"terrain_grass","title":"Grass","files":["materials/terrain/textures/a.png",...],
+//    "items":[{"id":"terrain_grass","title":"Grass","title-ru":"Трава","files":["materials/terrain/textures/a.png",...],
 //              "repeat":2.0}], "shared":["materials.json"]}
 //   {"schema":1,"kind":"models","items":[{"id":"oak","title":"Oak","model":"models/oak.glb",
 //              "files":["models/oak.glb","models/tex/x.png"]}]}
+//   (item titles: "title" is English, translations "title-<lang>"; the page picks one, this app ignores them)
 #include "../../engine/platform/Platform.h"
 #include "../../engine/render/GeometryScene.h"
 #include "../../engine/render/Model.h"

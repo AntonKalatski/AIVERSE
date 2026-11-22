@@ -1924,7 +1924,7 @@ the *engine* add mechanics generically — never a special case for one game.
 | `engine/platform` | Cocoa, UIKit, Android NativeActivity, Emscripten, Win32, X11 | `Platform.h` is the only API |
 | `engine/services`, `plugins/` | store / ads / analytics / privacy APIs over native plugins (Java, Obj-C, JS, C++); ready plugins: App Store, Google Play, RuStore, Yandex Games, Steam, Yandex Ads, AdMob, AppLovin MAX, ironSource LevelPlay, GameAnalytics, Facebook, AppMetrica, ATT; a build carries only the plugins the game selects (CI: check-plugin-isolation.py) | docs/plugins.md |
 | `engine/assets` | fonts, default assets copied into every build | data only (no code: it is bundled) |
-| `tools/pkg` | package catalog client `aiverse_pkg.py`: search / add / install / verify optional content from AIVERSE-PLUGINS into projects (`game.json` "packages" + `aiverse.lock`); `engine/pack/Packages.h` finds cached packages for host tools | docs/packages.md, skill `aiverse-packages` |
+| `tools/pkg` | package catalog client `aiverse_pkg.py`: search / add / install / verify optional content from AIVERSE-PACKAGES into projects (`game.json` "packages" + `aiverse.lock`); `engine/pack/Packages.h` finds cached packages for host tools | docs/packages.md, skill `aiverse-packages` |
 | `engine/atlas` | texture atlas manifest + `.rtex` pages, `TextureLibrary` (path -> texture + uv + trim) | packer in `tools/atlas` (host only) |
 | `engine/pack` | resource packs `.rpak`: reader (`Pack`), writer (`PackWriter`, host tools only) | zstd, reproducible output |
 | `modules/rts` | generic RTS gameplay: data model (`RtsData`), map/pathfinding (`RtsMap`), module (`GameCore*.cpp`, `RtsEconomy`, `RtsUnits`, `RtsCombat`, `RtsWorld`, `RtsTriggers`), AI (`ComputerPlayer`) | deterministic |
@@ -2017,7 +2017,7 @@ copy and builds mark them external.
 
 **Heavy content lives in the package catalog, not here (owner's rule, 2026-11-22).** Material and
 texture libraries, their bake sources, project templates, model / sound / effect packs go to
-[AIVERSE-PLUGINS](https://github.com/chromealex/AIVERSE-PLUGINS) by pull request (owner approves), in
+[AIVERSE-PACKAGES](https://github.com/chromealex/AIVERSE-PACKAGES) by pull request (owner approves), in
 `<category>/<id>/` (templates, materials, textures, models, audio, vfx, ui, scripts, plugins, tools).
 Projects install them with `tools/pkg/aiverse_pkg.py add <id> --project P`; tools read bake inputs with
 `aiverse_pkg.package_dir('<id>')`; a skill that needs one lists it in its frontmatter
