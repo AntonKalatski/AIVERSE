@@ -1311,7 +1311,7 @@ void GameGroundFx::drawCandidate(const std::shared_ptr<PreparedFrame>& frame,
     exchange();
 }
 
-void GameGroundFx::drawPrepared(Renderer3D& r,const GameScene& s,double time,
+void GameGroundFx::drawPrepared(Renderer3D& r,const GameScene& /*s*/,double /*time*/,
                                const std::vector<uint8_t>* vision,
                                const MapGrid& g,const GameView& v) {
     if(!dev_ || !rules_ || g.w<=0 || g.h<=0)return;

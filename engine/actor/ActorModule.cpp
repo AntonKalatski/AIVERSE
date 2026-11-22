@@ -533,7 +533,7 @@ bool ActorHost::serializeState(Simulation& sim,Archive& archive) {
         for(const Entity e:projectileEntities(view))shots.push_back({{e},*w.tryGetConst<Projectile>(e)});
         for(const Entity e:lootEntities(view))items.push_back({{e},*w.tryGetConst<Loot>(e)});
         for(const Entity e:vehicleEntities(view)){
-            SavedVehicle v{{e},*w.tryGetConst<Vehicle>(e)};
+            SavedVehicle v{{e},*w.tryGetConst<Vehicle>(e),false,{}};
             if(const auto* d=w.tryGetConst<vehicles::VehicleDrive>(e)){v.typed=true;v.drive=*d;}
             cars.push_back(std::move(v));
         }

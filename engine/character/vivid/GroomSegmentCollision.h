@@ -152,7 +152,7 @@ public:
             std::unique(workspace.pairs.begin(),workspace.pairs.end()),
             workspace.pairs.end());
         const float r2=cfg.separation*cfg.separation;
-        for(const auto [a,b]:workspace.pairs) {
+        for(const auto& [a,b]:workspace.pairs) {
             if(stats.pairChecks>=cfg.maxPairChecks) {
                 stats.budgetHit=true;
                 break;
