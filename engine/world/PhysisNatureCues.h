@@ -166,7 +166,7 @@ inline const char* physisFlameEffectJson() {
                  "useParticleColor": false, "alphaAffectsIntensity": true } },
     { "texture": "builtin:soft", "blend": "additive", "align": "ground", "rate": 2, "loop": true, "prewarm": true,
       "life": [1.2, 1.6], "speed": [0, 0], "shape": "disc", "radius": 0.4, "size": [1.6, 2.2],
-      "color": [[0, "#ff600000"], [0.3, "#ff6a2038"], [1, "#ff400000"]] },
+      "color": [[0, "#ff600000"], [0.3, "#ff6a2024"], [1, "#ff400000"]] },
     { "texture": "builtin:spark", "blend": "additive", "align": "velocity", "rate": 3, "loop": true,
       "life": [0.8, 1.6], "speed": [1.5, 3.5], "spread": 30, "shape": "disc", "radius": 0.7,
       "gravity": [0, 0.8, 0], "drag": 0.6, "stretch": 0.05, "size": [0.03, 0.06],
