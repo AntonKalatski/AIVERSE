@@ -14,6 +14,7 @@
   <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
+  <a href="https://chromealex.github.io/AIVERSE/en/"><img alt="Website" src="https://img.shields.io/badge/website-chromealex.github.io%2FAIVERSE-111?logo=googlechrome&logoColor=white"></a>
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
 </p>
 
@@ -247,10 +248,16 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 **1. エンジンをビルドする**（macOS。Xcode と CMake が必要）：
 
 ```bash
-cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
-cmake --build build/mac -j 8
-open build/mac/AiverseEditor.app        # エディター：プロジェクトハブとテンプレート
+./studio_mac.command                    # AIVERSE Studio（エディタ。Xcode、CMake、Node.js が必要）
+./studio_mac.command templates/mushrooms   # ……別のプロジェクトで
 ```
+
+Windows：`studio_windows.cmd [project]` で `AiverseStudio.exe` をビルドして開きます（Visual Studio 2022、
+CMake、Node.js が必要。WebView2 Runtime と Vulkan で動作）。
+
+`studio_mac.command` は Web UI とネイティブの Studio をビルドして開きます。エンジンだけなら：
+`cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`。従来の
+ImGui エディタ（`build/mac/AiverseEditor.app`）も引き続きビルドされ、Linux と Windows で動きます。
 
 Linux：`cmake --preset linux-release && cmake --build build/linux-release`。コンパイルしたくない場合は、
 `builds` ブランチにビルド済みのエディターとツールがあります

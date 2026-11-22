@@ -407,6 +407,8 @@ a.chip-ink { color: var(--on-ink); }
 
 /* releases */
 .chip-link { text-decoration: none; color: var(--ink); background: var(--accent); border-color: var(--accent); }
+.chips a.chip-link { padding: 7px 14px; font-size: 13px; }
+.chips { align-items: center; }
 .chip-link:hover { background: #F2D3B8; }
 .rel-next { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 28px 32px; margin-bottom: 48px; }
 .rel-next-head h2 { font: 600 24px var(--display); }

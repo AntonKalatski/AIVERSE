@@ -14,6 +14,7 @@
   <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
+  <a href="https://chromealex.github.io/AIVERSE/en/"><img alt="Website" src="https://img.shields.io/badge/website-chromealex.github.io%2FAIVERSE-111?logo=googlechrome&logoColor=white"></a>
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
 </p>
 
@@ -242,10 +243,16 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 **1. 构建引擎**（macOS；需要 Xcode 和 CMake）：
 
 ```bash
-cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
-cmake --build build/mac -j 8
-open build/mac/AiverseEditor.app        # 编辑器：项目中心和模板
+./studio_mac.command                    # AIVERSE Studio 编辑器（需要 Xcode、CMake、Node.js）
+./studio_mac.command templates/mushrooms   # ……打开其他项目
 ```
+
+Windows：`studio_windows.cmd [project]` 构建并打开 `AiverseStudio.exe`（需要 Visual Studio 2022、
+CMake、Node.js；运行于 WebView2 Runtime 和 Vulkan）。
+
+`studio_mac.command` 会构建 Web 界面和原生 Studio 并打开它。只构建引擎：
+`cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`。之前的
+ImGui 编辑器（`build/mac/AiverseEditor.app`）仍会构建，并可在 Linux 和 Windows 上使用。
 
 Linux：`cmake --preset linux-release && cmake --build build/linux-release`。如果不想编译，
 `builds` 分支提供预构建的编辑器和工具
