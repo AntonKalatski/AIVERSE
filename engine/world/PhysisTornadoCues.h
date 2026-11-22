@@ -124,10 +124,10 @@ inline const char* physisTornadoEffectJson() {
     return R"({
   "emitters": [
     { "texture": "builtin:smoke", "blend": "alpha", "align": "camera", "space": "local", "rate": 110, "loop": true,
-      "prewarm": true, "life": [1.8, 2.6], "speed": [0, 0.2], "shape": "disc", "radius": 0.7,
-      "size": [0.9, 1.5], "sizeOverLife": [[0, 0.5], [0.3, 1], [1, 2.4]], "rotation": [0, 360], "spin": [-60, 60],
+      "prewarm": true, "life": [1.8, 2.6], "speed": [0, 0.1], "shape": "disc", "radius": 0.35,
+      "size": [0.6, 1.0], "sizeOverLife": [[0, 0.4], [0.3, 1], [1, 2.6]], "rotation": [0, 360], "spin": [-60, 60],
       "velocityOverLife": { "y": { "curve": [[0, 4.5], [1, 6.5]] }, "orbital": [0, 330, 0],
-                            "radial": { "curve": [[0, 0.15], [1, 1.4]] }, "space": "local" },
+                            "radial": { "curve": [[0, 0.02], [0.4, 0.4], [1, 2.0]] }, "space": "local" },
       "noise": { "strength": 0.25, "frequency": 0.6, "scroll": 0.8 },
       "color": [[0, "#6b5d4c00"], [0.12, "#6b5d4cb0"], [0.7, "#7d7266a0"], [1, "#8a827800"]] },
     { "texture": "builtin:smoke", "blend": "alpha", "align": "camera", "space": "local", "rate": 45, "loop": true,
