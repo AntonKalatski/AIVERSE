@@ -117,7 +117,7 @@ void registerGeometryOps(Workspace& ws){
             for(auto& mesh:m->meshes)for(auto& primitive:mesh.primitives)if(primitive.morphTargets)throw std::runtime_error("geometry scene: morph assets must remain entities");}
         if(fs::is_symlink(tmp))throw std::runtime_error("geometry scene: temporary path is symlink");
         {std::ofstream f(tmp,std::ios::binary|std::ios::trunc);f<<text;f.close();if(!f)throw std::runtime_error("geometry scene: write failed");}fs::rename(tmp,file);
-        if(!ws.project.worldSpaceMaps()){Json q=Json::object();q.set("path",Json::string("geometryScene"));q.set("value",Json::string("geometry.json"));auto result=ws.call("set_manifest",q);if(result.has("error"))return result;}
+        if(!ws.map.data.worldSpace){Json q=Json::object();q.set("path",Json::string("geometryScene"));q.set("value",Json::string("geometry.json"));auto result=ws.call("set_manifest",q);if(result.has("error"))return result;}
         ws.note({Change::Rules,0,0,-1,-1,-1,"Geometry scene updated"});return ok();
     }});
 }

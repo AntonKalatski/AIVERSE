@@ -38,7 +38,7 @@ public:
 
         // TerraWeave is opt-in and uses the same Workspace operation as MCP.
         // It never rewrites an existing authored heightfield without consent.
-        if (!ed.planetMap() && !ws.project.worldSpaceMaps()) {
+        if (!ed.planetMap() && !ws.map.data.worldSpace) {
             ui::section(ICON_TERRAIN, "TerraWeave · процедурный мир");
             ui::hint("Предпросмотр показывает диапазон высот (9×9 точек). Все режимы генерации доступны через Undo.");
             const Json& savedRecipe=d.extra["terraweave"];

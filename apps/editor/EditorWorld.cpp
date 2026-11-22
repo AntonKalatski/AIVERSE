@@ -191,7 +191,7 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
     // All Scene consumers (hover, click, Inspector, Hierarchy) use one
     // selection API. FPS previews map their renderable ID back to the
     // document source; the transient render-array index never escapes.
-    if (ws_.project.worldSpaceMaps()) {
+    if (ws_.map.data.worldSpace) {
         const int index = pickFpsSceneObject(vp, cam, sx, sy);
         if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
         if (fpsSceneObjects_[size_t(index)].runtimeObject != 0) {
@@ -280,7 +280,7 @@ void Editor::ensureWorld() {
 }
 
 void Editor::updateWorld() {
-    if(ws_.project.worldSpaceMaps())return; // FPS has its own document hierarchy; never build an RTS preview.
+    if(ws_.map.data.worldSpace)return; // FPS has its own document hierarchy; never build an RTS preview.
     auto profScope = prof.scope(EditorProfile::WorldUpdate);
     Simulation* live = sim_ ? sim_.get() : clientHost_.active() ? clientHost_.simulation() : nullptr;
     if (live) {

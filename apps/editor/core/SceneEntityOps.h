@@ -27,7 +27,7 @@ inline Json sceneEntityView(const MapDoc& map,const EditorSceneNode& node) {
     result.set("components",components);return result;
 }
 inline void commitSceneDocument(Workspace& ws,MapDoc& draft) {
-    if(ws.project.worldSpaceMaps()) {
+    if(ws.map.data.worldSpace) {
         Json args=Json::object();args.set("map",draft.toJson());
         const auto result=ws.call("fps_set",args,"scene-entity");
         if(result.has("error"))throw std::runtime_error(result.getStr("error"));
@@ -94,7 +94,7 @@ inline void registerSceneEntityOps(Workspace& ws) {
         Json light=Json::parse(R"({"x":0,"z":0,"height":1,"type":"point","radius":4,"intensity":1.5,"color":[1,0.8,0.6]})");
         if(p.has("name"))light.set("name",p["name"]);
         lights.push(light);ensureDocumentLightIds(document);
-        const auto ref=DocumentEntityRef::light(index,ws.project.worldSpaceMaps());
+        const auto ref=DocumentEntityRef::light(index,ws.map.data.worldSpace);
         if(p.has("position")){Json patch=Json::object();patch.set("position",p["position"]);componentPatch(draft,ref,DocumentComponentKind::Transform,patch);}
         if(p.has("light"))componentPatch(draft,ref,DocumentComponentKind::Light,p["light"]);
         const auto id=documentEntityId(draft,ref);commitSceneDocument(ws,draft);

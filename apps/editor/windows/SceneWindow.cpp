@@ -275,7 +275,7 @@ public:
             }
         }
         const bool physisMarkerInput = natureIgnite || processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
-        if(ed.ws().project.worldSpaceMaps()) {
+        if(ed.ws().map.data.worldSpace) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
             if (vp_.hovered && io.MouseWheel != 0)
@@ -725,7 +725,7 @@ private:
                 ImGui::TextDisabled("Different GLBs and their material slots may require separate draws.");
                 ImGui::TreePop();
             }
-            if (!ed.ws().project.worldSpaceMaps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
+            if (!ed.ws().map.data.worldSpace && ImGui::TreeNode("Road surfaces: materials / chunks")) {
                 const auto& road = ed.view().roads().batchStats();
                 ImGui::Text("Road source chunks: %zu -> %zu uploaded (merge group %d)",
                             road.sourceChunks, road.uploadedChunks, road.mergeGroup);

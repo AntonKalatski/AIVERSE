@@ -11,7 +11,7 @@ public:
     bool openByDefault()const override{return false;}
     void draw(Editor& ed)override {
         auto text=[&](const char* key){return engineText(ed.ws(),key);};
-        if(!ed.ws().project.worldSpaceMaps()){ImGui::TextWrapped("%s",text("fps.editor.only").c_str());return;}
+        if(!ed.ws().map.data.worldSpace){ImGui::TextWrapped("%s",text("fps.editor.only").c_str());return;}
         if(project_!=ed.ws().project.dir||path_!=ed.doc().path){project_=ed.ws().project.dir;path_=ed.doc().path;rules_=ed.ws().project.rulesJson.dump();map_=ed.doc().toJson().dump();error_.clear();}
         ImGui::TextWrapped("%s",text("fps.editor.hint").c_str());
         ImGui::BeginDisabled(ed.ws().building());
