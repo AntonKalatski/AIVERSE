@@ -69,6 +69,9 @@ public:
         int a = -1, b = -1, clip = -1, hip = -1, knee = -1, foot = -1;
         float weight = 1, speed = 1;
         bool loop = true;
+        // Blend only: a and b are looping clip nodes whose normalized phases are
+        // locked (sync group). The pair advances at the weight-blended cycle rate.
+        bool sync = false;
         std::vector<uint8_t> mask;
         std::shared_ptr<const AnimationOperation> operation;
         Json config;
@@ -90,7 +93,12 @@ public:
     const AnimationParameters& defaults() const { return defaults_; }
     int initial() const { return initial_; }
     const Model* model() const { return model_; }
+    // True when nothing in the graph can change morph weights (no clip in the
+    // model animates them, no native operation/trait, morph-free subgraphs):
+    // internal pose copies and blends then skip the 64 per-node morph slots.
+    bool morphFree() const { return morphFree_; }
 private:
+    bool morphFree_ = false;
     struct CompileContext;
     static std::shared_ptr<const AnimationGraph> compileImpl(const Model&, const Json&, CompileContext&, int);
     const Model* model_ = nullptr;
@@ -187,6 +195,8 @@ private:
     std::vector<double> clocks_;
     std::vector<double> unwrappedClocks_;
     std::vector<uint8_t> clipStarted_;
+    std::vector<double> syncRate_; // per node: synced clip-seconds per second, <0 = free running
+    std::vector<int> syncLeader_;  // per node: phase leader of a synced follower clip, -1 = none
     std::vector<AnimationGraphNotify> notifies_;
     struct TraitState { std::vector<float> data; bool enabled=true; std::shared_ptr<AnimationRigState> rig; };
     std::vector<std::vector<TraitState>> traitState_;

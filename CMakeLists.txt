@@ -1014,6 +1014,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_api COMMAND aiverse_motionweave_api_tests)
 endif()
 
+# MotionWeave core: sampling, blend/sync, morph-free path, IK, rig, motion matching, foot slide.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_core_tests tests/animation/motionweave_core.cpp)
+    target_link_libraries(aiverse_motionweave_core_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_core COMMAND aiverse_motionweave_core_tests)
+endif()
+
 # MotionWeave persistent host workers (no worker startup in simulation).
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_motionweave_worker_tests tests/animation/motionweave_workers.cpp)
@@ -1055,6 +1062,12 @@ endif()
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
     add_executable(aiverse_motionweave_bench tools/animation/motionweave_bench.cpp)
     target_link_libraries(aiverse_motionweave_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    # 53-bone procedural humanoid: per-character cost of clip/blend/IK/motion matching.
+    add_executable(aiverse_motionweave_humanoid_bench tools/animation/motionweave_humanoid_bench.cpp)
+    target_link_libraries(aiverse_motionweave_humanoid_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    # Locomotion review: foot sliding / pops / broken poses + CSV for contact sheets.
+    add_executable(aiverse_motionweave_locomotion_review tools/animation/motionweave_locomotion_review.cpp)
+    target_link_libraries(aiverse_motionweave_locomotion_review PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_motionweave_phase_tests tests/animation/motionweave_phase.cpp)
