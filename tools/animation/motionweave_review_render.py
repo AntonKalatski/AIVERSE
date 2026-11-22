@@ -111,7 +111,8 @@ def footprints(all_rows, all_speeds, path):
         sc = min((w-40)/(maxx-minx), (h-40)/(maxz-minz))
         ox = i*w + 20
         tf = lambda x, z: (ox + (x-minx)*sc, 40 + h - 20 - (z-minz)*sc)
-        d.text((ox, 10), f"{name}: top view, ankle path (L blue, R red); planted samples coloured by slide", fill=(0,0,0), font=fb)
+        d.text((ox, 6), f"{name}: top view", fill=(0,0,0), font=fb)
+        d.text((ox, 26), "ankle path L blue / R red; planted: green <0.05, orange <0.3, red >0.3 m/s", fill=(60,60,60), font=fs)
         d.line([tf(x, z) for x, z in zip(xs, zs)], fill=(200,200,200), width=1)
         for side, col in (("L", LEFT), ("R", RIGHT)):
             pts = [tf(r["j"]["foot"+side][0], r["j"]["foot"+side][2]) for r in rows]
