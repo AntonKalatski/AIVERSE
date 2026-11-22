@@ -22,6 +22,24 @@ This skill is ONLY for world-space VFX emitters, particles, ribbon/mesh FX, effe
 4. One-shot impact, fire, ability and death effects use `PresentationSystem::consumeTickEvents(tick, events, bindings)`, exactly once per committed tick. Call `reset()` when the client rolls back or starts a new session.
 5. Preserve `aiverse_fx`, `fx/<name>.json`, `fx/fx.json`, legacy `RtsFx` and older `Vfx*` aliases until production parity tests pass.
 
+## Effects declared in data, CPU/GPU from one asset (2026-11-22)
+
+Full reference: `docs/spectrafx-entity-effects.md`.
+
+- To give units, buildings, characters, vehicles, projectiles, weapons or abilities effects WITHOUT game code, write a
+  `"spectraFx": {"entities": {"<selector>": {"attach": [...], "on": {...}}}}` block in rules.json or the map, or an
+  inline `"spectraFx"` rule on rules `types.<id>`, their `weapons[]` / `abilities[]` (RTS) or `fps.weapons[i]` (FPS).
+  Selectors: `*`, `unit|structure|projectile|actor|vehicle`, `type:<id>`, `weapon:<id|index>`, `ability:<id>`,
+  `player:<n>|player:local|player:remote`, `team:<n>`. Cues: `spawned`, `died`, `despawned`, `fired`, `hit`, `ability`.
+- Both the RTS client (`apps/client/ClientFx.cpp`) and the FPS client (`SpectraFxSceneHost`) feed the same presenter
+  `engine/fx/SpectraFxEntityEffects.h`. New hosts: enumerate entities with selectors, forward cues; never add a
+  genre-specific copy.
+- An effect name resolves to `fx/gpu/<name>.gpu.json` (GPU compute on Metal, CPU twin of the same kernel elsewhere or
+  with `"preference":"cpu"`; `cpuEffect` is optional) or else `fx/<name>.json` (CPU ParticleSystem).
+- QA: `AIVERSE_SPECTRAFX_CPU=1` forces the CPU twin in hosts; `AIVERSE_FX_DEBUG=1` prints presenter/back-end counters;
+  `AIVERSE_FPS_WATCH=1` turns the FPS view to the nearest remote character for screenshots.
+- Tests: `spectrafx_cpu_gpu_parity` (Metal), `spectrafx_entity_effects`, `spectrafx_retirement`.
+
 ## Graph editing through MCP (stage 7)
 
 Use the universal editor-core tools when authoring graphs for an open game:

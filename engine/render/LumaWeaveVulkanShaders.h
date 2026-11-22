@@ -66,13 +66,23 @@ uint candidate(uint k) {
     uint index=p.dims.x*p.dims.y*p.dims.z+k/4u;
     return cellData[index][k%4u];
 }
+// Kinds 0 point, 1 spot, 2 sphere, 3 tube (same as LumaWeaveMetalCommon.h).
+vec3 lumaLightPoint(LumaLight l,vec3 receiver) {
+    vec3 c=l.positionRadius.xyz;
+    if(l.identity.z!=3u)return c;
+    float h=l.directionCone.w;
+    return c+l.directionCone.xyz*clamp(dot(receiver-c,l.directionCone.xyz),-h,h);
+}
+float lumaSourceRadius(LumaLight l) { return l.identity.z>=2u?l.settings.w:0.0; }
 vec3 directUnshadowed(LumaLight l,vec3 receiver,vec3 normal) {
-    vec3 toLight=l.positionRadius.xyz-receiver;
+    vec3 toLight=lumaLightPoint(l,receiver)-receiver;
     float d2=dot(toLight,toLight);
     float radius=l.positionRadius.w;
     if(d2<=0.0001 || d2>=radius*radius || l.colorIntensity.w<=0.0)return vec3(0.0);
     float d=sqrt(d2);
     vec3 L=toLight/d;
+    float sr=lumaSourceRadius(l);
+    d2=max(d2,sr*sr);
     float ndl=max(0.0,dot(normal,L));
     if(ndl==0.0)return vec3(0.0);
     float angular=1.0;
@@ -174,7 +184,7 @@ layout(set=0,binding=7) uniform sampler2D receiverDepth;
 vec3 lumaPbrReflected(LumaLight l,vec3 q,vec3 n,vec3 v,vec3 base,float metallic,float rough) {
     vec3 cosineRadiance=directUnshadowed(l,q,n);
     if(all(lessThanEqual(cosineRadiance,vec3(0.0))))return vec3(0.0);
-    vec3 toLight=l.positionRadius.xyz-q;
+    vec3 toLight=lumaLightPoint(l,q)-q;
     float dist2=dot(toLight,toLight);
     if(dist2<=0.0001)return vec3(0.0);
     vec3 L=toLight*inversesqrt(dist2);
@@ -186,9 +196,14 @@ vec3 lumaPbrReflected(LumaLight l,vec3 q,vec3 n,vec3 v,vec3 base,float metallic,
     vec3 H=halfVector*inversesqrt(h2);
     float ndh=max(dot(n,H),0.0),vdh=max(dot(v,H),0.0);
     float alpha=max(0.045,rough);
+    // Area source: widen the lobe by its angular size and keep its energy.
+    float sr=lumaSourceRadius(l);
+    float widened=clamp(alpha+sr*inversesqrt(dist2)*0.5,0.045,1.0);
+    float energy=(alpha*alpha)/(widened*widened);
+    alpha=widened;
     float a=alpha*alpha,a2=a*a;
     float d=ndh*ndh*(a2-1.0)+1.0;
-    float D=a2/(3.141592653589793*d*d);
+    float D=energy*a2/(3.141592653589793*d*d);
     float k=(alpha+1.0)*(alpha+1.0)*0.125;
     float G=(ndl/(ndl*(1.0-k)+k))*(ndv/(ndv*(1.0-k)+k));
     vec3 F0=mix(vec3(0.04),base,metallic);
@@ -261,7 +276,7 @@ void main() {
         bool blocked=false;
         if(selected.settings.z>0.5 && p.control.x!=0u) {
             vec3 start=world+normal*0.02;
-            vec3 ray=selected.positionRadius.xyz-start;
+            vec3 ray=lumaLightPoint(selected,start)-start;
             float distance=length(ray);
             if(distance>0.05) {
                 float limit=distance-0.03;
@@ -286,7 +301,7 @@ layout(set=0,binding=16,std140) uniform Params {
     LumaScreenParams current;
     mat4 prevVP;
     vec4 history;   // previousValid, blend, normal dot, depth delta
-    vec4 spatial;   // neighbour depth delta, RGB clamp, camera cut, spare
+    vec4 spatial;   // neighbour depth delta, RGB clamp, camera cut, object velocity bound
 };
 layout(set=0,binding=0,rgba16f) writeonly uniform image2D filtered;
 layout(set=0,binding=1,rgba16f) writeonly uniform image2D normals;
@@ -297,6 +312,7 @@ layout(set=0,binding=7) uniform sampler2D sceneDepth;
 #if defined(LUMAWEAVE_PBR_NORMALS)
 layout(set=0,binding=8) uniform sampler2D surfaceNormal;
 #endif
+layout(set=0,binding=9) uniform sampler2D objectVelocity;
 void main() {
     uint i=gl_GlobalInvocationID.x;
     if(i>=current.limits.z)return;
@@ -335,20 +351,28 @@ void main() {
     color/=sum;
     if(history.x>0.5) {
         vec4 clip=prevVP*vec4(world,1.0);
-        if(clip.w>1e-5) {
-            vec3 ndc=clip.xyz/clip.w;
+        // Moving objects: object velocity replaces camera reprojection (Metal kernel).
+        bool moved=false;
+        vec2 movedUv=vec2(0.0);
+        if(spatial.w>0.5) {
+            vec2 velocityUv=current.eye.w>0.5?vec2(uv.x,1.0-uv.y):uv;
+            vec4 v=texture(objectVelocity,velocityUv);
+            if(v.b>0.5){moved=true;movedUv=uv-v.rg;}
+        }
+        if(clip.w>1e-5 || moved) {
+            vec3 ndc=clip.w>1e-5?clip.xyz/clip.w:vec3(0.0);
             // History stores device depth; GL clip depth maps -1..1 to 0..1.
             float oldDepth=current.control.w!=0u?ndc.z:ndc.z*0.5+0.5;
-            vec2 oldUv=ndc.xy*0.5+0.5;
+            vec2 oldUv=moved?movedUv:ndc.xy*0.5+0.5;
             vec2 readUv=current.eye.w>0.5?vec2(oldUv.x,1.0-oldUv.y):oldUv;
             if(all(greaterThanEqual(readUv,vec2(0.0))) && all(lessThan(readUv,vec2(1.0))) &&
-               oldDepth>=0.0 && oldDepth<=1.0) {
+               (moved || (oldDepth>=0.0 && oldDepth<=1.0))) {
                 ivec2 oldPixel=ivec2(readUv*current.resolution.xy);
                 vec4 old=texelFetch(oldFiltered,oldPixel,0);
                 vec4 oldNormal=texelFetch(oldNormals,oldPixel,0);
                 float delta=abs(oldNormal.w-oldDepth);
                 float nd=dot(normal,oldNormal.xyz);
-                if(old.w>0.0 && old.w<0.99999 && delta<=history.w && nd>=history.z) {
+                if(old.w>0.0 && old.w<0.99999 && (moved || delta<=history.w) && nd>=history.z) {
                     vec3 clampWidth=vec3(spatial.y)*(1.0+color);
                     vec3 historic=clamp(old.rgb,max(color-clampWidth,vec3(0.0)),color+clampWidth);
                     color=mix(color,historic,clamp(history.y,0.0,0.95));

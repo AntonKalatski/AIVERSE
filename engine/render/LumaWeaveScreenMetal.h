@@ -316,7 +316,8 @@ public:
                         uint32_t sceneWidth,uint32_t sceneHeight,
                         const mat4& inverseVP,const mat4& currentVP,
                         float3 eye,uint32_t samples,uint32_t frameSeed,
-                        SurfaceInputs surface) {
+                        SurfaceInputs surface,
+                        gfx::TextureHandle objectVelocity={}) {
         Submission result;
         if(surface.any() && !surface.complete())return result;
         if(!ready()||busy()||!sourcesReady_||!geometryReady_||
@@ -386,8 +387,11 @@ public:
         bool historic=historyValid_ && length(eye-previousEye_)<=settings_.cameraCutMetres;
         denoise.history={historic?1.f:0.f,settings_.maxHistoryWeight,
                          settings_.normalAgreement,settings_.depthThreshold};
+        // Optional PRISMA object velocity (signed RG, B = object mask) for
+        // the history of moving objects; camera reprojection elsewhere.
         denoise.spatial={settings_.spatialDepthTolerance,settings_.historyColorClamp,
-                         settings_.cameraCutMetres,0};
+                         settings_.cameraCutMetres,objectVelocity.valid()?1.f:0.f};
+        const gfx::TextureHandle velocityInput=objectVelocity.valid()?objectVelocity:raw_;
         if(!dev_->beginCompute(shaded?pbrDenoise_:denoise_)) {
             // The DIRECT encoder was already submitted. Even on denoiser
             // failure, fence its raw input/output before another dispatch or
@@ -403,6 +407,7 @@ public:
             dev_->setComputeTexture(2,normalDepth_[confirmedIndex_]);
             dev_->setComputeTexture(3,sceneDepth);
             if(shaded)dev_->setComputeTexture(4,surface.normalRoughness);
+            dev_->setComputeTexture(5,velocityInput);
             denoiseEncoded=dev_->bindComputeStorageTexture(0,filtered_[dst]) &&
                            dev_->bindComputeStorageTexture(1,normalDepth_[dst]) &&
                            dev_->dispatchChecked(uint32_t(pixels));
@@ -414,6 +419,7 @@ public:
             dev_->setComputeTexture(4,normalDepth_[confirmedIndex_]);
             dev_->setComputeTexture(5,sceneDepth);
             if(shaded)dev_->setComputeTexture(6,surface.normalRoughness);
+            dev_->setComputeTexture(7,velocityInput);
             dev_->dispatch(uint32_t(pixels));
             denoiseEncoded=dev_->computeDispatchSucceeded();
         }

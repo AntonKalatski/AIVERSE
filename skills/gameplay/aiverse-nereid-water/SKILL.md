@@ -334,6 +334,18 @@ The adapter holds up to 256 handles and calls the actual
 `ParticleSystem::play` API. NEREID does not own particle ticking/rendering.
 **Tests remain deferred by explicit user direction.**
 
+## Large open seas and legacy RTS map water (2026-11-22)
+
+**Sea over a big world:** `"shape": "infinite", "oceanLod": "rings", "oceanPatchRadius": 6000`
+(+ optional `oceanInnerCell` metres, `oceanInnerCells` even 4..64) - stitched LOD rings around
+the camera, bounded triangles, rebuild every `cell*cells/2` metres. Default `"patch"` keeps one
+square, now centred on its cell (r/2 of water in every direction). See `docs/nereid/ocean-lod.md`.
+
+**Old RTS cell water (`~`):** do not hand-convert. Set the game's
+`terrain.water.renderer: "nereid"` (optional `terrain.water.nereid` style overrides); the engine
+converts the legacy sheet/bodies layout to NEREID surfaces and fails closed to the legacy mesh.
+`AIVERSE_WATER_RENDERER=legacy|nereid` for A/B. See `docs/nereid/legacy-water-migration.md`.
+
 ## Stage 26/27 — ocean tile waves and universal waterfalls
 
 **Ocean/large boxes:** use `"rippleTileGrid": 4` (range 1..8) on an

@@ -96,9 +96,12 @@ is no disk cache yet; on lavapipe the skirmish map reaches its first frame faste
 - Without a driver (`VK_ICD_FILENAMES` pointing nowhere) the client prints the reason and runs on GL.
 - CI (`linux` job): lavapipe installed, `aiverse_vulkan_tests` and a Vulkan screenshot.
 
-Not verified: real GPUs (Windows, Linux), the MSVC build, Android (not built here: surface lifecycle
-on pause / resume, mobile drivers, `R8G8B8A8_USCALED` vertex support — without it `UByte4` attributes
-read as UNORM).
+`UByte4` vertex attributes (skin joints, packed lightmap uv2) need `R8G8B8A8_USCALED` vertex fetch.
+Drivers without it (Adreno 610 does not have it) read them as UNORM; the backend then builds a
+vertex-shader variant per pipeline whose `vec4` inputs at the `UByte4` locations are multiplied by
+255 before `main()` (`scaleUByte4Inputs`). `AIVERSE_VK_NO_USCALED=1` forces that path on any driver.
+
+Not verified: real GPUs (Windows, Linux), the MSVC build, surface lifecycle on pause / resume.
 
 ## Not done yet
 

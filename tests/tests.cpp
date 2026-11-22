@@ -3463,6 +3463,7 @@ TEST(fx_sample_games_have_valid_effects) {
         for (auto& w : bridge.warnings()) std::printf("    %s: %s\n", g.c_str(), w.c_str());
         CHECK(bridge.warnings().empty());
         for (auto& entry : std::filesystem::directory_iterator(std::string(AIVERSE_SOURCE_DIR) + "/" + dir + "fx")) {
+            if (!entry.is_regular_file()) continue;   // fx/gpu/ holds SpectraFX GPU assets, not ParticleSystem effects
             const std::string name = entry.path().stem().string();
             if (name == "fx") continue;
             CHECK(ps.effect(name) >= 0);
@@ -17585,7 +17586,7 @@ TEST(game_wizard_makes_a_playable_project) {
     CHECK(pf["wizard"]["spec"].getStr("title") == "Wizard Test" && pf["wizard"].getStr("template") == "skirmish");
     // maps: the levels first (the editor opens the first map), then the tutorial, then the template's own
     Json m = Json::parseFile((dir / "game.json").string());
-    CHECK(m["maps"].size() == 4 && m["maps"][0].getStr("file") == "maps/wiz_level_1.json" && m["maps"][2].getStr("file") == "maps/wiz_tutorial.json");
+    CHECK(m["maps"].size() == 3 + Json::parse(readSource("templates/skirmish/game.json"))["maps"].size() && m["maps"][0].getStr("file") == "maps/wiz_level_1.json" && m["maps"][2].getStr("file") == "maps/wiz_tutorial.json");
     CHECK(m.getStr("name") == "Wizard Test" && m["store"]["products"].size() == 3 && m["ads"].isObject() && m["plugins"].has("mock-ads"));
     CHECK(m["icons"].getStr("default") == "branding/wiz_icon.png" && m["splash"].getStr("image") == "art/key_art.png");
     Json lv = Json::parseFile((dir / "maps/wiz_level_1.json").string());

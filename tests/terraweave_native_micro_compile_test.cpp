@@ -10,7 +10,9 @@
 // directories (including vendored <box3d/box3d.h>).
 #if defined(AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS)
 #include "examples/world/terraweave_native/PhysicsIntegration.h"
+#include "engine/world/TerraWeaveTreeCollidersBox3D.h"
 #endif
+#include "engine/world/TerraWeaveTreeColliders.h"
 #include "engine/world/TerraWeaveNereidMicroNutrients.h"
 #include "engine/world/TerraWeavePhysisNutrientBridge.h"
 #include <cassert>
@@ -21,6 +23,10 @@
 int main() {
     using namespace aiverse;
     using namespace aiverse::terraweave;
+    // Automatic streaming barrier and trunk colliders compile in the full
+    // native composition (no GPU/World instantiated here).
+    auto autoPublish=&publishNativeTerraWeaveFrameAuto;
+    assert(autoPublish!=nullptr);
     static_assert(ForestDeadwoodResource::kMicroWaterCellCm==400);
     static_assert(ForestDeadwoodResource::kNutrientCellCm==3200);
     static_assert(std::is_copy_constructible_v<ForestDeadwoodResource>);

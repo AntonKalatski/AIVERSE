@@ -20,6 +20,9 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 #include <chrono>
 #include <cstdlib>
 #include <exception>
@@ -416,6 +419,23 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         const Json& rj=incomingRules;
         fog_.setLook(incomingFogLook);
         spriteDefaults_ = incomingSpriteDefaults;   // same snapshot as staged sprites
+        // game.json "lod": {"scale": s, "shadowScale": t} — projected-size
+        // multipliers for model LOD selection (<1 = coarser levels sooner).
+        {
+            const Json& lod=incomingGame["lod"];
+            auto num=[&](const char* k){
+                const Json& v=lod[k];
+                const double d=v.isNumber()?v.toDouble(1.0):1.0;
+                return float(std::clamp(std::isfinite(d)?d:1.0,0.05,4.0));
+            };
+            modelLodScale_=lod.isObject()?num("scale"):1.f;
+            shadowLodScale_=lod.isObject()?num("shadowScale"):1.f;
+            const Json& rc=lod["reflectionCullPixels"];
+            reflectionCullPixels_=lod.isObject()&&rc.isNumber()?float(std::clamp(rc.toDouble(0.0),0.0,4096.0)):0.f;
+            // Optional LOD cross-fade width (0..0.49); absent keeps the host's.
+            const Json& fd=lod["fade"];
+            lodFadeWidth_=lod.isObject()&&fd.isNumber()?float(std::clamp(fd.toDouble(0.15),0.0,0.49)):-1.f;
+        }
         fogMeshDirty_ = true;
         // overlays: built-ins + rules "overlays" + game.json "overlays" (by id)
         overlays_.initPrepared(rules,std::move(incomingOverlaySet),contentBase_);
@@ -508,6 +528,33 @@ size_t RtsView::genericRetargetScratchCapacityBytes() const noexcept {
     return genericView_?genericView_->retargetScratchCapacityBytes():0;
 }
 
+// Map water cells converted to NEREID (terrain.water.renderer "nereid",
+// RtsWaterNereid.h). The parsed scene is replaced only when the converted
+// manifest changes; uploads happen here, before Renderer3D encodes the frame.
+void RtsView::drawNereidLegacyWater(Renderer3D& r,bool terrainReady) {
+    auto manifest=terrainReady&&terrain_.look().render&&terrain_.mapSurfaceEnabled()
+        ?terrain_.nereidWaterManifest():nullptr;
+    const std::string signature=manifest?manifest->dump():std::string();
+    if(!dev_ || (signature.empty()&&nereidLegacySignature_.empty()))return;
+    try {
+        if(signature!=nereidLegacySignature_) {
+            auto parsed=manifest?world::parseNereidWaterManifest(*manifest):world::NereidManifest{};
+            nereidLegacy_.setMaxUploadsPerFrame(parsed.maxUploadsPerFrame);
+            nereidLegacy_.setMaxEstimatedUploadBytes(parsed.maxEstimatedUploadBytes);
+            nereidLegacy_.setSurfaces(std::move(parsed.surfaces));
+            nereidLegacySignature_=signature;
+        }
+        if(signature.empty())return;
+        const auto eye=r.camera().eye();
+        const auto fixed=[](float v){return Fixed::fromRaw(int64_t(std::llround(double(std::clamp(v,-1e6f,1e6f))*Fixed::kOne)));};
+        const Vec3 observer{fixed(eye.x),fixed(eye.y),fixed(eye.z)};
+        nereidLegacy_.update(*dev_,&observer);
+        nereidLegacy_.draw(r,{},1);
+    } catch(const std::exception& e) {
+        std::fprintf(stderr,"[water] NEREID map water: %s\n",e.what());
+    }
+}
+
 void RtsView::shutdown(gfx::Device& dev) {
     // Private unpublished GPU candidates must be released BEFORE the
     // full-device idle boundary or owner kit shutdown.
@@ -523,6 +570,8 @@ void RtsView::shutdown(gfx::Device& dev) {
     if(!dev.waitForResourceIdle())
         throw std::runtime_error("RtsView shutdown: GPU idle barrier failed");
     framePublication_.invalidate();
+    nereidLegacy_.shutdown(dev);
+    nereidLegacySignature_.clear();
     if(pendingSpriteRecovery_) {
         // The barrier above proves safe retirement of the failed staged view.
         pendingSpriteRecovery_->shutdown(dev);
@@ -1088,6 +1137,10 @@ private:
 };
 
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    r.setModelLodScale(modelLodScale_);
+    r.setShadowLodScale(shadowLodScale_);
+    r.setReflectionCullPixels(reflectionCullPixels_);
+    if(lodFadeWidth_>=0.f) r.setModelLodFadeWidth(lodFadeWidth_);
     // A matching topology prewarm MUST publish before even the first
     // hierarchy/animation height query or FramePublicationEpoch::begin().
     std::unique_ptr<PreparedSurfaceLease> surfaceLease;
@@ -1289,6 +1342,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             else terrain_.draw(r,grid,vision,groundFx_.drawsDig());
         }
         if(hasTerrain_ && tiles)terrain_.drawWater(r);
+        drawNereidLegacyWater(r,hasTerrain_);
         publication.mark(Epoch::Terrain);
     });
     layers.append("surface effects",LayerPhase::Effects,[&] {
@@ -1694,6 +1748,36 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if(!publication.finish())
         throw std::logic_error("RtsView: incomplete visual frame publication");
     if(animationLease)animationLease->commit();
+    // AIVERSE_STRATA_LOG=1: one "[strata]" line per 300 frames for STRATA on/off
+    // acceptance runs (GLES/Vulkan on devices, desktop): static geometry scene
+    // routing plus this frame's renderer counters. Diagnostic only.
+    if (geometryScene_.instanceCount()>0) {
+        static const bool strataLog=[]{const char* e=std::getenv("AIVERSE_STRATA_LOG");return e&&*e&&*e!='0';}();
+        static unsigned strataFrames=0;static uint64_t lastDraws=0,lastClusters=0,lastFallbacks=0;
+        static double tris=0,calls=0;
+        if(strataLog){
+            tris+=double(r.profile().cameraModelTriangles);calls+=double(r.drawCalls());
+            if(++strataFrames==300){
+                const auto& g=geometryScene_.stats();
+                char line[512];
+                std::snprintf(line,sizeof line,
+                    "[strata] enabled=%d instances=%zu staged=%u portableSources=%u autoStrata=%u autoLod=%u failures=%u "
+                    "draws/frame=%.2f clusters/frame=%.1f fallbacks/frame=%.2f cameraModelTris/frame=%.0f drawCalls/frame=%.1f",
+                    int(geometryScene_.strataPortableRenderingEnabled()),geometryScene_.instanceCount(),
+                    unsigned(g.strataSources),unsigned(g.strataPortableSources),unsigned(g.strataAutoStrataSources),
+                    unsigned(g.strataAutoLodSources),unsigned(g.strataFailures),
+                    double(g.strataPortableDraws-lastDraws)/300.0,double(g.strataPortableClusters-lastClusters)/300.0,
+                    double(g.strataPortableFallbacks-lastFallbacks)/300.0,tris/300.0,calls/300.0);
+#if defined(__ANDROID__)
+                __android_log_print(ANDROID_LOG_INFO,"AIVERSE","%s",line);
+#else
+                std::fprintf(stderr,"%s\n",line);
+#endif
+                lastDraws=g.strataPortableDraws;lastClusters=g.strataPortableClusters;lastFallbacks=g.strataPortableFallbacks;
+                strataFrames=0;tris=calls=0;
+            }
+        }
+    }
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};

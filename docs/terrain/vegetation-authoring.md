@@ -331,3 +331,28 @@ Granite/schist source prompts and seam processing are in pbr_sources/README.md.
 For a long-distance showcase, explicitly author existing lighting.fogDensity
 in the project. Renderer default.0025 can wash out a small alpine scene; the
 review uses.00035. This is scene tuning, not a global engine-default change.
+
+## Instanced grass clump field
+
+Unique per-patch grass models cannot be instanced: each patch is its own draw
+call at every LOD, in every pass (main, water reflection, shadow). For dense
+grass, export a few small shared clump prototypes and rebuild the coverage of
+the existing patches from them:
+
+```sh
+# 1. prototypes: a flat ground.json with 6..8 patches of ~120x120 cm, ~160 blades
+aiverse_terraweave_vegetation --out /new/clumps --materials $ENGINE/engine/assets/materials/vegetation/textures \
+  --ground clumps-ground.json --seed 4242
+# 2. replace the patch entities of a map (run on a copy: map and rules are rewritten)
+python3 tools/terrain/grass_clump_field.py --project P --map maps/valley.json --clumps /new/clumps \
+  --lod-pixels 12,5 --cull-pixels 6
+```
+
+The tool reads the blades of every patch (where they grow and their root
+height), keeps a clump wherever a cell of `--spacing` metres is covered, and
+writes ONE `content/models/grass-clumps/field.gltf` whose nodes reference the
+shared prototype meshes. The renderer instances every clump of the same
+prototype/LOD together, and LOD/culling is per clump instead of per 8 m patch.
+`--lod-pixels` replaces the patch-sized LOD thresholds (values are before the
+game.json `lod.scale`), `--cull-pixels` goes to `field.gltf.batching.json`.
+Clumps take the yaw/scale of a jittered grid; the terrain normal is not used.

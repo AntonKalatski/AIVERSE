@@ -12,6 +12,8 @@ struct SourceSeamAudit {
     uint64_t boundarySegments=0;
     uint64_t matchedSegments=0;
     uint64_t rejectedNearJunctions=0;
+    uint64_t nonmanifoldEdges=0; // treated as interior (locked by the builder)
+    uint64_t crowdedEdges=0;     // 3+ partitions on one spatial edge, not matched
 };
 
 // Requires all staged per-partition hierarchies to be seam-certified.
@@ -24,7 +26,12 @@ struct SourceSeamAudit {
 // The report is unchanged on failure. Does not modify model or asset.
 // Sources with missing transform metadata, excessive edge count or
 // pre-existing source T-junctions fail closed.
+// tolerant: real-world sources (scans, dense authored buildings) carry
+// degenerate triangles, non-manifold edges, edges shared by 3+ materials and
+// pre-existing T-junctions. The builder locks every primitive border, so these
+// are counted and skipped instead of refusing the whole source; the source's
+// own gaps are preserved, never widened.
 bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
                            SourceSeamAudit& report,
-                           std::string* error=nullptr);
+                           std::string* error=nullptr,bool tolerant=false);
 } // namespace aiverse::render::strata

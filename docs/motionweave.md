@@ -752,3 +752,99 @@ Model/GPU lifetime coupling are Stage 184 work. Details:
 [Stage 183 native preview](motionweave-facial-native-preview.md) and
 [Stage 183 handoff](agent-handoffs/animation-stage183-studio-facial-native-preview-2026-11-20.md).
 No native CMake/CTest/Metal/Vulkan/GLES validation has been run.
+
+## Verification, locomotion review and CPU cost (2026-11-22)
+
+Branch `agent-motionweave-next`. Everything below was **run**; the review is
+a CPU stick-figure render of the evaluated MotionWeave pose, **not** a Metal
+render of a skinned character (no humanoid with locomotion clips ships in the
+repo, so the test character is procedural).
+
+### Test character and tools
+
+- `tests/animation/HumanoidLocomotionFixture.h` — 53-bone procedural humanoid
+  (+Y up, +Z forward, metres) with planted-foot clips authored through
+  `solveTwoBoneIK` and baked to 30 Hz keys: `Idle` 2 s, `Walk` 1.2 m/s,
+  `Run` 3.0 m/s, `Stop` (walk → idle in 0.36 m), `TurnLeft` (90° in place),
+  their in-place `*_IP` variants and optional `GaitNN` speed variants.
+- `aiverse_motionweave_core_tests` (CTest `motionweave_core`, 292 checks):
+  sampling, world matrices, blend/mask, sync groups, morph-free path,
+  two-bone IK, rig world reuse, motion matching and a foot-slide regression.
+- `aiverse_motionweave_locomotion_review <dir>` (tools) drives the humanoid
+  through idle → start → walk → run → walk+turn → stop → idle → turn in place
+  with three graphs (`blend`, `blend-sync`, `motion-matching`) and reports
+  planted-foot slide, pops (joint acceleration, rotation step) and broken
+  poses; `tools/animation/motionweave_review_render.py <dir>` renders
+  contact sheets, footprints, slide plots and an MP4.
+  Committed output: `docs/qa/motionweave-locomotion-2026-11-22/`.
+- `aiverse_motionweave_humanoid_bench` (tools): per-character CPU cost for
+  1/10/100/1000 actors and the building blocks; uses only graph features that
+  exist on `origin/main`, so the same source measures before/after.
+
+### What the review found and what changed
+
+| Finding | Evidence (review) | Fix |
+|---|---|---|
+| Motion matching wrapped one-shot clips (Stop) to frame 0 | 35 cm foot teleport in one frame, pop 1298 m/s² | database clips accept `{"clip":"Stop","loop":false}`: clamp at end, search on arrival, trajectory holds the final root; pop now 293 m/s² (= steady run) |
+| Motion matching could not pick a turn in place (trajectory had positions only) | `TurnLeft` never chosen; 0.157 m/s slide while turning | trajectory samples accept `"facing":"<vector param>"` (+`facingWeight`, `facingAxis`); turn-in-place slide 0.048 m/s |
+| Motion matching faded in from the bind pose at spawn | straight-leg frame, ankles below ground | first selection starts on the match (below-ground frames 27 → 7) |
+| Walk/run blend clocks were independent | planted-foot slide at w=0.5: 0.94 m/s | blend `"sync": true` locks normalized phase, blended cycle rate: 0.31 m/s (core test) |
+
+Not fixed (documented limitations, visible in `slide.png`):
+state-machine crossfades still start from a **frozen** outgoing pose, so
+idle→walk starts (≈0.87 m/s slide for 0.25 s) and walk→stop slide; walking
+turns slide (no turn clips / foot locking); motion matching with only walk and
+run speeds slides while the host speed is between them (data coverage), and
+the idealized 0.6 s lookahead starts stepping before the host moves. No
+foot-lock IK pass exists yet; that and inertialized state transitions are the
+next steps.
+
+### CPU cost (Apple M3 Ultra, Release, 53 bones)
+
+Interleaved A/B of the same bench source against the engine before
+(`4a9d15b52` = `origin/main` + sync groups) and after (`d635f8295`) the
+optimisations; the Mac was shared with other agents (load 7–15 on 28 cores),
+numbers are medians of 3 runs and repeated within ~5 % across rounds.
+µs per character per frame, sequential `MotionWeave::update`:
+
+| scenario | 1 | 10 | 100 | 1000 | scheduler, 1000 actors |
+|---|---:|---:|---:|---:|---:|
+| clip | 2.61 → 2.06 | 2.97 → 2.34 | 3.23 → 2.67 | 4.73 → 3.90 | 0.65 → 0.57 |
+| blend walk/run | 4.73 → 3.35 | 5.15 → 3.75 | 5.62 → 4.27 | 7.25 → 6.44 | 1.04 → 0.88 |
+| blend + 2-leg IK | 6.83 → 4.72 | 7.25 → 5.17 | 7.69 → 5.92 | 9.48 → 8.37 | 1.34 → 1.13 |
+| motion matching (814 frames) | 6.62 → 3.77 | 7.00 → 4.11 | 7.44 → 4.33 | 8.76 → 5.49 | 1.18 → 0.74 |
+| motion matching + IK | 8.50 → 5.23 | 9.10 → 5.68 | 9.56 → 5.94 | 10.88 → 7.12 | 1.47 → 0.97 |
+
+Building blocks (µs/call): `MotionDatabase::search` 814×24 15.8 → 1.48;
+graph update+evaluate: clip 1.60 → 1.19, blend 3.75 → 2.35, blend+IK
+5.83 → 3.74, MM 5.64 → 2.75, MM+IK 7.65 → 4.17. Unchanged blocks:
+`sampleClip` 0.66, `worldMatrices` 0.40, `solveTwoBoneIK` 0.30, `bindPose` 0.26.
+
+Hot spots and what was done:
+1. MM query extracted the **full** feature vector (2–8 extra pose samples,
+   trajectory part discarded) → pose part only, per-thread scratch.
+2. MM search: per-frame `std::vector` rows, double sums → contiguous
+   `sqrt(weight)`-scaled float matrix, 4-wide sums, early exit (10×).
+3. `NodePose` carries 64 morph weights (296 B vs 40 B of t/r/s): every pose
+   copy and blend touched them → `AnimationGraph::morphFree()` graphs copy
+   and blend only t/r/s (exact: internal poses keep bind weights).
+4. Each rig unit rebuilt all world matrices → reuse after `twoBoneIK`.
+5. Tried and **reverted**: hand-written affine `worldMatrices` product was
+   slower (0.44 vs 0.39 µs) than the vectorised generic one.
+
+Remaining cost at 1000 sequential actors is memory traffic (per-actor poses
+and instances; µs/char grows ~1.6× from 1 to 1000 actors) plus the ECS layer
+(defaults map copy per entity per frame, final `worldMatrices`). Use the
+persistent `MotionWeaveScheduler` (7 workers here): 1000 MM+IK characters
+cost ≈1 ms/frame.
+
+### Commands
+
+```sh
+cmake --build <build> --target aiverse_motionweave_core_tests \
+  aiverse_motionweave_humanoid_bench aiverse_motionweave_locomotion_review
+ctest --test-dir <build> -R "motionweave|animation"      # 42/42 passed
+<build>/aiverse_motionweave_humanoid_bench --repeats 3
+<build>/aiverse_motionweave_locomotion_review /tmp/mw-review
+python3 tools/animation/motionweave_review_render.py /tmp/mw-review
+```

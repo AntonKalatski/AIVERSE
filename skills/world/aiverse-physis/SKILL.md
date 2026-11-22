@@ -19,6 +19,20 @@ Historical NOT RUN notes below are stage-local. Latest scoped evidence is in
 and `docs/qa/physis-gui-resume-2026-11-20.md` (demo ticks 25→26→86→25).
 Neither certifies full live-host or reference-image visual acceptance.
 
+## Using PHYSIS in a game (2026-11-22) — data, not wiring
+
+1. Put a `"physis"` block in the map (grid, climate; optional `enableDisasters`, fields).
+   `Simulation::setup` installs it for any module; do NOT call `installFromMap` again.
+2. Presentation is automatic in the game client (`engine/world/PhysisNatureRuntime.h`):
+   SpectraFX fire/smoke, fire/wind sound, TerraWeave vegetation wind, NEREID visual wind,
+   PRISMA sky. Tune or disable with `"physis.presentation"`. Other hosts: create one
+   `PhysisNatureRuntime`, call `start(map, targets)`, `update(world, view, targets)` per frame,
+   `stop(targets)` on unload.
+3. Large grids: `"workerThreads": 0` (auto lanes, bit-identical) and
+   `"streaming": {"chunkCells": 32}` + `ActivityAnchor` entities (or `"anchors"` in the map).
+4. Tests: build `aiverse_physis_tests`, run `ctest -R '^physis_'`. Details: docs/physis.md
+   "Automatic integration, parallel update and streaming".
+
 ## Ownership
 
 - **PHYSIS:** atmospheric/weather climate, wind/gust/shelter, storms (hurricanes/tornadoes), snow/wetness/ice, fire/quakes, configurable gravity and environmental force **policy**.

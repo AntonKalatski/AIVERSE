@@ -56,6 +56,9 @@ inline const std::vector<StudioToolGroup>& studioToolGroups() {
         {"model_anim", {"model_info", "animation_editor", "animation_edit"}},
         {"snapshot_diff", {"game_file_read"}},
         {"project_import", {"port_scan", "port_report", "port_item", "port_resolve", "port_import"}},
+        // TerraWeave Generator panel (landscape heightfield + Arbor forest recipe).
+        {"terraweave_generator", {"map_info", "terraweave_preview", "terraweave_generate", "terraweave_forest_get",
+                                  "terraweave_forest_set"}},
     };
     return groups;
 }

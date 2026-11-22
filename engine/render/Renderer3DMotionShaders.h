@@ -62,7 +62,7 @@ fragment float4 fs_main(
     float2 s=in.position.xy/u.params.xy;
     // Metal raster pixels and render target textures both use top-left UV.
     float2 uv=s;
-    const float sceneZ=tex0.sample(tex0_s,uv).r;
+    const float sceneZ=tex0.sample(tex0_s,uv);
     if (in.position.z > sceneZ+0.0015) discard_fragment();
     if (in.previous.w <= 0.00001) discard_fragment();
     const float2 prior=in.previous.xy/in.previous.w*0.5+0.5;
@@ -343,7 +343,7 @@ struct VOut { float4 position [[position]];float4 previous; };
 float4 morphPoint(float4 p,bool prior,constant U0& u,
                   constant Morph& mo,texture2d<float> tex8,uint vid) {
     if(u.params.z<0.5)return p;
-    int vertex=int(vid)-int(mo.info.y);
+    int vtx=int(vid)-int(mo.info.y);
     int count=int(mo.info.z);
     int targets=int(mo.info.w);
     int base=int(mo.info.x);
@@ -352,7 +352,7 @@ float4 morphPoint(float4 p,bool prior,constant U0& u,
         if(k>=targets)break;
         float w=prior?mo.previousW[k/4][k%4]:mo.currentW[k/4][k%4];
         if(w==0.0)continue;
-        int index=base+(k*count+vertex)*2;
+        int index=base+(k*count+vtx)*2;
         p.xyz+=w*tex8.read(uint2(index%width,index/width)).xyz;
     }
     return p;

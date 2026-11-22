@@ -40,14 +40,18 @@ std::shared_ptr<const AnimationRig> AnimationRig::compile(const Model& m,const J
 void AnimationRig::execute(const Model& m,const AnimationParameters& params,Pose& pose,std::vector<mat4>& world, AnimationRigState* state) const{
     if(pose.size()!=m.nodes.size())return;
     AnimationRigState temporary;if(!state)state=&temporary;state->contacts.resize(units_.size());state->locomotion.resize(units_.size());float dt=state->pendingTime;state->pendingTime=0;
+    // World matrices are rebuilt only when an earlier unit left them stale:
+    // solveTwoBoneIK keeps `world` in sync with the pose it edits.
+    bool worldValid=false;
     for(size_t ui=0;ui<units_.size();++ui){const auto& u=units_[ui];
         float weight=u.weight;auto wi=params.values.find(u.weightParameter);if(wi!=params.values.end()&&std::isfinite(wi->second))weight=std::clamp(wi->second,0.f,1.f);if(weight<=0){state->contacts[ui].reset();state->locomotion[ui].reset();continue;}
-        if(u.locomotion){u.locomotion->solve(m,params,pose,dt,state->locomotion[ui],weight);continue;}
-        if(u.fullBody){u.fullBody->solve(m,params,pose,weight,state?&state->contacts[ui]:nullptr);continue;}
-        worldMatrices(m,pose,world);auto& p=pose[size_t(u.bone)];NodePose desired=p;
+        if(u.locomotion){u.locomotion->solve(m,params,pose,dt,state->locomotion[ui],weight);worldValid=false;continue;}
+        if(u.fullBody){u.fullBody->solve(m,params,pose,weight,state?&state->contacts[ui]:nullptr);worldValid=false;continue;}
+        if(!worldValid||world.size()!=pose.size())worldMatrices(m,pose,world);
+        worldValid=false;auto& p=pose[size_t(u.bone)];NodePose desired=p;
         int parent=m.nodes[size_t(u.bone)].parent;mat4 parentWorld=parent<0?mat4{}:world[size_t(parent)];
-        if(u.kind==Kind::TwoBoneIK){solveTwoBoneIK(m,pose,world,u.bone,u.knee,u.end,parameter(params,u.target,{}),parameter(params,u.pole,{0,0,1}),weight);continue;}
-        if(u.kind==Kind::Aim){float3 dir=parameter(params,u.target,{})-position(world[size_t(u.bone)]);if(length(dir)<1e-6f)continue;quat current=rotationOf(world[size_t(u.bone)]);desired.r=inverseQ(rotationOf(parentWorld))*between(current.rotate(u.axis),dir)*current;}
+        if(u.kind==Kind::TwoBoneIK){solveTwoBoneIK(m,pose,world,u.bone,u.knee,u.end,parameter(params,u.target,{}),parameter(params,u.pole,{0,0,1}),weight);worldValid=true;continue;}
+        if(u.kind==Kind::Aim){float3 dir=parameter(params,u.target,{})-position(world[size_t(u.bone)]);if(length(dir)<1e-6f){worldValid=true;continue;}quat current=rotationOf(world[size_t(u.bone)]);desired.r=inverseQ(rotationOf(parentWorld))*between(current.rotate(u.axis),dir)*current;}
         else if(u.kind==Kind::Copy){
             desired=pose[size_t(u.source)];
             if(u.global){auto local=parentWorld.inverse()*world[size_t(u.source)];desired.t=position(local);desired.r=rotationOf(local);desired.s={length({local.at(0,0),local.at(1,0),local.at(2,0)}),length({local.at(0,1),local.at(1,1),local.at(2,1)}),length({local.at(0,2),local.at(1,2),local.at(2,2)})};}

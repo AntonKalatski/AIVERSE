@@ -160,6 +160,19 @@ add_library(aiverse_engine STATIC
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
 target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# PHYSIS nature simulation installs itself from a map "physis" block in
+# Simulation::setup for every game module (engine/physis/PhysisAutoInstall.cpp).
+# OFF drops it from the link; maps with a "physis" block then run without it.
+option(AIVERSE_SIM_PHYSIS "Install PHYSIS automatically from map data" ON)
+# PHYSIS worker lanes (engine/physis/PhysisParallel.h) use std::thread.
+if(NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_engine PUBLIC Threads::Threads)
+endif()
+if(AIVERSE_SIM_PHYSIS)
+    target_sources(aiverse_engine PRIVATE engine/physis/PhysisAutoInstall.cpp)
+    target_compile_definitions(aiverse_engine PRIVATE AIVERSE_SIM_PHYSIS=1)
+endif()
 # Tests that rely on assert() must keep it in Release (CMake adds NDEBUG): undefine NDEBUG for the
 # target on every compiler (GCC/Clang/AppleClang/clang-cl: -UNDEBUG, MSVC: /UNDEBUG).
 function(aiverse_keep_test_asserts target)
@@ -615,6 +628,12 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_model_batching_policy_tests tests/render/model_batching_policy.cpp)
     target_link_libraries(aiverse_model_batching_policy_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME model_batching_policy COMMAND aiverse_model_batching_policy_tests)
+    add_executable(aiverse_static_impostor_lod_tests tests/render/static_impostor_lod.cpp)
+    target_link_libraries(aiverse_static_impostor_lod_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME static_impostor_lod COMMAND aiverse_static_impostor_lod_tests)
+    add_executable(aiverse_strata_auto_select_tests tests/render/strata_auto_select.cpp)
+    target_link_libraries(aiverse_strata_auto_select_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME strata_auto_select COMMAND aiverse_strata_auto_select_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_tests tests/animation/graphs.cpp apps/editor/core/AnimationDocument.cpp)
@@ -995,6 +1014,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_api COMMAND aiverse_motionweave_api_tests)
 endif()
 
+# MotionWeave core: sampling, blend/sync, morph-free path, IK, rig, motion matching, foot slide.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_core_tests tests/animation/motionweave_core.cpp)
+    target_link_libraries(aiverse_motionweave_core_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_core COMMAND aiverse_motionweave_core_tests)
+endif()
+
 # MotionWeave persistent host workers (no worker startup in simulation).
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_motionweave_worker_tests tests/animation/motionweave_workers.cpp)
@@ -1036,6 +1062,12 @@ endif()
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
     add_executable(aiverse_motionweave_bench tools/animation/motionweave_bench.cpp)
     target_link_libraries(aiverse_motionweave_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    # 53-bone procedural humanoid: per-character cost of clip/blend/IK/motion matching.
+    add_executable(aiverse_motionweave_humanoid_bench tools/animation/motionweave_humanoid_bench.cpp)
+    target_link_libraries(aiverse_motionweave_humanoid_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    # Locomotion review: foot sliding / pops / broken poses + CSV for contact sheets.
+    add_executable(aiverse_motionweave_locomotion_review tools/animation/motionweave_locomotion_review.cpp)
+    target_link_libraries(aiverse_motionweave_locomotion_review PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_motionweave_phase_tests tests/animation/motionweave_phase.cpp)
@@ -2671,6 +2703,19 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
+    # Legacy RTS cell water -> NEREID conversion (CPU-only).
+    add_executable(aiverse_rts_water_nereid_test tests/rts_water_nereid_test.cpp)
+    target_link_libraries(aiverse_rts_water_nereid_test PRIVATE
+        aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
+    add_test(NAME rts_water_nereid_test COMMAND aiverse_rts_water_nereid_test)
+    # NEREID large-world ocean LOD: legacy coverage, stitched rings (CPU-only).
+    add_executable(aiverse_ecs_nereid_ocean_lod_test
+        tests/ecs_nereid_ocean_lod_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_ocean_lod_test PRIVATE
+        aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_ocean_lod_test
+        COMMAND aiverse_ecs_nereid_ocean_lod_test
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/nereid/ocean-large-world.json)
     # NEREID stages 41-44: JSON links, reference/indexed/scene flow parity
     # and shader-only water mesh upload identity (CPU-only).
     add_executable(aiverse_ecs_nereid_confluence_contract_test
@@ -2923,12 +2968,16 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
             add_test(NAME prisma_${_fx}_vulkan COMMAND aiverse_hdr_vulkan)
             set_tests_properties(prisma_${_fx}_vulkan PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Vulkan;Prisma" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
-                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         endforeach()
+        add_test(NAME lighting_baked_vulkan COMMAND aiverse_hdr_vulkan)
+        set_tests_properties(lighting_baked_vulkan PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+            LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         add_test(NAME lighting_luma_vulkan COMMAND aiverse_hdr_vulkan)
         set_tests_properties(lighting_luma_vulkan PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
             LABELS "Lighting;GPU;Vulkan" TIMEOUT 180 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
-            PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+            PASS_REGULAR_EXPRESSION "Luma GPU 11:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan lighting_compute_gi_scroll_vulkan
             PROPERTIES LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
@@ -3219,6 +3268,13 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_model_adapter_tests PRIVATE
             aiverse_strata_model_adapter aiverse_zstd_dec)
         add_test(NAME strata_model_adapter COMMAND aiverse_strata_model_adapter_tests)
+        # Manual load-time benchmark on a real asset (no CTest: needs an external model).
+        add_executable(aiverse_strata_stage_bench tests/render/strata_stage_bench.cpp)
+        target_link_libraries(aiverse_strata_stage_bench PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
+        add_executable(aiverse_strata_stage_probe tools/strata/stage_probe.cpp)
+        target_link_libraries(aiverse_strata_stage_probe PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
         add_executable(aiverse_strata_source_seams_tests
             tests/render/strata_source_seams.cpp)
         target_link_libraries(aiverse_strata_source_seams_tests PRIVATE
@@ -4029,6 +4085,34 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Data-driven entity effects shared by every host (table + presenter).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_spectrafx_entity_effects_tests
+        tests/spectrafx_entity_effects_test.cpp)
+    target_include_directories(aiverse_spectrafx_entity_effects_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_entity_effects_tests PRIVATE aiverse_fx)
+    add_test(NAME spectrafx_entity_effects COMMAND aiverse_spectrafx_entity_effects_tests)
+    set_tests_properties(spectrafx_entity_effects PROPERTIES LABELS "SpectraFX")
+endif()
+
+# CPU/GPU linkage: one asset on the Metal compute kernel and on its CPU twin
+# (kernel state parity, emitter image parity, particles/ms perf print).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_cpu_gpu_parity_test
+        tests/spectrafx_cpu_gpu_parity.mm $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_spectrafx_cpu_gpu_parity_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_spectrafx_cpu_gpu_parity_test PRIVATE "-fobjc-arc")
+    target_link_libraries(aiverse_spectrafx_cpu_gpu_parity_test PRIVATE
+        aiverse_runtime aiverse_fx aiverse_render2d)
+    add_test(NAME spectrafx_cpu_gpu_parity
+        COMMAND aiverse_spectrafx_cpu_gpu_parity_test)
+    set_tests_properties(spectrafx_cpu_gpu_parity PROPERTIES
+        LABELS "SpectraFX;MetalGPU;RHI"
+        SKIP_RETURN_CODE 77)
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
@@ -4238,6 +4322,23 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_nature_presentation_test PRIVATE aiverse_engine)
     add_test(NAME physis_nature_presentation COMMAND aiverse_physis_nature_presentation_test)
     set_tests_properties(physis_nature_presentation PROPERTIES LABELS "PHYSIS")
+    # Parallel grid passes: bit-identical to serial for every lane count;
+    # `aiverse_physis_parallel_test bench 1024 10` prints the speedup.
+    add_executable(aiverse_physis_parallel_test tests/physis_parallel_test.cpp)
+    target_link_libraries(aiverse_physis_parallel_test PRIVATE aiverse_engine)
+    add_test(NAME physis_parallel COMMAND aiverse_physis_parallel_test)
+    set_tests_properties(physis_parallel PROPERTIES LABELS "PHYSIS")
+    add_executable(aiverse_physis_streaming_test tests/physis_streaming_test.cpp)
+    target_link_libraries(aiverse_physis_streaming_test PRIVATE aiverse_engine)
+    add_test(NAME physis_streaming COMMAND aiverse_physis_streaming_test)
+    set_tests_properties(physis_streaming PROPERTIES LABELS "PHYSIS;PERSISTENCE")
+    if(AIVERSE_SIM_PHYSIS)
+        # Map-data install for any GameModule + presentation config/wind adapters.
+        add_executable(aiverse_physis_nature_runtime_test tests/physis_nature_runtime_test.cpp)
+        target_link_libraries(aiverse_physis_nature_runtime_test PRIVATE aiverse_engine)
+        add_test(NAME physis_nature_runtime COMMAND aiverse_physis_nature_runtime_test)
+        set_tests_properties(physis_nature_runtime PROPERTIES LABELS "PHYSIS;TERRAWEAVE;NEREID")
+    endif()
     if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
         # PHYSIS -> SpectraFX / audio planners and TerraWeave grass overlay
         # (CPU only; no device, no audio hardware).
@@ -4478,6 +4579,19 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_forest_scene_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec)
     aiverse_keep_test_asserts(aiverse_terraweave_forest_scene_test)
     add_test(NAME terraweave_forest_scene COMMAND aiverse_terraweave_forest_scene_test)
+    # Automatic observer-driven residency planner + tree trunk colliders.
+    add_executable(aiverse_terraweave_streaming_test tests/terraweave_streaming_test.cpp)
+    target_link_libraries(aiverse_terraweave_streaming_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec)
+    aiverse_keep_test_asserts(aiverse_terraweave_streaming_test)
+    add_test(NAME terraweave_streaming COMMAND aiverse_terraweave_streaming_test)
+    if(TARGET aiverse_physics)
+        add_executable(aiverse_terraweave_streaming_physics_test tests/terraweave_streaming_test.cpp)
+        target_compile_definitions(aiverse_terraweave_streaming_physics_test PRIVATE AIVERSE_TERRAWEAVE_TEST_WITH_PHYSICS=1)
+        target_link_libraries(aiverse_terraweave_streaming_physics_test PRIVATE
+            aiverse_models aiverse_world aiverse_zstd_dec AIVERSE::physics)
+        aiverse_keep_test_asserts(aiverse_terraweave_streaming_physics_test)
+        add_test(NAME terraweave_streaming_physics COMMAND aiverse_terraweave_streaming_physics_test)
+    endif()
     if(TARGET aiverse_world)
         add_executable(aiverse_terraweave_horizon_test tests/terraweave_horizon_test.cpp)
         target_link_libraries(aiverse_terraweave_horizon_test PRIVATE aiverse_world aiverse_models aiverse_zstd_dec)
@@ -4757,18 +4871,29 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
         add_test(NAME prisma_${_fx}_gpu COMMAND aiverse_hdr_scene)
         set_tests_properties(prisma_${_fx}_gpu PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
             LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
-            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS" FAIL_REGULAR_EXPRESSION "FAIL")
         if(TARGET aiverse_hdr_gl)
             add_test(NAME prisma_${_fx}_gl COMMAND aiverse_hdr_gl)
             set_tests_properties(prisma_${_fx}_gl PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
-                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS" FAIL_REGULAR_EXPRESSION "FAIL")
         endif()
     endforeach()
+    # Baked lightmaps and probes drawn by the real renderer (sun off, pixel check).
+    add_test(NAME lighting_baked_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_baked_gpu PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+        LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_baked_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_baked_gl PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+            LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+            PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
     add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE
-        PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        PASS_REGULAR_EXPRESSION "Luma GPU 11:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
 
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench AND AIVERSE_PLATFORM STREQUAL "macos")
@@ -4848,4 +4973,25 @@ if(AIVERSE_WITH_DLSS AND TARGET aiverse_client)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/rel/nvngx_dlss.dll" "$<TARGET_FILE_DIR:aiverse_client>"
         COMMENT "Copying nvngx_dlss.dll")
+endif()
+
+# One target that builds every PHYSIS test executable defined above, so CI and
+# agents never keep a hand-written list that silently misses new tests (a
+# registered CTest without its executable fails as "Not Run").
+if(AIVERSE_BUILD_TESTS)
+    get_property(_aiverse_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    set(_aiverse_physis_test_targets)
+    foreach(_aiverse_target IN LISTS _aiverse_all_targets)
+        if(_aiverse_target MATCHES "^aiverse_physis_.*_tests?$")
+            list(APPEND _aiverse_physis_test_targets ${_aiverse_target})
+        endif()
+    endforeach()
+    add_custom_target(aiverse_physis_tests)
+    if(_aiverse_physis_test_targets)
+        add_dependencies(aiverse_physis_tests ${_aiverse_physis_test_targets})
+    endif()
+    # physis_mcp drives the MCP server binary.
+    if(TARGET aiversemcp)
+        add_dependencies(aiverse_physis_tests aiversemcp)
+    endif()
 endif()

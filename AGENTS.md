@@ -244,6 +244,11 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 **Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).
 **Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).
 **System documentation:** [docs/spectrafx.md](docs/spectrafx.md).
+**Effects in data + one CPU/GPU path (2026-11-22):** [docs/spectrafx-entity-effects.md](docs/spectrafx-entity-effects.md).
+Entity effects are declared in rules/map/type/weapon/ability `"spectraFx"` data and presented by the shared
+`engine/fx/SpectraFxEntityEffects.h` in every host (RTS client, FPS client); never add a host-specific copy. A
+`fx/gpu/*.gpu.json` asset runs on the Metal kernel or its CPU twin (`SpectraFxEvolutionKernel.h`, keep in lockstep
+with `SpectraFxComputeShaders.h`); `spectrafx_cpu_gpu_parity` must stay green.
 
 <!-- Historical incoming Inspector/SpectraFX branch contracts; current integration gates still apply. -->
 **Latest implementation handoff (Stage 44, actual standalone tests RUN):**
@@ -3332,6 +3337,7 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - **Docs/hand-off on EVERY stage:** `docs/agent-handoffs/physis-{core,climate,environment,disasters,integration}-2026-11-18.md` and `engine/physis/AGENTS.md`. Every follow-on implementation stage must commit code, then a separate handoff with exact branch/SHA, public API, changed files, actual test results, limits and specific next action.
 - **Tests:** baseline CTests `physis_core`, `physis_climate`, `physis_environment`, `physis_disasters`, `physis_integration`, plus `physis_wind`, `physis_gravity`, `physis_storm`, `physis_forces`, `physis_presentation`, and opt-in `physis_box3d` (`AIVERSE_ENABLE_PHYSICS=ON`); run `./run-tests.sh --filter '^physis_'` as required by the unified test-runner policy above. These targets have been written and registered but **NOT RUN** in the connector-only development session; do not claim validation or merge before tests and review.
 - **Nature presentation host (2026-11-21):** `engine/world/PhysisNature{Presentation,Cues,FxHost,AudioHost,Grass}.h` drive TerraWeave grass burn/wind, SpectraFX fire/smoke/light and audio from read-only PHYSIS; editor «Живая природа» (`apps/editor/PhysisNaturePreview.h`, MCP `physis_nature_preview`) shows it without a play-test. Reuse these; do not write a second fire/grass/VFX bridge. Game client hookup and macOS visual QA pending: `docs/agent-handoffs/physis-nature-host-2026-11-21.md`.
+- **Automatic + parallel + streaming (2026-11-22):** a map `"physis"` block installs PHYSIS in `Simulation::setup` for every module (`engine/physis/PhysisAutoInstall.cpp`, CMake `AIVERSE_SIM_PHYSIS`); `engine/world/PhysisNatureRuntime.h` drives SpectraFX/audio/TerraWeave wind/NEREID wind/PRISMA sky from it in the game client — reuse it in other hosts, do not wire hosts by hand. Grid passes take `workerThreads` lanes (`PhysisParallel.h`, bit-identical; per-cell writes only, providers read-only) and `streaming.chunkCells` + `ActivityAnchor` (`PhysisStreaming.h`). CI builds the aggregate target `aiverse_physis_tests`; never hand-list PHYSIS test targets. Handoff `docs/agent-handoffs/physis-next-2026-11-22.md`.
 - **Remaining work:** PHYSIS-owned climate/wind/gravity/storm/force fields and host-facing presentation APIs and host-owned opt-in Terra/NEREID/VFX/Foliage/Physics/editor adapters (other agents own canonical water and terrain), spatial indexing, sparse hazards, streaming/LOD, deterministic partitions, network deltas, platform validation and physical-unit calibration. Follow the cross-agent ownership matrix below and `docs/physis-nereid-terraweave-integration.md`; do not duplicate Water or Terra systems.
 
 ## Cross-agent ownership: PHYSIS / NEREID / TerraWeave (2026-11-18)

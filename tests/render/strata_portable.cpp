@@ -270,6 +270,25 @@ static void testLegacyClusteredSource(gfx::Backend backend) {
     assert(source.geometry);
     assert(alias.vb==source.vb);
     assert(alias.meshes[0].primitives.size()==2);
+    {   // Opt-in merge: the two adjacent leaves become ONE primitive that
+        // covers exactly the same indices (fewer draws, same geometry).
+        const uint32_t first=alias.meshes[0].primitives[0].firstIndex;
+        const uint32_t total=alias.meshes[0].primitives[0].indexCount+
+                             alias.meshes[0].primitives[1].indexCount;
+        const bool adjacent=alias.meshes[0].primitives[0].firstIndex+
+            alias.meshes[0].primitives[0].indexCount==alias.meshes[0].primitives[1].firstIndex;
+        staged.setMergeAdjacentClusters(true);
+        Model merged;
+        assert(staged.prepareModel(mat4::identity(),{fine},false,merged,&error));
+        if(adjacent){
+            assert(merged.meshes[0].primitives.size()==1);
+            assert(merged.meshes[0].primitives[0].firstIndex==first);
+            assert(merged.meshes[0].primitives[0].indexCount==total);
+        }else{
+            assert(merged.meshes[0].primitives.size()==2);
+        }
+        staged.setMergeAdjacentClusters(false);
+    }
     alias=Model{};
     staged.shutdown(dev);
     dev.destroyBuffer(source.vb);
