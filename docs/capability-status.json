@@ -72,7 +72,7 @@
         "ecs-locomotion",
         "physical-interactions"
       ],
-      "remaining": "Есть: stepMotion (ускорение/торможение, буфер прыжка, coyote time, доп. прыжки, склоны), LocomotionModes (уступ, лестница, плавание, лазание с выносливостью, wall jump, mantle/vault), ECS-адаптер ecs-locomotion, движущиеся платформы (mechanics/Platforms.h); тесты tests/libraries/genre_tests.cpp, tests/ecs_cross_genre_locomotion_test.cpp. Осталось: wall-run и grapple, связь режимов с prediction/reconciliation и камерой FPS-сервера, запись ввода с сетевыми коррекциями."
+      "remaining": "Есть: stepMotion (ускорение/торможение, буфер прыжка, coyote time, доп. прыжки, склоны), LocomotionModes (уступ, лестница, плавание, лазание с выносливостью, wall jump, mantle/vault; с 0.3.0 — dash с воздушными рывками и перезарядкой, wall slide, wall run, grapple с подтягиванием или маятником и сматыванием), ECS-адаптер ecs-locomotion, движущиеся платформы (mechanics/Platforms.h); тесты tests/libraries/genre_tests.cpp, tests/ecs_cross_genre_locomotion_test.cpp. Осталось: подключить LocomotionModes к хосту акторов (engine/actor) и его prediction/reconciliation и камере, запись ввода с сетевыми коррекциями."
     },
     {
       "id": "F2",
@@ -361,7 +361,7 @@
         "character-locomotion",
         "physical-interactions"
       ],
-      "remaining": "Есть: coyote time, буфер прыжка, доп. прыжки, wall jump, движущиеся платформы по путям (Loop/PingPong/Once). Осталось: односторонние платформы, dash, wall-slide, петли, 2D-хост с метриками движения и камерой."
+      "remaining": "Есть: coyote time, буфер прыжка, доп. прыжки, wall jump, wall slide, dash с воздушными рывками, односторонние платформы с drop-through (LocomotionResult::ignoreOneWay, oneWaySupports), движущиеся платформы по путям (Loop/PingPong/Once). Осталось: петли, 2D-хост с авторскими метриками движения и камерой, набор edge-case уровней с повтором ввода."
     },
     {
       "id": "P2",

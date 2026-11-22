@@ -876,7 +876,7 @@
       "package": "character-locomotion",
       "path": "skills/gameplay/aiverse-character-locomotion/SKILL.md",
       "domain": "gameplay",
-      "summary": "Fixed character movement policy: ground/air acceleration, jump buffer, coyote time, slopes, ledges, ladders, swimming, climbing and mantle/vault modes",
+      "summary": "Fixed character movement policy: ground/air acceleration, jump buffer, coyote time, slopes, ledges, ladders, swimming, climbing, mantle/vault, dash, wall slide, wall run, grapple and one-way platform modes",
       "side": "simulation",
       "runtime": "header",
       "target": "AIVERSE::lib_character_locomotion",

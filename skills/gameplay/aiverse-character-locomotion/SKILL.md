@@ -1,6 +1,6 @@
 ---
 name: aiverse-character-locomotion
-description: Reuse AIVERSE fixed character movement policy (ground/air acceleration, jump buffer, coyote time) and its mode machine for slopes, ledges, ladders, swimming, wall climbing and mantle/vault when building native C++ games across genres.
+description: Reuse AIVERSE fixed character movement policy (ground/air acceleration, jump buffer, coyote time) and its mode machine for slopes, ledges, ladders, swimming, wall climbing, mantle/vault, dash, wall slide, wall run, grapple and one-way platforms when building native C++ games across genres.
 ---
 
 # character-locomotion
@@ -17,7 +17,7 @@ Build selection: `AIVERSE::lib_character_locomotion`; native OBJECT modules call
 `aiverse_native_use_libraries(target character-locomotion)`. Only this header library and its
 declared dependencies are selected. See `skills/catalog.json` for dependency and responsibility routing.
 
-## Mode machine (slopes, ledges, ladders, swimming, climbing, mantle)
+## Mode machine (slopes, ledges, ladders, swimming, climbing, mantle, dash, wall moves, grapple)
 
 Include `<aiverselib/mechanics/LocomotionModes.h>` (plus `genre/Persistence.h` for save/load). Use it
 instead of writing per-game ladder/ledge/swim/climb code; `stepMotion` remains the ground/air core.
@@ -34,9 +34,15 @@ instead of writing per-game ladder/ledge/swim/climb code; `stepMotion` remains t
 - Edges (`jumpPressed`, `grabPressed`, `dropPressed`) come from validated Commands. `vertical`
   drives ladders/walls/ledges/swim depth. Grab attaches ladders/walls; jump near a reported
   obstacle mantles/vaults; falling past a ledge auto-grabs unless `autoLedgeGrab` is false.
+- Moves (0.3.0): `dashPressed` (+ `facing` for a dash without wish); `env.wallContact` + `contactNormal`
+  for any wall at the side (wall slide while pushing into it, wall run when fast along it);
+  `grapplePressed`/`grappleReleased` with `env.grappleAnchor` + `grappleOffset` (anchor minus body,
+  from the owner's aim raycast, refreshed every tick while attached); `env.groundOneWay` + drop for
+  drop-through - honour `result.ignoreOneWay` and land with `oneWaySupports(...)` in the owner sweep.
+  Do not write a separate dash/grapple/wall-run controller in a game.
 - Stamina: built-in counter (`climbStamina`, drain/regen per tick) or the owner's pool via
   `stepLocomotionWithStamina(..., spend)` where `spend(cost)` debits atomically.
-- Persist with `genre::save/load` (state kind 20), hash with `locomotionHash`, and bind
+- Persist with `genre::save/load` (state kind 21; 0.2.0 kind 20 records still load), hash with `locomotionHash`, and bind
   `locomotionConfigHash(config)` in the save envelope. Presentation IK climbing
   (docs/surface-locomotion.md) only reads this state; it is not the gameplay authority.
 - Verify with `aiverse_library_genre_tests` (each mode trajectory, restore, rejection).

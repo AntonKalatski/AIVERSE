@@ -1175,13 +1175,13 @@
     },
     {
       "id": "character-locomotion",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "layer": "simulation",
       "status": "cpp-subsystem",
       "source": "libraries/include/aiverselib/mechanics/Locomotion.h",
       "skill": "skills/gameplay/aiverse-character-locomotion/SKILL.md",
-      "summary": "Fixed character movement policy: ground/air acceleration, jump buffer, coyote time, slopes, ledges, ladders, swimming, climbing and mantle/vault modes",
-      "notes": "Read docs/mechanics-packages.md for exact coverage and authority boundaries. 0.2.0 adds LocomotionModes.h: a Ground/Air/Ledge/Ladder/Swim/Climb/Mantle state machine driven by owner-reported environment queries (no physics inside), optional locomotion.* settings, versioned/hashable LocomotionState; stepMotion is unchanged. Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
+      "summary": "Fixed character movement policy: ground/air acceleration, jump buffer, coyote time, slopes, ledges, ladders, swimming, climbing, mantle/vault, dash, wall slide, wall run, grapple and one-way platform modes",
+      "notes": "Read docs/mechanics-packages.md for exact coverage and authority boundaries. 0.2.0 adds LocomotionModes.h: a Ground/Air/Ledge/Ladder/Swim/Climb/Mantle state machine driven by owner-reported environment queries (no physics inside), optional locomotion.* settings, versioned/hashable LocomotionState; stepMotion is unchanged. 0.3.0 adds Dash/WallSlide/WallRun/Grapple modes, one-way drop-through with LocomotionResult::ignoreOneWay and oneWaySupports, new locomotion.* settings and state kind 21 (kind 20 still loads; 0.2.0 config/state hashes unchanged at defaults). Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_character_locomotion",
       "dependencies": [

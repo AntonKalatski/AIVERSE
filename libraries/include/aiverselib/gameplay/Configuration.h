@@ -133,6 +133,28 @@ struct LocomotionSettings {
     std::int64_t vaultMinSpeedMilli=4000;
     std::int64_t vaultTicks=14;
     std::int64_t mantleTicks=30;
+    bool dashEnabled=true;
+    std::int64_t dashSpeedMilli=14000;
+    std::int64_t dashEndSpeedMilli=6000;
+    std::int64_t dashTicks=10;
+    std::int64_t dashCooldownTicks=30;
+    std::int64_t airDashes=1;
+    bool wallSlideEnabled=true;
+    std::int64_t wallSlideSpeedMilli=2500;
+    bool wallRunEnabled=true;
+    std::int64_t wallRunSpeedMilli=8000;
+    std::int64_t wallRunMinSpeedMilli=4000;
+    std::int64_t wallRunGravityScaleMilli=250;
+    std::int64_t wallRunTicks=90;
+    std::int64_t wallRunCooldownTicks=12;
+    bool grappleEnabled=true;
+    bool grappleSwing=false;
+    std::int64_t grappleMaxLengthMilli=30000;
+    std::int64_t grappleSpeedMilli=18000;
+    std::int64_t grappleArriveMilli=1000;
+    std::int64_t grappleReelSpeedMilli=4000;
+    std::int64_t grappleTicks=300;
+    std::int64_t oneWayDropTicks=12;
 };
 struct MeleeSettings {
     std::int64_t windup=6;
@@ -743,7 +765,7 @@ template<class Json> SettingsResult readGameplaySettings(const Json& root) {
     if(root.has("locomotion")) { const auto& section=root["locomotion"];
         if(!section.isObject()) result.errors.push_back("locomotion: expected object");
         else {
-            for(const auto& entry:section.members()) if(entry.first!="groundSpeedMilli" && entry.first!="airSpeedMilli" && entry.first!="accelerationMilli" && entry.first!="brakingMilli" && entry.first!="gravityMilli" && entry.first!="jumpSpeedMilli" && entry.first!="coyoteTicks" && entry.first!="bufferTicks" && entry.first!="maxJumps" && entry.first!="maxSlopeMilliDegrees" && entry.first!="slideAccelerationMilli" && entry.first!="slideSpeedMilli" && entry.first!="ledgeMinHeightMilli" && entry.first!="ledgeMaxHeightMilli" && entry.first!="ledgeShimmySpeedMilli" && entry.first!="ledgeClimbDepthMilli" && entry.first!="ledgeClimbTicks" && entry.first!="ledgeRegrabTicks" && entry.first!="autoLedgeGrab" && entry.first!="ladderSpeedMilli" && entry.first!="ladderExitRiseMilli" && entry.first!="ladderExitDepthMilli" && entry.first!="ladderExitTicks" && entry.first!="ladderJumpPushMilli" && entry.first!="swimExitDepthMilli" && entry.first!="swimEnterDepthMilli" && entry.first!="swimFloatDepthMilli" && entry.first!="swimDiveDepthMilli" && entry.first!="swimSpeedMilli" && entry.first!="swimVerticalSpeedMilli" && entry.first!="swimAccelerationMilli" && entry.first!="buoyancyMilli" && entry.first!="waterJumpSpeedMilli" && entry.first!="climbEnabled" && entry.first!="climbSpeedMilli" && entry.first!="wallJumpPushMilli" && entry.first!="climbStamina" && entry.first!="climbStaminaDrain" && entry.first!="climbStaminaRegen" && entry.first!="mantleMinHeightMilli" && entry.first!="vaultMaxHeightMilli" && entry.first!="mantleMaxHeightMilli" && entry.first!="vaultMinSpeedMilli" && entry.first!="vaultTicks" && entry.first!="mantleTicks") result.errors.push_back("locomotion."+entry.first+": unknown field");
+            for(const auto& entry:section.members()) if(entry.first!="groundSpeedMilli" && entry.first!="airSpeedMilli" && entry.first!="accelerationMilli" && entry.first!="brakingMilli" && entry.first!="gravityMilli" && entry.first!="jumpSpeedMilli" && entry.first!="coyoteTicks" && entry.first!="bufferTicks" && entry.first!="maxJumps" && entry.first!="maxSlopeMilliDegrees" && entry.first!="slideAccelerationMilli" && entry.first!="slideSpeedMilli" && entry.first!="ledgeMinHeightMilli" && entry.first!="ledgeMaxHeightMilli" && entry.first!="ledgeShimmySpeedMilli" && entry.first!="ledgeClimbDepthMilli" && entry.first!="ledgeClimbTicks" && entry.first!="ledgeRegrabTicks" && entry.first!="autoLedgeGrab" && entry.first!="ladderSpeedMilli" && entry.first!="ladderExitRiseMilli" && entry.first!="ladderExitDepthMilli" && entry.first!="ladderExitTicks" && entry.first!="ladderJumpPushMilli" && entry.first!="swimExitDepthMilli" && entry.first!="swimEnterDepthMilli" && entry.first!="swimFloatDepthMilli" && entry.first!="swimDiveDepthMilli" && entry.first!="swimSpeedMilli" && entry.first!="swimVerticalSpeedMilli" && entry.first!="swimAccelerationMilli" && entry.first!="buoyancyMilli" && entry.first!="waterJumpSpeedMilli" && entry.first!="climbEnabled" && entry.first!="climbSpeedMilli" && entry.first!="wallJumpPushMilli" && entry.first!="climbStamina" && entry.first!="climbStaminaDrain" && entry.first!="climbStaminaRegen" && entry.first!="mantleMinHeightMilli" && entry.first!="vaultMaxHeightMilli" && entry.first!="mantleMaxHeightMilli" && entry.first!="vaultMinSpeedMilli" && entry.first!="vaultTicks" && entry.first!="mantleTicks" && entry.first!="dashEnabled" && entry.first!="dashSpeedMilli" && entry.first!="dashEndSpeedMilli" && entry.first!="dashTicks" && entry.first!="dashCooldownTicks" && entry.first!="airDashes" && entry.first!="wallSlideEnabled" && entry.first!="wallSlideSpeedMilli" && entry.first!="wallRunEnabled" && entry.first!="wallRunSpeedMilli" && entry.first!="wallRunMinSpeedMilli" && entry.first!="wallRunGravityScaleMilli" && entry.first!="wallRunTicks" && entry.first!="wallRunCooldownTicks" && entry.first!="grappleEnabled" && entry.first!="grappleSwing" && entry.first!="grappleMaxLengthMilli" && entry.first!="grappleSpeedMilli" && entry.first!="grappleArriveMilli" && entry.first!="grappleReelSpeedMilli" && entry.first!="grappleTicks" && entry.first!="oneWayDropTicks") result.errors.push_back("locomotion."+entry.first+": unknown field");
             if(section.has("groundSpeedMilli")) number(section["groundSpeedMilli"],settings.locomotion.groundSpeedMilli,0,100000,"locomotion.groundSpeedMilli");
             if(section.has("airSpeedMilli")) number(section["airSpeedMilli"],settings.locomotion.airSpeedMilli,0,100000,"locomotion.airSpeedMilli");
             if(section.has("accelerationMilli")) number(section["accelerationMilli"],settings.locomotion.accelerationMilli,1,1000000,"locomotion.accelerationMilli");
@@ -789,6 +811,28 @@ template<class Json> SettingsResult readGameplaySettings(const Json& root) {
             if(section.has("vaultMinSpeedMilli")) number(section["vaultMinSpeedMilli"],settings.locomotion.vaultMinSpeedMilli,0,100000,"locomotion.vaultMinSpeedMilli");
             if(section.has("vaultTicks")) number(section["vaultTicks"],settings.locomotion.vaultTicks,2,3600,"locomotion.vaultTicks");
             if(section.has("mantleTicks")) number(section["mantleTicks"],settings.locomotion.mantleTicks,2,3600,"locomotion.mantleTicks");
+            if(section.has("dashEnabled")) boolean(section["dashEnabled"],settings.locomotion.dashEnabled,"locomotion.dashEnabled");
+            if(section.has("dashSpeedMilli")) number(section["dashSpeedMilli"],settings.locomotion.dashSpeedMilli,0,100000,"locomotion.dashSpeedMilli");
+            if(section.has("dashEndSpeedMilli")) number(section["dashEndSpeedMilli"],settings.locomotion.dashEndSpeedMilli,0,100000,"locomotion.dashEndSpeedMilli");
+            if(section.has("dashTicks")) number(section["dashTicks"],settings.locomotion.dashTicks,1,3600,"locomotion.dashTicks");
+            if(section.has("dashCooldownTicks")) number(section["dashCooldownTicks"],settings.locomotion.dashCooldownTicks,0,3600,"locomotion.dashCooldownTicks");
+            if(section.has("airDashes")) number(section["airDashes"],settings.locomotion.airDashes,0,16,"locomotion.airDashes");
+            if(section.has("wallSlideEnabled")) boolean(section["wallSlideEnabled"],settings.locomotion.wallSlideEnabled,"locomotion.wallSlideEnabled");
+            if(section.has("wallSlideSpeedMilli")) number(section["wallSlideSpeedMilli"],settings.locomotion.wallSlideSpeedMilli,0,100000,"locomotion.wallSlideSpeedMilli");
+            if(section.has("wallRunEnabled")) boolean(section["wallRunEnabled"],settings.locomotion.wallRunEnabled,"locomotion.wallRunEnabled");
+            if(section.has("wallRunSpeedMilli")) number(section["wallRunSpeedMilli"],settings.locomotion.wallRunSpeedMilli,0,100000,"locomotion.wallRunSpeedMilli");
+            if(section.has("wallRunMinSpeedMilli")) number(section["wallRunMinSpeedMilli"],settings.locomotion.wallRunMinSpeedMilli,0,100000,"locomotion.wallRunMinSpeedMilli");
+            if(section.has("wallRunGravityScaleMilli")) number(section["wallRunGravityScaleMilli"],settings.locomotion.wallRunGravityScaleMilli,0,2000,"locomotion.wallRunGravityScaleMilli");
+            if(section.has("wallRunTicks")) number(section["wallRunTicks"],settings.locomotion.wallRunTicks,1,3600,"locomotion.wallRunTicks");
+            if(section.has("wallRunCooldownTicks")) number(section["wallRunCooldownTicks"],settings.locomotion.wallRunCooldownTicks,0,3600,"locomotion.wallRunCooldownTicks");
+            if(section.has("grappleEnabled")) boolean(section["grappleEnabled"],settings.locomotion.grappleEnabled,"locomotion.grappleEnabled");
+            if(section.has("grappleSwing")) boolean(section["grappleSwing"],settings.locomotion.grappleSwing,"locomotion.grappleSwing");
+            if(section.has("grappleMaxLengthMilli")) number(section["grappleMaxLengthMilli"],settings.locomotion.grappleMaxLengthMilli,0,1000000,"locomotion.grappleMaxLengthMilli");
+            if(section.has("grappleSpeedMilli")) number(section["grappleSpeedMilli"],settings.locomotion.grappleSpeedMilli,0,100000,"locomotion.grappleSpeedMilli");
+            if(section.has("grappleArriveMilli")) number(section["grappleArriveMilli"],settings.locomotion.grappleArriveMilli,0,10000,"locomotion.grappleArriveMilli");
+            if(section.has("grappleReelSpeedMilli")) number(section["grappleReelSpeedMilli"],settings.locomotion.grappleReelSpeedMilli,0,100000,"locomotion.grappleReelSpeedMilli");
+            if(section.has("grappleTicks")) number(section["grappleTicks"],settings.locomotion.grappleTicks,1,36000,"locomotion.grappleTicks");
+            if(section.has("oneWayDropTicks")) number(section["oneWayDropTicks"],settings.locomotion.oneWayDropTicks,0,3600,"locomotion.oneWayDropTicks");
         }
         if(settings.locomotion.ledgeMinHeightMilli>settings.locomotion.ledgeMaxHeightMilli)result.errors.push_back("locomotion.ledgeMinHeightMilli: must not exceed ledgeMaxHeightMilli");
         if(settings.locomotion.swimExitDepthMilli>settings.locomotion.swimEnterDepthMilli)result.errors.push_back("locomotion.swimExitDepthMilli: must not exceed swimEnterDepthMilli");
@@ -796,6 +840,9 @@ template<class Json> SettingsResult readGameplaySettings(const Json& root) {
         if(settings.locomotion.swimFloatDepthMilli>settings.locomotion.swimDiveDepthMilli)result.errors.push_back("locomotion.swimFloatDepthMilli: must not exceed swimDiveDepthMilli");
         if(settings.locomotion.mantleMinHeightMilli>settings.locomotion.vaultMaxHeightMilli)result.errors.push_back("locomotion.mantleMinHeightMilli: must not exceed vaultMaxHeightMilli");
         if(settings.locomotion.vaultMaxHeightMilli>settings.locomotion.mantleMaxHeightMilli)result.errors.push_back("locomotion.vaultMaxHeightMilli: must not exceed mantleMaxHeightMilli");
+        if(settings.locomotion.dashEndSpeedMilli>settings.locomotion.dashSpeedMilli)result.errors.push_back("locomotion.dashEndSpeedMilli: must not exceed dashSpeedMilli");
+        if(settings.locomotion.wallRunMinSpeedMilli>settings.locomotion.wallRunSpeedMilli)result.errors.push_back("locomotion.wallRunMinSpeedMilli: must not exceed wallRunSpeedMilli");
+        if(settings.locomotion.grappleArriveMilli>settings.locomotion.grappleMaxLengthMilli)result.errors.push_back("locomotion.grappleArriveMilli: must not exceed grappleMaxLengthMilli");
     }
     if(root.has("melee")) { const auto& section=root["melee"];
         if(!section.isObject()) result.errors.push_back("melee: expected object");

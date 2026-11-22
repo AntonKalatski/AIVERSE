@@ -5,7 +5,7 @@ mechanics; they do not silently replace existing FPS movement, RTS abilities/dam
 
 | Package | Implemented API | Boundaries |
 |---|---|---|
-| character-locomotion | MotionConfig/State/Input, stepMotion: ground/air speed, acceleration/braking, gravity, jump buffer, coyote time, bounded extra jumps, ceiling response. LocomotionModes.h (0.2.0): stepLocomotion mode machine Ground/Air/Ledge/Ladder/Swim/Climb/Mantle with slopes, ledge grab/shimmy/climb-up, ladders, buoyant swimming, stamina-limited wall climbing and timed mantle/vault | Returns velocity, mode and events; collision owner reports grounded/ceiling, ground normal, ledges, ladders, water depth, climbable walls and obstacles, and applies movement. No physics queries, root motion or animation controller. |
+| character-locomotion | MotionConfig/State/Input, stepMotion: ground/air speed, acceleration/braking, gravity, jump buffer, coyote time, bounded extra jumps, ceiling response. LocomotionModes.h (0.2.0): stepLocomotion mode machine Ground/Air/Ledge/Ladder/Swim/Climb/Mantle with slopes, ledge grab/shimmy/climb-up, ladders, buoyant swimming, stamina-limited wall climbing and timed mantle/vault; 0.3.0 adds Dash (air dash count, cooldown), WallSlide, WallRun, Grapple (pull or swing with reel) and one-way platform drop-through | Returns velocity, mode and events; collision owner reports grounded/ceiling, ground normal, ledges, ladders, water depth, climbable walls and obstacles, and applies movement. No physics queries, root motion or animation controller. |
 | melee-combat | AttackSet/State, phase evaluation, input buffering, allowed combo cancels, authorization callback, once-per-swing hit bookkeeping, evade/parry/block outcome | Geometry/target validation and actual damage/stamina belong to the existing combat owner. No parallel health/status system. |
 | combat-actions | Frame-keyed hitboxes + hurtboxes (sphere/capsule/yaw box) with overlap tests, self/team filtering and once-per-swing hits; dodge i-frames + cooldown; directional guard arc + perfect-parry window with re-arm; poise damage/break/recovery and hit/block/parry stun; deterministic lock-on acquire/switch/break | Composes melee-combat. Returns contacts/outcomes; damage, stamina, health and statuses stay with the existing combat owner. No per-tick sweep, animation-driven boxes, ragdoll or camera presentation. |
 | weapon-policies | Deterministic recoil recovery, seeded spread, swept projectiles with gravity, lifetime and bounded ricochets; 0.2.0: material-layer penetration, radial explosions with owner LOS, ammo feeds (magazine/belt/per-shell/energy + overheat), charge tiers, attachment stat stacking, ballistic launch and lead solving (see [Weapons and ballistics](#weapons-and-ballistics-weapon-policies-020)) | Existing FPS ammo/reload/fire cadence remain authoritative for built-in FPS weapons. No automatic replacement of hitscan, no damage/health owner, no presentation. |
@@ -41,7 +41,7 @@ block of eight here before using it.
 |---|---|
 | 1..7 | genre core (motion, melee, recoil, projectile, match, capture, story) |
 | 16..18 | weapon-policies (feed, charge, loadout) |
-| 20 | character-locomotion (locomotion modes) |
+| 20..23 | character-locomotion (20 = 0.2.0 locomotion modes, still loads; 21 = 0.3.0 with moves) |
 | 32..36 | combat-actions |
 | 40..47 | match-rules objectives |
 | 48..55 | stealth-senses |
@@ -120,11 +120,36 @@ Unknown fields, duplicate IDs, broken edges and invalid integer values are rejec
 - **Mantle/vault:** jump next to an obstacle mantleMin..mantleMax high starts a timed phase: rise for
   the first half, move over obstacleDepth for the rest. On the ground, obstacles up to vaultMaxHeight
   taken at >= vaultMinSpeed vault in vaultTicks and keep momentum. A ceiling during the rise aborts.
+- **Dash (0.3.0):** `dashPressed` dashes along wish (or `facing` when there is no wish) at dashSpeed for
+  dashTicks with no gravity, then leaves at dashEndSpeed. Ground dashes are free; airborne ones use one of
+  `airDashes`, refilled on landing or touching a wall move. dashCooldownTicks after the dash ends; a wall
+  ahead (`wallContact`, normal against the dash) stops it with no momentum. Events DashStart/DashEnd.
+- **Wall slide (0.3.0):** airborne, falling, `wallContact` reported and wish pushing into the wall: fall
+  speed is capped at wallSlideSpeed; jump wall-jumps (contactNormal*wallJumpPush + jumpSpeed). Stops when
+  grounded, the contact ends or the push stops.
+- **Wall run (0.3.0):** airborne with `wallContact` and speed along the wall >= wallRunMinSpeed: runs
+  along the wall tangent at wallRunSpeed (same direction as before), vertical speed starts at max(vy,0)
+  and falls with gravity*wallRunGravityScale, up to wallRunTicks. Ends on ground, lost contact, drop or
+  timeout (then wallRunCooldownTicks before the next run); jump leaves with push + run speed + jumpSpeed.
+- **Grapple (0.3.0):** the owner aims (raycast) and reports `grappleAnchor` + `grappleOffset` (anchor minus
+  body) every tick; `grapplePressed` attaches when the offset is grappleArrive..grappleMaxLength. Pull
+  (default) flies to the anchor at grappleSpeed and lets go within grappleArrive. Swing (`grappleSwing`)
+  keeps gravity and light air control, the rope only pulls (outward radial velocity is removed when taut,
+  stretch is corrected at up to grappleSpeed) and `vertical` reels at grappleReelSpeed. Jump, `grappleReleased`,
+  a lost anchor or grappleTicks let go. Events GrappleAttach/GrappleRelease.
+- **One-way platforms (0.3.0):** the owner sets `groundOneWay` when standing on one; drop on it leaves
+  the ground (DropThrough) and `LocomotionResult::ignoreOneWay` stays true for oneWayDropTicks so the
+  collision sweep lets the body fall through. `oneWaySupports(top, previousFeet, feet, vy, ignoreOneWay)`
+  is the owner's landing test: only from above, not while rising, not during drop-through.
+
+All moves need their own input edge or environment report, so 0.2.0 callers behave bit-identically; the
+0.2.0 configuration hash and state hash are unchanged while the new fields keep their defaults (the
+test pins the 0.2.0 configuration hash).
 
 The owner keeps dt constant (phase velocities are computed at entry), calls once per tick, and moves the
 body with swept collision. Invalid config/state/input, dt outside (0,1] and repeated/backwards ticks
 return nullopt with the state untouched. All state (including the nested MotionState and mantle phase)
-is persisted by `genre::save/load` (state kind 20) and hashed by `locomotionHash`; bind
+is persisted by `genre::save/load` (state kind 21; 0.2.0 kind 20 records still load) and hashed by `locomotionHash`; bind
 `locomotionConfigHash` in the save envelope. Presentation climbing/IK (surface-locomotion.md) reads the
 mode and events; it does not decide them. Network prediction/rollback is the owner's concern: restore
 the saved record and replay the same inputs.
