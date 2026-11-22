@@ -370,7 +370,8 @@ LINE_COLORS = ('#2F6FB0', '#3F8A55', '#1F8A9E', '#7A4FB0', '#B0562F', '#B0407A',
 
 
 def line_color(s, flagships):
-    return s.get('color') or LINE_COLORS[[f['id'] for f in flagships].index(s['id']) % len(LINE_COLORS)]
+    ids = [f['id'] for f in flagships]
+    return s.get('color') or LINE_COLORS[(ids.index(s['id']) if s['id'] in ids else len(ids)) % len(LINE_COLORS)]
 
 
 def short(text, n):

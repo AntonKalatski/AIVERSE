@@ -67,6 +67,9 @@ Each flagship system also has its own page (`system-<id>.html`) and feeds the sh
 (what a game can do with it) and `roadmap` items `{"status", "title", "text"?, "date"|"target"}`:
 `done` needs `date` (YYYY-MM-DD, when it landed), `in-progress`/`planned` take `target` (YYYY-MM)
 or `null` — shown as "срок не назначен". Targets come from the user or the system's docs, never guessed.
+Core systems (`"core": true`) may have the same optional `roadmap`; with one they get the roadmap
+section on their page and a row on `roadmap.html`. Publishing: `python3 tools/site/build.py publish`
+after pushing `main` (skills/workflow/aiverse-site-publish).
 An `includes` item can grow into a mini-article: give it a slug `id`, write
 `docs/devlog/features/<system>/<id>.md` (English twin `<id>.en.md`; long text, `##` sections,
 tables, code, images by paths relative to the file) and/or a `media` list (`[{src, caption, captionEn}]`).

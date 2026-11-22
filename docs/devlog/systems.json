@@ -1814,6 +1814,14 @@
    "taglineEn": "Spherical worlds and maps from a seed",
    "essence": "Планеты на кубе-сфере с орбитами и генератор рельефа: эрозия, реки, биомы и честные стартовые позиции.",
    "essenceEn": "Cube-sphere planets with orbits and a terrain generator: erosion, rivers, biomes and fair starting positions.",
+   "roadmap": [
+     {"status": "done", "date": "2026-11-22", "title": "Берега из генератора", "titleEn": "Coasts from the generator", "text": "Моря и озёра строит генератор карт, без квадратных водоёмов.", "textEn": "Seas and lakes come from the map generator, no square lakes."},
+     {"status": "done", "date": "2026-11-22", "title": "Рельеф и флора TerraWeave", "titleEn": "TerraWeave terrain and flora", "text": "Высоты, биомы и растения планеты считает TerraWeave.", "textEn": "TerraWeave computes the planet's heights, biomes and plants."},
+     {"status": "done", "date": "2026-11-22", "title": "Море NEREID", "titleEn": "NEREID sea", "text": "Волны, цвет по глубине и пена у берега.", "textEn": "Waves, colour by depth and coast foam."},
+     {"status": "done", "date": "2026-11-22", "title": "Водоёмы NEREID на сферах", "titleEn": "NEREID water bodies on spheres", "text": "Глубина, течение, волны, плавучесть и всплески по радиусу.", "textEn": "Radial depth, current, waves, buoyancy and splashes."},
+     {"status": "planned", "target": null, "title": "Дрейф по течению", "titleEn": "Drift with the current", "text": "Корабли и обломки сносит течением моря.", "textEn": "The sea's current carries ships and wrecks."},
+     {"status": "planned", "target": null, "title": "Одни волны в симуляции и на экране", "titleEn": "One wave model for simulation and screen", "text": "Корабль качается на тех же волнах, что видны.", "textEn": "A ship rides the same waves that are drawn."}
+   ],
    "includes": [
     {
      "name": "Куб-сфера",

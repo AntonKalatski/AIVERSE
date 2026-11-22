@@ -4,6 +4,7 @@
   python3 tools/site/build.py check                      validate docs/devlog
   python3 tools/site/build.py add --system render --title "..." [--media a.png ...]
   python3 tools/site/build.py build [--out build/site]   site/ + devlog.json + media
+  python3 tools/site/build.py publish [--dry-run]         after pushing main: check, build, push gh-pages
 
 Rules for agents: AGENTS.md "Ход разработки на сайте", skill skills/workflow/aiverse-devlog.
 """
@@ -12,12 +13,15 @@ import datetime as dt
 import html
 import hashlib
 import json
+import os
 from pathlib import Path
 import posixpath
 import re
 import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 ROOT = Path(__file__).resolve().parents[2]
@@ -226,6 +230,27 @@ def check_feature(p, sid, it, ids):
     return errors
 
 
+def check_roadmap(p, items):
+    """Roadmap items of a flagship or core system: {status, title, text?, date (done) | target (YYYY-MM or null)}."""
+    errors = []
+    for i, it in enumerate(items):
+        q = f'{p} roadmap[{i}]'
+        if not isinstance(it, dict) or not (it.get('title') or '').strip():
+            errors.append(f'{q}: needs a title')
+            continue
+        st = it.get('status')
+        if st not in ROADMAP_STATUS:
+            errors.append(f'{q}: status must be one of {list(ROADMAP_STATUS)}')
+        if st == 'done':
+            try:
+                dt.date.fromisoformat(it.get('date') or '')
+            except ValueError:
+                errors.append(f'{q}: a done item needs "date" YYYY-MM-DD')
+        elif it.get('target') is not None and not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', str(it['target'])):
+            errors.append(f'{q}: target is YYYY-MM or null')
+    return errors
+
+
 def check_systems(systems):
     errors = []
     for s in systems.values():
@@ -241,6 +266,9 @@ def check_systems(systems):
                     errors.append(f'{p}: core system needs a non-empty "{key}" list')
             if s.get('cover') and not (repo_file(s['cover']['src']) or ROOT / '_').is_file():
                 errors.append(f'{p}: cover not found: {s["cover"]["src"]}')
+            if s.get('roadmap') is not None and not isinstance(s['roadmap'], list):
+                errors.append(f'{p}: "roadmap" must be a list')
+            errors += check_roadmap(p, s.get('roadmap') or [])
             continue
         if not s.get('flagship'):
             continue
@@ -265,21 +293,7 @@ def check_systems(systems):
                 errors.append(f'{p}: includes items are {{"name", "text"}}')
                 continue
             errors += check_feature(p, s['id'], it, ids)
-        for i, it in enumerate(s.get('roadmap') or []):
-            q = f'{p} roadmap[{i}]'
-            if not isinstance(it, dict) or not (it.get('title') or '').strip():
-                errors.append(f'{q}: needs a title')
-                continue
-            st = it.get('status')
-            if st not in ROADMAP_STATUS:
-                errors.append(f'{q}: status must be one of {list(ROADMAP_STATUS)}')
-            if st == 'done':
-                try:
-                    dt.date.fromisoformat(it.get('date') or '')
-                except ValueError:
-                    errors.append(f'{q}: a done item needs "date" YYYY-MM-DD')
-            elif it.get('target') is not None and not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', str(it['target'])):
-                errors.append(f'{q}: target is YYYY-MM or null')
+        errors += check_roadmap(p, s.get('roadmap') or [])
         if s.get('cover') is not None:
             errors += check_frame(f'{p} cover', s['cover'], MIN_COVER_W, ('src', 'caption', 'approved'))
             video = s['cover'].get('video')
@@ -591,7 +605,7 @@ def cmd_build(args):
                 devblog_page(s, mine, ctx, s['id'] in {p['id'] for p in paged}), nav='devlog', script=FEATURE_JS), encoding='utf-8')
             pages += 1
         (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
-                                                    roadmap_page(flagships, ctx), nav='roadmap', script=ROADMAP_JS),
+                                                    roadmap_page(flagships + [s for s in systems if s.get('core') and s.get('roadmap')], ctx), nav='roadmap', script=ROADMAP_JS),
                                         encoding='utf-8')
         rel_cfg = {'index': rel_data['builds']['index'], 'none': T['relDlNone'],
                    'os': {'windows': 'Windows', 'macos': 'macOS', 'linux': 'Linux'}}
@@ -631,6 +645,57 @@ def cmd_build(args):
     return 0
 
 
+def git(*args, capture=True, env=None):
+    r = subprocess.run(['git', *args], cwd=ROOT, capture_output=capture, text=True, env=env)
+    if r.returncode != 0:
+        raise SystemExit(f'git {" ".join(args)} failed: {(r.stderr or "").strip()}')
+    return (r.stdout or '').strip()
+
+
+def cmd_publish(args):
+    """Publish the site of origin/main to gh-pages (the Site workflow is not installed: this is the way).
+
+    Refuses when the checkout is not exactly origin/main or has uncommitted site sources, so the
+    published pages always match main. One commit on top of gh-pages, nothing else is touched."""
+    git('fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main',
+        '+refs/heads/gh-pages:refs/remotes/origin/gh-pages')
+    head, main_tip = git('rev-parse', 'HEAD'), git('rev-parse', 'origin/main')
+    if head != main_tip:
+        print(f'publish: HEAD {head[:9]} is not origin/main {main_tip[:9]}. Merge and push main first '
+              f'(git push origin HEAD:main), then check out origin/main and run publish again.')
+        return 1
+    dirty = git('status', '--porcelain', '--', 'site', 'docs', 'tools/site', 'README.md')
+    if dirty:
+        print('publish: uncommitted site sources (commit them to main first):\n' + dirty)
+        return 1
+    if cmd_check(args):
+        return 1
+    out = Path(tempfile.mkdtemp(prefix='aiverse-site-'))
+    try:
+        b = argparse.Namespace(out=str(out))
+        if cmd_build(b):
+            return 1
+        index = out.parent / (out.name + '.index')
+        env = dict(os.environ, GIT_INDEX_FILE=str(index))
+        git('read-tree', 'origin/gh-pages', env=env)
+        git(f'--work-tree={out}', 'add', '--sparse', '-A', env=env)
+        tree = git('write-tree', env=env)
+        if tree == git('rev-parse', 'origin/gh-pages^{tree}'):
+            print('publish: gh-pages already matches main, nothing to push')
+            return 0
+        commit = git('commit-tree', tree, '-p', 'origin/gh-pages', '-m', f'Site: publish main {main_tip[:9]}')
+        if args.dry_run:
+            print(f'publish (dry run): would push {commit[:9]} to gh-pages')
+            return 0
+        git('push', '-q', 'origin', f'{commit}:refs/heads/gh-pages', capture=False)
+        print(f'publish: gh-pages {commit[:9]} pushed. Pages deploys in ~1 min: '
+              f'gh run list -R chromealex/AIVERSE --workflow pages-build-deployment -L 1')
+        return 0
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+        (out.parent / (out.name + '.index')).unlink(missing_ok=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -648,6 +713,9 @@ def main():
     b = sub.add_parser('build')
     b.add_argument('--out', default=str(ROOT / 'build/site'))
     b.set_defaults(fn=cmd_build)
+    pb = sub.add_parser('publish')
+    pb.add_argument('--dry-run', action='store_true')
+    pb.set_defaults(fn=cmd_publish)
     args = ap.parse_args()
     return args.fn(args)
 
