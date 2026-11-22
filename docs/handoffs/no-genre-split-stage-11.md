@@ -21,4 +21,6 @@ Branch `feature/aiv20261121_no-genre`, on top of main `f3fc4fc88`.
 
 ## Tests
 
-Pending (Mac run).
+| Commit | Result |
+|---|---|
+| d0c73cb85 (Mac, KINGSTON, clean build dir `no-genre-k1`) | build PASS; CTest 434/434 (voxel_game, voxel_server, fps, ta_importer included); checksums equal except the known boss_arena seed 2 |
