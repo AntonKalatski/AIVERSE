@@ -38,6 +38,9 @@ struct SelectionInput {
     float hysteresisFraction = 0.f; // 0..0.45
     const uint8_t* previousRefined = nullptr;
     uint32_t previousRefinedCount = 0;
+    // The caller already validated this exact hierarchy (planView caches it
+    // per asset): skip the O(all nodes) topology walk on every selection.
+    bool topologyValidated = false;
 };
 struct SelectionOutput {
     std::vector<uint32_t> nodes;
@@ -85,7 +88,7 @@ inline bool select(const std::vector<ClusterNode>& nodes,
                    const std::vector<uint32_t>& roots,
                    const SelectionInput& input, SelectionOutput& out) {
     out = {};
-    if (!validate(nodes, roots) || !input.errorPixels ||
+    if ((!input.topologyValidated && !validate(nodes, roots)) || !input.errorPixels ||
         input.errorCount != nodes.size() ||
         !std::isfinite(input.thresholdPixels) ||
         input.thresholdPixels <= 0 || input.maxVisibleNodes == 0 ||

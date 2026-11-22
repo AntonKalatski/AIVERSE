@@ -3192,6 +3192,7 @@ if(AIVERSE_BUILD_STRATA)
     target_include_directories(aiverse_strata_builder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     add_library(aiverse_strata_model_adapter STATIC
         engine/render/StrataModelAdapter.cpp
+        engine/render/StrataCooked.cpp
         engine/render/StrataSourceSeams.cpp)
     target_link_libraries(aiverse_strata_model_adapter PUBLIC aiverse_strata_builder aiverse_models)
     target_include_directories(aiverse_strata_model_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -3275,6 +3276,10 @@ if(AIVERSE_BUILD_STRATA)
         add_executable(aiverse_strata_stage_probe tools/strata/stage_probe.cpp)
         target_link_libraries(aiverse_strata_stage_probe PRIVATE
             aiverse_strata_model_adapter aiverse_zstd_dec)
+        # Cook: writes cooked STRATA hierarchies + index-page archives for a scene.
+        add_executable(aiverse_strata_cook tools/strata/cook.cpp)
+        target_link_libraries(aiverse_strata_cook PRIVATE
+            aiverse_strata_disk aiverse_strata_model_adapter aiverse_zstd_dec)
         add_executable(aiverse_strata_source_seams_tests
             tests/render/strata_source_seams.cpp)
         target_link_libraries(aiverse_strata_source_seams_tests PRIVATE

@@ -44,10 +44,17 @@ public:
         // strata.select auto: sources kept on the ordinary LOD path / sent to STRATA.
         uint32_t strataAutoLodSources=0, strataAutoStrataSources=0;
         float strataStageMs=0; // CPU time of building STRATA clusters at load
+        // Cooked STRATA: sources loaded from strata.cooked / written by a cook
+        // pass / rejected as stale; time spent reading vs building.
+        uint32_t strataCookedSources=0, strataCookWrittenSources=0, strataCookStaleSources=0;
+        float strataCookedLoadMs=0, strataBuildMs=0;
         uint64_t strataCompactUploads=0, strataCompactReuses=0;
         uint64_t strataPortableSharedReuses=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
+        uint64_t strataPortableTriangles=0; // triangles of the drawn STRATA aliases (all instances, main view)
+        float strataErrorScale=1.f; // triangle budget: current multiplier of the pixel-error threshold
+        uint64_t strataSelectionGpuBytes=0; // live compacted selection index buffers (all instances)
         uint64_t strataLodHysteresisTransitions=0;
         uint32_t strataLodHysteresisHistories=0;
         uint32_t strataStreamedSources=0;
@@ -335,6 +342,13 @@ public:
     // already chose; never changes LOD selection, routing or GPU data.
     // Returns false (and keeps the old options) for invalid options.
     bool setStrataDebugView(const strata::DebugViewOptions& options);
+    // Debug primitives only in the right half of the screen (side-by-side).
+    void setStrataDebugRightHalf(bool on) { strataDebugRightHalf_=on; }
+    // Inset (picture-in-picture) debug: the main pass draws no debug
+    // primitives; a second, inset pass draws them and is not counted in stats.
+    void setStrataDebugSuppressed(bool on) { strataDebugSuppressed_=on; }
+    void setStrataInsetPass(bool on) { strataInsetPass_=on; }
+    bool strataDebugRightHalf() const { return strataDebugRightHalf_; }
     const strata::DebugViewOptions& strataDebugView() const {
         return strataDebugView_;
     }
@@ -447,8 +461,13 @@ private:
     size_t strataStreamingFrameBudgetLeft_=0;
     uint64_t strataStreamingSourceCursor_=0;
     std::string strataDiskPageDirectory_;
+    std::string strataCookedDir_; // geometry scene strata.cooked (content-relative)
+    // strata.triangleBudget / AIVERSE_STRATA_TRI_BUDGET: automatic quality.
+    uint64_t strataTriangleBudget_=0, strataBudgetLastTotal_=0;
+    float strataBudgetScale_=1.f;
     bool strataDropArchivedCpuIndicesEnabled_=false;
     strata::DebugViewOptions strataDebugView_{};
+    bool strataDebugRightHalf_=false, strataDebugSuppressed_=false, strataInsetPass_=false;
     strata::DebugDrawStats strataDebugStats_{};
     bool strataDebugGeometryCapture_=false;
     std::map<const Model*,std::shared_ptr<strata::DebugGeometry>>

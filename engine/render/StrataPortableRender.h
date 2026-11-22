@@ -82,7 +82,22 @@ struct PortableCompactBuffer {
     uint64_t signature=0;
     std::vector<uint32_t> scratch;
     uint64_t uploads=0, reuses=0;
-    void release(gfx::Device& dev){ if(buffer.valid())dev.destroyBuffer(buffer); buffer={}; capacityBytes=0; signature=0; }
+    // Immutable per selection: a new buffer only when the selection changes;
+    // replaced buffers are destroyed after kRetireAfter further prepares,
+    // when no in-flight frame can still read them.
+    static constexpr uint64_t kRetireAfter=16;
+    uint64_t prepares=0;
+    std::vector<std::pair<gfx::BufferHandle,uint64_t>> retired;
+    void collect(gfx::Device& dev){
+        size_t keep=0;
+        for(auto& r:retired){ if(prepares-r.second>=kRetireAfter) dev.destroyBuffer(r.first); else retired[keep++]=r; }
+        retired.resize(keep);
+    }
+    void release(gfx::Device& dev){
+        if(buffer.valid())dev.destroyBuffer(buffer);
+        for(auto& r:retired)dev.destroyBuffer(r.first);
+        retired.clear(); buffer={}; capacityBytes=0; signature=0;
+    }
 };
 class PortableSource final {
 public:
