@@ -260,6 +260,14 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
         if (writeCookedAsset(path, built, signature, &why)) ++stats_.cookedWrittenSources;
         else warnings_.push_back("STRATA cook '" + key + "': " + why);
     }
+    // Leaf meshlet tables (local vertex lists, packed triangles) serve
+    // mesh-shader/GPU-cluster paths and the cook file; the CPU-selected and
+    // indexed STRATA routes never read them at run time.
+    if (!retainMeshlets_)
+        for (auto& primitive : built.primitives) {
+            std::vector<uint32_t>().swap(primitive.geometry.meshletVertices);
+            std::vector<uint8_t>().swap(primitive.geometry.meshletTriangles);
+        }
     assets_.emplace(key, std::move(built));
     ++stats_.stagedSources;
     return true;

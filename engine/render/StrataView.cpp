@@ -60,14 +60,9 @@ bool planView(const Asset& source, const ViewConfig& config,
         if (!std::isfinite(value))
             return fail(error, "nonfinite Strata object-to-clip matrix");
 
-    // Topology and range validation is O(all nodes); staged assets are
-    // immutable, so validate each asset once per thread instead of every
-    // frame for every instance and pass.
-    thread_local std::vector<std::pair<const Asset*, uint64_t>> validated;
-    const uint64_t shape = uint64_t(source.nodes.size()) * 0x9e3779b97f4a7c15ull ^
-                           uint64_t(source.logicalIndexCount()) ^ (uint64_t(source.roots.size()) << 40);
-    bool known = false;
-    for (const auto& [asset, key] : validated) known |= asset == &source && key == shape;
+    // Topology and range validation is O(all nodes): staged sources were
+    // validated once at staging and pass trustedSource.
+    const bool known = config.trustedSource;
     if (!known) {
         if (!validate(source.nodes, source.roots) ||
             source.bounds.size() != source.nodes.size())
@@ -84,8 +79,6 @@ bool planView(const Asset& source, const ViewConfig& config,
                 node.indexCount > logicalIndices - node.firstIndex)
                 return fail(error, "invalid Strata cluster bounds/index range");
         }
-        if (validated.size() >= 256) validated.erase(validated.begin());
-        validated.push_back({&source, shape});
     }
 
     // Projected error only for the nodes the selection can actually reach:
@@ -104,7 +97,7 @@ bool planView(const Asset& source, const ViewConfig& config,
             walk.pop_back();
             const auto& node = source.nodes[i];
             const auto& b = source.bounds[i];
-            if (outsideFrustum(config.objectToClip, low(b), high(b), config.clipDepthZeroToOne)) {
+            if (config.coarsenOutsideFrustum && outsideFrustum(config.objectToClip, low(b), high(b), config.clipDepthZeroToOne)) {
                 errors[i] = 0.f;
                 continue;
             }
@@ -135,7 +128,7 @@ bool planView(const Asset& source, const ViewConfig& config,
     input.errorPixels = errors.data();
     input.errorCount = uint32_t(errors.size());
     input.thresholdPixels = config.errorThresholdPixels;
-    input.topologyValidated = true; // validated above (or cached for this asset)
+    input.topologyValidated = true; // validated above, or by staging (trustedSource)
     input.maxVisibleNodes = config.maxSelectedNodes;
     input.hysteresisFraction=config.hysteresisFraction;
     if(config.previousRefined){
