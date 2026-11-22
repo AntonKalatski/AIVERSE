@@ -658,7 +658,8 @@ def releases_page(data, entries, systems, ctx, repo):
         if sid in pages:
             return f'<a class="rm-sys" href="system-{esc(sid)}.html">{label}</a>'
         return f'<span class="rm-sys">{label}</span>'
-    fresh = [e for e in entries if e['date'] > since]
+    shipped = data.get('_shipped')
+    fresh = [e for e in entries if (e['id'] not in shipped if shipped is not None else e['date'] > since)]
     head = (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["relEyebrow"]}</p><h1>{ctx.T["relTitle"]}</h1>'
             f'<p>{ctx.T["relLead"]}</p></div>'
             f'<div class="dl-stats"><div><strong>{esc(latest["version"]) if latest else "—"}</strong><span>{ctx.T["relLatest"]}</span></div>'
