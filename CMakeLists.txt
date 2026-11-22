@@ -2440,6 +2440,8 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     if(TARGET aiverse_headless)
         set_tests_properties(world_importer PROPERTIES ENVIRONMENT "AIVERSE_PORT_HEADLESS=$<TARGET_FILE:aiverse_headless>")
     endif()
+    # Package catalog client (tools/pkg): local index, no network
+    add_test(NAME aiverse_pkg COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/pkg/test_aiverse_pkg.py)
     # Total Annihilation importer + HPI unpacker on made-up data (tools/importers/ta)
     add_test(NAME ta_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/ta/test_ta.py)
     if(TARGET aiverse_headless)

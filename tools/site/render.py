@@ -661,3 +661,66 @@ Object.keys(g).forEach(function(k){var row=document.createElement('div');row.cla
 var c=document.createElement('code');c.textContent=k;row.appendChild(c);g[k].forEach(function(p){row.appendChild(btn(p));});list.appendChild(row);});
 box.hidden=false;}}).catch(function(){});})();
 </script>"""
+
+
+def catalog_page(cfg, ctx):
+    """Package catalog: the cards are filled in the browser from AIVERSE-PLUGINS index.json."""
+    T = ctx.T
+    return (f'<section class="dl-hero"><div><p class="eyebrow">{T["catEyebrow"]}</p><h1>{T["catTitle"]}</h1>'
+            f'<p>{T["catLead"]}</p></div>'
+            f'<div class="dl-stats"><div><strong class="cat-n">—</strong><span>{T["catCount"]}</span></div>'
+            f'<div><strong class="cat-c">—</strong><span>{T["catCategories"]}</span></div></div></section>'
+            f'<div class="cat-bar"><div class="dl-filters cat-filters" role="group" aria-label="{T["catFilter"]}">'
+            f'<button class="filter" type="button" data-cat="" aria-pressed="true">{T["catAll"]}</button></div>'
+            f'<label class="dl-search cat-search"><span aria-hidden="true">⌕</span>'
+            f'<input type="search" placeholder="{T["catSearch"]}" aria-label="{T["catSearch"]}"></label></div>'
+            f'<p class="cat-status">{T["catLoading"]}</p>'
+            f'<div class="cat-grid"></div>'
+            f'<section class="cat-howto"><div><h2>{T["catHowTitle"]}</h2><p>{T["catHowLead"]}</p>'
+            f'<pre><code>python3 tools/pkg/aiverse_pkg.py search terrain\n'
+            f'python3 tools/pkg/aiverse_pkg.py add terrain-pbr --project ~/Games/MyGame</code></pre></div>'
+            f'<div><h2>{T["catAddTitle"]}</h2><p>{T["catAddLead"]}</p>'
+            f'<p><a class="btn btn-ink btn-sm" href="{esc(cfg["repo"])}/blob/main/CONTRIBUTING.md">{T["catAddBtn"]}</a> '
+            f'<a class="btn btn-line btn-sm" href="{esc(cfg["repo"])}">GitHub</a></p></div></section>')
+
+
+CATALOG_JS = """<script>
+(function(){var cfg=window.CAT_CFG;if(!cfg)return;var T=cfg.t,lang=cfg.lang;
+function loc(o,k){return (lang!=='ru'&&o[k+'En'])||o[k]||'';}
+function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+function mb(n){return n>=1048576?(n/1048576).toFixed(n>=104857600?0:1)+' MB':Math.max(1,Math.round(n/1024))+' KB';}
+var grid=document.querySelector('.cat-grid'),status=document.querySelector('.cat-status'),bar=document.querySelector('.cat-filters'),
+search=document.querySelector('.cat-search input'),cur='',cards=[];
+function apply(){var q=(search.value||'').toLowerCase().trim(),n=0;cards.forEach(function(c){var ok=(!cur||c.cat===cur)&&(!q||c.hay.indexOf(q)>=0);
+c.el.hidden=!ok;if(ok)n++;});status.textContent=n?'':T.none;status.hidden=!!n;}
+function card(p){var v=p.versions[p.latest],a=el('article','cat-card');a.id='pkg-'+p.id;
+var media=el('div','cat-media'),img=el('img');img.loading='lazy';img.alt=loc(p,'title');img.src=(p.previews||[])[0]||'';media.appendChild(img);
+if((p.previews||[]).length>1){var th=el('div','cat-thumbs');p.previews.forEach(function(src,i){var b=el('button','cat-thumb');b.type='button';
+b.setAttribute('aria-label',(i+1)+'/'+p.previews.length);var t=el('img');t.src=src;t.alt='';t.loading='lazy';b.appendChild(t);
+b.onclick=function(){img.src=src;};th.appendChild(b);});media.appendChild(th);}a.appendChild(media);
+var body=el('div','cat-body'),meta=el('div','cat-meta');meta.appendChild(el('span','chip',cfg.cats[p.category]||p.category));
+meta.appendChild(el('span','cat-ver','v'+p.latest));body.appendChild(meta);
+body.appendChild(el('h2',null,loc(p,'title')));body.appendChild(el('p','cat-summary',loc(p,'summary')));
+var d=loc(p,'description');if(d){var det=el('details','cat-more');det.appendChild(el('summary',null,T.more));det.appendChild(el('p',null,d));body.appendChild(det);}
+var facts=el('dl','cat-facts');[[T.engine,(v.minEngine||'—')+'+'],[T.size,mb(v.size)],[T.license,p.license||'—'],[T.kind,cfg.kinds[p.kind]||p.kind]].forEach(function(f){
+var w=el('div');w.appendChild(el('dt',null,f[0]));w.appendChild(el('dd',null,f[1]));facts.appendChild(w);});body.appendChild(facts);
+var cmd=(p.kind==='content'?'add '+p.id+' --project <project>':p.kind==='template'?'create '+p.id+' <folder>':'fetch '+p.id);
+var pre=el('div','cat-cmd'),code=el('code',null,'python3 tools/pkg/aiverse_pkg.py '+cmd),cp=el('button','cat-copy',T.copy);cp.type='button';
+cp.onclick=function(){navigator.clipboard&&navigator.clipboard.writeText(code.textContent).then(function(){cp.textContent=T.copied;setTimeout(function(){cp.textContent=T.copy;},1500);});};
+pre.appendChild(code);pre.appendChild(cp);body.appendChild(pre);
+var act=el('div','cat-actions'),dl=el('a','btn btn-ink btn-sm',T.download+' · '+mb(v.size));dl.href=v.url;dl.title='sha256 '+v.sha256;act.appendChild(dl);
+if(p.readme){var r=el('a','btn btn-line btn-sm',T.readme);r.href=p.readme;act.appendChild(r);}body.appendChild(act);a.appendChild(body);
+cards.push({el:a,cat:p.category,hay:[p.id,p.title,p.titleEn,p.summary,p.summaryEn,(p.tags||[]).join(' '),JSON.stringify(p.provides||{})].join(' ').toLowerCase()});
+return a;}
+fetch(cfg.index,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(d){
+var pk=d.packages||[],used={};pk.forEach(function(p){used[p.category]=1;grid.appendChild(card(p));});
+Object.keys(cfg.cats).forEach(function(c){if(!used[c])return;var b=el('button','filter',cfg.cats[c]);b.type='button';b.dataset.cat=c;b.setAttribute('aria-pressed','false');bar.appendChild(b);});
+bar.querySelectorAll('.filter').forEach(function(b){b.onclick=function(){cur=b.dataset.cat;bar.querySelectorAll('.filter').forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
+history.replaceState(null,'',cur?'#cat='+cur:location.pathname);apply();};});
+document.querySelector('.cat-n').textContent=pk.length;document.querySelector('.cat-c').textContent=Object.keys(used).length;
+var h=location.hash.match(/^#cat=([a-z]+)/);if(h){var b=bar.querySelector('[data-cat="'+h[1]+'"]');if(b)b.click();}
+status.textContent='';apply();
+var m=location.hash.match(/^#pkg-([a-z0-9-]+)/);if(m){var t=document.getElementById('pkg-'+m[1]);if(t)t.scrollIntoView();}
+}).catch(function(){status.textContent=T.error;});
+search.addEventListener('input',apply);})();
+</script>"""
