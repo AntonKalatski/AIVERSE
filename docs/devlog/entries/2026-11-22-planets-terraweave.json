@@ -13,7 +13,7 @@
   "limitsEn": "Planet seas are still their own, not NEREID: no waves or shore foam yet. Trees ignore fog of war, and the Metal shaders have not been run on a Mac yet.",
   "limits": "Море на планетах пока своё, не NEREID: волн и пены у берега ещё нет. Деревья не учитывают туман войны, а шейдеры для Metal на Маке ещё не запускались.",
   "branch": "main",
-  "commit": "",
+  "commit": "6706d4de3",
   "media": [
     {
       "src": "docs/devlog/media/2026-11-22-planets-terraweave/trees.jpg",
