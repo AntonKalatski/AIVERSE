@@ -253,7 +253,7 @@ add_library(aiverse_game STATIC
     engine/game/ComputerPlayerTactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
-# the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
+# the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (engine/actor/ActorVehicles.cpp)
 # only implement its world queries.
 add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
 add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
@@ -2524,7 +2524,7 @@ if(AIVERSE_BUILD_TESTS)
 endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
-add_subdirectory(modules/fps)
+add_subdirectory(engine/actor)
 
 # Host-only offline TerraWeave atlas baker: not linked into any game module.
 # Uses the same optional WorldScene Horizon manifest and pure C++20 bake API.
@@ -2533,7 +2533,7 @@ if(AIVERSE_BUILD_TOOLS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_horizon_bake PRIVATE aiverse_world aiverse_models aiverse_zstd_dec)
 endif()
 # Opt-in additive scene collision namespaces use the existing
-# aiverse_world / CollisionStream library. Define these after modules/fps
+# aiverse_world / CollisionStream library. Define these after engine/actor
 # has created aiverse_world, not in the early aiverse_engine-only test group.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_ecs_scene_collision_namespaces_test

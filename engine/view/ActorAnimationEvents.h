@@ -3,7 +3,7 @@
 #pragma once
 #include <aiverselib/animation/AnimationActionEdges.h>
 #include <cstdint>
-namespace aiverse::fps::view {
+namespace aiverse::actor::view {
 struct ReplicatedAnimationState {
     uint32_t tick=0,life=0,shots=0,reloadUntil=0;
     int32_t health=0;
@@ -29,4 +29,4 @@ public:
 private:
     lib::animation::AnimationActionEdges events_;
 };
-} // namespace aiverse::fps::view
+} // namespace aiverse::actor::view

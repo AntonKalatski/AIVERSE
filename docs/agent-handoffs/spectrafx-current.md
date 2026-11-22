@@ -579,7 +579,7 @@ Do not merge to main without those checks.
      `SpectraFxSceneHost.h`: genre-independent presentation API.
    - `apps/client/ClientFx.cpp`: existing opt-in RTS bridge.
    - `apps/fps/client.cpp`: opt-in local muzzle-fire cue ID 1, with
-     floating-origin reset. `modules/fps/CMakeLists.txt` links
+     floating-origin reset. `engine/actor/CMakeLists.txt` links
      `aiverse_fx` into FPS client only.
    - `apps/editor/windows/SpectraFxGpuAssetsWindow.cpp`: GPU route and
      asset visual authoring, safe save/backups, unsaved-JSON offscreen

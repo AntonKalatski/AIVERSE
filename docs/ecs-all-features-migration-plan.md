@@ -8,7 +8,7 @@ Goal: **every authoritative gameplay feature is an opt-in composition of reusabl
 
 ### Present state, grounded in source
 - `engine/game/GameCore.cpp` registers 41 named ordered system stages, but module-aware systems still use `GameCore&`, `GameState` and `Unit`, with a large `applyCommand` dispatcher.
-- `modules/fps/FpsModule.cpp` stages `fps.ecsHydrate -> fps -> fps.ecsMirror` when `fps.ecsAuthority` is on, with `ActorRuntime`, `ProjectileRuntime`, `LootRuntime` and `VehicleRuntime` storage. The `fps` tick itself still runs many algorithms through `State::actors` and dynamic vectors; legacy saves are v9.
+- `engine/actor/ActorModule.cpp` stages `fps.ecsHydrate -> fps -> fps.ecsMirror` when `fps.ecsAuthority` is on, with `ActorRuntime`, `ProjectileRuntime`, `LootRuntime` and `VehicleRuntime` storage. The `fps` tick itself still runs many algorithms through `State::actors` and dynamic vectors; legacy saves are v9.
 - Generic public components/systems exist in three opt-in packages: `ecs-weapon-launch`, `ecs-projectile-systems`, `ecs-impact-damage`. These have not replaced real FPS/RTS gameplay. Native test success is **unverified**.
 - `engine/core/ECS.h` supports deterministic sparse-set World and experimental COW; `engine/sim/CommonComponents.h` has `Transform`, `Owner`, `Parent`, `LocalTransform`, `WorldTransform`. ECS is the substrate, not evidence that a module is fully universal.
 - In-match `GameCore` and `fps::Module` must become composition/adapters. `modules/rts` and `modules/fps` remain for template compatibility until snapshots/replays/network pass.
@@ -394,7 +394,7 @@ shared-mechanics integration before any default enablement.
 
 ## FPS projectile end-of-tick one-way ECS mirror (2026-11-18)
 
-The live `fps.ecsMirror` in `modules/fps/FpsModule.cpp` now calls
+The live `fps.ecsMirror` in `engine/actor/ActorModule.cpp` now calls
 `syncDynamicEntities(sim,config_.ecsAuthority)` instead of always
 importing `State::projectiles` into `ProjectileRuntime`.
 

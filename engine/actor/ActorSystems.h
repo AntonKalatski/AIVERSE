@@ -2,7 +2,7 @@
 #include "engine/world/SpatialWorld.h"
 #include "engine/core/Archive.h"
 #include "engine/sim/ProjectileProgram.h"
-namespace aiverse::fps {
+namespace aiverse::actor {
 enum class Action:uint8_t { None, Frag, Smoke, Flash, Heal, Interact, Drop, Buy, Plant, Attach, Vault };
 enum class ItemKind:int32_t { Medkit=1,Armor,Frag,Smoke,Flash,Scope,Suppressor,Magazine,Ammo };
 struct Item { int32_t type=0,count=0; bool operator==(const Item&)const=default; };

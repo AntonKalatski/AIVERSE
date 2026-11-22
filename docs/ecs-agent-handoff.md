@@ -383,8 +383,8 @@ User requested full FPS parallelization and production incremental rollback. The
 
 ### FPS motor stage
 
-- `b559900`: `modules/fps/FpsModule.cpp` adds `AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR` opt-in two-phase motor path. Only when 32+ actors, deathmatch, no bots, weapons firing, vehicles, melee, systems, royale, streaming or active interactions: precompute per-actor movement concurrently on copies and commit position/velocity/orientation/stance back in original actor order. Other FPS combat/AI/projectiles/authority logic still runs sequentially. This does **NOT** implement full FPS parallel gameplay.
-- `39066c5`: `modules/fps/CMakeLists.txt` exposes the feature as OFF by default; links Threads when enabled.
+- `b559900`: `engine/actor/ActorModule.cpp` adds `AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR` opt-in two-phase motor path. Only when 32+ actors, deathmatch, no bots, weapons firing, vehicles, melee, systems, royale, streaming or active interactions: precompute per-actor movement concurrently on copies and commit position/velocity/orientation/stance back in original actor order. Other FPS combat/AI/projectiles/authority logic still runs sequentially. This does **NOT** implement full FPS parallel gameplay.
+- `39066c5`: `engine/actor/CMakeLists.txt` exposes the feature as OFF by default; links Threads when enabled.
 - `c463308` / `37bcffe`: `tests/fps/tests.cpp` generates a 100-player movement-only fixture for 120 ticks with command-driven movement, jump, crouch and sprint, checks snapshot restore and prints `FPS_MOTOR_PARITY_HASH`. This exercises the optional path when enabled and the legacy sequential path otherwise.
 - `7273dd2`: `tests/run_ecs_gameplay_compare.sh` now also builds FPS motor OFF/ON and compares the full-tick hash produced by this fixture; FPS combat/authority regressions run in both builds. `--full` adds game and network suites.
 

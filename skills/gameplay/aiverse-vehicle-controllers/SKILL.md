@@ -55,5 +55,5 @@ Engine projects use it through the one vehicle system `engine/vehicles` (`AIVERS
 components `vehicles::VehicleDrive` / `VehicleOccupant`, `vehicles::stepVehicles` (the per-tick order above, with the
 host's `VehicleHost` world query) and the race adapter `vehicles::VehicleRace`. Rules `driving` (grid maps,
 `skills/gameplay/aiverse-driving`) and `vehicleTypes` (top level, or legacy `fps.vehicleTypes`) + map vehicles with
-`"type"` (metre maps, `modules/fps/FpsVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
+`"type"` (metre maps, `engine/actor/ActorVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
 `tests/fps/tests.cpp`) both become `vehicles::VehicleType`s. Extend the shared system, never add a host-side copy.

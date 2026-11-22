@@ -3,7 +3,7 @@
 #include "ShaderGraphOps.h"
 #include "AnimationOps.h"
 #include "GeometryOps.h"
-#include "modules/fps/FpsModule.h"
+#include "engine/actor/ActorModule.h"
 #include "ScenarioOps.h"
 #include "SchemaOps.h"
 namespace aiverse::editor { void registerFpsOps(Workspace& ws); }
@@ -180,7 +180,7 @@ bool Project::load(const std::string& d, std::string* err) {
             for (size_t i = 0; i < parts.size(); ++i) origin.text[i] = parts[i].second.dump() + "\n";
         }
         game::Rules parsed;
-        if(m.getStr("module", "rts")=="fps")fps::readConfig(r);else parsed=game::loadRules(r);   // == actorSessionRules() of the manifest being loaded
+        if(m.getStr("module", "rts")=="fps")actor::readConfig(r);else parsed=game::loadRules(r);   // == actorSessionRules() of the manifest being loaded
         dir = d; manifest = std::move(m); rulesJson = std::move(r); rulesOrigin = std::move(origin); rules = std::move(parsed);
         rulesError.clear();
         rulesDirty = manifestDirty = false;
@@ -191,7 +191,7 @@ bool Project::load(const std::string& d, std::string* err) {
     }
 }
 bool Project::reloadRules() {
-    try { if(actorSessionRules()){fps::readConfig(rulesJson);rules=game::Rules{};}else rules = game::loadRules(rulesJson); rulesError.clear(); return true; }
+    try { if(actorSessionRules()){actor::readConfig(rulesJson);rules=game::Rules{};}else rules = game::loadRules(rulesJson); rulesError.clear(); return true; }
     catch (const std::exception& e) { rulesError = e.what(); return false; }
 }
 bool Project::saveRules(std::string* err) {

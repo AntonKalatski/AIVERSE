@@ -3,7 +3,7 @@
 #include "engine/data/JsonCompose.h"
 #include <functional>
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 struct Project { Json manifest,rules,map;std::string mapFile; };
 using Reader=std::function<bool(const std::string&,std::string&)>;
 inline Project readProject(const Reader& read) {

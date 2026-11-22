@@ -7,10 +7,10 @@
 //   CharacterControl / CharacterAction / CharacterMelee (+ lib::systems::GearLoadout when `fps.gear` is set,
 //   + BotMemory when `fps.bots` is set). Resource CharacterIndex{bySlot} maps slot 1.. to entities.
 // * Dynamic objects: one entity per projectile / loot item / vehicle with the component Projectile / Loot /
-//   Vehicle (FpsSystems.h) and the shared vehicles::VehicleDrive on typed vehicles. Deterministic order = ascending `id`.
-// * Match-level data: the World resource fps::State (round, winner, nextObject, match, royale, history).
+//   Vehicle (ActorSystems.h) and the shared vehicles::VehicleDrive on typed vehicles. Deterministic order = ascending `id`.
+// * Match-level data: the World resource actor::State (round, winner, nextObject, match, royale, history).
 //
-// Public API of fps::Module (FpsModule.h) for consumers (Session, client, HUD, editor, bots, tools, tests):
+// Public API of actor::Module (ActorModule.h) for consumers (Session, client, HUD, editor, bots, tools, tests):
 //   size_t            characterCount(const Simulation&) const;
 //   Entity            characterEntity(const Simulation&, uint8_t slot) const;          // kNullEntity if invalid
 //   CharacterRef      character(Simulation&, uint8_t slot) const;                      // writable view, throws std::out_of_range
@@ -31,7 +31,7 @@
 #include "engine/core/ECS.h"
 #include "engine/core/Archive.h"
 #include "engine/world/SpatialWorld.h"
-#include "FpsSystems.h"
+#include "ActorSystems.h"
 #include "libraries/include/aiverselib/mechanics/Melee.h"
 #include "libraries/include/aiverselib/mechanics/VehicleData.h"
 #include "engine/vehicles/Vehicles.h"
@@ -42,7 +42,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 constexpr uint16_t kInputCommand=1;
 enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096 };
 constexpr uint32_t kButtonBits=8191;

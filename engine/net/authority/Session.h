@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/net/Conn.h"
-#include "modules/fps/FpsModule.h"
+#include "engine/actor/ActorModule.h"
 #include "libraries/include/aiverselib/net/SnapshotDelta.h"
 #include <deque>
 
@@ -9,9 +9,9 @@ constexpr uint32_t kProtocol=6;   // 6: RaceView in snapshots
 uint64_t contentId(const Json& rules,const Json& map);
 struct Snapshot {
     uint32_t tick=0,ack=0;uint8_t localSlot=0;int32_t winner=0;
-    std::vector<fps::CharacterSnapshot> characters;
-    std::vector<fps::Projectile> projectiles;std::vector<fps::Loot> loot;std::vector<fps::Vehicle> vehicles;fps::RoundState match;uint32_t round=1;
-    fps::RoyaleView royale;
+    std::vector<actor::CharacterSnapshot> characters;
+    std::vector<actor::Projectile> projectiles;std::vector<actor::Loot> loot;std::vector<actor::Vehicle> vehicles;actor::RoundState match;uint32_t round=1;
+    actor::RoyaleView royale;
     lib::systems::GearLoadout gear;   // own gear (fps.gear)
     lib::mechanics::RaceView race;        // own race standing (map "race")
 };
@@ -32,12 +32,12 @@ public:
     bool step();
     void broadcast();
     Simulation& simulation(){return simulation_;}
-    fps::Module& module(){return static_cast<fps::Module&>(simulation_.module());}
+    actor::Module& module(){return static_cast<actor::Module&>(simulation_.module());}
     bool occupied(uint8_t slot) const;
     uint64_t rejected()const{return rejected_;}
     const SnapshotStats& snapshotStats()const{return stats_;}
 private:
-    struct Peer { uint8_t slot=0;std::unique_ptr<Conn> conn;std::deque<fps::Input> inputs;uint32_t lastReceived=0;bool ready=false;uint64_t born=0;lib::delta::DeltaSender delta; };
+    struct Peer { uint8_t slot=0;std::unique_ptr<Conn> conn;std::deque<actor::Input> inputs;uint32_t lastReceived=0;bool ready=false;uint64_t born=0;lib::delta::DeltaSender delta; };
     Simulation simulation_;
     uint64_t content_=0,rejected_=0;
     SnapshotStats stats_;
@@ -49,25 +49,25 @@ public:
     void updateStreaming();
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     void poll(uint64_t now);
-    bool submit(fps::Input input);
+    bool submit(actor::Input input);
     const Snapshot& snapshot()const{return latest_;}
-    const fps::CharacterSnapshot& predicted()const{return predicted_;}
+    const actor::CharacterSnapshot& predicted()const{return predicted_;}
     bool ready()const{return ready_;}
     bool connected()const{return conn_->state()!=ConnState::Closed;}
     uint32_t nextSequence()const{return sequence_+1;}
     size_t pending()const{return pending_.size();}
 private:
-    fps::Config config_;
+    actor::Config config_;
     world::SpatialWorld collision_;
     std::unique_ptr<Conn> conn_;
     Snapshot latest_;
-    fps::CharacterSnapshot predicted_;
-    std::deque<fps::Input> pending_;
+    actor::CharacterSnapshot predicted_;
+    std::deque<actor::Input> pending_;
     uint32_t sequence_=0;
     bool ready_=false,sentHello_=false;
     uint64_t content_=0;
     lib::delta::DeltaReceiver delta_;
     std::unique_ptr<world::CollisionStream> streamedCollision_;
-    void predict(const fps::Input&);
+    void predict(const actor::Input&);
 };
 }

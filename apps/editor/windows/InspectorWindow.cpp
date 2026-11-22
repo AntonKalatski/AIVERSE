@@ -79,9 +79,9 @@ public:
         ImGui::Separator();
         ImGui::Spacing();
         switch (s.kind) {
-            case Selection::FpsObject:
-            case Selection::FpsActor:
-            case Selection::FpsRuntimeObject:
+            case Selection::ActorObject:
+            case Selection::ActorActor:
+            case Selection::ActorRuntimeObject:
             case Selection::Entity:
             case Selection::Live: details_.draw(ed); break;   // «Детали»: one or many world objects
             case Selection::MapBlock: mapJson(ed, s.key, ICON_BRACES, s.key, "Блок карты (JSON)"); break;

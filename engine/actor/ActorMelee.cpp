@@ -1,8 +1,8 @@
-#include "FpsModule.h"
+#include "ActorModule.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 namespace {
 // Inside the defender's guard arc: the attacker is within guardTurns of where the defender faces.
 bool guarded(const CharacterRef& target,const CharacterRef& attacker,Fixed guardTurns) {

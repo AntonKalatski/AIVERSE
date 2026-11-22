@@ -24,10 +24,10 @@ int main() {
     })");
     nodes = editor::enumerateDocumentSceneNodes(map, true);
     AIVERSE_TEST_CHECK(nodes.size() == 2);
-    AIVERSE_TEST_CHECK(nodes[0].ref.source == editor::DocumentEntityRef::Source::FpsCollider);
+    AIVERSE_TEST_CHECK(nodes[0].ref.source == editor::DocumentEntityRef::Source::ActorCollider);
     AIVERSE_TEST_CHECK(nodes[0].group == "Colliders" && nodes[0].hasPosition);
     AIVERSE_TEST_CHECK(std::abs(nodes[0].position.x - 5.0) < .0001);
-    AIVERSE_TEST_CHECK(nodes[1].ref.source == editor::DocumentEntityRef::Source::FpsSpawn);
+    AIVERSE_TEST_CHECK(nodes[1].ref.source == editor::DocumentEntityRef::Source::ActorSpawn);
     AIVERSE_TEST_CHECK(nodes[1].hasPosition && nodes[1].position.y == 3);
     editor::DocumentTransform target = nodes[1].position;
     target.x = 7; target.y = 9;

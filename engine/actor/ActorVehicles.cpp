@@ -5,14 +5,14 @@
 // sweep against the static triangle world, the seat list glue (passengers / gunners; Interact = seat requests), the
 // characters' held controls as the driver's pedals (shared axes mapping, mechanics/VehicleDrive.h), the Vehicle
 // health, and the race seats (player i drives the i-th typed map vehicle in ascending vehicle id).
-// Vehicles without a type keep the arcade car (FpsSystems actorSystems). Passengers and gunners may shoot; the driver
+// Vehicles without a type keep the arcade car (ActorSystems actorSystems). Passengers and gunners may shoot; the driver
 // steers. A destroyed vehicle ejects and kills its occupants.
-#include "FpsModule.h"
+#include "ActorModule.h"
 #include "libraries/include/aiverselib/mechanics/VehiclePersistence.h"
 #include "libraries/include/aiverselib/mechanics/VehicleDrive.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
-namespace aiverse::fps {
+namespace aiverse::actor {
 using namespace lib::mechanics;
 namespace vs = vehicles;
 namespace {

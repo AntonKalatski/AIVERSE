@@ -14,10 +14,7 @@ import sys
 ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PATTERN = re.compile(r"\b(Rts[A-Z]\w*|Fps[A-Z]\w*|isFps|isRts|fps::\w+|rts::\w+)\b")
 # Debt removed by no-genre stages C/D (engine/net still runs on the legacy hosts).
-DEBT = {
-    "engine/net/authority/Session.cpp": 27,
-    "engine/net/authority/Session.h": 15,
-}
+DEBT = {}
 
 
 def strip(text):

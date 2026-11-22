@@ -23,7 +23,7 @@ vehicle-controllers library (`libraries/include/aiverselib/mechanics/VehicleCont
   `ground` (height / normal), `sweep` (body against the host's static world and other bodies), `placed` (host pose,
   occupants), `damage`. Hosts today: the grid map (`engine/game/Driving.cpp`: cells <-> metres, three-circle sweep
   over grid / units / colliders / decks, the hero's stick, `kCmdTopDownEnter`) and the metre map
-  (`modules/fps/FpsVehicles.cpp`: `collision_` casts, `groundBelow`, seat-list glue). A new host implements this
+  (`engine/actor/ActorVehicles.cpp`: `collision_` casts, `groundBelow`, seat-list glue). A new host implements this
   interface; it never steps controllers itself.
 - **API for traffic and scripts**: `vehicles::setAutopilot` / `clearAutopilot` / `setLocked` / `isLocked` /
   `speedOf` / `vehicleOf(driver)` / `vehicleEntities` (the grid-map `Driving` wrappers call them).

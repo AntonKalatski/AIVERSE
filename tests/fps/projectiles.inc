@@ -2,7 +2,7 @@ void projectilePrograms() {
     auto base=Json::parse(R"({"fps":{"tickRate":20,"mode":"deathmatch","weapon":{"damage":10,"intervalTicks":1000,"bulletSpeed":200,"bulletGravity":0,"flight":{}},"motor":{"gravity":1}}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2},{"team":2},{"team":2}],"spawns":[[0,0.01,0],[0,0.01,4],[0,0.01,8],[0,0.01,12]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]})");
     auto make=[&](const char* flight,Json m){auto r=base;r.member("fps").member("weapon").set("flight",Json::parse(flight));return simulation(r,m);};
-    auto fire=[](Simulation& sim){fps::Input in;in.buttons=fps::Fire;in.sequence=1;auto cmd=fps::command(1,in);cmd.tick=sim.tick();sim.inject(cmd);sim.step();};
+    auto fire=[](Simulation& sim){actor::Input in;in.buttons=actor::Fire;in.sequence=1;auto cmd=actor::command(1,in);cmd.tick=sim.tick();sim.inject(cmd);sim.step();};
     auto step=[](Simulation& sim,int n){while(n--)sim.step();};
     auto sim=make(R"({"modifiers":[{"kind":"flyThrough","count":2,"falloff":0.5}]})",map);
     fire(*sim);step(*sim,4);CHECK(character(*sim,2).health==90);CHECK(character(*sim,3).health==95);CHECK(character(*sim,4).health==98);
@@ -32,7 +32,7 @@ void projectilePrograms() {
     // Network presentation keeps the existing wire format; private history is server-only.
     net::authority::Snapshot snapshot;snapshot.localSlot=1;snapshot.characters=fpsModule(*sim).snapshots(*sim);snapshot.projectiles=projectilesOf(*sim);
     net::authority::Snapshot decoded;CHECK(net::authority::decodeSnapshot(net::authority::encodeSnapshot(snapshot),decoded));
-    bool rejected=false;try{auto bad=base;bad.member("fps").member("weapon").set("bulletSpeed",Json::number(int64_t(0)));fps::readConfig(bad);}catch(const std::exception&){rejected=true;}CHECK(rejected);
+    bool rejected=false;try{auto bad=base;bad.member("fps").member("weapon").set("bulletSpeed",Json::number(int64_t(0)));actor::readConfig(bad);}catch(const std::exception&){rejected=true;}CHECK(rejected);
 }
 
 
@@ -57,16 +57,16 @@ void projectileProgramStageCase(bool cow) {
     })");
     auto sim=simulation(rules,map);
     if(cow)sim->world().enableCowSnapshots(true);
-    auto input=fps::Input{};
-    input.buttons=fps::Fire;
+    auto input=actor::Input{};
+    input.buttons=actor::Fire;
     input.sequence=1;
     input.viewTick=0;
-    auto command=fps::command(1,input);
+    auto command=actor::command(1,input);
     command.tick=0;
     sim->inject(command);
     sim->step(); // shot created after projectile program phase
     CHECK(projectilesOf(*sim).size()==1);
-    CHECK(sim->world().countExisting<fps::Projectile>()==1);
+    CHECK(sim->world().countExisting<actor::Projectile>()==1);
     SimSnapshot beforeProgram;
     sim->saveState(beforeProgram);
     std::vector<uint64_t> hashes;
@@ -120,20 +120,20 @@ void projectileBranchesCase(bool cow) {
     })");
     auto sim=simulation(rules,map);
     if(cow)sim->world().enableCowSnapshots(true);
-    fps::Input input;input.buttons=fps::Fire;input.sequence=1;
+    actor::Input input;input.buttons=actor::Fire;input.sequence=1;
     // Insert a nonprogrammed cloud entity before the first shot: mixed
     // passive / programmed projectiles in one id-ordered pool.
-    fps::Projectile passive;
+    actor::Projectile passive;
     passive.owner=1;passive.kind=4;
     passive.expires=1000;passive.pos={10_fx,5_fx,10_fx};
     const Entity passiveEntity=spawnObject(*sim,passive);
-    const uint32_t passiveId=sim->world().tryGetConst<fps::Projectile>(passiveEntity)->id;
+    const uint32_t passiveId=sim->world().tryGetConst<actor::Projectile>(passiveEntity)->id;
 
-    const auto command=fps::command(1,input);
+    const auto command=actor::command(1,input);
     sim->inject(command);
     auto ordered=[&]() {
         const auto shots=projectilesOf(*sim);
-        CHECK(shots.size()==size_t(sim->world().countExisting<fps::Projectile>()));
+        CHECK(shots.size()==size_t(sim->world().countExisting<actor::Projectile>()));
         for(size_t i=1;i<shots.size();++i)CHECK(shots[i-1].id<shots[i].id);
         for(const auto& shot:shots)CHECK(shot.id<state(*sim).nextObject);
     };
@@ -191,20 +191,20 @@ void ordinaryProjectilesCase(bool cow) {
     })");
     auto sim=simulation(rules,map);
     if(cow)sim->world().enableCowSnapshots(true);
-    fps::Projectile bullet;
+    actor::Projectile bullet;
     bullet.owner=1;bullet.kind=0;bullet.weapon=0;
     bullet.pos={0_fx,1_fx,0_fx};bullet.velocity={0_fx,0_fx,40_fx};
     bullet.remaining=100_fx;bullet.expires=100;bullet.damage=10;
-    fps::Projectile smoke;
+    actor::Projectile smoke;
     smoke.owner=1;smoke.kind=4;
     smoke.pos={20_fx,5_fx,20_fx};smoke.expires=5;
-    fps::Projectile grenade;
+    actor::Projectile grenade;
     grenade.owner=1;grenade.kind=2;
     grenade.pos={30_fx,4_fx,30_fx};grenade.expires=2;
     grenade.velocity={1_fx,2_fx,0_fx};
     spawnObject(*sim,bullet);
     const Entity smokeEntity=spawnObject(*sim,smoke);
-    const uint32_t smokeId=sim->world().tryGetConst<fps::Projectile>(smokeEntity)->id;
+    const uint32_t smokeId=sim->world().tryGetConst<actor::Projectile>(smokeEntity)->id;
     spawnObject(*sim,grenade);
     for(int i=0;i<2;++i)sim->step();
     CHECK(character(*sim,2).health==90); // direct bullet hit
@@ -224,7 +224,7 @@ void ordinaryProjectilesCase(bool cow) {
     CHECK(sim->checksum()==expected);
     sim->loadState(before);
     // A native write to the smoke entity is the state at once.
-    auto* live=sim->world().tryGet<fps::Projectile>(smokeEntity);
+    auto* live=sim->world().tryGet<actor::Projectile>(smokeEntity);
     CHECK(live&&live->id==smokeId&&live->kind==4);
     const auto unchanged=sim->checksum();
     live->expires+=3;

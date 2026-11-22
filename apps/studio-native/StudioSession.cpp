@@ -330,7 +330,7 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
                 components.push(component(name.c_str(),name.c_str(),fields,"Read-only in Studio."));
             }
         } else {
-            result.set("kind",str(node.ref.source==editor::DocumentEntityRef::Source::FpsCollider?"Collider":"Spawn"));
+            result.set("kind",str(node.ref.source==editor::DocumentEntityRef::Source::ActorCollider?"Collider":"Spawn"));
             Json transform=Json::array();
             if(node.hasPosition) {
                 transform.push(numericProp("x","Position X",Json::number(node.position.x,3)));
@@ -415,7 +415,7 @@ Json StudioSession::snapshot() const {
         // UI receives only generic display kind; document source names remain native.
         row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
             ? (node.ref.index < ws_.map.data.entities.size() ? ws_.map.data.entities[node.ref.index].type : "Entity")
-            : node.ref.isLight()?"Light":node.ref.source == editor::DocumentEntityRef::Source::FpsCollider ? "Collider" : "Spawn"));
+            : node.ref.isLight()?"Light":node.ref.source == editor::DocumentEntityRef::Source::ActorCollider ? "Collider" : "Spawn"));
         row.set("visible", Json::fromBool(!hidden_.count(nodeId(ws_.map,node.ref))));
         if(locked_.count(nodeId(ws_.map,node.ref)))row.set("locked",Json::fromBool(true));
         if(node.ref.source==editor::DocumentEntityRef::Source::MapEntity && node.ref.index<ws_.map.data.entities.size())

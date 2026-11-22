@@ -118,7 +118,7 @@ bool Editor::selectionPos(const Selection& s, float& x, float& z) const {
         if (s.index < 0 || s.index >= int(d.entities.size())) return false;
         x = d.entities[size_t(s.index)].x; z = d.entities[size_t(s.index)].z;
         return true;
-    case Selection::FpsObject: {
+    case Selection::ActorObject: {
         DocumentEntityRef ref;
         DocumentTransform transform;
         if (!documentEntityFromSelection(s, ref) ||
@@ -126,8 +126,8 @@ bool Editor::selectionPos(const Selection& s, float& x, float& z) const {
         x = float(transform.x); z = float(transform.z);
         return true;
     }
-    case Selection::FpsActor:
-    case Selection::FpsRuntimeObject: {
+    case Selection::ActorActor:
+    case Selection::ActorRuntimeObject: {
         const auto runtime = enumerateEditorRuntimeEntities(
             *const_cast<Editor*>(this));
         for (const auto& item : runtime)
@@ -196,13 +196,13 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
         if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
         if (fpsSceneObjects_[size_t(index)].runtimeObject != 0) {
             Selection object;
-            object.kind = Selection::FpsRuntimeObject;
+            object.kind = Selection::ActorRuntimeObject;
             object.ref = fpsSceneObjects_[size_t(index)].runtimeObject;
             return object;
         }
         if (fpsSceneObjects_[size_t(index)].runtimeActor >= 0) {
             Selection actor;
-            actor.kind = Selection::FpsActor;
+            actor.kind = Selection::ActorActor;
             actor.index = fpsSceneObjects_[size_t(index)].runtimeActor;
             return actor;
         }

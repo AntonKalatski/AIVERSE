@@ -1,12 +1,12 @@
 // FPS programmed projectiles (projectile programs: homing, split, bounce, pierce) over Projectile entities.
-#include "FpsModule.h"
+#include "ActorModule.h"
 #include "libraries/include/aiverselib/mechanics/EcsSweepQuerySystems.h"
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 
 // Shared per-projectile implementation. No gameplay state is mirrored into
 // another projectile owner while this function runs. All direct effects

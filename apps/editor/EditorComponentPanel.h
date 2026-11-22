@@ -59,7 +59,7 @@ inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
 }
 
 inline bool drawDocumentColliderBoundsField(MapDoc& map, DocumentEntityRef ref) {
-    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    if (ref.source != DocumentEntityRef::Source::ActorCollider) return false;
     Json component;
     if (!readDocumentComponent(map, ref, DocumentComponentKind::Collider, component))
         return false;

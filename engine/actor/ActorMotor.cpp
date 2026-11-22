@@ -1,7 +1,7 @@
-#include "FpsModule.h"
+#include "ActorModule.h"
 #include "engine/core/FixedMath.h"
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 Vec3 direction(Fixed yaw,Fixed pitch) {
     auto cp=fxCosTurns(pitch);return {fxSinTurns(yaw)*cp,fxSinTurns(pitch),fxCosTurns(yaw)*cp};
 }

@@ -2,7 +2,7 @@
 #include "engine/render/Math3D.h"
 #include <algorithm>
 #include <cmath>
-namespace aiverse::fps::view {
+namespace aiverse::actor::view {
 struct Look {
     float yaw=0,pitch=0; // turns
     void motion(float dx,float dy,float sensitivity=0.0004f,bool invertY=false) {

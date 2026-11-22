@@ -673,7 +673,7 @@ static int replay(const Args& a) {
     return ok ? 0 : 1;
 }
 
-#include "FpsRunner.h"
+#include "ActorRunner.h"
 
 int main(int argc, char** argv) {
     Args a;

@@ -68,7 +68,7 @@ void MotionModule::setup(Simulation& sim,const Json& rules,const Json& map) {
         if(a.body.team!=i+1)throw JsonError("motion.players: teams must match slots");
         a.body.pos=point(spawns[i]);a.respawn=a.body.pos;
         if(fxAbs(a.body.pos.x)>limit_||fxAbs(a.body.pos.y)>limit_||fxAbs(a.body.pos.z)>limit_)throw JsonError("motion.spawn: outside world limit");
-        if(!collision_.query(fps::actorBounds(a.body,motor_)).empty())throw JsonError("motion.spawn: intersects collider");
+        if(!collision_.query(actor::actorBounds(a.body,motor_)).empty())throw JsonError("motion.spawn: intersects collider");
         s.actors.push_back(a);bots_.push_back(map["players"][i].getBool("bot",false));
     }
     Hasher h;h.str(rules.dump(-1));h.str(map.dump(-1));contentHash_=h.value();
@@ -88,7 +88,7 @@ void MotionModule::race(MotionActor& a,Fixed dt) {
     a.speed=fxClamp(a.speed,Fixed{},maxSpeed_);
     a.body.yaw+=Fixed::fromRatio(a.steer,1000)*turnSpeed_*dt*fxMin(1_fx,a.speed/5);
     a.body.yaw.raw=((a.body.yaw.raw%Fixed::kOne)+Fixed::kOne)%Fixed::kOne;
-    Vec3 delta=fps::direction(a.body.yaw,{})*(a.speed*dt),half{motor_.radius,motor_.height/2,motor_.radius};
+    Vec3 delta=actor::direction(a.body.yaw,{})*(a.speed*dt),half{motor_.radius,motor_.height/2,motor_.radius};
     auto hit=collision_.cast(a.body.pos+Vec3{{},half.y,{}},delta,half);
     if(hit.hit) {
         auto length=delta.length();auto fraction=fxMax(Fixed{},hit.fraction-(length.raw?Fixed::fromRatio(1,1000)/length:Fixed{}));
@@ -114,9 +114,9 @@ void MotionModule::tick(Simulation& sim) {
         }else if(sim.tick()-a.lastInput>sim.tickRate()/2){a.axis=0;a.steer=0;a.buttons=0;}
         auto before=a.body.pos;
         if(kind_==MotionKind::Platformer) {
-            fps::Input input;input.yaw=Fixed::fromRatio(1,4);input.forward=a.axis;
-            if(a.buttons&&!a.jumpHeld)input.buttons=fps::Jump;
-            fps::moveActor(a.body,input,motor_,collision_,sim.dt(),limit_);a.jumpHeld=a.buttons!=0;
+            actor::Input input;input.yaw=Fixed::fromRatio(1,4);input.forward=a.axis;
+            if(a.buttons&&!a.jumpHeld)input.buttons=actor::Jump;
+            actor::moveActor(a.body,input,motor_,collision_,sim.dt(),limit_);a.jumpHeld=a.buttons!=0;
         }else race(a,sim.dt());
         bool hazard=a.body.pos.y<-20_fx;
         Fixed fraction;Vec3 normal;

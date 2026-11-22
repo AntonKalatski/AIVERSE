@@ -1,6 +1,6 @@
 // Same flight component/system + collision policy in two independent genre
 // modules, with canonical impact events, COW snapshot and replay parity.
-// No GameCore, fps::Module or genre-specific Actor dependency.
+// No GameCore, actor::Module or genre-specific Actor dependency.
 #include <aiverselib/mechanics/EcsProjectileSystems.h>
 #include "tests/AlwaysCheck.h"
 #include <cstdint>

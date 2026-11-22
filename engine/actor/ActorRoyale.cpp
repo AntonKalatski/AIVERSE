@@ -3,11 +3,11 @@
 // decides and reports; this file owns health, positions, loot and the winner. SimEvents:
 // 5 = kill feed (player = actor, value = victim | kind << 8), 6 = zone (value = phase | kind << 8),
 // 7 = supply drop (value = id | kind << 16, pos = point), 8 = shell impact (pos = centre, value = damage);
-// 9 = gear piece broke (player = wearer, value = gear slot; FpsSystems damage).
-#include "FpsModule.h"
+// 9 = gear piece broke (player = wearer, value = gear slot; ActorSystems damage).
+#include "ActorModule.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
-namespace aiverse::fps {
+namespace aiverse::actor {
 using namespace lib::genre;
 namespace {
 uint64_t seedFrom(Simulation& sim,uint32_t salt){Random g=sim.rng();uint64_t a=g.next(),b=g.next();return (a<<32|b)^(uint64_t(salt)*0x9e3779b97f4a7c15ull);}

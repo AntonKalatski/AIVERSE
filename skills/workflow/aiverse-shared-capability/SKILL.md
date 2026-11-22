@@ -11,7 +11,7 @@ place a feature works.
 
 1. Find the owner, not a host. `python3 tools/skills/catalog.py search <words>` (English and Russian), the library
    catalog and `docs/`; then `grep` the code for the data blocks and types. List every module that implements the
-   same thing (e.g. cars were `modules/fps/FpsVehicles.cpp` and `engine/game/Driving.cpp` before `engine/vehicles`).
+   same thing (e.g. cars were `engine/actor/ActorVehicles.cpp` and `engine/game/Driving.cpp` before `engine/vehicles`).
 2. Split the capability into: data format (rules / map blocks, one format for every project, in the map's own
    units), simulation policy (Fixed math, no module types), presentation (view, HUD, camera) and host glue (who owns
    the entities, the collision world, the input). Only host glue may stay per module.

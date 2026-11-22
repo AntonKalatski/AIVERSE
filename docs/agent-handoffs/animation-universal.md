@@ -641,7 +641,7 @@ before calling this stage validated.
 - **Branch:** `feature/universal-ecs-animation-pipeline`, PR #22 (Draft)
   targeting `feature/universal-entity-inspector-fps`.
 - **Code implementation commit:** `b4b55bd3b38bd9110c072f9456b4300cdbe46872`.
-- **Code paths:** `CMakeLists.txt`, `modules/fps/CMakeLists.txt`,
+- **Code paths:** `CMakeLists.txt`, `engine/actor/CMakeLists.txt`,
   `apps/fps/client.cpp`, `apps/editor/core/AnimationOps.cpp`,
   `apps/editor/windows/AnimationAssetsWindow.cpp`,
   `apps/editor/windows/AnimationGraphWindow.cpp`,
@@ -1148,10 +1148,10 @@ before calling this stage validated.
   draft PR #22, base `feature/universal-entity-inspector-fps`.
 - **Code SHA:** `2d809da0267463b0bf7be8b460d79f6dfd6d0eb8`.
 - **Code paths:** new `libraries/include/aiverselib/animation/AnimationActionEdges.h`;
-  new `modules/fps/view/FpsAnimationEvents.h`;
+  new `engine/view/ActorAnimationEvents.h`;
   `libraries/include/aiverselib/animation/EcsAnimationSystems.h`;
   `apps/fps/client.cpp`, root `CMakeLists.txt` and
-  `modules/fps/CMakeLists.txt`; new `tests/animation/action_edges.cpp` and
+  `engine/actor/CMakeLists.txt`; new `tests/animation/action_edges.cpp` and
   `tests/fps/animation_actions.cpp`.
   Deleted FPS-only `libraries/include/aiverselib/animation/ReplicatedAnimationActions.h`
   and moved its old regression from `tests/animation/replicated_cues.cpp`
@@ -1172,7 +1172,7 @@ before calling this stage validated.
   This unmerged feature branch intentionally **relocates** the
   FPS-specific experimental helper; consumers of the old
   `aiverselib/animation/ReplicatedAnimationActions.h` must adopt the
-  FPS-host include `modules/fps/view/FpsAnimationEvents.h`.
+  FPS-host include `engine/view/ActorAnimationEvents.h`.
   The core is now independent of this genre-specific event logic.
 - **Tests:** `motionweave_action_edges` (generic) and
   `fps_animation_actions` (FPS host) are registered. **NOT RUN**
@@ -1379,7 +1379,7 @@ before calling this stage validated.
   PR #22 Draft, base `feature/universal-entity-inspector-fps`.
 - **Implementation SHA:** `5b7f14c4e83063e5cf03d8165b5718055590b599`.
 - **Changed files:** `apps/fps/client.cpp`,
-  `modules/fps/CMakeLists.txt`, root `CMakeLists.txt`,
+  `engine/actor/CMakeLists.txt`, root `CMakeLists.txt`,
   `docs/motionweave.md`.
 - **Architecture:** FPS now uses an independent
   `aiverse::View` instance as a genre-neutral renderer gateway:

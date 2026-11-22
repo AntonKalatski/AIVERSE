@@ -1,4 +1,4 @@
-#include "FpsModule.h"
+#include "ActorModule.h"
 #include "libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h"
 #include <algorithm>
 #include <set>
@@ -7,7 +7,7 @@
 #include "engine/world/OrientedBox.h"
 #include <stdexcept>
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 namespace {
 int64_t integer(const Json& j,const char* key,int64_t fallback,int64_t lo,int64_t hi) {
     if(j.has(key)&&(!j[key].isNumber()||j[key].fx().raw%Fixed::kOne))throw JsonError(std::string("fps.")+key+": expected integer");
@@ -190,10 +190,10 @@ ConstCharacterRef Module::character(const Simulation& sim,uint8_t slot) const {
     if(!e.valid())throw std::out_of_range("fps: no character in slot "+std::to_string(slot));
     return makeCharacterRef<true>(sim.world(),e);
 }
-CharacterSnapshot Module::snapshot(const Simulation& sim,uint8_t slot) const { return fps::snapshot(character(sim,slot)); }
+CharacterSnapshot Module::snapshot(const Simulation& sim,uint8_t slot) const { return actor::snapshot(character(sim,slot)); }
 std::vector<CharacterSnapshot> Module::snapshots(const Simulation& sim) const {
     std::vector<CharacterSnapshot> out;const size_t n=characterCount(sim);out.reserve(n);
-    for(size_t slot=1;slot<=n;++slot)out.push_back(fps::snapshot(character(sim,uint8_t(slot))));
+    for(size_t slot=1;slot<=n;++slot)out.push_back(actor::snapshot(character(sim,uint8_t(slot))));
     return out;
 }
 std::vector<HitPose> Module::livePoses(Simulation& sim) const {

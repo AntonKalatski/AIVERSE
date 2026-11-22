@@ -3,13 +3,13 @@
 // (doors, stairs, floors) plus straight steering in the open; outside a building a goal inside it is
 // replaced by its door. Goals besides fighting: the battle-royale zone (inside the controller), wanted
 // loot nearby (weapons not owned, better gear, medkits / ammo), healing when hurt and out of combat.
-// Bot state is the BotMemory component (FpsState bytes, saved and hashed); meshes are derived from collision at setup.
-#include "FpsModule.h"
+// Bot state is the BotMemory component (ActorState bytes, saved and hashed); meshes are derived from collision at setup.
+#include "ActorModule.h"
 #include "libraries/include/aiverselib/bots/Fps.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <algorithm>
-namespace aiverse::fps {
-struct BotHost { lib::bots::FpsConfig config;std::vector<lib::bots::NavMesh> meshes; };
+namespace aiverse::actor {
+struct BotHost { lib::bots::ActorConfig config;std::vector<lib::bots::NavMesh> meshes; };
 void Module::setupBots(Simulation& sim,const Json&) {
     botHost_.reset();if(config_.bots.isNull())return;
     auto host=std::make_shared<BotHost>();host->config=lib::bots::fpsConfig(config_.bots);
@@ -28,7 +28,7 @@ bool insideXZ(const world::Bounds& b,Vec3 p){return p.x>=b.min.x&&p.x<=b.max.x&&
 bool Module::thinkBot(Simulation& sim,CharacterRef a) {
     if(!botHost_)return false;
     auto& s=state(sim);World& w=sim.world();auto now=sim.tick();const auto& host=*botHost_;
-    lib::bots::FpsState bot;if(const auto* memory=w.tryGet<BotMemory>(a.entity);!memory||!lib::bots::loadFps(memory->bytes,bot))bot={};
+    lib::bots::ActorState bot;if(const auto* memory=w.tryGet<BotMemory>(a.entity);!memory||!lib::bots::loadFps(memory->bytes,bot))bot={};
     // Objective: wanted loot within 25 m (closest), else a point inside the next circle (spread by slot).
     std::optional<Vec3> objective;std::optional<Loot> want;Fixed best=625_fx;
     const auto* loadout=gear(sim,a.slot);
@@ -95,7 +95,7 @@ bool Module::thinkBot(Simulation& sim,CharacterRef a) {
     Input input;if(!decodeInput(*command,input))return true;
     // Pick up when the wanted item is in reach; heal when hurt and nobody is in sight.
     if(want&&(want->pos-a.pos).length()<=config_.systems.interactRange-Fixed::fromRatio(1,2)&&!(input.buttons&Fire))input.action=Action::Interact;
-    else if(config_.systems.enabled&&a.health<60&&bot.decision!=lib::bots::FpsDecision::Engage&&a.activeAction==Action::None)
+    else if(config_.systems.enabled&&a.health<60&&bot.decision!=lib::bots::ActorDecision::Engage&&a.activeAction==Action::None)
         for(auto item:a.bag)if(item.type==1){input.action=Action::Heal;input.forward=input.right=0;break;}
     input.sequence=0;a.input=input;a.lastInputTick=now;
     if(auto* memory=w.tryGet<BotMemory>(a.entity))memory->bytes=lib::bots::saveFps(bot);

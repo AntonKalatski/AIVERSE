@@ -103,9 +103,9 @@ public:
                 if (!ImGui::TreeNodeEx(group, ImGuiTreeNodeFlags_DefaultOpen))
                     continue;
                 for (const auto& entity : runtimeEntities) {
-                    const bool actor = entity.selection.kind == Selection::FpsActor;
+                    const bool actor = entity.selection.kind == Selection::ActorActor;
                     const uint8_t kind = entity.selection.kind ==
-                        Selection::FpsRuntimeObject
+                        Selection::ActorRuntimeObject
                             ? uint8_t(entity.selection.ref >> 32) : 0;
                     const bool inGroup = actor ? std::string(group) == "Runtime Actors"
                         : kind == 1 ? std::string(group) == "Projectiles"

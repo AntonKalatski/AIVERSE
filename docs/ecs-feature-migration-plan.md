@@ -31,7 +31,7 @@ Snapshot totals by proposed destination: `P` 21; `A` 20; `D` 9; `S` 46; `T` 21; 
 
 1. **ECS infrastructure:** `engine/core/ECS.h` implements sparse-set entity pools, generation-safe entity handles and opt-in COW. `engine/sim/Simulation.h` manages deterministic commands, RNG, ordered systems, World snapshots/checksums and restored hooks. `engine/sim/CommonComponents.h` provides shared `Transform`, `Owner`, `Parent`, `LocalTransform`, `WorldTransform`. This is common infrastructure; it does not make individual genre algorithms universal by itself.
 2. **RTS:** `engine/game/GameCore.cpp::setup` registers systems into `Simulation` in a specified deterministic order, including `economy`, `fields`, `production`, `construction`, `settlers`, `lanes`, `garrison`, `orders`, `abilities`, `targeting`, `movement`, `weapons`, `projectiles`, `death`, `capture`, `vision`, `victory`, `triggers`, `traffic` and more. Many are closures on `this` or delegate to genre-specific objects. `GameState` also holds substantial state as a World resource. **Registered with the ECS scheduler ≠ independent ECS mechanic.**
-3. **FPS:** `modules/fps/FpsModule.h` has monolithic `Actor`, `State::actors/projectiles/loot/vehicles/history` and optional `fps.ecsAuthority`. `ActorRuntime` / `ProjectileRuntime` / `LootRuntime` / `VehicleRuntime` can be canonical between ticks; `Module::tick` still processes legacy workspaces, `Module::shoot` constructs its own shots and traces, and `Module::moveActorEcs` copies motor fields across an adapter. These are transition scaffolds, **not final feature-sized ECS components**.
+3. **FPS:** `engine/actor/ActorModule.h` has monolithic `Actor`, `State::actors/projectiles/loot/vehicles/history` and optional `fps.ecsAuthority`. `ActorRuntime` / `ProjectileRuntime` / `LootRuntime` / `VehicleRuntime` can be canonical between ticks; `Module::tick` still processes legacy workspaces, `Module::shoot` constructs its own shots and traces, and `Module::moveActorEcs` copies motor fields across an adapter. These are transition scaffolds, **not final feature-sized ECS components**.
 4. **Shared projectile pipeline:** `libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h`, `EcsProjectileSystems.h`, `EcsDamageSystems.h` provide genre-neutral launch → spawn → flight → impact/damage stages and independent cross-genre fixtures. This pipeline **is not yet the authoritative FPS/RTS weapon path**. Reload, hitscan, spread/recoil, AoE, armor, factions and status effects require follow-on component/policy composition.
 5. **Existing policies:** `libraries/include/aiverselib/mechanics/Weapons.h`, `Locomotion.h`, `Melee.h`, `CombatActions.h`, `VehicleData.h`, `Senses.h` and the other catalogued C++ packages should be **reused**, not replaced with freshly duplicated algorithms.
 6. **Editor:** `apps/editor/EditorEntityAdapter.h` and `SceneRenderable.h` already unify some document identity, selection and scene submission, but `docs/editor-unification-handoff.md` explicitly reports incomplete native ECS reflection/writeback, transform gizmo and visual/build validation.
@@ -150,7 +150,7 @@ Valid statuses: `not-started`, `policy-only`, `ecs-library-only`, `adapter-activ
 - **PR #7:** FPS runtime + Editor working branch. Use `docs/editor-unification-handoff.md`; log **every implementation** commit with a separate handoff documentation commit and exact SHA.
 - **PR #8/ECS experiments:** some infrastructure has been integrated; do not silently enable new scheduler/COW or overwrite FPS/editor changes using stale branch content. See `docs/ecs-agent-handoff.md`.
 - **PR #17:** renderer PCSS/TAA work, separate from ECS gameplay conversion. Avoid renderer collision, reconcile by diff/merge only when appropriate; it is **not** proof of ECS system compatibility.
-- Assign one owner at a time to `modules/fps/FpsModule.cpp`, `engine/game/Combat.cpp` and shared `engine/core/ECS.h`; other agents can work on independent public libraries/tests/skills.
+- Assign one owner at a time to `engine/actor/ActorModule.cpp`, `engine/game/Combat.cpp` and shared `engine/core/ECS.h`; other agents can work on independent public libraries/tests/skills.
 - Never reorder RTS `sim.addSystem` or FPS same-tick hit/death/score updates without **old vs new event sequence** evidence.
 - Avoid silently overwriting `AGENTS.md`, Editor adapter or handoff changes made by concurrent agents.
 
@@ -166,7 +166,7 @@ Account-level `engine/meta` shop, balances, offers, payments, social and LiveOps
 - `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `docs/mechanics-packages.md`
 - `engine/core/ECS.h`, `engine/sim/Simulation.h`, `engine/sim/CommonComponents.h`
 - `engine/game/GameCore.cpp`, `GameCore.h`, `GameData.h`
-- `modules/fps/FpsModule.cpp`, `FpsModule.h`, `FpsSystems.h`
+- `engine/actor/ActorModule.cpp`, `ActorModule.h`, `ActorSystems.h`
 - `engine/meta/Meta.h`, `docs/editor-unification-handoff.md`, `docs/ecs-agent-handoff.md`, `docs/overview.md`
 
 ## Appendix A — complete package inventory (catalog snapshot)

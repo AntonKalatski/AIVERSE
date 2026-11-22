@@ -78,9 +78,9 @@ struct Selection {
                 Live,       // an object of the world tree that is not a map entity being edited (ref): created by the game, or play mode
                 MapBlock,   // a block of the map document's extra JSON (key = path: "lights[2]", "gridFields")
                 Road,       // map road (index)
-                FpsObject,  // FPS document collider/spawn, stable source key in ref
-                FpsActor,   // FPS runtime actor ECS identity, slot index for editor UI
-                FpsRuntimeObject, // FPS projectile, loot or vehicle ECS entity; stable kind/id key in ref
+                ActorObject,  // FPS document collider/spawn, stable source key in ref
+                ActorActor,   // FPS runtime actor ECS identity, slot index for editor UI
+                ActorRuntimeObject, // FPS projectile, loot or vehicle ECS entity; stable kind/id key in ref
                 Body } kind = None;   // planet map body (index)
     int index = -1;          // entity / player (0-based) / wave / trigger / road / body
     std::string key;         // area name, region letter, rule id, map block path

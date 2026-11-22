@@ -1,4 +1,4 @@
-#include "FpsModule.h"
+#include "ActorModule.h"
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
 #include "libraries/include/aiverselib/mechanics/EcsHitscanResolutionSystems.h"
 #include "libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h"
@@ -6,7 +6,7 @@
 #include "libraries/include/aiverselib/mechanics/EcsDamageSystems.h"
 #include <algorithm>
 #include <optional>
-namespace aiverse::fps {
+namespace aiverse::actor {
 namespace {
 Vec3 position(const Json& j) {
     if(!j.isArray()||j.size()!=3)throw JsonError("fps object: expected position [x,y,z]");

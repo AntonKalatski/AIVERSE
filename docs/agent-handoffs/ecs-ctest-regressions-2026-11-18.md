@@ -24,7 +24,7 @@ Reported failures:
 1. `world::intersect` in `engine/world/SpatialWorld.cpp` computes first contact with `Fixed::operator/`; `Fixed::fromRatio` instead rounds to nearest, while division truncates. This is an expectation mismatch, not a reason to change the shared collision solver.
    - Existing commits: `dfef673b` fixes projectile contact expectations; `9e5263a6` hitscan resolution fraction + derived point; `940064fa` hitscan selection expectation.
    - Deterministic hit arbitration itself was not changed.
-2. `modules/fps/FpsModule.cpp` used mutable `state(sim)` inside `hashState`/authoritative copy. COW snapshots detach `State` when `world.resource<State>()` is called. Existing commit `383b9c90` uses `resourceConst<State>()` for checksum and materialization.
+2. `engine/actor/ActorModule.cpp` used mutable `state(sim)` inside `hashState`/authoritative copy. COW snapshots detach `State` when `world.resource<State>()` is called. Existing commit `383b9c90` uses `resourceConst<State>()` for checksum and materialization.
 3. Inspecting the latest source found two accidental literal `\\n` escapes inserted *inside C++ comments*, hiding subsequent `const auto` declarations:
    - `tests/ecs_projectile_composition_test.cpp`: fixed by `7e183a43c2bcebb5e77b6a056bb1685e04cdb700`.
    - `tests/ecs_hitscan_selection_test.cpp`: fixed by `885abcfb9c4e3634a1ed87b9cb0bb71cec0a140e`.

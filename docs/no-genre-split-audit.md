@@ -34,7 +34,7 @@ renaming it.
 separate simulations; each project gets only that host's features.
 - `apps/server/GameData.cpp:31` runs only `rts`; `engine/net/server/ServerMatch.cpp:452` defaults `module` to `rts`.
 - `apps/headless/main.cpp:66,453,723` — static cast to `GameCore` by name, separate `playFps`.
-- `modules/fps/Project.h:14`, `modules/voxel/Project.h:13` reject other modules;
+- `engine/actor/Project.h:14`, `modules/voxel/Project.h:13` reject other modules;
   `engine/view/GameViewScript.cpp:838` view scripts only when `module().name()=="rts"`.
 - `modules/genres/MotionModule.cpp:38` — `motion.kind` must be `platformer` or `racing` (genre names as a mode).
 - 36 `dynamic_cast<GameCore*>` (campaign, scenario, AI, audio, fx, overlays, view).

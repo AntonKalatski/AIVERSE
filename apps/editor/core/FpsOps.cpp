@@ -1,5 +1,5 @@
 #include "Workspace.h"
-#include "modules/fps/FpsModule.h"
+#include "engine/actor/ActorModule.h"
 namespace aiverse::editor {
 void registerFpsOps(Workspace& ws) {
     auto schema=Json::parse(R"({"type":"object","properties":{"rules":{"type":"object"},"map":{"type":"object"}},"additionalProperties":false})");
@@ -11,7 +11,7 @@ void registerFpsOps(Workspace& ws) {
         if(!ws.project.worldSpaceMaps())throw std::runtime_error("open a project with world-space maps first");
         auto rules=args.has("rules")?args["rules"]:ws.project.rulesJson;
         auto map=args.has("map")?args["map"]:ws.map.toJson();
-        auto config=fps::readConfig(rules);Simulation sim({1,config.tickRate,0},std::make_unique<fps::Module>());sim.setup(rules,map);
+        auto config=actor::readConfig(rules);Simulation sim({1,config.tickRate,0},std::make_unique<actor::Module>());sim.setup(rules,map);
         if(args.has("map")){ws.map.beginEdit();ws.map.data.fps=map;ws.map.data.name=map.getStr("name","FPS");ws.map.touched();}
         if(args.has("rules")){ws.project.rulesJson=rules;ws.project.rulesDirty=true;ws.project.reloadRules();}
         ws.note({Change::Map,0,0,-1,-1,-1,"FPS updated"});Json result=Json::object();result.set("ok",Json::fromBool(true));return result;

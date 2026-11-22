@@ -1,6 +1,6 @@
-#include "FpsModule.h"
+#include "ActorModule.h"
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 void Module::setContentReader(world::AssetReader reader) {
     streamedCollision_.reset();
     if(streamManifest_.getBool("async"))streamedCollision_=std::make_unique<world::CollisionStream>(streamManifest_,std::move(reader),collision_);

@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <deque>
 #include <map>
-#include "FpsSystems.h"
-#include "FpsComponents.h"
+#include "ActorSystems.h"
+#include "ActorComponents.h"
 #include "engine/world/CollisionStream.h"
 #include "libraries/include/aiverselib/mechanics/Melee.h"
 #include "libraries/include/aiverselib/mechanics/royale/BattleRoyale.h"
@@ -18,7 +18,7 @@
 #include <span>
 #include <utility>
 
-namespace aiverse::fps {
+namespace aiverse::actor {
 constexpr uint32_t kBuildingColliderBase=0x40000000;
 constexpr uint32_t kRotatedColliderBase=0x50000000;   // triangles of map colliders with a "yaw" (12 per box)   // collider ids of map `buildings` (building-gen)
 struct WeaponConfig {
@@ -82,7 +82,7 @@ void io(Archive&,RoyaleView&);
 // One rewind frame: every character as it was at `tick` (lag-compensated hitscan).
 struct HistoryFrame { uint32_t tick=0; std::vector<CharacterSnapshot> characters; };
 // World resource with the match-level data. Characters, projectiles, loot and vehicles are entities
-// (FpsComponents.h); read them through the Module accessors.
+// (ActorComponents.h); read them through the Module accessors.
 struct State {
     std::deque<HistoryFrame> history;
     uint32_t round=1; int32_t winner=0;
@@ -94,7 +94,7 @@ Config readConfig(const Json& rules);
 Command command(uint8_t slot,const Input& input);
 bool decodeInput(const Command& command,Input& input);
 Vec3 direction(Fixed yaw,Fixed pitch);
-struct BotHost;   // FpsBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
+struct BotHost;   // ActorBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
 class Module final : public GameModule {
 public:
     // Limits of the dynamic object pools (spawns beyond them are dropped).

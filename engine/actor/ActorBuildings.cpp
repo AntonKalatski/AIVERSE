@@ -1,8 +1,8 @@
 // Map `buildings` (building-gen package): enterable boxes with floors, doors, windows and switchback stairs
 // generated at setup into static collision (ids from kBuildingColliderBase) plus loot on the generated spots.
 // {"buildings":[{"pos":[x,y,z],"yaw":0,"seed":1,"building":{...BuildingDef JSON...},"loot":[1,2,101]}]}
-#include "FpsModule.h"
-namespace aiverse::fps {
+#include "ActorModule.h"
+namespace aiverse::actor {
 std::vector<Loot> Module::buildMapBuildings(const Json& map) {
     std::vector<Loot> loot;const auto& list=map["buildings"];
     if(list.isNull())return loot;

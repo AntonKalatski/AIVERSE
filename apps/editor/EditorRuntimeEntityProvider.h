@@ -29,7 +29,7 @@ inline std::vector<EditorRuntimeEntity> enumerateEditorRuntimeEntities(Editor& e
         for (size_t i = 0; i < actors.size(); ++i) {
             const Json& actor = actors[i];
             EditorRuntimeEntity info;
-            info.selection.kind = Selection::FpsActor;
+            info.selection.kind = Selection::ActorActor;
             info.selection.index = int(i);
             info.title = "Actor #" + std::to_string(
                 actor["slot"].integer(int64_t(i + 1)));
@@ -51,7 +51,7 @@ inline std::vector<EditorRuntimeEntity> enumerateEditorRuntimeEntities(Editor& e
         if (objects.isArray()) for (const auto& object : objects.items()) {
             if (!object["key"].isNumber()) continue;
             EditorRuntimeEntity info;
-            info.selection.kind = Selection::FpsRuntimeObject;
+            info.selection.kind = Selection::ActorRuntimeObject;
             info.selection.ref = uint64_t(object["key"].integer());
             info.title = object.getStr("title", "FPS Object");
             info.fields = object;

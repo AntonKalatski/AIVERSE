@@ -9,7 +9,7 @@ using namespace aiverse;
 namespace lg=aiverse::lib::genre;
 static void require(bool ok,const char* msg){if(!ok)throw std::runtime_error(msg);}
 struct RtsStoreTag {};
-struct FpsBagTag {};
+struct ActorBagTag {};
 
 template<class Tag>class Host final:public GameModule {
 public:
@@ -96,8 +96,8 @@ template<class Tag>uint64_t exercise(bool cow) {
 }
 int main() {
     const auto expected=exercise<RtsStoreTag>(false);
-    require(exercise<FpsBagTag>(false)==expected,"FPS/RTS inventory mismatch");
+    require(exercise<ActorBagTag>(false)==expected,"FPS/RTS inventory mismatch");
     require(exercise<RtsStoreTag>(true)==expected,"RTS inventory COW mismatch");
-    require(exercise<FpsBagTag>(true)==expected,"FPS inventory COW mismatch");
+    require(exercise<ActorBagTag>(true)==expected,"FPS inventory COW mismatch");
     std::cout<<"PASS ECS transactional cross-genre inventory and COW rollback\n";
 }

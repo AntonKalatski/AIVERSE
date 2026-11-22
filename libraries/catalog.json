@@ -1101,7 +1101,7 @@
         "docs/bots.md",
         "libraries/include/aiverselib/bots/Persistence.h",
         "libraries/include/aiverselib/bots/Waypoints.h",
-        "modules/fps/FpsModule.h"
+        "engine/actor/ActorModule.h"
       ],
       "runtime": "header",
       "linkDependencies": [
