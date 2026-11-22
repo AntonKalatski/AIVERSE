@@ -2060,6 +2060,26 @@ This overrides earlier local/worktree build examples and release paths in this f
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
 
+### Mac launcher scripts from a VM / Cowork session (all agents)
+
+**Owner instruction (2026-11-22): a `.command` handed to the user must open on the first
+double-click.** Finder runs only executable files; otherwise it shows "could not be executed
+because you do not have appropriate access privileges".
+
+- Writing a script through the mounted folder (`sed -i`, the Write/commit tools, a Python
+  rewrite, `git checkout`) replaces the file and **drops its execute bit**, and a `chmod`
+  issued right after the rewrite is sometimes lost in the sync. After every change to a
+  `.command` / `.sh` the user or Finder will run:
+  `chmod +x <files>; sleep 5; stat -c '%a %n' <files>` — every mode must be `7xx`; repeat
+  the `chmod` until it is. Check this before asking the user to run anything, and again
+  before each double-click you make yourself.
+- Prefer editing launchers in place (`open(path, "r+")`, write, `truncate()`), which keeps
+  the mode; never assume a rewritten script is still executable.
+- KINGSTON can remount under another name (`/Volumes/KINGSTON 1` after a reconnect). Keep
+  the drive root in one place per script (a variable or the link
+  `~/Projects/AIVERSE/build/kingston`), re-point it when the name changes, and give the
+  moved sources new CMake/package build directories: old caches keep the old path.
+
 Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
 
 **Never create builds in the shared engine checkout's `build/` folder** (the user's main
@@ -3353,6 +3373,7 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - **Nature presentation host (2026-11-21):** `engine/world/PhysisNature{Presentation,Cues,FxHost,AudioHost,Grass}.h` drive TerraWeave grass burn/wind, SpectraFX fire/smoke/light and audio from read-only PHYSIS; editor «Живая природа» (`apps/editor/PhysisNaturePreview.h`, MCP `physis_nature_preview`) shows it without a play-test. Reuse these; do not write a second fire/grass/VFX bridge. Game client hookup and macOS visual QA pending: `docs/agent-handoffs/physis-nature-host-2026-11-21.md`.
 - **Automatic + parallel + streaming (2026-11-22):** a map `"physis"` block installs PHYSIS in `Simulation::setup` for every module (`engine/physis/PhysisAutoInstall.cpp`, CMake `AIVERSE_SIM_PHYSIS`); `engine/world/PhysisNatureRuntime.h` drives SpectraFX/audio/TerraWeave wind/NEREID wind/PRISMA sky from it in the game client — reuse it in other hosts, do not wire hosts by hand. Grid passes take `workerThreads` lanes (`PhysisParallel.h`, bit-identical; per-cell writes only, providers read-only) and `streaming.chunkCells` + `ActivityAnchor` (`PhysisStreaming.h`). CI builds the aggregate target `aiverse_physis_tests`; never hand-list PHYSIS test targets. Handoff `docs/agent-handoffs/physis-next-2026-11-22.md`.
 - **Tornadoes (2026-11-22):** map `"physis.tornadoes"` → `engine/physis/PhysisTornado.h` (`TornadoTrack` on a Tornado `StormEvent`: wander/waypoint paths, life ramp, fire blown out/fanned, debris resource, `NatureCarriable` props) + system `physis.tornadoes`; unit/building damage only through the generic `GameModule::environmentDamage` (RTS override in `RtsCombat.cpp`). Presentation (funnel/debris FX, roar, vegetation/water wind) in `PhysisNatureRuntime` via `PhysisTornadoCues.h`. Tests `physis_tornado`, `physis_tornado_cues`; docs/physis.md "Tornadoes"; handoff `docs/agent-handoffs/physis-tornado-2026-11-22.md`.
+- **Fire whirls, water, ground scour (2026-11-22):** `engine/physis/PhysisTornadoNature.h` (`TornadoNature` on every map tornado: drawn fire -> fireness, ignition/embers/heat damage; land tornado weakens over water, waterspouts; `GroundScourField`). Water under a vortex only via `GameModule::environmentWaterDepth` (or PHYSIS local flood). Map keys: tornado `fire`/`surface`/`erosion`, `physis.ignitions`/`disasterConfig`/`noFuelOnWater`/`scourCellMeters`. Tests `physis_firestorm`; handoff `docs/agent-handoffs/physis-firestorm-2026-11-22.md`.
 - **Remaining work:** PHYSIS-owned climate/wind/gravity/storm/force fields and host-facing presentation APIs and host-owned opt-in Terra/NEREID/VFX/Foliage/Physics/editor adapters (other agents own canonical water and terrain), spatial indexing, sparse hazards, streaming/LOD, deterministic partitions, network deltas, platform validation and physical-unit calibration. Follow the cross-agent ownership matrix below and `docs/physis-nereid-terraweave-integration.md`; do not duplicate Water or Terra systems.
 
 ## Cross-agent ownership: PHYSIS / NEREID / TerraWeave (2026-11-18)
