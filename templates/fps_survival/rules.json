@@ -4,7 +4,7 @@
     "rules/gear.json",
     "rules/vehicles.json"
   ],
-  "fps": {
+  "actor": {
     "tickRate": 30,
     "snapshotRate": 10,
     "maxPlayers": 100,
@@ -15,7 +15,7 @@
     "roundTicks": 54000,
     "weapons": [
       {
-        "nameKey": "fps.weapon.pistol",
+        "nameKey": "actor.weapon.pistol",
         "damage": 28,
         "magazine": 12,
         "reserve": 72,
@@ -31,7 +31,7 @@
         "bulletSpeed": 350
       },
       {
-        "nameKey": "fps.weapon.rifle",
+        "nameKey": "actor.weapon.rifle",
         "damage": 25,
         "magazine": 30,
         "reserve": 120,
@@ -46,7 +46,7 @@
         "bulletSpeed": 700
       },
       {
-        "nameKey": "fps.weapon.shotgun",
+        "nameKey": "actor.weapon.shotgun",
         "damage": 14,
         "magazine": 8,
         "reserve": 40,
@@ -64,7 +64,7 @@
         "bulletSpeed": 200
       },
       {
-        "nameKey": "fps.weapon.sniper",
+        "nameKey": "actor.weapon.sniper",
         "damage": 100,
         "magazine": 5,
         "reserve": 25,

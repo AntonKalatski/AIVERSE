@@ -3,8 +3,8 @@
 Status: all four steps of the suggested sequence have a first implementation (see the lines below and
 [mechanics-packages.md](mechanics-packages.md)). The packages are library policies with tests and executable examples; wiring
 them into the FPS/RTS modules and editor workflows is separate work. Items in the table not named below stay proposed.
-Genre bot policies: a first slice (melee/shooter bots, squad roles, objective choice) is the `genre-bots` package
-([mechanics-packages.md](mechanics-packages.md#genre-bots-genre-bots-010)); race and sports bots ship with vehicle-controllers/sports-rules, turn and card bots with cards-turns-bots, the puzzle bot with puzzle-solvers and the colony planner with settlement-production.
+Genre bot policies: a first slice (melee/shooter bots, squad roles, objective choice) is the `action-bots` package
+([mechanics-packages.md](mechanics-packages.md#action-bots-action-bots-010)); race and sports bots ship with vehicle-controllers/sports-rules, turn and card bots with cards-turns-bots, the puzzle bot with puzzle-solvers and the colony planner with settlement-production.
 Narrative and social scenes: relationships, knowledge, consequences, cue requests, barks and visual-novel helpers are in
 `narrative-graphs` 0.2.0 ([mechanics-packages.md](mechanics-packages.md#narrative-scenes-narrative-graphs-020)); cue playback belongs to cinematic owners.
 Physical interaction: kinematic carry/throw, push/pull, ropes, doors, moving platforms and breakables are the

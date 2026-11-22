@@ -22,7 +22,7 @@ inline Entity spawnDemoSource(World& world,const std::string& effect,
                               Vec3 position) {
     Entity e=world.create();
     world.add<DemoPose>(e).position=position;
-    auto& component=world.add<lib::genre::SpectraSourceComponent>(e);
+    auto& component=world.add<lib::mechanics::SpectraSourceComponent>(e);
     component.effect=effect;
     component.scale=1_fx; // strict pooled GPU subset requires unit scale
     component.enabled=true;

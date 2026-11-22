@@ -2,7 +2,7 @@
   "include": [
     "rules/race.json"
   ],
-  "fps": {
+  "actor": {
     "tickRate": 60,
     "snapshotRate": 20,
     "maxPlayers": 8,

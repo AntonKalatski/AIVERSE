@@ -48,10 +48,10 @@ void GameCore::sysEconomy(Simulation& sim) {
         const bool building = u.flags & kUnitUnderConstruction;
         if (!building && u.hp.raw > 0) {
             if (t.regen.raw > 0 && u.hp < t.maxHp)
-                u.hp = lib::genre::stepFixedResourceRegeneration(
+                u.hp = lib::mechanics::stepFixedResourceRegeneration(
                     u.hp, stat(sim, e, Stat::MaxHp), t.regen, dt);
             if (t.maxEnergy.raw > 0)
-                u.energy = lib::genre::stepFixedResourceRegeneration(
+                u.energy = lib::mechanics::stepFixedResourceRegeneration(
                     u.energy, t.maxEnergy,
                     t.energyRegen * (rules_.advancedEffects ? stat(sim, e, Stat::EnergyRegen) : kOne), dt);
         }

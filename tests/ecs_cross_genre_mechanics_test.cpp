@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 
 struct MechanicData {
     lg::MotionState motion;

@@ -8,7 +8,7 @@
 namespace aiverse::game {
 
 namespace {
-ViewGroundVertex toGround(const lib::genre::DecalVertex& v) { return {v.x, v.y, v.z, 0.f, 0.f, v.rgba}; }
+ViewGroundVertex toGround(const lib::mechanics::DecalVertex& v) { return {v.x, v.y, v.z, 0.f, 0.f, v.rgba}; }
 
 void ring(std::vector<ViewGroundVertex>& out, float cx, float y, float cz, float r0, float r1, uint32_t c) {
     const int n = 24;
@@ -42,14 +42,14 @@ void appendEncounterDecals(Simulation& sim, GameCore& m, const GameView& view, u
     b.layer = -1;   // under the view scripts' own marks
     const uint32_t tick = sim.tick();
     for (auto& c : st->casts) {
-        const lib::genre::TelegraphView v = enc->view(c, tick);
+        const lib::mechanics::TelegraphView v = enc->view(c, tick);
         if (!v.live || (c.attack < enc->rules().attacks.size() && !enc->rules().attacks[c.attack].decal)) continue;   // "decal": false
         const Vec3 o{v.pose.origin.x, Fixed{}, v.pose.origin.y};
         if (viewer && !m.isVisible(sim, viewer, o)) continue;
         const bool own = viewer && c.owner && m.teamOf(sim, c.owner) == viewerTeam;
         const float x = float(o.x.toDouble()), z = float(o.z.toDouble());
         const float y = view.heightAt(grid, x, z) + 0.04f;
-        for (auto& dv : lib::genre::telegraphDecal(v, y, own)) b.verts.push_back(toGround(dv));
+        for (auto& dv : lib::mechanics::telegraphDecal(v, y, own)) b.verts.push_back(toGround(dv));
     }
     w.each<Statuses, Unit, Transform>([&](Entity, Statuses& s, Unit& u, Transform& t) {
         if (s.list.empty() || u.hp.raw <= 0 || (u.flags & kUnitOffMap)) return;

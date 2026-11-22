@@ -7,7 +7,7 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
-using namespace aiverse;using namespace aiverse::lib::genre;
+using namespace aiverse;using namespace aiverse::lib::mechanics;
 #define CHECK(x) do{if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);}while(false)
 namespace {
 template<class State> void roundtrip(const State& s){
@@ -109,10 +109,10 @@ void statuses(){
     for(int i=0;i<3;++i){applyStatus(defs,boss,0,2,7);}
     CHECK(boss.active.size()==3);                  // maxStacks 3
     roundtrip(boss);CHECK(clearStatuses(defs,boss).size()==3&&boss.active.empty());
-    auto rules=rtsStatusRules(defs.at(3),20);CHECK(rules.status.find("\"speed\", \"mul\": 0.6000")!=std::string::npos&&rules.duration=="2.0000");
-    CHECK(rtsStatusRules(defs.at(2),20).status.find("\"independent\"")!=std::string::npos);
-    CHECK(rtsStatusRules(defs.at(1),20).status.find("\"stun\"")!=std::string::npos);
-    CHECK(Json::parse(rtsStatusRules(defs.at(2),20).status).isObject());
+    auto rules=gameStatusRules(defs.at(3),20);CHECK(rules.status.find("\"speed\", \"mul\": 0.6000")!=std::string::npos&&rules.duration=="2.0000");
+    CHECK(gameStatusRules(defs.at(2),20).status.find("\"independent\"")!=std::string::npos);
+    CHECK(gameStatusRules(defs.at(1),20).status.find("\"stun\"")!=std::string::npos);
+    CHECK(Json::parse(gameStatusRules(defs.at(2),20).status).isObject());
 }
 TelegraphSet bossAttacks(){
     TelegraphSet t;

@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/mechanics/Namespace.h"
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for physical-interactions.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for physical-interactions.
 // Record kinds 80..87 are reserved for this package: CarryState 80, PushState 81, RopeState 82, DoorState 83,
 // PlatformState 84, BreakableState 85 (86..87 free). Store each state in its own NativeState key; bind
 // interactionConfigHash and interactionDefinitionsHash in the save envelope. Loading validates structure only:

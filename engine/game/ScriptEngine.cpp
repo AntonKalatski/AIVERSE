@@ -54,7 +54,7 @@ struct ScriptEngine::Impl {
     uint64_t epochCounter = 0, lastEpoch = 0;
     bool stateDirty = false;
     struct DataEntry { uint64_t serial = 0; bool valid = false, dirty = false; };
-    std::map<uint64_t, DataEntry> dataCache;   // entity (packed) -> its table in registry "rts.data"
+    std::map<uint64_t, DataEntry> dataCache;   // entity (packed) -> its table in registry "game.data"
     std::vector<uint64_t> dataDirty;           // tables handed out since the last flush
     uint32_t budgetTick = UINT32_MAX;
     std::vector<bool> simWanted = std::vector<bool>(256, false);   // EvSim handlers by GameEvent type
@@ -81,7 +81,7 @@ struct ScriptEngine::Impl {
     // ---- persistent state
     void restoreState(const std::string& blob) {
         lua_State* L = vm.L;
-        lua_getfield(L, LUA_REGISTRYINDEX, "rts.state");       // the table `state` was created with
+        lua_getfield(L, LUA_REGISTRYINDEX, "game.state");       // the table `state` was created with
         lua_pushnil(L);                                        // clear in place: scripts may hold `state` in locals
         while (lua_next(L, -2)) { lua_pop(L, 1); lua_pushvalue(L, -1); lua_pushnil(L); lua_rawset(L, -4); }
         if (blob.empty()) lua_pushnil(L);
@@ -99,7 +99,7 @@ struct ScriptEngine::Impl {
         if (!stateDirty) return;
         stateDirty = false;
         lua_State* L = vm.L;
-        lua_getfield(L, LUA_REGISTRYINDEX, "rts.state");
+        lua_getfield(L, LUA_REGISTRYINDEX, "game.state");
         std::string blob, where;
         serialize(L, -1, blob, where, 0, true);
         lua_pop(L, 1);
@@ -108,13 +108,13 @@ struct ScriptEngine::Impl {
                           "tables with integer/string keys only): left out of the saved state");
         store(sim).state.swap(blob);
     }
-    void dataTable(uint64_t packed) {   // pushes registry "rts.data"[packed] (or nil)
-        lua_getfield(vm.L, LUA_REGISTRYINDEX, "rts.data");
+    void dataTable(uint64_t packed) {   // pushes registry "game.data"[packed] (or nil)
+        lua_getfield(vm.L, LUA_REGISTRYINDEX, "game.data");
         lua_rawgeti(vm.L, -1, lua_Integer(packed));
         lua_remove(vm.L, -2);
     }
     void dropData(uint64_t packed) {
-        lua_getfield(vm.L, LUA_REGISTRYINDEX, "rts.data");
+        lua_getfield(vm.L, LUA_REGISTRYINDEX, "game.data");
         lua_pushnil(vm.L);
         lua_rawseti(vm.L, -2, lua_Integer(packed));
         lua_pop(vm.L, 1);
@@ -155,7 +155,7 @@ struct ScriptEngine::Impl {
         dataCache.clear();
         dataDirty.clear();
         lua_newtable(vm.L);
-        lua_setfield(vm.L, LUA_REGISTRYINDEX, "rts.data");
+        lua_setfield(vm.L, LUA_REGISTRYINDEX, "game.data");
         budgetTick = UINT32_MAX;   // a replayed tick starts with a fresh budget, like the first time
     }
     // Before any script code runs in a tick: world replaced? per-tick budget, epoch stamp.
@@ -181,7 +181,7 @@ struct ScriptEngine::Impl {
         if (!c.valid || c.serial != sd->serial) {
             if (sd->blob.empty()) lua_newtable(vm.L);
             else { deserialize(vm.L, sd->blob); if (!lua_istable(vm.L, -1)) { lua_pop(vm.L, 1); lua_newtable(vm.L); } }
-            lua_getfield(vm.L, LUA_REGISTRYINDEX, "rts.data");
+            lua_getfield(vm.L, LUA_REGISTRYINDEX, "game.data");
             lua_pushvalue(vm.L, -2);
             lua_rawseti(vm.L, -2, lua_Integer(pk));
             lua_pop(vm.L, 1);
@@ -577,9 +577,9 @@ void ScriptEngine::load(Simulation& sim, const Json& rules, const Json& map) {
     lua_pushcfunction(L, bind<lOnArea>); lua_setglobal(L, "on_area");
     lua_pushcfunction(L, bind<lOnFieldThreshold>); lua_setglobal(L, "on_field_threshold");
     lua_newtable(L);
-    lua_setfield(L, LUA_REGISTRYINDEX, "rts.data");
+    lua_setfield(L, LUA_REGISTRYINDEX, "game.data");
     lua_newtable(L);
-    lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "rts.state");
+    lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "game.state");
     lua_setglobal(L, "state");
 
     // the standard library first (engine code: no budget); scripts/std/<name>.lua of the game replaces a module

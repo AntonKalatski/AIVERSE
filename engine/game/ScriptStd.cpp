@@ -883,7 +883,7 @@ void openStdApi(Vm& vm) {
         {"UNIT_SILENT", kUnitSilent}, {"EV_NOT_ENOUGH", kEvNotEnough}, {"EV_TRIGGER_FIRED", kEvTriggerFired}, {"EV_SOLD", kEvSold}, {"STAT_MAX_HP", int(Stat::MaxHp)}, {"HOSTILE_NEUTRAL", kHostileNeutral},
         {"ORDER_MOVE", int(OrderType::Move)}, {"ORDER_ATTACK_MOVE", int(OrderType::AttackMove)}, {"ORDER_ATTACK", int(OrderType::Attack)}};
     for (auto& [k, v] : ids) { lua_pushinteger(vm.L, v); lua_setfield(vm.L, -2, k); }
-    lua_setglobal(vm.L, "rts");
+    lua_setglobal(vm.L, "core");   // native library behind the std Lua modules
 }
 
 } // namespace script

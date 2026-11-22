@@ -811,7 +811,7 @@ def run(src, out, only_maps=False):
             wjson(path, data, compact_rows=True)
 
     wjson(os.path.join(out, 'game.json'), {
-        'name': 'Dune II (imported)', 'id': 'com.aiverse.import.dune2', 'version': '0.1.0', 'build': 1, 'module': 'rts',
+        'name': 'Dune II (imported)', 'id': 'com.aiverse.import.dune2', 'version': '0.1.0', 'build': 1, 'module': 'game',
         'sourceLanguage': 'en', 'languages': ['en', 'ru'], 'rules': 'rules.json', 'maps': maps, 'orientation': 'landscape',
         'camera': {'projection': 'ortho', 'pitch': 90, 'yaw': 0, 'pixelsPerCell': 32, 'zoomMin': 8, 'zoomMax': 40, 'rotate': False},
         'external': True,

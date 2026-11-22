@@ -1,17 +1,17 @@
 #pragma once
-// Shooter bot policy (genre-bots): engagement band, aim with bounded turn rate and seeded aim error, lead via
-// genre::solveIntercept for projectile weapons, burst control from the recoil state, reload/overheat decisions
+// Shooter bot policy (action-bots): engagement band, aim with bounded turn rate and seeded aim error, lead via
+// mechanics::solveIntercept for projectile weapons, burst control from the recoil state, reload/overheat decisions
 // from the weapon feed state (genre/WeaponMods.h) and cover preference among owner-supplied candidates.
 // The output is ShooterInput: view angles, a locomotion wish and the FeedInput a player's trigger/reload keys
 // produce. The owner applies them through stepFeed/stepRecoil and its own fire/command path.
 #include "GenreCommon.h"
-#include <aiverselib/mechanics/Ballistics.h>
-#include <aiverselib/mechanics/WeaponMods.h>
+#include "../mechanics/Ballistics.h"
+#include "../mechanics/WeaponMods.h"
 namespace aiverse::lib::bots {
 struct ShooterBotConfig {
     Fixed minRange=5_fx,preferredRange=15_fx,maxRange=40_fx; // retreat below min, strafe up to preferred, approach beyond; no fire past max
     Fixed projectileSpeed{},gravity{};          // projectile weapons lead with solveIntercept; speed 0 = hitscan (aim at the body)
-    genre::AimConfig aim{};
+    mechanics::AimConfig aim{};
     Fixed turnPerTick=Fixed::fromRatio(1,64);   // max view change per tick and axis (turns)
     Fixed fireTolerance=Fixed::fromRatio(1,200);// fire only when the view is this close to the (erroneous) solution
     Fixed recoilTolerance=Fixed::fromRatio(1,50);// hold fire while |recoil| exceeds this: bursts let recoil recover
@@ -26,21 +26,21 @@ struct ShooterBotConfig {
 // protectionMilli: how well this spot hides the bot from its current threats (0..1000), computed by the owner
 // from its LOS/cover data; reachable: the owner's navigation can reach it. Unreachable or 0-protection spots are skipped.
 struct CoverCandidate {int64_t id=0;Vec3 position{};int64_t protectionMilli=1000;bool reachable=true;};
-struct ShooterBotSelf {int64_t id=0,team=0;Vec3 position{},eye{};Fixed yaw{},pitch{};genre::RecoilState recoil{};genre::FeedState feed{};uint32_t reserve=0;int64_t healthMilli=1000;};
+struct ShooterBotSelf {int64_t id=0,team=0;Vec3 position{},eye{};Fixed yaw{},pitch{};mechanics::RecoilState recoil{};mechanics::FeedState feed{};uint32_t reserve=0;int64_t healthMilli=1000;};
 enum class ShooterDecision:uint8_t {Idle,Engage,Reload,Cool,Cover};
-// Persisted bot memory (genre::save record kind 57).
+// Persisted bot memory (mechanics::save record kind 57).
 struct ShooterBotState {
     int64_t target=0,cover=0;uint32_t noticedAt=0,lastDecision=0,lastTick=0;Fixed errorYaw{},errorPitch{};
     ShooterDecision decision=ShooterDecision::Idle;bool cooling=false,decided=false,initialized=false;
 };
 // Player-equivalent inputs: move -> locomotion wish (world X/Z), yaw/pitch -> view angles (recoil is added by the
 // weapon owner), feed -> stepFeed input (fire is the held trigger level), cover -> chosen candidate id (diagnostic/nav goal).
-struct ShooterInput {Vec2 move{};Fixed yaw{},pitch{};genre::FeedInput feed{};int64_t cover=0;ShooterDecision decision=ShooterDecision::Idle;};
+struct ShooterInput {Vec2 move{};Fixed yaw{},pitch{};mechanics::FeedInput feed{};int64_t cover=0;ShooterDecision decision=ShooterDecision::Idle;};
 
 inline bool valid(const ShooterBotConfig& c){
     auto milli=[](int64_t v){return v>=0&&v<=1000;};
     return c.minRange>=Fixed{}&&c.minRange<=c.preferredRange&&c.preferredRange<=c.maxRange&&c.maxRange<=kBotCoordLimit
-        &&(c.projectileSpeed==Fixed{}||(c.projectileSpeed>=Fixed::fromRatio(1,16)&&c.projectileSpeed<=1000_fx))&&c.gravity>=Fixed{}&&c.gravity<=1000_fx&&genre::valid(c.aim)
+        &&(c.projectileSpeed==Fixed{}||(c.projectileSpeed>=Fixed::fromRatio(1,16)&&c.projectileSpeed<=1000_fx))&&c.gravity>=Fixed{}&&c.gravity<=1000_fx&&mechanics::valid(c.aim)
         &&c.turnPerTick>Fixed{}&&c.turnPerTick<=Fixed::fromRatio(1,2)&&c.fireTolerance>=Fixed{}&&c.fireTolerance<=Fixed::fromRatio(1,8)
         &&c.recoilTolerance>=Fixed{}&&c.recoilTolerance<=Fixed::fromRatio(1,4)&&milli(c.recoilCompensationMilli)&&milli(c.reloadIdleMilli)
         &&milli(c.heatStopMilli)&&milli(c.heatResumeMilli)&&c.heatResumeMilli<=c.heatStopMilli&&milli(c.retreatHealthMilli)
@@ -77,10 +77,10 @@ inline int64_t chooseCover(const ShooterBotConfig& c,Vec3 from,std::span<const C
 
 // Once per bot per tick. nullopt: invalid config/feed/self/targets/cover or repeated/backwards tick (state
 // untouched). Consumes exactly two RNG draws per decision when aimError > 0 (none otherwise).
-inline std::optional<ShooterInput> stepShooterBot(const ShooterBotConfig& c,const genre::FeedConfig& feed,ShooterBotState& state,uint32_t tick,
+inline std::optional<ShooterInput> stepShooterBot(const ShooterBotConfig& c,const mechanics::FeedConfig& feed,ShooterBotState& state,uint32_t tick,
     const ShooterBotSelf& self,std::span<const PerceivedTarget> seen,std::span<const CoverCandidate> cover,Random& rng){
-    using genre::FeedPhase;
-    if(!valid(c)||!genre::compatible(feed,self.feed)||!valid(state)||!valid(self)||!validTargets(seen)||!validCover(cover)||(state.initialized&&tick<=state.lastTick))return std::nullopt;
+    using mechanics::FeedPhase;
+    if(!valid(c)||!mechanics::compatible(feed,self.feed)||!valid(state)||!valid(self)||!validTargets(seen)||!validCover(cover)||(state.initialized&&tick<=state.lastTick))return std::nullopt;
     auto s=state;s.initialized=true;s.lastTick=tick;
     ShooterInput out;out.yaw=self.yaw;out.pitch=self.pitch;
     const auto* t=pickTarget(self.position,self.id,self.team,seen,s.target);
@@ -95,8 +95,8 @@ inline std::optional<ShooterInput> stepShooterBot(const ShooterBotConfig& c,cons
         if(self.feed.phase==FeedPhase::Overheated||heat*1000>=cap*c.heatStopMilli)s.cooling=true;
         else if(heat*1000<=cap*c.heatResumeMilli)s.cooling=false;
     }else s.cooling=false;
-    bool magazine=genre::usesMagazine(feed.kind);
-    bool hasRound=magazine?self.feed.loaded>=feed.ammoPerShot:feed.kind==genre::FeedKind::Belt?self.reserve>=feed.ammoPerShot:true;
+    bool magazine=mechanics::usesMagazine(feed.kind);
+    bool hasRound=magazine?self.feed.loaded>=feed.ammoPerShot:feed.kind==mechanics::FeedKind::Belt?self.reserve>=feed.ammoPerShot:true;
     bool reloading=self.feed.phase==FeedPhase::Reloading;
     bool wantReload=magazine&&self.feed.phase==FeedPhase::Ready&&self.feed.loaded<feed.capacity&&self.reserve>0
         &&(self.feed.loaded<feed.ammoPerShot||(!t&&int64_t(self.feed.loaded)*1000<int64_t(feed.capacity)*c.reloadIdleMilli));
@@ -124,7 +124,7 @@ inline std::optional<ShooterInput> stepShooterBot(const ShooterBotConfig& c,cons
     if(reacted){
         Fixed wantYaw=yawToward(self.eye,t->position,self.yaw),wantPitch=pitchToward(self.eye,t->position);bool solved=true;
         if(c.projectileSpeed>Fixed{}){
-            auto lead=genre::solveIntercept(c.aim,self.eye,t->position,t->velocity,c.projectileSpeed,c.gravity);
+            auto lead=mechanics::solveIntercept(c.aim,self.eye,t->position,t->velocity,c.projectileSpeed,c.gravity);
             if(lead&&lead->found){auto v=lead->launch.velocity;if(v.x.raw||v.z.raw)wantYaw=fxAtan2Turns(v.x,v.z);wantPitch=lead->launch.elevation;}
             else solved=false;
         }

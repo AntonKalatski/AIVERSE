@@ -6,7 +6,7 @@
 // into the linked portal's frame (exit moving out of the partner's front, speed kept or scaled), with a per-body
 // cooldown against immediate re-entry. portalTransform* expose the same mapping for rendering recursive views
 // (apply it `depth` times for portal-in-portal views; presentation code decides the depth).
-// Rewind: a bounded history of opaque per-tick snapshots (the owner's genre::save bytes or a whole-world snapshot)
+// Rewind: a bounded history of opaque per-tick snapshots (the owner's mechanics::save bytes or a whole-world snapshot)
 // with a rewind energy budget: rewinding N ticks spends N energy, recording refills it. rewindTo restores the newest
 // snapshot at or before the target tick and drops the newer history, so a replay after rewind is deterministic.
 // This is gameplay rewind (Braid/Prince of Persia style), separate from engine/actor lag-compensation history.

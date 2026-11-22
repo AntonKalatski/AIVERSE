@@ -48,7 +48,7 @@ std::string progMap(const std::string& entities) {
            "]},\"entities\":[{\"type\":\"core\",\"owner\":1,\"pos\":[1.5,14.5]},{\"type\":\"core\",\"owner\":2,\"pos\":[30.5,1.5]}" + (entities.empty() ? "" : ",") + entities + "]}";
 }
 game::Progression& prog(Simulation& sim) { return *mod(sim).progression(); }
-const aiverse::lib::genre::PlayerProgress& pp(Simulation& sim, uint8_t p) { return *prog(sim).progress(sim, p); }
+const aiverse::lib::mechanics::PlayerProgress& pp(Simulation& sim, uint8_t p) { return *prog(sim).progress(sim, p); }
 void progCmd(Simulation& sim, uint8_t p, int64_t op, int card, uint32_t rev) {
     Command c; c.player = p; c.type = game::kCmdProgression; c.param = game::progressionParam(op, card, rev);
     sim.submit(c);
@@ -126,7 +126,7 @@ TEST(progression_kills_orbs_offer_recruit_and_summon_restore) {
     bool restored = false;
     for (int i = 0; i < 30 && !restored; ++i) {
         sim->step();
-        for (auto& e : sim->events()) if (e.type == game::kEvProgSummon && (e.value >> 32) == int64_t(aiverse::lib::genre::SummonEventKind::Confirmed)) restored = true;
+        for (auto& e : sim->events()) if (e.type == game::kEvProgSummon && (e.value >> 32) == int64_t(aiverse::lib::mechanics::SummonEventKind::Confirmed)) restored = true;
     }
     CHECK(restored && countUnits(*sim, "gunbot", 1) == 1);
     Entity back = findType(*sim, "gunbot", 1);
@@ -161,8 +161,8 @@ TEST(progression_perk_stats_on_real_units) {
     // units outside the progression (player 2 takes no part) are untouched
     CHECK(m.stat(*sim, other, game::Stat::Damage) == Fixed::fromInt(1) && m.stat(*sim, other, game::Stat::MaxHp) == Fixed::fromInt(100));
     // pipeline explanation for tools / Lua
-    CHECK(prog(*sim).statOf(*sim, hero, aiverse::lib::genre::perk_stat::OutgoingDamage, 1000) == 2250);
-    CHECK(prog(*sim).statOf(*sim, other, aiverse::lib::genre::perk_stat::OutgoingDamage, 1000) == 1000);
+    CHECK(prog(*sim).statOf(*sim, hero, aiverse::lib::mechanics::perk_stat::OutgoingDamage, 1000) == 2250);
+    CHECK(prog(*sim).statOf(*sim, other, aiverse::lib::mechanics::perk_stat::OutgoingDamage, 1000) == 1000);
 }
 
 TEST(progression_bullet_perks_and_on_hit_payloads) {
@@ -256,7 +256,7 @@ on("progression_offer", function(e) state.offers = state.offers + 1 end)
     // a different seed draws different offers but stays valid
     auto s4 = make(6);
     play(*s4, 600, nullptr);
-    CHECK(aiverse::lib::genre::valid(prog(*s4).store(*s4)->perks));
+    CHECK(aiverse::lib::mechanics::valid(prog(*s4).store(*s4)->perks));
 }
 
 TEST(progression_lua_api_and_view_cards) {

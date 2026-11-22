@@ -11,7 +11,7 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
-using namespace aiverse;using namespace aiverse::lib::genre;
+using namespace aiverse;using namespace aiverse::lib::mechanics;
 #define CHECK(x) do{if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);}while(false)
 template<class State> void roundtrip(const State& s){auto bytes=save(s);CHECK(!bytes.empty());State copy;CHECK(load(bytes,copy));CHECK(save(copy)==bytes);CHECK(!load(bytes+"x",copy));CHECK(!load(bytes.substr(0,bytes.size()-1),copy));CHECK(save(copy)==bytes);}
 void movement(){
@@ -934,11 +934,11 @@ void rejection(const std::string& root){
 }
 #undef SCHECK
 void stealthSenses(const std::string& root){senses::coneAndRange();senses::losOrder();senses::hearing();senses::suspicionThresholds();senses::propagation();senses::searchGiveUp();senses::disguises(root);senses::hiding(root);senses::trails();senses::restore();senses::rejection(root);}
-// ---- genre-bots: melee/shooter bot policies, squad roles, objective choice (record kinds 56..58) ----
+// ---- action-bots: melee/shooter bot policies, squad roles, objective choice (record kinds 56..58) ----
 #include <aiverselib/bots/SensesPerception.h>
 #include <aiverselib/bots/GenreBotConfig.h>
 namespace gbots {
-using namespace aiverse::lib::bots;using aiverse::lib::bots::PerceivedTarget; // genre::PerceivedTarget (stealth-senses) is a different record
+using namespace aiverse::lib::bots;using aiverse::lib::bots::PerceivedTarget; // mechanics::PerceivedTarget (stealth-senses) is a different record
 uint64_t mix(uint64_t running,uint64_t value){Hasher h;h.u64(running);h.u64(value);return h.value();}
 const AttackSet& duelAttacks(){static const AttackSet defs{{1,{1,8,4,10,14,6,{2}}},{2,{2,6,4,12,22,6,{}}}};return defs;}
 const HitboxSet& duelBoxes(){
@@ -1304,7 +1304,7 @@ void settings(const std::string& root){
 void genreBots(const std::string& root){gbots::meleePolicy();gbots::shooterPolicy();gbots::squadRoles();gbots::objectives();gbots::persistence();gbots::settings(root);gbots::meleeDuels();gbots::gunDuels();}
 // ---- senses -> bots bridge: awareness gating, remembered vs visible, owner facts, ordering.
 void sensesBotBridge(){
-    using A=aiverse::lib::genre::Awareness;namespace sb=aiverse::lib::bots;namespace sg=aiverse::lib::genre;
+    using A=aiverse::lib::mechanics::Awareness;namespace sb=aiverse::lib::bots;namespace sg=aiverse::lib::mechanics;
     std::vector<sg::PerceivedTarget> seen(5);
     seen[0].observer=1;seen[0].target=9;seen[0].level=A::Alert;seen[0].visibleNow=true;seen[0].lastKnown={1_fx,{},{}};
     seen[1].observer=1;seen[1].target=4;seen[1].level=A::Searching;seen[1].lastKnown={{},{},3_fx};

@@ -221,7 +221,7 @@ void GameCore::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>&
                 // deferred payload or spatial-query iteration order).
                 const WeaponDef* wd=projectileWeapon(shot);
                 const Fixed damage=shot.damage*ps.damageScale;
-                lib::genre::resolveOrderedProjectileImpact(
+                lib::mechanics::resolveOrderedProjectileImpact(
                     {entity,shot.source,target,at,damage,shot.splash},
                     [&](Entity victim) {
                         dealDamage(sim,victim,damage,shot.damageType,shot.source,shot.owner,wd);

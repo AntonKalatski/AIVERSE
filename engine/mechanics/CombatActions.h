@@ -272,7 +272,7 @@ inline std::optional<LockOnResult> stepLockOn(const LockOnConfig& c,LockOnState&
     s.target=target;s.lastTick=tick;s.initialized=true;r.target=target;r.changed=target!=previous;return r;
 }
 
-// ---- Persistence (records for genre::save/load in Persistence.h; kinds 32..36 are reserved for combat-actions).
+// ---- Persistence (records for mechanics::save/load in Persistence.h; kinds 32..36 are reserved for combat-actions).
 struct CombatActorState {DodgeState dodge;GuardState guard;PoiseState poise;LockOnState lock;};
 inline void io(Archive& a,DodgeState& s){a(s.started,s.readyAt,s.lastTick,s.dodged,s.initialized);}
 inline void io(Archive& a,GuardState& s){a(s.raisedAt,s.lastTick,s.raised,s.parryArmed,s.everRaised,s.initialized);}

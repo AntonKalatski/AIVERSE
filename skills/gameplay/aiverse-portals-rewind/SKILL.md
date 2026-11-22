@@ -14,7 +14,7 @@ Deterministic policy: Fixed/integer math, ascending ids, strictly increasing tic
 
 1. Portals: define pairs (`Portal`: center, normal, up, half size, link). Each tick call `crossPortals(portals, cooldowns, tick, previous, bodies)` after movement and apply the crossings.
 2. Rendering recursion: apply `portalTransformPoint/Direction` to the camera once per depth level.
-3. Rewind: `recordRewind(config, history, tick, snapshotBytes)` every tick (use genre::save output or a world snapshot); `rewindTo(history, tick)` returns the snapshot to restore and spends energy.
+3. Rewind: `recordRewind(config, history, tick, snapshotBytes)` every tick (use mechanics::save output or a world snapshot); `rewindTo(history, tick)` returns the snapshot to restore and spends energy.
 4. This is gameplay rewind; engine/actor rewind history stays lag compensation.
 5. Persist PortalCooldowns (kind 203); RewindHistory (kind 204) only for small histories (save limit 1 MB).
 

@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/mechanics/Namespace.h"
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for weapon state.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for weapon state.
 // FeedState, ChargeState and LoadoutState are dynamic state: store each in its own NativeState key
 // and bind the immutable FeedConfig/ChargeConfig/frame/attachment definition versions in the save
 // envelope. Per-call outcomes (penetration, explosion, launch, feed/charge steps) are hashable so

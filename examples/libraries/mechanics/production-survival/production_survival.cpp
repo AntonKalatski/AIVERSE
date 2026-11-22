@@ -12,12 +12,12 @@
 #include <cstdio>
 #include <string>
 namespace {
-using namespace aiverse;using namespace aiverse::lib;using namespace aiverse::lib::genre;
+using namespace aiverse;using namespace aiverse::lib;using namespace aiverse::lib::mechanics;
 constexpr int64_t kTicksPerHour=50,kDay=kTicksPerHour*24,kDays=20,kTicks=kDay*kDays,kFireTick=8*kDay+10*kTicksPerHour;
 constexpr int64_t kRawFood=1,kWood=2,kMeal=3,kField=1,kStore=2,kKitchen=50,kHeater=10,kPump=11,kWind=1,kSolar=2,kWater=20,kTap=22;
 constexpr int64_t kHuntNode1=9001,kHuntNode2=9002,kDeer=1,kWolf=2;
 struct Data {ColonyDefs colony;PowerGridState grid;EcologyDefs ecology;EcologyAnimalDefs animals;EcologyResourceState resources;bots::ColonyPlannerConfig planner;SurvivalConfig survival;};
-// Everything outcome-affecting: package states (saved through genre::save/load) + owner bookkeeping + RNG.
+// Everything outcome-affecting: package states (saved through mechanics::save/load) + owner bookkeeping + RNG.
 struct World {
     ColonyState colony;PowerGridState grid;SurvivalState bodies;EcologyState ecology;EcologyAnimalState animals;EcologyResourceState resources;bots::ColonyPlannerState planner;
     uint64_t rngState=0,rngInc=0;int64_t nextAnimal=3000,fireResolvedAt=-1,dayRain=0,dayWind=0,generators=0,kitchens=1;
@@ -158,7 +158,7 @@ struct Owner {
         return h.value();
     }
 };
-// Save every package record through genre::save and rebuild a fresh owner from the bytes (+ owner fields).
+// Save every package record through mechanics::save and rebuild a fresh owner from the bytes (+ owner fields).
 bool restoreInto(const Owner& from,Owner& to){
     auto copy=[](const auto& src,auto& dst){auto bytes=save(src);return !bytes.empty()&&load(bytes,dst);};
     if(!copy(from.w.colony,to.w.colony)||!copy(from.w.grid,to.w.grid)||!copy(from.w.bodies,to.w.bodies)||!copy(from.w.ecology,to.w.ecology)

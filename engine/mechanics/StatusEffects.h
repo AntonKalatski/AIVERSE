@@ -3,7 +3,7 @@
 // Custom status owner for native/host actors (boss-encounters): slow, root, stun and burn instances with
 // Independent / Refresh / Reject stacking, immunity by kind or id, periodic damage on exact ticks and view
 // events (one per instance, Ground or ModelTop anchor) for status visuals. Inside GameCore games the engine's
-// statuses stay authoritative: use rtsStatusRules to express the same definition as a rules.json status instead.
+// statuses stay authoritative: use gameStatusRules to express the same definition as a rules.json status instead.
 #include "engine/core/Fixed.h"
 #include <algorithm>
 #include <cstdint>
@@ -90,11 +90,11 @@ inline std::optional<StatusTick> stepStatuses(const StatusSet& defs,StatusActorS
     if(out.stunned||out.rooted)out.speedMilli=0;
     s.active=std::move(keep);state=std::move(s);return out;
 }
-// The same definition for games running on the RTS simulation: `status` is a rules.json statuses entry (slow ->
+// The same definition for games running on the GameCore simulation (engine/game): `status` is a rules.json statuses entry (slow ->
 // speed mod, root/stun -> flags, burn -> tick damage; independent or refresh stacking; Reject has no engine
 // equivalent and maps to refresh with one stack) and `duration` the seconds for the applying status effect.
-struct RtsStatusRules {std::string status,duration;};
-inline RtsStatusRules rtsStatusRules(const StatusEffectDef& d,uint32_t ticksPerSecond){
+struct GameStatusRules {std::string status,duration;};
+inline GameStatusRules gameStatusRules(const StatusEffectDef& d,uint32_t ticksPerSecond){
     if(!valid(d)||ticksPerSecond==0)return {};
     auto seconds=[&](uint32_t t){return Fixed::fromRatio(t,ticksPerSecond).toString();};
     std::string out="{\"tags\": [\"debuff\"]";

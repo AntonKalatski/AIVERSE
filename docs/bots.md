@@ -4,11 +4,11 @@
 
 | Package | Coverage | Target |
 |---|---|---|
-| bots-rts | Full existing ComputerPlayer through a project-local configuration/restore adapter | AIVERSE::aiverse_bots |
-| bots-fps | Perception, remembered target, reaction, bounded aim, firing/reload, retreat, patrol, safe-zone movement | AIVERSE::fps_bots |
+| bots-commander | Full existing ComputerPlayer through a project-local configuration/restore adapter | AIVERSE::aiverse_bots |
+| bots-combatant | Perception, remembered target, reaction, bounded aim, firing/reload, retreat, patrol, safe-zone movement | AIVERSE::fps_bots |
 | navmesh | Automatic layered polygon mesh from static AABB collision; agent clearance/erosion, step links, connected regions, bounded routes | AIVERSE::navmesh |
 | bot-matches | Headless actual-engine match runner and deterministic restoration scenarios | aiverse_bot_match |
-| genre-bots | Genre-independent melee/shooter bot policies, squad roles + formations, objective choice over owner-supplied perception ([mechanics-packages.md](mechanics-packages.md#genre-bots-genre-bots-010)) | AIVERSE::lib_genre_bots |
+| action-bots | Genre-independent melee/shooter bot policies, squad roles + formations, objective choice over owner-supplied perception ([mechanics-packages.md](mechanics-packages.md#action-bots-action-bots-010)) | AIVERSE::lib_action_bots |
 | settlement-production (colony planner) | Rule-based colony/survival planner choosing builds, bills, gathering and work priorities from needs, stock, power and owner facts; emits player-equivalent ColonyCommands ([mechanics-packages.md](mechanics-packages.md#settlement-and-production-settlement-production-010)) | AIVERSE::lib_settlement_production |
 
 Public headers live in `libraries/include/aiverselib/bots`. No Lua or project-specific engine edits are

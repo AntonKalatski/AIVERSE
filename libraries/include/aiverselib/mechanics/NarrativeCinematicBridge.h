@@ -5,7 +5,7 @@
 // releaseNarrativeCues() once per tick before stepScene(); due cues become TriggerCue commands ordered by
 // (due tick, narrative sequence). Already-seen sequences are ignored, so replaying a report after a restore never
 // triggers a scene twice. Cue IDs without a scene trigger are dropped by the scene runner (TriggerIgnored event).
-// Persist NarrativeCueQueue with genre::save/load (record kind 76, inside cinematic-gameplay's reserved 72..79).
+// Persist NarrativeCueQueue with mechanics::save/load (record kind 76, inside cinematic-gameplay's reserved 72..79).
 #include "CinematicScene.h"
 #include "NarrativeCues.h"
 #include "engine/mechanics/Persistence.h"

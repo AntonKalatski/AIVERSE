@@ -11,7 +11,7 @@
 namespace aiverse::game {
 using namespace aiverse::roads;   // spline roads (engine/roads)
 
-namespace tl = lib::genre;
+namespace tl = lib::mechanics;
 
 namespace {
 

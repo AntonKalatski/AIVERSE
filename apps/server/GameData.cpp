@@ -12,7 +12,7 @@ namespace aiverse::netgame {
 MatchData loadMatchData(const std::string& gameDir, const std::string& mapFile) {
     MatchData d;
     d.manifest = Json::parseFile(gameDir + "/game.json");
-    d.module = d.manifest.getStr("module", "rts");
+    d.module = d.manifest.getStr("module", "game");
     d.rules = readComposedJson(gameDir + "/" + d.manifest.getStr("rules", "rules.json"), fileReader());
     d.map = Json::parseFile(gameDir + "/" + mapFile);
     auto read = [&](const std::string& p, std::string& out) {
@@ -28,7 +28,7 @@ MatchData loadMatchData(const std::string& gameDir, const std::string& mapFile) 
 }
 
 std::unique_ptr<Simulation> makeSimulation(const std::string& module, const SimConfig& cfg) {
-    if (module == "rts") return std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
+    if (module == "game") return std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     return nullptr;
 }
 

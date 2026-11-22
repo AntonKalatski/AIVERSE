@@ -5,7 +5,7 @@
 // assumed to pass until the stack is empty) and scored on health, board and hand; a bounded second ply tries
 // follow-up actions. Deterministic: no RNG is consumed (simulations use a private fixed-seed Random), ties keep the
 // earlier action in legal order (Pass first). Returns the same CardAction a player submits.
-#include <aiverselib/mechanics/CardGameRunner.h>
+#include "../mechanics/CardGameRunner.h"
 #include "engine/gameplay/Configuration.h"
 #include <optional>
 namespace aiverse::lib::bots {
@@ -17,11 +17,11 @@ struct CardBotConfig{
 };
 inline bool valid(const CardBotConfig& c){return c.nodeBudget>=1&&c.nodeBudget<=100000&&c.depth>=1&&c.depth<=4&&c.healthWeight>=0&&c.powerWeight>=0&&c.toughnessWeight>=0&&c.handWeight>=0&&c.mulliganCostAbove>=0;}
 inline CardBotConfig cardBotConfig(const gameplay::GameplaySettings& s){CardBotConfig c;c.nodeBudget=uint32_t(s.cardGame.botNodeBudget);c.depth=uint32_t(s.cardGame.botDepth);return c;}
-struct CardBotChoice{genre::CardAction action;int64_t score=0;uint32_t nodes=0;};
+struct CardBotChoice{mechanics::CardAction action;int64_t score=0;uint32_t nodes=0;};
 
 // A rules-valid state holding exactly what the view shows (its own hand, revealed cards, public zones, the stack).
-inline std::optional<genre::CardGameState> cardStateFromView(const genre::CardLibrary& lib,const genre::CardGameView& v){
-    using namespace genre;
+inline std::optional<mechanics::CardGameState> cardStateFromView(const mechanics::CardLibrary& lib,const mechanics::CardGameView& v){
+    using namespace mechanics;
     if(v.seats.size()<2||v.seats.size()>std::size_t(kCardMaxSeats))return std::nullopt;
     CardGameState s;s.seats.resize(v.seats.size());s.phase=v.phase;s.turn=v.turn;s.active=v.active;s.priority=v.priority;s.passes=v.passes;s.winner=v.winner;
     auto add=[&](const CardViewCard& c,CardGameZone z)->bool{
@@ -47,8 +47,8 @@ inline std::optional<genre::CardGameState> cardStateFromView(const genre::CardLi
     if(!cardStateCompatible(lib,s))return std::nullopt;
     return s;
 }
-inline int64_t cardEvaluate(const genre::CardLibrary& lib,const genre::CardGameState& s,int32_t seat,const CardBotConfig& c){
-    using namespace genre;
+inline int64_t cardEvaluate(const mechanics::CardLibrary& lib,const mechanics::CardGameState& s,int32_t seat,const CardBotConfig& c){
+    using namespace mechanics;
     if(s.winner==seat)return int64_t(1)<<40;
     if(s.winner>=0)return -(int64_t(1)<<40);
     if(s.winner==kCardDraw)return 0;
@@ -62,15 +62,15 @@ inline int64_t cardEvaluate(const genre::CardLibrary& lib,const genre::CardGameS
 }
 namespace detail_cardbot {
 // Applies `a` for `seat`, then lets every holder of priority pass until the stack is empty.
-inline std::optional<genre::CardGameState> simulate(const genre::CardLibrary& sim,const genre::CardGameState& from,int32_t seat,const genre::CardAction& a){
-    using namespace genre;Random rng(0x5eed);auto s=from;uint64_t seq=s.lastCommand;
+inline std::optional<mechanics::CardGameState> simulate(const mechanics::CardLibrary& sim,const mechanics::CardGameState& from,int32_t seat,const mechanics::CardAction& a){
+    using namespace mechanics;Random rng(0x5eed);auto s=from;uint64_t seq=s.lastCommand;
     if(!stepCardGame(sim,s,{++seq,seat,a},rng))return std::nullopt;
     for(std::size_t guard=0;guard<4*kCardMaxStack*std::size_t(kCardMaxSeats)&&!s.stack.empty()&&s.phase!=CardPhase::GameOver;++guard)
         if(!stepCardGame(sim,s,{++seq,s.priority,{}},rng))return std::nullopt;
     return s;
 }
-inline int64_t followUp(const genre::CardLibrary& sim,const genre::CardGameState& s,int32_t seat,uint32_t depth,uint32_t& budget,uint32_t& nodes,const CardBotConfig& c){
-    using namespace genre;auto best=cardEvaluate(sim,s,seat,c);
+inline int64_t followUp(const mechanics::CardLibrary& sim,const mechanics::CardGameState& s,int32_t seat,uint32_t depth,uint32_t& budget,uint32_t& nodes,const CardBotConfig& c){
+    using namespace mechanics;auto best=cardEvaluate(sim,s,seat,c);
     if(depth==0||s.phase==CardPhase::GameOver||s.priority!=seat||s.active!=seat||!s.stack.empty())return best;
     for(const auto& a:cardLegalActions(sim,s,seat)){
         if(a.kind==CardActionKind::Pass)continue;
@@ -81,8 +81,8 @@ inline int64_t followUp(const genre::CardLibrary& sim,const genre::CardGameState
     return best;
 }
 }
-inline std::optional<CardBotChoice> cardBotChoose(const genre::CardLibrary& lib,const genre::CardGameView& view,const CardBotConfig& cfg=CardBotConfig{}){
-    using namespace genre;
+inline std::optional<CardBotChoice> cardBotChoose(const mechanics::CardLibrary& lib,const mechanics::CardGameView& view,const CardBotConfig& cfg=CardBotConfig{}){
+    using namespace mechanics;
     if(!valid(cfg))return std::nullopt;
     auto legal=cardLegalActions(lib,view);if(legal.empty())return std::nullopt;
     if(view.phase==CardPhase::Mulligan){

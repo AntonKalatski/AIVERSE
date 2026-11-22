@@ -12,7 +12,7 @@ Actual checks with TMPDIR/build/bundle/logs on KINGSTON:
 - cmake configure and build aiverse_studio + aiverse_studio_render_lighting_tests PASS.
 - ctest -R '^studio_render_lighting$' PASS: real RTS/FPS invalid-patch atomicity,
   undo/redo/save/reopen/disk serialization. Initial fixtures lacked RTS types,
-  FPS rules.fps and player; fixed fixtures to satisfy real host validation.
+  FPS rules.actor and player; fixed fixtures to satisfy real host validation.
 - npm --prefix apps/studio-web run build -- --outDir external studio-web-dist PASS
   (includes tsc --noEmit); initial mock generic type corrected.
 - npm --prefix apps/studio-web run test:web PASS (57 tests).

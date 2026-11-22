@@ -16,7 +16,7 @@ Deterministic policy: Fixed/integer math, ascending ids, strictly increasing tic
 2. `planWithLinks(links, start, goal, meshCost)` - `meshCost(a, b)` returns the walking distance on your mesh (bots/NavMesh.h, engine/nav) or nullopt; the result is a list of Walk/Link legs.
 3. Drive a link with `beginLink` + `stepLinkTraversal(links, traversal, tick, doorOpen)`; doors make the agent wait until open.
 4. `generateCover(boxes, config, standable)` returns cover spots (half/full by box height) around box obstacles; map them to `bots::CoverCandidate` for ShooterBot.
-5. Persist LinkTraversal with genre::save/load (kind 201).
+5. Persist LinkTraversal with mechanics::save/load (kind 201).
 
 ## Limits
 

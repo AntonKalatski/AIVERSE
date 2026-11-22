@@ -1,6 +1,6 @@
 #pragma once
-// Versioned save/load (genre::save/load, version 1) and checksum hashing for genre bot memory.
-// Record kinds 56..63 are reserved for genre-bots: 56 MeleeBotState, 57 ShooterBotState, 58 SquadState,
+// Versioned save/load (mechanics::save/load, version 1) and checksum hashing for genre bot memory.
+// Record kinds 56..63 are reserved for action-bots: 56 MeleeBotState, 57 ShooterBotState, 58 SquadState,
 // 59..63 free for later bot adapters. Store each record in its own NativeState key (storeBytes) next to
 // the simulation and bind the immutable bot configs/attack sets/weapon definitions in the save envelope.
 #include "MeleeBot.h"
@@ -17,7 +17,7 @@ inline void io(Archive& a,SquadState& s){a(s.composition,s.lastAssign,s.lastTick
 inline uint16_t stateKind(const MeleeBotState&){return 56;}
 inline uint16_t stateKind(const ShooterBotState&){return 57;}
 inline uint16_t stateKind(const SquadState&){return 58;}
-using genre::save;using genre::load;using runtime::storeBytes;using runtime::loadBytes;
+using mechanics::save;using mechanics::load;using runtime::storeBytes;using runtime::loadBytes;
 // Folds the canonical record (kind + body, the same bytes as the save body) into the simulation checksum.
 template<class State> requires requires(Archive& a,State& s){stateKind(s);io(a,s);}
 void hashGenreBot(Hasher& h,const State& s){std::string bytes;Archive a(&bytes);auto copy=s;uint16_t kind=stateKind(copy);a(kind,copy);h.str(bytes);}

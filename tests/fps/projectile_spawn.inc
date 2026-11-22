@@ -2,7 +2,7 @@
 // No genre-specific test-only spawn hook: exercise production input Commands.
 void projectileSpawnsCase(bool cow) {
     const auto rules=Json::parse(R"({
-        "fps":{"tickRate":20,"mode":"deathmatch",
+        "actor":{"tickRate":20,"mode":"deathmatch",
                "weapons":[{"damage":10,"magazine":12,"intervalTicks":1,
                             "bulletSpeed":200,"bulletGravity":0}],
                "mechanics":{"enabled":true,"grenadeFuse":3,
@@ -86,7 +86,7 @@ void projectileSpawns() {
 // and a subsequent spawn must not reuse a stale projectile id.
 void projectileRoundResetCase(bool cow) {
     const auto rules=Json::parse(R"({
-        "fps":{"tickRate":20,"mode":"bomb",
+        "actor":{"tickRate":20,"mode":"bomb",
                "weapons":[{"damage":10,"magazine":12,"intervalTicks":1}],
                "mechanics":{"enabled":true,"freezeTicks":1,
                             "grenadeFuse":20,"smokeTicks":10},

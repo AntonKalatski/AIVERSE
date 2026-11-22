@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
-using namespace aiverse;using namespace aiverse::lib::genre;
+using namespace aiverse;using namespace aiverse::lib::mechanics;
 static int usage(){std::cerr<<"usage: aiverse_encounter validate|simulate <encounter.json> [--boss ID] [--seed N] [--ticks N] [--reaction N] [--json] [--quiet]\n";return 1;}
 static std::string hex(uint64_t v){static const char* d="0123456789abcdef";std::string s(16,'0');for(int i=15;i>=0;--i){s[size_t(i)]=d[v&15];v>>=4;}return s;}
 int main(int argc,char** argv){

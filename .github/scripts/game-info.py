@@ -44,7 +44,7 @@ def sanitize(name):  # same as aiversebuild: every non-alphanumeric *byte* becom
 game = json.loads(strip_comments((Path(sys.argv[1]) / "game.json").read_text(encoding="utf-8")))
 name = game.get("name", "Game")
 info = {
-    "MODULE": game.get("module", "rts"),
+    "MODULE": game.get("module", "game"),
     "NAME": name,
     "ID": game.get("id", "com.example.game"),
     "VERSION": game.get("version", "0.1.0"),

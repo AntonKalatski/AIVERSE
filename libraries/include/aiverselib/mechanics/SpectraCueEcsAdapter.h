@@ -14,7 +14,7 @@
 
 namespace aiverse::spectra {
 
-using SourcePoseResolver = lib::genre::SpectraPresentationSystem::ResolvePose;
+using SourcePoseResolver = lib::mechanics::SpectraPresentationSystem::ResolvePose;
 
 // Sync all sources, including generation-safe Entity identity. Missing/disabled
 // components are omitted and are detached by CueScheduler::syncAttachments.
@@ -22,8 +22,8 @@ using SourcePoseResolver = lib::genre::SpectraPresentationSystem::ResolvePose;
 inline void syncEcsCueSources(const World& world, CueScheduler& scheduler,
                               const SourcePoseResolver& resolve) {
     std::vector<AttachedCue> sources;
-    world.eachExistingConst<lib::genre::SpectraSourceComponent>(
-        [&](Entity entity, const lib::genre::SpectraSourceComponent& source) {
+    world.eachExistingConst<lib::mechanics::SpectraSourceComponent>(
+        [&](Entity entity, const lib::mechanics::SpectraSourceComponent& source) {
             if(!world.alive(entity) || !source.enabled || source.effect.empty())return;
             fx::float3 position{},direction{0,1,0};
             if(!resolve || !resolve(world,entity,position,direction))return;

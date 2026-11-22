@@ -1,5 +1,5 @@
 {
-  "fps": {
+  "actor": {
     "mode": "deathmatch",
     "tickRate": 60,
     "maxPlayers": 2,

@@ -5,7 +5,7 @@
 #include <stdexcept>
 using namespace aiverse;using namespace aiverse::lib::bots;
 #define CHECK(x) do{if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);}while(false)
-Json rules(){return Json::parse(R"({"fps":{"mode":"deathmatch","roundTicks":10000,"weapon":{"magazine":3,"reserve":100,"reloadTicks":15}}})");}
+Json rules(){return Json::parse(R"({"actor":{"mode":"deathmatch","roundTicks":10000,"weapon":{"magazine":3,"reserve":100,"reloadTicks":15}}})");}
 Json map(){return Json::parse(R"({"players":[{"name":"A","team":1},{"name":"B","team":2},{"name":"C","team":1}],"spawns":[[0,0.01,0],[0,0.01,10],[20,0.01,0]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]})");}
 std::unique_ptr<Simulation> make(Json r=rules(),Json m=map()){
     auto sim=std::make_unique<Simulation>(SimConfig{1,60,0},std::make_unique<game::GameCore>());sim->setup(r,m);return sim;
@@ -32,17 +32,17 @@ void policies(){
     auto friendly=make();auto& fm=module(*friendly);fm.character(*friendly,3).pos={0_fx,Fixed::fromRatio(1,100),5_fx};
     ActorState fs;c.reactionTicks=0;c.turnPerTick=Fixed::fromRatio(1,2);auto safe=fpsCommand(*friendly,fm,1,c,{},fs);CHECK(safe&&!(input(*safe).buttons&actor::Fire));
     auto reload=make();module(*reload).character(*reload,1).ammo=0;ActorState rs;auto ri=fpsCommand(*reload,module(*reload),1,c,{},rs);CHECK(ri&&(input(*ri).buttons&actor::Reload));
-    auto zoneRules=rules();zoneRules.member("fps").set("mode",Json::string("battleRoyale"));zoneRules.member("fps").set("zone",Json::parse(R"({"center":[30,0,0],"radius":5,"endRadius":1})"));
+    auto zoneRules=rules();zoneRules.member("actor").set("mode",Json::string("battleRoyale"));zoneRules.member("actor").set("zone",Json::parse(R"({"center":[30,0,0],"radius":5,"endRadius":1})"));
     auto zone=make(zoneRules);ActorState zs;CHECK(fpsCommand(*zone,module(*zone),1,c,{},zs)&&zs.decision==ActorDecision::Zone);
 }
 void expandedWeapons(){
     auto sim=make();auto& m=module(*sim);auto self=m.character(*sim,1);self.blindUntil=10;ActorState state;auto cfg=fpsConfig(Json::parse(R"({"preset":"hard","reactionTicks":0})"));
     auto blind=fpsCommand(*sim,m,1,cfg,{},state);CHECK(blind&&state.target==0&&!(input(*blind).buttons&actor::Fire));
     self.prone=true;CHECK(eye(self,m.config().motor).y==self.pos.y+actor::stanceHeight(self,m.config().motor)-Fixed::fromRatio(1,10));
-    auto r=rules();r.member("fps").set("weapons",Json::parse(R"([{"range":100},{"range":2,"automatic":false,"intervalTicks":1}])"));
+    auto r=rules();r.member("actor").set("weapons",Json::parse(R"([{"range":100},{"range":2,"automatic":false,"intervalTicks":1}])"));
     auto ranged=make(r);auto& rm=module(*ranged);rm.character(*ranged,1).weaponIndex=1;ActorState rs;
     auto limited=fpsCommand(*ranged,rm,1,cfg,{},rs);CHECK(limited&&!(input(*limited).buttons&actor::Fire));
-    r.member("fps").set("weapons",Json::parse(R"([{"range":100,"automatic":false,"intervalTicks":1}])"));
+    r.member("actor").set("weapons",Json::parse(R"([{"range":100,"automatic":false,"intervalTicks":1}])"));
     auto semi=make(r);ActorState ss;uint32_t shots=0;
     for(int i=0;i<30;++i){auto cmd=fpsCommand(*semi,module(*semi),1,cfg,{},ss);CHECK(cmd);semi->submit(*cmd);semi->step();for(const auto& e:semi->events())shots+=e.type==1;}
     CHECK(shots>=2);

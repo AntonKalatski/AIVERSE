@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/mechanics/Namespace.h"
-// Versioned save/load (genre::save/load, version 1) and checksum hashing for sports-rules.
+// Versioned save/load (mechanics::save/load, version 1) and checksum hashing for sports-rules.
 // Record kinds (shared range 88..95 with vehicle-controllers): SportsState 92, SportsBotState 95; 93 is reserved.
 // Store each record in its own NativeState key, save the RNG state (Random::state/inc) next to it, feed
 // sportsHash(state) into the checksum and bind sportsDefinitionsHash(field, rules, formations) in the save envelope.
@@ -38,6 +38,6 @@ inline uint64_t sportsDefinitionsHash(const SportsField& f,const SportsRulesConf
 namespace aiverse::lib::bots {
 inline void io(Archive& a,SportsBotState& s){a(s.slots,s.holder,s.holderSince,s.nextDecision,s.lastTick,s.phase,s.initialized);}
 inline uint16_t stateKind(const SportsBotState&){return 95;}
-using genre::save;using genre::load;
+using mechanics::save;using mechanics::load;
 template<class T> uint64_t sportsBotHash(const T& value){auto copy=value;std::string bytes;Archive a(&bytes);io(a,copy);Hasher h;h.str(bytes);return h.value();}
 }

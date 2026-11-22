@@ -2,7 +2,7 @@
   "name": "Projectile chains",
   "id": "org.aiverse.projectile-chains",
   "version": "1.0",
-  "module": "rts",
+  "module": "game",
   "rules": "rules.json",
   "maps": [
     {

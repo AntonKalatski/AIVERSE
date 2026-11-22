@@ -85,7 +85,7 @@ def main(out: Path):
     (content / "wind" / "profiles.json").write_text(json.dumps({"profiles": {"oak": {"levels": [
         {"mask": "trunk", "stiffness": 0.85, "flex": 0.5}, {"mask": "oak_branch", "stiffness": 0.5, "flex": 1.0},
         {"mask": "leaf", "stiffness": 0.2, "flex": 1.4}]}}}, indent=1))
-    (out / "game.json").write_text(json.dumps({"name": "Wind masks QA", "module": "rts", "rules": "rules.json",
+    (out / "game.json").write_text(json.dumps({"name": "Wind masks QA", "module": "game", "rules": "rules.json",
                                                "maps": [{"file": "maps/scene.json"}]}))
     (out / "rules.json").write_text(json.dumps({"types": {"tree": {"health": {"max": 100},
                                                                    "view": {"model": "content/tree.gltf"}}}}))

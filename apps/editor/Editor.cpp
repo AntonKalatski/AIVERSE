@@ -376,7 +376,7 @@ void Editor::openGame(const std::string& idOrDir) {
     status = "Игра: " + ws_.project.manifest.getStr("name", idOrDir);
     checkNativeModules(false);
     if(ws_.map.data.worldSpace) {
-        focusWindow("fps");
+        focusWindow("actor");
         const auto& spawn=doc().data.extra["spawns"][0];
         sceneCam.target={float(spawn[0].toDouble()),0,float(spawn[2].toDouble())};sceneCam.distance=35;
     }
@@ -516,7 +516,7 @@ bool Editor::convertVisualModelSource(const std::string& src) {
 }
 
 void Editor::pollVisualAssets(double dt) {
-    if(!dev_ || ws_.project.dir.empty() || ws_.project.actorSessionRules()) {
+    if(!dev_ || ws_.project.dir.empty() || ws_.project.actorSession()) {
         visualAssets_.reset();
         return;
     }
@@ -609,7 +609,7 @@ void Editor::retainEditorType(uint16_t type) {
 
 void Editor::reclaimEditorAssets(bool force) {
     if (!lazyEditorAssets_ || !dev_ || playing() || clientPlaying() ||
-        ws_.project.actorSessionRules()) return;
+        ws_.project.actorSession()) return;
     constexpr double kSweepInterval = 5.0;
     constexpr double kUnusedGrace = 15.0;
     if (!modelDemand_.shouldSweep(time_,kSweepInterval,force)) return;
@@ -1733,7 +1733,7 @@ void Editor::drawSpectraGpuPreview() {
 
 void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
-    if (playing() && !ws_.project.actorSessionPlay()) { renderGame(vp, cam, 1ULL); return; }
+    if (playing() && !ws_.project.actorSession()) { renderGame(vp, cam, 1ULL); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto stageStart = std::chrono::steady_clock::now();
     if (!ws_.map.data.worldSpace) {
@@ -2128,7 +2128,7 @@ void Editor::applyChanges() {
 // ============================ play-test ============================
 
 void Editor::startPlay(int humanSlot) {
-    if(ws_.project.actorSessionPlay()){startFpsPlay();return;}
+    if(ws_.project.actorSession()){startFpsPlay();return;}
     if (checkNativeModules(true)) return;   // the banner offers to build an editor with them
     stopClientPlay();
     auto issues = doc().validate(rules(), ws_.project.rulesJson);
@@ -2400,7 +2400,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
     // slow upload can overrun the advisory time budget, so also cap count.
     // Interactive Inspector and viewport requests still load immediately.
     if(lazyEditorAssets_ && !playing() && !clientPlaying() &&
-       !ws_.project.actorSessionRules()) {
+       !ws_.project.actorSession()) {
         modelDemand_.drainBudget(1.0,2,[&](size_t type){
             if(type<rules().types.size() && !view_.typeLoaded(uint16_t(type)))
                 view_.loadType(uint16_t(type));

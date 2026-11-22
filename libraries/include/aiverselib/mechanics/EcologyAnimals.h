@@ -1,7 +1,7 @@
 #pragma once
 #include "engine/mechanics/Namespace.h"
 // survival-ecology: animal behavior states (Wander / Graze / Flee / Hunt / Sleep) for individual animals.
-// Decisions come only from senses-like inputs: genre::PerceivedTarget records (stealth-senses, observer = animal
+// Decisions come only from senses-like inputs: mechanics::PerceivedTarget records (stealth-senses, observer = animal
 // id) plus owner facts about each perceived target (species, current position). Priority per tick: flee a feared
 // target within fleeDistance (and keep fleeing for fleeCalmTicks) > sleep window / exhaustion > hunt visible prey
 // when hungry > graze while hungry and vegetation is available > wander around home. Wander goals use the passed-in

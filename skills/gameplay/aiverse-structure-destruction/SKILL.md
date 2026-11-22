@@ -16,7 +16,7 @@ Deterministic policy: Fixed/integer math, ascending ids, strictly increasing tic
 2. Every tick: `stepStructure(config, state, tick, dt, damage)`. Apply `report.removed` / `report.added` to collision, rebuild navmesh and visibility inside `report.dirty`.
 3. Debris bodies are authoritative (gravity, bounce, rest, lifetime): replicate `report.spawned` or the whole state; Box3D may add visual detail only.
 4. Use with PHYSIS fracture events (engine/physis/PhysisFractureOutbox.h) and physical-interactions breakables for single objects.
-5. Persist with genre::save/load (kind 202).
+5. Persist with mechanics::save/load (kind 202).
 
 ## Limits
 

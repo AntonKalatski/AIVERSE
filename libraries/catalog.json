@@ -704,7 +704,7 @@
       "packageDependencies": []
     },
     {
-      "id": "genre-kits",
+      "id": "template-kits",
       "version": "0.2.0",
       "layer": "tools",
       "status": "cpp-subsystem",
@@ -713,7 +713,7 @@
       "summary": "Reusable capability and acceptance recipes for sixteen genres",
       "notes": "Use genreKit to select existing library packages and acceptance scenarios. Configure engine rules and templates before adding code. Kits are composition recipes, not complete generated games. Implement the named acceptance scenarios for the actual project and verify them.",
       "verifiedPlatforms": [],
-      "cmakeTarget": "AIVERSE::lib_genre_kits",
+      "cmakeTarget": "AIVERSE::lib_template_kits",
       "runtime": "header",
       "linkDependencies": [],
       "packageDependencies": []
@@ -1066,7 +1066,7 @@
       ]
     },
     {
-      "id": "bots-rts",
+      "id": "bots-commander",
       "version": "0.1.1",
       "layer": "simulation",
       "status": "cpp-subsystem",
@@ -1075,7 +1075,7 @@
       "summary": "RTS bot profiles and transactional checkpoints over the existing ComputerPlayer",
       "notes": "Use existing ComputerPlayer for economy, build/research, combat, garrisons and terrain/planet play. Host calls update before sim.step. rules.ai may override profiles. Preserve the legacy knowledge policy; do not claim fog-fairness. Save bot state with simulation; exact player/seed/settings must match.",
       "verifiedPlatforms": [],
-      "cmakeTarget": "AIVERSE::lib_bots_rts",
+      "cmakeTarget": "AIVERSE::lib_bots_commander",
       "dependencies": [
         "docs/bots.md",
         "engine/game/ComputerPlayer.h",
@@ -1087,7 +1087,7 @@
       "packageDependencies": []
     },
     {
-      "id": "bots-fps",
+      "id": "bots-combatant",
       "version": "0.1.4",
       "layer": "simulation",
       "status": "cpp-subsystem",
@@ -1096,7 +1096,7 @@
       "summary": "Command-driven FPS bots with perception, reaction, aiming, reload, retreat, zone and patrol",
       "notes": "Run on one authoritative host with map bot:false for owned slots. Use fpsCommand then sim.submit; never mutate character components. Persist FpsState with the simulation. Supply generated navmesh or authored waypoint graph; no bomb, loot or vehicle mechanics are implied. 0.1.4: with fps.royale the zone goal is the announced battle-royale circle (Module::royaleView); FPS rules fps.bots host this controller inside the module for map bots (docs/fps.md § Library bots).",
       "verifiedPlatforms": [],
-      "cmakeTarget": "AIVERSE::lib_bots_fps",
+      "cmakeTarget": "AIVERSE::lib_bots_combatant",
       "dependencies": [
         "docs/bots.md",
         "engine/bots/Persistence.h",
@@ -1429,16 +1429,16 @@
       "packageDependencies": []
     },
     {
-      "id": "genre-bots",
+      "id": "action-bots",
       "version": "0.1.1",
       "layer": "simulation",
       "status": "cpp-subsystem",
       "source": "libraries/include/aiverselib/bots/GenreBots.h",
       "skill": "skills/ai/aiverse-action-bots/SKILL.md",
       "summary": "Deterministic genre bot policies: melee spacing/attack timing/dodge-parry/lock-on, shooter aim/lead/burst/reload/overheat/cover, squad roles with formations and an objective choice hook",
-      "notes": "Read docs/mechanics-packages.md (genre-bots) for exact coverage. Bots return player-equivalent inputs (MeleeInput, ShooterInput, role orders, objective choice) for the owner's ordinary command path and never write state. Perception is owner-supplied and must be visibility-authorized. Owner RNG only; repeated/backwards ticks rejected. Persist MeleeBotState/ShooterBotState/SquadState via genre::save/load (record kinds 56-58, 59-63 reserved) and hash them with genreBotHash. bots/SensesPerception.h (perceivedFromSenses) turns stealth-senses PerceivedTarget records into bot input: visible+Alert targets are engageable with owner facts, Searching targets are remembered at lastKnown.",
+      "notes": "Read docs/mechanics-packages.md (action-bots) for exact coverage. Bots return player-equivalent inputs (MeleeInput, ShooterInput, role orders, objective choice) for the owner's ordinary command path and never write state. Perception is owner-supplied and must be visibility-authorized. Owner RNG only; repeated/backwards ticks rejected. Persist MeleeBotState/ShooterBotState/SquadState via genre::save/load (record kinds 56-58, 59-63 reserved) and hash them with genreBotHash. bots/SensesPerception.h (perceivedFromSenses) turns stealth-senses PerceivedTarget records into bot input: visible+Alert targets are engageable with owner facts, Searching targets are remembered at lastKnown.",
       "verifiedPlatforms": [],
-      "cmakeTarget": "AIVERSE::lib_genre_bots",
+      "cmakeTarget": "AIVERSE::lib_action_bots",
       "dependencies": [
         "libraries/include/aiverselib/bots/GenreCommon.h",
         "libraries/include/aiverselib/bots/MeleeBot.h",
@@ -2049,7 +2049,7 @@
       "source": "engine/mechanics/Telegraphs.h",
       "skill": "skills/gameplay/aiverse-boss-encounters/SKILL.md",
       "summary": "Telegraphed area attacks (windup/active/recovery, circle/cone/line/ring fixed-point hit tests, periodic and sweeping strikes, falloff, statuses on the strike tick, progress-telegraph view records and ground decals), slow/root/stun/burn status instances with stacking and immunity, boss phases by HP or time with range-band/sequence/weighted attack patterns, enrage and add waves, encounter windows with personal requests and archetype rotation, and mob wander/hunt/flee/leash/swarm behaviour",
-      "notes": "Read docs/mechanics-packages.md (boss-encounters) for exact coverage and authority boundaries. Decisions and outcomes only: the owner applies damage, moves bodies (steering, flow field or navmesh), places bosses/adds and renders the TelegraphView / StatusViewEvent records (TelegraphDecals.h -> GameGroundCanvas or view.draw_ground). Inside GameCore games the engine statuses stay authoritative (rtsStatusRules maps the definitions). Fixed math, integer ticks, repeated/backwards ticks rejected, RNG only through the passed Random&. Persist states via genre::save/load (record kinds 112..119, 112..117 used), hash with encounterHash and bind encounterDataHash. aiverse_encounter validates data and runs the headless hero-vs-boss reference fight.",
+      "notes": "Read docs/mechanics-packages.md (boss-encounters) for exact coverage and authority boundaries. Decisions and outcomes only: the owner applies damage, moves bodies (steering, flow field or navmesh), places bosses/adds and renders the TelegraphView / StatusViewEvent records (TelegraphDecals.h -> GameGroundCanvas or view.draw_ground). Inside GameCore games the engine statuses stay authoritative (gameStatusRules maps the definitions). Fixed math, integer ticks, repeated/backwards ticks rejected, RNG only through the passed Random&. Persist states via genre::save/load (record kinds 112..119, 112..117 used), hash with encounterHash and bind encounterDataHash. aiverse_encounter validates data and runs the headless hero-vs-boss reference fight.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_boss_encounters",
       "dependencies": [

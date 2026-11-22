@@ -1,5 +1,5 @@
 #pragma once
-// Squad/team roles (genre-bots): deterministic role assignment (attacker/defender/support/flanker) from the
+// Squad/team roles (action-bots): deterministic role assignment (attacker/defender/support/flanker) from the
 // objective stance and team composition with stable tie-breaks and hysteresis, plus simple formation slots.
 // Orders are goals for each member's own controller/navigation (melee or shooter bot, RTS move command, ...);
 // the squad policy never moves anybody itself.
@@ -22,7 +22,7 @@ struct SquadConfig {
 // roles: bitmask of roles this member may take (roleBit); members without a capable candidate fill remaining slots.
 struct SquadMember {int64_t id=0;Vec3 position{};uint8_t roles=kAllRoles;bool alive=true;};
 struct RoleSlot {int64_t id=0;SquadRole role=SquadRole::Attacker;};
-// Persisted squad memory (genre::save record kind 58). roles sorted by member id; heading = unit X/Z towards the objective at assignment.
+// Persisted squad memory (mechanics::save record kind 58). roles sorted by member id; heading = unit X/Z towards the objective at assignment.
 struct SquadState {uint64_t composition=0;uint32_t lastAssign=0,lastTick=0;Vec2 heading{};bool initialized=false;std::vector<RoleSlot> roles;};
 struct RoleOrder {int64_t id=0;SquadRole role=SquadRole::Attacker;uint32_t slot=0;Vec3 goal{};};
 struct SquadPlan {bool reassigned=false;std::array<uint32_t,kSquadRoles> counts{};std::vector<RoleOrder> orders;}; // orders sorted by id

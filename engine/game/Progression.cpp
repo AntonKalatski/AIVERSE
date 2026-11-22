@@ -12,7 +12,7 @@
 namespace aiverse::game {
 
 using namespace detail;
-namespace lg = aiverse::lib::genre;
+namespace lg = aiverse::lib::mechanics;
 
 namespace {
 inline int64_t toMilli(Fixed v) { return (v.raw * 1000 + (v.raw >= 0 ? 32768 : -32768)) / 65536; }
@@ -543,17 +543,17 @@ bool Progression::botGoal(Simulation& sim, uint8_t player, Vec3& goal, Fixed& st
     if (p && R_->offerAtCircles && (p->offer.open || lg::availableLevels(R_->defs, R_->perk, *p))) {
         if (atCircle(sim, player)) { goal = at; stand = Fixed::fromInt(1000); return true; }   // stay: the cards are (about to be) open
         const int64_t team = m_->teamOf(sim, player);
-        const lib::genre::SummonPointDef* best = nullptr;
+        const lib::mechanics::SummonPointDef* best = nullptr;
         for (auto& d : points_) {
             if (d.team && d.team != team) continue;
             if (!best || d2(d.position) < d2(best->position)) best = &d;
         }
         if (best) { goal = best->position; stand = fxMax(best->radius - Fixed::fromRatio(1, 2), Fixed::fromRatio(1, 4)); return true; }
     }
-    const lib::genre::XpOrb* orb = nullptr;
+    const lib::mechanics::XpOrb* orb = nullptr;
     const TopDown* td = m_->topDown();
     const bool check = td && td->active() && td->rules().bot.pathCheck;   // rules topDown.bot.pathCheck: skip orbs it cannot walk to
-    std::vector<const lib::genre::XpOrb*> near;
+    std::vector<const lib::mechanics::XpOrb*> near;
     for (auto& o : st->pickups.orbs) {   // orbs are kept in id order: ties go to the older one
         if (o.owner != 0 && o.owner != player) continue;
         if (d2(o.position) > orbRange * orbRange) continue;

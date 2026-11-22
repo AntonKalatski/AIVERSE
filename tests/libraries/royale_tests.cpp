@@ -4,7 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-using namespace aiverse;using namespace aiverse::lib::genre;
+using namespace aiverse;using namespace aiverse::lib::mechanics;
 #define CHECK(x) do{if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);}while(false)
 namespace {
 template<class State> void roundtrip(const State& s){

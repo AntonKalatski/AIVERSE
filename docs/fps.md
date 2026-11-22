@@ -12,11 +12,11 @@ Existing copied projects are not overwritten when engine templates change.
 
 ## Shared blocks at the top level of rules
 
-The actor-session host (game.json `"module": "fps"`, legacy name) reads its settings from `rules.fps`. The blocks
+The actor-session host (game.json `"module": "actor"`, legacy name) reads its settings from `rules.actor`. The blocks
 that describe capabilities rather than this host - `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`,
 `weapon` - may also be written at the top level of the rules (`rules.royale`, ...), which is where shared systems
 read them as they are extracted from the legacy hosts (docs/no-genre-split-audit.md, G6). A block may sit in only one
-of the two places; both at once is a load error. Existing projects keep `rules.fps.<block>` unchanged.
+of the two places; both at once is a load error. Existing projects keep `rules.actor.<block>` unchanged.
 
 ## Controls and weapons
 
@@ -176,7 +176,7 @@ through the door, climb a floor with the real motor).
 
 ## Library bots (opt-in)
 
-`fps.bots` holds [bots-fps](../skills/ai/aiverse-bots-combatant/SKILL.md) settings (`{"preset":"normal","sightRange":120}`).
+`fps.bots` holds [bots-combatant](../skills/ai/aiverse-bots-combatant/SKILL.md) settings (`{"preset":"normal","sightRange":120}`).
 Map players with `"bot": true` then run that controller inside the authoritative tick instead of the reference
 fallback bot: perception, reaction, bounded aim, reload, retreat and the battle-royale zone (the announced circle).
 On top of it the module adds goals: wanted loot within 25 m (weapons it lacks, better gear, medkits, ammo) and

@@ -5,7 +5,7 @@
 // this tick (ground, wall contact and normal, grapple ray hit) and the body's current velocity; the policy
 // returns the velocity to use when `overrides` is set, plus event bits. It never queries physics or moves bodies.
 // Fixed math, integer ticks; one stepTraversal per body per tick with strictly increasing ticks.
-// Persistence: genre::save/load (record kind 200); bind traversalConfigHash next to the state.
+// Persistence: mechanics::save/load (record kind 200); bind traversalConfigHash next to the state.
 #include "PolicyCommon.h"
 namespace aiverse::lib::mechanics {
 enum class TraversalMode:uint8_t {None,WallRun,WallSlide,Dash,Grapple,Glide};

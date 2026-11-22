@@ -8,7 +8,7 @@ int main(int argc,char** argv) {
     try {
         std::string project=argc>1?argv[1]:"examples/fps/arena";
         auto rules=Json::parseFile(project+"/rules.json"),map=Json::parseFile(project+"/map.json");
-        rules.member("fps").set("mode",Json::string("deathmatch"));
+        rules.member("actor").set("mode",Json::string("deathmatch"));
         for(bool websocket:{false,true}) {
             net::authority::Server server(rules,map);net::UdpListener udp;net::WsListener ws;
             if(!(websocket?ws.open(0):udp.open(0)))throw std::runtime_error("cannot bind loopback listener");

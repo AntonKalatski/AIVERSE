@@ -8,7 +8,7 @@
 #include <vector>
 
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 
 static void check(bool ok,const char* reason) {
     if(!ok)throw std::runtime_error(reason);

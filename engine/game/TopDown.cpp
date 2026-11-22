@@ -1171,21 +1171,21 @@ bool TopDown::steerCommand(Simulation& sim, uint8_t player, Vec3 goal, Fixed sta
             const Fixed r = m_->rules().types[w.get<Unit>(e).type].radius + Fixed::fromInt(1);
             const Vec2 me{pos.x, pos.z};
             for (const EncCast& c : es->casts) {   // ascending instance id: deterministic
-                const lib::genre::TelegraphView v = enc->view(c, sim.tick());
-                if (!v.live || v.team == mine || (v.phase != lib::genre::AttackPhase::Windup && v.phase != lib::genre::AttackPhase::Active)) continue;
-                lib::genre::AreaDef a;
+                const lib::mechanics::TelegraphView v = enc->view(c, sim.tick());
+                if (!v.live || v.team == mine || (v.phase != lib::mechanics::AttackPhase::Windup && v.phase != lib::mechanics::AttackPhase::Active)) continue;
+                lib::mechanics::AreaDef a;
                 a.shape = v.shape; a.radius = v.radius; a.inner = v.inner; a.halfAngle = v.halfAngle; a.length = v.length; a.halfWidth = v.halfWidth;
-                if (!lib::genre::areaHits(a, v.pose, me, r)) continue;
+                if (!lib::mechanics::areaHits(a, v.pose, me, r)) continue;
                 Vec2 out = me - v.pose.origin;
-                if (v.shape == lib::genre::AreaShape::Line) {   // sideways off the line
-                    const Vec2 right = lib::genre::areaRight(v.pose.yaw);
+                if (v.shape == lib::mechanics::AreaShape::Line) {   // sideways off the line
+                    const Vec2 right = lib::mechanics::areaRight(v.pose.yaw);
                     out = out.dot(right).raw >= 0 ? right : Vec2{-right.x, -right.y};
-                } else if (v.shape == lib::genre::AreaShape::Ring) {   // the nearer edge: inward or outward
+                } else if (v.shape == lib::mechanics::AreaShape::Ring) {   // the nearer edge: inward or outward
                     const Fixed d = out.length();
                     if (d - v.inner < v.radius - d) out = Vec2{-out.x, -out.y};
                 }
                 const Fixed ol = out.length();
-                if (ol.raw <= 0) out = lib::genre::areaRight(v.pose.yaw);
+                if (ol.raw <= 0) out = lib::mechanics::areaRight(v.pose.yaw);
                 else out = Vec2{out.x / ol, out.y / ol};
                 dodge += Vec3{out.x, Fixed{}, out.y};
             }

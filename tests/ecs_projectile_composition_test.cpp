@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <vector>
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 
 static void checkSweep(bool condition,const char* message) {
     if(!condition)throw std::runtime_error(message);

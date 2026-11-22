@@ -5,7 +5,7 @@
 // in one deterministic Dijkstra (cost, then node index) and returns legs: walk to a point / traverse a link.
 // stepLinkTraversal moves an agent along a link tick by tick (jump arcs, ladder and door timing, waiting at closed
 // doors). generateCover samples cover spots around box obstacles for ShooterBot (map GeneratedCover to
-// bots::CoverCandidate). Fixed math; persistence of LinkTraversal: genre::save/load record kind 201.
+// bots::CoverCandidate). Fixed math; persistence of LinkTraversal: mechanics::save/load record kind 201.
 #include <aiverselib/mechanics/PolicyCommon.h>
 #include "engine/world/SpatialWorld.h"
 namespace aiverse::lib::bots {

@@ -35,8 +35,8 @@ public:
 
         std::map<uint64_t,SpectraRenderPose> staged;
         bool valid=true;
-        world.eachExistingConst<lib::genre::SpectraSourceComponent>(
-            [&](Entity entity,const lib::genre::SpectraSourceComponent& source) {
+        world.eachExistingConst<lib::mechanics::SpectraSourceComponent>(
+            [&](Entity entity,const lib::mechanics::SpectraSourceComponent& source) {
                 if(!valid || !world.alive(entity) || !source.enabled ||
                    source.effect.empty())return;
                 fx::float3 p{},d{0,1,0};

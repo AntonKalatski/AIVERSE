@@ -16,7 +16,7 @@ Deterministic policy: Fixed/integer math, ascending ids, strictly increasing tic
 2. Call `stepTraversal(config, state, env, input, tick, dt)` after LocomotionModes; when `result.overrides` use `result.velocity` instead of the locomotion velocity.
 3. One-way platforms: the collision owner asks `oneWaySolid(top, previousFeet, feet, vy, result.ignoreOneWay)` before resolving contacts.
 4. An expired wall-run blocks the same wall until the body touches ground; a wall jump blocks it for `wallReattachTicks`.
-5. Persist TraversalState with genre::save/load (kind 200) and bind `traversalConfigHash(config)`.
+5. Persist TraversalState with mechanics::save/load (kind 200) and bind `traversalConfigHash(config)`.
 
 ## Limits
 

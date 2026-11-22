@@ -12,7 +12,7 @@
 #include <aiverselib/bots/TacticsBot.h>
 #include "engine/game/Native.h"
 bool libraryCardsTurnsConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;namespace bots=aiverse::lib::bots;
+    using namespace aiverse::lib::mechanics;namespace bots=aiverse::lib::bots;
     aiverse::Random rng(0x51ed270bu);
     auto cards=aiverse::Json::parse(R"({"rules":{"mulligan":"none","deck":[6,30]},
         "cards":[{"id":1,"name":"card.bolt","kind":"instant","cost":1,"target":"character","side":"enemy","effects":[{"op":"damage","amount":2}]},

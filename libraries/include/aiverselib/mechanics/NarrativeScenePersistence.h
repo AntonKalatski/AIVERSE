@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/mechanics/Namespace.h"
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for narrative scenes.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for narrative scenes.
 // Record kinds 64..71 are reserved for narrative-graphs scenes (64 NarrativeState, 65 BarkMemory used).
 // The record body starts with kNarrativeSceneFormat so later layouts can migrate. After load, call
 // narrativeStateError(world, config, state) and bind narrativeWorldHash + narrativeConfigHash in the save envelope.

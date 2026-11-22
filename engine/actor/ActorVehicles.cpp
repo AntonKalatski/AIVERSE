@@ -118,10 +118,10 @@ void ActorHost::setupVehicles(Simulation& sim,const Json& map) {
     World& w=sim.world();const auto entities=vehicleEntities(sim);
     for(size_t i=0;i<list.size()&&i<entities.size();++i){
         const auto& j=list[i];if(!j.has("type"))continue;
-        if(!config_.vehicleTypes)throw JsonError("fps vehicle.type: requires fps.vehicleTypes");
+        if(!config_.vehicleTypes)throw JsonError("actor vehicle.type: requires fps.vehicleTypes");
         auto type=j.getInt("type");const auto* t=drive_.type(type);
-        if(!t)throw JsonError("fps vehicle.type: unknown vehicle type "+std::to_string(type));
-        if(j.has("yaw")&&!j["yaw"].isNumber())throw JsonError("fps vehicle.yaw: expected turns");
+        if(!t)throw JsonError("actor vehicle.type: unknown vehicle type "+std::to_string(type));
+        if(j.has("yaw")&&!j["yaw"].isNumber())throw JsonError("actor vehicle.yaw: expected turns");
         auto& v=*w.tryGet<Vehicle>(entities[i]);v.yaw=j.getFx("yaw",Fixed{});
         vs::addVehicle(w,entities[i],*t,v.pos,v.yaw);
     }
@@ -199,7 +199,7 @@ void ActorHost::setupRace(Simulation& sim,const Json& rules,const Json& map){
     if(cars.size()<n)throw JsonError("map race: one typed map vehicle (\"type\") per player required");
     if(race->mapGrid&&race->course.grid.size()<n)throw JsonError("map race.grid: one slot per player");
     cars.resize(n);
-    for(const Entity e:cars){const auto& d=*vs::driveOf(w,e);if(!driverSeat(drive_.type(d.type)->seats))throw JsonError("fps.race: vehicle type "+std::to_string(d.type)+" needs a driver seat");}
+    for(const Entity e:cars){const auto& d=*vs::driveOf(w,e);if(!driverSeat(drive_.type(d.type)->seats))throw JsonError("actor.race: vehicle type "+std::to_string(d.type)+" needs a driver seat");}
     race_=std::move(race);
     RaceSeats seats(*this,sim);
     if(!race_->start(w,seats,drive_,cars,sim.tick()))throw JsonError(race_->line?"map race: invalid race":"map race: bots need a racing line (\"line\")");

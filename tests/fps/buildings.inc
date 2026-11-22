@@ -1,6 +1,6 @@
 // Map `buildings` (building-gen): generated collision, door entry and stair climbing with the real FPS motor.
 void buildings() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":30,"mode":"deathmatch","mechanics":{"enabled":true}}})");
+    auto rules=Json::parse(R"({"actor":{"tickRate":30,"mode":"deathmatch","mechanics":{"enabled":true}}})");
     auto cfg=actor::readConfig(rules);lib::systems::BuildingDef def;def.floors=3;
     def.agentRadius=cfg.motor.radius;def.agentHeight=cfg.motor.height;def.maxStepRise=fxMin(def.maxStepRise,cfg.motor.stepHeight);
     Vec3 origin{20_fx,{},20_fx};auto layout=*lib::systems::generateBuilding(def,5,origin-Vec3{{},def.slab,{}},0);layout.doorOutside.y={};
@@ -26,7 +26,7 @@ void buildings() {
 }
 // Map colliders with "yaw": exact rotated boxes (12 triangles), not their bounding boxes.
 void rotatedColliders() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":30,"mode":"deathmatch"}})");
+    auto rules=Json::parse(R"({"actor":{"tickRate":30,"mode":"deathmatch"}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[-6,0.01,0],[30,0.01,30]],
       "colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]},{"id":2,"center":[0,1.5,0],"half":[20,1.5,0.25],"yaw":0.125}]})");
     auto sim=simulation(rules,map);auto& module=actor::host(*sim);const auto& w=module.collision();
@@ -41,8 +41,8 @@ void rotatedColliders() {
 }
 // fps.bots: a library bot walks through the door of a generated house and picks up the loot inside.
 void houseBots() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":30,"mode":"deathmatch","mechanics":{"enabled":true},"bots":{"preset":"normal"},
-      "weapons":[{"nameKey":"fps.weapon.pistol"},{"nameKey":"fps.weapon.rifle"}]}})");
+    auto rules=Json::parse(R"({"actor":{"tickRate":30,"mode":"deathmatch","mechanics":{"enabled":true},"bots":{"preset":"normal"},
+      "weapons":[{"nameKey":"actor.weapon.pistol"},{"nameKey":"actor.weapon.rifle"}]}})");
     auto cfg=actor::readConfig(rules);lib::systems::BuildingDef def;def.floors=1;
     def.agentRadius=cfg.motor.radius;def.agentHeight=cfg.motor.height;def.maxStepRise=fxMin(def.maxStepRise,cfg.motor.stepHeight);
     Vec3 origin{20_fx,{},20_fx};auto layout=*lib::systems::generateBuilding(def,8,origin-Vec3{{},def.slab,{}},0);layout.doorOutside.y={};
@@ -59,7 +59,7 @@ void houseBots() {
 }
 // Every room of generated houses (all floors, via the stairs) is reachable on the bots' navmesh from the door.
 void houseNavigation() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":30,"mode":"deathmatch"}})");auto cfg=actor::readConfig(rules);
+    auto rules=Json::parse(R"({"actor":{"tickRate":30,"mode":"deathmatch"}})");auto cfg=actor::readConfig(rules);
     for(uint64_t seed=1;seed<=6;++seed)for(uint32_t floors:{1u,2u,3u}){
         lib::systems::BuildingDef def;def.floors=floors;def.agentRadius=cfg.motor.radius;def.agentHeight=cfg.motor.height;def.maxStepRise=fxMin(def.maxStepRise,cfg.motor.stepHeight);
         Json b=Json::object();b.set("floors",Json::number(int64_t(floors)));Json house=Json::object();house.set("pos",Json::parse("[0,0,0]"));house.set("seed",Json::number(int64_t(seed)));house.set("building",b);
@@ -78,8 +78,8 @@ void houseNavigation() {
 }
 // A bot fetches loot from the top floor of a three-storey house (navmesh per floor + the stair flights).
 void upstairsBot() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":30,"mode":"deathmatch","mechanics":{"enabled":true},"bots":{"preset":"normal"},
-      "weapons":[{"nameKey":"fps.weapon.pistol"},{"nameKey":"fps.weapon.rifle"}]}})");
+    auto rules=Json::parse(R"({"actor":{"tickRate":30,"mode":"deathmatch","mechanics":{"enabled":true},"bots":{"preset":"normal"},
+      "weapons":[{"nameKey":"actor.weapon.pistol"},{"nameKey":"actor.weapon.rifle"}]}})");
     auto cfg=actor::readConfig(rules);lib::systems::BuildingDef def;def.floors=3;
     def.agentRadius=cfg.motor.radius;def.agentHeight=cfg.motor.height;def.maxStepRise=fxMin(def.maxStepRise,cfg.motor.stepHeight);
     Vec3 origin{20_fx,{},20_fx};auto layout=*lib::systems::generateBuilding(def,4,origin-Vec3{{},def.slab,{}},0);layout.doorOutside.y={};

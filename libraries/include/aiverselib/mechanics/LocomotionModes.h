@@ -103,7 +103,7 @@ inline uint64_t locomotionConfigHash(const LocomotionModeConfig& c){
     return h.value();
 }
 
-// Persistence: genre::save/load from Persistence.h find these overloads by argument lookup.
+// Persistence: mechanics::save/load from Persistence.h find these overloads by argument lookup.
 inline void io(Archive& a,LocomotionState& s){
     auto& m=s.motion;a(m.velocity,m.lastTick,m.lastGround,m.jumpTick,m.jumps,m.initialized,m.hasGround,m.buffered);
     a(s.mode,s.mantle,s.lastTick,s.modeTick,s.releaseTick,s.mantleRiseTicks,s.mantleTicks,s.mantleRise,s.mantleForward,s.stamina,s.initialized,s.sliding,s.submerged,s.released);

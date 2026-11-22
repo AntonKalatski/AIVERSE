@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/mechanics/Namespace.h"
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for stealth-senses state.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for stealth-senses state.
 // Record kinds 48..55 are reserved for this package (48..52 used). Store SensesState in its own NativeState
 // key and bind sensesConfigHash plus the disguise/hiding definition version in the save envelope.
 #include "Senses.h"

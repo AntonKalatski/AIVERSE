@@ -44,13 +44,13 @@ public:
     }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.actorSessionPlay()) {
-            ImGui::TextWrapped("%s",engineText(ed.ws(),"fps.editor.hint").c_str());
+        if(ed.ws().project.actorSession()) {
+            ImGui::TextWrapped("%s",engineText(ed.ws(),"actor.editor.hint").c_str());
             ImGui::BeginDisabled(ed.ws().building());
-            if(ImGui::Button(engineText(ed.ws(),"fps.editor.play").c_str()))ed.startFpsPlay();
-            ImGui::SameLine();if(ImGui::Button(engineText(ed.ws(),"fps.editor.listen").c_str()))ed.startFpsPlay(true);
+            if(ImGui::Button(engineText(ed.ws(),"actor.editor.play").c_str()))ed.startFpsPlay();
+            ImGui::SameLine();if(ImGui::Button(engineText(ed.ws(),"actor.editor.listen").c_str()))ed.startFpsPlay(true);
             ImGui::EndDisabled();
-            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+            if(ImGui::Button(engineText(ed.ws(),"actor.editor.open").c_str()))ed.focusWindow("actor");
             ed.gameViewport=nullptr;return;
         }
         toolbar(ed);

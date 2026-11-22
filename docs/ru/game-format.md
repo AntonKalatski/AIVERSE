@@ -22,7 +22,7 @@ JSON допускает комментарии `//`. **Числа — обычн
 
 ```json
 { "name": "Iron and Gold", "id": "com.studio.ironandgold", "version": "0.1.0", "build": 1,
-  "module": "rts", "rules": "rules.json",
+  "module": "game", "rules": "rules.json",
   "maps": [{ "file": "maps/valley.json", "title": "River Valley (1v1)" }],
   "orientation": "landscape", "icon": "icon.png" }
 ```

@@ -8,7 +8,7 @@
 #include "engine/game/Native.h"
 #include <string>
 bool libraryProductionSurvivalConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse::lib::genre;namespace bots=aiverse::lib::bots;
+    using namespace aiverse::lib::mechanics;namespace bots=aiverse::lib::bots;
     if(!colonySettingsErrors(settings).empty()||!survivalSettingsErrors(settings).empty())return false;
     const auto survival=survivalConfig(settings);
     ColonyDefs defs;PowerGridState grid;EcologyDefs eco;bots::ColonyPlannerConfig planner;

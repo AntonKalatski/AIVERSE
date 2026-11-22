@@ -11,7 +11,7 @@ int main() {
  const auto root=fs::temp_directory_path()/("studio-human-look-"+std::to_string(getpid()));
  const auto project=root/"templates"/"character";fs::create_directories(project/"content"/"Ada");
  try {
-  {std::ofstream f(project/"game.json");f<<R"({"name":"Look test","module":"rts","rules":"rules.json"})";}
+  {std::ofstream f(project/"game.json");f<<R"({"name":"Look test","module":"game","rules":"rules.json"})";}
   {std::ofstream f(project/"rules.json");f<<R"({"resources":{},"types":{"person":{"name":"Person","health":{"max":1}}}})";}
   {std::ofstream f(project/"content/Ada/model.gltf");f<<"{}";}
   vivid::HumanAppearance look;look.materials["Face"]="skin";look.values["skin.roughness"]=.8f;

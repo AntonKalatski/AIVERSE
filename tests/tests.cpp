@@ -337,7 +337,7 @@ TEST(determinism_replay_reproduces_match) {
 
 TEST(replay_file_roundtrip) {
     Replay r;
-    r.module = "rts"; r.rulesPath = "a"; r.mapPath = "b"; r.seed = 5; r.endTick = 100; r.finalChecksum = 0xdeadbeef;
+    r.module = "game"; r.rulesPath = "a"; r.mapPath = "b"; r.seed = 5; r.endTick = 100; r.finalChecksum = 0xdeadbeef;
     Command c; c.tick = 3; c.player = 1; c.type = 1; c.units = {Entity{1, 0}}; c.param = 50;
     r.commands = {c, c};
     r.checksums = {{20, 1}, {40, 2}};
@@ -347,7 +347,7 @@ TEST(replay_file_roundtrip) {
     CHECK(r.save(path));
     Replay l;
     CHECK(l.load(path));
-    CHECK(l.module == "rts" && l.seed == 5 && l.endTick == 100 && l.finalChecksum == 0xdeadbeef);
+    CHECK(l.module == "game" && l.seed == 5 && l.endTick == 100 && l.finalChecksum == 0xdeadbeef);
     CHECK(l.commands.size() == 2 && l.commands[1] == c);
     CHECK(l.checksums == r.checksums);
     std::remove(path);

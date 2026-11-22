@@ -12,13 +12,13 @@ namespace aiverse::netgame {
 
 struct MatchData {
     Json manifest, rules, map;
-    std::string module = "rts";
+    std::string module = "game";
 };
 
 // gameDir: folder with game.json; mapFile relative to it. Throws std::runtime_error with a readable message.
 MatchData loadMatchData(const std::string& gameDir, const std::string& mapFile);
 
-// A Simulation for the module named in game.json ("rts"), or nullptr if this build lacks it.
+// A Simulation for the module named in game.json ("game"), or nullptr if this build lacks it.
 std::unique_ptr<Simulation> makeSimulation(const std::string& module, const SimConfig& cfg);
 
 // The arbiter aiverse_server installs: gameDirs maps game.json "id" to its folder.

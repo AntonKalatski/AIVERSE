@@ -1,5 +1,5 @@
 #include "apps/editor/core/DocumentLightIdentity.h"
-// FPS authoring lighting adapter: modify a COPY and commit it via fps_set.
+// FPS authoring lighting adapter: modify a COPY and commit it via actor_set.
 // Do not use MapDoc.extra for FPS lighting: MapDoc::toJson() serializes fps instead.
 #pragma once
 #include "apps/editor/core/LightOps.h"

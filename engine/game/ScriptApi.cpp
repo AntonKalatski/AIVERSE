@@ -1333,8 +1333,8 @@ int gTrafficLight(lua_State* L, Vm& vm) {
     Traffic* t = m.traffic();
     const int j = t && t->active() ? t->junctionAt(x, z) : -1;
     if (j < 0 || !t->net().junctions[size_t(j)].signal) { lua_pushnil(L); return 1; }
-    lib::genre::TrafficAxis axis = lib::genre::TrafficAxis::X;
-    if (lua_isstring(L, 3)) axis = std::string(lua_tostring(L, 3)) == "z" ? lib::genre::TrafficAxis::Z : lib::genre::TrafficAxis::X;
+    lib::mechanics::TrafficAxis axis = lib::mechanics::TrafficAxis::X;
+    if (lua_isstring(L, 3)) axis = std::string(lua_tostring(L, 3)) == "z" ? lib::mechanics::TrafficAxis::Z : lib::mechanics::TrafficAxis::X;
     else {
         const auto& net = t->net();
         const int cx = int(x.floorInt()), cz = int(z.floorInt());

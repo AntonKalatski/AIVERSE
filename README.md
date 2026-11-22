@@ -96,7 +96,7 @@ from the mechanics libraries — each one deterministic, tested, with save/resto
 |---|---|
 | **RTS, tower defense, capture games** | Full `rts` module: units and buildings from data, A\* / HPA\* / flow fields for armies of thousands of units on maps up to 2048², economy, construction, fog of war, AI, terrain and planets, 26 templates |
 | **FPS and TPS** | Full `fps` module: client and authoritative server, large streamed worlds up to 100 players, bots, 4 templates; `weapon-policies` (recoil, ballistics, penetration), `match-rules` (rounds, payload, bomb/defuse, extraction) |
-| **Action, fighting, soulslike** | `combat-actions`, `melee-combat`: hitboxes and hurtboxes, combos and cancel windows, dodge i-frames, parry, poise, lock-on; `genre-bots` for opponents |
+| **Action, fighting, soulslike** | `combat-actions`, `melee-combat`: hitboxes and hurtboxes, combos and cancel windows, dodge i-frames, parry, poise, lock-on; `action-bots` for opponents |
 | **Platformer, metroidvania** | `character-locomotion`: coyote time, jump buffer, ledges, ladders, swimming, climbing, mantling; `zone-graph`: ability gates, checkpoints and softlock proofs |
 | **Stealth, immersive sim** | `stealth-senses`: sight cones, hearing, suspicion and alerts, searches, disguises; `physical-interactions`: carrying, throwing, ropes, doors, platforms, breakables |
 | **Story games, visual novels** | `narrative-graphs`: dialogue with conditions, relationships, consequences, VN backlog and auto-advance; `cinematic-gameplay`: timelines, QTE, slow motion |

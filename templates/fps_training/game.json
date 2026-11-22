@@ -2,7 +2,7 @@
   "id": "com.aiverse.fps_training",
   "name": "Aim Lab",
   "description": "Тренировочный тир: мишени, стрельба, перезарядка и полоса препятствий.",
-  "module": "fps",
+  "module": "actor",
   "genre": "fps",
   "version": "0.1.0",
   "rules": "rules.json",

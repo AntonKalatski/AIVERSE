@@ -506,7 +506,7 @@ inline std::optional<NarrativeReport> stepNarrative(const NarrativeWorld& w,cons
     state=std::move(s);return r;
 }
 
-// Structural + definition binding check for a restored state (call after genre::load). Empty when it fits.
+// Structural + definition binding check for a restored state (call after mechanics::load). Empty when it fits.
 inline std::string narrativeStateError(const NarrativeWorld& w,const NarrativeConfig& c,const NarrativeState& s){
     if(s.facts.size()!=w.facts.size())return "facts: state does not match the fact definitions";
     for(const auto& [id,v]:s.facts){auto f=w.facts.find(id);if(f==w.facts.end()||!scene_detail::inDomain(f->second,v))return "facts["+std::to_string(id)+"]: unknown or out of domain";}

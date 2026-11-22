@@ -554,7 +554,7 @@ def load_trees(assets, out):
 
 def game_manifest():
     return {
-        'name': 'Kingston Streets', 'id': 'com.aiverse.kingstonstreets', 'version': '0.1.0', 'build': 1, 'module': 'rts',
+        'name': 'Kingston Streets', 'id': 'com.aiverse.kingstonstreets', 'version': '0.1.0', 'build': 1, 'module': 'game',
         'sourceLanguage': 'en', 'languages': ['en'], 'rules': 'rules.json',
         'maps': [{'file': 'maps/city.json', 'title': 'Downtown'}],
         'lighting': {'time': 0.42, 'clouds': 0.2, 'sunDir': [-0.8, 1.0, 0.5]},   # a slanted sun: shadows are visible from straight above

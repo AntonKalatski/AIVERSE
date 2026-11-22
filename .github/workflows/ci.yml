@@ -334,7 +334,7 @@ jobs:
           python3 tests/meta/local_match.py
           cmake -S . -B build/.temp/local-fps -DCMAKE_BUILD_TYPE=Release -DAIVERSE_BUILD_SERVER=ON -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_EDITOR=OFF -DAIVERSE_BUILD_TESTS=OFF -DAIVERSE_BUILD_TOOLS=OFF
           cmake --build build/.temp/local-fps --target aiverse_fps_server --parallel 4
-          python3 tests/meta/local_match_listener.py --server build/.temp/local-fps/modules/fps/aiverse_fps_server --probe build/.temp/strategy-native/build-export/native/aiverse_session_native_probe
+          python3 tests/meta/local_match_listener.py --server build/.temp/local-fps/engine/actor/aiverse_fps_server --probe build/.temp/strategy-native/build-export/native/aiverse_session_native_probe
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -23,7 +23,7 @@ Compatibility and ownership:
   setProperty; reject ownership mismatch. Light update/delete optionally resolve
   entityId before legacy index. Old callers retain compatibility.
 - Lighting/Hierarchy/Inspector/viewport share entity selection. FPS mutations
-  validate whole document through fps_set; RTS uses existing MapDoc history.
+  validate whole document through actor_set; RTS uses existing MapDoc history.
 - Global all-object mandate committed in Stage33 and copied to root AGENTS.md;
   root copy remains uncommitted on its unrelated branch, other changes preserved.
 

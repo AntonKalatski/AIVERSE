@@ -5,7 +5,7 @@
   "id": "com.aiverse.mushroomclash",
   "version": "0.1.0",
   "build": 1,
-  "module": "rts",
+  "module": "game",
   "sourceLanguage": "en",
   "languages": ["en", "ru"],
   "rules": "rules.json",

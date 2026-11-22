@@ -389,8 +389,8 @@ void Editor::drawPlayControls() {
     ui::beginSegment();
     const bool on = playing() || clientPlaying();
     if(ws_.map.data.worldSpace) {
-        at();if(ui::toolButton(ICON_PLAY,engineText(ws_,"fps.editor.play").c_str(),false,!ws_.building()))startFpsPlay();
-        at();if(ui::toolButton(ICON_GAME,engineText(ws_,"fps.editor.open").c_str()))focusWindow("fps");
+        at();if(ui::toolButton(ICON_PLAY,engineText(ws_,"actor.editor.play").c_str(),false,!ws_.building()))startFpsPlay();
+        at();if(ui::toolButton(ICON_GAME,engineText(ws_,"actor.editor.open").c_str()))focusWindow("actor");
         ui::endSegment();ImGui::PopStyleVar();return;
     }
     const bool asClient = prefersClientPlay();   // the game's own screens: F5 plays as in the client

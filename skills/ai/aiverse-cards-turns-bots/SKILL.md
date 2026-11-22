@@ -7,7 +7,7 @@ description: Reuse AIVERSE turn and card bot policies (a tactics turn planner sc
 
 Use for computer opponents in `card-games` and `tactics-grid` games. Bots return the same action a player submits;
 the owner applies it through `stepCardGame` / `stepTactics`, so bots can never bypass validation. Real-time bots
-(melee/shooter/squad) are `genre-bots`; RTS AI is ComputerPlayer.
+(melee/shooter/squad) are `action-bots`; RTS AI is ComputerPlayer.
 
 1. Read `libraries/include/aiverselib/bots/CardBot.h` and `bots/TacticsBot.h`, and `docs/mechanics-packages.md`
    (Cards and turn strategy section).

@@ -18,7 +18,7 @@
 #include <vector>
 using namespace aiverse;
 using namespace aiverse::lib;
-using namespace aiverse::lib::genre;
+using namespace aiverse::lib::mechanics;
 namespace {
 void require(bool ok,const char* what){if(!ok)throw std::runtime_error(what);}
 template<class T> T roundtrip(const T& value){T copy;require(load(save(value),copy),"record failed to load");return copy;}

@@ -22,7 +22,7 @@ bool Traffic::projectReturnCar(Simulation& sim, TrafficStore& st, int id, Entity
 }
 
 using namespace detail;
-namespace tl = lib::genre;
+namespace tl = lib::mechanics;
 
 namespace {
 const Fixed kUnit = Fixed::fromInt(1);
@@ -67,7 +67,7 @@ Fixed segDistSq(Vec2 p, Vec2 a, Vec2 b) {
 struct Axles { Fixed rear{}, base{}, maxSteer{}, falloff{}; };
 Axles axlesOf(const vehicles::VehicleType* vt, Fixed mpc) {
     Axles a;
-    if (!vt || vt->def.kind != lib::genre::VehicleKind::Wheeled || mpc.raw <= 0 || vt->def.wheeled.wheels.empty()) return a;
+    if (!vt || vt->def.kind != lib::mechanics::VehicleKind::Wheeled || mpc.raw <= 0 || vt->def.wheeled.wheels.empty()) return a;
     const auto& wc = vt->def.wheeled;
     Fixed front = wc.wheels[0].offset.z, rear = front;
     for (auto& w : wc.wheels) { front = fxMax(front, w.offset.z); rear = fxMin(rear, w.offset.z); }
@@ -100,7 +100,7 @@ Fixed curveMinRadius(Vec2 e, Vec2 c, Vec2 x) {
     Fixed best = Fixed::fromInt(1000);
     for (int i = 1; i < n; ++i) {
         const Vec2 a = p[i] - p[i - 1], b = p[i + 1] - p[i], d = p[i + 1] - p[i - 1];
-        const Fixed cr = fxAbs(lib::genre::trafficDetail::cross(a, d));
+        const Fixed cr = fxAbs(lib::mechanics::trafficDetail::cross(a, d));
         if (cr.raw <= 0) continue;
         best = fxMin(best, a.length() * b.length() * d.length() / (cr * 2));
     }
@@ -111,8 +111,8 @@ Fixed curveMinRadius(Vec2 e, Vec2 c, Vec2 x) {
 // until the curve is wide enough, at most as far as the shorter leg is long.
 Vec2 widenTurn(Vec2 e, Vec2 c, Vec2 x, Fixed need) {
     if (need.raw <= 0 || curveMinRadius(e, c, x) >= need) return c;
-    const Vec2 din = lib::genre::trafficDetail::normalised(c - e), dout = lib::genre::trafficDetail::normalised(x - c);
-    const Vec2 out = lib::genre::trafficDetail::normalised(din - dout);
+    const Vec2 din = lib::mechanics::trafficDetail::normalised(c - e), dout = lib::mechanics::trafficDetail::normalised(x - c);
+    const Vec2 out = lib::mechanics::trafficDetail::normalised(din - dout);
     if (out.lengthSq().raw == 0) return c;
     const Fixed lim = fxMin((c - e).length(), (x - c).length());
     for (Fixed t = Fixed::fromRatio(1, 8); t <= lim; t += Fixed::fromRatio(1, 8))
@@ -1665,7 +1665,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
         const Vec2 tgt = tl::trafficPursuit(rearP, pts, ld);
         const Vec2 d = tgt - rearP;
         if (d.lengthSq().raw > 0) {
-            const Fixed alpha = lib::genre::vehicleDetail::wrap(fxAtan2Turns(d.x, d.y) - yaw);
+            const Fixed alpha = lib::mechanics::vehicleDetail::wrap(fxAtan2Turns(d.x, d.y) - yaw);
             const Fixed delta = fxAtan2Turns(ax.base * fxSinTurns(alpha) * 2, d.length());
             const Fixed lock = steerLock(ax, v);
             if (lock.raw > 0) c.input.steer = fxClamp(delta / lock, -kUnit, kUnit);

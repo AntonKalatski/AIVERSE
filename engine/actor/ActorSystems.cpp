@@ -9,8 +9,8 @@
 namespace aiverse::actor {
 namespace {
 Vec3 position(const Json& j) {
-    if(!j.isArray()||j.size()!=3)throw JsonError("fps object: expected position [x,y,z]");
-    Vec3 v;Fixed* coordinates[]={&v.x,&v.y,&v.z};for(size_t i=0;i<3;++i){if(!j[i].isNumber()||fxAbs(j[i].fx())>100000_fx)throw JsonError("fps object: invalid coordinate");*coordinates[i]=j[i].fx();}return v;
+    if(!j.isArray()||j.size()!=3)throw JsonError("actor object: expected position [x,y,z]");
+    Vec3 v;Fixed* coordinates[]={&v.x,&v.y,&v.z};for(size_t i=0;i<3;++i){if(!j[i].isNumber()||fxAbs(j[i].fx())>100000_fx)throw JsonError("actor object: invalid coordinate");*coordinates[i]=j[i].fx();}return v;
 }
 bool near(Vec3 a,Vec3 b,Fixed radius){return (a-b).lengthSq()<=radius*radius;}
 bool inside(Vec3 p,const world::Bounds& b){return p.x>=b.min.x&&p.x<=b.max.x&&p.y>=b.min.y&&p.y<=b.max.y&&p.z>=b.min.z&&p.z<=b.max.z;}
@@ -33,34 +33,34 @@ void ActorHost::setupSystems(Simulation& sim,const Json& map) {
     forEachCharacter(sim,[&](CharacterRef actor){actor.armor=config_.systems.startArmor;actor.money=config_.systems.startMoney;});
     auto boxes=[&](const char* key,std::vector<world::Bounds>& output){
         if(!map.has(key))return;
-        if(!map[key].isArray()||map[key].size()>128)throw JsonError(std::string("fps.")+key+": expected at most 128 boxes");
-        for(const auto& box:map[key].items()){world::Bounds b{position(box["min"]),position(box["max"])};if(b.min.x>=b.max.x||b.min.y>=b.max.y||b.min.z>=b.max.z)throw JsonError("fps region: invalid bounds");output.push_back(b);}
+        if(!map[key].isArray()||map[key].size()>128)throw JsonError(std::string("actor.")+key+": expected at most 128 boxes");
+        for(const auto& box:map[key].items()){world::Bounds b{position(box["min"]),position(box["max"])};if(b.min.x>=b.max.x||b.min.y>=b.max.y||b.min.z>=b.max.z)throw JsonError("actor region: invalid bounds");output.push_back(b);}
     };
     boxes("ladders",ladders_);boxes("bombSites",sites_);
     if(config_.mode=="bomb"){
         bool attack=false,defense=false;
-        forEachCharacter(sim,[&](CharacterRef actor){if(actor.team>2)throw JsonError("fps bomb: teams must be 1 or 2");attack|=actor.team==1;defense|=actor.team==2;});
-        if(!attack||!defense||sites_.empty())throw JsonError("fps bomb: both teams and a bomb site are required");
+        forEachCharacter(sim,[&](CharacterRef actor){if(actor.team>2)throw JsonError("actor bomb: teams must be 1 or 2");attack|=actor.team==1;defense|=actor.team==2;});
+        if(!attack||!defense||sites_.empty())throw JsonError("actor bomb: both teams and a bomb site are required");
         for(size_t slot=1;slot<=characterCount(sim);++slot)if(character(sim,uint8_t(slot)).team==1){s.match.carrier=uint8_t(slot);break;}
     }
     for(const auto& box:map["colliders"].items())if(box.has("penetration")) {
-        if(!box["penetration"].isNumber()||box["penetration"].fx()<=Fixed{}||box["penetration"].fx()>10_fx)throw JsonError("fps collider.penetration: expected (0,10]");
+        if(!box["penetration"].isNumber()||box["penetration"].fx()<=Fixed{}||box["penetration"].fx()>10_fx)throw JsonError("actor collider.penetration: expected (0,10]");
         penetrable_[uint32_t(box.getInt("id"))]=box["penetration"].fx();
     }
-    auto array=[&](const char* key,size_t limit){if(map.has(key)&&(!map[key].isArray()||map[key].size()>limit))throw JsonError(std::string("fps.")+key+": invalid array size");};
+    auto array=[&](const char* key,size_t limit){if(map.has(key)&&(!map[key].isArray()||map[key].size()>limit))throw JsonError(std::string("actor.")+key+": invalid array size");};
     array("loot",kMaxLoot);array("vehicles",kMaxVehicles);
     for(const auto& j:map["loot"].items()) {
         auto type=j.getInt("type"),count=j.getInt("count",1);
-        if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(config_.weapons.size()))||(type>=200&&config_.gear.contains(type-200)))||count<1||count>20)throw JsonError("fps loot: invalid type or count");
+        if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(config_.weapons.size()))||(type>=200&&config_.gear.contains(type-200)))||count<1||count>20)throw JsonError("actor loot: invalid type or count");
         Loot l{s.nextObject++,position(j["pos"]),int32_t(type),int32_t(count)};
         if(type>=200){l.count=1;l.ammo=int32_t(config_.gear.at(type-200).durability);}
         else if(type>=100){l.count=1;l.ammo=config_.weapons[size_t(type-100)].magazine;l.reserve=config_.weapons[size_t(type-100)].reserve;}
         spawnLoot(sim,l);
     }
     for(const auto& j:map["vehicles"].items()) {
-        auto speed=j.getFx("speed",15_fx);if(speed<1_fx||speed>50_fx)throw JsonError("fps vehicle.speed: expected 1..50");
+        auto speed=j.getFx("speed",15_fx);if(speed<1_fx||speed>50_fx)throw JsonError("actor vehicle.speed: expected 1..50");
         Vehicle v;v.id=s.nextObject++;v.pos=position(j["pos"]);v.speed=speed;
-        if(collision_.blocked({v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}}))throw JsonError("fps vehicle spawn intersects collision");
+        if(collision_.blocked({v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}}))throw JsonError("actor vehicle spawn intersects collision");
         spawnVehicle(sim,v);
     }
     s.match.start=ticks(sim);initialLoot_=loot(sim);initialVehicles_=vehicles(sim);
@@ -87,7 +87,7 @@ void ActorHost::damage(Simulation& sim,uint8_t source,CharacterRef target,int32_
         if(teammate){releaseVehicles(target.slot);target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
     }
     // The same immediate integer HP commit as the generic ECS DamageResolutionSystem.
-    lib::genre::applyIntegerHitPointDamage(target.health,amount);
+    lib::mechanics::applyIntegerHitPointDamage(target.health,amount);
     if(target.health)return;
     target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
     if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
@@ -118,12 +118,12 @@ bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int
     if(!rewind)live=livePoses(sim);
     const auto& targets=rewind?*rewind:live;
     const World& view=sim.world();
-    lib::genre::HitscanIntentComponent shotIntent;
+    lib::mechanics::HitscanIntentComponent shotIntent;
     shotIntent.origin=eye;
     shotIntent.delta=delta;
     shotIntent.maximumFraction=best;
     shotIntent.requested=true;
-    const auto actorHit=lib::genre::resolveHitscanIntent(
+    const auto actorHit=lib::mechanics::resolveHitscanIntent(
         shotIntent,characterEntity(sim,source),targets,
         [&](const HitPose& target) {
             if(target.slot==source||target.health<=0)return false;
@@ -140,7 +140,7 @@ bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int
     // Vehicles after characters: an exact equal-distance hit keeps the character; nearer vehicles occlude.
     uint32_t vehicleId=0;
     const auto cars=vehicles(sim);
-    const auto vehicleHit=lib::genre::selectClosestHitscanCandidate(
+    const auto vehicleHit=lib::mechanics::selectClosestHitscanCandidate(
         cars,eye,delta,best,
         [&](const Vehicle& v) {return v.health>0 && v.driver!=source;},
         [&](const Vehicle& v) {
@@ -173,7 +173,7 @@ bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int
     // Accepted direct hits go through the shared ordered ECS impact policy; head / limb modifiers, armor,
     // knockdown, kill and replay side effects stay in damage(). A ray has no splash or deferred on-hit stage.
     const Entity victimEntity=characterEntity(sim,victim);
-    lib::genre::resolveOrderedProjectileImpact(
+    lib::mechanics::resolveOrderedProjectileImpact(
         {kNullEntity,characterEntity(sim,source),victimEntity,point,
          Fixed::fromInt(amount),Fixed{}},
         [&](Entity) { damage(sim,source,character(sim,victim),amount,head); },
@@ -329,7 +329,7 @@ bool ActorHost::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
         remove=now>=p.expires;
     } else if(now<p.expires) {
         // Physical bounce is a shared policy; fuse, blast, smoke and flash belong to the effect stages below.
-        lib::genre::stepBouncingProjectile(p.pos,p.velocity,
+        lib::mechanics::stepBouncingProjectile(p.pos,p.velocity,
                                             collision_,sim.dt());
     } else {
         if(p.kind==2) {
