@@ -252,7 +252,9 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     pooledIndices_=std::move(pooled);
     dedicated_=dedicated;
     streaming_=std::move(streaming);
-    if(compactSelection_ && !streaming_)cpuIndices_=std::move(combined);
+    // Compacted submission gathers straight from the staged asset's indices
+    // (no second CPU copy: that copy was as large as the whole index set).
+    cpuGather_=compactSelection_ && !streaming_;
     stats_={};
     stats_.pooledIndices=pooledIndices_.valid();
     stats_.dedicatedIndices=dedicated || bool(streaming_);
@@ -307,6 +309,8 @@ bool PortableSource::collectResidencyDemands(
                         g.nodes.size());
                 }
                 view.frustumCull=false; // shadow/reflection keep coverage
+                view.coarsenOutsideFrustum=true;
+                view.trustedSource=true; // validated by stage()
                 view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
                 ViewPlan plan;
                 if(!planView(g,view,plan,nullptr) || plan.budgetExceeded)
@@ -470,6 +474,8 @@ bool PortableSource::prepareModel(
                     // The existing renderer independently culls the per-pass
                     // model primitives. Never select only main-camera geometry.
                     view.frustumCull=false;
+                    view.coarsenOutsideFrustum=true; // off-view clusters stay coarse
+                    view.trustedSource=true; // validated by stage()
                     view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
                     ViewPlan plan;
                     if(!planView(g,view,plan,nullptr,
@@ -572,7 +578,7 @@ bool PortableSource::prepareModel(
         // frame: ~10 MB/frame for 20 dense objects, the main cost on phones.)
         ++compact->prepares;
         compact->collect(*device_);
-        const bool sameSelection=compact->signature==compactSignature && !compact->scratch.empty() && compact->buffer.valid();
+        const bool sameSelection=compact->signature==compactSignature && compact->buffer.valid();
         const bool reuse=sameSelection;
         if(reuse)++compact->reuses;
         if(!sameSelection)out.clear();
@@ -583,7 +589,11 @@ bool PortableSource::prepareModel(
             Primitive prim=source_->meshes[entry.mesh].primitives[entry.primitive];
             uint32_t count=0;
             for(const auto& r:compactRanges[i]){
-                if(!sameSelection)out.insert(out.end(),cpuIndices_.begin()+r.first,cpuIndices_.begin()+r.first+r.count);
+                if(!sameSelection){
+                    const auto& src=entry.geometry.indices;
+                    const size_t at=size_t(r.first-primitiveOffsets_[i]);
+                    out.insert(out.end(),src.begin()+at,src.begin()+at+r.count);
+                }
                 count+=r.count;
             }
             prim.firstIndex=cursor;
@@ -609,6 +619,7 @@ bool PortableSource::prepareModel(
             if(!compact->buffer.valid()){compact->capacityBytes=0;compact->signature=0;return reject("compacted Strata index buffer allocation failed");}
             compact->signature=compactSignature;
             ++compact->uploads;
+            std::vector<uint32_t>().swap(out); // the GPU buffer is the only copy kept
         }
         alias.ib=compact->buffer;
         alias.gpuFirstIndex=0;
@@ -664,7 +675,7 @@ void PortableSource::shutdown(gfx::Device& dev){
     firstIndex_=indexCount_=baseVertex_=0;
     sourceGeometryRevision_=sourceMaterialRevision_=0;
     primitiveOffsets_.clear(); legacyMaterialMask_.clear();
-    std::vector<uint32_t>().swap(cpuIndices_);
+    cpuGather_=false;
     stats_={};
     std::vector<SelectedCluster>().swap(debugSelection_);
 }

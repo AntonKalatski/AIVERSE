@@ -37,7 +37,7 @@ void GeometryScene::validate(const Json& j){
         for(auto& [k,v]:i.members())if(k!="id"&&k!="model"&&k!="position"&&k!="rotation"&&k!="scale"&&k!="geometry"&&k!="proxy"&&k!="layers"&&k!="strata")throw std::runtime_error("geometry scene: unknown instance key '"+k+"'");
         if(i.getStr("id").empty()||!ids.insert(i.getStr("id")).second)throw std::runtime_error("geometry scene: unique nonempty instance id required");
         path(i.getStr("model"));parseGeometryPolicy(i["geometry"]);
-        if(i.has("strata")&&i["strata"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: instance strata must be boolean (forces STRATA on/off for its model)");
+        if(i.has("strata")&&i["strata"].type()!=Json::Type::Bool&&!(i["strata"].isString()&&i.getStr("strata")=="auto"))throw std::runtime_error("geometry scene: instance strata must be true (force STRATA), false (force the LOD path) or \"auto\"");
         if(i.has("layers")){
             const auto& l=i["layers"];const double v=l.isNumber()?l.toDouble():0;
             if(!(v>=1&&v<=4294967295.0)||v!=std::floor(v))throw std::runtime_error("geometry scene: 'layers' must be a nonzero 32-bit layer mask");

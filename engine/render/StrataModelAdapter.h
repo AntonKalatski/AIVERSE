@@ -108,8 +108,11 @@ public:
     // Production scenes: see auditModelSourceSeams(tolerant).
     void setTolerateSourceSeamDefects(bool value) { tolerateSourceSeamDefects_ = value; }
     void setCookIo(CookIo io) { cook_ = std::move(io); }
+    // Keep meshlet vertex/triangle tables after staging (GPU cluster paths).
+    void setRetainMeshlets(bool value) { retainMeshlets_ = value; }
 private:
     CookIo cook_;
+    bool retainMeshlets_ = false;
     BuildOptions options_{};
     Limits limits_{};
     StagingStats stats_{};

@@ -488,6 +488,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             auto rot=vector(i["rotation"],{});constexpr float deg=.0174532925199433f;
             in.world=mat4::translate(vector(i["position"],{}))*mat4::rotateY(rot.y*deg)*mat4::rotateX(rot.x*deg)*mat4::rotateZ(rot.z*deg)*mat4::scale(vector(i["scale"],{1,1,1}));
             if(i.has("layers"))in.layers=uint32_t(i["layers"].toDouble());
+            if(i.has("strata")&&i["strata"].type()==Json::Type::Bool)in.strataForce=i["strata"].boolean()?1:-1;
             if(i.has("proxy")){
                 const auto proxyFile=i["proxy"].getStr("model");
                 if(!models_.count(proxyFile)){
@@ -507,28 +508,37 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         // generate LOD meshes, so "authored LODs" means the asset's own chain.
         std::set<const Model*> strataLodSources;
         strataSelectDecisions_.clear();
-        if (strataPortableRenderingEnabled_ && strataAutoSelect_) {
+        if (strataPortableRenderingEnabled_) {
+            // Per instance: "strata": true forces STRATA, false forces the LOD
+            // path, absent = auto (the model's decision below; with
+            // strata.select "all" every model is STRATA). A model is staged
+            // when at least one of its instances draws through STRATA.
             std::map<const Model*,size_t> count;
-            std::map<const Model*,int> forced; // -1 off, 1 on
-            {
-                size_t k=0;
-                for (const auto& i : json["instances"].items()) {
-                    if (k>=instances_.size()) break;
-                    const Model* m=instances_[k++].model;
-                    ++count[m];
-                    if (i.has("strata")) forced[m]=i["strata"].boolean()?1:-1;
-                }
-            }
+            for (const auto& in : instances_) ++count[in.model];
             StrataAutoSelectConfig cfg;
             if (strataAutoMinTriangles_) cfg.minTriangles=strataAutoMinTriangles_;
+            std::map<const Model*,bool> autoStrata;
             for (const auto& [file, m] : models_) {
                 if (!m || !count.count(m.get())) continue;
-                std::string why;
-                bool strata=strataPreferred(strataSourceFacts(*m,count[m.get()]),cfg,&why);
-                if (forced.count(m.get())) { strata=forced[m.get()]>0; why="forced by instance \"strata\""; }
-                if (!strata) strataLodSources.insert(m.get());
-                strata ? ++stats_.strataAutoStrataSources : ++stats_.strataAutoLodSources;
-                strataSelectDecisions_.push_back(file+": "+(strata?"strata":"lod")+" ("+why+")");
+                std::string why="strata.select all";
+                const bool a=!strataAutoSelect_ || strataPreferred(strataSourceFacts(*m,count[m.get()]),cfg,&why);
+                autoStrata[m.get()]=a;
+                size_t on=0,off=0,forcedOn=0,forcedOff=0;
+                for (auto& in : instances_) {
+                    if (in.model!=m.get()) continue;
+                    in.strataRoute=in.strataForce>0 || (in.strataForce==0 && a);
+                    in.strataRoute ? ++on : ++off;
+                    if (in.strataForce>0) ++forcedOn;
+                    if (in.strataForce<0) ++forcedOff;
+                }
+                const bool staged=on>0;
+                if (!staged) strataLodSources.insert(m.get());
+                staged ? ++stats_.strataAutoStrataSources : ++stats_.strataAutoLodSources;
+                std::string line=file+": "+(staged?"strata":"lod")+" (auto: "+(a?"strata":"lod")+", "+why+")";
+                if (forcedOn||forcedOff)
+                    line+=" instances strata="+std::to_string(on)+" lod="+std::to_string(off)+
+                          " (forced on "+std::to_string(forcedOn)+", forced off "+std::to_string(forcedOff)+")";
+                strataSelectDecisions_.push_back(line);
             }
         }
         for(auto& [file,m]:models_)if(hlod_||std::any_of(instances_.begin(),instances_.end(),[&](const Instance& i){return i.model==m.get()&&(i.policy.clusters||i.policy.shadowClusters||i.policy.occluder);}))prepareGeometry(*m);
@@ -1118,11 +1128,13 @@ void GeometryScene::draw(Renderer3D& r){
         }
     }
     stats_.strataErrorScale=strataBudgetScale_;
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
     {
         uint64_t bytes=0;
         for(const auto& [instance,buffer]:strataCompactBuffers_) if(buffer) bytes+=buffer->capacityBytes;
         stats_.strataSelectionGpuBytes=bytes;
     }
+#endif
     stats_.submitted=0;stats_.surfaceProxiesSubmitted=0;
     strataDebugStats_.reset();
     ++strataDrawFrame_;
@@ -1415,7 +1427,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     // The Vulkan GPU route does NOT create a second ModelDraw. It only
     // annotates this single source draw for Renderer3D's own main pass.
     // An unsupported view/source retains the normal Legacy/portable path.
-    const bool gpuStrataPrepared=tryStrataVulkanGpuDraw(r,i,d);
+    const bool gpuStrataPrepared=i.strataRoute && tryStrataVulkanGpuDraw(r,i,d);
     // No duplicate geometry: preview only; always execute the exact legacy
     // draw below. Source proxies and HLOD substitutes are intentionally
     // excluded from this diagnostic path. Source key is borrowed only for
@@ -1433,7 +1445,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     }
 #endif
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
-    if (!gpuStrataPrepared && strataPortableRenderingEnabled_ &&
+    if (!gpuStrataPrepared && strataPortableRenderingEnabled_ && i.strataRoute &&
         d.model == i.model &&
         !strataPortableSources_.empty()) {
         const auto staged=strataPortableSources_.find(d.model);

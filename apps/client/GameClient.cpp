@@ -17,6 +17,9 @@
 // F8:     RmlUi debugger. The UI itself is data: engine/assets/ui/*.rml (see ClientUi.cpp).
 #include <fstream>
 #include <cstdlib>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -1146,7 +1149,11 @@ struct ClientStageProfile {
         double sum = 0;
         for (int i = 0; i < kStages; ++i) { n += std::snprintf(line + n, sizeof line - size_t(n), " %s=%.2f", names[i], total[i] / frames); sum += total[i]; total[i] = 0; }
         std::snprintf(line + n, sizeof line - size_t(n), " total=%.2f ms", sum / frames);
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "%s", line);
+#else
         std::fprintf(stderr, "%s\n", line);
+#endif
         frames = 0;
     }
 } g_stages;

@@ -1966,7 +1966,7 @@ void RtsView::drawStrataHud(float w, float h) {
         double(g.strataIndexBytes)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0,strataHud_.ms,strataHud_.ms>0?1000.0/strataHud_.ms:0.0);
     ImDrawList* dl=ImGui::GetForegroundDrawList();
     if(strataDebugInset_ && insetTexture_){
-        const float s2=ImGui::GetFontSize()*std::max(1.f,std::floor(h/(ImGui::GetFontSize()*30.f)));
+        const float s2=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);
         const float iw=std::floor(w*.40f), ih=std::floor(iw*h/std::max(1.f,w)), m=s2*.6f;
         const ImVec2 p0{w-iw-m,m}, p1{w-m,m+ih};
         dl->AddRectFilled({p0.x-3,p0.y-3},{p1.x+3,p1.y+3+s2*1.4f},IM_COL32(0,0,0,200),4.f);
@@ -1979,11 +1979,11 @@ void RtsView::drawStrataHud(float w, float h) {
     if(geometryScene_.strataDebugView().enabled && geometryScene_.strataDebugRightHalf()){
         const float x=std::floor(w*.5f);
         dl->AddLine({x,0},{x,h},IM_COL32(255,255,255,200),2.f);
-        const float s2=ImGui::GetFontSize()*std::max(1.f,std::floor(h/(ImGui::GetFontSize()*30.f)));
+        const float s2=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);
         dl->AddText(ImGui::GetFont(),s2,{x+s2*.6f,h-s2*1.6f},IM_COL32(255,255,255,230),"STRATA debug: clusters");
         dl->AddText(ImGui::GetFont(),s2,{s2*.6f,h-s2*1.6f},IM_COL32(255,255,255,230),"final image");
     }
-    const float size=ImGui::GetFontSize()*std::max(1.f,std::floor(h/(ImGui::GetFontSize()*30.f)));
+    const float size=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);
     ImFont* font=ImGui::GetFont();
     const ImVec2 extent=font->CalcTextSizeA(size,1e9f,0,text);
     const ImVec2 at{size*0.6f,size*0.6f};
