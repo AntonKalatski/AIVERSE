@@ -142,6 +142,7 @@ if __name__ == "__main__":
     path = os.path.join(ROOT, "planets", "maps", "two_worlds.json")
     with open(path, "w", encoding="utf-8") as f: f.write(compact(build()) + "\n")
     print("wrote", path)
-    path = os.path.join(ROOT, "planets", "maps", "big_planet.json")
-    with open(path, "w", encoding="utf-8") as f: f.write(json.dumps(build_big(), ensure_ascii=False, separators=(",", ":")) + "\n")
-    print("wrote", path)
+    # maps/big_planet.json comes from the engine's planet generator (noise relief, coasts that follow the heights):
+    #   aiverse_headless --project <copy of templates/planets with big_planet.json first> --generate rocky --seed 11 \
+    #       --players 2 --gen-out templates/planets/maps/big_planet.json
+    # build_big() below is the old hand-made version, kept for reference only.

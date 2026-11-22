@@ -29,6 +29,11 @@ bool loadLoader() {
 #else
 #if defined(__ANDROID__)
     void* lib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+#elif defined(__APPLE__)
+    // macOS: the Vulkan SDK / Homebrew loader over MoltenVK, or MoltenVK alone.
+    void* lib = dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
+    if (!lib) lib = dlopen("libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
+    if (!lib) lib = dlopen("libMoltenVK.dylib", RTLD_NOW | RTLD_LOCAL);
 #else
     void* lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
     if (!lib) lib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);

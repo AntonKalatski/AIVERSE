@@ -1,4 +1,4 @@
-# Dynamic indirect GI
+# LUMA: dynamic indirect GI
 
 The lighting branch provides an explicit, genre-independent, one-bounce diffuse
 probe overlay. It composes with existing direct lighting. It does not implicitly

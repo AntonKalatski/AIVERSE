@@ -1,0 +1,35 @@
+{
+  "id": "2026-11-16-render-sponza-pbr",
+  "date": "2026-11-16",
+  "system": "render",
+  "title": "Sponza: PBR, тени и ambient occlusion",
+  "summary": "Классическая тестовая сцена Sponza целиком в рендере AIVERSE: физически корректные материалы, тени от солнца и затенение.",
+  "body": [
+    "Кадр снят движком; на этой же сцене собраны бенчмарки освещения, проб GI и дымки в docs/benchmarks/sponza-2026-11-12."
+  ],
+  "status": "done",
+  "verified": "Снимок сделан движком на сцене Sponza.",
+  "limits": null,
+  "branch": "main",
+  "commit": "ad6025b50",
+  "media": [
+    {
+      "src": "docs/images/readme/sponza.jpg",
+      "caption": "Sponza: PBR, тени, AO",
+      "captionEn": "Sponza: PBR, shadows, AO"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/probe-gi.md",
+      "href": "docs/probe-gi.md"
+    }
+  ],
+  "author": "render",
+  "titleEn": "Sponza: PBR, shadows and ambient occlusion",
+  "summaryEn": "The classic Sponza test scene fully rendered by AIVERSE: physically based materials, sun shadows and occlusion.",
+  "verifiedEn": "Frame captured by the engine in the Sponza scene.",
+  "bodyEn": [
+    "Captured by the engine; the lighting, GI probe and haze benchmarks in docs/benchmarks/sponza-2026-11-12 use the same scene."
+  ]
+}

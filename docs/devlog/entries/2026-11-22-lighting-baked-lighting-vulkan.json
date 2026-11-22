@@ -1,0 +1,51 @@
+{
+  "id": "2026-11-22-lighting-baked-lighting-vulkan",
+  "date": "2026-11-22",
+  "system": "lighting",
+  "title": "Запечённое освещение на Vulkan и Android",
+  "summary": "Запечённые лайтмапы и пробы света проверены на Vulkan и Android; по пути исправлено чтение упакованных вершинных данных на мобильных GPU — оно ломало и лайтмапы, и скелетную анимацию.",
+  "body": [
+    "Статичные модели, стоящие там, где их запекли, берут свет из лайтмапа, а сдвинутые или новые объекты — из сетки проб. Это давно работало на Metal и GL; теперь то же самое проверено на Vulkan и на Android-телефоне.",
+    "Проверка нашла ошибку в Vulkan-бэкенде. На части мобильных GPU (Adreno 610 в том числе) нет формата вершин `R8G8B8A8_USCALED`, и байтовые атрибуты читались как числа от 0 до 1 вместо 0–255. Из-за этого UV лайтмапа указывали в одну точку, а у скелетной анимации брались неправильные кости. Теперь для таких устройств движок собирает вариант вершинного шейдера, который восстанавливает настоящие значения; на устройствах с этим форматом ничего не меняется.",
+    "Заодно исправлены тесты новых эффектов PRISMA: их проверка не узнавала строку «PASS» и считала проваленными даже прошедшие эффекты."
+  ],
+  "status": "done",
+  "verified": "Новый GPU-тест `lighting_baked_{gpu,gl,vulkan}`: плита с лайтмапом из двух цветов и та же плита со сдвигом (свет из проб), солнце выключено. Mac Studio (Metal и GL) и телефон Samsung Galaxy A05s (Adreno 610, Vulkan) — пройдено. На телефоне проверка UV лайтмапа падала до исправления и проходит после; там же снова пройдены Luma, динамический GI и `aiverse_vulkan_tests`.",
+  "limits": "Это проверочная сцена с одной плитой, а не запекание реальной карты на телефоне. Скелетные модели на Adreno визуально не проверялись — исправление проверено на лайтмапах и компиляции вариантов шейдеров.",
+  "branch": "main",
+  "commit": "781b362e1",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-lighting-baked-lighting-vulkan/01.jpg",
+      "caption": "Лайтмап из двух цветов на плите: слева красный, справа синий, Vulkan на Android",
+      "captionEn": "A two-colour lightmap on a slab: red on the left, blue on the right, Vulkan on Android"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-lighting-baked-lighting-vulkan/02.jpg",
+      "caption": "Та же плита не на месте запекания — свет из зелёной сетки проб",
+      "captionEn": "The same slab moved off its baked place — lit by a green probe grid"
+    }
+  ],
+  "links": [
+    {
+      "title": "Запекание света",
+      "titleEn": "Light baking",
+      "href": "docs/lightbake.md"
+    },
+    {
+      "title": "Vulkan",
+      "titleEn": "Vulkan",
+      "href": "docs/vulkan.md"
+    }
+  ],
+  "author": "lighting",
+  "titleEn": "Baked lighting on Vulkan and Android",
+  "summaryEn": "Baked lightmaps and light probes are checked on Vulkan and Android; on the way, reading packed vertex data on mobile GPUs was fixed — it broke both lightmaps and skeletal animation.",
+  "bodyEn": [
+    "Static models standing where they were baked take their light from the lightmap, moved or new objects from the probe grid. This has long worked on Metal and GL; the same is now checked on Vulkan and on an Android phone.",
+    "The check found a bug in the Vulkan backend. Some mobile GPUs (Adreno 610 among them) have no `R8G8B8A8_USCALED` vertex format, so byte attributes were read as 0..1 instead of 0..255. Lightmap UVs pointed at one spot and skeletal animation used the wrong bones. On such devices the engine now builds a vertex-shader variant that restores the real values; devices with the format are unchanged.",
+    "The tests of the new PRISMA effects were fixed too: their check did not recognise the \"PASS\" line and reported passing effects as failed."
+  ],
+  "verifiedEn": "New GPU test `lighting_baked_{gpu,gl,vulkan}`: a slab with a two-colour lightmap and the same slab moved (lit by probes), sun off. Mac Studio (Metal and GL) and a Samsung Galaxy A05s phone (Adreno 610, Vulkan) — passed. On the phone the lightmap UV check failed before the fix and passes after; Luma, dynamic GI and `aiverse_vulkan_tests` pass there again.",
+  "limitsEn": "This is a one-slab test scene, not baking a real map on a phone. Skeletal models on Adreno were not checked visually — the fix is verified on lightmaps and on compiling the shader variants."
+}

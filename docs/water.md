@@ -158,3 +158,13 @@ Set AIVERSE_NEREID_DIAGNOSTIC only for a separate inspection process: depth
 These opt-in shader variants draw opaque diagnostic colour for NEREID only;
 postprocessing may transform the display values. Unset the environment variable
 for normal rendering. They do not change scene/component/save state.
+
+
+## Legacy cell water -> NEREID (2026-11-22)
+
+`terrain.water.renderer: "nereid"` draws the map's water cells with NEREID surfaces converted
+from the same layout the legacy mesh uses (sheet / bodies, same levels); default stays
+`"legacy"`, `AIVERSE_WATER_RENDERER=legacy|nereid` overrides for A/B. Ten engine templates are
+switched. Converter, fail-closed rules, evidence and open items:
+`docs/nereid/legacy-water-migration.md`. Large open seas (LOD rings, patch coverage):
+`docs/nereid/ocean-lod.md`.

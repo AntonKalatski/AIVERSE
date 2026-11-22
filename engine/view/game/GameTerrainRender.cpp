@@ -191,6 +191,11 @@ void TerrainRenderer::parseLook(const Json& t) {
             look_.waterColor = {c.x, c.y, c.z, w["color"].size() >= 4 ? float(w["color"][3].toDouble()) : 0.78f};
         }
         look_.waterOffset = float(w["offset"].toDouble(look_.waterOffset));
+        const std::string renderer = w.getStr("renderer", "legacy");
+        look_.waterRenderer = renderer == "nereid" ? TerrainLook::WaterRenderer::Nereid : TerrainLook::WaterRenderer::Legacy;
+        if (renderer != "nereid" && renderer != "legacy")
+            std::fprintf(stderr, "[water] unknown terrain.water.renderer \"%s\", using legacy\n", renderer.c_str());
+        if (w["nereid"].isObject()) look_.nereid = w["nereid"];
     } else if (w.isString()) {
         std::string m = w.str();
         look_.water = m == "sheet" ? TerrainLook::Water::Sheet : m == "bodies" ? TerrainLook::Water::Bodies : TerrainLook::Water::Auto;
@@ -310,6 +315,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     retiredMeshes_.retireBuffer(dev,water_.vb);
     retiredMeshes_.retireBuffer(dev,water_.ib);
     water_={};
+    nereidWater_.reset();
     if(!retiredMeshes_.completeForShutdown(dev))
         throw std::runtime_error("TerrainRenderer: pending GPU mesh retirement could not reach idle");
     for (auto t : {cellTex_, dynTex_, splatTex_, visionTex_, detailNrmTex_, detailSplatTex_, white_, flatN_, gray_, heightField_.tex}) if (t.valid()) dev.destroyTexture(t);
@@ -609,6 +615,8 @@ bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept
     built_=next.built_;
     hasWater_=next.hasWater_;
     waterSheet_=next.waterSheet_;
+    nereidWater_=next.nereidWater_;
+    nereidWaterStatus_=next.nereidWaterStatus_;
     waterHash_=next.waterHash_;
     texW_=next.texW_;texH_=next.texH_;dynRow_=next.dynRow_;
     nrmW_=next.nrmW_;nrmH_=next.nrmH_;
@@ -782,6 +790,8 @@ bool TerrainRenderer::buildInternal(gfx::Device& dev,
         water_=staged.water_;
         hasWater_=staged.hasWater_;
         waterSheet_=staged.waterSheet_;
+        nereidWater_=staged.nereidWater_;
+        nereidWaterStatus_=staged.nereidWaterStatus_;
         mapW_=staged.mapW_;
         mapH_=staged.mapH_;
         cw_=staged.cw_;
@@ -899,6 +909,8 @@ bool TerrainRenderer::buildInternal(gfx::Device& dev,
         water_=staged.water_;
         hasWater_=staged.hasWater_;
         waterSheet_=staged.waterSheet_;
+        nereidWater_=staged.nereidWater_;
+        nereidWaterStatus_=staged.nereidWaterStatus_;
         mapW_=g.w;
         mapH_=g.h;
         cw_=staged.cw_;
@@ -1256,36 +1268,17 @@ void TerrainRenderer::buildApron(gfx::Device& dev, const MapGrid& g) {
 // Water. Sheet (classic): one translucent plane slightly below ground level, visible where the
 // terrain dips. Bodies: every connected water area gets its own surface just below its lowest shore
 // corner, so lakes on plateaus and heightfield valleys hold water at their own level.
-void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDig) {
-    // The existing water mesh can still be referenced by submitted cameras.
-    // Publish replacement only after the new mesh has uploaded successfully.
-    auto publish=[&](Mesh replacement,bool has,bool sheet) {
-        retiredMeshes_.retireBuffer(dev,water_.vb);
-        retiredMeshes_.retireBuffer(dev,water_.ib);
-        water_=replacement;
-        hasWater_=has;
-        waterSheet_=sheet;
-    };
-    bool nextHasWater=false;
+// The water layout both renderers share: the legacy mesh below and the NEREID
+// conversion (GameWaterNereid.h) read the same bodies, cells and levels.
+LegacyWaterLayout TerrainRenderer::legacyWaterLayout(const MapGrid& g, bool flatDig) const {
+    LegacyWaterLayout out;
     const int W = g.w, H = g.h;
-    for (auto f : g.flags) if ((f & kCellWater) && !(f & kCellGround)) { nextHasWater = true; break; }
-    const bool nextWaterSheet=look_.water==TerrainLook::Water::Sheet ||
+    out.width = W; out.height = H; out.apron = float(kApron);
+    out.sheet = look_.water==TerrainLook::Water::Sheet ||
         (look_.water==TerrainLook::Water::Auto && !heightfield_);
-    const auto uploadWater=[&](const MeshBuilder& builder) {
-        reservePreparationBytes(builder.vertices().size(),sizeof(MeshVertex));
-        // Conservative upper bound: MeshBuilder may choose 16-bit indices.
-        reservePreparationBytes(builder.indices().size(),sizeof(uint32_t));
-        return builder.upload(dev);
-    };
-    MeshBuilder wb;
-    wb.color(rgba(255, 255, 255));
-    if (nextWaterSheet) {
-        if (!nextHasWater) { publish({},false,nextWaterSheet); return; }
-        const float a = float(kApron), y = look_.waterOffset;
-        wb.quad({-a, y, -a}, {-a, y, float(H) + a}, {float(W) + a, y, float(H) + a}, {float(W) + a, y, -a});
-        publish(uploadWater(wb),true,nextWaterSheet);
-        return;
-    }
+    out.sheetY = look_.waterOffset;
+    for (auto f : g.flags) if ((f & kCellWater) && !(f & kCellGround)) { out.any = true; break; }
+    if (out.sheet) return out;
     std::vector<int> body(size_t(W * H), -1);
     std::vector<int> stack;
     int bodies = 0;
@@ -1315,7 +1308,9 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
                 for (int cy = 0; cy <= 1; ++cy) for (int cx = 0; cx <= 1; ++cx) top = std::max(top, terrain::gridCorner(g, lh_, x + cx, y + cy, flatDig));
             }
             if (!deep && look_.water == TerrainLook::Water::Auto && !heightfield_) continue; // shallows alone: no surface
-            const float y = (rim < 1e8f ? rim : top) + look_.waterOffset;
+            LegacyWaterLayout::Body b;
+            b.level = (rim < 1e8f ? rim : top) + look_.waterOffset;
+            b.water = cells;
             // detail surface: the water reaches one cell under the shore, the smooth bank cuts its outline
             if (detailOn_) {
                 std::vector<int> grown = cells;
@@ -1329,8 +1324,78 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
                     }
                 cells.swap(grown);
             }
-            // rows of cells merged into runs
             std::sort(cells.begin(), cells.end());
+            b.cells = std::move(cells);
+            out.bodies.push_back(std::move(b));
+        }
+    return out;
+}
+
+TerrainLook::WaterRenderer TerrainRenderer::waterRenderer() const {
+    if (const char* forced = std::getenv("AIVERSE_WATER_RENDERER")) {
+        if (std::strcmp(forced, "nereid") == 0) return TerrainLook::WaterRenderer::Nereid;
+        if (std::strcmp(forced, "legacy") == 0) return TerrainLook::WaterRenderer::Legacy;
+    }
+    return look_.waterRenderer;
+}
+
+float TerrainRenderer::waterGroundAt(const MapGrid& g, float x, float z) const {
+    return detailOn_ ? detail_.sample(x, z) : terrain::heightAt(g, lh_, x, z);
+}
+
+// Water. Sheet (classic): one translucent plane slightly below ground level, visible where the
+// terrain dips. Bodies: every connected water area gets its own surface just below its lowest shore
+// corner, so lakes on plateaus and heightfield valleys hold water at their own level.
+// terrain.water.renderer "nereid" (or AIVERSE_WATER_RENDERER=nereid) converts the same layout to
+// NEREID surfaces (GameWaterNereid.h) that GameView draws; the legacy mesh is then not built.
+void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDig) {
+    // The existing water mesh can still be referenced by submitted cameras.
+    // Publish replacement only after the new mesh has uploaded successfully.
+    auto publish=[&](Mesh replacement,bool has,bool sheet) {
+        retiredMeshes_.retireBuffer(dev,water_.vb);
+        retiredMeshes_.retireBuffer(dev,water_.ib);
+        water_=replacement;
+        hasWater_=has;
+        waterSheet_=sheet;
+    };
+    const LegacyWaterLayout layout = legacyWaterLayout(g, flatDig);
+    const bool nextWaterSheet = layout.sheet;
+    nereidWater_.reset();
+    nereidWaterStatus_.clear();
+    if (waterRenderer() == TerrainLook::WaterRenderer::Nereid) {
+        std::string why;
+        auto manifest = legacyWaterToNereidManifest(layout, look_.waterColor, look_.nereid,
+            [&](float x, float z) { return waterGroundAt(g, x, z); }, &why);
+        if (manifest) {
+            nereidWater_ = std::make_shared<const Json>(std::move(*manifest));
+            publish({}, false, nextWaterSheet);
+            return;
+        }
+        // Fail closed to the legacy mesh; the reason is reported by stats/status.
+        nereidWaterStatus_ = why;
+        std::fprintf(stderr, "[water] NEREID conversion refused, legacy water kept: %s\n", why.c_str());
+    }
+    const int W = g.w;
+    auto isWater = [&](int x, int y) { return (g.flags[size_t(g.index(x, y))] & kCellWater) != 0; };
+    const auto uploadWater=[&](const MeshBuilder& builder) {
+        reservePreparationBytes(builder.vertices().size(),sizeof(MeshVertex));
+        // Conservative upper bound: MeshBuilder may choose 16-bit indices.
+        reservePreparationBytes(builder.indices().size(),sizeof(uint32_t));
+        return builder.upload(dev);
+    };
+    MeshBuilder wb;
+    wb.color(rgba(255, 255, 255));
+    if (nextWaterSheet) {
+        if (!layout.any) { publish({},false,nextWaterSheet); return; }
+        const float a = float(kApron), y = look_.waterOffset;
+        wb.quad({-a, y, -a}, {-a, y, float(g.h) + a}, {float(W) + a, y, float(g.h) + a}, {float(W) + a, y, -a});
+        publish(uploadWater(wb),true,nextWaterSheet);
+        return;
+    }
+    for (const auto& body : layout.bodies) {
+            const auto& cells = body.cells;
+            const float y = body.level;
+            // rows of cells merged into runs
             for (size_t i = 0; i < cells.size();) {
                 size_t j = i + 1;
                 while (j < cells.size() && cells[j] == cells[j - 1] + 1 && cells[j] / W == cells[i] / W) ++j;
@@ -1354,9 +1419,8 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
                 }
                 i = j;
             }
-        }
-    nextHasWater = !wb.empty();
-    if(nextHasWater)publish(uploadWater(wb),true,nextWaterSheet);
+    }
+    if(!wb.empty())publish(uploadWater(wb),true,nextWaterSheet);
     else publish({},false,nextWaterSheet);
 }
 

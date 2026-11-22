@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -16,6 +17,7 @@
 #include "FxModelMesh.h"
 #include "SpectraFxGpuRoutes.h"
 #include "SpectraFxCueInbox.h"
+#include "SpectraFxEntityEffects.h"
 #include "../render/Renderer3D.h"
 #include "../render/TextureCache.h"
 
@@ -37,8 +39,11 @@ public:
         lastError_.clear();
         device_=&device;
         if(!reader) {lastError_="SpectraFX scene host missing reader";return false;}
+        // Kept even without routes: configureEntityEffects may enable later.
+        reader_=std::move(reader);
+        textureBase_=std::move(textureBase);
         std::string routesText;
-        if(!reader("fx/gpu/routes.json",routesText)) return true;
+        if(!reader_("fx/gpu/routes.json",routesText)) return true;
         SpectraFxGpuRouteAsset::Routes routes;
         SpectraFxGpuBudgetGovernor::Config budget;
         std::optional<FxQuality> authoredQuality;
@@ -47,8 +52,53 @@ public:
             return false;
         if(authoredQuality) quality_=*authoredQuality;
         if(routes.empty()) return true;
-        reader_=std::move(reader);
-        textureBase_=std::move(textureBase);
+        if(!enable(budget)) return false;
+        for(const auto& [type,route]:routes)
+            if(route.playback.enabled)
+                playback_->route(uint32_t(type),route.playback);
+        return true;
+    }
+
+    // Data-driven entity effects (SpectraFxEntityEffects.h): the "spectraFx"
+    // blocks of rules then map, plus inline "spectraFx" objects found on
+    // data lists the host names (selector prefix -> list). Enables the host
+    // when the project declares any binding, even without fx/gpu/routes.json.
+    struct InlineList { std::string prefix; const Json* list=nullptr; const char* idKey="id"; };
+    bool configureEntityEffects(const Json& rules,const Json& map,
+                                const std::vector<InlineList>& inlineLists={}) {
+        SpectraFxEntityTable table;
+        std::string error;
+        for(const auto& list:inlineLists)
+            if(list.list && !table.readInline(*list.list,list.prefix,list.idKey,&error)) {
+                lastError_=error;return false;
+            }
+        if(!table.read(rules["spectraFx"],&error) || !table.read(map["spectraFx"],&error)) {
+            lastError_=error;return false;
+        }
+        entities_.reset(true);
+        if(table.empty()) {entities_.configure({}, {});return true;}
+        if(!enabled_ && !enable({})) return false;
+        SpectraFxEntityEffects::Backend backend;
+        backend.cpu=&cpu_;
+        backend.isGpuAsset=[this](const std::string& name) {
+            return library_ && library_->load(name).valid;
+        };
+        backend.routeGpu=[this](uint32_t id,const std::string& asset,float seconds) {
+            if(!playback_) return;
+            SpectraFxHybridPlayback::Route route;
+            route.asset=asset;
+            route.oneShotSeconds=seconds;
+            playback_->route(id,route);
+        };
+        entities_.configure(std::move(table),std::move(backend));
+        return true;
+    }
+    SpectraFxEntityEffects& entities() {return entities_;}
+    const SpectraFxEntityEffects& entities() const {return entities_;}
+
+private:
+    bool enable(const SpectraFxGpuBudgetGovernor::Config& budget) {
+        gfx::Device& device=*device_;
         textures_.init(device);
         cpu_.setQuality(quality_);
         cpu_.setFileReader(reader_);
@@ -73,12 +123,11 @@ public:
             device,cpu_,*library_);
         playback_->configureGpuBudget(budget);
         playback_->setGlobalQuality(quality_);
-        for(const auto& [type,route]:routes)
-            if(route.playback.enabled)
-                playback_->route(uint32_t(type),route.playback);
+        playback_->setForceCpuTwin(std::getenv("AIVERSE_SPECTRAFX_CPU")!=nullptr);
         enabled_=true;
         return true;
     }
+public:
 
     bool enabled() const {return enabled_;}
     // A single native scene quality control for both existing CPU FX and
@@ -124,6 +173,8 @@ public:
             lastError_="SpectraFX scene reset needs an outside-pass safe point";
             return false;
         }
+        entities_.reset(true);
+        entities_.flushGpu([](const SpectraFxCue&) {}); // playback reset dropped them
         if(enabled_) cpu_.clear();
         inbox_.reset();
         return true;
@@ -133,6 +184,10 @@ public:
         if(!enabled_ || !playback_ || !view.valid()) return;
         // Drain a fixed snapshot; callback-generated cues cannot recursively
         // create more GPU effects in the same frame.
+        // Entity effects queue their GPU cues; this is the safe point.
+        entities_.flushGpu([this](const SpectraFxCue& cue) {
+            playback_->dispatch(cue);
+        });
         inbox_.drain([this](const SpectraFxCue& cue) {
             return playback_->dispatch(cue);
         },maxCuesPerFrame_);
@@ -200,6 +255,7 @@ public:
         // Playback teardown destroys live and retiring GPU buffers at once;
         // first wait for every submitted frame that may still read them
         // (Gfx.h: never rely on frameSerial() alone).
+        entities_.configure({}, {});
         if(playback_ && device_) device_->waitIdle();
         if(playback_) playback_.reset(); // all GPU resources before RHI
         library_.reset();
@@ -211,11 +267,13 @@ public:
         textureBase_.clear();
         device_=nullptr;
     }
+    const ParticleSystem& particles() const {return cpu_;}
     const SpectraFxHybridPlayback* playback() const {
         return playback_.get();
     }
 private:
     ParticleSystem cpu_;
+    SpectraFxEntityEffects entities_;
     SpectraFxCueInbox inbox_{1024};
     size_t maxCuesPerFrame_=256;
     render::TextureCache textures_;

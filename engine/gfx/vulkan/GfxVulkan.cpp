@@ -66,6 +66,12 @@ bool VulkanDevice::createInstance(bool wantSurface, std::string& error) {
     app.pEngineName = "AIVERSE";
     app.apiVersion = api >= VK_API_VERSION_1_1 ? VK_API_VERSION_1_1 : VK_API_VERSION_1_0;
     auto ci = vkStruct<VkInstanceCreateInfo>(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO);
+    // Portability drivers (MoltenVK on macOS) are only enumerated with this
+    // extension + flag; absent on conformant drivers, so nothing changes there.
+    if (hasExtension(exts, "VK_KHR_portability_enumeration")) {
+        want.push_back("VK_KHR_portability_enumeration");
+        ci.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
     ci.pApplicationInfo = &app;
     ci.enabledExtensionCount = uint32_t(want.size());
     ci.ppEnabledExtensionNames = want.data();
@@ -165,6 +171,8 @@ bool VulkanDevice::pickDevice(std::string& error) {
     if (swapchainExt_) deviceExts.push_back(swapExt);
     for (const auto& name : vulkanExtensionRequests().device)
         if (hasExtension(ex, name.c_str())) deviceExts.push_back(name.c_str());
+    // The spec requires enabling VK_KHR_portability_subset when a device advertises it (MoltenVK).
+    if (hasExtension(ex, "VK_KHR_portability_subset")) deviceExts.push_back("VK_KHR_portability_subset");
     if (!deviceExts.empty()) {
         di.enabledExtensionCount = uint32_t(deviceExts.size());
         di.ppEnabledExtensionNames = deviceExts.data();

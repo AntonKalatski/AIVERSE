@@ -1,0 +1,26 @@
+{
+  "id": "2026-11-21-build-engine-modules",
+  "date": "2026-11-21",
+  "system": "build",
+  "title": "Клиентская сборка берёт только нужные модули движка",
+  "titleEn": "Client builds take only the engine modules they need",
+  "summary": "В game.json можно выбрать, какие необязательные части движка попадут в собранную игру, или поручить это автоматике: \"engineModules\": [\"auto\"].",
+  "summaryEn": "game.json can choose which optional engine parts go into the packaged game, or leave it to detection: \"engineModules\": [\"auto\"].",
+  "body": [
+    "Раньше каждая собранная игра несла весь движок: частицы, Spine, геймпады, загрузчики FBX и старых форматов моделей, клиент городского сервера, симуляции трафика и генерации карт. Теперь их можно отключить списком packaging.engineModules — общим или для отдельной платформы.",
+    "Режим \"auto\" сам смотрит в проект: Spine и геймпад по game.json, частицы по файлам эффектов, загрузчики по исходным моделям, симуляции по правилам и картам. Если игра использует то, что исключено, сборщик откажется собирать с понятной ошибкой; без поля всё собирается как раньше.",
+    "На пробной сборке клиента для macOS исполняемый файл стал меньше примерно на 7% только за счёт того, что линкуется лишь используемый код. Каждый отключённый модуль убирает ещё от примерно сотни килобайт (геймпад) до пары мегабайт (частицы, старые загрузчики моделей)."
+  ],
+  "bodyEn": [
+    "Every packaged game used to carry the whole engine: particles, Spine, gamepads, FBX and legacy model loaders, the city server client, traffic and map generation. Now a packaging.engineModules list, shared or per platform, can leave them out.",
+    "\"auto\" looks into the project: Spine and gamepad from game.json, particles from effect files, loaders from source models, simulations from rules and maps. If the game uses something excluded, the packager refuses with a clear error; without the field everything builds as before.",
+    "On a test macOS client build the executable shrank by about 7% just from linking only the code in use. Each disabled module removes from about a hundred kilobytes (gamepad) to a couple of megabytes (particles, legacy model loaders)."
+  ],
+  "status": "done",
+  "verified": "Сборщик проверяет выбор модулей для Web, Windows и macOS; размеры измерены на клиенте для macOS.",
+  "verifiedEn": "The packager checks the module choice for Web, Windows and macOS; sizes were measured on the macOS client.",
+  "limits": "Размер и запуск HTML5-сборки ещё не измерены: на машине сборки не было Emscripten. Android, iOS, Windows и Linux тоже ещё не собирались с выключенными модулями.",
+  "limitsEn": "HTML5 build size and startup are not measured yet: Emscripten was missing on the build machine. Android, iOS, Windows and Linux have not been built with modules off either.",
+  "branch": "main",
+  "media": []
+}

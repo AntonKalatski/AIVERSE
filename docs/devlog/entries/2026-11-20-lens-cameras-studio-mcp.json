@@ -1,0 +1,49 @@
+{
+  "id": "2026-11-20-lens-cameras-studio-mcp",
+  "date": "2026-11-20",
+  "system": "lens",
+  "title": "LENS: камеры как данные сцены, окно в Studio и инструменты для агентов",
+  "summary": "Камеры игры теперь описываются в одном файле cameras.json: несколько камер, порядок их отрисовки, свои цели рендера и захват кадра. Их можно создавать и править в окне Studio или через MCP-инструменты агента.",
+  "body": [
+    "Каждая камера — сущность сцены со своими компонентами: положение, объектив, риг слежения, цель рендера. Движок сам решает, в каком порядке рисовать камеры, если одна показывает картинку другой, и предупреждает о циклах.",
+    "Вторичные камеры — мониторы, картинка в картинке, портреты — получают тот же подготовленный кадр, что и основная: игра не просчитывается заново, анимация не шагает второй раз.",
+    "В Studio есть окно камер: список, создание, сохранение и перезагрузка. Агенты делают то же через MCP: lens_scene_get, lens_camera_set и соседние операции проверяют изменения до записи и не портят рабочий файл при ошибке. Готовый кадр любой камеры можно сохранить в PNG."
+  ],
+  "status": "done",
+  "verified": "Окно камер открыто в Studio на Mac с проектом и загруженной камерой; клиент с включёнными камерами отрисовал игровую сцену на Metal. Повтор кадра во вторичную камеру сравнивался с основным кадром попиксельно на Metal.",
+  "limits": "Попиксельное сравнение пройдено только на Metal; Vulkan и мобильные GPU ещё не проверены. Нагрузка при большом числе камер не измерялась.",
+  "branch": "main",
+  "commit": null,
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-20-lens-cameras-studio-mcp/studio-cameras.png",
+      "caption": "Studio: справа внизу окно камер LENS с камерой проекта, кнопки New Camera, Save, Reload",
+      "captionEn": "Studio: the LENS cameras window bottom right with the project camera and New Camera, Save, Reload"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-20-lens-cameras-studio-mcp/client-metal.png",
+      "caption": "Игровой клиент на Metal с включёнными камерами LENS",
+      "captionEn": "The game client on Metal with LENS cameras enabled"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/camera-system.md",
+      "href": "docs/camera-system.md"
+    },
+    {
+      "title": "skills/visuals/aiverse-lens/SKILL.md",
+      "href": "skills/visuals/aiverse-lens/SKILL.md"
+    }
+  ],
+  "author": "lens",
+  "titleEn": "LENS: cameras as scene data, a Studio window and agent tools",
+  "summaryEn": "A game's cameras are now described in one cameras.json file: several cameras, their draw order, their own render targets and frame capture. They can be created and edited in a Studio window or through the agent's MCP tools.",
+  "bodyEn": [
+    "Each camera is a scene entity with its own components: transform, lens, follow rig, render target. The engine orders the cameras itself when one shows the image of another and warns about cycles.",
+    "Secondary cameras — monitors, picture-in-picture, portraits — get the same prepared frame as the main view: the game is not simulated again and animation does not step twice.",
+    "Studio has a cameras window: list, create, save and reload. Agents do the same through MCP: lens_scene_get, lens_camera_set and the related operations validate a change before writing and leave the working file intact on error. Any camera's frame can be saved to PNG."
+  ],
+  "verifiedEn": "The cameras window was opened in Studio on a Mac with a project and its camera loaded; the client with cameras enabled rendered the game scene on Metal. Replaying the frame into a secondary camera was compared pixel by pixel with the main frame on Metal.",
+  "limitsEn": "The pixel comparison has only been run on Metal; Vulkan and mobile GPUs are not checked yet. Cost with many cameras has not been measured."
+}

@@ -17,6 +17,14 @@
     "siege":  { "light": 0.6, "medium": 0.8, "fortified": 1.6 }
   },
 
+  // SpectraFX entity effects shared by every host (docs/spectrafx-entity-effects.md):
+  // selectors "*", "unit" | "structure" | "projectile", "type:<id>", "player:<n>", "weapon:<id>".
+  "spectraFx": {
+    "entities": {
+      "type:gryphon": { "attach": [ { "effect": "gryphon_sparkles", "when": "moving" } ] },
+      "unit": { "on": { "spawned": { "effect": "unit_ready", "scale": 0.6 } } }
+    }
+  },
   "types": {
     "peasant": {
       "name": "Peasant",
@@ -49,6 +57,8 @@
       "view": { "shape": "ranged", "scale": 0.95 }
     },
     "catapult": {
+      "spectraFx": { "attach": [ { "effect": "wheel_dust", "offset": [0, 0.1, -0.5], "when": "moving",
+                                   "direction": "backward" } ] },
       "name": "Catapult",
       "health": { "max": 300, "armorType": "heavy" },
       "move": { "speed": 1.8, "radius": 0.6 },
@@ -71,6 +81,7 @@
     },
 
     "townhall": {
+      "spectraFx": { "attach": [ { "effect": "hearth_embers", "offset": [0, 2.0, 0] } ] },
       "name": "Town Hall",
       "structure": { "footprint": [4, 4] },
       "health": { "max": 1500, "armor": 5, "armorType": "fortified" },
@@ -112,7 +123,10 @@
       "health": { "max": 500, "armor": 4, "armorType": "fortified" },
       "sight": 11,
       "weapons": [ { "id": "arrows", "range": 7, "damage": 18, "cooldown": 1.2, "projectileSpeed": 16,
-                     "targets": ["ground", "air"], "damageType": "pierce" } ],
+                     "targets": ["ground", "air"], "damageType": "pierce",
+                     // SpectraFX data (docs/spectrafx-entity-effects.md): flash when fired, glowing arrows
+                     "spectraFx": { "on": { "fired": { "effect": "tower_flash", "offset": [0, 2.4, 0] } },
+                                    "attach": [ { "effect": "arrow_glow" } ] } } ],
       "cost": { "gold": 110, "wood": 80, "time": 30 },
       "view": { "shape": "tower", "light": { "color": [1.0, 0.6, 0.28], "radius": 4.5, "intensity": 1.5, "height": 2.4, "flicker": 0.18 } }
     },

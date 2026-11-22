@@ -98,31 +98,44 @@ inline void advanceDisasters(World& world,
     const std::size_t count = climate->cells.size();
     std::vector<HazardCell> old(count);
     std::vector<HazardCell> next(count);
-    std::vector<std::int64_t> waterDeltas(count, 0);
+    // Flood transfer is recorded per SOURCE cell and direction, then gathered
+    // per RECEIVING cell, so parallel lanes never write a neighbour's slot.
+    // Integer raw sums are order independent: bit-identical to the old
+    // scatter loop (tests/physis_parallel_test.cpp).
+    std::vector<std::array<std::int64_t, 4>> outflow(count, std::array<std::int64_t, 4>{});
     std::vector<Cell> positions(count);
     std::vector<Atmosphere> air(count);
     std::vector<Surface> surfaces(count);
 
     // Read phase: snapshot each component once; subsequent work cannot observe
     // writes from this same disaster step.
-    for (std::size_t i = 0; i < count; ++i) {
-        const Entity entity = climate->cells[i];
-        if (const auto* value = world.tryGetConst<HazardCell>(entity)) old[i] = *value;
-        if (const auto* value = world.tryGetConst<Cell>(entity)) positions[i] = *value;
-        if (const auto* value = world.tryGetConst<Atmosphere>(entity)) air[i] = *value;
-        if (const auto* value = world.tryGetConst<Surface>(entity)) surfaces[i] = *value;
-        next[i] = old[i];
-    }
+    const World& view = world;
+    forEachCellRange(count, [&](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            const Entity entity = climate->cells[i];
+            if (const auto* value = view.tryGetConst<HazardCell>(entity)) old[i] = *value;
+            if (const auto* value = view.tryGetConst<Cell>(entity)) positions[i] = *value;
+            if (const auto* value = view.tryGetConst<Atmosphere>(entity)) air[i] = *value;
+            if (const auto* value = view.tryGetConst<Surface>(entity)) surfaces[i] = *value;
+            next[i] = old[i];
+        }
+    });
     const std::array<std::int32_t, 4> dx{1, -1, 0, 0};
     const std::array<std::int32_t, 4> dz{0, 0, 1, -1};
-    for (std::int32_t z = 0; z < height; ++z) {
-        for (std::int32_t x = 0; x < width; ++x) {
-            const auto i = std::size_t(z) * std::size_t(width) + std::size_t(x);
+    const auto cellCount = std::size_t(width) * std::size_t(height);
+    // Streaming (PhysisStreaming.h): dormant cells keep their hazard state and
+    // are walls for flood transfer; active cells still read their frozen fire.
+    const auto* mask = view.resourceConst<ActiveChunks>();
+    forEachCellRange(std::min(count, cellCount), [&](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            if (!cellSimulated(mask, width, i)) continue;
+            const auto x = std::int32_t(i % std::size_t(width));
+            const auto z = std::int32_t(i / std::size_t(width));
             const auto& prior = old[i];
             auto& result = next[i];
             Fixed neighborFire{};
             const auto head = positions[i].elevation + prior.waterDepth;
-            std::array<std::size_t, 4> drains{};
+            std::array<std::size_t, 4> drainDirections{};
             std::array<std::int64_t, 4> gradients{};
             std::size_t drainCount = 0;
             std::int64_t totalGradient = 0;
@@ -143,11 +156,11 @@ inline void advanceDisasters(World& world,
                 const auto windGain = fxClamp(along / 20, -Fixed::fromRatio(3, 4),
                                               Fixed::fromInt(1));
                 neighborFire += old[j].fire * (Fixed::fromInt(1) + windGain);
-                if (floodMode == FloodMode::LocalShallow) {
+                if (floodMode == FloodMode::LocalShallow && cellSimulated(mask, width, j)) {
                     const auto neighborHead = positions[j].elevation + old[j].waterDepth;
                     const auto gradient = (head - neighborHead).raw;
                     if (gradient > 0) {
-                        drains[drainCount] = j;
+                        drainDirections[drainCount] = direction;
                         gradients[drainCount] = gradient;
                         totalGradient += gradient;
                         ++drainCount;
@@ -168,9 +181,10 @@ inline void advanceDisasters(World& world,
                                   Fixed{}, Fixed::fromInt(1));
             if (result.fuel <= Fixed{}) result.fire = Fixed{};
 
-            // Each source has a bounded per-tick outflow. Apply opposite signed
-            // integer-raw deltas to source and destination for exact conservation
-            // in the absence of rain, evaporation and depth clamping.
+            // Each source has a bounded per-tick outflow. Opposite signed
+            // integer-raw shares leave the source and reach the destination
+            // for exact conservation in the absence of rain, evaporation and
+            // depth clamping.
             if (floodMode == FloodMode::LocalShallow &&
                 drainCount > 0 && prior.waterDepth > Fixed{} && totalGradient > 0) {
                 std::int64_t outgoing = (prior.waterDepth *
@@ -180,13 +194,12 @@ inline void advanceDisasters(World& world,
                 for (std::size_t k = 0; k < drainCount; ++k) {
                     const std::int64_t share = (k + 1 == drainCount)
                         ? remainder : outgoing * gradients[k] / totalGradient;
-                    waterDeltas[i] -= share;
-                    waterDeltas[drains[k]] += share;
+                    outflow[i][drainDirections[k]] = share;
                     remainder -= share;
                 }
             }
             result.quake = Fixed{};
-            world.eachExistingConst<QuakeEvent>([&](Entity, const QuakeEvent& event) {
+            view.eachExistingConst<QuakeEvent>([&](Entity, const QuakeEvent& event) {
                 if (event.radiusCells <= Fixed{} ||
                     climate->tick < event.startTick ||
                     climate->tick - event.startTick >= event.durationTicks)
@@ -200,20 +213,37 @@ inline void advanceDisasters(World& world,
                     fxClamp(event.magnitude * falloff, Fixed{}, Fixed::fromInt(1)));
             });
         }
-    }
+    });
     // Commit phase. Read-only clients never see any partially propagated fire or
     // water depth during the computation of the next disaster state.
-    for (std::size_t i = 0; i < count; ++i) {
-        auto* hazard = world.tryGet<HazardCell>(climate->cells[i]);
-        if (!hazard) continue;
-        // ExternalAuthority explicitly clears the legacy local flood cache.
-        // NEREID owns water level/depth via its own ECS; never mirror it here.
-        next[i].waterDepth = floodMode == FloodMode::LocalShallow ? fxClamp(
-            old[i].waterDepth + Fixed::fromRaw(waterDeltas[i]) +
-            air[i].rain * config.rainInflowRate - config.evaporationRate,
-            Fixed{}, Fixed::fromInt(100)) : Fixed{};
-        *hazard = next[i];
-    }
+    if (cellPassIsParallel(count)) world.prepareExistingWrite<HazardCell>();
+    forEachCellRange(count, [&](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            if (i < cellCount && !cellSimulated(mask, width, i)) continue;   // dormant
+            auto* hazard = world.tryGet<HazardCell>(climate->cells[i]);
+            if (!hazard) continue;
+            std::int64_t waterDelta = 0;
+            if (floodMode == FloodMode::LocalShallow && i < cellCount) {
+                const auto x = std::int32_t(i % std::size_t(width));
+                const auto z = std::int32_t(i / std::size_t(width));
+                for (std::size_t direction = 0; direction < 4; ++direction) {
+                    waterDelta -= outflow[i][direction];
+                    const auto nx = x + dx[direction], nz = z + dz[direction];
+                    if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+                    const auto j = std::size_t(nz) * std::size_t(width) + std::size_t(nx);
+                    // Neighbour j sends to i along the opposite direction.
+                    waterDelta += outflow[j][direction ^ 1u];
+                }
+            }
+            // ExternalAuthority explicitly clears the legacy local flood cache.
+            // NEREID owns water level/depth via its own ECS; never mirror it here.
+            next[i].waterDepth = floodMode == FloodMode::LocalShallow ? fxClamp(
+                old[i].waterDepth + Fixed::fromRaw(waterDelta) +
+                air[i].rain * config.rainInflowRate - config.evaporationRate,
+                Fixed{}, Fixed::fromInt(100)) : Fixed{};
+            *hazard = next[i];
+        }
+    });
     disaster->lastProcessedTick = climate->tick;
 }
 

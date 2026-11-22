@@ -4451,3 +4451,22 @@ and part of cache/change keys. No uniform or layout change. Contract test:
 "style": {"deepColor":[0.03,0.2,0.26], "absorption":0.5, "depthTint":0.85,
           "turbidity":0.22, "siltColor":[0.36,0.42,0.33]}
 ```
+
+
+## 2026-11-22 large-world ocean LOD + legacy RTS water migration (branch agent-nereid-next)
+
+Ocean: the infinite patch is now centred on its snap cell (before: anchored at the cell
+corner, so the sea edge reached the camera right before a cell switch); opt-in
+`"oceanLod": "rings"` builds stitched, crack/T-junction-free nested LOD rings out to
+`oceanPatchRadius` (13 248 tris for 6 km with defaults). CTest `ecs_nereid_ocean_lod_test`
+PASS, renderer_contract/surface_mesh/flow_map/river_grade PASS. Metal renderbench
+`tests/render/verify_nereid_ocean_lod.py` PASS (coverage, triangle bound, no rebuild pop);
+numbers and limits in `docs/nereid/ocean-lod.md`. GPU times shared with other agents: no
+speed claim.
+
+Legacy water: `TerrainRenderer::legacyWaterLayout` + `RtsWaterNereid.h` converter +
+`terrain.water.renderer` switch (default legacy) + `RtsView` NEREID host. CTest
+`rts_water_nereid_test` PASS; native editor before/after captures for 12 templates, ten
+switched to NEREID (tiles2d no-op, lastcolony unverified). `aiverse_client` builds. Web,
+Studio HTML5, LENS secondary cameras, played-match captures NOT RUN. Details:
+`docs/nereid/legacy-water-migration.md`.

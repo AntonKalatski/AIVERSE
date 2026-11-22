@@ -245,6 +245,7 @@ void GameClient::startNetMatch() {
         if (!embedScripts(rules, map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
         sim_->setup(rules, map);
         configurePrisma(map);
+        natureStart(map);
     } catch (const std::exception& e) {
         netError_ = e.what();
         city_.reset(); sim_.reset();
@@ -284,6 +285,7 @@ void GameClient::leaveNetMatch() {
     mapLoading_ = false; loadingTypes_.clear(); loadingSplash_.shutdown();
     if (net_) { net_->leaveMatch(); if (!battle_) net_->refreshRooms(); }   // detach before the simulation goes away
     if (battle_) { net_.reset(); battle_ = false; }   // a battle has no lobby to return to
+    natureStop();
     fx_.stopMatch();
     city_.reset(); sim_.reset();
     bots_.clear();

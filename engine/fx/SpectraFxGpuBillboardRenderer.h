@@ -109,8 +109,10 @@ public:
     bool init(gfx::Device& device) {
         release();
         device_=&device;
-        if(!device.supportsCompute()) {
-            error_="GPU billboard rendering requires a compute-capable RHI";
+        // Compute is NOT required: the CPU twin (SpectraFxGpuEvolution
+        // cpuTwin mode) uploads the same RGBA32F position texture layout.
+        if(!device.supports(gfx::PixelFormat::RGBA32F)) {
+            error_="SpectraFX billboards need RGBA32F vertex texture fetch";
             device_=nullptr;return false;
         }
         gfx::ShaderDesc shader{};
@@ -165,6 +167,9 @@ public:
               const SpectraFxGpuAlphaSort* alphaSort=nullptr) {
         if(!ready()||!particles.ready()||!particles.count()||
            !particles.positionTexture().valid()) return false;
+        // CPU twin: the upload is already packed/sorted; nothing to draw is OK.
+        if(particles.cpuTwin()) {compaction=nullptr;alphaSort=nullptr;}
+        if(particles.drawCount()==0) return true;
         auto finite=[](render::float3 v) {
             return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);
         };
@@ -210,7 +215,7 @@ public:
             device_->setTexture(1,particles.positionTexture());
             device_->setUniforms(0,&u,sizeof(u));
         }
-        device_->drawIndexed(6,0,0,particles.count());
+        device_->drawIndexed(6,0,0,particles.drawCount());
         return true;
     }
 

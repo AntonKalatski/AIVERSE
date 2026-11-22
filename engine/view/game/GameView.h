@@ -48,6 +48,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "GameFieldView.h"
 #include "GamePlanetGroundFx.h"
 #include "GamePlanetRender.h"
+#include "GamePlanetFlora.h"
 #include "GameOverlays.h"
 #include "GameModelResourceProvider.h"
 #include "GameModelResourceCache.h"
@@ -467,6 +468,8 @@ public:
         terrain_.setDetail(d, splat);
     }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
+    // Water drawn by NEREID from the map cells this frame (0 = legacy or none).
+    const world::NereidWaterScene& nereidMapWater() const { return nereidLegacy_; }
     // After a synchronous map-size transition, all resource owners already
     // agree on dimensions. GroundFX mesh fills still await primary draw.
     bool surfacePresentationMapReady(const MapGrid& grid) const noexcept {
@@ -932,6 +935,9 @@ private:
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
     TerrainRenderer terrain_;    // chunked terrain + water (GameTerrainRender.cpp)
+    world::NereidWaterScene nereidLegacy_;   // map water cells drawn by NEREID (GameWaterNereid.h)
+    std::string nereidLegacySignature_;
+    void drawNereidLegacyWater(render::Renderer3D& r,bool terrainReady);
     bool hasTerrain_ = false;
     std::vector<ViewEvent> events_;
     std::vector<ViewEffect> effects_;
@@ -942,6 +948,7 @@ private:
     // unique_ptr silently drop the recovery path.
     std::unique_ptr<Rts2DView> pendingSpriteRecovery_;
     SpriteDefaults spriteDefaults_;
+    float modelLodScale_=1.f, shadowLodScale_=1.f, reflectionCullPixels_=0.f, lodFadeWidth_=-1.f; // game.json "lod"
     std::string contentBase_;
     std::vector<render::float3> bars_;   // per scene object: health bar anchor of sprite objects
     double lastTime_ = -1;
@@ -1033,6 +1040,8 @@ private:
     // planets
     PlanetRenderer planets_;
     GamePlanetGroundFx planetGroundFx_;   // territory, rock, roads, lanes on sphere faces
+    PlanetFlora planetFlora_;            // TerraWeave trees and rocks on planet bodies
+    void rebuildPlanetFlora();
     PlanetCamera planetCam_;
     PlanetViewFrame pframe_;
     double planetSeconds_ = 0;

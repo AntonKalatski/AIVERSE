@@ -24,6 +24,10 @@ struct NereidSurfaceKey {
     lib::nereid::WaterRiverGradeComponent grade{};
     bool useGrade=false;
     bool infinite=false;
+    // Infinite ocean ring policy (patchX/Z is then the ring centre).
+    bool oceanRings=false;
+    float oceanInnerCell=0;
+    uint16_t oceanInnerCells=0;
 };
 
 // Center a camera-relative ocean patch on a stable lattice: moving the
@@ -44,6 +48,27 @@ inline double nereidPatchAnchor64(double camera,double radius) {
         return std::numeric_limits<double>::quiet_NaN();
     return std::floor(camera/radius)*radius;
 }
+// Snapped ocean key coordinate: the legacy cell anchor, or the ring centre.
+inline double nereidOceanPatch64(double camera,
+        const lib::nereid::WaterSurfaceMeshOptions& opts) {
+    if(!opts.oceanRings)return nereidPatchAnchor64(camera,double(opts.oceanPatchRadius));
+    const double step=lib::nereid::oceanRingSnapStep(opts);
+    if(!std::isfinite(camera) || !std::isfinite(step) || step<=0)
+        return std::numeric_limits<double>::quiet_NaN();
+    return lib::nereid::oceanRingCentre(camera,step);
+}
+// Mesh centre for a snapped key coordinate. The legacy patch is centred on
+// its cell (anchor + r/2): the camera is inside [anchor, anchor+r), so at
+// least r/2 of water remains in every direction. Centring the patch on the
+// anchor itself (before 2026-11-22) let the far edge reach the camera just
+// before the next cell switch.
+inline double nereidOceanMeshCentre64(double patch,
+        const lib::nereid::WaterSurfaceMeshOptions& opts) {
+    return opts.oceanRings?patch:patch+0.5*double(opts.oceanPatchRadius);
+}
+inline double nereidOceanHalfExtent(const lib::nereid::WaterSurfaceMeshOptions& opts) {
+    return opts.oceanRings?lib::nereid::oceanRingExtent(opts):double(opts.oceanPatchRadius);
+}
 
 inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
         lib::nereid::WaterSurfaceMeshOptions opts,
@@ -63,12 +88,15 @@ inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
     key.style=style;
     if(infinite) {
         key.oceanPatchRadius=opts.oceanPatchRadius;
-        key.patchX=nereidPatchAnchor64(
-            opts.preciseCamera?opts.cameraX64:double(opts.cameraX),
-            double(opts.oceanPatchRadius));
-        key.patchZ=nereidPatchAnchor64(
-            opts.preciseCamera?opts.cameraZ64:double(opts.cameraZ),
-            double(opts.oceanPatchRadius));
+        key.oceanRings=opts.oceanRings;
+        if(opts.oceanRings) {
+            key.oceanInnerCell=float(lib::nereid::oceanRingInnerCell(opts));
+            key.oceanInnerCells=opts.oceanInnerCells;
+        }
+        key.patchX=nereidOceanPatch64(
+            opts.preciseCamera?opts.cameraX64:double(opts.cameraX),opts);
+        key.patchZ=nereidOceanPatch64(
+            opts.preciseCamera?opts.cameraZ64:double(opts.cameraZ),opts);
     }
     return key;
 }
@@ -82,6 +110,8 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         a.maxVertices==b.maxVertices &&
         a.rippleTileGrid==b.rippleTileGrid &&
         a.oceanPatchRadius==b.oceanPatchRadius &&
+        a.oceanRings==b.oceanRings && a.oceanInnerCell==b.oceanInnerCell &&
+        a.oceanInnerCells==b.oceanInnerCells &&
         a.patchX==b.patchX && a.patchZ==b.patchZ &&
         a.originX==b.originX && a.originZ==b.originZ &&
         a.originY==b.originY &&
@@ -175,8 +205,8 @@ public:
         out.key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
         if(infinite) {
             opts.preciseCamera=true;
-            opts.cameraX64=out.key.patchX;
-            opts.cameraZ64=out.key.patchZ;
+            opts.cameraX64=nereidOceanMeshCentre64(out.key.patchX,opts);
+            opts.cameraZ64=nereidOceanMeshCentre64(out.key.patchZ,opts);
         }
         out.cpu=lib::nereid::buildWaterSurfaceMesh(body,geometry,opts);
         if(out.cpu.empty())return std::nullopt;

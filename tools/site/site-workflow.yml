@@ -1,0 +1,40 @@
+# Website: validate devlog entries on every push / PR; rebuild and publish gh-pages from main.
+# Source: site/, docs/devlog/ (entries, showcase), tools/site/build.py. See docs/devlog/README.md.
+name: Site
+
+on:
+  push:
+    paths: ['site/**', 'docs/devlog/**', 'tools/site/**', 'docs/images/readme/**', '.github/workflows/site.yml']
+  pull_request:
+    paths: ['site/**', 'docs/devlog/**', 'tools/site/**', '.github/workflows/site.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check devlog
+        run: python3 tools/site/build.py check
+      - name: Build
+        run: python3 tools/site/build.py build --out "$RUNNER_TEMP/site"
+      - name: Publish gh-pages
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          cd "$RUNNER_TEMP/site"
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git fetch -q --depth 1 origin gh-pages || true
+          git reset -q --soft FETCH_HEAD 2>/dev/null || true
+          git add -A
+          git commit -q -m "site: publish ${GITHUB_SHA::9}" || { echo "no changes"; exit 0; }
+          git push -q origin gh-pages

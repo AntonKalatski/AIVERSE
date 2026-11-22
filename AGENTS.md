@@ -4,6 +4,88 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Ход разработки на сайте — обязательная запись (2026-11-21, указание пользователя)
+
+Сайт движка (`site/`, GitHub Pages из ветки `gh-pages`) показывает страницу «Ход разработки»:
+скриншоты и описание по каждой системе. **Данные туда добавляют сами агенты.**
+
+- **Каждый успешно законченный этап любой системы — запись в её дневнике разработки на сайте,
+  со скриншотами** (указание пользователя 2026-11-21). Это отдельный devblog системы:
+  `devblog-<system>.html` собирается из всех её записей, новые сверху. Агент в той же ветке
+  добавляет `docs/devlog/entries/<date>-<system>-<slug>.json` и реальные кадры движка в
+  `docs/devlog/media/<id>/`. Порядок и формат: навык
+  [skills/workflow/aiverse-devlog/SKILL.md](skills/workflow/aiverse-devlog/SKILL.md),
+  описание формата — [docs/devlog/README.md](docs/devlog/README.md).
+- **Блог разработки** (`blog.html`) — для всего, чего нет среди систем на главной: редактор
+  Studio, сборка и платформы, сеть, мета, геймплей и жанры, рендер, мир, ECS, инструменты
+  агентов. Агент, закончивший такой этап, пишет такую же запись `docs/devlog/entries/*.json`,
+  указывая в `system` тему из `systems.json` без `flagship` (`studio`, `build`, `network`,
+  `meta`, `gameplay`, `render`, `world`, `ecs`, `agents`); новую тему можно добавить туда же.
+  Скриншоты в блоге желательны, но не обязательны. Правила ниже — только успешное, для людей —
+  те же.
+- В дневник идут **только успешные этапы**: то, что работает и показано на кадре. Неудачные,
+  брошенные и незаконченные попытки, ошибки сборки и падения тестов остаются в handoff, на сайт
+  не попадают. Этап без того, что можно показать (рефакторинг, внутренний API), описывается
+  вместе со следующим этапом, у которого есть кадр, — одна запись может охватить несколько этапов.
+- Страницы документации на сайте (`site/docs.json`) есть на двух языках: русская версия
+  берёт `docs/ru/<имя>.md`, английская — `docs/en/<имя>.md` (для документов, где есть русский
+  текст), иначе оригинал. Меняя документ из `site/docs.json`, обнови в том же коммите и его
+  перевод: новые разделы переведи, удалённые убери. Системы называем их именами
+  (LUMA, NEREID, …) и в заголовках документов.
+- Не писать на сайте, что движок или его системы делают агенты, и не подписывать записи
+  агентами. Возможности движка для ИИ-агентов (MCP, навыки) — это функции продукта, о них писать можно.
+- Не акцентировать на сайте, что система «жанронезависимая», «для любого жанра», «единая для
+  всех жанров», «универсальная». Это внутреннее правило архитектуры (NO GENRE SPLIT), а не
+  свойство для читателя: в текстах сайта (`systems.json`, записи дневника, мини-статьи, релизы,
+  страницы `site/`) пишем, что система делает, без таких пометок.
+- Дневник читают люди, а не агенты. Пиши, что изменилось и что теперь можно сделать, как это
+  выглядит и где включается. Не пиши «билд собрался», «сборка упала», «тесты прошли», списки
+  команд, логи, номера этапов из handoff и пути к временным файлам. В `verified` — одной-двумя
+  фразами, на чём и как результат показан работающим (платформа, сцена, бэкенд); в `limits` —
+  чего пока нет или что ещё не проверено, человеческим языком.
+- Начало: `python3 tools/site/build.py add --system <id> --title "…" --media <снимки>`;
+  перед коммитом `python3 tools/site/build.py check` — 0 ошибок.
+- Текст записей — на русском (с английской парой). Скриншоты — только настоящие кадры движка,
+  без референсов и сгенерированных картинок; у каждой записи хотя бы один кадр. В `verified` —
+  только реально запущенное. Статус `done` — после слияния в `main`, иначе `in-progress`;
+  `experimental` — работает, но выключено по умолчанию.
+- Главная страница берёт из тех же данных блок «Кадр движка» (`docs/devlog/showcase.json`) и
+  карточки флагманских систем (`docs/devlog/systems.json`: TerraWeave, PHYSIS, NEREID, STRATA,
+  LENS, VIVID, LUMA, PRISMA, SpectraFX, MotionWeave). Агент, владеющий флагманской системой без
+  обложки, снимает кадр по её `coverBrief` и ставит `cover` с `"approved": false`. Кадр для
+  «Кадра движка» агент только предлагает в `candidates`. `approved: true` ставит только
+  пользователь; заменить одобренный кадр или обложку — только по его просьбе. Новая крупная
+  система получает строку в `systems.json` с `flagship`, `tagline`, `essence`, `coverBrief`.
+- У каждой флагманской системы своя страница (`system-<id>.html`: что входит, что позволяет,
+  кадры, статья о разработке, хронология и план) и общий роадмап `roadmap.html`. Данные — в её
+  записи `systems.json` (`includes`, `enables`, `article`, `roadmap`). Закончив этап, агент в том же
+  коммите переводит пункт роадмапа в `done` с датой и добавляет запланированное из своего handoff.
+  Сроки (`target`) — только от пользователя или из документа системы, не придумывать.
+- Карточка из «Что входит» может стать мини-статьёй: у пункта `includes` поле `id` (slug) и
+  `docs/devlog/features/<система>/<id>.md` (английский — `<id>.en.md`) и/или `media`
+  (`[{src, caption, captionEn}]`, PNG/JPG). Тогда карточка ведёт на `system-<система>-<id>.html`,
+  первый кадр — её миниатюра. Картинки статьи — относительные пути от `.md`, ссылки на документы
+  репозитория тоже. Только реальные кадры и проверенные факты, как в записях хода разработки.
+- Не редактировать `gh-pages` вручную и не коммитить `build/site`: после слияния в `main`
+  `.github/workflows/site.yml` проверяет записи, собирает сайт и публикует `gh-pages`.
+- Сайт двуязычный: русский в корне, английский в `en/`. У каждого текстового поля записи и
+  системы есть английская пара с суффиксом `En` (`titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`,
+  `limitsEn`, `captionEn`; в `systems.json` — `nameEn`, `taglineEn`, `essenceEn`, `enablesEn`,
+  `includes[].nameEn/textEn`, `roadmap[].titleEn/textEn`). Агент заполняет обе версии; без `En`
+  английская страница показывает русский текст. Строки интерфейса — `site/i18n/ru.json`, `en.json`.
+- Раздел «Документация» сайта — страницы из Markdown-документов репозитория по списку
+  `site/docs.json` (разделы и страницы `{id, source, title, titleEn, lead, leadEn}`). Новый документ системы,
+  который нужен разработчикам игр, агент добавляет туда сам; `build.py check` проверяет пути.
+- Страница «Релизы» (`releases.html`) берёт версии из `docs/devlog/releases.json`, а ссылки на
+  сборки — из `index.json` ветки `builds` прямо в браузере. Выпуская релиз (тег + GitHub release,
+  §8), интегратор добавляет запись в начало `releases.json`: версия, тег, дата, коммит, заголовок,
+  описание и главное на русском и английском; `verified` — только реально проверенное.
+  «В следующем релизе» собирается само из записей хода разработки после даты последнего релиза.
+  У флагманской системы в `systems.json` поле `release` — версия, в которой она вышла, или
+  `next.version` из `releases.json`, если она уже в `main`, но ещё не в теге (карточка: «с версии
+  2.0.0» / «появится в 2.2.0»). Система в ветке поле не получает до слияния в `main`.
+- Вёрстку сайта менять в `site/` в визуальном языке дизайна сайта (бумага #F3EFE8, чернила
+  #141210, ромб #E9C3A4; Unbounded / Onest / JetBrains Mono).
 ## NO GENRE SPLIT — EVER (owner rule, 2026-11-21, highest priority for every agent)
 
 **Features are never divided, gated or duplicated by genre.** AIVERSE has no "RTS features", "FPS features",
@@ -162,6 +244,11 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 **Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).
 **Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).
 **System documentation:** [docs/spectrafx.md](docs/spectrafx.md).
+**Effects in data + one CPU/GPU path (2026-11-22):** [docs/spectrafx-entity-effects.md](docs/spectrafx-entity-effects.md).
+Entity effects are declared in rules/map/type/weapon/ability `"spectraFx"` data and presented by the shared
+`engine/fx/SpectraFxEntityEffects.h` in every host (RTS client, FPS client); never add a host-specific copy. A
+`fx/gpu/*.gpu.json` asset runs on the Metal kernel or its CPU twin (`SpectraFxEvolutionKernel.h`, keep in lockstep
+with `SpectraFxComputeShaders.h`); `spectrafx_cpu_gpu_parity` must stay green.
 
 <!-- Historical incoming Inspector/SpectraFX branch contracts; current integration gates still apply. -->
 **Latest implementation handoff (Stage 44, actual standalone tests RUN):**
@@ -2172,6 +2259,9 @@ themselves (`engine/platform/EngineDir.h`), so the unpacked folder runs anywhere
    download from: keep its fields backward compatible (README § Готовые сборки движка).
    Linux is optional: `package_engine.py --platform linux --bin build/linux-release` (tools only is fine).
 
+When a version is tagged as a GitHub release, also add it to the top of `docs/devlog/releases.json`
+(website page `releases.html`, rules in the site section at the top of this file).
+
 The version is `project(AIVERSE VERSION x.y.z)` in CMakeLists.txt + the short commit hash; bump the
 version for releases worth naming. Only publish builds whose tests and template matches passed.
 Other agents don't publish; they say in their report that a republish is due.
@@ -3247,6 +3337,7 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - **Docs/hand-off on EVERY stage:** `docs/agent-handoffs/physis-{core,climate,environment,disasters,integration}-2026-11-18.md` and `engine/physis/AGENTS.md`. Every follow-on implementation stage must commit code, then a separate handoff with exact branch/SHA, public API, changed files, actual test results, limits and specific next action.
 - **Tests:** baseline CTests `physis_core`, `physis_climate`, `physis_environment`, `physis_disasters`, `physis_integration`, plus `physis_wind`, `physis_gravity`, `physis_storm`, `physis_forces`, `physis_presentation`, and opt-in `physis_box3d` (`AIVERSE_ENABLE_PHYSICS=ON`); run `./run-tests.sh --filter '^physis_'` as required by the unified test-runner policy above. These targets have been written and registered but **NOT RUN** in the connector-only development session; do not claim validation or merge before tests and review.
 - **Nature presentation host (2026-11-21):** `engine/world/PhysisNature{Presentation,Cues,FxHost,AudioHost,Grass}.h` drive TerraWeave grass burn/wind, SpectraFX fire/smoke/light and audio from read-only PHYSIS; editor «Живая природа» (`apps/editor/PhysisNaturePreview.h`, MCP `physis_nature_preview`) shows it without a play-test. Reuse these; do not write a second fire/grass/VFX bridge. Game client hookup and macOS visual QA pending: `docs/agent-handoffs/physis-nature-host-2026-11-21.md`.
+- **Automatic + parallel + streaming (2026-11-22):** a map `"physis"` block installs PHYSIS in `Simulation::setup` for every module (`engine/physis/PhysisAutoInstall.cpp`, CMake `AIVERSE_SIM_PHYSIS`); `engine/world/PhysisNatureRuntime.h` drives SpectraFX/audio/TerraWeave wind/NEREID wind/PRISMA sky from it in the game client — reuse it in other hosts, do not wire hosts by hand. Grid passes take `workerThreads` lanes (`PhysisParallel.h`, bit-identical; per-cell writes only, providers read-only) and `streaming.chunkCells` + `ActivityAnchor` (`PhysisStreaming.h`). CI builds the aggregate target `aiverse_physis_tests`; never hand-list PHYSIS test targets. Handoff `docs/agent-handoffs/physis-next-2026-11-22.md`.
 - **Remaining work:** PHYSIS-owned climate/wind/gravity/storm/force fields and host-facing presentation APIs and host-owned opt-in Terra/NEREID/VFX/Foliage/Physics/editor adapters (other agents own canonical water and terrain), spatial indexing, sparse hazards, streaming/LOD, deterministic partitions, network deltas, platform validation and physical-unit calibration. Follow the cross-agent ownership matrix below and `docs/physis-nereid-terraweave-integration.md`; do not duplicate Water or Terra systems.
 
 ## Cross-agent ownership: PHYSIS / NEREID / TerraWeave (2026-11-18)

@@ -1,0 +1,48 @@
+{
+  "id": "2026-11-21-prisma-waterline-lens",
+  "date": "2026-11-21",
+  "system": "prisma",
+  "title": "PRISMA: камера на границе воды — ватерлиния, плёнка и капли",
+  "titleEn": "PRISMA: a camera at the water surface — waterline, film and drops",
+  "summary": "Когда камера у поверхности, кадр делится волнистой ватерлинией с мениском; после выныривания всё, что было под водой, покрыто преломляющей плёнкой, которая стекает к уровню воды и оставляет ручейки и капли.",
+  "summaryEn": "At the surface the frame splits along a waving waterline with a meniscus; after emerging, everything that was under water is covered by a refracting film that drains to the water level, leaving rivulets and drops.",
+  "body": [
+    "Эффект lensWater для каждого пикселя проверяет точку линзы против волнующейся плоскости воды из NEREID: ниже линии — подводная оптика, выше — сухая картинка, по линии — яркий преломляющий мениск. Под водой на линзе ничего не стекает.",
+    "После выныривания плёнка держится первую треть sheetTime, затем её рваный край стекает вниз; за ней остаются извилистые ручейки с каплей на конце и круглые капли-линзы с бликами, которые высыхают за dryTime. Все параметры настраиваются и эффект отключается."
+  ],
+  "bodyEn": [
+    "lensWater tests the lens point of every pixel against NEREID's waving water plane: underwater optics below the line, the dry image above it, a bright refracting meniscus along it. Nothing runs down the part of the lens that is under water.",
+    "After emerging the film clings for the first third of sheetTime, then its ragged edge drains down, leaving meandering rivulets with a head drop and round lens drops with glints that dry over dryTime. Every parameter is tunable and the effect can be disabled."
+  ],
+  "status": "in-progress",
+  "verified": "Mac (Metal), ревью‑копия AlpineValley: запись ныряния в реальном времени (кадр раз в ~0,35 с, видео собрано с реальной скоростью); тест prisma_lens_water.",
+  "verifiedEn": "Mac (Metal), AlpineValley review copy: a real-time dive recording (a frame every ~0.35 s, video assembled at real speed); prisma_lens_water test.",
+  "limits": "Нижняя сторона поверхности (полное отражение) пока не рисуется отдельно; другие бэкенды не проверены визуально.",
+  "limitsEn": "The underside of the surface (total internal reflection) is not rendered separately yet; other backends are not visually verified.",
+  "branch": "agent-wind-masks",
+  "commit": "6f7652aae",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-prisma-waterline-lens/dive.mp4",
+      "caption": "Ныряние и выныривание в реальном времени",
+      "captionEn": "Diving and emerging in real time"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-prisma-waterline-lens/01.jpg",
+      "caption": "Камера у поверхности: волнистая ватерлиния с мениском",
+      "captionEn": "Camera at the surface: waving waterline with a meniscus"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-prisma-waterline-lens/02.jpg",
+      "caption": "Сразу после выныривания: плёнка воды стекает к уровню воды",
+      "captionEn": "Right after emerging: the water film drains to the water level"
+    }
+  ],
+  "links": [
+    {
+      "title": "PRISMA lens water",
+      "href": "docs/prisma-lens-water.md"
+    }
+  ],
+  "author": "agent-wind-masks"
+}

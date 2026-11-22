@@ -57,6 +57,15 @@ the live GrassPatchRenderer still requires the host to supply suitable patch sta
 Do not claim the offline mask was installed into native streaming. Regenerate only
 affected patches after terrain/coverage changes, with the owning RHI lifecycle.
 
+## Tree collisions and streaming
+
+Trunk colliders: `engine/world/TerraWeaveTreeColliders.h` (SpatialWorld AABBs per streamed tile,
+Box3D capsules in `TerraWeaveTreeCollidersBox3D.h`, nav footprints) from resident ForestScene trees and
+the species Arbor skeleton — do not hand-place collider entities per tree. Pinned terrain/grass/
+collision tiles come from `TerraWeaveStreamingPlanner` (`engine/world/TerraWeaveStreaming.h`,
+`publishNativeTerraWeaveFrameAuto`). Exported tree entities have no LOD/impostor chain in the editor
+path (docs/terrain/qa-2026-11-22-terra-next.md): prefer the live ForestScene for large forests.
+
 ## Rocks and offline export
 
 Use `engine/world/TerraWeaveRocks.h`, `engine/render/TerraWeaveRockModel.h` and

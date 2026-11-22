@@ -25,6 +25,7 @@ public:
             return fail("SpectraFX GPU emitter expects JSON object version 1");
         for(const auto& pair:doc.members())
             if(pair.first!="version" && pair.first!="cpuEffect" &&
+               pair.first!="cpuFallback" &&
                pair.first!="impactEffect" &&
                pair.first!="preference" && pair.first!="particles" &&
                pair.first!="gpuIndirectCompaction" &&
@@ -35,10 +36,20 @@ public:
                pair.first!="environment" && pair.first!="lod")
                 return fail("SpectraFX unknown GPU emitter field "+pair.first);
         SpectraFxHybridEmitter::Config next;
-        if(!doc["cpuEffect"].isString() ||
-           doc["cpuEffect"].str().size()>128)
-            return fail("cpuEffect must be an effect name string (<=128)");
-        next.cpuEffect=doc["cpuEffect"].str();
+        // cpuEffect is optional: without it the CPU path runs this SAME
+        // asset on the CPU twin of the compute kernel (cpuFallback "twin").
+        if(doc.has("cpuEffect")) {
+            if(!doc["cpuEffect"].isString() ||
+               doc["cpuEffect"].str().size()>128)
+                return fail("cpuEffect must be an effect name string (<=128)");
+            next.cpuEffect=doc["cpuEffect"].str();
+        }
+        const auto fallback=doc.getStr("cpuFallback","twin");
+        if(fallback=="twin")
+            next.cpuFallback=SpectraFxHybridEmitter::Config::CpuFallback::Twin;
+        else if(fallback=="effect")
+            next.cpuFallback=SpectraFxHybridEmitter::Config::CpuFallback::Effect;
+        else return fail("cpuFallback must be twin or effect");
         if(doc.has("allowUnsortedAlpha")) {
             if(doc["allowUnsortedAlpha"].type()!=Json::Type::Bool)
                 return fail("allowUnsortedAlpha must be boolean");
@@ -200,12 +211,16 @@ public:
             next.backend.required=next.backend.required |
                                   SpectraFxFeature::GpuImpactFeedback;
         }
-        if(next.backend.preference!=SpectraFxExecutionPreference::Cpu &&
+        const bool effectFallback=next.cpuFallback==
+            SpectraFxHybridEmitter::Config::CpuFallback::Effect;
+        if((!effectFallback ||
+            next.backend.preference!=SpectraFxExecutionPreference::Cpu) &&
            next.backend.particles==0)
-            return fail("GPU/auto emitter requires nonzero capacity");
-        if(next.cpuEffect.empty() && (next.backend.preference==SpectraFxExecutionPreference::Cpu ||
-                                     next.backend.allowCpuFallback))
-            return fail("CPU fallback requires an effect");
+            return fail("emitter requires nonzero particle capacity");
+        if(effectFallback && next.cpuEffect.empty() &&
+           (next.backend.preference==SpectraFxExecutionPreference::Cpu ||
+            next.backend.allowCpuFallback))
+            return fail("cpuFallback \"effect\" requires cpuEffect");
         output=std::move(next);
         if(error) error->clear();
         return true;

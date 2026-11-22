@@ -2143,7 +2143,8 @@ units/structures standing on slopes too steep for them. Sculpting: `terrain_scul
 ## Planets: visual keys (map `world` block)
 
 The bodies themselves are described in `docs/planets.md` §1-2 (`world.bodies`, `kind`, `radius`, `faceSize`,
-`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`). What only the view reads:
+`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`, `nereid` = the sea as a NEREID water body for buoyancy and
+currents, §1). What only the view reads:
 
 ```jsonc
 {"id": "terra", "kind": "planet", ...,
@@ -2151,6 +2152,7 @@ The bodies themselves are described in `docs/planets.md` §1-2 (`world.bodies`, 
             "atmosphere": {"color": [110, 170, 255], "height": 0.08}}}   // or false; default: on for planets, off for moons
 ```
 
+- `visual.flora`: TerraWeave trees and rocks on the body (one site per land cell, species from the sphere climate): `{"density": 0..1, "scale": world units per metre}` or `false`; default density 0.22 on planets, none on moons, scale 0.06.
 - `visual.atmosphere.height`: shell thickness as a fraction of the radius (0.005..0.5). The shell and the haze use the
   colour; the shell is drawn from the Medium material tier up.
 - `terrain.faces[f].material`: rows of digits `0`..`3` per face (`.` = by cell kind), like the flat map's
@@ -2255,7 +2257,7 @@ into a static map.
 | `caves` | caves | Dungeon Keeper (`diggable`) | `size` [48,32], `gold` 0.03 / `gems` 0.004 (share of rock that is a vein / infinite seam), `bedrock` 0.06, `caverns` 0.06 |
 | `lanes` | lanes | lane battlers / MOBA | `size` [32,64], `lanes` 3, `laneWidth` 4, `bend` 0.35 (rock everywhere else) |
 | `field` | lanes, `open` | Mushroom Wars 2 (garrisons + roads) | `size` [44,28], `obstacles` 0.12, `roads` from the template |
-| `rocky` / `ocean` / `moon` | planet | whole planet maps, or one body's terrain | `faceSize`, `water` 0.25 / 0.7 / 0, `relief`, `ice` (polar caps), `craters` (moon), `layout`, `moonResources`, `baseRadius` (moon 11) |
+| `rocky` / `ocean` / `moon` | planet | whole planet maps, or one body's terrain | `faceSize`, `water` 0.25 / 0.7 / 0, `relief`, `ice` (polar caps), `craters` (moon), `layout`, `moonResources`, `baseRadius` (moon 11), `heights` (`terraweave` default: TerraWeave relief and climate biomes; `fbm`: the older noise) |
 
 **Planet maps.** A planet preset as the map's `generate` builds the whole `world` block: the bodies (and their orbits,
 visuals) come from the template map's `world` (e.g. `templates/planets`), else a sun + planet + moon. Every surface body

@@ -3,6 +3,7 @@
 // here: every entry point is guarded by GameState::surface.
 #include "Internal.h"
 #include "engine/core/FixedMath.h"
+#include <aiverselib/water/NereidSphereWater.h>
 #include <algorithm>
 #include <stdexcept>
 
@@ -211,6 +212,40 @@ void GameCore::setupWorld(Simulation& sim, const Json& map) {
         }
     }
     if (rules_.terrain.model == TerrainModel::Flat) std::fill(g.level.begin(), g.level.end(), int8_t(0));
+    // NEREID seas (opt-in per body, "nereid": true | {...}): one WaterSphereComponent entity per sea, so
+    // probes on units (native modules, scripts) get radial depth, buoyancy and the current. Maps without the
+    // key register nothing (saves and checksums unchanged).
+    bool nereid = false;
+    for (size_t bi = 0; bi < surf->bodies.size(); ++bi) {
+        const Json& nj = items[bi]["nereid"];
+        if (!(nj.isObject() || nj.boolean(false))) continue;
+        const BodyDef& b = surf->bodies[bi];
+        const std::string where = "map world body '" + b.id + "' nereid";
+        if (!b.hasSurface()) throw std::runtime_error(where + ": a star has no sea");
+        if (!nereid) {
+            namespace nw = aiverse::lib::nereid;
+            nw::registerNereidWaterPersistence(sim);
+            nw::registerNereidBuoyancyPersistence(sim);
+            nw::registerNereidSphereWaterPersistence(sim);
+            nw::addWaterProbeFromTransformSystem(sim, "nereid.sphere.probe");
+            nw::addSphereWaterSamplingSystem(sim, "nereid.sphere.sample");
+            nw::addSphereWaterBuoyancySystem(sim, "nereid.sphere.buoyancy");
+            nereid = true;
+        }
+        lib::nereid::WaterSphereComponent w;
+        w.center = Surface::anchor(int(bi));
+        w.surfaceRadius = b.radius + b.seaLevel;
+        const Fixed depth = nj.isObject() ? nj.getFx("depth", b.radius * Fixed::fromRatio(1, 4)) : b.radius * Fixed::fromRatio(1, 4);
+        if (depth.raw <= 0 || depth >= w.surfaceRadius) throw std::runtime_error(where + ": depth must be 0 < depth < radius + seaLevel");
+        w.floorRadius = w.surfaceRadius - depth;
+        if (nj.isObject()) {
+            w.currentSpeed = nj.getFx("current");
+            if (nj["axis"].isArray()) w.axis = {nj["axis"][0].fx(), nj["axis"][1].fx(), nj["axis"][2].fx()};
+            w.priority = int32_t(nj.getInt("priority", 0));
+        }
+        if (w.axis.lengthSq().raw <= 0) throw std::runtime_error(where + ": axis must be non-zero");
+        sim.world().add<lib::nereid::WaterSphereComponent>(sim.world().create(), w);
+    }
     std::shared_ptr<const Surface> cs = surf;
     gs.surface = cs;
     g.surf = cs;

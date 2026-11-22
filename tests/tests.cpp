@@ -3463,6 +3463,7 @@ TEST(fx_sample_games_have_valid_effects) {
         for (auto& w : bridge.warnings()) std::printf("    %s: %s\n", g.c_str(), w.c_str());
         CHECK(bridge.warnings().empty());
         for (auto& entry : std::filesystem::directory_iterator(std::string(AIVERSE_SOURCE_DIR) + "/" + dir + "fx")) {
+            if (!entry.is_regular_file()) continue;   // fx/gpu/ holds SpectraFX GPU assets, not ParticleSystem effects
             const std::string name = entry.path().stem().string();
             if (name == "fx") continue;
             CHECK(ps.effect(name) >= 0);
@@ -4660,6 +4661,9 @@ TEST(ktx2_rejects_bad_files) {
 }
 
 // ---------------- models (models agent): FBX loader ----------------
+// FBX decoding requires the optional ufbx runtime. With AIVERSE_FBX=OFF,
+// verify its explicit diagnostic instead of invoking a disabled importer.
+#if !defined(AIVERSE_NO_FBX)
 TEST(models_fbx_skinned_cube) {
     using namespace modeltest;
     std::vector<std::string> warn;
@@ -4726,6 +4730,22 @@ TEST(models_fbx_readable_errors) {
     catch (const std::exception& e) { threw = std::string(e.what()).find(".fbx") != std::string::npos; }
     CHECK(threw);
 }
+#else
+TEST(models_fbx_disabled_gives_actionable_error) {
+    using namespace modeltest;
+    const std::string path=std::string(AIVERSE_SOURCE_DIR)+"/tests/data/models/cube.fbx";
+    bool rejected=false;
+    try { (void)loadModel(path,diskReader(),nullptr); }
+    catch(const std::exception& e) {
+        const std::string reason=e.what();
+        rejected=reason.find(path)!=std::string::npos &&
+                 reason.find("AIVERSE_FBX=OFF")!=std::string::npos &&
+                 reason.find("convert to .glb")!=std::string::npos;
+    }
+    CHECK(rejected);
+}
+#endif
+
 
 
 // ---------------- models (models agent): IK, additive, blend space, morph targets, baking ----------------
@@ -6395,8 +6415,8 @@ TEST(sphere_great_circle_steps) {
 #define GEN_GOLD_LANES 0x6010e5d33a6a8fdbull
 #define GEN_GOLD_CAVES 0xd348fb3d9f4d2f55ull
 #define GEN_GOLD_METAL 0x5e11afce218433b2ull
-#define GEN_GOLD_PLANET_WORLD 0x8101a56ab8e6f0c6ull
-#define GEN_GOLD_PLANET 0x0c2a152a97d7e02bull
+#define GEN_GOLD_PLANET_WORLD 0x5a4bc2a514b61323ull
+#define GEN_GOLD_PLANET 0x88818babb637e26full
 
 // ---------------- terrain / map generator (agent-terrain-gen) ----------------
 #include "engine/game/gen/MapGen.h"
@@ -17585,7 +17605,7 @@ TEST(game_wizard_makes_a_playable_project) {
     CHECK(pf["wizard"]["spec"].getStr("title") == "Wizard Test" && pf["wizard"].getStr("template") == "skirmish");
     // maps: the levels first (the editor opens the first map), then the tutorial, then the template's own
     Json m = Json::parseFile((dir / "game.json").string());
-    CHECK(m["maps"].size() == 4 && m["maps"][0].getStr("file") == "maps/wiz_level_1.json" && m["maps"][2].getStr("file") == "maps/wiz_tutorial.json");
+    CHECK(m["maps"].size() == 3 + Json::parse(readSource("templates/skirmish/game.json"))["maps"].size() && m["maps"][0].getStr("file") == "maps/wiz_level_1.json" && m["maps"][2].getStr("file") == "maps/wiz_tutorial.json");
     CHECK(m.getStr("name") == "Wizard Test" && m["store"]["products"].size() == 3 && m["ads"].isObject() && m["plugins"].has("mock-ads"));
     CHECK(m["icons"].getStr("default") == "branding/wiz_icon.png" && m["splash"].getStr("image") == "art/key_art.png");
     Json lv = Json::parseFile((dir / "maps/wiz_level_1.json").string());

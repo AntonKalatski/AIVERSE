@@ -16,6 +16,14 @@ add the adapter to the shared subsystem; record a real capability gap before any
 custom fallback. Do not fake waves, flow, foam or buoyancy in project scripts.
 Sky stays with PRISMA, climate with PHYSIS, VFX with SpectraFX; compose owners.
 
+Planets: the sea of cube-sphere bodies draws with NEREID's wave model from `engine/render/NereidWaveShaders.h`
+(shared with plane water; `nereidSphereNormal` / `nereidSpherePatch` / `nereidSphereFoam` sample it triplanar),
+colour by depth and coast foam (`engine/view/game/GamePlanetShaders.h` only calls them). Water bodies on spheres:
+`<aiverselib/water/NereidSphereWater.h>` (`WaterSphereComponent` shells, `sampleSphereWater`,
+`addSphereWaterSamplingSystem` / `addSphereWaterBuoyancySystem`, `registerNereidSphereWaterPersistence`; radial depth
+and up, a current about an axis). The RTS planet host creates them for bodies with `"nereid"` (docs/planets.md §1);
+extend sphere water there, not in the planet code. Test: `ecs_nereid_sphere_water_test`.
+
 
 # NEREID: universal water system
 
@@ -333,6 +341,18 @@ project; no built-in SpectraFX particle asset is assumed. Call
 The adapter holds up to 256 handles and calls the actual
 `ParticleSystem::play` API. NEREID does not own particle ticking/rendering.
 **Tests remain deferred by explicit user direction.**
+
+## Large open seas and legacy RTS map water (2026-11-22)
+
+**Sea over a big world:** `"shape": "infinite", "oceanLod": "rings", "oceanPatchRadius": 6000`
+(+ optional `oceanInnerCell` metres, `oceanInnerCells` even 4..64) - stitched LOD rings around
+the camera, bounded triangles, rebuild every `cell*cells/2` metres. Default `"patch"` keeps one
+square, now centred on its cell (r/2 of water in every direction). See `docs/nereid/ocean-lod.md`.
+
+**Old RTS cell water (`~`):** do not hand-convert. Set the game's
+`terrain.water.renderer: "nereid"` (optional `terrain.water.nereid` style overrides); the engine
+converts the legacy sheet/bodies layout to NEREID surfaces and fails closed to the legacy mesh.
+`AIVERSE_WATER_RENDERER=legacy|nereid` for A/B. See `docs/nereid/legacy-water-migration.md`.
 
 ## Stage 26/27 — ocean tile waves and universal waterfalls
 

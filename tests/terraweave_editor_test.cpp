@@ -82,5 +82,28 @@ int main() {
     const Json saved = ws.map.toJson();
     assert(saved.has("terraweave") ||
            (saved.has("terrain") && saved["terrain"].has("terraweave")));
+    // Forest recipe (Studio TerraWeave Generator panel): defaults, merge,
+    // validation without mutation, one undo step.
+    {
+        const Json defaults = ws.call("terraweave_forest_get", Json::object(), "editor");
+        assert(defaults.getBool("ok", false) && !defaults.getBool("saved", true));
+        assert(defaults.getInt("spacingCm", 0) == 1100 && defaults.getInt("densityPermille", 0) == 780);
+        const auto before = ws.map.revision;
+        Json bad = Json::object();
+        bad.set("spacingCm", Json::number(int64_t(100)));
+        assert(ws.call("terraweave_forest_set", bad, "editor").has("error"));
+        assert(ws.map.revision == before && !ws.map.data.extra.has("terraweaveForest"));
+        Json set = Json::object();
+        set.set("densityPermille", Json::number(int64_t(400)));
+        set.set("enabled", Json::fromBool(false));
+        const Json saved = ws.call("terraweave_forest_set", set, "editor");
+        assert(saved.getBool("ok", false) && !saved.has("error"));
+        const Json& stored = ws.map.data.extra["terraweaveForest"];
+        assert(stored.getInt("densityPermille", 0) == 400 && !stored.getBool("enabled", true));
+        assert(stored.getInt("spacingCm", 0) == 1100); // merged, not reset
+        assert(ws.call("terraweave_forest_get", Json::object(), "editor").getBool("saved", false));
+        ws.map.undo();
+        assert(!ws.map.data.extra.has("terraweaveForest"));
+    }
     return 0;
 }

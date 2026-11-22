@@ -13,6 +13,7 @@ public:
     void init(gfx::Device&, const game::Rules&) {}
     void shutdown() {}
     void startMatch(Simulation&, uint8_t, const game::GameView&, const game::MapGrid&) {}
+    void configureEntityEffects(const Json&, const Json&) {}
     void stopMatch() {}
     void setPlanetView(const game::GameView*) {}
     void update(Simulation&, const game::GameScene&, const render::Camera&, const render::mat4&, int, int, float) {}
@@ -36,7 +37,9 @@ public:
 #include "engine/fx/ParticleSystem.h"
 #include "engine/fx/SpectraFxGpuRoutes.h"
 #include "engine/fx/SpectraFxSimulationBridge.h"
+#include "engine/fx/SpectraFxEntityEffects.h"
 #include <deque>
+#include <unordered_map>
 #include <memory>
 #include <unordered_set>
 #include "engine/render/Renderer3D.h"
@@ -54,6 +57,12 @@ public:
     void init(gfx::Device& dev, const game::Rules& rules);
     void shutdown();
     void startMatch(Simulation& sim, uint8_t viewer, const game::GameView& view, const game::MapGrid& grid);
+    // Data-declared entity effects (shared SpectraFxEntityEffects): rules /
+    // map "spectraFx" blocks and inline "spectraFx" on rules types (selector
+    // "type:<id>"), their weapons ("weapon:<id>") and abilities
+    // ("ability:<id>"). Call before startMatch with the composed rules JSON.
+    void configureEntityEffects(const Json& rulesJson, const Json& map);
+    const fx::SpectraFxEntityEffects& entityEffects() const { return entities_; }
     void stopMatch();
     // Planet maps: particles in the camera body's local space (GameView::planetFxSpace); call before update().
     void setPlanetView(const game::GameView* view);
@@ -118,6 +127,19 @@ private:
     std::unique_ptr<fx::SpectraFxGpuEmitterLibrary> gpuLibrary_;
     std::unique_ptr<fx::SpectraFxHybridPlayback> gpuPlayback_;
     std::shared_ptr<GpuEventInbox> gpuInbox_;
+    struct EntityEventInbox {
+        bool active=false;
+        struct Event { uint16_t type; uint64_t a, b; int64_t value; int32_t unitType; };
+        std::deque<Event> pending;
+    };
+    bool ensureGpuPlayback(gfx::Device& dev);
+    void presentEntityEffects(Simulation& sim, const game::GameScene& scene, float dt);
+    int entityRule(uint64_t key, const std::vector<std::string>& selectors);
+    fx::SpectraFxEntityEffects entities_;
+    std::unordered_map<uint64_t,int> entityRules_;
+    std::shared_ptr<EntityEventInbox> entityInbox_;
+    const game::Rules* rules_ = nullptr;
+    gfx::Device* dev_ = nullptr;
     fx::ParticleSystem ps_;
     game::GameFx bridge_;
     render::TextureCache textures_;   // sprite textures of effects: the same loader (and atlas) as sprites

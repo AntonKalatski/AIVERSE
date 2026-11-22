@@ -1,0 +1,1 @@
+{"hdr":"on","effects":[{"type":"bloom","intensity":0.6,"threshold":0.8},{"type":"colorGrade","contrast":1.1,"saturation":1.05,"temperature":0.03},{"type":"vignette","intensity":0.38}]}

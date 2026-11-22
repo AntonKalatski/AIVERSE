@@ -1,0 +1,48 @@
+{
+  "id": "2026-11-21-strata-debug-view",
+  "date": "2026-11-21",
+  "system": "strata",
+  "title": "STRATA: визуализация кластеров, как в Nanite",
+  "summary": "Отладочный режим показывает, на какие кластеры STRATA разбила геометрию и какие уровни детализации выбраны в кадре: каждый кластер — своим цветом.",
+  "body": [
+    "StrataDebugView рисует поверх кадра выбранный фронтир кластеров: заливку, каркас или рамки, с раскраской по кластеру, глубине LOD, геометрической ошибке или материалу. Это только презентация: выбор LOD, маршрутизация и данные GPU не меняются, по умолчанию режим выключен.",
+    "Сцена для кадров — процедурные рельеф (≈105 тыс. треугольников) и 20 камней (≈82 тыс. каждый), всего около 1,7 млн треугольников исходной геометрии. В кадре STRATA выбрала 15 280 кластеров. Вблизи — мелкие кластеры финального уровня, к горизонту — всё более крупные."
+  ],
+  "status": "done",
+  "verified": "Отладочный вид в main (7d0654223). Кадры сняты хостом tools/site/strata_showcase (ветка feature/site-strata-showcase, 4bf7232d4) на Linux, OpenGL через Mesa llvmpipe: 2 источника STRATA, 0 отклонено, 15 280 кластеров, 1 384 090 отладочных треугольников, 0 обрезано, 1920×1080.",
+  "limits": "Не снято на Metal и других GPU. Треугольники сцены упорядочены по коду Мортона: на исходном порядке процедурной сетки кластеры получались полосами — это стоит проверить на реальных ассетах. Sponza STRATA не принимает (стыки между материалами).",
+  "branch": "main",
+  "commit": "7d0654223",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg",
+      "caption": "Кластеры: каждый своим цветом",
+      "captionEn": "Clusters: each in its own colour"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg",
+      "caption": "Уровни LOD: от финального вблизи к грубым вдали",
+      "captionEn": "LOD levels: finest up close, coarse in the distance"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg",
+      "caption": "Тот же ракурс в обычном рендере",
+      "captionEn": "The same view in the normal render"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/strata.md",
+      "href": "docs/strata.md"
+    }
+  ],
+  "author": "site",
+  "titleEn": "STRATA: Nanite-style cluster visualization",
+  "summaryEn": "A debug view shows which clusters STRATA split the geometry into and which detail levels it selected in the frame: every cluster in its own colour.",
+  "verifiedEn": "Debug view in main (7d0654223). Frames captured with the tools/site/strata_showcase host (branch feature/site-strata-showcase, 4bf7232d4) on Linux, OpenGL through Mesa llvmpipe: 2 STRATA sources, 0 declined, 15,280 clusters, 1,384,090 debug triangles, 0 truncated, 1920×1080.",
+  "bodyEn": [
+    "StrataDebugView draws the selected cluster frontier over the frame — fill, wireframe or bounds — coloured by cluster, LOD depth, geometric error or material. Presentation only: LOD selection, routing and GPU data are unchanged, and the view is off by default.",
+    "The scene is procedural terrain (≈105 k triangles) and 20 rocks (≈82 k each), about 1.7 M source triangles in total. STRATA selected 15,280 clusters in the frame: small finest-level clusters up close, increasingly coarse ones towards the horizon."
+  ],
+  "limitsEn": "Not captured on Metal or other GPUs. Scene triangles are Morton-ordered: with the procedural mesh's original order clusters came out as strips — worth checking on real assets. STRATA rejects Sponza (cross-material seams)."
+}

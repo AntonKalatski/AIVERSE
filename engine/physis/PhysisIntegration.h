@@ -1,7 +1,9 @@
 // PHYSIS Stage 5: generic Simulation integration, persistent ECS and render-neutral snapshots.
 // No dependency on any genre module or rendering backend.
 #pragma once
+#include <memory>
 #include "PhysisDisasters.h"
+#include "PhysisStreaming.h"
 #include "PhysisWind.h"
 #include "PhysisGravity.h"
 #include "PhysisStorm.h"
@@ -167,6 +169,15 @@ struct InstallOptions {
     // Use ExternalAuthority when NEREID or another water simulation owns
     // water volumes; fire and quakes keep running without duplicate flooding.
     FloodMode floodMode = FloodMode::LocalShallow;
+    // Grid passes on several threads (PhysisParallel.h), bit-identical to
+    // serial. 1 = serial (default), 0 = hardware concurrency, N = N lanes.
+    // Not saved and not part of the state hash: hosts may pick any value.
+    unsigned workerThreads = 1;
+    // Chunk streaming (PhysisStreaming.h): 0 = off (whole grid every tick,
+    // save manifest unchanged); N = chunk edge in cells. Anchors listed here
+    // are spawned as ActivityAnchor entities; hosts may add/move their own.
+    std::int32_t streamingChunkCells = 0;
+    std::vector<ActivityAnchor> anchors;
 };
 
 inline void install(Simulation& simulation, const InstallOptions& options = {}) {
@@ -178,6 +189,11 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
         (!options.enableForces || !options.enableNatureContacts))
         throw std::invalid_argument(
             "PHYSIS nature stress requires forces and nature contacts");
+    if (options.streamingChunkCells != 0 &&
+        (options.streamingChunkCells < 4 || options.streamingChunkCells > 1024))
+        throw std::invalid_argument("PHYSIS streaming chunkCells must be 4..1024");
+    if (!options.anchors.empty() && options.streamingChunkCells == 0)
+        throw std::invalid_argument("PHYSIS anchors require streaming");
     if (options.enableFractureOutbox && !options.enableNatureStress)
         throw std::invalid_argument(
             "PHYSIS fracture outbox requires nature stress");
@@ -192,9 +208,24 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
                         options.enableStorms, options.enableForces,
                         options.enableNatureContacts, options.enableNatureStress,
                         options.enableFractureOutbox);
+    if (options.streamingChunkCells != 0) {
+        enableStreaming(simulation.world(), options.streamingChunkCells);
+        for (const auto& anchor : options.anchors)
+            (void)addActivityAnchor(simulation.world(), anchor.position, anchor.radiusMeters);
+        simulation.registerPersistentResource<ActiveChunks>("physis.active_chunks", 1);
+        simulation.registerPersistentComponent<ActivityAnchor>("physis.activity_anchor", 1);
+        // Before the climate pass, so the whole tick sees one mask.
+        simulation.addSystem("physis.streaming", [](Simulation& sim) {
+            updateActiveChunks(sim.world());
+        });
+    }
+    std::shared_ptr<const CellExecutor> lanes;
+    if (options.workerThreads != 1)
+        lanes = std::make_shared<ThreadPoolCellExecutor>(options.workerThreads);
     simulation.addSystem("physis.environment",
         [hazards=options.enableDisasters, storms=options.enableStorms,
-         flood=options.floodMode](Simulation& sim) {
+         flood=options.floodMode, lanes](Simulation& sim) {
+            ScopedCellExecutor parallel(lanes.get());
             if (storms && hazards) advanceEnvironmentWithStormsAndDisasters(sim.world(), flood);
             else if (storms) advanceEnvironmentWithStorms(sim.world());
             else if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);

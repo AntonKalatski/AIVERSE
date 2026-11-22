@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-21-terraweave-ground-detail",
+  "date": "2026-11-21",
+  "system": "terraweave",
+  "title": "Земля TERRA без тайлинга и клякс",
+  "titleEn": "TERRA ground without tiling or blotches",
+  "summary": "Вблизи земля берёт траву, песок и скалу из общих детальных слоёв в мировых координатах, а не из запечённой текстуры тайла; повтор ломают второй повёрнутый сэмпл и макрошум.",
+  "summaryEn": "Up close the ground samples grass, sand and rock from shared world-space detail layers instead of the baked tile texture; a second rotated lookup and macro noise break the repeat.",
+  "body": [
+    "Раньше тайл 64 м был запечён в текстуру 1024 px (около 6 см на пиксель), а трава проецировалась только сверху, поэтому на склонах растягивалась в кляксы. Теперь текстура тайла хранит только веса слоёв (билинейно), детальные слои 4 м проецируются по доминирующей оси, поэтому склон не растягивается.",
+    "Против тайлинга трава и песок получают второй сэмпл, повёрнутый на ~53° и отмасштабированный, смешанный по мировому градиентному шуму, плюс двухоктавная вариация яркости (23 м и 7 м). Граф укладывается в 16 выборок; для материалов добавлен nodeBudget до 192 узлов."
+  ],
+  "bodyEn": [
+    "Previously a 64 m tile was baked into a 1024 px texture (about 6 cm per pixel) with top-down grass, which stretched into blotches on slopes. Now the tile texture only stores layer weights (bilinear) and the 4 m detail layers use dominant-axis projection, so slopes do not stretch.",
+    "Against tiling, grass and sand get a second lookup rotated ~53° and rescaled, mixed by world gradient noise, plus a two-octave brightness variation (23 m and 7 m). The graph stays within 16 samples; material graphs gain a nodeBudget of up to 192 nodes."
+  ],
+  "status": "in-progress",
+  "verified": "Mac (Metal), ревью‑копия AlpineValley: кадры берега вплотную; тест shader_graph (nodeBudget).",
+  "verifiedEn": "Mac (Metal), AlpineValley review copy: close-up bank frames; shader_graph test (nodeBudget).",
+  "limits": "Включено на ревью‑копии; основной проект AlpineValley ещё на запечённых текстурах.",
+  "limitsEn": "Enabled on the review copy; the main AlpineValley project still uses baked textures.",
+  "branch": "agent-wind-masks",
+  "commit": "18f16ca16",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-terraweave-ground-detail/01.jpg",
+      "caption": "Крутой берег вплотную: детальные слои без растяжения и повтора",
+      "captionEn": "Steep bank up close: detail layers without stretching or repeats"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-terraweave-ground-detail/02.jpg",
+      "caption": "Тот же берег в общем плане",
+      "captionEn": "The same bank in a wide shot"
+    }
+  ],
+  "links": [
+    {
+      "title": "Native landscape authoring",
+      "href": "docs/terrain/native-landscape-authoring.md"
+    }
+  ],
+  "author": "agent-wind-masks"
+}

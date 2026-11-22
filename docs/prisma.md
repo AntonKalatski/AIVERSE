@@ -4239,7 +4239,7 @@ focused on the scene keeps it, focus near the camera softens it by at least 40%;
 turning camera with motion blur is at least 20% softer than the same turn without, a still camera with blur stays within 5% of no effect; every
 effect phase must report `encoded`. Handoff: `docs/handoffs/prisma-stage-67.md`.
 
-## Stage 97 — AO, SSR, lens flare + dirt, SMAA, lens distortion, streaks, halation, heat haze, FSR 1, DLSS route, histogram metering, stylization (2026-11-22)
+## Stage 99 — AO, SSR, lens flare + dirt, SMAA, lens distortion, streaks, halation, heat haze, FSR 1, DLSS route, histogram metering, stylization (2026-11-22)
 
 Ten new catalog effects, one new Auto Exposure mode and six stylization presets.
 All are data (`postfx.effects`, camera volumes, MCP `postfx_*`, the editor window),
@@ -4282,4 +4282,4 @@ Tests: `prisma_new_effects` (GPU-free catalog/plans/cost/presets/shader contract
 `prisma_<fx>_gpu` / `_gl` / `_vulkan` for `ao ssr flare smaa distort streaks
 halation haze fsr histogram` (phase 0 without, phase 1 with the effect; it must be
 encoded and change the frame in its direction), `prisma_style_presets_fresh`.
-Handoff: `docs/handoffs/prisma-stage-97-new-effects.md`.
+Handoff: `docs/handoffs/prisma-stage-99-new-effects.md`.

@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "note": "Documentation pages of the website: each page renders one repository Markdown file (docs-<id>.html). Add a page here when a user-facing doc appears; agent handoffs and stage logs do not belong here.",
+  "sections": [
+    {
+      "title": "Начало", "titleEn": "Getting started",
+      "pages": [
+        { "id": "overview", "source": "docs/overview.md",
+          "title": "Обзор движка", "titleEn": "Engine overview",
+          "lead": "Устройство движка, сборка, форматы, подсистемы и платформы.", "leadEn": "Layout, building, formats, subsystems and platforms." },
+        { "id": "engine-import", "source": "docs/engine-import.md",
+          "title": "Импорт из Unity и Godot", "titleEn": "Import from Unity and Godot",
+          "lead": "Как перенести проект: что переносится точно, что приблизительно.", "leadEn": "Porting a project: what transfers exactly and what approximately." }
+      ]
+    },
+    {
+      "title": "Создание игры", "titleEn": "Making a game",
+      "pages": [
+        { "id": "game-format", "source": "docs/game-format.md",
+          "title": "Формат игры", "titleEn": "Game data format",
+          "lead": "game.json, rules.json, карты, UI, эффекты и звук.", "leadEn": "game.json, rules.json, maps, UI, effects and audio." },
+        { "id": "scripting", "source": "docs/scripting.md",
+          "title": "Скрипты на Lua", "titleEn": "Lua scripting",
+          "lead": "Детерминированный Lua в симуляции, бюджеты и горячая перезагрузка.", "leadEn": "Deterministic Lua in the simulation, budgets and hot reload." },
+        { "id": "mechanics-packages", "source": "docs/mechanics-packages.md",
+          "title": "Пакеты механик", "titleEn": "Mechanics packages",
+          "lead": "Готовые библиотеки игровых механик на C++.", "leadEn": "Ready-made C++ gameplay mechanics libraries." },
+        { "id": "fps", "source": "docs/fps.md",
+          "title": "FPS", "titleEn": "FPS",
+          "lead": "Модуль шутера: клиент, авторитетный сервер, примеры.", "leadEn": "The shooter module: client, authoritative server, examples." },
+        { "id": "meta-service", "source": "docs/meta-service.md",
+          "title": "Мета-сервис", "titleEn": "Meta service",
+          "lead": "Магазин, квесты, лидерборды, кланы и турниры со своим бэкендом.", "leadEn": "Shop, quests, leaderboards, clans and tournaments with its own backend." },
+        { "id": "battle-net", "source": "docs/battle-net.md",
+          "title": "Сетевые бои", "titleEn": "Hosted battles",
+          "lead": "Свой сервер битв, билеты на матч, шифрованный UDP.", "leadEn": "Own battle server, match tickets, encrypted UDP." },
+        { "id": "editor-windows", "source": "docs/editor-windows.md",
+          "title": "Окна редактора", "titleEn": "Editor windows",
+          "lead": "Как добавить окно в редактор.", "leadEn": "Adding a window to the editor." }
+      ]
+    },
+    {
+      "title": "Системы движка", "titleEn": "Engine systems",
+      "pages": [
+        { "id": "terraweave", "source": "docs/terrain/TERRAWEAVE.md", "title": "TerraWeave", "titleEn": "TerraWeave",
+          "lead": "Процедурный ландшафт, биомы и растительность.", "leadEn": "Procedural terrain, biomes and vegetation." },
+        { "id": "physis", "source": "docs/physis.md", "title": "PHYSIS", "titleEn": "PHYSIS",
+          "lead": "Среда: погода, огонь, наводнения, ветер и гравитация.", "leadEn": "Environment: weather, fire, floods, wind and gravity." },
+        { "id": "nereid", "source": "docs/nereid/ARCHITECTURE.md", "title": "NEREID", "titleEn": "NEREID",
+          "lead": "Вода: реки, океан, плавучесть, пена.", "leadEn": "Water: rivers, ocean, buoyancy, foam." },
+        { "id": "strata", "source": "docs/strata.md", "title": "STRATA", "titleEn": "STRATA",
+          "lead": "Виртуализированная геометрия.", "leadEn": "Virtualized geometry." },
+        { "id": "lens", "source": "docs/camera-system.md", "title": "LENS", "titleEn": "LENS",
+          "lead": "Камеры в ECS и захват кадров.", "leadEn": "ECS cameras and frame capture." },
+        { "id": "prisma", "source": "docs/prisma.md", "title": "PRISMA", "titleEn": "PRISMA",
+          "lead": "Постобработка и атмосфера.", "leadEn": "Post-processing and atmosphere." },
+        { "id": "spectrafx", "source": "docs/spectrafx.md", "title": "SpectraFX", "titleEn": "SpectraFX",
+          "lead": "Эффекты частиц и графы эффектов.", "leadEn": "Particle effects and effect graphs." },
+        { "id": "motionweave", "source": "docs/motionweave.md", "title": "MotionWeave", "titleEn": "MotionWeave",
+          "lead": "Анимация персонажей.", "leadEn": "Character animation." },
+        { "id": "vivid-creator", "source": "docs/vivid-creator.md", "title": "VIVID: Character Creator и MetaHuman", "titleEn": "VIVID: Character Creator and MetaHuman",
+          "lead": "Редактор внешности цифровых людей в Studio и адаптер экспорта MetaHuman.", "leadEn": "The digital-human appearance editor in Studio and the MetaHuman export adapter." },
+        { "id": "dynamic-gi", "source": "docs/dynamic-gi.md", "title": "LUMA: динамический непрямой свет", "titleEn": "LUMA: dynamic indirect light",
+          "lead": "Непрямой свет одним отскоком на CPU и GPU.", "leadEn": "One-bounce indirect light on CPU and GPU." },
+        { "id": "lightbake", "source": "docs/lightbake.md", "title": "Запекание света", "titleEn": "Light baking",
+          "lead": "Лайтмапы и пробы своим path tracer.", "leadEn": "Lightmaps and probes with the engine's path tracer." }
+      ]
+    }
+  ]
+}

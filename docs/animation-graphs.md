@@ -37,11 +37,11 @@ C++ API самостоятельно; автоматическое подклю�
 |---|---|---|
 | `stack` | `input`, `traits` | Стек native/Lua traits и rig-коррекций |
 | `subgraph` | `graph`, `bindings` | Отдельный экземпляр именованного графа |
-| `motionMatching` | `database` | Выбор клипа/времени по позе и будущей траектории |
+| `motionMatching` | `database` | Выбор клипа/времени по позе и будущей траектории. `clips`: имя (цикл) или `{"clip":"Stop","loop":false}` (одноразовый: держит конец). `trajectory[i].facing` — векторный параметр будущего направления (повороты на месте); `facingWeight`, `facingAxis` |
 | `rig` | `input`, `units` | Последовательная программа управления костями |
 | `bind` | `id` | Bind pose модели |
 | `clip` | `clip`, `loop` (true), `speed` (1), `parameter` | Клип; параметр задаёт скорость воспроизведения |
-| `blend` | `a`, `b`, `weight` (1), `parameter`, `mask` | Смешивание полных поз A → B; маска — имя корня поддерева |
+| `blend` | `a`, `b`, `weight` (1), `parameter`, `mask`, `sync` (false) | Смешивание полных поз A → B; маска — имя корня поддерева. `sync: true` (только два зацикленных clip-входа): общая нормализованная фаза, длительность цикла смешивается по весу (walk/run без проскальзывания ног) |
 | `additive` | `a`, `b`, `weight`, `parameter`, `mask` | К A добавляется разница B относительно bind pose |
 | `controller` | `controller` | Mecanim-style layered state machine imported from Unity ([unity-animation.md](unity-animation.md)) |
 | `twoBoneIK` | `input`, `hip`, `knee`, `foot`, `target`, `pole`, `weight`, `parameter` | Двухкостный IK; target/pole — имена векторных параметров в пространстве модели |

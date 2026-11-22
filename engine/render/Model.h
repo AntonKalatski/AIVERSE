@@ -240,6 +240,11 @@ struct Model {
     // from its GLB alone. The default still prepares compatible material/shadow batches.
     struct Batching {
         bool mergeRigid = false;
+        // Size cull for rigid scenery with a LOD chain (grass, pebbles):
+        // a node smaller than this many projected pixels (before the
+        // renderer's LOD scale) is skipped in the camera/shadow passes.
+        // 0 = never cull.
+        float cullPixels = 0;
         // Per-asset shared GPU geometry pool admission. Inherit uses the
         // current global upload policy; Dedicated always uses separate VB/IB;
         // AllowRigidLods opts in safe rigid LODs for only this Model.

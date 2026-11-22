@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-21-terraweave-forest-impostors",
+  "date": "2026-11-21",
+  "system": "terraweave",
+  "title": "Лес TerraWeave: дерево целиком в один вызов, импостеры вдали",
+  "titleEn": "TerraWeave forest: a whole tree per draw, impostors in the distance",
+  "summary": "Одинаковые деревья теперь рисуются одним инстансированным вызовом на уровень детализации вместо отдельного вызова на каждую ветку, а дальние деревья — импостерами, запечёнными из ближней модели.",
+  "summaryEn": "Identical trees now render as one instanced draw per detail level instead of one draw per branch, and distant trees use impostors baked from the near model.",
+  "body": [
+    "При иерархическом ветре дерево собирается в одну модель с тремя уровнями (полный, упрощённый, минимальный), уровень выбирает FloraView, а Renderer3D инстансирует одинаковые деревья по примитиву. В кадре с лесом вызовов стало 110–177 вместо ~6000.",
+    "Импостер больше не рисуется отдельной упрощённой графикой: атлас запекается растеризацией ближней модели с 2×2 сглаживанием и протеканием цвета по краям, поэтому вдали дерево узнаётся по силуэту и цвету кроны."
+  ],
+  "bodyEn": [
+    "With hierarchical wind a tree becomes one model with three tiers (full, reduced, minimal); FloraView picks the tier and Renderer3D instances identical trees per primitive. A forest frame went from ~6000 draws to 110–177.",
+    "The impostor atlas is baked by rasterising the near model with 2×2 supersampling and colour bleeding, so a distant tree keeps its silhouette and crown colour."
+  ],
+  "status": "in-progress",
+  "verified": "Mac (Metal), редактор: замеры draw calls и GPU‑времени в одной сцене до/после; тесты wind_rig, terraweave_model, terraweave_forest_scene.",
+  "verifiedEn": "Mac (Metal), editor: same-scene draw call and GPU time measurements before/after; tests wind_rig, terraweave_model, terraweave_forest_scene.",
+  "limits": "Статические glTF‑деревья старых экспортов (как в AlpineValley) пока без цепочек LOD; группировка импостеров до горизонта ещё проверяется.",
+  "limitsEn": "Static glTF trees from older exports (as in AlpineValley) still have no LOD chains; horizon-wide impostor grouping is still being verified.",
+  "branch": "agent-wind-masks",
+  "commit": "c304a51cd",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-terraweave-forest-impostors/01.jpg",
+      "caption": "Дальний лес: импостеры, запечённые из ближних моделей",
+      "captionEn": "Distant forest: impostors baked from the near models"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-terraweave-forest-impostors/02.jpg",
+      "caption": "Ближние деревья: одна модель на дерево, иерархический ветер",
+      "captionEn": "Near trees: one model per tree, hierarchical wind"
+    }
+  ],
+  "links": [
+    {
+      "title": "TerraWeave",
+      "href": "docs/terrain/native-landscape-authoring.md"
+    }
+  ],
+  "author": "agent-wind-masks"
+}
