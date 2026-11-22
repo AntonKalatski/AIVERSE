@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T11:36:08+00:00",
+ "generated": "2026-11-22T12:13:48+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -316,16 +316,17 @@
    "date": "2026-11-22",
    "system": "planets",
    "title": "Planet seas became NEREID water bodies",
-   "summary": "A planet's sea can now be turned on as a NEREID water body: depth, up, current and buoyancy follow the sphere's radius, deterministically and with saves.",
+   "summary": "The sea of any sphere — a planet, a moon or anything else — is now a NEREID water body: depth, up, current, waves and buoyancy follow the radius, and ships get splashes and wakes.",
    "body": [
     "NEREID gained sphere water bodies: a shell around the planet's centre with the surface at sea level and the floor at a set depth. For any point they return the radial depth, the direction up from the centre and a current flowing east around an axis.",
-    "The same buoyancy components as for flat water push an object along the radius on a sphere. A map turns this on with a single nereid key on a body; without the key nothing is registered, and saves and checksums of old maps stay the same. Big Planet already has it on."
+    "The same buoyancy components as for flat water push an object along the radius on a sphere. A map turns this on with a single nereid key on a body; without the key nothing is registered, and saves and checksums of old maps stay the same. Big Planet already has it on.",
+    "Waves now exist in the simulation too: the sea level on a sphere rises and falls with a set amplitude and period, and depth and buoyancy follow it. Objects in the water get entry, exit and wake events — the same as for flat water, so splash effects read them unchanged. This is shared NEREID code for any game, not only strategy: one flag in the water pipeline turns it on."
    ],
    "status": "done",
    "verified": "The new ecs_nereid_sphere_water_test (sampling, current, buoyancy, determinism, saves) passes; a bot match on Big Planet plays to a winner, the save restore check passes, and the planets template checksums match the baseline.",
-   "limits": "Water probes on units are added by the game's native module for now; built-in RTS ships and swimmers do not use this yet. Waves remain visual only: the water height on a sphere is constant.",
+   "limits": "Simulation waves and the waves on screen do not match exactly yet: the picture has its own, the simulation its own. Built-in RTS ships get probes automatically but do not drift with the current yet — movement stays with the host.",
    "branch": "main",
-   "commit": "997956cfe",
+   "commit": "4230eff56",
    "media": [],
    "links": [
     {
