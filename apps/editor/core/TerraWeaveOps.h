@@ -273,7 +273,7 @@ inline void registerTerraWeaveOps(Workspace& ws) {
           "seedOffset":{"type":"integer","minimum":0}}})"),
         [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
-            if (w->project.isFps() || w->map.data.planet()) throw std::runtime_error(
+            if (w->project.worldSpaceMaps() || w->map.data.planet()) throw std::runtime_error(
                 "TerraWeave forest recipe is for flat heightfield maps");
             // Merge over the current recipe: unspecified fields keep their value.
             Json merged=terraweave_ops_detail::forestRecipeJson(
