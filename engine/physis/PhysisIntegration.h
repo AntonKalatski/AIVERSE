@@ -1,6 +1,7 @@
 // PHYSIS Stage 5: generic Simulation integration, persistent ECS and render-neutral snapshots.
 // No dependency on any genre module or rendering backend.
 #pragma once
+#include <memory>
 #include "PhysisDisasters.h"
 #include "PhysisWind.h"
 #include "PhysisGravity.h"
@@ -167,6 +168,10 @@ struct InstallOptions {
     // Use ExternalAuthority when NEREID or another water simulation owns
     // water volumes; fire and quakes keep running without duplicate flooding.
     FloodMode floodMode = FloodMode::LocalShallow;
+    // Grid passes on several threads (PhysisParallel.h), bit-identical to
+    // serial. 1 = serial (default), 0 = hardware concurrency, N = N lanes.
+    // Not saved and not part of the state hash: hosts may pick any value.
+    unsigned workerThreads = 1;
 };
 
 inline void install(Simulation& simulation, const InstallOptions& options = {}) {
@@ -192,9 +197,13 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
                         options.enableStorms, options.enableForces,
                         options.enableNatureContacts, options.enableNatureStress,
                         options.enableFractureOutbox);
+    std::shared_ptr<const CellExecutor> lanes;
+    if (options.workerThreads != 1)
+        lanes = std::make_shared<ThreadPoolCellExecutor>(options.workerThreads);
     simulation.addSystem("physis.environment",
         [hazards=options.enableDisasters, storms=options.enableStorms,
-         flood=options.floodMode](Simulation& sim) {
+         flood=options.floodMode, lanes](Simulation& sim) {
+            ScopedCellExecutor parallel(lanes.get());
             if (storms && hazards) advanceEnvironmentWithStormsAndDisasters(sim.world(), flood);
             else if (storms) advanceEnvironmentWithStorms(sim.world());
             else if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);

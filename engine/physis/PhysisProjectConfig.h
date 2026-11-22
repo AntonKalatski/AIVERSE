@@ -68,6 +68,8 @@ inline std::optional<InstallOptions> optionsFromMap(const Json& map) {
     options.enableWindZones = readFlag("enableWindZones");
     options.enableGravityFields = readFlag("enableGravityFields");
     options.enableForces = readFlag("enableForces");
+    if (!config["workerThreads"].isNull())
+        options.workerThreads = unsigned(integer(config, "workerThreads", 0, 16));
     const auto& floodMode = config["floodMode"];
     if (!floodMode.isNull() && !floodMode.isString())
         throw std::invalid_argument("PHYSIS floodMode must be a string");

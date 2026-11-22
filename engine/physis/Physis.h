@@ -4,6 +4,7 @@
 #pragma once
 #include "../core/ECS.h"
 #include "../core/Fixed.h"
+#include "PhysisParallel.h"
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -185,7 +186,12 @@ template<class SurfaceProvider>
 inline void advanceSurface(World& world, SurfaceProvider&& getParameters) {
     const auto* state = world.resourceConst<State>();
     if (!state) throw std::logic_error("PHYSIS not initialized");
-    for (const Entity entity : state->cells) {
+    const auto& cells = state->cells;
+    // Parallel lanes write disjoint Surface components: resolve COW first.
+    if (cellPassIsParallel(cells.size())) world.prepareExistingWrite<Surface>();
+    forEachCellRange(cells.size(), [&](std::size_t begin, std::size_t end) {
+    for (std::size_t index = begin; index < end; ++index) {
+        const Entity entity = cells[index];
         if (!world.alive(entity)) continue;
         const auto* coord = world.tryGetConst<Cell>(entity);
         const auto* atmosphere = world.tryGetConst<Atmosphere>(entity);
@@ -206,6 +212,7 @@ inline void advanceSurface(World& world, SurfaceProvider&& getParameters) {
                             -parameters.thawingRate),
             Fixed{}, Fixed::fromInt(1));
     }
+    });
 }
 
 // A single deterministic scheduler entry point, independently extendable by
@@ -221,7 +228,13 @@ inline void advanceWith(World& world, ForcingProvider&& getForcing,
     const auto tick = state->tick;
     const auto baselineTemperature = state->settings.baseTemperature;
     const auto baselineHumidity = state->settings.baseHumidity;
-    for (const Entity entity : state->cells) {
+    const auto& cells = state->cells;
+    // Each cell reads only its own Atmosphere and read-only forcing data, so
+    // lanes (PhysisParallel.h) give bit-identical results to serial order.
+    if (cellPassIsParallel(cells.size())) world.prepareExistingWrite<Atmosphere>();
+    forEachCellRange(cells.size(), [&](std::size_t begin, std::size_t end) {
+    for (std::size_t index = begin; index < end; ++index) {
+        const Entity entity = cells[index];
         if (!world.alive(entity)) continue;
         const auto* coord = world.tryGetConst<Cell>(entity);
         if (!coord) continue;
@@ -259,6 +272,7 @@ inline void advanceWith(World& world, ForcingProvider&& getForcing,
         atmosphere->rain = atmosphere->temperature > Fixed{} ? precipitation : Fixed{};
         atmosphere->snow = atmosphere->temperature <= Fixed{} ? precipitation : Fixed{};
     }
+    });
     advanceSurface(world, getSurfaceParameters);
     ++state->tick;
 }

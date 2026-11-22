@@ -164,6 +164,11 @@ target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Simulation::setup for every game module (engine/physis/PhysisAutoInstall.cpp).
 # OFF drops it from the link; maps with a "physis" block then run without it.
 option(AIVERSE_SIM_PHYSIS "Install PHYSIS automatically from map data" ON)
+# PHYSIS worker lanes (engine/physis/PhysisParallel.h) use std::thread.
+if(NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_engine PUBLIC Threads::Threads)
+endif()
 if(AIVERSE_SIM_PHYSIS)
     target_sources(aiverse_engine PRIVATE engine/physis/PhysisAutoInstall.cpp)
     target_compile_definitions(aiverse_engine PRIVATE AIVERSE_SIM_PHYSIS=1)
@@ -4246,6 +4251,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_nature_presentation_test PRIVATE aiverse_engine)
     add_test(NAME physis_nature_presentation COMMAND aiverse_physis_nature_presentation_test)
     set_tests_properties(physis_nature_presentation PROPERTIES LABELS "PHYSIS")
+    # Parallel grid passes: bit-identical to serial for every lane count;
+    # `aiverse_physis_parallel_test bench 1024 10` prints the speedup.
+    add_executable(aiverse_physis_parallel_test tests/physis_parallel_test.cpp)
+    target_link_libraries(aiverse_physis_parallel_test PRIVATE aiverse_engine)
+    add_test(NAME physis_parallel COMMAND aiverse_physis_parallel_test)
+    set_tests_properties(physis_parallel PROPERTIES LABELS "PHYSIS")
     if(AIVERSE_SIM_PHYSIS)
         # Map-data install for any GameModule + presentation config/wind adapters.
         add_executable(aiverse_physis_nature_runtime_test tests/physis_nature_runtime_test.cpp)
@@ -4879,5 +4890,9 @@ if(AIVERSE_BUILD_TESTS)
     add_custom_target(aiverse_physis_tests)
     if(_aiverse_physis_test_targets)
         add_dependencies(aiverse_physis_tests ${_aiverse_physis_test_targets})
+    endif()
+    # physis_mcp drives the MCP server binary.
+    if(TARGET aiversemcp)
+        add_dependencies(aiverse_physis_tests aiversemcp)
     endif()
 endif()
