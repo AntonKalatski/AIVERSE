@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -32,7 +32,7 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html" aria-current="page">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md">исходный документ</a>.</p><h1 id="aiverse-lens-независимые-от-жанра-ecs-камеры-и-захват-с-нескольких-камер">AIVERSE LENS — независимые от жанра ECS-камеры и захват с нескольких камер<a class="anchor" href="#aiverse-lens-независимые-от-жанра-ecs-камеры-и-захват-с-нескольких-камер" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html" aria-current="page">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md">исходный документ</a>.</p><h1 id="aiverse-lens-независимые-от-жанра-ecs-камеры-и-захват-с-нескольких-камер">AIVERSE LENS — независимые от жанра ECS-камеры и захват с нескольких камер<a class="anchor" href="#aiverse-lens-независимые-от-жанра-ecs-камеры-и-захват-с-нескольких-камер" aria-label="#">#</a></h1>
 <p>Обновлено: 2026-11-21. Текущая интеграция: <code>main</code>; работа P2 в <code>feature/aiv20261121_lens_p2</code>.</p>
 <p>Тела видовых камер (обзор карты, следование, преследование, от первого лица), режимы ECS-рига на той же математике и именованные пресеты: <a href="docs-camera-behaviors.html">camera-behaviors.md</a>.</p>
 <h2 id="текущая-реализация-и-проверка">Текущая реализация и проверка<a class="anchor" href="#текущая-реализация-и-проверка" aria-label="#">#</a></h2>
@@ -51,22 +51,22 @@
 <p>Повторно используемое ядро теперь закоммичено в ветку функции (НЕ проверено на железе):</p>
 <ul><li><code>engine/render/CameraRenderScheduler.h</code>: планирование на основе ECS-сущностей с приоритетами, DAG зависимостей, диагностикой дублирующихся выводов и циклов; <code>EveryFrame</code>, <code>EveryNFrames</code>, <code>FixedRate</code>, <code>OnDirty</code>, <code>Manual</code>. Экранная камера с наивысшим приоритетом идёт последней, после внеэкранных камер. Пока разделённый экран не реализован, дополнительные полноэкранные камеры подавляются.</li><li><code>engine/render/RenderTargetPool.h</code>: выделение вложений RGBA8/RGBA16F и глубины по требованию по ключу ассета; ленивое изменение размера; отложенное освобождение по токену завершения; при неизвестном завершении цели удерживаются до разборки с подтверждённым простоем GPU.</li><li><code>engine/render/CameraRenderPipeline.h</code>: выполняет <code>CameraRenderPlan</code> в <code>Renderer3D::render(gfx::PassDesc)</code>, позволяет хосту отправлять геометрию сцены и предоставлять экземпляры постобработки для каждой камеры, и выдаёт текстуры цвета/глубины, доступные для выборки.</li><li>Исходники CTest-фикстур (NOT RUN): <code>ecs_camera</code>, <code>camera_scheduler</code>, <code>camera_rt_pool</code>. Пиксельные тесты GPU и полная интеграция с редактором/нативным кодом остаются в ожидании.</li></ul>
 <h3 id="пример-нативного-хоста-на-c">Пример нативного хоста на C++<a class="anchor" href="#пример-нативного-хоста-на-c" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">render::CameraRenderScheduler schedule;
-render::CameraRenderPipeline lens(device, renderer, schedule);
-// The host created ECS camera Entities with WorldTransform and CameraComponent.
-// CameraOutputComponent{Texture, 42, 512, 512} chooses a stable RT asset key.
-// All rendered models are submitted by the game&#x27;s presentation callback.
-device.beginFrame(framebufferWidth, framebufferHeight);
-auto result = lens.execute(world, frameIndex, seconds,
-    [&amp;](const render::EcsCameraView&amp; camera, render::Renderer3D&amp; r3d) {
-        // Submit your world geometry here; respect camera.visibilityMask.
-        // Never sample camera.output.targetAssetKey in this same pass.
-        submitVisibleWorld(camera, r3d);
+<pre><code class="lang-cpp">render::<span class="hl-ty">CameraRenderScheduler</span> schedule;
+render::<span class="hl-ty">CameraRenderPipeline</span> <span class="hl-fn">lens</span>(<span class="hl-kw">device</span>, renderer, schedule);
+<span class="hl-com">// The host created ECS camera Entities with WorldTransform and CameraComponent.</span>
+<span class="hl-com">// CameraOutputComponent{Texture, 42, 512, 512} chooses a stable RT asset key.</span>
+<span class="hl-com">// All rendered models are submitted by the game&#x27;s presentation callback.</span>
+<span class="hl-kw">device</span>.<span class="hl-fn">beginFrame</span>(framebufferWidth, framebufferHeight);
+<span class="hl-kw">auto</span> result = lens.<span class="hl-fn">execute</span>(world, frameIndex, seconds,
+    [&amp;](<span class="hl-kw">const</span> render::<span class="hl-ty">EcsCameraView</span>&amp; camera, render::<span class="hl-ty">Renderer3D</span>&amp; r3d) {
+        <span class="hl-com">// Submit your world geometry here; respect camera.visibilityMask.</span>
+        <span class="hl-com">// Never sample camera.output.targetAssetKey in this same pass.</span>
+        <span class="hl-fn">submitVisibleWorld</span>(camera, r3d);
     });
-auto cameraColor = lens.targets().color(42); // valid after its successful pass
-device.endFrame();
-// At an externally proven GPU-idle point before Device teardown:
-// lens.shutdownAfterGpuIdle();</code></pre>
+<span class="hl-kw">auto</span> cameraColor = lens.<span class="hl-fn">targets</span>().<span class="hl-fn">color</span>(<span class="hl-num">42</span>); <span class="hl-com">// valid after its successful pass</span>
+<span class="hl-kw">device</span>.<span class="hl-fn">endFrame</span>();
+<span class="hl-com">// At an externally proven GPU-idle point before Device teardown:</span>
+<span class="hl-com">// lens.shutdownAfterGpuIdle();</span></code></pre>
 <p>Нативный пример поясняющий, это не самостоятельный собираемый проект: <code>submitVisibleWorld</code>, <code>world</code>, <code>renderer</code> и <code>device</code> принадлежат игре. Флаг <code>depth</code> цели определяет, выдаётся ли глубина наружу; внутреннее вложение глубины выделяется всегда, чтобы 3D-тест глубины работал правильно. Не читайте цель камеры, пока эта же камера пишет в неё. Объявляйте зависимости RT с помощью <code>CameraDependenciesComponent</code>. Для PostFX каждой камеры держите отдельный экземпляр <code>PostProcess</code> на каждую Entity и вызывайте <code>executeWithPost</code>.</p>
 <h2 id="1-требования">1. Требования<a class="anchor" href="#1-требования" aria-label="#">#</a></h2>
 <ol><li>Произвольное число камер одновременно в одной сцене, каждая задаётся нативной ECS <code>Entity</code> (существующая идентичность, безопасная к поколениям), с обычной иерархией сцены <code>Parent</code>, <code>LocalTransform</code> и <code>WorldTransform</code>.</li><li>Каждая камера может отрисовывать в swapchain, внешнюю или управляемую render-текстуру (цвет/глубина, HDR), подпрямоугольник viewport или внеэкранный захват; независимые clear/load/store и маски слоёв.</li><li>Камере не обязательно быть активной на экране, чтобы захватывать. RT, доступная для выборки, остаётся действительной, пока хост явно её не освободит; время жизни GPU и владение между кадрами должны соблюдаться.</li><li>Захват по расписанию: каждый кадр, фиксированная частота в Гц, каждые N кадров, по загрязнению, однократно, вручную. Приоритеты и бюджеты на кадр не должны лишать ресурсов обязательный вывод.</li><li>Один и тот же снимок симуляции можно смотреть через множество камер. В инфраструктуре камер не допускается жанровая логика мира, ввода или отрисовки.</li><li>Стек камер: base/overlay, разделённый экран и картинка в картинке; явная композиция и семантика очистки.</li><li>Независимые временные эффекты (TAA/SSR/SSAO, векторы движения, автоэкспозиция) и джиттер/история для каждой камеры и размера вывода. Монтажные склейки камеры, телепорты, динамическое изменение размера и отключённые захваты сбрасывают историю.</li><li>Никаких петель обратной связи чтения/записи: проход отрисовки не может делать выборку из изображения, в которое пишет. Зависимости захватов образуют DAG; циклы отклоняются или используется явно задокументированная история предыдущего кадра.</li><li>Избегайте дублирования загрузок неизменяемой геометрии для каждой камеры. Планируйте повторное использование теней, отсечения и LOD, не разделяя неправильно видимость, зависящую от вида.</li></ol>
@@ -100,6 +100,23 @@ device.endFrame();
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>

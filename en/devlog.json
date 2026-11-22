@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T16:00:49+00:00",
+ "generated": "2026-11-22T16:04:10+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -498,6 +498,52 @@
     {
      "src": "../media/docs/devlog/media/2026-11-22-physis-tornado/physis-tornado-wide.jpg",
      "caption": "Wide view: the tornado crossing the valley"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/physis.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/physis.md"
+    }
+   ],
+   "author": "physis"
+  },
+  {
+   "id": "2026-11-22-physis-firestorm",
+   "date": "2026-11-22",
+   "system": "physis",
+   "title": "PHYSIS: fire whirls, waterspouts and scoured ground",
+   "summary": "A tornado that crosses a wildfire draws the fire in and becomes a fire whirl; over water it weakens and is quenched, a waterspout forms on a lake, and the vortex leaves a scoured track on land.",
+   "body": [
+    "The tornado takes fire from the PHYSIS cells under its core and ring and stores it as heat. The bigger and stronger the fire, the higher the vortex's fireness, from 0 to 1; a small fire gives a weak effect, and without fire the fireness fades. A fire whirl no longer snuffs fire at its centre: it sets grass alight on its path, throws embers that ignite where they land and burns units and buildings in its ring.",
+    "Water under the tornado comes from the game. A land tornado over a river or lake loses strength and breaks up if it stays over water; its fire goes out. A tornado born over water becomes a waterspout: weaker, with a column of spray, splashes at the base and rings spreading on the water, and it breaks up within seconds after reaching the shore.",
+    "On land the core strips the soil, carries it and drops it nearby. The depth depends on the vortex strength, and the track stays on the ground as a dark band. Everything is set in the tornado data (fire, surface, erosion), and fires in the ignitions list. The example is the Firestorm Valley map of the skirmish template."
+   ],
+   "status": "in-progress",
+   "verified": "Game client on a Mac (Metal), Firestorm Valley map: a dust tornado enters the fire and becomes a fire whirl (fireness up to 0.9), its fire nearly goes out over the river, a waterspout with rings on the water runs on the lake, and a scoured track shows on land. A match with one seed repeats with the same checksum; replay of a recording matches.",
+   "limits": "Scouring does not lower the terrain mesh or change passability yet: it is PHYSIS data and a ground mark. Water rings are particles, not water surface waves. Fire burns on coarse PHYSIS cells. The flame roar was not listened to.",
+   "branch": "agent-physis-firestorm",
+   "commit": "",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-firestorm/physis-firestorm-1-dust.jpg",
+     "caption": "Before: a dust tornado approaching the fire"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-firestorm/physis-firestorm-2-firewhirl.jpg",
+     "caption": "After: the tornado has drawn the fire in and become a fire whirl"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-firestorm/physis-firestorm-3-river.jpg",
+     "caption": "The fire whirl reaching the river"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-firestorm/physis-firestorm-4-waterspout.jpg",
+     "caption": "A waterspout on the lake: spray and rings on the water"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-firestorm/physis-firestorm-5-scour.jpg",
+     "caption": "The tornado's scoured track on the ground"
     }
    ],
    "links": [

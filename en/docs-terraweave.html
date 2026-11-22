@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -32,7 +32,7 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html" aria-current="page">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="terraweave-procedural-terrain-biomes-and-vegetation-aiverse">TerraWeave — procedural terrain, biomes and vegetation (AIVERSE)<a class="anchor" href="#terraweave-procedural-terrain-biomes-and-vegetation-aiverse" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="ds-box"><input class="ds-input" type="search" placeholder="Search the docs  /" aria-label="Search the docs  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html" aria-current="page">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="terraweave-procedural-terrain-biomes-and-vegetation-aiverse">TerraWeave — procedural terrain, biomes and vegetation (AIVERSE)<a class="anchor" href="#terraweave-procedural-terrain-biomes-and-vegetation-aiverse" aria-label="#">#</a></h1>
 <p>Status (2026-11-19): <strong>Core + Arbor/Flora, Horizon HLOD, async forest/terrain scene adapters, authored near/far Q16 stitching and Stage 22 diagnostics implemented in source</strong>. GPU, editor, integration and performance verification remain pending; see the Draft PR and handoff for exact test status. Implementation: <code>engine/world/TerraWeave.h</code>. Test: <code>tests/terraweave_test.cpp</code>. Handoff: <code>docs/terrain/AGENT_HANDOFF.md</code>.</p>
 <h2 id="relationship-to-existing-terrain">Relationship to existing terrain<a class="anchor" href="#relationship-to-existing-terrain" aria-label="#">#</a></h2>
 <p>AIVERSE already has chunked RTS heightfield rendering, editor sculpt/paint operations, <code>MapGrid</code> heightfield simulation, <code>modules/rts/gen/GenNoise.*</code> and water/roads. <strong>Do not duplicate or replace these</strong>. TerraWeave supplies genre-independent, pure CPU world-generation outputs. Genre adapters consume them without changing legacy project, save, replay or networking contracts.</p>
@@ -41,17 +41,17 @@
 <p>Namespace: <code>aiverse::terraweave</code>.</p>
 <ul><li><code>heightAtCm(TerrainSettings, worldXcm, worldZcm) -&gt; int32_t</code>: signed terrain elevation in cm.</li><li><code>climateAt(TerrainSettings, BiomeSettings, xCm, zCm) -&gt; ClimateSample</code>: temperature, humidity in [0,1000], and one categorical Biome.</li><li><code>generateChunk(TerrainSettings, BiomeSettings, ChunkKey, resolution, spacingCm)</code> returns <code>TerrainChunk</code> with (resolution+1)^2 signed heights and biome ids. Coordinates are absolute; adjacent chunk borders are identical.</li><li><code>scatter(TerrainSettings, BiomeSettings, ScatterSettings, RectCm worldBounds, vector&lt;FoliageSpecies&gt;, vector&lt;RectCm&gt; exclusions)</code> returns stable sorted row-major foliage instances. Prototype ids are uint32 and unique within the invocation. Candidate selection is anchored to a <strong>global</strong> lattice; chunk partitioning and prototype order cannot change the result.</li><li><code>slopePermilleAt</code> estimates local max-axis slope from signed height differences.</li><li><code>TerrainChunkComponent</code>, <code>VegetationPatchComponent</code> are small ECS-ready descriptors; these are not yet registered into an ECS scheduler.</li><li><code>FoliageInstance::key</code> is the stable hash of global lattice coordinates and scatter seed. Persist removals/harvests by key and world-generation revision, not by GPU buffer index.</li></ul>
 <p>Sample (C++20; no renderer or RTS dependency):</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeave.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeave.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-TerrainSettings terrain;
-BiomeSettings climate;
-auto tile = generateChunk(terrain, climate, {0, 0}, 32, 100);
-FoliageSpecies oak;
-oak.id = 1001;
-oak.biomeMask = biomeBit(Biome::Forest) | biomeBit(Biome::Grassland);
-auto trees = scatter(terrain, climate, {}, {0, 0, 3200, 3200},
-                     {oak}, {{1000, 1000, 1600, 1600}}); // building exclusion</code></pre>
+<span class="hl-ty">TerrainSettings</span> terrain;
+<span class="hl-ty">BiomeSettings</span> climate;
+<span class="hl-kw">auto</span> tile = <span class="hl-fn">generateChunk</span>(terrain, climate, {<span class="hl-num">0</span>, <span class="hl-num">0</span>}, <span class="hl-num">32</span>, <span class="hl-num">100</span>);
+<span class="hl-ty">FoliageSpecies</span> oak;
+oak.id = <span class="hl-num">1001</span>;
+oak.biomeMask = <span class="hl-fn">biomeBit</span>(<span class="hl-ty">Biome</span>::<span class="hl-ty">Forest</span>) | <span class="hl-fn">biomeBit</span>(<span class="hl-ty">Biome</span>::<span class="hl-ty">Grassland</span>);
+<span class="hl-kw">auto</span> trees = <span class="hl-fn">scatter</span>(terrain, climate, {}, {<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">3200</span>, <span class="hl-num">3200</span>},
+                     {oak}, {{<span class="hl-num">1000</span>, <span class="hl-num">1000</span>, <span class="hl-num">1600</span>, <span class="hl-num">1600</span>}}); <span class="hl-com">// building exclusion</span></code></pre>
 <h2 id="determinism-and-threading">Determinism and threading<a class="anchor" href="#determinism-and-threading" aria-label="#">#</a></h2>
 <p>All phase 1 outputs are integer-only, seeded and independent of call order. No <code>rand()</code>, platform time, global mutable state, or <code>float</code>. Helpers use stable 64-bit mixing and signed floor-division for negative world coordinates. Pure generators can be called concurrently. The host job system schedules them; the ECS main-thread/guarded commit order must remain deterministic. CPU outputs are authoritative; GPU placement or rendering must not affect gameplay RNG or collision. Changes to generator parameters, coordinate transforms or hashing are <strong>world-format version changes</strong>, requiring migration or explicit revision.</p>
 <p>Use one ECS entity per <strong>terrain/vegetation patch</strong> or interactive tree, not per grass blade. Render-only millions of blades belong in instance buffers. Decorative foliage may not have gameplay state. Harvestable foliage must have a stable removal record, replicated and hashed by the game's simulation owner.</p>
@@ -60,9 +60,9 @@ auto trees = scatter(terrain, climate, {}, {0, 0, 3200, 3200},
 <h2 id="integrating-a-scene">Integrating a scene<a class="anchor" href="#integrating-a-scene" aria-label="#">#</a></h2>
 <ol><li>A world config selects TerraWeave seed/settings and an explicit generator version.</li><li>Visible-world streaming chooses chunk keys; workers call pure <code>generateChunk</code>.</li><li>An adapter maps centimetres to the existing heightfield <code>MapGrid</code>/editor document or to a generic terrain mesh; changes go through the existing dirty-chunk pipeline, <em>never</em> a second competing terrain renderer.</li><li>Query roads, buildings, waterways and designer overrides as exclusion/stamp sources before scattering.</li><li><code>scatter</code> returns instance descriptors for prototype render groups; only interactable objects become separate ECS entities.</li><li>All rendering uploads and GPU work go through <code>gfx::Device</code>, using GLSL+MSL parity and quality tiers; no direct graphics backend calls in generation.</li></ol>
 <h2 id="tests">Tests<a class="anchor" href="#tests" aria-label="#">#</a></h2>
-<pre><code class="lang-sh">cmake -S . -B build/terraweave-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/terraweave-test --target aiverse_terraweave_test -j
-ctest --test-dir build/terraweave-test --output-on-failure -R &#x27;^terraweave$&#x27;</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">cmake</span> <span class="hl-opt">-S</span> . <span class="hl-opt">-B</span> build/terraweave-test <span class="hl-opt">-DAIVERSE_BUILD_TESTS</span>=ON
+<span class="hl-fn">cmake</span> <span class="hl-opt">--build</span> build/terraweave-test <span class="hl-opt">--target</span> aiverse_terraweave_test <span class="hl-opt">-j</span>
+<span class="hl-fn">ctest</span> <span class="hl-opt">--test-dir</span> build/terraweave-test <span class="hl-opt">--output-on-failure</span> <span class="hl-opt">-R</span> <span class="hl-str">&#x27;^terraweave$&#x27;</span></code></pre>
 <p>The test covers adjacent tile edges, negative tile coordinates, stable seed, partition-independent foliage, prototype input reordering, world exclusions, invalid configs and worker-thread purity.</p>
 <p>When terrain is mapped into the sim, also run the existing full determinism, headless, replay and editor view suites per <code>AGENTS.md</code>.</p>
 <h2 id="future-subsystem-names">Future subsystem names<a class="anchor" href="#future-subsystem-names" aria-label="#">#</a></h2>
@@ -70,31 +70,31 @@ ctest --test-dir build/terraweave-test --output-on-failure -R &#x27;^terraweave$
 <p>See the handoff file for exact priorities and integration hazards.</p>
 <h2 id="stage-2a-arbor-procedural-tree-geometry">Stage 2a: Arbor procedural tree geometry<a class="anchor" href="#stage-2a-arbor-procedural-tree-geometry" aria-label="#">#</a></h2>
 <p>Added <code>engine/world/TerraWeaveArbor.h</code> (integer-authoritative tree skeleton) and <code>engine/world/TerraWeaveArborMesh.h</code> (render-only CPU tessellation). This is independent of any genre, and a native C++ module can include it.</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeaveArborMesh.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeaveArborMesh.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-TreeProfile oak;
-oak.speciesId = 1001;
-oak.shape = CrownShape::Broadleaf;
-oak.primaryBranches = 22;
-const TreeSkeleton skeleton = generateTree(oak, instance.key, TreeLOD::High);
-const ArborMesh renderGeometry = buildArborMesh(skeleton, {6, true});
-// Upload through gfx::Device (not implemented in this stage).</code></pre>
+<span class="hl-ty">TreeProfile</span> oak;
+oak.speciesId = <span class="hl-num">1001</span>;
+oak.shape = <span class="hl-ty">CrownShape</span>::<span class="hl-ty">Broadleaf</span>;
+oak.primaryBranches = <span class="hl-num">22</span>;
+<span class="hl-kw">const</span> <span class="hl-ty">TreeSkeleton</span> skeleton = <span class="hl-fn">generateTree</span>(oak, instance.key, <span class="hl-ty">TreeLOD</span>::<span class="hl-ty">High</span>);
+<span class="hl-kw">const</span> <span class="hl-ty">ArborMesh</span> renderGeometry = <span class="hl-fn">buildArborMesh</span>(skeleton, {<span class="hl-num">6</span>, <span class="hl-kw">true</span>});
+<span class="hl-com">// Upload through gfx::Device (not implemented in this stage).</span></code></pre>
 <p><code>TreeProfile</code> defines tree height range, trunk radius, crown start, primary branches, branch reach/rise, leaf-cluster radius and broadleaf/conifer/columnar shape. Tree seed is derived from stable foliage instance key + species ID; the same inputs yield the same integer local-space structure regardless of worker thread or scene partition. <code>TreeLOD</code> High/Medium/Low reduce branch counts and leaf clusters. Impostor returns bounds only; actual billboard atlas baking is <strong>not implemented</strong>.</p>
 <p><code>TreeSkeleton</code> contains a root trunk, child branch segments with parent indices, leaf clusters and conservative height/crown radius bounds. <code>buildArborMesh</code> converts branches to cylindrical bark tubes and clusters to crossed alpha-card quads with UVs, normals and a bark/leaf material discriminator. The returned mesh uses float only for <strong>presentation</strong>, not gameplay state. Meshes have no tangents or GPU material binding yet. The first visual pass is simple card foliage, not photorealistic SpeedTree-equivalent geometry.</p>
 <p>The mesh is local-space in <strong>centimetres</strong>. Instance translation, rotation and scale are supplied by <code>FoliageInstance</code> externally. If gameplay needs tree collision/hitboxes, derive deterministic proxies from <code>TreeSkeleton</code>, not from float render vertices. View LOD selection and GPU uploads must live in a renderer adapter and not in lockstep ECS simulation.</p>
 <p>Test source: <code>tests/terraweave_arbor_test.cpp</code>. CTest name: <code>terraweave_arbor</code>. Check seeded determinism, all crown archetypes, branch parent validity, LOD topology, independent parallel evaluation, render geometry index validity, and invalid profiles. Compilation/CTest results are tracked in <code>docs/terrain/AGENT_HANDOFF.md</code>.</p>
 <h2 id="stage-2b-flora-cpu-visibility-and-instancing-prep">Stage 2b: Flora CPU visibility and instancing prep<a class="anchor" href="#stage-2b-flora-cpu-visibility-and-instancing-prep" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveFlora.h</code> contains a presentation-only draw-list organizer that does <strong>not</strong> add one ECS entity per grass blade or tree.</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeaveFlora.h&quot;
-using namespace aiverse::terraweave;
-FloraView view;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeaveFlora.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+<span class="hl-ty">FloraView</span> view;
 view.cameraXcm = cameraXcm;
 view.cameraZcm = cameraZcm;
-auto batches = buildFloraBatches(placements, view);
-for (const FloraBatch&amp; batch : batches) {
-    // Resolve species prototype + TreeLOD, pack instance transforms.
-    // Upload/submit via gfx::Device in a future renderer adapter.
+<span class="hl-kw">auto</span> batches = <span class="hl-fn">buildFloraBatches</span>(placements, view);
+<span class="hl-kw">for</span> (<span class="hl-kw">const</span> <span class="hl-ty">FloraBatch</span>&amp; batch : batches) {
+    <span class="hl-com">// Resolve species prototype + TreeLOD, pack instance transforms.</span>
+    <span class="hl-com">// Upload/submit via gfx::Device in a future renderer adapter.</span>
 }</code></pre>
 <p><code>FloraView</code> selects radial ranges for High/Medium/Low/Impostor mesh tiers, a hard culling radius, and stable seeded far-density thinning. <code>FloraBatch</code> groups copies of <code>FoliageInstance</code> by <code>(speciesId, lod)</code>. Ordering is canonical regardless of worker/chunk completion order, and overlapping identical placements are deduplicated within the resulting group. This is draw-list preparation <strong>only</strong>, not GPU instancing/culling/indirect drawing, frustum/Hi-Z occlusion or crossfade. Screen-space LOD, camera-frustum culling and distance-field shadows remain future stages.</p>
 <p>Never feed visibility decisions back into authoritative ECS state or network simulation; gameplay placement continues to use <code>scatter</code>. Test source: <code>tests/terraweave_flora_test.cpp</code>; CTest <code>terraweave_flora</code>.</p>
@@ -103,11 +103,11 @@ for (const FloraBatch&amp; batch : batches) {
 <p>Do not remove these guards when introducing a streamed world. Large-world support additionally needs camera-relative rendering, origin rebasing and bounded chunk residency, which are not yet implemented.</p>
 <h2 id="stage-2d-standard-aiverse-rendermodel-adapter">Stage 2d: standard AIVERSE render::Model adapter<a class="anchor" href="#stage-2d-standard-aiverse-rendermodel-adapter" aria-label="#">#</a></h2>
 <p><code>engine/render/TerraWeaveModelAdapter.h</code> is a thin render-only adapter into the pre-existing <code>render::Model</code> and its <code>prepareModelUpload</code> / <code>uploadModel(gfx::Device&amp;, Model&amp;)</code> path:</p>
-<pre><code class="lang-cpp">#include &quot;engine/render/TerraWeaveModelAdapter.h&quot;
-auto tree = aiverse::terraweave::makeArborModel(profile, instance.key);
-// On the render-owning thread:
-aiverse::render::prepareModelUpload(*tree);
-aiverse::render::uploadModel(device, *tree);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/render/TerraWeaveModelAdapter.h&quot;</span>
+<span class="hl-kw">auto</span> tree = aiverse::terraweave::<span class="hl-fn">makeArborModel</span>(profile, instance.key);
+<span class="hl-com">// On the render-owning thread:</span>
+aiverse::render::<span class="hl-fn">prepareModelUpload</span>(*tree);
+aiverse::render::<span class="hl-fn">uploadModel</span>(<span class="hl-kw">device</span>, *tree);</code></pre>
 <p>The adapter builds explicit High/Medium/Low mesh variants in a single <code>render::Model</code>, with mesh-0 LOD switches at 128 and 32 projected pixels. It uses standard <code>render::ModelVertex</code>, <code>Primitive</code>, <code>Material</code>, <code>Node</code> and <code>Model::finalize()</code>; positions convert from integer cm to floating-point metres. Existing model renderer infrastructure owns the shaders, LOD fade, frustum culling, backend upload and instanced draws.</p>
 <p>The default bark and leaf materials have simple untextured PBR colours. Leaf cards are <strong>opaque rectangles</strong> until a caller binds a real alpha-cutout foliage texture and sets <code>AlphaMode::Mask</code>; do not misrepresent this as production-quality foliage. Billboard atlas generation, material/texture registry, wind deformation and actual scene draw submission remain unfinished.</p>
 <p><code>tests/terraweave_model_test.cpp</code> checks three LOD meshes, range/index correctness, bounds, and stable topology. It links <code>aiverse_models</code>; the target <code>aiverse_terraweave_model_test</code> and CTest <code>terraweave_model</code> are registered in CMake. All four TerraWeave test targets explicitly undefine <code>NDEBUG</code> on GCC/Clang so their assertions execute in Release builds.</p>
@@ -115,33 +115,33 @@ aiverse::render::uploadModel(device, *tree);</code></pre>
 <h2 id="stage-2f-baking-terraweave-into-existing-editor-mapdoc-heightfields">Stage 2f: baking TerraWeave into existing editor MapDoc heightfields<a class="anchor" href="#stage-2f-baking-terraweave-into-existing-editor-mapdoc-heightfields" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveHeightmap.h</code> provides a pure <code>generateLegacyCorners(TerrainSettings, widthCells, heightCells, LegacyHeightfieldOptions)</code> adapter. Inputs use centimetres; output is the existing MapData signed-int16 corner format, <strong>1/16 map metre</strong> per sample. Coordinates and output ranges are validated; overflow/saturation throws instead of corrupting map heights. Offset/spacing can be configured.</p>
 <p><code>apps/editor/core/TerraWeaveMapAdapter.h</code> provides:</p>
-<pre><code class="lang-cpp">#include &quot;apps/editor/core/TerraWeaveMapAdapter.h&quot;
-aiverse::editor::bakeTerraWeaveTerrain(
-    mapDoc, terrainSettings, {0, 0, 100});
-// For intentional regeneration replacing authored corner data:
-aiverse::editor::bakeTerraWeaveTerrain(
-    mapDoc, terrainSettings, {0, 0, 100},
-    aiverse::editor::TerraWeaveExistingTerrain::ReplaceExplicitly);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;apps/editor/core/TerraWeaveMapAdapter.h&quot;</span>
+aiverse::editor::<span class="hl-fn">bakeTerraWeaveTerrain</span>(
+    mapDoc, terrainSettings, {<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">100</span>});
+<span class="hl-com">// For intentional regeneration replacing authored corner data:</span>
+aiverse::editor::<span class="hl-fn">bakeTerraWeaveTerrain</span>(
+    mapDoc, terrainSettings, {<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">100</span>},
+    aiverse::editor::<span class="hl-ty">TerraWeaveExistingTerrain</span>::<span class="hl-ty">ReplaceExplicitly</span>);</code></pre>
 <p>The editor adapter writes through <code>MapDoc::beginEdit()</code> and <code>MapDoc::touched()</code> after constructing all generated heights, preserving undo and the existing view-revision notification. It never silently overwrites manual sculpting, never changes <code>rules.terrain.model</code>, and rejects planet maps (separate cube-sphere adapter needed). This is <strong>one-shot baking API</strong>, not yet an editor button, regeneration graph, streaming terrain or painted override stack.</p>
 <p>Source test: <code>tests/terraweave_heightmap_test.cpp</code> (CTest <code>terraweave_heightmap</code>) verifies signed heights, seam continuity, legacy overflow rejection and invalid inputs. The inline <code>MapDoc</code> helper is not yet exercised end-to-end in a running editor.</p>
 <h2 id="stage-2f-shared-forest-model-submission-adapter-cpu-rhi-bridge">Stage 2f — shared forest model submission adapter (CPU / RHI bridge)<a class="anchor" href="#stage-2f-shared-forest-model-submission-adapter-cpu-rhi-bridge" aria-label="#">#</a></h2>
 <p><code>engine/render/TerraWeaveForestAdapter.h</code> exposes <code>aiverse::terraweave::ArborForestAdapter</code>. It bridges deterministic <code>FloraBatch</code> instances to the <strong>existing</strong> <code>render::Renderer3D::drawModel</code> path. It does not own or replace Renderer3D, ECS, streaming or shaders.</p>
 <ul><li><code>addPrototype(TreeProfile, meshSeed, ArborMeshSettings)</code> builds <strong>one</strong> <code>render::Model</code> per species. Duplicate/zero species IDs are rejected. Changing the tree's mesh on every instance defeats batching; only transform, yaw and scale vary by <code>FoliageInstance</code>. All nodes use existing model projected-size LODs.</li><li><code>prototype(speciesId)</code> gives the stable shared model pointer, valid while the adapter lives. <code>uploadModels(gfx::Device&amp;)</code> and <code>releaseModels(gfx::Device&amp;)</code> MUST run on the GPU-owning render thread. Release GPU resources before destroying the device or the adapter.</li><li><code>forEachDraw(batches, ForestRenderOriginCm, callback)</code> is a GPU-free inspection/submission primitive, and <code>submit(Renderer3D&amp;, batches, origin)</code> forwards directly to <code>Renderer3D::drawModel</code>. Call <code>submit</code> between <code>beginScene</code> and <code>render</code>, only after model upload.</li><li><code>ForestRenderOriginCm</code> is signed world <strong>centimetres</strong>, with fields <code>x,y,z</code>. For X/Z, subtract origin using int64 BEFORE float metre conversion, to preserve precision in large worlds. Camera and renderer must use the same rebased coordinate frame; model draw transforms are metres.</li><li><code>ModelDraw::persistentId</code> is a namespaced stable hash of <code>FoliageInstance::key</code> and species, independent of the draw index. Draw flags are <code>kDrawStatic</code>. An <code>Impostor</code> Flora batch now selects a separate camera-facing alpha-mask tree billboard model (one quad and one procedural RGBA silhouette), not the lowest geometry mesh. This is a single-view silhouette, not a multi-angle atlas.</li></ul>
 <p>Minimal native / host render integration sketch:</p>
-<pre><code class="lang-cpp">#include &quot;engine/render/TerraWeaveForestAdapter.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/render/TerraWeaveForestAdapter.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-ArborForestAdapter forest;
-TreeProfile pine;
-pine.speciesId = 21;
-pine.shape = CrownShape::Conifer;
-forest.addPrototype(pine, 0x5678);           // CPU / setup stage
-forest.uploadModels(device);                 // render thread, check bool
-auto batches = buildFloraBatches(placements, view);
-renderer.beginScene(camera, width, height);
-forest.submit(renderer, batches, {originXcm, originYcm, originZcm});
-// ... other scene draws and renderer.render(pass)
-forest.releaseModels(device);                // render thread at shutdown</code></pre>
+<span class="hl-ty">ArborForestAdapter</span> forest;
+<span class="hl-ty">TreeProfile</span> pine;
+pine.speciesId = <span class="hl-num">21</span>;
+pine.shape = <span class="hl-ty">CrownShape</span>::<span class="hl-ty">Conifer</span>;
+forest.<span class="hl-fn">addPrototype</span>(pine, <span class="hl-num">0x5678</span>);           <span class="hl-com">// CPU / setup stage</span>
+forest.<span class="hl-fn">uploadModels</span>(<span class="hl-kw">device</span>);                 <span class="hl-com">// render thread, check bool</span>
+<span class="hl-kw">auto</span> batches = <span class="hl-fn">buildFloraBatches</span>(placements, view);
+renderer.<span class="hl-fn">beginScene</span>(camera, width, height);
+forest.<span class="hl-fn">submit</span>(renderer, batches, {originXcm, originYcm, originZcm});
+<span class="hl-com">// ... other scene draws and renderer.render(pass)</span>
+forest.<span class="hl-fn">releaseModels</span>(<span class="hl-kw">device</span>);                <span class="hl-com">// render thread at shutdown</span></code></pre>
 <p>The adapter <strong>does not register with WorldScene or the editor</strong> yet. It does not provide per-tree geometry variation, guaranteed indirect draw counts, actual impostors, material cutout textures, scene screenshots, GPU validation, or an opt-in manifest format. Existing projects remain untouched. Validation is added to <code>tests/terraweave_model_test.cpp</code>; see <code>AGENT_HANDOFF.md</code> for observed test results and next task.</p>
 <h2 id="hierarchical-branchlod-independent-tree-parts-stage-2g">Hierarchical BranchLOD — independent tree parts (Stage 2g)<a class="anchor" href="#hierarchical-branchlod-independent-tree-parts-stage-2g" aria-label="#">#</a></h2>
 <p>The new <code>engine/world/TerraWeaveBranchLod.h</code> and <code>makeArborBranchLodModel(profile, seed, BranchLodSettings)</code> in <code>engine/render/TerraWeaveModelAdapter.h</code> build a reusable native <code>render::Model</code> containing <strong>one render node per tree branch</strong>. Each node retains <code>TreeBranch::parent</code> and has its own three <code>MeshDef</code> variants. <code>Renderer3D</code> already chooses a node's LOD by its projected size using its existing <code>selectModelLod</code> path, considering camera and shadow views. This allows, e.g., a large near-side trunk to remain fully detailed while individual smaller background branches switch to their cheapest shape. There is no whole-tree mesh switch for these three geometric tiers.</p>
@@ -169,15 +169,15 @@ forest.releaseModels(device);                // render thread at shutdown</code>
 <ul><li><code>terraweave_preview</code>: returns an integer-cm 9×9 height sample grid plus <code>minCm</code> and <code>maxCm</code>; does <strong>not</strong> edit the map.</li><li><code>terraweave_generate</code>: explicitly bakes a full heightfield into the existing <code>MapDoc::corners</code>, creates an undo snapshot, calls <code>MapDoc::touched()</code>, queues a <code>Change::Map</code> invalidation and writes sanitized generator metadata into <code>map.extra.terraweave</code> (version 1).</li></ul>
 <p>Both operations are registered in <code>apps/editor/core/TerraWeaveOps.h</code> via <code>registerTerrainOps</code> and are reachable through the existing editor/MCP registry. Example:</p>
 <pre><code class="lang-json">{
-  &quot;seed&quot;: 42,
-  &quot;baseHeightCm&quot;: 0,
-  &quot;reliefCm&quot;: 5000,
-  &quot;basePeriodCm&quot;: 6400,
-  &quot;octaves&quot;: 5,
-  &quot;originXcm&quot;: 0,
-  &quot;originZcm&quot;: 0,
-  &quot;cellSizeCm&quot;: 100,
-  &quot;overwrite&quot;: false
+  <span class="hl-key">&quot;seed&quot;</span>: <span class="hl-num">42</span>,
+  <span class="hl-key">&quot;baseHeightCm&quot;</span>: <span class="hl-num">0</span>,
+  <span class="hl-key">&quot;reliefCm&quot;</span>: <span class="hl-num">5000</span>,
+  <span class="hl-key">&quot;basePeriodCm&quot;</span>: <span class="hl-num">6400</span>,
+  <span class="hl-key">&quot;octaves&quot;</span>: <span class="hl-num">5</span>,
+  <span class="hl-key">&quot;originXcm&quot;</span>: <span class="hl-num">0</span>,
+  <span class="hl-key">&quot;originZcm&quot;</span>: <span class="hl-num">0</span>,
+  <span class="hl-key">&quot;cellSizeCm&quot;</span>: <span class="hl-num">100</span>,
+  <span class="hl-key">&quot;overwrite&quot;</span>: <span class="hl-kw">false</span>
 }</code></pre>
 <p><strong>Safety/compatibility:</strong> Without explicit <code>overwrite: true</code>, the adapter refuses to replace either an existing corner heightfield or an authored detail surface. With explicit replacement, the previous detail layer (including splat/file/scale) is cleared <em>after</em> recording the undo snapshot so it cannot mask the new corners in the renderer. Planet and FPS maps are rejected by this legacy <code>MapDoc</code> adapter; TerraWeave's generic C++ world generator and ForestAdapter still work independently of genre. The operation does <strong>not</strong> silently change <code>rules.terrain.model</code>; game authors choose whether corners influence simulation. No project changes occur until the user calls Generate.</p>
 <p><strong>Limitations:</strong> <code>preview</code> is a 9×9 numeric sample, not a live 3D preview. Generation is a one-shot bake, not procedural streaming, a persistent non-destructive graph or a paintable biome editor. The <code>terraweave</code> map block records generator inputs but is not yet automatically re-evaluated on load.</p>
@@ -197,45 +197,45 @@ forest.releaseModels(device);                // render thread at shutdown</code>
 <p><code>engine/world/TerraWeaveForestManifest.h</code> implements an optional JSON adapter, <code>world::forestSceneFromManifest</code>, and <code>WorldScene</code> owns/updates/submits/shuts down the forest <strong>only when</strong> <code>terraweaveForest</code> exists at manifest root. No existing <code>WorldScene</code> manifest without this key is changed. The opt-in host uses the <strong>first</strong> observer from <code>WorldScene::update</code>; it does not currently union multiple observer budgets.</p>
 <p>Example root manifest fragment (all coordinates in cm inside the <code>terraweaveForest</code> object; existing world mesh/camera coordinates outside this block still use WorldScene's normal metre units):</p>
 <pre><code class="lang-json">{
-  &quot;terraweaveForest&quot;: {
-    &quot;terrainSeed&quot;: 42,
-    &quot;biomeSeed&quot;: 143,
-    &quot;scatterSeed&quot;: 55,
-    &quot;baseHeightCm&quot;: 0,
-    &quot;reliefCm&quot;: 6000,
-    &quot;basePeriodCm&quot;: 6400,
-    &quot;octaves&quot;: 5,
-    &quot;spacingCm&quot;: 450,
-    &quot;densityPermille&quot;: 650,
-    &quot;chunkSizeCm&quot;: 6400,
-    &quot;radiusChunks&quot;: 4,
-    &quot;maxResidentChunks&quot;: 64,
-    &quot;highRangeCm&quot;: 3000,
-    &quot;mediumRangeCm&quot;: 9000,
-    &quot;lowRangeCm&quot;: 12000,
-    &quot;cullRangeCm&quot;: 24000,
-    &quot;impostorBlendWidthCm&quot;: 3000,
-    &quot;species&quot;: [
+  <span class="hl-key">&quot;terraweaveForest&quot;</span>: {
+    <span class="hl-key">&quot;terrainSeed&quot;</span>: <span class="hl-num">42</span>,
+    <span class="hl-key">&quot;biomeSeed&quot;</span>: <span class="hl-num">143</span>,
+    <span class="hl-key">&quot;scatterSeed&quot;</span>: <span class="hl-num">55</span>,
+    <span class="hl-key">&quot;baseHeightCm&quot;</span>: <span class="hl-num">0</span>,
+    <span class="hl-key">&quot;reliefCm&quot;</span>: <span class="hl-num">6000</span>,
+    <span class="hl-key">&quot;basePeriodCm&quot;</span>: <span class="hl-num">6400</span>,
+    <span class="hl-key">&quot;octaves&quot;</span>: <span class="hl-num">5</span>,
+    <span class="hl-key">&quot;spacingCm&quot;</span>: <span class="hl-num">450</span>,
+    <span class="hl-key">&quot;densityPermille&quot;</span>: <span class="hl-num">650</span>,
+    <span class="hl-key">&quot;chunkSizeCm&quot;</span>: <span class="hl-num">6400</span>,
+    <span class="hl-key">&quot;radiusChunks&quot;</span>: <span class="hl-num">4</span>,
+    <span class="hl-key">&quot;maxResidentChunks&quot;</span>: <span class="hl-num">64</span>,
+    <span class="hl-key">&quot;highRangeCm&quot;</span>: <span class="hl-num">3000</span>,
+    <span class="hl-key">&quot;mediumRangeCm&quot;</span>: <span class="hl-num">9000</span>,
+    <span class="hl-key">&quot;lowRangeCm&quot;</span>: <span class="hl-num">12000</span>,
+    <span class="hl-key">&quot;cullRangeCm&quot;</span>: <span class="hl-num">24000</span>,
+    <span class="hl-key">&quot;impostorBlendWidthCm&quot;</span>: <span class="hl-num">3000</span>,
+    <span class="hl-key">&quot;species&quot;</span>: [
       {
-        &quot;id&quot;: 1,
-        &quot;shape&quot;: &quot;broadleaf&quot;,
-        &quot;minHeightCm&quot;: 900,
-        &quot;maxHeightCm&quot;: 1400,
-        &quot;branches&quot;: 24,
-        &quot;weight&quot;: 4,
-        &quot;prototypeSeed&quot;: 1001
+        <span class="hl-key">&quot;id&quot;</span>: <span class="hl-num">1</span>,
+        <span class="hl-key">&quot;shape&quot;</span>: <span class="hl-str">&quot;broadleaf&quot;</span>,
+        <span class="hl-key">&quot;minHeightCm&quot;</span>: <span class="hl-num">900</span>,
+        <span class="hl-key">&quot;maxHeightCm&quot;</span>: <span class="hl-num">1400</span>,
+        <span class="hl-key">&quot;branches&quot;</span>: <span class="hl-num">24</span>,
+        <span class="hl-key">&quot;weight&quot;</span>: <span class="hl-num">4</span>,
+        <span class="hl-key">&quot;prototypeSeed&quot;</span>: <span class="hl-num">1001</span>
       },
       {
-        &quot;id&quot;: 2,
-        &quot;shape&quot;: &quot;conifer&quot;,
-        &quot;minHeightCm&quot;: 1100,
-        &quot;maxHeightCm&quot;: 2100,
-        &quot;branches&quot;: 32,
-        &quot;weight&quot;: 2,
-        &quot;prototypeSeed&quot;: 2002
+        <span class="hl-key">&quot;id&quot;</span>: <span class="hl-num">2</span>,
+        <span class="hl-key">&quot;shape&quot;</span>: <span class="hl-str">&quot;conifer&quot;</span>,
+        <span class="hl-key">&quot;minHeightCm&quot;</span>: <span class="hl-num">1100</span>,
+        <span class="hl-key">&quot;maxHeightCm&quot;</span>: <span class="hl-num">2100</span>,
+        <span class="hl-key">&quot;branches&quot;</span>: <span class="hl-num">32</span>,
+        <span class="hl-key">&quot;weight&quot;</span>: <span class="hl-num">2</span>,
+        <span class="hl-key">&quot;prototypeSeed&quot;</span>: <span class="hl-num">2002</span>
       }
     ],
-    &quot;exclusions&quot;: [[0, 0, 1200, 1500]]
+    <span class="hl-key">&quot;exclusions&quot;</span>: [[<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">1200</span>, <span class="hl-num">1500</span>]]
   }
 }</code></pre>
 <p>The fragment is added to an otherwise valid existing <code>WorldScene</code> root manifest with <code>async</code>, <code>assets</code>, and <code>chunks</code> populated according to <code>docs/large-worlds.md</code>. No new world format is implied for legacy RTS <code>MapDoc</code> maps; their editor generator is in <code>TerraWeaveOps.h</code> and separate. The forest here is <strong>render-only</strong>: it does not create authoritative colliders, navmesh obstacles, harvested resource entities or changed RTS/FPS simulation checksums. Terrain heights derive from the TerraWeave procedural seed; until a heightmap provider adapter is implemented, they may not match an independently authored terrain surface. <code>WorldScene</code> releases the forest's models through its existing <code>shutdown(device)</code> path. GPU upload is on the same update thread as the other world-model uploads.</p>
@@ -249,20 +249,20 @@ forest.releaseModels(device);                // render thread at shutdown</code>
 <p><strong>Testing:</strong> <code>tests/terraweave_preview_test.cpp</code> smoke-compiles the preview header, checks opt-in toggle and authored placement masks. The isolated GCC/Clang workflow also builds <code>terraweave_preview</code>. No evidence of a passing editor build, renderer screenshot or measured GPU performance exists at this stage; maintain PR #24 as Draft.</p>
 <h2 id="stage-5-authored-terrain-and-placement-providers-for-generic-forests">Stage 5 — authored terrain and placement providers for generic forests<a class="anchor" href="#stage-5-authored-terrain-and-placement-providers-for-generic-forests" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveForestScene.h</code> now supports two optional host callbacks, independent of RTS, FPS and the actual terrain storage:</p>
-<pre><code class="lang-cpp">TerraWeaveForestScene forest(settings);
-forest.addSpecies(profile, species, prototypeSeed);
+<pre><code class="lang-cpp"><span class="hl-ty">TerraWeaveForestScene</span> <span class="hl-fn">forest</span>(settings);
+forest.<span class="hl-fn">addSpecies</span>(profile, species, prototypeSeed);
 
-// A snapshot from a project/engine physics terrain provider, integer cm:
-forest.setHeightSource([&amp;surface](int64_t xCm, int64_t zCm) -&gt; int32_t {
-    return surface.heightAtCm(xCm, zCm);
+<span class="hl-com">// A snapshot from a project/engine physics terrain provider, integer cm:</span>
+forest.<span class="hl-fn">setHeightSource</span>([&amp;surface](<span class="hl-ty">int64_t</span> xCm, <span class="hl-ty">int64_t</span> zCm) -&gt; <span class="hl-ty">int32_t</span> {
+    <span class="hl-kw">return</span> surface.<span class="hl-fn">heightAtCm</span>(xCm, zCm);
 });
 
-// Exclusion/footprint/water provider; evaluated after height sampling:
-forest.setPlacementFilter([&amp;surface](const FoliageInstance&amp; tree) -&gt; bool {
-    return surface.allowTree(tree.xCm, tree.zCm, tree.heightCm);
+<span class="hl-com">// Exclusion/footprint/water provider; evaluated after height sampling:</span>
+forest.<span class="hl-fn">setPlacementFilter</span>([&amp;surface](<span class="hl-kw">const</span> <span class="hl-ty">FoliageInstance</span>&amp; tree) -&gt; <span class="hl-ty">bool</span> {
+    <span class="hl-kw">return</span> surface.<span class="hl-fn">allowTree</span>(tree.xCm, tree.zCm, tree.heightCm);
 });
 
-forest.streamAt({cameraXcm, cameraZcm});</code></pre>
+forest.<span class="hl-fn">streamAt</span>({cameraXcm, cameraZcm});</code></pre>
 <p>Providers are invoked only during <code>streamAt()</code> on the owning CPU work phase. Any replacement automatically invalidates resident patches and increments the host revision. The deterministic placement IDs do not change when elevation or filtering changes; only final <code>heightCm</code> and presence can change. An invalid returned height outside the supported forest world extent throws before GPU submission.</p>
 <p><strong>Important:</strong> callbacks must read an immutable terrain/collision snapshot for the duration of a regeneration. Do not capture mutable ECS data and race it against asynchronous workers. The current host is still synchronous, and these callbacks are presentation-only. They do <strong>not</strong> change the biome/slope evaluation in the underlying <code>scatter()</code>: if a project has independently authored very steep or underwater terrain, its <code>PlacementFilter</code> must reject unsuitable candidates. A later core API can support complete terrain-surface sampling for both selection and final height.</p>
 <p>Tests: <code>tests/terraweave_forest_scene_test.cpp</code> and CTest target <code>terraweave_forest_scene</code> (height override, stable keys, filter, revision invalidation, invalid height). Tests have been authored, but are not claimed to have executed.</p>
@@ -287,21 +287,21 @@ forest.streamAt({cameraXcm, cameraZcm});</code></pre>
 <p>This is <em>much</em> cheaper geometrically than distant individual foliage but not literally free: alpha overdraw, one-time CPU bake, texture upload, memory and shadow/atmospheric composition still cost resources.</p>
 <h3 id="optional-worldscene-manifest">Optional WorldScene manifest<a class="anchor" href="#optional-worldscene-manifest" aria-label="#">#</a></h3>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;terrainSeed&quot;: 1,
-    &quot;biomeSeed&quot;: 2,
-    &quot;middleTileCm&quot;: 12800,
-    &quot;middleTilesPerSide&quot;: 16,
-    &quot;distantTileCm&quot;: 51200,
-    &quot;distantTilesPerSide&quot;: 24,
-    &quot;closeForestEndCm&quot;: 25000,
-    &quot;middleForestEndCm&quot;: 100000,
-    &quot;terrainBeginCm&quot;: 110000,
-    &quot;terrainSkirtDepthCm&quot;: 1200,
-    &quot;terrainResolution&quot;: 48,
-    &quot;atlasTilePixels&quot;: 48,
-    &quot;canopyHeightCm&quot;: 1800,
-    &quot;distantTerrain&quot;: true
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;terrainSeed&quot;</span>: <span class="hl-num">1</span>,
+    <span class="hl-key">&quot;biomeSeed&quot;</span>: <span class="hl-num">2</span>,
+    <span class="hl-key">&quot;middleTileCm&quot;</span>: <span class="hl-num">12800</span>,
+    <span class="hl-key">&quot;middleTilesPerSide&quot;</span>: <span class="hl-num">16</span>,
+    <span class="hl-key">&quot;distantTileCm&quot;</span>: <span class="hl-num">51200</span>,
+    <span class="hl-key">&quot;distantTilesPerSide&quot;</span>: <span class="hl-num">24</span>,
+    <span class="hl-key">&quot;closeForestEndCm&quot;</span>: <span class="hl-num">25000</span>,
+    <span class="hl-key">&quot;middleForestEndCm&quot;</span>: <span class="hl-num">100000</span>,
+    <span class="hl-key">&quot;terrainBeginCm&quot;</span>: <span class="hl-num">110000</span>,
+    <span class="hl-key">&quot;terrainSkirtDepthCm&quot;</span>: <span class="hl-num">1200</span>,
+    <span class="hl-key">&quot;terrainResolution&quot;</span>: <span class="hl-num">48</span>,
+    <span class="hl-key">&quot;atlasTilePixels&quot;</span>: <span class="hl-num">48</span>,
+    <span class="hl-key">&quot;canopyHeightCm&quot;</span>: <span class="hl-num">1800</span>,
+    <span class="hl-key">&quot;distantTerrain&quot;</span>: <span class="hl-kw">true</span>
   }
 }</code></pre>
 <p>No <code>terraweaveHorizon</code> block means <strong>no additional memory, GPU work or change to the existing world</strong>. If <code>terraweaveForest</code> is also in the manifest, Horizon inherits the near forest's terrain/biome seeds unless explicitly overridden. Use matching seeds and elevation conventions to avoid near/far colour and silhouette mismatches. <code>distantTerrain: false</code> draws only cluster forests, useful when an existing world terrain renderer already covers far ground.</p>
@@ -321,10 +321,10 @@ forest.streamAt({cameraXcm, cameraZcm});</code></pre>
 <p><code>estimateHorizonBudget</code> validates both options within the 16 MiB packed-atlas cap. For real performance use <code>TerraWeaveHorizonScene::runtimeStats()</code> (cluster count, uploaded atlas bytes, vertices, triangles, CPU preparation milliseconds, render-thread upload milliseconds, pending/canceled async tasks). These are measurements captured by the running host <strong>only once a scene is actually executed</strong>, not benchmark results supplied by this document.</p>
 <p>Example opt-in quality settings within <code>terraweaveHorizon</code>:</p>
 <pre><code class="lang-json">{
-  &quot;crownDetail&quot;: 3,
-  &quot;orientationViews&quot;: 2,
-  &quot;nearBlendCm&quot;: 6000,
-  &quot;tierBlendCm&quot;: 16000
+  <span class="hl-key">&quot;crownDetail&quot;</span>: <span class="hl-num">3</span>,
+  <span class="hl-key">&quot;orientationViews&quot;</span>: <span class="hl-num">2</span>,
+  <span class="hl-key">&quot;nearBlendCm&quot;</span>: <span class="hl-num">6000</span>,
+  <span class="hl-key">&quot;tierBlendCm&quot;</span>: <span class="hl-num">16000</span>
 }</code></pre>
 <p>Tradeoffs / unverified:</p>
 <ul><li>The spatial mask can create gaps or partially doubled canopy in its overlap bands; better complementary per-pixel fade and material-driven frame transitions require GPU screenshots, alpha coverage testing and perhaps a dedicated shader pass.</li><li>Differing near forest density, custom species, authored roads and nonprocedural landscape still need production integration.</li><li>The CPU image baker runs on existing background work threads and the atlas memory cap is an analytic bound. Neither GPU timings nor frame stability nor image quality has been verified on Metal, Vulkan or GLES in this stage.</li></ul>
@@ -347,24 +347,24 @@ forest.streamAt({cameraXcm, cameraZcm});</code></pre>
 <p>The same ~832 potential cluster slots apply; the atlas resolution changes rather than the number of forest cluster cards. Minimal and mobile deliberately avoid retaining additional CPU atlases. The two-view high preset increases the texture budget to about 14.77 MiB <strong>before mipmaps</strong>, requiring real-device profiling before being a recommended default. These are intended presets, not measured FPS or validated platform quality settings.</p>
 <h3 id="prebaked-horizon-archive-assets-stage-9e">Prebaked Horizon archive assets (stage 9e)<a class="anchor" href="#prebaked-horizon-archive-assets-stage-9e" aria-label="#">#</a></h3>
 <p>Static worlds may avoid the expensive canopy rasterization across game restarts by preparing a region offline and shipping a <code>.twh</code> asset. <code>engine/world/TerraWeaveHorizonArchive.h</code> provides pure portable C++20 APIs (no filesystem, OS or rendering dependencies):</p>
-<pre><code class="lang-cpp">const uint64_t fingerprint =
-    terraweave::horizonArchiveFingerprint(terrain, biomes, settings);
-auto bake = terraweave::bakeHorizon(terrain, biomes, settings,
+<pre><code class="lang-cpp"><span class="hl-kw">const</span> <span class="hl-ty">uint64_t</span> fingerprint =
+    terraweave::<span class="hl-fn">horizonArchiveFingerprint</span>(terrain, biomes, settings);
+<span class="hl-kw">auto</span> bake = terraweave::<span class="hl-fn">bakeHorizon</span>(terrain, biomes, settings,
                                     regionCenterXcm, regionCenterZcm);
-std::vector&lt;uint8_t&gt; bytes =
-    terraweave::encodeHorizonArchive(bake, fingerprint);
-// The game/editor build tool writes bytes into its own asset pack.
+<span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;<span class="hl-ty">uint8_t</span>&gt; bytes =
+    terraweave::<span class="hl-fn">encodeHorizonArchive</span>(bake, fingerprint);
+<span class="hl-com">// The game/editor build tool writes bytes into its own asset pack.</span>
 
-// At runtime, given the *same* settings and matching world content:
-terraweave::HorizonBake decoded =
-    terraweave::decodeHorizonArchive(bytes, fingerprint);</code></pre>
+<span class="hl-com">// At runtime, given the *same* settings and matching world content:</span>
+terraweave::<span class="hl-ty">HorizonBake</span> decoded =
+    terraweave::<span class="hl-fn">decodeHorizonArchive</span>(bytes, fingerprint);</code></pre>
 <p>Archive wire format is currently versioned <code>TWH3</code>, explicit little-endian integer fields, packed RGBA atlas, terrain vertices and cluster metadata, with a 64-bit FNV payload checksum and 20 MiB maximum serialized size. It is intended for <em>trusted application assets</em>; the checksum is <strong>not cryptographic authentication</strong>. Decoder checks version, fingerprint, sizes, atlas frame bounds, payload integrity and trailing bytes before returning any bake.</p>
 <p><code>TerraWeaveHorizonScene::setArchiveStore(...)</code> accepts an optional shared <code>HorizonArchiveStore</code> with <code>read</code> and/or <code>write</code> callbacks and an optional stable <code>authoredContentHash</code>. Configure it <strong>before the first update()</strong>, because callbacks are then invoked by the bounded worker. The worker checks the in-memory LRU first, then a prebaked archive, then falls back to a fresh procedural bake. Failed/corrupt/stale archive reads and write failures are best-effort cache misses, <strong>not fatal</strong>. The runtime keeps only one uploaded Horizon GPU model, regardless of how many CPU archives are available. <code>runtimeStats().archiveHits</code> counts successful archive restores.</p>
 <p>For <code>WorldScene</code> game manifests, optionally add:</p>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;quality&quot;: &quot;balanced&quot;,
-    &quot;archivePrefix&quot;: &quot;world/horizon-cache&quot;
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;quality&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+    <span class="hl-key">&quot;archivePrefix&quot;</span>: <span class="hl-str">&quot;world/horizon-cache&quot;</span>
   }
 }</code></pre>
 <p>It looks for <code>world/horizon-cache/&lt;cellX&gt;_&lt;cellZ&gt;.twh</code>, where X/Z are signed <strong>middle-Horizon camera-grid keys</strong>, through the normal game <code>AssetReader</code>. No configured prefix means no asset lookups. The WorldScene adapter is <strong>read-only</strong>; the build pipeline is responsible for producing and packing the blobs.</p>
@@ -374,10 +374,10 @@ terraweave::HorizonBake decoded =
 <h3 id="host-only-bulk-bake">Host-only bulk bake<a class="anchor" href="#host-only-bulk-bake" aria-label="#">#</a></h3>
 <p>The reusable <code>engine/world/TerraWeaveHorizonBatch.h</code> declares <code>HorizonBatchBounds</code>, <code>HorizonBatchOptions</code>, <code>HorizonBatchStorage</code> (game-supplied read/write/cancel callbacks), <code>HorizonBatchProgress</code> and <code>bakeHorizonBatch(...)</code>. It generates deterministic signed camera region keys in z-major, x-minor order, using the <strong>same grid and fingerprints as runtime</strong> HorizonScene. Up to 4,096 regions are allowed by default. Existing valid TWH2 archives are skipped; wrong settings/version/CRC/missing assets are regenerated. The tool never accesses the GPU or authoritative ECS.</p>
 <p><code>aiverse_horizon_bake</code> is a host-only CMake target built with <code>AIVERSE_BUILD_TOOLS=ON</code>, disabled for Emscripten. Example:</p>
-<pre><code class="lang-sh">aiverse_horizon_bake \
-  --manifest content/world.json \
-  --out content/world/horizon-cache \
-  --cells -4 -4 4 4</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">aiverse_horizon_bake</span> \
+  <span class="hl-fn">--manifest</span> content/world.json \
+  <span class="hl-fn">--out</span> content/world/horizon-cache \
+  <span class="hl-fn">--cells</span> -4 -4 4 4</code></pre>
 <p>Each region produces <code>&lt;x&gt;_&lt;z&gt;.twh</code> in that output folder. Pack the files as normal content and configure the same <code>terraweaveHorizon.archivePrefix</code> in the runtime manifest. <code>--force</code> bypasses skip-existing; <code>--max-regions N</code> limits work. The executable builds <em>procedural</em> Horizon surfaces only. Projects with authored collisions/roads/water instead use <code>bakeHorizonBatch</code> directly with their immutable <code>HorizonSurfaceSources</code> snapshot and a nonzero <code>authoredContentHash</code>.</p>
 <h3 id="stable-atlas-slots-and-partial-cpu-updates">Stable atlas slots and partial CPU updates<a class="anchor" href="#stable-atlas-slots-and-partial-cpu-updates" aria-label="#">#</a></h3>
 <p>Before partial regeneration each cluster receives a <strong>stable atlas slot independent of visible cluster count</strong>: <code>(layerBase + row*rowCount + col) * orientationViews</code>. Changes to road/shore mask, terrain height or biome in one region do not move unrelated cluster UV subrectangles. This atlas-layout change advanced the archive format to <strong>TWH2/version 2</strong>; previous TWH1 blobs must be regenerated.</p>
@@ -486,25 +486,25 @@ terraweave::HorizonBake decoded =
 <p>This affects <strong>render shading only</strong>. The Stage 20 all-or-none <code>maxNearWeldSlopePermille</code> height-weld guard, near X/Z clipping, TWH8 <code>NearSeamSample</code> layout and existing atlas/VB/full model patch selection remain in effect. The normal stencil must not smooth a genuine cliff across independently authored tiles.</p>
 <h3 id="reading-live-region-state">Reading live region state<a class="anchor" href="#reading-live-region-state" aria-label="#">#</a></h3>
 <p>After updating the scene on its owning thread, a native host/editor can read <code>TerraWeaveHorizonScene::runtimeStats()</code>:</p>
-<pre><code class="lang-cpp">const auto h = horizon.runtimeStats();
-if (h.requestedRegionPending) {
-    // A requested region is not yet resolved at the current source revision.
-    // h.preparing is a separate worker status; &quot;pending&quot; != &quot;CPU is running&quot;.
+<pre><code class="lang-cpp"><span class="hl-kw">const</span> <span class="hl-kw">auto</span> h = horizon.<span class="hl-fn">runtimeStats</span>();
+<span class="hl-kw">if</span> (h.requestedRegionPending) {
+    <span class="hl-com">// A requested region is not yet resolved at the current source revision.</span>
+    <span class="hl-com">// h.preparing is a separate worker status; &quot;pending&quot; != &quot;CPU is running&quot;.</span>
 }
-if (h.activeRegionResolved &amp;&amp; h.activeRegionEmpty) {
-    // Accepted bake for the active cell, intentionally no drawable GPU model.
+<span class="hl-kw">if</span> (h.activeRegionResolved &amp;&amp; h.activeRegionEmpty) {
+    <span class="hl-com">// Accepted bake for the active cell, intentionally no drawable GPU model.</span>
 }
-if (h.staleProxy) {
-    // Active resolved cell is from an older authored source revision.
+<span class="hl-kw">if</span> (h.staleProxy) {
+    <span class="hl-com">// Active resolved cell is from an older authored source revision.</span>
 }
-if (h.nearNormalProvenanceAvailable) {
-    // Counts are unique sampled seam points, NOT vertices or draw calls.
-    auto neighbor = h.continuousNearNormalSamples;
-    auto local = h.localFallbackNearNormalSamples;
-    (void)neighbor; (void)local;
+<span class="hl-kw">if</span> (h.nearNormalProvenanceAvailable) {
+    <span class="hl-com">// Counts are unique sampled seam points, NOT vertices or draw calls.</span>
+    <span class="hl-kw">auto</span> neighbor = h.continuousNearNormalSamples;
+    <span class="hl-kw">auto</span> local = h.localFallbackNearNormalSamples;
+    (<span class="hl-ty">void</span>)neighbor; (<span class="hl-ty">void</span>)local;
 }
-// Only inspect requestedCellX/Z if requestedRegionPresent is true.
-// Only inspect activeCellX/Z if activeRegionResolved is true.</code></pre>
+<span class="hl-com">// Only inspect requestedCellX/Z if requestedRegionPresent is true.</span>
+<span class="hl-com">// Only inspect activeCellX/Z if activeRegionResolved is true.</span></code></pre>
 <div class="table"><table><thead><tr><th>Field</th><th>Contract</th></tr></thead><tbody><tr><td><code>sourceRevision</code> / <code>activeRevision</code></td><td>Current immutable source revision / accepted active-region revision.</td></tr><tr><td><code>requestedRegionPresent</code>, <code>requestedCellX/Z</code></td><td>A camera-selected target exists; coordinates are <strong>middle-tile grid indices</strong>, not centimetres; camera hysteresis applies.</td></tr><tr><td><code>activeRegionResolved</code>, <code>activeCellX/Z</code></td><td>A region result was accepted (including an intentionally empty result); active coordinates are defined only when resolved.</td></tr><tr><td><code>activeRegionPresent</code></td><td>Accepted region currently has a drawable GPU model; <strong>false does not imply pending</strong>.</td></tr><tr><td><code>activeRegionEmpty</code></td><td>A resolved region intentionally has no GPU model (e.g. empty ocean Horizon).</td></tr><tr><td><code>requestedRegionPending</code></td><td>Target exists and is unresolved, differs from active cell, or active revision is stale. An empty resolved same-cell/same-revision region is <strong>not pending</strong>.</td></tr><tr><td><code>staleProxy</code></td><td>Active resolved region revision differs from <code>sourceRevision</code>; it can also describe a stale <strong>empty</strong> region. Wrong-camera-cell status without source edits belongs to <code>requestedRegionPending</code>, not this flag.</td></tr><tr><td><code>preparing</code> / <code>discarded</code></td><td>Async stream state; check independently of <code>requestedRegionPending</code>.</td></tr><tr><td><code>continuousNearNormalSamples</code></td><td>Unique Q16 near-seam samples with valid neighbor-aware slopes in the CPU bake.</td></tr><tr><td><code>localFallbackNearNormalSamples</code></td><td>Unique Q16 near-seam samples using the local-height derivative because neighbor-aware results were unavailable/invalid.</td></tr><tr><td><code>nearNormalProvenanceAvailable</code></td><td>Counts above have a known CPU sampling origin. When false, treat both counts as <strong>unknown</strong>, even if numerically zero.</td></tr><tr><td><code>matchedAuthoredNearNormals</code></td><td>Number of <strong>render vertices</strong> matched to an authored near-source normal; do not add to sample counts.</td></tr></tbody></table></div>
 <p><strong>Archive behavior:</strong> TWH8 stores the near-seam height, slope and normal-valid bit but <strong>not</strong> the provenance counters or availability flag. A disk archive cache hit can legitimately report <code>nearNormalProvenanceAvailable=false</code> and zero provenance counts even when stored normals are valid; this is <strong>unknown</strong>, not measured zero. A fresh bake can report valid zero counts when no seam sample qualifies. All-or-none weld fallback may discard samples and zero counters while the CPU sampling-path availability flag remains true.</p>
 <p><strong>Lifecycle:</strong> <code>shutdown(device)</code> clears current region, requested region, geometry metadata and diagnostic counters. GPU-cache retirement/restoration carries provenance counts and their availability. A source revision update can temporarily keep an older GPU proxy until an updated bake succeeds. <code>activeRegionPresent</code> only reports model existence, while <code>requestedRegionPending</code> reports unresolved selection. A large teleport may be hidden by the separate camera coverage check in <code>submit()</code>; this is not encoded by <code>staleProxy</code>.</p>
@@ -512,45 +512,45 @@ if (h.nearNormalProvenanceAvailable) {
 <h2 id="stage-24-sparse-deterministic-forest-regrowth-and-presentation-ticks">Stage 24 — sparse deterministic forest regrowth and presentation ticks<a class="anchor" href="#stage-24-sparse-deterministic-forest-regrowth-and-presentation-ticks" aria-label="#">#</a></h2>
 <p><strong>Status:</strong> native C++ source committed, runtime/compiler/CTest/GPU verification intentionally deferred until the separate testing phase. This feature extends the already-existing persisted <code>ForestTreeIdentity</code> removals; it does <strong>not</strong> introduce per-tree ECS entities, a new shader, another RHI backend, a new save file format, or a second GPU forest model.</p>
 <p>A <code>TerraWeaveForestScene</code> now supports <code>ForestRegrowthSchedule</code>, a sparse value type:</p>
-<pre><code class="lang-cpp">struct ForestRegrowthSchedule {
-    ForestTreeIdentity tree;        // {key, speciesId}: stable across chunks
-    uint64_t regrowAtTick;          // hidden before this tick
-    uint64_t matureAtTick;          // full generator scale at/after this tick
-    uint32_t initialScalePermille;  // 1..1000, defaults to 150
+<pre><code class="lang-cpp"><span class="hl-kw">struct</span> <span class="hl-ty">ForestRegrowthSchedule</span> {
+    <span class="hl-ty">ForestTreeIdentity</span> tree;        <span class="hl-com">// {key, speciesId}: stable across chunks</span>
+    <span class="hl-ty">uint64_t</span> regrowAtTick;          <span class="hl-com">// hidden before this tick</span>
+    <span class="hl-ty">uint64_t</span> matureAtTick;          <span class="hl-com">// full generator scale at/after this tick</span>
+    <span class="hl-ty">uint32_t</span> initialScalePermille;  <span class="hl-com">// 1..1000, defaults to 150</span>
 };</code></pre>
 <p>Use the <strong>game's own deterministic simulation tick</strong> — not wall-clock time — with <code>setPresentationTick(uint64_t)</code>. <code>scheduleRegrowth(schedule)</code> removes the tree from the persistent <code>removedTrees</code> set and hides it before <code>regrowAtTick</code>. For ticks between appearance and maturity, <code>visibleBatches()</code> modifies the <strong>presentation copy</strong> of <code>FoliageInstance::scalePermille</code> using bounded integer interpolation, from <code>initialScalePermille</code> to 1000 permille of its original generated scale. <code>matureAtTick == regrowAtTick</code> means instant restoration. Nothing changes in the authoritative scatter keys, heights, seed, collision, navmesh or GPU prototype models. On later camera movement/re-streaming the same identity gets the same scale for the same tick.</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeaveForestScene.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeaveForestScene.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-// Use an existing configured scene and a stable ID obtained from foliage.
-ForestTreeIdentity oak{stableTreeKey, 1001};
-forest.removeTree(oak); // optional gameplay-driven harvest
-forest.scheduleRegrowth({oak, 6000, 12000, 120});
-forest.setPresentationTick(gameplayTick);
-const auto batches = forest.visibleBatches();
-// Host still calls uploadModels()/submit() on the renderer owner thread.
-// Persist forest.removedTrees() and forest.regrowthSchedules() in game saves.</code></pre>
+<span class="hl-com">// Use an existing configured scene and a stable ID obtained from foliage.</span>
+<span class="hl-ty">ForestTreeIdentity</span> oak{stableTreeKey, <span class="hl-num">1001</span>};
+forest.<span class="hl-fn">removeTree</span>(oak); <span class="hl-com">// optional gameplay-driven harvest</span>
+forest.<span class="hl-fn">scheduleRegrowth</span>({oak, <span class="hl-num">6000</span>, <span class="hl-num">12000</span>, <span class="hl-num">120</span>});
+forest.<span class="hl-fn">setPresentationTick</span>(gameplayTick);
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> batches = forest.<span class="hl-fn">visibleBatches</span>();
+<span class="hl-com">// Host still calls uploadModels()/submit() on the renderer owner thread.</span>
+<span class="hl-com">// Persist forest.removedTrees() and forest.regrowthSchedules() in game saves.</span></code></pre>
 <p>Here <code>stableTreeKey</code> and <code>gameplayTick</code> are native-game values, not engine globals. <code>setRegrowthSchedules(...)</code> atomically validates and replaces a saved sorted list; <code>regrowthSchedules()</code> exposes a stable sorted snapshot for persistence/replication. <code>cancelRegrowth(id)</code> cancels a schedule without automatically hiding or removing the tree. <code>removeTree(id)</code> cancels any pending regrowth and hides the tree; <code>restoreTree(id)</code> clears both hidden and scheduled states; <code>setRemovedTrees(...)</code> clears any overlapping regrowth schedules so explicitly removed trees remain hidden. Use the caller's save/network authority for lifecycle decisions.</p>
 <p>The implementation limits regrowth to at most <strong>1,000,000</strong> sparse records, rejects zero species, duplicate replacement keys, <code>initialScalePermille</code> outside 1..1000, backward schedules, and maturity intervals greater than <strong>1e12 ticks</strong>. These bounds keep <code>elapsed * (1000 - minScale)</code> within signed/unsigned 64-bit integer range without platform-specific 128-bit arithmetic. Even with asynchronous forest generation, tick changes are evaluated at presentation time and do <strong>not</strong> cancel/rebuild chunk workers.</p>
 <p><code>ForestSceneStats</code> exposes the additional trailing fields <code>scheduledRegrowth</code> and <code>presentationTick</code>, without breaking earlier aggregate uses of its existing members.</p>
 <h3 id="access-from-worldscene">Access from WorldScene<a class="anchor" href="#access-from-worldscene" aria-label="#">#</a></h3>
 <p>An opt-in <code>world::WorldScene</code> exposes <code>terraweave::TerraWeaveForestScene* forestScene() noexcept</code> (and the const overload). It returns null if the world manifest does not enable <code>terraweaveForest</code>. Native games can include both <code>engine/world/WorldScene.h</code> and <code>engine/world/TerraWeaveForestScene.h</code> and feed game time or saved lifecycle records directly without any genre-specific API:</p>
-<pre><code class="lang-cpp">if (auto* forest = worldScene.forestScene()) {
-    forest-&gt;setPresentationTick(gameplayTick);
-    forest-&gt;scheduleRegrowth({oak, 6000, 12000, 120});
+<pre><code class="lang-cpp"><span class="hl-kw">if</span> (<span class="hl-kw">auto</span>* forest = worldScene.<span class="hl-fn">forestScene</span>()) {
+    forest-&gt;<span class="hl-fn">setPresentationTick</span>(gameplayTick);
+    forest-&gt;<span class="hl-fn">scheduleRegrowth</span>({oak, <span class="hl-num">6000</span>, <span class="hl-num">12000</span>, <span class="hl-num">120</span>});
 }</code></pre>
 <p><strong>Ownership and limitations:</strong> this is <em>cosmetic presentation</em> only. An authoritative game layer is responsible for deciding when harvests occur and for modifying collision/navmesh/resources, save versioning, replay/network replication and any wider ecosystem simulation. Harvesting a single tree does not yet punch an individual hole in the <strong>far Horizon HLOD cluster silhouettes</strong>; coordinate harvested-area masks with Horizon in a later stage to avoid near/far inconsistencies. The implementation has not been built or visually tested in this feature-first phase.</p>
 <h2 id="stage-25-runtime-forest-clearings-shared-by-near-flora-and-horizon-hlod">Stage 25 — runtime forest clearings shared by near Flora and Horizon HLOD<a class="anchor" href="#stage-25-runtime-forest-clearings-shared-by-near-flora-and-horizon-hlod" aria-label="#">#</a></h2>
 <p><strong>Source implemented, tests deferred</strong> at user request. A native <code>world::WorldScene</code> now exposes:</p>
-<pre><code class="lang-cpp">void setVegetationClearings(std::vector&lt;terraweave::RectCm&gt; clearings);
-const std::vector&lt;terraweave::RectCm&gt;&amp; vegetationClearings() const;</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">void</span> <span class="hl-fn">setVegetationClearings</span>(<span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;terraweave::<span class="hl-ty">RectCm</span>&gt; clearings);
+<span class="hl-kw">const</span> <span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;terraweave::<span class="hl-ty">RectCm</span>&gt;&amp; <span class="hl-fn">vegetationClearings</span>() <span class="hl-kw">const</span>;</code></pre>
 <p>Clearings are <strong>signed world-centimetre half-open X/Z rectangles</strong>, not RTS map-grid units. A game can use them to clear whole construction areas, timber harvest zones, or landscape patches (unlike the individual per-tree <code>ForestRegrowthSchedule</code> in Stage 24). All input rectangles must be nonempty and inside TerraWeave's <code>+/-kWorldLimitCm</code> extent; at most 4096 are accepted. The setter normalizes order and removes exact duplicates; passing an identical canonical set is a no-op. The returned list is suitable for caller-owned save/replication; the engine does <strong>not</strong> create authoritative gameplay events, collision edits, or a new save schema.</p>
-<pre><code class="lang-cpp">using aiverse::terraweave::RectCm;
-worldScene.setVegetationClearings({
-    RectCm{siteX0cm,siteZ0cm,siteX1cm,siteZ1cm}
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> aiverse::terraweave::<span class="hl-ty">RectCm</span>;
+worldScene.<span class="hl-fn">setVegetationClearings</span>({
+    <span class="hl-ty">RectCm</span>{siteX0cm,siteZ0cm,siteX1cm,siteZ1cm}
 });
-// Call worldScene.update(device, observers, radius) from the owner thread.
-// Later: worldScene.setVegetationClearings({}) to restore the area.</code></pre>
+<span class="hl-com">// Call worldScene.update(device, observers, radius) from the owner thread.</span>
+<span class="hl-com">// Later: worldScene.setVegetationClearings({}) to restore the area.</span></code></pre>
 <p>The <code>site*cm</code> values in this example are game-provided coordinates.</p>
 <p>The next <code>WorldScene::update</code> captures one immutable <code>FoliageExclusionMask</code> containing both active clearing rectangles and resident authored object/terrain footprints. The <strong>same</strong> snapshot is shared with:</p>
 <ul><li><code>TerraWeaveForestScene::setLandscapeSources</code> for near Flora placement. Its bounded async patches are invalidated by a single source revision and rebuilt safely after their captured callbacks are released.</li><li><code>HorizonSurfaceSources::allowsCanopyAt</code> for distant forest silhouette atlas sampling. It suppresses crowns at masked positions during the normal bounded CPU region bake and reuses the existing Horizon async/GPU update path. Existing terrain mesh and near/far height welding remain unchanged.</li></ul>
@@ -558,29 +558,29 @@ worldScene.setVegetationClearings({
 <p><strong>Caveats:</strong> The mask suppresses individual CPU canopy samples and may leave empty far cluster cards if all samples in that cluster are excluded; this is a rendering efficiency follow-up. An authored forest/city streaming update can also trigger shared mask republishing, independent of gameplay clearings. No shape rotation, polygon harvesting, sector replication, authoritative resource/collision modifications, or weather/season coupling is included yet. Runtime re-bake, cross-boundary exclusions, visual transitions and performance budgets have <strong>NOT</strong> been verified; another agent owns those tests.</p>
 <h2 id="stage-26-resident-tree-spatial-queries-for-native-gameplay">Stage 26 — resident tree spatial queries for native gameplay<a class="anchor" href="#stage-26-resident-tree-spatial-queries-for-native-gameplay" aria-label="#">#</a></h2>
 <p>TerraWeave now supports <em>presentation-resident</em> tree selection without forcing every decorative tree into ECS:</p>
-<pre><code class="lang-cpp">// TerraWeaveForestScene forest already configured / streamed.
-const auto closest=forest.nearestTreeAt(playerXcm,playerZcm,500);
-if(closest) {
-    forest.removeTree({closest-&gt;key,closest-&gt;speciesId});
-    // The authoritative game must still update lumber, collider and save.
+<pre><code class="lang-cpp"><span class="hl-com">// TerraWeaveForestScene forest already configured / streamed.</span>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> closest=forest.<span class="hl-fn">nearestTreeAt</span>(playerXcm,playerZcm,<span class="hl-num">500</span>);
+<span class="hl-kw">if</span>(closest) {
+    forest.<span class="hl-fn">removeTree</span>({closest-&gt;key,closest-&gt;speciesId});
+    <span class="hl-com">// The authoritative game must still update lumber, collider and save.</span>
 }
 
-const auto trees=forest.treesInRect(
-    {plotMinXcm,plotMinZcm,plotMaxXcm,plotMaxZcm},1024);</code></pre>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> trees=forest.<span class="hl-fn">treesInRect</span>(
+    {plotMinXcm,plotMinZcm,plotMaxXcm,plotMaxZcm},<span class="hl-num">1024</span>);</code></pre>
 <p>The coordinates above are game-provided signed <strong>world centimetres</strong>.</p>
 <ul><li><code>nearestTreeAt(xCm,zCm,radiusCm=500) -&gt; optional&lt;FoliageInstance&gt;</code>: searches resident CPU scatter patches, using an AABB precheck and circle distance. Radius must be in 1..10,000,000cm; out-of-world centres are rejected. Equal-distance ties select the lowest stable <code>ForestTreeIdentity{speciesId,key}</code>, independently of map iteration order. It is not camera/frustum/LOD dependent.</li><li><code>treesInRect(RectCm,size_t maxResults=1024) -&gt; vector&lt;FoliageInstance&gt;</code>: checks only resident patches intersecting a nonempty half-open rectangle, excludes removed/pending-regrowth trees and sorts results by species ID, key then X/Z. The result budget is 1..100,000; overflow throws <code>std::length_error</code> instead of silently returning an arbitrary truncated set.</li><li>Both use the exact same <code>presentationInstance</code> lifecycle filter as <code>visibleBatches()</code>; harvested trees are invisible to queries; a scheduled tree is hidden until its <code>regrowAtTick</code>, and returned growing trees carry the current visual scale. Queries never re-scatter terrain, modify the GPU, sample external game physics or use a platform clock.</li><li>Results cover only <strong>loaded forest patches</strong>. An unloaded tree or a tree outside the configured residency area cannot be found through this presentation-only API; collision, harvesting at long range and persistent jobs remain responsibilities of the authoritative gameplay/world systems.</li></ul>
 <p>The generic <code>WorldScene::forestScene()</code> accessor from Stage 24 gives native projects access to these methods for opt-in worlds. For huge worlds, if frequent queries become hot, consider an optional per-chunk spatial index after profiling; no claimed performance benchmarks or compiler/CTest/GPU validation have been performed in this features-first stage.</p>
 <h2 id="stage-27-shared-canopy-phenology-for-flora-and-horizon">Stage 27 — shared canopy phenology for Flora and Horizon<a class="anchor" href="#stage-27-shared-canopy-phenology-for-flora-and-horizon" aria-label="#">#</a></h2>
 <p><strong>Source committed; compilation, CTest, screenshots and GPU benchmarks intentionally deferred.</strong> The engine now accepts a <strong>host-owned seasonal appearance state</strong>, not a built-in calendar or weather simulation. PHYSIS and game-specific time-of-year systems can supply the same small POD via a genre-independent bridge:</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeavePhenology.h&quot;
-// A non-default fall/autumn profile; choose values in the host.
-aiverse::terraweave::CanopyPhenology autumn;
-autumn.broadleafCoverPermille = 480;
-autumn.evergreenCoverPermille = 960;
-autumn.tintRPermille = 1350;
-autumn.tintGPermille = 810;
-autumn.tintBPermille = 580;
-worldScene.setVegetationPhenology(autumn);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeavePhenology.h&quot;</span>
+<span class="hl-com">// A non-default fall/autumn profile; choose values in the host.</span>
+aiverse::terraweave::<span class="hl-ty">CanopyPhenology</span> autumn;
+autumn.broadleafCoverPermille = <span class="hl-num">480</span>;
+autumn.evergreenCoverPermille = <span class="hl-num">960</span>;
+autumn.tintRPermille = <span class="hl-num">1350</span>;
+autumn.tintGPermille = <span class="hl-num">810</span>;
+autumn.tintBPermille = <span class="hl-num">580</span>;
+worldScene.<span class="hl-fn">setVegetationPhenology</span>(autumn);</code></pre>
 <p>The above values are an <strong>example</strong>, not a baked climate forecast. Each cover value is in 0..1000; RGB tint multipliers are integer permille 0..2000; 1000 = identity. <code>validateCanopyPhenology</code>, <code>canopyCoverPermille</code> and <code>tintCanopyChannel</code> are pure C++20 helpers in <code>engine/world/TerraWeavePhenology.h</code>. They do not include PHYSIS, RTS, FPS, GPU or platform timing. The caller owns climate, seasonal chronology, persistence and replication.</p>
 <p>The opt-in <code>world::WorldScene::setVegetationPhenology(state)</code> stores the canonical policy, forwards it to <code>TerraWeaveForestScene::setPhenology</code>, and queues a Horizon source revision for the next <code>WorldScene::update</code>. Unchanged state is a no-op. Near Flora updates shared <em>per-species material overrides</em> in <code>ArborForestAdapter</code> without rescatters or async worker cancellation. Conifer prototypes use the evergreen coverage; other shapes use broadleaf coverage. Bark material stays intact, while the leaf material receives RGB tint and optional blended alpha when canopy cover is below full. Overrides must not be changed after submitting draws to Renderer3D but before that frame is rendered, because <code>ModelDraw::materials</code> stores a borrowed pointer.</p>
 <p>For near azimuth impostors, the same policy updates the <strong>existing shared per-view billboard material overrides</strong>; the source atlas includes bark and foliage on one quad, so coverage alpha fades the entire billboard rather than just its leaves. This is a known LOD-parity limitation, <strong>not</strong> a leaf-only billboard mask or per-pixel seasonal foliage solution. It adds no atlas, mesh or extra draw pass by design. Partially transparent canopy may incur standard blended-render overdraw; benchmark in the later test phase.</p>
@@ -590,20 +590,20 @@ worldScene.setVegetationPhenology(autumn);</code></pre>
 <h2 id="stage-28-genre-neutral-wind-presentation-for-arbor-forest">Stage 28 — genre-neutral wind presentation for Arbor forest<a class="anchor" href="#stage-28-genre-neutral-wind-presentation-for-arbor-forest" aria-label="#">#</a></h2>
 <p><strong>Code committed, tests intentionally deferred.</strong> The wind motion API is a presentation-only adapter: games or PHYSIS supply wind vectors and simulation ticks; TerraWeave does not run its own weather, physics forces, collision, ECS or platform-time timers.</p>
 <p>The new <code>engine/world/TerraWeaveWind.h</code> defines:</p>
-<pre><code class="lang-cpp">struct ForestWindState {
-    int32_t xCmPerSec = 0, zCmPerSec = 0;
-    uint32_t gustPermille = 350;
-    uint32_t cycleTicks = 120;
-    uint32_t maxLeanMilliDegrees = 1500;
+<pre><code class="lang-cpp"><span class="hl-kw">struct</span> <span class="hl-ty">ForestWindState</span> {
+    <span class="hl-ty">int32_t</span> xCmPerSec = <span class="hl-num">0</span>, zCmPerSec = <span class="hl-num">0</span>;
+    <span class="hl-ty">uint32_t</span> gustPermille = <span class="hl-num">350</span>;
+    <span class="hl-ty">uint32_t</span> cycleTicks = <span class="hl-num">120</span>;
+    <span class="hl-ty">uint32_t</span> maxLeanMilliDegrees = <span class="hl-num">1500</span>;
 };
-ForestLeanMilliDegrees forestTreeLean(
-    const ForestWindState&amp; state, uint64_t tick, uint64_t stableTreeKey);</code></pre>
+<span class="hl-ty">ForestLeanMilliDegrees</span> <span class="hl-fn">forestTreeLean</span>(
+    <span class="hl-kw">const</span> <span class="hl-ty">ForestWindState</span>&amp; state, <span class="hl-ty">uint64_t</span> tick, <span class="hl-ty">uint64_t</span> stableTreeKey);</code></pre>
 <p>Both wind components use signed <strong>world X/Z centimetres per second</strong>. A state is valid when the horizontal magnitude is no more than 5000cm/s (50m/s), <code>gustPermille</code> in 0..1000, <code>cycleTicks</code> in 8..4096 and <code>maxLeanMilliDegrees</code> in 0..3000. The helper computes a bounded integer triangle-wave phase using <code>mix64(stableTreeKey)</code>; each tree has a stable offset instead of the entire forest tilting in lockstep. The zero-wind default preserves identical model transforms.</p>
-<pre><code class="lang-cpp">aiverse::terraweave::ForestWindState wind;
-wind.xCmPerSec = 900;   // 9 m/s toward +X
-wind.zCmPerSec = -300;
-worldScene.setVegetationWind(wind);
-worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">ForestWindState</span> wind;
+wind.xCmPerSec = <span class="hl-num">900</span>;   <span class="hl-com">// 9 m/s toward +X</span>
+wind.zCmPerSec = -<span class="hl-num">300</span>;
+worldScene.<span class="hl-fn">setVegetationWind</span>(wind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);</code></pre>
 <p><code>WorldScene</code> forwards those values to its optional <code>TerraWeaveForestScene</code>; native projects using the forest independently may call <code>forest.setWind(wind)</code> and <code>forest.setPresentationTick(tick)</code> directly. For an opt-in renderer, the <code>ArborForestAdapter</code> computes a small world-space lean about the base of the model, before the tree's local yaw, then uses existing <code>Renderer3D::drawModel</code>. Stable tree identity, origin-rebased centimetres, per-species LOD, shared meshes and billboard atlas remain unchanged. Per-tree phases and angles are computed on the presentation side; changes to wind/tick do <strong>not</strong> rescatters, restart workers, or force Horizon atlas uploads.</p>
 <p><strong>Important limitations:</strong> this is a low-cost root/whole-tree sway approximation, not branch/leaf skinning or vertex-shader wind deformation. Distant Horizon HLOD remains static (moving 12km forest atlases per tick would be excessive); the very far treeline therefore does not individually sway. Billboard impostors lean as one quad. The final float transform is cosmetic and not guaranteed bit-for-bit identical between rendering backends; authoritative physics or harvest logic must never use it. PHYSIS can map its velocity field into this POD from the owning game host without linking the TerraWeave engine to PHYSIS.</p>
 <p><strong>Performance and correctness:</strong> no new model geometry or draw calls are introduced; however CPU transform math is performed per submitted tree when wind is nonzero, so actual frame cost and visual quality still require the separately scheduled benchmarking and GPU test phase. A future optional vertex deformation shader could preserve stable roots while bending crowns more naturally. Neither compiler nor GPU/CTest has been run during this features-first stage.</p>
@@ -624,15 +624,15 @@ worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
 <p>No tree ECS entities, animation clips, skinned matrices, GPU mesh mutation, shader variants, atlas rebuilds or extra draw passes are added. The original Arbor mesh geometry, <code>TreeProfile</code>, branch LOD simplification and canonical procedural tree seeds remain unchanged. View-distance tiers attenuate additional branch sway (High 100%, Medium 65%, Low 25%, Impostor 0%) to limit near-to-billboard discontinuity. Distant statistical Horizon remains static as previously documented; it is intentionally NOT rebuilt per wind tick.</p>
 <p>The private temporary pose arena is a <code>std::deque&lt;std::vector&lt;render::mat4&gt;&gt;</code> so references in <code>ModelDraw::nodeWorld</code> remain stable during a forEachDraw call; the arena is cleared at the next forEachDraw. <code>Renderer3D::drawModel</code> reads node transforms synchronously and copies them into render items. <strong>Native callbacks collecting ModelDraws may only use their nodeWorld pointers until the next forEachDraw invocation</strong>, and must not use the forest adapter concurrently on multiple threads. <code>ArborForestAdapter::setBranchPoseBudgetBytes(bytes)</code> (forwarded through <code>TerraWeaveForestScene</code>) accepts 0..8MiB and defaults to <strong>4MiB</strong>. A draw whose node matrix snapshot would exceed the remaining budget uses root-only sway instead. The budget is for CPU temporary matrices, not new GPU residency.</p>
 <p>Example (on the owning host/update thread):</p>
-<pre><code class="lang-cpp">if(auto* forest = worldScene.forestScene()) {
-    forest-&gt;setBranchPoseBudgetBytes(4u * 1024u * 1024u);
+<pre><code class="lang-cpp"><span class="hl-kw">if</span>(<span class="hl-kw">auto</span>* forest = worldScene.<span class="hl-fn">forestScene</span>()) {
+    forest-&gt;<span class="hl-fn">setBranchPoseBudgetBytes</span>(<span class="hl-num">4u</span> * <span class="hl-num">1024u</span> * <span class="hl-num">1024u</span>);
 }
-aiverse::terraweave::ForestWindState wind;
-wind.xCmPerSec=700;
-wind.gustPermille=450;
-wind.branchFlexPermille=850; // optional, 0 = whole-tree-only
-worldScene.setVegetationWind(wind);
-worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
+aiverse::terraweave::<span class="hl-ty">ForestWindState</span> wind;
+wind.xCmPerSec=<span class="hl-num">700</span>;
+wind.gustPermille=<span class="hl-num">450</span>;
+wind.branchFlexPermille=<span class="hl-num">850</span>; <span class="hl-com">// optional, 0 = whole-tree-only</span>
+worldScene.<span class="hl-fn">setVegetationWind</span>(wind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);</code></pre>
 <p>A real PHYSIS solver may supply the world X/Z velocity components; this bridge does not require PHYSIS headers, does not alter collision/navmesh/authoritative physics and does not put wind in an ECS component. <code>WorldScene</code> continues forwarding the same validated wind state and tick, so native code uses the existing public methods.</p>
 <p><strong>Limitations/QA debt:</strong> Branches are rigidly rotated at their joints rather than continuously bent as a skinned elastic curve. At high winds thin joints can show gaps. The source uses integer hashed wind phases but converts degrees to float matrices in renderer presentation; bitwise cross-GPU determinism is not promised. Very dense near forests can hit the CPU pose budget and switch to root-only motion. Source <code>forEachDraw</code> collectors must respect pose borrowing lifetime. No CMake, CTest, GPU screenshot, per-frame CPU benchmark or cross-platform rendering check has been executed. Dedicated test agent should validate hierarchy/pivot continuity, season + wind, LOD transitions, budget fallback, material/draw pointers and native PHYSIS integration before marking production ready.</p>
 <h2 id="stage-31-shared-gpu-crown-wind-for-near-arbor-and-horizon">Stage 31 — shared GPU crown wind for near Arbor and Horizon<a class="anchor" href="#stage-31-shared-gpu-crown-wind-for-near-arbor-and-horizon" aria-label="#">#</a></h2>
@@ -648,33 +648,33 @@ worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
 <p><code>makeHorizonModel</code> keeps <strong>one combined model</strong>, the original terrain primitive and shared forest-cluster primitive/atlas. Forest billboard vertex alpha now encodes a weight of 0 at the base and 1 at the canopy top; the forest material ignores vertex alpha in fragment shading so it cannot accidentally erase half the forest. Only its canopy material slot 1 opts into the same graph. <code>TerraWeaveHorizonScene::setWind</code> and <code>setPresentationTick</code> accept the same POD/tick as near Arbor. In <code>submit</code>, current and crossfading forest-region materials receive the shared graph and a restrained <strong>30% GPU wind strength</strong>. The terrain material and near/far seam vertices are unchanged. Static TWH8 archives and partial atlas/VB uploads remain untouched; the per-frame motion is a GPU vertex offset, not an atlas redraw. Source snapshot revisions are <strong>not</strong> advanced merely because the wind changed.</p>
 <p><code>WorldScene::setVegetationWind</code> and <code>setVegetationPresentationTick</code> forward the policy/time to <strong>both</strong> near ForestScene and far HorizonScene, preserving null opt-in module behavior.</p>
 <p><strong>API example:</strong></p>
-<pre><code class="lang-cpp">aiverse::terraweave::ForestWindState wind;
-wind.xCmPerSec = 650;
-wind.zCmPerSec = -250;
-wind.branchFlexPermille = 700; // 0 restores root-only sway
-worldScene.setVegetationWind(wind);
-worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">ForestWindState</span> wind;
+wind.xCmPerSec = <span class="hl-num">650</span>;
+wind.zCmPerSec = -<span class="hl-num">250</span>;
+wind.branchFlexPermille = <span class="hl-num">700</span>; <span class="hl-com">// 0 restores root-only sway</span>
+worldScene.<span class="hl-fn">setVegetationWind</span>(wind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);</code></pre>
 <p><strong>Boundaries/limitations:</strong> This is <em>procedural render-only</em> crown flutter, not physical leaf/branch simulation; wind affects shader vertex positions but not collision, navmesh, authoritative tree positions or gameplay ECS. The effect intentionally retains existing root/branch transforms and only adds a small extra vertex displacement. Spatial phases are deterministic functions of the host tick and model-space/rebased world coordinates but GPU sine/floating math is not promised bitwise-identical across devices. Bounded graph models now continue to participate in node/LOD culling; confirm conservativeness with high-wind screenshots. Raw <code>ModelDraw::vertexParameters</code> is incompatible with concurrently using the packed <code>Inst.anim</code> slot for baked clips or lightmaps. The far forest motion is whole-card canopy shear, not individually simulated distant branches. Renderer pipeline/material changes, shadows, PHYSIS integration, large-area transition and CPU/GPU timings are <strong>not yet validated</strong>.</p>
 <p><strong>Tests intentionally deferred:</strong> The independent testing agent must update Stage 29 impostor expectations, compile GCC/Clang and backend shader pipelines, validate U0 payload/vertex colors on Metal, Vulkan and GL, test 0 and maximum wind, season + GPU flutter, crossfade compatibility, vertex bounds and culling, and measure material pipeline counts/frame cost. Do not treat source commits as passing tests.</p>
 <h2 id="stage-32-spatial-wind-grid-and-near-to-horizon-transition">Stage 32 — spatial wind grid and near-to-Horizon transition<a class="anchor" href="#stage-32-spatial-wind-grid-and-near-to-horizon-transition" aria-label="#">#</a></h2>
 <p><strong>Feature source committed, build and tests deferred</strong> per the project owner's feature-first priority.</p>
 <p>Native games/PHYSIS can publish one bounded, <strong>immutable spatial wind snapshot</strong> for near Arbor trees and far Horizon, without linking PHYSIS to the forest renderer. The new <code>engine/world/TerraWeaveWindField.h</code> defines <code>ForestWindField</code> as a regular X/Z lattice of <code>ForestWindSample {xCmPerSec,zCmPerSec,gustPermille}</code>, all in signed <strong>world centimetres</strong> and cm/sec. The caller owns sampling from its actual PHYSIS wind/weather field; TerraWeave performs only the render-side interpolation:</p>
-<pre><code class="lang-cpp">using namespace aiverse::terraweave;
-auto mutableField=std::make_shared&lt;ForestWindField&gt;();
-mutableField-&gt;originXcm=-12800;
-mutableField-&gt;originZcm=-12800;
-mutableField-&gt;spacingCm=6400;
-mutableField-&gt;columns=5;
-mutableField-&gt;rows=5;
-mutableField-&gt;samples.assign(25,{800,0,400});
-// Optionally fill specific nodes with different PHYSIS velocities.
-mutableField-&gt;samples[12]={-100,550,750};
-mutableField-&gt;validate(); // reject invalid geometry/oversized winds
-std::shared_ptr&lt;const ForestWindField&gt; published=mutableField;
-worldScene.setVegetationWindField(published);
-worldScene.setVegetationPresentationTick(gameplayTick);
-// Publish a NEW immutable object when the weather field changes:
-worldScene.setVegetationWindField({});</code></pre>
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+<span class="hl-kw">auto</span> mutableField=<span class="hl-ty">std</span>::make_shared&lt;<span class="hl-ty">ForestWindField</span>&gt;();
+mutableField-&gt;originXcm=-<span class="hl-num">12800</span>;
+mutableField-&gt;originZcm=-<span class="hl-num">12800</span>;
+mutableField-&gt;spacingCm=<span class="hl-num">6400</span>;
+mutableField-&gt;columns=<span class="hl-num">5</span>;
+mutableField-&gt;rows=<span class="hl-num">5</span>;
+mutableField-&gt;samples.<span class="hl-fn">assign</span>(<span class="hl-num">25</span>,{<span class="hl-num">800</span>,<span class="hl-num">0</span>,<span class="hl-num">400</span>});
+<span class="hl-com">// Optionally fill specific nodes with different PHYSIS velocities.</span>
+mutableField-&gt;samples[<span class="hl-num">12</span>]={-<span class="hl-num">100</span>,<span class="hl-num">550</span>,<span class="hl-num">750</span>};
+mutableField-&gt;<span class="hl-fn">validate</span>(); <span class="hl-com">// reject invalid geometry/oversized winds</span>
+<span class="hl-ty">std</span>::<span class="hl-ty">shared_ptr</span>&lt;<span class="hl-kw">const</span> <span class="hl-ty">ForestWindField</span>&gt; published=mutableField;
+worldScene.<span class="hl-fn">setVegetationWindField</span>(published);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);
+<span class="hl-com">// Publish a NEW immutable object when the weather field changes:</span>
+worldScene.<span class="hl-fn">setVegetationWindField</span>({});</code></pre>
 <p><strong>Do not mutate</strong> a field after publishing it, even if a mutable shared pointer alias still exists. Create and publish a new snapshot for each update. <code>WorldScene::vegetationWindField()</code> returns the active const shared snapshot (or null). Native projects using the forest/Horizon directly can call their <code>setWindField(shared_ptr&lt;const ForestWindField&gt;)</code> methods. The uniform fallback still comes from the existing <code>ForestWindState</code> (<code>setVegetationWind</code>) and supplies the authoritative wind animation period, strength/flex, and limits. The grid overrides only local X/Z wind velocities and gust intensity.</p>
 <h3 id="sampling-and-transition-semantics">Sampling and transition semantics<a class="anchor" href="#sampling-and-transition-semantics" aria-label="#">#</a></h3>
 <ul><li>Limits: either empty/default field or 2..64 nodes per axis, at most <strong>4096</strong> node samples; spacing 100..10,000,000cm; all node coordinates within <code>+/-kWorldLimitCm</code>. Each node is validated using <code>validateForestWind</code> (horizontal magnitude &lt;=5000cm/s; gust 0..1000). Invalid input fails before replacing the active world snapshot.</li><li><code>sampleForestWindField(field,xCm,zCm,fallback)</code> uses Q16 bilinear interpolation in absolute signed world centimetres, including negative positions. Outside the lattice it returns <code>fallback</code>; a half-node-spacing <strong>interior feather</strong> blends border values back to the fallback to prevent sudden direction/speed jumps at the field edge. No shader texture, RHI buffer, global mutable state or wall-time dependency.</li><li><code>blendForestWind(local,macro,macroPermille)</code> is a bounded integer interpolation of velocity and gust. Branch flex, period and lean maximum remain those of the fallback source.</li><li>The near <code>ArborForestAdapter</code> samples the immutable field at <strong>each resident tree's stable world position</strong>. Its geometric root lean, hierarchical CPU branch poses, and Stage 31 GPU leaf displacement all use that same effective per-tree wind. For consistency near distant render tiers, wind is blended toward the <strong>observer-position macro sample</strong>, continuously between <code>FloraView.mediumRangeCm</code> and <code>FloraView.cullRangeCm</code> (using a conservative X/Z Chebyshev distance and bounded permille interpolation). The forest scene configures these boundaries once; an unchanged/no-field setup retains its old execution path.</li><li>The far <code>TerraWeaveHorizonScene</code> takes one observer-space macro wind sample in <code>submit</code>, shared by active and outgoing region draws during crossfade. This prevents a wind-vector discontinuity when the Horizon region changes and keeps HLOD geometry/atlas batched. It does <strong>not</strong> yet produce a separate PHYSIS wind vector for every statistical distant forest cluster. A later optional coarse GPU wind field or per-cluster baked vector feature can improve microvariation at kilometre scale if warranted.</li><li><code>WorldScene::setVegetationWindField</code> forwards the <strong>same</strong> <code>shared_ptr&lt;const ForestWindField&gt;</code> to its optional forest and Horizon modules, with no terrain worker invalidation or TWH8 archive changes. Repeated pointer identity is a no-op; passing null clears the field so only uniform wind remains.</li></ul>
@@ -687,16 +687,16 @@ worldScene.setVegetationWindField({});</code></pre>
 <p>At runtime, the first-party <strong>GLSL + Metal</strong> <code>horizonSpatialWindGraph()</code> uses the same inherited <code>I.anim</code> instance data as the Stage 31 crown graph. One shared macro wind vector (from the existing <code>ForestWindField</code> sampled at the observer location, or the fallback uniform wind) is rotated by at most <strong>30 degrees</strong> per cluster, scaled between <strong>0.75 and 1.25</strong>, and given a coherent but cluster-dependent phase offset. The exact per-cluster coefficients are fixed by the baked vertex RGB metadata and never require new CPU atlas work when the wind tick changes. Roots stay fixed because alpha is still zero at the card bottom. Direction, amplitude and phase vary <em>smoothly</em> across neighbouring clusters in world space rather than jumping between camera tiles.</p>
 <p><code>makeHorizonModel</code> writes this metadata only to the distant forest vertices, not authored/coarse terrain. The far forest material already has <code>vertexColors=false</code>, ensuring these packed RGB8 values do not unexpectedly tint the foliage or modify opacity. No changes were made to near authored terrain, clipping, Q16 height welding, canopy atlas pixels or TWH8 serialized data.</p>
 <h3 id="native-api-and-quality-switch">Native API and quality switch<a class="anchor" href="#native-api-and-quality-switch" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">// Already supported PHYSIS/game wind setup:
-worldScene.setVegetationWind(baseWind);
-worldScene.setVegetationWindField(immutableSpatialWind);
-worldScene.setVegetationPresentationTick(gameplayTick);
+<pre><code class="lang-cpp"><span class="hl-com">// Already supported PHYSIS/game wind setup:</span>
+worldScene.<span class="hl-fn">setVegetationWind</span>(baseWind);
+worldScene.<span class="hl-fn">setVegetationWindField</span>(immutableSpatialWind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);
 
-// New optional comparison/quality switch. True by default:
-worldScene.setVegetationHorizonSpatialWind(true);
+<span class="hl-com">// New optional comparison/quality switch. True by default:</span>
+worldScene.<span class="hl-fn">setVegetationHorizonSpatialWind</span>(<span class="hl-kw">true</span>);
 
-// Return to Stage 31&#x27;s identical macro wind for every far card:
-worldScene.setVegetationHorizonSpatialWind(false);</code></pre>
+<span class="hl-com">// Return to Stage 31&#x27;s identical macro wind for every far card:</span>
+worldScene.<span class="hl-fn">setVegetationHorizonSpatialWind</span>(<span class="hl-kw">false</span>);</code></pre>
 <p>Standalone <code>TerraWeaveHorizonScene::setSpatialWindVariation(bool)</code> and <code>spatialWindVariation()</code> expose the same switch, while <code>WorldScene::vegetationHorizonSpatialWind()</code> returns the current choice. The setting is presentation-only and should be set on the render/update owner thread before calling <code>submit()</code>; toggling changes only the <em>shared ShaderGraph program selection</em>, not the mesh, atlas, CPU bake or source revision. First use of a variant may incur the renderer's existing pipeline warm-up cost, not shader recompilation every simulation tick. The default is enabled; if zero wind is configured, neither the old nor new wind graph is active.</p>
 <p><strong>Important scope distinction:</strong> The Stage 32 field is sampled exactly at the <em>near individual tree</em> and at the <em>Horizon observer</em>. Stage 33's independent <strong>far cluster variation is procedural</strong>, applied to that sampled macro vector. It is <strong>not</strong> a direct sample of the upstream PHYSIS field at every far cluster, and therefore is designed to make a 1–12 km treeline feel alive, not to simulate exact kilometre-scale weather boundaries or tornado trajectories. Exact per-cluster PHYSIS fields would require dynamic vertex metadata updates or an extra bounded GPU wind-grid resource, both outside this no-extra-resources mode.</p>
 <p><strong>Bounded visual effect:</strong> The base Horizon GPU crown displacement strength remains 30% of the near-tree graph; the per-cluster amplitude is at most 1.25 and the graph's sine/gust multiplier is bounded. The current <code>ModelDraw::maxVertexOffsetMetres = 0.65f</code> remains conservative for the validated host wind bounds. GPU cost is extra vertex shader ALU and shared shader variant, not an additional draw or material per cluster. Real performance, frustum bounds, visual appearance in moving cameras, GLSL/Metal shader compilation and accurate material batching <strong>have not been tested yet</strong>.</p>
@@ -704,17 +704,17 @@ worldScene.setVegetationHorizonSpatialWind(false);</code></pre>
 <h2 id="stage-34-exact-physis-wind-per-distant-horizon-cluster">Stage 34 — exact PHYSIS wind per distant Horizon cluster<a class="anchor" href="#stage-34-exact-physis-wind-per-distant-horizon-cluster" aria-label="#">#</a></h2>
 <p><strong>Functionality committed; compiler, CTest and GPU validation intentionally deferred.</strong> Stage 32 provides a small immutable <code>ForestWindField</code> sourced by PHYSIS/gameplay. Stage 33 gave distant Horizon clusters smooth <em>procedural</em> subvariation around one macro wind, but could not reproduce opposing winds in separate far areas. Stage 34 adds an opt-in <strong>direct per-cluster sample of the current field</strong> at the cluster's original world-centimetre centre, encoded into the existing Horizon forest vertex colour stream.</p>
 <h3 id="public-native-interface">Public native interface<a class="anchor" href="#public-native-interface" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">auto field = std::make_shared&lt;terraweave::ForestWindField&gt;();
-// Host fills the validated &lt;=64x64 node field from PHYSIS.
-field-&gt;validate();
-worldScene.setVegetationWindField(field); // shared near + far immutable snapshot
-worldScene.setVegetationHorizonExactWindField(true); // default: true
-worldScene.setVegetationPresentationTick(gameplayTick);
+<pre><code class="lang-cpp"><span class="hl-kw">auto</span> field = <span class="hl-ty">std</span>::make_shared&lt;terraweave::<span class="hl-ty">ForestWindField</span>&gt;();
+<span class="hl-com">// Host fills the validated &lt;=64x64 node field from PHYSIS.</span>
+field-&gt;<span class="hl-fn">validate</span>();
+worldScene.<span class="hl-fn">setVegetationWindField</span>(field); <span class="hl-com">// shared near + far immutable snapshot</span>
+worldScene.<span class="hl-fn">setVegetationHorizonExactWindField</span>(<span class="hl-kw">true</span>); <span class="hl-com">// default: true</span>
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);
 
-// Revert to the original procedural 2.4km pattern in distant forests:
-worldScene.setVegetationHorizonExactWindField(false);
-// Or remove the exact PHYSIS field entirely, keeping the uniform fallback:
-worldScene.setVegetationWindField({});</code></pre>
+<span class="hl-com">// Revert to the original procedural 2.4km pattern in distant forests:</span>
+worldScene.<span class="hl-fn">setVegetationHorizonExactWindField</span>(<span class="hl-kw">false</span>);
+<span class="hl-com">// Or remove the exact PHYSIS field entirely, keeping the uniform fallback:</span>
+worldScene.<span class="hl-fn">setVegetationWindField</span>({});</code></pre>
 <p><code>TerraWeaveHorizonScene::setExactSpatialWindField(bool)</code>, <code>exactSpatialWindField()</code> and the matching <code>WorldScene</code> getter give native games control of this <strong>presentation-only</strong> mode. <code>WorldScene::setVegetationHorizonSpatialWind(bool)</code> remains the Stage 33 quality switch for <em>procedural</em> variation when an exact field is not active; exact field mode takes precedence if a non-null field is provided. <code>ForestWindState</code> still determines maximum lean, branch flex and tick period; exact sampled X/Z velocity and gust come from <code>sampleForestWindField</code> at each distant cluster position. No game/PHYSIS headers, ECS entities, physics state or simulated weather are introduced into the renderer.</p>
 <h3 id="gpu-data-flow-format-and-budgets">GPU data flow, format and budgets<a class="anchor" href="#gpu-data-flow-format-and-budgets" aria-label="#">#</a></h3>
 <ul><li>On initial Horizon GPU publication, <code>captureHorizonForestWindOverlay</code> copies only the existing contiguous <strong>forest-card vertex range</strong> (not terrain or the entire model) and stores a compact list of exact cluster world coordinates. Both crossed cards of a cluster share one wind sample; 8 vertices per cluster carry the same wind RGB but retain A=0 for bottom and 255 for top. The capture occurs before <code>uploadModel</code> drops CPU mesh data. This CPU shadow moves with active, outgoing crossfade, and cached GPU models in <code>HorizonGpuRegion::forestWind</code>.</li><li><code>horizonFieldWindVertexColor</code> packs <strong>X/Z signed velocity</strong> (each -5000..+5000 cm/s) into RG8 using centered 8-bit quantization with <strong>zero wind encoded exactly as byte 128</strong>; B8 stores gust 0..1000 permille; A8 remains root-to-crown bend weight. Values are taken from real PHYSIS/grid samples at each cluster centre, subject to roughly <strong>40 cm/s per-channel resolution</strong>. This is spatially sampled field fidelity, <strong>not lossless precision</strong>.</li><li><code>horizonExactFieldWindGraph()</code> is one shared first-party GLSL/MSL <code>vertexOffset</code> program. Unlike Stage 33's pseudo-variation, it reconstructs the velocity vector from RG8 and uses the local B8 gust with caller-tick phase/low-frequency variation; the shader uses the existing rigid <code>U0 Inst.anim</code> strength and phase, without a new uniform buffer, texture, pass, atlas or shader per cluster. Terrain retains material slot 0, untouched; only the single forest material slot 1 uses this program.</li><li><code>TerraWeaveHorizonScene::setWindField</code> or a change in fallback wind creates a <strong>presentation wind-field revision</strong> separate from the Horizon terrain/biome source revision. The next <code>update(device,observer)</code> on the owning RHI thread calls <code>refreshForestWindGpu</code>, creating a candidate colour-only update and committing it via <strong>one contiguous <code>gfx::Device::updateBuffer</code> write per visible GPU model</strong> if and only if the RGB values actually changed. At most <strong>2 MiB of forest-card vertex bytes per update</strong> are sent across active and outgoing regions, and at most <strong>2 MiB CPU forest shadow per region</strong> are retained. No atlas CPU regeneration, no terrain vertex edit, no cluster topology change, no TWH8 archive write and no weather-tick-driven upload.</li><li>The GPU update checks <code>canUpdateSharedBuffers()</code>, requires an unpooled independent model VB/IB, and preserves old colours when updates cannot safely be issued. An incomplete refresh does not switch to an exact-field shader: it uses the existing safe macro wind presentation until a full consistent region update completes. Per-region <code>appliedRevision</code> survives LRU/crossfade ownership changes, and stale cached regions refresh on their next render-owner update after adoption. Disabling exact mode or clearing the spatial field <strong>restores Stage 33 procedural RGB</strong> through the same bounded GPU patch path.</li><li><code>HorizonRuntimeStats</code> appends cumulative <code>windOverlayPatchWrites</code>, <code>windOverlayPatchBytes</code>, and live <code>windOverlayPending</code> / <code>exactWindFieldActive</code> indicators. A skipped update is not reported as successful.</li></ul>
@@ -725,11 +725,11 @@ worldScene.setVegetationWindField({});</code></pre>
 <p><strong>Functional source committed; compilation, CTest and GPU execution deferred by request.</strong> Stage 34 introduced exact per-cluster spatial wind samples from the host's immutable PHYSIS/game <code>ForestWindField</code>, but transmitted the <strong>entire</strong> forest-card vertex range to the RHI whenever even one sampled cluster changed. Stage 35 keeps the same public world and Horizon APIs and GPU format, while replacing that coarse update with a bounded <em>sparse dirty-run</em> planner.</p>
 <h3 id="dirty-cluster-selection-and-updates">Dirty cluster selection and updates<a class="anchor" href="#dirty-cluster-selection-and-updates" aria-label="#">#</a></h3>
 <p><code>engine/render/TerraWeaveHorizonWindPatch.h</code> now provides the pure C++ planner:</p>
-<pre><code class="lang-cpp">std::optional&lt;HorizonForestWindUploadPlan&gt; planHorizonForestWindUpload(
-    std::span&lt;const render::ModelVertex&gt; oldVertices,
-    std::span&lt;const render::ModelVertex&gt; newVertices,
-    size_t maxRanges = 8,
-    uint32_t fullFallbackPercent = 70);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">std</span>::<span class="hl-ty">optional</span>&lt;<span class="hl-ty">HorizonForestWindUploadPlan</span>&gt; <span class="hl-fn">planHorizonForestWindUpload</span>(
+    <span class="hl-ty">std</span>::<span class="hl-ty">span</span>&lt;<span class="hl-kw">const</span> render::<span class="hl-ty">ModelVertex</span>&gt; oldVertices,
+    <span class="hl-ty">std</span>::<span class="hl-ty">span</span>&lt;<span class="hl-kw">const</span> render::<span class="hl-ty">ModelVertex</span>&gt; newVertices,
+    <span class="hl-ty">size_t</span> maxRanges = <span class="hl-num">8</span>,
+    <span class="hl-ty">uint32_t</span> fullFallbackPercent = <span class="hl-num">70</span>);</code></pre>
 <p>It compares only the <strong>vertex colour attributes</strong> of each eight-vertex forest cluster (two crossed cards), because weather updates never change position, normal, UV, indices, or material assignment. Adjacent dirty clusters are coalesced into one contiguous <code>HorizonForestWindUploadRange{firstVertex,vertexCount}</code>. With at most eight separate dirty runs and under 70% of clusters changed, only those ranges are transferred to the existing <code>render::Model::vb</code> by <code>gfx::Device::updateBuffer</code>; there is no GPU allocation, shader permutation or additional render pass.</p>
 <p>If more than eight disjoint runs are dirty, or at least 70% of clusters changed, the planner <strong>falls back to one complete forest suffix upload</strong>. The maximum resident CPU shadow is still 2 MiB per model and the scene's aggregate render-owner update budget remains <strong>2 MiB per <code>update()</code> across both active and outgoing crossfade regions</strong>. If the <em>chosen</em> sparse or full plan would exceed the remaining budget or <code>canUpdateSharedBuffers()</code> is false, all writes for that model are deferred and the old safe rendering mode remains. No RHI write occurs before every selected range has been validated; the CPU copy and field revision are committed only after the planned sequence of writes is issued. Like Stage34, the backend's <code>updateBuffer</code> returns void, so a mid-sequence device failure cannot be detected here; engine-level device-loss recovery is still required.</p>
 <p><strong>Important consequence:</strong> a small changed area can now be updated even when the full forest suffix is <strong>larger than the frame's remaining upload budget</strong>. For example, after the active region has consumed some budget, an outgoing region with one modified cluster may still be refreshed through one 8-vertex write instead of being repeatedly deferred. The planner reports an empty plan when the new quantized RGB8 values equal the existing values; this advances the applied weather-field revision with <strong>zero</strong> GPU traffic. A field snapshot can therefore change with no visual or RHI cost if all cluster samples quantize identically.</p>
@@ -739,12 +739,12 @@ worldScene.setVegetationWindField({});</code></pre>
 <p><strong>Validation intentionally deferred:</strong> source commits and source inspection only; the new planner and RHI code have not been compiled, CTest has not run, and no Metal/Vulkan/GL backend or PHYSIS integration screenshots/performance data have been obtained. A later tester must verify one dirty cluster, adjacent clusters, eight vs nine disjoint runs, the 70% threshold, negative world coordinates, identical quantized samples, reduced bandwidth, active/outgoing combined budgets, disabled buffer updates, old cached GPU-region reactivation, and full-fallback correctness before release. Stage29's outdated impostor tests also remain pending.</p>
 <h2 id="stage-36-configurable-far-horizon-wind-upload-quality-policy">Stage 36 — configurable far-Horizon wind upload quality policy<a class="anchor" href="#stage-36-configurable-far-horizon-wind-upload-quality-policy" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveWindUploadPolicy.h</code> exposes a small, genre-neutral <code>HorizonWindUploadPolicy</code> for C++ games. Default values retain Stage35 behavior: <code>maxBytesPerUpdate=2*1024*1024</code> (one combined RHI bandwidth budget for active + outgoing crossfade GPU regions), <code>maxSparseRanges=8</code> and <code>fullFallbackPercent=70</code>. Set it from the WorldScene owner/render update thread or directly on the optional <code>TerraWeaveHorizonScene</code>:</p>
-<pre><code class="lang-cpp">aiverse::terraweave::HorizonWindUploadPolicy policy;
-policy.maxBytesPerUpdate = 256u * 1024u; // e.g. mobile: 256 KiB/update
-policy.maxSparseRanges = 4;              // &lt;= 4 runs per region
-policy.fullFallbackPercent = 85;         // full range if &gt;=85% dirty
-worldScene.setVegetationHorizonWindUploadPolicy(policy);
-auto applied = worldScene.vegetationHorizonWindUploadPolicy();</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">HorizonWindUploadPolicy</span> policy;
+policy.maxBytesPerUpdate = <span class="hl-num">256u</span> * <span class="hl-num">1024u</span>; <span class="hl-com">// e.g. mobile: 256 KiB/update</span>
+policy.maxSparseRanges = <span class="hl-num">4</span>;              <span class="hl-com">// &lt;= 4 runs per region</span>
+policy.fullFallbackPercent = <span class="hl-num">85</span>;         <span class="hl-com">// full range if &gt;=85% dirty</span>
+worldScene.<span class="hl-fn">setVegetationHorizonWindUploadPolicy</span>(policy);
+<span class="hl-kw">auto</span> applied = worldScene.<span class="hl-fn">vegetationHorizonWindUploadPolicy</span>();</code></pre>
 <p>The Horizon native API is <code>setWindUploadPolicy(policy)</code> / <code>windUploadPolicy()</code>. <code>validateHorizonWindUploadPolicy</code> rejects uploads larger than 2 MiB, ranges outside [1,8] or density outside [1,100] <strong>before changing the live policy</strong>. Upload bytes may be <strong>zero</strong>: this explicitly pauses <em>changed</em> GPU wind metadata while allowing zero-byte identical-quantization revisions to advance. Raising it later retries the pending revision; no terrain or forest rebake is required.</p>
 <p><code>applyHorizonForestWindOverlay</code> retains its backward-compatible default policy argument after <code>remainingUploadBytes</code>. It now passes the policy's range/density settings to the existing pure <code>planHorizonForestWindUpload</code> and enforces both the caller's remaining budget and the policy's own maximum before any RHI write. The <code>TerraWeaveHorizonScene::refreshForestWindGpu</code> owner-thread updater starts from the configured budget and consumes it across active and outgoing models, active first. A plan that does not fit is deferred <strong>as a complete region revision</strong>, with the existing macro wind shader fallback.</p>
 <p>This is a <strong>GPU traffic / update scheduling policy</strong>, not a CPU-cache quality selector: each GPU-resident model may still keep up to 2 MiB of forest vertex CPU shadow, and active/cached model residency remains controlled by the existing Horizon settings. There is no new vertex/index/texture allocation, HLOD topology change, shader, PHYSIS dependency, ECS/gameplay data, atlas format or TWH8 archive version. The host must not set the policy concurrently with <code>update</code>/<code>submit</code>.</p>
@@ -752,10 +752,10 @@ auto applied = worldScene.vegetationHorizonWindUploadPolicy();</code></pre>
 <h2 id="stage-37-bounded-inactive-horizon-wind-cpu-shadow-cache">Stage 37 — bounded inactive Horizon wind CPU shadow cache<a class="anchor" href="#stage-37-bounded-inactive-horizon-wind-cpu-shadow-cache" aria-label="#">#</a></h2>
 <p>A Horizon GPU cache hit normally preserves its matching per-region <strong>CPU wind overlay</strong> (up to 2 MiB of forest vertex data plus cluster centres). The overlay is necessary for Stage35's sparse wind RGB patch planner: the GPU may already contain exact PHYSIS metadata rather than baked procedural colours. Discarding the overlay <em>alone</em> would make future colour comparisons wrong, and there is no guaranteed cross-backend RHI vertex-buffer readback.</p>
 <p>Stage37 adds a separate <strong>inactive cache</strong> CPU budget via <code>&lt;engine/world/TerraWeaveWindShadowCachePolicy.h&gt;</code>:</p>
-<pre><code class="lang-cpp">aiverse::terraweave::HorizonWindShadowCachePolicy cpuPolicy{};
-cpuPolicy.maxCachedShadowBytes=1u*1024u*1024u;
-worldScene.setVegetationHorizonWindShadowCachePolicy(cpuPolicy);
-auto configured=worldScene.vegetationHorizonWindShadowCachePolicy();</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">HorizonWindShadowCachePolicy</span> cpuPolicy{};
+cpuPolicy.maxCachedShadowBytes=<span class="hl-num">1u</span>*<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+worldScene.<span class="hl-fn">setVegetationHorizonWindShadowCachePolicy</span>(cpuPolicy);
+<span class="hl-kw">auto</span> configured=worldScene.<span class="hl-fn">vegetationHorizonWindShadowCachePolicy</span>();</code></pre>
 <p>Direct scene use: <code>TerraWeaveHorizonScene::setWindShadowCachePolicy(cpuPolicy)</code> and <code>windShadowCachePolicy()</code>. The default is <strong>16 MiB</strong>, above the maximum expected three cached wind overlays so pre-Stage37 default residency is preserved. The setting is bounded to 0..16 MiB and validated before publication. <code>0</code> prevents inactive GPU cache entries from retaining any CPU wind overlay; it does <strong>not</strong> disable the active or outgoing transition wind animation, nor does it change Stage36's per-update GPU transfer budget. This budget measures actual vector <strong>capacities</strong> of <code>forestWind.vertices</code> and <code>forestWind.centersCm</code>, not merely the current logical vector lengths.</p>
 <p><code>HorizonGpuRegionCache::trimWindShadowBytes(device,budget)</code> runs only on the graphics owner thread. When the cached wind shadow capacity exceeds the budget, it retires the <strong>whole least-recently-used shadow-bearing cached GPU region</strong>, releasing its matching vertex/index/atlas resources through the normal RHI owner path and the associated CPU wind shadow together. It never removes a shadow from a retained GPU model, never touches the active model or current outgoing fade, and does not evict unrelated zero-shadow entries solely to meet this policy. The CPU budget is enforced immediately on <code>retain()</code> and again at the next <code>update(device)</code> after changes to policy or terrain-source revisions. It does not require a new GPU allocation, RHI readback, shader, asset format or CPU worker.</p>
 <p>When a camera returns to a region whose <strong>entire GPU cache entry</strong> was evicted under this budget, the existing <code>AsyncChunkStream</code> prepare/upload path restores the HLOD model and captures a coherent new wind shadow <strong>before</strong> uploading. It can reuse a matching CPU Horizon bake/asset archive if enabled; otherwise it re-bakes. The old visible proxy is retained while streaming. No stale GPU colour bytes are ever mistaken for a fresh CPU shadow. If the cache entry was not evicted, it retains both GPU and CPU metadata and remains an ordinary instant cache hit. A tight budget trades GPU cache hit rate/re-upload work for bounded dormant CPU shadow memory.</p>
@@ -765,10 +765,10 @@ auto configured=worldScene.vegetationHorizonWindShadowCachePolicy();</code></pre
 <h2 id="stage-38-lossless-dormant-horizon-gpu-wind-shadow-compression">Stage 38 — lossless dormant Horizon GPU wind-shadow compression<a class="anchor" href="#stage-38-lossless-dormant-horizon-gpu-wind-shadow-compression" aria-label="#">#</a></h2>
 <p>Stage37 had to evict a complete GPU cache entry whenever its inactive CPU wind shadow exceeded the configured budget. Stage38 optionally saves dormant CPU memory <strong>without evicting the matching GPU region</strong>. The wind field, PHYSIS owner, procedural map, material shader and existing RHI GPU buffers remain unchanged.</p>
 <p>Use the public <strong>Stage37</strong> policy from a native project:</p>
-<pre><code class="lang-cpp">aiverse::terraweave::HorizonWindShadowCachePolicy policy;
-policy.maxCachedShadowBytes=2u*1024u*1024u;
-policy.compressCachedShadows=true;  // Stage38 optional; default false
-worldScene.setVegetationHorizonWindShadowCachePolicy(policy);</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">HorizonWindShadowCachePolicy</span> policy;
+policy.maxCachedShadowBytes=<span class="hl-num">2u</span>*<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+policy.compressCachedShadows=<span class="hl-kw">true</span>;  <span class="hl-com">// Stage38 optional; default false</span>
+worldScene.<span class="hl-fn">setVegetationHorizonWindShadowCachePolicy</span>(policy);</code></pre>
 <p>This setter stays on the WorldScene owner thread. The optional <code>TerraWeaveHorizonScene::setWindShadowCachePolicy</code> accepts the same POD. The per-update <strong>GPU upload</strong> policy is separate (<code>HorizonWindUploadPolicy</code>). All default API values preserve Stage37 behavior (compression disabled unless explicitly enabled). The current 0..16 MiB inactive CPU-shadow budget remains valid and unchanged.</p>
 <p><strong>Lossless storage:</strong> <code>TerraWeaveHorizonWindCompression.h</code> provides <code>packHorizonWindVertexBytes</code> and <code>unpackHorizonWindVertexBytes</code> with a simple bounded bytewise zero-run/literal codec (1..128 bytes per token). It stores raw <strong>ModelVertex bytes</strong>, including all 32-bit float fields, RGBA wind metadata and joint/weight fields; it never rescales or recomputes geometry or a PHYSIS wind sample. This is memory-only storage inside the process, not a persistent file format. Before packing, the <code>HorizonForestWindOverlay</code> must be intact and already paired with its GPU-resident model. A compressed overlay keeps its signed world-centimetre <code>centersCm</code>, the exact applied wind revision and first vertex offset, and stores <code>packedVertices</code> plus <code>packedVertexCount</code> instead of a full vertex array. Compression is accepted <strong>only when the packed vector's actual capacity is lower than the original vertex vector capacity</strong>; otherwise the original raw shadow stays untouched.</p>
 <p><strong>Cache lifecycle and budget:</strong> <code>HorizonGpuRegionCache::retain</code> packs only <strong>inactive</strong> entries (not the active or outgoing crossfade model). It compresses already-cached entries when the policy is enabled during a live scene, at the next <code>update(device)</code> before budget trimming. <code>windCompressionAttempted</code> prevents repeatedly scanning incompressible entries every frame. The dormant CPU budget now counts the actual capacities of raw vertices, packed bytes and cluster centres. Only if compressed/raw capacity still exceeds the budget will Stage37's whole-region LRU eviction run. There is <strong>no</strong> GPU upload, new buffer, atlas rebuild or geometry regeneration when a shadow is packed.</p>
@@ -784,21 +784,21 @@ worldScene.setVegetationHorizonWindShadowCachePolicy(policy);</code></pre>
 <div class="table"><table><thead><tr><th>Preset</th><th>Exact PHYSIS cluster field</th><th>Procedural spatial graph</th><th>GPU wind upload bytes/update</th><th>Max sparse runs</th><th>Full-range threshold</th><th>Inactive wind CPU budget</th><th>Lossless compression</th></tr></thead><tbody><tr><td>BatterySaver</td><td>Off</td><td>Off</td><td>0</td><td>1</td><td>70%</td><td>0</td><td>Off</td></tr><tr><td>Mobile</td><td>Off</td><td>On</td><td>128 KiB</td><td>2</td><td>90%</td><td>1 MiB</td><td>On</td></tr><tr><td>Balanced</td><td>On</td><td>On</td><td>512 KiB</td><td>4</td><td>75%</td><td>4 MiB</td><td>On</td></tr><tr><td>Desktop</td><td>On</td><td>On</td><td>2 MiB</td><td>8</td><td>70%</td><td>16 MiB</td><td>On</td></tr></tbody></table></div>
 <p>These are <strong>initial engine policy choices</strong>, NOT measured performance recommendations. A low upload limit may defer a dense full-suffix weather metadata patch indefinitely; the existing Stage34 macro wind graph remains the safe fallback. BatterySaver intentionally pauses weather VB changes and does not promise immediate restoration of a procedural graph after switching away from exact field mode. Inactive GPU-cache models may be evicted when their CPU wind-shadow total exceeds the chosen budget. Actual GPU and CPU effects depend on terrain geometry and wind field distribution and need device QA.</p>
 <h3 id="native-project-api">Native project API<a class="anchor" href="#native-project-api" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">using namespace aiverse::terraweave;
-worldScene.setVegetationHorizonPresentationQualityPreset(
-    HorizonPresentationQualityPreset::Mobile);
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+worldScene.<span class="hl-fn">setVegetationHorizonPresentationQualityPreset</span>(
+    <span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Mobile</span>);
 
-// Fine-tune after preset (or define a fully custom value policy):
-auto quality=worldScene.vegetationHorizonPresentationPolicy();
-quality.windUpload.maxBytesPerUpdate=256u*1024u;
-quality.windShadowCache.maxCachedShadowBytes=2u*1024u*1024u;
-worldScene.setVegetationHorizonPresentationPolicy(quality);</code></pre>
+<span class="hl-com">// Fine-tune after preset (or define a fully custom value policy):</span>
+<span class="hl-kw">auto</span> quality=worldScene.<span class="hl-fn">vegetationHorizonPresentationPolicy</span>();
+quality.windUpload.maxBytesPerUpdate=<span class="hl-num">256u</span>*<span class="hl-num">1024u</span>;
+quality.windShadowCache.maxCachedShadowBytes=<span class="hl-num">2u</span>*<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+worldScene.<span class="hl-fn">setVegetationHorizonPresentationPolicy</span>(quality);</code></pre>
 <p>The direct renderer owner API is <code>TerraWeaveHorizonScene::setPresentationQualityPreset</code>, <code>setPresentationPolicy</code>, and <code>presentationPolicy()</code>. These calls are <strong>owner-thread-only</strong>; no concurrent <code>update(device)</code>, <code>submit</code> or mutable PHYSIS field sampling. <code>WorldScene</code> updates its existing individual getters when a whole policy is set, so individual setters and aggregate getters remain coherent. The whole-policy setter validates all fields before altering the live Horizon source; errors cannot leave half a preset applied. No name for a "currently active preset" is retained after manual overrides: query the <strong>effective</strong> policy values instead.</p>
 <h3 id="manifest-startup-only">Manifest (startup only)<a class="anchor" href="#manifest-startup-only" aria-label="#">#</a></h3>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;quality&quot;: &quot;high&quot;,
-    &quot;presentationQuality&quot;: &quot;mobile&quot;
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;quality&quot;</span>: <span class="hl-str">&quot;high&quot;</span>,
+    <span class="hl-key">&quot;presentationQuality&quot;</span>: <span class="hl-str">&quot;mobile&quot;</span>
   }
 }</code></pre>
 <p><code>quality</code> still selects CPU/terrain/atlas <em>geometry</em> settings and is included in TWH8 asset compatibility. The NEW optional <code>presentationQuality</code> accepts exactly <code>&quot;battery-saver&quot;</code>, <code>&quot;mobile&quot;</code>, <code>&quot;balanced&quot;</code>, <code>&quot;desktop&quot;</code>. It configures presentation and runtime budgets <strong>after</strong> Horizon geometry settings are validated; a missing value retains existing Stage38 defaults exactly. Invalid values throw <code>JsonError</code>. <code>WorldScene</code> copies the manifest-effective runtime values from <code>TerraWeaveHorizonScene</code> at initialization so the public getter does not incorrectly report defaults after a manifest preset.</p>
@@ -808,23 +808,23 @@ worldScene.setVegetationHorizonPresentationPolicy(quality);</code></pre>
 <p>Stage40 adds a bounded <em>runtime presentation</em> controller in <code>engine/world/TerraWeaveHorizonAdaptiveQuality.h</code>. It composes only the four Stage39 profiles (BatterySaver, Mobile, Balanced, Desktop) and the existing Stage33–38 wind shader/bandwidth/CPU-cache policy. The <strong>terrain/forest geometry, near seam, atlas, PHYSIS field, native ECS state, GPU resource topology and TWH8 archive remain untouched</strong>. The controller is <strong>disabled by default</strong> and never starts timing a frame by itself.</p>
 <h3 id="inputs-api-and-integration">Inputs, API and integration<a class="anchor" href="#inputs-api-and-integration" aria-label="#">#</a></h3>
 <p>The game or platform host already responsible for framing/presentation supplies measured CPU and/or completed GPU frame times in <strong>microseconds</strong>, with a monotonically increasing frame index:</p>
-<pre><code class="lang-cpp">using namespace aiverse::terraweave;
-HorizonAdaptiveQualityConfig adaptive;
-adaptive.enabled=true;
-adaptive.minimum=HorizonPresentationQualityPreset::Mobile;
-adaptive.maximum=HorizonPresentationQualityPreset::Desktop;
-adaptive.initial=HorizonPresentationQualityPreset::Balanced;
-adaptive.targetFrameUs=16667;  // 60 Hz frame budget, not a GPU benchmark
-worldScene.setVegetationHorizonAdaptiveQualityConfig(adaptive);
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+<span class="hl-ty">HorizonAdaptiveQualityConfig</span> adaptive;
+adaptive.enabled=<span class="hl-kw">true</span>;
+adaptive.minimum=<span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Mobile</span>;
+adaptive.maximum=<span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Desktop</span>;
+adaptive.initial=<span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Balanced</span>;
+adaptive.targetFrameUs=<span class="hl-num">16667</span>;  <span class="hl-com">// 60 Hz frame budget, not a GPU benchmark</span>
+worldScene.<span class="hl-fn">setVegetationHorizonAdaptiveQualityConfig</span>(adaptive);
 
-// On the scene owner thread, after the host has a frame measurement:
-const HorizonFrameTimingSample timing{
+<span class="hl-com">// On the scene owner thread, after the host has a frame measurement:</span>
+<span class="hl-kw">const</span> <span class="hl-ty">HorizonFrameTimingSample</span> timing{
     .frameId=completedFrameId,
     .cpuFrameUs=measuredCpuFrameUs,
-    .gpuFrameUs=measuredCompletedGpuFrameUs // 0 when unavailable
+    .gpuFrameUs=measuredCompletedGpuFrameUs <span class="hl-com">// 0 when unavailable</span>
 };
-const bool switched=worldScene.submitVegetationHorizonFrameTiming(timing);
-auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
+<span class="hl-kw">const</span> <span class="hl-ty">bool</span> switched=worldScene.<span class="hl-fn">submitVegetationHorizonFrameTiming</span>(timing);
+<span class="hl-kw">auto</span> state=worldScene.<span class="hl-fn">vegetationHorizonAdaptiveQualityState</span>();</code></pre>
 <p>Direct scene API: <code>TerraWeaveHorizonScene::setAdaptiveQualityConfig(config)</code>, <code>adaptiveQualityConfig()</code>, <code>adaptiveQualityState()</code>, <code>submitAdaptiveFrameTiming(timing)</code>. A native WorldScene with no Horizon module returns false for submissions. <code>setVegetationHorizonAdaptiveQualityConfig</code> applies the initial profile <strong>immediately</strong> only when enabling adaptation. Disabling keeps the current profile. Explicit manual calls to the Stage39 whole-policy setter or any of the four existing individual presentation setters <strong>disable</strong> adaptation rather than fighting the developer's choice. Wind-field publication, normal simulation ticks and camera updates do not count as manual overrides. Re-enabling starts a fresh history.</p>
 <p>The engine's gfx <code>Device::gpuFrameMs()</code> can report a backend's last completed GPU duration, but this is not universally implemented and may be delayed. The host must distinguish real completed timing samples from unavailable/stale values and may submit zero for missing GPU or CPU. Stage40 does <strong>not</strong> synthesize GPU time or equate its own <code>HorizonRuntimeStats::gpuUploadMs</code> with the whole-frame render duration. At least one nonzero actual CPU/GPU frame duration is required; a frame with no measurements is ignored. An individual sample of more than 10 seconds, an out-of-order/duplicate frame index, or disabled adaptation is ignored. Missing frame IDs break continuous streaks, so occasional metrics must not masquerade as sustained FPS degradation. CPU and GPU together use the <strong>worst available</strong> duration. This is global frame quality control, not evidence that TerraWeave itself caused all CPU/GPU work.</p>
 <h3 id="hysteresis-and-hard-limits">Hysteresis and hard limits<a class="anchor" href="#hysteresis-and-hard-limits" aria-label="#">#</a></h3>
@@ -832,20 +832,20 @@ auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
 <p>Validation rejects quality ranks outside [0,3], reversed bounds, initial outside bounds, target outside 4–100 ms, downgrade threshold outside 101–200%, upgrade outside 25–99%, downgrade streak outside 2–600 frames, upgrade streak outside 2–3600, and cooldown above 36,000 frames. The controller is purely presentation state driven by host measurements and does not belong in authoritative ECS save/replay. <code>advanceHorizonAdaptiveQuality(config,state,sample)</code> is a backend-free deterministic state step for later unit tests.</p>
 <h3 id="optional-manifest-configuration">Optional manifest configuration<a class="anchor" href="#optional-manifest-configuration" aria-label="#">#</a></h3>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;quality&quot;: &quot;high&quot;,
-    &quot;presentationQuality&quot;: &quot;balanced&quot;,
-    &quot;adaptiveQuality&quot;: {
-      &quot;enabled&quot;: true,
-      &quot;minimum&quot;: &quot;mobile&quot;,
-      &quot;maximum&quot;: &quot;desktop&quot;,
-      &quot;initial&quot;: &quot;balanced&quot;,
-      &quot;targetFrameUs&quot;: 16667,
-      &quot;downgradePercent&quot;: 115,
-      &quot;upgradePercent&quot;: 80,
-      &quot;downgradeFrames&quot;: 30,
-      &quot;upgradeFrames&quot;: 240,
-      &quot;cooldownFrames&quot;: 240
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;quality&quot;</span>: <span class="hl-str">&quot;high&quot;</span>,
+    <span class="hl-key">&quot;presentationQuality&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+    <span class="hl-key">&quot;adaptiveQuality&quot;</span>: {
+      <span class="hl-key">&quot;enabled&quot;</span>: <span class="hl-kw">true</span>,
+      <span class="hl-key">&quot;minimum&quot;</span>: <span class="hl-str">&quot;mobile&quot;</span>,
+      <span class="hl-key">&quot;maximum&quot;</span>: <span class="hl-str">&quot;desktop&quot;</span>,
+      <span class="hl-key">&quot;initial&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+      <span class="hl-key">&quot;targetFrameUs&quot;</span>: <span class="hl-num">16667</span>,
+      <span class="hl-key">&quot;downgradePercent&quot;</span>: <span class="hl-num">115</span>,
+      <span class="hl-key">&quot;upgradePercent&quot;</span>: <span class="hl-num">80</span>,
+      <span class="hl-key">&quot;downgradeFrames&quot;</span>: <span class="hl-num">30</span>,
+      <span class="hl-key">&quot;upgradeFrames&quot;</span>: <span class="hl-num">240</span>,
+      <span class="hl-key">&quot;cooldownFrames&quot;</span>: <span class="hl-num">240</span>
     }
   }
 }</code></pre>
@@ -862,13 +862,13 @@ auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
 <p><strong>Backend timing ownership:</strong> AIVERSE already exposes <code>gfx::Device::timeGpuFrame(tag)</code> and <code>takeGpuTimings()</code>; Metal records a tagged command buffer and returns its asynchronously completed <code>GPUStartTime/GPUEndTime</code> interval, while supported GL may use <code>GL_TIME_ELAPSED</code> around its active interval. These report different GPU scope semantics by backend (Metal whole command buffer, GL from query start until end-frame), NOT isolated TerraWeave render time. Unsupported backends return false and the adapter uses CPU-only data. The <code>takeGpuTimings()</code> API <strong>destructively drains all ready device timing tags</strong>, so the adapter must be the one timing consumer for these game-client Device instances, or future integrations must introduce a shared device timing router rather than independently polling the API from another benchmark. These game clients currently have no other device-tag timing collector in their runtime paths. The FPS client controls its own <code>beginFrame/endFrame</code>; the RTS client is inside the platform's existing outer frame. Do not add a second begin/end call.</p>
 <p><strong>Usage:</strong> Existing Stage40 manifest remains enough; no new field required:</p>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;presentationQuality&quot;: &quot;balanced&quot;,
-    &quot;adaptiveQuality&quot;: {
-      &quot;enabled&quot;: true,
-      &quot;minimum&quot;: &quot;mobile&quot;,
-      &quot;maximum&quot;: &quot;desktop&quot;,
-      &quot;targetFrameUs&quot;: 16667
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;presentationQuality&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+    <span class="hl-key">&quot;adaptiveQuality&quot;</span>: {
+      <span class="hl-key">&quot;enabled&quot;</span>: <span class="hl-kw">true</span>,
+      <span class="hl-key">&quot;minimum&quot;</span>: <span class="hl-str">&quot;mobile&quot;</span>,
+      <span class="hl-key">&quot;maximum&quot;</span>: <span class="hl-str">&quot;desktop&quot;</span>,
+      <span class="hl-key">&quot;targetFrameUs&quot;</span>: <span class="hl-num">16667</span>
     }
   }
 }</code></pre>
@@ -889,9 +889,9 @@ auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
 <h2 id="native-alpine-source-optional-ridged-massifs">Native alpine source: optional ridged massifs<a class="anchor" href="#native-alpine-source-optional-ridged-massifs" aria-label="#">#</a></h2>
 <p><code>TerraWeaveAlpine.h</code> accepts an appended <code>AlpinePeak::morphology</code> field. <code>LegacyCone</code> remains the default: existing six-field initializers and old landscape recipes retain their exact old source. <code>RidgedMassif</code> combines a zero-slope elliptical support, seeded domain warp and five ridged octaves with feedback. Samples use signed integer centimetres and Q16 arithmetic. It is a stateless generation profile, not a hydraulic erosion or rock-physics solver. Peak support, shear, height and valley protection retain their existing bounds.</p>
 <p>The native <code>aiverse_terraweave_landscape</code> exporter accepts each peak's <code>&quot;morphology&quot;:&quot;ridged_massif&quot;</code>, <code>&quot;cragged_massif&quot;</code> or <code>&quot;legacy&quot;</code>. Unknown names reject. <code>CraggedMassif</code> retains the same bounded support while moving modest relief to one-third-radius scales with .42 octave amplitude rolloff and a higher broad carrier. Existing legacy/ridged samples stay exact; it is cosmetic relief, not physical hydraulic erosion. <a href="https://github.com/chromealex/AIVERSE/blob/main/examples/terraweave/alpine-valley.json">The alpine valley recipe</a> places its broad mountain range behind the forest area, with 128 terrain tiles and an explicit NEREID river. Export to a new directory on the external build drive:</p>
-<pre><code class="lang-sh">aiverse_terraweave_landscape --recipe examples/terraweave/alpine-valley.json \
-  --out NEW_PACK --materials engine/assets/materials/terrain/textures
-python3 tests/terrain/check_landscape_export.py NEW_PACK</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">aiverse_terraweave_landscape</span> <span class="hl-opt">--recipe</span> examples/terraweave/alpine-valley.json \
+  <span class="hl-fn">--out</span> NEW_PACK <span class="hl-opt">--materials</span> engine/assets/materials/terrain/textures
+<span class="hl-fn">python3</span> tests/terrain/check_landscape_export.py NEW_PACK</code></pre>
 <p>The export audit compares actual neighbouring glTF edge heights/normals and checks render vertices against the shared integer planting-height grid. Rebake material masks and vegetation from the new <code>ground.json</code>; retain planted root depth when moving existing trees/rocks to the new surface. A static export is not the live erosion/fall host. The example's full visual acceptance and renderer budget remain separate from source/seam correctness.</p>
 <h2 id="immutable-terrain-patch-lod">Immutable terrain patch LOD<a class="anchor" href="#immutable-terrain-patch-lod" aria-label="#">#</a></h2>
 <p><code>engine/render/TerraWeaveTerrainLod.h</code> provides <code>appendTerrainPatchLods(model, patch, targetErrorPixels=1.5f)</code> for a CPU model before upload. The native landscape exporter calls it after world-space normal smoothing and tangent generation. The live mutable <code>makeEarthworksTerrainModel</code> path retains its original full-resolution surface and collision by default.</p>
@@ -913,6 +913,23 @@ python3 tests/terrain/check_landscape_export.py NEW_PACK</code></pre>
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Nothing found"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>
