@@ -14,6 +14,8 @@ export interface StudioMenuItem {
   checked?: boolean;
   /** Non-interactive section caption. */
   caption?: boolean;
+  /** Nested menu, opened beside this row (Add Tab). */
+  children?: StudioMenuItem[];
   onSelect: () => void;
 }
 
@@ -62,13 +64,30 @@ export function StudioContextMenu({ x, y, items, onClose, label = 'Context menu'
       const next = buttons[(index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length];
       next?.focus();
     }}>
-    {items.map(item => <div key={item.id} className={item.separator ? 'au-menu__group' : undefined}>
-      {item.caption ? <div className="au-menu__caption">{item.label}</div> : <button type="button" role="menuitem" className={'au-menu__item' + (item.danger ? ' is-danger' : '')}
-        disabled={item.disabled} onClick={() => { onClose(); item.onSelect(); }}>
+    <MenuRows items={items} onClose={onClose}/>
+  </div>;
+}
+
+function MenuRows({ items, onClose }: { items: StudioMenuItem[]; onClose: () => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return <>
+    {items.map(item => <div key={item.id}
+      className={'au-menu__row' + (item.separator ? ' au-menu__group' : '')}
+      onMouseEnter={() => setOpen(item.children ? item.id : null)}>
+      {item.caption ? <div className="au-menu__caption">{item.label}</div> : <button type="button" role="menuitem"
+        aria-haspopup={item.children ? 'menu' : undefined}
+        aria-expanded={item.children ? open === item.id : undefined}
+        className={'au-menu__item' + (item.danger ? ' is-danger' : '')}
+        disabled={item.disabled}
+        onClick={() => { if (item.children) { setOpen(item.id); return; } onClose(); item.onSelect(); }}>
         <span className="au-menu__icon">{item.checked ? '✓' : item.icon}</span>
         <span className="au-menu__label">{item.label}</span>
-        {item.shortcut && <kbd className="au-menu__shortcut">{item.shortcut}</kbd>}
+        {item.children ? <span className="au-menu__shortcut" aria-hidden="true">›</span>
+          : item.shortcut && <kbd className="au-menu__shortcut">{item.shortcut}</kbd>}
       </button>}
+      {item.children && open === item.id && <div className="au-menu au-menu--sub" role="menu" aria-label={item.label}>
+        <MenuRows items={item.children} onClose={onClose}/>
+      </div>}
     </div>)}
-  </div>;
+  </>;
 }

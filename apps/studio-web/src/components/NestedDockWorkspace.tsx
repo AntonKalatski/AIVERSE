@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppWindow, Columns2, MoreVertical, Rows2, X } from 'lucide-react';
+import { AppWindow, Columns2, MoreVertical, Plus, Rows2, X } from 'lucide-react';
 import { StudioContextMenu, type StudioMenuItem } from '../ui';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
 import {
@@ -63,6 +63,10 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
       ...(onDockBack ? [{ id: 'dock-back', label: 'Move to Main Window', icon: <AppWindow size={13}/>,
         onSelect: () => onDockBack(panel) } as StudioMenuItem] : []),
       { id: 'close', label: 'Close ' + STUDIO_PANEL_TITLES[panel], icon: <X size={13}/>, onSelect: () => setTree(t => closeTab(t, panel)) },
+      { id: 'add', label: 'Add Tab', icon: <Plus size={13}/>, separator: true, onSelect: () => {},
+        children: STUDIO_PANELS.filter(candidate => !node.tabs.includes(candidate))
+          .map(candidate => ({ id: candidate, label: STUDIO_PANEL_TITLES[candidate], onSelect: () => setTree(t => moveTab(t, candidate, node.id)) }))
+          .sort((a, b) => a.label.localeCompare(b.label)) },
       split('right', 'Split Right', <Columns2 size={13}/>, true),
       split('left', 'Split Left', <Columns2 size={13}/>),
       split('bottom', 'Split Down', <Rows2 size={13}/>),

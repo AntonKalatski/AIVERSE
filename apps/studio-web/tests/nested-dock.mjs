@@ -131,6 +131,14 @@ test('old saved empty leaves are compacted upon restoration',()=>{
   assert.equal(t.root.id,'dock-center');
 });
 
+test('Add Tab drops a closed panel into the stack that was clicked',()=>{
+  const closed=closeTab(defaultDockTree(),'assets');
+  assert.equal(panelStack(closed,'assets'),null);
+  const added=moveTab(closed,'assets','dock-left');
+  assert.equal(panelStack(added,'assets'),'dock-left');
+  assert.equal(findDockStack(added,'dock-left')?.active,'assets');
+});
+
 test('character editor never stays over the Scene viewport',async()=>{
   const {moveCharacterEditorBesideScene}=await import('../src/nestedDock.ts');
   const covered=moveTab(defaultDockTree(),'human_creator','dock-center');
