@@ -22,7 +22,10 @@ namespace aiverse {
 inline bool cameraFollowFromJson(const Json& block,CameraFollowComponent& f,std::string* error=nullptr) {
     std::string presetError;
     const Json j=render::resolveCameraPreset(block,&presetError);
-    if(!presetError.empty()){if(error)*error=presetError;return false;}
+    if(!presetError.empty()){
+        if(error)*error=presetError;
+        return false;
+    }
     if(!j.isObject())return true;
     f.pitch=j.getFx("pitch",f.pitch);f.yaw=j.getFx("yaw",f.yaw);
     f.distance=j.getFx("distance",f.distance);
@@ -36,11 +39,15 @@ inline bool cameraFollowFromJson(const Json& block,CameraFollowComponent& f,std:
     }
     if(const Json& b=j["bounds"];b.isArray()&&b.size()==4){
         f.bounds=true;f.minX=b[0].fx();f.minZ=b[1].fx();f.maxX=b[2].fx();f.maxZ=b[3].fx();
-        if(f.maxX<f.minX||f.maxZ<f.minZ){if(error)*error="Invalid camera follow bounds";return false;}
+        if(f.maxX<f.minX||f.maxZ<f.minZ){
+            if(error)*error="Invalid camera follow bounds";
+            return false;
+        }
     } else f.bounds=false;   // "bounds": true needs a map size: only the game follow camera has one
     if(f.distance<=0_fx||f.minDistance<0_fx||f.maxDistance<0_fx||f.smoothing<0_fx||f.lookAheadSmoothing<0_fx||
        f.velocityLookAhead<0_fx||f.maxLookAhead<0_fx||f.fov<0_fx||f.speedSmoothing<0_fx){
-        if(error)*error="Invalid camera follow values";return false;
+        if(error)*error="Invalid camera follow values";
+        return false;
     }
     return true;
 }
