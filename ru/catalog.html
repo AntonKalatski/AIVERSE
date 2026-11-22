@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=1544d474e7">
+<link rel="stylesheet" href="../style.css?v=fffa3ec9cc">
 </head>
 <body>
 <header class="top">
@@ -78,7 +78,9 @@ pre.appendChild(code);pre.appendChild(cp);body.appendChild(pre);
 var act=el('div','cat-actions'),dl=el('a','btn btn-ink btn-sm',T.download+' · '+mb(v.size));dl.href=v.url;dl.title='sha256 '+v.sha256;act.appendChild(dl);
 if(p.readme){var r=el('a','btn btn-line btn-sm',T.readme);r.href=p.readme;act.appendChild(r);}
 if(p.viewer){var v3=el('button','btn btn-accent btn-sm cat-3d',T.view3d);v3.type='button';v3.onclick=function(){
-var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;return;}
+var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;a.classList.remove('is-open');a.scrollIntoView({block:'nearest'});return;}
+cards.forEach(function(c){var o=c.el.querySelector('.cat-frame');if(o&&c.el!==a)c.el.querySelector('.cat-3d').click();});
+a.classList.add('is-open');setTimeout(function(){a.scrollIntoView({behavior:'smooth',block:'start'});},30);
 f=el('iframe','cat-frame');f.src=p.viewer+(p.viewer.indexOf('?')<0?'?':'&')+'lang='+lang;f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
 img.hidden=true;media.appendChild(f);v3.textContent=T.view3dClose;};act.insertBefore(v3,act.firstChild);}
 body.appendChild(act);a.appendChild(body);
