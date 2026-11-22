@@ -2184,9 +2184,14 @@ endif()
 # icon / launch screen generation (resize, .ico, .icns, Android/iOS/web/Linux sets, previews) used
 # by aiversebuild, the editor core (branding_* / icons_preview / splash_preview) and the tests.
 # ---------------------------------------------------------------------------
-add_library(aiverse_splash STATIC engine/splash/SplashData.cpp engine/splash/SplashScreen.cpp)
+add_library(aiverse_splash STATIC engine/splash/SplashData.cpp engine/splash/SplashScreen.cpp engine/splash/SplashBoot.cpp)
 target_include_directories(aiverse_splash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_splash PUBLIC aiverse_engine aiverse_atlas)
+if(AIVERSE_BUILD_TESTS)   # game.json "splash" choices: engine screen, changed, own, none, map loading
+    add_executable(aiverse_splash_choice_tests tests/splash/choice.cpp)
+    target_link_libraries(aiverse_splash_choice_tests PRIVATE aiverse_splash)
+    add_test(NAME splash_choice COMMAND aiverse_splash_choice_tests)
+endif()
 # aiversebuild: window colour before the first frame (0xRRGGBB from game.json splash.background)
 set(AIVERSE_SPLASH_BACKGROUND "" CACHE STRING "Window background before the first frame, 0xRRGGBB (set by aiversebuild)")
 foreach(t ${AIVERSE_GAME_CLIENT_TARGETS})
