@@ -13,7 +13,7 @@ port, out = int(sys.argv[1]), sys.argv[2]
 os.makedirs(out, exist_ok=True)
 
 def connect():
-    for _ in range(240):
+    for _ in range(int(os.environ.get("LOD_CONNECT_WAIT", "240"))):
         try:
             s = socket.create_connection(("127.0.0.1", port), timeout=5)
             s.settimeout(120)

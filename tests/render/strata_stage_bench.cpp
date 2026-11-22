@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
         const auto t2 = clock::now();
         strata::SceneStaging staging;
         staging.setAllowPreparedRootLods(true);
+        staging.setTolerateSourceSeamDefects(true); // as GeometryScene does for production scenes
         const bool staged = staging.stage(path, *model);
         const auto t3 = clock::now();
         const auto& st = staging.stats();
