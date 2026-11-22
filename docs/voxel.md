@@ -2,7 +2,7 @@
 
 Seven header packages for Minecraft-like games: a mutable world of 16x16x16 block chunks, its light, meshes,
 generation, block updates, mob navigation and network streaming. They close the core of gap W2 in
-`docs/genre-implementation.json` (mutable volumetric world) and part of W1 (regional saves, streaming of mutable
+`docs/capability-status.json` (mutable volumetric world) and part of W1 (regional saves, streaming of mutable
 state). A playable game on top of them is the `voxel` module (`modules/voxel`, template `templates/voxel_sandbox`,
 section "The game" below).
 

@@ -46,6 +46,11 @@ bool VulkanDevice::createInstance(bool wantSurface, std::string& error) {
         want.push_back(platformExt);
         surfaceInstance_ = true;
     }
+    // Vendor libraries (e.g. NVIDIA NGX) may ask for extra instance extensions.
+    for (const auto& name : vulkanExtensionRequests().instance)
+        if (hasExtension(exts, name.c_str()) &&
+            std::find_if(want.begin(), want.end(), [&](const char* w) { return name == w; }) == want.end())
+            want.push_back(name.c_str());
     std::vector<const char*> layers;
     const bool validation = envOn("AIVERSE_VK_VALIDATION");
     if (validation) {
@@ -162,12 +167,16 @@ bool VulkanDevice::pickDevice(std::string& error) {
     std::vector<VkExtensionProperties> ex(en);
     vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, ex.data());
     swapchainExt_ = surfaceInstance_ && hasExtension(ex, swapExt);
-    std::vector<const char*> devExts;
-    if (swapchainExt_) devExts.push_back(swapExt);
+    std::vector<const char*> deviceExts;
+    if (swapchainExt_) deviceExts.push_back(swapExt);
+    for (const auto& name : vulkanExtensionRequests().device)
+        if (hasExtension(ex, name.c_str())) deviceExts.push_back(name.c_str());
     // The spec requires enabling VK_KHR_portability_subset when a device advertises it (MoltenVK).
-    if (hasExtension(ex, "VK_KHR_portability_subset")) devExts.push_back("VK_KHR_portability_subset");
-    di.enabledExtensionCount = uint32_t(devExts.size());
-    di.ppEnabledExtensionNames = devExts.empty() ? nullptr : devExts.data();
+    if (hasExtension(ex, "VK_KHR_portability_subset")) deviceExts.push_back("VK_KHR_portability_subset");
+    if (!deviceExts.empty()) {
+        di.enabledExtensionCount = uint32_t(deviceExts.size());
+        di.ppEnabledExtensionNames = deviceExts.data();
+    }
     if (vkCreateDevice(gpu_, &di, nullptr, &device_) != VK_SUCCESS) { error = "Vulkan: vkCreateDevice failed"; return false; }
     if (!loadDeviceFunctions(device_)) {
         if (vkDestroyDevice) vkDestroyDevice(device_, nullptr);
@@ -194,7 +203,9 @@ bool VulkanDevice::pickDevice(std::string& error) {
     }
     if (depthFormat_ == VK_FORMAT_UNDEFINED) return fail("Vulkan: no sampled depth format");
     uscaled_ = features(VK_FORMAT_R8G8B8A8_USCALED).bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
-    if (!uscaled_) std::fprintf(stderr, "[gfx] Vulkan: R8G8B8A8_USCALED vertex attributes unsupported, UByte4 reads as UNORM * 255\n");
+    // AIVERSE_VK_NO_USCALED=1 forces the fallback (tests on drivers that have USCALED).
+    if (const char* e = std::getenv("AIVERSE_VK_NO_USCALED"); e && *e == '1') uscaled_ = false;
+    if (!uscaled_) std::fprintf(stderr, "[gfx] Vulkan: R8G8B8A8_USCALED vertex attributes unsupported, UByte4 inputs are read as UNORM and rescaled in the vertex shader\n");
     return true;
 }
 

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <set>
 #include "SimTools.h"
+#include "../../../engine/vehicles/Vehicles.h"
 #if AIVERSE_PREVIEW_THREAD
 #include <thread>
 #endif
@@ -254,6 +255,11 @@ const std::vector<Desc>& descs() {
         }),
         AIVERSE_C(Pulled, "Притягивается", j.f("target", x.target).f("way", x.way).f("dist", x.dist).f("vel", x.vel).f("done", x.done)),   // skill objects
         AIVERSE_C(Transfer, "Телепорт гарнизона", j.f("from", x.from).f("to", x.to).f("collected", x.collected).f("toGrab", x.toGrab).f("wait", x.wait)),   // skill objects
+        // the vehicle system (engine/vehicles/Vehicles.h)
+        AIVERSE_C(vehicles::VehicleDrive, "Транспорт", j.type("type", int(x.type)).f("pos", x.controller.position).f("velocity", x.controller.velocity)
+            .f("yaw", x.controller.yaw).f("gear", x.controller.gear).f("driver", x.driver).f("player", x.player).f("locked", x.locked)
+            .f("deck", x.deck).f("autopilot", x.autopilot).ticks("doorUntil", x.doorUntil)),
+        AIVERSE_C(vehicles::VehicleOccupant, "За рулём", j.f("vehicle", x.vehicle).f("pos", x.position).f("yaw", x.yaw).f("speed", x.speed).f("deck", x.deck)),
     };
     return d;
 }

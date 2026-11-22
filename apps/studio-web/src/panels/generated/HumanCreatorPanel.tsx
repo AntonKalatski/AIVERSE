@@ -1,3 +1,4 @@
+import { copyText } from '../../clipboard';
 // Character Creator (MetaHuman-style): a category rail (Presets & Blend, Face,
 // Sculpt, Skin, Eyes, Hair, Body, Clothing, Pose & Light), camera framing
 // (face / torso / full), a one-click "character studio" layout with the Scene
@@ -169,7 +170,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
               if (d.matched.length) applyDraft(d.values, i >= 0 ? archetypePoint(i) : null);
             }}>Создать черновик</StudioButton>
             <StudioButton disabled={!description.trim()} title="Запрос для агента с MCP-инструментами AIVERSE"
-              onClick={() => { void navigator.clipboard?.writeText(agentLookPrompt(description, profileName)); h.setStatus('Запрос для агента скопирован'); }}>Запрос агенту</StudioButton>
+              onClick={() => { void copyText(agentLookPrompt(description, profileName)); h.setStatus('Запрос для агента скопирован'); }}>Запрос агенту</StudioButton>
           </div>
           {understood && <p className="hc-hint">{understood.length ? 'Понял: ' + understood.join(', ') : 'Ничего не распознал — уточните цвет волос, глаз, кожу, телосложение или форму лица, либо отправьте запрос агенту.'}</p>}
         </HcCard>

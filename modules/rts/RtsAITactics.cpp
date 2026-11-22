@@ -12,7 +12,6 @@
 //   - build spots chosen by the bot (lanes between dropoffs and resources kept free, random tie-breaks so
 //     mirrored starts don't favour one side), stuck builders released.
 #include "RtsAI.h"
-#include "RtsBwAI.h"   // agent-bw-ai
 #include "RtsAITerrain.h"
 #include "../../engine/core/Archive.h"
 #include <algorithm>
@@ -978,13 +977,20 @@ void RtsAI::stateIo(Archive& a) {
         if (!a.writing()) { savedPass_ = std::move(pass); terr_.reset(); }
     }
     if (version >= 3) io(a, noSpot_);
-    if (version >= 4) {   // agent-bw-ai: Bunker Wars controller
-        bool has = bw_.p != nullptr;
+    if (version >= 4) {   // controller of a registered kind (rules ai.controller)
+        bool has = ctl_.p != nullptr;
         io(a, has);
         if (has) {
-            if (!a.writing()) bw_.p = std::make_unique<BwAI>(player_, 0);
-            bw_.p->stateIo(a);
-        } else if (!a.writing()) bw_.p.reset();
+            std::string kind = a.writing() ? ctlKind_ : std::string();
+            io(a, kind);   // the controller kind's name: a save restores into the same kind
+            if (!a.writing()) {
+                const AIControllerKind* k = findAIController(kind);
+                if (!k || !k->create) { a.fail(); return; }
+                ctl_.p = k->create(player_, 0);
+                ctlKind_ = kind;
+            }
+            ctl_.p->stateIo(a);
+        } else if (!a.writing()) ctl_.p.reset();
     }
 }
 

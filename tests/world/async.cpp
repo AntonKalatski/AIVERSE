@@ -60,7 +60,7 @@ void terrainCollision() {
     Bounds region{{0_fx,-10_fx,0_fx},{32_fx,10_fx,16_fx}};
     CHECK(!stream.covers(region));spin([&]{return stream.prepareRegions({&region,1});});CHECK(stream.covers(region));CHECK(world.colliders().size()==4);
     auto hit=world.cast({24_fx,10_fx,8_fx},{0_fx,-20_fx,0_fx});CHECK(hit.hit&&fxAbs(hit.fraction-Fixed::fromRatio(7,20))<Fixed::fromRatio(1,1000));
-    fps::Actor actor;actor.health=100;actor.pos={8_fx,3_fx,8_fx};fps::MotorConfig motor;
+    fps::CharacterSnapshot actor;actor.health=100;actor.pos={8_fx,3_fx,8_fx};fps::MotorConfig motor;
     for(int i=0;i<120;++i)fps::moveActor(actor,{},motor,world,Fixed::fromRatio(1,60),1000_fx);
     CHECK(actor.grounded);CHECK(actor.pos.y>0_fx&&actor.pos.y<2_fx);
     fps::Input input;input.yaw=Fixed::fromRatio(1,4);input.forward=1000;
@@ -95,7 +95,7 @@ void exampleIntegration() {
             if(!server.step())std::this_thread::sleep_for(std::chrono::milliseconds(1));
             client.poll(now);
         }
-        const auto& actor=server.module().state(server.simulation()).actors[0];
+        const auto actor=server.module().snapshot(server.simulation(),1);
         CHECK(client.ready()&&actor.grounded);
         if(doorway)CHECK(actor.pos.z>128_fx);else CHECK(actor.pos.z<63_fx&&actor.pos.z>60_fx);
         CHECK(server.module().streamingStatus()->selection.reservedBytes<=41943040);

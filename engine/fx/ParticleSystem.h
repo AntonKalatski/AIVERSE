@@ -72,7 +72,8 @@ struct FxHandle {
 struct FxFog { float3 color{0.62f, 0.70f, 0.80f}; float density = 0; };  // Renderer3D::lighting fog (linear colour)
 
 // A light carried by particles ("light" module): the apps add these to Renderer3D::lights.
-struct FxPointLight { float3 pos; float radius = 1; float3 color{1, 1, 1}; float intensity = 1; };
+struct FxPointLight { float3 pos; float radius = 1; float3 color{1, 1, 1}; float intensity = 1;
+                      uint32_t uid = 0; };   // uid: the carrying particle (stable while it lives)
 
 // A live particle as seen from outside (tests, tools).
 struct FxParticleInfo { float3 pos, vel; float size = 0, age = 0, life = 0, rotation = 0; float4 color; int effect = -1, emitter = 0; };
@@ -141,6 +142,10 @@ public:
     int effect(const std::string& name);
     // Adds or replaces an effect (editor live edit). Particles of a replaced effect are removed.
     int define(const std::string& name, const EffectDef& def);
+    // Drops a defined effect: its particles, trails and instances are removed
+    // and its definition is freed. The id stays reserved (never reused), so
+    // stale ids simply fail; the name becomes free for a later define().
+    bool undefine(int id);
     // Drop cached effects so the next effect() reloads them from files (editor: files changed).
     void reloadAll();
     const EffectDef* def(int id) const;

@@ -98,6 +98,38 @@ void translation() {
     aiverse::gfx::vk::SpirvProgram p;
     CHECK(aiverse::gfx::vk::compileProgram(kVs, kColorFs, false, p) && !p.vertex.empty() && !p.fragment.empty());
     CHECK(!aiverse::gfx::vk::compileProgram(kVs, "void main() { undefined_call(); }", false, p) && !p.error.empty());
+    {   // UByte4 rescale for drivers without USCALED vertex fetch: inputs at the
+        // masked locations become UNORM raw inputs scaled by 255 before main().
+        const char* ub4 = R"(
+layout(location = 0) in vec3 a_pos;
+#if defined(LM)
+layout(location = 5) in vec4 a_lmuv;
+#endif
+#if defined(SK)
+layout(location = 5) in vec4 a_joints;
+#endif
+out vec2 v_uv;
+void main() {
+#if defined(LM)
+    v_uv = a_lmuv.xy;
+#endif
+#if defined(SK)
+    v_uv = a_joints.zw;
+#endif
+    gl_Position = vec4(a_pos, 1.0);
+}
+)";
+        const char* ub4fs = "in vec2 v_uv; out vec4 o_color; void main() { o_color = vec4(v_uv, 0.0, 1.0); }";
+        const std::string scaled = aiverse::gfx::vk::scaleUByte4Inputs(ub4, 1u << 5);
+        CHECK(scaled.find("a_lmuv_aiverse_unorm * 255.0") != std::string::npos);
+        CHECK(scaled.find("a_joints_aiverse_unorm * 255.0") != std::string::npos);
+        CHECK(scaled.find("in vec3 a_pos;") != std::string::npos);   // other locations untouched
+        CHECK(aiverse::gfx::vk::scaleUByte4Inputs(ub4, 0) == ub4);
+        for (const char* def : {"#define LM 1\n", "#define SK 1\n", ""}) {
+            aiverse::gfx::vk::SpirvProgram q;
+            CHECK(aiverse::gfx::vk::compileProgram(std::string(def) + scaled, ub4fs, false, q) && !q.vertex.empty());
+        }
+    }
     std::vector<uint32_t> computeSpv;
     std::string computeError;
     const char* computeSource = R"(
@@ -159,6 +191,39 @@ int main() {
         }
     }
 
+
+    {   // Dynamic buffer versions: partial writes on consecutive frames rotate
+        // through GPU-fenced versions; a reused version must receive every
+        // range it missed (copied incrementally, not the whole shadow).
+        constexpr size_t kBytes = 4096;
+        BufferDesc bd{BufferType::Storage, Usage::Dynamic, kBytes, nullptr, "dirty ranges"};
+        const BufferHandle buf = d.createBuffer(bd);
+        CHECK(buf.valid());
+        if (buf.valid() && d.supportsCompute()) {
+            std::vector<uint8_t> expected(kBytes, 0);
+            struct Read { bool done = false; std::vector<uint8_t> bytes; std::vector<uint8_t> want; };
+            std::vector<std::shared_ptr<Read>> reads;
+            for (int f = 0; f < 12; ++f) {
+                d.beginFrame(W, H);
+                const size_t offset = size_t((f * 384) % 3584), size = 96 + size_t(f) * 8;
+                std::vector<uint8_t> chunk(size, uint8_t(1 + f));
+                std::copy(chunk.begin(), chunk.end(), expected.begin() + long(offset));
+                CHECK(d.updateSharedBufferChecked(buf, chunk.data(), size, offset));
+                auto r = std::make_shared<Read>();
+                r->want = expected;
+                CHECK(d.readBufferAsync(buf, kBytes, [r](std::vector<uint8_t> b) {
+                    r->bytes = std::move(b); r->done = true; }));
+                reads.push_back(r);
+                d.endFrame();
+            }
+            for (int wait = 0; wait < 12; ++wait) { d.beginFrame(W, H); d.endFrame(); }
+            int matches = 0;
+            for (const auto& r : reads) matches += r->done && r->bytes == r->want;
+            CHECK(matches == 12);
+            std::printf("dynamic buffer versions: %d/12 frames match\n", matches);
+            d.destroyBuffer(buf);
+        }
+    }
 
     {   // Real Vulkan compute storage texture, barrier and async GPU readback.
         // This runs only when the physical queue and format support image stores.

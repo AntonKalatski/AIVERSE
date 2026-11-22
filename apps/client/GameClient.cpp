@@ -1,6 +1,7 @@
 #include "engine/ui/RaceHud.h"
 #include "engine/platform/WindowSettings.h"
 #include "engine/render/PrismaVolumeData.h"
+#include "engine/render/PrismaDlss.h"
 #include "modules/rts/RtsInitialVars.h"
 #include "engine/data/JsonCompose.h"
 // Generic RTS game client. Everything game-specific comes from the project's data (game.json,
@@ -140,6 +141,10 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
         prisma_.setGpuDeviceLease(gpuDeviceLease_);
         prisma_.init(dev);
+        // PRISMA "dlss" effect: NVIDIA NGX provider when this build has the DLSS SDK
+        // (AIVERSE_DLSS_SDK_DIR) and runs on Vulkan; otherwise the effect reports why.
+        if (render::prismaDlssCompiled() && dev.info().backend == gfx::Backend::Vulkan)
+            prisma_.setExternalUpscaler(render::makePrismaDlss());
         prismaBase_ = render::Prisma::defaultQualityFor(dev, platform::isTouchDevice());
         prisma_.setQuality(prismaBase_);
         prisma_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {
@@ -1293,7 +1298,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     render::LightSystem::PreparedFrame lensLightingSnapshot;
     if (sim_) {
-        if (planet()) { // orbit camera -> view-world RTSCamera; space is black
+        if (planet()) { // orbit camera -> view-world Camera; space is black
             cam_ = view_.updatePlanetCamera(scene_.seconds, float(dt), fbH());
             pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
         }
@@ -1328,7 +1333,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         // Presentation-only Halton jitter: gameplay aiming, viewport picking,
         // UI and input continue to use the original unjittered cam_.
         const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
-        const render::RTSCamera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
+        const render::Camera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
         // SpectraFX GPU simulation is encoded before the scene pass.
         fx_.setPlanetView(planet() ? &view_ : nullptr);
         fx_.prepareGpuFrame(screen_ == Screen::Playing || screen_ == Screen::Over

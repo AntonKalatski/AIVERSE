@@ -7,6 +7,7 @@
 // the same code run Warcraft, StarCraft, Red Alert, Dune, Total Annihilation, Age of Empires,
 // Company of Heroes, They Are Billions, Northgard or Mushroom Wars style games.
 #pragma once
+#include <array>
 #include "RtsProjectileData.h"
 #include <cstdint>
 #include <string>
@@ -98,6 +99,9 @@ struct WeaponDef {
     Fixed chargeTime{};                 // >0: the weapon has to stay on one target this long before each shot
     Fixed rangeAspect = Fixed::fromInt(1); // elliptical range: z radius = range x this (isometric maps)
     uint8_t armorClass = 0;             // 0: armor, 1: armor2 (pierce)
+    bool attackLight = true;            // "attackLight": false: the view adds no flash light when it fires (the game draws its own)
+    bool hitsWalls = false;             // "hitsWalls": its projectiles stop at the walls of unit types ("walls")
+    std::string wrecksTag;              // "wrecks": a direct hit destroys targets with this tag outright
     std::vector<std::pair<uint64_t, Fixed>> bonus; // extra damage vs targets with any of these tags (AoE / SC2 bonuses)
     Fixed killsCrew{};                  // chance per hit to kill the crew of a crewed target (Z snipers)
     std::vector<ClassAttack> attacks;   // classes model: class attacks (AoE II: melee 6, cavalry +15)
@@ -177,6 +181,7 @@ struct UnitType {
     std::string id, name;
     uint64_t tags = 0;
     bool structure = false;
+    std::vector<std::array<Fixed, 4>> walls;   // "walls": [x, z, w, d] boxes (cells, centre offset and size) that stop hitsWalls shots
     bool collider = false;          // "collider": map entities of this type are static circles, not units (RtsColliders.h)
     // health
     Fixed maxHp = Fixed::fromInt(100);
@@ -567,7 +572,7 @@ struct TrapDef {
 struct ProgressionRules;   // RtsProgressionData.h
 struct Rules {
     bool scriptedAI = false;                  // external RtsAI must yield to the game's controller
-    bool bwAI = false;                        // ai.controller "bw": Bunker Wars bots (RtsBwAI.h, agent-bw-ai)
+    std::string aiController = "builtin";     // rules ai.controller: builtin, scripted or a registered kind (RtsAIControllers.h)
     MechRules mech;                           // agent-mech rules (RtsMechData.h)
     bool overkill = false;                    // targeting.overkill: auto-targeting skips enemies already doomed by shots in flight (StarCraft II)
     std::vector<ResourceDef> resources;

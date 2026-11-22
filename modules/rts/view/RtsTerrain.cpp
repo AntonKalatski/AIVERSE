@@ -4,7 +4,7 @@
 #include "RtsTerrainSurface.h"
 #include "RtsView.h"
 #include "engine/view/Surface.h"
-#include "RtsRoadView.h"
+#include "../../../engine/roads/RoadView.h"
 #include "RtsShoreView.h"
 #include "engine/render/OwnerPrepareCommit.h"
 #include <algorithm>
@@ -121,7 +121,7 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
     bool sceneGroundPrepared=false;
     if(topologyChange) {
         std::shared_ptr<TerrainRenderer::PreparedMap> stagedTerrain;
-        std::shared_ptr<RtsRoadView::PreparedRebuild> stagedRoad;
+        std::shared_ptr<roads::RoadView::PreparedRebuild> stagedRoad;
         std::shared_ptr<RtsShoreView::PreparedRebuild> stagedShore;
         std::shared_ptr<RtsGroundFx::PreparedFrame> stagedGroundFx;
         std::unique_ptr<FogOfWar::PreparedSheet> stagedFogSheet;

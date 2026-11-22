@@ -6,7 +6,7 @@
 // Reference: docs/progression.md (keep scriptApiReference() in RtsScriptApi.cpp in sync).
 #include "RtsScriptInternal.h"
 #include "RtsInternal.h"
-#include "libraries/include/aiverselib/genre/PerksData.h"
+#include "libraries/include/aiverselib/mechanics/PerksData.h"
 
 namespace aiverse::game::script {
 

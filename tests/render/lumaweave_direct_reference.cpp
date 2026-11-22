@@ -1,4 +1,6 @@
 #include "engine/render/LumaWeaveDirectReference.h"
+#include "engine/render/LumaWeaveGpuPacket.h"
+#include "engine/fx/FxLumaBridge.h"
 #include "tests/AlwaysCheck.h"
 #include <algorithm>
 #include <cmath>
@@ -121,4 +123,45 @@ int main() {
     try {(void)LumaWeaveDirectReference::estimate(registry,q,65);}
     catch(const std::invalid_argument&){rejected=true;}
     AIVERSE_TEST_CHECK(rejected);
+
+    // Area sources: sphere falloff clamped at its emitter radius; tube shaded
+    // from its closest axis point; both packed with their extra fields.
+    {
+        LumaWeaveRegistry area;
+        LumaLight sphere;sphere.key=1;sphere.kind=LumaLightKind::Sphere;
+        sphere.position={0,0,1};sphere.radius=2;sphere.intensity=4;sphere.sourceRadius=1.2f;
+        sphere.castsShadows=false;
+        LumaLight tube;tube.key=2;tube.kind=LumaLightKind::Tube;tube.position={3,0,1};
+        tube.direction={1,0,0};tube.halfLength=3;tube.radius=2;tube.intensity=4;tube.castsShadows=false;
+        LumaLight badTube=tube;badTube.key=3;badTube.halfLength=0;
+        AIVERSE_TEST_CHECK(lumaValidLight(sphere)&&lumaValidLight(tube)&&!lumaValidLight(badTube));
+        LumaLight badSphere=sphere;badSphere.sourceRadius=2;   // must stay inside the falloff radius
+        AIVERSE_TEST_CHECK(!lumaValidLight(badSphere));
+        LumaDirectQuery at;at.position={0,0,0};at.normal={0,0,1};
+        (void)area.publish({sphere});
+        const float clamped=4*(1-1.44f/4)*(1-1.44f/4)/(1+1.44f);
+        AIVERSE_TEST_CHECK(near(LumaWeaveDirectReference::exact(area,at).direct.x,clamped,.002f));
+        (void)area.publish({tube});
+        AIVERSE_TEST_CHECK(near(LumaWeaveDirectReference::exact(area,at).direct.x,4*.28125f,.002f));
+        const auto bounds=lumaLightBounds(tube);
+        AIVERSE_TEST_CHECK(near(bounds.min.x,-2)&&near(bounds.max.x,8)&&near(bounds.max.y,2));
+        LumaWeaveClusters cl;cl.rebuild(area,{});
+        const auto packet=packLumaSources(area,cl);
+        AIVERSE_TEST_CHECK(packet.lights.size()==1&&packet.lights[0].identity[2]==3u&&
+                           near(packet.lights[0].directionCone.w,3)&&near(packet.lights[0].settings.w,0));
+    }
+    // Particle lights -> Luma: stable keys above 2^32, invalid ones dropped.
+    {
+        std::vector<aiverse::fx::FxPointLight> fx(3);
+        fx[0].pos={1,2,3};fx[0].uid=7;fx[0].radius=3;fx[0].color={1,1,1};
+        fx[1].uid=9;fx[1].radius=2;fx[1].color={1,0,0};
+        fx[2].uid=11;fx[2].radius=std::nanf("");
+        std::vector<LumaLight> out;
+        aiverse::fx::appendLumaFxLights(out,fx,2,.1f);
+        AIVERSE_TEST_CHECK(out.size()==2);
+        AIVERSE_TEST_CHECK(out[0].key==((uint64_t(2)<<32)|7)&&out[1].key==((uint64_t(2)<<32)|9));
+        AIVERSE_TEST_CHECK(out[0].kind==LumaLightKind::Sphere&&near(out[0].sourceRadius,.1f));
+        aiverse::fx::appendLumaFxLights(out,fx,0);
+        AIVERSE_TEST_CHECK(out.size()==2);   // namespace 0 is reserved
+    }
 }

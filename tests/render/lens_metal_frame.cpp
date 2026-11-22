@@ -47,7 +47,7 @@ int aiverseMain(int,char**) {
             require(frame++<120,"GPU capture timeout");
             targets.collectCompleted();view.collectRetiredModels();
             if(frame==1) {
-                render::RTSCamera camera;camera.target={4,0,4};camera.distance=15;camera.pitch=1;
+                render::Camera camera;camera.target={4,0,4};camera.distance=15;camera.pitch=1;
                 renderer.beginScene(camera,width,height);
                 require(view.prepareTerrainAtomicFrame(d,grid,renderer,scene,1,&vision),"topology staging");
                 {

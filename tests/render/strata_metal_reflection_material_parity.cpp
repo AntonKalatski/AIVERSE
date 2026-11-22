@@ -266,7 +266,7 @@ struct Fixture {
         return true;
     }
 
-    bool checkSelectedRanges(const RTSCamera& cam,bool leaves){
+    bool checkSelectedRanges(const Camera& cam,bool leaves){
         (void)cam;
         // Exactly the mirrored transform used in Renderer3DReflect.cpp,
         // with the same selected water plane y=-1.0.
@@ -467,7 +467,7 @@ struct Fixture {
         const int view=block/kModes;
         const Mode mode=Mode(block%kModes);
         const size_t idx=slot(view,mode);
-        RTSCamera cam;
+        Camera cam;
         cam.target={0,0,0};
         cam.distance=view==0?5.f:6.f;
         cam.pitch=view==0?.2f:.55f;

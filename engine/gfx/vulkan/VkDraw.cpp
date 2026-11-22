@@ -37,7 +37,8 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& d) {
 void VulkanDevice::destroyShader(ShaderHandle h) {
     VShader* s = shaders_.get(h.id);
     if (!s) return;
-    VkShaderModule ms[4] = {s->vert, s->frag, s->hdrVert, s->hdrFrag};
+    std::vector<VkShaderModule> ms = {s->vert, s->frag, s->hdrVert, s->hdrFrag};
+    for (const auto& v : s->scaled) { ms.push_back(v.second.first); ms.push_back(v.second.second); }
     deferDestroy([this, ms] { for (VkShaderModule m : ms) if (m) vkDestroyShaderModule(device_, m, nullptr); });
     shaders_.remove(h.id);
 }
@@ -615,6 +616,28 @@ VkPipeline VulkanDevice::pipelineFor(
         }
         if (s->hdrFailed) return VK_NULL_HANDLE;
         vert = s->hdrVert; frag = s->hdrFrag;
+    }
+    if (!uscaled_) {   // UByte4 inputs read as UNORM here: rescaled shader variant
+        uint32_t mask = 0;
+        for (int i = 0; i < std::min(d.attrCount, 8); ++i)
+            if (d.attrs[i].format == VertexFormat::UByte4 && d.attrs[i].location < 32)
+                mask |= 1u << d.attrs[i].location;
+        if (mask) {
+            const uint64_t vkey = (uint64_t(mask) << 1) | (hdr ? 1u : 0u);
+            auto it = std::find_if(s->scaled.begin(), s->scaled.end(), [&](const auto& e) { return e.first == vkey; });
+            if (it == s->scaled.end()) {
+                SpirvProgram prog;
+                std::pair<VkShaderModule, VkShaderModule> modules{VK_NULL_HANDLE, VK_NULL_HANDLE};
+                if (compileProgram(scaleUByte4Inputs(s->vs, mask), s->fs, hdr ? true : s->linear, prog)) {
+                    modules.first = createModule(prog.vertex);
+                    modules.second = createModule(prog.fragment);
+                } else std::fprintf(stderr, "[gfx] UByte4 rescaled shader: %s\n", prog.error.c_str());
+                s->scaled.push_back({vkey, modules});
+                it = s->scaled.end() - 1;
+            }
+            if (!it->second.first || !it->second.second) return VK_NULL_HANDLE;
+            vert = it->second.first; frag = it->second.second;
+        }
     }
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

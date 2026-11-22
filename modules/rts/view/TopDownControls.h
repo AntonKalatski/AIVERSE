@@ -73,7 +73,7 @@ struct TopDownCameraConfig {
 void readTopDownCamera(const Json& cj, TopDownCameraConfig& c);
 void finishTopDownCamera(TopDownCameraConfig& c);
 // Clip planes for a camera at this distance: near grows with it (depth precision far away), far stays past the view.
-void topDownClipPlanes(render::RTSCamera& cam);
+void topDownClipPlanes(render::Camera& cam);
 
 // game.json topDown "aimAssist": the stick's aim bends toward the target nearest to it (client side: the sim gets an
 // ordinary aim angle), per input source. Absent: off.
@@ -190,7 +190,7 @@ public:
     void worldMove(float& x, float& z) const { x = moveDirX_; z = moveDirZ_; }   // last composed move stick (world)
     int buttonAt(float x, float y, float screenW, float screenH) const;   // -1: none
 
-    // The input of this frame, camera-relative (cameraYaw radians, RTSCamera convention), quantized like the sim.
+    // The input of this frame, camera-relative (cameraYaw radians, Camera convention), quantized like the sim.
     topdown::Input compose(const TopDownFrameInput& in, float cameraYaw);
     // true once per change: the host sends kCmdTopDown with topdown::pack(q) and calls sent(q)
     bool changed(const topdown::Input& q) const { return !haveSent_ || !(q == sent_); }
@@ -201,8 +201,8 @@ public:
     uint64_t assistTarget() const { return lockId_; }
 
     // Follow camera: heroPos / moving direction from the presentation (interpolated) state.
-    void updateCamera(render::RTSCamera& cam, render::float3 heroPos, bool haveHero, float dt, float mapW, float mapH);
-    void snapCamera(render::RTSCamera& cam, render::float3 heroPos, float mapW, float mapH);
+    void updateCamera(render::Camera& cam, render::float3 heroPos, bool haveHero, float dt, float mapW, float mapH);
+    void snapCamera(render::Camera& cam, render::float3 heroPos, float mapW, float mapH);
     // false: the stick does not point where the hero goes (pedals of a vehicle), so the stick look-ahead is off and
     // only the velocity look-ahead moves the focus. The host sets it every frame before updateCamera.
     void setStickLookAhead(bool on) { stickLook_ = on; }

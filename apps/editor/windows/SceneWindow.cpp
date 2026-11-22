@@ -21,7 +21,7 @@
 #include "../PhysisFieldEditor.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/GpuIcbPolicy.h"
-#include "modules/rts/view/RtsRoadView.h"
+#include "../../../engine/roads/RoadView.h"
 #include <array>
 
 namespace aiverse::editor {
@@ -275,7 +275,7 @@ public:
             }
         }
         const bool physisMarkerInput = natureIgnite || processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
-        if(ed.ws().project.isFps()) {
+        if(ed.ws().project.worldSpaceMaps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
             if (vp_.hovered && io.MouseWheel != 0)
@@ -725,7 +725,7 @@ private:
                 ImGui::TextDisabled("Different GLBs and their material slots may require separate draws.");
                 ImGui::TreePop();
             }
-            if (!ed.ws().project.isFps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
+            if (!ed.ws().project.worldSpaceMaps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
                 const auto& road = ed.view().roads().batchStats();
                 ImGui::Text("Road source chunks: %zu -> %zu uploaded (merge group %d)",
                             road.sourceChunks, road.uploadedChunks, road.mergeGroup);
@@ -1460,7 +1460,7 @@ private:
 
     void input(Editor& ed) {
         ImGuiIO& io = ImGui::GetIO();
-        RTSCamera& cam = ed.sceneCam;
+        Camera& cam = ed.sceneCam;
         const float mx = io.MousePos.x, my = io.MousePos.y;
         if (ed.planetMap()) { // planet camera; tools: select / move / place / erase objects, start, cells
             planetInput(ed);
@@ -1856,7 +1856,7 @@ private:
         }
         if (!ed.playing() && vp_.hovered && ed.groundAt(vp_, ed.sceneCam, hoverX_, hoverY_, x, z)) {
             bool brushTool = ed.tool == Tool::Terrain || ed.tool == Tool::Level || ed.tool == Tool::Height || ed.tool == Tool::Field || ed.tool == Tool::Region;
-            const RTSCamera& cam = ed.sceneCam;
+            const Camera& cam = ed.sceneCam;
             auto toScreen = [&](float wx, float wz, ImVec2& out) {
                 float2 s;
                 if (!cam.worldToScreen({wx, ed.view().heightAt(ed.editGrid(), wx, wz) + 0.1f, wz}, vp_.pointsW, vp_.pointsH, s)) return false;
@@ -1981,7 +1981,7 @@ private:
     int autoBatchChoice_ = -1;
     int benchmarkBlockCount_ = 6;
     int benchmarkPhase_ = 0, benchmarkMode_ = 0, benchmarkPhaseSamples_ = 0, benchmarkWarmup_ = 0;
-    RTSCamera benchmarkCamera_{};
+    Camera benchmarkCamera_{};
     std::vector<double> benchmarkSamples_[3];
     std::vector<double> benchmarkGpuSamples_[3];
     uint8_t benchmarkGeneration_ = 0;

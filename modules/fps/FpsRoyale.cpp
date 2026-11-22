@@ -12,7 +12,8 @@ using namespace lib::genre;
 namespace {
 uint64_t seedFrom(Simulation& sim,uint32_t salt){Random g=sim.rng();uint64_t a=g.next(),b=g.next();return (a<<32|b)^(uint64_t(salt)*0x9e3779b97f4a7c15ull);}
 }
-void Module::setupRoyale(Simulation& sim,const Json& map,State& s) {
+void Module::setupRoyale(Simulation& sim,const Json& map) {
+    auto& s=state(sim);const size_t count=characterCount(sim);
     if(map.has("royale"))config_.royale=readRoyale(map["royale"],"map.royale");
     if(!config_.royale)return;
     if(config_.mode!="battleRoyale")throw JsonError("fps.royale: requires fps.mode \"battleRoyale\"");
@@ -22,12 +23,12 @@ void Module::setupRoyale(Simulation& sim,const Json& map,State& s) {
     run.drops=beginSupplyDrops(seedFrom(sim,3));
     if(r.flight){
         auto f=planInsertionFlight(*r.flight,r.bounds,seedFrom(sim,4),0);if(!f)throw JsonError("fps.royale.flight: path does not fit");
-        run.flight=*f;run.divers.assign(s.actors.size(),SkydiverState{});
-        for(auto& a:s.actors)a.pos=insertionPosition(run.flight,0);
+        run.flight=*f;run.divers.assign(count,SkydiverState{});
+        forEachCharacter(sim,[&](CharacterRef a){a.pos=insertionPosition(run.flight,0);});
     }
-    for(const auto& a:s.actors)addRoyaleCompetitor(run.standings,a.slot,a.team);
+    forEachCharacter(sim,[&](CharacterRef a){addRoyaleCompetitor(run.standings,a.slot,a.team);});
     if(!startRoyaleStandings(run.standings,0))throw JsonError("fps.royale: invalid standings");
-    run.lastAttacker.assign(s.actors.size(),0);run.lastWeapon.assign(s.actors.size(),0);
+    run.lastAttacker.assign(count,0);run.lastWeapon.assign(count,0);
 }
 Fixed Module::groundBelow(Vec3 p) const {
     // Short segments keep the hit fraction precise (Q16 fractions of a 100 km ray would be metres off).
@@ -36,12 +37,12 @@ Fixed Module::groundBelow(Vec3 p) const {
     return Fixed{};
 }
 // Moves an actor that has not landed yet. Returns true while it is still in the air (skip the ground motor).
-bool Module::skydive(Simulation& sim,Actor& a) {
+bool Module::skydive(Simulation& sim,CharacterRef a) {
     auto& run=state(sim).royale;
     if(!run.enabled||run.divers.empty()||!config_.royale->flight)return false;
     auto& d=run.divers[a.slot-1];if(d.phase==SkydivePhase::Landed)return false;
     const auto& r=*config_.royale;SkydiveInput in;
-    auto input=a.input;if(sim.tick()-a.lastInputTick>config_.inputTimeout){input.forward=input.right=0;input.buttons=0;}
+    Input input=a.input;if(sim.tick()-a.lastInputTick>config_.inputTimeout){input.forward=input.right=0;input.buttons=0;}
     Fixed f=Fixed::fromRatio(input.forward,1000),rt=Fixed::fromRatio(input.right,1000);
     Vec2 forward{fxSinTurns(input.yaw),fxCosTurns(input.yaw)},right{forward.y,-forward.x};
     in.move=forward*f+right*rt;in.move={fxClamp(in.move.x,-1_fx,1_fx),fxClamp(in.move.y,-1_fx,1_fx)};
@@ -62,7 +63,7 @@ bool Module::skydive(Simulation& sim,Actor& a) {
     a.input.buttons&=~uint32_t(Jump);
     return d.phase!=SkydivePhase::Landed;
 }
-void Module::steerRoyaleBot(Simulation& sim,Actor& a) {
+void Module::steerRoyaleBot(Simulation& sim,CharacterRef a) {
     auto& run=state(sim).royale;if(!run.enabled||a.input.buttons||a.input.forward)return;
     auto target=safeZoneTarget(config_.royale->zone,run.zone);
     if(insideCircle(RoyaleCircle{target.center,target.radius*Fixed::fromRatio(9,10)},a.pos))return;
@@ -74,24 +75,24 @@ void Module::tickRoyale(Simulation& sim) {
     const auto& r=*config_.royale;auto now=sim.tick();
     if(auto events=stepSafeZone(r.zone,run.zone,now))for(const auto& e:*events)sim.emit({6,0,{},{},int64_t(e.phase)|int64_t(uint8_t(e.kind))<<8,Vec3{e.circle.center.x,{},e.circle.center.y}});
     auto circle=safeZoneCircle(r.zone,run.zone,now);
-    auto landed=[&](const Actor& a){return run.divers.empty()||run.divers[a.slot-1].phase==SkydivePhase::Landed;};
-    if(auto hit=safeZoneDamage(r.zone,run.zone,now))for(auto& a:s.actors)if(a.health>0&&landed(a)&&!insideCircle(circle,a.pos))damage(sim,0,a,hit);
+    auto landed=[&](const CharacterRef& a){return run.divers.empty()||run.divers[a.slot-1].phase==SkydivePhase::Landed;};
+    if(auto hit=safeZoneDamage(r.zone,run.zone,now))forEachCharacter(sim,[&](CharacterRef a){if(a.health>0&&landed(a)&&!insideCircle(circle,a.pos))damage(sim,0,a,hit);});
     if(r.bombardment)if(auto events=stepBombardment(*r.bombardment,run.bombardment,circle,now))for(const auto& e:*events){
         if(e.kind!=BombardmentEventKind::Shell)continue;
         sim.emit({8,0,{},{},e.damage,Vec3{e.circle.center.x,groundBelow({e.circle.center.x,500_fx,e.circle.center.y}),e.circle.center.y}});
-        for(auto& a:s.actors){
-            if(a.health<=0||!landed(a)||!insideCircle(e.circle,a.pos))continue;
-            auto head=a.pos+Vec3{{},stanceHeight(a,config_.motor),{}};if(collision_.cast(head,{{},100_fx,{}}).hit)continue;   // under a roof
+        forEachCharacter(sim,[&](CharacterRef a){
+            if(a.health<=0||!landed(a)||!insideCircle(e.circle,a.pos))return;
+            auto head=a.pos+Vec3{{},stanceHeight(a,config_.motor),{}};if(collision_.cast(head,{{},100_fx,{}}).hit)return;   // under a roof
             damage(sim,0,a,e.damage);
-        }
+        });
     }
     if(r.supplyDrops)if(auto events=stepSupplyDrops(*r.supplyDrops,run.drops,safeZoneTarget(r.zone,run.zone),now))for(const auto& e:*events){
         Vec3 at{e.point.x,groundBelow({e.point.x,1000_fx,e.point.y}),e.point.y};
         sim.emit({7,0,{},{},int64_t(e.id)|int64_t(uint8_t(e.kind))<<16,at});
-        if(e.kind==SupplyDropEventKind::Landed)for(auto item:config_.crate)if(s.loot.size()<256){
+        if(e.kind==SupplyDropEventKind::Landed)for(auto item:config_.crate)if(sim.world().countExisting<Loot>()<kMaxLoot){
             Loot l{s.nextObject++,at,item.type,item.count};
             if(item.type>=100){const auto& w=config_.weapons[size_t(item.type-100)];l.count=1;l.ammo=w.magazine;l.reserve=w.reserve;}
-            s.loot.push_back(l);
+            spawnLoot(sim,l);
         }
     }
 }
@@ -100,26 +101,26 @@ void Module::settleRoyale(Simulation& sim) {
     auto& s=state(sim);auto& run=s.royale;if(!run.enabled||run.standings.finished)return;
     const auto& cfg=config_.royale->standings;auto now=sim.tick();
     std::vector<std::pair<int64_t,int64_t>> outs;std::vector<KillFeedEvent> feed;
-    for(auto& a:s.actors){
+    forEachCharacter(sim,[&](CharacterRef a){
         auto& c=run.standings.players[a.slot];auto attacker=int64_t(run.lastAttacker[a.slot-1]),weapon=int64_t(run.lastWeapon[a.slot-1]);
         if(a.health<=0&&c.life!=RoyaleLife::Out)outs.push_back({a.slot,attacker});
         else if(a.health>0&&a.downed&&c.life==RoyaleLife::Standing){if(auto e=reportDown(cfg,run.standings,a.slot,attacker,weapon,now))feed.insert(feed.end(),e->begin(),e->end());}
         else if(a.health>0&&!a.downed&&c.life==RoyaleLife::Knocked){
             int64_t reviver=0;Fixed best;
-            for(const auto& m:s.actors)if(m.team==a.team&&m.slot!=a.slot&&m.health>0&&!m.downed){auto d=(m.pos-a.pos).lengthSq();if(!reviver||d<best){reviver=m.slot;best=d;}}
+            forEachCharacter(sim,[&](CharacterRef m){if(m.team==a.team&&m.slot!=a.slot&&m.health>0&&!m.downed){auto d=(m.pos-a.pos).lengthSq();if(!reviver||d<best){reviver=m.slot;best=d;}}});
             if(reviver)if(auto e=reportRevive(run.standings,a.slot,reviver,now))feed.insert(feed.end(),e->begin(),e->end());
         }
-    }
+    });
     if(!outs.empty())if(auto e=reportOutTogether(cfg,run.standings,outs,now))feed.insert(feed.end(),e->begin(),e->end());
     for(const auto& e:feed){
         run.feed.push_back(e);if(run.feed.size()>6)run.feed.erase(run.feed.begin());
         if(e.kind==KillFeedKind::Knocked||e.kind==KillFeedKind::Eliminated||e.kind==KillFeedKind::Revived)
-            sim.emit({5,uint8_t(e.actor),{},{},e.subject|int64_t(uint8_t(e.kind))<<8,s.actors[size_t(e.subject-1)].pos});
+            sim.emit({5,uint8_t(e.actor),{},{},e.subject|int64_t(uint8_t(e.kind))<<8,character(sim,uint8_t(e.subject)).pos});
         else sim.emit({5,0,{},{},e.subject|int64_t(uint8_t(e.kind))<<8,{}});
     }
-    for(auto& a:s.actors)if(a.health>0&&run.standings.players[a.slot].life==RoyaleLife::Out){   // finished while knocked
+    forEachCharacter(sim,[&](CharacterRef a){if(a.health>0&&run.standings.players[a.slot].life==RoyaleLife::Out){   // finished while knocked
         a.health=0;a.downed=false;a.bleedUntil=0;sim.emit({2,uint8_t(run.standings.players[a.slot].knockedBy),{},{},a.slot,a.pos});
-    }
+    }});
     if(run.standings.finished)s.winner=run.standings.winner>0?int32_t(run.standings.winner):-1;
 }
 void io(Archive& a,RoyaleView& v){
@@ -139,7 +140,7 @@ RoyaleView Module::royaleView(Simulation& sim,uint8_t slot) const {
     const auto& own=run.standings.players.at(slot);v.kills=uint16_t(own.kills);v.placement=uint16_t(run.standings.teams.at(own.team).placement);
     v.bombardment=run.bombardment.stage==BombardmentStage::Warned||run.bombardment.stage==BombardmentStage::Active;v.bombArea=run.bombardment.area;
     v.feed=run.feed;v.finished=run.standings.finished;v.winner=int32_t(run.standings.winner);v.teams=uint16_t(run.standings.teams.size());
-    v.outside=!insideCircle(v.circle,state(sim).actors[slot-1].pos);if(r.flight)v.doorOpen=insertionDoorOpen(*r.flight,run.flight,now);
+    v.outside=!insideCircle(v.circle,character(sim,slot).pos);if(r.flight)v.doorOpen=insertionDoorOpen(*r.flight,run.flight,now);
     if(r.supplyDrops)for(const auto& f:run.drops.falling)if(v.crates.size()<8)v.crates.push_back(supplyDropPosition(*r.supplyDrops,f,now,groundBelow({f.point.x,1000_fx,f.point.y})));
     return v;
 }

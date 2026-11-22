@@ -74,7 +74,7 @@ struct Bench {
     float lightingPoseSeconds=0;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
-    std::vector<RTSCamera> cameras;
+    std::vector<Camera> cameras;
     std::vector<std::string> cameraNames;
     std::map<uint64_t,size_t> tags;
     gfx::PassDesc output;
@@ -115,7 +115,7 @@ struct Bench {
         try {
             for(size_t i=0;i<config["cameras"].size();++i) {
                 if(options.camera>=0&&int(i)!=options.camera)continue;
-                auto& j=config["cameras"][i];RTSCamera c;c.target=v3(j["target"]);auto delta=v3(j["eye"])-c.target;
+                auto& j=config["cameras"][i];Camera c;c.target=v3(j["target"]);auto delta=v3(j["eye"])-c.target;
                 c.distance=length(delta);if(c.distance<0.001f)throw std::runtime_error("degenerate camera");
                 c.pitch=std::asin(delta.y/c.distance);c.yaw=std::atan2(delta.x,delta.z);
                 c.fovY=float(j["fovYDegrees"].toDouble(config["fovYDegrees"].toDouble(60)))*3.14159265f/180;

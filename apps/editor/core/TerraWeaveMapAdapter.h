@@ -63,7 +63,7 @@ inline TerraWeaveRebaseReport rebaseTerraWeaveTerrain(
         const terraweave::TerrainSettings& nextTerrain,
         terraweave::LegacyHeightfieldOptions nextOrigin) {
     if(doc.data.planet() || !doc.data.fps.isNull())
-        throw std::invalid_argument("TerraWeave rebase supports flat RTS maps only");
+        throw std::invalid_argument("TerraWeave rebase supports flat grid maps only (world-space maps: G2)");
     const int w=doc.data.w, h=doc.data.h;
     const auto previous=terraweave::generateLegacyCorners(
         previousTerrain,w,h,previousOrigin);

@@ -9,7 +9,7 @@ Read `AGENTS.md`, `docs/ecs-all-features-migration-plan.md`,
 `docs/ecs-mechanic-composition.md` and the inventory package's
 existing skill.
 
-Include `<aiverselib/genre/EcsInventorySystems.h>`, link
+Include `<aiverselib/mechanics/EcsInventorySystems.h>`, link
 `AIVERSE::lib_ecs_inventory`, and attach `InventoryComponent` with
 a `gameplay::InventoryConfig` and item stacks to any Entity. Register
 an immutable `InventoryCatalog` of `gameplay::ItemType` definitions

@@ -91,6 +91,18 @@
   #define GL_PIXEL_PACK_BUFFER_BINDING 0x88ED
   #define GL_STREAM_READ 0x88E1
   #define GL_MAP_READ_BIT 0x0001
+  #ifndef GL_MAP_WRITE_BIT
+  #define GL_MAP_WRITE_BIT 0x0002
+  #endif
+  #ifndef GL_MAP_INVALIDATE_RANGE_BIT
+  #define GL_MAP_INVALIDATE_RANGE_BIT 0x0004
+  #endif
+  #ifndef GL_MAP_UNSYNCHRONIZED_BIT
+  #define GL_MAP_UNSYNCHRONIZED_BIT 0x0020
+  #endif
+  #ifndef GL_FRAMEBUFFER_BINDING
+  #define GL_FRAMEBUFFER_BINDING 0x8CA6
+  #endif
   #define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
   #define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
   #define GL_ALREADY_SIGNALED 0x911A
@@ -181,9 +193,6 @@
     X(void, glDrawBuffers, (GLsizei n, const GLenum* b)) \
     X(void, glClearBufferfv, (GLenum buffer, GLint drawbuffer, const GLfloat* value)) \
     X(void, glBlitFramebuffer, (GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield m, GLenum f)) \
-    X(GLsync, glFenceSync, (GLenum condition, GLbitfield flags)) \
-    X(GLenum, glClientWaitSync, (GLsync sync, GLbitfield flags, GLuint64 timeout)) \
-    X(void, glDeleteSync, (GLsync sync)) \
     X(void*, glMapBufferRange, (GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)) \
     X(GLboolean, glUnmapBuffer, (GLenum target))
   #define AIVERSE_GL_DECLARE(ret, name, args) typedef ret (APIENTRY* PFN_##name) args; extern PFN_##name name;

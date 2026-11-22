@@ -183,7 +183,7 @@ StudioTransferPlan StudioTransferPlan::plan(const fs::path& project,
                 throw std::runtime_error("Only assets under content/ can be moved internally");
             if(directory){
                 auto dest=fs::weakly_canonical(to);
-                if(dest==sourceAbs||dest.string().rfind(sourceAbs.string()+fs::path::preferred_separator,0)==0)
+                if(dest==sourceAbs||dest.string().rfind(sourceAbs.string()+char(fs::path::preferred_separator),0)==0)
                     throw std::runtime_error("Cannot move a directory inside itself");
             }
         }

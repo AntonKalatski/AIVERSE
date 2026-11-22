@@ -22,7 +22,7 @@
     "                               float3 base,float metallic,float rough) {\n" \
     "    float3 cosineRadiance=directUnshadowed(l,p,n);\n" \
     "    if(all(cosineRadiance<=float3(0.0f)))return float3(0);\n" \
-    "    float3 toLight=l.positionRadius.xyz-p;\n" \
+    "    float3 toLight=lumaLightPoint(l,p)-p;\n" \
     "    const float dist2=dot(toLight,toLight);\n" \
     "    if(dist2<=.0001f)return float3(0);\n" \
     "    float3 L=toLight*rsqrt(dist2);\n" \
@@ -36,11 +36,16 @@
     "    const float ndh=max(dot(n,H),0.0f);\n" \
     "    const float vdh=max(dot(v,H),0.0f);\n" \
     "\n" \
-    "    const float alpha=max(.045f,rough);\n" \
+    "    float alpha=max(.045f,rough);\n" \
+    "    // Area source: widen the lobe by its angular size and keep its energy.\n" \
+    "    const float sr=lumaSourceRadius(l);\n" \
+    "    const float widened=clamp(alpha+sr*rsqrt(dist2)*.5f,.045f,1.0f);\n" \
+    "    const float energy=(alpha*alpha)/(widened*widened);\n" \
+    "    alpha=widened;\n" \
     "    const float a=alpha*alpha;\n" \
     "    const float a2=a*a;\n" \
     "    const float d=ndh*ndh*(a2-1.0f)+1.0f;\n" \
-    "    const float D=a2/(3.141592653589793f*d*d);\n" \
+    "    const float D=energy*a2/(3.141592653589793f*d*d);\n" \
     "    const float k=(alpha+1.0f)*(alpha+1.0f)*.125f;\n" \
     "    const float G=(ndl/(ndl*(1.0f-k)+k))*\n" \
     "                  (ndv/(ndv*(1.0f-k)+k));\n" \
@@ -149,7 +154,7 @@
     "        bool occluded=false;\n" \
     "        if(selected.settings.z>.5f && p.control.x!=0u) {\n" \
     "            const float3 origin=world+N*.02f;\n" \
-    "            const float3 ray=selected.positionRadius.xyz-origin;\n" \
+    "            const float3 ray=lumaLightPoint(selected,origin)-origin;\n" \
     "            const float distance=length(ray);\n" \
     "            if(distance>.05f) {\n" \
     "                const float limit=distance-.03f;\n" \

@@ -14,7 +14,10 @@
 
 namespace aiverse::render {
 
-enum class LumaLightKind : uint8_t { Point=0, Spot=1 };
+// Sphere / Tube are area sources shaded with a representative point (the
+// tube's closest axis point; a sphere's diffuse equals its centre's) and a
+// GGX lobe widened by the source's angular size.
+enum class LumaLightKind : uint8_t { Point=0, Spot=1, Sphere=2, Tube=3 };
 
 struct LumaLight {
     uint64_t key=0;                        // stable ECS/scene source, MUST NOT be frame index
@@ -25,6 +28,8 @@ struct LumaLight {
     float radius=4;                        // world metres, finite extent
     float intensity=1;                     // linear nonnegative energy scale
     float cosInner=1, cosOuter=0;           // Spot inner/outer cone cosines
+    float sourceRadius=0;                  // Sphere / Tube emitter radius (metres)
+    float halfLength=0;                    // Tube half length along `direction`
     float importanceBias=1;                // sampling weight ONLY, never brightness
     bool castsShadows=true;
     bool contributesToGi=false;           // ONLY if this light was NOT baked as static
@@ -35,7 +40,12 @@ struct LumaLightBounds {
 };
 
 inline LumaLightBounds lumaLightBounds(const LumaLight& light) {
-    const float3 extent{light.radius,light.radius,light.radius};
+    float3 extent{light.radius,light.radius,light.radius};
+    if(light.kind==LumaLightKind::Tube) {   // the falloff surrounds the whole axis
+        const float3 axis{std::abs(light.direction.x),std::abs(light.direction.y),
+                          std::abs(light.direction.z)};
+        extent=extent+axis*light.halfLength;
+    }
     return {light.position-extent,light.position+extent};
 }
 
@@ -46,6 +56,7 @@ inline bool lumaSameLight(const LumaLight& a,const LumaLight& b) {
            a.color.x==b.color.x && a.color.y==b.color.y && a.color.z==b.color.z &&
            a.radius==b.radius && a.intensity==b.intensity &&
            a.cosInner==b.cosInner && a.cosOuter==b.cosOuter &&
+           a.sourceRadius==b.sourceRadius && a.halfLength==b.halfLength &&
            a.importanceBias==b.importanceBias &&
            a.castsShadows==b.castsShadows && a.contributesToGi==b.contributesToGi;
 }
@@ -64,6 +75,15 @@ inline bool lumaValidLight(const LumaLight& light) {
        light.importanceBias>64)
         return false;
     if(light.kind==LumaLightKind::Point)return true;
+    if(light.kind==LumaLightKind::Sphere || light.kind==LumaLightKind::Tube) {
+        if(!std::isfinite(light.sourceRadius)||light.sourceRadius<0||
+           light.sourceRadius>=light.radius)return false;
+        if(light.kind==LumaLightKind::Sphere)return true;
+        if(!std::isfinite(light.halfLength)||light.halfLength<=0||light.halfLength>1000)
+            return false;
+        const float d=dot(light.direction,light.direction);
+        return std::isfinite(d)&&std::abs(d-1.0f)<.002f;
+    }
     if(light.kind!=LumaLightKind::Spot ||
        !std::isfinite(light.cosOuter)||!std::isfinite(light.cosInner) ||
        light.cosOuter< -1 ||light.cosOuter>1 ||

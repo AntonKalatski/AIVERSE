@@ -64,13 +64,13 @@ option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot c
 # Register Objective-C++ in the ROOT directory before creating any targets.
 # CMake does not propagate a language enabled only in a child directory back
 # to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
-# The HTML5 Studio is the main editor on macOS: built by default once its web bundle exists
-# (studio_mac.command builds the bundle first; -DAIVERSE_BUILD_STUDIO_HTML5=OFF skips it).
+# The HTML5 Studio is the main editor on macOS and Windows: built by default once its web bundle exists
+# (studio_mac.command / studio_windows.cmd build the bundle first; -DAIVERSE_BUILD_STUDIO_HTML5=OFF skips it).
 set(_aiverse_studio_default OFF)
-if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/studio-web/dist/index.html")
+if((APPLE OR WIN32) AND NOT IOS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/studio-web/dist/index.html")
     set(_aiverse_studio_default ON)
 endif()
-option(AIVERSE_BUILD_STUDIO_HTML5 "Build the macOS HTML5 Studio (main editor)" ${_aiverse_studio_default})
+option(AIVERSE_BUILD_STUDIO_HTML5 "Build the HTML5 Studio (main editor; macOS and Windows)" ${_aiverse_studio_default})
 if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
     enable_language(OBJCXX)
 endif()
@@ -252,6 +252,14 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
+# The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
+# the race adapter. The grid-map host (modules/rts/RtsDriving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
+# only implement its world queries.
+add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
+add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
+target_include_directories(aiverse_vehicles PUBLIC "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
+target_link_libraries(aiverse_vehicles PUBLIC aiverse_engine)
+target_link_libraries(aiverse_game PUBLIC aiverse_vehicles)
 # Experimental RTS transform preprocessing remains OFF by default.
 option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
     "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
@@ -301,9 +309,8 @@ endfunction()
 
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
-# RtsBwAISim.cpp is simulation code every game runs (hypnotised sends, per point counters).
-list(FILTER AIVERSE_BWAI_SOURCES EXCLUDE REGEX "RtsBwAISim\\.cpp$")
-target_sources(aiverse_game PRIVATE modules/rts/RtsBwAISim.cpp)
+# Every game: hypnotised sends, per point counters, the controller registry and the registration point.
+target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp modules/rts/RtsAIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
@@ -1312,6 +1319,19 @@ if(AIVERSE_MOCK_PLUGINS)
     target_compile_definitions(aiverse_plugins PUBLIC AIVERSE_WITH_MOCK_PLUGINS=1)
 endif()
 
+# NVIDIA DLSS for the PRISMA "dlss" effect (engine/render/PrismaDlss.h): only with the user's
+# own NGX SDK, never vendored (proprietary). Windows + Vulkan backend.
+set(AIVERSE_DLSS_SDK_DIR "" CACHE PATH "NVIDIA DLSS SDK folder (include/, lib/Windows_x86_64/); empty = no DLSS")
+set(AIVERSE_WITH_DLSS OFF)
+if(AIVERSE_DLSS_SDK_DIR AND WIN32 AND AIVERSE_VULKAN)
+    list(APPEND AIVERSE_RUNTIME_SRC engine/render/PrismaDlssNgx.cpp)
+    set(AIVERSE_WITH_DLSS ON)
+else()
+    if(AIVERSE_DLSS_SDK_DIR)
+        message(WARNING "AIVERSE_DLSS_SDK_DIR is set, but DLSS needs Windows and AIVERSE_VULKAN=ON; building without it")
+    endif()
+    list(APPEND AIVERSE_RUNTIME_SRC engine/render/PrismaDlssStub.cpp)
+endif()
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
 # Packaged clients link an archive of the runtime objects. The linker extracts
 # only translation units needed by the client, while editor and test targets
@@ -1335,6 +1355,17 @@ if(AIVERSE_VULKAN)
 endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
+if(AIVERSE_WITH_DLSS)
+    find_library(AIVERSE_NGX_LIBRARY NAMES nvsdk_ngx_d nvsdk_ngx_s
+        PATHS "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/x64" "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/x86_64"
+        NO_DEFAULT_PATH)
+    if(NOT AIVERSE_NGX_LIBRARY)
+        message(FATAL_ERROR "AIVERSE_DLSS_SDK_DIR: nvsdk_ngx_d.lib not found under ${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64")
+    endif()
+    target_include_directories(aiverse_runtime PUBLIC "${AIVERSE_DLSS_SDK_DIR}/include")
+    target_compile_definitions(aiverse_runtime PUBLIC AIVERSE_HAS_DLSS=1)
+    target_link_libraries(aiverse_runtime PUBLIC "${AIVERSE_NGX_LIBRARY}")
+endif()
 if(AIVERSE_TEXTURE_WITH_LIBKTX)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_texture_libktx)
 endif()
@@ -2217,7 +2248,7 @@ endif()
 target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
 target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
+target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp modules/rts/RtsPrompt.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
     modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
@@ -2767,7 +2798,7 @@ endif()
 
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
     add_executable(aiverse_library_genre_tests tests/libraries/genre_tests.cpp)
-    target_link_libraries(aiverse_library_genre_tests PRIVATE AIVERSE::genre)
+    target_link_libraries(aiverse_library_genre_tests PRIVATE AIVERSE::mechanics)
     add_test(NAME library_genre COMMAND aiverse_library_genre_tests ${PROJECT_SOURCE_DIR})
 endif()
 
@@ -2821,12 +2852,12 @@ endif()
 # match-progression (perks, xp, offers, pickups, summons, battle deck): tests + headless run.
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
     add_executable(aiverse_library_progression_tests tests/libraries/perks_tests.cpp)
-    target_link_libraries(aiverse_library_progression_tests PRIVATE AIVERSE::genre)
+    target_link_libraries(aiverse_library_progression_tests PRIVATE AIVERSE::mechanics)
     add_test(NAME library_progression COMMAND aiverse_library_progression_tests ${PROJECT_SOURCE_DIR})
 endif()
 if(TARGET aiverse_world AND (AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_TOOLS))
     add_executable(aiverse_progression tools/libraries/progression_main.cpp)
-    target_link_libraries(aiverse_progression PRIVATE AIVERSE::genre)
+    target_link_libraries(aiverse_progression PRIVATE AIVERSE::mechanics)
     if(AIVERSE_BUILD_TESTS)
         add_test(NAME progression_headless COMMAND aiverse_progression --root ${PROJECT_SOURCE_DIR} --verify)
     endif()
@@ -2843,6 +2874,17 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_prisma_volume_tests tests/render/prisma_volume.cpp)
     target_link_libraries(aiverse_prisma_volume_tests PRIVATE aiverse_postfx_data)
     add_test(NAME prisma_volume COMMAND aiverse_prisma_volume_tests)
+    # 2026-11-22 effects (AO, SSR, lens flare, SMAA, distortion, streaks, halation, haze,
+    # FSR 1, DLSS route, histogram metering, stylization graphs): GPU-free contract test.
+    add_executable(aiverse_prisma_new_effects_tests tests/render/prisma_new_effects.cpp)
+    target_link_libraries(aiverse_prisma_new_effects_tests PRIVATE aiverse_postfx_data)
+    add_test(NAME prisma_new_effects COMMAND aiverse_prisma_new_effects_tests)
+    set_tests_properties(prisma_new_effects PROPERTIES LABELS "Prisma")
+    if(Python3_EXECUTABLE)
+        add_test(NAME prisma_style_presets_fresh COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/prisma/make_style_presets.py --check)
+        set_tests_properties(prisma_style_presets_fresh PROPERTIES LABELS "Prisma")
+    endif()
 endif()
 
 if(AIVERSE_BUILD_TESTS)
@@ -2883,16 +2925,20 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3")
         set_tests_properties(lighting_compute_gi_scroll_vulkan PROPERTIES
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1")
-        foreach(_fx dof motion)
+        foreach(_fx dof motion ao ssr flare smaa distort streaks halation haze fsr histogram)
             add_test(NAME prisma_${_fx}_vulkan COMMAND aiverse_hdr_vulkan)
             set_tests_properties(prisma_${_fx}_vulkan PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Vulkan;Prisma" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
-                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         endforeach()
+        add_test(NAME lighting_baked_vulkan COMMAND aiverse_hdr_vulkan)
+        set_tests_properties(lighting_baked_vulkan PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+            LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         add_test(NAME lighting_luma_vulkan COMMAND aiverse_hdr_vulkan)
         set_tests_properties(lighting_luma_vulkan PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
             LABELS "Lighting;GPU;Vulkan" TIMEOUT 180 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
-            PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+            PASS_REGULAR_EXPRESSION "Luma GPU 11:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
         set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan lighting_compute_gi_scroll_vulkan
             PROPERTIES LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
@@ -3376,6 +3422,7 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME skill_catalog COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/skills/catalog.py check)
     add_test(NAME skill_routing COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/skills/catalog_test.py)
     add_test(NAME skill_audit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/skills/audit.py --strict)
+    add_test(NAME genre_free_engine COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/genre/check_engine_genre_free.py ${CMAKE_CURRENT_SOURCE_DIR})   # NO GENRE SPLIT: no Rts/Fps names in engine code
     # tools behind workflow skills (skills/ai/aiverse-bots-tune, verification/aiverse-determinism-triage, aiverse-visual-qa)
     add_test(NAME tool_bot_sweep COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bots/test_sweep.py)
     add_test(NAME tool_determinism_diff COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/determinism/test_diff.py)
@@ -4721,22 +4768,35 @@ endif()
 
 if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
     # PRISMA Depth of Field and Motion Blur: regular effects (no opt-in flag).
-    foreach(_fx dof motion)
+    # 2026-11-22: AO, SSR, lens flare, SMAA, lens distortion, streaks, halation, heat haze,
+    # FSR 1 and histogram metering (tests/render/PrismaEffectsScene.h, prismaNewEffect).
+    foreach(_fx dof motion ao ssr flare smaa distort streaks halation haze fsr histogram)
         add_test(NAME prisma_${_fx}_gpu COMMAND aiverse_hdr_scene)
         set_tests_properties(prisma_${_fx}_gpu PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
             LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
-            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS" FAIL_REGULAR_EXPRESSION "FAIL")
         if(TARGET aiverse_hdr_gl)
             add_test(NAME prisma_${_fx}_gl COMMAND aiverse_hdr_gl)
             set_tests_properties(prisma_${_fx}_gl PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
-                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: (diff [0-9.]+ )?PASS" FAIL_REGULAR_EXPRESSION "FAIL")
         endif()
     endforeach()
+    # Baked lightmaps and probes drawn by the real renderer (sun off, pixel check).
+    add_test(NAME lighting_baked_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_baked_gpu PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+        LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_baked_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_baked_gl PROPERTIES ENVIRONMENT "AIVERSE_BAKED_LIGHTING_TEST=1"
+            LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+            PASS_REGULAR_EXPRESSION "Baked lighting: .*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
     add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE
-        PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        PASS_REGULAR_EXPRESSION "Luma GPU 11:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
 
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench AND AIVERSE_PLATFORM STREQUAL "macos")
@@ -4777,10 +4837,10 @@ endif()
 # Experimental HTML5 Studio host. Production editor still uses its existing UI.
 # ---------------------------------------------------------------------------
 if(AIVERSE_BUILD_STUDIO_HTML5)
-    if(APPLE AND TARGET aiverse_editor_core)
+    if((APPLE OR WIN32) AND TARGET aiverse_editor_core)
         add_subdirectory(apps/studio-native)
     else()
-        message(WARNING "AIVERSE Studio HTML5 currently requires macOS and aiverse_editor_core (AIVERSE_BUILD_TOOLS or AIVERSE_BUILD_EDITOR)")
+        message(WARNING "AIVERSE Studio HTML5 requires macOS or Windows and aiverse_editor_core (AIVERSE_BUILD_TOOLS or AIVERSE_BUILD_EDITOR)")
     endif()
 endif()
 
@@ -4808,4 +4868,12 @@ option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
 if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
     add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
+endif()
+
+# DLSS runtime library next to the client (the SDK ships it as lib/Windows_x86_64/rel/nvngx_dlss.dll).
+if(AIVERSE_WITH_DLSS AND TARGET aiverse_client)
+    add_custom_command(TARGET aiverse_client POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/rel/nvngx_dlss.dll" "$<TARGET_FILE_DIR:aiverse_client>"
+        COMMENT "Copying nvngx_dlss.dll")
 endif()

@@ -22,6 +22,8 @@ void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
 void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
 void drawPrismaEffects(HdrScene&,gfx::Device&,int,int,const char*);
+void drawBakedLighting(HdrScene&,gfx::Device&,int,int);
+void shutdownBakedLighting(HdrScene&,gfx::Device&);
 
 void initFogLandscape(HdrScene&,gfx::Device&,const std::string&);
 void drawFogLandscape(HdrScene&);
@@ -42,7 +44,7 @@ struct HdrScene {
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
-    RTSCamera camera;
+    Camera camera;
     Mesh floor, cube, water;
     bool fogLandscape=false;
     Mesh fogTerrain,fogTrees,fogRocks;
@@ -225,6 +227,7 @@ struct HdrScene {
         if (lumaVerify) { drawLumaScene(*this,d,w,h); return; }
         if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
         if (const char* effect=std::getenv("AIVERSE_PRISMA_EFFECT_TEST")) { drawPrismaEffects(*this,d,w,h,effect); return; }
+        if (std::getenv("AIVERSE_BAKED_LIGHTING_TEST")) { drawBakedLighting(*this,d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
@@ -477,6 +480,7 @@ struct HdrScene {
             if(d.waitForResourceIdle()) { d.destroyTexture(giVtAtlas); d.destroyTexture(giVtTable); }
             else failed=true;
         }
+        shutdownBakedLighting(*this,d);
         if(probeBg)releaseModel(d,*probeBg);
         if(probeFg)releaseModel(d,*probeFg);
         if(shadowReceiver) releaseModel(d,*shadowReceiver);
@@ -493,5 +497,6 @@ struct HdrScene {
 
 #include "LumaScene.h"
 #include "PrismaEffectsScene.h"
+#include "BakedLightingScene.h"
 
 #include "FogLandscape.h"

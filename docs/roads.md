@@ -11,9 +11,9 @@ the heights of the spline points, branches that leave chosen lanes of another ro
 | Editor window «Дороги» (Мир) | `apps/editor/windows/RoadsWindow.cpp` |
 | Edit helpers + MCP | `apps/editor/core/RoadOps.{h,cpp}` |
 
-Roads are shared by every project, whatever its module: a metre map sets rules `roadTypes.cellMeters` to 1. The old
-`modules/rts/RtsRoadNet.h` and `modules/rts/view/RtsRoadView.h` are compatibility headers (`game::RtsRoadView` =
-`roads::RoadView`).
+Roads are shared by every project, whatever its module: a metre map sets rules `roadTypes.cellMeters` to 1. Code
+includes `engine/roads/*.h` and names `aiverse::roads::*` (the old `modules/rts/RtsRoadNet.h`, `view/RtsRoadView.h`,
+`view/RtsRoadKit.h` forwarders and `game::RtsRoadView` are deleted).
 
 Water (straits, rivers, the sea with embankments, cliffs and beaches) is drawn the same way: `docs/water.md`.
 
