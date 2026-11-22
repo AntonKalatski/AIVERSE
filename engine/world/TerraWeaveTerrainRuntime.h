@@ -244,6 +244,7 @@ public:
             // Pure camera-distance LOD updates upload ONLY a visual model.
             // All residents share the same authoritative Earthworks source.
             auto [slot,created]=residents_.try_emplace(tile);
+            std::optional<TerrainPatch> notified; // the patch listeners are told about
             try {
                 const render::Model* material=
                     materials?materials(tile):nullptr;
@@ -260,9 +261,10 @@ public:
                             device,*visual,spec->second.neighborResolution,
                             material,uvScale))
                         break; // keep prior GPU model safely resident
+                    notified=std::move(visual);
                 }else{
-                    const TerrainPatch patch=bakeEarthworksTerrainPatch(
-                        earth_,tile,cellSizeMetres_,resolution_);
+                    const TerrainPatch& patch=notified.emplace(bakeEarthworksTerrainPatch(
+                        earth_,tile,cellSizeMetres_,resolution_));
                     if(!slot->second.publish(
                             device,spatial,colliders_,patch,ids(tile),
                             material,uvScale,visual?&*visual:nullptr,
@@ -278,7 +280,8 @@ public:
             }
             pending_.erase(it);
             ++published;
-            for(const auto& l:listeners_)if(l.published)l.published(slot->second,patch);
+            if(notified)
+                for(const auto& l:listeners_)if(l.published)l.published(slot->second,*notified);
         }
         bool complete=true;
         for(const auto& tile:needed)

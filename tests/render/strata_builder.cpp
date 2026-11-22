@@ -1,3 +1,4 @@
+#include <array>
 #include "engine/render/StrataBuilder.h"
 #include <algorithm>
 // Keep CTest assertions active under Release (-DNDEBUG) builds.
@@ -62,7 +63,20 @@ int main() {
         }
     }
     assert(leafIndices == source.size());
-    assert(reconstructed == source); // exact leaf LOD0 triangle order
+    // Leaf clusters are cut in spatial (Morton) order, so the leaf triangle
+    // ORDER differs from the source; every source triangle must still appear
+    // exactly once with its winding (compare as sorted, rotation-normalised).
+    auto canonical = [](const std::vector<uint32_t>& list) {
+        std::vector<std::array<uint32_t, 3>> tris;
+        for (size_t i = 0; i + 2 < list.size(); i += 3) {
+            std::array<uint32_t, 3> t{list[i], list[i + 1], list[i + 2]};
+            while (t[0] != std::min({t[0], t[1], t[2]})) t = {t[1], t[2], t[0]};
+            tris.push_back(t);
+        }
+        std::sort(tris.begin(), tris.end());
+        return tris;
+    };
+    assert(canonical(reconstructed) == canonical(source));
     for (const auto& node : asset.nodes) {
         assert(size_t(node.firstIndex) + node.indexCount <= asset.indices.size());
         if (node.childCount)
@@ -174,7 +188,7 @@ int main() {
             originalLeaves.push_back(
                 spatial.meshletVertices[m.vertexOffset +
                     spatial.meshletTriangles[m.triangleOffset + n]]);
-    assert(originalLeaves == islandsIndices);
+    assert(canonical(originalLeaves) == canonical(islandsIndices)); // spatial (Morton) leaf order
     size_t parents = 0;
     for (size_t node = 0; node < spatial.nodes.size(); ++node) {
         if (!spatial.nodes[node].childCount) continue;

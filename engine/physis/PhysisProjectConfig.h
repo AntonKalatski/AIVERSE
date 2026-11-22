@@ -5,6 +5,7 @@
 #include "PhysisRuntimeFields.h"
 #include "PhysisFieldInstallMode.h"
 #include "PhysisFieldRuntimeState.h"
+#include "PhysisTornadoAssets.h"
 #include "engine/data/Json.h"
 #include <optional>
 #include <stdexcept>
@@ -68,6 +69,13 @@ inline std::optional<InstallOptions> optionsFromMap(const Json& map) {
     options.enableWindZones = readFlag("enableWindZones");
     options.enableGravityFields = readFlag("enableGravityFields");
     options.enableForces = readFlag("enableForces");
+    // A non-empty "tornadoes" array turns on the tornado systems and their
+    // persistence (and storms, which they are). Maps without it are unchanged.
+    if (const Json& tornadoes = config["tornadoes"]; !tornadoes.isNull()) {
+        if (!tornadoes.isArray())
+            throw std::invalid_argument("PHYSIS tornadoes must be an array");
+        if (tornadoes.size() > 0) options.enableTornadoes = options.enableStorms = true;
+    }
     if (const Json& st = config["streaming"]; !st.isNull()) {
         if (!st.isObject()) throw std::invalid_argument("PHYSIS streaming must be an object");
         options.streamingChunkCells = std::int32_t(integer(st, "chunkCells", 4, 1024));
@@ -120,8 +128,10 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
         sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
+    const auto tornadoes = parseTornadoes(map["physis"], sim.tickRate());
     install(sim, *options);
     spawnFieldAssets(sim.world(), fields);
+    spawnTornadoes(sim.world(), tornadoes);   // after fields: stable entity order
     sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Static});
     return true;
 }
@@ -138,10 +148,12 @@ inline bool installTrackedFromMap(Simulation& sim, const Json& map) {
         sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
+    const auto tornadoes = parseTornadoes(map["physis"], sim.tickRate());
     install(sim, *options);
     sim.registerPersistentResource<RuntimeFieldRegistry>(
         "physis.authored_field_registry", 1);
     reconcileTrackedRuntimeFields(sim.world(), fields);
+    spawnTornadoes(sim.world(), tornadoes);
     sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Tracked});
     return true;
 }

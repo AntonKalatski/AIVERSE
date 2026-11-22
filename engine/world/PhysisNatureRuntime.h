@@ -45,6 +45,7 @@ public:
         bool rebuilt = false;
         std::uint64_t tick = 0;
         std::size_t flames = 0, smoke = 0, voices = 0;
+        std::size_t tornadoes = 0, debris = 0;   // live funnel / debris effects
         float meanWindX = 0, meanWindZ = 0;
     };
 
@@ -76,6 +77,8 @@ public:
         if (!configured_ || !state) return s;
         s.active = true;
         s.tick = state->tick;
+        if (state->tick != lastTick_) { lastTick_ = state->tick; sinceTick_ = 0; }
+        else if (std::isfinite(v.dt) && v.dt > 0) sinceTick_ += v.dt;
         const float cs = float(std::max(1, state->settings.cellSizeMeters));
         const float moveLimit = std::max(4.f, cs);
         if (!frame_ || frame_->tick != state->tick ||
@@ -109,6 +112,8 @@ public:
                 if (!fxReady_ && !errors.empty()) error_ = "fx: " + errors.front();
             }
             if (fxReady_) fx_.update(*t.particles, *frame_, config_.fxWindScale);
+            if (fxReady_ && config_.tornado)
+                fx_.updateTornadoes(*t.particles, *frame_, sinceTick_, v.secondsPerTick);
         }
         if (config_.audio && t.audio)
             audio_.update(*t.audio, *frame_, v.focusX, v.focusY, v.focusZ, std::max(0.f, v.dt));
@@ -121,6 +126,8 @@ public:
         s.flames = fx_.activeFlames();
         s.smoke = fx_.activeSmoke();
         s.voices = audio_.voices();
+        s.tornadoes = fx_.activeFunnels();
+        s.debris = fx_.activeDebris();
         return s;
     }
 
@@ -145,6 +152,7 @@ public:
         frame_.reset();
         lastField_.reset();
         configured_ = fxReady_ = fxTried_ = false;
+        lastTick_ = ~std::uint64_t(0); sinceTick_ = 0;
         haveWind_ = haveWater_ = false;
     }
 
@@ -175,6 +183,9 @@ private:
             const Vec3 at{Fixed::fromInt(std::int64_t(std::lround(v.focusX))), Fixed{},
                           Fixed::fromInt(std::int64_t(std::lround(v.focusZ)))};
             if (physis::sampleNatureField(world, at, sample)) {
+                // A tornado near the view roughens the water even when the
+                // camera focus is outside its ring (one uniform water wind).
+                tornadoWaterWind(f, v, sample.windVelocity);
                 const float speed = float(std::hypot(sample.windVelocity.x.toDouble(),
                                                      sample.windVelocity.z.toDouble()));
                 const Fixed gust = Fixed::fromRatio(
@@ -185,7 +196,26 @@ private:
         }
     }
 
+    static void tornadoWaterWind(const NaturePresentationFrame& f, const View& v, Vec3& wind) {
+        double best = std::hypot(wind.x.toDouble(), wind.z.toDouble());
+        for (const auto& t : f.tornadoes) {
+            const double dx = double(v.focusX - t.x), dz = double(v.focusZ - t.z);
+            const double d = std::hypot(dx, dz), reach = double(t.outerRadius) * 3.0;
+            if (!(reach > 0) || d >= reach) continue;
+            const double speed = double(t.tangentialWind) * (1.0 - d / reach);
+            if (speed <= best) continue;
+            // Tangent of the swirl at the focus (counter-clockwise around +Y).
+            double tx = d > 1e-3 ? -dz / d : 1.0, tz = d > 1e-3 ? dx / d : 0.0;
+            if (t.clockwise) { tx = -tx; tz = -tz; }
+            const auto fx = [](double m) { return Fixed::fromRaw(std::int64_t(std::llround(m * double(Fixed::kOne)))); };
+            wind = {fx(tx * speed), wind.y, fx(tz * speed)};
+            best = speed;
+        }
+    }
+
     NatureRuntimeConfig config_{};
+    std::uint64_t lastTick_ = ~std::uint64_t(0);
+    float sinceTick_ = 0;
     bool configured_ = false;
     std::string error_;
     std::shared_ptr<const NaturePresentationFrame> frame_;

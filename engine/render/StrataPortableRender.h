@@ -82,7 +82,22 @@ struct PortableCompactBuffer {
     uint64_t signature=0;
     std::vector<uint32_t> scratch;
     uint64_t uploads=0, reuses=0;
-    void release(gfx::Device& dev){ if(buffer.valid())dev.destroyBuffer(buffer); buffer={}; capacityBytes=0; signature=0; }
+    // Immutable per selection: a new buffer only when the selection changes;
+    // replaced buffers are destroyed after kRetireAfter further prepares,
+    // when no in-flight frame can still read them.
+    static constexpr uint64_t kRetireAfter=16;
+    uint64_t prepares=0;
+    std::vector<std::pair<gfx::BufferHandle,uint64_t>> retired;
+    void collect(gfx::Device& dev){
+        size_t keep=0;
+        for(auto& r:retired){ if(prepares-r.second>=kRetireAfter) dev.destroyBuffer(r.first); else retired[keep++]=r; }
+        retired.resize(keep);
+    }
+    void release(gfx::Device& dev){
+        if(buffer.valid())dev.destroyBuffer(buffer);
+        for(auto& r:retired)dev.destroyBuffer(r.first);
+        retired.clear(); buffer={}; capacityBytes=0; signature=0;
+    }
 };
 class PortableSource final {
 public:
@@ -147,7 +162,7 @@ public:
     // instead of one per cluster. Re-uploaded only when the selection
     // changes. Non-streaming sources only; keeps a CPU copy of the indices.
     void setCompactSelection(bool on) { compactSelection_=on; }
-    bool compactSelection() const { return compactSelection_ && !cpuIndices_.empty(); }
+    bool compactSelection() const { return compactSelection_ && cpuGather_; }
     bool mergeAdjacentClusters() const { return mergeAdjacent_; }
     const std::vector<SelectedCluster>& debugSelection() const {
         return debugSelection_;
@@ -179,7 +194,7 @@ private:
     std::vector<uint32_t> primitiveOffsets_;
     std::vector<uint8_t> legacyMaterialMask_;
     bool compactSelection_=false;
-    std::vector<uint32_t> cpuIndices_; // compacted submission source
+    bool cpuGather_=false; // compacted submission gathers from asset_ indices
     PortableRenderStats stats_{};
     bool debugCapture_ = false;
     bool mergeAdjacent_ = false;

@@ -40,7 +40,7 @@ struct BuildOptions {
     uint32_t maxVertices = 64;    // 3..255, local meshlet ids are uint8
     uint32_t maxTriangles = 124;  // 1..512 (recommended <= 124)
     uint32_t childrenPerNode = 4; // 2..8
-    uint32_t maxLevels = 8;       // 1..16, leaf level excluded
+    uint32_t maxLevels = 16;      // 1..16, leaf level excluded; 16 lets a 1M-triangle mesh reach a ~hundreds-triangle root
     float targetRatio = 0.5f;     // 0.1..0.95
     float relativeError = 0.02f;  // 0..1 (fraction of group AABB diagonal)
 };

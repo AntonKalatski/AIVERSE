@@ -17,6 +17,9 @@
 // F8:     RmlUi debugger. The UI itself is data: engine/assets/ui/*.rml (see ClientUi.cpp).
 #include <fstream>
 #include <cstdlib>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -203,6 +206,7 @@ void GameClient::initAudio() {
         try {
             Json bank = Json::parse(text);
             world::addPhysisNatureSounds(bank);   // synth fallbacks unless audio.json has its own
+            world::addPhysisTornadoSounds(bank);
             std::string err;
             if (!audio_.loadBank(bank, platform::readContentFile, &err) || !sound_.init(audio_, rules_, bank, &err)) error_ = err;
             for (auto& w : sound_.warnings()) std::fprintf(stderr, "audio: %s\n", w.c_str());
@@ -364,9 +368,10 @@ void GameClient::natureUpdate(float dt) {
     static const bool dbg = std::getenv("AIVERSE_PHYSIS_DEBUG") != nullptr;
     static int frames = 0;
     if (dbg && stats.active && ++frames % 60 == 0)
-        std::fprintf(stderr, "[physis] tick %llu flames %zu smoke %zu voices %zu wind %.1f,%.1f\n",
+        std::fprintf(stderr, "[physis] tick %llu flames %zu smoke %zu voices %zu wind %.1f,%.1f tornadoes %zu debris %zu\n",
                      static_cast<unsigned long long>(stats.tick), stats.flames, stats.smoke,
-                     stats.voices, double(stats.meanWindX), double(stats.meanWindZ));
+                     stats.voices, double(stats.meanWindX), double(stats.meanWindZ),
+                     stats.tornadoes, stats.debris);
 }
 
 void GameClient::natureStop() { nature_.stop(natureTargets()); }
@@ -1144,7 +1149,11 @@ struct ClientStageProfile {
         double sum = 0;
         for (int i = 0; i < kStages; ++i) { n += std::snprintf(line + n, sizeof line - size_t(n), " %s=%.2f", names[i], total[i] / frames); sum += total[i]; total[i] = 0; }
         std::snprintf(line + n, sizeof line - size_t(n), " total=%.2f ms", sum / frames);
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "%s", line);
+#else
         std::fprintf(stderr, "%s\n", line);
+#endif
         frames = 0;
     }
 } g_stages;
@@ -1335,6 +1344,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     pass.colorTarget = hostColor_;
     pass.depthTarget = hostDepth_;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
+    if (static const bool flat = [] { const char* e = std::getenv("AIVERSE_GEOMETRY_ONLY"); return e && *e && *e != '0'; }(); flat) {
+        pass.clearColor[0] = 0.18f; pass.clearColor[1] = 0.19f; pass.clearColor[2] = 0.21f;   // geometry-only benchmark background
+    }
     render::LightSystem::PreparedFrame lensLightingSnapshot;
     if (sim_) {
         if (planet()) { // orbit camera -> view-world Camera; space is black
@@ -1372,11 +1384,64 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         // Presentation-only Halton jitter: gameplay aiming, viewport picking,
         // UI and input continue to use the original unjittered cam_.
         const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
+        // AIVERSE_CAM_FLY="x,z,dist,pitch,yaw>x,z,dist,pitch,yaw@frames":
+        // benchmark fly-through. The camera moves linearly from the first
+        // pose to the second over the given number of rendered frames (by
+        // frame count, so every device sees the same path), then holds.
+        if (static const char* fly = std::getenv("AIVERSE_CAM_FLY"); fly && *fly) {
+            static float a[5], b[5]; static int frames = 0, frame = 0;
+            static const bool ok = std::sscanf(fly, "%f,%f,%f,%f,%f>%f,%f,%f,%f,%f@%d",
+                &a[0], &a[1], &a[2], &a[3], &a[4], &b[0], &b[1], &b[2], &b[3], &b[4], &frames) == 11 && frames > 0;
+            if (ok && sim_ && !mapLoading_) {
+                const float t = std::min(1.0f, float(frame++) / float(frames));
+                float v[5];
+                for (int k = 0; k < 5; ++k) v[k] = a[k] + (b[k] - a[k]) * t;
+                cam_.target = {v[0], 0, v[1]};
+                cam_.minDistance = std::min(cam_.minDistance, v[2]);
+                cam_.distance = v[2];
+                cam_.pitch = v[3] / 57.2958f;
+                cam_.yaw = v[4] / 57.2958f;
+            }
+        }
         const render::Camera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
         // SpectraFX GPU simulation is encoded before the scene pass.
         fx_.setPlanetView(planet() ? &view_ : nullptr);
         fx_.prepareGpuFrame(screen_ == Screen::Playing || screen_ == Screen::Over
                                 ? float(std::clamp(dt,0.0,0.1)) : 0.0f,cam_);
+        if (view_.strataDebugInset() && !mapLoading_) {
+            if (!insetR3d_ || insetW_ != int(renderW) || insetH_ != int(renderH)) {
+                if (insetColor_.valid()) dev.destroyTexture(insetColor_);
+                if (insetDepth_.valid()) dev.destroyTexture(insetDepth_);
+                insetColor_ = insetDepth_ = {};
+                if (!insetR3d_) {
+                    insetR3d_ = std::make_unique<render::Renderer3D>();
+                    if (insetR3d_->init(dev)) insetR3d_->setShadowQuality(render::ShadowQuality::Off);
+                    else insetR3d_.reset();
+                }
+                gfx::TextureDesc td;
+                td.width = int(renderW); td.height = int(renderH);
+                td.renderTarget = true;
+                td.label = "strata debug inset";
+                insetColor_ = dev.createTexture(td);
+                td.format = gfx::PixelFormat::Depth;
+                td.filter = gfx::Filter::Nearest;
+                insetDepth_ = dev.createTexture(td);
+                insetW_ = int(renderW); insetH_ = int(renderH);
+            }
+            if (insetR3d_ && insetColor_.valid() && insetDepth_.valid()) {
+                insetR3d_->lighting = r3d_.lighting;
+                insetR3d_->lighting.fogDensity = 0;
+                insetR3d_->beginScene(renderCam, int(renderW), int(renderH));
+                view_.drawGeometryInset(*insetR3d_);
+                gfx::PassDesc ip;
+                ip.colorTarget = insetColor_;
+                ip.depthTarget = insetDepth_;
+                ip.clearColor[0] = 0.18f; ip.clearColor[1] = 0.19f; ip.clearColor[2] = 0.21f; ip.clearColor[3] = 1.f;
+                insetR3d_->render(ip);
+                dev.endPass();
+                view_.setStrataInsetTexture(insetColor_.id, dev.info().renderTargetFlipY);
+            }
+        }
         r3d_.beginScene(renderCam,renderW,renderH);
         if (worldScene_ && !planet()) worldScene_->draw(r3d_, world::Cell{0, 0, 0}, 1);
         auto& gs = mod().state(*sim_);
@@ -1416,6 +1481,19 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             view_.setCameraPreparedCapture(&lensModelSnapshot_);
         }
         g_stages.lap(7);
+        // AIVERSE_GEOMETRY_ONLY=1: clean geometry benchmark (STRATA/LOD): only
+        // the static geometry scene on a flat grey background; no terrain,
+        // water, sky gradient, fog, HUD; sun shadows only with
+        // AIVERSE_GEOMETRY_SHADOWS=1.
+        static const bool geometryOnly = [] { const char* e = std::getenv("AIVERSE_GEOMETRY_ONLY"); return e && *e && *e != '0'; }();
+        static const bool geometryShadows = [] { const char* e = std::getenv("AIVERSE_GEOMETRY_SHADOWS"); return e && *e && *e != '0'; }();
+        if (geometryOnly) {
+            view_.setGeometryOnly(true);
+            quality_.lock(); // fixed tiers: the adaptive governor would change what is measured
+            r3d_.setProfiling(true); // triangle counters for the corner panel / [strata] log
+            static bool shadowsSet = false;
+            if (!shadowsSet && !geometryShadows) { r3d_.setShadowQuality(render::ShadowQuality::Off); shadowsSet = true; }
+        }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         g_stages.lap(3);   // view
         for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
@@ -1448,7 +1526,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
         if(lensCamerasActive_) lensLightingSnapshot=r3d_.lights.capturePrepared();
         g_stages.lap(4);   // fx, scripts, ground, ghosts
+        if (geometryOnly) {
+            r3d_.lighting.skyColor = r3d_.lighting.fogColor = {0.18f, 0.19f, 0.21f};
+            r3d_.lighting.fogDensity = 0;
+        }
         r3d_.render(pass, &prisma_);
+        view_.noteRenderedFrame(r3d_.profile().cameraModelTriangles, r3d_.profile().triangles[0], r3d_.drawCalls());
         fx_.render(r3d_.lighting);
         // GPU billboards share this scene depth/pass; no separate pass and no
         // duplicate CPU draw of GPU-owned hybrid emitter instances.
@@ -1465,8 +1548,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         r3d_.resolvePrisma();   // post effects (if any) under the HUD
         g_stages.lap(5);   // render
         prisma_.clearCameraVolumes();
-        view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
-        view_.drawCanvas(canvas_);
+        if (!geometryOnly) {
+            view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
+            view_.drawCanvas(canvas_);
+        }
+        if (static const bool hud = geometryOnly || std::getenv("AIVERSE_STRATA_DEBUG"); hud)
+            view_.drawStrataHud(platform::windowWidth(), platform::windowHeight());
         topDownDraw();
         // races (rules "race" + map "race", docs/races.md): the same HUD as every other client
         if (auto* drv = mod().driving(); drv && drv->racing(*sim_))
@@ -1477,7 +1564,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     }
     overlay_.render();
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
-    ui_.render();
+    static const bool hideUi = [] { const char* e = std::getenv("AIVERSE_GEOMETRY_ONLY"); return e && *e && *e != '0'; }();
+    if (!hideUi || !sim_) ui_.render();
     dev.endPass();
     g_stages.lap(6);   // hud
     g_stages.endFrame();

@@ -1,5 +1,8 @@
 #include "StrataModelAdapter.h"
 #include "StrataSourceSeams.h"
+#include "StrataCooked.h"
+#include <chrono>
+#include <filesystem>
 
 #include <array>
 #include <cstddef>
@@ -188,11 +191,35 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
     }
     ModelAsset built;
     std::string error;
-    if (!buildModelAsset(model, options_, built, &error,
-                         allowPreparedRootLods_, tolerateSourceSeamDefects_)) {
-        ++stats_.failedSources;
-        warnings_.push_back("Strata staging failed '" + key + "': " + error);
-        return false;
+    const bool cooking = bool(cook_.read) || !cook_.writeDirectory.empty();
+    const uint64_t signature = cooking ? cookSignature(model, options_,
+        allowPreparedRootLods_, tolerateSourceSeamDefects_) : 0;
+    bool cooked = false;
+    if (cook_.read) {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::string bytes, why;
+        if (cook_.read(cookedFilename(key), bytes)) {
+            if (decodeCookedAsset(bytes, signature, built, &why)) {
+                cooked = true;
+                ++stats_.cookedLoadedSources;
+            } else {
+                ++stats_.cookedStaleSources;
+                warnings_.push_back("STRATA cooked '" + key + "': " + why + "; building at load");
+            }
+        }
+        stats_.cookedLoadMs += float(std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count());
+    }
+    if (!cooked) {
+        const auto t0 = std::chrono::steady_clock::now();
+        if (!buildModelAsset(model, options_, built, &error,
+                             allowPreparedRootLods_, tolerateSourceSeamDefects_)) {
+            ++stats_.failedSources;
+            warnings_.push_back("Strata staging failed '" + key + "': " + error);
+            return false;
+        }
+        stats_.buildMs += float(std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count());
     }
     stats_.skippedPrimitives += uint32_t(built.skipped.size());
     if (built.primitives.empty()) {
@@ -227,6 +254,20 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
     stats_.crossMaterialMatchedSeams+=
         built.sharedGeometricBoundarySegments;
     ++stats_.crossMaterialCertifiedSources;
+    if (!cooked && !cook_.writeDirectory.empty()) {
+        std::string why;
+        const auto path = (std::filesystem::path(cook_.writeDirectory) / cookedFilename(key)).string();
+        if (writeCookedAsset(path, built, signature, &why)) ++stats_.cookedWrittenSources;
+        else warnings_.push_back("STRATA cook '" + key + "': " + why);
+    }
+    // Leaf meshlet tables (local vertex lists, packed triangles) serve
+    // mesh-shader/GPU-cluster paths and the cook file; the CPU-selected and
+    // indexed STRATA routes never read them at run time.
+    if (!retainMeshlets_)
+        for (auto& primitive : built.primitives) {
+            std::vector<uint32_t>().swap(primitive.geometry.meshletVertices);
+            std::vector<uint8_t>().swap(primitive.geometry.meshletTriangles);
+        }
     assets_.emplace(key, std::move(built));
     ++stats_.stagedSources;
     return true;

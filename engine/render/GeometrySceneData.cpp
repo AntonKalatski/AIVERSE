@@ -13,12 +13,14 @@ void GeometryScene::validate(const Json& j){
     const auto& st=j["strata"];
     if(!st.isNull()){
         if(!st.isObject())throw std::runtime_error("geometry scene: strata must be object");
-        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale"&&k!="select"&&k!="minTriangles")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
+        for(auto& [k,v]:st.members())if(k!="enabled"&&k!="hysteresis"&&k!="reflections"&&k!="mergeClusters"&&k!="shadowErrorScale"&&k!="select"&&k!="minTriangles"&&k!="cooked"&&k!="triangleBudget")throw std::runtime_error("geometry scene: unknown strata key '"+k+"'");
         if(st.has("mergeClusters")&&st["mergeClusters"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.mergeClusters must be boolean");
         if(st.has("reflections")&&st.getStr("reflections")!="finest"&&st.getStr("reflections")!="main")throw std::runtime_error("geometry scene: strata.reflections must be finest or main");
         if(st.has("enabled")&&st["enabled"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: strata.enabled must be boolean");
         if(st.has("select")&&st.getStr("select")!="auto"&&st.getStr("select")!="all")throw std::runtime_error("geometry scene: strata.select must be auto or all");
         number(st,"minTriangles",0,100000000);
+        number(st,"triangleBudget",0,1000000000);
+        if(st.has("cooked")){if(!st["cooked"].isString())throw std::runtime_error("geometry scene: strata.cooked must be a content folder");path(st.getStr("cooked"));}
         number(st,"hysteresis",0,.45);
         number(st,"shadowErrorScale",1,64);
     }
@@ -35,7 +37,7 @@ void GeometryScene::validate(const Json& j){
         for(auto& [k,v]:i.members())if(k!="id"&&k!="model"&&k!="position"&&k!="rotation"&&k!="scale"&&k!="geometry"&&k!="proxy"&&k!="layers"&&k!="strata")throw std::runtime_error("geometry scene: unknown instance key '"+k+"'");
         if(i.getStr("id").empty()||!ids.insert(i.getStr("id")).second)throw std::runtime_error("geometry scene: unique nonempty instance id required");
         path(i.getStr("model"));parseGeometryPolicy(i["geometry"]);
-        if(i.has("strata")&&i["strata"].type()!=Json::Type::Bool)throw std::runtime_error("geometry scene: instance strata must be boolean (forces STRATA on/off for its model)");
+        if(i.has("strata")&&i["strata"].type()!=Json::Type::Bool&&!(i["strata"].isString()&&i.getStr("strata")=="auto"))throw std::runtime_error("geometry scene: instance strata must be true (force STRATA), false (force the LOD path) or \"auto\"");
         if(i.has("layers")){
             const auto& l=i["layers"];const double v=l.isNumber()?l.toDouble():0;
             if(!(v>=1&&v<=4294967295.0)||v!=std::floor(v))throw std::runtime_error("geometry scene: 'layers' must be a nonzero 32-bit layer mask");

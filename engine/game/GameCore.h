@@ -74,6 +74,8 @@ public:
     const MatchOutcome* outcome(Simulation& sim) const;
     std::vector<uint8_t> outcomeBlob(Simulation& sim) const;
     double speedScale(Simulation& sim) override;   // match modes: time limit speed steps, sudden death preview (Modes.cpp)
+    // Shared engine hazards (PHYSIS tornadoes): pure damage to on-map units / buildings (Combat.cpp).
+    void environmentDamage(Simulation& sim, Entity target, Fixed amount, Entity source) override;
     // ---- match modes (Modes.cpp): the effective modes of this match (rules + matchMode preset + map)
     const ModesRules& modes() const { return modes_; }
     bool modeZone(Simulation& sim, uint8_t player, ModeRect& out) const;   // battle-royal zone of a player (false: none)

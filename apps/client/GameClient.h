@@ -335,6 +335,11 @@ private:
     int hostW_ = 0, hostH_ = 0;
     int fbW() const { return hostColor_.valid() ? hostW_ : dev_->framebufferWidth(); }
     int fbH() const { return hostColor_.valid() ? hostH_ : dev_->framebufferHeight(); }
+    // AIVERSE_STRATA_DEBUG picture-in-picture: second render of the static
+    // geometry with STRATA cluster colours, shown in the right corner.
+    std::unique_ptr<render::Renderer3D> insetR3d_;
+    gfx::TextureHandle insetColor_, insetDepth_;
+    int insetW_ = 0, insetH_ = 0;
     ImGuiLayer overlay_;      // world-space overlays of GameView (health bars) still draw through ImGui
     ui::UiLayer ui_;
     Rml::DataModelHandle model_;

@@ -4,6 +4,7 @@
 // native client), so PRISMA bloom / fog / sorting stay the existing ones.
 #pragma once
 #include "engine/world/PhysisNatureCues.h"
+#include "engine/world/PhysisTornadoCues.h"
 #include "engine/fx/ParticleSystem.h"
 #include <map>
 #include <string>
@@ -23,8 +24,20 @@ public:
               std::vector<std::string>* errors = nullptr) {
         flameFx_ = resolve(ps, projectFiles, "physis_flame", physisFlameEffectJson(), errors);
         smokeFx_ = resolve(ps, projectFiles, "physis_smoke", physisSmokeEffectJson(), errors);
-        return flameFx_ >= 0 && smokeFx_ >= 0;
+        tornadoFx_ = resolve(ps, projectFiles, "physis_tornado", physisTornadoEffectJson(), errors);
+        debrisFx_ = resolve(ps, projectFiles, "physis_tornado_debris", physisTornadoDebrisEffectJson(), errors);
+        return flameFx_ >= 0 && smokeFx_ >= 0;   // tornado effects are optional
     }
+
+    // Tornado funnels + flying debris (every render frame; `since` = seconds
+    // since the frame's tick, for smooth extrapolation).
+    void updateTornadoes(fx::ParticleSystem& ps, const NaturePresentationFrame& frame,
+                         float since, double secondsPerTick) {
+        if (tornadoFx_ < 0 && debrisFx_ < 0) return;
+        applyTornado(ps, tornado_.plan(frame, since, secondsPerTick));
+    }
+    std::size_t activeFunnels() const { return funnels_.size(); }
+    std::size_t activeDebris() const { return debris_.size(); }
 
     // Once per render frame after a new presentation frame (or the same one).
     // windScale maps PHYSIS m/s onto the particle wind force.
@@ -46,6 +59,13 @@ public:
             if (kill) ps.kill(it->second); else ps.stop(it->second);
         }
         flames_.clear(); smoke_.clear();
+        for (const auto& c : tornado_.clear()) {
+            auto& map = c.layer == TornadoFxLayer::Funnel ? funnels_ : debris_;
+            const auto it = map.find(c.key);
+            if (it == map.end()) continue;
+            if (kill) ps.kill(it->second); else ps.stop(it->second);
+        }
+        funnels_.clear(); debris_.clear();
         ps.setWind({0, 0, 0});
     }
 
@@ -91,9 +111,33 @@ private:
         }
     }
 
+    void applyTornado(fx::ParticleSystem& ps, const std::vector<TornadoFxCommand>& commands) {
+        for (const auto& c : commands) {
+            auto& map = c.layer == TornadoFxLayer::Funnel ? funnels_ : debris_;
+            const int effect = c.layer == TornadoFxLayer::Funnel ? tornadoFx_ : debrisFx_;
+            switch (c.op) {
+            case TornadoFxOp::Start: {
+                if (auto it = map.find(c.key); it != map.end()) ps.stop(it->second);
+                if (effect < 0) break;
+                const auto h = ps.play(effect, {c.x, c.y, c.z}, {0, 1, 0}, c.scale,
+                                       {c.tint[0], c.tint[1], c.tint[2], c.tint[3]});
+                if (h.valid()) map[c.key] = h; else map.erase(c.key);
+                break;
+            }
+            case TornadoFxOp::Move:
+                if (auto it = map.find(c.key); it != map.end()) ps.move(it->second, {c.x, c.y, c.z});
+                break;
+            case TornadoFxOp::Stop:
+                if (auto it = map.find(c.key); it != map.end()) { ps.stop(it->second); map.erase(it); }
+                break;
+            }
+        }
+    }
+
     NatureFxPlanner planner_;
-    int flameFx_ = -1, smokeFx_ = -1;
-    std::map<std::uint64_t, fx::FxHandle> flames_, smoke_;
+    TornadoFxPlanner tornado_;
+    int flameFx_ = -1, smokeFx_ = -1, tornadoFx_ = -1, debrisFx_ = -1;
+    std::map<std::uint64_t, fx::FxHandle> flames_, smoke_, funnels_, debris_;
 };
 
 } // namespace aiverse::world

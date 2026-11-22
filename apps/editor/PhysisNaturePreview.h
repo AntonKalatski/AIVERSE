@@ -432,6 +432,7 @@ private:
             } catch (const std::exception&) {}
         }
         world::addPhysisNatureSounds(bank);
+        world::addPhysisTornadoSounds(bank);
         std::string error;
         if (!audio_->loadBank(bank, reader, &error)) status_ = "audio: " + error;
     }
