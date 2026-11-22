@@ -101,7 +101,9 @@ h1, h2, h3 { margin: 0; }
 .sys-placeholder svg { position: relative; }
 .sys-placeholder span { font: 700 34px var(--display); color: var(--on-ink); letter-spacing: .02em; position: relative; }
 .sys-body { padding: 26px 28px 28px; display: flex; flex-direction: column; gap: 10px; flex: 1 1 auto; }
-.sys-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.sys-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 12px; }
+.sys-head h3 { min-width: 0; }
+.sys-head .badge { flex: none; white-space: nowrap; }
 .sys-head h3 { font: 700 26px var(--display); }
 .sys-tag { margin: 0; font-weight: 600; font-size: 17px; }
 .sys-body p { margin: 0; color: var(--text-2); line-height: 1.6; }
