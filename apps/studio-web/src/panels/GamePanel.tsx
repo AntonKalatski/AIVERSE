@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { dockDragActive, overlayBlocks, watchDockDrag, watchOverlays, viewportRectChanged, forgetViewportRect } from '../nativeOverlay';
+import { dockDragActive, watchDockDrag, watchOverlays, viewportRectChanged, forgetViewportRect, visibleViewport } from '../nativeOverlay';
 import { Menu, RotateCcw } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioGameState, StudioGameDevice, StudioGameDeviceOption } from '../types';
@@ -55,8 +55,9 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
       cancelAnimationFrame(frame);
       frame=requestAnimationFrame(()=>{
         const b=host.getBoundingClientRect();
-        const rect={x:b.left,y:b.top,width:b.width,height:b.height,
-          dpr:window.devicePixelRatio||1,visible:!!state?.active && document.visibilityState==='visible' && b.width>16 && b.height>16 && !dockDragActive() && !overlayBlocks(b)};
+        const fit=visibleViewport(b);
+        const rect={x:fit.x,y:fit.y,width:fit.width,height:fit.height,
+          dpr:window.devicePixelRatio||1,visible:!!state?.active && document.visibilityState==='visible' && !dockDragActive() && fit.visible};
         if(!viewportRectChanged('game',rect))return;
         void invoke('studio.viewportRect',{id:'game',...rect}).catch(e=>{forgetViewportRect('game');setError(String(e));});
       });

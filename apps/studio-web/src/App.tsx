@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shortcutKey } from './keyboard';
 import { ChevronDown, Search, Settings2 } from 'lucide-react';
-import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
+import { invoke, nativeConnected, nativeWindowAction, nativeWindowResize, onNativeEvent } from './bridge';
 import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, DOCK_PRESET_EVENT, closeTab, dockStacks, panelStack, reopenTab
 } from './nestedDock';
@@ -96,6 +96,53 @@ export default function App() {
     window.localStorage.setItem('aiverse.studio.uiScale', String(uiScale));
     return () => { document.documentElement.style.removeProperty('--au-ui-scale'); };
   }, [uiScale]);
+
+  // The web view covers the frame, so Windows never sees the edges. The outer pixels start the system resize.
+  useEffect(() => {
+    if (!windowsHost || FLOAT) return;
+    const border = 8;
+    type ResizeEdge = 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+    const edgeAt = (x: number, y: number): ResizeEdge | '' => {
+      const left = x <= border;
+      const right = x >= window.innerWidth - border;
+      const top = y <= border;
+      const bottom = y >= window.innerHeight - border;
+      if (top && left) return 'top-left';
+      if (top && right) return 'top-right';
+      if (bottom && left) return 'bottom-left';
+      if (bottom && right) return 'bottom-right';
+      if (left) return 'left';
+      if (right) return 'right';
+      if (top) return 'top';
+      if (bottom) return 'bottom';
+      return '';
+    };
+    const cursorClass = (edge: ResizeEdge) => edge === 'left' || edge === 'right' ? 'studio-edge-ew'
+      : edge === 'top' || edge === 'bottom' ? 'studio-edge-ns'
+      : edge === 'top-left' || edge === 'bottom-right' ? 'studio-edge-nwse' : 'studio-edge-nesw';
+    const paint = (edge: ResizeEdge | '') => {
+      const root = document.documentElement;
+      root.classList.remove('studio-edge-ew', 'studio-edge-ns', 'studio-edge-nwse', 'studio-edge-nesw');
+      if (edge) root.classList.add(cursorClass(edge));
+    };
+    const move = (event: PointerEvent) => { if (event.buttons === 0) paint(edgeAt(event.clientX, event.clientY)); };
+    const down = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const edge = edgeAt(event.clientX, event.clientY);
+      if (!edge) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('button,a,input,select,textarea')) return;
+      event.preventDefault();
+      nativeWindowResize(edge);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerdown', down, true);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerdown', down, true);
+      paint('');
+    };
+  }, []);
 
   // Store browser-only layout (not engine state) with bounded write frequency.
   useEffect(() => {
@@ -507,8 +554,10 @@ export default function App() {
   return <div className={'studio compact-shell'+(windowsHost?' compact-shell--windows':connected?' compact-shell--native':'')+(game?.active?' is-playing':'')}>
     <header className="titlebar"
       onMouseDown={event => {
-        // Empty title-bar areas move the native window (like the macOS title bar).
-        if (event.button !== 0 || (event.target as HTMLElement).closest('button,input,select,textarea,a,[role=button],[role=menu]')) return;
+        // Empty title-bar areas move the native window. The outer pixels resize it instead.
+        const target = event.target instanceof Element ? event.target : (event.target as Node).parentElement;
+        if (event.button !== 0 || !target || target.closest('button,input,select,textarea,a,[role=button],[role=menu]')) return;
+        if (windowsHost && (event.clientY <= 8 || event.clientX <= 8 || event.clientX >= window.innerWidth - 8)) return;
         if (event.detail === 2) nativeWindowAction('studio.windowZoom');
         else nativeWindowAction('studio.windowDrag');
       }}>

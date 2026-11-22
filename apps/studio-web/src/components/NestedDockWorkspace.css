@@ -9,9 +9,9 @@
 .nested-horizontal>.nested-divider{width:6px;cursor:col-resize}.nested-vertical>.nested-divider{height:6px;cursor:row-resize}
 .nested-stack{display:flex;flex-direction:column;min-height:0;min-width:0;flex:1;background:#111b2a;border:1px solid #2a3a50;overflow:hidden}
 .nested-tabs{display:flex;min-height:38px;height:38px;align-items:stretch;flex:none;border-bottom:1px solid #34435a;background:#192536;overflow-x:auto}
-.nested-tab{display:flex;flex:none;max-width:180px;align-items:stretch;color:#93a9c7;border-right:1px solid #304159}
+.nested-tab{display:flex;flex:none;max-width:180px;align-items:stretch;color:#93a9c7;border-right:1px solid #304159;touch-action:none}
 .nested-active{color:#e5efff;background:#263c58;box-shadow:inset 0 -2px var(--studio-accent)}
-.nested-tab>span[role=tab]{border:0;background:none;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 9px;font-size:11px;display:flex;align-items:center;cursor:grab;-webkit-user-drag:element}
+.nested-tab>span[role=tab]{border:0;background:none;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 9px;font-size:11px;display:flex;align-items:center;cursor:grab;user-select:none;-webkit-user-drag:none}
 .nested-tab-close{padding:0 7px;border:0;background:none;color:#8294ae;cursor:pointer}.nested-tab-close:hover{color:white;background:#394d6b}
 .nested-tab>span[role=tab]:focus-visible,.nested-panel-actions-button:focus-visible{outline:2px solid var(--studio-accent);outline-offset:-2px}
 .nested-stack-body{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}

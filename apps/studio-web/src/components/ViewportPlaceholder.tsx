@@ -6,7 +6,7 @@ import { SCENE_TOOL_KEYS } from './SceneToolbar';
 import SceneAxisGizmo from './SceneAxisGizmo';
 import { brushPixels, onSculptBrush, sculptBrush, strokeSpacing } from '../panels/sculptBrushStore';
 import { onReferenceView, referenceView } from '../panels/referenceStore';
-import { dockDragActive, forgetViewportRect, overlayBlocks, viewportRectChanged, watchDockDrag, watchOverlays } from '../nativeOverlay';
+import { dockDragActive, forgetViewportRect, viewportRectChanged, visibleViewport, watchDockDrag, watchOverlays } from '../nativeOverlay';
 import {
   DEFAULT_SCENE_CAMERA, dragZoomAmount, flyStep, isSceneCameraState, navigationFor, stepFlySpeed,
   type SceneCameraState, type SceneNavigation
@@ -71,13 +71,13 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
         frame = 0;
         if (closed) return;
         const bounds = host.getBoundingClientRect();
+        const fit = visibleViewport(bounds);
         const rect = {
-          x: bounds.left, y: bounds.top,
-          width: bounds.width, height: bounds.height,
+          x: fit.x, y: fit.y, width: fit.width, height: fit.height,
           dpr: window.devicePixelRatio || 1,
-          // Hidden while an HTML dialog/menu overlaps it: the Metal view would cover it.
-          visible: active && document.visibilityState === 'visible' &&
-                   bounds.width > 16 && bounds.height > 16 && !dockDragActive() && !overlayBlocks(bounds)
+          // A dialog over most of the view hides it. A menu only trims the corner it covers,
+          // so the rest of the Scene stays on screen.
+          visible: active && document.visibilityState === 'visible' && !dockDragActive() && fit.visible
         };
         if (!viewportRectChanged('scene', rect)) return;
         void invoke('studio.viewportRect', { id: 'scene', ...rect })

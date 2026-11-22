@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppWindow, Columns2, MoreVertical, Plus, Rows2, X } from 'lucide-react';
 import { StudioContextMenu, type StudioMenuItem } from '../ui';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
-import { setDockDrag } from '../nativeOverlay';
+import { concealNativeViews, setDockDrag } from '../nativeOverlay';
 import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, activateTab, closeTab, defaultDockTree, dockStacks,
   moveTab, panelStack, reopenTab, resizeDockSplit, splitDockRoot, splitDockStack
@@ -94,7 +94,7 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
     if (adopted) onAdopt?.(panel);
   };
   const showEdges = foreign || (dragging !== null && (panelStack(tree, dragging) !== node.id || node.tabs.length > 1));
-  return <section className="nested-stack" aria-label={'Dock '+node.id}
+  return <section className="nested-stack" aria-label={'Dock '+node.id} data-stack={node.id}
     onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect='move';}}
     onDrop={event => transfer(event)}>
     <div className="nested-tabs" role="tablist" aria-label={'Tabs '+node.id}
@@ -191,6 +191,58 @@ function DockBranch(props: BranchProperties) {
 /** Keep the active tab visible in an overflowing tab strip (a panel opened from the palette or Window menu). */
 function revealTab(el: HTMLDivElement | null) { el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
 
+interface DockHit { kind: string; edge?: DockEdge; stack?: string; before?: string }
+
+/** Drop target under the pointer. elementFromPoint misses once the cursor is over the native Scene window. */
+function dockHit(x: number, y: number): DockHit | null {
+  const inside = (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width >= 1 && rect.height >= 1 && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+  };
+  let root: HTMLElement | null = null;
+  let best: HTMLElement | null = null;
+  let bestArea = Infinity;
+  for (const element of document.querySelectorAll<HTMLElement>('[data-dock]')) {
+    const kind = element.dataset.dock;
+    if (!kind || !inside(element)) continue;
+    if (kind === 'root') { root = element; continue; }
+    if (kind !== 'edge' && kind !== 'center' && kind !== 'tab') continue;
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (area < bestArea) { best = element; bestArea = area; }
+  }
+  const chosen = root ?? best;
+  if (chosen) return {
+    kind: chosen.dataset.dock || '',
+    edge: chosen.dataset.edge as DockEdge | undefined,
+    stack: chosen.dataset.stack,
+    before: chosen.dataset.before,
+  };
+  const body = document.querySelector('.nested-workspace-body');
+  if (body instanceof HTMLElement && inside(body)) {
+    const rect = body.getBoundingClientRect();
+    const margin = 28;
+    if (x < rect.left + margin) return { kind: 'root', edge: 'left' };
+    if (x > rect.right - margin) return { kind: 'root', edge: 'right' };
+    if (y < rect.top + margin) return { kind: 'root', edge: 'top' };
+    if (y > rect.bottom - margin) return { kind: 'root', edge: 'bottom' };
+  }
+  for (const element of document.querySelectorAll<HTMLElement>('.nested-stack[data-stack]')) {
+    if (!inside(element)) continue;
+    const rect = element.getBoundingClientRect();
+    const stack = element.dataset.stack;
+    if (y < rect.top + 40) return { kind: 'center', stack };
+    const rx = (x - rect.left) / Math.max(1, rect.width);
+    const ry = (y - rect.top) / Math.max(1, rect.height);
+    if (rx < 0.28) return { kind: 'edge', edge: 'left', stack };
+    if (rx > 0.72) return { kind: 'edge', edge: 'right', stack };
+    if (ry < 0.28) return { kind: 'edge', edge: 'top', stack };
+    if (ry > 0.78) return { kind: 'edge', edge: 'bottom', stack };
+    return { kind: 'center', stack };
+  }
+  return null;
+}
+
 export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloat, onAdopt, onDockBack, compact }: Properties) {
   const [dragging,setDragging]=useState<StudioPanel|null>(null);
   const [foreign,setForeign]=useState(false);
@@ -211,50 +263,77 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloa
   },[dragging]);
   const beginDrag=(event: ReactPointerEvent<HTMLElement>, panel: StudioPanel)=>{
     if(event.button!==0)return;
-    if((event.target as HTMLElement).closest('.nested-tab-close,button,a,input'))return;
+    const origin = event.target instanceof Element ? event.target : (event.target as Node).parentElement;
+    if(!origin || origin.closest('.nested-tab-close,button,a,input'))return;
+    // A browser drag on the label ends the gesture before it moves. Pointer capture is taken
+    // only after the drag has started, so the tab can leave the window; a rejected capture
+    // must not cancel the in-window drag (mousemove on the page still tracks that).
+    event.preventDefault();
     const startX=event.clientX, startY=event.clientY;
+    const tab=event.currentTarget;
+    const pointerId=event.pointerId;
     let moved=false;
+    let done=false;
+    let captured=false;
     const track=(x:number,y:number)=>{
       point.current={x,y};
       const chip=ghost.current;
       if(chip) chip.style.transform=`translate(${x+14}px,${y+14}px)`;
-      const zone=document.elementFromPoint(x,y)?.closest<HTMLElement>('[data-dock]');
+      const hit=dockHit(x,y);
       document.querySelectorAll('[data-dock].hovered').forEach(node=>node.classList.remove('hovered'));
+      if(!hit)return;
+      const zone=[...document.querySelectorAll<HTMLElement>('[data-dock]')].find(element=>{
+        const rect=element.getBoundingClientRect();
+        return element.dataset.dock===hit.kind && (element.dataset.stack||'')===(hit.stack||'') &&
+          (element.dataset.edge||'')===(hit.edge||'') && x>=rect.left && x<rect.right && y>=rect.top && y<rect.bottom;
+      });
       zone?.classList.add('hovered');
     };
-    const move=(ev: PointerEvent)=>{
-      if(!moved && Math.hypot(ev.clientX-startX, ev.clientY-startY)<5)return;
-      if(!moved){moved=true; setDockDrag(true); setDragging(panel);}
-      track(ev.clientX, ev.clientY);
-    };
-    const up=(ev: PointerEvent)=>{
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
+    const finish=(x:number,y:number)=>{
+      if(done)return;
+      done=true;
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('mousemove', move, true);
+      window.removeEventListener('pointerup', finishPointer, true);
+      window.removeEventListener('mouseup', finishPointer, true);
       document.querySelectorAll('[data-dock].hovered').forEach(node=>node.classList.remove('hovered'));
       setDockDrag(false);
       setDragging(null);
-      if(!moved)return;
-      const zone=document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('[data-dock]');
-      if(!zone){
-        if(ev.clientX<=0||ev.clientY<=0||ev.clientX>=window.innerWidth||ev.clientY>=window.innerHeight) onFloat?.(panel, true);
+      if(!moved){
+        const stack=panelStack(tree, panel);
+        if(stack) setTree(current=>activateTab(current, stack, panel));
         return;
       }
-      const edge=zone.dataset.edge as DockEdge | undefined;
-      const stack=zone.dataset.stack;
-      const before=zone.dataset.before;
+      const hit=dockHit(x,y);
+      if(!hit){
+        if(x<=0||y<=0||x>=window.innerWidth||y>=window.innerHeight) onFloat?.(panel, true);
+        return;
+      }
       const adopted=panelStack(tree, panel)===null;
       setTree(current=>{
-        if(zone.dataset.dock==='root' && edge) return splitDockRoot(current, panel, edge);
-        if(zone.dataset.dock==='edge' && edge && stack) return splitDockStack(current, panel, stack, edge);
-        if(stack) return moveTab(current, panel, stack, before && validPanel(before) ? before : undefined);
+        if(hit.kind==='root' && hit.edge) return splitDockRoot(current, panel, hit.edge);
+        if(hit.kind==='edge' && hit.edge && hit.stack) return splitDockStack(current, panel, hit.stack, hit.edge);
+        if(hit.stack) return moveTab(current, panel, hit.stack, hit.before && validPanel(hit.before) ? hit.before : undefined);
         return current;
       });
       if(adopted) onAdopt?.(panel);
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
+    const move=(ev: PointerEvent | MouseEvent)=>{
+      if(!moved && Math.hypot(ev.clientX-startX, ev.clientY-startY)<3)return;
+      if(!moved){
+        moved=true; concealNativeViews(); setDragging(panel);
+        if(!captured && tab instanceof HTMLElement){
+          captured=true;
+          try { tab.setPointerCapture(pointerId); } catch { /* the page still tracks the drag inside the window */ }
+        }
+      }
+      track(ev.clientX, ev.clientY);
+    };
+    const finishPointer=(ev: PointerEvent | MouseEvent)=>finish(ev.clientX, ev.clientY);
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('mousemove', move, true);
+    window.addEventListener('pointerup', finishPointer, true);
+    window.addEventListener('mouseup', finishPointer, true);
   };
   const dropOnRoot=(event: DragEvent<HTMLElement>, edge: DockEdge)=>{
     event.preventDefault();

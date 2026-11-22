@@ -52,6 +52,12 @@ export function nativeWindowAction(action: 'studio.windowDrag' | 'studio.windowZ
   try { native?.postMessage({ id: 0, method: action, params: {} }); }
   catch { /* not in the native host */ }
 }
+/** Start an edge resize. The button must still be down; the host runs the system size loop. */
+export function nativeWindowResize(edge: 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'): void {
+  const native = window.webkit?.messageHandlers?.aiverse;
+  try { native?.postMessage({ id: 0, method: 'studio.windowResize', params: { edge } }); }
+  catch { /* not in the native host */ }
+}
 /** Events the host may send while React is still mounting (the startup project opens on didFinishNavigation):
  *  a listener added within a few seconds still gets the latest one. */
 const STICKY = new Set(['project.splash', 'project.loading']);
