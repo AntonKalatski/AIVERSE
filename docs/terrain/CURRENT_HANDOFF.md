@@ -4,6 +4,13 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Latest (2026-11-22): Metal editor QA, automatic streaming, trunk colliders
+
+**Read first:** [qa-2026-11-22-terra-next.md](qa-2026-11-22-terra-next.md) — near/mid/far editor
+frame/draw/triangle tables (live TerraWeave and AlpineValley exported assets), the fixed Horizon
+preview bug, the exported-tree LOD bottleneck, `TerraWeaveStreamingPlanner`, trunk colliders and the
+Studio TerraWeave Generator panel, with what is and is not verified.
+
 ## Latest acceptance evidence: FULL native CTest 136/136 PASSED
 
 **Read first:** [Mac Studio full CTest 136/136 PASS handoff](qa-2026-11-20-mac-136-ctest-pass.md).
