@@ -93,7 +93,12 @@ public:
     const AnimationParameters& defaults() const { return defaults_; }
     int initial() const { return initial_; }
     const Model* model() const { return model_; }
+    // True when nothing in the graph can change morph weights (no clip in the
+    // model animates them, no native operation/trait, morph-free subgraphs):
+    // internal pose copies and blends then skip the 64 per-node morph slots.
+    bool morphFree() const { return morphFree_; }
 private:
+    bool morphFree_ = false;
     struct CompileContext;
     static std::shared_ptr<const AnimationGraph> compileImpl(const Model&, const Json&, CompileContext&, int);
     const Model* model_ = nullptr;
