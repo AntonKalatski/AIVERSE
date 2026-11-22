@@ -1,6 +1,6 @@
 // Boss encounters in the RTS simulation: rules "encounters" (docs/encounters.md, docs/game-format.md § Boss encounters).
 //
-// Glue between the `boss-encounters` library package (libraries/include/aiverselib/genre: Telegraphs, StatusEffects,
+// Glue between the `boss-encounters` library package (libraries/include/aiverselib/mechanics: Telegraphs, StatusEffects,
 // BossEncounter, BossSchedule, MobBehaviour) and real units: the library makes the decisions (which attack, which
 // phase, when adds come, where a mob goes, who a telegraph strikes on which tick), this file owns the bodies.
 //  - attacks: telegraphed ground areas (circle / cone / line / ring, windup -> active -> recovery). Bosses, mobs, unit
@@ -34,7 +34,7 @@ namespace aiverse::game {
 
 class GameHost;
 struct Rules;
-namespace lg = aiverse::lib::genre;
+namespace lg = aiverse::lib::mechanics;
 
 // What an encounter status looks like (status markers); derived from the rules status: stun / root flags, a speed
 // multiplier below 1, positive tick damage.

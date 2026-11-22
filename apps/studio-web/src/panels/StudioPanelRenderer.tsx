@@ -98,7 +98,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'postfx': return <PostFxPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'terrain': case 'water': case 'roads': case 'tiles': case 'generate':
       case 'effects': case 'lightbake': case 'models': case 'overlays': case 'branding':
-      case 'fields': case 'physis': case 'fps': case 'raid': case 'balance': case 'fx_graph': case 'fx_functions': case 'modeling':
+      case 'fields': case 'physis': case 'actor': case 'raid': case 'balance': case 'fx_graph': case 'fx_functions': case 'modeling':
       case 'anim_assets': case 'anim_graph': case 'anim_rig': case 'model_anim': case 'project_import':
         return <ToolPanel panel={panel} snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'fog': return <FogPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;

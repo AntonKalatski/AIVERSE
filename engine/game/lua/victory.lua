@@ -4,7 +4,7 @@
 -- Mirrors the former C++ RtsModule::sysVictory exactly (bit-identical matches).
 
 local PRES_ANY, PRES_BUILT, PRES_UNIT, PRES_KEY, PRES_STRUCTURE, PRES_DEPLOYER =
-  rts.PRES_ANY, rts.PRES_BUILT, rts.PRES_UNIT, rts.PRES_KEY, rts.PRES_STRUCTURE, rts.PRES_DEPLOYER
+  core.PRES_ANY, core.PRES_BUILT, core.PRES_UNIT, core.PRES_KEY, core.PRES_STRUCTURE, core.PRES_DEPLOYER
 
 -- does a player with these presence flags stay in the game?
 local function hasBase(v, f)
@@ -21,8 +21,8 @@ end
 
 local function aliveTeams()
   local teams, seen = {}, {}
-  for _, p in ipairs(rts.players()) do
-    if p.alive and not rts.is_wave_player(p.slot) and not seen[p.team] then
+  for _, p in ipairs(core.players()) do
+    if p.alive and not core.is_wave_player(p.slot) and not seen[p.team] then
       seen[p.team] = true
       teams[#teams + 1] = p.team
     end
@@ -32,56 +32,56 @@ end
 
 std.period.victory = 10           -- checked every 10 ticks
 
-local V = rts.victory_rules()     -- constant for the match (rules + map override)
+local V = core.victory_rules()     -- constant for the match (rules + map override)
 
 function std.victory(tick)
-  if rts.winner() >= 0 then return end
+  if core.winner() >= 0 then return end
   if raid.active() then return end  -- extraction raids decide the match themselves (RtsRaid.cpp)
   local v = V
 
   local out, teamHas = {}, {}
-  for _, p in ipairs(rts.players()) do
-    if p.alive and not rts.is_wave_player(p.slot) then
-      local has = hasBase(v, rts.presence(p.slot))
+  for _, p in ipairs(core.players()) do
+    if p.alive and not core.is_wave_player(p.slot) then
+      local has = hasBase(v, core.presence(p.slot))
       if v.mode == "tickets" then
-        local t = rts.tickets(p.team)
+        local t = core.tickets(p.team)
         if t and t <= 0 then has = false end
       end
-      if v.mode == "territory" and v.territory_enabled then has = rts.territory(p.slot) > 0 end  -- out when no ground is left
+      if v.mode == "territory" and v.territory_enabled then has = core.territory(p.slot) > 0 end  -- out when no ground is left
       if has then teamHas[p.team] = true else out[#out + 1] = p end
     end
   end
   -- match modes "conquest": {"team": true}: a player stays while a teammate still has a base
   for _, p in ipairs(out) do
-    if not (v.team_elimination and teamHas[p.team]) then rts.defeat(p.slot) end
+    if not (v.team_elimination and teamHas[p.team]) then core.defeat(p.slot) end
   end
 
   if v.mode == "survive" then
     local teams = aliveTeams()
     if #teams == 0 then
       -- defenders fell: the wave side wins (or a draw if waves have no team of their own)
-      local wp = rts.wave_players()
-      rts.set_winner(#wp == 0 and 0 or rts.team_of(wp[1]))
+      local wp = core.wave_players()
+      core.set_winner(#wp == 0 and 0 or core.team_of(wp[1]))
     elseif tick >= v.limit_ticks then
-      rts.set_winner(#teams == 1 and teams[1] or 0)
+      core.set_winner(#teams == 1 and teams[1] or 0)
     end
-  elseif v.mode == "territory" and rts.territory_total() > 0 then
+  elseif v.mode == "territory" and core.territory_total() > 0 then
     -- a team holding the required share of all claimable cells wins
     local cells = {}
-    for _, p in ipairs(rts.players()) do
-      if p.alive and not rts.is_wave_player(p.slot) then cells[p.team] = (cells[p.team] or 0) + rts.territory(p.slot) end
+    for _, p in ipairs(core.players()) do
+      if p.alive and not core.is_wave_player(p.slot) then cells[p.team] = (cells[p.team] or 0) + core.territory(p.slot) end
     end
-    local need = v.share * rts.territory_total()
+    local need = v.share * core.territory_total()
     for _, t in ipairs(aliveTeams()) do
-      if fx(cells[t] or 0) >= need then rts.set_winner(t); break end
+      if fx(cells[t] or 0) >= need then core.set_winner(t); break end
     end
   elseif v.mode == "score" and tick >= v.limit_ticks then
     local best, bestScore, tie = -1, fx(0), false
     for _, t in ipairs(aliveTeams()) do
-      local s = rts.score(t) or fx(0)
+      local s = core.score(t) or fx(0)
       if best < 0 or s > bestScore then best, bestScore, tie = t, s, false
       elseif s == bestScore then tie = true end
     end
-    rts.set_winner((best < 0 or tie) and 0 or best)
+    core.set_winner((best < 0 or tie) and 0 or best)
   end
 end

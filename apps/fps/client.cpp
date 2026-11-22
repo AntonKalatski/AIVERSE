@@ -332,7 +332,7 @@ struct App {
         // Data-declared entity effects (rules/map "spectraFx", inline
         // "spectraFx" on rules fps.weapons -> selector "weapon:<index>").
         if(!fxScene.configureEntityEffects(rules,map,
-               {{"weapon:",&rules["fps"]["weapons"],"id"}}))
+               {{"weapon:",&rules["actor"]["weapons"],"id"}}))
             std::fprintf(stderr,"SpectraFX entity effects: %s\n",
                          fxScene.lastError().c_str());
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
@@ -369,8 +369,8 @@ struct App {
         ::aiverse::view::AppearanceAssetRegistry::Request request;
         request.model=&model;
         request.sourceId=1; // registry asset key; NOT an individual actor ID
-        request.appearance=rules["fps"]["visual"];
-        request.materialLibrary=rules["fps"]["visual"]["materialLibrary"];
+        request.appearance=rules["actor"]["visual"];
+        request.materialLibrary=rules["actor"]["visual"]["materialLibrary"];
         request.animationGraph=characterGraphFile.empty()
             ?fallbackGraph:Json::string(characterGraphFile.string());
         if(!model.path.empty())request.sources.push_back(model.path);
@@ -401,7 +401,7 @@ struct App {
     void loadAnimatedCharacter(gfx::Device& device) {
         if(!gpuLifetime || !gpuLifetime->lease().validFor(device))
             throw std::logic_error("FPS animated character GPU device generation expired");
-        const auto& view=rules["fps"]["visual"];
+        const auto& view=rules["actor"]["visual"];
         const std::string file=view.getStr("model");
         if (file.empty()) return;
         // Own partially uploaded assets until the graph and optional bake
@@ -484,7 +484,7 @@ struct App {
             // cosmetic montages never drive hit, reload or damage authority.
             const auto& montagePaths=view["montages"];
             if(!montagePaths.isNull() && !montagePaths.isObject())
-                throw std::invalid_argument("fps.visual.montages must be an object");
+                throw std::invalid_argument("actor.visual.montages must be an object");
             for(const char* action:{"shot","reload","death"}) {
                 const std::string file=montagePaths.getStr(action);
                 if(file.empty())continue;
@@ -1186,21 +1186,21 @@ struct App {
         if(fxOriginReady) fxScene.render(renderer.lighting,renderer.viewProj(),cam);
         ImGui::SetNextWindowPos({16,16});ImGui::SetNextWindowBgAlpha(0.65f);
         ImGui::Begin("##fps",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
-        auto text=lang.tr("fps.status",i18n::Args().num("health",actor.health).num("ammo",actor.ammo).num("reserve",actor.reserve).num("tick",client->snapshot().tick));
+        auto text=lang.tr("actor.status",i18n::Args().num("health",actor.health).num("ammo",actor.ammo).num("reserve",actor.reserve).num("tick",client->snapshot().tick));
         if(!client->snapshot().race.enabled)ImGui::TextUnformatted(text.c_str());   // a race shows its own HUD (engine/ui/RaceHud.h), no weapons
-        if((streamedScene&&!streamedScene->status().complete())||(server&&server->module().streamingStatus()&&!server->module().streamingStatus()->complete()))ImGui::TextUnformatted(lang.tr("fps.worldLoading").c_str());
+        if((streamedScene&&!streamedScene->status().complete())||(server&&server->module().streamingStatus()&&!server->module().streamingStatus()->complete()))ImGui::TextUnformatted(lang.tr("actor.worldLoading").c_str());
         if(!client->snapshot().race.enabled){
         ImGui::TextUnformatted(lang.tr(weapon.nameKey).c_str());
-        if(actor.reloadUntil)ImGui::TextUnformatted(lang.tr("fps.reloading").c_str());
-        else if(actor.ammo==0)ImGui::TextUnformatted(lang.tr("fps.empty").c_str());
+        if(actor.reloadUntil)ImGui::TextUnformatted(lang.tr("actor.reloading").c_str());
+        else if(actor.ammo==0)ImGui::TextUnformatted(lang.tr("actor.empty").c_str());
         for(size_t i=0;i<config.weapons.size();++i) {
-            auto label=lang.tr("fps.weaponSlot",i18n::Args().num("slot",int(i+1)).str("weapon",lang.tr(config.weapons[i].nameKey)));
+            auto label=lang.tr("actor.weaponSlot",i18n::Args().num("slot",int(i+1)).str("weapon",lang.tr(config.weapons[i].nameKey)));
             ImGui::TextColored(i==actor.weaponIndex?ImVec4(1,0.8f,0.3f,1):ImVec4(0.6f,0.65f,0.7f,1),"%s",label.c_str());
         }
         }   // !client->snapshot().race.enabled
-        ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr(!client->ready()?"fps.connecting":client->snapshot().race.enabled?"race.controls":"fps.controls").c_str());ImGui::PopTextWrapPos();
-        if(!client->connected())ImGui::TextUnformatted(lang.tr("fps.disconnected").c_str());
-        if(client->snapshot().winner)ImGui::TextUnformatted(lang.tr("fps.finished").c_str());
+        ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr(!client->ready()?"actor.connecting":client->snapshot().race.enabled?"race.controls":"actor.controls").c_str());ImGui::PopTextWrapPos();
+        if(!client->connected())ImGui::TextUnformatted(lang.tr("actor.disconnected").c_str());
+        if(client->snapshot().winner)ImGui::TextUnformatted(lang.tr("actor.finished").c_str());
         if(characterModel && characterAnimationStatsEnabled) {
             ImGui::Text("MotionWeave: %s (%zu visible)",
                 characterBakedCrowd?"GPU baked":"CPU graph",
@@ -1215,13 +1215,13 @@ struct App {
             }
         }
         if(config.systems.enabled&&!client->snapshot().race.enabled){
-            auto stats=lang.tr("fps.systems.status",i18n::Args().num("armor",actor.armor).num("money",actor.money));ImGui::TextUnformatted(stats.c_str());
-            if(actor.downed)ImGui::TextUnformatted(lang.tr("fps.downed").c_str());
-            if(actor.health<=0)ImGui::TextUnformatted(lang.tr("fps.dead").c_str());
-            if(actor.activeAction!=actor::Action::None){auto remaining=std::max(0,int(actor.actionUntil)-int(client->snapshot().tick));ImGui::TextUnformatted(lang.tr("fps.action",i18n::Args().num("seconds",(remaining+int(config.tickRate)-1)/int(config.tickRate))).c_str());}
-            ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr("fps.systems.controls").c_str());ImGui::PopTextWrapPos();
-            if(held("ShowInventory"))for(auto item:actor.bag)ImGui::TextUnformatted(lang.tr("fps.item",i18n::Args().str("name",lang.tr("fps.item."+std::to_string(item.type))).num("count",item.count)).c_str());
-            if(config.mode=="bomb")ImGui::TextUnformatted(lang.tr("fps.round",i18n::Args().num("round",client->snapshot().round).num("a",client->snapshot().match.scoreA).num("b",client->snapshot().match.scoreB).num("bomb",client->snapshot().match.planted?std::max(0,int(client->snapshot().match.bombExplodes)-int(client->snapshot().tick))/int(config.tickRate):0)).c_str());
+            auto stats=lang.tr("actor.systems.status",i18n::Args().num("armor",actor.armor).num("money",actor.money));ImGui::TextUnformatted(stats.c_str());
+            if(actor.downed)ImGui::TextUnformatted(lang.tr("actor.downed").c_str());
+            if(actor.health<=0)ImGui::TextUnformatted(lang.tr("actor.dead").c_str());
+            if(actor.activeAction!=actor::Action::None){auto remaining=std::max(0,int(actor.actionUntil)-int(client->snapshot().tick));ImGui::TextUnformatted(lang.tr("actor.action",i18n::Args().num("seconds",(remaining+int(config.tickRate)-1)/int(config.tickRate))).c_str());}
+            ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr("actor.systems.controls").c_str());ImGui::PopTextWrapPos();
+            if(held("ShowInventory"))for(auto item:actor.bag)ImGui::TextUnformatted(lang.tr("actor.item",i18n::Args().str("name",lang.tr("actor.item."+std::to_string(item.type))).num("count",item.count)).c_str());
+            if(config.mode=="bomb")ImGui::TextUnformatted(lang.tr("actor.round",i18n::Args().num("round",client->snapshot().round).num("a",client->snapshot().match.scoreA).num("b",client->snapshot().match.scoreB).num("bomb",client->snapshot().match.planted?std::max(0,int(client->snapshot().match.bombExplodes)-int(client->snapshot().tick))/int(config.tickRate):0)).c_str());
         }
         ImGui::End();
         drawInputSettings();
@@ -1284,7 +1284,7 @@ struct App {
     }
 };
 }
-// Actor projects (game.json "module": "fps") in the one game client (apps/client/main.cpp dispatches here).
+// Actor projects (game.json "module": "actor") in the one game client (apps/client/main.cpp dispatches here).
 int actorClientMain(int argc,char** argv) {
     try {
         App app;auto engineRoot=platform::resolveEngineDir(AIVERSE_SOURCE_DIR,argv[0]);

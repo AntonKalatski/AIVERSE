@@ -13,7 +13,7 @@ scene_entity_list/get, scene_component_set, scene_light_create/delete,
 scene_render_lighting_get/set. Common document ID formatting moved into
 apps/editor/DocumentEntityIdentity.h; Studio wrappers reuse it. Component edits
 reuse EditorEntityAdapter, validate ownership/instance fields, stage on a copy
-and commit to native history. FPS uses whole-document fps_set validation. Old
+and commit to native history. FPS uses whole-document actor_set validation. Old
 MCP names and save formats remain compatible; entityId is the Stage34 metadata.
 No new renderer behavior, GPU flags or simulation components. Sources are
 apps/editor/core/SceneEntityOps.h, LightOps registration and tools/mcp/main.cpp

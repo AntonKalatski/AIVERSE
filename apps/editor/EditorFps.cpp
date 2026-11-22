@@ -45,7 +45,7 @@ const Json& Editor::fpsRuntimeSnapshot() {
     fpsRuntimeProjectDir_ = ws_.project.dir + "\n" + doc().path;
     fpsRuntimeCache_ = Json::object();
     Json actors = Json::array();
-    if (!ws_.project.actorSessionPlay()) {
+    if (!ws_.project.actorSession()) {
         fpsRuntimeCache_.set("actors", actors);
         return fpsRuntimeCache_;
     }
@@ -182,7 +182,7 @@ const Json& Editor::fpsRuntimeSnapshot() {
 }
 
 void Editor::startFpsPlay(bool listen,const std::string& address) {
-    if(!ws_.project.actorSessionPlay()||ws_.building())return;
+    if(!ws_.project.actorSession()||ws_.building())return;
     try {
         auto cfg=actor::readConfig(ws_.project.rulesJson);Simulation check({1,cfg.tickRate,0},std::make_unique<game::GameCore>());check.setup(ws_.project.rulesJson,doc().toJson());
         std::string error;
@@ -198,14 +198,14 @@ void Editor::startFpsPlay(bool listen,const std::string& address) {
         auto parent=fs::path(opt_.editorExe).parent_path();for(int i=0;i<4;++i){roots.push_back(parent);parent=parent.parent_path();}
         fs::path exe;std::error_code ec;
         for(const auto& root:roots)for(const auto& rel:{fs::path(name),fs::path("Release")/name,fs::path("AiverseGame.app/Contents/MacOS")/name})if(exe.empty()&&fs::is_regular_file(root/rel,ec))exe=root/rel;
-        if(exe.empty()){status=engineText(ws_,"fps.editor.missing");ws_.log("fps",status,true);return;}
+        if(exe.empty()){status=engineText(ws_,"actor.editor.missing");ws_.log("actor",status,true);return;}
         std::string cmd="cd "+quote(ws_.engineDir)+" && "+quote(exe.string())+" --project "+quote(ws_.project.dir);
 #ifdef _WIN32
         cmd="cd /d "+quote(ws_.engineDir)+" && "+quote(exe.string())+" --project "+quote(ws_.project.dir);
 #endif
         if(listen)cmd+=" --listen";else if(!address.empty())cmd+=" --connect "+quote(address);
-        ws_.startCommand(cmd,cmd,"fps-play");status=engineText(ws_,"fps.editor.running");
-    }catch(const std::exception& e){status=engineText(ws_,"fps.editor.invalid");ws_.log("fps",e.what(),true);}
+        ws_.startCommand(cmd,cmd,"actor-play");status=engineText(ws_,"actor.editor.running");
+    }catch(const std::exception& e){status=engineText(ws_,"actor.editor.invalid");ws_.log("actor",e.what(),true);}
 }
 // FPS contributes scene geometry to the shared editor renderer. The scene
 // lifecycle, post-processing, depth buffer and UI overlays are owned by

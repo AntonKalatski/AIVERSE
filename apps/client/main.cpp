@@ -44,7 +44,7 @@ int aiverseMain(int argc, char** argv) {
     // One client for every project: the project's data picks the host, not the executable.
     const std::string module = projectModule(argc, argv);
 #if defined(AIVERSE_CLIENT_ACTOR)
-    if (module == "fps") return actorClientMain(argc, argv);
+    if (module == "actor") return actorClientMain(argc, argv);
 #endif
 #if defined(AIVERSE_CLIENT_VOXEL)
     if (module == "voxel") return voxelClientMain(argc, argv);

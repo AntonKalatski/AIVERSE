@@ -193,7 +193,7 @@ void StudioHost::sendProjectSplash(const std::string& path) {
     try {
         const Json m = Json::parseFile((dir / "game.json").string());
         if (!m.getStr("name").empty()) payload.set("name", Json::string(m.getStr("name")));
-        payload.set("module", Json::string(m.getStr("genre", m.getStr("module", "rts"))));
+        payload.set("module", Json::string(m.getStr("genre", m.getStr("module", "game"))));
         payload.set("maps", Json::number(int64_t(m["maps"].isArray() ? m["maps"].size() : 0)));
         const Json& sp = m["splash"];
         if (sp.isObject()) {

@@ -9,7 +9,7 @@
 // invalid input with std::nullopt without touching state, and returns ObjectiveEvents. Events are
 // outcomes for the existing match owner (Match.h awardScore via awardObjectiveEvents); presence,
 // deaths, gate crossings and pickups are reported by the authoritative owner, never trusted input.
-// Persistence: genre::save/load (Persistence.h) find io/valid/stateKind here; record kinds 40..47.
+// Persistence: mechanics::save/load (Persistence.h) find io/valid/stateKind here; record kinds 40..47.
 #include "Match.h"
 #include "engine/core/Archive.h"
 #include "engine/core/Fixed.h"

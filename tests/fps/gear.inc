@@ -1,16 +1,16 @@
 // fps.gear: tiered helmets / vests / backpacks (gear-tiers package) as loot, absorption, drops, saves.
 void gear() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":20,"mode":"deathmatch","mechanics":{"enabled":true},
+    auto rules=Json::parse(R"({"actor":{"tickRate":20,"mode":"deathmatch","mechanics":{"enabled":true},
       "gear":[{"id":1,"slot":0,"tier":2,"durability":150,"reduction":400,"zones":1},{"id":2,"slot":1,"tier":2,"durability":100,"reduction":500,"zones":2},
               {"id":3,"slot":1,"tier":3,"durability":250,"reduction":550,"zones":2},{"id":4,"slot":2,"tier":1,"durability":1,"wear":0,"capacity":4}]}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[0,0.01,0],[0,0.01,30]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}],
       "loot":[{"pos":[0,0.01,1],"type":202},{"pos":[0,0.01,1.5],"type":203},{"pos":[0,0.01,2],"type":204}]})");
-    auto bad=Json::parse(R"({"fps":{"tickRate":20,"gear":[{"id":1}]}})");
-    try{actor::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.gear: requires mechanics.enabled")!=std::string::npos);}
+    auto bad=Json::parse(R"({"actor":{"tickRate":20,"gear":[{"id":1}]}})");
+    try{actor::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("actor.gear: requires mechanics.enabled")!=std::string::npos);}
     {   // the same block at the top level of rules (shared name, G6) loads identically; both places at once is an error
-        auto top=rules;auto fpsBlock=top["fps"];top.set("gear",fpsBlock["gear"]);fpsBlock.erase("gear");top.set("fps",fpsBlock);
+        auto top=rules;auto fpsBlock=top["actor"];top.set("gear",fpsBlock["gear"]);fpsBlock.erase("gear");top.set("actor",fpsBlock);
         CHECK(actor::readConfig(top).gear.size()==actor::readConfig(rules).gear.size());
-        auto both=rules;both.set("gear",rules["fps"]["gear"]);
+        auto both=rules;both.set("gear",rules["actor"]["gear"]);
         try{actor::readConfig(both);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("keep one of them")!=std::string::npos);}
     }
     auto sim=simulation(rules,map);auto& module=fpsModule(*sim);

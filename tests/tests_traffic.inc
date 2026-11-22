@@ -4,7 +4,7 @@
 #include "engine/game/Traffic.h"
 
 namespace {
-namespace tl = lib::genre;
+namespace tl = lib::mechanics;
 // 28 x 28 cells: roads (4 wide) along rows / columns 0-3, 12-15, 24-27; sidewalk rings around two by two blocks
 std::vector<std::string> trafficRows() {
     std::vector<std::string> rows;

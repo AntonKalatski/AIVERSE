@@ -23,7 +23,7 @@ void projectFileRecoveryWorkflow() {
     fs::create_directories(project/"content"/"A");
     fs::create_directories(project/"content"/"B");
     fs::create_directories(project/".aiverse-cache");
-    std::ofstream(project/"game.json") << R"({"name":"Recovery fixture","module":"rts","rules":"rules.json"})";
+    std::ofstream(project/"game.json") << R"({"name":"Recovery fixture","module":"game","rules":"rules.json"})";
     std::ofstream(project/"rules.json") << R"({"types":{"unit":{"health":{"max":100}}}})";
     std::ofstream(project/"Fixture.aiverse") << R"({"format":1,"name":"Recovery fixture","manifest":"game.json"})";
     const auto original=project/"content"/"A"/"sample.txt";
@@ -52,7 +52,7 @@ void authoredEntityWorkflow() {
    using namespace aiverse;namespace fs=std::filesystem;
    const auto root=fs::temp_directory_path()/("studio-authored-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
    const auto project=root/"fixture";fs::create_directories(project/"maps");
-   std::ofstream(project/"game.json")<<R"({"module":"rts","rules":"rules.json","maps":[{"file":"maps/scene.json"}]})";
+   std::ofstream(project/"game.json")<<R"({"module":"game","rules":"rules.json","maps":[{"file":"maps/scene.json"}]})";
    std::ofstream(project/"rules.json")<<R"({"types":{"tree":{"health":{"max":100}}}})";
    editor::MapDoc map;map.reset(16,16);editor::DocEntity e;e.id="first";e.type="tree";e.x=2;e.z=3;
    e.extra=Json::parse(R"({"components":{"Transform":{"y":4,"yaw":0,"scale":1},"StaticModel":{"asset":"content/tree.gltf"}}})");map.data.entities.push_back(e);e.id="second";map.data.entities.push_back(e);
@@ -411,7 +411,7 @@ void entityWorkflow() {
     const auto root=fs::temp_directory_path()/("studio-entities-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const auto project=root/"templates"/"fixture";
     fs::create_directories(project/"maps");
-    std::ofstream(project/"game.json") << R"({"name":"Studio fixture","module":"rts","rules":"rules.json","maps":[{"file":"maps/scene.json"}]})";
+    std::ofstream(project/"game.json") << R"({"name":"Studio fixture","module":"game","rules":"rules.json","maps":[{"file":"maps/scene.json"}]})";
     std::ofstream(project/"rules.json") << R"({"types":{"unit":{"health":{"max":100}}}})";
     editor::MapDoc map;
     map.reset(16,16);

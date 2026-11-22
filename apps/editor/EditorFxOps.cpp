@@ -213,12 +213,12 @@ void Editor::registerFxPreviewOps() {
                 gameFx_.kill(fxPreview_.h);
                 fxPreview_={};fxFrozen_=false;
                 queueSpectraGpuPreview(compiled,instanceParams,pos,
-                    playing()&&!ws_.project.actorSessionPlay(),p.getBool("loop"));
+                    playing()&&!ws_.project.actorSession(),p.getBool("loop"));
                 Json response=Json::object();
                 response.set("ok",Json::fromBool(true));
                 response.set("queued",Json::fromBool(true));
                 response.set("backend",Json::string("Metal"));
-                response.set("view",Json::string(playing()&&!ws_.project.actorSessionPlay()?"game":"scene"));
+                response.set("view",Json::string(playing()&&!ws_.project.actorSession()?"game":"scene"));
                 response.set("summary",Json::string("Metal preview will start before the next scene render pass"));
                 return response;
             }

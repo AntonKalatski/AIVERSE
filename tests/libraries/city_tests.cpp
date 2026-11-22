@@ -150,7 +150,7 @@ void weather() {
 }
 
 void vehicleFx() {
-    using namespace genre;
+    using namespace mechanics;
     VehicleLights l;
     l.motion(10, 9, 9, 0.1, 5.0, false);    // -10 per second: hard braking
     CHECK(l.braking && l.level("brake", true, 5.1) == 1);
@@ -249,7 +249,7 @@ void derivedKeys() {
 }
 
 void trafficRoutes() {
-    using namespace genre;
+    using namespace mechanics;
     // J0 --narrow (2 cells)-- J3 --destination piece
     //  \--wide W1-- J1 --wide W2--/
     TrafficNet net;

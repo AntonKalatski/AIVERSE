@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// Versioned save/load (genre::save/load from Persistence.h) and checksum hashing for card-games state.
+// Versioned save/load (mechanics::save/load from Persistence.h) and checksum hashing for card-games state.
 // Record kinds 96..103 are reserved for the cards+turns batch: CardGameState 96 (97 reserved for cards),
 // TacticsState 98 and TacticsOrders 99 (TacticsPersistence.h), 100..103 reserved. card-runtime's own
 // strategy/Persistence.h records (CardState kind 4) are unchanged. Store each state in its own NativeState key,

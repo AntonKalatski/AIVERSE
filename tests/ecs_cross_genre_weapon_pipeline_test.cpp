@@ -9,7 +9,7 @@
 #include <string>
 
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 static void require(bool ok,const char* why) {
     if(!ok)throw std::runtime_error(why);
 }

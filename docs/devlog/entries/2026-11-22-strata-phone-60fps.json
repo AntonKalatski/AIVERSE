@@ -1,0 +1,48 @@
+{
+  "id": "2026-11-22-strata-phone-60fps",
+  "date": "2026-11-22",
+  "system": "strata",
+  "title": "STRATA: 60 fps на бюджетном телефоне и вдвое меньше памяти",
+  "summary": "Те же 20 сфер по миллиону треугольников на Galaxy A05s теперь идут в 60 кадров на GLES, процесс занимает около 440 МБ вместо 730, а на Vulkan кадр подешевел за счёт поворота изображения внутри движка.",
+  "body": [
+    "Сцена прежняя: 20 сфер по 1 002 252 треугольника, только геометрия, рендер 1200×540. Иерархия готовится заранее на диске и грузится около 1,2 с.",
+    "Иерархия доходит до грубых уровней: если упрощение группы почти ничего не дало, построитель повторяет его с большей ошибкой, а корни сферы сливаются вниз до ~256 треугольников. Предел уровней — 16. С бюджетом 60 тыс. треугольников STRATA рисует около 71 тыс. треугольников на 20 сфер, дальние сферы — сотни треугольников.",
+    "Выбор кластеров для каждой сферы кешируется, пока камера и порог не меняются; выбранные индексы лежат в неизменяемом буфере на каждый выбор, старые освобождаются через 16 кадров — без ожидания GPU на перезаливке.",
+    "Память. Полный поток индексов больше не грузится в видеопамять, когда рисуются только сжатые выборки; на CPU индексы хранятся в сжатом виде, таблицы мешлетов освобождаются после загрузки, а страницы пакета контента отдаются системе после копирования. PSS процесса: 730 → 410–455 МБ, нативная куча: 300 → 85 МБ на GLES и 123 МБ на Vulkan.",
+    "Vulkan. На этом телефоне свопчейн в портретной ориентации, и композитор поворачивал каждый кадр сам. Теперь движок поворачивает изображение вычислительным шейдером перед показом (AIVERSE_VK_PRE_ROTATE=0 выключает): 43 → 48 fps.",
+    "Панель STRATA в углу показывает треугольники, порог ошибки, вызовы отрисовки, память процесса, CPU-индексы и видеопамять выборок."
+  ],
+  "status": "in-progress",
+  "verified": "Samsung Galaxy A05s (Adreno 610, 1200×540), бюджет 60 тыс.: GLES — 59,9 fps стоя и 58,4 fps в пролёте камеры, ~71 тыс. треугольников, 20 вызовов отрисовки, PSS 437 МБ. Бюджет 120 тыс. — 54 fps. Vulkan — 48 fps с поворотом в движке, 43 без него. Без STRATA — 4,5 fps.",
+  "limits": "Vulkan всё ещё медленнее GLES и не рисует текст панели. Около 200 МБ видеопамяти — вершины по 60 байт и исходный буфер индексов моделей, которые рисуются только через STRATA; их сжатие следующим шагом. Около 100 МБ занимает отображение .apk, эффект освобождения страниц при чтении файлов ещё не замерен.",
+  "branch": "main",
+  "commit": "",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-strata-phone-60fps/strata-phone-60fps.jpg",
+      "caption": "Galaxy A05s, GLES: 20 сфер по миллиону треугольников, 60 fps",
+      "captionEn": "Galaxy A05s, GLES: 20 spheres of a million triangles each, 60 fps"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-strata-phone-60fps/strata-phone-vulkan.jpg",
+      "caption": "Тот же кадр на Vulkan с поворотом изображения в движке, 48 fps",
+      "captionEn": "The same frame on Vulkan with in-engine pre-rotation, 48 fps"
+    }
+  ],
+  "links": [
+    {"title": "docs/strata.md", "href": "docs/strata.md"}
+  ],
+  "author": "strata",
+  "titleEn": "STRATA: 60 fps on a budget phone and half the memory",
+  "summaryEn": "The same 20 million-triangle spheres now run at 60 fps on GLES on a Galaxy A05s, the process takes about 440 MB instead of 730, and Vulkan frames got cheaper by rotating the image inside the engine.",
+  "bodyEn": [
+    "Same scene: 20 spheres of 1,002,252 triangles each, geometry only, rendering at 1200×540. The hierarchy is cooked on disk ahead of time and loads in about 1.2 s.",
+    "The hierarchy reaches coarse levels: when simplifying a group gains almost nothing the builder retries with a larger error, and a sphere's roots are merged down to about 256 triangles. Up to 16 levels. With a 60 k triangle budget STRATA draws about 71 k triangles for 20 spheres; far spheres take a few hundred.",
+    "Each sphere's cluster selection is cached while the camera and threshold stay put; selected indices live in an immutable buffer per selection and old ones are freed after 16 frames, so re-uploads never wait on the GPU.",
+    "Memory. The full index stream is no longer uploaded to video memory when only compacted selections are drawn; CPU indices are kept compressed, meshlet tables are freed after staging, and content pack pages are returned to the system after copying. Process PSS: 730 → 410–455 MB, native heap: 300 → 85 MB on GLES and 123 MB on Vulkan.",
+    "Vulkan. This phone's swapchain is portrait and the compositor rotated every frame itself. The engine now rotates the image with a compute shader before presenting (AIVERSE_VK_PRE_ROTATE=0 turns it off): 43 → 48 fps.",
+    "The STRATA corner panel shows triangles, error threshold, draw calls, process memory, CPU indices and selection video memory."
+  ],
+  "verifiedEn": "Samsung Galaxy A05s (Adreno 610, 1200×540), 60 k budget: GLES 59.9 fps static and 58.4 fps in a camera fly-through, ~71 k triangles, 20 draw calls, PSS 437 MB. 120 k budget: 54 fps. Vulkan: 48 fps with in-engine rotation, 43 without. Without STRATA: 4.5 fps.",
+  "limitsEn": "Vulkan is still slower than GLES and does not draw the panel text. About 200 MB of video memory is 60-byte vertices and the original index buffer of models drawn only through STRATA; compressing them is next. About 100 MB is the .apk mapping; the effect of releasing pages on file reads is not measured yet."
+}

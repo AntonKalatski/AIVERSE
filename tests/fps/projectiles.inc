@@ -1,7 +1,7 @@
 void projectilePrograms() {
-    auto base=Json::parse(R"({"fps":{"tickRate":20,"mode":"deathmatch","weapon":{"damage":10,"intervalTicks":1000,"bulletSpeed":200,"bulletGravity":0,"flight":{}},"motor":{"gravity":1}}})");
+    auto base=Json::parse(R"({"actor":{"tickRate":20,"mode":"deathmatch","weapon":{"damage":10,"intervalTicks":1000,"bulletSpeed":200,"bulletGravity":0,"flight":{}},"motor":{"gravity":1}}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2},{"team":2},{"team":2}],"spawns":[[0,0.01,0],[0,0.01,4],[0,0.01,8],[0,0.01,12]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]})");
-    auto make=[&](const char* flight,Json m){auto r=base;r.member("fps").member("weapon").set("flight",Json::parse(flight));return simulation(r,m);};
+    auto make=[&](const char* flight,Json m){auto r=base;r.member("actor").member("weapon").set("flight",Json::parse(flight));return simulation(r,m);};
     auto fire=[](Simulation& sim){actor::Input in;in.buttons=actor::Fire;in.sequence=1;auto cmd=actor::command(1,in);cmd.tick=sim.tick();sim.inject(cmd);sim.step();};
     auto step=[](Simulation& sim,int n){while(n--)sim.step();};
     auto sim=make(R"({"modifiers":[{"kind":"flyThrough","count":2,"falloff":0.5}]})",map);
@@ -16,8 +16,8 @@ void projectilePrograms() {
     sim=make(R"({"modifiers":[{"kind":"flyThrough","count":3}]})",cover);fire(*sim);step(*sim,4);
     CHECK(character(*sim,2).health==90);CHECK(character(*sim,3).health==100);
     // Ballistic branches retain vertical velocity; state restores after a timed split.
-    auto ballistic=base;ballistic.member("fps").member("weapon").set("bulletSpeed",Json::number(int64_t(10)));
-    ballistic.member("fps").member("weapon").set("flight",Json::parse(R"({"gravity":4,"verticalSpeed":4,"splitBudget":2,"modifiers":[{"kind":"split","trigger":"time","after":0.1,"angle":45},{"kind":"flyThrough","count":2}]})"));
+    auto ballistic=base;ballistic.member("actor").member("weapon").set("bulletSpeed",Json::number(int64_t(10)));
+    ballistic.member("actor").member("weapon").set("flight",Json::parse(R"({"gravity":4,"verticalSpeed":4,"splitBudget":2,"modifiers":[{"kind":"split","trigger":"time","after":0.1,"angle":45},{"kind":"flyThrough","count":2}]})"));
     sim=simulation(ballistic,map);fire(*sim);step(*sim,3);CHECK(projectilesOf(*sim).size()==3);
     auto saved=sim->serialize();auto copy=simulation(ballistic,map);CHECK(copy->deserialize(saved));CHECK(copy->checksum()==sim->checksum());
     for(const auto& p:projectilesOf(*sim)){CHECK(p.pos.y>1_fx);CHECK(p.program.verticalSpeed>3_fx);CHECK(p.program.splitBudget==0);}
@@ -32,7 +32,7 @@ void projectilePrograms() {
     // Network presentation keeps the existing wire format; private history is server-only.
     net::authority::Snapshot snapshot;snapshot.localSlot=1;snapshot.characters=fpsModule(*sim).snapshots(*sim);snapshot.projectiles=projectilesOf(*sim);
     net::authority::Snapshot decoded;CHECK(net::authority::decodeSnapshot(net::authority::encodeSnapshot(snapshot),decoded));
-    bool rejected=false;try{auto bad=base;bad.member("fps").member("weapon").set("bulletSpeed",Json::number(int64_t(0)));actor::readConfig(bad);}catch(const std::exception&){rejected=true;}CHECK(rejected);
+    bool rejected=false;try{auto bad=base;bad.member("actor").member("weapon").set("bulletSpeed",Json::number(int64_t(0)));actor::readConfig(bad);}catch(const std::exception&){rejected=true;}CHECK(rejected);
 }
 
 
@@ -41,7 +41,7 @@ void projectileProgramStageCase(bool cow) {
     // stage (fps.projectilePrograms) over the Projectile entities: hits,
     // save, rollback replay and a native component write.
     const auto rules=Json::parse(R"({
-        "fps":{"tickRate":20,"mode":"deathmatch",
+        "actor":{"tickRate":20,"mode":"deathmatch",
                "weapon":{"damage":10,"intervalTicks":1000,
                          "bulletSpeed":200,"bulletGravity":0,
                          "flight":{"modifiers":[
@@ -103,7 +103,7 @@ void projectileBranchesCase(bool cow) {
     // Branching shots may retire a source and create multiple children in one
     // tick. Verify entity recycling, stable projectile order and saves.
     auto rules=Json::parse(R"({
-        "fps":{"tickRate":20,"mode":"deathmatch",
+        "actor":{"tickRate":20,"mode":"deathmatch",
                "weapon":{"damage":10,"intervalTicks":1000,
                          "bulletSpeed":200,"bulletGravity":0,
                          "flight":{"modifiers":[
@@ -176,7 +176,7 @@ void ordinaryProjectilesCase(bool cow) {
     // Bullets, timed smoke and bouncing grenades are processed in the
     // separate fps.ordinaryProjectiles stage over natively created entities.
     const auto rules=Json::parse(R"({
-        "fps":{"tickRate":20,"mode":"deathmatch",
+        "actor":{"tickRate":20,"mode":"deathmatch",
                "weapon":{"damage":10,"intervalTicks":1000,
                          "bulletSpeed":40,"bulletGravity":0},
                "mechanics":{"enabled":true,"smokeTicks":10,

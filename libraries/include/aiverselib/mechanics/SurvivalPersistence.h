@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// survival-ecology persistence: versioned genre::save/load records (SurvivalState 106, EcologyState 107,
+// survival-ecology persistence: versioned mechanics::save/load records (SurvivalState 106, EcologyState 107,
 // EcologyAnimalState 108, EcologyResourceState 109; kinds 104..111 are shared with settlement-production, see
 // ColonyPersistence.h) and checksum hashing. Bind survivalConfigHash / ecologyDefsHash / ecologyAnimalDefsHash in
 // the save envelope; feed survivalHash(state) values into the simulation checksum.

@@ -445,7 +445,7 @@ def import_game(source, out, maps_only=False):
             json.dump(rules, f, ensure_ascii=False, indent=1)
         with open(os.path.join(out, 'rules', 'units.json'), 'w') as f:
             json.dump({'types': types}, f, ensure_ascii=False, indent=1)
-        game = {'name': 'Imported TA', 'id': 'local.imported.ta', 'version': '0.1.0', 'module': 'rts', 'rules': 'rules.json',
+        game = {'name': 'Imported TA', 'id': 'local.imported.ta', 'version': '0.1.0', 'module': 'game', 'rules': 'rules.json',
                 'maps': [{'file': 'maps/%s.json' % ident(n), 'title': m['name']} for n, m in maps], 'terrain': {'style': 'smooth'},
                 'external': True}
         gpath = os.path.join(out, 'game.json')

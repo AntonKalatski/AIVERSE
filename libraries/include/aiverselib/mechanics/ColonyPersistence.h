@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// settlement-production persistence: versioned genre::save/load records and checksum hashing.
+// settlement-production persistence: versioned mechanics::save/load records and checksum hashing.
 // Record kinds 104..111 are reserved for settlement-production + survival-ecology: ColonyState 104,
 // PowerGridState 105, SurvivalState 106, EcologyState 107, EcologyAnimalState 108, EcologyResourceState 109
 // (SurvivalPersistence.h), bots::ColonyPlannerState 110 (bots/ColonyPlanner.h), 111 free.

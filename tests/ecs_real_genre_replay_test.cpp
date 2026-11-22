@@ -35,7 +35,7 @@ std::unique_ptr<Simulation> make(Genre genre,bool cow) {
         const std::string base=root+"/examples/fps/arena/";
         rules=Json::parseFile(base+"rules.json");
         map=Json::parseFile(base+"map.json");
-        rules.member("fps").set("mode",Json::string("deathmatch"));
+        rules.member("actor").set("mode",Json::string("deathmatch"));
         tickRate=actor::readConfig(rules).tickRate;
         module=std::make_unique<game::GameCore>();
     }

@@ -2,9 +2,9 @@
 // Race bot policy (vehicle-controllers): follows an owner-authored racing line (closed loop of points), brakes for
 // corners from the line curvature (corner speed sqrt(lateralAccel / curvature), braking distance v^2 = vc^2 + 2ad),
 // overtakes slower cars ahead with a lane offset and scales its pace with a rubber-band difficulty knob.
-// It only returns a genre::VehicleInput (the same struct a player produces); the owner steps the vehicle.
+// It only returns a mechanics::VehicleInput (the same struct a player produces); the owner steps the vehicle.
 // Fixed math, integer ticks, no randomness.
-#include "../genre/VehicleControllers.h"
+#include "../mechanics/VehicleControllers.h"
 #include <algorithm>
 #include <cstdint>
 #include <optional>
@@ -27,39 +27,39 @@ struct RaceBotConfig{
 struct RaceBotState{uint32_t segment=0,lastTick=0;Fixed lane{},laneTarget{};int64_t overtaking=0;bool initialized=false;};
 struct RaceBotOpponent{int64_t id=0;Vec3 position{},velocity{};};
 struct RaceBotView{Vec3 position{},velocity{};Fixed yaw{};uint32_t place=1,racers=1;std::span<const RaceBotOpponent> opponents;};
-struct RaceBotOutput{genre::VehicleInput input;Vec3 target{};Fixed targetSpeed{};int64_t overtaking=0;};
+struct RaceBotOutput{mechanics::VehicleInput input;Vec3 target{};Fixed targetSpeed{};int64_t overtaking=0;};
 
 namespace raceBotDetail {
 inline Vec2 flat(Vec3 v){return {v.x,v.z};}
-inline Fixed wrap(Fixed t){return genre::vehicleDetail::wrap(t);}
+inline Fixed wrap(Fixed t){return mechanics::vehicleDetail::wrap(t);}
 inline Fixed distanceToSegment(Vec2 p,Vec2 a,Vec2 b,Fixed& t){
     auto ab=b-a;auto l=ab.lengthSq();t=l>Fixed{}?fxClamp((p-a).dot(ab)/l,Fixed{},1_fx):Fixed{};return (a+ab*t-p).length();
 }
 }
 inline bool valid(const RaceBotConfig& c){
-    using genre::vehicleDetail::vehicleNonneg;using genre::vehicleDetail::vehiclePositive;
-    return vehicleNonneg(c.lookahead,Fixed::fromInt(1000))&&vehicleNonneg(c.lookaheadTime,Fixed::fromInt(10))&&vehiclePositive(c.maxSpeed,genre::kVehicleMaxSpeed)&&vehiclePositive(c.cornerAccel,Fixed::fromInt(1000))
+    using mechanics::vehicleDetail::vehicleNonneg;using mechanics::vehicleDetail::vehiclePositive;
+    return vehicleNonneg(c.lookahead,Fixed::fromInt(1000))&&vehicleNonneg(c.lookaheadTime,Fixed::fromInt(10))&&vehiclePositive(c.maxSpeed,mechanics::kVehicleMaxSpeed)&&vehiclePositive(c.cornerAccel,Fixed::fromInt(1000))
         &&vehiclePositive(c.brakeDecel,Fixed::fromInt(1000))&&vehicleNonneg(c.brakeHorizon,Fixed::fromInt(10000))&&vehicleNonneg(c.speedMargin,Fixed::fromInt(100))&&vehicleNonneg(c.steerGain,Fixed::fromInt(100))
         &&vehiclePositive(c.maxSteer,Fixed::fromRatio(1,4))&&vehicleNonneg(c.laneOffset,Fixed::fromInt(100))&&vehicleNonneg(c.laneStep,Fixed::fromInt(10))&&vehicleNonneg(c.overtakeDistance,Fixed::fromInt(1000))
-        &&vehicleNonneg(c.laneWidth,Fixed::fromInt(100))&&vehicleNonneg(c.carLength,Fixed::fromInt(100))&&vehicleNonneg(c.carWidth,Fixed::fromInt(100))&&vehicleNonneg(c.followDistance,Fixed::fromInt(1000))&&vehicleNonneg(c.handbrakeAngle,Fixed::fromRatio(1,2))&&vehicleNonneg(c.handbrakeSpeed,genre::kVehicleMaxSpeed)
+        &&vehicleNonneg(c.laneWidth,Fixed::fromInt(100))&&vehicleNonneg(c.carLength,Fixed::fromInt(100))&&vehicleNonneg(c.carWidth,Fixed::fromInt(100))&&vehicleNonneg(c.followDistance,Fixed::fromInt(1000))&&vehicleNonneg(c.handbrakeAngle,Fixed::fromRatio(1,2))&&vehicleNonneg(c.handbrakeSpeed,mechanics::kVehicleMaxSpeed)
         &&c.skillMilli>=100&&c.skillMilli<=2000&&c.rubberBandMilli>=0&&c.rubberBandMilli<=500;
 }
 inline bool valid(const RaceLine& l){return l.points.size()>=3&&l.points.size()<=kRaceBotMaxPoints&&l.distance.size()==l.points.size()&&l.curvature.size()==l.points.size()&&l.length>Fixed{};}
-inline bool valid(const RaceBotState& s){return genre::vehicleDetail::vehicleNonneg(fxAbs(s.lane),Fixed::fromInt(100))&&fxAbs(s.laneTarget)<=Fixed::fromInt(100)&&s.overtaking>=0;}
+inline bool valid(const RaceBotState& s){return mechanics::vehicleDetail::vehicleNonneg(fxAbs(s.lane),Fixed::fromInt(100))&&fxAbs(s.laneTarget)<=Fixed::fromInt(100)&&s.overtaking>=0;}
 // Closed loop of at least 3 distinct consecutive points; nullopt otherwise.
 inline std::optional<RaceLine> makeRaceLine(std::span<const Vec3> points){
     using namespace raceBotDetail;
     if(points.size()<3||points.size()>kRaceBotMaxPoints)return {};RaceLine l;l.points.assign(points.begin(),points.end());
     const auto n=points.size();
     for(std::size_t i=0;i<n;++i){
-        if(!genre::vehicleDetail::vehicleBounded(points[i],genre::kVehicleCoordLimit))return {};
+        if(!mechanics::vehicleDetail::vehicleBounded(points[i],mechanics::kVehicleCoordLimit))return {};
         auto seg=(flat(points[(i+1)%n])-flat(points[i])).length();if(seg<=Fixed{})return {};
         l.distance.push_back(l.length);l.length+=seg;
     }
     for(std::size_t i=0;i<n;++i){
         auto a=flat(points[(i+n-1)%n]),b=flat(points[i]),c=flat(points[(i+1)%n]);
         auto d1=b-a,d2=c-b;auto turn=wrap(fxAtan2Turns(d2.x,d2.y)-fxAtan2Turns(d1.x,d1.y));
-        auto span=(d1.length()+d2.length())/2;l.curvature.push_back(fxAbs(turn)*genre::kVehicleTwoPi/span);
+        auto span=(d1.length()+d2.length())/2;l.curvature.push_back(fxAbs(turn)*mechanics::kVehicleTwoPi/span);
     }
     return l;
 }
@@ -88,10 +88,10 @@ inline std::pair<Vec3,Vec2> raceLinePoint(const RaceLine& l,Fixed s){
 inline std::optional<RaceBotOutput> stepRaceBot(const RaceBotConfig& c,const RaceLine& line,RaceBotState& s,uint32_t tick,const RaceBotView& view){
     using namespace raceBotDetail;
     if(!valid(c)||!valid(line)||!valid(s)||view.opponents.size()>kRaceBotMaxOpponents||view.racers<1||view.place<1||view.place>view.racers
-        ||!genre::vehicleDetail::vehicleBounded(view.position,genre::kVehicleCoordLimit)||!genre::vehicleDetail::vehicleBounded(view.velocity,genre::kVehicleMaxSpeed)||(s.initialized&&tick<=s.lastTick))return {};
+        ||!mechanics::vehicleDetail::vehicleBounded(view.position,mechanics::kVehicleCoordLimit)||!mechanics::vehicleDetail::vehicleBounded(view.velocity,mechanics::kVehicleMaxSpeed)||(s.initialized&&tick<=s.lastTick))return {};
     auto next=s;RaceBotOutput out;const auto n=line.points.size();
     auto progress=raceLineProgress(line,view.position,next.segment,s.initialized?std::min<std::size_t>(n,24):n);
-    auto fwd=genre::vehicleDetail::forward(view.yaw);auto speed=flat(view.velocity).dot(fwd);
+    auto fwd=mechanics::vehicleDetail::forward(view.yaw);auto speed=flat(view.velocity).dot(fwd);
     // Pace: skill scale, rubber band (+band for last place, -band for the leader).
     int64_t pace=c.skillMilli;
     if(view.racers>1&&c.rubberBandMilli)pace=pace*(1000+c.rubberBandMilli*(2*int64_t(view.place-1)-int64_t(view.racers-1))/int64_t(view.racers-1))/1000;
@@ -107,7 +107,7 @@ inline std::optional<RaceBotOutput> stepRaceBot(const RaceBotConfig& c,const Rac
     // Traffic: an opponent alongside (|ahead| <= carLength, inside the lane band) pushes us to the other lane; the
     // nearest slower opponent ahead inside overtakeDistance is passed on the side away from it; an opponent right in
     // front (|side| < carWidth) caps the target speed so the bot follows instead of ramming it.
-    int64_t blocker=0,beside=0;Fixed blockerAhead{},blockerSide{},besideSide{},besideAhead{};auto right=genre::vehicleDetail::rightOf(fwd);
+    int64_t blocker=0,beside=0;Fixed blockerAhead{},blockerSide{},besideSide{},besideAhead{};auto right=mechanics::vehicleDetail::rightOf(fwd);
     for(const auto& o:view.opponents){
         auto d=flat(o.position)-flat(view.position);auto ahead=d.dot(fwd),side=d.dot(right);auto theirs=flat(o.velocity).dot(fwd);
         if(fxAbs(side)>c.laneWidth)continue;
@@ -120,7 +120,7 @@ inline std::optional<RaceBotOutput> stepRaceBot(const RaceBotConfig& c,const Rac
     if(beside){next.laneTarget=besideSide>=Fixed{}? -c.laneOffset:c.laneOffset;next.overtaking=0;}
     else if(blocker){if(blocker!=next.overtaking)next.laneTarget=blockerSide>=Fixed{}? -c.laneOffset:c.laneOffset;next.overtaking=blocker;}
     else{next.overtaking=0;next.laneTarget={};}
-    next.lane=genre::vehicleDetail::toward(next.lane,next.laneTarget,c.laneStep);
+    next.lane=mechanics::vehicleDetail::toward(next.lane,next.laneTarget,c.laneStep);
     auto [point,normal]=raceLinePoint(line,progress+c.lookahead+fxMax(speed,Fixed{})*c.lookaheadTime);
     out.target={point.x+normal.x*next.lane,point.y,point.z+normal.y*next.lane};
     auto desired=fxAtan2Turns(out.target.x-view.position.x,out.target.z-view.position.z);

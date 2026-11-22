@@ -105,7 +105,7 @@ void exampleIntegration() {
 }
 void simulationGate() {
     std::map<std::string,std::string> files={{"a.json",R"({"terrain":{"resolution":2,"heights":[0,0,0,0]}})"}};
-    auto rules=Json::parse(R"({"fps":{"tickRate":60,"maxPlayers":2,"mode":"deathmatch"}})");
+    auto rules=Json::parse(R"({"actor":{"tickRate":60,"maxPlayers":2,"mode":"deathmatch"}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[4,2,4],[12,2,12]],"colliders":[]})");map.set("world",manifest(files));
     auto create=[&]{auto sim=std::make_unique<Simulation>(SimConfig{3,60,0},std::make_unique<game::GameCore>());sim->setup(rules,map);return sim;};
     auto a=create(),b=create();auto initial=a->checksum();a->step();CHECK(a->tick()==0&&a->checksum()==initial);

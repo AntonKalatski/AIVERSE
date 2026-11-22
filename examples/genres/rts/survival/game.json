@@ -3,7 +3,7 @@
   "name": "Survival",
   "description": "Minimal genre mechanics sample",
   "version": "0.1.0",
-  "module": "rts",
+  "module": "game",
   "genre": "survival",
   "rules": "rules.json",
   "maps": [

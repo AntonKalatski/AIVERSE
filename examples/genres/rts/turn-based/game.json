@@ -3,7 +3,7 @@
   "name": "Turn Based",
   "description": "Minimal genre mechanics sample",
   "version": "0.1.0",
-  "module": "rts",
+  "module": "game",
   "genre": "turn-based",
   "rules": "rules.json",
   "maps": [

@@ -572,7 +572,7 @@ TEST(mech_save_states_all_games) {
     CHECK(games.size() >= 20);
     for (auto& dir : games) {
         Json manifest = Json::parseFile(dir + "/game.json");
-        if (manifest.getStr("module", "rts") != "rts") continue; // RTS save-state coverage; FPS has its own suite.
+        if (manifest.getStr("module", "game") != "game") continue; // grid save-state coverage; actor sessions have their own suite.
         const Json& m0 = manifest["maps"][size_t(0)];
         std::string file = m0.isString() ? m0.str() : m0.getStr("file");
         if (file.empty()) continue;

@@ -28,7 +28,7 @@ For gameplay command creation use the existing `AIVERSE::gameplay_native` adapte
 | balance-lab | Balance.h / roundRobin, addSample | Mirrored starts/seeds, per-faction win/loss/draw counts |
 | play-scenarios | Scenario.h / ScenarioRunner | Exact tick actions + inclusive metric bounds; missing metric/rejected action/skipped tick fails |
 | performance-budgets | Performance.h | Median, nearest-rank p95, peak, minimum sample count, absolute and relative baseline gates |
-| genre-kits | Genre.h / genreKit | Sixteen capability/acceptance recipes; Tower Defense and lane battlers belong to RTS |
+| template-kits | Genre.h / genreKit | Sixteen capability/acceptance recipes; Tower Defense and lane battlers belong to RTS |
 | change-planner | Planner.h / planChanges | Explicit recipe dependency closure, topological order, deduplicated touched files and checks |
 
 Configuration lives in typed public structs; the host can populate them from its validated project
@@ -134,7 +134,7 @@ SDK builds and actual RmlUi screenshots remain separate platform/integration che
 
 ### Expanded genre recipes
 
-`genre-kits` 0.2.0 provides sixteen recipes via `allGenres`, `parseGenre` and
+`template-kits` 0.2.0 provides sixteen recipes via `allGenres`, `parseGenre` and
 `genreInFamily`. Existing enum values remain stable; `rts` and `rpg` are aliases.
 Each recipe names catalog packages, acceptance checks, a family and required host
 integration. The application CLI reports `coverage: "recipe"`; it does not install

@@ -6,7 +6,7 @@
 // choice, and the three persisted states (perks, orbs, summons) in NativeState. Stat values are read back with
 // evaluateStat where the owner computes damage/speed; recruits and summons are spawned by the owner.
 bool libraryProgressionConsumerExample(aiverse::game::NativeState& state,const aiverse::lib::gameplay::GameplaySettings& settings){
-    using namespace aiverse;using namespace aiverse::lib::genre;
+    using namespace aiverse;using namespace aiverse::lib::mechanics;
     if(!perkSettingsErrors(settings).empty())return false;
     const auto perk=perkConfig(settings);const auto pick=pickupConfig(settings);const auto summon=summonConfig(settings);
     const auto defs=readPerkDefinitions(Json::parse(R"({"units":[{"id":1,"hero":true},{"id":2}],

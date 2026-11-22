@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
-using namespace aiverse;using namespace aiverse::lib::genre;
+using namespace aiverse;using namespace aiverse::lib::mechanics;
 namespace {
 struct Run {
     PerkDefinitions defs;std::vector<SummonPointDef> points;PerkConfig perk;PickupConfig pick;SummonConfig summon;BattleDeck deck;

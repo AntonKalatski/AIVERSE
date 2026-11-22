@@ -61,12 +61,13 @@ int main() {
           ws.map.data.extra["terraweaveSparse"]==after,
           "invalid brush partially modified saved sparse terrain");
 
-    // Same authored chunks must survive a world-space scene (colliders +
-    // spawns, kept whole in MapData::extra) save/load too.
+    // Same authored chunks must survive FPS document save/load too:
+    // MapDoc::toJson returns a world-space document whole.
     Workspace fps;
     fps.project.dir=".";
     fps.map.reset(4,4);
-    fps.map.data.worldSpace=true;
+    fps.map.data.worldSpace=true;   // a world-space document is kept whole in extra
+    fps.map.data.extra=Json::object();
     fps.map.data.extra.set("colliders",Json::array());
     fps.map.data.extra.set("spawns",Json::array());
     auto fpsCreate=fps.call("terraweave_sparse_paint",

@@ -22,7 +22,7 @@ namespace aiverse::spectra {
 // World reads are const; each Entity::packed() includes its generation.
 class GpuEcsAttachmentPresenter final {
 public:
-    using ResolvePose = lib::genre::SpectraPresentationSystem::ResolvePose;
+    using ResolvePose = lib::mechanics::SpectraPresentationSystem::ResolvePose;
 
     explicit GpuEcsAttachmentPresenter(GpuPoolWorld& pool) : pool_(pool) {}
     GpuEcsAttachmentPresenter(const GpuEcsAttachmentPresenter&) = delete;
@@ -63,8 +63,8 @@ public:
             bool killOnDetach=false, hasPose=false;
         };
         std::map<uint64_t,Wanted> desired;
-        world.eachExistingConst<lib::genre::SpectraSourceComponent>(
-            [&](Entity entity,const lib::genre::SpectraSourceComponent& component) {
+        world.eachExistingConst<lib::mechanics::SpectraSourceComponent>(
+            [&](Entity entity,const lib::mechanics::SpectraSourceComponent& component) {
                 if(!world.alive(entity) || !component.enabled ||
                    component.effect.empty())return;
                 Wanted w;

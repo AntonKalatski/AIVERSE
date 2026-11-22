@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 using namespace aiverse;
-namespace lg=aiverse::lib::genre;
+namespace lg=aiverse::lib::mechanics;
 static void require(bool ok,const char* msg){if(!ok)throw std::runtime_error(msg);}
 struct RtsStoreTag {};
 struct ActorBagTag {};

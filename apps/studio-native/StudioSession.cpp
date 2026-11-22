@@ -1705,7 +1705,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     if(ws_.map.data.worldSpace) {
                         Json next=current;next.set("renderLighting",settings);
                         Json input=Json::object();input.set("map",next);
-                        const auto updated=ws_.call("fps_set",input,"studio");
+                        const auto updated=ws_.call("actor_set",input,"studio");
                         if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
                     } else {
                         ws_.map.beginEdit();ws_.map.data.extra.set("renderLighting",settings);ws_.map.touched();
@@ -1723,14 +1723,14 @@ Json StudioSession::dispatchImpl(const Json& request) {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             if (ws_.map.data.worldSpace) {
                 // FPS maps serialize MapData.fps, NOT MapData.extra. Apply to a copy,
-                // then validate/commit the full candidate through fps_set.
+                // then validate/commit the full candidate through actor_set.
                 const Json currentDocument = ws_.map.toJson();
                 if (method != "studio.lighting") {
                     const Json proposed = editFpsLighting(currentDocument,method,params);
                     if (!(proposed == currentDocument)) {
                         Json input=Json::object();
                         input.set("map",proposed);
-                        const Json updated=ws_.call("fps_set",input,"studio");
+                        const Json updated=ws_.call("actor_set",input,"studio");
                         if (updated.has("error")) throw std::runtime_error(updated.getStr("error"));
                     }
                 }
@@ -2597,7 +2597,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     if(!changed)throw std::runtime_error("Invalid component property");
                     if(ws_.map.data.worldSpace) {
                         Json args=Json::object();args.set("map",draft.toJson());
-                        const auto updated=ws_.call("fps_set",args,"studio");
+                        const auto updated=ws_.call("actor_set",args,"studio");
                         if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
                     } else {ws_.map.beginEdit();ws_.map.data=std::move(draft.data);ws_.map.touched();}
                 }
@@ -2605,7 +2605,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             }
             if (entityId.compare(0, 7, "entity:") != 0) {
                 // Non-map document sources use the shared editor transform adapter.
-                // fps_set validates the COMPLETE edited document atomically before
+                // actor_set validates the COMPLETE edited document atomically before
                 // committing it with the existing MapDoc undo snapshots.
                 if (!ws_.map.data.worldSpace ||
                     (key != "x" && key != "y" && key != "z") || !value.isNumber())
@@ -2647,7 +2647,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 }
                 Json args = Json::object();
                 args.set("map", draft.toJson());
-                const Json op = ws_.call("fps_set", args, "studio");
+                const Json op = ws_.call("actor_set", args, "studio");
                 if (op.has("error")) throw std::runtime_error(op.getStr("error"));
                 reply.set("result", snapshot());
                 return reply;

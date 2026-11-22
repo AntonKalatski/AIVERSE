@@ -16,36 +16,36 @@ using namespace aiverse;using namespace aiverse::lib;
 struct Outcome{int32_t winner=-1;uint32_t steps=0;uint64_t hash=0;std::string detail;};
 static void fold(uint64_t& h,uint64_t v){Hasher x;x.u64(h);x.u64(v);h=x.value();}
 
-static Outcome playDuel(const genre::CardLibrary& lib,const std::vector<std::vector<int64_t>>& decks,uint64_t seed){
+static Outcome playDuel(const mechanics::CardLibrary& lib,const std::vector<std::vector<int64_t>>& decks,uint64_t seed){
     Random rng(seed);Outcome out;auto first=int32_t(rng.below(2));
-    auto setup=genre::cardGameSetup(lib,decks,first,rng);if(!setup)throw std::runtime_error("duel setup rejected");
-    auto state=setup->state;uint64_t h=genre::cardGameHash(state),seq=0;bots::CardBotConfig cfg;
-    for(;state.phase!=genre::CardPhase::GameOver&&out.steps<20000;++out.steps){
-        auto seat=state.priority;auto view=genre::cardViewFor(lib,state,seat);if(!view)throw std::runtime_error("view failed");
+    auto setup=mechanics::cardGameSetup(lib,decks,first,rng);if(!setup)throw std::runtime_error("duel setup rejected");
+    auto state=setup->state;uint64_t h=mechanics::cardGameHash(state),seq=0;bots::CardBotConfig cfg;
+    for(;state.phase!=mechanics::CardPhase::GameOver&&out.steps<20000;++out.steps){
+        auto seat=state.priority;auto view=mechanics::cardViewFor(lib,state,seat);if(!view)throw std::runtime_error("view failed");
         auto choice=bots::cardBotChoose(lib,*view,cfg);if(!choice)throw std::runtime_error("card bot found no action");
-        auto report=genre::stepCardGame(lib,state,{++seq,seat,choice->action},rng);if(!report)throw std::runtime_error("card bot action rejected");
-        for(const auto& e:report->events)fold(h,genre::cardGameHash(e));
+        auto report=mechanics::stepCardGame(lib,state,{++seq,seat,choice->action},rng);if(!report)throw std::runtime_error("card bot action rejected");
+        for(const auto& e:report->events)fold(h,mechanics::cardGameHash(e));
     }
-    fold(h,genre::cardGameHash(state));out.winner=state.winner;out.hash=h;
+    fold(h,mechanics::cardGameHash(state));out.winner=state.winner;out.hash=h;
     out.detail="turn "+std::to_string(state.turn)+", health "+std::to_string(state.seats[0].health)+"/"+std::to_string(state.seats[1].health);
     return out;
 }
-static Outcome playSkirmish(const genre::TacticsScenarioData& data,uint64_t seed){
+static Outcome playSkirmish(const mechanics::TacticsScenarioData& data,uint64_t seed){
     Random rng(seed);Outcome out;const auto& sc=data.scenario;
-    auto state=genre::tacticsBegin(sc,data.units);if(!state)throw std::runtime_error("skirmish setup rejected");
+    auto state=mechanics::tacticsBegin(sc,data.units);if(!state)throw std::runtime_error("skirmish setup rejected");
     // Objective per team: the opposing deployment zone (map data both sides know), never a live enemy position.
-    auto objective=[&](int32_t team){return genre::tacticsIndex(sc.grid,{team==1?sc.grid.width-2:1,sc.grid.height/2});};
-    uint64_t h=genre::tacticsHash(*state),seq=0;bots::TacticsBotConfig cfg;
-    for(;state->winner==genre::kTacticsNoWinner&&out.steps<20000;++out.steps){
-        auto unit=genre::tacticsActiveUnit(*state);auto team=state->units.at(unit).team;
-        auto view=genre::tacticsViewFor(sc,*state,team);if(!view)throw std::runtime_error("view failed");
+    auto objective=[&](int32_t team){return mechanics::tacticsIndex(sc.grid,{team==1?sc.grid.width-2:1,sc.grid.height/2});};
+    uint64_t h=mechanics::tacticsHash(*state),seq=0;bots::TacticsBotConfig cfg;
+    for(;state->winner==mechanics::kTacticsNoWinner&&out.steps<20000;++out.steps){
+        auto unit=mechanics::tacticsActiveUnit(*state);auto team=state->units.at(unit).team;
+        auto view=mechanics::tacticsViewFor(sc,*state,team);if(!view)throw std::runtime_error("view failed");
         auto choice=bots::tacticsBotChoose(sc,*view,objective(team),cfg);if(!choice)throw std::runtime_error("tactics bot found no action");
-        auto report=genre::stepTactics(sc,*state,{++seq,team,unit,choice->action},rng);
-        if(!report)report=genre::stepTactics(sc,*state,{++seq,team,unit,{}},rng); // planned into an unseen unit
+        auto report=mechanics::stepTactics(sc,*state,{++seq,team,unit,choice->action},rng);
+        if(!report)report=mechanics::stepTactics(sc,*state,{++seq,team,unit,{}},rng); // planned into an unseen unit
         if(!report)throw std::runtime_error("end turn rejected");
-        for(const auto& e:report->events)fold(h,genre::tacticsHash(e));
+        for(const auto& e:report->events)fold(h,mechanics::tacticsHash(e));
     }
-    fold(h,genre::tacticsHash(*state));out.winner=state->winner;out.hash=h;
+    fold(h,mechanics::tacticsHash(*state));out.winner=state->winner;out.hash=h;
     int32_t alive=0;for(const auto& [id,u]:state->units){(void)id;if(u.alive&&u.team==state->winner)++alive;}
     out.detail="round "+std::to_string(state->round)+", "+std::to_string(alive)+" survivors";
     return out;
@@ -54,8 +54,8 @@ int main(int argc,char** argv){
     try{
         if(argc<2){std::fprintf(stderr,"usage: %s <dir> [seed]\n",argv[0]);return 2;}
         std::string dir=argv[1];uint64_t seed=argc>2?std::stoull(argv[2]):7;
-        auto duelJson=Json::parseFile(dir+"/duel.json");auto lib=genre::readCardLibrary(duelJson);auto decks=genre::readCardDecks(duelJson,lib);
-        auto skirmish=genre::readTacticsScenario(Json::parseFile(dir+"/skirmish.json"));
+        auto duelJson=Json::parseFile(dir+"/duel.json");auto lib=mechanics::readCardLibrary(duelJson);auto decks=mechanics::readCardDecks(duelJson,lib);
+        auto skirmish=mechanics::readTacticsScenario(Json::parseFile(dir+"/skirmish.json"));
         auto d1=playDuel(lib,decks,seed),d2=playDuel(lib,decks,seed);
         auto s1=playSkirmish(skirmish,seed),s2=playSkirmish(skirmish,seed);
         std::printf("card duel: winner seat %d after %u commands (%s), hash %016llx\n",d1.winner,d1.steps,d1.detail.c_str(),(unsigned long long)d1.hash);

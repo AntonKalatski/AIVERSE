@@ -16,7 +16,7 @@ number or `[x,y,z]`), but the RTS runtime ignored the component: only the legacy
     (`modules/rts/RtsModule.h`, Fixed). Values are validated like Studio
     (rotation ≤ 360000°, |y| ≤ 1e6, scale 0.001..10000) and bad maps fail setup.
   - The component is registered through `Simulation::registerPersistentComponent`
-    ("rts.authored_pose", v1) **only when a map uses it**, so maps without a pose keep
+    ("game.authored_pose", v1) **only when a map uses it**, so maps without a pose keep
     the v9 save format and checksums; maps with one save as v10 (existing contract).
 - **View (`RtsViewDraw.cpp` drawObject, `RtsView.cpp` contact frames)**:
   `SceneObject` carries the pose; `authoredPoseFrame()` premultiplies the model

@@ -29,7 +29,7 @@ struct AIConfig {
     uint32_t escalateSeconds = 300; // no enemy structure destroyed for this long: escalate (bigger waves, siege, economy targets)
     int invasionSize = 6;         // planets: orbit units gathered before an invasion of another body
 };
-// Bot presets (map players[i].ai.preset, aiverselib bots-rts settings): changes only the fields the preset names.
+// Bot presets (map players[i].ai.preset, aiverselib bots-commander settings): changes only the fields the preset names.
 // False for an unknown name (isAIPreset in GameData.h lists the same names).
 bool applyAIPreset(AIConfig& c, const std::string& name);
 struct AITerrain;

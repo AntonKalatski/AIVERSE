@@ -1,6 +1,6 @@
 /** Tool panels migrated from the legacy editor windows: their op group (native StudioTools.h) and what they show first. */
 export const TOOL_PANEL_IDS = ['terrain', 'water', 'roads', 'tiles', 'generate', 'postfx', 'effects', 'lightbake', 'models', 'overlays', 'branding',
-  'fields', 'physis', 'fps', 'raid', 'balance', 'fx_graph', 'fx_functions', 'modeling', 'anim_assets', 'anim_graph', 'anim_rig', 'model_anim', 'project_import'] as const;
+  'fields', 'physis', 'actor', 'raid', 'balance', 'fx_graph', 'fx_functions', 'modeling', 'anim_assets', 'anim_graph', 'anim_rig', 'model_anim', 'project_import'] as const;
 export type ToolPanelId = typeof TOOL_PANEL_IDS[number];
 export interface ToolPanelSpec {
   /** Op name prefix dropped from card titles ("terrain_sculpt" -> "Sculpt"). */
@@ -38,7 +38,7 @@ export const TOOL_PANELS: Record<ToolPanelId, ToolPanelSpec> = {
     intro: 'Resource fields, regions and territory painted on the map.' },
   physis: { prefix: 'physis', state: ['physis_get'], open: ['physis_set'],
     intro: 'PHYSIS nature simulation settings of the game (opt-in).' },
-  fps: { prefix: 'fps', state: ['fps_get', 'lens_scene_get'], open: ['fps_set'],
+  actor: { prefix: 'actor', state: ['actor_get', 'lens_scene_get'], open: ['actor_set'],
     intro: 'First-person levels and LENS cameras.' },
   raid: { prefix: 'raid', state: ['raid_info'], open: ['raid_set'],
     intro: 'Extraction raid: mode, clock, extraction points, objectives; run a bot raid on the open map.' },

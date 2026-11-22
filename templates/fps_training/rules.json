@@ -1,5 +1,5 @@
 {
-  "fps": {
+  "actor": {
     "tickRate": 60,
     "snapshotRate": 20,
     "maxPlayers": 10,
@@ -22,7 +22,7 @@
     "respawnTicks": 60,
     "weapons": [
       {
-        "nameKey": "fps.weapon.pistol",
+        "nameKey": "actor.weapon.pistol",
         "damage": 28,
         "magazine": 12,
         "reserve": 72,
@@ -37,7 +37,7 @@
         "penetration": 0
       },
       {
-        "nameKey": "fps.weapon.rifle",
+        "nameKey": "actor.weapon.rifle",
         "damage": 25,
         "magazine": 30,
         "reserve": 120,
@@ -51,7 +51,7 @@
         "penetration": 1
       },
       {
-        "nameKey": "fps.weapon.shotgun",
+        "nameKey": "actor.weapon.shotgun",
         "damage": 14,
         "magazine": 8,
         "reserve": 40,
@@ -68,7 +68,7 @@
         "penetration": 0
       },
       {
-        "nameKey": "fps.weapon.sniper",
+        "nameKey": "actor.weapon.sniper",
         "damage": 100,
         "magazine": 5,
         "reserve": 25,

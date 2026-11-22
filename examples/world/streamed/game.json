@@ -1,7 +1,7 @@
 {
   "id": "aiverse.streamed-world",
   "name": "Streamed terrain and arches",
-  "module": "fps",
+  "module": "actor",
   "genre": "fps",
   "rules": "rules.json",
   "maps": [

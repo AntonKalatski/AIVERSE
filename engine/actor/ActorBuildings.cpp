@@ -6,10 +6,10 @@ namespace aiverse::actor {
 std::vector<Loot> ActorHost::buildMapBuildings(const Json& map) {
     std::vector<Loot> loot;const auto& list=map["buildings"];
     if(list.isNull())return loot;
-    if(!list.isArray()||list.size()>512)throw JsonError("fps.buildings: expected at most 512 buildings");
+    if(!list.isArray()||list.size()>512)throw JsonError("actor.buildings: expected at most 512 buildings");
     uint32_t next=kBuildingColliderBase;buildingRegions_.clear();
     for(size_t i=0;i<list.size();++i){
-        auto path="fps.buildings["+std::to_string(i)+"]";const auto& b=list[i];
+        auto path="actor.buildings["+std::to_string(i)+"]";const auto& b=list[i];
         if(!b.isObject())throw JsonError(path+": expected object");
         for(const auto& [k,v]:b.members()){(void)v;if(k!="pos"&&k!="yaw"&&k!="seed"&&k!="building"&&k!="loot")throw JsonError(path+": unknown key '"+k+"'");}
         if(!b["pos"].isArray()||b["pos"].size()!=3)throw JsonError(path+".pos: expected [x,y,z]");

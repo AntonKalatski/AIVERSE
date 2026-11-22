@@ -1,12 +1,12 @@
 #pragma once
 // Colony / survival planner bot (settlement-production): decides what to build, which bills to run, what to
 // gather and which work to prioritise from the colony's needs and stock. It never writes simulation state: it
-// returns genre::ColonyCommand values, the same commands a player issues, which the owner passes to stepColony
+// returns mechanics::ColonyCommand values, the same commands a player issues, which the owner passes to stepColony
 // (validated there like any player command). Bounded (maxCommands per plan, one plan per intervalTicks) and
 // deterministic: rules are evaluated in (priority desc, id asc) order, ties pick the lowest id. No RNG.
-// State (ColonyPlannerState) is genre::save/load record kind 110.
-#include "../genre/ColonyRunner.h"
-#include "../genre/Persistence.h"
+// State (ColonyPlannerState) is mechanics::save/load record kind 110.
+#include "../mechanics/ColonyRunner.h"
+#include "../mechanics/Persistence.h"
 #include "engine/core/Hash.h"
 #include <algorithm>
 #include <cstdint>
@@ -43,9 +43,9 @@ struct ColonyGatherOption {int64_t gather=0,node=0,available=0;};
 // Owner-supplied facts the colony state does not contain (power, survival bodies, renewal nodes).
 struct ColonyPlannerFacts {int64_t powerDeficit=0,cold=0;std::vector<ColonyGatherOption> gatherNodes;std::map<int64_t,int64_t> custom;};
 struct ColonyPlannerState {int64_t lastPlan=0,nextSeq=1,lastTick=0;std::map<int64_t,int64_t> readyAt;bool planned=false,initialized=false;};
-struct ColonyPlanReport {std::vector<genre::ColonyCommand> commands;std::vector<int64_t> fired;}; // fired: rule ids
+struct ColonyPlanReport {std::vector<mechanics::ColonyCommand> commands;std::vector<int64_t> fired;}; // fired: rule ids
 
-inline std::string colonyPlannerError(const ColonyPlannerConfig& c,const genre::ColonyDefs& d){
+inline std::string colonyPlannerError(const ColonyPlannerConfig& c,const mechanics::ColonyDefs& d){
     if(c.intervalTicks<1||c.intervalTicks>10000000)return "planner.intervalTicks: 1..10000000";
     if(c.maxCommands<1||c.maxCommands>256)return "planner.maxCommands: 1..256";
     if(c.rules.size()>1024)return "planner.rules: at most 1024";
@@ -58,7 +58,7 @@ inline std::string colonyPlannerError(const ColonyPlannerConfig& c,const genre::
         case ColonyPlanAction::Build:if(!d.blueprints.contains(r.ref)||r.stockpile<=0)return p+": unknown blueprint or missing stockpile";break;
         case ColonyPlanAction::Bill:if(!d.recipes.contains(r.ref)||r.value<0)return p+": unknown recipe";break;
         case ColonyPlanAction::Gather:if(!d.gathers.contains(r.ref)||r.stockpile<=0)return p+": unknown gather or missing stockpile";break;
-        case ColonyPlanAction::Priority:if(!d.workTypes.contains(r.ref)||r.value<0||r.value>genre::kColonyLowestPriority)return p+": unknown work type or priority";break;
+        case ColonyPlanAction::Priority:if(!d.workTypes.contains(r.ref)||r.value<0||r.value>mechanics::kColonyLowestPriority)return p+": unknown work type or priority";break;
         default:return p+": unknown action";
         }
     }
@@ -70,8 +70,8 @@ inline bool valid(const ColonyPlannerState& s){
     for(auto [id,t]:s.readyAt)if(id<=0||t<0)return false;
     return true;
 }
-inline int64_t colonyPlanMetric(const genre::ColonyDefs& d,const genre::ColonyState& s,const ColonyPlannerFacts& f,const ColonyPlanCondition& c){
-    using namespace genre;
+inline int64_t colonyPlanMetric(const mechanics::ColonyDefs& d,const mechanics::ColonyState& s,const ColonyPlannerFacts& f,const ColonyPlanCondition& c){
+    using namespace mechanics;
     switch(c.metric){
     case ColonyPlanMetric::StockPerColonist:return colonyStockAll(s,c.ref)*1000/std::max<int64_t>(1,int64_t(s.colonists.size()));
     case ColonyPlanMetric::Stock:return colonyStockAll(s,c.ref);
@@ -88,17 +88,17 @@ inline int64_t colonyPlanMetric(const genre::ColonyDefs& d,const genre::ColonySt
     return 0;
 }
 namespace detail_colony_planner {
-inline int64_t openJobs(const genre::ColonyState& s,genre::ColonyJobKind kind,int64_t ref){int64_t k=0;for(const auto& [id,j]:s.jobs){(void)id;if(j.kind==kind&&j.ref==ref)++k;}return k;}
-inline bool affordable(const genre::ColonyState& s,int64_t stockpile,const systems::Quantities& cost){
+inline int64_t openJobs(const mechanics::ColonyState& s,mechanics::ColonyJobKind kind,int64_t ref){int64_t k=0;for(const auto& [id,j]:s.jobs){(void)id;if(j.kind==kind&&j.ref==ref)++k;}return k;}
+inline bool affordable(const mechanics::ColonyState& s,int64_t stockpile,const systems::Quantities& cost){
     auto p=s.stockpiles.find(stockpile);if(p==s.stockpiles.end())return false;
-    for(auto [res,n]:cost)if(genre::colonyAvailable(p->second,res)<n)return false;
+    for(auto [res,n]:cost)if(mechanics::colonyAvailable(p->second,res)<n)return false;
     return true;
 }
 }
 // Plans at most maxCommands commands once per intervalTicks; strictly increasing ticks (nullopt otherwise).
-inline std::optional<ColonyPlanReport> planColony(const ColonyPlannerConfig& c,const genre::ColonyDefs& d,const genre::ColonyState& colony,
+inline std::optional<ColonyPlanReport> planColony(const ColonyPlannerConfig& c,const mechanics::ColonyDefs& d,const mechanics::ColonyState& colony,
                                                   const ColonyPlannerFacts& facts,ColonyPlannerState& state,int64_t tick){
-    using namespace genre;using namespace detail_colony_planner;
+    using namespace mechanics;using namespace detail_colony_planner;
     if(tick<0||(state.initialized&&tick<=state.lastTick)||!valid(state)||!colonyPlannerError(c,d).empty())return std::nullopt;
     auto s=state;s.lastTick=tick;s.initialized=true;ColonyPlanReport rep;
     if(s.planned&&tick<s.lastPlan+c.intervalTicks){state=std::move(s);return rep;}
@@ -139,7 +139,7 @@ inline std::optional<ColonyPlanReport> planColony(const ColonyPlannerConfig& c,c
     }
     state=std::move(s);return rep;
 }
-// Persistence (genre::save/load record kind 110) and checksum hashing.
+// Persistence (mechanics::save/load record kind 110) and checksum hashing.
 inline void io(Archive& a,ColonyPlannerState& s){a(s.lastPlan,s.nextSeq,s.lastTick,s.readyAt,s.planned,s.initialized);}
 inline uint16_t stateKind(const ColonyPlannerState&){return 110;}
 inline uint64_t colonyPlannerHash(const ColonyPlannerState& s){std::string bytes;Archive a(&bytes);auto copy=s;uint16_t kind=110;a(kind,copy);Hasher h;h.str(bytes);return h.value();}

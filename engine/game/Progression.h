@@ -42,13 +42,13 @@ struct ProgUnit {
     uint32_t shots = 0;           // shots fired (perks with "everyNth" only: hashed / saved then)
 };
 struct ProgressionStore {
-    lib::genre::PerkState perks;
-    lib::genre::PickupState pickups;
-    lib::genre::SummonState summons;
+    lib::mechanics::PerkState perks;
+    lib::mechanics::PickupState pickups;
+    lib::mechanics::SummonState summons;
     std::vector<ProgUnit> units;              // sorted by entity
     std::vector<uint8_t> magnet;              // per player slot: one-shot magnet pending
     std::vector<int64_t> kills;               // per player slot
-    std::vector<lib::genre::OrbSpawn> orbQueue;   // orbs to drop on the next step (Lua spawn_orb)
+    std::vector<lib::mechanics::OrbSpawn> orbQueue;   // orbs to drop on the next step (Lua spawn_orb)
     const ProgUnit* find(Entity e) const;
     ProgUnit* find(Entity e) { return const_cast<ProgUnit*>(static_cast<const ProgressionStore*>(this)->find(e)); }
 };
@@ -83,7 +83,7 @@ public:
     static int variantIndex(int weapon) { return weapon <= -2 ? -2 - weapon : -1; }
 
     // ---- queries / actions (Lua, tools, tests)
-    const lib::genre::PlayerProgress* progress(Simulation& sim, uint8_t player) const;
+    const lib::mechanics::PlayerProgress* progress(Simulation& sim, uint8_t player) const;
     Entity heroOf(Simulation& sim, uint8_t player) const;
     int64_t statOf(Simulation& sim, Entity e, int64_t stat, int64_t base) const;      // library pipeline for a unit
     bool grantXp(Simulation& sim, uint8_t player, int64_t amount, bool pickup);
@@ -92,8 +92,8 @@ public:
     bool reroll(Simulation& sim, uint8_t player, uint32_t revision);
     bool open(Simulation& sim, uint8_t player);
     bool close(Simulation& sim, uint8_t player);
-    const std::vector<lib::genre::SummonPointDef>& summonPoints() const { return points_; }   // rules + map circles
-    const lib::genre::SummonConfig& summonConfig() const { return summon_; }                 // in ticks
+    const std::vector<lib::mechanics::SummonPointDef>& summonPoints() const { return points_; }   // rules + map circles
+    const lib::mechanics::SummonConfig& summonConfig() const { return summon_; }                 // in ticks
     Entity spawnSlot(Simulation& sim, uint8_t player, int slot, Vec3 at, bool nearHero);   // a deck slot's unit as an ally
 
 private:
@@ -107,18 +107,18 @@ private:
 public:
     bool atCircle(Simulation& sim, uint8_t player) const;   // the hero stands in a summon circle of its team
 private:
-    void dispatch(Simulation& sim, uint8_t player, const std::vector<lib::genre::PerkEvent>& ev);
-    lib::genre::PerkHooks hooks(Simulation& sim) const;
-    int64_t slotOfUnit(const lib::genre::PlayerProgress& p, int64_t unit) const;
-    lib::genre::BattleDeck deckFor(const Json& map, uint8_t player) const;
+    void dispatch(Simulation& sim, uint8_t player, const std::vector<lib::mechanics::PerkEvent>& ev);
+    lib::mechanics::PerkHooks hooks(Simulation& sim) const;
+    int64_t slotOfUnit(const lib::mechanics::PlayerProgress& p, int64_t unit) const;
+    lib::mechanics::BattleDeck deckFor(const Json& map, uint8_t player) const;
     void maxHpBefore(Simulation& sim, uint8_t player, std::vector<std::pair<Entity, Fixed>>& out) const;
     void maxHpAfter(Simulation& sim, const std::vector<std::pair<Entity, Fixed>>& before) const;
     const ProgressionRules* R_ = nullptr;
     GameHost* m_ = nullptr;
     // runtime configs in ticks (from the rules' seconds at the simulation's tick rate)
-    lib::genre::PickupConfig pickup_;
-    lib::genre::SummonConfig summon_;
-    std::vector<lib::genre::SummonPointDef> points_;
+    lib::mechanics::PickupConfig pickup_;
+    lib::mechanics::SummonConfig summon_;
+    std::vector<lib::mechanics::SummonPointDef> points_;
     uint32_t allyLifetime_ = 0;
 };
 

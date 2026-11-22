@@ -4,7 +4,7 @@
 // only what the observer can actually see of a visible target (team, velocity, facing, guard, telegraphed attack).
 // Pure function: no state, deterministic order (ascending target id), no RNG.
 #include "GenreCommon.h"
-#include "../genre/Senses.h"
+#include "../mechanics/Senses.h"
 #include <optional>
 #include <span>
 #include <vector>
@@ -23,15 +23,15 @@ struct TargetFacts {
 
 struct PerceptionFilter {
     // Minimum awareness for a remembered (not visible) target to stay in the bot's list at its last known position.
-    genre::Awareness rememberFrom=genre::Awareness::Searching;
+    mechanics::Awareness rememberFrom=mechanics::Awareness::Searching;
     // Minimum awareness for a visible target to be engageable (visible=true for the bot).
-    genre::Awareness engageFrom=genre::Awareness::Alert;
+    mechanics::Awareness engageFrom=mechanics::Awareness::Alert;
 };
 
 // facts(targetId) -> std::optional<TargetFacts>; nullopt drops the target (despawned, dead, friendly, ...).
 // Only records of `observer` are used; anonymous disturbances (target 0) are skipped: use searchGoal() for them.
 template<class FactsFn>
-std::vector<PerceivedTarget> perceivedFromSenses(std::span<const genre::PerceivedTarget> perceived,int64_t observer,
+std::vector<PerceivedTarget> perceivedFromSenses(std::span<const mechanics::PerceivedTarget> perceived,int64_t observer,
                                                  FactsFn&& facts,const PerceptionFilter& filter={}){
     std::vector<PerceivedTarget> out;
     for(const auto& p:perceived){

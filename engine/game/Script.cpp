@@ -103,7 +103,7 @@ void countHook(lua_State* L, lua_Debug*) {
     luaL_error(L, "instruction budget exceeded (%d per tick): endless loop?", int(vm.budget));
 }
 
-const char* kFxMeta = "rts.fx";
+const char* kFxMeta = "game.fx";
 } // namespace
 
 Vm::~Vm() { close(); }
@@ -450,7 +450,7 @@ int sbRequire(lua_State* L, Vm& vm) {
         path += ".lua";
     }
     if (path.rfind("scripts/", 0) != 0) path = "scripts/" + path;
-    lua_getfield(L, LUA_REGISTRYINDEX, "rts.loaded");
+    lua_getfield(L, LUA_REGISTRYINDEX, "game.loaded");
     if (lua_getfield(L, -1, path.c_str()) != LUA_TNIL) return 1;
     lua_pop(L, 1);
     auto it = vm.sources.find(path);
@@ -603,7 +603,7 @@ bool Vm::open(Mode m, size_t limit) {
     lua_pushcfunction(L, bind<sbPrint>); lua_setglobal(L, "print");
     lua_pushcfunction(L, bind<sbSetMetatable>); lua_setglobal(L, "setmetatable");
     lua_pushcfunction(L, bind<sbRequire>); lua_setglobal(L, "require");
-    lua_newtable(L); lua_setfield(L, LUA_REGISTRYINDEX, "rts.loaded");
+    lua_newtable(L); lua_setfield(L, LUA_REGISTRYINDEX, "game.loaded");
     openFx(*this);
     openIeee(L);   // f32 / f64 bit-pattern arithmetic (pure; both modes)
     if (m == Mode::Sim) {

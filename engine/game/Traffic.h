@@ -154,7 +154,7 @@ struct TrafficRules {
     bool enabled = false;
     std::string roadTiles;                   // map tile characters that are road
     bool roadNetwork = false;                // roads.network: the map's spline roads ("roadNetwork") are the roads
-    lib::genre::TrafficNetConfig net;
+    lib::mechanics::TrafficNetConfig net;
     // cars
     std::vector<TrafficWeighted> cars;       // vehicle types (must be "driving" vehicles), by weight
     int maxCars = 16;
@@ -165,7 +165,7 @@ struct TrafficRules {
     Fixed decel = Fixed::fromInt(5);                                     // m/s^2 planned braking
     Fixed gap = Fixed::fromRatio(1, 2);                                  // cells kept to the obstacle ahead
     int straight = 3, turn = 2;                                          // junction choice weights
-    lib::genre::TrafficDriverParams driver;
+    lib::mechanics::TrafficDriverParams driver;
     // buses: drive the outer lane and call at the stops (map objects of the stop types next to a road)
     std::vector<TrafficWeighted> buses;
     int maxBuses = 0;
@@ -194,7 +194,7 @@ struct TrafficRules {
     Fixed yieldRadius = Fixed::fromInt(7);   // cells: traffic this close ahead of / beside it pulls over
     // signals
     bool signals = true;
-    lib::genre::TrafficSignalTiming timing;  // ticks (rules in seconds)
+    lib::mechanics::TrafficSignalTiming timing;  // ticks (rules in seconds)
     Fixed greenS = Fixed::fromInt(9), yellowS = Fixed::fromInt(3), allRedS = Fixed::fromInt(1), walkS = Fixed::fromInt(6);
     int offsetMode = 0;                      // 0 random (per junction), 1 wave (green wave along x + z), 2 none
     uint16_t light[3] = {UINT16_MAX, UINT16_MAX, UINT16_MAX};   // prop types shown for green / yellow / red
@@ -258,7 +258,7 @@ struct TrafficCar {
     uint32_t lostSince = 0;                  // off every road since this tick (0: on the road)
     Vec2 anchor{};                           // where it last made headway (more than a cell and a half)
     uint32_t anchorTick = 0;                 // ... and when: no headway for long is a wedge that backing off does not clear
-    lib::genre::VehicleInput input;          // planned this tick (derived: recomputed before the vehicle steps)
+    lib::mechanics::VehicleInput input;          // planned this tick (derived: recomputed before the vehicle steps)
 };
 
 enum TrafficTask : uint8_t { kTaskNone = 0, kTaskGoing, kTaskCrewOut, kTaskWorking, kTaskCrewBack, kTaskHome,
@@ -338,7 +338,7 @@ class Traffic {
 public:
     bool active() const { return rules_.enabled; }
     const TrafficRules& rules() const { return rules_; }
-    const lib::genre::TrafficNet& net() const { return net_; }
+    const lib::mechanics::TrafficNet& net() const { return net_; }
     static TrafficRules parse(const Json& j, const std::vector<std::string>& typeIds, uint32_t tickRate);   // throws
     void setup(Simulation& sim, GameHost& m, const Json& rulesJson, const Json& map);
     void tick(Simulation& sim);              // before the vehicles step (inside the movement system)
@@ -346,9 +346,9 @@ public:
     void hash(Simulation& sim, Hasher& h) const;
     void io(Simulation& sim, Archive& a);
     TrafficStore* store(Simulation& sim) const;
-    bool aiInput(Simulation& sim, Entity vehicle, lib::genre::VehicleInput& out) const;   // Driving.cpp
+    bool aiInput(Simulation& sim, Entity vehicle, lib::mechanics::VehicleInput& out) const;   // Driving.cpp
     // signal state of `axis` at junction j (Green when the junction has no signal)
-    lib::genre::TrafficLight light(Simulation& sim, int junction, lib::genre::TrafficAxis axis) const;
+    lib::mechanics::TrafficLight light(Simulation& sim, int junction, lib::mechanics::TrafficAxis axis) const;
     int junctionAt(Fixed x, Fixed z) const;  // junction of the cell, or the nearest one within 3 cells, -1: none
     bool walkAllowed(Simulation& sim, int strip) const;
     // something happened (scripts: game.traffic_report): the services answer it. Returns the incident id, 0: ignored
@@ -411,7 +411,7 @@ private:
     bool roadSpot(Vec2 p, int radius, int32_t& piece, Fixed& along) const;
     int exitToward(int junction, int inSide, int32_t fromPiece, int32_t destPiece) const;
     bool isCasualtyType(uint16_t t) const;
-    bool stripAtEnd(const lib::genre::TrafficPiece& p, int end) const;   // a crossing strip on the last row before the junction
+    bool stripAtEnd(const lib::mechanics::TrafficPiece& p, int end) const;   // a crossing strip on the last row before the junction
     void passengers(Simulation& sim, TrafficStore& st, const BusStop& stop, const TrafficCar& bus);
     // bus lines (TrafficCommute.cpp)
     struct BusLine {
@@ -475,7 +475,7 @@ private:
     GameHost* m_ = nullptr;
     TrafficRules rules_;
     bool base_ = false; int baseLimits_[4] = {0, 0, 0, 0};   // scaleLimits: the rules' own limits
-    lib::genre::TrafficNet net_;
+    lib::mechanics::TrafficNet net_;
     std::vector<std::array<Fixed, 4>> noParking_;   // map traffic.noParking: [x0, z0, x1, z1] cell rectangles where nobody parks
     std::vector<uint32_t> offset_;           // per junction: signal phase offset (ticks)
     std::vector<uint8_t> walk_;              // per cell: sidewalk or crossing (pedestrian graph)
@@ -499,7 +499,7 @@ private:
     std::vector<BusLine> lines_;
     std::vector<std::pair<int32_t, int32_t>> gangTargets_;   // place, loot
     std::vector<int32_t> stopCell_;          // per bus stop: the sidewalk cell people wait on (-1: none)
-    mutable lib::genre::TrafficWalkSearch search_;   // work arrays of the long walks (derived)
+    mutable lib::mechanics::TrafficWalkSearch search_;   // work arrays of the long walks (derived)
 };
 
 } // namespace aiverse::game

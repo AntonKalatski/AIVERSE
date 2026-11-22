@@ -11,12 +11,12 @@ void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 int main(int argc,char** argv) {
     check(argc==2,"external fixture directory required");
     const std::filesystem::path root=argv[1];
-    for(const char* genre:{"rts","fps"}) {
+    for(const char* genre:{"game","actor"}) {
         const auto dir=root/"templates"/genre;
         std::filesystem::create_directories(dir);
         std::ofstream(dir/"game.json")<<"{\"name\":\"Lighting fixture\",\"module\":\""<<genre<<"\",\"maps\":[{\"file\":\"map.json\"}]}";
-        std::ofstream(dir/"rules.json")<<R"({"fps":{},"types":{"unit":{"health":{"max":100}}}})";
-        std::ofstream(dir/"map.json")<<(std::string(genre)=="fps"?R"({"name":"Fixture","colliders":[],"spawns":[[0,1,0]],"players":[{"name":"P1","team":1}]})":R"({"name":"Fixture","size":[8,8]})");
+        std::ofstream(dir/"rules.json")<<R"({"actor":{},"types":{"unit":{"health":{"max":100}}}})";
+        std::ofstream(dir/"map.json")<<(std::string(genre)=="actor"?R"({"name":"Fixture","colliders":[],"spawns":[[0,1,0]],"players":[{"name":"P1","team":1}]})":R"({"name":"Fixture","size":[8,8]})");
         studio::StudioSession session(root.string(),dir.string());
         auto call=[&](const char* method,Json params=Json::object()){
             Json req=Json::object();req.set("id",Json::number(int64_t(1)));req.set("method",Json::string(method));req.set("params",params);
@@ -80,7 +80,7 @@ int main(int argc,char** argv) {
             if(row.getStr("id")=="light:"+id1)retained=true;
         check(retained,"entity ID persists on reopen");
         auto& map=session.workspace().map;
-        const auto ref=editor::DocumentEntityRef::light(0,std::string(genre)=="fps");
+        const auto ref=editor::DocumentEntityRef::light(0,std::string(genre)=="actor");
         const auto components=editor::documentComponents(map,ref);
         check(components.size()==2 && components[1].kind==editor::DocumentComponentKind::Light,"light components");
         editor::MapDoc draft;draft.data=map.data;

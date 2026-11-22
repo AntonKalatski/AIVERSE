@@ -5,7 +5,7 @@
 // and the puzzle bot, then per-puzzle records in NativeState (record kinds 112..119) plus their checksums.
 // A real game routes Match3Swap / PuzzleSokobanCommand / PuzzleCspAssign from its command handler instead.
 bool libraryPuzzlesConsumerExample(aiverse::game::NativeState& state){
-    using namespace aiverse::lib::genre;namespace bots=aiverse::lib::bots;
+    using namespace aiverse::lib::mechanics;namespace bots=aiverse::lib::bots;
     const auto levels=aiverse::Json::parse(R"({
         "match3":{"rows":["......","......","......","......","......","......"],"colors":4,
             "specials":[{"shape":"line4","special":"stripe"},{"shape":"corner","special":"bomb"}],"goals":{"moves":12,"score":200}},

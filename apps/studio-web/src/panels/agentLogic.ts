@@ -14,7 +14,7 @@ const LEGACY_TO_PANEL: Record<string, string> = {
   terrain: 'terrain', water: 'water', roads: 'roads', tiles: 'tiles', fog: 'fog', generate: 'generate', fields: 'fields', physis: 'physis',
   postfx: 'postfx', effects: 'effects', lightbake: 'lightbake', models: 'models', scripts: 'scripts', input: 'input', overlays: 'overlays',
   branding: 'branding', studio_asset_audit: 'asset_audit', stats: 'stats', agent: 'agent', build: 'build', lighting: 'lighting', materials: 'materials',
-  FpsWindow: 'fps', raid: 'raid', ModelingWindow: 'modeling', spectrafx_graph: 'fx_graph', spectrafx_gpu_assets: 'fx_functions',
+  FpsWindow: 'actor', raid: 'raid', ModelingWindow: 'modeling', spectrafx_graph: 'fx_graph', spectrafx_gpu_assets: 'fx_functions',
   animation_assets: 'anim_assets', animation_graph: 'anim_graph', animation_rig: 'anim_rig', AnimationWindow: 'model_anim',
   project_import: 'project_import', studio_snapshot_diff: 'snapshot_diff', studio_frame_capture: 'frame_capture', texture_resources: 'texture_resources', animation_attachments: 'attachments', studio_extensions: 'extensions',
 };

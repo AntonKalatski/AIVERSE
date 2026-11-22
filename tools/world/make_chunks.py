@@ -137,7 +137,7 @@ def main():
         biggest = max(biggest, reserve)
         entries.append({'cell': [cx, 0, cz], 'file': rel, 'reservedBytes': reserve})
     side = 2 * a.radius + 1
-    key = a.key or ('world' if json.load(open(os.path.join(a.project, 'game.json'))).get('module') == 'fps' else 'streamedWorld')
+    key = a.key or ('world' if json.load(open(os.path.join(a.project, 'game.json'))).get('module') == 'actor' else 'streamedWorld')
     m[key] = {'async': True, 'version': 1, 'cellSize': a.cell, 'shareModels': True, 'meshOverhang': a.cell, 'viewRadius': a.radius,
                   'maxResidentChunks': side * side + 8, 'maxResidentBytes': max(1 << 20, biggest * (side * side + 8)),
                   'maxStagingBytes': 256 << 20, 'maxUploadBytes': 256 << 20, 'maxJobs': 4, 'assets': assets, 'chunks': entries}

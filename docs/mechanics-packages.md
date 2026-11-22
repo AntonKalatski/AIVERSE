@@ -9,7 +9,7 @@ mechanics; they do not silently replace existing FPS movement, RTS abilities/dam
 | melee-combat | AttackSet/State, phase evaluation, input buffering, allowed combo cancels, authorization callback, once-per-swing hit bookkeeping, evade/parry/block outcome | Geometry/target validation and actual damage/stamina belong to the existing combat owner. No parallel health/status system. |
 | combat-actions | Frame-keyed hitboxes + hurtboxes (sphere/capsule/yaw box) with overlap tests, self/team filtering and once-per-swing hits; dodge i-frames + cooldown; directional guard arc + perfect-parry window with re-arm; poise damage/break/recovery and hit/block/parry stun; deterministic lock-on acquire/switch/break | Composes melee-combat. Returns contacts/outcomes; damage, stamina, health and statuses stay with the existing combat owner. No per-tick sweep, animation-driven boxes, ragdoll or camera presentation. |
 | weapon-policies | Deterministic recoil recovery, seeded spread, swept projectiles with gravity, lifetime and bounded ricochets; 0.2.0: material-layer penetration, radial explosions with owner LOS, ammo feeds (magazine/belt/per-shell/energy + overheat), charge tiers, attachment stat stacking, ballistic launch and lead solving (see [Weapons and ballistics](#weapons-and-ballistics-weapon-policies-020)) | Existing FPS ammo/reload/fire cadence remain authoritative for built-in FPS weapons. No automatic replacement of hitscan, no damage/health owner, no presentation. |
-| genre-bots | Melee bot (spacing band, phase-aware openings, hit-confirmed combos, telegraph dodge/parry timing, lock-on), shooter bot (turn-limited aim, seeded aim error, solveIntercept lead, recoil bursts, reload/overheat, cover choice), squad roles + formations, objective choice hook (see [Genre bots](#genre-bots-genre-bots-010)) | Returns player-equivalent inputs only; perception, cover, objectives and navigation come from owners. No pathfinding, match rules, senses or sports/racing/card bots. |
+| action-bots | Melee bot (spacing band, phase-aware openings, hit-confirmed combos, telegraph dodge/parry timing, lock-on), shooter bot (turn-limited aim, seeded aim error, solveIntercept lead, recoil bursts, reload/overheat, cover choice), squad roles + formations, objective choice hook (see [Genre bots](#action-bots-action-bots-010)) | Returns player-equivalent inputs only; perception, cover, objectives and navigation come from owners. No pathfinding, match rules, senses or sports/racing/card bots. |
 | stealth-senses | Sight cones (near/focus/peripheral) with owner light/cover/stance/visibility multipliers and LOS callback, hearing with occlusion callback and noise/query budgets, decaying footprint/scent markers, per observer-target suspicion meters (Unaware/Suspicious/Searching/Alert), delayed ally alerts sharing last known positions, deterministic search points with give-up, disguises, hiding spots (see [Stealth and senses](#stealth-and-senses-stealth-senses-010)) | Perception records and events only. Owner supplies poses, multipliers, raycasts/occlusion and search candidates and moves agents. Not RTS fog of war. No sound propagation, navmesh routes or presentation. |
 | physical-interactions | Pick up/carry (hold point, mass limit, carry speed penalty, drop when blocked), charged throws with an arc preview from the same integrator and swept landing, push/pull (free or grid, friction/mass resistance, cooperative pushing, blocking), XPBD ropes with a fixed iteration count, attach/detach and breaking force, hinged/sliding doors (locks/keys, one-way, timing, auto-reverse), waypoint moving platforms with per-rider carry deltas, breakables (damage types, thresholds, stages, debris requests) (see [Physical interactions](#physical-interactions-physical-interactions-010)) | Authoritative kinematic policies over owner collision (engine/world). Box3D stays presentation-only (debris). No rigid-body stacking, rotation of props/platforms, rope-world collision or rendering. |
 | match-rules | Warmup/live/overtime/intermission/finished, team score events, best-of rounds, draws and capture points. MatchObjectives.h (0.2.0): capture/hold zones with contest rules and decay, king of the hill, payload, elimination with lives/respawn waves, extraction, bomb/defuse, ordered route gates, contested overtime clock, spectator transitions (see [Match objectives](#match-objectives-match-rules-020)) | Native extension policies returning events/scores for the match owner; existing built-in victory modes stay owned by their modules. Presence, deaths, pickups and gate crossings come from the authoritative owner. No cart physics, bomb/HUD presentation or network spectating. |
@@ -45,7 +45,7 @@ block of eight here before using it.
 | 32..36 | combat-actions |
 | 40..47 | match-rules objectives |
 | 48..55 | stealth-senses |
-| 56..63 | genre-bots |
+| 56..63 | action-bots |
 | 64..71 | narrative-graphs scenes |
 | 72..79 | cinematic-gameplay (76 = NarrativeCueQueue bridge) |
 | 80..87 | physical-interactions |
@@ -497,12 +497,12 @@ occlusion/budget, suspicion thresholds/decay, alert delay/relay, search planning
 hiding/reveal, trails, save/restore determinism and invalid data, and the GenreConsumer chain in a standalone
 driver. Not run: CMake/isolation, `aiverse_tests`, native module export, headless restore matches, clang/MSVC.
 
-## Genre bots (genre-bots 0.1.0)
+## Genre bots (action-bots 0.1.0)
 
 Headers under `bots/`: `GenreCommon.h` (difficulty, perception record, target pick), `MeleeBot.h`, `ShooterBot.h`,
 `ObjectivePolicy.h`, `SquadRoles.h`, `GenreBotPersistence.h`, umbrella `GenreBots.h`, settings adapters
-`GenreBotConfig.h`. Target `AIVERSE::lib_genre_bots` (depends on `combat-actions`, `weapon-policies`,
-`configuration`); native OBJECT modules call `aiverse_native_use_libraries(target genre-bots)`. Skill:
+`GenreBotConfig.h`. Target `AIVERSE::lib_action_bots` (depends on `combat-actions`, `weapon-policies`,
+`configuration`); native OBJECT modules call `aiverse_native_use_libraries(target action-bots)`. Skill:
 `skills/ai/aiverse-action-bots`. Namespace `aiverse::lib::bots`; the policies are independent of genre labels.
 
 **Contract.** Each policy is a pure decision step: one call per bot (or squad) per strictly increasing tick
@@ -595,7 +595,7 @@ filter)` converts `genre::PerceivedTarget` (stealth-senses) into bot `PerceivedT
 velocity, guard, telegraphed attack); a target at `rememberFrom` (default Searching) or above is kept at its
 `lastKnown` position with `visible=false`, so bots approach but never shoot or lock it. Anonymous disturbances
 (target 0) are skipped; steer search with `genre::searchGoal`. Results are sorted by target id. `facts` returning
-nullopt drops a target. This makes `stealth-senses` a package dependency of `genre-bots`.
+nullopt drops a target. This makes `stealth-senses` a package dependency of `action-bots`.
 
 ## Match progression (match-progression 0.1.0)
 

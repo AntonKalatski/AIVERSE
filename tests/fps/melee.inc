@@ -1,5 +1,5 @@
 void melee() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":20,"mode":"deathmatch","melee":{"enabled":true,"damage":50}}})");
+    auto rules=Json::parse(R"({"actor":{"tickRate":20,"mode":"deathmatch","melee":{"enabled":true,"damage":50}}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[0,0.01,0],[0,0.01,1.5]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]})");
     // Each tick both players send input: attacker (slot 1) and defender (slot 2, faces the attacker at yaw 0.5).
     struct Tick {uint32_t attacker=0,defender=0;Fixed attackerYaw{},defenderYaw=Fixed::fromRatio(1,2);};
@@ -13,7 +13,7 @@ void melee() {
     };
     auto run=[&](Simulation& sim,Tick t,int ticks){for(int i=0;i<ticks;++i)step(sim,t);};
     // Rules without the block stay unchanged: the strike button does nothing.
-    auto plain=Json::parse(R"({"fps":{"tickRate":20,"mode":"deathmatch"}})");
+    auto plain=Json::parse(R"({"actor":{"tickRate":20,"mode":"deathmatch"}})");
     auto sim=simulation(plain,map);run(*sim,{actor::Melee},20);CHECK(character(*sim,2).health==100);
     CHECK(!actor::readConfig(plain).melee.enabled);
     // A strike from the front of an unguarded target lands once per swing and staggers it.
@@ -46,6 +46,6 @@ void melee() {
     for(int i=0;i<10;++i){step(*sim,{actor::Melee});step(*restored,{actor::Melee});CHECK(sim->checksum()==restored->checksum());}
     auto twin=simulation(rules,map);run(*twin,{actor::Melee,actor::Block},2);auto hash=twin->checksum();character(*twin,1).staggerUntil+=1;CHECK(twin->checksum()!=hash);
     // Out-of-range settings are rejected with a readable error.
-    auto bad=rules;bad.member("fps").member("melee").set("range",Json::number(int64_t(50)));
+    auto bad=rules;bad.member("actor").member("melee").set("range",Json::number(int64_t(50)));
     bool threw=false;try{actor::readConfig(bad);}catch(const JsonError&){threw=true;}CHECK(threw);
 }

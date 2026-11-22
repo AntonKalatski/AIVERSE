@@ -113,5 +113,5 @@ end)
     for key,value in t.items():value['name']=key.replace('_',' ').title()
     path=ROOT/'examples/genres/rts'/genre
     write(path/'rules.json',r);write(path/'maps/start.json',m)
-    write(path/'game.json',{'id':'com.aiverse.genre.'+genre.replace('-','_'),'name':genre.replace('-',' ').title(),'description':'Minimal genre mechanics sample','version':'0.1.0','module':'rts','genre':genre,'rules':'rules.json','maps':[{'file':'maps/start.json','title':'Genre arena'}],'sourceLanguage':'en','languages':['en'],'camera':{'projection':'ortho','zoom':30,'pitch':65}})
+    write(path/'game.json',{'id':'com.aiverse.genre.'+genre.replace('-','_'),'name':genre.replace('-',' ').title(),'description':'Minimal genre mechanics sample','version':'0.1.0','module':'game','genre':genre,'rules':'rules.json','maps':[{'file':'maps/start.json','title':'Genre arena'}],'sourceLanguage':'en','languages':['en'],'camera':{'projection':'ortho','zoom':30,'pitch':65}})
     if script:(path/'scripts').mkdir(exist_ok=True);(path/'scripts/game.lua').write_text(script)

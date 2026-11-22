@@ -33,8 +33,8 @@ void Traffic::collect(Simulation&) {}
 void Traffic::hash(Simulation&, Hasher&) const {}
 void Traffic::io(Simulation&, Archive&) {}
 TrafficStore* Traffic::store(Simulation&) const { return nullptr; }
-bool Traffic::aiInput(Simulation&, Entity, lib::genre::VehicleInput&) const { return false; }
-lib::genre::TrafficLight Traffic::light(Simulation&, int, lib::genre::TrafficAxis) const { return lib::genre::TrafficLight::Green; }
+bool Traffic::aiInput(Simulation&, Entity, lib::mechanics::VehicleInput&) const { return false; }
+lib::mechanics::TrafficLight Traffic::light(Simulation&, int, lib::mechanics::TrafficAxis) const { return lib::mechanics::TrafficLight::Green; }
 int Traffic::junctionAt(Fixed, Fixed) const { return -1; }
 bool Traffic::walkAllowed(Simulation&, int) const { return true; }
 uint32_t Traffic::report(Simulation&, uint8_t, Vec2, Entity, Entity, bool) { return 0; }
