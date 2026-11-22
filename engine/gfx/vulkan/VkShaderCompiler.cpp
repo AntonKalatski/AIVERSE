@@ -8,6 +8,7 @@
 #include <SPIRV/GlslangToSpv.h>
 
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -201,6 +202,40 @@ std::string translateGlsl(const std::string& body, bool vertex, bool linearTarge
     return "#version 450\n#define AIVERSE_VULKAN 1\n" + colorShaderPrefix(false, linearTarget) + s;
 }
 
+// AIVERSE_VK_SPV_DIR=<dir> (experiment): every program's SPIR-V is written there as
+// <key>.vert.spv / <key>.frag.spv; when <key>.vert.opt.spv and <key>.frag.opt.spv exist
+// (e.g. made offline with spirv-opt -O) they are used instead.
+void exchangeSpirv(uint64_t key, SpirvProgram& p) {
+    static const char* dir = std::getenv("AIVERSE_VK_SPV_DIR");
+    if (!dir || !*dir) return;
+    char base[1024];
+    std::snprintf(base, sizeof base, "%s/%016llx", dir, static_cast<unsigned long long>(key));
+    auto read = [](const std::string& path, std::vector<uint32_t>& out) {
+        std::FILE* f = std::fopen(path.c_str(), "rb");
+        if (!f) return false;
+        std::vector<uint32_t> words;
+        uint32_t w;
+        while (std::fread(&w, 4, 1, f) == 1) words.push_back(w);
+        std::fclose(f);
+        if (words.size() < 5 || words[0] != 0x07230203u) return false;
+        out = std::move(words);
+        return true;
+    };
+    auto write = [](const std::string& path, const std::vector<uint32_t>& words) {
+        if (std::FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(words.data(), 4, words.size(), f); std::fclose(f); }
+    };
+    std::vector<uint32_t> v, f;
+    if (read(std::string(base) + ".vert.opt.spv", v) && read(std::string(base) + ".frag.opt.spv", f)) {
+        std::fprintf(stderr, "[vk-spv] %016llx: optimized SPIR-V (%zu+%zu words, was %zu+%zu)\n",
+                     static_cast<unsigned long long>(key), v.size(), f.size(), p.vertex.size(), p.fragment.size());
+        p.vertex = std::move(v);
+        p.fragment = std::move(f);
+        return;
+    }
+    write(std::string(base) + ".vert.spv", p.vertex);
+    write(std::string(base) + ".frag.spv", p.fragment);
+}
+
 bool compileProgram(const std::string& vertexBody, const std::string& fragmentBody, bool linearTarget, SpirvProgram& out) {
     const uint64_t key = fnv(vertexBody, fragmentBody, linearTarget);
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -241,6 +276,7 @@ bool compileProgram(const std::string& vertexBody, const std::string& fragmentBo
             opt.validate = false;
             glslang::GlslangToSpv(*program.getIntermediate(EShLangVertex), result.vertex, &opt);
             glslang::GlslangToSpv(*program.getIntermediate(EShLangFragment), result.fragment, &opt);
+            exchangeSpirv(key, result);
         }
     }
     g_cache.emplace(key, std::make_shared<SpirvProgram>(result));
