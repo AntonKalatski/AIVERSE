@@ -161,7 +161,8 @@ of the `i`-th typed map vehicle (ascending vehicle id); the race decides the rou
 wins). ECS shape: the `vehicles::RaceState` world resource (racer `i` = slot `i`, `racers[i - 1]` = its car), the
 cars are `Vehicle` + `vehicles::VehicleDrive` entities. FPS save version 10 appends the RaceState record only on
 maps with a race; snapshots carry the player's `lib::mechanics::RaceView` (authority protocol 6). The client
-shows the chase camera and the race HUD at the wheel and hides the weapon UI.
+shows the chase camera (rules / map `"camera": {"chase": {...}}`, first-person look: `"firstPerson"`; presets in
+[camera-behaviors.md](camera-behaviors.md)) and the race HUD at the wheel and hides the weapon UI.
 
 ## Generated buildings (opt-in)
 

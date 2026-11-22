@@ -44,7 +44,7 @@
 #include "RegionSettings.h"
 #include "engine/game/Localize.h"
 #include "engine/game/Tiles.h"
-#include "engine/render/CameraModes.h"
+#include "engine/render/CameraBehavior.h"
 #include "engine/view/game/GameOverlayData.h"
 
 using namespace aiverse;
@@ -501,7 +501,7 @@ void GameClient::fitCamera() {
     cam_.maxDistance = std::max(40.0f, float(std::max(g.w, g.h)) * 1.3f);
     float aspect = platform::windowHeight() > 0 ? platform::windowWidth() / platform::windowHeight() : 1.6f;
     cam_.distance = small ? std::max(g.w / aspect, float(g.h)) * 1.05f + 4 : 24.0f;
-    render::applyCameraSetup(render::cameraSetupFrom(manifest_), cam_, float(platform::framebufferHeight())); // game.json "camera" (2D games)
+    render::applyOverheadCamera(render::overheadCameraFrom(manifest_), cam_, float(platform::framebufferHeight())); // game.json "camera" (2D games)
     if (const char* e = std::getenv("AIVERSE_CAM")) { // testing (close-up screenshots): "x,z,distance[,pitchDeg[,yawDeg]]"
         float v[5] = {c.x, c.z, cam_.distance, cam_.pitch * 57.2958f, cam_.yaw * 57.2958f};
         int n = std::sscanf(e, "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]);

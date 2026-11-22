@@ -1,5 +1,5 @@
 // ------------------------------------------------------------------ authored routes, row groups, multiscreen
-// (modules/rts/RtsRoutes*.cpp, docs/game-format.md § Routes)
+// (engine/game/Routes*.cpp, docs/game-format.md § Routes)
 
 static bool nearFx(Fixed a, double b, double eps = 1e-3) { return std::fabs(a.toDouble() - b) <= eps; }
 

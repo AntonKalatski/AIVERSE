@@ -76,6 +76,7 @@ nothing). GPUs without sRGB render targets silently keep the default. Code: `eng
 
 Optional `"camera"` block (2D games, see "2D games" below):
 `{"projection": "ortho", "pitch": 90, "yaw": 0, "fov": 43, "zoom": 20, "zoomMin": 8, "zoomMax": 40, "pixelsPerCell": 32, "rotate": false}`.
+The block may start from a preset (`{"preset": "overhead-pixel"}`; list: [camera-behaviors.md](camera-behaviors.md)).
 
 Optional `"playerColors"`: `[neutral, slot 1, ..., slot 8]` (overlay colour syntax: `"#rrggbb"`, `[r, g, b]` 0..1 or
 0..255; `null` keeps a slot) replaces the built-in player palette used for team colours, overlays and the territory

@@ -76,6 +76,25 @@ struct PortableRenderStats {
 // Explicit fallback: leave output untouched on failure and draw the original.
 // Per-instance dynamic index stream for compacted submission. Owned by the
 // host (one per drawn instance); release() with the staging device.
+// CPU copy of a source's combined STRATA index stream for compacted
+// submission, at about half the size: blocks of 256 indices stored as 16-bit
+// offsets from the block minimum when the block's range fits, else 32-bit.
+// Gathering arbitrary ranges is only needed when a selection changes.
+class CompressedIndexStore {
+public:
+    void build(const std::vector<uint32_t>& indices);
+    void gather(uint32_t first, uint32_t count, std::vector<uint32_t>& out) const;
+    size_t bytes() const { return narrow_.size()*2 + wide_.size()*4 + blocks_.size()*sizeof(Block); }
+    size_t size() const { return size_; }
+    void clear() { blocks_.clear(); narrow_.clear(); wide_.clear(); size_=0; }
+private:
+    static constexpr uint32_t kBlock = 256;
+    struct Block { uint32_t base = 0, offset = 0; bool wide = false; };
+    std::vector<Block> blocks_;
+    std::vector<uint16_t> narrow_;
+    std::vector<uint32_t> wide_;
+    size_t size_ = 0;
+};
 struct PortableCompactBuffer {
     gfx::BufferHandle buffer;
     size_t capacityBytes=0;
@@ -163,6 +182,10 @@ public:
     // changes. Non-streaming sources only; keeps a CPU copy of the indices.
     void setCompactSelection(bool on) { compactSelection_=on; }
     bool compactSelection() const { return compactSelection_ && cpuGather_; }
+    // Bytes of the compressed CPU index copy kept for compacted submission.
+    size_t cpuIndexBytes() const { return cpuIndices_.bytes(); }
+    // GPU bytes of the full index stream (0 when compacted-only).
+    size_t gpuIndexBytes() const { return sidecarSkipped_ ? 0 : size_t(indexCount_)*4u; }
     bool mergeAdjacentClusters() const { return mergeAdjacent_; }
     const std::vector<SelectedCluster>& debugSelection() const {
         return debugSelection_;
@@ -194,7 +217,9 @@ private:
     std::vector<uint32_t> primitiveOffsets_;
     std::vector<uint8_t> legacyMaterialMask_;
     bool compactSelection_=false;
-    bool cpuGather_=false; // compacted submission gathers from asset_ indices
+    bool cpuGather_=false; // compacted submission gathers from cpuIndices_
+    CompressedIndexStore cpuIndices_;
+    bool sidecarSkipped_=false; // compacted-only: the full index stream was not uploaded
     PortableRenderStats stats_{};
     bool debugCapture_ = false;
     bool mergeAdjacent_ = false;

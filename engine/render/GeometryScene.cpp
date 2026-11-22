@@ -231,6 +231,7 @@ void GeometryScene::retireResident(gfx::Device& dev) {
     // Renderer3D has consumed the previous draw epoch before scene unload.
     // Release alias borrowers BEFORE their index sidecars / source Models.
     strataPortableDrawModels_.clear();
+    strataLastPlans_.clear();
     strataSharedAliases_.clear();
     strataPortableLodHistories_.clear();
     for (auto& [instance, compact] : strataCompactBuffers_)
@@ -392,6 +393,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     staged->strataPortableSources_.clear();
     staged->strataGlobalIndexLeases_.clear();
     staged->strataPortableDrawModels_.clear();
+    staged->strataLastPlans_.clear();
     staged->strataCompactBuffers_.clear();
     staged->strataSharedAliases_.clear();
     staged->strataPortableLodHistories_.clear();
@@ -551,6 +553,15 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             // This leaves legacy material/shadow/LOD metadata intact.
             for (auto& [key, model] : models_)
                 if (model && !model->uploadPrepared) {
+                    // A model that every instance draws through STRATA needs
+                    // no generated LOD chain: it would cost load time (mesh
+                    // simplification) and GPU index memory for a path that
+                    // never draws. Authored LODs are kept.
+                    const Model* m=model.get();
+                    const bool strataOnly=!strataLodSources.count(m) &&
+                        std::none_of(instances_.begin(),instances_.end(),[m](const Instance& in){return in.model==m && !in.strataRoute;}) &&
+                        std::any_of(instances_.begin(),instances_.end(),[m](const Instance& in){return in.model==m;});
+                    if (strataOnly) model->batching.autoLod=false;
                     prepareModelUpload(*model);
                     using Policy=Model::Batching::GeometryPoolPolicy;
                     if (model->batching.geometryPoolPolicy==Policy::Inherit)
@@ -812,6 +823,21 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     stats_.strataArchivedCpuIndexSources+=freed!=0;
                 }else if(diskApplicable && strataDropArchivedCpuIndicesEnabled_){
                     warnings_.push_back("STRATA kept CPU index payload for diagnostic source "+key);
+                }
+                // Compacted submission keeps its own compressed index copy,
+                // so the asset's full 32-bit CPU indices are redundant once
+                // the GPU index stream is uploaded (debug views and the GPU
+                // metadata/culling/preview paths still read them).
+                const auto* portable=strataPortableSources_.at(model.get()).get();
+                stats_.strataPortableGpuIndexBytes+=portable->gpuIndexBytes();
+                if(!canReleaseCpu && portable->compactSelection() && !portable->streamingEnabled() &&
+                   !strataDebugView_.enabled && !strataDebugGeometryCapture_ &&
+                   !strataStagingEnabled_ && !strataGpuMetadataEnabled_ &&
+                   !strataGpuCullingEnabled_ && !strataRenderPreviewEnabled_ &&
+                   !strataVulkanGpuIndirectEnabled_){
+                    const size_t freed=strataStaging_->discardArchivedCpuIndices(key);
+                    stats_.strataArchivedCpuIndexBytesFreed+=freed;
+                    stats_.strataCompressedCpuIndexBytes+=portable->cpuIndexBytes();
                 }
             }
         }
@@ -1464,6 +1490,36 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             // use the finest resident frontier whenever water reflections
             // might consume this ModelDraw in the current frame.
             const bool forceFinest = r.lights.reflectionsWanted() && strataReflectionFinest_;
+            uint64_t planKey=1469598103934665603ull;
+            {
+                auto mix=[&](const void* p,size_t n){const auto* b=static_cast<const unsigned char*>(p);for(size_t k=0;k<n;++k){planKey^=b[k];planKey*=1099511628211ull;}};
+                for(const auto& v:views){mix(v.viewProjection.m,sizeof(v.viewProjection.m));mix(&v.width,sizeof v.width);mix(&v.height,sizeof v.height);mix(&v.errorThresholdPixels,sizeof v.errorThresholdPixels);const uint8_t z=v.clipDepthZeroToOne;mix(&z,1);}
+                mix(i.world.m,sizeof(i.world.m));
+                const uint8_t f=forceFinest;mix(&f,1);
+                mix(&strataLodHysteresisFraction_,sizeof strataLodHysteresisFraction_);
+            }
+            // (Debug views read the source's last frontier: always re-plan then.)
+            if(auto last=strataLastPlans_.find(&i);last!=strataLastPlans_.end() && last->second.key==planKey &&
+               !staged->second->partial() && !strataDebugView_.enabled){
+                auto alias=strataSharedAliases_.find({i.model,last->second.signature});
+                if(alias!=strataSharedAliases_.end() && alias->second.model){
+                    if(last->second.ib.valid())alias->second.model->ib=last->second.ib;
+                    alias->second.lastFrame=strataDrawFrame_;
+                    d.model=alias->second.model.get();
+                    d.flags |= kDrawStatic;
+                    d.staticCache=nullptr;
+                    d.persistentId=0;
+                    if(!strataInsetPass_){
+                        ++stats_.strataPortableDraws;
+                        ++stats_.strataPlanReuses;
+                        for(const auto& mesh:d.model->meshes)
+                            for(const auto& p:mesh.primitives)
+                                stats_.strataPortableTriangles+=p.indexCount/3;
+                    }
+                    goto strataDrawn;
+                }
+            }
+            {
             auto& slot=strataPortableDrawModels_[&i];
             if (!slot) slot=std::make_unique<Model>();
             std::string error;
@@ -1511,6 +1567,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
                     if(slot->ib.valid()) shared.model->ib=slot->ib;
                 }
                 shared.lastFrame=strataDrawFrame_;
+                strataLastPlans_[&i]={planKey,signature,shared.model->ib};
                 d.model=shared.model.get();
                 d.flags |= kDrawStatic; // eligible rigid Strata, Vulkan MDI may batch it
                 d.staticCache=nullptr;
@@ -1532,7 +1589,10 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
                 ++stats_.strataPortableFallbacks;
                 // Failure is atomic: output was preserved, and source model
                 // always remains the only drawn object in this epoch.
+                strataLastPlans_.erase(&i);
             }
+            }
+            strataDrawn:;
         }
     }
 #endif

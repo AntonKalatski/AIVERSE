@@ -1470,6 +1470,7 @@ target_link_libraries(aiverse_game_view PUBLIC aiverse_view_visibility)
 # Transitional host adapter consumes the engine View. The dependency points
 # from the game module into the engine, never back into an RTS implementation.
 target_link_libraries(aiverse_game_view PUBLIC AIVERSE::view)
+target_link_libraries(aiverse_game_view PUBLIC aiverse_world)   # GameWaterNereid.h: NEREID manifest parsing (engine/world)
 
 # Helper: package content + platform metadata around an executable.
 include(platform/cmake/ThirdPartyNotices.cmake)
@@ -1951,6 +1952,10 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_camera_rig_tests tests/render/camera_rig.cpp)
     target_include_directories(aiverse_camera_rig_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rig COMMAND aiverse_camera_rig_tests)
+    add_executable(aiverse_camera_behavior_tests tests/render/camera_behavior.cpp)
+    target_include_directories(aiverse_camera_behavior_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_camera_behavior_tests PRIVATE aiverse_engine)
+    add_test(NAME camera_behavior COMMAND aiverse_camera_behavior_tests)
     add_executable(aiverse_camera_rail_path_tests tests/render/camera_rail_path.cpp)
     target_include_directories(aiverse_camera_rail_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rail_path COMMAND aiverse_camera_rail_path_tests)
@@ -2720,11 +2725,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
-    # Legacy RTS cell water -> NEREID conversion (CPU-only).
-    add_executable(aiverse_rts_water_nereid_test tests/rts_water_nereid_test.cpp)
-    target_link_libraries(aiverse_rts_water_nereid_test PRIVATE
+    # Legacy cell water -> NEREID conversion (CPU-only).
+    add_executable(aiverse_game_water_nereid_test tests/game_water_nereid_test.cpp)
+    target_link_libraries(aiverse_game_water_nereid_test PRIVATE
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
-    add_test(NAME rts_water_nereid_test COMMAND aiverse_rts_water_nereid_test)
+    add_test(NAME game_water_nereid_test COMMAND aiverse_game_water_nereid_test)
     # NEREID large-world ocean LOD: legacy coverage, stitched rings (CPU-only).
     add_executable(aiverse_ecs_nereid_ocean_lod_test
         tests/ecs_nereid_ocean_lod_test.cpp)

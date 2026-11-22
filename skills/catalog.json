@@ -673,7 +673,7 @@
       "package": "camera",
       "path": "skills/ui/aiverse-camera/SKILL.md",
       "domain": "gameplay",
-      "summary": "RTS/follow/orbit target controls, limits, smoothing and strategic icon threshold",
+      "summary": "Ground camera pose limits and exponential easing (target, zoom, yaw, pitch); the engine follow camera runs on it",
       "side": "presentation",
       "runtime": "header",
       "target": "AIVERSE::lib_camera",

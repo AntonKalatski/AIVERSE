@@ -21,7 +21,10 @@ Planets: the sea of cube-sphere bodies draws with NEREID's wave model from `engi
 colour by depth and coast foam (`engine/view/game/GamePlanetShaders.h` only calls them). Water bodies on spheres:
 `<aiverselib/water/NereidSphereWater.h>` (`WaterSphereComponent` shells, `sampleSphereWater`,
 `addSphereWaterSamplingSystem` / `addSphereWaterBuoyancySystem`, `registerNereidSphereWaterPersistence`; radial depth
-and up, a current about an axis). The RTS planet host creates them for bodies with `"nereid"` (docs/planets.md §1);
+and up, a current about an axis, optional `WaterSphereWavesComponent` swell, `waterSphereFromJson` / `spawnWaterSpheres`;
+events in `NereidSphereInteractions.h`: `attachSphereWaterActor`, `addSphereWaterInteractionSystem`; or
+`NativeWaterPipelineConfig::enableSphereWater`). Genre-neutral: any host may use them. The planet host creates them for
+bodies with `"nereid"` (docs/planets.md §1);
 extend sphere water there, not in the planet code. Test: `ecs_nereid_sphere_water_test`.
 
 

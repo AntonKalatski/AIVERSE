@@ -5,6 +5,7 @@
 #include "MapRules.h"
 #include "../core/FixedMath.h"
 #include "gen/MapGen.h"
+#include <aiverselib/water/NereidSphereInteractions.h>
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
@@ -587,6 +588,9 @@ Entity GameCore::spawn(Simulation& sim, uint16_t type, uint8_t owner, Vec3 pos, 
     if (S) pos = (t.layer & kLayerOrbit) ? S->toShell(pos, S->bodies[size_t(S->bodyAt(pos))].shellRadius()) : S->project(pos);
     else if (gs.grid.hf) pos.y = gs.grid.surfaceHeight(pos.x, pos.z);
     w.add<Transform>(e, Transform{pos, pos, Fixed{}});
+    // NEREID sphere seas (map body "nereid"): naval units get a probe and splash / wake events
+    if (S && (t.layer & kLayerNaval) && w.countExisting<lib::nereid::WaterSphereComponent>())
+        lib::nereid::attachSphereWaterActor(w, e);
     w.add<Owner>(e, Owner{owner});
     Unit u;
     u.type = type;

@@ -313,18 +313,27 @@ bool build(const BuildInput& input, const BuildOptions& options,
             float simplificationError = 0;
             const unsigned simplifyFlags = meshopt_SimplifyLockBorder |
                                            meshopt_SimplifyErrorAbsolute;
-            const size_t count = hasAttributes
-                ? meshopt_simplifyWithAttributes(
-                    simplified.data(), source.data(), source.size(),
-                    input.positions, input.vertexCount, input.positionStride,
-                    input.attributes, input.attributeStride,
-                    input.attributeWeights, input.attributeComponents, nullptr,
-                    target, targetError, simplifyFlags, &simplificationError)
-                : meshopt_simplify(
-                    simplified.data(), source.data(), source.size(),
-                    input.positions, input.vertexCount, input.positionStride,
-                    target, targetError, simplifyFlags, &simplificationError);
-
+            auto simplifyAt = [&](float limit) {
+                return hasAttributes
+                    ? meshopt_simplifyWithAttributes(
+                        simplified.data(), source.data(), source.size(),
+                        input.positions, input.vertexCount, input.positionStride,
+                        input.attributes, input.attributeStride,
+                        input.attributeWeights, input.attributeComponents, nullptr,
+                        target, limit, simplifyFlags, &simplificationError)
+                    : meshopt_simplify(
+                        simplified.data(), source.data(), source.size(),
+                        input.positions, input.vertexCount, input.positionStride,
+                        target, limit, simplifyFlags, &simplificationError);
+            };
+            size_t count = simplifyAt(targetError);
+            // A group that cannot shrink within the tolerance (curved or
+            // bumpy surfaces at the upper levels) would stay a root and the
+            // whole hierarchy would stop there. Allow a larger error instead:
+            // the node records the error it really has, so selection only
+            // picks it when that error is small on screen (far away).
+            for (int retry = 0; retry < 3 && count >= source.size() * 9 / 10; ++retry)
+                count = simplifyAt(targetError * float(8 << (retry * 2)));
             if (count < 3 || count % 3 || count > source.size() ||
                 !std::isfinite(simplificationError) || simplificationError < 0)
                 return fail(error, "meshoptimizer returned invalid cluster");
@@ -371,6 +380,67 @@ bool build(const BuildInput& input, const BuildOptions& options,
         }
         frontier = std::move(next);
         if (!addedParent) break;
+    }
+
+    // Coarse tail. Groups of childrenPerNode leave a few large roots whose
+    // shared borders are still at full resolution (they never became
+    // interior), so a 1M-triangle sphere kept a 13k-triangle "coarsest"
+    // level and distant objects could not get cheaper. Merge the remaining
+    // roots into one parent, then keep halving that single node: the union
+    // of all roots has no internal border, only the primitive's own open
+    // edges (material seams, holes) stay locked. Each step must still pass
+    // the exact seam-contour check; any failure just stops the tail.
+    auto coarser = [&](const std::vector<uint32_t>& kids, size_t minimum) -> bool {
+        ClusterBounds bounds = emptyBounds();
+        float inheritedError = 0;
+        std::vector<uint32_t> source;
+        for (uint32_t id : kids) {
+            const BuildNode& child = created[id];
+            merge(bounds, child.bounds);
+            inheritedError = std::max(inheritedError, child.node.geometricError);
+            source.insert(source.end(), asset.indices.begin() + child.node.firstIndex,
+                          asset.indices.begin() + child.node.firstIndex + child.node.indexCount);
+        }
+        if (source.size() / 3 <= minimum) return false;
+        const float size = diagonal(bounds);
+        if (!std::isfinite(size)) return false;
+        const size_t target = std::max<size_t>(3, (source.size() / 4 / 3) * 3);
+        std::vector<uint32_t> simplified(source.size());
+        float simplificationError = 0;
+        const unsigned flags = meshopt_SimplifyLockBorder | meshopt_SimplifyErrorAbsolute;
+        const size_t count = hasAttributes
+            ? meshopt_simplifyWithAttributes(simplified.data(), source.data(), source.size(),
+                input.positions, input.vertexCount, input.positionStride,
+                input.attributes, input.attributeStride, input.attributeWeights,
+                input.attributeComponents, nullptr, target, size, flags, &simplificationError)
+            : meshopt_simplify(simplified.data(), source.data(), source.size(),
+                input.positions, input.vertexCount, input.positionStride,
+                target, size, flags, &simplificationError);
+        if (count < 3 || count % 3 || count >= source.size() * 9 / 10 ||
+            !std::isfinite(simplificationError) || simplificationError < 0 ||
+            !sameSeamContour(source.data(), source.size(), simplified.data(), count, nullptr) ||
+            asset.indices.size() + count > uint64_t(UINT32_MAX))
+            return false;
+        ClusterNode node;
+        node.firstIndex = uint32_t(asset.indices.size());
+        node.indexCount = uint32_t(count);
+        node.materialGroup = input.materialGroup;
+        node.geometricError = inheritedError + simplificationError;
+        node.resident = true;
+        if (!std::isfinite(node.geometricError)) return false;
+        asset.indices.insert(asset.indices.end(), simplified.begin(), simplified.begin() + count);
+        BuildNode parent;
+        parent.node = node;
+        parent.bounds = bounds;
+        parent.children = kids;
+        frontier = {uint32_t(created.size())};
+        created.push_back(std::move(parent));
+        return true;
+    };
+    if (frontier.size() > 1 && frontier.size() <= 8 && coarser(frontier, 0)) {
+        for (int level = 0; level < 8 && coarser(frontier, 256); ++level) {}
+    } else if (frontier.size() == 1) {
+        for (int level = 0; level < 8 && coarser(frontier, 256); ++level) {}
     }
 
     // Reorder as BFS, because the selector requires contiguous direct children

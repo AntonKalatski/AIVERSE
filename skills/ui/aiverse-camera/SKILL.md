@@ -1,12 +1,16 @@
 ---
 name: aiverse-camera
-description: Reuse AIVERSE camera for rts/follow/orbit target controls, limits, smoothing and strategic icon threshold in C++ native game projects.
+description: Reuse the AIVERSE ground camera pose limits and easing (lib_camera) and the LENS camera behaviours (overhead, follow, chase, first person, presets) in C++ native game projects.
 ---
 
 # camera
 
 For ECS camera assets, multi-camera outputs and capture use
-`skills/visuals/aiverse-lens/SKILL.md`. This package owns input/controller helpers.
+`skills/visuals/aiverse-lens/SKILL.md`. Camera bodies for views (overhead map camera, follow with look-ahead,
+speed zoom and bounds, chase, first-person look) and the named presets live in
+`engine/render/CameraBehavior.h` / `CameraPresets.h` (`docs/camera-behaviors.md`): configure them by data
+(`"camera": {"preset": "follow-speed"}`) before writing a camera of your own. This package owns the pose
+limits and easing those bodies run on.
 
 Read `docs/gameplay-packages.md`, `libraries/catalog.json` and `libraries/include/aiverselib/gameplay/Camera.h` from the engine root.
 Read `docs/gameplay-settings.md` for supported settings; do not invent JSON keys or APIs.

@@ -3,7 +3,7 @@
 // here: every entry point is guarded by GameState::surface.
 #include "Internal.h"
 #include "engine/core/FixedMath.h"
-#include <aiverselib/water/NereidSphereWater.h>
+#include <aiverselib/water/NereidSphereInteractions.h>
 #include <algorithm>
 #include <stdexcept>
 
@@ -230,21 +230,13 @@ void GameCore::setupWorld(Simulation& sim, const Json& map) {
             nw::addWaterProbeFromTransformSystem(sim, "nereid.sphere.probe");
             nw::addSphereWaterSamplingSystem(sim, "nereid.sphere.sample");
             nw::addSphereWaterBuoyancySystem(sim, "nereid.sphere.buoyancy");
+            nw::registerNereidInteractionPersistence(sim);
+            nw::registerNereidSphereInteractionPersistence(sim);
+            nw::addSphereWaterInteractionSystem(sim, "nereid.sphere.interaction");
             nereid = true;
         }
-        lib::nereid::WaterSphereComponent w;
-        w.center = Surface::anchor(int(bi));
-        w.surfaceRadius = b.radius + b.seaLevel;
-        const Fixed depth = nj.isObject() ? nj.getFx("depth", b.radius * Fixed::fromRatio(1, 4)) : b.radius * Fixed::fromRatio(1, 4);
-        if (depth.raw <= 0 || depth >= w.surfaceRadius) throw std::runtime_error(where + ": depth must be 0 < depth < radius + seaLevel");
-        w.floorRadius = w.surfaceRadius - depth;
-        if (nj.isObject()) {
-            w.currentSpeed = nj.getFx("current");
-            if (nj["axis"].isArray()) w.axis = {nj["axis"][0].fx(), nj["axis"][1].fx(), nj["axis"][2].fx()};
-            w.priority = int32_t(nj.getInt("priority", 0));
-        }
-        if (w.axis.lengthSq().raw <= 0) throw std::runtime_error(where + ": axis must be non-zero");
-        sim.world().add<lib::nereid::WaterSphereComponent>(sim.world().create(), w);
+        lib::nereid::spawnWaterSpheres(sim.world(),
+            {lib::nereid::waterSphereFromJson(nj, Surface::anchor(int(bi)), b.radius + b.seaLevel, where)});
     }
     std::shared_ptr<const Surface> cs = surf;
     gs.surface = cs;
