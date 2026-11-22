@@ -24,3 +24,16 @@ Branch `feature/aiv20261122_camera_presets` (based on `feature/aiv20261121_no-ge
 
 ## Verification
 See the stage log appended below (Mac build, ctest, frames).
+
+## Stage log
+- Mac (KINGSTON `AIVERSE-builds/camera-presets`, Release, tests ON) at merge with main `c09e2a5cb`: build OK;
+  ctest 431/434 pass. Failures were no-genre leftovers fixed in `6d58a2f33` (skill catalog regenerated,
+  `modules/fps` -> `engine/actor` in skills, `gen/NativeRegistry.cpp` in `tests/native_project_build.py`);
+  `native_project_build` not re-run on Mac after the fix. `camera_behavior` and `aiverse_tests` (top-down camera
+  tests) pass. One earlier ctest run had an `aiverse_tests` SegFault that did not repeat on the next full run
+  (two runs overlapped in the same build dir) — watch for it.
+- Pre-existing build breaks fixed by the main merge: `TerraWeaveTerrainRuntime.h` (`patch`), `RTSCamera` in tests.
+- Frames: `AIVERSE-builds/camera-presets/shots` — skirmish with overhead / overhead-isometric / overhead-flat,
+  topdown_arena with follow / follow-overhead / follow-telephoto; only the preset line differs. The telephoto preset
+  frames a small arena far off-centre (it is meant for large maps).
+- Devlog entry `2026-11-22-lens-camera-presets` (in-progress), LENS roadmap item (in-progress) + planned next step.
