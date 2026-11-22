@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T13:33:16+00:00",
+ "generated": "2026-11-22T15:30:38+00:00",
  "lang": "ru",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -732,6 +732,34 @@
    ],
    "links": [],
    "author": null
+  },
+  {
+   "id": "2026-11-22-gameplay-one-host",
+   "date": "2026-11-22",
+   "system": "gameplay",
+   "title": "Один движок для любой игры: без деления на жанры",
+   "summary": "Стратегии, шутеры, гонки и города теперь идут через одно ядро GameCore: игровые системы лежат в engine/, а что включено, решают данные проекта, а не модуль жанра.",
+   "body": [
+    "Раньше движок держал два отдельных хоста: modules/rts для сеточных игр и modules/fps для карт в метрах. Все системы сеточного хоста (бой, экономика, трафик, вождение, арсенал, рейды, торговля, карьера, сенсоры, прогрессия) переехали в engine/game, вид — в engine/view/game, звук и эффекты — в engine/audio и engine/fx.",
+    "Системы акторов (персонажи, оружие, снаряды, машины, королевская битва, гонки, боты) стали частью того же ядра: GameCore запускает их, когда карта задана в мировых координатах. Карта любого вида — один документ сцены, редактор и Studio работают с ней одинаково, клиент один.",
+    "Имена в форматах данных больше не называют жанр: в game.json \"module\" — \"game\" или \"actor\", блок правил актёров — \"actor\", нативная Lua-библиотека — core, пакеты ботов — bots-commander, bots-combatant, action-bots."
+   ],
+   "status": "done",
+   "verified": "Полная сборка на Mac и 432 из 433 тестов (упавший импортёр TA писал старое имя модуля, исправлено); контрольные суммы всех шаблонов совпадают с прежними, кроме известного boss_arena seed 2.",
+   "limits": "Старые проекты, повторы и сохранения со старыми именами не загружаются. Board, Motion, Voxel и Strategic пока отдельные хосты; перенос GTA2 идёт отдельно.",
+   "branch": "feature/aiv20261121_no-genre",
+   "commit": null,
+   "media": [],
+   "links": [
+    {
+     "title": "Аудит: без деления на жанры",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/no-genre-split-audit.md"
+    },
+    {
+     "title": "Handoff этапа 10",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/handoffs/no-genre-split-stage-10.md"
+    }
+   ]
   },
   {
    "id": "2026-11-21-vivid-adaptive-soft-shadows",
