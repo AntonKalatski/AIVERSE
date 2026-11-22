@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T17:05:47+00:00",
+ "generated": "2026-11-22T17:26:42+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -864,8 +864,8 @@
     "Data-format names no longer name a genre: game.json \"module\" is \"game\" or \"actor\", the actor rules block is \"actor\", the native Lua library is core, and the bot packages are bots-commander, bots-combatant and action-bots."
    ],
    "status": "done",
-   "verified": "Full Mac build and 432 of 433 tests (the failing TA importer wrote the old module name; fixed); checksums of every sample match the previous ones except the known boss_arena seed 2.",
-   "limits": "Old projects, replays and saves with the previous names do not load. Board, Motion, Voxel and Strategic are still separate hosts; the GTA2 port is separate work.",
+   "verified": "Full Mac build and all 434 tests; checksums of every sample match the previous ones except the known boss_arena seed 2.",
+   "limits": "Old projects, replays and saves with the previous names do not load. The GTA2 port is separate work.",
    "branch": "feature/aiv20261121_no-genre",
    "commit": null,
    "media": [],
@@ -887,16 +887,16 @@
    "title": "Package catalog: content is downloaded separately from the engine",
    "summary": "The terrain and vegetation PBR material libraries and their sources moved out of the engine into a package catalog. A project installs only what it needs with one command; the website has a new Catalog page.",
    "body": [
-    "The catalog is a separate repository, AIVERSE-PLUGINS, with sections: templates, materials, textures, models, audio, effects, UI, scripts, plugins, tools. Every package has a description, previews, a licence and the minimum engine version.",
+    "The catalog is a separate repository, AIVERSE-PACKAGES, with sections: templates, materials, textures, models, audio, effects, UI, scripts, plugins, tools. Every package has a description, previews, a licence and the minimum engine version.",
     "`aiverse_pkg.py add terrain-pbr --project <project>` downloads the package, checks its hash, puts the files into the project and adds the materials to its library. The version and file hashes go to `aiverse.lock`, so a cloned project is restored with `install`. A downloaded package is kept once per computer for all projects.",
     "Engine skills name the packages they need, and an agent installs them by itself.",
     "New packages are added by pull request to the catalog. Once merged, a package appears in the engine and on the Catalog page by itself: previews, description, engine version, a download button and the install command."
    ],
-   "status": "in-progress",
+   "status": "done",
    "verified": "Four packages are published in the catalog and downloaded over the network on Linux; their textures are byte-identical to the former engine files, and the material map checks pass. The Catalog page was opened in Chrome at desktop and phone width and shows the packages from the catalog.",
    "limits": "There is no catalog window in Studio and no MCP commands yet: search and install run from the command line. The editor build with the changed empty project was not checked on macOS.",
    "branch": "feature/aiv20261122_packages",
-   "commit": null,
+   "commit": "a304cd753",
    "media": [],
    "links": [
     {
@@ -917,11 +917,11 @@
     "Models: Auto LOD (the level the renderer picked at this distance is highlighted), any level by hand, or STRATA — clusters are built from the model on first request and the Clusters button colours them. Wireframe shows the edges of the shown level. The panel lists triangles per level, whether the engine generated the LODs, and STRATA's cluster count and build time.",
     "The loading mark is the same assembly of blades and diamond as the engine's splash: on the site (catalog, builds on the releases page), in the viewer, in Studio instead of spinners, and in web builds of games without their own splash."
    ],
-   "status": "in-progress",
+   "status": "done",
    "verified": "Frames come from the desktop build of the viewer (Linux, OpenGL) on the terrain-pbr and vegetation-pbr packages and a 20k-triangle test rock; the loading mark was captured on the built site in Chrome.",
    "limits": "The web viewer is built in the catalog and checked after it is deployed. The catalog has no model packages yet, so LOD and STRATA appear on the site with the first one. STRATA is built on first request, which is a noticeable pause on a large model.",
    "branch": "feature/aiv20261122_packages",
-   "commit": null,
+   "commit": "a304cd753",
    "media": [
     {
      "src": "media/docs/devlog/media/2026-11-22-build-catalog-viewer-lod/01.jpg",
@@ -934,6 +934,39 @@
     {
      "src": "media/docs/devlog/media/2026-11-22-build-catalog-viewer-lod/03.jpg",
      "caption": "The site catalog while loading: the animated AIVERSE mark"
+    }
+   ],
+   "links": [],
+   "author": null
+  },
+  {
+   "id": "2026-11-22-build-catalog-models",
+   "date": "2026-11-22",
+   "system": "build",
+   "title": "Catalog: TerraWeave rocks and trees, packages with dependencies, translations",
+   "summary": "The catalog has its first model packs — 12 TerraWeave rocks and 10 tree species, three LODs each. A package can depend on another and use its textures instead of copies. Catalog texts are English with translations such as title-ru, and the catalog page explains how to add your own package.",
+   "body": [
+    "`terraweave-rocks` and `terraweave-trees` come from the engine tools aiverse_terraweave_rocks and aiverse_terraweave_vegetation. The models refer to the textures of terrain-pbr and vegetation-pbr, so the tree pack is 17 MB instead of 52. `aiverse_pkg.py add` installs the dependencies first, and the site's 3D preview takes the textures from them too.",
+    "The catalog index is short now: the root lists only the sections and the folder of each package; the description is its aiverse.package.json and the published versions and hashes are in versions.json next to it. Plain keys are English, translations are title-ru, summary-zh-CN and so on; the catalog README exists in nine languages.",
+    "The Catalog page has five steps for offering a package and a link to the full instructions in the docs."
+   ],
+   "status": "in-progress",
+   "verified": "Models with textures from their dependency packages were captured in the desktop viewer (Linux, OpenGL), including STRATA on the oak; installing with dependencies is covered by the aiverse_pkg test; the catalog page with the new index was checked in Chrome against a local copy of the catalog.",
+   "limits": "The trees are for hand placement; the forest the engine grows and places itself is still built by TerraWeave. Package descriptions are translated into Russian only so far.",
+   "branch": "feature/aiv20261122_model_packages",
+   "commit": null,
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-22-build-catalog-models/01.jpg",
+     "caption": "Ten tree species: spruce, pine, fir, larch, oak, birch, maple, apple, willow, poplar"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-22-build-catalog-models/02.jpg",
+     "caption": "12 rocks in four shapes: rounded, boulder, slab, shard"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-22-build-catalog-models/03.jpg",
+     "caption": "The catalog page: how to add your own package"
     }
    ],
    "links": [],
