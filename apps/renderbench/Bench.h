@@ -503,6 +503,13 @@ struct Bench {
             r.set("instancedModelDraws",Json::number(int64_t(stats.instancedDraws)));
             Json lods=Json::array();for(auto n:stats.lodNodes)lods.push(Json::number(int64_t(n)));r.set("modelLodNodes",lods);
             r.set("postPasses",Json::number(int64_t(post.stats().passes+screen.passCount())));
+            if(water.configuredSurfaces()) {
+                const auto& wd=water.scene().drawStats();const auto& ws=water.scene().stats();
+                r.set("nereidWaterDraws",Json::number(int64_t(wd.draws)));
+                r.set("nereidWaterTriangles",Json::number(int64_t(wd.triangles)));
+                r.set("nereidWaterResident",Json::number(int64_t(ws.resident)));
+                r.set("nereidWaterUploads",Json::number(int64_t(ws.uploadsAttempted)));
+            }
             if(timed)tags.emplace(thisTag,rows.size());
             rows.push(std::move(r));
         }

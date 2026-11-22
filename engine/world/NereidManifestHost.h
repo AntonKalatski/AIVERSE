@@ -37,6 +37,7 @@ public:
     void draw(render::Renderer3D& renderer)const{scene_.draw(renderer,{},1);}
     void shutdown(gfx::Device& device){scene_.shutdown(device);signature_.clear();configured_=0;}
     size_t configuredSurfaces()const{return configured_;}
+    const NereidWaterScene& scene()const{return scene_;}
 private:
     NereidWaterScene scene_;
     Vec3 observer_{};
