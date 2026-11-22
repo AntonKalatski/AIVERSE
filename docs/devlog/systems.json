@@ -596,6 +596,12 @@
      "textEn": "Camera rigs and separate temporal state for every camera."
     },
     {
+     "name": "Поведение и пресеты",
+     "text": "Тела камер для любой игры — обзор карты, следование, преследование, вид от первого лица, орбита планеты — и готовые пресеты одной строкой в данных.",
+     "nameEn": "Behaviours and presets",
+     "textEn": "Camera bodies for any game — map overview, follow, chase, first person, planet orbit — and ready presets in one line of data."
+    },
+    {
      "name": "Стек и режиссёр",
      "text": "Наложения, сплит-скрин, картинка в картинке и режиссёр с плавными переходами между камерами.",
      "nameEn": "Stack and director",
@@ -695,18 +701,20 @@
      "date": "2026-11-22"
     },
     {
-     "status": "in-progress",
+     "status": "done",
      "title": "Общие тела камер и пресеты",
      "text": "Камера обзора карты, камера следования (упреждение, отъезд от скорости, границы карты), камера преследования и вид от первого лица собраны в одном месте и работают одинаково в любом проекте. Блок камеры выбирает готовый пресет одной строкой — \"preset\": \"follow-speed\" — и меняет нужные ключи; ECS-риг получил режимы преследования и от первого лица на той же математике.",
      "titleEn": "Shared camera bodies and presets",
-     "textEn": "The map camera, the follow camera (look-ahead, speed zoom, map bounds), the chase camera and the first-person look now live in one place and behave the same in any project. A camera block picks a ready preset in one line — \"preset\": \"follow-speed\" — and overrides any keys; the ECS rig gained chase and first-person modes on the same math."
+     "textEn": "The map camera, the follow camera (look-ahead, speed zoom, map bounds), the chase camera and the first-person look now live in one place and behave the same in any project. A camera block picks a ready preset in one line — \"preset\": \"follow-speed\" — and overrides any keys; the ECS rig gained chase and first-person modes on the same math.",
+     "date": "2026-11-22"
     },
     {
-     "status": "planned",
-     "title": "Модификаторы камеры в ECS и выбор пресета в Studio",
-     "text": "Упреждение, отъезд от скорости, границы и сглаживание как отдельные ECS-компоненты для любого рига; выбор и предпросмотр пресетов в окне камер Studio и через MCP; планетная камера как одно из тел.",
-     "titleEn": "Camera modifiers in ECS and preset picker in Studio",
-     "textEn": "Look-ahead, speed zoom, bounds and smoothing as separate ECS components for any rig; picking and previewing presets in the Studio cameras window and through MCP; the planet camera as one of the bodies."
+     "status": "done",
+     "title": "Камера следования в ECS, пресеты в Studio и MCP, орбита планет",
+     "text": "Камера сцены в ECS может работать как игровая камера следования: угол, расстояние, сглаживание, упреждение по скорости, отъезд от скорости и границы задаются блоком follow в cameras.json, тоже с пресетом. В окне камер Studio пресет применяется одним выбором, MCP-инструмент lens_camera_presets перечисляет пресеты для агентов. Камера планет стала одним из тел системы — орбитой над сферой.",
+     "titleEn": "Follow camera in ECS, presets in Studio and MCP, planet orbit",
+     "textEn": "An ECS scene camera can work like the game follow camera: angle, distance, smoothing, velocity lead, speed zoom and bounds come from a follow block in cameras.json, presets included. The Studio cameras window applies a preset in one pick, and the MCP tool lens_camera_presets lists presets for agents. The planet camera became one of the system's bodies — an orbit over a sphere.",
+     "date": "2026-11-22"
     }
    ],
    "taglineEn": "Cameras and cinematic frames",

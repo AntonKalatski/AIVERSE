@@ -3,15 +3,15 @@
   "date": "2026-11-22",
   "system": "lens",
   "title": "Пресеты камер: одна строка в данных",
-  "summary": "Камеры всех проектов теперь собираются из одних и тех же тел — обзор карты, следование, преследование и вид от первого лица, — и любую из них можно задать готовым пресетом одной строкой в game.json.",
+  "summary": "Камеры всех проектов теперь собираются из одних и тех же тел — обзор карты, следование, преследование, вид от первого лица и орбита планеты, — и любую можно задать готовым пресетом одной строкой.",
   "body": [
     "Раньше камера карты, камера, следующая за героем, камера за машиной и вид из глаз жили в разных местах и настраивались каждая по-своему. Теперь это четыре тела одной системы камер LENS, и блок камеры начинается с пресета: \"camera\": {\"preset\": \"overhead-isometric\"} даёт изометрию, \"topDown\": {\"camera\": {\"preset\": \"follow-speed\"}} — камеру, которая отъезжает и уходит вперёд на скорости. Любой ключ поверх пресета переопределяет его.",
     "Готово одиннадцать пресетов: обзор карты в перспективе, крутой обзор, пиксельный вид сверху для спрайтовых игр, изометрия, четыре варианта следования (от плеча, строго сверху, со скоростью, длиннофокусный издалека), два варианта преследования и вид от первого лица. Пресеты — это данные, новый добавляется без кода.",
-    "ECS-риг камер получил режимы преследования и от первого лица на той же математике, так что камера сцены, настроенная в Studio, ведёт себя так же, как камера игры. Список пресетов и ключей — на странице документации «LENS: поведение камер»."
+    "ECS-риг камер получил режимы преследования и от первого лица на той же математике, а риг следования с блоком follow в cameras.json работает как игровая камера следования — с пресетом, упреждением по скорости и границами. В окне камер Studio пресет применяется одним выбором, агенты получают список через MCP-инструмент lens_camera_presets. Камера планет стала пятым телом системы — орбитой над сферой. Список пресетов и ключей — на странице документации «LENS: поведение камер»."
   ],
-  "status": "in-progress",
+  "status": "done",
   "verified": "macOS, Metal: кадры сняты в клиенте игры на двух шаблонах, меняется только строка пресета в game.json. Тесты камер, top-down и FPS проходят на Mac.",
-  "limits": "Пресеты пока выбираются в game.json и правилах; выбора в окне камер Studio и через MCP ещё нет. Упреждение, отъезд от скорости и границы пока не отдельные ECS-компоненты, планетная камера — своё тело.",
+  "limits": "Тело следования в ECS ведёт за целью только по её скорости: стика у сцены нет. Камера преследования и вид от первого лица берут настройки из правил и карты, а не из cameras.json.",
   "branch": "feature/aiv20261122_camera_presets",
   "commit": null,
   "media": [
@@ -39,12 +39,12 @@
   "links": [],
   "author": null,
   "titleEn": "Camera presets: one line of data",
-  "summaryEn": "Cameras of every project are now built from the same bodies — map overview, follow, chase and first person — and any of them can be set with a ready preset in one line of game.json.",
+  "summaryEn": "Cameras of every project are now built from the same bodies — map overview, follow, chase, first person and planet orbit — and any of them can be set with a ready preset in one line.",
   "bodyEn": [
     "The map camera, the camera following a hero, the camera behind a car and the first-person view used to live in different places, each configured its own way. Now they are four bodies of one LENS camera system, and a camera block starts from a preset: \"camera\": {\"preset\": \"overhead-isometric\"} gives an isometric view, \"topDown\": {\"camera\": {\"preset\": \"follow-speed\"}} a camera that pulls back and leads at speed. Any key on top of the preset overrides it.",
     "Eleven presets are ready: a perspective map view, a steep view, a pixel-perfect top view for sprite games, isometric, four follow variants (over the shoulder, straight down, with speed, telephoto from far away), two chase variants and first person. Presets are data; a new one needs no code.",
-    "The ECS camera rig gained chase and first-person modes on the same math, so a scene camera set up in Studio behaves like the game camera. The preset and key list is on the documentation page “LENS: camera behaviours”."
+    "The ECS camera rig gained chase and first-person modes on the same math, and a follow rig with a follow block in cameras.json works like the game follow camera — with a preset, velocity lead and bounds. The Studio cameras window applies a preset in one pick, and agents get the list through the MCP tool lens_camera_presets. The planet camera became the system's fifth body — an orbit over a sphere. The preset and key list is on the documentation page “LENS: camera behaviours”."
   ],
   "verifiedEn": "macOS, Metal: frames captured in the game client on two templates, only the preset line in game.json changes. Camera, top-down and FPS tests pass on Mac.",
-  "limitsEn": "Presets are picked in game.json and rules for now; there is no picker in the Studio cameras window or through MCP yet. Look-ahead, speed zoom and bounds are not separate ECS components yet; the planet camera is its own body."
+  "limitsEn": "The ECS follow body leads its target by velocity only: a scene has no stick. The chase camera and first-person look read rules and maps, not cameras.json."
 }

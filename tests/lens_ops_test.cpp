@@ -82,7 +82,7 @@ int main() {
     if (!ec) require(call("lens_scene_get").has("error"), "symlink accepted");
     unsigned tools=0;
     for (const auto& op:ws.ops()) if(op.name.rfind("lens_",0)==0) { ++tools; require(!op.guiOnly,"authoring needs GUI"); }
-    require(tools==5,"MCP registry missing LENS tools");
+    require(tools==6,"MCP registry missing LENS tools");
     // presets: the list, one by name, unknown names fail; a follow preset is accepted in a camera record
     auto presets = call("lens_camera_presets");
     require(presets.getBool("ok") && presets["presets"].size() >= 8, "preset list");
