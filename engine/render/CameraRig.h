@@ -4,6 +4,7 @@
 #include "EcsCameraRender.h"
 #include "../sim/CameraRigComponents.h"
 #include "CameraRailPath.h"
+#include "CameraBehavior.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -39,6 +40,9 @@ inline float3 cameraRailPosition(const CameraRailComponent& rail,double seconds)
     const float frac=float(span-index);
     return lerp(cameraEcsPos(rail.points[size_t(index)]),
                 cameraEcsPos(rail.points[size_t(index+1)]),frac);
+}
+inline quat cameraEcsRotation(const Rotation& r) {
+    return qnormalize(quat{float(r.x.toDouble()),float(r.y.toDouble()),float(r.z.toDouble()),float(r.w.toDouble())});
 }
 inline bool validCameraLens(const CameraLensComponent& lens) {
     return lens.sensorHeightMm>0_fx && lens.focalLengthMm>0_fx &&
@@ -84,11 +88,15 @@ public:
             float3 target{};
             const bool needsTarget=rig->mode==CameraRigMode::Follow ||
                                    rig->mode==CameraRigMode::Orbit ||
-                                   rig->mode==CameraRigMode::LookAt;
+                                   rig->mode==CameraRigMode::LookAt ||
+                                   rig->mode==CameraRigMode::Chase ||
+                                   rig->mode==CameraRigMode::FirstPerson;
+            quat targetRotation{};
             if (needsTarget) {
                 const auto* xf=world.tryGetConst<WorldTransform>(rig->target);
                 if (!xf) return true; // no implicit target at world origin
                 target=cameraEcsPos(xf->position,renderOrigin);
+                targetRotation=cameraEcsRotation(xf->rotation);
             }
             if (rig->mode==CameraRigMode::Follow) {
                 desired=target+cameraEcsPos(rig->offset);
@@ -100,6 +108,23 @@ public:
                 const float distance=std::max(.01f,float(rig->distance.toDouble()));
                 desired=target+float3{std::sin(yaw)*cp,std::sin(pitch),std::cos(yaw)*cp}*distance;
                 orientation=cameraLookRotation(desired,target);
+            } else if(rig->mode==CameraRigMode::Chase) {
+                constexpr float tau=6.28318530718f;
+                const float3 f=targetRotation.rotate({0,0,1});
+                const float heading=std::atan2(f.x,f.z)/tau+float(rig->yaw.toDouble())/tau;
+                CameraChaseSettings chase;
+                chase.distance=std::max(.01f,float(rig->distance.toDouble()));
+                chase.pitch=float(rig->pitch.toDouble());
+                chase.height=float(rig->offset.y.toDouble());
+                chase.lead=float(rig->offset.z.toDouble());
+                const Camera c=chaseCamera(target,heading,chase);
+                desired=c.eye();
+                orientation=cameraLookRotation(desired,c.target);
+            } else if(rig->mode==CameraRigMode::FirstPerson) {
+                constexpr float pi=3.14159265358979f;
+                desired=target+targetRotation.rotate(cameraEcsPos(rig->offset));
+                orientation=qnormalize(targetRotation*quat::axisAngle({0,1,0},pi+float(rig->yaw.toDouble()))*
+                                       quat::axisAngle({1,0,0},float(rig->pitch.toDouble())));
             } else if(rig->mode==CameraRigMode::LookAt) {
                 orientation=cameraLookRotation(desired,target);
             } else if(rig->mode==CameraRigMode::Rail) {

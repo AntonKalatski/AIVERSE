@@ -242,7 +242,7 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         }
         const Json& rig=input["rig"];
         if(rig.isObject()) {
-            it.rig.mode=CameraRigMode(std::clamp<int64_t>(rig.getInt("mode"),0,4));
+            it.rig.mode=CameraRigMode(std::clamp<int64_t>(rig.getInt("mode"),0,int64_t(CameraRigMode::FirstPerson)));
             it.rig.offset=cameraVecFromJson(rig["offset"],it.rig.offset);
             it.rig.distance=rig.getFx("distance",it.rig.distance);
             it.rig.yaw=rig.getFx("yaw");it.rig.pitch=rig.getFx("pitch");

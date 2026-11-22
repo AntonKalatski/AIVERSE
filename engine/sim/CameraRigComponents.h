@@ -6,7 +6,12 @@
 #include <cstdint>
 
 namespace aiverse {
-enum class CameraRigMode : uint8_t { Static, LookAt, Follow, Orbit, Rail };
+// Chase / FirstPerson (appended) run the same math as the view cameras (render/CameraBehavior.h):
+//   Chase       - behind the target's heading: distance, pitch, offset.y = height, offset.z = lead ahead,
+//                 yaw = turn around the heading (radians);
+//   FirstPerson - eyes at target + offset (offset turns with the target), looking along the target's +Z,
+//                 yaw / pitch added on top.
+enum class CameraRigMode : uint8_t { Static, LookAt, Follow, Orbit, Rail, Chase, FirstPerson };
 struct CameraRigComponent {
     CameraRigMode mode=CameraRigMode::Static;
     Entity target=kNullEntity;                // stable generation checked target

@@ -147,7 +147,7 @@ public:
         if(rig && ImGui::CollapsingHeader("Camera Rig")) {
             ImGui::Checkbox("Rig Enabled",&rig->enabled);
             int mode=int(rig->mode);
-            if(ImGui::Combo("Rig Mode",&mode,"Static\0Look At\0Follow\0Orbit\0Rail\0"))
+            if(ImGui::Combo("Rig Mode",&mode,"Static\0Look At\0Follow\0Orbit\0Rail\0Chase\0First Person\0"))
                 rig->mode=CameraRigMode(mode);
             float offset[3]={float(rig->offset.x.toDouble()),
                              float(rig->offset.y.toDouble()),float(rig->offset.z.toDouble())};

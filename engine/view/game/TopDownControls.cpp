@@ -9,7 +9,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmisleading-indentation"   // the library header's one-line else (not ours to restyle)
 #endif
-#include "../../../libraries/include/aiverselib/gameplay/Camera.h"
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -84,46 +83,6 @@ void ring(ViewDrawBatch& b, float cx, float cy, float r, float w, uint32_t col) 
 
 // ================================================================= config
 
-void readTopDownCamera(const Json& cj, TopDownCameraConfig& cam) {
-    if (!cj.isObject()) return;
-    auto num = [&](const char* k, float& v) { v = float(cj[k].toDouble(v)); };
-    num("pitch", cam.pitch); num("yaw", cam.yaw); num("distance", cam.distance);
-    num("minDistance", cam.minDistance); num("maxDistance", cam.maxDistance);
-    num("smoothing", cam.smoothing); num("lookAhead", cam.lookAhead); num("aimLookAhead", cam.aimLookAhead);
-    num("lookAheadSmoothing", cam.lookAheadSmoothing); num("margin", cam.margin);
-    num("velocityLookAhead", cam.velocityLookAhead); num("maxLookAhead", cam.maxLookAhead);
-    num("fov", cam.fov);
-    if (const Json& sz = cj["speedZoom"]; sz.isObject()) {
-        cam.speedFrom = std::max(0.0f, float(sz["from"].toDouble(0)));
-        cam.speedTo = float(sz["to"].toDouble(0));
-        cam.speedDistance = float(sz["distance"].toDouble(cam.distance));
-        cam.speedSmoothing = std::max(0.0f, float(sz["smoothing"].toDouble(cam.speedSmoothing)));
-    }
-    cam.lockOffsetIfNoInput = cj.getBool("lockOffsetIfNoInput", cam.lockOffsetIfNoInput);
-    cam.bounds = cj.getBool("bounds", cam.bounds);
-    cam.fogFollow = cj.getBool("fogFollow", cam.fogFollow);
-    if (cj.has("projection")) {
-        const std::string pr = cj.getStr("projection");
-        cam.projection = pr == "ortho" ? TopDownCameraConfig::Projection::Ortho
-                       : pr == "perspective" ? TopDownCameraConfig::Projection::Perspective : TopDownCameraConfig::Projection::Keep;
-    }
-}
-
-void finishTopDownCamera(TopDownCameraConfig& cam) {
-    cam.velocityLookAhead = std::max(0.0f, cam.velocityLookAhead);
-    cam.maxLookAhead = std::max(0.0f, cam.maxLookAhead);
-    cam.pitch = std::clamp(cam.pitch, 5.0f, 90.0f);
-    cam.yaw = std::remainder(cam.yaw, 360.0f);
-    cam.fov = cam.fov > 0 ? std::clamp(cam.fov, 1.0f, 120.0f) : 0.0f;
-    cam.minDistance = std::max(1.0f, std::min(cam.minDistance, cam.distance));
-    cam.maxDistance = std::max(cam.maxDistance, cam.distance);
-}
-
-void topDownClipPlanes(render::Camera& cam) {
-    cam.zNear = std::max(0.5f, cam.distance * 0.02f);    // 0.5 up to 25 units (the engine default), 6.4 at 320
-    cam.zFar = std::max(1000.0f, cam.distance * 4.0f);
-}
-
 TopDownControlConfig parseTopDownControls(const Json& g, const std::vector<std::string>& heroAbilities, const Json& mapCamera) {
     TopDownControlConfig c;
     const Json& j = g["topDown"];
@@ -170,9 +129,9 @@ TopDownControlConfig parseTopDownControls(const Json& g, const std::vector<std::
         b.radius = std::max(12.0f, float(bj["radius"].toDouble(b.radius)));
         c.buttons.push_back(b);
     }
-    readTopDownCamera(j["camera"], c.camera);
-    if (mapCamera.isObject()) readTopDownCamera(mapCamera, c.camera);   // the map's own framing on top
-    finishTopDownCamera(c.camera);
+    render::readCameraFollow(j["camera"], c.camera);
+    if (mapCamera.isObject()) render::readCameraFollow(mapCamera, c.camera);   // the map's own framing on top
+    render::finishCameraFollow(c.camera);
     return c;
 }
 
@@ -190,11 +149,8 @@ void TopDownControls::configure(const Json& gameJson, const TopDownRules& rules,
     events_.clear();
     escape_ = {};
     haveSent_ = false;
-    camInit_ = false;
-    haveLast_ = false; stickLook_ = true;
-    velX_ = velZ_ = speed_ = vOffX_ = vOffZ_ = zoomAdd_ = 0;
+    follow_.reset(); stickLook_ = true;
     tapPending_ = false; tapUntil_ = 0; lockId_ = tapId_ = 0;
-    offX_ = offZ_ = 0;
 }
 
 // ================================================================= sticks
@@ -484,84 +440,21 @@ topdown::Input TopDownControls::compose(const TopDownFrameInput& in, float yaw) 
 // ================================================================= camera
 
 void TopDownControls::snapCamera(render::Camera& cam, render::float3 hero, float mapW, float mapH) {
-    camInit_ = false;
-    haveLast_ = false;
-    velX_ = velZ_ = speed_ = vOffX_ = vOffZ_ = zoomAdd_ = 0;
+    follow_.reset();
     updateCamera(cam, hero, true, 0, mapW, mapH);
 }
 
 void TopDownControls::updateCamera(render::Camera& cam, render::float3 hero, bool haveHero, float dt, float mapW, float mapH) {
-    const TopDownCameraConfig& c = cfg_.camera;
-    namespace gc = lib::gameplay::camera;
-    gc::Limits lim;
-    if (c.bounds && mapW > 0 && mapH > 0) {
-        lim.minX = std::min(c.margin, mapW * 0.5f); lim.maxX = std::max(mapW - c.margin, mapW * 0.5f);
-        lim.minZ = std::min(c.margin, mapH * 0.5f); lim.maxZ = std::max(mapH - c.margin, mapH * 0.5f);
-    }
-    // speed camera: the hero's velocity from its motion between frames (a jump = respawn / teleport: no speed)
-    const bool speedCam = c.speedTo > c.speedFrom || c.velocityLookAhead > 0;
-    if (speedCam && haveHero && dt > 0) {
-        if (haveLast_) {
-            float vx = (hero.x - lastX_) / dt, vz = (hero.z - lastZ_) / dt;
-            if (std::hypot(hero.x - lastX_, hero.z - lastZ_) > 8) vx = vz = 0;
-            const float k = 1 - std::exp(-10 * dt);   // frames are jittery: a short low-pass
-            velX_ += (vx - velX_) * k; velZ_ += (vz - velZ_) * k;
-        }
-        lastX_ = hero.x; lastZ_ = hero.z; haveLast_ = true;
-    } else if (!haveHero || !speedCam) { haveLast_ = false; velX_ = velZ_ = 0; }
-    speed_ = std::hypot(velX_, velZ_);
-    if (c.speedTo > c.speedFrom) {
-        float t = std::clamp((speed_ - c.speedFrom) / (c.speedTo - c.speedFrom), 0.0f, 1.0f);
-        t = t * t * (3 - 2 * t);
-        const float want = (c.speedDistance - c.distance) * t;
-        const float k = c.speedSmoothing > 0 ? 1 - std::exp(-c.speedSmoothing * std::max(0.0f, dt)) : 1;
-        zoomAdd_ += (want - zoomAdd_) * (camInit_ ? k : 1);
-    } else zoomAdd_ = 0;
-    const float addLo = std::min(0.0f, c.speedDistance - c.distance), addHi = std::max(0.0f, c.speedDistance - c.distance);
-    lim.minZoom = std::max(1.0f, c.minDistance + (c.speedTo > c.speedFrom ? addLo : 0));
-    lim.maxZoom = c.maxDistance + (c.speedTo > c.speedFrom ? addHi : 0);
-    lim.minPitch = 5; lim.maxPitch = 90;
-    // look-ahead: eases toward the stick (and the aim); a released stick keeps the offset (lockOffsetIfNoInput)
-    const bool input = (stickLook_ && (moveDirX_ != 0 || moveDirZ_ != 0)) || aiming_;
-    if (input || !c.lockOffsetIfNoInput || !stickLook_) {
-        const float mx = stickLook_ ? moveDirX_ : 0, mz = stickLook_ ? moveDirZ_ : 0;
-        const float tx = mx * c.lookAhead + (aiming_ ? aimDirX_ * c.aimLookAhead : 0);
-        const float tz = mz * c.lookAhead + (aiming_ ? aimDirZ_ * c.aimLookAhead : 0);
-        const float t = c.lookAheadSmoothing > 0 ? 1 - std::exp(-c.lookAheadSmoothing * std::max(0.0f, dt)) : 1;
-        offX_ += (tx - offX_) * t; offZ_ += (tz - offZ_) * t;
-    }
-    gc::Pose current{cam.target.x, cam.target.z, cam.distance, cam.yaw * 180 / kPi, cam.pitch * 180 / kPi};
-    gc::Pose target = current;
-    if (c.velocityLookAhead > 0) {   // ahead of the motion (never locked: it follows the speed down to zero)
-        const float t = c.lookAheadSmoothing > 0 ? 1 - std::exp(-c.lookAheadSmoothing * std::max(0.0f, dt)) : 1;
-        vOffX_ += (velX_ * c.velocityLookAhead - vOffX_) * t; vOffZ_ += (velZ_ * c.velocityLookAhead - vOffZ_) * t;
-    } else vOffX_ = vOffZ_ = 0;
-    float ox = offX_ + vOffX_, oz = offZ_ + vOffZ_;
-    if (const float ol = std::hypot(ox, oz); c.maxLookAhead > 0 && ol > c.maxLookAhead) { ox *= c.maxLookAhead / ol; oz *= c.maxLookAhead / ol; }
-    if (haveHero) { target.x = hero.x + ox; target.z = hero.z + oz; }
-    target.yaw = c.yaw; target.pitch = c.pitch;
-    // the player's own zoom (wheel / pinch) is what the camera has now minus the speed part; the speed part goes on top
-    baseZoom_ = camInit_ ? std::clamp(baseZoom_ + (cam.distance - appliedZoom_), c.minDistance, c.maxDistance) : c.distance;
-    target.zoom = baseZoom_ + zoomAdd_;
-    if (!camInit_ || c.smoothing <= 0) { gc::constrain(target, lim); current = target; camInit_ = haveHero; }
-    else if (!gc::advance(current, target, lim, std::max(0.0f, dt), c.smoothing)) { gc::constrain(target, lim); current = target; }
-    cam.target = {current.x, 0, current.z};
-    cam.distance = appliedZoom_ = current.zoom;
-    cam.minDistance = c.minDistance + zoomAdd_; cam.maxDistance = c.maxDistance + zoomAdd_;
-    cam.yaw = current.yaw * kPi / 180;
-    cam.pitch = current.pitch * kPi / 180;
-    if (c.fov > 0) cam.fovY = c.fov * kPi / 180;
-    if (c.projection != TopDownCameraConfig::Projection::Keep) cam.ortho = c.projection == TopDownCameraConfig::Projection::Ortho;
-    topDownClipPlanes(cam);
+    render::CameraFollowInput in;
+    in.focus = hero; in.haveFocus = haveHero;
+    in.moveX = moveDirX_; in.moveZ = moveDirZ_;
+    in.aiming = aiming_; in.aimX = aimDirX_; in.aimZ = aimDirZ_;
+    in.moveLookAhead = stickLook_;
+    in.mapW = mapW; in.mapH = mapH; in.dt = dt;
+    follow_.update(cfg_.camera, in, cam);
 }
 
-float TopDownControls::fogScale() const {
-    const TopDownCameraConfig& c = cfg_.camera;
-    if (!c.fogFollow || c.fov <= 0) return 1;
-    // fog over the same ground as a 43-degree lens (the default) at the distance that frames it alike
-    const float s = std::tan(c.fov * kPi / 360) / std::tan(43.0f * kPi / 360);
-    return std::clamp(s, 0.02f, 4.0f);
-}
+float TopDownControls::fogScale() const { return render::cameraFogScale(cfg_.camera); }
 
 // ================================================================= drawing
 
