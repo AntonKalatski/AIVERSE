@@ -34,11 +34,12 @@ struct NatureRuntimeConfig {
     bool vegetationWind = true;  // TerraWeave Flora/Horizon wind (WorldScene)
     bool waterWind = true;       // NEREID visual wind (WorldScene)
     bool sky = true;             // PRISMA physical sky coverage / cloud drift
+    bool tornado = true;         // SpectraFX tornado funnels + flying debris
     float radiusMeters = 160;    // presentation region around the camera focus
     int maxRegionCells = 96;     // hard cap of PHYSIS cells per frame axis
     float fxWindScale = 0.35f;   // particle drift per m/s of PHYSIS wind
     int windFieldNodes = 16;     // spatial vegetation wind lattice; 0 = uniform
-    bool any() const { return fx || audio || vegetationWind || waterWind || sky; }
+    bool any() const { return fx || audio || vegetationWind || waterWind || sky || tornado; }
 };
 
 // nullopt: no "physis" block, "physis.enabled": false or "presentation": false.
@@ -79,6 +80,7 @@ inline std::optional<NatureRuntimeConfig> natureRuntimeConfigFromMap(const Json&
     flag("vegetationWind", c.vegetationWind);
     flag("waterWind", c.waterWind);
     flag("sky", c.sky);
+    flag("tornado", c.tornado);
     double radius = c.radiusMeters, cells = c.maxRegionCells, scale = c.fxWindScale,
            nodes = c.windFieldNodes;
     number("radiusMeters", 10, 4000, radius);

@@ -4389,6 +4389,12 @@ if(AIVERSE_BUILD_TESTS)
         target_link_libraries(aiverse_physis_nature_runtime_test PRIVATE aiverse_engine)
         add_test(NAME physis_nature_runtime COMMAND aiverse_physis_nature_runtime_test)
         set_tests_properties(physis_nature_runtime PROPERTIES LABELS "PHYSIS;TERRAWEAVE;NEREID")
+        # Tornadoes: path, life, wind, fire, debris, carried objects, host damage,
+        # map install, save/load and checksums (engine/physis/PhysisTornado.h).
+        add_executable(aiverse_physis_tornado_test tests/physis_tornado_test.cpp)
+        target_link_libraries(aiverse_physis_tornado_test PRIVATE aiverse_engine)
+        add_test(NAME physis_tornado COMMAND aiverse_physis_tornado_test)
+        set_tests_properties(physis_tornado PROPERTIES LABELS "PHYSIS;PERSISTENCE")
     endif()
     if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
         # PHYSIS -> SpectraFX / audio planners and TerraWeave grass overlay
@@ -4398,6 +4404,11 @@ if(AIVERSE_BUILD_TESTS)
             aiverse_engine aiverse_fx aiverse_audio aiverse_models aiverse_zstd_dec)
         add_test(NAME physis_nature_cues COMMAND aiverse_physis_nature_cues_test)
         set_tests_properties(physis_nature_cues PROPERTIES LABELS "PHYSIS;TERRAWEAVE;VFX;AUDIO")
+        add_executable(aiverse_physis_tornado_cues_test tests/physis_tornado_cues_test.cpp)
+        target_link_libraries(aiverse_physis_tornado_cues_test PRIVATE
+            aiverse_engine aiverse_fx aiverse_audio aiverse_models aiverse_zstd_dec)
+        add_test(NAME physis_tornado_cues COMMAND aiverse_physis_tornado_cues_test)
+        set_tests_properties(physis_tornado_cues PROPERTIES LABELS "PHYSIS;VFX;AUDIO")
     endif()
 endif()
 
