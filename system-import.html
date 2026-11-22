@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Импорт из Unity и Godot — Перенос проекта с другого движка · AIVERSE</title>
-<meta name="description" content="Импортёр переносит сцены, префабы, модели, частицы и анимации; остальное попадает в отчёт для агента.">
+<title>Import from Unity and Godot — Moving a project from another engine · AIVERSE</title>
+<meta name="description" content="The importer moves scenes, prefabs, models, particles and animations; the rest goes into a report for an agent.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="alternate icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#F3EFE8">
-<link rel="alternate" hreflang="en" href="en/system-import.html">
+<link rel="alternate" hreflang="ru" href="ru/system-import.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,33 +18,33 @@
 </head>
 <body>
 <header class="top">
-<nav class="wrap" aria-label="Главное меню">
+<nav class="wrap" aria-label="Main menu">
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
-<a href="./#systems" data-nav="systems" aria-current="page">Системы</a>
-<a href="./#genres" data-nav="genres">Жанры</a>
-<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
-<a href="releases.html" data-nav="releases">Релизы</a>
-<a href="gallery.html" data-nav="gallery">Галерея</a>
-<a href="devlog.html" data-nav="devlog">Ход разработки</a>
-<a href="blog.html" data-nav="blog">Блог</a>
-<a href="docs.html" data-nav="docs">Документация</a>
+<a href="./#systems" data-nav="systems" aria-current="page">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
 </div>
-<a class="lang-switch" href="en/system-import.html" hreflang="en" lang="en">EN</a>
+<a class="lang-switch" href="ru/system-import.html" hreflang="ru" lang="ru">RU</a>
 <a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
 </nav>
 </header>
 
 <main class="wrap">
-<section class="sp-hero"><p class="crumbs"><a href="./#core">Системы движка</a> / Импорт из Unity и Godot</p><div class="sp-title"><h1>Импорт из Unity и Godot</h1></div><p class="sp-tag">Перенос проекта с другого движка</p><p class="sp-lead">Импортёр переносит сцены, префабы, модели, частицы и анимации; остальное попадает в отчёт для агента.</p><div class="actions"><a class="btn btn-ink" href="docs-engine-import.html">Документация системы</a></div></section><section class="sp-sec" id="inc"><h2 class="h2">Что входит</h2><div class="grid sp-inc"><article class="card"><h3>Сцены и префабы</h3><p>Сцена становится картой, префаб — типом объекта, поля компонентов — данными.</p></article><article class="card"><h3>Материалы и шейдеры</h3><p>URP-материалы и Shader Graph переводятся в материалы движка; текстуры сжимаются под платформу.</p></article><article class="card"><h3>Анимации</h3><p>Клипы, контроллеры Mecanim, слои и деревья смешивания.</p></article><article class="card"><h3>Частицы и UI</h3><p>ParticleSystem и VFX Graph в эффекты, экраны uGUI в RmlUi, локализация.</p></article><article class="card"><h3>Мир</h3><p>Террейн, дороги на сплайнах и меши сцены.</p></article><article class="card"><h3>Отчёт</h3><p>Каждый элемент помечен: точно, приближённо или не перенесено. Повторный импорт сохраняет правки.</p></article></div></section><section class="sp-sec"><h2 class="h2">Что позволяет делать</h2><ul class="sp-ena"><li>Перенести мобильную игру с Unity и продолжить её здесь.</li><li>Передать логику на C# агенту для переноса в Lua или C++.</li><li>Импортировать проект Godot тем же инструментом.</li></ul></section><section class="sp-sec sp-others"><p class="eyebrow">Другие системы</p><div class="chips"><a class="chip" href="system-navigation.html">Навигация и толпы</a><a class="chip" href="system-network.html">Сеть и сервер</a><a class="chip" href="system-physics.html">Физика и ткань</a><a class="chip" href="system-ecs.html">ECS и симуляция</a><a class="chip" href="system-shadergraph.html">Shader Graph</a><a class="chip" href="system-lightbake.html">Запекание света</a><a class="chip" href="system-world.html">Дороги и город</a><a class="chip" href="system-planets.html">Планеты и генерация карт</a><a class="chip" href="system-voxel.html">Воксельные миры</a><a class="chip" href="system-inputflow.html">InputFlow</a><a class="chip" href="system-ui.html">Интерфейс игры</a><a class="chip" href="system-audio.html">Звук</a><a class="chip" href="system-studio.html">Studio — редактор</a><a class="chip" href="system-agents.html">MCP и навыки агентов</a><a class="chip chip-ink" href="system-import.html">Импорт из Unity и Godot</a><a class="chip" href="system-build.html">Сборка и платформы</a><a class="chip" href="system-meta.html">Мета и LiveOps</a><a class="chip" href="system-gameplay.html">Жанры и механики</a></div></section>
+<section class="sp-hero"><p class="crumbs"><a href="./#core">Engine systems</a> / Import from Unity and Godot</p><div class="sp-title"><h1>Import from Unity and Godot</h1></div><p class="sp-tag">Moving a project from another engine</p><p class="sp-lead">The importer moves scenes, prefabs, models, particles and animations; the rest goes into a report for an agent.</p><div class="actions"><a class="btn btn-ink" href="docs-engine-import.html">System docs</a></div></section><section class="sp-sec" id="inc"><h2 class="h2">What is inside</h2><div class="grid sp-inc"><article class="card"><h3>Scenes and prefabs</h3><p>A scene becomes a map, a prefab an object type, component fields become data.</p></article><article class="card"><h3>Materials and shaders</h3><p>URP materials and Shader Graph become engine materials; textures are compressed per platform.</p></article><article class="card"><h3>Animation</h3><p>Clips, Mecanim controllers, layers and blend trees.</p></article><article class="card"><h3>Particles and UI</h3><p>ParticleSystem and VFX Graph into effects, uGUI screens into RmlUi, localization.</p></article><article class="card"><h3>World</h3><p>Terrain, spline roads and scene meshes.</p></article><article class="card"><h3>Report</h3><p>Every item is marked exact, approximate or not transferred. Re-importing keeps your edits.</p></article></div></section><section class="sp-sec"><h2 class="h2">What it lets you do</h2><ul class="sp-ena"><li>Move a mobile game from Unity and carry on here.</li><li>Hand C# logic to an agent to port into Lua or C++.</li><li>Import a Godot project with the same tool.</li></ul></section><section class="sp-sec sp-others"><p class="eyebrow">Other systems</p><div class="chips"><a class="chip" href="system-navigation.html">Navigation and crowds</a><a class="chip" href="system-network.html">Networking and server</a><a class="chip" href="system-physics.html">Physics and cloth</a><a class="chip" href="system-ecs.html">ECS and simulation</a><a class="chip" href="system-shadergraph.html">Shader Graph</a><a class="chip" href="system-lightbake.html">Baked lighting</a><a class="chip" href="system-world.html">Roads and the city</a><a class="chip" href="system-planets.html">Planets and map generation</a><a class="chip" href="system-voxel.html">Voxel worlds</a><a class="chip" href="system-inputflow.html">InputFlow</a><a class="chip" href="system-ui.html">Game UI</a><a class="chip" href="system-audio.html">Audio</a><a class="chip" href="system-studio.html">Studio editor</a><a class="chip" href="system-agents.html">MCP and agent skills</a><a class="chip chip-ink" href="system-import.html">Import from Unity and Godot</a><a class="chip" href="system-build.html">Builds and platforms</a><a class="chip" href="system-meta.html">Meta and LiveOps</a><a class="chip" href="system-gameplay.html">Genres and mechanics</a></div></section>
 </main>
 
 <footer class="dark">
 <div class="wrap foot">
 <a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
 <div class="foot-cols">
-<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
-<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
 </div>
 <small>MIT License · AIVERSE</small>
 </div>

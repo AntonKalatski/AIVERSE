@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отладочный вид — STRATA · AIVERSE</title>
+<meta name="description" content="Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация.">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
+<link rel="alternate icon" href="../favicon.ico">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<meta name="theme-color" content="#F3EFE8">
+<link rel="alternate" hreflang="en" href="../system-strata-debug-view.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems" aria-current="page">Системы</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="gallery.html" data-nav="gallery">Галерея</a>
+<a href="devlog.html" data-nav="devlog">Ход разработки</a>
+<a href="blog.html" data-nav="blog">Блог</a>
+<a href="docs.html" data-nav="docs">Документация</a>
+</div>
+<a class="lang-switch" href="../system-strata-debug-view.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="sp-hero fp-hero"><p class="crumbs"><a href="./#systems">Системы движка</a> / <a href="system-strata.html">STRATA</a> / Отладочный вид</p><h1>Отладочный вид</h1><p class="sp-lead">Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация.</p></section><article class="doc fp-body"><h2 id="зачем">Зачем<a class="anchor" href="#зачем" aria-label="#">#</a></h2>
+<p>STRATA режет геометрию на кластеры и каждый кадр решает, какой уровень детализации показать для каждого куска сцены. Без визуализации этого не видно: картинка просто выглядит как обычный рендер. Отладочный вид рисует поверх кадра ровно тот набор кластеров, который STRATA выбрала, — так видно, где она детализирует, а где упрощает, и где что-то пошло не так.</p>
+<p><img src="../media/docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg" alt="Кластеры: каждый своим цветом" loading="lazy"></p>
+<h2 id="что-рисует">Что рисует<a class="anchor" href="#что-рисует" aria-label="#">#</a></h2>
+<p>Отладочный вид берёт не пересчитанный, а <strong>фактически выбранный</strong> фронтир — те кластеры, которые последний успешный <code>prepareModel</code> записал в отрисовку. Поверх кадра он может показать:</p>
+<ul><li>рамки (AABB) каждого выбранного кластера;</li><li>каркас — рёбра треугольников каждого кластера;</li><li>полупрозрачную заливку кластера его цветом;</li><li>рамку экземпляра, окрашенную по маршруту отрисовки.</li></ul>
+<p>Цвет выбирается одним из четырёх режимов:</p>
+<div class="table"><table><thead><tr><th>Режим</th><th>Что показывает</th></tr></thead><tbody><tr><td><code>Cluster</code></td><td>устойчивый цвет на кластер, соседние куски различаются</td></tr><tr><td><code>LodDepth</code></td><td>глубина в иерархии: красный — грубый корень, синий — финальный лист</td></tr><tr><td><code>Error</code></td><td>геометрическая ошибка кластера, в логарифмической шкале</td></tr><tr><td><code>Material</code></td><td>материал или часть примитива</td></tr></tbody></table></div>
+<p>Рамки экземпляров тоже говорят о многом: зелёный — STRATA на переносимом пути, голубой — GPU indirect на Vulkan (только рамка: CPU-фронтира у этого маршрута нет), оранжевый — источник STRATA, который в этом кадре ушёл на обычный рендер, серый — не STRATA.</p>
+<p><img src="../media/docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg" alt="Уровни LOD: от финального вблизи к грубым вдали" loading="lazy"></p>
+<h2 id="только-презентация">Только презентация<a class="anchor" href="#только-презентация" aria-label="#">#</a></h2>
+<p>Режим ничего не меняет в работе STRATA: не выбирает LOD, не трогает маршрутизацию, не загружает данные на GPU и не читает обратно GPU-выборку. Он рисует обычными линиями и треугольниками <code>Renderer3D</code> и по умолчанию выключен. Включается из кода, который настраивает <code>GeometryScene</code>:</p>
+<pre><code class="lang-cpp">scene.<span class="hl-fn">setStrataPortableRenderingEnabled</span>(<span class="hl-kw">true</span>);
+scene.<span class="hl-fn">setStrataDebugGeometryCaptureEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// до load: для каркаса и заливки</span>
+scene.<span class="hl-fn">load</span>(<span class="hl-kw">device</span>, json, reader);
+strata::<span class="hl-ty">DebugViewOptions</span> debug;
+debug.enabled = <span class="hl-kw">true</span>;
+debug.clusterWireframe = <span class="hl-kw">true</span>;
+debug.color = strata::<span class="hl-ty">DebugColorMode</span>::<span class="hl-ty">LodDepth</span>;
+scene.<span class="hl-fn">setStrataDebugView</span>(debug);</code></pre>
+<h2 id="кадры-на-сайте">Кадры на сайте<a class="anchor" href="#кадры-на-сайте" aria-label="#">#</a></h2>
+<p>Сцена для кадров — процедурный рельеф (около 105 тыс. треугольников) и 20 камней (около 82 тыс. каждый), всего около 1,7 млн треугольников исходной геометрии. В кадре STRATA выбрала 15 280 кластеров: вблизи — мелкие кластеры финального уровня, к горизонту — всё более крупные. Сняты на Linux через OpenGL (Mesa llvmpipe), 1920×1080.</p>
+<p><img src="../media/docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg" alt="Тот же ракурс в обычном рендере" loading="lazy"></p>
+<h2 id="ограничения">Ограничения<a class="anchor" href="#ограничения" aria-label="#">#</a></h2>
+<ul><li>Каркасу и заливке нужны позиции вершин на CPU, а после загрузки на GPU они освобождаются. Поэтому захват включается <strong>до</strong> загрузки сцены и копирует позиции только источников STRATA. Без него рисуются только рамки.</li><li>На кадр есть потолок примитивов (по умолчанию 262 144 линии и 131 072 треугольника на все экземпляры); всё сверх него не рисуется и считается в статистике.</li><li>Показан один консервативный фронтир — общий для основной камеры и тени солнца, а не срез только под основную камеру.</li><li>Ни игровой хост, ни вьюпорт редактора пока не включают переносимый STRATA, поэтому режим доступен только из кода. Переключателя в редакторе и в MCP ещё нет.</li><li>Кадры не сняты на Metal и других GPU. Треугольники сцены упорядочены по коду Мортона: на исходном порядке процедурной сетки кластеры получались полосами — это стоит проверить на реальных ассетах.</li></ul>
+<p>Подробнее — в <a href="docs-strata.html#debug-visualisation-of-clusters-and-geometry-2026-11-21">документации STRATA</a>.</p></article><section class="sp-sec sp-others"><p class="eyebrow">Ещё в STRATA</p><div class="chips"><a class="chip" href="system-strata.html#inc">Builder</a><a class="chip" href="system-strata.html#inc">Выбор LOD</a><a class="chip" href="system-strata.html#inc">Резидентность</a><a class="chip" href="system-strata.html#inc">Рендер</a><a class="chip" href="system-strata.html#inc">Инструменты</a><a class="chip chip-ink" href="system-strata-debug-view.html">Отладочный вид</a></div><p><a class="btn btn-line" href="system-strata.html">← STRATA</a></p></section><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a, .gal-grid a.gal-img, .rel-hl a.rel-hl-img').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>
+</body>
+</html>

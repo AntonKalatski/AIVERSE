@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIVERSE — игровой движок, где игру собирает ИИ-агент</title>
+<meta name="description" content="C++20-движок для игр любого жанра: игра — это данные, ИИ-агент собирает её через MCP. 88 библиотек механик, ~190 MCP-инструментов, 6 платформ.">
+<meta property="og:title" content="AIVERSE — игру описывают, а не пишут с нуля">
+<meta property="og:description" content="Движок, в котором ИИ-агент собирает игру из данных и сам её проверяет.">
+<meta property="og:image" content="../media/docs/images/readme/sponza.jpg">
+<link rel="alternate" hreflang="en" href="../index.html">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
+<link rel="alternate icon" href="../favicon.ico">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<meta name="theme-color" content="#F3EFE8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Системы</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="gallery.html" data-nav="gallery">Галерея</a>
+<a href="devlog.html" data-nav="devlog">Ход разработки</a>
+<a href="blog.html" data-nav="blog">Блог</a>
+<a href="docs.html" data-nav="docs">Документация</a>
+</div>
+<a class="lang-switch" href="../index.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main>
+<section class="hero wrap">
+<div class="chips">
+<span class="chip">C++20</span><span class="chip">MIT</span><span class="chip">детерминированная симуляция</span><span class="chip chip-ink">MCP · агенты</span><a class="chip chip-link" href="releases.html">Релиз 3.0.0 →</a>
+</div>
+<h1>Игру любого жанра <span class="mark">описывают</span>, а&nbsp;не&nbsp;пишут с&nbsp;нуля</h1>
+<div class="hero-row">
+<p>AIVERSE — движок, в котором игра — это папка данных, а ИИ-агент собирает её через MCP: правила, уровни, интерфейс, эффекты, баланс и сборку под шесть платформ.</p>
+<div class="actions">
+<a class="btn btn-ink" href="#start">Собрать первую игру</a>
+<a class="btn btn-line" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</div>
+</div>
+<div class="hero-visual">
+<figure><img src="../media/docs/images/readme/city-roads.jpg" alt="Город со сплайновыми дорогами и кварталами, собранный агентом в AIVERSE" width="1280" height="800"></figure>
+<div class="console" aria-label="Пример сессии агента">
+<div class="console-head"><span class="dot"></span>агент · aiversemcp · пример сессии</div>
+<div class="console-body">
+<div><b>›</b> rules_set <i>peasant.cost.gold = 75</i></div>
+<div><b>›</b> map_generate <i>2 игрока · 128×128</i></div>
+<div><b>›</b> rules_lint <em>ok · 0 ошибок</em></div>
+<div><b>›</b> scenario_run <i>tutorial</i> <em>все проверки пройдены</em></div>
+<div><b>›</b> balance_matrix <i>матчи ботов</i></div>
+<div><b>›</b> build_start <i>ios · android · web</i></div>
+</div>
+</div>
+<p class="shot-caption">Город собрал агент навыками aiverse-roads и aiverse-city-blocks</p>
+</div>
+</section>
+
+<section class="facts" aria-label="Цифры">
+<div class="wrap">
+<div class="fact"><strong>88</strong><span>библиотек механик</span></div>
+<div class="fact"><strong>~190</strong><span>MCP-инструментов</span></div>
+<div class="fact"><strong>30+</strong><span>играбельных шаблонов</span></div>
+<div class="fact"><strong>200+</strong><span>навыков для агентов</span></div>
+<div class="fact"><strong>6</strong><span>платформ одной командой</span></div>
+</div>
+</section>
+
+<section class="showcase" aria-labelledby="showcase-title">
+<figure><img src="../media/docs/devlog/media/showcase/2026-11-21-alpine-river.jpg" alt="Alpine Valley: река с гор в реальном времени">
+<figcaption><div class="wrap"><div><p class="eyebrow">Кадр движка</p><h2 id="showcase-title">Alpine Valley: река с гор в реальном времени</h2><p>Низкая камера над рекой NEREID: течение от гор, бирюзовая толща воды, песчаные берега и хвойный лес TerraWeave под штатным небом PhysicalSky. Настоящий кадр Metal из редактора без интерфейса.</p></div><div class="meta"><span>NEREID · 21.11.2026</span><a href="devlog.html#2026-11-21-nereid-turbidity">Подробнее в ходе разработки →</a></div></div></figcaption></figure>
+</section>
+
+<section id="systems" class="section wrap" aria-labelledby="systems-title">
+<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:48px">
+<div style="display:flex;flex-direction:column;gap:18px;max-width:760px">
+<p class="eyebrow">Системы движка</p>
+<h2 class="h2" id="systems-title">Каждая система — отдельный движок внутри движка</h2>
+</div>
+<p style="margin:0;color:var(--muted);max-width:380px">Независимые, каждая со своим контрактом. Собираются вместе в любую игру.</p>
+</div>
+<div class="sys-grid">
+<article class="sys-card" id="sys-terraweave"><figure><img src="../media/docs/devlog/media/systems/terraweave-river-forest.jpg" alt="TerraWeave: река в лесу, вид сверху" loading="lazy"><figcaption>TerraWeave: река в лесу, вид сверху</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-terraweave.html">TerraWeave</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Процедурный ландшафт и природа</p><p>Рельеф, растительность и камни из правил и сида: генератор округлых камней, валунов, плит и обломков с тремя LOD и размещением по высоте, крутизне и маскам.</p><a class="sys-link" href="system-terraweave.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-physis"><figure><img src="../media/docs/devlog/media/systems/physis-tornado.jpg" alt="PHYSIS: смерч идёт по долине, поднимая пыль и обломки" loading="lazy"><figcaption>PHYSIS: смерч идёт по долине, поднимая пыль и обломки</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-physis.html">PHYSIS</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Живая среда: ветер, огонь, земля</p><p>Поля природы в ECS: ветер, огонь, землетрясения и нагрузки на конструкции, которые реагируют друг на друга.</p><a class="sys-link" href="system-physis.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-nereid"><figure><img src="../media/docs/devlog/media/systems/nereid-alpine-river.jpg" alt="NEREID в Alpine River Valley: река с течением через изгиб, мутность и глубина дают бирюзовый цвет, пена по линии берега" loading="lazy"><figcaption>NEREID в Alpine River Valley: река с течением через изгиб, мутность и глубина дают бирюзовый цвет, пена по линии берега</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-nereid.html">NEREID</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Вода, которая ведёт себя как вода</p><p>Реки, озёра и океан, плавучесть и сопротивление, брызги, волны и след от движения.</p><a class="sys-link" href="system-nereid.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-strata"><figure><img src="../media/docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg" alt="STRATA: кластеры, выбранные в кадре, каждый своим цветом" loading="lazy"><figcaption>STRATA: кластеры, выбранные в кадре, каждый своим цветом</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-strata.html">STRATA</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Виртуализированная геометрия</p><p>Огромные меши без ручных LOD: страничный стриминг, кластеры с плавными переходами детализации без трещин и GPU-отбор на Metal и Vulkan.</p><a class="sys-link" href="system-strata.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-lens"><figure><img src="../media/docs/devlog/media/systems/lens-sponza-arcade.jpg" alt="LENS: объектив 35 мм f/1.4, фокус 4 м на зелёном занавесе; во врезке вторая камера той же сцены" loading="lazy"><figcaption>LENS: объектив 35 мм f/1.4, фокус 4 м на зелёном занавесе; во врезке вторая камера той же сцены</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-lens.html">LENS</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Камеры и кинематографичный кадр</p><p>Сцены камер как данные: несколько камер, расписание кадров, захват изображения и авторинг через MCP и Studio.</p><a class="sys-link" href="system-lens.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-vivid"><figure><video src="../media/docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/adaptive-soft-shadows.mp4" poster="../media/docs/devlog/media/systems/vivid-portrait.jpg" autoplay muted loop playsinline preload="none" aria-label="VIVID: портрет в студийном свете, нативный кадр Metal"></video><figcaption>VIVID: портрет в студийном свете, нативный кадр Metal</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-vivid.html">VIVID</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Цифровые люди</p><p>Цифровые люди: лицевой контроллер и морфы на GPU поверх анимации MotionWeave, редактор внешности Character Creator в Studio и адаптер для экспорта MetaHuman.</p><a class="sys-link" href="system-vivid.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-lighting"><figure><img src="../media/docs/images/readme/sponza.jpg" alt="Sponza: PBR, тени и ambient occlusion" loading="lazy"><figcaption>Sponza: PBR, тени и ambient occlusion</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-lighting.html">LUMA</a></h3><a class="badge badge-ink" href="releases.html#v2.0.0" title="Появилась в релизе 2.0.0">с версии 2.0.0</a></div><p class="sys-tag">Свет и глобальное освещение</p><p>Свет как компонент сущности, пробы GI, запекание лайтмапов своим path tracer и динамическое непрямое освещение.</p><a class="sys-link" href="system-lighting.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-prisma"><figure><img src="../media/docs/images/readme/sponza-light-shafts.png" alt="Лучи света сквозь дымку: выключено / включено" loading="lazy"><figcaption>Лучи света сквозь дымку: выключено / включено</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-prisma.html">PRISMA</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Постобработка и атмосфера</p><p>HDR, экспозиция и тонмаппинг, bloom, DoF, motion blur, TAA, AO и отражения, эффекты линзы, сглаживание и апскейл, цветокоррекция и экранные атмосферные эффекты с профилями качества.</p><a class="sys-link" href="system-prisma.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-spectrafx"><figure><img src="../media/docs/devlog/media/2026-11-21-spectrafx-scenes/sponza-night.jpg" alt="SpectraFX: костры, портал, светлячки и туман в Sponza ночью" loading="lazy"><figcaption>SpectraFX: костры, портал, светлячки и туман в Sponza ночью</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-spectrafx.html">SpectraFX</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Эффекты частиц</p><p>Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.</p><a class="sys-link" href="system-spectrafx.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-motionweave"><figure><video src="../media/docs/devlog/media/2026-11-22-motionweave-battle/battle.mp4" poster="../media/docs/devlog/media/2026-11-22-motionweave-battle/battle.jpg" autoplay muted loop playsinline preload="none" aria-label="MotionWeave: два строя на одном графе анимации"></video><figcaption>MotionWeave: два строя на одном графе анимации</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-motionweave.html">MotionWeave</a></h3><a class="badge badge-ink" href="releases.html#v3.0.0" title="Появилась в релизе 3.0.0">с версии 3.0.0</a></div><p class="sys-tag">Анимация персонажей</p><p>Графы анимации, ретаргет между ригами, LOD скелетов и вложения.</p><a class="sys-link" href="system-motionweave.html">О системе и роадмап →</a></div></article>
+</div>
+</section>
+
+<section id="core" class="section wrap" aria-labelledby="core-title">
+<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:40px">
+<div style="display:flex;flex-direction:column;gap:18px;max-width:760px">
+<p class="eyebrow">Основа движка</p>
+<h2 class="h2" id="core-title">Всё, на чём стоят игры</h2>
+</div>
+<p style="margin:0;color:var(--muted);max-width:380px">Навигация, сеть, физика, звук, интерфейс, сборка и другие большие системы, которые есть в каждом проекте.</p>
+</div>
+<div class="core-grid">
+<a class="core-card has-thumb" href="system-navigation.html" id="sys-navigation"><span class="core-thumb"><img src="../media/docs/devlog/media/systems/navigation-flow-field.jpg" alt="Поле потоков: волна обходит озеро с двух сторон и сходится за ним" loading="lazy"></span><h3>Навигация и толпы</h3><p class="core-tag">Пути для одного юнита и для армии</p><p>A*, HPA*, навигационная сетка и поля потоков на целых числах: один и тот же результат на каждой машине матча.</p><div class="core-inc"><span>A* и HPA*</span><span>Навигационная сетка</span><span>Гибридный режим</span><span>Поля потоков</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card has-thumb" href="system-physics.html" id="sys-physics"><span class="core-thumb"><img src="../media/docs/devlog/media/systems/physics-cloth.jpg" alt="XPBD-ткань: 256 флагов по 10 тысяч треугольников, расчёт на CPU" loading="lazy"></span><h3>Физика и ткань</h3><p class="core-tag">Твёрдые тела, персонаж и ткань</p><p>Box3D подключается по желанию: тела, соединения, сцена для сервера и контроллер персонажа. Рядом XPBD-ткань для сотен объектов.</p><div class="core-inc"><span>Box3D</span><span>Сцена сервера</span><span>Контроллер персонажа</span><span>XPBD-ткань</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card has-thumb" href="system-lightbake.html" id="sys-lightbake"><span class="core-thumb"><img src="../media/docs/images/lightbake_after_baked.png" alt="Запечённый свет: отражения на стенах и земле" loading="lazy"></span><h3>Запекание света</h3><p class="core-tag">Глобальное освещение без рантайм-цены</p><p>Свой трассировщик путей запекает карты освещения для статики и сетку проб для всего, что движется.</p><div class="core-inc"><span>Карты освещения</span><span>Пробы</span><span>Смешанный режим</span><span>Без лишних перезапеканий</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card has-thumb" href="system-world.html" id="sys-world"><span class="core-thumb"><img src="../media/docs/images/readme/city-roads.jpg" alt="Город агента: сплайновые дороги, переходы, кварталы" loading="lazy"></span><h3>Дороги и город</h3><p class="core-tag">Сплайновые дороги и живые улицы</p><p>Сеть дорог из кривых Безье с развязками, мостами и тоннелями, а на ней машины, светофоры и пешеходы.</p><div class="core-inc"><span>Сплайновые дороги</span><span>Мосты и тоннели</span><span>Вид</span><span>Трафик</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card has-thumb" href="system-planets.html" id="sys-planets"><span class="core-thumb"><img src="../media/docs/devlog/media/2026-11-22-planets-nereid-sea/coast.jpg" alt="Берег планеты: море NEREID, деревья TerraWeave" loading="lazy"></span><h3>Планеты и генерация карт</h3><p class="core-tag">Сферические миры и карты по сиду</p><p>Планеты на кубе-сфере с орбитами и генератор рельефа: эрозия, реки, биомы и честные стартовые позиции.</p><div class="core-inc"><span>Куб-сфера</span><span>Орбиты</span><span>Генератор рельефа</span><span>Честные старты</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card has-thumb" href="system-ui.html" id="sys-ui"><span class="core-thumb"><img src="../media/docs/devlog/media/systems/ui-mushrooms-hud.jpg" alt="HUD шаблона «Грибная битва»: счёт, таймер, миникарта и кнопки на RmlUi" loading="lazy"></span><h3>Интерфейс игры</h3><p class="core-tag">Меню и HUD на HTML и CSS</p><p>Меню, HUD, миникарта и пауза — документы RmlUi в разметке и стилях, а не код.</p><div class="core-inc"><span>HTML и CSS</span><span>Скины</span><span>Масштаб</span><span>Языки</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-network.html" id="sys-network"><h3>Сеть и сервер</h3><p class="core-tag">Мультиплеер без кода игры</p><p>По сети ходят только команды: симуляция одинакова у всех. Есть rollback lockstep, сервер с матчмейкингом и отдельная модель для серверных миров с физикой.</p><div class="core-inc"><span>Rollback lockstep</span><span>Выделенный сервер</span><span>UDP и WebSocket</span><span>Мобильные бои</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-ecs.html" id="sys-ecs"><h3>ECS и симуляция</h3><p class="core-tag">Бит в бит на каждой платформе</p><p>Игра состоит из компонентов и систем. Симуляция на fixed-point, со своим генератором случайных чисел и снимками для отката.</p><div class="core-inc"><span>Fixed-point</span><span>Снимки и откат</span><span>Иерархия сцены</span><span>Свои компоненты</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-shadergraph.html" id="sys-shadergraph"><h3>Shader Graph</h3><p class="core-tag">Материалы и эффекты из узлов</p><p>Графы для материалов, постэффектов и частиц. Один граф даёт шейдеры GLSL и Metal, превью идёт на настоящем рендере.</p><div class="core-inc"><span>Три вида графов</span><span>103 операции</span><span>Безопасность</span><span>Превью</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-voxel.html" id="sys-voxel"><h3>Воксельные миры</h3><p class="core-tag">Блоки, которые можно копать и строить</p><p>Изменяемый мир из чанков 16×16×16: свет, меши, генерация, жидкости, мобы и потоковая передача по сети.</p><div class="core-inc"><span>Мир</span><span>Свет</span><span>Генерация</span><span>Жидкости и рост</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-inputflow.html" id="sys-inputflow"><h3>InputFlow</h3><p class="core-tag">Ввод через действия</p><p>Клавиатура, мышь, касания и геймпады превращаются в действия игры через контексты, модификаторы и триггеры.</p><div class="core-inc"><span>Действия и контексты</span><span>Триггеры</span><span>Все устройства</span><span>Несколько игроков</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-audio.html" id="sys-audio"><h3>Звук</h3><p class="core-tag">3D-звук и адаптивная музыка</p><p>Микшер, банки звуков из данных, синтез и музыка со слоями. Звуки привязаны к событиям игры.</p><div class="core-inc"><span>3D-звук</span><span>Большие битвы</span><span>Музыка</span><span>Синтез</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-studio.html" id="sys-studio"><h3>Studio — редактор</h3><p class="core-tag">Редактор, где работают человек и агент</p><p>Редактор в стиле Unity со сценой, инспектором и тестовой игрой. Агент правит тот же проект, и каждое его действие можно отменить.</p><div class="core-inc"><span>Окна</span><span>Игра и симулятор устройств</span><span>Панель агента</span><span>Мастер «Сделать игру»</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-agents.html" id="sys-agents"><h3>MCP и навыки агентов</h3><p class="core-tag">Игру делает агент</p><p>Около 190 инструментов MCP и 238 навыков: агент правит карты, правила и свет, гоняет матчи ботов и смотрит на снимки.</p><div class="core-inc"><span>Инструменты MCP</span><span>Навыки</span><span>Самопроверка</span><span>Без компилятора</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-import.html" id="sys-import"><h3>Импорт из Unity и Godot</h3><p class="core-tag">Перенос проекта с другого движка</p><p>Импортёр переносит сцены, префабы, модели, частицы и анимации; остальное попадает в отчёт для агента.</p><div class="core-inc"><span>Сцены и префабы</span><span>Материалы и шейдеры</span><span>Анимации</span><span>Частицы и UI</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-build.html" id="sys-build"><h3>Сборка и платформы</h3><p class="core-tag">Одна команда — сборка под магазин</p><p>aiversebuild делает .app, проект Xcode, Gradle/APK, веб и .exe, сам ставит инструменты сборки и рисует иконки.</p><div class="core-inc"><span>Шесть платформ</span><span>Паки ресурсов</span><span>Инструменты сборки</span><span>Иконки и заставка</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-meta.html" id="sys-meta"><h3>Мета и LiveOps</h3><p class="core-tag">Магазин, квесты и события из JSON</p><p>Готовая мета для мобильных игр: валюты, магазин, пропуски, ежедневные награды, кланы, турниры и события.</p><div class="core-inc"><span>Экономика</span><span>Прогресс</span><span>Социальное</span><span>LiveOps</span></div><span class="sys-link">Подробнее →</span></a>
+<a class="core-card" href="system-gameplay.html" id="sys-gameplay"><h3>Жанры и механики</h3><p class="core-tag">Механики для любого жанра</p><p>Детерминированные пакеты механик, которые подключает любой проект: движение персонажа, бой, оружие, предметы, транспорт, карты, головоломки, колонии и выживание.</p><div class="core-inc"><span>Движение персонажа</span><span>Бой и оружие</span><span>Предметы и прогресс</span><span>Транспорт и гонки</span></div><span class="sys-link">Подробнее →</span></a>
+</div>
+</section>
+
+<section id="roadmap" class="section wrap ln-sec"><div class="ln-head"><div><p class="eyebrow">Роадмап</p><h2 class="h2">Где сейчас каждая система</h2></div><div class="ln-side"><p>Каждая линия — система, станции — пункты её плана. Нажмите на линию, чтобы открыть подробный роадмап.</p><div class="ln-legend"><span><i class="lg-done"></i>готово</span><span><i class="lg-cur"></i>Сейчас</span><span><i class="lg-plan"></i>впереди</span></div></div></div><div class="ln-list"><a class="ln" href="roadmap.html#terraweave" style="--c:#2F6FB0;--x:83.57%"><span class="ln-n">TerraWeave<small>готово 6 из 8</small><span class="ln-now-m">Проверка на GPU, в редакторе и по производительности</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Ядро: рельеф, биомы и растительность"><i></i><span class="ln-l">Ядро: рельеф, биомы и растите…</span></span><span class="ln-st ln-done" style="left:16.43%" title="Импостер-атлас деревьев на 8 ракурсов"><i></i></span><span class="ln-st ln-done" style="left:29.86%" title="Horizon: сварка ближнего и дальнего рельефа"><i></i></span><span class="ln-st ln-done" style="left:43.29%" title="Сетка ветра и смешивание LOD"><i></i></span><span class="ln-st ln-done" style="left:56.71%" title="Эрозия, корни и жизненный цикл растений"><i></i></span><span class="ln-st ln-done" style="left:70.14%" title="Изменения рельефа сразу в динамическом GI"><i></i></span><span class="ln-st ln-cur" style="left:83.57%" title="Проверка на GPU, в редакторе и по производительности"><i></i><span class="ln-l ln-cur">Проверка на GPU, в редакторе и по произ…</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Автоматический стриминг, коллизии деревьев и панель генератора в Studio"><i></i><span class="ln-l ln-plan">Автоматический стриминг, колл…</span></span></span></a><a class="ln" href="roadmap.html#physis" style="--c:#3F8A55;--x:78.20%"><span class="ln-n">PHYSIS<small>готово 8 из 11</small><span class="ln-now-m">Сборка и тесты в CI</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Ядро среды в ECS"><i></i><span class="ln-l">Ядро среды в ECS</span></span><span class="ln-st ln-done" style="left:12.40%" title="Силы ветра и гравитации для ECS-получателей"><i></i></span><span class="ln-st ln-done" style="left:21.80%" title="Поля ветра, штормов и гравитации из конфига карты"><i></i></span><span class="ln-st ln-done" style="left:31.20%" title="Сверка с авторитетным сервером и повтор команд"><i></i></span><span class="ln-st ln-done" style="left:40.60%" title="Журнал и восстановление после рестарта сервера"><i></i></span><span class="ln-st ln-done" style="left:50.00%" title="Подключение к TerraWeave, NEREID, растительности, VFX и звуку"><i></i></span><span class="ln-st ln-done" style="left:59.40%" title="Параллельное обновление сетки и стриминг больших миров"><i></i></span><span class="ln-st ln-done" style="left:68.80%" title="Смерчи"><i></i></span><span class="ln-st ln-cur" style="left:78.20%" title="Сборка и тесты в CI"><i></i><span class="ln-l ln-cur">Сборка и тесты в CI</span></span><span class="ln-st ln-plan" style="left:87.60%" title="Огненные и водяные смерчи, размытие земли"><i></i><span class="ln-l ln-plan">Огненные и водяные смерчи, ра…</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Реалистичный огонь"><i></i></span></span></a><a class="ln" href="roadmap.html#nereid" style="--c:#1F8A9E;--x:86.56%"><span class="ln-n">NEREID<small>готово 8 из 10</small><span class="ln-now-m">Приёмка LOD океана для больших миров</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Архитектура и данные воды"><i></i><span class="ln-l">Архитектура и данные воды</span></span><span class="ln-st ln-done" style="left:13.44%" title="Пена на дальнем LOD"><i></i></span><span class="ln-st ln-done" style="left:23.89%" title="Рябь океана по тайлам"><i></i></span><span class="ln-st ln-done" style="left:34.33%" title="Стыковка воды с берегом"><i></i></span><span class="ln-st ln-done" style="left:44.78%" title="Эрозия и общий контракт с TerraWeave"><i></i></span><span class="ln-st ln-done" style="left:55.22%" title="Регрессионные проверки"><i></i></span><span class="ln-st ln-done" style="left:65.67%" title="Уклон реки и течение под гору в редакторе"><i></i></span><span class="ln-st ln-done" style="left:76.11%" title="Течение рек на GPU и приёмка в Alpine River Valley"><i></i></span><span class="ln-st ln-cur" style="left:86.56%" title="Приёмка LOD океана для больших миров"><i></i><span class="ln-l ln-cur">Приёмка LOD океана для больших миров</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Перевод старой RTS-воды на NEREID"><i></i><span class="ln-l ln-plan">Перевод старой RTS-воды на NE…</span></span></span></a><a class="ln" href="roadmap.html#strata" style="--c:#7A4FB0;--x:79.91%"><span class="ln-n">STRATA<small>готово 9 из 12</small><span class="ln-now-m">Приёмка на реальном железе Vulkan, GLES и WebGL</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="API сборщика и владение в движке"><i></i><span class="ln-l">API сборщика и владение в дви…</span></span><span class="ln-st ln-done" style="left:11.55%" title="Выбор кластеров на Metal совпал с эталоном"><i></i></span><span class="ln-st ln-done" style="left:20.09%" title="Инкрементальные страницы индексов"><i></i></span><span class="ln-st ln-done" style="left:28.64%" title="Vulkan: GPU-отбор и indirect-отрисовка"><i></i></span><span class="ln-st ln-done" style="left:37.18%" title="LOD без трещин и временная стабильность"><i></i></span><span class="ln-st ln-done" style="left:45.73%" title="Навык и анализ ассетов через MCP"><i></i></span><span class="ln-st ln-done" style="left:54.27%" title="Визуализация кластеров и уровней LOD"><i></i></span><span class="ln-st ln-done" style="left:62.82%" title="Готовая иерархия на диске"><i></i></span><span class="ln-st ln-done" style="left:71.36%" title="60 fps на Galaxy A05s"><i></i></span><span class="ln-st ln-cur" style="left:79.91%" title="Приёмка на реальном железе Vulkan, GLES и WebGL"><i></i><span class="ln-l ln-cur">Приёмка на реальном железе Vulkan, GLES…</span></span><span class="ln-st ln-plan" style="left:88.45%" title="Нативная сборка arm64 и приёмка производительности"><i></i><span class="ln-l ln-plan">Нативная сборка arm64 и приём…</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Включение по умолчанию"><i></i></span></span></a><a class="ln" href="roadmap.html#lens" style="--c:#B0562F;--x:88.45%"><span class="ln-n">LENS<small>готово 10 из 12</small><span class="ln-now-m">Стерео и OpenXR</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Модули камер на базе MotionWeave"><i></i><span class="ln-l">Модули камер на базе MotionWe…</span></span><span class="ln-st ln-done" style="left:11.55%" title="Навыки и MCP-авторинг камер"><i></i></span><span class="ln-st ln-done" style="left:20.09%" title="Нативная проверка на Metal"><i></i></span><span class="ln-st ln-done" style="left:28.64%" title="Планировщик, стек камер, режиссёр и split-screen"><i></i></span><span class="ln-st ln-done" style="left:37.18%" title="Физическая линза и глубина резкости"><i></i></span><span class="ln-st ln-done" style="left:45.73%" title="HDR/EXR-последовательности, тряска и рельсы камеры"><i></i></span><span class="ln-st ln-done" style="left:54.27%" title="PostFX и слои отдельно для каждой камеры"><i></i></span><span class="ln-st ln-done" style="left:62.82%" title="Кубмапы, панорамы, зеркала и порталы"><i></i></span><span class="ln-st ln-done" style="left:71.36%" title="Общие тела камер и пресеты"><i></i></span><span class="ln-st ln-done" style="left:79.91%" title="Камера следования в ECS, пресеты в Studio и MCP, орбита планет"><i></i></span><span class="ln-st ln-cur" style="left:88.45%" title="Стерео и OpenXR"><i></i><span class="ln-l ln-cur">Стерео и OpenXR</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Камера от третьего лица для персонажей"><i></i><span class="ln-l ln-plan">Камера от третьего лица для п…</span></span></span></a><a class="ln" href="roadmap.html#vivid" style="--c:#B0407A;--x:100.00%"><span class="ln-n">VIVID<small>готово 9 из 9</small></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Архитектура и начало работы"><i></i><span class="ln-l">Архитектура и начало работы</span></span><span class="ln-st ln-done" style="left:14.75%" title="Перенос LOD кожи"><i></i></span><span class="ln-st ln-done" style="left:26.50%" title="Коллизии волос"><i></i></span><span class="ln-st ln-done" style="left:38.25%" title="Панель внешности в Studio и предпросмотр персонажа"><i></i></span><span class="ln-st ln-done" style="left:50.00%" title="Сокеты и независимые вложения"><i></i></span><span class="ln-st ln-done" style="left:61.75%" title="Адаптивные мягкие тени в портретном свете"><i></i></span><span class="ln-st ln-done" style="left:73.50%" title="Слияние в main"><i></i></span><span class="ln-st ln-done" style="left:85.25%" title="VIVID Creator: редактор внешности"><i></i></span><span class="ln-st ln-done" style="left:97.00%" title="Совместимость с MetaHuman через проверенный адаптер"><i></i></span></span></a><a class="ln" href="roadmap.html#lighting" style="--c:#C08A1E;--x:100.00%"><span class="ln-n">LUMA<small>готово 8 из 8</small></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Пробы GI и переносимые кэши освещения"><i></i><span class="ln-l">Пробы GI и переносимые кэши о…</span></span><span class="ln-st ln-done" style="left:16.43%" title="Запекание лайтмапов и проб"><i></i></span><span class="ln-st ln-done" style="left:29.86%" title="Видимость проб по моментам"><i></i></span><span class="ln-st ln-done" style="left:43.29%" title="Luma на Metal с HDR-материалами"><i></i></span><span class="ln-st ln-done" style="left:56.71%" title="Свет, компоненты сущностей и MCP слиты в main"><i></i></span><span class="ln-st ln-done" style="left:70.14%" title="Luma и динамический GI на Vulkan и Android"><i></i></span><span class="ln-st ln-done" style="left:83.57%" title="Каскады GI следуют за камерой"><i></i></span><span class="ln-st ln-done" style="left:97.00%" title="Запечённое освещение на Vulkan и Android"><i></i></span></span></a><a class="ln" href="roadmap.html#prisma" style="--c:#8A4B26;--x:97.00%"><span class="ln-n">PRISMA<small>готово 7 из 8</small><span class="ln-now-m">DLSS: сборка и проверка адаптера NGX на Windows с RTX</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Архитектура и план миграции"><i></i><span class="ln-l">Архитектура и план миграции</span></span><span class="ln-st ln-done" style="left:16.43%" title="Bloom через render graph"><i></i></span><span class="ln-st ln-done" style="left:29.86%" title="Векторы скорости для инстансов и скиннинга"><i></i></span><span class="ln-st ln-done" style="left:43.29%" title="Устойчивая HDR-экспозиция и сброс на склейках"><i></i></span><span class="ln-st ln-done" style="left:56.71%" title="Туман банками по ветру и приземная дымка"><i></i></span><span class="ln-st ln-done" style="left:70.14%" title="Глубина резкости и motion blur вне экспериментального режима"><i></i></span><span class="ln-st ln-done" style="left:83.57%" title="AO, SSR, SMAA, FSR 1 и эффекты линзы"><i></i></span><span class="ln-st ln-cur" style="left:97.00%" title="DLSS: сборка и проверка адаптера NGX на Windows с RTX"><i></i><span class="ln-l ln-cur">DLSS: сборка и проверка адаптера NGX на…</span></span></span></a><a class="ln" href="roadmap.html#spectrafx" style="--c:#C0392B;--x:83.57%"><span class="ln-n">SpectraFX<small>готово 6 из 8</small><span class="ln-now-m">Полная связка GPU и CPU в продакшене</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Начало работы над системой эффектов"><i></i><span class="ln-l">Начало работы над системой эф…</span></span><span class="ln-st ln-done" style="left:16.43%" title="Имя SpectraFX, публичный C++ API и формат ассетов"><i></i></span><span class="ln-st ln-done" style="left:29.86%" title="Общий батчинг между эффектами"><i></i></span><span class="ln-st ln-done" style="left:43.29%" title="Постоянные атрибуты частиц на GPU"><i></i></span><span class="ln-st ln-done" style="left:56.71%" title="GPU-конвейер scatter-kill и пример нативной ECS-интеграции"><i></i></span><span class="ln-st ln-done" style="left:70.14%" title="Граф v2 в Inspector и проверенный жизненный цикл Metal"><i></i></span><span class="ln-st ln-cur" style="left:83.57%" title="Полная связка GPU и CPU в продакшене"><i></i><span class="ln-l ln-cur">Полная связка GPU и CPU в продакшене</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Автоматическое подключение к RTS и FPS"><i></i><span class="ln-l ln-plan">Автоматическое подключение к…</span></span></span></a><a class="ln" href="roadmap.html#motionweave" style="--c:#4B5E8A;--x:81.33%"><span class="ln-n">MotionWeave<small>готово 5 из 7</small><span class="ln-now-m">Тесты и визуальная проверка</span></span><span class="ln-track"><span class="ln-rail"></span><span class="ln-st ln-done" style="left:3.00%" title="Публичное имя и API MotionWeave"><i></i><span class="ln-l">Публичное имя и API MotionWea…</span></span><span class="ln-st ln-done" style="left:18.67%" title="Многопоточный импорт моделей"><i></i></span><span class="ln-st ln-done" style="left:34.33%" title="Контракт пакетов презентации"><i></i></span><span class="ln-st ln-done" style="left:50.00%" title="Переимпорт с диска и наблюдение за файлами"><i></i></span><span class="ln-st ln-done" style="left:65.67%" title="Мимика лица в Studio"><i></i></span><span class="ln-st ln-cur" style="left:81.33%" title="Тесты и визуальная проверка"><i></i><span class="ln-l ln-cur">Тесты и визуальная проверка</span></span><span class="ln-st ln-plan" style="left:97.00%" title="Замеры производительности на CPU"><i></i><span class="ln-l ln-plan">Замеры производительности на…</span></span></span></a></div><p class="ln-more"><a class="btn btn-line" href="roadmap.html">Весь роадмап →</a></p></section>
+
+<section id="pillars" class="section wrap">
+<div class="pillars">
+<div class="pillars-head">
+<p class="eyebrow">Как устроен движок</p>
+<h2 class="h2">Три опоры вокруг одной игры</h2>
+<img src="../favicon.svg" width="300" height="284" alt="Знак AIVERSE: три луча вокруг ромба">
+</div>
+<div class="grid">
+<article class="card"><span class="tag">01 · данные</span><h3 class="h3">Проект — это текст</h3><p>game.json, rules.json, уровни, UI, звук и эффекты — читаемые файлы. Никаких бинарных сцен: человек и агент правят одно и то же.</p></article>
+<article class="card"><span class="tag">02 · механики</span><h3 class="h3">Геймплей уже внутри</h3><p>Армии, персонажи, транспорт и гонки, бой, движение, стелс, диалоги, карты, головоломки, экономика — 88 детерминированных библиотек, которые работают в любом проекте.</p></article>
+<article class="card card-ink"><span class="tag">03 · агент</span><h3 class="h3">ИИ проверяет сам себя</h3><p>Матчи ботов, сценарии с проверками, матрицы баланса, линтер правил и скриншоты — агент видит результат, а не работает вслепую.</p></article>
+</div>
+</div>
+</section>
+
+<section class="sand">
+<div class="wrap section">
+<p class="eyebrow" style="margin-bottom:18px">От идеи до стора</p>
+<h2 class="h2" style="max-width:820px;margin-bottom:56px">Опишите идею и укажите папку с артом — дальше работает конвейер</h2>
+<ol class="steps">
+<li><span class="n">1</span><strong>Идея, арт, музыка</strong><span>Текстовое описание и ассеты — всё, что нужно на входе.</span></li>
+<li><span class="n">2</span><strong>Мастер «Сделать игру»</strong><span>Или агент через MCP: уровни, туториал, мета, магазин, иконка, сплэш.</span></li>
+<li><span class="n">3</span><strong>Проект = данные</strong><span>game.json · rules.json · levels · ui · fx · audio.</span></li>
+<li><span class="n">4</span><strong>Проверка ↺</strong><span>Боты проходят туториал и каждый уровень; найденное уходит в правки.</span></li>
+<li class="ink"><span class="n">5</span><strong>aiversebuild</strong><span>.app, Xcode, Gradle/APK, web и .exe — одной командой.</span></li>
+</ol>
+</div>
+</section>
+
+<section class="dark">
+<div class="wrap section split">
+<div style="display:flex;flex-direction:column;gap:24px">
+<p class="eyebrow">Данные вместо кода</p>
+<h2 class="h2">Объект — это описание</h2>
+<p style="margin:0;font-size:18px;color:var(--on-ink-2)">Рабочий из RTS-шаблона skirmish: добывает золото и дерево, строит пять зданий и дерётся киркой. Ни строчки C++.</p>
+<p style="margin:8px 0 0;font-size:15px;color:var(--muted-dark)">Когда данных мало — три ступени вверх:</p>
+<div class="ladder"><span>триггеры JSON</span><span class="arrow" aria-hidden="true">→</span><span>Lua 5.4</span><span class="arrow" aria-hidden="true">→</span><span class="hl">нативный C++</span></div>
+</div>
+<div class="code">
+<div class="code-head">templates/skirmish/rules.json</div>
+<pre><span class="a">"peasant"</span>: {
+  <span class="k">"health"</span>:  { <span class="k">"max"</span>: <span class="v">220</span>, <span class="k">"armorType"</span>: <span class="s">"light"</span> },
+  <span class="k">"move"</span>:    { <span class="k">"speed"</span>: <span class="v">2.4</span>, <span class="k">"radius"</span>: <span class="v">0.35</span> },
+  <span class="k">"sight"</span>:   <span class="v">7</span>,
+  <span class="k">"weapons"</span>: [{ <span class="k">"id"</span>: <span class="s">"pick"</span>, <span class="k">"range"</span>: <span class="v">0.5</span>, <span class="k">"damage"</span>: <span class="v">5</span>, <span class="k">"cooldown"</span>: <span class="v">1.5</span> }],
+  <span class="k">"cost"</span>:    { <span class="k">"gold"</span>: <span class="v">75</span>, <span class="k">"time"</span>: <span class="v">12</span>, <span class="k">"supply"</span>: <span class="v">1</span> },
+  <span class="k">"gather"</span>:  { <span class="k">"gold"</span>: { <span class="k">"carry"</span>: <span class="v">10</span>, <span class="k">"time"</span>: <span class="v">2.0</span> }, <span class="k">"wood"</span>: { <span class="k">"carry"</span>: <span class="v">10</span>, <span class="k">"time"</span>: <span class="v">3.0</span> } },
+  <span class="k">"builds"</span>:  [<span class="s">"townhall"</span>, <span class="s">"farm"</span>, <span class="s">"barracks"</span>, <span class="s">"workshop"</span>, <span class="s">"tower"</span>],
+  <span class="k">"view"</span>:    { <span class="k">"shape"</span>: <span class="s">"worker"</span>, <span class="k">"scale"</span>: <span class="v">0.8</span> }
+}</pre>
+</div>
+</div>
+</section>
+
+<section id="genres" class="section wrap">
+<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:48px">
+<div style="display:flex;flex-direction:column;gap:18px;max-width:760px">
+<p class="eyebrow">Жанры</p>
+<h2 class="h2">Готовые механики</h2>
+</div>
+<p style="margin:0;color:var(--muted);max-width:420px">Механики подключаются данными и сочетаются как угодно. Каждая библиотека детерминирована, протестирована, умеет сохраняться и валидирует свой конфиг.</p>
+</div>
+<div class="grid genres">
+<article class="card genre"><div class="genre-top"><h3>Армии, здания, экономика</h3></div><p>Юниты и здания из данных, A*/HPA*/flow fields для тысяч юнитов на картах до 2048², ресурсы, туман войны, ИИ-командир стороны.</p><code>26 шаблонов · aiverse-bots-commander</code></article>
+<article class="card genre"><div class="genre-top"><h3>Персонаж и сетевой бой</h3></div><p>Авторитетный сервер с откатом попаданий, большие стримящиеся миры до 100 игроков, отдача и баллистика, боты.</p><code>weapon-policies · match-rules</code></article>
+<article class="card genre"><div class="genre-top"><h3>Транспорт и гонки</h3></div><p>Колёсные, гусеничные, ховер и летающие машины с местами; трассы на сплайновых дорогах, старт, чекпоинты, круги, гоночные боты.</p><code>vehicle-controllers · aiverse-races</code></article>
+<article class="card genre"><div class="genre-top"><h3>Ближний бой</h3></div><p>Хитбоксы, комбо и окна отмены, i-frames уклонения, парирование, захват цели.</p><code>combat-actions · melee-combat</code></article>
+<article class="card genre"><div class="genre-top"><h3>Движение и мир</h3></div><p>Coyote time, буфер прыжка, уступы, лестницы, плавание; гейты способностей и проверка на софтлоки.</p><code>character-locomotion · zone-graph</code></article>
+<article class="card genre"><div class="genre-top"><h3>Восприятие и взаимодействие</h3></div><p>Конусы зрения, слух, подозрение и тревога, маскировка; перенос, броски, верёвки, двери.</p><code>stealth-senses · physical-interactions</code></article>
+<article class="card genre"><div class="genre-top"><h3>Сюжет и постановка</h3></div><p>Диалоги с условиями, отношения и последствия, бэклог; таймлайны, QTE, замедление.</p><code>narrative-graphs · cinematic-gameplay</code></article>
+<article class="card genre"><div class="genre-top"><h3>Ходы, карты, скрытая информация</h3></div><p>Инициатива, очки действий, реакции; зоны, стек приоритета, тактическая сетка.</p><code>turn-scheduler · card-runtime</code></article>
+<article class="card genre"><div class="genre-top"><h3>Головоломки, ритм, спорт</h3></div><p>Правила сокобана, undo/redo и решатель, VM для задач; темповые карты; владение мячом, пасы, удары, периоды.</p><code>grid-puzzles · rhythm-timing · sports-rules</code></article>
+<article class="card genre"><div class="genre-top"><h3>Забеги и лут</h3></div><p>Сидированные забеги, бюджеты встреч, таблицы лута с гарантированной редкостью.</p><code>run-graph · loot-tables</code></article>
+<article class="card genre"><div class="genre-top"><h3>Большие числа и производство</h3></div><p>Точный офлайн-прогресс, многослойный престиж, производственные сети и логистика.</p><code>big-numbers · offline-production</code></article>
+<article class="card genre"><div class="genre-top"><h3>Мета мобильной игры</h3></div><p>Магазин, валюты, квесты, пассы, энергия, кланы, турниры, сундуки — в JSON.</p><code>aiverse::meta · LiveOps</code></article>
+</div>
+<div class="card card-ink plugins" style="margin-top:20px">
+<span class="tag">своя механика</span>
+<h3 class="h3">Нет готовой механики — ИИ напишет плагин для вашей игры</h3>
+<div class="plugins-cols">
+<div><h4>Lua</h4><p>Скрипты лежат в папке игры и подключаются в rules.json. Работают внутри детерминированной симуляции — в сетевой игре и в реплеях — или только на экране игрока. Правятся в редакторе с горячей перезагрузкой, движок пересобирать не нужно.</p></div>
+<div><h4>C++</h4><p>Модули игры в папке native/ со своими компонентами, системами и хуками движка. Собираются вместе с игрой, редактором и сервером — на всех платформах, включая iOS, Android и веб. Исходники движка при этом не меняются.</p></div>
+</div>
+</div>
+</section>
+
+<section class="wrap" style="padding-bottom:120px">
+<div class="gallery">
+<div class="gpu wide">
+<h3 class="h3">Красиво — даже на слабом мобильном GPU</h3>
+<p>Тени, частицы, террейн и постэффекты имеют уровни качества и подстраиваются под GPU — от старых Mali и Adreno до Apple Silicon. Свой RHI: Metal, GLES3/WebGL2, GL 3.3, Vulkan.</p>
+<div class="pills"><span>PBR</span><span>PRISMA постобработка</span><span>SpectraFX</span><span>Shader Graph</span><span>объёмные облака</span></div>
+<a href="devlog.html" style="font-weight:600">Все снимки по системам — в ходе разработки →</a>
+</div>
+</div>
+</section>
+
+<section id="network" class="dark">
+<div class="wrap section">
+<div class="net-top">
+<div style="display:flex;flex-direction:column;gap:22px">
+<p class="eyebrow">Сеть, сервер и мета</p>
+<h2 class="h2">Бит в бит на&nbsp;каждой платформе</h2>
+<p style="margin:0;font-size:18px;color:var(--on-ink-2)">Fixed-point вместо float, свой RNG и контрольные суммы: один и тот же матч на iPhone, Android-телефоне и в браузере даёт один и тот же хэш. Поэтому можно выбрать сетевую модель под жанр — и поднять свой сервер.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;justify-content:center">
+<p class="mono" style="margin:0 0 6px;font-size:13px;color:var(--muted-dark)">один матч — один хэш</p>
+<div class="hashes">
+<div>iOS<span>= hash</span></div><div>Android<span>= hash</span></div><div>Web<span>= hash</span></div>
+<div>Windows<span>= hash</span></div><div>macOS<span>= hash</span></div><div>Linux x64 / ARM64<span>= hash</span></div>
+</div>
+</div>
+</div>
+<div class="grid net-cards">
+<article class="card"><span class="tag">сеть · модель 1</span><h3>Rollback lockstep</h3><p>По сети идут только команды. Откат по вводу со сверкой хэшей, сглаживание коррекций, реконнект и поздний вход.</p></article>
+<article class="card"><span class="tag">сеть · модель 2</span><h3>Авторитетный сервер</h3><p>Клиент и сервер, который решает всё сам: большие стримящиеся миры до 100 игроков и боты прямо на сервере.</p></article>
+<article class="card"><span class="tag">свой хостинг</span><h3>Свой сервер битв</h3><p>aiverse_server на вашей машине: шифрованный UDP и WebSocket, билеты на матч, пинг до серверов, матчмейкинг по Elo, вердикты по реплеям.</p></article>
+<article class="card meta"><span class="tag">мета · LiveOps</span><h3>Мета-сервис</h3><p>Магазин, валюты, квесты, пассы, энергия, лидерборды, чат, друзья и кланы, турниры — из JSON, со своим бэкендом и готовым клиентом.</p></article>
+</div>
+</div>
+</section>
+
+<section id="templates" class="section wrap">
+<div style="display:flex;flex-direction:column;gap:18px;margin-bottom:44px;max-width:760px">
+<p class="eyebrow">Готовые шаблоны</p>
+<h2 class="h2">Новая игра начинается с работающей</h2>
+<p style="margin:0;font-size:18px;color:var(--text-2)">Каждый шаблон — полностью играбельная игра с ботами. Откройте в редакторе и меняйте.</p>
+</div>
+<div class="list">
+<div class="list-row"><h3>Классические RTS</h3><p>Iron and Gold · Iron Front · Starfall Sectors · Frost Crown · Four Ages · Amber Sands · Metal Tide</p></div>
+<div class="list-row"><h3>Захват и гарнизоны</h3><p>Mushroom Clash · Shroom Wars · Spore Lanes · Spell Bunkers · Border Rush · Clan Lands · Flag Sectors</p></div>
+<div class="list-row"><h3>Отряды, волны, выживание</h3><p>Hold the Line · Last Colony · Lane Clash</p></div>
+<div class="list-row"><h3>Экономика и стройка</h3><p>Hearth and Haul · Underlord</p></div>
+<div class="list-row"><h3>2D и эксперименты</h3><p>Crystal Dunes · Green Hills · Planets · Wildfire</p></div>
+<div class="list-row"><h3>FPS</h3><p>Crossfire Arena · Breach Protocol · Last Survivor (100 игроков) · Aim Lab</p></div>
+</div>
+</section>
+
+<section class="sand">
+<div class="wrap" style="padding:100px 32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));gap:48px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<h2 style="font:600 36px/1.15 var(--display)">Шесть платформ. Одна команда.</h2>
+<p style="margin:0;font-size:17px;color:var(--text-2)">aiversebuild подписывает, генерирует иконки и сплэши и кладёт в сборку только те плагины, которые выбрала игра.</p>
+<div class="platforms"><span>iOS</span><span>Android</span><span>Web</span><span>Windows</span><span>macOS</span><span>Linux</span></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px">
+<p class="eyebrow">Плагины сторов и рекламы</p>
+<p style="margin:0;font-size:22px;line-height:1.7;font-weight:500">App Store · Google Play · RuStore · Yandex Games · Steam · Xsolla · AdMob · AppLovin · ironSource · Yandex Ads · AppMetrica · AppsFlyer · GameAnalytics · Push · Deeplinks</p>
+</div>
+</div>
+</section>
+
+<section id="start" class="section wrap">
+<h2 class="h2" style="margin-bottom:48px">Быстрый старт</h2>
+<div class="start">
+<div><span class="tag">01 — Собрать движок</span>
+<pre>cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
+cmake --build build/mac -j 8
+open build/mac/AiverseEditor.app</pre>
+<span style="font-size:14px;color:var(--muted)">Не хотите компилировать — <a href="releases.html">скачайте готовый редактор</a>.</span></div>
+<div><span class="tag">02 — Сделать игру</span><div class="box">В хабе нажмите <strong>«Сделать игру»</strong> или создайте проект из шаблона. В окне Game сразу играйте против ботов.</div></div>
+<div><span class="tag">03 — Подключить агента</span><div class="box accent">Окно <strong>Agent</strong> в редакторе показывает готовый конфиг aiversemcp — вставьте его в Claude Code или другой MCP-клиент.</div></div>
+</div>
+</section>
+</main>
+
+<footer class="dark">
+<div class="wrap">
+<div class="cta">
+<h2>Опишите игру.<br>Остальное — <em>данные</em>.</h2>
+<div class="actions">
+<a class="btn btn-accent" href="#start">Начать</a>
+<a class="btn btn-line-light" href="https://t.me/aiverseengine">Telegram</a>
+</div>
+</div>
+<div class="foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Движок</span><a href="#pillars">Возможности</a><a href="#genres">Жанры</a><a href="#templates">Шаблоны</a></div>
+<div><span>Разработчикам</span><a href="docs.html">Документация</a><a href="devlog.html">Ход разработки</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</div>
+</footer>
+<script>
+(function(){var map=[['systems','systems'],['core','systems'],['genres','genres'],['roadmap','roadmap']],links={};
+document.querySelectorAll('.menu a[data-nav]').forEach(function(a){links[a.dataset.nav]=a;});
+var secs=map.map(function(m){return [document.getElementById(m[0]),m[1]];}).filter(function(m){return m[0]&&links[m[1]];});if(!secs.length)return;
+function spy(){var y=innerHeight*.35,cur=null;secs.forEach(function(m){var r=m[0].getBoundingClientRect();if(r.top<=y&&r.bottom>y)cur=m[1];});
+Object.keys(links).forEach(function(k){if(k===cur)links[k].setAttribute('aria-current','page');else if(links[k].getAttribute('aria-current')==='page')links[k].removeAttribute('aria-current');});}
+addEventListener('scroll',spy,{passive:true});addEventListener('resize',spy);addEventListener('hashchange',function(){setTimeout(spy,50);});spy();})();
+</script></body>
+</html>

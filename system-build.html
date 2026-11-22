@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Сборка и платформы — Одна команда — сборка под магазин · AIVERSE</title>
-<meta name="description" content="aiversebuild делает .app, проект Xcode, Gradle/APK, веб и .exe, сам ставит инструменты сборки и рисует иконки.">
+<title>Builds and platforms — One command, a store build · AIVERSE</title>
+<meta name="description" content="aiversebuild makes an .app, an Xcode project, Gradle/APK, web and an .exe, installs the build tools and draws the icons.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="alternate icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#F3EFE8">
-<link rel="alternate" hreflang="en" href="en/system-build.html">
+<link rel="alternate" hreflang="ru" href="ru/system-build.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,33 +18,33 @@
 </head>
 <body>
 <header class="top">
-<nav class="wrap" aria-label="Главное меню">
+<nav class="wrap" aria-label="Main menu">
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
-<a href="./#systems" data-nav="systems" aria-current="page">Системы</a>
-<a href="./#genres" data-nav="genres">Жанры</a>
-<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
-<a href="releases.html" data-nav="releases">Релизы</a>
-<a href="gallery.html" data-nav="gallery">Галерея</a>
-<a href="devlog.html" data-nav="devlog">Ход разработки</a>
-<a href="blog.html" data-nav="blog">Блог</a>
-<a href="docs.html" data-nav="docs">Документация</a>
+<a href="./#systems" data-nav="systems" aria-current="page">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
 </div>
-<a class="lang-switch" href="en/system-build.html" hreflang="en" lang="en">EN</a>
+<a class="lang-switch" href="ru/system-build.html" hreflang="ru" lang="ru">RU</a>
 <a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
 </nav>
 </header>
 
 <main class="wrap">
-<section class="sp-hero"><p class="crumbs"><a href="./#core">Системы движка</a> / Сборка и платформы</p><div class="sp-title"><h1>Сборка и платформы</h1></div><p class="sp-tag">Одна команда — сборка под магазин</p><p class="sp-lead">aiversebuild делает .app, проект Xcode, Gradle/APK, веб и .exe, сам ставит инструменты сборки и рисует иконки.</p><div class="actions"><a class="btn btn-ink" href="docs-overview.html">Документация системы</a><a class="btn btn-line" href="devblog-build.html">Дневник разработки · 1</a></div></section><section class="sp-sec" id="inc"><h2 class="h2">Что входит</h2><div class="grid sp-inc"><article class="card"><h3>Шесть платформ</h3><p>iOS, Android, веб, Windows, macOS и Linux; Metal, GLES3/WebGL2, GL 3.3 и Vulkan.</p></article><article class="card"><h3>Паки ресурсов</h3><p>Сжатые .rpak, раздельные сборки и докачка контента.</p></article><article class="card"><h3>Инструменты сборки</h3><p>Проверка и автоматическая установка нужного SDK под цель.</p></article><article class="card"><h3>Иконки и заставка</h3><p>Иконки и экран загрузки генерируются под каждую платформу.</p></article><article class="card"><h3>Плагины магазинов и рекламы</h3><p>App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin и другие; в сборку попадают только выбранные.</p></article><article class="card"><h3>Модули движка</h3><p>Ненужные части движка выключаются из клиента, чтобы уменьшить сборку.</p></article></div></section><section class="sp-sec"><h2 class="h2">Что позволяет делать</h2><ul class="sp-ena"><li>Выпустить игру в магазины без отдельного проекта сборки.</li><li>Собрать Windows-версию на Mac или Linux.</li><li>Держать размер веб-сборки под контролем.</li></ul></section><section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">Роадмап</h2><a href="roadmap.html#build">Общий роадмап движка →</a></div><div class="rmt"><div class="rmt-bar"><div class="rmt-progress" role="img" aria-label="готово 0 из 1"><span style="width:0%"></span></div><span class="rmt-count mono">готово 0 из 1</span><span class="rmt-nav"><button type="button" class="rmt-btn" data-dir="-1" aria-label="Назад">←</button><button type="button" class="rmt-btn" data-dir="1" aria-label="Вперёд">→</button></span></div><div class="rmt-scroll" tabindex="0"><ol class="rmt-list"><li class="rmt-item rm-in-progress is-now"><span class="rmt-now">Сейчас</span><span class="rmt-dot" aria-hidden="true"></span><div class="rmt-card"><div class="rm-meta"><span class="st st-in-progress">В работе</span><time>срок не назначен</time></div><h3>Один экран загрузки во всех проектах</h3><p>Экран загрузки движка теперь и в FPS, и в воксельных проектах; проект в game.json оставляет его, меняет отдельные поля, ставит свой или убирает совсем.</p></div></li></ol></div></div></section><section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">Ход разработки</h2><a href="devblog-build.html">Весь дневник · 1</a></div><div class="sp-entries"><a class="sp-entry" href="devblog-build.html#2026-11-21-build-engine-modules"><span class="mono">21.11.2026</span><strong>Клиентская сборка берёт только нужные модули движка</strong><span>В game.json можно выбрать, какие необязательные части движка попадут в собранную игру, или поручить это автоматике: &quot;engineModules&quot;: [&quot;auto&quot;].</span></a></div></section><section class="sp-sec sp-others"><p class="eyebrow">Другие системы</p><div class="chips"><a class="chip" href="system-navigation.html">Навигация и толпы</a><a class="chip" href="system-network.html">Сеть и сервер</a><a class="chip" href="system-physics.html">Физика и ткань</a><a class="chip" href="system-ecs.html">ECS и симуляция</a><a class="chip" href="system-shadergraph.html">Shader Graph</a><a class="chip" href="system-lightbake.html">Запекание света</a><a class="chip" href="system-world.html">Дороги и город</a><a class="chip" href="system-planets.html">Планеты и генерация карт</a><a class="chip" href="system-voxel.html">Воксельные миры</a><a class="chip" href="system-inputflow.html">InputFlow</a><a class="chip" href="system-ui.html">Интерфейс игры</a><a class="chip" href="system-audio.html">Звук</a><a class="chip" href="system-studio.html">Studio — редактор</a><a class="chip" href="system-agents.html">MCP и навыки агентов</a><a class="chip" href="system-import.html">Импорт из Unity и Godot</a><a class="chip chip-ink" href="system-build.html">Сборка и платформы</a><a class="chip" href="system-meta.html">Мета и LiveOps</a><a class="chip" href="system-gameplay.html">Жанры и механики</a></div></section>
+<section class="sp-hero"><p class="crumbs"><a href="./#core">Engine systems</a> / Builds and platforms</p><div class="sp-title"><h1>Builds and platforms</h1></div><p class="sp-tag">One command, a store build</p><p class="sp-lead">aiversebuild makes an .app, an Xcode project, Gradle/APK, web and an .exe, installs the build tools and draws the icons.</p><div class="actions"><a class="btn btn-ink" href="docs-overview.html">System docs</a><a class="btn btn-line" href="devblog-build.html">Development diary · 1</a></div></section><section class="sp-sec" id="inc"><h2 class="h2">What is inside</h2><div class="grid sp-inc"><article class="card"><h3>Six platforms</h3><p>iOS, Android, web, Windows, macOS and Linux; Metal, GLES3/WebGL2, GL 3.3 and Vulkan.</p></article><article class="card"><h3>Resource packs</h3><p>Compressed .rpak packs, split builds and content download.</p></article><article class="card"><h3>Build tools</h3><p>Checks and installs the SDK each target needs.</p></article><article class="card"><h3>Icons and splash</h3><p>Icons and the loading screen are generated for every platform.</p></article><article class="card"><h3>Store and ads plugins</h3><p>App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin and more; a build carries only the chosen ones.</p></article><article class="card"><h3>Engine modules</h3><p>Unused parts of the engine are left out of the client to shrink the build.</p></article></div></section><section class="sp-sec"><h2 class="h2">What it lets you do</h2><ul class="sp-ena"><li>Ship a game to stores without a separate build project.</li><li>Build the Windows version on a Mac or Linux.</li><li>Keep the web build size under control.</li></ul></section><section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">Roadmap</h2><a href="roadmap.html#build">Engine roadmap →</a></div><div class="rmt"><div class="rmt-bar"><div class="rmt-progress" role="img" aria-label="0 of 1 done"><span style="width:0%"></span></div><span class="rmt-count mono">0 of 1 done</span><span class="rmt-nav"><button type="button" class="rmt-btn" data-dir="-1" aria-label="Back">←</button><button type="button" class="rmt-btn" data-dir="1" aria-label="Forward">→</button></span></div><div class="rmt-scroll" tabindex="0"><ol class="rmt-list"><li class="rmt-item rm-in-progress is-now"><span class="rmt-now">Now</span><span class="rmt-dot" aria-hidden="true"></span><div class="rmt-card"><div class="rm-meta"><span class="st st-in-progress">In progress</span><time>no date set</time></div><h3>One loading screen in every project</h3><p>The engine loading screen now also runs in FPS and voxel projects; in game.json a project keeps it, changes single fields, sets its own or removes it entirely.</p></div></li></ol></div></div></section><section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">Devlog</h2><a href="devblog-build.html">Full diary · 1</a></div><div class="sp-entries"><a class="sp-entry" href="devblog-build.html#2026-11-21-build-engine-modules"><span class="mono">Nov 21, 2026</span><strong>Client builds take only the engine modules they need</strong><span>game.json can choose which optional engine parts go into the packaged game, or leave it to detection: &quot;engineModules&quot;: [&quot;auto&quot;].</span></a></div></section><section class="sp-sec sp-others"><p class="eyebrow">Other systems</p><div class="chips"><a class="chip" href="system-navigation.html">Navigation and crowds</a><a class="chip" href="system-network.html">Networking and server</a><a class="chip" href="system-physics.html">Physics and cloth</a><a class="chip" href="system-ecs.html">ECS and simulation</a><a class="chip" href="system-shadergraph.html">Shader Graph</a><a class="chip" href="system-lightbake.html">Baked lighting</a><a class="chip" href="system-world.html">Roads and the city</a><a class="chip" href="system-planets.html">Planets and map generation</a><a class="chip" href="system-voxel.html">Voxel worlds</a><a class="chip" href="system-inputflow.html">InputFlow</a><a class="chip" href="system-ui.html">Game UI</a><a class="chip" href="system-audio.html">Audio</a><a class="chip" href="system-studio.html">Studio editor</a><a class="chip" href="system-agents.html">MCP and agent skills</a><a class="chip" href="system-import.html">Import from Unity and Godot</a><a class="chip chip-ink" href="system-build.html">Builds and platforms</a><a class="chip" href="system-meta.html">Meta and LiveOps</a><a class="chip" href="system-gameplay.html">Genres and mechanics</a></div></section>
 </main>
 
 <footer class="dark">
 <div class="wrap foot">
 <a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
 <div class="foot-cols">
-<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
-<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
 </div>
 <small>MIT License · AIVERSE</small>
 </div>

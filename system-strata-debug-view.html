@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Отладочный вид — STRATA · AIVERSE</title>
-<meta name="description" content="Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация.">
+<title>Debug view — STRATA · AIVERSE</title>
+<meta name="description" content="Colouring of selected clusters by id, LOD level, error or material; presentation only.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="alternate icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#F3EFE8">
-<link rel="alternate" hreflang="en" href="en/system-strata-debug-view.html">
+<link rel="alternate" hreflang="ru" href="ru/system-strata-debug-view.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,58 +18,58 @@
 </head>
 <body>
 <header class="top">
-<nav class="wrap" aria-label="Главное меню">
+<nav class="wrap" aria-label="Main menu">
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
-<a href="./#systems" data-nav="systems" aria-current="page">Системы</a>
-<a href="./#genres" data-nav="genres">Жанры</a>
-<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
-<a href="releases.html" data-nav="releases">Релизы</a>
-<a href="gallery.html" data-nav="gallery">Галерея</a>
-<a href="devlog.html" data-nav="devlog">Ход разработки</a>
-<a href="blog.html" data-nav="blog">Блог</a>
-<a href="docs.html" data-nav="docs">Документация</a>
+<a href="./#systems" data-nav="systems" aria-current="page">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
 </div>
-<a class="lang-switch" href="en/system-strata-debug-view.html" hreflang="en" lang="en">EN</a>
+<a class="lang-switch" href="ru/system-strata-debug-view.html" hreflang="ru" lang="ru">RU</a>
 <a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
 </nav>
 </header>
 
 <main class="wrap">
-<section class="sp-hero fp-hero"><p class="crumbs"><a href="./#systems">Системы движка</a> / <a href="system-strata.html">STRATA</a> / Отладочный вид</p><h1>Отладочный вид</h1><p class="sp-lead">Раскраска выбранных кластеров по id, уровню LOD, ошибке или материалу; только презентация.</p></section><article class="doc fp-body"><h2 id="зачем">Зачем<a class="anchor" href="#зачем" aria-label="#">#</a></h2>
-<p>STRATA режет геометрию на кластеры и каждый кадр решает, какой уровень детализации показать для каждого куска сцены. Без визуализации этого не видно: картинка просто выглядит как обычный рендер. Отладочный вид рисует поверх кадра ровно тот набор кластеров, который STRATA выбрала, — так видно, где она детализирует, а где упрощает, и где что-то пошло не так.</p>
-<p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg" alt="Кластеры: каждый своим цветом" loading="lazy"></p>
-<h2 id="что-рисует">Что рисует<a class="anchor" href="#что-рисует" aria-label="#">#</a></h2>
-<p>Отладочный вид берёт не пересчитанный, а <strong>фактически выбранный</strong> фронтир — те кластеры, которые последний успешный <code>prepareModel</code> записал в отрисовку. Поверх кадра он может показать:</p>
-<ul><li>рамки (AABB) каждого выбранного кластера;</li><li>каркас — рёбра треугольников каждого кластера;</li><li>полупрозрачную заливку кластера его цветом;</li><li>рамку экземпляра, окрашенную по маршруту отрисовки.</li></ul>
-<p>Цвет выбирается одним из четырёх режимов:</p>
-<div class="table"><table><thead><tr><th>Режим</th><th>Что показывает</th></tr></thead><tbody><tr><td><code>Cluster</code></td><td>устойчивый цвет на кластер, соседние куски различаются</td></tr><tr><td><code>LodDepth</code></td><td>глубина в иерархии: красный — грубый корень, синий — финальный лист</td></tr><tr><td><code>Error</code></td><td>геометрическая ошибка кластера, в логарифмической шкале</td></tr><tr><td><code>Material</code></td><td>материал или часть примитива</td></tr></tbody></table></div>
-<p>Рамки экземпляров тоже говорят о многом: зелёный — STRATA на переносимом пути, голубой — GPU indirect на Vulkan (только рамка: CPU-фронтира у этого маршрута нет), оранжевый — источник STRATA, который в этом кадре ушёл на обычный рендер, серый — не STRATA.</p>
-<p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg" alt="Уровни LOD: от финального вблизи к грубым вдали" loading="lazy"></p>
-<h2 id="только-презентация">Только презентация<a class="anchor" href="#только-презентация" aria-label="#">#</a></h2>
-<p>Режим ничего не меняет в работе STRATA: не выбирает LOD, не трогает маршрутизацию, не загружает данные на GPU и не читает обратно GPU-выборку. Он рисует обычными линиями и треугольниками <code>Renderer3D</code> и по умолчанию выключен. Включается из кода, который настраивает <code>GeometryScene</code>:</p>
+<section class="sp-hero fp-hero"><p class="crumbs"><a href="./#systems">Engine systems</a> / <a href="system-strata.html">STRATA</a> / Debug view</p><h1>Debug view</h1><p class="sp-lead">Colouring of selected clusters by id, LOD level, error or material; presentation only.</p></section><article class="doc fp-body"><h2 id="why">Why<a class="anchor" href="#why" aria-label="#">#</a></h2>
+<p>STRATA cuts geometry into clusters and decides every frame which detail level to show for each piece of the scene. Without a visualisation none of that is visible: the image just looks like a normal render. The debug view draws exactly the clusters STRATA selected over the frame, so you can see where it refines, where it simplifies, and where something went wrong.</p>
+<p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-cluster.jpg" alt="Clusters: each in its own colour" loading="lazy"></p>
+<h2 id="what-it-draws">What it draws<a class="anchor" href="#what-it-draws" aria-label="#">#</a></h2>
+<p>The debug view uses the <strong>actually selected</strong> frontier, not a recomputed one: the clusters the last successful <code>prepareModel</code> wrote into the draw. Over the frame it can show:</p>
+<ul><li>the bounds (AABB) of each selected cluster;</li><li>a wireframe of each cluster's triangle edges;</li><li>a translucent fill in the cluster's colour;</li><li>the instance box, coloured by draw route.</li></ul>
+<p>Colour comes from one of four modes:</p>
+<div class="table"><table><thead><tr><th>Mode</th><th>What it shows</th></tr></thead><tbody><tr><td><code>Cluster</code></td><td>a stable colour per cluster; adjacent pieces differ</td></tr><tr><td><code>LodDepth</code></td><td>hierarchy depth: red = coarse root, blue = finest leaf</td></tr><tr><td><code>Error</code></td><td>the cluster's geometric error on a log scale</td></tr><tr><td><code>Material</code></td><td>the material or primitive partition</td></tr></tbody></table></div>
+<p>Instance boxes say a lot too: green = STRATA on the portable path, cyan = Vulkan GPU indirect (bounds only: that route has no CPU frontier), orange = a STRATA source that fell back to the normal render this frame, grey = not STRATA.</p>
+<p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg" alt="LOD levels: finest up close, coarse in the distance" loading="lazy"></p>
+<h2 id="presentation-only">Presentation only<a class="anchor" href="#presentation-only" aria-label="#">#</a></h2>
+<p>The view changes nothing in how STRATA works: it does not select LODs, touch routing, upload GPU data or read back GPU selections. It draws ordinary <code>Renderer3D</code> lines and triangles and is off by default. Code that configures <code>GeometryScene</code> turns it on:</p>
 <pre><code class="lang-cpp">scene.<span class="hl-fn">setStrataPortableRenderingEnabled</span>(<span class="hl-kw">true</span>);
-scene.<span class="hl-fn">setStrataDebugGeometryCaptureEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// до load: для каркаса и заливки</span>
+scene.<span class="hl-fn">setStrataDebugGeometryCaptureEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// before load: for wireframe and fill</span>
 scene.<span class="hl-fn">load</span>(<span class="hl-kw">device</span>, json, reader);
 strata::<span class="hl-ty">DebugViewOptions</span> debug;
 debug.enabled = <span class="hl-kw">true</span>;
 debug.clusterWireframe = <span class="hl-kw">true</span>;
 debug.color = strata::<span class="hl-ty">DebugColorMode</span>::<span class="hl-ty">LodDepth</span>;
 scene.<span class="hl-fn">setStrataDebugView</span>(debug);</code></pre>
-<h2 id="кадры-на-сайте">Кадры на сайте<a class="anchor" href="#кадры-на-сайте" aria-label="#">#</a></h2>
-<p>Сцена для кадров — процедурный рельеф (около 105 тыс. треугольников) и 20 камней (около 82 тыс. каждый), всего около 1,7 млн треугольников исходной геометрии. В кадре STRATA выбрала 15 280 кластеров: вблизи — мелкие кластеры финального уровня, к горизонту — всё более крупные. Сняты на Linux через OpenGL (Mesa llvmpipe), 1920×1080.</p>
-<p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg" alt="Тот же ракурс в обычном рендере" loading="lazy"></p>
-<h2 id="ограничения">Ограничения<a class="anchor" href="#ограничения" aria-label="#">#</a></h2>
-<ul><li>Каркасу и заливке нужны позиции вершин на CPU, а после загрузки на GPU они освобождаются. Поэтому захват включается <strong>до</strong> загрузки сцены и копирует позиции только источников STRATA. Без него рисуются только рамки.</li><li>На кадр есть потолок примитивов (по умолчанию 262 144 линии и 131 072 треугольника на все экземпляры); всё сверх него не рисуется и считается в статистике.</li><li>Показан один консервативный фронтир — общий для основной камеры и тени солнца, а не срез только под основную камеру.</li><li>Ни игровой хост, ни вьюпорт редактора пока не включают переносимый STRATA, поэтому режим доступен только из кода. Переключателя в редакторе и в MCP ещё нет.</li><li>Кадры не сняты на Metal и других GPU. Треугольники сцены упорядочены по коду Мортона: на исходном порядке процедурной сетки кластеры получались полосами — это стоит проверить на реальных ассетах.</li></ul>
-<p>Подробнее — в <a href="docs-strata.html#debug-visualisation-of-clusters-and-geometry-2026-11-21">документации STRATA</a>.</p></article><section class="sp-sec sp-others"><p class="eyebrow">Ещё в STRATA</p><div class="chips"><a class="chip" href="system-strata.html#inc">Builder</a><a class="chip" href="system-strata.html#inc">Выбор LOD</a><a class="chip" href="system-strata.html#inc">Резидентность</a><a class="chip" href="system-strata.html#inc">Рендер</a><a class="chip" href="system-strata.html#inc">Инструменты</a><a class="chip chip-ink" href="system-strata-debug-view.html">Отладочный вид</a></div><p><a class="btn btn-line" href="system-strata.html">← STRATA</a></p></section><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+<h2 id="the-frames-on-this-site">The frames on this site<a class="anchor" href="#the-frames-on-this-site" aria-label="#">#</a></h2>
+<p>The scene is procedural terrain (about 105 k triangles) and 20 rocks (about 82 k each), about 1.7 M source triangles in total. STRATA selected 15,280 clusters in the frame: small finest-level clusters up close, increasingly coarse ones towards the horizon. Captured on Linux through OpenGL (Mesa llvmpipe) at 1920×1080.</p>
+<p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg" alt="The same view in the normal render" loading="lazy"></p>
+<h2 id="limits">Limits<a class="anchor" href="#limits" aria-label="#">#</a></h2>
+<ul><li>Wireframe and fill need CPU vertex positions, which are released after the GPU upload. The capture is therefore turned on <strong>before</strong> the scene loads and copies positions of STRATA sources only. Without it only bounds are drawn.</li><li>Each frame has a primitive cap (262,144 lines and 131,072 triangles by default, shared by all instances); anything above it is not drawn and is counted in the stats.</li><li>The view shows one conservative frontier shared by the main camera and the sun shadow, not a main-camera-only cut.</li><li>Neither a game host nor the editor viewport enables portable STRATA yet, so the view is reachable from code only. There is no editor or MCP toggle yet.</li><li>Not captured on Metal or other GPUs. Scene triangles are Morton-ordered: with the procedural mesh's original order clusters came out as strips — worth checking on real assets.</li></ul>
+<p>More in the <a href="docs-strata.html#debug-visualisation-of-clusters-and-geometry-2026-11-21">STRATA documentation</a>.</p></article><section class="sp-sec sp-others"><p class="eyebrow">More in STRATA</p><div class="chips"><a class="chip" href="system-strata.html#inc">Builder</a><a class="chip" href="system-strata.html#inc">LOD selection</a><a class="chip" href="system-strata.html#inc">Residency</a><a class="chip" href="system-strata.html#inc">Rendering</a><a class="chip" href="system-strata.html#inc">Tools</a><a class="chip chip-ink" href="system-strata-debug-view.html">Debug view</a></div><p><a class="btn btn-line" href="system-strata.html">← STRATA</a></p></section><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
 </main>
 
 <footer class="dark">
 <div class="wrap foot">
 <a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
 <div class="foot-cols">
-<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
-<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
 </div>
 <small>MIT License · AIVERSE</small>
 </div>

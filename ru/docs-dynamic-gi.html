@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUMA: динамический непрямой свет — AIVERSE</title>
+<meta name="description" content="Непрямой свет одним отскоком на CPU и GPU.">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
+<link rel="alternate icon" href="../favicon.ico">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<meta name="theme-color" content="#F3EFE8">
+<link rel="alternate" hreflang="en" href="../docs-dynamic-gi.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Системы</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="gallery.html" data-nav="gallery">Галерея</a>
+<a href="devlog.html" data-nav="devlog">Ход разработки</a>
+<a href="blog.html" data-nav="blog">Блог</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Документация</a>
+</div>
+<a class="lang-switch" href="../docs-dynamic-gi.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap docs-main">
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html" aria-current="page">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/dynamic-gi.md">исходный документ</a>.</p><h1 id="luma-динамический-непрямой-свет">LUMA: динамический непрямой свет<a class="anchor" href="#luma-динамический-непрямой-свет" aria-label="#">#</a></h1>
+<p>LUMA добавляет к обычному прямому освещению один отскок рассеянного света через сетку проб. Режим явный: сам по себе он не включается, не забирает себе прямое освещение и ничего не пишет в состояние симуляции или ECS.</p>
+<h2 id="подключение-из-нативного-кода">Подключение из нативного кода<a class="anchor" href="#подключение-из-нативного-кода" aria-label="#">#</a></h2>
+<p>Для трассировки на CPU с бюджетом времени — <code>engine/render/GiMainCpuBridge.h</code>, для ограниченных вычислений на Metal/Vulkan — <code>engine/render/GiMainGpuBridge.h</code>. Оба принимают неизменяемый <code>GiChunkedGeometrySnapshot</code>, стабильные ревизии геометрии, источники <code>GiMovingLight</code> в линейном RGB и необязательный <code>GiEnvironmentLight</code>, который влияет только на непрямой свет. Рабочий пример нативного хоста — <code>apps/renderbench/DynamicGiHost.h</code>.</p>
+<ol><li>Пока массивы мешей на CPU ещё не освобождены, соберите неизменяемые блоки непрозрачных отбрасывателей с диффузным альбедо материала. Бенчмарк сохраняет CPU-геометрию у анимированных ассетов, для которых это включено, и сам публикует блоки в текущей позе.</li><li>Создайте фиксированную решётку проб. GPU поддерживает до 8192 треугольников, 16 источников, 32 проб за вызов и 8–64 луча на пробу. CPU поддерживает 8–128 лучей и сам подстраивает число проб за кадр. Решётка ограничена 20000 проб. Бюджет CPU — цель планировщика, а не гарантия времени кадра для отдельного луча.</li><li>В потоке рендера опубликуйте снимки геометрии, света и окружения и обновите их до графических проходов. Публикация на GPU требует активного кадра устройства. Отложенные публикации повторяйте после того, как завершатся прежние барьеры вычислений <strong>и графических читателей</strong>. Отклонённые исходные данные нельзя выдавать за текущие.</li><li>Вызовите <code>renderer.beginScene(...)</code>, затем <code>renderer.setDynamicGiOverlay(bridge)</code> для каждого вида. <code>beginScene</code> снимает прежнее подключение. Мост должен жить дольше всех отправленных отрисовок. Материалы Shader Graph с текстурами отдают tex13 под GI и сдвигают свои сэмплеры на tex14+. Пока GI подключён, GPU-инстансинг и ICB рисуются обычными вызовами. PBR-материалы поддерживают High/Low и умножают GI на AO материала.</li><li>Рельеф и собственные конвейеры привязывают GI после выбора шейдера: полный встроенный рельеф — U6/tex21; компактный рельеф уровня 0 — только tex8, без запечённого света, детали и трассировки. Обычные модели и свои сэмплеры — tex13.</li><li>Отключите приёмники, дождитесь настоящего простоя GPU, затем вызовите <code>shutdownAfterGpuIdle()</code> до уничтожения устройства. Возраст кадра на CPU не заменяет завершения работы GPU.</li></ol>
+<p>Завершение работы планировщика на GPU подтверждается барьерами. <code>computeDispatchSucceeded()</code> значит, что команды записаны, а не что GPU их выполнил. При частично прошедшей загрузке результат остаётся скрытым, а геометрия восстанавливается целиком. Отказы по разным источникам независимы: обновление окружения не возвращает отклонённые источники света.</p>
+<h2 id="рецепт-для-renderbench">Рецепт для renderbench<a class="anchor" href="#рецепт-для-renderbench" aria-label="#">#</a></h2>
+<p>Добавьте в сцену нативного renderbench необязательный объект <code>dynamicGI</code>:</p>
+<pre><code class="lang-json"><span class="hl-key">&quot;dynamicGI&quot;</span>: {
+  <span class="hl-key">&quot;backend&quot;</span>: <span class="hl-str">&quot;auto&quot;</span>,
+  <span class="hl-key">&quot;origin&quot;</span>: [<span class="hl-num">-12</span>, <span class="hl-num">0</span>, <span class="hl-num">-6</span>],
+  <span class="hl-key">&quot;dimensions&quot;</span>: [<span class="hl-num">8</span>, <span class="hl-num">4</span>, <span class="hl-num">4</span>],
+  <span class="hl-key">&quot;spacing&quot;</span>: <span class="hl-num">3</span>,
+  <span class="hl-key">&quot;samples&quot;</span>: <span class="hl-num">32</span>,
+  <span class="hl-key">&quot;distance&quot;</span>: <span class="hl-num">20</span>,
+  <span class="hl-key">&quot;cascades&quot;</span>: <span class="hl-num">1</span>,
+  <span class="hl-key">&quot;cpuBudgetMs&quot;</span>: <span class="hl-num">2</span>,
+  <span class="hl-key">&quot;sunDirection&quot;</span>: [<span class="hl-num">0.35</span>, <span class="hl-num">1</span>, <span class="hl-num">0.55</span>],
+  <span class="hl-key">&quot;sunColor&quot;</span>: [<span class="hl-num">1</span>, <span class="hl-num">0.96</span>, <span class="hl-num">0.9</span>],
+  <span class="hl-key">&quot;sunIntensity&quot;</span>: <span class="hl-num">3</span>,
+  <span class="hl-key">&quot;skyIntensity&quot;</span>: <span class="hl-num">0</span>
+}</code></pre>
+<p><code>auto</code> использует вычисления на GPU, только если это позволяют устройство и сцена; иначе вся геометрия остаётся на CPU. <code>gpu</code> явно завершится ошибкой, если GPU-путь недоступен; <code>cpu</code> принудительно включает переносимый путь. Источники не обрезаются молча. Точечные источники рецепта переводятся из хранимого рендером sRGB обратно в линейный цвет. Цвета окружения выше уже линейные и влияют только на непрямой свет; настройки прямого солнца и неба неявно не копируются.</p>
+<p>Геометрия делится на пространственные блоки размером примерно с <code>distance</code>. На GPU резидентны только блоки, до которых может дотянуться луч GI (<code>GiGpuResidencyPlanner</code>), поэтому мир больше бюджета в 8192 треугольника остаётся на GPU, пока достижимая часть в него помещается. <code>cascades</code> (1..3, только GPU) добавляет вложенные решётки вокруг того же центра: каскад k имеет шаг <code>spacing</code>·2^k и дальность <code>distance</code>·2^k. Все каскады делят один атлас GI (texture 13, U6 — девять float4). Точка берёт самый мелкий каскад, в который попадает, и плавно переходит в следующий у его края.</p>
+<p>Бенчмарк ждёт начальной сходимости перед замеряемыми кадрами и сообщает <code>dynamicGiBackend</code>, <code>dynamicGiFallback</code>, <code>dynamicGiTriangles</code> и <code>dynamicGiConvergenceMs</code>. GI подключается заново для каждого вида камеры.</p>
+<p>Бенчмарк не допускает одновременно <code>probeGI</code>/<code>staticPointBounce</code>: эти рецепты используют те же источники. Его экранный диффузный отскок выключен, пока активен dynamicGI. Прямое освещение и постобработка остаются независимыми. Анимированные ассеты используют одну позу на рендер, непрямой GI и тени LUMA. Проверочный хост держит эту позу, пока GI не сойдётся, и не претендует на задержку переноса света для анимации в реальном времени. Тайминги отправленных кадров не включают обновления только ради сходимости (см. <code>lightingCadence</code>). Интеграция в редактор — отдельный этап.</p>
+<h2 id="проверка-и-ограничения">Проверка и ограничения<a class="anchor" href="#проверка-и-ограничения" aria-label="#">#</a></h2>
+<p>Все сборки и временные каталоги компилятора для этой работы лежат на KINGSTON: <code>/Volumes/KINGSTON/AIVERSE/Builds/.temp/lighting-completion-20261120</code>. Зарегистрированные проверки запускаются командой <code>./run-tests.sh --no-build --build-dir &lt;root&gt;/build --filter &#x27;^lighting_&#x27;</code> после сборки нужных целей. Включите <code>AIVERSE_BUILD_HDR_TESTS</code>, <code>AIVERSE_BUILD_RENDERBENCH</code>, <code>AIVERSE_BUILD_TESTS</code>; <code>AIVERSE_VULKAN</code> дополнительно собирает тесты компиляции SPIR-V.</p>
+<p>Пиксельные тесты на Metal и настольном GL покрывают модели и рельеф как приёмники, сброс для каждого вида, удаление и возврат источников и совпадение CPU и GPU. Приёмка нативного хоста загружает настоящий glTF, проверяет итоговый JSON и сравнивает снятый RGB, так что нулевой код выхода окна не скроет ошибку сцены. Бэкенд Vulkan и SPIR-V для GI компилируются локально; выполнение на GPU через Vulkan на этом Mac не проверено (нет загрузчика). Проверка компактного шейдера на настольном GL — не утверждение о производительности на устройствах с GLES.</p>
+<p>Это ограниченная интерполяция L1 первого отскока, а не многоотскоковый path tracing, не GI отражений, не потоковая загрузка бесконечного мира, не перенос проб и не защита от всех утечек света сквозь тонкие стены. Производительность и приёмка на мобильных устройствах и Vulkan — отдельные этапы; качество по умолчанию не менялось.</p>
+<h2 id="снимки-геометрии-в-позе">Снимки геометрии в позе<a class="anchor" href="#снимки-геометрии-в-позе" aria-label="#">#</a></h2>
+<p><code>giModelGeometry(model, objectTransform, &amp;pose)</code> из <code>GiModelGeometry.h</code> снимает непрозрачные отбрасыватели с жёсткой анимацией узлов, позициями морфов и нормализованными байтовыми весами скиннинга. Он использует <code>worldMatrices</code> / <code>paletteMatrices</code>; преобразования суставов скиннинга заданы в пространстве модели, поэтому трансформ узла меша не применяется дважды. Морфы идут до скиннинга. Для моделей, чьи снимки пересобираются после загрузки, сохраняйте на CPU вершины, индексы, дельты морфов и образцы изображений через <code>uploadModel(..., true)</code>. Без данных позы или морфов снимок отклоняется, а не застывает молча в позе привязки.</p>
+<p>Публикуйте результат как замену блока в <code>GiChunkedGeometryBuilder</code>; старые снимки сохраняют прежнюю геометрию для трассировки, которая уже идёт. Адаптер даёт снимок, но не планирование и не автоматическое отслеживание хоста. Альфа-маски, прозрачные поверхности и смещение вершин в Shader Graph этим приближением непрозрачными треугольниками не передаются. Альбедо текстуры берётся ограниченным усреднением.</p>
+<p>Нативный хост <code>AnimatedLightingGeometry</code> переиспользует неизменённые статичные блоки и пересобирает только блоки анимированных отбрасывателей. Он публикует монотонные ревизии и для GI на CPU/GPU, и для LUMA. Отчёты показывают animatedLightingCasters, lightingGeometryRevision и lightingSnapshotTriangles. Ошибка вместимости геометрии отклоняет вид; актёры никогда молча не выбрасываются, чтобы влезть в бюджет GPU. <code>bake:false</code> сохраняет явное исключение ассета из отбрасывателей. Этот хост с фиксированной нагрузкой держит выбранную позу, пока идут вычисления и сходимость, и затем рисует ту же позу; игровой хост выбирает и измеряет частоту обновления сам.</p>
+<h2 id="настройка-в-studio">Настройка в Studio<a class="anchor" href="#настройка-в-studio" aria-label="#">#</a></h2>
+<p>Необязательный блок карты <code>renderLighting</code> версии 1 проверяет RenderLightingSettings. Панель Lighting в Studio поддерживает сохранение, отмену и повтор. RenderLightingRuntime использует общие владельцы DynamicGiHost и LumaHost; вьюпорт рисует существующие прокси рельефа и документа как PBR-геометрию. Это не полное совпадение с предпросмотром игровых ассетов. Панель показывает фактический бэкенд, сходимость и откат.</p>
+<h2 id="экспериментальный-metal-icb">Экспериментальный Metal ICB<a class="anchor" href="#экспериментальный-metal-icb" aria-label="#">#</a></h2>
+<p>Texture13 динамического GI входит в буфер аргументов фрагментного шейдера Metal ICB; U6 сохраняется вместе с другими юниформами каждой отправки. Оба источника GI, CPU и GPU, проходят аналитические пиксельные тесты с настоящими отправками команд, записанными на GPU. Это не включает экспериментальный ICB по умолчанию и не говорит о производительности ICB во всём движке.</p>
+<h2 id="воспроизводимые-замеры-release">Воспроизводимые замеры Release<a class="anchor" href="#воспроизводимые-замеры-release" aria-label="#">#</a></h2>
+<p><code>tools/renderbench/lighting_release_acceptance.py --binary &lt;arm64-renderbench&gt; --scene &lt;GI-scene.json&gt; --output &lt;каталог-артефактов-на-KINGSTON&gt;</code> записывает последовательность ВЫКЛ/ВКЛ/ВЫКЛ: 30 кадров прогрева и 120 замеряемых, камера и поза фиксированы. Запись кадра на CPU, кадр CPU и выполнение на GPU выводятся отдельно от загрузки и сходимости GI. Отчёты не-Release, не-arm64 и неполные отклоняются; темп окна нельзя выдавать за FPS. Для прямого освещения используйте <code>--feature luma</code>.</p>
+<h2 id="совместная-работа-ресурсов-в-main-2026-11-20">Совместная работа ресурсов в main (2026-11-20)<a class="anchor" href="#совместная-работа-ресурсов-в-main-2026-11-20" aria-label="#">#</a></h2>
+<p>Модели без виртуальных материалов сохраняют GI на texture13/U6. Если материал использует виртуальную выборку, его атлас, таблица страниц и U6 остаются как есть; GI занимает U7 и первую текстуру после таблицы (после альфа-покрытия, если оно есть). Источники Shader Graph остаются на 13+ для виртуальных материалов и сдвигаются на 14+ для невиртуальных материалов с GI. Переполнение ресурсов отклоняет конвейер с явной диагностикой. Виртуальный материал + GI и граф + GI отправляются обычным путём через CPU; экспериментальный ICB сохраняет ранее проверенный ABI GI для простого PBR. Эти откаты дают то же затенение на GPU, а не второй решатель освещения.</p>
+<p>GI на Vulkan использует общий ABI вычислений TextureResources: буферы 12..15, образ хранилища 0 и блок юниформ std140 16 через bindComputeStorageTexture и dispatchChecked. Отдельного конкурирующего бэкенда вычислений на Vulkan больше нет. GLSL рельефа выдаёт буквальные имена сэмплеров для транслятора привязок Vulkan. Подготовленные кадры рельефа LENS ставят варианты конвейера GI до публикации; обратные вызовы хранят неизменяемые привязки текстур, а не изменяемых владельцев.</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/dynamic-gi.md">Исходник на GitHub: docs/dynamic-gi.md</a></p></article><aside class="doc-toc" aria-label="На странице"><span>На странице</span><a class="toc-2" href="#подключение-из-нативного-кода">Подключение из нативного кода</a><a class="toc-2" href="#рецепт-для-renderbench">Рецепт для renderbench</a><a class="toc-2" href="#проверка-и-ограничения">Проверка и ограничения</a><a class="toc-2" href="#снимки-геометрии-в-позе">Снимки геометрии в позе</a><a class="toc-2" href="#настройка-в-studio">Настройка в Studio</a><a class="toc-2" href="#экспериментальный-metal-icb">Экспериментальный Metal ICB</a><a class="toc-2" href="#воспроизводимые-замеры-release">Воспроизводимые замеры Release</a><a class="toc-2" href="#совместная-работа-ресурсов-в-main-2026-11-20">Совместная работа ресурсов в main (2026-11-20)</a></aside></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
+</body>
+</html>

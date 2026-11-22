@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VIVID: Character Creator и MetaHuman — AIVERSE</title>
-<meta name="description" content="Редактор внешности цифровых людей в Studio и адаптер экспорта MetaHuman.">
+<title>VIVID: Character Creator and MetaHuman — AIVERSE</title>
+<meta name="description" content="The digital-human appearance editor in Studio and the MetaHuman export adapter.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="alternate icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#F3EFE8">
-<link rel="alternate" hreflang="en" href="en/docs-vivid-creator.html">
+<link rel="alternate" hreflang="ru" href="ru/docs-vivid-creator.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,25 +18,25 @@
 </head>
 <body>
 <header class="top">
-<nav class="wrap" aria-label="Главное меню">
+<nav class="wrap" aria-label="Main menu">
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
-<a href="./#systems" data-nav="systems">Системы</a>
-<a href="./#genres" data-nav="genres">Жанры</a>
-<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
-<a href="releases.html" data-nav="releases">Релизы</a>
-<a href="gallery.html" data-nav="gallery">Галерея</a>
-<a href="devlog.html" data-nav="devlog">Ход разработки</a>
-<a href="blog.html" data-nav="blog">Блог</a>
-<a href="docs.html" data-nav="docs" aria-current="page">Документация</a>
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Docs</a>
 </div>
-<a class="lang-switch" href="en/docs-vivid-creator.html" hreflang="en" lang="en">EN</a>
+<a class="lang-switch" href="ru/docs-vivid-creator.html" hreflang="ru" lang="ru">RU</a>
 <a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
 </nav>
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html" aria-current="page">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><h1 id="vivid-character-creator-и-адаптер-metahuman">VIVID Character Creator и адаптер MetaHuman<a class="anchor" href="#vivid-character-creator-и-адаптер-metahuman" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="ds-box"><input class="ds-input" type="search" placeholder="Search the docs  /" aria-label="Search the docs  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html" aria-current="page">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="ru"><p class="doc-note">This document is maintained in Russian.</p><h1 id="vivid-character-creator-и-адаптер-metahuman">VIVID Character Creator и адаптер MetaHuman<a class="anchor" href="#vivid-character-creator-и-адаптер-metahuman" aria-label="#">#</a></h1>
 <p>Character Creator — редактор внешности цифрового человека в AIVERSE Studio. Он работает с персонажем проекта (glTF / GLB / FBX) или с процедурной ДНК VIVID и показывает результат в нативном вьюпорте. Открывается в рабочем пространстве <strong>Character</strong> (⌘7 или вкладка вверху).</p>
 <p><img src="https://raw.githubusercontent.com/chromealex/AIVERSE/main/docs/devlog/media/2026-11-22-vivid-creator-metahuman/metahuman-adapter.jpg" alt="Адаптер MetaHuman в Studio" loading="lazy"></p>
 <h2 id="быстрый-старт">Быстрый старт<a class="anchor" href="#быстрый-старт" aria-label="#">#</a></h2>
@@ -51,20 +51,20 @@
 <p><strong>Не поддерживается:</strong> полный RigLogic (корректоры bulge, in/out, fwd/bck стоят в bind pose), анимация остальных лицевых костей (мимика идёт через морфы), грум прядями (только карточки), чтение <code>.dna</code> в игре (только офлайн-инструмент <code>tools/vivid-dna-import</code>). GLB со сжатием Draco распакуйте офлайн: <code>node tools/vivid-dna-import/decompress_draco.cjs &lt;tooling&gt; in.glb out.glb</code>.</p>
 <h2 id="для-агентов-mcp">Для агентов (MCP)<a class="anchor" href="#для-агентов-mcp" aria-label="#">#</a></h2>
 <ul><li><code>human_metahuman_check {path, save_look?}</code> — отчёт адаптера и образ с ролями.</li><li><code>human_look_schema</code>, <code>human_look_list</code>, <code>human_look_get</code>, <code>human_look_save</code> — образы.</li><li><code>studio_character_snapshot {view}</code> — PNG вьюпорта Character Creator (Studio должна быть открыта).</li><li><code>human_schema</code>, <code>human_create</code>, <code>human_edit</code> … — процедурная ДНК VIVID.</li></ul>
-<p>Подробный журнал разработки: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/vivid.md">vivid.md</a>.</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/vivid-creator.md">Исходник на GitHub: docs/vivid-creator.md</a></p></article><aside class="doc-toc" aria-label="На странице"><span>На странице</span><a class="toc-2" href="#быстрый-старт">Быстрый старт</a><a class="toc-2" href="#категории">Категории</a><a class="toc-2" href="#адаптер-metahuman">Адаптер MetaHuman</a><a class="toc-2" href="#для-агентов-mcp">Для агентов (MCP)</a></aside></div>
+<p>Подробный журнал разработки: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/vivid.md">vivid.md</a>.</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/vivid-creator.md">Source on GitHub: docs/vivid-creator.md</a></p></article><aside class="doc-toc" aria-label="On this page"><span>On this page</span><a class="toc-2" href="#быстрый-старт">Быстрый старт</a><a class="toc-2" href="#категории">Категории</a><a class="toc-2" href="#адаптер-metahuman">Адаптер MetaHuman</a><a class="toc-2" href="#для-агентов-mcp">Для агентов (MCP)</a></aside></div>
 </main>
 
 <footer class="dark">
 <div class="wrap foot">
 <a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
 <div class="foot-cols">
-<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
-<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
 </div>
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+<script>window.DS_L={"none": "Nothing found"};</script><script>
 (function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
 function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
 function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}

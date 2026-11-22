@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Интерфейс игры — Меню и HUD на HTML и CSS · AIVERSE</title>
-<meta name="description" content="Меню, HUD, миникарта и пауза — документы RmlUi в разметке и стилях, а не код.">
+<title>Game UI — Menus and HUD in HTML and CSS · AIVERSE</title>
+<meta name="description" content="Menus, the HUD, the minimap and pause are RmlUi documents in markup and styles, not code.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="alternate icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#F3EFE8">
-<link rel="alternate" hreflang="en" href="en/system-ui.html">
+<link rel="alternate" hreflang="ru" href="ru/system-ui.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,33 +18,33 @@
 </head>
 <body>
 <header class="top">
-<nav class="wrap" aria-label="Главное меню">
+<nav class="wrap" aria-label="Main menu">
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
-<a href="./#systems" data-nav="systems" aria-current="page">Системы</a>
-<a href="./#genres" data-nav="genres">Жанры</a>
-<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
-<a href="releases.html" data-nav="releases">Релизы</a>
-<a href="gallery.html" data-nav="gallery">Галерея</a>
-<a href="devlog.html" data-nav="devlog">Ход разработки</a>
-<a href="blog.html" data-nav="blog">Блог</a>
-<a href="docs.html" data-nav="docs">Документация</a>
+<a href="./#systems" data-nav="systems" aria-current="page">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
 </div>
-<a class="lang-switch" href="en/system-ui.html" hreflang="en" lang="en">EN</a>
+<a class="lang-switch" href="ru/system-ui.html" hreflang="ru" lang="ru">RU</a>
 <a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
 </nav>
 </header>
 
 <main class="wrap">
-<section class="sp-hero"><p class="crumbs"><a href="./#core">Системы движка</a> / Интерфейс игры</p><div class="sp-title"><h1>Интерфейс игры</h1></div><p class="sp-tag">Меню и HUD на HTML и CSS</p><p class="sp-lead">Меню, HUD, миникарта и пауза — документы RmlUi в разметке и стилях, а не код.</p><div class="actions"><a class="btn btn-ink" href="https://github.com/chromealex/AIVERSE/blob/main/docs/ui-scripting.md">Статья о разработке</a></div></section><figure class="sp-cover"><img src="media/docs/devlog/media/systems/ui-mushrooms-hud.jpg" alt="HUD шаблона «Грибная битва»: счёт, таймер, миникарта и кнопки на RmlUi"><figcaption>HUD шаблона «Грибная битва»: счёт, таймер, миникарта и кнопки на RmlUi</figcaption></figure><section class="sp-sec" id="inc"><h2 class="h2">Что входит</h2><div class="grid sp-inc"><article class="card"><h3>HTML и CSS</h3><p>Разметка .rml и стили .rcss; игра заменяет любой файл своим.</p></article><article class="card"><h3>Скины</h3><p>Свои цвета, рамки и шрифты на игру; портретная раскладка для телефонов.</p></article><article class="card"><h3>Масштаб</h3><p>Размеры в dp, крупные кнопки на сенсорных экранах.</p></article><article class="card"><h3>Языки</h3><p>Тексты ключами, смена языка перезагружает документы.</p></article><article class="card"><h3>Экранная клавиатура</h3><p>Своя клавиатура с раскладками для полей ввода на телефонах.</p></article></div></section><section class="sp-sec"><h2 class="h2">Что позволяет делать</h2><ul class="sp-ena"><li>Сменить весь интерфейс игры одним файлом стилей.</li><li>Перевести игру на любой язык без правки разметки.</li><li>Дать агенту верстать экраны как веб-страницы.</li></ul></section><section class="sp-sec sp-others"><p class="eyebrow">Другие системы</p><div class="chips"><a class="chip" href="system-navigation.html">Навигация и толпы</a><a class="chip" href="system-network.html">Сеть и сервер</a><a class="chip" href="system-physics.html">Физика и ткань</a><a class="chip" href="system-ecs.html">ECS и симуляция</a><a class="chip" href="system-shadergraph.html">Shader Graph</a><a class="chip" href="system-lightbake.html">Запекание света</a><a class="chip" href="system-world.html">Дороги и город</a><a class="chip" href="system-planets.html">Планеты и генерация карт</a><a class="chip" href="system-voxel.html">Воксельные миры</a><a class="chip" href="system-inputflow.html">InputFlow</a><a class="chip chip-ink" href="system-ui.html">Интерфейс игры</a><a class="chip" href="system-audio.html">Звук</a><a class="chip" href="system-studio.html">Studio — редактор</a><a class="chip" href="system-agents.html">MCP и навыки агентов</a><a class="chip" href="system-import.html">Импорт из Unity и Godot</a><a class="chip" href="system-build.html">Сборка и платформы</a><a class="chip" href="system-meta.html">Мета и LiveOps</a><a class="chip" href="system-gameplay.html">Жанры и механики</a></div></section>
+<section class="sp-hero"><p class="crumbs"><a href="./#core">Engine systems</a> / Game UI</p><div class="sp-title"><h1>Game UI</h1></div><p class="sp-tag">Menus and HUD in HTML and CSS</p><p class="sp-lead">Menus, the HUD, the minimap and pause are RmlUi documents in markup and styles, not code.</p><div class="actions"><a class="btn btn-ink" href="https://github.com/chromealex/AIVERSE/blob/main/docs/ui-scripting.md">Development article</a></div></section><figure class="sp-cover"><img src="media/docs/devlog/media/systems/ui-mushrooms-hud.jpg" alt="The HUD of the Mushroom Battle template: score, timer, minimap and buttons in RmlUi"><figcaption>The HUD of the Mushroom Battle template: score, timer, minimap and buttons in RmlUi</figcaption></figure><section class="sp-sec" id="inc"><h2 class="h2">What is inside</h2><div class="grid sp-inc"><article class="card"><h3>HTML and CSS</h3><p>.rml markup and .rcss styles; a game replaces any file with its own.</p></article><article class="card"><h3>Skins</h3><p>Colours, borders and fonts per game; a portrait layout for phones.</p></article><article class="card"><h3>Scale</h3><p>Sizes in dp, bigger buttons on touch screens.</p></article><article class="card"><h3>Languages</h3><p>Texts are keys, switching the language reloads the documents.</p></article><article class="card"><h3>On-screen keyboard</h3><p>Its own keyboard with layouts for input fields on phones.</p></article></div></section><section class="sp-sec"><h2 class="h2">What it lets you do</h2><ul class="sp-ena"><li>Restyle a whole game with one stylesheet.</li><li>Translate a game into any language without touching markup.</li><li>Let an agent lay out screens like web pages.</li></ul></section><section class="sp-sec sp-others"><p class="eyebrow">Other systems</p><div class="chips"><a class="chip" href="system-navigation.html">Navigation and crowds</a><a class="chip" href="system-network.html">Networking and server</a><a class="chip" href="system-physics.html">Physics and cloth</a><a class="chip" href="system-ecs.html">ECS and simulation</a><a class="chip" href="system-shadergraph.html">Shader Graph</a><a class="chip" href="system-lightbake.html">Baked lighting</a><a class="chip" href="system-world.html">Roads and the city</a><a class="chip" href="system-planets.html">Planets and map generation</a><a class="chip" href="system-voxel.html">Voxel worlds</a><a class="chip" href="system-inputflow.html">InputFlow</a><a class="chip chip-ink" href="system-ui.html">Game UI</a><a class="chip" href="system-audio.html">Audio</a><a class="chip" href="system-studio.html">Studio editor</a><a class="chip" href="system-agents.html">MCP and agent skills</a><a class="chip" href="system-import.html">Import from Unity and Godot</a><a class="chip" href="system-build.html">Builds and platforms</a><a class="chip" href="system-meta.html">Meta and LiveOps</a><a class="chip" href="system-gameplay.html">Genres and mechanics</a></div></section>
 </main>
 
 <footer class="dark">
 <div class="wrap foot">
 <a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
 <div class="foot-cols">
-<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
-<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
 </div>
 <small>MIT License · AIVERSE</small>
 </div>
