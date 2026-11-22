@@ -27,7 +27,7 @@ namespace aiverse { class Simulation; class Hasher; class Archive; struct Comman
 
 namespace aiverse::game {
 
-// A walker waiting at the kerb for vehicles (RtsPedestrianVehicles.inc; kept only in games with traffic, which
+// A walker waiting at the kerb for vehicles (PedestrianVehicles.inc; kept only in games with traffic, which
 // registers it).
 // reason: 0 walking, 1 a vehicle is coming, 2 peeking past a parked one.
 struct CrossingWait {

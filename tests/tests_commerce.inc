@@ -161,7 +161,7 @@ TEST(commerce_lua_table_and_games_without_it) {
     rules.set("scripts", list);
     rules.set("$scriptSources", src);
     SimConfig cfg;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parse(commerceMap(kPremises)));
     for (int i = 0; i < 5; ++i) sim->step();
     for (auto& e : mod(*sim).scripts()->log()) if (e.error) std::printf("  log: %s\n", e.text.c_str());
@@ -181,7 +181,7 @@ TEST(commerce_staff_manager_customers_and_purchases) {
     com2.set("offers", Json::parse(R"({"van": {"kinds": ["dealer"], "price": 700, "vehicle": "van"}, "pistol": {"kinds": ["gunshop"], "price": 50, "weapon": "pistol", "ammo": 12}})"));
     rules.set("commerce", com2);
     SimConfig cfg;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parse(commerceMap(R"([{"id":"s","kind":"shop","at":[5,5],"price":4000,"rentWeek":0,"owner":1,"business":"store"},
         {"id":"cars","kind":"dealer","at":[9,5],"price":1,"public":true},{"id":"guns","kind":"gunshop","at":[12,5],"price":1,"public":true}])")));
     auto& c = com(*sim);
@@ -228,7 +228,7 @@ TEST(commerce_staff_manager_customers_and_purchases) {
     // saved with staff, a car and customers served
     c.visit(*sim, 0);
     std::string save = sim->serialize(), err;
-    auto copy = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto copy = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     copy->setup(rules, Json::parse(commerceMap(R"([{"id":"s","kind":"shop","at":[5,5],"price":4000,"rentWeek":0,"owner":1,"business":"store"},
         {"id":"cars","kind":"dealer","at":[9,5],"price":1,"public":true},{"id":"guns","kind":"gunshop","at":[12,5],"price":1,"public":true}])")));
     CHECK(copy->deserialize(save, &err) && copy->checksum() == sim->checksum());
@@ -269,7 +269,7 @@ TEST(commerce_accounts_outlive_the_seat) {
     const std::string map = commerceMap(R"([{"id":"kiosk","kind":"shop","at":[5,5],"price":500,"rentWeek":70},
         {"id":"own","kind":"office","at":[9,5],"price":400,"rentWeek":50}])");
     SimConfig cfg;
-    auto make = [&] { auto s = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>()); s->setup(rules, Json::parse(map)); return s; };
+    auto make = [&] { auto s = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>()); s->setup(rules, Json::parse(map)); return s; };
     auto sim = make();
     auto& c = com(*sim);
     auto* st = c.store(*sim);

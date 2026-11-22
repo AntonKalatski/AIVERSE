@@ -64,7 +64,7 @@ Sample: `templates/topdown_arena` ("Scrapyard Arena").
   the hero and its squad (in their ring slots) move there, `kEvGroupTeleport` fires per unit at the departure
   (value 2) and the arrival (value 0), and `cooldown` starts (per player, kept across hero replacement). State,
   HP and statuses stay; there is no invulnerability. Losing focus cancels the preview.
-- **Bots.** `RtsAI` steers its hero with the same commands (`TopDown::botCommand`): walk (path around walls) to
+- **Bots.** `ComputerPlayer` steers its hero with the same commands (`TopDown::botCommand`): walk (path around walls) to
   the nearest hostile, preferring armed ones, stop inside 85% of the weapon range so auto-fire works, give ground
   to armed foes closer than 35%.
 - **Raid bots and other AI** never give a hero move / attack orders (it ignores them): `TopDown::steerCommand(goal,
@@ -74,7 +74,7 @@ Sample: `templates/topdown_arena` ("Scrapyard Arena").
   + 2.5, with wall probes at 45 / 90 / 135 degrees; a hostile telegraph area (rules `encounters`) in windup or active
   that covers the hero outweighs everything: it steps out (away from a circle / cone origin, sideways off a line, to
   the nearer edge of a ring). Otherwise the hero stands and auto-fires. The raid bot
-  (`RtsRaidBot.cpp`) uses it for objectives, kills, loot and extraction, keeps kiting before the raid starts and while
+  (`RaidBot.cpp`) uses it for objectives, kills, loot and extraction, keeps kiting before the raid starts and while
   it waits for a called point, and re-steers every 3 ticks. With rules `progression` it first walks over xp orbs
   within 14 units and, with a level banked and offers at circles, to the nearest summon circle
   (`Progression::botGoal`). Skirmish bots (`botCommand`) do the same only with `"bot": {"progression": true}`.
@@ -82,7 +82,7 @@ Sample: `templates/topdown_arena` ("Scrapyard Arena").
   fields in `RtsSave`. Games without the block keep their checksums and save layout; so do top-down games that use
   none of squad / escape / hold / windups / free fire (`rules.extended`: only then is the extra pilot state — held
   button, windup, escape cooldown, squad — hashed and saved). Planets are not supported.
-- **Outcome.** `RtsModule` freezes the match outcome at the end of the first tick with a result (`MatchOutcome`
+- **Outcome.** `GameCore` freezes the match outcome at the end of the first tick with a result (`MatchOutcome`
   world resource, not hashed or saved): `result()` keeps returning it and `outcomeBlob()` (result, tick, per player
   slot / team / alive / units / structures / team score) never changes again. Hosted battle clients report that blob.
 

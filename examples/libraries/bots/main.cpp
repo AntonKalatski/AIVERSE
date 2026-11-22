@@ -3,8 +3,8 @@
 #include <aiverselib/bots/Persistence.h>
 #include <aiverselib/bots/Waypoints.h>
 #include <aiverselib/bots/NavMeshData.h>
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/Script.h"
+#include "engine/game/Tiles.h"
 #include <fstream>
 #include <iostream>
 #include <filesystem>
@@ -21,7 +21,7 @@ int main(int argc,char** argv){try{
     // This host controls every slot. Disable the reference FPS fallback controller.
     for(auto& player:map.member("players").itemsMut())player.set("bot",Json::fromBool(false));
     SimConfig cfg;cfg.seed=3;cfg.inputDelayTicks=0;if(genre=="fps")cfg.tickRate=fps::readConfig(rules).tickRate;
-    std::unique_ptr<GameModule> module;if(genre=="fps")module=std::make_unique<fps::Module>();else module=std::make_unique<game::RtsModule>();
+    std::unique_ptr<GameModule> module;if(genre=="fps")module=std::make_unique<fps::Module>();else module=std::make_unique<game::GameCore>();
     Simulation sim(cfg,std::move(module));sim.setup(rules,map);
     std::vector<RtsBot> rtsBots;std::vector<FpsState> fpsBots(sim.players().size());FpsConfig fc;Waypoints waypoints;std::optional<NavMesh> navigation;
     if(genre=="rts")for(const auto& p:sim.players())rtsBots.emplace_back(p.slot,cfg.seed,spec["settings"]);

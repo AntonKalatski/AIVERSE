@@ -5,15 +5,15 @@
 #include <map>
 #include <cmath>
 #include <algorithm>
-#include "../RtsModule.h"
-#include "../RtsScriptInternal.h"
+#include "../../../engine/game/GameCore.h"
+#include "../../../engine/game/ScriptInternal.h"
 #include "../../../engine/game/Progression.h"
 
 namespace aiverse::game {
 using namespace script;
 
 namespace {
-const char* eventName(uint16_t t) { return simEventName(t); }   // every GameEvent (RtsScript.cpp table)
+const char* eventName(uint16_t t) { return simEventName(t); }   // every GameEvent (Script.cpp table)
 struct Collector { std::vector<SimEvent> events; bool enabled = true; };
 } // namespace
 
@@ -838,7 +838,7 @@ bool ViewScripts::load(Simulation& sim, const Json& rules, const Json& map, uint
     if (files.empty() || sim.module().name() != "rts") return false;
     Vm& vm = im.vm;
     vm.owner = &im;
-    vm.module = static_cast<RtsModule*>(&sim.module());
+    vm.module = static_cast<GameCore*>(&sim.module());
     vm.sim = &sim; vm.spatialOk = false;
     vm.log = [&im](bool e, const std::string& t) { im.logLine(e, t); };
     // game.data(h) / has_data: the simulation scripts' table as it is now, for any unit (the world copy is written only

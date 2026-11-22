@@ -6,7 +6,7 @@
 #include "engine/render/AnimationLod.h"
 #include "engine/view/View.h"
 #include "engine/view/AppearanceAuthoringService.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 
 #include <algorithm>
 #include <cmath>

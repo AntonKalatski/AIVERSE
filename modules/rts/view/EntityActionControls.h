@@ -1,7 +1,7 @@
 #pragma once
 // Read-only world controls for explicit entity point abilities. Hosts own pointer
 // capture/rendering; only a successful release produces a normal simulation command.
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "engine/render/Math3D.h"
 #include <algorithm>
 #include <cmath>
@@ -50,7 +50,7 @@ public:
         return nullptr;
     }
     void cancel() { source_={}; ability_.clear(); }
-    void refresh(Simulation& sim, RtsModule& module, uint8_t player, const Json& definitions) {
+    void refresh(Simulation& sim, GameCore& module, uint8_t player, const Json& definitions) {
         items_.clear();width_=module.state(sim).grid.w;height_=module.state(sim).grid.h;
         if (player_!=player) cancel();
         player_=player;

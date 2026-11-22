@@ -3,7 +3,7 @@
 // rules without "careers"; rules with that block fail at match start with a readable error. The Lua
 // table `career` keeps only active() (false).
 #include "../../../engine/game/Career.h"
-#include "../RtsScriptInternal.h"
+#include "../../../engine/game/ScriptInternal.h"
 #include <stdexcept>
 
 namespace aiverse::game {
@@ -18,7 +18,7 @@ CareerRules Career::parse(const Json& j) {
     if (j.isObject()) missingModule();
     return {};
 }
-void Career::setup(Simulation&, RtsModule& m, const Json& rulesJson) {
+void Career::setup(Simulation&, GameCore& m, const Json& rulesJson) {
     m_ = &m;
     if (rulesJson["careers"].isObject()) missingModule();
 }

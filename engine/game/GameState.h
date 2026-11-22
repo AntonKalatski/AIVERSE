@@ -37,13 +37,13 @@ struct PlayerEconomy {
     std::vector<uint8_t> typeDisabled;         // per type: switched off by triggers
     std::vector<StatusInst> statuses;          // player statuses (silence, freeze regen, passives, wind)
     uint32_t statusFlags = 0;
-    // fidelity mechanics (RtsOriginals.cpp)
+    // fidelity mechanics (Originals.cpp)
     std::vector<Fixed> gatherMultRes;          // upkeep per resource (empty: gatherMult for all)
     int heroesMade = 0;                        // heroes trained so far (free first hero)
     struct DeadHero { uint16_t type; int level; Fixed xp; uint8_t skill[8]; };
     std::vector<DeadHero> deadHeroes;          // revive keeps the level and skills
     std::vector<uint8_t> fieldCells;           // derived: cells covered by own power fields (needsField)
-    Vec3 point2{};                             // second point of the last pointPair player ability (RtsFidelity.cpp)
+    Vec3 point2{};                             // second point of the last pointPair player ability (Fidelity.cpp)
 };
 
 struct WaveDef {
@@ -71,7 +71,7 @@ struct PlayerAbilityState {
     int8_t slot = -1;                  // loadout slot (BW skill slot; per-slot silence)
 };
 
-// Who / where an effect payload is applied (see RtsEffects.cpp).
+// Who / where an effect payload is applied (see Effects.cpp).
 struct EffectCtx {
     Entity caster = kNullEntity;
     uint8_t owner = 0;
@@ -99,7 +99,7 @@ struct GameState {
     std::vector<std::vector<int32_t>> visibleCells; // per player: cells at 2 (derived, so fog reset is O(visible))
     uint8_t fogMode = 0;                            // FogMode of this match (rules, map override)
     std::vector<int64_t> visionBase, visionOcc;     // line of sight: ground / occluder heights (1/64 units, derived)
-    uint64_t visionToken = 0;                       // vision cache that last updated this state (RtsVision.cpp; not saved / hashed)
+    uint64_t visionToken = 0;                       // vision cache that last updated this state (Vision.cpp; not saved / hashed)
     // regions
     int regionCount = 0;
     std::vector<uint8_t> regionOwner;
@@ -137,13 +137,13 @@ struct GameState {
     bool lanesDirty = true;
     uint32_t laneSignature = 0;              // garrisons/obstacles the lanes were built for
     std::vector<uint32_t> laneRoundRobin;    // per garrison entity index: next lane slot
-    RouteState routes;                       // authored routes, row groups, multiscreen (RtsRoutes.cpp)
+    RouteState routes;                       // authored routes, row groups, multiscreen (Routes.cpp)
     // planets (map `world` block): bodies, cube-sphere layout of the grid rows (Surface.h); null on flat maps
     std::shared_ptr<const Surface> surface;
     // fidelity mechanics: eaters (sandworms) that submerged and come back later
     struct Resurface { uint16_t type; uint8_t owner; uint32_t at; };
     std::vector<Resurface> resurface;
-    ModesState modes;                        // match modes, timed rules, levels, match stats (RtsModes.cpp)
+    ModesState modes;                        // match modes, timed rules, levels, match stats (Modes.cpp)
 };
 
 } // namespace aiverse::game

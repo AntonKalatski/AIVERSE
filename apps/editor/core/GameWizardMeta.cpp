@@ -9,9 +9,9 @@
 #include "SimTools.h"
 #include "engine/pack/FileCopy.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsScript.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Script.h"
 
 namespace fs = std::filesystem;
 
@@ -379,12 +379,12 @@ RunResult runMap(Workspace& ws, const std::string& mapFile, uint32_t maxSeconds,
         const Json simMap = mapForSim(map, ws.project.dir);
         SimConfig cfg;
         cfg.seed = seed;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(ws.project.simRules(simMap), simMap);
-        auto& mod = *dynamic_cast<game::RtsModule*>(&sim.module());
+        auto& mod = *dynamic_cast<game::GameCore*>(&sim.module());
         game::AIConfig ai;
         ai.thinkTicks = 10;
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& pl : sim.players()) bots.emplace_back(pl.slot, cfg.seed, ai);
         const uint32_t limit = maxSeconds * sim.tickRate();
         while (sim.tick() < limit && sim.result() == 0) {

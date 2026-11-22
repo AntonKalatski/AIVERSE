@@ -16,7 +16,7 @@ static Json bwaiMap(const std::string& p1 = "", const std::string& p2 = "") {
 }
 static std::unique_ptr<Simulation> bwaiSim(const Json& rules, const Json& map, uint64_t seed) {
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, map);
     return sim;
 }
@@ -27,7 +27,7 @@ static bool bwaiThrows(const Json& rules, const Json& map, const char* needle) {
 struct BwaiMatch { int result = 0; uint32_t ticks = 0; size_t commands = 0, sends = 0, upgrades = 0, skills = 0; std::vector<uint64_t> sums; };
 static BwaiMatch bwaiMatch(const Json& rules, const Json& map, uint64_t seed, uint32_t maxTicks) {
     auto sim = bwaiSim(rules, map, seed);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim->players()) bots.emplace_back(p.slot, seed);
     BwaiMatch r;
     while (sim->result() == 0 && sim->tick() < maxTicks) {
@@ -110,9 +110,9 @@ TEST(bwai_deterministic) {
 TEST(bwai_save_restore) {
     const Json rules = bwaiRules(), map = bwaiMap("expert", "hard");
     auto sim = bwaiSim(rules, map, 9);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim->players()) bots.emplace_back(p.slot, 9);
-    auto play = [](Simulation& s, std::vector<game::RtsAI>& bs, int ticks) {
+    auto play = [](Simulation& s, std::vector<game::ComputerPlayer>& bs, int ticks) {
         std::vector<uint64_t> sums;
         for (int i = 0; i < ticks; ++i) { for (auto& b : bs) b.update(s); s.step(); if (i % 50 == 49) sums.push_back(s.checksum()); }
         return sums;
@@ -125,7 +125,7 @@ TEST(bwai_save_restore) {
     auto sim2 = bwaiSim(rules, map, 9);
     std::string err;
     CHECK(sim2->deserialize(bytes, &err));
-    std::vector<game::RtsAI> bots2;
+    std::vector<game::ComputerPlayer> bots2;
     for (size_t i = 0; i < states.size(); ++i) { bots2.emplace_back(sim2->players()[i].slot, 1234); CHECK(bots2.back().loadState(states[i])); }
     CHECK(play(*sim2, bots2, 1200) == expect);
 }

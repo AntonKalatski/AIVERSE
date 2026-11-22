@@ -47,7 +47,7 @@ def write_json(obj, rel, header=None):
 
 
 # ---------------------------------------------------------------- autotile masks
-# 8-neighbour bits, same as modules/rts/RtsTiles.cpp
+# 8-neighbour bits, same as engine/game/Tiles.cpp
 N, NE, E, SE, S, SW, W, NW = 1, 2, 4, 8, 16, 32, 64, 128
 
 

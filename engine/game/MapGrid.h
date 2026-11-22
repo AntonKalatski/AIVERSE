@@ -82,7 +82,7 @@ struct SphereHpaGraph {
     std::vector<std::vector<uint32_t>> dist;                      // per cluster: k*k intra costs
 };
 
-// Flow field for one goal area (RtsFlowField.cpp): integration values (integer cost to the goal area, the A* step
+// Flow field for one goal area (FlowField.cpp): integration values (integer cost to the goal area, the A* step
 // costs 10/14 and its corner-cutting rules, slope classes through the path layer) and lazily cached directions.
 // Small maps: one backward Dijkstra over the whole grid (with the A* clearance penalty). HPA* maps / bodies:
 // hierarchical - a resumable reverse Dijkstra over the HPA* entrances gives each portal its cost to the goal (D);
@@ -212,7 +212,7 @@ struct MapGrid {
     void setPathMode(uint8_t mode) { if (mode != pathMode) { pathMode = mode; nav_.clear(); } }
     void prepareNavMesh(uint8_t layer) { if (pathMode != kPathGrid && !surf) navFor(layer); if (pathMode == kPathHybrid && !surf) hpaRefresh(hpaFor(layer)); }   // build at load, not mid-match
     const nav::Mesh* navMeshFor(uint8_t layer);   // tests / tools: the layer's mesh, refreshed (null on planets / off)
-    // ---- flow fields (RtsFlowField.cpp). Index results are valid until the next flowHousekeeping().
+    // ---- flow fields (FlowField.cpp). Index results are valid until the next flowHousekeeping().
     int flowFind(int goalCell, int radius, uint8_t layer, int clear) const;   // clear is ignored for hierarchical fields
     bool flowHierFor(int cell) const;                   // fields toward this goal cell are hierarchical (HPA* map / body)
     // Finds or creates the field for a goal area (cells within `radius` cells of the goal cell, passable for the

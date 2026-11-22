@@ -154,11 +154,11 @@ TEST(navmesh_rts_matches_deterministic) {
       for (const char* mode : {"navmesh", "hybrid"}) {
         auto run = [&](int* answered) {
             SimConfig cfg; cfg.seed = 4;
-            auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+            auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
             Json rules = Json::parseFile(game + "/rules.json");
             rules.member("movement").set("pathfinding", Json::string(mode));
             sim->setup(rules, Json::parseFile(game + "/" + map));
-            std::vector<game::RtsAI> bots;
+            std::vector<game::ComputerPlayer> bots;
             for (auto& p : sim->players()) bots.emplace_back(p.slot, 4);
             for (uint32_t t = 0; t < 20 * 120 && sim->result() == 0; ++t) { for (auto& b : bots) b.update(*sim); sim->step(); }
             if (answered) *answered = mod(*sim).state(*sim).grid.navStats[0];

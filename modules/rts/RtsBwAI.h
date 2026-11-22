@@ -1,5 +1,5 @@
 // Bunker Wars / Mushroom Wars 2 computer player, ported as code (rules "ai": {"controller": "bw"}).
-// One controller per bot slot, owned by RtsAI (RtsAI::update hands the slot over to it). Like every bot it only
+// One controller per bot slot, owned by ComputerPlayer (ComputerPlayer::update hands the slot over to it). Like every bot it only
 // reads the simulation and submits Commands; all its maths is Fixed so it plays the same on every machine.
 // Algorithms: AI6 (ranker + worker, Domination / King of the Hill modes, per-map custom factories), Bishop (task
 // queue), Ashley; per-skill casters (AISkill*), debuts (recorded openings) and map bot triggers. Data keys:
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 #include "../../engine/core/Random.h"
-#include "RtsModule.h"
+#include "../../engine/game/GameCore.h"
 
 namespace aiverse { class Archive; class Json; }
 

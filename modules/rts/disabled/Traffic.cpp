@@ -22,7 +22,7 @@ void Traffic::parseGangs(const Json& j, TrafficRules&, const std::vector<std::st
 void Traffic::parsePopulation(const Json& j, TrafficRules&, const std::vector<std::string>&, uint32_t) { if (enabled(j)) missingModule(); }
 void Traffic::parseCity(const Json& j, TrafficRules&, const std::vector<std::string>&, uint32_t) { if (enabled(j)) missingModule(); }
 
-void Traffic::setup(Simulation&, RtsModule& m, const Json& rulesJson, const Json& map) {
+void Traffic::setup(Simulation&, GameCore& m, const Json& rulesJson, const Json& map) {
     m_ = &m;
     const Json& mapBlock = map["traffic"];
     if (mapBlock.type() == Json::Type::Bool && !mapBlock.boolean(true)) return;   // this map has no traffic

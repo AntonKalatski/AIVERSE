@@ -235,7 +235,7 @@ void Driving::hash(Simulation& sim, Hasher& h) const {
     if (race_) race_->hash(sim.world(), h);   // maps with a race only
 }
 
-// The vehicles themselves are RTS pools (VehicleDrive, VehicleOccupant: RtsSave.cpp); here the decks and the race.
+// The vehicles themselves are RTS pools (VehicleDrive, VehicleOccupant: Save.cpp); here the decks and the race.
 void Driving::io(Simulation& sim, Archive& a) {
     if (!active()) return;
     auto& decks = decksOf(sim);

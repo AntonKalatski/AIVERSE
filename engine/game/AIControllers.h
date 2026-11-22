@@ -24,7 +24,7 @@ public:
     virtual ~AIController() = default;
     virtual std::unique_ptr<AIController> clone() const = 0;
     virtual void update(Simulation& sim) = 0;                 // every tick for its slot (sim.module(): the game module)
-    virtual void stateIo(Archive& a) = 0;                     // bot save state (RtsAI save state v4)
+    virtual void stateIo(Archive& a) = 0;                     // bot save state (ComputerPlayer save state v4)
 };
 
 struct AIControllerKind {
@@ -42,7 +42,7 @@ std::vector<std::string> aiControllerNames();                  // builtin, scrip
 // registers its controllers. Called once, before the first lookup.
 void registerGameExtensions();
 
-// Copyable owner of a bot's controller: copies of a bot diverge (rollback snapshots copy RtsAI).
+// Copyable owner of a bot's controller: copies of a bot diverge (rollback snapshots copy ComputerPlayer).
 struct AIControllerHolder {
     std::unique_ptr<AIController> p;
     AIControllerHolder() = default;

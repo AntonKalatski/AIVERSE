@@ -459,7 +459,7 @@
       "package": "bots-rts",
       "path": "skills/ai/aiverse-bots-commander/SKILL.md",
       "domain": "gameplay",
-      "summary": "RTS bot profiles and transactional checkpoints over the existing RtsAI",
+      "summary": "RTS bot profiles and transactional checkpoints over the existing ComputerPlayer",
       "side": "simulation",
       "runtime": "header",
       "target": "AIVERSE::lib_bots_rts",
@@ -513,13 +513,13 @@
       "package": null,
       "path": "skills/ai/aiverse-bots-debug/SKILL.md",
       "domain": "workflow",
-      "summary": "Diagnose bots that do not play and teach RtsAI a new mechanic",
+      "summary": "Diagnose bots that do not play and teach ComputerPlayer a new mechanic",
       "side": "tools",
       "runtime": "none",
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "modules/rts/RtsMechAI.cpp",
+      "source": "engine/game/MechAI.cpp",
       "keywords": [
         "bot",
         "bots",
@@ -548,7 +548,7 @@
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "modules/rts/RtsAI.cpp",
+      "source": "engine/game/ComputerPlayer.cpp",
       "keywords": [
         "bot",
         "bots",
@@ -697,7 +697,7 @@
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "modules/rts/RtsCampaign.h",
+      "source": "engine/game/Campaign.h",
       "keywords": [
         "campaign",
         "mission",
@@ -2269,7 +2269,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "modules/rts/gen/MapGen.h",
+      "source": "engine/game/gen/MapGen.h",
       "keywords": []
     },
     {
@@ -3931,7 +3931,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "modules/rts/RtsModule.h",
+      "source": "engine/game/GameCore.h",
       "keywords": []
     },
     {

@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/sim/Command.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include <algorithm>
 #include <span>
 namespace aiverse::lib::gameplay {

@@ -6,7 +6,7 @@ only; presentation can read copied snapshots and reports.
 
 | Package | Public header | Implemented coverage |
 |---|---|---|
-| attribute-modifiers | systems/EngineMechanics.h | Effective stat snapshots from RtsModule::stat, including its existing tech/level/buff/status pipeline |
+| attribute-modifiers | systems/EngineMechanics.h | Effective stat snapshots from GameCore::stat, including its existing tech/level/buff/status pipeline |
 | status-effects | systems/EngineMechanics.h | Copies of status instances/flags; validated invocation of the existing addStatus hook |
 | tag-conditions | systems/Tags.h | All/any/none bitmask queries, checked name resolution, bounded integer conditions |
 | object-interactions | systems/Interactions.h + EngineMechanics.h | Stable action previews and reasons; constructors for existing Smart, PickItem, UseItem, Load, ToggleLock Commands |
@@ -46,7 +46,7 @@ invented damage breakdown is introduced here.
 `statuses` copies the engine's status list (definition, stacks, expiry, source, periodic state) and
 flags. The engine still owns stacking/refresh policies, immunity, periodic effects, stat modifiers,
 dispel and expiry. `applyStatus` validates the basic target/definition/duration, then delegates to
-RtsModule. It is **not** a public UI mutation API: call only inside an authorized simulation command
+GameCore. It is **not** a public UI mutation API: call only inside an authorized simulation command
 or system, outside ECS iteration. Its true result means the call was valid; engine immunity or
 status rules may still prevent the intended effect. Do not bypass target/ownership/ability checks.
 

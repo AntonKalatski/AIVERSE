@@ -9,8 +9,8 @@ operation id that the meta layer applies exactly once.
 Everything is simulation state (fixed point, ECS order, `sim.rng()` only, hashed, saved, copied by rollback
 snapshots). A game without a `raid` block loads, plays and hashes exactly as before.
 
-Code: `modules/rts/RtsRaidData.*` (parsing), `RtsRaid.*` (store, system, receipts), `RtsRaidBot.cpp` (bot),
-`RtsRaidApi.cpp` (Lua `raid` table). Editor / MCP: `apps/editor/core/RaidOps.*`. Sample: `templates/extraction`.
+Code: `modules/rts/RtsRaidData.*` (parsing), `RtsRaid.*` (store, system, receipts), `RaidBot.cpp` (bot),
+`RaidApi.cpp` (Lua `raid` table). Editor / MCP: `apps/editor/core/RaidOps.*`. Sample: `templates/extraction`.
 
 ## What is reused
 
@@ -148,7 +148,7 @@ Veto: global `raid_can_extract(player, point_id)` (also asked for calls). Events
 
 ## Bot
 
-`RtsAI` hands raid players to `raidBotThink`: required objectives (reach, interact, collect, kill), then loot
+`ComputerPlayer` hands raid players to `raidBotThink`: required objectives (reach, interact, collect, kill), then loot
 while the bag has room and more than a third of the clock is left, then the nearest usable point (calling a
 callable one). Enemies (owner -1 creeps, other AI players without raiders) keep their usual behaviour.
 

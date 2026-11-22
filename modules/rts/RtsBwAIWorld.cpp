@@ -53,7 +53,7 @@ void BwImpl::refreshRoutes(Ctx& c) {
         for (size_t k = 1; k < pts.size(); ++k) cum[k] = cum[k - 1] + len2(pts[k - 1], pts[k]);
     }
     World& w = c.sim.world();
-    // first lane per pair = RtsModule::lanesBetween()[0] (smallest |offset|, then lane order), in one pass over the
+    // first lane per pair = GameCore::lanesBetween()[0] (smallest |offset|, then lane order), in one pass over the
     // lanes: per pair calls are O(pairs x lanes), minutes on the 99-point / 2615-route BW 8-player map
     std::map<std::pair<uint32_t, uint32_t>, int> first;
     if (lanes)

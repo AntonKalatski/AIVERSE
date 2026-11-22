@@ -38,9 +38,9 @@
 #include "engine/ui/UiLayer.h"
 #include "engine/world/WorldScene.h"
 #include "engine/world/TerraWeaveHorizonFrameTimingBridge.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsLocalize.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/Localize.h"
+#include "engine/game/GameCore.h"
 #include "modules/rts/audio/RtsAudio.h"
 #include "modules/rts/audio/AudioScriptSound.h"
 #include "modules/rts/view/RtsView.h"
@@ -194,7 +194,7 @@ private:
                            const std::vector<std::string>& actions);
     bool objectScreen(const SceneObject& o, float lift, float2& sp) const;   // flat maps: worldToScreen({x, lift, z})
     static Vec3 simPoint(float3 g);   // planets: picked sim-space point -> command point (1/256 units)
-    RtsModule& mod() { return *static_cast<RtsModule*>(&sim_->module()); }
+    GameCore& mod() { return *static_cast<GameCore*>(&sim_->module()); }
     bool groundAt(float sx, float sy, float3& out) const;
     Entity pick(float sx, float sy) const;
     void selectBox(float x0, float y0, float x1, float y1, bool add);
@@ -431,7 +431,7 @@ private:
     void cityPrepare(Json& rules, Json& map);
     void cityAttach();
     float cityFrame(double dt);
-    std::vector<RtsAI> bots_;
+    std::vector<ComputerPlayer> bots_;
     RtsScene scene_;
     uint8_t human_ = 1;
     bool spectator_ = false;

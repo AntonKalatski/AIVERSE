@@ -1,4 +1,4 @@
-// Abilities, effects, statuses and their delivery: the data side of RtsEffects.cpp / RtsSkills.cpp.
+// Abilities, effects, statuses and their delivery: the data side of Effects.cpp / Skills.cpp.
 // Included from GameData.h (needs Amount, StatMod, Stat, kNoType).
 //
 // Everything a skill does is a *payload*: a list of effects in Rules::payloads. Effects may carry
@@ -69,7 +69,7 @@ struct StatusDef {
     Fixed sendShare = Fixed::fromInt(1);   // hypnotised: share of the garrison the caster may send (BW percent)
     bool captureSent = false;           // hypnotised: the sent units become the caster's (BW captureHypnotisedUnits)
     Json view;
-    // skill objects (RtsSkillObjects.cpp)
+    // skill objects (SkillObjects.cpp)
     Fixed spreadChance = Fixed::fromInt(1); // `spreads`: chance a carrier infects the structure it enters
     uint32_t slots = 0;                 // player silence: only these loadout slots (bit i = slot i; 0 = all)
     int16_t onSpawn = -1;               // structure: payload on every unit it sends out (target = the unit)
@@ -144,7 +144,7 @@ struct DeliveryDef {
     int jumps = 0;
     Fixed jumpRadius = Fixed::fromInt(4);
     Fixed jumpFalloff = Fixed::fromInt(1); // amount multiplier per jump
-    // skill objects (RtsSkillObjects.cpp): rolling stones, jumping heads, mines, souls, magnets
+    // skill objects (SkillObjects.cpp): rolling stones, jumping heads, mines, souls, magnets
     int16_t origins = -1;               // payload with one Cast effect: its filter picks the units each object starts from
     bool consume = false;               // the origin unit turns into the object (dies silently)
     uint8_t goal = 0;                   // DeliveryGoal: where a moving area / projectile heads (and stops)
@@ -178,12 +178,12 @@ enum class EffectKind : uint8_t {
     SendBack, Clone, Formation, Convert,
     // players
     PlayerStatus, EqualizeResource, Sacrifice, StealSkill, Cooldown,
-    // RtsFidelity.cpp
+    // Fidelity.cpp
     AddCharges,     // structure with larva charges: + amount, up to `limit` (inject larvae)
     TeleportGroup,  // units around one end moved to the other, keeping formation; may come back after `duration`
-    Script,     // {"type": "script", "fn": "name", ...}: a Lua function (RtsScript.h), runs in the tick's scripts phase
+    Script,     // {"type": "script", "fn": "name", ...}: a Lua function (Script.h), runs in the tick's scripts phase
     Field,      // {"type": "field", "field": id, "add" | "set" | "max": n, "radius": r}: grid field cells (GridFields.h)
-    Pull,       // magnet (RtsSkillObjects.cpp): units fly straight into the goal structure with a velocity profile
+    Pull,       // magnet (SkillObjects.cpp): units fly straight into the goal structure with a velocity profile
     Defeat,     // the players chosen by the filter lose (BW PointsEndGameOnCatch: DefeatEnemies)
     GarrisonSend, // a share of the garrison walks out as the owner's sends to the nearest structures of `runTo` (BW Panic)
     CloseGroups,  // groups still leaving the structure stop (the rest stays home; BW WarChains)
@@ -231,7 +231,7 @@ struct EffectDef {
     uint8_t fieldOp = 0;       // 0 add, 1 set, 2 max
     Fixed fieldAmount{};
     int32_t fieldValue = 0;    // fieldAmount in the field's raw units
-    // skill objects (RtsSkillObjects.cpp)
+    // skill objects (SkillObjects.cpp)
     int budget = 0;            // > 0: at most this many targets over the life of the area / status it runs in
     bool areaRadius = false;   // radius "area": the radius of the area it runs in (growing areas)
     Fixed levels{};            // Resource: change by this many resource levels (morale stars), fractional

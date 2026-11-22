@@ -1,7 +1,7 @@
 #include "RtsFx.h"
 #include <algorithm>
 #include <cmath>
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "../view/RtsView.h"   // SceneObject (plain struct, no link dependency)
 
 namespace aiverse::game {
@@ -213,7 +213,7 @@ void RtsFx::detach() {
 }
 
 void RtsFx::handle(Simulation& sim, const SimEvent& ev) {
-    auto* mod = dynamic_cast<RtsModule*>(&sim.module());
+    auto* mod = dynamic_cast<GameCore*>(&sim.module());
     if (!mod) return;
     World& w = sim.world();
     auto typeOf = [&](Entity e) -> int {

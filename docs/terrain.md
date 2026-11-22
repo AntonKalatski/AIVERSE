@@ -32,7 +32,7 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
   `hf` flag; `enableHeightfield()` derives slopes and cliff `level` = floor(h / levelHeight). Passability by slope
   per move layer / slope class (`UnitType::pathLayer` = layer | class << 4); `canStep` ignores cliffs on heightfields.
 - Uphill/downhill speed factor, mobile unit `pos.y` = surface, projectile Y from the surface, LOS vision,
-  `RtsModule::heightAdvantage` for range/damage/missUphill.
+  `GameCore::heightAdvantage` for range/damage/missUphill.
 - Corners and the model are hashed only when the heightfield is active (old checksums unchanged).
 - `terrain.cornersFile`: raw int16 LE; `applyCornersFile(map, reader)` (called by `applyTilesToMap`, so every
   loader gets it) attaches the bytes as in-memory `terrain.cornersBlob`; `MapDoc` loads/saves it (file above
@@ -44,7 +44,7 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
 
 ## Vision (agent-vision) — how it is computed
 
-`modules/rts/RtsVision.cpp`, system `vision`, every 5 ticks. Cells lit last pass fall back to explored (only those in
+`engine/game/Vision.cpp`, system `vision`, every 5 ticks. Cells lit last pass fall back to explored (only those in
 `visibleCells`), then every unit lights the cells it sees for its owner and the allies sharing vision (`see()`).
 
 - **Definition** = the brute-force reference (`visionFlatRef`, `visionSphereRef`): per unit, every cell of the sight disk;
@@ -58,7 +58,7 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
   offset tables (no divisions). Caches are derived and live in the module (`VisionCache`), tied to the `GameState` by
   `visionToken` (not saved / hashed): a snapshot restore, a loaded save or another simulation rebuilds them from scratch.
 - **Verification:** `AIVERSE_VISION=ref` runs the reference, `AIVERSE_VISION=check` runs both every pass and aborts on any
-  difference; `RtsModule::setVisionReference(true)` for tests (`vision_fast_equals_reference_flat` / `_planet`: random maps,
+  difference; `GameCore::setVisionReference(true)` for tests (`vision_fast_equals_reference_flat` / `_planet`: random maps,
   moving / parked units, blockers, smoke, digging, sculpting, rollback, save loading). `aiverse_headless --profile` prints
   per-system time.
 - Measured (Release, arm64 VM): Big Planet 0.72 → 0.064 ms/tick (80% → 27% of the tick); faceSize-256 planet 0.42 → 0.043;

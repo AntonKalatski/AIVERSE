@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 
 namespace aiverse::game {
 
@@ -188,7 +188,7 @@ void RtsAudio::detach() {
 }
 
 void RtsAudio::handle(Simulation& sim, const SimEvent& ev, bool worldSounds) {
-    auto* mod = dynamic_cast<RtsModule*>(&sim.module());
+    auto* mod = dynamic_cast<GameCore*>(&sim.module());
     if (!mod) return;
     World& w = sim.world();
     const bool mine = viewer_ != 0 && ev.player == viewer_;

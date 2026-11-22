@@ -1,7 +1,7 @@
 // Real RTS NativeModule (not a mock GameModule): persistent ECS regression.
 #include "engine/data/JsonCompose.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsNative.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Native.h"
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -17,7 +17,7 @@ void io(Archive& a,Counter& v){a(v.ticks,v.bonus);}
 void io(Archive& a,Ledger& v){a(v.processed);}
 class Native final:public g::NativeModule {
 public:
-    void setup(g::RtsModule&,Simulation& s,g::NativeState& state,const Json&)const override {
+    void setup(g::GameCore&,Simulation& s,g::NativeState& state,const Json&)const override {
         s.registerPersistentComponent<Counter>("test.native.counter",1);
         s.registerPersistentResource<Ledger>("test.native.ledger",1);
         const Entity entity=s.world().create();
@@ -25,7 +25,7 @@ public:
         s.world().setResource<Ledger>();
         state.values["entity"]=int64_t(entity.packed());
     }
-    void tick(g::RtsModule&,Simulation& s,g::NativeState& state)const override {
+    void tick(g::GameCore&,Simulation& s,g::NativeState& state)const override {
         Entity e=Entity::fromPacked(uint64_t(state.values.at("entity")));
         auto* component=s.world().tryGet<Counter>(e);
         auto* resource=s.world().resource<Ledger>();
@@ -52,7 +52,7 @@ static std::unique_ptr<Simulation> make(bool native){
         definitions.push_back({"ecs_persist_test",1,&factory});
     }
     auto sim=std::make_unique<Simulation>(
-        SimConfig{},std::make_unique<g::RtsModule>(std::move(definitions)));
+        SimConfig{},std::make_unique<g::GameCore>(std::move(definitions)));
     sim->setup(rules,map);
     return sim;
 }

@@ -24,7 +24,7 @@ A weapon feature must separate:
 
 RTS artillery, FPS bullets, turret-on-vehicle, homing rockets and spells
 are different *configurations and adapters* of the same underlying systems.
-No `RtsModule&`/`fps::Module&` dependency in the reusable system.
+No `GameCore&`/`fps::Module&` dependency in the reusable system.
 Do not keep a second authoritative copy of weapon, projectile or damage state.
 Use Fixed math and stable Entity IDs; collect hits first, apply damage and
 RNG in deterministic order at the commit barrier. Never mutate World topology

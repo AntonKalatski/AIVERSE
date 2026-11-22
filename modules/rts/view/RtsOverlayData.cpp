@@ -1,6 +1,6 @@
 #include "RtsOverlayData.h"
 #include "../../../engine/platform/Platform.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 
 #include <algorithm>
 #include <cctype>

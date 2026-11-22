@@ -17,12 +17,12 @@ std::unique_ptr<Simulation> raidSample(const std::string& mapFile, uint64_t seed
         return true;
     }, &err);
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, map);
     return sim;
 }
 int runBots(Simulation& sim, int seconds) {
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, sim.config().seed);
     const int limit = seconds * int(sim.tickRate());
     while (sim.result() == 0 && int(sim.tick()) < limit) { for (auto& b : bots) b.update(sim); sim.step(); }
@@ -197,7 +197,7 @@ TEST(raid_lua_api_veto_and_commands) {
 
 TEST(raid_save_state_and_rollback) {
     auto sim = raidSample("salvage.json", 5);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim->players()) bots.emplace_back(p.slot, 5);
     for (int i = 0; i < 20 * 60; ++i) { for (auto& b : bots) b.update(*sim); sim->step(); }
     const std::string bytes = sim->serialize();

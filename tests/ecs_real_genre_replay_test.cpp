@@ -1,9 +1,9 @@
-// Real RtsModule + fps::Module integration gate, not only mock genre hosts.
+// Real GameCore + fps::Module integration gate, not only mock genre hosts.
 // The same deterministic engine snapshot/save/replay contract must survive
 // actual genre adapters and gameplay commands (FPS state lives on ECS only).
 #include "engine/data/JsonCompose.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "modules/fps/FpsModule.h"
 #include <cstdint>
 #include <iostream>
@@ -30,7 +30,7 @@ std::unique_ptr<Simulation> make(Genre genre,bool cow) {
         const std::string base=root+"/templates/mushrooms/";
         rules=readComposedJson(base+"rules.json",fileReader());
         map=Json::parseFile(base+"maps/duel.json");
-        module=std::make_unique<game::RtsModule>();
+        module=std::make_unique<game::GameCore>();
     } else {
         const std::string base=root+"/examples/fps/arena/";
         rules=Json::parseFile(base+"rules.json");

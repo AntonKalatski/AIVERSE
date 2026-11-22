@@ -66,7 +66,7 @@ struct ResourceDef {
     int16_t convertTo = -1;   // credited as another resource when delivered (ore -> credits)
     Fixed regen{};            // per second for every player (mana, morale)
     Fixed convertRate = Fixed::fromInt(1);
-    // fidelity mechanics (RtsOriginals.cpp): gains on match events and player stat mods per whole unit held
+    // fidelity mechanics (Originals.cpp): gains on match events and player stat mods per whole unit held
     Fixed gainKill{}, gainCapture{}, gainCaptured{}, gainUpgrade{}, gainLost{}, gainDefended{};
     Fixed min{};              // floor (negative regen = decay)
     std::vector<std::pair<uint64_t, StatMod>> perUnitMods; // tags (0 = all) -> mod * floor(stock) (morale suns)
@@ -78,7 +78,7 @@ enum Layer : uint8_t { kLayerGround = 1, kLayerAir = 2, kLayerNaval = 4, kLayerS
 // Can a weapon with these target layers hit a unit of `layer`? Orbit units only by weapons listing "orbit".
 inline bool layerHit(uint8_t targets, uint8_t layer) { return (layer & kLayerOrbit) ? (targets & kLayerOrbit) != 0 : (targets & layer) != 0; }
 
-// Armor model (rules "armor" / alias "armorModel"): one damage pipeline for every game (RtsOriginals.cpp mitigate).
+// Armor model (rules "armor" / alias "armorModel"): one damage pipeline for every game (Originals.cpp mitigate).
 enum class ArmorModel : uint8_t { Subtract = 0, Percent = 1, Classes = 2 };
 constexpr uint16_t kDamagePure = 0xFFFF;   // damage type: no damage table; in the classes model armor is already applied
 struct ClassAttack { uint16_t cls = 0; Fixed amount{}; };
@@ -299,7 +299,7 @@ struct UnitType {
     uint16_t trainFrom = kNoType;              // training consumes an idle own unit of this type (recruit)
     uint16_t autoTrainUnit = kNoType;          // continuous production into the field
     Fixed autoTrainInterval = Fixed::fromInt(5);
-    // ---- fidelity mechanics (RtsOriginals.cpp)
+    // ---- fidelity mechanics (Originals.cpp)
     Fixed armor2{};                            // second armor class (pierce)
     std::vector<Fixed> classArmors;            // classes model: armor per class (missing = 0)
     uint64_t classMask = 0;                    // classes it has (bonus classes apply only when present)
@@ -336,7 +336,7 @@ struct UnitType {
     bool ownsRegion = false;                   // its region (and the territory cells of it) follow its owner (State.io states)
     int16_t deathFieldRes = -1;                // dying spreads a resource field (Dune spice bloom)
     Fixed deathFieldRadius = Fixed::fromInt(3), deathFieldAmount = Fixed::fromInt(100);
-    // ---- foundations and traps (RtsFidelity.cpp)
+    // ---- foundations and traps (Fidelity.cpp)
     bool foundation = false;                   // concrete slab: once placed its cells become the owner's foundation, the slab goes away
     bool weathers = true;                      // "weathers": false - never damaged by a missing foundation (walls, turrets)
     int16_t trap = -1;                         // index into Rules::traps
@@ -426,7 +426,7 @@ struct HeightRules {
     Fixed damagePerLevel{};                   // multiplier added per level of advantage
 };
 
-// Computer player knobs (rules "ai" block, agent-ai-terrain): -1 / unset = the bot's defaults (RtsAI.h AIConfig).
+// Computer player knobs (rules "ai" block, agent-ai-terrain): -1 / unset = the bot's defaults (ComputerPlayer.h AIConfig).
 struct AIRules {
     int workersPerBase = -1, firstAttackArmy = -1, armyGrowth = -1, maxAttackArmy = -1;
     int towers = -1, scouts = -1, invasionSize = -1, climbWeight = -1, exposureWeight = -1;
@@ -434,7 +434,7 @@ struct AIRules {
     int terrain = -1;                         // 0 / 1
 };
 
-// Per-slot computer player (map players[i].ai): a preset (RtsAI.h applyAIPreset) plus the rules "ai" knobs and
+// Per-slot computer player (map players[i].ai): a preset (ComputerPlayer.h applyAIPreset) plus the rules "ai" knobs and
 // thinkTicks / aggression. Applied after rules "ai": defaults -> rules ai -> slot preset -> slot keys.
 struct AIPlayerRules {
     bool set = false;
@@ -446,7 +446,7 @@ struct AIPlayerRules {
 // Parses rules "ai" knobs into `out` (errors name `where`.<key>); used by the rules block and map players[i].ai.
 void parseAIKnobs(const class Json& a, AIRules& out, const std::string& where);
 AIPlayerRules parseAIPlayerRules(const class Json& j, const std::string& where);
-bool isAIPreset(const std::string& name);   // names accepted by applyAIPreset (RtsAI.h)
+bool isAIPreset(const std::string& name);   // names accepted by applyAIPreset (ComputerPlayer.h)
 
 // Terrain model (rules "terrain" block; visual keys there belong to the view and are ignored here).
 //   levels (default): cliff levels + ramps, exactly the classic behaviour; flat: levels ignored (all 0);
@@ -522,7 +522,7 @@ struct RoadNetworkRules {
 };
 
 // Local avoidance between moving units.
-// rules movement.flowField: shared flow fields instead of one path search per unit (RtsFlowField.cpp)
+// rules movement.flowField: shared flow fields instead of one path search per unit (FlowField.cpp)
 struct FlowFieldRules {
     int minGroup = 0;                 // move / attack-move / patrol orders of >= this many units use a field (0 = never)
     int minCells = 0;                 // ... for units at least this many cells (Chebyshev) from the goal; nearer ones keep A*
@@ -571,7 +571,7 @@ struct TrapDef {
 
 struct ProgressionRules;   // ProgressionData.h
 struct Rules {
-    bool scriptedAI = false;                  // external RtsAI must yield to the game's controller
+    bool scriptedAI = false;                  // external ComputerPlayer must yield to the game's controller
     std::string aiController = "builtin";     // rules ai.controller: builtin, scripted or a registered kind (AIControllers.h)
     MechRules mech;                           // agent-mech rules (MechData.h)
     bool overkill = false;                    // targeting.overkill: auto-targeting skips enemies already doomed by shots in flight (StarCraft II)
@@ -627,10 +627,10 @@ struct Rules {
     bool dungeon = false;                      // any dungeon / territory mechanic present (systems run)
     ArmorRules armor;
     HeroRules heroes;
-    bool originals = false;                    // any fidelity mechanic (RtsOriginals.cpp) present: its system runs, its state is hashed
+    bool originals = false;                    // any fidelity mechanic (Originals.cpp) present: its system runs, its state is hashed
     std::vector<uint16_t> playerModTypes;      // types with playerMods (forges)
     std::vector<uint16_t> perUnitResources;    // resources with perUnit mods (morale)
-    // foundations, traps, group teleports, charge effects (RtsFidelity.cpp)
+    // foundations, traps, group teleports, charge effects (Fidelity.cpp)
     FoundationRules foundation;
     std::vector<TrapDef> traps;
     bool fidelity = false;                     // any of them present: their system runs, their state is hashed
@@ -657,7 +657,7 @@ void loadMechRules(Rules& r, const Json& j);   // MechData.cpp, called by loadRu
 // Unit designs (UD): rules "designs": {"chassis": {...}, "parts": {...}} and types with "design": {"chassis", "parts"}
 // expand into plain type blocks. Returns a copy without "designs"; loadRules calls it when the block is present.
 Json expandDesigns(const Json& j);
-void loadMechStage4(Rules& r, const Json& j);   // RtsMechData4.cpp: morale, fatigue, charge, supply, conveyors
+void loadMechStage4(Rules& r, const Json& j);   // MechData4.cpp: morale, fatigue, charge, supply, conveyors
 VictoryRules loadVictory(const Json& j, const VictoryRules& def);
 // match modes (ModesData.cpp): loadRules calls loadModes; setup merges rules / preset / map and parses the result
 void loadModes(Rules& r, const Json& j);

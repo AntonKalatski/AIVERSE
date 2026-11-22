@@ -216,42 +216,41 @@ add_subdirectory(engine/meta)
 # Generic data-driven RTS gameplay (units, orders, economy, combat, garrisons, AI)
 add_library(aiverse_game STATIC
     engine/game/GameData.cpp
-    engine/game/MechData.cpp
     engine/game/MapGrid.cpp
     engine/game/MapHpa.cpp
     engine/game/MapGridSphere.cpp
     engine/game/MapHpaSphere.cpp
-    modules/rts/RtsFlowField.cpp
+    engine/game/FlowField.cpp
     engine/game/Sphere.cpp
     engine/game/Surface.cpp
-    modules/rts/RtsModule.cpp
-    modules/rts/RtsPlanets.cpp
-    modules/rts/RtsEconomy.cpp
-    modules/rts/RtsUnits.cpp
-    modules/rts/RtsProjectilePrograms.cpp
-    modules/rts/RtsCombat.cpp
-    modules/rts/RtsWorld.cpp
-    modules/rts/RtsVision.cpp
-    modules/rts/RtsTriggers.cpp
-    modules/rts/RtsDungeon.cpp
-    modules/rts/RtsSettlers.cpp
-    modules/rts/RtsLanes.cpp
-    modules/rts/RtsAvoidance.cpp
+    engine/game/GameCore.cpp
+    engine/game/Planets.cpp
+    engine/game/Economy.cpp
+    engine/game/Units.cpp
+    engine/game/ProjectilePrograms.cpp
+    engine/game/Combat.cpp
+    engine/game/World.cpp
+    engine/game/Vision.cpp
+    engine/game/Triggers.cpp
+    engine/game/Dungeon.cpp
+    engine/game/Settlers.cpp
+    engine/game/Lanes.cpp
+    engine/game/Avoidance.cpp
     engine/game/EffectsData.cpp
-    modules/rts/RtsEffects.cpp
-    modules/rts/RtsSkillObjects.cpp
-    modules/rts/RtsSkills.cpp
-    modules/rts/RtsAI.cpp
+    engine/game/Effects.cpp
+    engine/game/SkillObjects.cpp
+    engine/game/Skills.cpp
+    engine/game/ComputerPlayer.cpp
     engine/game/OriginalsData.cpp
-    modules/rts/RtsOriginals.cpp
+    engine/game/Originals.cpp
     engine/game/FidelityData.cpp
-    modules/rts/RtsFidelity.cpp
+    engine/game/Fidelity.cpp
     engine/game/ModesData.cpp
-    modules/rts/RtsModes.cpp
-    modules/rts/RtsAIOriginals.cpp
-    modules/rts/RtsAIFidelity.cpp
-    modules/rts/RtsAITerrain.cpp
-    modules/rts/RtsAITactics.cpp)
+    engine/game/Modes.cpp
+    engine/game/ComputerPlayerOriginals.cpp
+    engine/game/ComputerPlayerFidelity.cpp
+    engine/game/ComputerPlayerTerrain.cpp
+    engine/game/ComputerPlayerTactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
 # the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
@@ -288,8 +287,8 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
 endif()
 include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
-file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsMech*.cpp)
-target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} modules/rts/RtsSave.cpp modules/rts/RtsCampaign.cpp   # + save states, campaigns
+file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/Mech*.cpp)
+target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} engine/game/Save.cpp engine/game/Campaign.cpp   # + save states, campaigns
     modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on RtsModule
 # Optional simulation systems of packaged clients (packaging.engineModules, tools/aiversebuild).
 # A system that runs only when its rules block is present can be left out: OFF compiles the adapter
@@ -311,7 +310,7 @@ endfunction()
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
 # Every game: hypnotised sends, per point counters, the controller registry and the registration point.
-target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp engine/game/AIControllers.cpp modules/rts/RtsGameExtensions.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Hypnosis.cpp engine/game/AIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
@@ -321,7 +320,7 @@ add_library(aiverse_i18n STATIC
     engine/i18n/Localization.cpp
     engine/i18n/GameLanguage.cpp
     engine/i18n/SystemLanguage.cpp
-    modules/rts/RtsLocalize.cpp)
+    engine/game/Localize.cpp)
 target_link_libraries(aiverse_i18n PUBLIC aiverse_game)
 if(APPLE)
     target_link_libraries(aiverse_i18n PUBLIC "-framework CoreFoundation")
@@ -2038,12 +2037,12 @@ endforeach()
 # 2D games (2D-mode agent): tile maps + autotiling (deterministic, part of the game library),
 # sprite batch + textures (RHI only), sprite/tile presentation in the RTS view.
 # ---------------------------------------------------------------------------
-target_sources(aiverse_game PRIVATE modules/rts/RtsTiles.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Tiles.cpp)
 # terrain / map generator (agent-terrain-gen): integer noise, erosion, biomes, fair starts, presets, planets
 aiverse_game_module(AIVERSE_GAME_WITH_MAPGEN "Include the map generator (map \"generate\" blocks)"
     modules/rts/disabled/MapGen.cpp
-    modules/rts/gen/GenNoise.cpp modules/rts/gen/GenField.cpp modules/rts/gen/GenTerrain.cpp
-    modules/rts/gen/GenContent.cpp modules/rts/gen/GenCity.cpp modules/rts/gen/GenPlanet.cpp modules/rts/gen/GenWorld.cpp modules/rts/gen/MapGen.cpp)
+    engine/game/gen/GenNoise.cpp engine/game/gen/GenField.cpp engine/game/gen/GenTerrain.cpp
+    engine/game/gen/GenContent.cpp engine/game/gen/GenCity.cpp engine/game/gen/GenPlanet.cpp engine/game/gen/GenWorld.cpp engine/game/gen/MapGen.cpp)
 add_library(aiverse_render2d STATIC engine/render/SpriteBatch.cpp engine/render/TextureCache.cpp)
 target_include_directories(aiverse_render2d PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
 target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsSprites.cpp modules/rts/view/RtsTileView.cpp modules/rts/view/RtsSpriteShadow.cpp)
@@ -2231,40 +2230,40 @@ endif()
 if(UNIX)
     target_compile_definitions(aiverse_lua PRIVATE LUA_USE_POSIX)  # os.tmpname via mkstemp (the linker warns about tmpnam)
 endif()
-target_sources(aiverse_game PRIVATE modules/rts/RtsScriptTerritory.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsScriptGrid.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsScript.cpp modules/rts/RtsScriptEngine.cpp modules/rts/RtsScriptApi.cpp modules/rts/RtsScriptCommands.cpp
-    modules/rts/RtsScriptStd.cpp modules/rts/RtsScriptIeee.cpp)
+target_sources(aiverse_game PRIVATE engine/game/ScriptTerritory.cpp)
+target_sources(aiverse_game PRIVATE engine/game/ScriptGrid.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Script.cpp engine/game/ScriptEngine.cpp engine/game/ScriptApi.cpp engine/game/ScriptCommands.cpp
+    engine/game/ScriptStd.cpp engine/game/ScriptIeee.cpp)
 if(NOT MSVC)
-    # one IEEE operation per binding: never contract into FMA (RtsScriptIeee.cpp)
-    set_source_files_properties(modules/rts/RtsScriptIeee.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+    # one IEEE operation per binding: never contract into FMA (ScriptIeee.cpp)
+    set_source_files_properties(engine/game/ScriptIeee.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 # grid fields (G5): data, kernels, Lua `field` table (docs/fields.md)
-target_sources(aiverse_game PRIVATE engine/game/GridFields.cpp engine/game/GridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/GridFields.cpp engine/game/GridFieldData.cpp engine/game/GridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
-target_sources(aiverse_game PRIVATE engine/game/Raid.cpp engine/game/RaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp engine/game/Prompts.cpp modules/rts/RtsPromptApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Raid.cpp engine/game/RaidData.cpp engine/game/RaidBot.cpp engine/game/RaidApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/DrivingApi.cpp engine/game/ServicesApi.cpp engine/game/Prompts.cpp engine/game/PromptApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
-    modules/rts/disabled/Commerce.cpp engine/game/Commerce.cpp modules/rts/RtsCommerceApi.cpp)
+    modules/rts/disabled/Commerce.cpp engine/game/Commerce.cpp engine/game/CommerceApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
-    modules/rts/disabled/Career.cpp engine/game/Career.cpp modules/rts/RtsCareerApi.cpp)
+    modules/rts/disabled/Career.cpp engine/game/Career.cpp engine/game/CareerApi.cpp)
 target_sources(aiverse_game PRIVATE engine/game/Sensors.cpp engine/game/FieldOps.cpp)   # radar / sonar / jammers, field operations
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
 target_sources(aiverse_game PRIVATE engine/game/TopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
-target_sources(aiverse_game PRIVATE engine/game/Progression.cpp engine/game/ProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Progression.cpp engine/game/ProgressionData.cpp engine/game/ProgressionApi.cpp)
 # boss encounters (agent-df-encounters-glue): rules "encounters" over the boss-encounters library package (docs/encounters.md)
 aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules \"encounters\")"
-    modules/rts/disabled/Encounters.cpp engine/game/Encounters.cpp modules/rts/RtsEncountersApi.cpp)
+    modules/rts/disabled/Encounters.cpp engine/game/Encounters.cpp engine/game/EncountersApi.cpp)
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsMapRules.cpp)
+target_sources(aiverse_game PRIVATE engine/game/MapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
 # map environment (weather, wind, zones, trample fields, auto skills on splines, fog options)
 target_sources(aiverse_game PRIVATE engine/game/Environment.cpp engine/game/EnvironmentData.cpp)
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)
 target_sources(aiverse_game PRIVATE engine/game/Driving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
-target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp engine/game/RoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Routes.cpp engine/game/RoutesData.cpp engine/game/ScriptRoutes.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_ARSENAL "Include hero weapons (rules \"arsenal\")"
     modules/rts/disabled/Arsenal.cpp engine/game/Arsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
@@ -2276,12 +2275,12 @@ target_sources(aiverse_game PRIVATE engine/game/TrafficRoads.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_roads)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
 target_sources(aiverse_game PRIVATE modules/rts/view/RtsWater.cpp)
-# the engine's standard Lua library (rule-level mechanics) is compiled in: modules/rts/lua/*.lua
-file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/*.lua)
-set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/RtsStdLua.h)
+# the engine's standard Lua library (rule-level mechanics) is compiled in: engine/game/lua/*.lua
+file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/*.lua)
+set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/StdLua.h)
 add_custom_command(OUTPUT ${AIVERSE_STD_LUA_H}
-    COMMAND ${CMAKE_COMMAND} -DOUT=${AIVERSE_STD_LUA_H} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua -P ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/embed.cmake
-    DEPENDS ${AIVERSE_STD_LUA} ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/embed.cmake VERBATIM)
+    COMMAND ${CMAKE_COMMAND} -DOUT=${AIVERSE_STD_LUA_H} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua -P ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/embed.cmake
+    DEPENDS ${AIVERSE_STD_LUA} ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/embed.cmake VERBATIM)
 target_sources(aiverse_game PRIVATE ${AIVERSE_STD_LUA_H})
 target_include_directories(aiverse_game PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen)
 target_link_libraries(aiverse_game PUBLIC aiverse_lua)

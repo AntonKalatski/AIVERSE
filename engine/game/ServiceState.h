@@ -2,7 +2,7 @@
 // ECS state of the traffic services (TrafficCity.cpp): custody (traffic.services.<id>.custody), carry
 // (traffic.services.<id>.carry) and people a script or native module has taken over (ServicePassenger).
 // Registered as persistent components (saved and hashed) by Traffic::setup when the game has traffic.
-// Scripts use them through the `services` Lua table (RtsServicesApi.cpp); native modules use them directly.
+// Scripts use them through the `services` Lua table (ServicesApi.cpp); native modules use them directly.
 #include "../core/Archive.h"
 #include "../core/ECS.h"
 #include "../core/Fixed.h"

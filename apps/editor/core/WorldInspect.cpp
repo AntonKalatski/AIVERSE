@@ -267,7 +267,7 @@ const std::vector<Desc>& descs() {
 
 std::string lower(std::string s) { for (auto& c : s) c = char(std::tolower(uint8_t(c))); return s; }
 
-// ---------------------------------------------------------------- script blob decoding (RtsScript.cpp format)
+// ---------------------------------------------------------------- script blob decoding (Script.cpp format)
 uint64_t getU64(const std::string& in, size_t pos) {
     uint64_t v = 0;
     for (int i = 0; i < 8; ++i) v |= uint64_t(uint8_t(in[pos + size_t(i)])) << (8 * i);
@@ -449,7 +449,7 @@ WorldConfig parseWorldConfig(const Json& manifest) {
 }
 
 // ---------------------------------------------------------------- reading the world
-std::vector<uint64_t> linkMapEntities(Simulation& sim, RtsModule& mod, const MapData& doc) {
+std::vector<uint64_t> linkMapEntities(Simulation& sim, GameCore& mod, const MapData& doc) {
     std::vector<uint64_t> out(doc.entities.size(), 0);
     World& w = sim.world();
     const auto st = w.entityState();
@@ -478,7 +478,7 @@ std::vector<uint64_t> linkMapEntities(Simulation& sim, RtsModule& mod, const Map
 
 namespace {
 // The row fields of one alive entity into r (reused: clears what it sets).
-void fillRow(Simulation& sim, RtsModule& mod, const WorldConfig& cfg, const GameState* gs, Entity e, WorldRow& r, const WorldReadOptions& opt) {
+void fillRow(Simulation& sim, GameCore& mod, const WorldConfig& cfg, const GameState* gs, Entity e, WorldRow& r, const WorldReadOptions& opt) {
     World& w = sim.world();
     const Rules& R = mod.rules();
     r.e = e;
@@ -538,13 +538,13 @@ void setWorldRowData(const WorldConfig& cfg, const std::string& blob, WorldRow& 
     if (!cfg.labelKey.empty()) if (auto it = r.data.find(cfg.labelKey); it != r.data.end()) r.label = it->second;
 }
 
-bool readWorldRow(Simulation& sim, RtsModule& mod, const WorldConfig& cfg, Entity e, WorldRow& r, const WorldReadOptions& opt) {
+bool readWorldRow(Simulation& sim, GameCore& mod, const WorldConfig& cfg, Entity e, WorldRow& r, const WorldReadOptions& opt) {
     if (!sim.world().alive(e)) return false;
     fillRow(sim, mod, cfg, sim.world().resource<GameState>(), e, r, opt);
     return true;
 }
 
-void readWorld(Simulation& sim, RtsModule& mod, const WorldConfig& cfg, const std::vector<uint64_t>& links,
+void readWorld(Simulation& sim, GameCore& mod, const WorldConfig& cfg, const std::vector<uint64_t>& links,
                const std::vector<uint64_t>& setupRefs, const MapData* doc, WorldModel& out, const WorldReadOptions& opt) {
     World& w = sim.world();
     GameState* gs = w.resource<GameState>();
@@ -590,7 +590,7 @@ Json decodeScriptBlob(const std::string& blob) {
     return out;
 }
 
-Json inspectEntity(Simulation& sim, RtsModule& mod, Entity e, const Json& rulesJson) {
+Json inspectEntity(Simulation& sim, GameCore& mod, Entity e, const Json& rulesJson) {
     World& w = sim.world();
     Json r = Json::object();
     if (!w.alive(e)) { r.set("error", Json::string("object is gone")); return r; }
@@ -726,7 +726,7 @@ bool worldRowMatches(const WorldModel& m, const Rules& R, const MapData* doc, co
 }
 
 // ---------------------------------------------------------------- preview
-game::RtsModule* WorldPreview::module() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
+game::GameCore* WorldPreview::module() { return sim_ ? dynamic_cast<game::GameCore*>(&sim_->module()) : nullptr; }
 
 WorldPreview::Result WorldPreview::run(const Json* simRules, const Json* simMap, const Prepare& prepare, const MapData& doc, const WorldConfig& cfg) {
     const auto t0 = std::chrono::steady_clock::now();
@@ -736,9 +736,9 @@ WorldPreview::Result WorldPreview::run(const Json* simRules, const Json* simMap,
         if (prepare) { prepare(preparedRules, preparedMap); simRules = &preparedRules; simMap = &preparedMap; }
         SimConfig sc;
         sc.seed = 1;   // fixed: the same data gives the same entity ids, so a selection survives a refresh
-        auto sim = std::make_unique<Simulation>(sc, std::make_unique<game::RtsModule>());
+        auto sim = std::make_unique<Simulation>(sc, std::make_unique<game::GameCore>());
         sim->setup(*simRules, *simMap);
-        auto* mod = dynamic_cast<game::RtsModule*>(&sim->module());
+        auto* mod = dynamic_cast<game::GameCore*>(&sim->module());
         res.links = linkMapEntities(*sim, *mod, doc);
         for (int k = 0; k < cfg.previewTicks; ++k) sim->step();
         sim->module().prepareSnapshot(*sim);   // Lua entity tables into the world (this sim is ours)

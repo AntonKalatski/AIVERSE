@@ -13,7 +13,7 @@ local clear = false
 ui.on("clear_animation", function() view.animation(actor, nil) end)
 )LUA"));rules.set("$scriptSources",src);
     Json map=Json::parseFile(kSkirmish+"/maps/valley.json");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     const auto before=sim.checksum();
     game::ViewScripts view;CHECK(view.load(sim,rules,map,1));view.update(sim,.1f);
     for(const auto& l:view.log()) std::printf("animation log: %s\n",l.text.c_str());
@@ -55,7 +55,7 @@ view.animation_define("broken",{nodes={{id="bind",kind="bind"},{id="stack",kind=
 view.animation_trait("loop",{post_evaluate=function() while true do end end})
 view.animation_define("loop",{nodes={{id="bind",kind="bind"},{id="stack",kind="stack",input="bind",traits={{trait="loop"}}}},output="stack"})
 )LUA"));rules.set("$scriptSources",sources);
-    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     auto hash=sim.checksum();game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());
     auto store=view.entityFx();CHECK(store->animations.size()==1);CHECK(store->animationDefinitions.size()==3);
     auto model=render::loadModel(std::string(AIVERSE_SOURCE_DIR)+"/templates/showcase/models/golem.glb",modeltest::diskReader(),nullptr);
@@ -75,7 +75,7 @@ assert(not pcall(view.animation_load,"escape","../bad"))
 assert(not pcall(view.animation_load,"invalid","broken"))
 view.animation_load("loaded","fullbody")
 )LUA"));rules.set("$scriptSources",sources);
-    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);auto hash=sim.checksum();game::ViewScripts view;view.setContentReader([](const std::string& path,std::string& out){if(path=="animations/fullbody.json")out=Json::parseFile(std::string(AIVERSE_SOURCE_DIR)+"/examples/animation/fullbody.json").dump();else out="{broken";return true;});CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());CHECK(view.entityFx()->animationDefinitions.count("loaded")==1);
+    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);auto hash=sim.checksum();game::ViewScripts view;view.setContentReader([](const std::string& path,std::string& out){if(path=="animations/fullbody.json")out=Json::parseFile(std::string(AIVERSE_SOURCE_DIR)+"/examples/animation/fullbody.json").dump();else out="{broken";return true;});CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());CHECK(view.entityFx()->animationDefinitions.count("loaded")==1);
     auto m=render::loadModel(std::string(AIVERSE_SOURCE_DIR)+"/templates/showcase/models/golem.glb",modeltest::diskReader(),nullptr);auto asset=view.entityFx()->animationDefinitions.at("fbik");render::AnimationGraphInstance instance;instance.reset(render::AnimationGraph::compile(*m,asset->definition));render::Pose pose;instance.evaluate(pose);std::vector<render::mat4> world;render::worldMatrices(*m,pose,world);int hand=m->findNode("arm.L");auto& w=world[size_t(hand)];CHECK(std::abs(w.at(0,3)-.6f)<.03f);CHECK(std::abs(w.at(1,3)-1.6f)<.03f);CHECK(std::abs(w.at(2,3)-.2f)<.03f);CHECK(instance.healthy());CHECK(sim.checksum()==hash);
 }
 
@@ -97,7 +97,7 @@ ui.on("contact_status",function()
  view.animation(actor,{plant=0,obstacle={1,1,0}})
 end)
 )LUA"));rules.set("$scriptSources",sources);
-    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);auto hash=sim.checksum();game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());
+    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);auto hash=sim.checksum();game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());
     auto store=view.entityFx();auto m=render::loadModel(std::string(AIVERSE_SOURCE_DIR)+"/templates/showcase/models/golem.glb",modeltest::diskReader(),nullptr);auto asset=store->animationDefinitions.at("contacts");render::AnimationGraphInstance graph;graph.reset(render::AnimationGraph::compile(*m,asset->definition));render::Pose pose;graph.evaluate(pose);auto report=graph.contactReport();CHECK(report.stable);CHECK(report.supports==2);store->animations.begin()->second.contacts=report;
     view.uiEvent(sim,"contact_status",Json::array());CHECK(view.log().empty());CHECK(store->animations.begin()->second.parameters.values.at("plant")==0);CHECK(sim.checksum()==hash);
 }
@@ -117,7 +117,7 @@ ui.on("climb_status",function()
  view.animation(actor,{velocity={0,0,0},adhesion=0})
 end)
 )LUA"));rules.set("$scriptSources",sources);
-    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);auto hash=sim.checksum();game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());
+    Json map=Json::parseFile(kSkirmish+"/maps/valley.json");Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);auto hash=sim.checksum();game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());
     render::Model m;m.nodes.resize(13);m.order.push_back(0);m.nodes[0].name="body";m.nodes[0].t={0,.5f,0};for(int i=0;i<4;++i){int h=1+i*3;float x=i%2?1.f:-1.f,z=i<2?-1.f:1.f;m.nodes[0].children.push_back(h);for(int j=0;j<3;++j){m.order.push_back(h+j);m.nodes[h+j].name=std::string(j==0?"hip":j==1?"knee":"foot")+std::to_string(i);m.nodes[h+j].parent=j==0?0:h+j-1;if(j<2)m.nodes[h+j].children={h+j+1};}m.nodes[h].t={x*.25f,0,z*.25f};m.nodes[h+1].t={x*.35f,-.1f,z*.1f};m.nodes[h+2].t={x*.2f,-.4f,0};}
     auto store=view.entityFx();render::AnimationGraphInstance graph;graph.reset(render::AnimationGraph::compile(m,store->animationDefinitions.at("crawl")->definition));render::Pose pose;for(int i=0;i<30;++i){graph.update(1.f/60);graph.evaluate(pose);}store->animations.begin()->second.locomotion=graph.locomotionReport();view.uiEvent(sim,"climb_status",Json::array());CHECK(view.log().empty());CHECK(store->animations.begin()->second.parameters.values.at("adhesion")==0);CHECK(sim.checksum()==hash);
 }

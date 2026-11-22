@@ -1,4 +1,4 @@
-// City planner (map generator preset "city", modules/rts/gen/GenCity.cpp): determinism, a connected street network,
+// City planner (map generator preset "city", engine/game/gen/GenCity.cpp): determinism, a connected street network,
 // bridges over the river, buildings on free lots, the road graph, and a simulation that starts on the result.
 namespace {
 const char* kCityRules = R"J({

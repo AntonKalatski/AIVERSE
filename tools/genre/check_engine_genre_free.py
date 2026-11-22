@@ -17,9 +17,6 @@ PATTERN = re.compile(r"\b(Rts[A-Z]\w*|Fps[A-Z]\w*|isFps|isRts|fps::\w+|rts::\w+)
 DEBT = {
     "engine/net/authority/Session.cpp": 27,
     "engine/net/authority/Session.h": 15,
-    "engine/net/city/CityNet.cpp": 5,
-    "engine/net/city/CityMirror.cpp": 3,
-    "engine/net/city/CityNet.h": 2,
 }
 
 

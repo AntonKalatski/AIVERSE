@@ -1,6 +1,6 @@
 // RtsView terrain entry points. The surface math lives in RtsTerrainSurface.h (shared with the
 // editor core), the chunked mesh / materials / water in RtsTerrainRender.cpp.
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "RtsTerrainSurface.h"
 #include "RtsView.h"
 #include "engine/view/Surface.h"

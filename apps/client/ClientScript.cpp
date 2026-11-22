@@ -23,7 +23,7 @@ extern "C" {
 #include <sstream>
 
 #include "GameClient.h"
-#include "modules/rts/RtsInitialVars.h"
+#include "engine/game/InitialVars.h"
 #include "engine/services/Ads.h"
 #include "engine/services/ServicesLua.h"
 #include "engine/services/Store.h"

@@ -2,7 +2,7 @@
 // (packaging.engineModules, CMake AIVERSE_GAME_WITH_MAPGEN=OFF). Maps without a "generate" block (top
 // level or on a world body) load unchanged, as with the full module; generated maps fail with a
 // readable error before the match starts.
-#include "../gen/MapGen.h"
+#include "../../../engine/game/gen/MapGen.h"
 
 namespace aiverse::gen {
 namespace {

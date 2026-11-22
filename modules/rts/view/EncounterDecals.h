@@ -11,11 +11,11 @@ namespace aiverse { class Simulation; }
 
 namespace aiverse::game {
 
-class RtsModule;
+class GameCore;
 class RtsView;
 
 // Appends this frame's encounter ground marks for `viewer` (0: spectator, sees everything; otherwise only what the
 // viewer's fog shows; "own" telegraphs are those of the viewer's team). Nothing without rules "encounters".
-void appendEncounterDecals(Simulation& sim, RtsModule& m, const RtsView& view, uint8_t viewer, std::vector<ViewGroundBatch>& out);
+void appendEncounterDecals(Simulation& sim, GameCore& m, const RtsView& view, uint8_t viewer, std::vector<ViewGroundBatch>& out);
 
 } // namespace aiverse::game

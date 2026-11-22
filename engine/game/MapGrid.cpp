@@ -215,7 +215,7 @@ bool MapGrid::canStep(int x0, int y0, int x1, int y1, uint8_t layer) const {
 }
 
 void MapGrid::block(int x0, int y0, int fw, int fh, int delta) {
-    ++flowStamp_;   // flow fields revalidate (RtsFlowField.cpp)
+    ++flowStamp_;   // flow fields revalidate (FlowField.cpp)
     navDirty(x0 - 1, y0 - 1, x0 + fw, y0 + fh);   // the cells and their links to the ring around them
     for (int y = y0; y < y0 + fh; ++y) for (int x = x0; x < x0 + fw; ++x) if (inside(x, y)) flowTouch(index(x, y));
     for (int y = y0; y < y0 + fh; ++y)

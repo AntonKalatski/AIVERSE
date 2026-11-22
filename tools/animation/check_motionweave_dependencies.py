@@ -19,7 +19,7 @@ FORBIDDEN_INCLUDE = re.compile(
 )
 FORBIDDEN_TYPED_REFERENCE = re.compile(
     r'\b(?:aiverse::)?(?:fps|rts|game)::|'
-    r'\b(?:FpsModule|RtsModule|OrderType|FpsActor)\b'
+    r'\b(?:FpsModule|GameCore|OrderType|FpsActor)\b'
 )
 
 

@@ -127,7 +127,7 @@ canonical quiet NaN `0x7fc00000` / `0x7ff8000000000000`), so results are identic
 
 Arguments must be integers (`f32` ones in range), otherwise the call is an error. Both tables exist in
 simulation and view scripts. (Built on the host's IEEE operations with one operation per call, no FMA
-contraction and a check of the default floating-point environment: `modules/rts/RtsScriptIeee.cpp`.)
+contraction and a check of the default floating-point environment: `engine/game/ScriptIeee.cpp`.)
 
 ### State: `state`, `game.data(h)`, not upvalues
 
@@ -220,7 +220,7 @@ road_built lanes_changed status_start status_end area_start area_trigger area_en
 impact chain_jump cast_start channel_start channel_end alert garrison_changed transit_start
 transit_end trigger_fired loaded unloaded cycle_phase traded diplomacy item merged objective dialog
 camera mission_end learned crew_killed crewed infected submerged trap_fired group_teleport paved
-morale turn` (what `unit` / `other` / `value` mean per event: `GameEvent` in modules/rts/RtsModule.h).
+morale turn` (what `unit` / `other` / `value` mean per event: `GameEvent` in engine/game/GameCore.h).
 View scripts get the same names with `view.on` (read-only).
 
 **Before-hooks** — global functions the engine calls *before* something happens, in the middle of
@@ -567,14 +567,14 @@ engine (`embed.cmake` turns them into a header, so every platform loads them wit
 and run by every game, before the game's own scripts, in the same deterministic VM. The C++ core
 keeps everything hot (ECS, commands, movement, pathfinding, avoidance, targeting and weapons,
 projectiles, vision, hashing, data parsing) and offers aggregate queries and primitives in the
-low-level `rts` table (`modules/rts/RtsScriptStd.cpp`); Lua decides the rules.
+low-level `rts` table (`engine/game/ScriptStd.cpp`); Lua decides the rules.
 
 | module | replaces (C++) | called |
 |---|---|---|
-| `victory.lua` (`std.victory`) | `RtsModule::sysVictory` | "victory" system, every 10 ticks (`std.period.victory`) |
-| `waves.lua` (`std.waves`) | `RtsModule::sysWaves` (+ wave objective scan, kept as `rts.wave_objective`) | "waves" system, only in games with waves |
-| `triggers.lua` (`std.triggers`) | `RtsModule::sysTriggers`, `triggerConditions`, `runTriggerActions` (parsing stays in `RtsTriggers.cpp`) | "triggers" system, only in games with triggers |
-| `commands.lua` (`std.auto_build`, `std.sell`) | the `kCmdAutoBuild` and `kCmdSell` branches of `RtsModule::applyCommand` | from `applyCommand` |
+| `victory.lua` (`std.victory`) | `GameCore::sysVictory` | "victory" system, every 10 ticks (`std.period.victory`) |
+| `waves.lua` (`std.waves`) | `GameCore::sysWaves` (+ wave objective scan, kept as `rts.wave_objective`) | "waves" system, only in games with waves |
+| `triggers.lua` (`std.triggers`) | `GameCore::sysTriggers`, `triggerConditions`, `runTriggerActions` (parsing stays in `Triggers.cpp`) | "triggers" system, only in games with triggers |
+| `commands.lua` (`std.auto_build`, `std.sell`) | the `kCmdAutoBuild` and `kCmdSell` branches of `GameCore::applyCommand` | from `applyCommand` |
 
 Every module is **bit-identical** to the C++ it replaced: same iteration order (ECS order comes from
 the C++ helpers), the same `Fixed` operations (`fx` metamethods call the engine's `Fixed`), the same
@@ -608,8 +608,8 @@ in `tests/checksums/games` (seeds 1-3) with `baseline.txt`, recorded from the C+
 
 ## Engine side
 
-`modules/rts/RtsScript.h` (design notes), `RtsScript.cpp` (VM, sandbox, fx, serialization),
-`RtsScriptEngine.cpp` (handlers, dispatch, `state`), `RtsScriptApi.cpp` (`game` table and
+`engine/game/Script.h` (design notes), `Script.cpp` (VM, sandbox, fx, serialization),
+`ScriptEngine.cpp` (handlers, dispatch, `state`), `ScriptApi.cpp` (`game` table and
 `scriptApiReference()`), `modules/rts/view/RtsViewScript.*` (view VM). Loaders call
 `game::embedScripts(rules, map, reader)` next to `applyTilesToMap`: script sources travel inside the
 rules JSON, so the simulation needs no file access. Lua 5.4.7 is vendored in `third_party/lua`

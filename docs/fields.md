@@ -6,7 +6,7 @@ initial values live in the map, Lua reads and writes it through the `field` tabl
 overlay. Gap `G5` of `docs/lua-coverage.md`.
 
 Code: `modules/rts/RtsGridFieldData.*` (format), `RtsGridFields.*` (kernels, effects, hooks, hash, saves),
-`RtsGridFieldsApi.cpp` (Lua), `modules/rts/view/RtsFieldView.*` (overlay, GLSL + MSL),
+`GridFieldsApi.cpp` (Lua), `modules/rts/view/RtsFieldView.*` (overlay, GLSL + MSL),
 `apps/editor/core/FieldOps.*` + `apps/editor/windows/FieldsWindow.cpp` (editor, MCP). Samples:
 `templates/wildfire` (forest fire + creep, data only), `templates/lua_lab` (`scripts/fire.lua`).
 

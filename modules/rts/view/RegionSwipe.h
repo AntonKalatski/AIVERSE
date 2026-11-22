@@ -1,7 +1,7 @@
 #pragma once
 // Data-driven region gestures shared by the client and editor. Only emits normal
 // ability commands; selection/preview never mutates simulation state.
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "engine/render/Math3D.h"
 #include <algorithm>
 #include <map>
@@ -20,7 +20,7 @@ public:
     std::vector<Arrow> arrows;
     render::float3 cursor{};
     void configure(const Json& manifest) { config_=manifest["controls"]; enabled=config_.getStr("mode")=="regionSwipe"; }
-    void refresh(Simulation& sim,RtsModule& module,uint8_t me) {
+    void refresh(Simulation& sim,GameCore& module,uint8_t me) {
         me_=me; tick_=sim.tick(); grid_=&module.state(sim).grid; anchors.clear(); infoAnchors_.clear();units_.clear();singleUnits_.clear();cacheTick_=UINT32_MAX;
         rebuildRegions(module.state(sim).trig.vars);
         const auto& rules=module.rules(); auto& world=sim.world();
@@ -191,7 +191,7 @@ public:
     int count() const {preview();return previewCount_;}
     int previewRatio() const {return single_.valid()?100:ratio;}
     bool favorable() const {auto it=anchors.find(region(cursor.x,cursor.z));if(it==anchors.end())return false;const double strength=config_.getFx(it->second.owner?"previewDefence":"previewNeutralStrength",Fixed::fromInt(1)).toDouble();return it->second.owner==me_||double(count())*count()>double(it->second.count)*it->second.count*strength;}
-    template<class Issue> void cancelFlow(Simulation& sim,RtsModule& module,render::float3 point,Issue issue) {
+    template<class Issue> void cancelFlow(Simulation& sim,GameCore& module,render::float3 point,Issue issue) {
         Entity best;float distance=1.4f*1.4f;const auto tag=module.rules().tagMask(config_.getStr("unitTag"));
         sim.world().each<Unit,Owner,Transform>([&](Entity e,const Unit& u,const Owner& o,const Transform& t){
             if(o.player!=me_||u.hp<=Fixed{}||!(module.rules().types[u.type].tags&tag))return;

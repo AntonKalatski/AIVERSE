@@ -7,7 +7,7 @@
 #include <fstream>
 #include <thread>
 
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 
 namespace fs = std::filesystem;
 

@@ -42,7 +42,7 @@ struct TrigFilter {                // unit filter
 
 struct TrigCondition {
     enum Kind : uint8_t { Count, Resource, Variable, Researched, Random, Time, Alive, RegionsOwned,
-                          Script /* {"type": "script", "fn": ...}: a Lua function's result (RtsScript.h) */ } kind = Count;
+                          Script /* {"type": "script", "fn": ...}: a Lua function's result (Script.h) */ } kind = Count;
     TrigPlayer player;
     TrigFilter filter;
     int area = -1;

@@ -205,7 +205,7 @@ TEST(city_mirror_shows_the_server_world_in_a_local_simulation) {
     CityNetRig rig(o, nullptr);
     cn::Client& a = rig.join(1, "");
     SimConfig cfg;
-    Simulation local(cfg, std::make_unique<game::RtsModule>());
+    Simulation local(cfg, std::make_unique<game::GameCore>());
     local.setup(cityNetRules(), cityNetMap());
     Simulation& server = rig.server.simulation();
     const Entity heroS = rig.server.module().topDown()->heroOf(server, 1);
@@ -324,7 +324,7 @@ TEST(city_mirror_predicts_the_hero_and_shows_events_and_premises) {
     auto shownAfterPush = [&](bool predict, Fixed& serverX, Fixed& serverLater, Fixed& restGap) {
         CityNetRig rig(o, nullptr, true);
         cn::Client& a = rig.knock("ann", {}, 100);   // a tenth of a second each way
-        Simulation local(SimConfig{}, std::make_unique<game::RtsModule>());
+        Simulation local(SimConfig{}, std::make_unique<game::GameCore>());
         local.setup(cityNetRules(), cityNetMap());
         cn::Mirror mirror(local, a);
         mirror.setPrediction(predict);
@@ -353,7 +353,7 @@ TEST(city_mirror_predicts_the_hero_and_shows_events_and_premises) {
     // events and premises reach the local simulation
     CityNetRig rig(o, nullptr, true);
     cn::Client& a = rig.knock("ann", {});
-    Simulation local(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation local(SimConfig{}, std::make_unique<game::GameCore>());
     local.setup(cityNetRules(), cityNetMap());
     std::vector<SimEvent> heard;
     int stepped = 0;

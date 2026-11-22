@@ -7,9 +7,9 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsScript.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Script.h"
 
 namespace fs = std::filesystem;
 
@@ -157,10 +157,10 @@ void registerScriptOps(Workspace& ws) {
             SimConfig cfg;
             cfg.seed = uint64_t(std::max<int64_t>(0, p.getInt("seed", 1)));
             try {
-                Simulation sim(cfg, std::make_unique<game::RtsModule>());
+                Simulation sim(cfg, std::make_unique<game::GameCore>());
                 sim.setup(ws.project.simRules(map), map);
-                auto& m = static_cast<game::RtsModule&>(sim.module());
-                std::vector<game::RtsAI> bots;
+                auto& m = static_cast<game::GameCore&>(sim.module());
+                std::vector<game::ComputerPlayer> bots;
                 for (auto& pl : sim.players()) bots.emplace_back(pl.slot, cfg.seed);
                 const uint32_t ticks = uint32_t(seconds * sim.tickRate());
                 while (sim.tick() < ticks && sim.result() == 0) { for (auto& b : bots) b.update(sim); sim.step(); }

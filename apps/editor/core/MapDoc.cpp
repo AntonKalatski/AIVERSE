@@ -11,7 +11,7 @@
 #include <mutex>
 #include <set>
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include <filesystem>
 #include <iterator>
 
@@ -775,7 +775,7 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
             std::string nm = d.entities[i].id.empty() ? d.entities[i].type : d.entities[i].id;
             if (t.structure) {
                 int x0 = 0, y0 = 0;
-                game::RtsModule::footprintAt(t, game::RtsModule::snapToFootprint(t, {Fixed::fromRaw(int64_t(std::lround(double(d.entities[i].x) * 65536))), Fixed{},
+                game::GameCore::footprintAt(t, game::GameCore::snapToFootprint(t, {Fixed::fromRaw(int64_t(std::lround(double(d.entities[i].x) * 65536))), Fixed{},
                                                                          Fixed::fromRaw(int64_t(std::lround(double(d.entities[i].z) * 65536)))}), x0, y0);
                 bool steep = false;
                 for (int yy = y0; yy < y0 + t.footprintH; ++yy)
@@ -792,11 +792,11 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
     if (!anyError) {
         try {
             SimConfig cfg;
-            Simulation sim(cfg, std::make_unique<game::RtsModule>());
+            Simulation sim(cfg, std::make_unique<game::GameCore>());
             sim.setup(rulesJson, toJson());
             for (int k = 0; k < 3; ++k) sim.step();
             if (d.planet()) {   // starts reachable: every pair of player key/first structures on one body by ground
-                auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+                auto* m = dynamic_cast<game::GameCore*>(&sim.module());
                 auto& gs = m->state(sim);
                 std::vector<std::pair<int, Vec3>> homes;   // player, position
                 sim.world().each<game::Unit, Owner, Transform>([&](Entity, game::Unit& u, Owner& o, Transform& tr) {

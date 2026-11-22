@@ -1,13 +1,13 @@
 // Campaign tools for agents: read / write campaign.json and play a mission chain headless (bots on every side,
-// the campaign player's survivors and resources carried over as the campaign says). See modules/rts/RtsCampaign.h.
+// the campaign player's survivors and resources carried over as the campaign says). See engine/game/Campaign.h.
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include "SimTools.h"
 #include "Workspace.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsCampaign.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/Campaign.h"
 
 namespace aiverse::editor {
 
@@ -79,10 +79,10 @@ void registerCampaignOps(Workspace& ws) {
                 applyCarry(map, carry, 1);
                 SimConfig cfg;
                 cfg.seed = uint64_t(p.getInt("seed", 1)) + uint64_t(k);
-                Simulation sim(cfg, std::make_unique<RtsModule>());
+                Simulation sim(cfg, std::make_unique<GameCore>());
                 sim.setup(ws.project.rulesJson, map);
                 restoreCarry(sim, carry, 1);
-                std::vector<RtsAI> bots;
+                std::vector<ComputerPlayer> bots;
                 for (auto& pl : sim.players()) bots.emplace_back(pl.slot, cfg.seed);
                 MissionOutcome out;
                 const uint32_t limit = uint32_t(secs * sim.tickRate());
@@ -92,7 +92,7 @@ void registerCampaignOps(Workspace& ws) {
                     out = missionOutcome(sim, *mission, 1);
                     if (out.finished) break;
                 }
-                auto* mod = dynamic_cast<RtsModule*>(&sim.module());
+                auto* mod = dynamic_cast<GameCore*>(&sim.module());
                 Json mj = Json::object();
                 mj.set("mission", str(id));
                 mj.set("finished", Json::fromBool(out.finished));

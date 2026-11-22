@@ -1047,7 +1047,7 @@ private:
 // enemies by fog of war (0 = see everything).
 void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer);
 // Planet maps (sceneFromSim calls it): objects with body-local positions, units in transit with world positions.
-class RtsModule;
-void sceneFromSphere(Simulation& sim, RtsModule& m, const Surface& surf, RtsScene& out, float alpha, uint8_t viewer);
+class GameCore;
+void sceneFromSphere(Simulation& sim, GameCore& m, const Surface& surf, RtsScene& out, float alpha, uint8_t viewer);
 
 } // namespace aiverse::game

@@ -219,7 +219,7 @@ The library does not change existing game rules or the visual layer.
 - The same 6 checks passed with AddressSanitizer + UndefinedBehaviorSanitizer (the nested native_link check builds a
   separate regular consumer).
 - `aiverse_meta_tests` was also built and run from the project's root CMake.
-- The combined state with the parallel foundation library and the include/linkage fix in `RtsScriptIeee.cpp`: 393 shared
+- The combined state with the parallel foundation library and the include/linkage fix in `ScriptIeee.cpp`: 393 shared
   engine tests passed.
 - Bot matches seed=3: skirmish — Blue, 405 game seconds, checksum ae6a5687d79765c2; mushrooms — Red, 92 seconds, checksum
   a06caad4f1d88f10.

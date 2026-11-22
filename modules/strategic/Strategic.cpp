@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include "engine/core/Random.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 
 namespace aiverse::strategic {
 
@@ -326,9 +326,9 @@ void StrategicGame::simulate(Army& a, Army& d, BattleReport& r) {
     const Json map = battleMap(a, d, r.province);
     SimConfig cfg;
     cfg.seed = seed_ ^ (uint64_t(turn_) * 1000003ull) ^ (uint64_t(r.province) * 7919ull);
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     sim.setup(rules, map);
-    auto& mod = static_cast<game::RtsModule&>(sim.module());
+    auto& mod = static_cast<game::GameCore&>(sim.module());
     World& w = sim.world();
     auto alive = [&](uint8_t side) {
         int n = 0;

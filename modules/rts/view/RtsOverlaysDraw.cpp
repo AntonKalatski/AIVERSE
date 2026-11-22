@@ -1,7 +1,7 @@
 // Geometry of the overlay shapes (world pass) and the screen pass (ImGui draw list).
 #include "RtsOverlays.h"
 #include "RtsView.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "RtsOverlayShaders.h"
 #include "imgui.h"
 
@@ -25,7 +25,7 @@ uint32_t scaleAlpha(uint32_t c, float k) {
     const float a = float(c >> 24) * std::clamp(k, 0.0f, 1.0f);
     return (c & 0x00ffffffu) | (uint32_t(a + 0.5f) << 24);
 }
-RtsModule* moduleOf(Simulation* sim) { return sim ? dynamic_cast<RtsModule*>(&sim->module()) : nullptr; }
+GameCore* moduleOf(Simulation* sim) { return sim ? dynamic_cast<GameCore*>(&sim->module()) : nullptr; }
 ImU32 imCol(float4 c) { return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, c.w)); }
 } // namespace
 
@@ -123,7 +123,7 @@ void RtsOverlays::commitFramePreparation(const std::shared_ptr<PreparedFrame>& f
 float RtsOverlays::radiusFor(const OverlayDef& d, const Inst& in) const {
     const UnitType* t = in.type < rules_->types.size() ? &rules_->types[in.type] : nullptr;
     Entity e = in.obj >= 0 && scene_ ? scene_->objects[size_t(in.obj)].entity : kNullEntity;
-    RtsModule* m = moduleOf(ctx_.sim);
+    GameCore* m = moduleOf(ctx_.sim);
     const bool live = m && e.valid() && ctx_.sim->world().has<Unit>(e) && ctx_.sim->world().has<Owner>(e);
     float r = d.radius;
     if (t) switch (d.radiusFrom) {

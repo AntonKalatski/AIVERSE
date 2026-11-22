@@ -18,7 +18,7 @@
 #include <filesystem>
 #include <set>
 #include <string_view>
-#include "modules/rts/RtsScript.h"
+#include "engine/game/Script.h"
 
 namespace aiverse::editor {
 

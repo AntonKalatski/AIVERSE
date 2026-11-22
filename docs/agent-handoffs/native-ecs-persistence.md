@@ -11,7 +11,7 @@ overwrite changes in the continuously updated FPS/editor branch.
   component-pool and singleton-resource codecs and checksum.
 - `engine/sim/Simulation.h/.cpp`: setup-time registration, world snapshots,
   checksum, versioned byte persistence and rollback on malformed disk loads.
-- `modules/rts/RtsSave.cpp`: counts engine's fixed pools plus **only** the
+- `engine/game/Save.cpp`: counts engine's fixed pools plus **only** the
   registered native ECS pools. Unregistered pools still fail saves.
 - `engine/core/Archive.h`: portable field-by-field encoding, streaming
   checksum and bounded binary blocks. No raw C++ structure dumps.
@@ -33,7 +33,7 @@ overwrite changes in the continuously updated FPS/editor branch.
   `docs/native-ecs-persistence.md`, `docs/native-modules.md`,
   `engine/core/Archive.h`, `engine/core/ECS.h`,
   `engine/sim/PersistentEcs.h`, `engine/sim/Simulation.cpp/.h`,
-  `modules/rts/RtsSave.cpp`, `tests/ecs_native_persistence_test.cpp`,
+  `engine/game/Save.cpp`, `tests/ecs_native_persistence_test.cpp`,
   `tests/run_ecs_experiment_suite.sh`.
 - Implemented: registration, deterministic ordered encode/hash, v10
   native-specific chunk, legacy v9 switch, COW ownership, fixed pool whitelist.
@@ -106,9 +106,9 @@ over a newer version. No green CI logs means no passing-CI claim.
 
 - **Implementation SHA:** `a10a9a87e468465eeacaed113f61b58cea46f007`, branch `feature/universal-entity-inspector-fps`, PR #7.
 - **Changed files:** `tests/ecs_native_rts_integration_test.cpp` (new), `CMakeLists.txt` (CTest registration).
-- **Behavior/ownership:** an actual `game::NativeModule` is injected through `game::RtsModule(std::vector<NativeDefinition>)`, not a synthetic GameModule. `NativeModule::setup` registers a custom `Counter` pool and `Ledger` resource and persists entity identity in `NativeStore`; its real tick updates both fields.
+- **Behavior/ownership:** an actual `game::NativeModule` is injected through `game::GameCore(std::vector<NativeDefinition>)`, not a synthetic GameModule. `NativeModule::setup` registers a custom `Counter` pool and `Ledger` resource and persists entity identity in `NativeStore`; its real tick updates both fields.
 - **Coverage added:** two real RTS simulation peers with matching checksum ticks; v10 byte save/load and checksum; COW snapshot restoration and post-reload replay; rejection of unregistered rogue pool; unchanged v9 save when no native registration; corrupt checksum must reject and preserve live simulation state.
-- **Compatibility:** no production runtime behavior or network protocol changed; only a test target registered for `AIVERSE_BUILD_TESTS`. The new test calls existing `RtsModule::serializeState` and built-in `NativeModules::serialize/hash`. `NativeStore` remains the module's explicit state and custom component/resource data are owned by registered ECS.
+- **Compatibility:** no production runtime behavior or network protocol changed; only a test target registered for `AIVERSE_BUILD_TESTS`. The new test calls existing `GameCore::serializeState` and built-in `NativeModules::serialize/hash`. `NativeStore` remains the module's explicit state and custom component/resource data are owned by registered ECS.
 - **Checks actually executed:** inspected GitHub source and recorded CMake target/linking; `git ls-remote https://github.com/chromealex/AIVERSE.git HEAD` attempted in available local container and failed with `Could not resolve host: github.com`. Native CMake compilation, CTest, AddressSanitizer, real network: **NOT RUN**.
 - **Latest CI at handoff:** CI: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451051); AIVERSE Studio validation: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451024); ECS 2.0 experimental checks: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451070); GPU batching focused regression: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451007).
 - **Risks/limits:** compilation/linkage on macOS/Windows/Linux is unproven. The new test uses repository `templates/mushrooms` files; assert those paths exist at test runtime. COW fixture covers in-process snapshots, not an actual UDP session or cross-CPU determinism.
@@ -117,7 +117,7 @@ over a newer version. No green CI logs means no passing-CI claim.
 
 ## Completed stage 5 — Validate entity allocator and real RTS pool rows (2026-11-18)
 - **Implementation SHA:** `d8937196965a79c60d0832590f6a04b5afb9ec89` on PR #7 `feature/universal-entity-inspector-fps`.
-- **Files:** `engine/core/ECS.h`, `engine/sim/Simulation.cpp`, `modules/rts/RtsSave.cpp`, `tests/ecs_native_persistence_test.cpp`.
+- **Files:** `engine/core/ECS.h`, `engine/sim/Simulation.cpp`, `engine/game/Save.cpp`, `tests/ecs_native_persistence_test.cpp`.
 - **Change:** added `World::validEntityState` guard for bounded entity allocator size, matching generation/alive arrays, binary alive values and exactly-once free-list membership of dead slots. `Simulation::deserialize` rejects malformed allocators before touching running state. `RtsSave::ioPool` now fails on invalid Entity generation, destroyed handles or duplicate component row indices rather than inserting inconsistent sparse-set entries.
 - **Tests added:** five invalid allocator shapes (column count, duplicate free slot, out-of-range free slot, live/free collision, nonboolean alive value); existing disk round-trip and COW tests remain registered.
 - **Compatibility:** valid v4–v10 existing save layout and v9 checksum are unchanged. Files with logically invalid allocator/pool membership may now be rejected, intentionally. Bound is 16,777,216 entity slots. `pendingDestroy` may contain stale handles intentionally and is not rejected.

@@ -2,12 +2,12 @@
 #include <cmath>
 #include "engine/net/HeroInput.h"
 #include "engine/game/Commerce.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "engine/game/TopDown.h"
 
 namespace aiverse::net::city {
 namespace {
-game::RtsModule& mod(Simulation& sim) { return static_cast<game::RtsModule&>(sim.module()); }
+game::GameCore& mod(Simulation& sim) { return static_cast<game::GameCore&>(sim.module()); }
 Fixed cell(uint16_t q) { return Fixed::fromRaw(int64_t(q) << (Fixed::kFracBits - 6)); }
 }
 
@@ -136,7 +136,7 @@ void Mirror::showPremises() {
 }
 
 void Mirror::apply() {
-    game::RtsModule& m = mod(sim_);
+    game::GameCore& m = mod(sim_);
     World& w = sim_.world();
     const auto& types = m.rules().types;
     if (tick_ && client_.tick() > tick_)   // the time between two snapshots, smoothed: what the interpolation runs over

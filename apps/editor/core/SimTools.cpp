@@ -4,8 +4,8 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
-#include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsScript.h"
+#include "engine/game/Tiles.h"
+#include "engine/game/Script.h"
 #include "engine/game/Progression.h"
 #include <stdexcept>
 
@@ -14,7 +14,7 @@ namespace aiverse::editor {
 using namespace aiverse::game;
 
 namespace {
-// Index = GameEvent value (RtsModule.h). Keep in the enum's order; new events go at the end.
+// Index = GameEvent value (GameCore.h). Keep in the enum's order; new events go at the end.
 const char* const kEventNames[] = {
     "", "spawned", "died", "attack", "hit", "trainStarted", "trained", "buildPlaced", "built",
     "gathered", "captured", "playerDefeated", "notEnough", "researched", "levelUp", "ability", "miss",
@@ -157,7 +157,7 @@ Json SimRefs::refJson(Entity e) const {
     return Json::number(int64_t(e.packed()));
 }
 
-std::map<std::string, Entity> mapEntityIds(Simulation& sim, RtsModule& mod, const Json& map) {
+std::map<std::string, Entity> mapEntityIds(Simulation& sim, GameCore& mod, const Json& map) {
     std::map<std::string, Entity> out;
     std::vector<Entity> used;
     World& w = sim.world();

@@ -10,7 +10,7 @@
 #include "engine/render/OwnerPrepareCommit.h"
 #include "engine/render/CameraModelSnapshot.h"
 #include "../../../engine/data/JsonCompose.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "../../../engine/game/Arsenal.h"
 #include "../../../engine/game/TopDown.h"
 #include "imgui.h"
@@ -1782,7 +1782,7 @@ bool RtsView::overlayTop(const Camera& cam, const SceneObject& o, size_t oi, flo
 
 void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
     World& w = sim.world();
-    auto* m = dynamic_cast<RtsModule*>(&sim.module());
+    auto* m = dynamic_cast<GameCore*>(&sim.module());
     if (!m) return;
     const Rules& R = m->rules();
     GameState& gs = m->state(sim);

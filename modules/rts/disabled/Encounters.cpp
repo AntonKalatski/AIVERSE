@@ -4,7 +4,7 @@
 // module. Rules with an "encounters" block fail at match start with a readable error. The Lua table
 // `encounters` keeps only active() (false).
 #include "../../../engine/game/Encounters.h"
-#include "../RtsScriptInternal.h"
+#include "../../../engine/game/ScriptInternal.h"
 #include <stdexcept>
 
 namespace aiverse::game {
@@ -19,7 +19,7 @@ EncounterRules Encounters::parse(const Json& j, const Rules&, uint32_t) {
     if (j.isObject()) missingModule();
     return {};
 }
-void Encounters::setup(Simulation&, RtsModule& m, const Json& rulesJson, const Json&) {
+void Encounters::setup(Simulation&, GameCore& m, const Json& rulesJson, const Json&) {
     m_ = &m;
     if (rulesJson["encounters"].isObject()) missingModule();
 }

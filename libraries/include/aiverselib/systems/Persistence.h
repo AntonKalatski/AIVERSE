@@ -1,5 +1,5 @@
 #pragma once
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include "Reservations.h"
 #include "Sequence.h"
 #include "Loot.h"

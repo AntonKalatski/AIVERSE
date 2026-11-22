@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 #include "../../../engine/data/Json.h"
-#include "../RtsScript.h"
+#include "../../../engine/game/Script.h"
 #include "../../../engine/render/PaintLayer.h"
 #include "../../../engine/sim/Command.h"
 #include "../../../engine/render/Math3D.h"
@@ -23,7 +23,7 @@ namespace aiverse { class Simulation; }
 
 namespace aiverse::game {
 
-class RtsModule;
+class GameCore;
 
 struct ViewTargeting {
     std::string ability;

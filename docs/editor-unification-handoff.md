@@ -227,7 +227,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Next: native ECS component introspection and editable reflection, real Transform rotation/scale when present, header name/Enabled semantics with persistence and runtime behavior.
 
 ### 2026-11-17 — ECS snapshots become authoritative for RTS Inspector component cards
-- User explicitly required REAL ECS component identities/values, not synthetic `DocEntity` components. Reviewed `apps/editor/core/WorldInspect.cpp`: `inspectEntity(Simulation&, RtsModule&, Entity, rulesJson)` iterates actual `World::has<T>` descriptors and serializes live ECS component values under `components`. `DetailsPanel::prepare()` already builds sections using those actual IDs.
+- User explicitly required REAL ECS component identities/values, not synthetic `DocEntity` components. Reviewed `apps/editor/core/WorldInspect.cpp`: `inspectEntity(Simulation&, GameCore&, Entity, rulesJson)` iterates actual `World::has<T>` descriptors and serializes live ECS component values under `components`. `DetailsPanel::prepare()` already builds sections using those actual IDs.
 - Commit `9d4c1a7c` (`apps/editor/DetailsPanel.cpp`): removes synthetic `drawDocumentEditableComponents()` from RTS Inspector; displays real ECS component `sections(ed)` first, then optional collapsed authoring-only `Map Entity Metadata` after them. Never call map fields real ECS components.
 - **Critical limitations:** existing ECS inspection is currently read-only, since the extracted JSON is a snapshot and has no writeback. `WorldInspect.cpp` descriptor serialization is real but RTS-specific; FPS and native project modules still need adapters / reflection. Rotation and Scale must only be displayed when present in actual ECS Transform schema. An unavailable native module means no real native components to inspect; do not synthesize them.
 - Verification: GitHub source read/commit only, **compile/UI tests NOT RUN**. Next agent must build and check UI with working native module; then implement typed per-component `World&` writeback with edit/undo policy and serialization persistence.
@@ -261,7 +261,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Next: get macOS build result, add in-process registry tests and then connect project native-module lifecycle safely; implement writeback hooks with real project persistence and Undo before making native fields editable.
 
 ### 2026-11-17 — NativeModule lifecycle integration for ECS Inspector
-- Branch: `feature/universal-entity-inspector-fps`. Commits: `260a9c62` (`modules/rts/RtsNative.h`), `c7dfa114` (`modules/rts/RtsNative.cpp`), `3227d1d1` (`apps/editor/core/WorldInspect.cpp`), `008b91b4` (`apps/editor/DetailsPanel.cpp`), `1e657929` (`docs/editor-native-ecs-inspector.md`), `0c1f4b29` (`docs/native-modules.md`).
+- Branch: `feature/universal-entity-inspector-fps`. Commits: `260a9c62` (`engine/game/Native.h`), `c7dfa114` (`engine/game/Native.cpp`), `3227d1d1` (`apps/editor/core/WorldInspect.cpp`), `008b91b4` (`apps/editor/DetailsPanel.cpp`), `1e657929` (`docs/editor-native-ecs-inspector.md`), `0c1f4b29` (`docs/native-modules.md`).
 - Architecture verified against `docs/native-modules.md`: AIVERSE C++ modules are **statically linked into project-specific editor builds**, not `dlopen`/hot-reloaded. `NativeModules::load` creates module instances from `compiledNativeModules` for `rules.json/nativeModules`; editor preview uses that Simulation.
 - Added optional virtual `NativeModule::inspectComponents(World&, Entity, Json& components, Json& schemas) const` with a no-op default. `NativeModules::inspectComponents(Simulation&, Entity, ...)` calls the **loaded module instances only**; it aggregates real reported ECS components, refuses overwrite of existing builtin/component names, and forwards per-field schema descriptors.
 - `inspectEntity` now merges the current Simulation's `mod.native().inspectComponents` output with existing ECS pool snapshots, optionally adding `componentSchemas`. `DetailsPanel` uses these scoped schema titles for component cards and field labels, without creating `DocEntity` placeholders. The earlier global C++ registration API remains optional for host-side extensions; module hooks avoid stale global callbacks on switching games.
@@ -371,7 +371,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Validation: GitHub source and test entries committed; **compilation, CTest and macOS visual verification NOT RUN**. Test selection ring handling at top-down/side camera angles, ensure rigid-box yaw matches runtime `orientedBoxTriangles`, confirm Undo/Redo/save/load. Fix any build errors before merge.
 
 ### 2026-11-18 — Native ECS field persistence hooks and type-aware default editors
-- Commits: `a17de986` (`modules/rts/RtsNative.h`), `17a708cf` (`modules/rts/RtsNative.cpp`), `03bce05d` (`apps/editor/EditorEcsWriteback.h`), `bd39cb3b` (`apps/editor/DetailsPanel.cpp`).
+- Commits: `a17de986` (`engine/game/Native.h`), `17a708cf` (`engine/game/Native.cpp`), `03bce05d` (`apps/editor/EditorEcsWriteback.h`), `bd39cb3b` (`apps/editor/DetailsPanel.cpp`).
 - Loaded native module instances may implement `inspectWriteback(componentId, fieldId, value, currentExtra, updatedExtra)` to validate and map an **actual ECS field** back to authored `DocEntity.extra`. The editor commits the updated JSON with `MapDoc::touched()` and uses `MapDoc::beginEdit()` at ImGui control activation for Undo. No editor-owned arbitrary in-memory World writes or unsupported generic persistence are performed.
 - `componentSchemas[componentId].fields[fieldId]` can opt into `editable:true` and supply a type (`integer`, scalar number, bool, string, numeric Vec3); the DetailsPanel draws a typed control and calls the loaded module's writer. Unknown/native-unregistered fields remain read-only, preserving safety when schemas change.
 - Crucial contract: module writer must ensure changed authoring extras are consumed at next Simulation::setup to reconstruct the ECS component; a temporary runtime state is never treated as persistent. Only statically linked and actually loaded project modules can supply this callback. Build/integration/Undo behavior are NOT verified yet; require tests and documentation example before merge.
@@ -454,7 +454,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Core commit `f4cf94d1`**: transferred 42 source blob-exact files including `engine/core/ECS.h`, `engine/sim/{CommonComponents,Simulation,SceneHierarchy,SceneHierarchySystem}`, `engine/net/Rollback.*`, experimental scheduler/guarded world/snapshot code, render hierarchy adapter, benchmark/correctness tests/scripts, GitHub ECS workflow, and the two ECS docs. Used base-target Git tree and lease-checked branch update, not a replace of entire source branch.
 - **Build integration `5866850a`**: wired opt-in ECS CTest suites, experimental RTS preprocessing flag (OFF), and COW rollback session test into our existing `CMakeLists.txt` without overwriting editor-specific CMake changes.
 - **Overlap resolution commits `3cf9aee4`, `48fae9dd`, `a272d1c4`**: manually merged the source FPS experimental parallel-motor (speculative gather + canonical sequential commit, OFF by default) into our FPS actor ECS mirror code, retaining `syncActorEntities`, `syncDynamicEntities`, current authoritative `State`, save v9/rollback, and existing Editor runtime provider. Counters and opt-in CMake flag preserved.
-- **Additional source ports `09644bf5` (RTS `RtsUnits.cpp`), `271ed678` (headless COW flags), `7d5876cf` (FPS tests incl. COW/motor parity)**.
+- **Additional source ports `09644bf5` (RTS `Units.cpp`), `271ed678` (headless COW flags), `7d5876cf` (FPS tests incl. COW/motor parity)**.
 - **Editor conflict resolution `5aacafd3`**: registered real `Parent`, `LocalTransform`, `WorldTransform` component dumps in the existing `WorldInspect.cpp` registry, preserving native module inspection and universal editor changes.
 - **Agents guidance `b2b874e6`**: integrated ECS 2.0 coordination / determinism restrictions into existing `AGENTS.md`.
 - **Audit:** among the 51 ECS-source-changed files, 44 are blob-identical to source commit and 7 are intentional merged versions: `AGENTS.md`, root and FPS `CMakeLists.txt`, `WorldInspect.cpp`, `FpsModule.cpp/.h`, `tests/fps/tests.cpp`. None omitted.
@@ -546,7 +546,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal mechanics audit: build preflight
 - User requires proving that RTS/FPS mechanics are reusable by **any genre**, not merely present in the same repository. Universal ECS primitives and pure policy libraries exist, but RTS/FPS module-specific business logic still has coupling; comprehensive genre-agnostic integration is not yet complete.
 - Commit `0b8ad00` fixed three invalid `//` comments in root `CMakeLists.txt` near ECS test/RTS option blocks. CMake uses `#` for comments, so previous imported PR #7 configuration could fail to parse before tests could run. This is a syntax-level fix; **native CMake configuration not yet executed**.
-- Next: add explicit independent cross-genre ECS policy consumer tests + reusable adapter API; audit genre-bound `RtsModule&`/ `fps::Actor` dependencies; report remaining blockers without claiming complete universality.
+- Next: add explicit independent cross-genre ECS policy consumer tests + reusable adapter API; audit genre-bound `GameCore&`/ `fps::Actor` dependencies; report remaining blockers without claiming complete universality.
 
 ### 2026-11-18 — FPS ECS authority migration: stage P (direct damage parity regression)
 - Commit `2413b7a` (`tests/fps/tests.cpp`) adds `ecsDamageAuthorityParity`. Creates identical two-team deathmatch simulations in default and `fps.ecsAuthority=true` mode, sends 30 ticks of deterministic fire, compares `Simulation::checksum` after each tick, target health, attacker hits/kills, and the complete `ActorRuntime::value` of both participants against the compatibility workspace. Explicitly verifies the victim dies and the attacker is credited with a kill.
@@ -560,8 +560,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Tests must verify native runtime spawn without pre-registered index and duplicate-ID failure. Native compile/CI not yet confirmed.
 
 ### 2026-11-18 — Cross-genre audit: stage 1, ECS policy adapter
-- Commit `cb9a43e`: `libraries/include/aiverselib/genre/EcsMechanicSystems.h` introduces genre-independent `eachEcsMechanic<Component>(World&,policy)` and `addEcsMechanicSystem<Component>(Simulation&,name,policy)`. Game code chooses an arbitrary ECS component type, binds its existing policy, and gets deterministic dense-order iteration and COW write preparation. No dependency on `RtsModule` or `fps::Module`.
-- This is **an adapter, not universalization of all FPS/RTS functions**. Any mechanic requiring `RtsModule&`, `fps::Actor`, global RNG, actor ownership, collision or format-specific state must be extracted/refactored separately. No native compilation yet.
+- Commit `cb9a43e`: `libraries/include/aiverselib/genre/EcsMechanicSystems.h` introduces genre-independent `eachEcsMechanic<Component>(World&,policy)` and `addEcsMechanicSystem<Component>(Simulation&,name,policy)`. Game code chooses an arbitrary ECS component type, binds its existing policy, and gets deterministic dense-order iteration and COW write preparation. No dependency on `GameCore` or `fps::Module`.
+- This is **an adapter, not universalization of all FPS/RTS functions**. Any mechanic requiring `GameCore&`, `fps::Actor`, global RNG, actor ownership, collision or format-specific state must be extracted/refactored separately. No native compilation yet.
 - Next: compile and run the same pure policies against two different GameModules via this common adapter; add coverage and an explicit capability matrix for each mechanic.
 
 ### 2026-11-18 — FPS ECS authority migration: stage R (direct ECS spawn regression)
@@ -576,7 +576,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Cross-genre audit: stage 2, executable contract
 - Commit `6dc7a89`: added `tests/ecs_cross_genre_mechanics_test.cpp`. It runs **identical** reusable `stepMotion`, `stepRecoil`, `stepCapture` policies through `addEcsMechanicSystem<Component>` in two independent GameModule types with distinct ECS components (`ShooterCharacter`, `StrategySoldier`). Checks matching deterministic checksums, rollback replay, and optional page COW state.
-- Scope: this proves generic C++ policies can be bound by independently authored game modules **once compiled and executed**. It does **not** prove that every existing RTS/FPS gameplay function can be moved to a new genre unchanged; those still refer to `RtsModule&`, `fps::Actor`, domain-specific state and configuration.
+- Scope: this proves generic C++ policies can be bound by independently authored game modules **once compiled and executed**. It does **not** prove that every existing RTS/FPS gameplay function can be moved to a new genre unchanged; those still refer to `GameCore&`, `fps::Actor`, domain-specific state and configuration.
 - New test is not yet wired into build/test runners; no native compilation or passing CI observed.
 
 ### 2026-11-18 — Cross-genre audit: stage 3, public header contract
@@ -632,7 +632,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — User-mandated universal ECS mechanic contract (all genres)
 - User explicitly requires **every reusable gameplay mechanic** to be built from (1) persistent ECS **components**, (2) composable ECS **systems** implementing feature stages. Genre is a project preset, never a gate: a vehicle may shoot, RTS objects may use first-person weapons, inventory and AI systems mix freely.
-- Commit `304e847` (`AGENTS.md`): high-priority normative rules require data-only ECS components, independent systems with explicit read/write/resource dependencies, pure policies, deterministic ordered effects, public native-project API, composability and cross-genre tests. Disallows duplicating trajectory/damage formulas in RTS/FPS and treats RtsModule/fps::Module code as adapters rather than universal APIs.
+- Commit `304e847` (`AGENTS.md`): high-priority normative rules require data-only ECS components, independent systems with explicit read/write/resource dependencies, pure policies, deterministic ordered effects, public native-project API, composability and cross-genre tests. Disallows duplicating trajectory/damage formulas in RTS/FPS and treats GameCore/fps::Module code as adapters rather than universal APIs.
 - Commit `76d7a69` (`docs/ecs-mechanic-composition.md`): detailed architecture, per-mechanic deliverables/acceptance gates and concrete launch -> flight -> collision -> damage -> effects/despawn design, plus candid migration status.
 - Commit `035aae4` (`skills/workflow/aiverse-new-mechanic/SKILL.md`): rewrote older RTS-only instructions. All future features must follow shared ECS component + system + policy + host-adapter architecture.
 - Commit `bc6ff19` (`skills/gameplay/aiverse-weapon-policies/SKILL.md`) requires shared ECS weapon/projectile systems for all genres. Commit `3cd63b6` created `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` for the new shared flight API.
@@ -670,7 +670,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS projectile + damage resolution, stage F
 - Commit `259258b`: registered public package `ecs-impact-damage` in `libraries/catalog.json`, with target `AIVERSE::lib_ecs_impact_damage`, source `EcsDamageSystems.h`, workflow skill, CTest fixture and dependency on existing `ecs-projectile-systems`. The library catalog's generated `AIVERSE::lib_*` targets make it accessible to native C++ game modules without linking FPS/RTS combat modules.
 - JSON structure was parsed and validated before commit (119 packages; package at end); **not** tested with the catalog CLI or a native CMake configure yet.
-- Next: update normative composition guide/skill and verify build/results; do not advertise automatic integration into legacy `fps::Module` / `RtsModule`.
+- Next: update normative composition guide/skill and verify build/results; do not advertise automatic integration into legacy `fps::Module` / `GameCore`.
 
 ### 2026-11-18 — Universal ECS projectile + damage resolution, stage G
 - Commit `95025b3`: updated normative `docs/ecs-mechanic-composition.md` with the actual `EcsDamageSystems.h` component schema, registration recipe, ordered flight→impact queue→damage resolution→deferred despawn barrier, public target `AIVERSE::lib_ecs_impact_damage`, and shooter/artillery rollback fixture.
@@ -682,7 +682,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Universal ECS weapon launch, stage A
 - Commit `3e146a3`: added shared `libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h`. Data-only ECS components: `WeaponParametersComponent` (Fixed speed/gravity/radius, lifetime, cooldown, damage), `WeaponStateComponent` (ammo/nextFireTick), `FireIntentComponent` (origin/direction/one-shot request), `ProjectileSpawnQueue` and `ProjectileSpawnCommand`.
-- `addWeaponLaunchSystem` validates settings, cooldown/ammo, consumes requests in stable `WeaponState` dense order and emits spawn commands without structural changes during iteration. `addProjectileSpawnSystem` consumes them in a separate deterministic barrier and creates `ProjectileFlightComponent`/`ProjectileDamageComponent` pairs for the shared flight→impact→damage chain. Host genre adapters supply inputs and configuration; no `RtsModule` or `fps::Module` dependencies.
+- `addWeaponLaunchSystem` validates settings, cooldown/ammo, consumes requests in stable `WeaponState` dense order and emits spawn commands without structural changes during iteration. `addProjectileSpawnSystem` consumes them in a separate deterministic barrier and creates `ProjectileFlightComponent`/`ProjectileDamageComponent` pairs for the shared flight→impact→damage chain. Host genre adapters supply inputs and configuration; no `GameCore` or `fps::Module` dependencies.
 - **Status:** initial implementation only, not compiled/run or integrated with legacy RTS/FPS gameplay. Next: full cross-genre weapon→spawn→flight→damage test, CMake/standalone registration, catalog, skill and documentation. Keep existing host combat untouched until equivalence is proven.
 
 ### 2026-11-18 — Universal ECS weapon launch, stage B (full pipeline proof)
@@ -718,7 +718,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Universal ECS weapon launch, stage I (skill cross-links)
 - Commit `2363b7d`: updated the existing `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` to direct agents to `aiverse-ecs-weapon-launch` and `aiverse-ecs-impact-damage`, the complete public header chain and three cross-genre regression tests. This prevents a future agent from implementing duplicate RTS/FPS weapon or damage stages when reading the older flight-only skill.
-- Work in this checkpoint is limited to independent reusable packages and tests. **Existing** `RtsModule` and `fps::Module` shooting/AI/netcode remain to be migrated, one stage at a time with real checksum and legacy save parity checks. CI not confirmed green.
+- Work in this checkpoint is limited to independent reusable packages and tests. **Existing** `GameCore` and `fps::Module` shooting/AI/netcode remain to be migrated, one stage at a time with real checksum and legacy save parity checks. CI not confirmed green.
 
 
 ### 2026-11-18 — Shared weapon dry-fire regression checkpoint
@@ -774,7 +774,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — complete ECS feature inventory and migration roadmap (planning-only audit)
 - **Planning document commit:** `0141efc431b5d852a633e627bb05b506fe7a43a7`; created `docs/ecs-feature-migration-plan.md`. It inventories all 120 registered packages (78 simulation, 21 presentation, 21 tools), describes real RTS/FPS host ownership and outlines cross-genre component/system migration epics E00–E15, execution stages, tests and agent boundaries. Categorization is a *proposed target architecture*, not a declaration that features are already converted.
 - **Machine-readable tracker commit:** `be15ce4e0e6b01713a7fc7a35387e3e0c505b095`; created `docs/ecs-feature-migration-status.csv` with 120 package rows and explicit initial migration statuses. Follow-on agents must update per-feature status only when source and real-host tests support it.
-- **Audited sources:** `libraries/catalog.json`, `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `engine/core/ECS.h`, `engine/sim/Simulation.h`, `engine/sim/CommonComponents.h`, `modules/rts/RtsModule.cpp`, `RtsModule.h`, `GameData.h`, `modules/fps/FpsModule.cpp`, `FpsModule.h`, `FpsSystems.h`, `engine/meta/Meta.h`, existing ECS and editor handoffs.
+- **Audited sources:** `libraries/catalog.json`, `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `engine/core/ECS.h`, `engine/sim/Simulation.h`, `engine/sim/CommonComponents.h`, `engine/game/GameCore.cpp`, `GameCore.h`, `GameData.h`, `modules/fps/FpsModule.cpp`, `FpsModule.h`, `FpsSystems.h`, `engine/meta/Meta.h`, existing ECS and editor handoffs.
 - **Finding:** independent shared ECS launch/flight/damage libraries exist but production RTS/FPS still use legacy gameplay; FPS ECS full-runtime payloads are canonical only between tick boundaries under an opt-in flag; RTS simulation registration is not itself genre-neutral component composition. Rendering, UI, offline tools and account meta are not simulation ECS migration targets.
 - **Verification executed:** successful GitHub connector source reads, `libraries/catalog.json` JSON parse and GitHub file creation responses. **No** native CMake build, CTest, sanitizer, FPS/RTS gameplay, checksum parity, Metal/GLES validation, editor visual test or CI results were run/verified here.
 - **Next action:** E00 baseline and golden RTS/FPS replay/event/save snapshots; coordinate ownership with active FPS and ECS agents before any implementation. Start incremental E01/E02/E03 integration, never mass-rewrite or replace live logic without parity proof. Keep this handoff updated after each subsequent implementation commit.
@@ -979,7 +979,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Real RTS ECS Unit health/energy regeneration reuses generic policy
 - Implementation SHA: `642bf57afec14ed3663ea404c13ddfef9df423af`.
-- Changed `modules/rts/RtsEconomy.cpp`: within the real `sysEconomy` ECS `w.each<Unit,Owner>` loop, health regen and energy regen now call `lib::genre::stepFixedResourceRegeneration` instead of duplicating fixed-point arithmetic; `Unit.hp`/`Unit.energy` remain the sole authoritative ECS fields. Preserved original conditions, `Stat::MaxHp` cap, `Stat::EnergyRegen` modifier, multiplication order, stage timing and save/replay layout. No separate copy/mirror or genre-specific fork of the calculation.
+- Changed `engine/game/Economy.cpp`: within the real `sysEconomy` ECS `w.each<Unit,Owner>` loop, health regen and energy regen now call `lib::genre::stepFixedResourceRegeneration` instead of duplicating fixed-point arithmetic; `Unit.hp`/`Unit.energy` remain the sole authoritative ECS fields. Preserved original conditions, `Stat::MaxHp` cap, `Stat::EnergyRegen` modifier, multiplication order, stage timing and save/replay layout. No separate copy/mirror or genre-specific fork of the calculation.
 - Verification: source change committed. **Native build, RTS scenario checksums and lockstep/rollback comparisons not executed**; those remain required before declaring parity. This is real shared-policy adoption inside an existing RTS ECS system, **not full RTS mechanic extraction**.
 - Next: add focused pure regression test for rates, caps, positive/negative values, and continue migrating real combat/projectile paths after native validation.
 
@@ -1030,7 +1030,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 
 ### 2026-11-18 — Continuation static integration audit (no native execution)
-- Read exact current branch source for `FpsModule.cpp`, `RtsEconomy.cpp`, `EcsTimedMechanics.h`, `FixedRegeneration.h`, FPS/regren fixtures, CMake, experiment suite, catalog and skill (10 files).
+- Read exact current branch source for `FpsModule.cpp`, `Economy.cpp`, `EcsTimedMechanics.h`, `FixedRegeneration.h`, FPS/regren fixtures, CMake, experiment suite, catalog and skill (10 files).
 - Eight focused **static** assertions passed: both ECS+FPS call `stepWeaponReload`; both ECS+RTS use `stepFixedResourceRegeneration`; misplaced dynamic indexing fixture no longer appears in actor test; FPS reload parity fixture is invoked; fixed regeneration CTest and standalone script registration exist; catalog parses as 123 packages; agent skill includes live integration guidance.
 - GitHub Actions examined for `92a165d3`: CI was **cancelled**, other three workflow runs were **queued**. Neither status establishes native compilation or passing gameplay tests. Git clone of the repo from execution environment is DNS-blocked; avoid claiming compiler/CTests passed.
 - Next: on a native clone run `python3 tools/libraries/catalog.py check`, `bash tests/run_ecs_experiment_suite.sh`, build `aiverse_fps_tests` and run `ctest --output-on-failure -R 'fps|ecs_'` with RTS replay/save baseline; investigate any failures before merging or dropping legacy data.
@@ -1045,7 +1045,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Live RTS movement consumes shared nonphysical kinematic policy
 - Implementation SHA: `83336082c896835643a0da78e1129f921d430c13`.
-- Changed `modules/rts/RtsCombat.cpp::sysProjectiles`: both non-programmed projectile movement paths now call `lib::genre::advanceKinematicPursuit` from `EcsKinematicProjectileSystems.h`, using the existing `Transform::pos`, current target/aim and identical per-tick movement budget. The helper delegates to the exact prior fixed-point `moveTowards` operation. Standard weapon missiles continue homing toward the current target position; ability projectiles keep their arc, collision and `ProjectileProgram` branches untouched.
+- Changed `engine/game/Combat.cpp::sysProjectiles`: both non-programmed projectile movement paths now call `lib::genre::advanceKinematicPursuit` from `EcsKinematicProjectileSystems.h`, using the existing `Transform::pos`, current target/aim and identical per-tick movement budget. The helper delegates to the exact prior fixed-point `moveTowards` operation. Standard weapon missiles continue homing toward the current target position; ability projectiles keep their arc, collision and `ProjectileProgram` branches untouched.
 - **Actual RTS integration:** existing RTS `Projectile` and `Transform` are ECS components and the live `projectiles` system now consumes the shared library's deterministic motion policy; hit/damage/splash/onHit ordering is still unchanged within legacy `sysProjectiles`. This does **not** yet register `addKinematicProjectileSystem` for RTS or move its damage stage into standalone generic systems. Legacy save/checksum layout unaffected by this source change, but native parity is still unverified.
 - Verification: pushed to GitHub only. Native compile, save v9, rollback and in-game projectile parity have **not** run.
 - Next: fix invalid-pursuit input mutation behavior if needed, add moving-target/timeout parity tests and register them, run native builds/CTest. Refactor `sysProjectiles` by behavior only after parity evidence; preserve ability and program variants.
@@ -1091,12 +1091,12 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `c44f3638788e4b18d62e4724082bd58b9d9574db`.
 - Added public `libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h` with `OrderedProjectileImpact` (ECS projectile, shooter, target, Fixed damage, location and splash radius) and `resolveOrderedProjectileImpact` which preserves canonical per-projectile order: resolve direct target, stage direct-hit effects, visit eligible splash candidates in the host spatial query's order. Prevents applying splash twice to the primary target. All armor/status/faction/distance logic remains injected by caller callbacks. No `SpatialWorld`, RTS/FPS module, or rigid-body dependency.
 - Intent: extract the live RTS direct+splash impact block without batching/reordering damage (which could change shields, callbacks and network replay). This generic resolver is a policy used from an ECS gameplay system, not yet a separately scheduled impact system.
-- Verification: GitHub source commit only; no compilation or CTest observed. Next: integrate into `RtsCombat.cpp::sysProjectiles` and add portable callback-order regressions.
+- Verification: GitHub source commit only; no compilation or CTest observed. Next: integrate into `Combat.cpp::sysProjectiles` and add portable callback-order regressions.
 
 
 ### 2026-11-18 — Live RTS direct/on-hit/splash damage routed through shared ordered impact policy
 - Implementation SHA: `86b3da1e56489460b395f2ffd91417cc8ea7286a`.
-- Changed `modules/rts/RtsCombat.cpp::sysProjectiles` for **ordinary non-programmed weapon projectiles** only: after shared kinematic pursuit reaches the current target aim, it calls `lib::genre::resolveOrderedProjectileImpact`. The generic helper dictates direct damage, on-hit payload staging, then splash candidate traversal, skipping the primary target. Injected RTS-specific callbacks preserve `w.alive/has<Unit>`, `dealDamage` (armor, native/script hooks, statuses/shields, faction effects), `gs.hash.query`, `hostile`, `dist2D` and payload scheduling, with the original `w.destroyLater` placement. `sysProjectilePrograms`, `impactProjectile` ability path, arcs, environmental collision and per-projectile order are untouched.
+- Changed `engine/game/Combat.cpp::sysProjectiles` for **ordinary non-programmed weapon projectiles** only: after shared kinematic pursuit reaches the current target aim, it calls `lib::genre::resolveOrderedProjectileImpact`. The generic helper dictates direct damage, on-hit payload staging, then splash candidate traversal, skipping the primary target. Injected RTS-specific callbacks preserve `w.alive/has<Unit>`, `dealDamage` (armor, native/script hooks, statuses/shields, faction effects), `gs.hash.query`, `hostile`, `dist2D` and payload scheduling, with the original `w.destroyLater` placement. `sysProjectilePrograms`, `impactProjectile` ability path, arcs, environmental collision and per-projectile order are untouched.
 - This reduces duplicated impact ordering in live gameplay without introducing a second ECS state owner or delaying damage to another system barrier. It is a reusable ECS policy called from the existing RTS ECS tick, **not** yet a separately scheduled universal damage system. The generic `HitPointsComponent` uses integer HP and cannot naively replace RTS fixed-point/detailed `dealDamage`.
 - Verification: GitHub source commit only, **not built/tested**. Mandatory parity cases: moving targets, direct kills, splash team filters, onHit payload sequencing, shield and status hooks, save/checksum/replay, editor and network rollback.
 - Next: exercise this policy with independent host callback-order tests, publish reusable skill/catalog, run CI when available, and only then consider full separate commit system behind parity gate.
@@ -1121,7 +1121,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Real RTS programmed weapon hits use shared ordered ECS impact policy
 - Implementation SHA: `120a26b16c28cc4f5262cc61c84a3eb8b9ee529d`.
-- Changed `modules/rts/RtsProjectilePrograms.cpp::sysProjectilePrograms`, the `impact` lambda's *weapon* branch (`shot.effList < 0`): routes fixed-point scaled direct damage, immediate on-hit payload and index-sorted splash through `lib::genre::resolveOrderedProjectileImpact`. The callback for splash querying retains **the original** `gs.hash.query` eligibility/distance test and explicitly sorts collected entities by `Entity::index` before applying damage; damage remains immediate for each candidate. The old `dealDamage` armor/shield/status/script behavior remains unchanged.
+- Changed `engine/game/ProjectilePrograms.cpp::sysProjectilePrograms`, the `impact` lambda's *weapon* branch (`shot.effList < 0`): routes fixed-point scaled direct damage, immediate on-hit payload and index-sorted splash through `lib::genre::resolveOrderedProjectileImpact`. The callback for splash querying retains **the original** `gs.hash.query` eligibility/distance test and explicitly sorts collected entities by `Entity::index` before applying damage; damage remains immediate for each candidate. The old `dealDamage` armor/shield/status/script behavior remains unchanged.
 - **Important semantics:** ordinary weapon projectiles queue on-hit payloads and use query order; programmed weapon shots execute on-hit payloads immediately and sort splash by entity index. These are deliberately preserved as separate RTS adapters despite using the same generic dispatch policy. Programmed *ability* projectiles (`shot.effList >= 0`) remain on their original `applyPayload` path; this change does not alter their effects or projectile motion. No new ECS state pools or save data were introduced.
 - Verification: source pushed via GitHub only; no native compile, CTest, cross-platform determinism, save v9, game replay, or network rollback verified. Next: add an explicit regression for host-provided splash ordering, then obtain native build/CI results before merging.
 
@@ -1212,7 +1212,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Native ECS impact queue package registered
 - **Implementation SHA:** `ac5d8a776f543d1aad0491915f53d2710df6cc67`.
-- Added `ecs-impact-queue` catalog package with public `AIVERSE::lib_ecs_impact_queue` INTERFACE target, depending on `ecs-ordered-impact`. This enables native project reuse without linking `RtsModule`/`fps::Module`. References header, skill and cross-genre test.
+- Added `ecs-impact-queue` catalog package with public `AIVERSE::lib_ecs_impact_queue` INTERFACE target, depending on `ecs-ordered-impact`. This enables native project reuse without linking `GameCore`/`fps::Module`. References header, skill and cross-genre test.
 - **Verification:** parsed catalog JSON and verified IDs unique and count 127 at edit time. Native catalog filesystem check and CMake configure **not run**; source/test are additive only.
 - **Next:** CMake CTest and standalone runner registration, executable compilation/rollback verification, then one real host adapter behind explicit parity gates.
 
@@ -1701,7 +1701,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Branch:** `feature/universal-entity-inspector-fps` (PR #7), sharing the working tree with other agents. This is a docs/process stage; prior code commits are `b416dd4c4ab9a72d43d7d9d805c44e49c4161d62` and `acba58bf9f3c4d7cea69c039540f203aa99abbc3`.
 - **Files:** `AGENTS.md`, `docs/agent-handoffs/native-ecs-persistence.md`, `docs/native-ecs-persistence.md`, `docs/editor-unification-handoff.md`.
 - **Change:** handoff requirement now applies after **every** stage, not just selected ECS implementation commits. The handoff must explicitly capture code SHA, paths, compatibility, actually executed tests, blocking failures, and next agent action; preserve concurrent entries and commit docs before next stage.
-- **Native ECS source of truth:** `engine/sim/PersistentEcs.h`; public registration `engine/sim/Simulation.h`; save/hash/rollback `engine/sim/Simulation.cpp`; RTS fixed-pool boundary `modules/rts/RtsSave.cpp`; tests `tests/ecs_native_persistence_test.cpp`.
+- **Native ECS source of truth:** `engine/sim/PersistentEcs.h`; public registration `engine/sim/Simulation.h`; save/hash/rollback `engine/sim/Simulation.cpp`; RTS fixed-pool boundary `engine/game/Save.cpp`; tests `tests/ecs_native_persistence_test.cpp`.
 - **Verification:** repository source and workflow metadata inspected using GitHub connector. Container `git ls-remote` failed with `Could not resolve host: github.com`. **Native compile/CTest/macOS runtime and real network playback: NOT RUN.** Latest examined GitHub Actions for PR #7 were queued, not passing.
 - **Unfinished:** real compiled/native RTT validation; check serializer migration of legacy modules, malformed payloads, exact checksum semantics, and full transaction boundary. Preserve old v9 format for projects without registered native ECS components.
 - **Next action:** run `ctest --test-dir <build> -R ecs_native_persistence_test --output-on-failure` and `bash tests/run_ecs_experiment_suite.sh` on a full checkout; fix real diagnostics before switching production gameplay. Add exact result and commit to both handoff locations.
@@ -1836,7 +1836,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 
 ### 2026-11-18 — Reject malformed ECS allocator and RTS pool records
 - **Code SHA:** `d8937196965a79c60d0832590f6a04b5afb9ec89`; current branch `feature/universal-entity-inspector-fps`.
-- **Files:** `engine/core/ECS.h`, `engine/sim/Simulation.cpp`, `modules/rts/RtsSave.cpp`, `tests/ecs_native_persistence_test.cpp`.
+- **Files:** `engine/core/ECS.h`, `engine/sim/Simulation.cpp`, `engine/game/Save.cpp`, `tests/ecs_native_persistence_test.cpp`.
 - Added allocator invariants before byte-state application, plus generation/liveness/duplicate validation for RTS built-in pool entries. Source tests cover five malformed allocator states.
 - No on-disk version or checksum update; no native compilation, sanitizers or live network test run here. See `docs/agent-handoffs/native-ecs-persistence.md` for exact proof limits and next command.
 - **Next:** build targeted CTest, inspect legacy save compatibility and run real RTS malformed-pool regression.
@@ -1934,7 +1934,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Shared branch `feature/universal-entity-inspector-fps`; code commits
   `d5a719fddc3f71d1b61f0518bf1b62cdf7b9c9d9` and
   `8c4fdf733a57d8b6413df4587abf6a367796ea31`.
-- Registered `ecs_real_genre_replay_test` that runs real `RtsModule` and
+- Registered `ecs_real_genre_replay_test` that runs real `GameCore` and
   `fps::Module`: canonical commands with reversed peer arrival, v9 disk
   save/load at tick 20, COW/deep snapshots, corrupted-load recovery, replay
   comparison per tick, FPS default and `ecsAuthority` parity.

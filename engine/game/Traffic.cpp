@@ -344,7 +344,7 @@ void Traffic::setup(Simulation& sim, GameHost& m, const Json& rulesJson, const J
     sim.registerPersistentComponent<VehicleDoor>("traffic.vehicle_door", 1);
     sim.registerPersistentComponent<ServiceHold>("traffic.service_hold", 1);
     sim.registerPersistentComponent<ServiceCrew>("traffic.service_crew", 1);
-    sim.registerPersistentComponent<CrossingWait>("traffic.crossing_wait", 1);   // RtsPedestrianVehicles.inc
+    sim.registerPersistentComponent<CrossingWait>("traffic.crossing_wait", 1);   // PedestrianVehicles.inc
     sim.registerPersistentResource<ServiceLedger>("traffic.service_ledger", 1);
     noParking_.clear();
     for (const Json& r : mapBlock["noParking"].items()) {   // map traffic.noParking: rectangles in cells

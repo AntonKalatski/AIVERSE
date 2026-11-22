@@ -19,7 +19,7 @@ payload per player (SpawnWanderData) and a compatibility key that splits incompa
 | Control plane | `engine/net/server/BattleControl.*` | signed JSON over TCP: allocate / release / status / reports |
 | Client lifecycle | `NetClient::suspend / resume / matchPayload / setResultReporter` | background / foreground, payload, result blob |
 | Tools | `apps/battle` (`aiverse_battle`), `aiverse_server --battle-port ...` | keys, tickets, control client, ping, headless load test |
-| RTS battles | `apps/battle/RtsBattle.*` | a top-down RtsModule project (topdown_arena, extraction, Drone Fall) on the load harness |
+| RTS battles | `apps/battle/RtsBattle.*` | a top-down GameCore project (topdown_arena, extraction, Drone Fall) on the load harness |
 | Tests | `tests/net_mobile/battle_tests.cpp` (`aiverse_battle_tests`) | everything above |
 
 ## Flow of one battle
@@ -130,7 +130,7 @@ load test and the tools all speak it.
 - Desync: checksums every `checksumInterval` ticks are compared on the server. `Desync` reaches
   every client (`NetEvent::Kind::Desync`), and the report has `desync = true` and no consensus.
 - The game must freeze outcome state once `result()` is non-zero, as HeroDuel does. Every client's
-  result blob is then the same, however far past the result tick it has predicted. `RtsModule` does this for
+  result blob is then the same, however far past the result tick it has predicted. `GameCore` does this for
   every RTS game: the `outcome` system latches the first result and its blob (`outcomeBlob()`); see
   docs/topdown.md § Outcome.
 
@@ -165,7 +165,7 @@ network match: when `MatchPayload` + `MatchStart` arrive the client checks the p
 (`battleCompatible`), builds the map with `applyBattlePayload` — a seat's loadout that is a JSON object is merged
 into `players[slot - 1]` of the map (for example `{"deck": {...}}`, progression.md), match-wide `gameData` that is
 a JSON object becomes the map's `"battle"` key — and attaches the simulation. The result reporter sends
-`RtsModule::outcomeBlob()`. On phones the client calls `suspend` / `resume` on focus loss / gain. A failed
+`GameCore::outcomeBlob()`. On phones the client calls `suspend` / `resume` on focus loss / gain. A failed
 connect (rejected tickets get no answer: the 10 s connect timeout), a lost battle after the reconnect window or a
 payload for another build ends the battle, goes back to the menu and emits `battleFailed {reason, text}`.
 Web builds return `"unsupported"` (no UDP). Test: `battle_join_by_ticket_payload_and_compat`
@@ -222,7 +222,7 @@ aiverse_battle load --matches 50 --players 2 --seconds 30 --profile bad [--suspe
 This runs one hosted battle server with N HeroDuel matches (`apps/battle/HeroDuel.h`, a stand-in
 top-down shooter with heroes, projectiles, dashes and loadouts, speaking the same hero commands), or with
 `--project DIR [--map FILE] [--rules-patch JSON]` N matches of an RTS top-down project (`apps/battle/RtsBattle.h`:
-RtsModule simulations, heroes steered by the computer pilot, ability taps, the frozen outcome blob as the report). Every player is a bot client with
+GameCore simulations, heroes steered by the computer pilot, ability taps, the frozen outcome blob as the report). Every player is a bot client with
 its own simulation, connected over the secure transport through the simulated mobile network, all
 on a virtual clock in one process. It reports finished matches, agreed results, desyncs, rollbacks,
 how far clients run ahead of confirmation, server update time (p50 / p99 / max), server CPU share and

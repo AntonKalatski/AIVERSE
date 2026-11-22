@@ -1,7 +1,7 @@
 #include "Definitions.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/Script.h"
+#include "engine/game/Tiles.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -14,7 +14,7 @@ int main(int argc,char** argv){try{
     CHECK(argc==2);std::filesystem::path root=argv[1];auto manifest=Json::parseFile((root/"game.json").string());auto rules=Json::parseFile((root/"rules.json").string());auto map=Json::parseFile((root/manifest["maps"][size_t(0)].getStr("file")).string());std::string error;
     auto read=[&](const std::string& p,std::string& bytes){std::ifstream f(root/p,std::ios::binary);if(!f)return false;bytes.assign(std::istreambuf_iterator<char>(f),{});return true;};
     CHECK(game::applyTilesToMap(map,read,&error));CHECK(game::embedScripts(rules,map,read,&error));
-    Simulation a({3,20,0},std::make_unique<game::RtsModule>()),b({3,20,0},std::make_unique<game::RtsModule>());a.setup(rules,map);b.setup(rules,map);
+    Simulation a({3,20,0},std::make_unique<game::GameCore>()),b({3,20,0},std::make_unique<game::GameCore>());a.setup(rules,map);b.setup(rules,map);
     auto send=[](Simulation& sim,uint8_t player,int64_t action){Command cmd;cmd.type=32768;cmd.player=player;cmd.param=action;sim.submit(cmd);sim.step();};
     send(a,2,1);
     PushHistory rejected;auto* initialStore=a.world().resource<game::NativeStore>();CHECK(initialStore&&initialStore->modules.size()==1);

@@ -44,9 +44,9 @@
 #include "engine/render/NativePresentationRetirement.h"
 #include "engine/render/RetirementDiagnosticRing.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
+#include "engine/game/ComputerPlayer.h"
 #include "engine/game/MapGrid.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "modules/rts/fx/RtsFx.h"
 #include "modules/rts/view/RtsView.h"
 #include "modules/rts/view/RtsModelDemandScheduler.h"
@@ -229,7 +229,7 @@ public:
     const WorldModel& world() const { return world_; }
     bool worldLive() const { return worldLive_; }
     Simulation* worldSim();                            // the simulation the rows were read from (null: none)
-    game::RtsModule* worldModule();
+    game::GameCore* worldModule();
     const WorldPreview& worldPreview() const { return preview_; }
     const WorldConfig& worldConfig() const { return worldCfg_; }
     void refreshWorld() { previewKey_ = 0; previewForce_ = true; }
@@ -278,7 +278,7 @@ public:
     // play-test (Game window)
     bool playing() const { return sim_ != nullptr; }
     Simulation* sim() { return sim_.get(); }
-    game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
+    game::GameCore* simModule() { return sim_ ? dynamic_cast<game::GameCore*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
     void enqueueFpsSceneGeometry(const render::Camera&, bool editOverlays=true);
     const Json& fpsRuntimeSnapshot(); // FPS character / projectile / loot / vehicle entities; cached by document/rules revision
@@ -666,7 +666,7 @@ private:
     FxPreview fxPreview_;                      // fx_preview: the effect an agent is looking at
     bool fxFrozen_ = false;                    // fx_preview {freeze}: particles hold still for screenshots
     std::unique_ptr<Simulation> sim_;
-    std::vector<game::RtsAI> bots_;
+    std::vector<game::ComputerPlayer> bots_;
     int human_ = 0;
     std::map<std::string, Entity> playIds_;   // map entity "id" -> live entity of the play-test (play_command names)
     float lastSimMs_ = 0;
@@ -684,7 +684,7 @@ private:
     std::map<uint64_t, int> liveDocOf_;        // live ref -> map entity (liveLinks_ inverted)
     bool worldWanted() const { return time_ - worldWantAt_ < 0.5; }
     bool worldDataWanted() const { return time_ - worldDataAt_ < 0.5; }
-    void readLiveWorld(Simulation& live, game::RtsModule& mod);
+    void readLiveWorld(Simulation& live, game::GameCore& mod);
     void ensureWorld();                        // MCP: rows (with script data) current now
     int rulesRevision_ = 0;
     const Simulation* liveSim_ = nullptr;      // live world last read (setup refs belong to it)

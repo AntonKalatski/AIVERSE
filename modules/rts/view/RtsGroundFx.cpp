@@ -3,7 +3,7 @@
 #include "../../../engine/data/JsonCompose.h"
 #include "RtsGroundFxShaders.h"
 #include "RtsView.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 
 #include <algorithm>
 #include <array>

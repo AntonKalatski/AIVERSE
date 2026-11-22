@@ -1,6 +1,6 @@
 #pragma once
 #include "Config.h"
-#include "modules/rts/RtsAI.h"
+#include "engine/game/ComputerPlayer.h"
 namespace aiverse::lib::bots {
 inline game::AIConfig rtsConfig(const Json& j) {
     keys(j,{"preset","thinkTicks","workersPerBase","firstAttackArmy","armyGrowth","maxAttackArmy","aggression","towers","scouts"});
@@ -29,10 +29,10 @@ public:
         if(bytes.size()>16*1024*1024)return false;
         Archive a(bytes);uint32_t version=0;uint8_t player=0;uint64_t seed=0;std::string settings,body;a(version,player,seed,settings,body);
         if(!a.ok()||a.remaining()||version!=1||player!=player_||seed!=seed_||settings!=settings_)return false;
-        game::RtsAI candidate(player_,seed_,config_);if(!candidate.loadState(body)||candidate.player()!=player_)return false;
+        game::ComputerPlayer candidate(player_,seed_,config_);if(!candidate.loadState(body)||candidate.player()!=player_)return false;
         ai_=std::move(candidate);return true;
     }
 private:
-    uint8_t player_;uint64_t seed_;std::string settings_;game::AIConfig config_;game::RtsAI ai_;
+    uint8_t player_;uint64_t seed_;std::string settings_;game::AIConfig config_;game::ComputerPlayer ai_;
 };
 }

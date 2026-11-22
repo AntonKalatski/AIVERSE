@@ -11,7 +11,7 @@
 #include "GameClient.h"
 #include "engine/core/Hash.h"
 #include "engine/data/JsonCompose.h"
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/Tiles.h"
 #include <RmlUi/Core/Input.h>
 
 namespace aiverse::client {
@@ -240,7 +240,7 @@ void GameClient::startNetMatch() {
         std::string terr; // 2D tile maps: same as offline, or the match desyncs from the server's replay
         if (!applyTilesToMap(map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
         if (const net::MatchPayloadMsg* pl = net_->matchPayload()) net::applyBattlePayload(map, *pl);   // hosted: per-seat loadouts
-        sim_ = std::make_unique<Simulation>(net_->simConfig(), std::make_unique<RtsModule>());
+        sim_ = std::make_unique<Simulation>(net_->simConfig(), std::make_unique<GameCore>());
         Json rules = readComposedJson(manifest_.getStr("rules", "rules.json"), [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); });
         if (!embedScripts(rules, map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
         sim_->setup(rules, map);

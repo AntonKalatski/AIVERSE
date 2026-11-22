@@ -13,7 +13,7 @@ FORBIDDEN = re.compile(
 )
 GAME_NAMESPACE = re.compile(
     r'\b(?:aiverse::)?(?:fps|rts|game)::|'
-    r'\b(?:FpsModule|RtsModule|RtsScene|RtsView|OrderType)\b'
+    r'\b(?:FpsModule|GameCore|RtsScene|RtsView|OrderType)\b'
 )
 
 

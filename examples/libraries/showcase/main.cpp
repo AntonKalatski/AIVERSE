@@ -5,9 +5,9 @@
 #include "engine/ui/UiLayer.h"
 #include "engine/i18n/Localization.h"
 #include "engine/meta/Meta.h"
-#include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsScript.h"
+#include "engine/game/GameCore.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/Script.h"
 #include "modules/rts/view/RtsView.h"
 #include "libraries/adapters/rmlui/ScreenBinding.h"
 #include <aiverselib/app/Lifecycle.h>
@@ -23,7 +23,7 @@ namespace fs=std::filesystem;
 namespace {
 struct Showcase {
     std::unique_ptr<Simulation> sim;
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     render::Renderer3D renderer;
     game::RtsView view;
     render::Camera camera;
@@ -59,12 +59,12 @@ struct Showcase {
         auto manifest=load("game.json");auto map=load(manifest["maps"][std::size_t(0)].getStr("file"));auto rules=load(manifest.getStr("rules","rules.json"));
         std::string error;auto read=[](const std::string& p,std::string& out){return platform::readContentFile(p,out);};
         if(!game::embedScripts(rules,map,read,&error))throw std::runtime_error(error);
-        SimConfig cfg;cfg.seed=3;sim=std::make_unique<Simulation>(cfg,std::make_unique<game::RtsModule>());sim->setup(rules,map);
+        SimConfig cfg;cfg.seed=3;sim=std::make_unique<Simulation>(cfg,std::make_unique<game::GameCore>());sim->setup(rules,map);
         for(const auto& player:sim->players())bots.emplace_back(player.slot,3);
     }
     void setup(gfx::Device& device){
         setupGame();
-        auto& module=static_cast<game::RtsModule&>(sim->module());auto& grid=module.state(*sim).grid;
+        auto& module=static_cast<game::GameCore&>(sim->module());auto& grid=module.state(*sim).grid;
         renderer.init(device);rendererReady=true;renderer.setShadowQuality(render::ShadowQuality::Low);
         viewReady=view.init(device,module.rules(),platform::readContentFile);if(!viewReady)throw std::runtime_error("view init failed");view.buildTerrain(device,grid);
         camera.target={grid.w*0.5f,0,grid.h*0.5f};camera.distance=64;camera.pitch=0.95f;camera.yaw=0.4f;
@@ -131,7 +131,7 @@ button:hover { background-color: #347dac; }
         refresh();ui.update();
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());
         game::RtsScene scene;game::sceneFromSim(*sim,scene,1.0f,0);
-        renderer.beginScene(camera,device.framebufferWidth(),device.framebufferHeight());auto& module=static_cast<game::RtsModule&>(sim->module());
+        renderer.beginScene(camera,device.framebufferWidth(),device.framebufferHeight());auto& module=static_cast<game::GameCore&>(sim->module());
         view.draw(renderer,scene,sim->tick()/20.0,nullptr,module.state(*sim).grid);gfx::PassDesc pass;renderer.render(pass);ui.render();device.endPass();
         if(automatic&&finished&&!captured){captured=true;device.captureNextFrame([this](int w,int h,std::vector<std::uint8_t> rgba){
             if(w<=0||h<=0){++failures;}else{std::ofstream image(output/"showcase.ppm",std::ios::binary);image<<"P6\n"<<w<<' '<<h<<"\n255\n";for(std::size_t i=0;i<rgba.size();i+=4)image.write(reinterpret_cast<const char*>(rgba.data()+i),3);}

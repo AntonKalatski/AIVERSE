@@ -90,7 +90,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
     free cell (no node-budget exhaustion on "walk up to a building" queries).
 - **Flow fields** (opt-in, `movement.flowField`; docs/pathfinding.md) work on planets too: full fields on small bodies,
   hierarchical over the planet HPA* graph on big ones; fields never extend to other bodies.
-- **Vision.** `RtsVision.cpp` (`visionSphereRef` = the definition): cells within sight (offset walk across seams), 3D sight
+- **Vision.** `Vision.cpp` (`visionSphereRef` = the definition): cells within sight (offset walk across seams), 3D sight
   line sampled once per cell against the ground radius + blockers → hills and the horizon hide; air/orbit units see
   everything in range. The fast pass (`visionSphereFast`) gives the same cells in the same order: a unit at the same exact
   position, sight and type for a second pass keeps its list of visible cells and replays it (with the reference's skip of
@@ -102,7 +102,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   plane; Fixed. Hashed (bodies, corners sample, transits) only when a world exists.
 - **Transit**: `kCmdTransit`; component `Transit {from, to, depart, arrive, fromWorld, toWorld, arrival}`; the unit is
   `kUnitInHand | kUnitInTransit` (off every surface) until `arrive`.
-- **Territory / dungeon on planets** (`RtsDungeon.cpp`, agent-planet-render): the per-cell `territory`, `dig`,
+- **Territory / dungeon on planets** (`Dungeon.cpp`, agent-planet-render): the per-cell `territory`, `dig`,
   `digMark` and `room` layers work on the stacked grid like every other layer; the neighbourhood code branches on
   `MapGrid::surf` (flat maps keep their exact x/y loops, checksums unchanged). `startRadius` squares around starting
   structures and discs around `players[].start` (`{body, face, x, y}` via `mapPos`) are cell offsets across seams;
@@ -112,19 +112,19 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   mean of the cell centres projected back onto the surface); dig / paint-room rects are offsets from the first cell;
   `frontFrom` (auto-train fronts) is a BFS over the body. Territory victory / income only count cells and work as is.
   The bot's dig planning uses the same neighbours. Test: `planet_territory_claims_and_dig_cross_seams`.
-- **Lanes** (`RtsLanes.cpp`): garrison pairs on the same body get a 3D Catmull-Rom spline through body-local control
+- **Lanes** (`Lanes.cpp`): garrison pairs on the same body get a 3D Catmull-Rom spline through body-local control
   points projected onto the surface; offset lanes shift along `tangent x up`; lane walkers keep the 3D points.
 
 ### API for the view / editor / generator
 
 | need | call |
 |---|---|
-| is this a planet map, bodies, layout | `RtsModule::surface(sim)` → `const Surface*` (null on flat maps): `bodies`, `startBody`, `findBody(id)` |
-| body centre at a sim tick | `RtsModule::bodyWorldPosition(sim, body, tick)` (Fixed; view: `float(...)` at tick + alpha) = `Surface::bodyPosition(body, seconds)` |
-| entity world position | `RtsModule::worldPosition(sim, e, tick)` (transit interpolated); body of a position: `bodyOf(sim, pos)`; body-local = `pos - Surface::anchor(body)` |
+| is this a planet map, bodies, layout | `GameCore::surface(sim)` → `const Surface*` (null on flat maps): `bodies`, `startBody`, `findBody(id)` |
+| body centre at a sim tick | `GameCore::bodyWorldPosition(sim, body, tick)` (Fixed; view: `float(...)` at tick + alpha) = `Surface::bodyPosition(body, seconds)` |
+| entity world position | `GameCore::worldPosition(sim, e, tick)` (transit interpolated); body of a position: `bodyOf(sim, pos)`; body-local = `pos - Surface::anchor(body)` |
 | surface point / normal | `Surface::facePoint(body, face, a, b)` / `faceNormal(...)` (body-local); `Surface::up(pos)`, `heightAt(pos)`, `project(pos, alt)` |
-| fog per body | `RtsModule::cellVision(sim, player, body, face, x, y)` (0/1/2), or `GameState::vision[player][surface->gridCell(body, face, x, y)]` |
-| place players / objects (generator, map JSON) | `"at": {"body", "face", "x", "y"}` on entities / players' `start` / waves (`RtsModule::mapPos`); fields per face |
+| fog per body | `GameCore::cellVision(sim, player, body, face, x, y)` (0/1/2), or `GameState::vision[player][surface->gridCell(body, face, x, y)]` |
+| place players / objects (generator, map JSON) | `"at": {"body", "face", "x", "y"}` on entities / players' `start` / waves (`GameCore::mapPos`); fields per face |
 | sphere paths (fair starts) | `MapGrid::findPath(fromPos, toPos, layer, out, maxNodes)` (HPA\* on big bodies; raw cells: `sphereCellPath(s, g, layer, hpa, cells)`) with positions from `Surface::cellCenter(gridCell(...))` or `anchor(b) + facePoint(...)`; after `Simulation::setup`, the module's `state(sim).grid` |
 | cube-sphere maths | `CubeSphere` (`Sphere.h`): cells, dirs, seams, `offset`, corners |
 
@@ -149,8 +149,8 @@ Implemented (agent-terrain-gen, `modules/rts/gen/`, format and params: docs/game
   relative to `seaLevel` 0); faces get `rows` (`~` water, `#` peaks, `.` ice over polar seas), `terrain.material` per face
   (layer digits like `terrainMaterial`), `corners`; `generated.starts` = maximally separated land sites
   (farthest-point sampling with `sphereArcTurns`) as `{body, face, x, y}`, flattened base areas; `generated.minStartArc`.
-- Runs at match start from `RtsModule::setup` (per body seed = match seed mixed with the body index for `"seed": "match"`).
-- Whole planet maps (map-level `generate` with a planet preset, `modules/rts/gen/GenWorld.cpp`): bodies from the template's
+- Runs at match start from `GameCore::setup` (per body seed = match seed mixed with the body index for `"seed": "match"`).
+- Whole planet maps (map-level `generate` with a planet preset, `engine/game/gen/GenWorld.cpp`): bodies from the template's
   world, layouts `shared` (polar rotational symmetry, exact for 2 / 4 players) and `separate` (one identical planet per player),
   kit / near / far / moon objects with `at`, players' `start` as `{body, face, x, y}`, flattened bases away from face seams,
   graded causeways, fairness measured with `MapGrid::findPath` on the generated map after `Simulation::setup`
@@ -177,12 +177,12 @@ Implementation (all presentation, float; nothing here touches the simulation):
 
 Simulation wiring (match maps): `RtsView::setSimWorld(gs.surface, gs.grid, map)` builds the view world from the
 simulation's `Surface` — bodies, orbits (`PlanetWorld::center` = `Surface::bodyPosition`, the same Fixed maths as
-`RtsModule::bodyWorldPosition`), corner heights exactly as the sim holds them (seams averaged by the loader, so units
+`GameCore::bodyWorldPosition`), corner heights exactly as the sim holds them (seams averaged by the loader, so units
 stand on the drawn ground) and cell flags of the stacked grid; the map JSON only adds visual keys (atmosphere, colours,
 whether a body has an ocean). `sceneFromSim` hands planet maps to `sceneFromSphere`: every object gets
 `SceneObject::body` and body-local `pos` / `facing` / `target` (sim position − `Surface::anchor(body)`), units in
 transit get `body = kBodyTransit` and a world position interpolated between `Transit::fromWorld` / `toWorld`
-(like `RtsModule::worldPosition`). Fog of war: the viewer's vision of the stacked grid (RtsFog fade / blur) cut into
+(like `GameCore::worldPosition`). Fog of war: the viewer's vision of the stacked grid (RtsFog fade / blur) cut into
 every body (`PlanetRenderer::setVision` per body; minimap per body). Client picking returns sim-space points
 (`anchor(body) + local`) used directly as command points; footprints are snapped by the sim. Editor maps without a
 running sim (MapDoc `bodies`) go through `MapDoc::worldJson()` → `loadPlanetWorld`; entities / starts are placed with

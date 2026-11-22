@@ -16,7 +16,7 @@ ArsenalRules Arsenal::parse(const Json& j, const std::vector<std::string>&, cons
     if (j.isObject()) missingModule();
     return {};
 }
-void Arsenal::setup(Simulation&, RtsModule& m, const Json& rulesJson) {
+void Arsenal::setup(Simulation&, GameCore& m, const Json& rulesJson) {
     m_ = &m;
     if (rulesJson["arsenal"].isObject()) missingModule();
 }

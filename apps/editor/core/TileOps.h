@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include "Workspace.h"
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/Tiles.h"
 
 namespace aiverse::editor {
 

@@ -71,7 +71,7 @@ enum CommandType : uint16_t {
     kCmdRotate,       // conveyor pieces: param 1..4 = east, south, west, north; 0 = turn clockwise
     kCmdLock,         // gates / doors: param 1 lock (closed for everyone), 2 unlock, 0 toggle
     kCmdEndTurn,      // turn-based mode: the active player ends the turn
-    kCmdScript,       // rules "commands" (RtsScript.h): param = command index, args = encoded arguments, units = selection
+    kCmdScript,       // rules "commands" (Script.h): param = command index, args = encoded arguments, units = selection
     kCmdRaid,         // extraction raids (Raid.h): param = RaidOp | point index << 8 (call: -1 = nearest)
     // in-match progression (rules "progression", Progression.h)
     kCmdProgression,  // no units; param = ProgressionOp | card index << 8 | offer revision << 16 (choose / reroll / close / open)
@@ -102,7 +102,7 @@ inline void unpackRect(int64_t p, int& w, int& h, int& extra) {
 }
 
 // ---------------------------------------------------------------- events (presentation)
-enum DefeatReason : int64_t { kDefeatEliminated = 0, kDefeatSurrendered = 1, kDefeatMode = 2 /*match modes (RtsModes.cpp)*/ }; // kEvPlayerDefeated value
+enum DefeatReason : int64_t { kDefeatEliminated = 0, kDefeatSurrendered = 1, kDefeatMode = 2 /*match modes (Modes.cpp)*/ }; // kEvPlayerDefeated value
 
 enum GameEvent : uint16_t {
     kEvSpawned = 1, kEvDied, kEvAttack, kEvHit, kEvTrainStarted, kEvTrainDone, kEvBuildPlaced, kEvBuildDone,
@@ -189,7 +189,7 @@ enum GameEvent : uint16_t {
     kEvTelegraphStrike, // a = caster, b = unit struck, value = attack index | damage (whole units) << 16, pos = unit struck
     kEvTelegraphEnd,    // a = caster, value = attack index | 1 << 16 when cancelled (caster died in the windup)
     kEvEnv,             // map environment (Environment.h): value = EnvEventKind << 16 | data, a / pos per kind (weather, lightning, wind)
-    kEvModePhase,       // match modes (RtsModes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
+    kEvModePhase,       // match modes (Modes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
     kEvShotEnd,         // a free-fire shot (rules "arsenal") stopped at a wall / its range, or went off (splash): a = shooter, value = weapon index of its type, pos
     kEvAssault,         // a unit assaulted a defended garrison: player = attacker, a = structure, b = the unit, value = defenders lost
     kEvNative,          // emitted by native modules for the view / scripts: value, a, b, pos are the module's (docs/native-modules.md)
@@ -258,7 +258,7 @@ struct Mobile {
     Vec3 yieldHome{};            // stepped aside for a passing unit; walks back here
     uint32_t yieldUntil = 0;
     bool yielded = false;
-    // flow field following (RtsFlowField.cpp): the field is keyed by (goal cell, radius, path layer, clearance)
+    // flow field following (FlowField.cpp): the field is keyed by (goal cell, radius, path layer, clearance)
     bool flow = false;
     uint8_t flowRadius = 0;
     uint8_t flowStuck = 0;       // stuck events while on the field: re-sample first, A* after repeated stalls
@@ -351,7 +351,7 @@ struct Hero { int level = 1; Fixed xp{}; uint8_t skill[8] = {}; uint8_t points =
 struct Shield { Fixed value{}; uint32_t lastHit = 0; };       // StarCraft shields (health.shields)
 struct Eater { int kills = 0; };                              // neutral eats (sandworm)
 struct Weathering { Fixed bare{}; };                          // share of the footprint off the owner's foundation (Dune II)
-struct TrapState { int charges = 0; uint32_t readyAt = 0; };  // traps (RtsFidelity.cpp)
+struct TrapState { int charges = 0; uint32_t readyAt = 0; };  // traps (Fidelity.cpp)
 struct TeleportBack { Vec3 home{}; uint32_t at = 0; Entity caster = kNullEntity; }; // group teleport with a return trip
 // Interplanetary transfer (kCmdTransit): leaves the shell of `from` at depart, arrives on the shell of `to`.
 // from/to world positions are the shell points at departure (body positions at that tick), for the view.
@@ -397,7 +397,7 @@ struct Area {
     int deaths = 0;                       // onDeath payloads applied (capped by maxTriggers)
     int spent = 0;                        // targets used of an effect `budget`
 };
-// A unit pulled straight into a structure by a magnet (`pull` effect, RtsSkillObjects.cpp).
+// A unit pulled straight into a structure by a magnet (`pull` effect, SkillObjects.cpp).
 // A garrison teleport in progress (BW PointsTeleport): grab from `from`, travel, fill `to`.
 struct Transfer {
     Entity from = kNullEntity, to = kNullEntity;

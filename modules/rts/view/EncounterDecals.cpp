@@ -1,7 +1,7 @@
 // Encounter ground marks (EncounterDecals.h): telegraphs from EncounterStore casts, status rings from Statuses.
 #include "EncounterDecals.h"
 #include "RtsView.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "aiverselib/mechanics/TelegraphDecals.h"
 #include <cmath>
 
@@ -31,7 +31,7 @@ uint32_t statusColor(EncStatusKind k) {
 }
 } // namespace
 
-void appendEncounterDecals(Simulation& sim, RtsModule& m, const RtsView& view, uint8_t viewer, std::vector<ViewGroundBatch>& out) {
+void appendEncounterDecals(Simulation& sim, GameCore& m, const RtsView& view, uint8_t viewer, std::vector<ViewGroundBatch>& out) {
     Encounters* enc = m.encounters();
     EncounterStore* st = enc && enc->active() ? enc->store(sim) : nullptr;
     if (!st) return;

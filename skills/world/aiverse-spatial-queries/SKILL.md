@@ -11,7 +11,7 @@ Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 ## Select and integrate
 
 - Layer: **simulation**. Current coverage: Existing game spatial queries.
-- Read `modules/rts/RtsModule.h` as the current API authority. No Lua implementation is required.
+- Read `engine/game/GameCore.h` as the current API authority. No Lua implementation is required.
 - Read current game query API; batch queries. Never infer visibility from presentation. New spatial index adapter remains planned.
 - Use the existing C++ engine API documented in the source above. This reference entry is not a standalone library target.
 - Use `examples/native/libraries` as a compiling project-local example.

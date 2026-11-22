@@ -1,7 +1,7 @@
 #include "apps/studio-native/StudioGameSurface.h"
 #include "engine/sim/Simulation.h"
 #include "engine/sim/CommonComponents.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -65,7 +65,7 @@ void StudioGameSurface::frame(int w,int h,float pw,float ph,double dt,bool focus
 }
 Json StudioGameSurface::mapEntityStates() {
     Simulation* sim=host_ && host_->inMatch()?host_->simulation():nullptr;
-    auto* mod=sim?dynamic_cast<game::RtsModule*>(&sim->module()):nullptr;
+    auto* mod=sim?dynamic_cast<game::GameCore*>(&sim->module()):nullptr;
     if(!mod)throw std::runtime_error("No game with map entities is running");
     auto& w=sim->world();
     Json out=Json::array();

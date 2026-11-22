@@ -10,10 +10,10 @@ constexpr Fixed kBwInf = Fixed::fromInt(int64_t(1) << 30);
 constexpr int kBwRowUnits = 6;    // AI6Shared.maxUnitsInOneRow
 
 struct BwAI::Ctx {
-    Ctx(Simulation& s, RtsModule& mod, BwAI& bot, const BwAIConfig& c, const BwProfile& p, Fixed d)
+    Ctx(Simulation& s, GameCore& mod, BwAI& bot, const BwAIConfig& c, const BwProfile& p, Fixed d)
         : sim(s), m(mod), R(mod.rules()), ai(bot), cfg(c), prof(p), dt(d) {}
     Simulation& sim;
-    RtsModule& m;
+    GameCore& m;
     const Rules& R;
     BwAI& ai;
     const BwAIConfig& cfg;

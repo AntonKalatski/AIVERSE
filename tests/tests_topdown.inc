@@ -243,7 +243,7 @@ TEST(topdown_respawn_bots_determinism_save_and_rollback) {
     const std::string map = topDownMap(R"({"type":"drone","owner":1,"pos":[3.5,8.5]},{"type":"drone","owner":2,"pos":[28.5,8.5]},
         {"type":"mover","owner":2,"pos":[26.5,4.5]},{"type":"mover","owner":1,"pos":[5.5,12.5]})");
     auto play = [&](Simulation& sim, int ticks, std::vector<uint64_t>* sums) {
-        game::RtsAI a(1, 7), b(2, 7);
+        game::ComputerPlayer a(1, 7), b(2, 7);
         for (int i = 0; i < ticks; ++i) {
             a.update(sim); b.update(sim);
             sim.step();
@@ -389,7 +389,7 @@ TEST(topdown_controls_sticks_keys_quantize_and_camera) {
 
 TEST(topdown_arena_template_bots_finish) {
     auto sim = makeSim(std::string(AIVERSE_SOURCE_DIR) + "/templates/topdown_arena", "maps/arena.json", 1);
-    game::RtsAI a(1, 1), b(2, 1);
+    game::ComputerPlayer a(1, 1), b(2, 1);
     for (int i = 0; i < 20 * 900 && sim->result() == 0; ++i) { a.update(*sim); b.update(*sim); sim->step(); }
     CHECK(sim->result() != 0);
 }

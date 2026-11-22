@@ -3,7 +3,7 @@
 // hash, save block or command handling, exactly like rules without "commerce". Rules with a "commerce"
 // block fail at match start with a readable error. The Lua table `commerce` keeps only active() (false).
 #include "../../../engine/game/Commerce.h"
-#include "../RtsScriptInternal.h"
+#include "../../../engine/game/ScriptInternal.h"
 #include <stdexcept>
 
 namespace aiverse::game {
@@ -18,7 +18,7 @@ CommerceRules Commerce::parse(const Json& j, const std::vector<std::string>&, ui
     if (j.isObject()) missingModule();
     return {};
 }
-void Commerce::setup(Simulation&, RtsModule& m, const Json& rulesJson, const Json&) {
+void Commerce::setup(Simulation&, GameCore& m, const Json& rulesJson, const Json&) {
     m_ = &m;
     if (rulesJson["commerce"].isObject()) missingModule();
 }

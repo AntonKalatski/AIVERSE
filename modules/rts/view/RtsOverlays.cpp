@@ -1,7 +1,7 @@
 #include "RtsOverlays.h"
 #include "RtsOverlayShaders.h"
 #include "RtsView.h"   // SceneObject / RtsScene (data only: nothing here links the renderer)
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "../../../engine/platform/Platform.h"
 
 #include <algorithm>
@@ -17,7 +17,7 @@ using namespace render;
 namespace {
 float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble()), float(v.z.toDouble())}; }
 bool contains(const std::vector<uint16_t>& v, uint16_t x) { return std::find(v.begin(), v.end(), x) != v.end(); }
-RtsModule* moduleOf(Simulation* sim) { return sim ? dynamic_cast<RtsModule*>(&sim->module()) : nullptr; }
+GameCore* moduleOf(Simulation* sim) { return sim ? dynamic_cast<GameCore*>(&sim->module()) : nullptr; }
 // stable pseudo-random in [-1, 1] (popup jitter): presentation only
 float hash01(uint32_t a, uint32_t b) {
     uint32_t h = a * 2654435761u ^ (b + 0x9e3779b9u + (a << 6) + (a >> 2));
@@ -189,7 +189,7 @@ bool RtsOverlays::test(const OvCondition& c, const SceneObject* o) const {
     case OvCondition::State: return (c.states & (ctx_.over ? 4 : ctx_.paused ? 2 : 1)) != 0;
     case OvCondition::Var: {
         double v = 0;
-        if (RtsModule* m = moduleOf(ctx_.sim); m && !c.names.empty()) {
+        if (GameCore* m = moduleOf(ctx_.sim); m && !c.names.empty()) {
             auto& vars = m->state(*ctx_.sim).trig.vars;
             auto it = vars.find(c.names[0]);
             if (it != vars.end()) v = it->second.toDouble();
@@ -424,7 +424,7 @@ bool RtsOverlays::gather(const OverlayDef& d, size_t di, bool screenPass) {
         float r[4] = {d.rect[0], d.rect[1], d.rect[2], d.rect[3]};
         if (!d.areaName.empty()) {
             bool found = false;
-            if (RtsModule* m = moduleOf(ctx_.sim)) {
+            if (GameCore* m = moduleOf(ctx_.sim)) {
                 int ai = m->triggers().findArea(d.areaName);
                 if (ai >= 0) {
                     const TrigArea& a = m->triggers().areas[size_t(ai)];
@@ -585,7 +585,7 @@ const std::string& RtsOverlays::format(const OverlayDef& d, const Inst& in) {
         else if (key == "player") appendNumber(text_, ctx_.player);
         else if (key.rfind("var:", 0) == 0) {
             double v = 0;
-            if (RtsModule* m = moduleOf(ctx_.sim)) {
+            if (GameCore* m = moduleOf(ctx_.sim)) {
                 auto& vars = m->state(*ctx_.sim).trig.vars;
                 auto it = vars.find(key.substr(4));
                 if (it != vars.end()) v = it->second.toDouble();

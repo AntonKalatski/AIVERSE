@@ -1,6 +1,6 @@
 #include "RtsLights.h"
 #include "RtsView.h"
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 
 #include <algorithm>
 #include <cmath>

@@ -1,6 +1,6 @@
 #include <aiverselib/bots/Rts.h>
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/Script.h"
+#include "engine/game/Tiles.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -13,7 +13,7 @@ int main(int argc,char** argv){try{
     CHECK(game::applyTilesToMap(map,read,&error));CHECK(game::embedScripts(rules,map,read,&error));
     for(auto preset:{"easy","normal","hard","rush","defender","economist"})CHECK(rtsConfig(Json::parse(std::string("{\"preset\":\"")+preset+"\"}")).thinkTicks>0);
     auto settings=Json::parse(R"({"preset":"rush"})");
-    Simulation a({3,20,0},std::make_unique<game::RtsModule>()),b({3,20,0},std::make_unique<game::RtsModule>());a.setup(rules,map);b.setup(rules,map);
+    Simulation a({3,20,0},std::make_unique<game::GameCore>()),b({3,20,0},std::make_unique<game::GameCore>());a.setup(rules,map);b.setup(rules,map);
     RtsBot one(1,3,settings),two(2,3,settings),restoreOne(1,3,settings),restoreTwo(2,3,settings);
     for(int i=0;i<300;++i){one.update(a);two.update(a);a.step();}
     CHECK(!a.executedCommands().empty());CHECK(b.deserialize(a.serialize(),&error));auto saved=one.save();CHECK(restoreOne.load(saved));CHECK(restoreTwo.load(two.save()));

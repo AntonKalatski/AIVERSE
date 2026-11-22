@@ -1,11 +1,11 @@
-#include "modules/rts/RtsNative.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/Native.h"
+#include "engine/game/GameCore.h"
 #include <stdexcept>
 
 namespace {
 class Income final : public aiverse::game::NativeModule {
 public:
-    void setup(aiverse::game::RtsModule& game, aiverse::Simulation&, aiverse::game::NativeState& state,
+    void setup(aiverse::game::GameCore& game, aiverse::Simulation&, aiverse::game::NativeState& state,
                const aiverse::Json& config) const override {
         const auto resource = config.getStr("resource", "gold");
         const int id = game.rules().findResource(resource);
@@ -15,7 +15,7 @@ public:
         state.values["resource"] = id;
         state.values["amount"] = amount.raw;
     }
-    void tick(aiverse::game::RtsModule& game, aiverse::Simulation& sim, aiverse::game::NativeState& state) const override {
+    void tick(aiverse::game::GameCore& game, aiverse::Simulation& sim, aiverse::game::NativeState& state) const override {
         if (sim.tick() % sim.tickRate() != 0) return;
         auto& players = game.state(sim).players;
         const size_t resource = size_t(state.values.at("resource"));

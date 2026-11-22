@@ -1,4 +1,4 @@
-#include "modules/rts/RtsNative.h"
+#include "engine/game/Native.h"
 #include <aiverselib/Graphs.h>
 #include <aiverselib/Behavior.h>
 #include <aiverselib/Logistics.h>
@@ -17,7 +17,7 @@ bool librarySystemsTickExample(aiverse::Simulation&,aiverse::game::NativeState&)
 namespace {
 class LibraryDemo final : public aiverse::game::NativeModule {
 public:
-    void setup(aiverse::game::RtsModule&,aiverse::Simulation&,aiverse::game::NativeState& state,
+    void setup(aiverse::game::GameCore&,aiverse::Simulation&,aiverse::game::NativeState& state,
                const aiverse::Json& config) const override {
         using namespace aiverse::lib::gameplay;
         auto document=config;
@@ -45,7 +45,7 @@ public:
         const std::array recipe{aiverse::lib::Ingredient{0,3},aiverse::lib::Ingredient{1,2}};
         state.values["recipe_paid"]=aiverse::lib::consume(stock,recipe) ? 1 : 0;
     }
-    void tick(aiverse::game::RtsModule&,aiverse::Simulation& sim,aiverse::game::NativeState& state) const override {
+    void tick(aiverse::game::GameCore&,aiverse::Simulation& sim,aiverse::game::NativeState& state) const override {
         using namespace aiverse::lib::gameplay;
         if(!librarySystemsTickExample(sim,state))return;
         AbilityConfig ability;ability.target=TargetKind::None;

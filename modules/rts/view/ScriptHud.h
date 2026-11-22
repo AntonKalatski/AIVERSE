@@ -1,7 +1,7 @@
 #pragma once
 // Presentation-only bindings to deterministic script variables. Buttons issue normal
 // player-ability commands; scripts remain responsible for validating purchases.
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "engine/i18n/Localization.h"
 
 namespace aiverse::game {

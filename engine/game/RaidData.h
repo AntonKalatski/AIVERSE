@@ -5,7 +5,7 @@
 // interrupt rules). The match ends when every raider is resolved (extracted, dead, timed out, abandoned)
 // or the clock runs out; each player gets a receipt (a deterministic JSON payload with a stable operation id)
 // that the meta layer consumes once (engine/meta Economy::transact(receipt.id, ...)).
-// Runtime: RtsRaid.{h,cpp} (store, system, bot), Lua `raid` table: RtsRaidApi.cpp. Reference: docs/raid.md.
+// Runtime: RtsRaid.{h,cpp} (store, system, bot), Lua `raid` table: RaidApi.cpp. Reference: docs/raid.md.
 // A game without a "raid" block loads, plays and hashes exactly as before.
 #pragma once
 #include <cstdint>

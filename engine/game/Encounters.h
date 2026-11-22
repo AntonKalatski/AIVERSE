@@ -11,7 +11,7 @@
 //  - mobs: wander / hunt / flee / return / swarm pressure per unit type; decisions become ordinary RTS orders (attack,
 //    attack-move along a shared flow field when far, move), so pathing, crowds and weapons are the engine's.
 //  - schedule: encounter windows that spawn a (personal) boss near each participant's hero, rotation, breathers.
-// Monster players are the map players with "monsters": true: the computer player leaves them alone (RtsAI.cpp) and
+// Monster players are the map players with "monsters": true: the computer player leaves them alone (ComputerPlayer.cpp) and
 // this file drives their boss / mob units. Telegraph attacks themselves work for every unit.
 //
 // State: the EncounterStore world resource, present only in games with the block (rollback snapshots copy it, hashState
@@ -130,7 +130,7 @@ public:
     EncounterStore* store(Simulation& sim) const;
     bool monsterPlayer(uint8_t slot) const;              // map "monsters": true players and hostile creeps (owner 255)
     // a boss / mob unit type of a monster player: its brain decides where it walks, so the creep camp leash
-    // (RtsWorld.cpp sysNeutrals: back home beyond 10 cells) and creep wandering leave it alone
+    // (World.cpp sysNeutrals: back home beyond 10 cells) and creep wandering leave it alone
     bool drives(uint8_t owner, uint16_t type) const { return active() && type < R_.mobOfType.size() && (R_.bossOfType[type] >= 0 || R_.mobOfType[type] >= 0) && monsterPlayer(owner); }
     int64_t teamKey(Simulation& sim, uint8_t owner) const;   // telegraph sides: 0 neutral, 256 creeps, else the team
     // stat hook: phase / enrage speed multiplier of a boss (1 for everything else)

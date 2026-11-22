@@ -99,4 +99,4 @@ Testes: `game_wizard_plan_picks_a_template_by_the_idea`, `game_wizard_makes_a_pl
 ## Mudança na engine
 
 Comandos de script aceitam `"card": false` (sem botão / atalho; enviados por scripts de visão, documentos do HUD, MCP) — o
-Próximo / Pular do tutorial (`modules/rts/RtsScriptCommands.cpp`, cartões de comando do cliente e do editor).
+Próximo / Pular do tutorial (`engine/game/ScriptCommands.cpp`, cartões de comando do cliente e do editor).

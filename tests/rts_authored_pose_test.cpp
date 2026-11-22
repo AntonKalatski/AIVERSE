@@ -2,7 +2,7 @@
 // Y rotation -> unit facing, height / X-Z tilt / per-axis scale -> AuthoredPose,
 // persisted and checksummed; RtsView turns it into the same world frame Studio shows.
 #include "engine/data/JsonCompose.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "modules/rts/view/RtsView.h"
 #include <cmath>
 #include <iostream>
@@ -15,11 +15,11 @@ static void check(bool yes, const std::string& what) { if (!yes) throw std::runt
 static Json baseMap(const std::string& base) { return Json::parseFile(base + "maps/duel.json"); }
 static std::unique_ptr<Simulation> make(const Json& map, const std::string& base) {
     Json rules = readComposedJson(base + "rules.json", fileReader());
-    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<g::RtsModule>());
+    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<g::GameCore>());
     sim->setup(rules, map);
     return sim;
 }
-// Buildings snap to their footprint at spawn (RtsModule::spawn), so the map
+// Buildings snap to their footprint at spawn (GameCore::spawn), so the map
 // position is only close to the entity's: take the nearest one within a cell.
 static Entity findAt(Simulation& sim, float x, float z) {
     Entity found;

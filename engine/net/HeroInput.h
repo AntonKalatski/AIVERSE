@@ -1,8 +1,8 @@
 // Direct-control hero input: the one wire format for top-down heroes (docs/topdown.md, docs/battle-net.md).
 //
 // Two command types, reserved by the engine (modules choose ids below 0xF000):
-//   kCmdHeroInput   (0xF100) = RtsModule kCmdTopDown: sticky stick / aim / fire state, topdown::pack(Input)
-//   kCmdHeroAbility (0xF101) = RtsModule kCmdTopDownAbility: one ability button event, topdown::abilityParam(...)
+//   kCmdHeroInput   (0xF100) = GameCore kCmdTopDown: sticky stick / aim / fire state, topdown::pack(Input)
+//   kCmdHeroAbility (0xF101) = GameCore kCmdTopDownAbility: one ability button event, topdown::abilityParam(...)
 //
 // The rollback session predicts "no new commands" for remote players. Hero input is therefore STICKY STATE: a
 // kCmdHeroInput command carries the whole quantized stick / aim / button state and the simulation keeps it until the
@@ -122,8 +122,8 @@ inline Ability unpackAbility(int64_t p) {
 
 namespace net {
 
-constexpr uint16_t kCmdHeroInput = 0xF100;     // = RtsModule kCmdTopDown (sticky topdown::Input)
-constexpr uint16_t kCmdHeroAbility = 0xF101;   // = RtsModule kCmdTopDownAbility (topdown::Ability)
+constexpr uint16_t kCmdHeroInput = 0xF100;     // = GameCore kCmdTopDown (sticky topdown::Input)
+constexpr uint16_t kCmdHeroAbility = 0xF101;   // = GameCore kCmdTopDownAbility (topdown::Ability)
 constexpr uint16_t kCmdHeroAction = kCmdHeroAbility;   // deprecated stage-1 name
 
 inline Command heroInputCommand(uint8_t player, const topdown::Input& in) {

@@ -1,4 +1,4 @@
-// ------------------------------------------------------------------ match modes (RtsModes.cpp)
+// ------------------------------------------------------------------ match modes (Modes.cpp)
 namespace modes_t {
 const char* kTypes = R"("types": {
     "village": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 30, "unit": "shroom", "interval": 100}},
@@ -285,33 +285,33 @@ TEST(modes_team_conquest_rule_sets_and_hud_vars) {
     CHECK(threw);
 }
 
-// ------------------------------------------------------------------ native module hooks (RtsNative.h NativeHook)
+// ------------------------------------------------------------------ native module hooks (Native.h NativeHook)
 namespace hooks_t {
 // A synthetic module: sends only from "village" types, neutral garrisons grow at half rate up to 7, player 2 grows
 // at double rate, upgrades into "tower" cost nothing and take twice as long, upgrades of player 2 are refused.
 class HookProbe final : public game::NativeModule {
 public:
-    void setup(game::RtsModule& g, Simulation&, game::NativeState& s, const Json&) const override {
+    void setup(game::GameCore& g, Simulation&, game::NativeState& s, const Json&) const override {
         s.values["mapKey"] = g.matchMap().getInt("probeKey", -1);
     }
     uint32_t hooks() const override { return game::kNativeHookCommand | game::kNativeHookGarrison | game::kNativeHookUpgrade; }
-    bool filterCommand(game::RtsModule& g, Simulation& sim, game::NativeState& s, Command& c) const override {
+    bool filterCommand(game::GameCore& g, Simulation& sim, game::NativeState& s, Command& c) const override {
         if (c.type != game::kCmdSend || c.units.empty() || !sim.world().alive(c.units[0])) return true;
         ++s.values["sends"];
         if (g.rules().types[sim.world().get<game::Unit>(c.units[0]).type].id != "village") return false;
         if (c.param == 100) c.param = -2;   // changed: exactly two units
         return true;
     }
-    void garrisonGrowth(game::RtsModule&, Simulation&, game::NativeState&, Entity, uint8_t owner, Fixed& rate, int& cap) const override {
+    void garrisonGrowth(game::GameCore&, Simulation&, game::NativeState&, Entity, uint8_t owner, Fixed& rate, int& cap) const override {
         if (owner == 0) { rate = Fixed::fromRatio(1, 2); cap = 7; }
         else if (owner == 2) rate = rate * Fixed::fromInt(2);
     }
-    bool upgradeOrder(game::RtsModule& g, Simulation&, game::NativeState&, Entity, uint8_t player, uint16_t& type, Fixed& cost, Fixed& time) const override {
+    bool upgradeOrder(game::GameCore& g, Simulation&, game::NativeState&, Entity, uint8_t player, uint16_t& type, Fixed& cost, Fixed& time) const override {
         if (player == 2) return false;
         if (g.rules().types[type].id == "tower") { cost = Fixed{}; time = Fixed::fromInt(2); }
         return true;
     }
-    void tick(game::RtsModule&, Simulation& sim, game::NativeState& s) const override {
+    void tick(game::GameCore&, Simulation& sim, game::NativeState& s) const override {
         for (auto& ev : sim.events()) if (ev.type == game::kEvAssault) { ++s.values["assaults"]; s.values["defendersLost"] += ev.value; }
     }
 };
@@ -324,7 +324,7 @@ std::unique_ptr<Simulation> sim(const std::string& entities, bool withModule = t
         "tower": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 30, "unit": "shroom", "interval": 1}, "cost": {"garrison": 4, "time": 2}},
         "shroom": {"move": {"speed": 3}, "entersGarrison": true}}})";
     std::vector<game::NativeDefinition> defs{{"hookprobe", 1, hookProbe}};
-    auto s = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>(std::move(defs)));
+    auto s = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>(std::move(defs)));
     s->setup(Json::parse(r), Json::parse(modes_t::map({1, 2}, entities, R"(,"probeKey":42)")));
     return s;
 }

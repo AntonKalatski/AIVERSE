@@ -31,12 +31,12 @@ extern "C" {
 #include "engine/data/Json.h"
 #include "engine/sim/Replay.h"
 #include "engine/sim/Simulation.h"
-#include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsCampaign.h"   // agent-mech
-#include "modules/rts/RtsModule.h"
+#include "engine/game/ComputerPlayer.h"
+#include "engine/game/Campaign.h"   // agent-mech
+#include "engine/game/GameCore.h"
 #include "../engine/roads/RoadNet.h"   // agent-roads
-#include "modules/rts/RtsScriptIeee.h"
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/ScriptIeee.h"
+#include "engine/game/Tiles.h"
 #include "engine/game/Sphere.h"
 #include <algorithm>
 
@@ -199,11 +199,11 @@ static const std::string kMushrooms = std::string(AIVERSE_SOURCE_DIR) + "/templa
 
 static std::unique_ptr<Simulation> makeSim(const std::string& game, const std::string& map, uint64_t seed) {
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(readComposedJson(game + "/rules.json", fileReader()), Json::parseFile(game + "/" + map));   // rules may include files
     return sim;
 }
-static game::RtsModule& mod(Simulation& s) { return *dynamic_cast<game::RtsModule*>(&s.module()); }
+static game::GameCore& mod(Simulation& s) { return *dynamic_cast<game::GameCore*>(&s.module()); }
 static Entity findType(Simulation& sim, const std::string& type, uint8_t owner) {
     int t = mod(sim).rules().findType(type);
     Entity found;
@@ -302,7 +302,7 @@ TEST(aiverse_garrison_send_and_capture) {
 static uint64_t botMatch(const std::string& game, const std::string& map, uint64_t seed, uint32_t ticks,
                          std::vector<Command>* cmds = nullptr, std::vector<uint64_t>* hashes = nullptr, uint32_t* end = nullptr) {
     auto sim = makeSim(game, map, seed);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim->players()) bots.emplace_back(p.slot, seed);
     for (uint32_t t = 0; t < ticks && sim->result() == 0; ++t) {
         for (auto& b : bots) b.update(*sim);
@@ -357,7 +357,7 @@ TEST(replay_file_roundtrip) {
 
 static std::unique_ptr<Simulation> makeSimJson(const std::string& rules, const std::string& map, uint64_t seed = 1) {
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(Json::parse(rules), Json::parse(map));
     return sim;
 }
@@ -545,7 +545,7 @@ TEST(mech_lane_autobuild_waves_score) {
 TEST(mech_lane_bots_deterministic) {
     auto play = [](uint64_t seed) {
         auto sim = makeSimJson(kLaneRules, laneMap(), seed);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim->players()) bots.emplace_back(p.slot, seed);
         for (int t = 0; t < 20 * 130 && sim->result() == 0; ++t) { for (auto& b : bots) b.update(*sim); sim->step(); }
         return std::pair{sim->checksum(), sim->result()};
@@ -634,7 +634,7 @@ TEST(json_edit_and_dump_roundtrip) {
 
 // ---------------- Localization (engine/i18n) ----------------
 #include "engine/i18n/GameLanguage.h"
-#include "modules/rts/RtsLocalize.h"
+#include "engine/game/Localize.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -907,9 +907,9 @@ TEST(pack_sample_games_match_folder) {
         CHECK(p->read("rules.json", rules, true) && p->read(map, mapText, true));
         CHECK(p->contains("engine/fonts/ui.ttf") && p->contains("game.json"));
         SimConfig cfg; cfg.seed = 9;
-        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         sim->setup(Json::parse(rules), Json::parse(mapText));
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& pl : sim->players()) bots.emplace_back(pl.slot, 9);
         for (uint32_t t = 0; t < 20 * 120 && sim->result() == 0; ++t) { for (auto& b : bots) b.update(*sim); sim->step(); }
         CHECK(sim->checksum() == botMatch(game, map, 9, 20 * 120));
@@ -1275,9 +1275,9 @@ TEST(audio_aiverse_events_keep_sim_deterministic) {
         }
         SimConfig cfg;
         cfg.seed = 11;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(rulesJson, map);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim.players()) bots.emplace_back(p.slot, 11);
         if (withAudio) sound.attach(sim, 1);
         std::vector<float> buf(2400 * 2);
@@ -1544,7 +1544,7 @@ TEST(importer_dune2_rules_and_synthetic_scenario) {
     CHECK(game.getBool("external") && game["maps"].size() == 1);
     // The importer's rules and map must load into the real simulation and run.
     SimConfig cfg; cfg.seed = 4;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     bool loaded = true;
     try {
         sim->setup(Json::parseFile((d / "out" / "rules.json").string()), Json::parseFile((d / "out" / "maps" / "scena001.json").string()));
@@ -1566,7 +1566,7 @@ TEST(importer_dune2_rules_and_synthetic_scenario) {
 TEST(mech_surrender_ends_match_and_replays) {
     auto play = [](std::vector<Command>* cmds, uint32_t* end, bool* surrenderEvent) {
         auto sim = makeSim(kSkirmish, "maps/valley.json", 9);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim->players()) bots.emplace_back(p.slot, 9);
         for (uint32_t t = 0; t < 20 * 60 && sim->result() == 0; ++t) {
             for (auto& b : bots) b.update(*sim);
@@ -2133,9 +2133,9 @@ TEST(tiles2d_sample_games_deterministic) {
             }, &err);
             CHECK(ok);
             SimConfig cfg; cfg.seed = 5;
-            Simulation sim(cfg, std::make_unique<game::RtsModule>());
+            Simulation sim(cfg, std::make_unique<game::GameCore>());
             sim.setup(Json::parseFile(dir + "/rules.json"), map);
-            std::vector<game::RtsAI> bots;
+            std::vector<game::ComputerPlayer> bots;
             for (auto& p : sim.players()) bots.emplace_back(p.slot, 5);
             for (int i = 0; i < 20 * 120; ++i) { for (auto& b : bots) b.update(sim); sim.step(); }
             return sim.checksum();
@@ -3237,7 +3237,7 @@ TEST(audio_music_per_map) {
     CHECK(loadBank(*a, bank.dump(), nullptr, files));
     game::RtsAudio s;
     CHECK(s.init(*a, rules, bank));
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     sim.setup(rulesJson, Json::parse(readSource(dir + "maps/valley.json")));
     s.attach(sim, 1, "maps/valley.json");
     CHECK(a->currentMusic() == "match.valley");
@@ -3488,9 +3488,9 @@ TEST(fx_aiverse_events_keep_sim_deterministic) {
         if (withFx) bridge.init(ps, rules, bank);
         SimConfig cfg;
         cfg.seed = 11;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(rulesJson, map);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim.players()) bots.emplace_back(p.slot, 11);
         if (withFx) bridge.attach(sim, 0);
         for (int t = 0; t < 20 * 240 && sim.result() == 0; ++t) {
@@ -4213,7 +4213,7 @@ TEST(bw_player_skills_loadout_levels_auto) {
 TEST(bw_skills_deterministic) {
     auto play = [](uint64_t seed) {
         auto sim = makeSimJson(kBwRules, bwMap(), seed);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim->players()) bots.emplace_back(p.slot, seed);
         for (int t = 0; t < 20 * 90 && sim->result() == 0; ++t) { for (auto& b : bots) b.update(*sim); sim->step(); }
         return std::pair{sim->checksum(), sim->tick()};
@@ -4328,10 +4328,10 @@ TEST(terrain_heightfield_match_is_deterministic) {
     CHECK(game::loadRules(rules).terrain.heightfield());
     auto run = [&] {
         SimConfig cfg; cfg.seed = 3;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(rules, map);
         CHECK(mod(sim).state(sim).grid.hf);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim.players()) bots.emplace_back(p.slot, 3);
         for (int i = 0; i < 20 * 150; ++i) { for (auto& b : bots) b.update(sim); sim.step(); }
         // units stand on the surface
@@ -4352,7 +4352,7 @@ TEST(terrain_heightfield_match_is_deterministic) {
     for (int i = 0; i < 81; ++i) cs.push(Json::number(int64_t(i % 5)));
     withCorners.member("terrain").set("corners", cs);
     SimConfig cfg;
-    Simulation s1(cfg, std::make_unique<game::RtsModule>()), s2(cfg, std::make_unique<game::RtsModule>());
+    Simulation s1(cfg, std::make_unique<game::GameCore>()), s2(cfg, std::make_unique<game::GameCore>());
     s1.setup(flatRules, Json::parse(m));
     s2.setup(flatRules, withCorners);
     CHECK(s1.checksum() == s2.checksum());
@@ -4892,7 +4892,7 @@ TEST(fog_of_war_modes_and_look) {
         f.set("mode", Json::string(mode));
         (inMap ? map : rules).set("fogOfWar", f);
         SimConfig cfg; cfg.seed = 2;
-        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         sim->setup(rules, map);
         for (int i = 0; i < 40; ++i) sim->step();
         return sim;
@@ -5671,7 +5671,7 @@ TEST(overlay_templates_are_valid) {
 TEST(overlay_conditions_on_sim_state) {
     auto sim = makeSim(kSkirmish, "maps/valley.json", 1);
     for (int i = 0; i < 20; ++i) sim->step();
-    game::RtsModule& m = mod(*sim);
+    game::GameCore& m = mod(*sim);
     const game::Rules& R = m.rules();
     game::RtsScene scene;   // like sceneFromSim (RtsView.cpp needs the renderer, not linked here)
     sim->world().each<game::Unit, Owner, Transform>([&](Entity e, game::Unit& u, Owner& ow, Transform& tr) {
@@ -6399,9 +6399,9 @@ TEST(sphere_great_circle_steps) {
 #define GEN_GOLD_PLANET 0x0c2a152a97d7e02bull
 
 // ---------------- terrain / map generator (agent-terrain-gen) ----------------
-#include "modules/rts/gen/MapGen.h"
-#include "modules/rts/gen/GenNoise.h"
-#include "modules/rts/gen/GenField.h"
+#include "engine/game/gen/MapGen.h"
+#include "engine/game/gen/GenNoise.h"
+#include "engine/game/gen/GenField.h"
 #include "engine/game/Sphere.h"
 
 static const char* kGenRules = R"({
@@ -6513,7 +6513,7 @@ TEST(gen_match_hook_and_replay) {
         CHECK(gen::prepareGenerate(map, [](const std::string&, std::string&) { return false; }, nullptr));
         CHECK(map["players"].size() == 2);
         SimConfig cfg; cfg.seed = seed;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(rj, map);
         for (int i = 0; i < 40; ++i) sim.step();
         return sim.checksum();
@@ -6523,7 +6523,7 @@ TEST(gen_match_hook_and_replay) {
     // readable errors
     Json bad = Json::parse(R"({"size": [40, 40], "players": [{}, {}], "generate": {"preset": "nope"}})");
     SimConfig cfg;
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     std::string what;
     try { sim.setup(rj, bad); } catch (const std::exception& e) { what = e.what(); }
     CHECK(what.find("unknown preset 'nope'") != std::string::npos);
@@ -8762,7 +8762,7 @@ TEST(planet_orbit_units_and_transit) {
 TEST(planet_matches_deterministic_and_replay) {
     auto run = [](uint64_t seed, std::vector<Command>* rec, const std::vector<Command>* play) {
         auto sim = makeSim(kPlanets, "maps/two_worlds.json", seed);
-        game::RtsAI a(1, seed), b(2, seed);
+        game::ComputerPlayer a(1, seed), b(2, seed);
         if (play) for (const Command& c : *play) sim->submit(c);   // recorded with their execution ticks
         for (int t = 0; t < 20 * 90; ++t) {
             if (!play) { a.update(*sim); b.update(*sim); }
@@ -8806,7 +8806,7 @@ TEST(planet_mapdoc_round_trip_and_validate) {
     CHECK(seam && pos);
 }
 #endif
-// ------------------------------------------------------------------ fidelity mechanics (RtsOriginals.cpp)
+// ------------------------------------------------------------------ fidelity mechanics (Originals.cpp)
 
 static Entity spawnAt(Simulation& sim, const std::string& type, uint8_t owner, double x, double z) {
     return mod(sim).spawn(sim, uint16_t(mod(sim).rules().findType(type)), owner, Vec3{Fixed::fromRatio(int64_t(x * 100), 100), Fixed{}, Fixed::fromRatio(int64_t(z * 100), 100)});
@@ -9208,7 +9208,7 @@ int pathCost(const game::Surface& S, const std::vector<int>& cells) {
 }
 std::unique_ptr<Simulation> planetSim(const Json& map) {
     SimConfig cfg; cfg.seed = 1;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(Json::parseFile(kPlanets + "/rules.json"), map);
     return sim;
 }
@@ -9447,7 +9447,7 @@ uint64_t flowGroupMatch(bool fields, int* arrived, uint64_t* hash2 = nullptr) {
     Json rules = Json::parseFile(kSkirmish + "/rules.json");
     if (fields) { Json ff = Json::object(); ff.set("minGroup", Json::number(int64_t(8))); rules.member("movement").set("flowField", ff); }
     SimConfig cfg; cfg.seed = 7;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     auto& m = mod(*sim);
     const int ft = m.rules().findType("footman");
@@ -9533,7 +9533,7 @@ Json crowdMap(int n, uint64_t seed) {
 struct CrowdRun { int arrived = 0, settled = 0; double t90 = -1; uint64_t sum = 0; std::vector<Command> cmds; bool roundTrip = true; };
 CrowdRun crowdRun(int units, uint64_t seed, const std::vector<Command>* replay = nullptr) {
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(Json::parseFile(kSkirmish + "/rules.json"), crowdMap(96, seed));
     auto& m = mod(*sim);
     const int ft = m.rules().findType("footman");
@@ -9559,7 +9559,7 @@ CrowdRun crowdRun(int units, uint64_t seed, const std::vector<Command>* replay =
         if (t == window * 12 && !replay) {   // save / load mid-settling (crowd state on Mobile): both copies stay identical
             const std::string bytes = sim->serialize();
             SimConfig cb; cb.seed = seed;
-            Simulation b(cb, std::make_unique<game::RtsModule>());
+            Simulation b(cb, std::make_unique<game::GameCore>());
             b.setup(Json::parseFile(kSkirmish + "/rules.json"), crowdMap(96, seed));
             std::string err;
             if (bytes.empty() || !b.deserialize(bytes, &err)) r.roundTrip = false;
@@ -9863,7 +9863,7 @@ TEST(gen_planet_world_players) {
         // the generated map loads and plays deterministically
         auto run = [&]() {
             SimConfig cfg; cfg.seed = 3;
-            Simulation sim(cfg, std::make_unique<game::RtsModule>());
+            Simulation sim(cfg, std::make_unique<game::GameCore>());
             sim.setup(rj, m);
             for (int i = 0; i < 60; ++i) sim.step();
             return sim.checksum();
@@ -9884,9 +9884,9 @@ TEST(gen_planet_world_players) {
     CHECK(gen::prepareGenerate(mm, [](const std::string&, std::string&) { return false; }, nullptr));
     auto runMatch = [&](uint64_t seed) {
         SimConfig cfg; cfg.seed = seed;
-        Simulation sim(cfg, std::make_unique<game::RtsModule>());
+        Simulation sim(cfg, std::make_unique<game::GameCore>());
         sim.setup(rj, mm);
-        auto* mod = dynamic_cast<game::RtsModule*>(&sim.module());
+        auto* mod = dynamic_cast<game::GameCore*>(&sim.module());
         CHECK(mod->surface(sim) != nullptr && mod->generatedMap() != nullptr);
         for (int i = 0; i < 40; ++i) sim.step();
         return sim.checksum();
@@ -9896,8 +9896,8 @@ TEST(gen_planet_world_players) {
 }
 
 // ---------------- Lua scripting (scripting agent) ----------------
-#include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsScriptInternal.h"
+#include "engine/game/Script.h"
+#include "engine/game/ScriptInternal.h"
 #include <fstream>
 #include <iterator>
 
@@ -9910,7 +9910,7 @@ static std::unique_ptr<Simulation> scriptSim(const std::vector<std::pair<std::st
     rules.set("$scriptSources", src);
     if (rulesOut) *rulesOut = rules;
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     return sim;
 }
@@ -10052,7 +10052,7 @@ TEST(script_data_hooks) {
         "actions": [{"type": "script", "fn": "act", "amount": 7, "player": 1}]}])");
     rules.set("triggers", trig);
     SimConfig cfg;
-    sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     const Fixed g0 = gold(*sim, 1);
     for (int i = 0; i < 25; ++i) sim->step();
@@ -10063,7 +10063,7 @@ TEST(script_data_hooks) {
     CHECK(mod(*sim).scripts()->errorCount() == 0);
     // unknown function reported at load
     rules.set("triggers", Json::parse(R"([{"id": "u", "event": "start", "actions": [{"type": "script", "fn": "nope"}]}])"));
-    sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     CHECK(scriptLogHas(*sim, "'nope' is not defined"));
 }
@@ -10081,7 +10081,7 @@ static std::unique_ptr<Simulation> scriptedGame(uint64_t seed) {
     }, &err);
     CHECK(ok);
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, map);
     return sim;
 }
@@ -10089,7 +10089,7 @@ static std::unique_ptr<Simulation> scriptedGame(uint64_t seed) {
 TEST(script_sample_deterministic) {
     auto run = [](uint64_t seed) {
         auto sim = scriptedGame(seed);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& p : sim->players()) bots.emplace_back(p.slot, seed);
         for (int i = 0; i < 20 * 120; ++i) { for (auto& b : bots) b.update(*sim); sim->step(); }
         CHECK(mod(*sim).scripts() && mod(*sim).scripts()->errorCount() == 0);
@@ -10119,14 +10119,14 @@ TEST(script_view_scripts) {
     rules.set("$scriptSources", Json::parse(R"J({"scripts/view/v.lua":
         "local n = 0.5\nview.on('unit_died', function(e) n = n + 1 end)\nview.on_frame(function(dt) n = n + dt * 2.0; if n > 0.5 then view.notice('spawned ' .. game.count{}) ; n = -100 end end)"})J"));
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     sim.setup(rules, map);
     CHECK(!mod(sim).scripts()->hasUserScripts());           // view scripts alone: no simulation scripts
     const uint64_t before = sim.checksum();
     game::ViewScripts vs;
     CHECK(vs.load(sim, rules, map, 1));
     vs.attach(sim);
-    Simulation ref(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation ref(SimConfig{}, std::make_unique<game::GameCore>());
     ref.setup(rules, map);
     CHECK(before == ref.checksum());
     int t = mod(sim).rules().findType("footman");
@@ -10236,7 +10236,7 @@ static std::unique_ptr<Simulation> luaLabGame(uint64_t seed) {
         return true;
     }, &err));
     SimConfig cfg; cfg.seed = seed;
-    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
     sim->setup(rules, map);
     return sim;
 }
@@ -10279,7 +10279,7 @@ TEST(lua_lab_prototypes) {
     // determinism with bots
     auto run = [](uint64_t seed) {
         auto s = luaLabGame(seed);
-        std::vector<game::RtsAI> bots;
+        std::vector<game::ComputerPlayer> bots;
         for (auto& pl : s->players()) bots.emplace_back(pl.slot, seed);
         for (int i = 0; i < 20 * 150; ++i) { for (auto& b : bots) b.update(*s); s->step(); }
         CHECK(mod(*s).scripts()->errorCount() == 0);
@@ -10480,7 +10480,7 @@ TEST(script_territory_brush_frontier_and_placement) {
     Json map = Json::parse(R"({"size":[8,8],"players":[{},{}],"entities":[
       {"type":"pawn","owner":1,"pos":[1,1]},{"type":"pawn","owner":2,"pos":[6,6]}]})");
     auto make = [&]() {
-        auto s=std::make_unique<Simulation>(SimConfig{},std::make_unique<game::RtsModule>());
+        auto s=std::make_unique<Simulation>(SimConfig{},std::make_unique<game::GameCore>());
         s->setup(rules,map); return s;
     };
     auto a=make(), b=make();
@@ -10522,7 +10522,7 @@ view.on_frame(function(dt) p:clear();p:stroke(20,20,21,21,{radius=1}) end)
 )LUA"));
     rules.set("$scriptSources",sources);
     Json map=Json::parseFile(kSkirmish+"/maps/valley.json");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     const auto hash=sim.checksum();game::ViewScripts view;
     CHECK(view.load(sim,rules,map,1));
     for(auto& e:view.log())if(e.error)std::printf("paint error: %s\n",e.text.c_str());
@@ -10553,7 +10553,7 @@ TEST(script_attack_event_is_visual_only) {
     )"));
     rules.set("scripts",files);rules.set("$scriptSources",sources);
     Json map=Json::parse(R"({"size":[8,8],"players":[{},{}],"entities":[{"type":"pawn","owner":1,"pos":[1,1]},{"type":"pawn","owner":2,"pos":[6,6]}]})");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);sim.step();
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);sim.step();
     CHECK(mod(sim).scripts()->errorCount()==0);
     int cues=0;for(const auto& e:sim.events())if(e.type==game::kEvAttack){++cues;CHECK(e.value==-1);}
     CHECK(cues==1);
@@ -10563,7 +10563,7 @@ TEST(script_attack_event_is_visual_only) {
 TEST(region_swipe_commands_and_cancellation) {
     Json rules=Json::parse(R"({"victory":{"mode":"survive","seconds":600},"types":{"base":{"tags":["zone"],"structure":true,"abilities":[{"id":"send","target":"point","range":100,"effects":[]}]}}})");
     Json map=Json::parse(R"({"size":[6,4],"regions":{"rows":["AABBCC","AABBCC","AABBCC","AABBCC"],"names":{"A":"a","B":"b","C":"c"}},"players":[{},{}],"entities":[{"type":"base","owner":1,"pos":[1,1]},{"type":"base","owner":1,"pos":[3,1]},{"type":"base","owner":2,"pos":[5,1]}]})");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     game::RegionSwipe swipe;
     swipe.configure(Json::parse(R"({"controls":{"mode":"regionSwipe","anchorTag":"zone","dispatchAbilities":["send","send","send"]}})"));
     swipe.refresh(sim,mod(sim),1);const auto checksum=sim.checksum();
@@ -10732,7 +10732,7 @@ end)
 
 )LUA"));rules.set("$scriptSources",sources);
     Json map=Json::parseFile(kSkirmish+"/maps/valley.json");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     auto& vars=mod(sim).state(sim).trig.vars;
     vars["rail_revision"]=1_fx;vars["rail_count"]=1_fx;vars["rail_a_1"]=970_fx;vars["rail_b_1"]=971_fx;
     game::ViewScripts view;CHECK(view.load(sim,rules,map,1));view.update(sim,.016f);
@@ -10806,7 +10806,7 @@ view.on_frame(function()
 end)
 )LUA"));rules.set("$scriptSources",sources);
     Json map=Json::parseFile(kSkirmish+"/maps/valley.json");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     game::ViewScripts view;CHECK(view.load(sim,rules,map,1));
     view.setTargeting({"probe",12.5f,8.f,true,true});view.update(sim,.016f);
     auto messages=view.takeRequests();CHECK(messages.size()==1);if(!messages.empty())CHECK(messages[0].text=="active");
@@ -10816,7 +10816,7 @@ end)
     CHECK(std::abs(view.paintLayers()->layers.begin()->second.opacity-.4f)<.0001f);
 }
 
-#include "modules/rts/RtsInitialVars.h"
+#include "engine/game/InitialVars.h"
 TEST(script_initial_vars_setup_validation_and_hash) {
     const Json rules = Json::parseFile(kSkirmish + "/rules.json");
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
@@ -10824,7 +10824,7 @@ TEST(script_initial_vars_setup_validation_and_hash) {
     game::mergeInitialVars(map, Json::parse(R"({"loadout.support":3,"card_1":7})"));
     CHECK(map["initialVars"].getInt("keep") == 4);
     auto run = [&](const Json& m) {
-        auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>());
+        auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>());
         sim->setup(rules, m);
         CHECK(mod(*sim).state(*sim).trig.vars.at("loadout.support") == Fixed::fromInt(3));
         for (int i = 0; i < 20; ++i) sim->step();
@@ -10923,7 +10923,7 @@ TEST(script_air_position_over_water) {
         end
     )"));rules.set("scripts",scripts);rules.set("$scriptSources",sources);
     auto map=Json::parse(R"({"size":[8,4],"terrain":{"rows":["..~~~~..","..~~~~..","..~~~~..","..~~~~.."]},"players":[{},{}],"entities":[{"type":"air","owner":1,"pos":[1,1]},{"type":"ground","owner":1,"pos":[1,2]}]})");
-    auto make=[&](){auto s=std::make_unique<Simulation>(SimConfig{},std::make_unique<game::RtsModule>());s->setup(rules,map);return s;};
+    auto make=[&](){auto s=std::make_unique<Simulation>(SimConfig{},std::make_unique<game::GameCore>());s->setup(rules,map);return s;};
     auto a=make(),b=make();for(int i=0;i<20;++i){a->step();b->step();}
     CHECK(mod(*a).scripts()->errorCount()==0);CHECK(a->checksum()==b->checksum());
     SimSnapshot snap;a->saveState(snap);for(int i=0;i<20;++i)a->step();auto hash=a->checksum();
@@ -10933,7 +10933,7 @@ TEST(script_air_position_over_water) {
 TEST(region_swipe_arrows_start_at_gesture) {
     Json rules=Json::parse(R"({"victory":{"mode":"survive","seconds":600},"types":{"base":{"tags":["zone"],"structure":true,"abilities":[{"id":"send","target":"point","range":100,"effects":[]}]}}})");
     Json map=Json::parse(R"({"size":[6,4],"regions":{"rows":["AABBCC","AABBCC","AABBCC","AABBCC"],"names":{"A":"a","B":"b","C":"c"}},"players":[{},{}],"entities":[{"type":"base","owner":1,"pos":[1,1]},{"type":"base","owner":1,"pos":[3,1]},{"type":"base","owner":2,"pos":[5,1]}]})");
-    Simulation sim(SimConfig{},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim(SimConfig{},std::make_unique<game::GameCore>());sim.setup(rules,map);
     game::RegionSwipe swipe;
     swipe.configure(Json::parse(R"({"controls":{"mode":"regionSwipe","anchorTag":"zone","dispatchAbilities":["send","send","send"]}})"));
     swipe.refresh(sim,mod(sim),1);const auto checksum=sim.checksum();
@@ -10966,7 +10966,7 @@ TEST(script_immutable_match_seed) {
             "assert(tostring(game.seed())=='"+std::to_string(static_cast<int64_t>(seed))+"')\n");
         checkedSources.set("seed.lua",Json::string(checked));rules.set("$scriptSources",checkedSources);
         SimConfig cfg;cfg.seed=seed;
-        Simulation sim(cfg,std::make_unique<game::RtsModule>());sim.setup(rules,map);
+        Simulation sim(cfg,std::make_unique<game::GameCore>());sim.setup(rules,map);
         for(int i=0;i<3;++i)sim.step();
         CHECK(mod(sim).scripts()->errorCount()==0);
         SimSnapshot snap;sim.saveState(snap);
@@ -11022,12 +11022,12 @@ TEST(script_sorted_pairs_order) {
         end
     )"));rules.set("scripts",scripts);rules.set("$scriptSources",sources);
     auto map=Json::parse(R"({"size":[4,4],"players":[{},{}]})");
-    Simulation sim({},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim({},std::make_unique<game::GameCore>());sim.setup(rules,map);
     sim.step();
     CHECK(mod(sim).scripts()->errorCount()==0);
 }
 
-// f32 / f64 bit-pattern arithmetic (RtsScriptIeee.cpp): known IEEE results, canonical NaN, argument checks,
+// f32 / f64 bit-pattern arithmetic (ScriptIeee.cpp): known IEEE results, canonical NaN, argument checks,
 // a simulation script using them deterministically, and a differential run against the host's IEEE operations.
 TEST(script_ieee_bit_patterns) {
     Json rules=Json::parse(R"({"victory":{"mode":"survive","seconds":600},"types":{"probe":{"hp":1}}})");
@@ -11092,7 +11092,7 @@ TEST(script_ieee_bit_patterns) {
         on('tick',function() state.x=f32.add(f32.mul(state.x,0x3f8ccccd),0x3dcccccd) end)
     )"));rules.set("scripts",scripts);rules.set("$scriptSources",sources);
     auto map=Json::parse(R"({"size":[4,4],"players":[{},{}]})");
-    Simulation sim({},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim({},std::make_unique<game::GameCore>());sim.setup(rules,map);
     for(int i=0;i<3;++i)sim.step();
     CHECK(mod(sim).scripts()->errorCount()==0);
     SimSnapshot snap;sim.saveState(snap);
@@ -11103,7 +11103,7 @@ TEST(script_ieee_bit_patterns) {
     CHECK(sim.checksum()==hash);
     for (const char* bad : {"f32.add(-1,0)", "f32.add(0x100000000,0)", "f32.mul(0,'1')", "f64.add(0,fx(1))", "f32.fromint(fx(1,2))", "f32.sqrt()"}) {
         sources.set("ieee.lua",Json::string(std::string("function on_start() local x=")+bad+" end"));rules.set("$scriptSources",sources);
-        Simulation invalid({},std::make_unique<game::RtsModule>());invalid.setup(rules,map);invalid.step();
+        Simulation invalid({},std::make_unique<game::GameCore>());invalid.setup(rules,map);invalid.step();
         CHECK(mod(invalid).scripts()->errorCount()>0);
     }
     // differential: random bit patterns (biased to small exponents, subnormals and specials) vs host IEEE
@@ -11196,7 +11196,7 @@ TEST(script_grid_path) {
         end)
     )"));rules.set("scripts",scripts);rules.set("$scriptSources",sources);
     auto map=Json::parse(R"({"size":[4,4],"players":[{},{}]})");
-    Simulation sim({},std::make_unique<game::RtsModule>());sim.setup(rules,map);
+    Simulation sim({},std::make_unique<game::GameCore>());sim.setup(rules,map);
     for(int i=0;i<3;++i)sim.step();
     CHECK(mod(sim).scripts()->errorCount()==0);
     SimSnapshot snap;sim.saveState(snap);
@@ -11207,7 +11207,7 @@ TEST(script_grid_path) {
     for (const char* args : {"0,4,{},0,1", "4096,4096,{},0,1", "4,4,false,0,1", "4,4,{},0,1,'x'"}) {
         sources.set("grid.lua",Json::string(std::string("function on_start() game.grid_path(")+args+") end"));
         rules.set("$scriptSources",sources);
-        Simulation invalid({},std::make_unique<game::RtsModule>());invalid.setup(rules,map);invalid.step();
+        Simulation invalid({},std::make_unique<game::GameCore>());invalid.setup(rules,map);invalid.step();
         CHECK(mod(invalid).scripts()->errorCount()>0);
     }
 }
@@ -11251,12 +11251,12 @@ TEST(script_grid_sample_segment) {
         end
     )"));rules.set("scripts",scripts);rules.set("$scriptSources",sources);
     auto map=Json::parse(R"({"size":[4,4],"players":[{},{}]})");
-    Simulation sim({},std::make_unique<game::RtsModule>());sim.setup(rules,map);sim.step();
+    Simulation sim({},std::make_unique<game::GameCore>());sim.setup(rules,map);sim.step();
     CHECK(mod(sim).scripts()->errorCount()==0);
     for (const char* args : {"0,4,{},0,0,1,1", "4,4,false,0,0,1,1", "4,4,{},0,0,1,1,'x'", "4,4,{},0,0,1,1,nil,-1", "4,4,{},0,0,1,1,nil,0,17"}) {
         sources.set("segment.lua",Json::string(std::string("function on_start() game.grid_sample_segment(")+args+") end"));
         rules.set("$scriptSources",sources);
-        Simulation invalid({},std::make_unique<game::RtsModule>());invalid.setup(rules,map);invalid.step();
+        Simulation invalid({},std::make_unique<game::GameCore>());invalid.setup(rules,map);invalid.step();
         CHECK(mod(invalid).scripts()->errorCount()>0);
     }
 }
@@ -11314,7 +11314,7 @@ TEST(script_view_effect_height_and_queue) {
     )"));
     rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts vs;
@@ -11446,11 +11446,11 @@ TEST(aiverse_scripted_ai_controller) {
     rules.set("ai", Json::parse(R"({"controller":"scripted"})"));
     CHECK(game::loadRules(rules).scriptedAI);
     SimConfig cfg; cfg.seed=3;
-    Simulation scripted(cfg,std::make_unique<game::RtsModule>());
-    Simulation reference(cfg,std::make_unique<game::RtsModule>());
+    Simulation scripted(cfg,std::make_unique<game::GameCore>());
+    Simulation reference(cfg,std::make_unique<game::GameCore>());
     auto map=Json::parseFile(kSkirmish + "/maps/valley.json");
     scripted.setup(rules,map); reference.setup(rules,map);
-    game::RtsAI ai(1,3);
+    game::ComputerPlayer ai(1,3);
     for (int i=0;i<100;++i) { ai.update(scripted); scripted.step(); reference.step(); }
     CHECK(scripted.executedCommands().empty());
     CHECK(scripted.checksum()==reference.checksum());
@@ -11463,7 +11463,7 @@ TEST(aiverse_scripted_ai_controller) {
     int workers=0;
     scripted.world().each<game::Unit,Owner>([&](Entity,game::Unit& u,Owner& o){if(o.player==1&&u.type==train.param)++workers;});
     CHECK(workers==6);
-    auto builtin=makeSim(kSkirmish,"maps/valley.json",3);game::RtsAI normal(1,3);
+    auto builtin=makeSim(kSkirmish,"maps/valley.json",3);game::ComputerPlayer normal(1,3);
     for(int i=0;i<100;++i){normal.update(*builtin);builtin->step();}
     CHECK(!builtin->executedCommands().empty());
 }
@@ -11489,9 +11489,9 @@ TEST(ai_map_player_presets) {   // map players[i].ai: per-slot preset + knobs (s
     rushMap.find("players")->at(0).set("ai", Json::parse(R"({"preset":"rush","firstAttackArmy":3})"));
     auto play = [&](const Json& m, uint32_t ticks, std::string* save = nullptr, std::vector<std::string>* bots = nullptr) {
         SimConfig cfg; cfg.seed = 3;
-        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         sim->setup(rules, m);
-        std::vector<game::RtsAI> ai;
+        std::vector<game::ComputerPlayer> ai;
         for (auto& p : sim->players()) ai.emplace_back(p.slot, 3);
         for (uint32_t i = 0; i < ticks; ++i) { for (auto& b : ai) b.update(*sim); sim->step(); }
         if (save) { *save = sim->serialize(); for (auto& b : ai) bots->push_back(b.saveState()); }
@@ -11506,11 +11506,11 @@ TEST(ai_map_player_presets) {   // map players[i].ai: per-slot preset + knobs (s
     std::string bytes; std::vector<std::string> botStates;
     auto [cont, contAi] = play(rushMap, 1200, &bytes, &botStates);
     SimConfig cfg; cfg.seed = 3;
-    Simulation loaded(cfg, std::make_unique<game::RtsModule>());
+    Simulation loaded(cfg, std::make_unique<game::GameCore>());
     loaded.setup(rules, rushMap);
     std::string err;
     CHECK(loaded.deserialize(bytes, &err));
-    std::vector<game::RtsAI> loadedAi;
+    std::vector<game::ComputerPlayer> loadedAi;
     for (size_t i = 0; i < contAi.size(); ++i) { loadedAi.emplace_back(contAi[i].player(), 3); CHECK(loadedAi.back().loadState(botStates[i])); }
     for (int i = 0; i < 1200; ++i) {
         for (auto& b : contAi) b.update(*cont); cont->step();
@@ -11642,7 +11642,7 @@ static std::unique_ptr<Simulation> cmdSim() {
     rules.set("scripts", Json::parse(R"(["scripts/c.lua"])"));
     Json src = Json::object(); src.set("scripts/c.lua", Json::string(kCmdScript));
     rules.set("$scriptSources", src);
-    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     return sim;
 }
@@ -11747,15 +11747,15 @@ TEST(script_g1_view_send) {   // view.send encodes by name; the simulation runs 
 namespace {
 class NativeProbe final : public game::NativeModule {
 public:
-    void setup(game::RtsModule&, Simulation&, game::NativeState& s, const Json& cfg) const override {
+    void setup(game::GameCore&, Simulation&, game::NativeState& s, const Json& cfg) const override {
         s.values["value"] = cfg.getInt("initial", 2);
         s.arrays["history"] = {7, 9};
     }
-    void tick(game::RtsModule&, Simulation& sim, game::NativeState& s) const override {
+    void tick(game::GameCore&, Simulation& sim, game::NativeState& s) const override {
         s.values["value"] += sim.rng().next() % 7;
         s.arrays["history"].push_back(sim.tick());
     }
-    void command(game::RtsModule&, Simulation&, game::NativeState& s, const Command& c) const override {
+    void command(game::GameCore&, Simulation&, game::NativeState& s, const Command& c) const override {
         if (c.param < 0 || c.param > 10) return;
         s.values["commands"] += c.param;
     }
@@ -11764,7 +11764,7 @@ std::unique_ptr<game::NativeModule> nativeProbe() { return std::make_unique<Nati
 // openLua: a pure Lua library of the module, visible to the scripts from their first line
 class NativeLuaProbe final : public game::NativeModule {
 public:
-    void setup(game::RtsModule&, Simulation&, game::NativeState&, const Json&) const override {}
+    void setup(game::GameCore&, Simulation&, game::NativeState&, const Json&) const override {}
     void openLua(lua_State* L) const override {
         static const luaL_Reg fns[] = {{"twice", [](lua_State* S) -> int {
             if (!lua_isinteger(S, 1)) return luaL_error(S, "twice: integer expected");
@@ -11782,7 +11782,7 @@ std::unique_ptr<Simulation> nativeSim(const std::string& list, uint32_t version 
         rules.set("$scriptSources", Json::parse(R"json({"test.lua":"every(1, function() state.n = (state.n or 0) + 1 end)"})json"));
     }
     std::vector<game::NativeDefinition> defs{{"probe", version, nativeProbe}, {"other", 1, nativeProbe}};
-    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>(std::move(defs)));
+    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>(std::move(defs)));
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     return sim;
 }
@@ -11826,7 +11826,7 @@ TEST(native_modules_lua_functions) {
     auto make = [&](const char* list) {
         rules.set("nativeModules", Json::parse(list));
         std::vector<game::NativeDefinition> defs{{"luaprobe", 1, nativeLuaProbe}, {"probe", 1, nativeProbe}};
-        auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>(std::move(defs)));
+        auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>(std::move(defs)));
         sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
         return sim;
     };
@@ -11877,7 +11877,7 @@ TEST(script_g2_view_ui) {   // view scripts drive the script UI: ui.set / open /
     )"));
     rules.set("$scriptSources", src);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     sim.setup(rules, map);
     sim.step(); sim.step();
     const uint64_t c0 = sim.checksum();
@@ -11885,7 +11885,7 @@ TEST(script_g2_view_ui) {   // view scripts drive the script UI: ui.set / open /
     CHECK(vs.load(sim, rules, map, 1));
     vs.update(sim, 0.016f);
     {   // view.state() flushed the simulation's `state` early: outcomes and checksums are unchanged
-        Simulation ref(SimConfig{}, std::make_unique<game::RtsModule>());
+        Simulation ref(SimConfig{}, std::make_unique<game::GameCore>());
         ref.setup(rules, map);
         ref.step(); ref.step();
         CHECK(ref.checksum() == sim.checksum() && c0 == sim.checksum());
@@ -12026,7 +12026,7 @@ TEST(script_command_map_click) {
     Json src = Json::object();
     src.set("scripts/c.lua", Json::string("function on_command(p, id, a) if id == 'tap' then game.set_var('tap_x', a.at.x) end end"));
     rules.set("$scriptSources", src);
-    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>());
+    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::GameCore>());
     sim->setup(rules, Json::parseFile(kSkirmish + "/maps/valley.json"));
     auto* se = mod(*sim).scripts();
     CHECK(se != nullptr);
@@ -12076,7 +12076,7 @@ view.on_frame(function()
 end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     game::ViewCamera vc; vc.x = 10; vc.z = 20; vc.zoom = 40; vc.pitch = 34; vc.width = 720; vc.height = 1280; vc.ortho = true;
     view.setCamera(vc); view.update(sim, .016f);
@@ -12096,7 +12096,7 @@ assert(not pcall(layer.set_cells, layer, "abc"))
 assert(not pcall(view.paint_layer, {bounds = {0, 0, 4, 2}, cells = {width = 0, height = 2}}))
 assert(not pcall(view.paint_layer, {bounds = {0, 0, 4, 2}, cells = {width = 4, height = 2}, density = 5}))
 )LUA")); rules2.set("$scriptSources", src2);
-    Simulation sim2(SimConfig{}, std::make_unique<game::RtsModule>()); sim2.setup(rules2, map);
+    Simulation sim2(SimConfig{}, std::make_unique<game::GameCore>()); sim2.setup(rules2, map);
     const auto before = sim2.checksum();
     game::ViewScripts v2; CHECK(v2.load(sim2, rules2, map, 1));
     for (auto& e : v2.log()) std::printf("  cells log: %s\n", e.text.c_str());
@@ -12135,7 +12135,7 @@ view.on_frame(function()
 end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     game::ViewCamera vc; vc.x = 10; vc.z = 20; vc.zoom = 40; vc.pitch = 34; vc.width = 720; vc.height = 1280; vc.ortho = true;
@@ -12173,7 +12173,7 @@ view.on_frame(function()
 end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     view.update(sim, .016f);
     for (auto& e : view.log()) std::printf("  view log: %s\n", e.text.c_str());
@@ -12200,7 +12200,7 @@ view.on_frame(function() while true do end end)                                 
 view.on_frame(function() if frame == 3 then error('bug') end; view.notice('fails') end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     auto count = [](const std::vector<game::ViewRequest>& r, const char* t) { int n = 0; for (auto& q : r) n += q.text == t; return n; };
@@ -12237,7 +12237,7 @@ TEST(view_screen_host_state) {
 view.on_frame(function() view.notice(view.screen()) end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     auto noticed = [&](const char* want) {
@@ -12267,7 +12267,7 @@ view.on_frame(function()
 end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     view.update(sim, .016f);
     auto r = view.takeRequests();
@@ -12307,7 +12307,7 @@ view.on_frame(function()
 end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     view.update(sim, .016f);
@@ -12348,7 +12348,7 @@ view.on_frame(function()
 end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     view.update(sim, .016f);
@@ -12407,7 +12407,7 @@ assert(not pcall(view.entity_parent,hs[2],hs[2]))
 assert(not pcall(view.entity_parent,hs[2],hs[1],{x=0/0}))
 view.entity_parent(hs[3],nil)
 )LUA"));rules.set("$scriptSources",sources);
-    Simulation sim({},std::make_unique<game::RtsModule>());sim.setup(rules,map);auto hash=sim.checksum();
+    Simulation sim({},std::make_unique<game::GameCore>());sim.setup(rules,map);auto hash=sim.checksum();
     game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());CHECK(view.entityFx()->hierarchy.parents.size()==1);CHECK(sim.checksum()==hash);
 }
 
@@ -12442,7 +12442,7 @@ FX = {a = a, b = b}
 view.on_frame(function() last = view.entity_fx(a) end)
 )LUA")); rules.set("$scriptSources", src);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts view; CHECK(view.load(sim, rules, map, 1));
     for (auto& e : view.log()) std::printf("  fx log: %s\n", e.text.c_str());
@@ -15769,7 +15769,7 @@ TEST(view_entity_fx_renders_scaled_translucent) {
     // the instance block (draw.w), opacity 0 draws nothing; objects without values are drawn exactly as before
     using namespace entityfxtest;
     Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const game::Rules& R = mod(sim).rules();
     RecordingDevice dev;
     render::Renderer3D r3d; CHECK(r3d.init(dev));
@@ -15842,7 +15842,7 @@ TEST(view_transparent_model_option) {
     // depth is written afterwards with the colour mask off (ground layers drawn later stay under it); default unchanged
     using namespace entityfxtest;
     Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::SceneObject unit;
     game::RtsScene scene; game::sceneFromSim(sim, scene, 1, 0);
     const game::Rules& R0 = mod(sim).rules();
@@ -15892,7 +15892,7 @@ TEST(view_entity_fx_ground_shadow) {
     // opacity * shadow; a corpse keeps its image while it fades
     using namespace entityfxtest;
     Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::Rules R = mod(sim).rules();
     game::SceneObject unit;
     game::RtsScene scene; game::sceneFromSim(sim, scene, 1, 0);
@@ -15960,7 +15960,7 @@ flash:set_opacity(.25)
 assert(not pcall(view.paint_layer, {bounds = {0, 0, 4, 2}, cells = {width = 4, height = 2}, transparent = 256}))
 )LUA")); rules.set("$scriptSources", src);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const auto before = sim.checksum();
     game::ViewScripts v; CHECK(v.load(sim, rules, map, 1));
     for (auto& e : v.log()) std::printf("  ground log: %s\n", e.text.c_str());
@@ -15989,7 +15989,7 @@ TEST(view_script_log_callback) {
 view.on_frame(function() game.log('frame line'); error('boom') end)
 )LUA")); rules.set("$scriptSources", sources);
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::ViewScripts view; std::vector<game::ScriptLogEntry> seen;
     view.onLog = [&](const game::ScriptLogEntry& e) { seen.push_back(e); };
     CHECK(view.load(sim, rules, map, 1));
@@ -16898,7 +16898,7 @@ TEST(planet_fog_blur_seams_and_speed) {
 }
 
 // ---- agent-ai-terrain: terrain analysis, bot save states, invasions of other planets
-#include "modules/rts/RtsAITerrain.h"
+#include "engine/game/ComputerPlayerTerrain.h"
 TEST(ai_terrain_analysis_high_ground_routes_chokes) {
     // 24x12 level map: a level-1 plateau in the middle (x 8..15) with a ramp, walls at the top and bottom rows
     // leave a 2-cell gap (choke) at x = 20.
@@ -16940,7 +16940,7 @@ TEST(ai_bot_state_survives_save_load) {
     for (const std::string& game : {kSkirmish, std::string(AIVERSE_SOURCE_DIR) + "/templates/metaltide"}) {
         const std::string map = game == kSkirmish ? "maps/valley.json" : "maps/twin_craters.json";
         auto a = makeSim(game, map, 4);
-        std::vector<game::RtsAI> botsA;
+        std::vector<game::ComputerPlayer> botsA;
         for (auto& p : a->players()) botsA.emplace_back(p.slot, 4);
         std::string simBytes;
         std::vector<std::string> botBytes;
@@ -16951,7 +16951,7 @@ TEST(ai_bot_state_survives_save_load) {
         }
         auto b = makeSim(game, map, 4);
         CHECK(b->deserialize(simBytes));
-        std::vector<game::RtsAI> botsB;
+        std::vector<game::ComputerPlayer> botsB;
         for (auto& p : b->players()) botsB.emplace_back(p.slot, 99);   // other seed: everything comes from the state
         for (size_t i = 0; i < botsB.size(); ++i) CHECK(botsB[i].loadState(botBytes[i]));
         while (b->tick() < a->tick() && b->result() == 0) { for (auto& bt : botsB) bt.update(*b); b->step(); }
@@ -16970,9 +16970,9 @@ TEST(ai_invades_separate_planets) {
     g.set("params", params); g.set("templateData", tmpl);
     map.set("generate", g);
     SimConfig cfg; cfg.seed = 1;
-    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    Simulation sim(cfg, std::make_unique<game::GameCore>());
     sim.setup(Json::parseFile(kPlanets + "/rules.json"), map);
-    std::vector<game::RtsAI> bots;
+    std::vector<game::ComputerPlayer> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, 1);
     int transits = 0;
     for (uint32_t t = 0; t < 20 * 900 && sim.result() == 0; ++t) {
@@ -17716,7 +17716,7 @@ assert(not pcall(view.entity_fx, a, {pitch = 0 / 0}))
 view.entity_fx(a, {pitch = 0, roll = 0, time = 1}); assert(view.entity_fx(a).pitch == 30)   -- eases from what is drawn
 )LUA")); rules.set("$scriptSources", src);
         Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-        Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+        Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
         game::ViewScripts vs; CHECK(vs.load(sim, rules, map, 1));
         for (auto& l : vs.log()) std::printf("  tilt log: %s\n", l.text.c_str());
         CHECK(vs.log().empty());
@@ -17729,7 +17729,7 @@ view.entity_fx(a, {pitch = 0, roll = 0, time = 1}); assert(view.entity_fx(a).pit
         }
     }
     Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>()); sim.setup(rules, map);
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     const game::Rules& R = mod(sim).rules();
     RecordingDevice dev;
     render::Renderer3D r3d; CHECK(r3d.init(dev));
@@ -18107,7 +18107,7 @@ TEST(game_start_players_merge_per_seat_data_into_the_map) {
     // the merged map still sets up a simulation (per-player keys the module reads, e.g. players[i].deck)
     Json valley = Json::parseFile(kSkirmish + "/maps/valley.json");
     CHECK(client::mergeStartPlayers(valley, Json(), 1, Json::parse(R"({"units": []})")).empty());
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     bool ok = true;
     try { sim.setup(Json::parseFile(kSkirmish + "/rules.json"), valley); } catch (const std::exception& e) { ok = false; std::printf("    %s\n", e.what()); }
     CHECK(ok);
@@ -18123,7 +18123,7 @@ TEST(view_scripts_read_live_game_data_of_neutral_props) {
         "scripts/s.lua": "on('tick', function(t) for _, h in ipairs(game.units{owner = 0, type = 'footman'}) do local d = game.data(h); d.mark = t; d.kind = 'prop' end end)",
         "scripts/view/v.lua": "view.on_frame(function(dt) for _, h in ipairs(game.units{owner = 0, type = 'footman'}) do local d = game.data(h); view.notice(tostring(d.kind) .. ':' .. tostring(d.mark) .. ':' .. tostring(game.has_data(h, 'kind')) .. ':' .. #game.units{has = 'mark'}) end end)"})J"));
     Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
-    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     sim.setup(rules, map);
     const int t = mod(sim).rules().findType("footman");
     mod(sim).spawn(sim, uint16_t(t), 0, {Fixed::fromInt(12), Fixed{}, Fixed::fromInt(12)});   // a neutral prop
@@ -18141,7 +18141,7 @@ TEST(view_scripts_read_live_game_data_of_neutral_props) {
     for (auto& e : vs.log()) if (e.error) std::printf("  view log: %s\n", e.text.c_str());
     for (auto& e : mod(sim).scripts()->log()) if (e.error) std::printf("  script log: %s\n", e.text.c_str());
     // reading from the view changes nothing in the simulation (the world copy is still written lazily)
-    Simulation ref(SimConfig{}, std::make_unique<game::RtsModule>());
+    Simulation ref(SimConfig{}, std::make_unique<game::GameCore>());
     ref.setup(rules, map);
     mod(ref).spawn(ref, uint16_t(t), 0, {Fixed::fromInt(12), Fixed{}, Fixed::fromInt(12)});
     for (int i = 0; i < 5; ++i) ref.step();

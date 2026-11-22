@@ -82,7 +82,7 @@ public:
     const FieldOpsTypeDef* def(uint16_t type) const { return type < types_.size() ? &types_[type] : nullptr; }
 
     // hooks into the generic code
-    Fixed repairCost() const { return repairCost_; }               // RtsUnits.cpp OrderType::Repair
+    Fixed repairCost() const { return repairCost_; }               // Units.cpp OrderType::Repair
     bool repairsUnits() const { return repairUnits_; }             // smart click on a damaged own unit
     Fixed assistMult(Simulation& sim, Entity producer);            // sysProduction: 1 + assisting build power
     bool castReady(Simulation& sim, Entity caster, int ability) const;   // canCast: a stockpile charge is there

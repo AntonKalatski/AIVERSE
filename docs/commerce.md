@@ -2,7 +2,7 @@
 
 Rules block `"commerce"` plus the map list `"premises"`. A player rents or buys premises, opens a business
 inside, borrows from the bank against what he owns. Code: `modules/rts/RtsCommerce.{h,cpp}`, Lua table
-`commerce` (`RtsCommerceApi.cpp`), tests `aiverse_tests commerce`.
+`commerce` (`CommerceApi.cpp`), tests `aiverse_tests commerce`.
 
 ## How it works
 

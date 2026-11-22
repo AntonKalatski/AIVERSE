@@ -4,7 +4,7 @@
 // Deterministic like the simulation (Fixed math, seeded RNG, fixed iteration order); the whole state is JSON
 // (toJson / fromJson) so it can be saved, shown through MCP and hashed. Battles are either auto-resolved
 // (Lanchester square law on hp x dps) or simulated: a battle map is built from the two armies and played by bots
-// on RtsModule; the survivors return to the map.
+// on GameCore; the survivors return to the map.
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -63,7 +63,7 @@ public:
     const std::vector<BattleReport>& battles() const { return battles_; }
     Fixed treasury(int player, int res) const;
 
-    // battles: "auto" (default) or "simulate"; simulate runs RtsModule with bots for at most `battleSeconds`
+    // battles: "auto" (default) or "simulate"; simulate runs GameCore with bots for at most `battleSeconds`
     std::string battleMode = "auto";
     int battleSeconds = 240;
     int battleW = 48, battleH = 32;

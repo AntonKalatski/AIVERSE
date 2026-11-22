@@ -29,7 +29,7 @@
 #include <fstream>
 #include <iterator>
 #include <unordered_map>
-#include "modules/rts/RtsTiles.h"
+#include "engine/game/Tiles.h"
 #include "modules/rts/view/RtsCamera.h"
 #include "modules/rts/view/RtsOverlayData.h"
 #include "modules/rts/view/RtsSelectionPresentation.h"
@@ -906,7 +906,7 @@ void Editor::syncGrid() {
             const int ti = rules().findType(e.type);
             if (e.owner <= 0 || e.owner > 8 || ti < 0 || !rules().types[size_t(ti)].structure) continue;
             const game::UnitType& t = rules().types[size_t(ti)];
-            int x0, y0; game::RtsModule::footprintAt(t, {Fixed::fromRatio(int64_t(std::lround(e.x * 1000)), 1000), Fixed{}, Fixed::fromRatio(int64_t(std::lround(e.z * 1000)), 1000)}, x0, y0);   // editor only: float -> fixed
+            int x0, y0; game::GameCore::footprintAt(t, {Fixed::fromRatio(int64_t(std::lround(e.x * 1000)), 1000), Fixed{}, Fixed::fromRatio(int64_t(std::lround(e.z * 1000)), 1000)}, x0, y0);   // editor only: float -> fixed
             for (int y = y0 - r; y < y0 + t.footprintH + r; ++y)
                 for (int x = x0 - r; x < x0 + t.footprintW + r; ++x) {
                     if (!grid_.inside(x, y)) continue;
@@ -1059,7 +1059,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
             if(e.extra["components"].has("NereidWater"))continue;
             const auto local=authoredLocalTransform(e);o.pos.y=float(local.position.y.toDouble());o.parented=true;o.parentFrame=authoredModelMatrix(e);
         }
-        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as RtsModule spawns it: 0 north, 90 east, 180 south
+        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as GameCore spawns it: 0 north, 90 east, 180 south
             const float a = float(e.extra["facing"].toDouble()) * 3.14159265f / 180.0f;
             o.facing = {std::sin(a), 0, -std::cos(a)};
         }
@@ -2116,7 +2116,7 @@ void Editor::startPlay(int humanSlot) {
     try {
         SimConfig cfg;
         cfg.seed = uint64_t(std::time(nullptr));
-        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        sim_ = std::make_unique<Simulation>(cfg, std::make_unique<game::GameCore>());
         Json mapJson = doc().toJson();
         std::string terr, dir = ws_.project.dir;
         auto read = [&dir](const std::string& p, std::string& out) {

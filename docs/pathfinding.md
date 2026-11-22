@@ -11,7 +11,7 @@ face seams and cube corners (7 neighbours) are ordinary steps.
 |---|---|---|
 | A* | `MapGrid::astarCells` (flat), `astarSphere` (planets) | every short path; long paths on small maps; refinement of HPA* routes |
 | HPA* | `MapHpa.cpp` (flat, maps >= 256x256), `MapHpaSphere.cpp` (planet bodies >= 65,536 cells) | one unit's long trip: entrance graph of 16x16 clusters, then A* between consecutive waypoints |
-| flow fields | `RtsFlowField.cpp` | many units to one goal: group orders >= `movement.flowField.minGroup`, map / lane waves with `waves: true` |
+| flow fields | `FlowField.cpp` | many units to one goal: group orders >= `movement.flowField.minGroup`, map / lane waves with `waves: true` |
 | navigation mesh | `engine/nav/NavMesh.h` (genre-independent), `MapGrid::navPath` | opt-in `movement.pathfinding: "navmesh"`: one unit's path on flat maps, any angle (docs/navmesh.md) |
 | hybrid | `MapGrid::hybridPath` (HPA* graph + navmesh / grid per cluster) | opt-in `movement.pathfinding: "hybrid"`: big or mixed flat maps; flow fields on the same cluster graph |
 

@@ -40,7 +40,7 @@ public:
     // Contacts the viewer does not see (for the view and scripts): enemies on radar outside the viewer's sight.
     std::vector<Entity> blips(Simulation& sim, uint8_t viewer);
 
-    // targeting hooks (RtsCombat.cpp)
+    // targeting hooks (Combat.cpp)
     bool radarTargeting() const { return targeting_; }
     void beginTargeting(Simulation& sim);                          // refreshes the source lists for this pass
     bool tracked(Simulation& sim, Entity e, uint8_t viewer);       // seen by the viewer's side or a contact

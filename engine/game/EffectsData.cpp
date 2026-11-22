@@ -158,7 +158,7 @@ void EffectParser::delivery(const std::string& where, const Json& j, DeliveryDef
     skillObjects(where, j, d);
 }
 
-// Skill objects (RtsSkillObjects.cpp): objects spawned from units, goals, arrival / expiry / death payloads, pull profile.
+// Skill objects (SkillObjects.cpp): objects spawned from units, goals, arrival / expiry / death payloads, pull profile.
 void EffectParser::skillObjects(const std::string& where, const Json& j, DeliveryDef& d) {
     if (const Json& oj = j["origins"]; oj.isObject()) {
         EffectDef o;
@@ -254,7 +254,7 @@ void EffectParser::statusBody(const std::string& where, const Json& j, int idx) 
     if (s.sendShare.raw < 0 || s.sendShare > Fixed::fromInt(1)) fail(where, "sendShare must be 0..1");
     s.captureSent = j.getBool("captureSent", s.captureSent);
     s.view = j["view"];
-    // skill objects (RtsSkillObjects.cpp)
+    // skill objects (SkillObjects.cpp)
     s.spreadChance = j.getFx("spreadChance", s.spreadChance);
     for (auto& sl : j["slots"].items()) {
         const int64_t k = sl.integer(-1);

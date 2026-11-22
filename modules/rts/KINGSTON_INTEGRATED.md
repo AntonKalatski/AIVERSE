@@ -17,7 +17,7 @@ What was changed on the way in:
   (`trafficWideExit` for types in `traffic.wideRoads`, `trafficLocalDetour`, `sweptBoxCircle`, `polylineBounds`);
 - what was hard-wired is data: map `traffic.noParking`, `traffic.services.<id>.officers`, `traffic.incidents.patient`
   and `.unarmed`, type `walls` with weapon `hitsWalls` / `wrecks` (was the 816-line rocket wall table);
-- the custody / carry / pedestrian code is `ServiceCustody.h/.inc`, `ServiceCarry.inc`, `RtsPedestrianVehicles.inc`;
+- the custody / carry / pedestrian code is `ServiceCustody.h/.inc`, `ServiceCarry.inc`, `PedestrianVehicles.inc`;
 - 108 repeated `#include "Kingston*.inc"` lines in `TrafficCity.cpp` (the patcher appended a pair on every
   configure) were reduced to one pair.
 

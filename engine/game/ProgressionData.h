@@ -8,7 +8,7 @@
 //
 // The block keeps the library's JSON format (stats, perks, units, deck, xp, offers, summonPoints) plus engine keys;
 // the engine keys of `units[]` and `perks[]` entries are removed before the library reader sees them.
-// Runtime: RtsProgression.{h,cpp} (store, system, hooks, bot), Lua `progression`: RtsProgressionApi.cpp.
+// Runtime: RtsProgression.{h,cpp} (store, system, hooks, bot), Lua `progression`: ProgressionApi.cpp.
 // A game without the block loads, plays, saves and hashes exactly as before.
 #pragma once
 #include <cstdint>

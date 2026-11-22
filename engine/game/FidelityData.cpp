@@ -1,4 +1,4 @@
-// Data of the foundation / trap / group-teleport / charge mechanics (RtsFidelity.cpp): concrete slabs and
+// Data of the foundation / trap / group-teleport / charge mechanics (Fidelity.cpp): concrete slabs and
 // weathering (Dune II), traps (Dungeon Keeper, Stronghold, They Are Billions). The two effect kinds
 // (addCharges, teleportGroup) are parsed with the other effects in EffectsData.cpp.
 // Every block is optional; without them a game loads and plays exactly as before.

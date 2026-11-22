@@ -1,4 +1,4 @@
-// Runtime state of authored routes, row groups and the multiscreen view (RtsRoutes.cpp; data in RoutesData.h).
+// Runtime state of authored routes, row groups and the multiscreen view (Routes.cpp; data in RoutesData.h).
 #pragma once
 #include <cstdint>
 #include <map>

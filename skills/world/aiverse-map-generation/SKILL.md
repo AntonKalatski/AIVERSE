@@ -11,7 +11,7 @@ Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 ## Select and integrate
 
 - Layer: **simulation**. Current coverage: Existing deterministic map generator.
-- Read `modules/rts/gen/MapGen.h` as the current API authority. No Lua implementation is required.
+- Read `engine/game/gen/MapGen.h` as the current API authority. No Lua implementation is required.
 - Reuse generation presets and engine seeds. Validate fair starts and connectivity. New Poisson/WFC adapters remain planned.
 - Use the existing C++ engine API documented in the source above. This reference entry is not a standalone library target.
 - Use `examples/native/libraries` as a compiling project-local example.

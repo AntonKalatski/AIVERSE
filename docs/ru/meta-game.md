@@ -243,7 +243,7 @@ CAS failure, периоды, premium, ежедневные цепочки, эн�
   (вложенная проверка native_link строит отдельный обычный consumer).
 - `aiverse_meta_tests` собран и запущен также из корневого CMake проекта.
 - Объединённое состояние с параллельной foundation-библиотекой и исправлением
-  include/linkage в `RtsScriptIeee.cpp`: 393 общих теста движка прошли.
+  include/linkage в `ScriptIeee.cpp`: 393 общих теста движка прошли.
 - Бот-матчи seed=3: skirmish — Blue, 405 игровых секунд, checksum ae6a5687d79765c2;
   mushrooms — Red, 92 секунды, checksum a06caad4f1d88f10.
 - Общий каталог библиотек, его тесты и внешний native consumer тоже прошли.

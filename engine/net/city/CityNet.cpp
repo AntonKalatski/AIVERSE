@@ -11,7 +11,7 @@
 #include "engine/game/Career.h"
 #include "engine/game/Commerce.h"
 #include "engine/game/Driving.h"
-#include "modules/rts/RtsModule.h"
+#include "engine/game/GameCore.h"
 #include "engine/game/TopDown.h"
 #include "engine/game/Traffic.h"
 
@@ -19,7 +19,7 @@ namespace aiverse { void io(Archive& a, Command& c); }   // engine/sim/Simulatio
 
 namespace aiverse::net::city {
 namespace {
-using game::RtsModule;
+using game::GameCore;
 constexpr uint32_t kMagic = 0x43495459;   // "CITY"
 enum class Msg : uint8_t { Hello = 1, Command = 2, Welcome = 3, Snapshot = 4, Account = 5, Event = 6, Fixed = 7, Gone = 8, Sim = 9, Premises = 10 };
 constexpr size_t kEntityBytes = 14;
@@ -123,7 +123,7 @@ Server::Server(const Json& rules, const Json& map, uint64_t seed, Options option
     cfg.seed = seed;
     cfg.inputDelayTicks = 0;
     cfg.recordCommands = false;
-    sim_ = std::make_unique<Simulation>(cfg, std::make_unique<RtsModule>());
+    sim_ = std::make_unique<Simulation>(cfg, std::make_unique<GameCore>());
     sim_->setup(rules, map);
     if (!module().topDown() || !module().topDown()->active()) throw std::runtime_error("city server: the rules have no \"topDown\" heroes");
     // The city goes on from where it was: everybody's property is theirs again before anyone comes in.
@@ -146,7 +146,7 @@ Server::Server(const Json& rules, const Json& map, uint64_t seed, Options option
     opt_.maxEntities = std::clamp(opt_.maxEntities, 8, 4000);
 }
 Server::~Server() = default;
-RtsModule& Server::module() { return static_cast<RtsModule&>(sim_->module()); }
+GameCore& Server::module() { return static_cast<GameCore&>(sim_->module()); }
 
 std::vector<uint8_t> Server::seats() const { return seats_; }
 bool Server::occupied(uint8_t slot) const { for (auto& p : peers_) if (p.slot == slot) return true; return false; }
@@ -416,7 +416,7 @@ void Server::tellPremises(Peer& p) {
 
 void Server::broadcast() {
     Simulation& sim = *sim_;
-    RtsModule& m = module();
+    GameCore& m = module();
     World& w = sim.world();
     game::TopDown* td = m.topDown();
     const auto& types = m.rules().types;

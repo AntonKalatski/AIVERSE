@@ -82,4 +82,4 @@ WIZARD.md 中写入 “## Агент: что сделано”。
 ## 引擎改动
 
 脚本指令支持 `"card": false`（没有按钮 / 快捷键；由视图脚本、HUD 文档、MCP 发送）—— 用于教程的“下一步 / 跳过”
-（`modules/rts/RtsScriptCommands.cpp`，客户端和编辑器的指令卡）。
+（`engine/game/ScriptCommands.cpp`，客户端和编辑器的指令卡）。

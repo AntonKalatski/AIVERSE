@@ -12,7 +12,7 @@
 #include "modules/rts/view/ScriptHud.h"
 #include "modules/rts/view/WorldCounters.h"
 #include "engine/net/NetLocalize.h"
-#include "modules/rts/RtsLocalize.h"
+#include "engine/game/Localize.h"
 #include "engine/atlas/AtlasFormat.h"
 #include "engine/ui/UiColor.h"
 

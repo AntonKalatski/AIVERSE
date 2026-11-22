@@ -18,7 +18,7 @@
 #include "../../../engine/render/TextureCache.h"
 #include "../../../engine/game/GameData.h"
 #include "../../../engine/game/MapGrid.h"
-#include "../RtsTiles.h"
+#include "../../../engine/game/Tiles.h"
 #include "RtsSpriteShadow.h"
 #include "EntityFx.h"
 

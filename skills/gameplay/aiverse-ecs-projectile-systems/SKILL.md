@@ -14,7 +14,7 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
    + generation-safe `owner` + stable `shotId`) on project Entities.
 2. Register `addProjectileFlightSystem(sim,name,collisionProvider,onImpact)`
    from any GameModule. The collision provider returns a read-only
-   `world::SpatialWorld`; no `RtsModule` / `fps::Module` dependency is
+   `world::SpatialWorld`; no `GameCore` / `fps::Module` dependency is
    allowed in the shared projectile stage.
 3. The default `BallisticFlightPolicy` calls the existing
    `genre::stepProjectile`: fixed-point gravity, radius, lifetime and

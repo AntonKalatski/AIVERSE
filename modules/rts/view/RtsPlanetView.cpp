@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include "../RtsModule.h"
+#include "../../../engine/game/GameCore.h"
 #include "RtsView.h"
 #include "engine/view/View.h"
 
@@ -398,7 +398,7 @@ void RtsView::drawPlanets(Renderer3D& r, const RtsScene& s, double time, const s
 
 // ------------------------------------------------------------------ scene from the simulation
 
-void sceneFromSphere(Simulation& sim, RtsModule& m, const Surface& S, RtsScene& out, float alpha, uint8_t viewer) {
+void sceneFromSphere(Simulation& sim, GameCore& m, const Surface& S, RtsScene& out, float alpha, uint8_t viewer) {
     World& w = sim.world();
     const Rules& R = m.rules();
     GameState& gs = m.state(sim);
