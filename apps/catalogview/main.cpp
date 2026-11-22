@@ -1,6 +1,6 @@
 // aiverse_catalogview: the website's 3D preview of catalog packages (docs/packages.md § Web viewer).
-// Shows the materials of a material library on a chosen shape (sphere, cube, cylinder, plane) over
-// a tiled ground slab, or glTF / GLB models with a LOD / STRATA switch, through the engine's own
+// Shows the materials of a material library on a chosen shape (sphere, cube, cylinder) or on a tiled
+// ground slab (plane), or glTF / GLB models with a LOD / STRATA switch, through the engine's own
 // Renderer3D (the same PBR path games use), with an orbit camera. Textures are shown as published.
 //
 // Input is a view folder (built by AIVERSE-PACKAGES tools/catalog.py for every package that has a
@@ -171,7 +171,7 @@ void addGround(UvMesh& m, float half, float repeat) {
         }
 }
 
-// The material preview: the shape (absent for kPlane) and the ground slab, both as a Model so materials
+// The material preview: the shape alone, or the ground slab for kPlane, as a Model so materials
 // with texture maps render exactly as on imported models (tangents generated for normal maps).
 std::unique_ptr<Model> makeMaterialModel(float repeat, int shape) {
     repeat = std::max(repeat, 0.05f);
@@ -182,18 +182,17 @@ std::unique_ptr<Model> makeMaterialModel(float repeat, int shape) {
     case kPlane: break;
     default: addSphere(body, {0, 1.05f, 0}, 1.0f, repeat); break;
     }
-    addGround(ground, shape == kPlane ? 4.0f : 3.0f, repeat);
+    if (shape == kPlane) addGround(ground, 4.0f, repeat);   // a shape is shown on its own, without a floor
     Material base;
     base.vertexColors = false;
     std::vector<ModelPart> parts;
     std::vector<const UvMesh*> sources;
     if (!body.mesh.empty()) { parts.push_back({"shape", &body.mesh, base, mat4{}}); sources.push_back(&body); }
-    parts.push_back({"ground", &ground.mesh, base, mat4{}});
-    sources.push_back(&ground);
+    if (!ground.mesh.empty()) { parts.push_back({"ground", &ground.mesh, base, mat4{}}); sources.push_back(&ground); }
     auto m = modelFromParts("catalogview/material", parts);
     if (!m) return m;
     for (size_t p = 0; p < sources.size(); ++p) {
-        m->meshes[p].primitives[0].material = 0;  // one material on the shape and the ground
+        m->meshes[p].primitives[0].material = 0;  // one material on every part
         const auto& prim = m->meshes[p].primitives[0];
         for (uint32_t i = 0; i < prim.vertexCount; ++i) m->vertices[prim.firstVertex + i].uv = sources[p]->uv[i];
         generateTangents(m->vertices, m->indices, prim.firstIndex, prim.indexCount);
