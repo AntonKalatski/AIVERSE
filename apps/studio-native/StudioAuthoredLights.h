@@ -57,7 +57,17 @@ inline std::vector<render::PointLight> studioAuthoredLights(
         }
         light.halo=std::clamp(lightScalar(item,"halo",0),0.f,10000.f);
         light.key=uint32_t(i+1); // stable until authoring order changes
-        if(item.getStr("type")=="spot") {
+        const std::string type=item.getStr("type");
+        if(type=="sphere" || type=="tube") {   // LumaWeave area sources
+            light.sourceRadius=std::clamp(lightScalar(item,"sourceRadius",.25f),0.f,radius*.5f);
+            if(type=="tube") {
+                constexpr float rad=0.0174532925199432957f;
+                const float yaw=lightScalar(item,"yaw",0)*rad;
+                light.dir={std::cos(yaw),0,std::sin(yaw)};
+                light.halfLength=std::clamp(lightScalar(item,"length",2),.05f,2000.f)*.5f;
+            }
+        }
+        if(type=="spot") {
             constexpr float rad=0.0174532925199432957f;
             const float yaw=lightScalar(item,"yaw",0)*rad;
             const float pitch=std::clamp(lightScalar(item,"pitch",35),0.f,89.f)*rad;

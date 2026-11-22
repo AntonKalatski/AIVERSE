@@ -74,3 +74,32 @@ The native animated acceptance moves a real glTF occluder, requires more than
 movement and checks live CPU/GPU GI geometry revisions. The separate broad-wall
 GPU fixture checks analytic zero illumination. Low-resolution denoising softens
 narrow shadow boundaries; it is not full-resolution ray-traced shadow parity.
+
+## Area lights and particle lights
+
+`LumaLightKind` has two area kinds besides `Point` and `Spot`:
+
+- `Sphere` (`sourceRadius`): diffuse light from a sphere equals that of its centre, so the
+  shader keeps the centre and clamps the falloff distance at `sourceRadius` (no singularity
+  when a receiver is inside the emitter).
+- `Tube` (`direction` = axis, `halfLength`, optional `sourceRadius`): shaded from the closest
+  point of the axis segment (representative point). Bounds and clusters cover the whole
+  segment; shadow rays aim at the same point.
+
+Specular for both widens the GGX lobe by the source's angular size (`roughness +
+sourceRadius / (2 d)`) and rescales it to keep the energy. These are approximations (no LTC):
+a long tube is lit by its nearest point, not integrated along its length.
+
+Authoring: map / Studio lights `"type": "sphere" | "tube"` with `sourceRadius` and `length`
+(tube along `yaw`); MCP `light_add` / `light_update` accept them. `PointLight::sourceRadius` /
+`halfLength` carry them to `LumaHost`; the legacy light map still shades them as points.
+
+Particle lights: `fx::appendLumaFxLights` (`engine/fx/FxLumaBridge.h`) turns
+`ParticleSystem::collectLights` output into Luma sources keyed `(namespace << 32) | particle uid`
+(stable while the particle lives). Publish them every frame with
+`LumaHost::setDynamicLights` / `RenderLightingRuntime::setDynamicLights`; when it returns false
+Luma is not shading and the host keeps adding them to `LightSystem` (never both). Dynamic keys
+must be >= 2^32 so they never collide with the host's static lights.
+
+Tests: `lumaweave_direct_reference` (CPU: sphere clamp, tube closest point, bounds, packing,
+particle keys), `lighting_luma_gpu` / `lighting_luma_vulkan` cases 10 (sphere) and 11 (tube).

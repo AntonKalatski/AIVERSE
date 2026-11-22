@@ -88,7 +88,7 @@
     "        bool blocked=false;\n" \
     "        if(selected.settings.z>.5f && p.control.x!=0u) {\n" \
     "            float3 start=world+normal*.02f;\n" \
-    "            float3 ray=selected.positionRadius.xyz-start;\n" \
+    "            float3 ray=lumaLightPoint(selected,start)-start;\n" \
     "            float distance=length(ray);\n" \
     "            if(distance>.05f) {\n" \
     "                const float limit=distance-.03f;\n" \

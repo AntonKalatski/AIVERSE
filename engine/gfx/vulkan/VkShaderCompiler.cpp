@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstdlib>
 #include "VkShaderCompiler.h"
 #include "../ColorSpace.h"
 
@@ -142,6 +144,53 @@ uint64_t fnv(const std::string& a, const std::string& b, bool linear) {
 }
 
 } // namespace
+
+std::string scaleUByte4Inputs(const std::string& body, uint32_t locations) {
+    if (!locations) return body;
+    std::string s = stripComments(body), scale;
+    // layout(location = L) in vec4 NAME;  ->  an UNORM raw input plus a global
+    // NAME the new main() fills (x 255) before the shader's own main runs.
+    for (size_t p = s.find("layout"); p != std::string::npos; p = s.find("layout", p + 6)) {
+        if ((p > 0 && identChar(s[p - 1])) || identChar(s[p + 6])) continue;
+        size_t q = skipSpace(s, p + 6);
+        if (q >= s.size() || s[q] != '(') continue;
+        const size_t close = s.find(')', q);
+        if (close == std::string::npos) continue;
+        std::string inside = s.substr(q + 1, close - q - 1);
+        inside.erase(std::remove_if(inside.begin(), inside.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); }), inside.end());
+        if (inside.rfind("location=", 0) != 0) continue;
+        const int loc = std::atoi(inside.c_str() + 9);
+        if (loc < 0 || loc > 31 || !(locations & (1u << loc))) continue;
+        size_t r = skipSpace(s, close + 1);
+        if (identAt(s, r) != "in") continue;
+        r = skipSpace(s, r + 2);
+        if (identAt(s, r) != "vec4") continue;
+        r = skipSpace(s, r + 4);
+        const std::string name = identAt(s, r);
+        size_t end = skipSpace(s, r + name.size());
+        if (name.empty() || end >= s.size() || s[end] != ';') continue;
+        const std::string tag = "AIVERSE_UB4_SCALE_" + std::to_string(loc);
+        const std::string decl = "layout(location = " + std::to_string(loc) + ") in vec4 " + name +
+            "_aiverse_unorm;\nvec4 " + name + ";\n#define " + tag + " " + name + " = " + name +
+            "_aiverse_unorm * 255.0;\n";
+        s.replace(p, end + 1 - p, decl);
+        p += decl.size() - 6;
+        if (scale.find(tag) == std::string::npos)
+            scale += "#ifdef " + tag + "\n    " + tag + "\n#endif\n";
+    }
+    if (scale.empty()) return s;
+    for (size_t p = s.find("main"); p != std::string::npos; p = s.find("main", p + 4)) {
+        if ((p > 0 && identChar(s[p - 1])) || (p + 4 < s.size() && identChar(s[p + 4]))) continue;
+        size_t v = p;
+        while (v > 0 && std::isspace(static_cast<unsigned char>(s[v - 1]))) --v;
+        if (v < 4 || s.compare(v - 4, 4, "void") != 0) continue;
+        if (skipSpace(s, p + 4) >= s.size() || s[skipSpace(s, p + 4)] != '(') continue;
+        s.replace(p, 4, "aiverse_ub4_main");
+        s += "\nvoid main() {\n" + scale + "    aiverse_ub4_main();\n}\n";
+        break;
+    }
+    return s;
+}
 
 std::string translateGlsl(const std::string& body, bool vertex, bool linearTarget, uint32_t* shadowSlots) {
     std::string s = stripComments(body);

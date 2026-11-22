@@ -114,15 +114,24 @@ private:
         z=(z^(z>>27))*0x94d049bb133111ebULL;
         return uint32_t((z^(z>>31))>>32);
     }
+    // Shading point of a source as seen from `position` (shader lumaLightPoint).
+    static float3 lightPoint(const LumaLight& light,float3 position) {
+        if(light.kind!=LumaLightKind::Tube)return light.position;
+        const float t=std::clamp(dot(position-light.position,light.direction),
+                                 -light.halfLength,light.halfLength);
+        return light.position+light.direction*t;
+    }
     static float3 contribution(const LumaLight& light,float3 position,float3 normal) {
-        const float3 relative=light.position-position;
-        const float d2=dot(relative,relative);
+        const float3 relative=lightPoint(light,position)-position;
+        float d2=dot(relative,relative);
         if(d2<=.0001f || d2>=light.radius*light.radius ||light.intensity<=0)
             return {};
         const float d=std::sqrt(d2);
         const float3 towardLight=relative*(1.0f/d);
         const float cosine=std::max(0.0f,dot(normal,towardLight));
         if(cosine<=0)return {};
+        if(light.kind>=LumaLightKind::Sphere)
+            d2=std::max(d2,light.sourceRadius*light.sourceRadius);
         float angular=1;
         if(light.kind==LumaLightKind::Spot) {
             const float cone=dot(light.direction,-towardLight);
@@ -175,7 +184,7 @@ private:
                          LumaDirectStats& stats) {
         if(!bvh ||!light.castsShadows ||bvh->nodes.empty())return false;
         const float3 surface=position+normal*.02f;
-        const float3 relative=light.position-surface;
+        const float3 relative=lightPoint(light,surface)-surface;
         const float lengthSq=dot(relative,relative);
         if(lengthSq<=.0025f)return false;
         const float distance=std::sqrt(lengthSq);
