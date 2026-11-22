@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T08:11:19+00:00",
+ "generated": "2026-11-22T08:36:05+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -44,40 +44,80 @@
    "name": "MotionWeave animation"
   },
   {
-   "id": "render",
-   "name": "Rendering and materials"
-  },
-  {
-   "id": "world",
-   "name": "World: roads and cities"
-  },
-  {
-   "id": "ecs",
-   "name": "ECS and entities"
-  },
-  {
-   "id": "studio",
-   "name": "Studio editor"
+   "id": "navigation",
+   "name": "Navigation and crowds"
   },
   {
    "id": "network",
    "name": "Networking and server"
   },
   {
-   "id": "meta",
-   "name": "Meta and LiveOps"
+   "id": "physics",
+   "name": "Physics and cloth"
   },
   {
-   "id": "gameplay",
-   "name": "Genres and mechanics"
+   "id": "ecs",
+   "name": "ECS and simulation"
+  },
+  {
+   "id": "shadergraph",
+   "name": "Shader Graph"
+  },
+  {
+   "id": "lightbake",
+   "name": "Baked lighting"
+  },
+  {
+   "id": "world",
+   "name": "Roads and the city"
+  },
+  {
+   "id": "planets",
+   "name": "Planets and map generation"
+  },
+  {
+   "id": "voxel",
+   "name": "Voxel worlds"
+  },
+  {
+   "id": "inputflow",
+   "name": "InputFlow"
+  },
+  {
+   "id": "ui",
+   "name": "Game UI"
+  },
+  {
+   "id": "audio",
+   "name": "Audio"
+  },
+  {
+   "id": "studio",
+   "name": "Studio editor"
   },
   {
    "id": "agents",
    "name": "MCP and agent skills"
   },
   {
+   "id": "import",
+   "name": "Import from Unity and Godot"
+  },
+  {
    "id": "build",
    "name": "Builds and platforms"
+  },
+  {
+   "id": "meta",
+   "name": "Meta and LiveOps"
+  },
+  {
+   "id": "render",
+   "name": "Rendering and materials"
+  },
+  {
+   "id": "gameplay",
+   "name": "Genres and mechanics"
   }
  ],
  "entries": [

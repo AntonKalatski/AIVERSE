@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T08:11:19+00:00",
+ "generated": "2026-11-22T08:36:05+00:00",
  "lang": "ru",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -44,40 +44,80 @@
    "name": "MotionWeave"
   },
   {
-   "id": "render",
-   "name": "Рендер и материалы"
-  },
-  {
-   "id": "world",
-   "name": "Мир: дороги и города"
-  },
-  {
-   "id": "ecs",
-   "name": "ECS и сущности"
-  },
-  {
-   "id": "studio",
-   "name": "Studio — редактор"
+   "id": "navigation",
+   "name": "Навигация и толпы"
   },
   {
    "id": "network",
    "name": "Сеть и сервер"
   },
   {
-   "id": "meta",
-   "name": "Мета и LiveOps"
+   "id": "physics",
+   "name": "Физика и ткань"
   },
   {
-   "id": "gameplay",
-   "name": "Жанры и механики"
+   "id": "ecs",
+   "name": "ECS и симуляция"
+  },
+  {
+   "id": "shadergraph",
+   "name": "Shader Graph"
+  },
+  {
+   "id": "lightbake",
+   "name": "Запекание света"
+  },
+  {
+   "id": "world",
+   "name": "Дороги и город"
+  },
+  {
+   "id": "planets",
+   "name": "Планеты и генерация карт"
+  },
+  {
+   "id": "voxel",
+   "name": "Воксельные миры"
+  },
+  {
+   "id": "inputflow",
+   "name": "InputFlow"
+  },
+  {
+   "id": "ui",
+   "name": "Интерфейс игры"
+  },
+  {
+   "id": "audio",
+   "name": "Звук"
+  },
+  {
+   "id": "studio",
+   "name": "Studio — редактор"
   },
   {
    "id": "agents",
    "name": "MCP и навыки агентов"
   },
   {
+   "id": "import",
+   "name": "Импорт из Unity и Godot"
+  },
+  {
    "id": "build",
    "name": "Сборка и платформы"
+  },
+  {
+   "id": "meta",
+   "name": "Мета и LiveOps"
+  },
+  {
+   "id": "render",
+   "name": "Рендер и материалы"
+  },
+  {
+   "id": "gameplay",
+   "name": "Жанры и механики"
   }
  ],
  "entries": [
