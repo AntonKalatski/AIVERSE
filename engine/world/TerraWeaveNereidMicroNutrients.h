@@ -39,6 +39,11 @@ inline ForestMicroWaterSampler makeNereidMicroWaterSampler(
     return [&terrain,&water](int64_t x4,int64_t z4,
                              uint64_t expectedBody)->ForestMicroSample {
         const int64_t cm=ForestDeadwoodResource::kMicroWaterCellCm;
+        // Public native callers may supply any signed tile coordinate.
+        // Reject it BEFORE multiplication to avoid signed overflow/UB.
+        const int64_t limit=kWorldLimitCm/cm;
+        if(x4<=-limit || x4>=limit || z4<=-limit || z4>=limit)
+            return {};
         const int64_t px=x4*cm+cm/2;
         const int64_t pz=z4*cm+cm/2;
         const int64_t edge=kWorldLimitCm-terrain.spacingCm();
@@ -67,11 +72,23 @@ inline std::optional<ForestMicroKey> nearestNereidMicroCell(
         Vec3 mouth,uint64_t bodyKey,
         const ForestMicroWaterSampler& waterAt,
         ForestNereidMicroJunctionSettings settings) {
+    // This is also a public native helper. Enforce the bounded search
+    // contract here, not only in buildNereidMicroJunctions: an external
+    // caller could otherwise supply UINT32_MAX radius and stall a tick.
+    validateForestNereidMicroJunctionSettings(settings);
+    if(!bodyKey || !waterAt)
+        throw std::invalid_argument("TerraWeave invalid micro body/sampler");
+    // A malformed authored mouth can carry an arbitrary Fixed raw value.
+    // Validate in raw units BEFORE multiplying by 100 (centimetres).
+    constexpr int64_t mouthLimitRaw=
+        (kWorldLimitCm-10000)*Fixed::kOne/100;
+    if(mouth.x.raw<=-mouthLimitRaw ||
+       mouth.x.raw>=mouthLimitRaw ||
+       mouth.z.raw<=-mouthLimitRaw ||
+       mouth.z.raw>=mouthLimitRaw)
+        return std::nullopt;
     const int64_t mx=mouth.x.raw*100/Fixed::kOne;
     const int64_t mz=mouth.z.raw*100/Fixed::kOne;
-    if(mx<=-kWorldLimitCm+10000 || mx>=kWorldLimitCm-10000 ||
-       mz<=-kWorldLimitCm+10000 || mz>=kWorldLimitCm-10000)
-        return std::nullopt;
     const int64_t cellCm=ForestDeadwoodResource::kMicroWaterCellCm;
     const int64_t centerX=detail::floorDiv(mx,cellCm);
     const int64_t centerZ=detail::floorDiv(mz,cellCm);

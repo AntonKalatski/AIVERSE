@@ -977,7 +977,7 @@
       "flagship": true,
       "where": "main",
       "tagline": "Постобработка и атмосфера",
-      "essence": "HDR, экспозиция и тонмаппинг, bloom, DoF, motion blur, TAA, цветокоррекция и экранные атмосферные эффекты с профилями качества.",
+      "essence": "HDR, экспозиция и тонмаппинг, bloom, DoF, motion blur, TAA, AO и отражения, эффекты линзы, сглаживание и апскейл, цветокоррекция и экранные атмосферные эффекты с профилями качества.",
       "cover": {
         "src": "docs/images/readme/sponza-light-shafts.png",
         "caption": "Лучи света сквозь дымку: выключено / включено",
@@ -990,15 +990,39 @@
       "includes": [
         {
           "name": "HDR-конвейер",
-          "text": "Экспозиция и автоэкспозиция, тонмаппинг ACES, sRGB.",
+          "text": "Экспозиция и автоэкспозиция (в том числе по гистограмме), тонмаппинг ACES, sRGB.",
           "nameEn": "HDR pipeline",
-          "textEn": "Exposure and auto exposure, ACES tone mapping, sRGB."
+          "textEn": "Exposure and auto exposure (including histogram metering), ACES tone mapping, sRGB."
         },
         {
           "name": "Эффекты",
-          "text": "Bloom, глубина резкости, motion blur, TAA, tilt shift, лучи солнца.",
+          "text": "Bloom, глубина резкости, motion blur, TAA, tilt shift, лучи солнца, марево и ударные волны.",
           "nameEn": "Effects",
-          "textEn": "Bloom, depth of field, motion blur, TAA, tilt shift, sun shafts."
+          "textEn": "Bloom, depth of field, motion blur, TAA, tilt shift, sun shafts, heat haze and shockwaves."
+        },
+        {
+          "name": "Затенение и отражения",
+          "text": "Экранное затенение в углах (AO) и отражения (SSR) по буферу глубины.",
+          "nameEn": "Occlusion and reflections",
+          "textEn": "Screen-space ambient occlusion (AO) and reflections (SSR) from the depth buffer."
+        },
+        {
+          "name": "Линза",
+          "text": "Блики и грязь на линзе, искажения и Panini, анаморфные лучи, ореол плёнки.",
+          "nameEn": "Lens",
+          "textEn": "Lens flare and dirt, distortion and Panini, anamorphic streaks, film halation."
+        },
+        {
+          "name": "Сглаживание и апскейл",
+          "text": "SMAA, FXAA, FSR 1; маршрут для DLSS.",
+          "nameEn": "Anti-aliasing and upscaling",
+          "textEn": "SMAA, FXAA, FSR 1; a route for DLSS."
+        },
+        {
+          "name": "Стилизация",
+          "text": "Узел sceneColor в Shader Graph и пресеты: тун, скетч, CRT, сканлайны, дизеринг, Kuwahara.",
+          "nameEn": "Stylization",
+          "textEn": "A sceneColor node in Shader Graph and presets: toon, sketch, CRT, scanlines, dithering, Kuwahara."
         },
         {
           "name": "Цвет",
@@ -1074,10 +1098,16 @@
           "titleEn": "AO, SSR, SMAA, FSR 1 and lens effects",
           "text": "Затенение AO, экранные отражения, блики и грязь на линзе, искажения и Panini, анаморфные лучи, ореол, марево и ударные волны, SMAA, FSR 1, гистограммная экспозиция и пресеты стилизации.",
           "textEn": "Ambient occlusion, screen-space reflections, lens flare and dirt, distortion and Panini, anamorphic streaks, halation, heat haze and shockwaves, SMAA, FSR 1, histogram metering and stylization presets."
+        },
+        {
+          "status": "planned",
+          "target": null,
+          "title": "DLSS: сборка и проверка адаптера NGX на Windows с RTX",
+          "titleEn": "DLSS: build and check the NGX adapter on Windows with RTX"
         }
       ],
       "taglineEn": "Post-processing and atmosphere",
-      "essenceEn": "HDR, exposure and tone mapping, bloom, DoF, motion blur, TAA, colour grading and screen-space atmosphere with quality profiles.",
+      "essenceEn": "HDR, exposure and tone mapping, bloom, DoF, motion blur, TAA, AO and reflections, lens effects, anti-aliasing and upscaling, colour grading and screen-space atmosphere with quality profiles.",
       "coverBriefEn": "The same frame with and without PRISMA, where the difference is mood: light, colour, atmosphere.",
       "enablesEn": [
         "Set the mood of a frame in game.json or a map and change it through MCP.",
