@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T10:03:59+00:00",
+ "generated": "2026-11-22T10:26:56+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -236,6 +236,39 @@
     }
    ],
    "author": "prisma"
+  },
+  {
+   "id": "2026-11-22-planets-terraweave",
+   "date": "2026-11-22",
+   "system": "planets",
+   "title": "Planets on TerraWeave: relief, biomes, trees and rocks",
+   "summary": "Planet relief is now built by TerraWeave fields carried over to the sphere, and TerraWeave trees and rocks grow on land according to the climate of each place.",
+   "body": [
+    "The planet generator (rocky, ocean and moon presets) takes heights and biomes from TerraWeave: the same octave sum and climate model as on flat maps, with the fields evaluated in 3D on the sphere. Cube faces therefore join without seams, and the poles are colder than the equator.",
+    "Trees and rocks now cover the land: spruce and pine in cold places, oak and birch in forests and grassland, willow in wetlands, boulders and slabs in deserts and on rock. The models come from the Arbor tree generator and the TerraWeave rock generator; the place and species for every cell are chosen deterministically. Density and scale are set in the map with visual.flora."
+   ],
+   "status": "done",
+   "verified": "Frames taken in the game client (OpenGL) on the regenerated Big Planet; generator checks — face seams, separated starts, symmetry and determinism — pass with the new reference hashes.",
+   "limits": "Planet seas are still their own, not NEREID: no waves or shore foam yet. Trees ignore fog of war, and the Metal shaders have not been run on a Mac yet.",
+   "branch": "main",
+   "commit": "6706d4de3",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-terraweave/trees.jpg",
+     "caption": "The coast up close: TerraWeave trees on land, the shore left clear"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-terraweave/orbit.jpg",
+     "caption": "Big Planet from orbit: relief and seas from TerraWeave fields"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/planets.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/planets.md"
+    }
+   ],
+   "author": "planets"
   },
   {
    "id": "2026-11-22-planets-generated-coasts",
