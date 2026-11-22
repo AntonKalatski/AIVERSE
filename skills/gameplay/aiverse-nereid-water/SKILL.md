@@ -16,9 +16,10 @@ add the adapter to the shared subsystem; record a real capability gap before any
 custom fallback. Do not fake waves, flow, foam or buoyancy in project scripts.
 Sky stays with PRISMA, climate with PHYSIS, VFX with SpectraFX; compose owners.
 
-Planets: NEREID has no cube-sphere adapter yet. A planet's sea is the planet renderer's sea sphere
-(`modules/rts/view/RtsPlanetShaders.h`, coast cut per pixel). Close that gap inside NEREID (a sphere
-surface and water body), then route planets to it; do not grow the planet shader into a second water system.
+Planets: the sea of cube-sphere bodies draws with NEREID's wave model from `engine/render/NereidWaveShaders.h`
+(shared with plane water; `nereidSphereNormal` / `nereidSpherePatch` / `nereidSphereFoam` sample it triplanar),
+colour by depth and coast foam (`modules/rts/view/RtsPlanetShaders.h` only calls them). NEREID water bodies on
+spheres (buoyancy, currents, contact sampling) do not exist yet: add them inside NEREID, not in the planet code.
 
 
 # NEREID: universal water system

@@ -71,7 +71,7 @@ void main() {
 )";
 
 inline const char* kPlanetFS =
-    AIVERSE_PLANET_GLSL_U0 AIVERSE_GLSL_FRAME AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS
+    AIVERSE_PLANET_GLSL_U0 AIVERSE_GLSL_FRAME AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS AIVERSE_GLSL_NEREID_WAVES
     R"(
 uniform mediump sampler2D tex2;
 uniform sampler2D tex5;
@@ -127,6 +127,17 @@ void main() {
 #if PLANET_DETAIL
     albedoS = mix(albedoS, p_rock.rgb, smoothstep(p_detail.z, p_detail.w, 1.0 - dot(n, up)) * p_detail.y) * cav;
 #endif
+    float foam = 0.0;
+    if (ocean) { // NEREID sea: its wave model on the sphere, colour by depth, foam along the coast
+        vec3 q = v_wpos - p_body.xyz;
+        float t = u_camPos.w;
+        n = nereidSphereNormal(q, up, t, clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0));
+        float depth = max(-v_sea, 0.0);
+        vec3 shallow = min(p_water.rgb * vec3(0.55, 1.2, 1.1) + vec3(0.06, 0.12, 0.1), vec3(1.0));
+        albedoS = mix(shallow, p_water.rgb, smoothstep(0.0, 2.5, depth)) * (0.86 + 0.2 * nereidSpherePatch(q, up, t));
+        foam = smoothstep(-0.3, 0.0, v_sea) * smoothstep(0.35, 0.75, nereidSphereFoam(q, up, t));
+        albedoS = mix(albedoS, vec3(0.88, 0.93, 0.95), foam * 0.8);
+    }
     vec3 base = rtsDecodeScene(albedoS);
     vec3 L = normalize(p_sun.xyz);
     vec3 V = normalize(u_camPos.xyz - v_wpos);
@@ -148,7 +159,7 @@ void main() {
     col = rtsToneScene(col, u_skyColor.w > 0.5);
     vec3 outc = rtsEncodeScene(col);
     float alpha = ocean ? mix(p_water.a, 1.0, pow(1.0 - max(dot(n, V), 0.0), 4.0)) : 1.0;
-    if (ocean) alpha *= mix(0.35, 1.0, smoothstep(0.0, -0.35, v_sea));   // shallow water near the coast
+    if (ocean) alpha = max(alpha * mix(0.35, 1.0, smoothstep(0.0, -0.35, v_sea)), foam * 0.9);   // shallow coast, opaque foam
     if (p_opts.z > 0.5) {
         vec2 uv = v_uv;
         if (p_fogColor.w > 0.5) uv = (floor(uv * p_fog.zw) + 0.5) / p_fog.zw;
@@ -162,7 +173,7 @@ void main() {
 )";
 
 inline const char* kPlanetMSL =
-    "#include <metal_stdlib>\nusing namespace metal;\n" AIVERSE_PLANET_MSL_U0 AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS
+    "#include <metal_stdlib>\nusing namespace metal;\n" AIVERSE_PLANET_MSL_U0 AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_NEREID_WAVES
     R"(
 struct VIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; float3 morph [[attribute(3)]];
              float2 uv [[attribute(4)]]; float4 splat [[attribute(5)]];
@@ -243,6 +254,17 @@ fragment float4 fs_main(VOut in [[stage_in]], constant PU0& u [[buffer(1)]], con
 #if PLANET_DETAIL
     albedoS = mix(albedoS, u.rock.rgb, smoothstep(u.detail.z, u.detail.w, 1.0 - dot(n, up)) * u.detail.y) * cav;
 #endif
+    float foam = 0.0;
+    if (ocean) { // NEREID sea: its wave model on the sphere, colour by depth, foam along the coast
+        float3 q = in.wpos - u.body.xyz;
+        float t = f.camPos.w;
+        n = nereidSphereNormal(q, up, t, clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0));
+        float depth = max(-in.sea, 0.0);
+        float3 shallow = min(u.water.rgb * float3(0.55, 1.2, 1.1) + float3(0.06, 0.12, 0.1), float3(1.0));
+        albedoS = mix(shallow, u.water.rgb, smoothstep(0.0, 2.5, depth)) * (0.86 + 0.2 * nereidSpherePatch(q, up, t));
+        foam = smoothstep(-0.3, 0.0, in.sea) * smoothstep(0.35, 0.75, nereidSphereFoam(q, up, t));
+        albedoS = mix(albedoS, float3(0.88, 0.93, 0.95), foam * 0.8);
+    }
     float3 base = rtsDecodeScene(albedoS);
     float3 L = normalize(u.sun.xyz);
     float3 V = normalize(f.camPos.xyz - in.wpos);
@@ -264,7 +286,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant PU0& u [[buffer(1)]], con
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = rtsEncodeScene(col);
     float alpha = ocean ? mix(u.water.a, 1.0, pow(1.0 - max(dot(n, V), 0.0), 4.0)) : 1.0;
-    if (ocean) alpha *= mix(0.35, 1.0, smoothstep(0.0, -0.35, in.sea));   // shallow water near the coast
+    if (ocean) alpha = max(alpha * mix(0.35, 1.0, smoothstep(0.0, -0.35, in.sea)), foam * 0.9);   // shallow coast, opaque foam
     if (u.opts.z > 0.5) {
         float2 uv = in.uv;
         if (u.fogColor.w > 0.5) uv = (floor(uv * u.fog.zw) + 0.5) / u.fog.zw;

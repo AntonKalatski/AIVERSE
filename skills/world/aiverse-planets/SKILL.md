@@ -21,10 +21,12 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
    Arbor / rock prototypes placed per cell by the planet view (`modules/rts/view/RtsPlanetFlora.*`): body
    `visual.flora` `{"density": 0..1 (0.22 planets, 0 moons), "scale": world units per metre (0.06)}` or `false`.
    Check them on a close screenshot (`AIVERSE_PLANET_CAM=40,20`): trees on land, none in the sea or on steep rock.
-5. Water: oceans of planets belong to NEREID (`skills/gameplay/aiverse-nereid-water/SKILL.md`). Today the planet
-   ocean is still the planet renderer's own sea sphere (cut per pixel at the coast, shallow fade); a NEREID
-   sphere adapter (waves, depth colour, shore foam, water bodies for buoyancy) is the open gap - extend NEREID,
-   do not add waves, foam or flow to the planet shader. Set the sea with `seaLevel` / the generator's `water`.
+5. Water: oceans of planets belong to NEREID (`skills/gameplay/aiverse-nereid-water/SKILL.md`). The planet sea
+   uses NEREID's wave model (`engine/render/NereidWaveShaders.h`, the same functions as plane water) sampled
+   triplanar on the sphere, with colour by depth, shallow water and foam along the coast, cut per pixel where
+   the ground is above `seaLevel`. Change waves or foam in `NereidWaveShaders.h`, not in the planet shader.
+   Still missing: NEREID water bodies on spheres (buoyancy, currents, contact sampling). Set the sea with
+   `seaLevel` / the generator's `water`; check the coast on a close screenshot.
 6. Cube-sphere terrain: relief and materials with the heightfield tools; check seams between faces on screenshots (`view_focus` on edges).
 7. Bots: `rules.ai.invasionSize` sets the orbit fleet; bots build orbital yards when the enemy is reachable only through orbit. `match_run` must show transfers between bodies and a winner (`skills/ai/aiverse-bots-debug` otherwise).
 8. Determinism: same seed -> same checksum; `templates/` checksums unchanged when engine code is touched.

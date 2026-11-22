@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-22-planets-nereid-sea",
+  "date": "2026-11-22",
+  "system": "planets",
+  "title": "Моря планет на волнах NEREID",
+  "summary": "Вода на планетах теперь рисуется моделью волн NEREID — той же, что у рек и озёр на плоских картах: бирюзовое мелководье, глубокая синева и пена вдоль берега.",
+  "body": [
+    "Волны NEREID вынесены в общий набор шейдерных функций, и им пользуются и плоская вода, и моря планет. На сфере те же волны считаются в трёх проекциях и смешиваются по направлению поверхности, поэтому на гранях куба нет швов.",
+    "Цвет моря зависит от глубины под каждой точкой: у берега вода светлая и прозрачная, дальше темнеет. Вдоль кромки суши бежит пена, а сама кромка повторяет рельеф."
+  ],
+  "status": "done",
+  "verified": "Кадры сняты в игровом клиенте (OpenGL) на Big Planet; плоская вода на обычной карте после переноса функций рисуется как раньше.",
+  "limits": "Это внешний вид. Водных тел NEREID на сфере ещё нет: плавучести, течений и контакта с водой у планетных морей пока нет. На Metal шейдер ещё не запускался.",
+  "branch": "main",
+  "commit": "",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-nereid-sea/coast.jpg",
+      "caption": "Берег планеты: мелководье, пена у кромки и деревья TerraWeave",
+      "captionEn": "A planet coast: shallow water, foam along the edge and TerraWeave trees"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-planets-nereid-sea/lakes.jpg",
+      "caption": "Озёра с орбиты: цвет по глубине и светлая кромка",
+      "captionEn": "Lakes from orbit: colour by depth and a light rim"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/planets.md",
+      "href": "docs/planets.md"
+    }
+  ],
+  "author": "planets",
+  "titleEn": "Planet seas on NEREID waves",
+  "summaryEn": "Water on planets is now drawn with NEREID's wave model — the same as rivers and lakes on flat maps: turquoise shallows, deep blue and foam along the coast.",
+  "bodyEn": [
+    "NEREID's waves moved into a shared set of shader functions used by both flat water and planet seas. On a sphere the same waves are evaluated in three projections and blended by the surface direction, so cube faces show no seams.",
+    "The sea colour follows the depth under every point: light and clear near the shore, darker further out. Foam runs along the land's edge, and the edge itself follows the relief."
+  ],
+  "verifiedEn": "Frames taken in the game client (OpenGL) on Big Planet; flat water on an ordinary map draws as before after the functions moved.",
+  "limitsEn": "This is the look. NEREID water bodies on spheres do not exist yet: planet seas have no buoyancy, currents or water contact so far. The shader has not been run on Metal yet."
+}
