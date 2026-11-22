@@ -2857,6 +2857,15 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
     add_test(NAME library_genre COMMAND aiverse_library_genre_tests ${PROJECT_SOURCE_DIR})
 endif()
 
+# Policy packages added 2026-11-22 (traversal-moves, nav-links, volume-nav, structure-destruction, portals-rewind,
+# item-affixes, quest-journal, wounds-disease, herds-taming, colonist-relations, utility-networks, railways, ...).
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
+    add_executable(aiverse_library_policy_mechanics_tests tests/libraries/policy_mechanics_tests.cpp)
+    target_include_directories(aiverse_library_policy_mechanics_tests PRIVATE ${PROJECT_SOURCE_DIR}/tests/libraries)
+    target_link_libraries(aiverse_library_policy_mechanics_tests PRIVATE AIVERSE::mechanics)
+    add_test(NAME library_policy_mechanics COMMAND aiverse_library_policy_mechanics_tests)
+endif()
+
 # boss-encounters (telegraphs, statuses, boss brain, schedule, mob behaviour): tests + headless reference fight.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_library_encounter_tests tests/libraries/encounter_tests.cpp)

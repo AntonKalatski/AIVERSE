@@ -284,7 +284,9 @@ def generate():
     for name,summary,source in WORKFLOWS:
         entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=summary,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source=source))
-    for entry in entries:entry['keywords']=(ALIASES.get(entry['id'],'')+' '+WORKFLOW_ALIASES.get(entry['id'],'')).split()
+    # Search words of the policy packages live next to their registration script (tools/skills/policy_packages.py).
+    policy_aliases=json.loads((ROOT/'tools/skills/policy_aliases.json').read_text(encoding='utf-8')) if (ROOT/'tools/skills/policy_aliases.json').is_file() else {}
+    for entry in entries:entry['keywords']=(ALIASES.get(entry['id'],'')+' '+WORKFLOW_ALIASES.get(entry['id'],'')+' '+policy_aliases.get(entry['id'],'')).split()
     return dict(schema=1,skills=sorted(entries,key=lambda e:e['id']))
 
 def validate(data):

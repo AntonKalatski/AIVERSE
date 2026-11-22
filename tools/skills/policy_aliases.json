@@ -1,0 +1,15 @@
+{
+ "aiverse-colonist-relations": "relationships family friends rivals partner marriage opinion memories thoughts ownership colonist social отношения семья друзья соперники партнер мнение воспоминания колонист",
+ "aiverse-follow-camera": "third person camera follow camera orbit camera boom shoulder obstacle avoidance aim camera камера от третьего лица плечо камера препятствия",
+ "aiverse-herds-taming": "herd herds flock pack animals panic taming tame pet follow stay off-screen simulation стадо стая паника приручение питомец",
+ "aiverse-item-affixes": "affix affixes prefix suffix item generation diablo path of exile sockets gems runes crafting reroll elemental reaction aura аффиксы префикс суффикс сокеты камни крафт реакции стихий",
+ "aiverse-nav-links": "offmesh off-mesh link navlink jump link ladder door teleport navmesh links cover generation cover points ссылки навмеш прыжок лестница дверь укрытия генерация",
+ "aiverse-portals-rewind": "portal portals teleport velocity transfer recursive portal rewind time rewind braid prince of persia time travel портал порталы перемотка времени отмотка",
+ "aiverse-quest-journal": "quest quests journal quest log objectives quest stages branching quest tracker квест квесты журнал задания цели трекер",
+ "aiverse-railways": "railway railways trains rail track signals block signal station timetable openttd factorio trains железная дорога поезда рельсы семафор блок станция",
+ "aiverse-structure-destruction": "destruction destructible wall building collapse fracture debris structural support demolition разрушение разрушаемые стены обрушение обломки",
+ "aiverse-traversal-moves": "wallrun wall-run wall slide walljump dash air dash grapple hook glide glider one-way platform drop through parkour паркур бег по стене рывок крюк кошка планирование односторонн платформ",
+ "aiverse-utility-networks": "pipes pressure pump valve water supply fluid network heat temperature rooms heating cooling thermostat трубы давление насос клапан водопровод тепло отопление термостат",
+ "aiverse-volume-nav": "3d navigation flying pathfinding volumetric navigation space ship drone swarm flock boids 3d formation полет 3d навигация корабли дроны стая формация",
+ "aiverse-wounds-disease": "wounds injury bleeding infection disease illness contagion epidemic medicine bandage splint immunity раны кровотечение инфекция болезни зараза эпидемия лечение иммунитет"
+}

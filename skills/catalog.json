@@ -1146,6 +1146,44 @@
       "keywords": []
     },
     {
+      "id": "aiverse-colonist-relations",
+      "package": "colonist-relations",
+      "path": "skills/gameplay/aiverse-colonist-relations/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Colonist families, memories with decay and stacking, opinions, friendships and rivalries with hysteresis, partnerships, item ownership and social mood",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_colonist_relations",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/ColonistRelations.h",
+      "keywords": [
+        "relationships",
+        "family",
+        "friends",
+        "rivals",
+        "partner",
+        "marriage",
+        "opinion",
+        "memories",
+        "thoughts",
+        "ownership",
+        "colonist",
+        "social",
+        "отношения",
+        "семья",
+        "друзья",
+        "соперники",
+        "партнер",
+        "мнение",
+        "воспоминания",
+        "колонист"
+      ]
+    },
+    {
       "id": "aiverse-combat-actions",
       "package": "combat-actions",
       "path": "skills/gameplay/aiverse-combat-actions/SKILL.md",
@@ -1767,6 +1805,42 @@
       ]
     },
     {
+      "id": "aiverse-follow-camera",
+      "package": "follow-camera",
+      "path": "skills/gameplay/aiverse-follow-camera/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Third-person camera boom: orbit, shoulder offset and swap, obstacle avoidance by owner sphere sweep, recenter behind the target, profile stack with blends",
+      "side": "presentation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_follow_camera",
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/gameplay/ThirdPersonCamera.h",
+      "keywords": [
+        "third",
+        "person",
+        "camera",
+        "follow",
+        "camera",
+        "orbit",
+        "camera",
+        "boom",
+        "shoulder",
+        "obstacle",
+        "avoidance",
+        "aim",
+        "camera",
+        "камера",
+        "от",
+        "третьего",
+        "лица",
+        "плечо",
+        "камера",
+        "препятствия"
+      ]
+    },
+    {
       "id": "aiverse-fx",
       "package": null,
       "path": "skills/visuals/aiverse-fx/SKILL.md",
@@ -1959,6 +2033,42 @@
       ]
     },
     {
+      "id": "aiverse-herds-taming",
+      "package": "herds-taming",
+      "path": "skills/gameplay/aiverse-herds-taming/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Herds with leader, cohesion, spreading panic and succession, off-screen aggregate herds, and taming by trust with follow/stay/guard orders",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_herds_taming",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/HerdsTaming.h",
+      "keywords": [
+        "herd",
+        "herds",
+        "flock",
+        "pack",
+        "animals",
+        "panic",
+        "taming",
+        "tame",
+        "pet",
+        "follow",
+        "stay",
+        "off-screen",
+        "simulation",
+        "стадо",
+        "стая",
+        "паника",
+        "приручение",
+        "питомец"
+      ]
+    },
+    {
       "id": "aiverse-hot-reload",
       "package": "hot-reload",
       "path": "skills/core/aiverse-hot-reload/SKILL.md",
@@ -2042,6 +2152,50 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/gameplay/Inventory.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-item-affixes",
+      "package": "item-affixes",
+      "path": "skills/gameplay/aiverse-item-affixes/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Seeded item generation with prefix/suffix affix pools, tiers, groups and item level, crafting rerolls, coloured sockets and gems, elemental auras and reactions, item migration",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_item_affixes",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/ItemAffixes.h",
+      "keywords": [
+        "affix",
+        "affixes",
+        "prefix",
+        "suffix",
+        "item",
+        "generation",
+        "diablo",
+        "path",
+        "of",
+        "exile",
+        "sockets",
+        "gems",
+        "runes",
+        "crafting",
+        "reroll",
+        "elemental",
+        "reaction",
+        "aura",
+        "аффиксы",
+        "префикс",
+        "суффикс",
+        "сокеты",
+        "камни",
+        "крафт",
+        "реакции",
+        "стихий"
+      ]
     },
     {
       "id": "aiverse-lens",
@@ -2573,6 +2727,46 @@
       "requiresOwner": null,
       "source": "tools/libraries/native_codegen.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-nav-links",
+      "package": "nav-links",
+      "path": "skills/ai/aiverse-nav-links/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Off-mesh navigation links (jump, drop, ladder, climb, door, teleport) planned together with any walking mesh, link traversal over ticks, cover spot generation from boxes",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nav_links",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/bots/NavLinks.h",
+      "keywords": [
+        "offmesh",
+        "off-mesh",
+        "link",
+        "navlink",
+        "jump",
+        "link",
+        "ladder",
+        "door",
+        "teleport",
+        "navmesh",
+        "links",
+        "cover",
+        "generation",
+        "cover",
+        "points",
+        "ссылки",
+        "навмеш",
+        "прыжок",
+        "лестница",
+        "дверь",
+        "укрытия",
+        "генерация"
+      ]
     },
     {
       "id": "aiverse-navmesh",
@@ -3226,6 +3420,45 @@
       ]
     },
     {
+      "id": "aiverse-portals-rewind",
+      "package": "portals-rewind",
+      "path": "skills/gameplay/aiverse-portals-rewind/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Linked portals with position/velocity/facing transfer and recursive view transforms, plus gameplay time rewind over a bounded snapshot history with an energy budget",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_portals_rewind",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/PortalsRewind.h",
+      "keywords": [
+        "portal",
+        "portals",
+        "teleport",
+        "velocity",
+        "transfer",
+        "recursive",
+        "portal",
+        "rewind",
+        "time",
+        "rewind",
+        "braid",
+        "prince",
+        "of",
+        "persia",
+        "time",
+        "travel",
+        "портал",
+        "порталы",
+        "перемотка",
+        "времени",
+        "отмотка"
+      ]
+    },
+    {
       "id": "aiverse-presentation",
       "package": "presentation",
       "path": "skills/ui/aiverse-presentation/SKILL.md",
@@ -3454,6 +3687,41 @@
       ]
     },
     {
+      "id": "aiverse-quest-journal",
+      "package": "quest-journal",
+      "path": "skills/gameplay/aiverse-quest-journal/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Quests as data: stages, counted and optional objectives, branches, prerequisites, time limits, abandon/fail/repeat, tracked quest, bounded journal and versioned migration",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_quest_journal",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/QuestJournal.h",
+      "keywords": [
+        "quest",
+        "quests",
+        "journal",
+        "quest",
+        "log",
+        "objectives",
+        "quest",
+        "stages",
+        "branching",
+        "quest",
+        "tracker",
+        "квест",
+        "квесты",
+        "журнал",
+        "задания",
+        "цели",
+        "трекер"
+      ]
+    },
+    {
       "id": "aiverse-racing",
       "package": null,
       "path": "skills/gameplay/aiverse-racing/SKILL.md",
@@ -3488,6 +3756,44 @@
         "старт",
         "заезд",
         "кольцев"
+      ]
+    },
+    {
+      "id": "aiverse-railways",
+      "package": "railways",
+      "path": "skills/gameplay/aiverse-railways/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Trains on a track graph with block signalling, acceleration and braking, looping routes and station stops with dwell times",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_railways",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/Railways.h",
+      "keywords": [
+        "railway",
+        "railways",
+        "trains",
+        "rail",
+        "track",
+        "signals",
+        "block",
+        "signal",
+        "station",
+        "timetable",
+        "openttd",
+        "factorio",
+        "trains",
+        "железная",
+        "дорога",
+        "поезда",
+        "рельсы",
+        "семафор",
+        "блок",
+        "станция"
       ]
     },
     {
@@ -4243,6 +4549,41 @@
       ]
     },
     {
+      "id": "aiverse-structure-destruction",
+      "package": "structure-destruction",
+      "path": "skills/gameplay/aiverse-structure-destruction/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Destructible structures of box pieces: area damage, fracture into fragments, support graph collapse, authoritative debris and dirty regions for collision/navmesh/visibility",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_structure_destruction",
+      "dependencies": [
+        "aiverse-configuration"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/StructureDestruction.h",
+      "keywords": [
+        "destruction",
+        "destructible",
+        "wall",
+        "building",
+        "collapse",
+        "fracture",
+        "debris",
+        "structural",
+        "support",
+        "demolition",
+        "разрушение",
+        "разрушаемые",
+        "стены",
+        "обрушение",
+        "обломки"
+      ]
+    },
+    {
       "id": "aiverse-survival-ecology",
       "package": "survival-ecology",
       "path": "skills/gameplay/aiverse-survival-ecology/SKILL.md",
@@ -4604,6 +4945,53 @@
       ]
     },
     {
+      "id": "aiverse-traversal-moves",
+      "package": "traversal-moves",
+      "path": "skills/gameplay/aiverse-traversal-moves/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Wall-run, wall-slide, wall jump, dash with air charges, grapple hook, glide and one-way platforms with drop-through over LocomotionModes",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_traversal_moves",
+      "dependencies": [
+        "aiverse-configuration"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/TraversalMoves.h",
+      "keywords": [
+        "wallrun",
+        "wall-run",
+        "wall",
+        "slide",
+        "walljump",
+        "dash",
+        "air",
+        "dash",
+        "grapple",
+        "hook",
+        "glide",
+        "glider",
+        "one-way",
+        "platform",
+        "drop",
+        "through",
+        "parkour",
+        "паркур",
+        "бег",
+        "по",
+        "стене",
+        "рывок",
+        "крюк",
+        "кошка",
+        "планирование",
+        "односторонн",
+        "платформ"
+      ]
+    },
+    {
       "id": "aiverse-turn-scheduler",
       "package": "turn-scheduler",
       "path": "skills/gameplay/aiverse-turn-scheduler/SKILL.md",
@@ -4726,6 +5114,46 @@
         "контр",
         "дуэл",
         "матриц"
+      ]
+    },
+    {
+      "id": "aiverse-utility-networks",
+      "package": "utility-networks",
+      "path": "skills/gameplay/aiverse-utility-networks/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Pressure-driven pipe networks with sources, sinks, tanks, pumps and valves, and heat exchange between rooms with doors, outdoor boundary and thermostats",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_utility_networks",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/UtilityNetworks.h",
+      "keywords": [
+        "pipes",
+        "pressure",
+        "pump",
+        "valve",
+        "water",
+        "supply",
+        "fluid",
+        "network",
+        "heat",
+        "temperature",
+        "rooms",
+        "heating",
+        "cooling",
+        "thermostat",
+        "трубы",
+        "давление",
+        "насос",
+        "клапан",
+        "водопровод",
+        "тепло",
+        "отопление",
+        "термостат"
       ]
     },
     {
@@ -4874,6 +5302,45 @@
         "снимок",
         "визуальн",
         "проверк"
+      ]
+    },
+    {
+      "id": "aiverse-volume-nav",
+      "package": "volume-nav",
+      "path": "skills/ai/aiverse-volume-nav/SKILL.md",
+      "domain": "gameplay",
+      "summary": "3D navigation for flyers, ships and swimmers: occupancy grid from boxes, deterministic 26-neighbour A* with smoothing, flock avoidance and 3D formation slots",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_volume_nav",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/bots/VolumeNav.h",
+      "keywords": [
+        "3d",
+        "navigation",
+        "flying",
+        "pathfinding",
+        "volumetric",
+        "navigation",
+        "space",
+        "ship",
+        "drone",
+        "swarm",
+        "flock",
+        "boids",
+        "3d",
+        "formation",
+        "полет",
+        "3d",
+        "навигация",
+        "корабли",
+        "дроны",
+        "стая",
+        "формация"
       ]
     },
     {
@@ -5292,6 +5759,44 @@
         "распорядок",
         "потребност",
         "поручен"
+      ]
+    },
+    {
+      "id": "aiverse-wounds-disease",
+      "package": "wounds-disease",
+      "path": "skills/gameplay/aiverse-wounds-disease/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Wounds by type and body part with bleeding, pain, healing, infection and treatments; diseases with incubation, symptoms, contagion, cures and immunity",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_wounds_disease",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/mechanics/WoundsDisease.h",
+      "keywords": [
+        "wounds",
+        "injury",
+        "bleeding",
+        "infection",
+        "disease",
+        "illness",
+        "contagion",
+        "epidemic",
+        "medicine",
+        "bandage",
+        "splint",
+        "immunity",
+        "раны",
+        "кровотечение",
+        "инфекция",
+        "болезни",
+        "зараза",
+        "эпидемия",
+        "лечение",
+        "иммунитет"
       ]
     },
     {

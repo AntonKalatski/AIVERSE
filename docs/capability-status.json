@@ -43,9 +43,14 @@
       "area": "Полноценное движение в 3D",
       "scope": "Объёмная навигация/избегание, 3D-формации, ввод высоты и согласованное представление кораблей",
       "acceptance": "Флот проходит объёмное препятствие в разных плоскостях, сохраняет формацию и корректно возобновляется из save",
-      "status": "planned",
-      "libraries": [],
-      "remaining": "Объёмная навигация/избегание, 3D-формации, ввод высоты и согласованное представление кораблей"
+      "status": "partial",
+      "libraries": [
+        "volume-nav"
+      ],
+      "remaining": "Есть объёмная сетка препятствий, детерминированный A* по 26 соседям со сглаживанием, локальное избегание стаи и 3D-слоты формаций (volume-nav). Осталось: иерархические и стримящиеся объёмы, ввод высоты в интерфейсе, согласованное представление кораблей.",
+      "code": [
+        "libraries/include/aiverselib/bots/VolumeNav.h"
+      ]
     },
     {
       "id": "F1",
@@ -56,13 +61,15 @@
       "libraries": [
         "character-locomotion",
         "physical-interactions",
-        "physics"
+        "physics",
+        "traversal-moves"
       ],
-      "remaining": "Есть режимы движения Ground/Air со склонами, Ledge, Ladder, Swim, Climb, Mantle/Vault, wall jump и выносливость (LocomotionModes.h); движущиеся платформы по точкам с переносом наездника (Platforms.h, только перенос без вращения); ступени и склоны у Box3D-персонажа (engine/physics/Character.cpp). Осталось: wall-run, grapple, dash, вращающиеся опоры, синхронизация prediction и камеры для новых режимов.",
+      "remaining": "Есть Ground/Air со склонами, Ledge, Ladder, Swim, Climb, Mantle/Vault (LocomotionModes.h), движущиеся платформы (Platforms.h), ступени Box3D-персонажа, а также wall-run, wall-slide, wall jump, dash с зарядами в воздухе, grapple hook, планирование и односторонние платформы (traversal-moves). Осталось: вращающиеся опоры, prediction и камера новых режимов в engine/actor, анимации режимов.",
       "code": [
         "libraries/include/aiverselib/mechanics/LocomotionModes.h",
         "libraries/include/aiverselib/mechanics/Platforms.h",
-        "engine/physics/Character.cpp"
+        "engine/physics/Character.cpp",
+        "libraries/include/aiverselib/mechanics/TraversalMoves.h"
       ]
     },
     {
@@ -73,14 +80,16 @@
       "status": "partial",
       "libraries": [
         "bots-fps",
+        "nav-links",
         "navmesh",
         "squads"
       ],
-      "remaining": "Есть выбор укрытия из кандидатов владельца и отступление (ShooterBot.h), роли отряда (SquadRoles.h), слоистый AABB-навмеш (engine/nav/NavMesh.h). Осталось: off-mesh links (прыжки, лестницы, двери) в навмеше, генерация кандидатов укрытий из геометрии, стриминг навмеша, задачи конкретного режима.",
+      "remaining": "Есть off-mesh links (прыжок, спрыгивание, лестница, лазание, дверь, телепорт) в общем планировщике с любым навмешем и прохождение связей по тикам, генерация точек укрытий от коробок (nav-links), выбор укрытия ботом, роли отряда, слоистый навмеш. Осталось: автоматическое извлечение связей из геометрии, стриминг навмеша, задачи конкретного режима.",
       "code": [
         "libraries/include/aiverselib/bots/ShooterBot.h",
         "libraries/include/aiverselib/bots/SquadRoles.h",
-        "engine/nav/NavMesh.h"
+        "engine/nav/NavMesh.h",
+        "libraries/include/aiverselib/bots/NavLinks.h"
       ]
     },
     {
@@ -91,13 +100,15 @@
       "status": "partial",
       "libraries": [
         "physical-interactions",
-        "physics"
+        "physics",
+        "structure-destruction"
       ],
-      "remaining": "Есть разрушаемые объекты со стадиями, типами урона, порогами и запросами обломков (Breakables.h; обломки в Box3D только визуальные) и детерминированные события разрушения от природных нагрузок PHYSIS (PhysisFractureOutbox.h). Осталось: разрушение произвольной геометрии с обновлением коллизий, навмеша и видимости, soft-body транспорт, репликация обломков.",
+      "remaining": "Есть разрушаемые конструкции из коробок: урон по области, раскол на фрагменты, обрушение без опоры, авторитетные обломки для репликации и грязные области для коллизий, навмеша и видимости (structure-destruction); разрушаемые объекты и события PHYSIS. Осталось: разрезание произвольных мешей, расчёт напряжений, soft-body транспорт.",
       "code": [
         "libraries/include/aiverselib/mechanics/Breakables.h",
         "engine/physis/PhysisFractureOutbox.h",
-        "engine/physis/PhysisFractureDelivery.h"
+        "engine/physis/PhysisFractureDelivery.h",
+        "libraries/include/aiverselib/mechanics/StructureDestruction.h"
       ]
     },
     {
@@ -143,15 +154,17 @@
       "status": "partial",
       "libraries": [
         "attribute-modifiers",
+        "item-affixes",
         "loot-tables",
         "match-progression",
         "status-effects",
         "weapon-policies"
       ],
-      "remaining": "Есть упорядоченный конвейер модификаторов с пределами, перки с требованиями, исключениями и цепочками улучшений (Perks.h), модули оружия (WeaponMods.h), статус-эффекты и таблицы лута. Осталось: аффиксы и сокеты предметов как данные, элементальные реакции, редактор связей, миграция предметов.",
+      "remaining": "Есть генерация предметов по пулам аффиксов (префиксы/суффиксы, группы, тиры, уровень предмета), крафт, сокеты с цветами и камнями, элементальные ауры и реакции, миграция предметов (item-affixes), модификаторы и перки. Осталось: редактор связей и UI предметов.",
       "code": [
         "libraries/include/aiverselib/mechanics/Perks.h",
-        "libraries/include/aiverselib/mechanics/WeaponMods.h"
+        "libraries/include/aiverselib/mechanics/WeaponMods.h",
+        "libraries/include/aiverselib/mechanics/ItemAffixes.h"
       ]
     },
     {
@@ -188,12 +201,14 @@
       "libraries": [
         "narrative-graphs",
         "objectives",
+        "quest-journal",
         "world-calendar"
       ],
-      "remaining": "Есть факты мира, отношения персонажей (affinity/trust/fear), знания, флаги, главы, отложенные последствия, barks и помощники визуальной новеллы (NarrativeScenes.h), календарь мира. Осталось: журнал квестов и его UI, миграция квестов между версиями, связка диалогов с миром.",
+      "remaining": "Есть квесты как данные: этапы, счётчики, ветки, требования, лимиты времени, провал и повтор, отслеживаемый квест, журнал и миграция версий (quest-journal); факты, отношения и сцены (narrative-graphs). Осталось: UI журнала и маркеры квестов на карте.",
       "code": [
         "libraries/include/aiverselib/mechanics/NarrativeScenes.h",
-        "libraries/include/aiverselib/mechanics/Narrative.h"
+        "libraries/include/aiverselib/mechanics/Narrative.h",
+        "libraries/include/aiverselib/mechanics/QuestJournal.h"
       ]
     },
     {
@@ -231,11 +246,13 @@
       "status": "partial",
       "libraries": [
         "survival-ecology",
-        "weather-timeline"
+        "weather-timeline",
+        "wounds-disease"
       ],
-      "remaining": "Есть модель тела: температура ядра от окружения, одежды и укрытия, влажность, голод, жажда и выносливость, модификаторы погоды (Survival.h). Осталось: раны и болезни, агрегирование дальних процессов.",
+      "remaining": "Есть температура тела, одежда, укрытие, влажность и голод (Survival.h), раны с кровотечением, болью, заживлением, инфекцией и лечением, болезни с инкубацией, заразностью, лечением и иммунитетом (wounds-disease). Осталось: потеря функций конечностей, агрегирование дальних процессов, медицинский UI.",
       "code": [
-        "libraries/include/aiverselib/mechanics/Survival.h"
+        "libraries/include/aiverselib/mechanics/Survival.h",
+        "libraries/include/aiverselib/mechanics/WoundsDisease.h"
       ]
     },
     {
@@ -246,13 +263,15 @@
       "status": "partial",
       "libraries": [
         "boss-encounters",
+        "herds-taming",
         "survival-ecology"
       ],
-      "remaining": "Есть популяции экосистем (Ecology.h), поведение отдельных животных: бродить, пастись, бежать, охотиться, спать (EcologyAnimals.h), поведение мобов с давлением толпы (MobBehaviour.h). Осталось: стаи как группы, приручение, расписания, симуляция вдали от игрока.",
+      "remaining": "Есть популяции, поведение отдельных животных, мобы, стада с вожаком, связностью, общей паникой и сменой вожака, агрегированные стада вдали от игрока и приручение по доверию с приказами (herds-taming). Осталось: разведение прирученных, верховая езда, суточные расписания животных.",
       "code": [
         "libraries/include/aiverselib/mechanics/EcologyAnimals.h",
         "libraries/include/aiverselib/mechanics/Ecology.h",
-        "libraries/include/aiverselib/mechanics/MobBehaviour.h"
+        "libraries/include/aiverselib/mechanics/MobBehaviour.h",
+        "libraries/include/aiverselib/mechanics/HerdsTaming.h"
       ]
     },
     {
@@ -308,15 +327,17 @@
       "acceptance": "Колония переживает смену суток и отсутствие ресурсов; нет вечных резервирований; мысли/причины видны игроку",
       "status": "partial",
       "libraries": [
+        "colonist-relations",
         "decision-explanations",
         "reservations",
         "settlement-production",
         "world-calendar"
       ],
-      "remaining": "Есть колонисты с потребностями, расписаниями и настроением, работы с предпочтениями, приоритетами и резервированием (Colony*.h), объяснения решений. Осталось: семьи и отношения, принадлежность предметов, многоуровневое размещение.",
+      "remaining": "Есть потребности, расписания, настроение, работы и резервирование колонистов, семьи, воспоминания, мнения, дружба и соперничество, пары, владение предметами и социальное настроение (colonist-relations). Осталось: рождение и старение, многоуровневое размещение.",
       "code": [
         "libraries/include/aiverselib/mechanics/Colony.h",
-        "libraries/include/aiverselib/mechanics/ColonyTypes.h"
+        "libraries/include/aiverselib/mechanics/ColonyTypes.h",
+        "libraries/include/aiverselib/mechanics/ColonistRelations.h"
       ]
     },
     {
@@ -327,11 +348,15 @@
       "status": "partial",
       "libraries": [
         "production-networks",
-        "settlement-production"
+        "railways",
+        "settlement-production",
+        "utility-networks"
       ],
-      "remaining": "Есть атомарные рецепты, буферы и детерминированный транспорт с сохранением ресурсов; графы электричества и жидкостей с балансом по компонентам, накопителями и отключением потребителей по приоритету (ColonyPower.h). Осталось: давление, тепло, железные дороги и полноценная интеграция.",
+      "remaining": "Есть рецепты, буферы, транспорт, электричество и простые жидкости (ColonyPower.h), трубы с давлением, насосами, клапанами и баками, теплообмен комнат с дверями и термостатами (utility-networks), поезда с блочной сигнализацией и станциями (railways). Осталось: поиск маршрутов поездов по развилкам, цепные сигналы, смешивание газов и полноценная интеграция в игру.",
       "code": [
-        "libraries/include/aiverselib/mechanics/ColonyPower.h"
+        "libraries/include/aiverselib/mechanics/ColonyPower.h",
+        "libraries/include/aiverselib/mechanics/UtilityNetworks.h",
+        "libraries/include/aiverselib/mechanics/Railways.h"
       ]
     },
     {
@@ -438,13 +463,15 @@
       "status": "partial",
       "libraries": [
         "character-locomotion",
-        "physical-interactions"
+        "physical-interactions",
+        "traversal-moves"
       ],
-      "remaining": "Есть движущиеся платформы (Platforms.h), wall jump (LocomotionModes.h), односторонние двери (Doors.h). Осталось: односторонние платформы, wall-slide, dash, петли, авторские метрики движения и камера.",
+      "remaining": "Есть движущиеся платформы, wall jump, wall-slide, dash, планирование и односторонние платформы с проваливанием вниз (traversal-moves). Осталось: петли и гравитация по поверхности, авторские метрики движения, 2D-камера платформера.",
       "code": [
         "libraries/include/aiverselib/mechanics/Platforms.h",
         "libraries/include/aiverselib/mechanics/LocomotionModes.h",
-        "libraries/include/aiverselib/mechanics/Doors.h"
+        "libraries/include/aiverselib/mechanics/Doors.h",
+        "libraries/include/aiverselib/mechanics/TraversalMoves.h"
       ]
     },
     {
@@ -454,11 +481,14 @@
       "acceptance": "Набор прыжков/краёв/поворотов камеры и контроллерные устройства; однозначный reset состояния",
       "status": "partial",
       "libraries": [
-        "camera"
+        "camera",
+        "follow-camera",
+        "traversal-moves"
       ],
-      "remaining": "Есть режимы камеры Follow и Orbit (gameplay/Camera.h). Осталось: камера третьего лица, обходящая препятствия, опоры, хват, планирование, переключаемые контроллеры.",
+      "remaining": "Есть камера третьего лица: орбита, плечо со сменой стороны, обход препятствий сферическим свипом владельца, возврат за спину, стек профилей с плавными переходами (follow-camera); хват за уступ и планирование (LocomotionModes, traversal-moves). Осталось: особые гравитации и привязка камеры к хосту engine/actor.",
       "code": [
-        "libraries/include/aiverselib/gameplay/Camera.h"
+        "libraries/include/aiverselib/gameplay/Camera.h",
+        "libraries/include/aiverselib/gameplay/ThirdPersonCamera.h"
       ]
     },
     {
@@ -603,9 +633,14 @@
       "area": "Время, порталы и топология",
       "scope": "Нужная игре разновидность: локальный rewind, порталы с переносом скорости, рекурсивные/перспективные миры, изменение правил; это разные задачи",
       "acceptance": "Проверка инвариантов конкретной механики, включая коллизию, звук, сохранение и переходы между пространствами",
-      "status": "planned",
-      "libraries": [],
-      "remaining": "Нужная игре разновидность: локальный rewind, порталы с переносом скорости, рекурсивные/перспективные миры, изменение правил; это разные задачи"
+      "status": "partial",
+      "libraries": [
+        "portals-rewind"
+      ],
+      "remaining": "Есть связанные порталы с переносом позиции, скорости и направления, преобразования для рекурсивного вида и игровая перемотка времени по истории снимков с запасом энергии (portals-rewind). Осталось: локальные пузыри времени для отдельных объектов, перспективные и неевклидовы миры, рендер рекурсии в View.",
+      "code": [
+        "libraries/include/aiverselib/mechanics/PortalsRewind.h"
+      ]
     },
     {
       "id": "Q5",
@@ -696,6 +731,7 @@
   "codeAudit": {
     "date": "2026-11-22",
     "commit": "02f9337af",
-    "note": "Statuses checked against code, not only skills. Areas still planned after the audit have no implementation found: R1-R5, C3, K2 (partial), Q4, U1. Paths of the code that exists are in each area under \"code\"."
+    "note": "Statuses checked against code, not only skills. Areas still planned after the audit have no implementation found: R1-R5, C3, K2 (partial), Q4, U1. Paths of the code that exists are in each area under \"code\".",
+    "policyPackages": "batch1-2"
   }
 }

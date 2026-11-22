@@ -2764,6 +2764,229 @@
       "runtime": "header",
       "linkDependencies": ["aiverse_engine"],
       "packageDependencies": ["nereid-water"]
+    },
+    {
+      "id": "traversal-moves",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/TraversalMoves.h",
+      "skill": "skills/gameplay/aiverse-traversal-moves/SKILL.md",
+      "summary": "Wall-run, wall-slide, wall jump, dash with air charges, grapple hook, glide and one-way platforms with drop-through over LocomotionModes",
+      "notes": "Capability F1 P1. No camera tilt or animation; prediction/reconciliation of these modes in engine/actor is not wired yet. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_traversal_moves",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "configuration"
+      ]
+    },
+    {
+      "id": "follow-camera",
+      "version": "0.1.0",
+      "layer": "presentation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/gameplay/ThirdPersonCamera.h",
+      "skill": "skills/gameplay/aiverse-follow-camera/SKILL.md",
+      "summary": "Third-person camera boom: orbit, shoulder offset and swap, obstacle avoidance by owner sphere sweep, recenter behind the target, profile stack with blends",
+      "notes": "Capability P2. No collision with moving bodies unless the sweep reports them; no automatic vehicle profile switching. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_follow_camera",
+      "linkDependencies": [],
+      "packageDependencies": []
+    },
+    {
+      "id": "nav-links",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/bots/NavLinks.h",
+      "skill": "skills/ai/aiverse-nav-links/SKILL.md",
+      "summary": "Off-mesh navigation links (jump, drop, ladder, climb, door, teleport) planned together with any walking mesh, link traversal over ticks, cover spot generation from boxes",
+      "notes": "Capability F2. Links are not extracted from geometry automatically; the planner calls meshCost for node pairs (fine for hundreds of links). Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_nav_links",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "volume-nav",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/bots/VolumeNav.h",
+      "skill": "skills/ai/aiverse-volume-nav/SKILL.md",
+      "summary": "3D navigation for flyers, ships and swimmers: occupancy grid from boxes, deterministic 26-neighbour A* with smoothing, flock avoidance and 3D formation slots",
+      "notes": "Capability R5. Dense grid (up to 4M cells); no hierarchical or streamed volumes yet. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_volume_nav",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "structure-destruction",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/StructureDestruction.h",
+      "skill": "skills/gameplay/aiverse-structure-destruction/SKILL.md",
+      "summary": "Destructible structures of box pieces: area damage, fracture into fragments, support graph collapse, authoritative debris and dirty regions for collision/navmesh/visibility",
+      "notes": "Capability F3. Box pieces only (no arbitrary mesh slicing); support is connectivity, not stress analysis; no soft bodies. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_structure_destruction",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "configuration"
+      ]
+    },
+    {
+      "id": "portals-rewind",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/PortalsRewind.h",
+      "skill": "skills/gameplay/aiverse-portals-rewind/SKILL.md",
+      "summary": "Linked portals with position/velocity/facing transfer and recursive view transforms, plus gameplay time rewind over a bounded snapshot history with an energy budget",
+      "notes": "Capability Q4. No portal-in-portal physics for bodies larger than the opening; rewind of single objects (local time bubbles) is left to the owner. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_portals_rewind",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "item-affixes",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/ItemAffixes.h",
+      "skill": "skills/gameplay/aiverse-item-affixes/SKILL.md",
+      "summary": "Seeded item generation with prefix/suffix affix pools, tiers, groups and item level, crafting rerolls, coloured sockets and gems, elemental auras and reactions, item migration",
+      "notes": "Capability A2. No UI; affix text and balance are content. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_item_affixes",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "quest-journal",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/QuestJournal.h",
+      "skill": "skills/gameplay/aiverse-quest-journal/SKILL.md",
+      "summary": "Quests as data: stages, counted and optional objectives, branches, prerequisites, time limits, abandon/fail/repeat, tracked quest, bounded journal and versioned migration",
+      "notes": "Capability A4. No quest UI widgets yet; journal text is content. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_quest_journal",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "wounds-disease",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/WoundsDisease.h",
+      "skill": "skills/gameplay/aiverse-wounds-disease/SKILL.md",
+      "summary": "Wounds by type and body part with bleeding, pain, healing, infection and treatments; diseases with incubation, symptoms, contagion, cures and immunity",
+      "notes": "Capability S1. No per-limb loss of function; medical UI is not included. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_wounds_disease",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "herds-taming",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/HerdsTaming.h",
+      "skill": "skills/gameplay/aiverse-herds-taming/SKILL.md",
+      "summary": "Herds with leader, cohesion, spreading panic and succession, off-screen aggregate herds, and taming by trust with follow/stay/guard orders",
+      "notes": "Capability S2. No breeding of tamed animals or saddles/riding. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_herds_taming",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "colonist-relations",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/ColonistRelations.h",
+      "skill": "skills/gameplay/aiverse-colonist-relations/SKILL.md",
+      "summary": "Colonist families, memories with decay and stacking, opinions, friendships and rivalries with hysteresis, partnerships, item ownership and social mood",
+      "notes": "Capability C1. Births and ageing belong to the owner; no conversation generator. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_colonist_relations",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "utility-networks",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/UtilityNetworks.h",
+      "skill": "skills/gameplay/aiverse-utility-networks/SKILL.md",
+      "summary": "Pressure-driven pipe networks with sources, sinks, tanks, pumps and valves, and heat exchange between rooms with doors, outdoor boundary and thermostats",
+      "notes": "Capability C2. Pressure is a relaxed approximation, not a hydraulic solver; no gas mixing. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_utility_networks",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "railways",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/mechanics/Railways.h",
+      "skill": "skills/gameplay/aiverse-railways/SKILL.md",
+      "summary": "Trains on a track graph with block signalling, acceleration and braking, looping routes and station stops with dwell times",
+      "notes": "Capability C2. No junction pathfinding (routes are explicit), no chain signals, no train length. Tests: tests/libraries/policy_mechanics_tests.cpp.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::lib_railways",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
     }
   ]
 }
