@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T18:22:40+00:00",
+ "generated": "2026-11-22T18:53:35+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -185,6 +185,40 @@
    ],
    "links": [],
    "author": "vivid"
+  },
+  {
+   "id": "2026-11-22-terraweave-rock-uv",
+   "date": "2026-11-22",
+   "system": "terraweave",
+   "title": "TerraWeave: rock textures without a swirl at the top",
+   "summary": "Generated TerraWeave rocks were unwrapped like a globe, and at the top the texture twisted into a swirl. Each face now takes the projection of its main axis, so the rock is covered with the same texture density on every side.",
+   "body": [
+    "Rocks are built from a sphere cut by planes and deformed by the seed. Texture coordinates used to come from that sphere's latitude and longitude: at the poles all meridians meet in one point and the rock texture stretched into a spiral at the top.",
+    "Each triangle now gets a planar projection along the axis it faces most, in metres with the texture repeat. Faces already have their own vertices, so switching the projection adds no seams to the mesh.",
+    "The generator test checks that the unwrap area per surface area stays within one projection for every triangle of every LOD - no pinched poles."
+   ],
+   "status": "done",
+   "verified": "Mac (Metal), aiverse_modelview: rounded, boulder and shard rocks with seed 42 from above and the side, dark-rock 1024² textures; TerraWeave tests 4 of 4.",
+   "limits": "The terraweave-rocks package in the catalog still has the old unwrap: it needs a re-export and a new version. Where projections meet the texture can turn slightly.",
+   "branch": "main",
+   "commit": "",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-22-terraweave-rock-uv/rock-top-after.jpg",
+     "caption": "A rock from above: even texture, no swirl at the top"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-22-terraweave-rock-uv/rock-side-after.jpg",
+     "caption": "A rounded rock from the side with the same texture density"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/terrain/rocks.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/rocks.md"
+    }
+   ],
+   "author": "terraweave"
   },
   {
    "id": "2026-11-22-studio-windows",
