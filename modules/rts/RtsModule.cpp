@@ -95,22 +95,22 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     if (rules_.originals) sim.addSystem("originals", [this](Simulation& s) { sysOriginals(s); }); // RtsOriginals.cpp
     if (rules_.fidelity) sim.addSystem("fidelity", [this](Simulation& s) { sysFidelity(s); });    // RtsFidelity.cpp
     sim.addSystem("targeting", [this](Simulation& s) { sysTargeting(s); });
-    if (fieldOps_->active()) sim.addSystem("fieldops", [this](Simulation& s) { fieldOps_->tick(s); });   // RtsFieldOps.cpp (games with field operations only)
+    if (fieldOps_->active()) sim.addSystem("fieldops", [this](Simulation& s) { fieldOps_->tick(s); });   // FieldOps.cpp (games with field operations only)
     sim.addSystem("movement", [this](Simulation& s) { sysMovement(s); });
     if (state(sim).surface) sim.addSystem("transit", [this](Simulation& s) { sysTransit(s); });
     sim.addSystem("weapons", [this](Simulation& s) { sysWeapons(s); });
     sim.addSystem("projectiles", [this](Simulation& s) { sysProjectiles(s); });
-    if (encounters_->active()) sim.addSystem("encounters", [this](Simulation& s) { encounters_->tick(s); });   // RtsEncounters.cpp: bosses, mobs, telegraph strikes
-    if (commerce_->active()) sim.addSystem("commerce", [this](Simulation& s) { commerce_->tick(s); });   // RtsCommerce.cpp: days and weeks
-    if (raid_->active()) sim.addSystem("raid", [this](Simulation& s) { raid_->tick(s); });   // RtsRaid.cpp: sees raiders at 0 hp
-    if (progression_->active()) sim.addSystem("progression", [this](Simulation& s) { progression_->tick(s); });   // RtsProgression.cpp: kills at 0 hp -> xp orbs
-    if (env_->active()) sim.addSystem("environment", [this](Simulation& s) { env_->tick(s); });   // RtsEnv.cpp (games with an environment only)
+    if (encounters_->active()) sim.addSystem("encounters", [this](Simulation& s) { encounters_->tick(s); });   // Encounters.cpp: bosses, mobs, telegraph strikes
+    if (commerce_->active()) sim.addSystem("commerce", [this](Simulation& s) { commerce_->tick(s); });   // Commerce.cpp: days and weeks
+    if (raid_->active()) sim.addSystem("raid", [this](Simulation& s) { raid_->tick(s); });   // Raid.cpp: sees raiders at 0 hp
+    if (progression_->active()) sim.addSystem("progression", [this](Simulation& s) { progression_->tick(s); });   // Progression.cpp: kills at 0 hp -> xp orbs
+    if (env_->active()) sim.addSystem("environment", [this](Simulation& s) { env_->tick(s); });   // Environment.cpp (games with an environment only)
     sim.addSystem("death", [this](Simulation& s) { sysDeath(s); });
     sim.addSystem("capture", [this](Simulation& s) { sysCapture(s); });
     sim.addSystem("creep", [this](Simulation& s) { sysCreep(s); });
-    if (fields_->active()) sim.addSystem("gridfields", [this](Simulation& s) { fields_->tick(s); });   // RtsGridFields.cpp
+    if (fields_->active()) sim.addSystem("gridfields", [this](Simulation& s) { fields_->tick(s); });   // GridFields.cpp
     sim.addSystem("vision", [this](Simulation& s) { sysVision(s); });
-    if (env_->active() && env_->hasFog()) sim.addSystem("environment3", [this](Simulation& s) { env_->fogTick(s); });   // fog without memory / start reveal (RtsEnv.cpp)
+    if (env_->active() && env_->hasFog()) sim.addSystem("environment3", [this](Simulation& s) { env_->fogTick(s); });   // fog without memory / start reveal (Environment.cpp)
     if (modes_.any) sim.addSystem("modes", [this](Simulation& s) { sysModes(s); });   // RtsModes.cpp: match modes decide before victory
     sim.addSystem("victory", [this](Simulation& s) { script_->callStd(s, StdFn::Victory); });   // lua/victory.lua
     sim.addSystem("triggers", [this](Simulation& s) {   // last: sees every event of the tick (lua/triggers.lua)
@@ -1087,16 +1087,16 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
         return;
     }
     if (script_ && (script_->hooks() & ScriptEngine::kHookCommand) && cmd.type != kCmdScript && !script_->allowCommand(sim, cmd)) return;   // before_command (G12)
-    if (topDown_ && topDown_->command(sim, cmd)) return;   // kCmdTopDown, kCmdTopDownAbility = 0xF100 / 0xF101 (RtsTopDown.cpp)
+    if (topDown_ && topDown_->command(sim, cmd)) return;   // kCmdTopDown, kCmdTopDownAbility = 0xF100 / 0xF101 (TopDown.cpp)
     if (cmd.type >= 32768) { native_.command(*this, sim, cmd); return; }   // native modules (never the two hero ids)
-    if (cmd.type == kCmdRaid) { if (raid_ && raid_->active()) raid_->command(sim, cmd); return; }   // RtsRaid.cpp
-    if (progression_ && progression_->command(sim, cmd)) return;   // kCmdProgression (RtsProgression.cpp)
-    if (prompts_ && prompts_->command(sim, cmd)) return;     // kCmdPrompt (RtsPrompt.cpp)
-    if (fieldOps_ && fieldOps_->command(sim, cmd)) return;   // kCmdRepair / kCmdReclaim / kCmdSelfDestruct (RtsFieldOps.cpp)
-    if (career_ && career_->command(sim, cmd)) return;       // kCmdCareer (RtsCareer.cpp)
-    if (commerce_ && commerce_->command(sim, cmd)) return;   // kCmdCommerce (RtsCommerce.cpp)
-    if (driving_ && driving_->command(sim, cmd)) return;   // kCmdTopDownEnter (RtsDriving.cpp)
-    if (arsenal_ && arsenal_->command(sim, cmd)) return;   // kCmdTopDownWeapon (RtsArsenal.cpp)
+    if (cmd.type == kCmdRaid) { if (raid_ && raid_->active()) raid_->command(sim, cmd); return; }   // Raid.cpp
+    if (progression_ && progression_->command(sim, cmd)) return;   // kCmdProgression (Progression.cpp)
+    if (prompts_ && prompts_->command(sim, cmd)) return;     // kCmdPrompt (Prompts.cpp)
+    if (fieldOps_ && fieldOps_->command(sim, cmd)) return;   // kCmdRepair / kCmdReclaim / kCmdSelfDestruct (FieldOps.cpp)
+    if (career_ && career_->command(sim, cmd)) return;       // kCmdCareer (Career.cpp)
+    if (commerce_ && commerce_->command(sim, cmd)) return;   // kCmdCommerce (Commerce.cpp)
+    if (driving_ && driving_->command(sim, cmd)) return;   // kCmdTopDownEnter (Driving.cpp)
+    if (arsenal_ && arsenal_->command(sim, cmd)) return;   // kCmdTopDownWeapon (Arsenal.cpp)
     const bool queue = cmd.flags & kCmdQueue;
     if (cmd.type >= kCmdStance || mechOn(sim) || (cmd.type == kCmdRally && (cmd.flags & kCmdQueue))) { if (applyMechCommand(sim, cmd)) return; }   // agent-mech
     if (cmd.type >= kCmdDig && cmd.type <= kCmdPlayerAbility) { applyDungeonCommand(sim, cmd); return; }

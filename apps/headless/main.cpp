@@ -22,7 +22,7 @@
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsProgression.h"
+#include "engine/game/Progression.h"
 #include "modules/rts/gen/MapGen.h"
 
 using namespace aiverse;

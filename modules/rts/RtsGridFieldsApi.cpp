@@ -1,4 +1,4 @@
-// The `field` table of the scripting API (grid fields, RtsGridFields.h). Queries in simulation and view
+// The `field` table of the scripting API (grid fields, GridFields.h). Queries in simulation and view
 // scripts, writes in simulation scripts only. Values are integers ("int" fields) or fx ("fixed" fields);
 // positions are world coordinates (x, z), *_cell variants take field cells. Per-player fields take the player
 // slot as the last argument (queries without it return the highest value of any player).

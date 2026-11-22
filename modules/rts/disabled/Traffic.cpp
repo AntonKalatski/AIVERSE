@@ -2,7 +2,7 @@
 // (packaging.engineModules, CMake AIVERSE_GAME_WITH_TRAFFIC=OFF). Traffic stays inactive, so the
 // simulation never registers its system, hash or save block: games without rules "traffic" run,
 // hash and save exactly as with the full module. Rules that enable traffic fail at match start.
-#include "../RtsTraffic.h"
+#include "../../../engine/game/Traffic.h"
 #include <stdexcept>
 
 namespace aiverse::game {
@@ -45,7 +45,7 @@ int Traffic::present(Simulation&, int) const { return 0; }
 int Traffic::kindOf(Simulation&, Entity) const { return -1; }
 bool Traffic::onRoad(Vec2) const { return false; }
 bool Traffic::projectReturnCar(Simulation&, TrafficStore&, int, Entity) { return false; }
-// Referenced by the inline project* helpers of RtsTraffic.h.
+// Referenced by the inline project* helpers of Traffic.h.
 bool Traffic::roadSpot(Vec2, int, int32_t&, Fixed&) const { return false; }
 bool Traffic::reroute(Simulation&, TrafficCar&, Vec2, Vec2) { return false; }
 void Traffic::depart(Simulation&, TrafficStore&, int32_t, uint8_t) {}

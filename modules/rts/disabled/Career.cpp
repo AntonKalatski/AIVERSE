@@ -2,7 +2,7 @@
 // (packaging.engineModules, CMake AIVERSE_GAME_WITH_CAREERS=OFF). Careers stay inactive, exactly like
 // rules without "careers"; rules with that block fail at match start with a readable error. The Lua
 // table `career` keeps only active() (false).
-#include "../RtsCareer.h"
+#include "../../../engine/game/Career.h"
 #include "../RtsScriptInternal.h"
 #include <stdexcept>
 

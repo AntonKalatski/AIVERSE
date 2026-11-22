@@ -6,7 +6,7 @@
 #include <iterator>
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/RtsScript.h"
-#include "modules/rts/RtsProgression.h"
+#include "engine/game/Progression.h"
 #include <stdexcept>
 
 namespace aiverse::editor {
@@ -48,7 +48,7 @@ const CmdName kCommands[] = {
     {"merge", kCmdMerge}, {"split", kCmdSplit}, {"trade", kCmdTrade}, {"trade_route", kCmdTradeRoute}, {"tribute", kCmdTribute},
     {"diplomacy", kCmdDiplomacy}, {"buy_item", kCmdBuyItem}, {"use_item", kCmdUseItem}, {"drop_item", kCmdDropItem}, {"pick_item", kCmdPickItem}, {"bounty", kCmdBounty}, {"rotate", kCmdRotate}, {"lock", kCmdLock}, {"end_turn", kCmdEndTurn},
     {"script", kCmdScript}, {"topdown", kCmdTopDown}, {"topdown_ability", kCmdTopDownAbility}, {"progression", kCmdProgression},
-    {"repair", kCmdRepair}, {"reclaim", kCmdReclaim}, {"self_destruct", kCmdSelfDestruct},   // field operations (RtsFieldOps.h)
+    {"repair", kCmdRepair}, {"reclaim", kCmdReclaim}, {"self_destruct", kCmdSelfDestruct},   // field operations (FieldOps.h)
 };
 
 Vec3 readPoint(const Json& p) {
@@ -245,7 +245,7 @@ Command commandFromJson(const SimRefs& refs, const Json& p, uint8_t defPlayer) {
     if (p.has("type")) c.param = need(R.findType(p.getStr("type")), "type", p.getStr("type"));
     if (p.has("tech")) c.param = need(R.findTech(p.getStr("tech")), "tech", p.getStr("tech"));
     if (p.has("player_ability")) c.param = need(R.findPlayerAbility(p.getStr("player_ability")), "player ability", p.getStr("player_ability"));
-    if (c.type == kCmdTopDown || c.type == kCmdTopDownAbility) {   // top-down heroes (RtsTopDown.h): readable stick fields
+    if (c.type == kCmdTopDown || c.type == kCmdTopDownAbility) {   // top-down heroes (TopDown.h): readable stick fields
         const game::TopDown* td = refs.mod.topDown();
         const Entity hero = td ? td->heroOf(refs.sim, c.player) : kNullEntity;
         if (hero.valid() && c.units.empty()) c.units = {hero};   // ability ids resolve against the hero's type
@@ -266,7 +266,7 @@ Command commandFromJson(const SimRefs& refs, const Json& p, uint8_t defPlayer) {
             c.param = topdown::pack(in);
         }
     }
-    if (c.type == kCmdProgression && !p.has("param")) {   // level-up offers (RtsProgression.h): the open offer's revision
+    if (c.type == kCmdProgression && !p.has("param")) {   // level-up offers (Progression.h): the open offer's revision
         const std::string op = p.getStr("op", "choose");
         const int64_t o = op == "choose" ? int64_t(game::kProgChoose) : op == "reroll" ? int64_t(game::kProgReroll) : op == "close" ? int64_t(game::kProgClose) : op == "open" ? int64_t(game::kProgOpen) : int64_t(0);
         need(o ? 0 : -1, "progression op (choose, reroll, close, open)", op);

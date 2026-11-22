@@ -1,4 +1,4 @@
-// Top-down hero controls on the client (presentation only; the sim side is modules/rts/RtsTopDown.h).
+// Top-down hero controls on the client (presentation only; the sim side is engine/game/TopDown.h).
 //
 // game.json "topDown" configures a floating or fixed virtual joystick (left), an optional aim stick (right), ability
 // buttons, keyboard / mouse and gamepad equivalents and the follow camera. Every frame the host feeds the pointer
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 #include "ViewCanvas.h"
-#include "../RtsTopDown.h"
+#include "../../../engine/game/TopDown.h"
 #include "../../../engine/render/Math3D.h"
 
 namespace aiverse::game {

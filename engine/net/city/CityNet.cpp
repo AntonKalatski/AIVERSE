@@ -8,12 +8,12 @@
 #include "engine/net/Crypto.h"
 #include "engine/net/HeroInput.h"
 #include "engine/core/Archive.h"
-#include "modules/rts/RtsCareer.h"
-#include "modules/rts/RtsCommerce.h"
-#include "modules/rts/RtsDriving.h"
+#include "engine/game/Career.h"
+#include "engine/game/Commerce.h"
+#include "engine/game/Driving.h"
 #include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsTopDown.h"
-#include "modules/rts/RtsTraffic.h"
+#include "engine/game/TopDown.h"
+#include "engine/game/Traffic.h"
 
 namespace aiverse { void io(Archive& a, Command& c); }   // engine/sim/Simulation.cpp
 

@@ -1,4 +1,4 @@
-// Presentation of boss encounters (rules "encounters", RtsEncounters.h): telegraph progress decals on the ground
+// Presentation of boss encounters (rules "encounters", Encounters.h): telegraph progress decals on the ground
 // (background shape + a fill that grows with the windup, as Drone Fall's TelegraphProgressCircle / Cone / Line,
 // drawn by aiverselib TelegraphDecals.h) and status markers (rings under slowed / rooted / stunned / burning units).
 // Read-only on the sim; the result is appended to the view.draw_ground batches (RtsGroundCanvas). docs/encounters.md.

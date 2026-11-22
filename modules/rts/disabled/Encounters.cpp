@@ -3,7 +3,7 @@
 // system, hash or save block is registered - games without rules "encounters" run as with the full
 // module. Rules with an "encounters" block fail at match start with a readable error. The Lua table
 // `encounters` keeps only active() (false).
-#include "../RtsEncounters.h"
+#include "../../../engine/game/Encounters.h"
 #include "../RtsScriptInternal.h"
 #include <stdexcept>
 

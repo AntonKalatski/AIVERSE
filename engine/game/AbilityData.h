@@ -182,7 +182,7 @@ enum class EffectKind : uint8_t {
     AddCharges,     // structure with larva charges: + amount, up to `limit` (inject larvae)
     TeleportGroup,  // units around one end moved to the other, keeping formation; may come back after `duration`
     Script,     // {"type": "script", "fn": "name", ...}: a Lua function (RtsScript.h), runs in the tick's scripts phase
-    Field,      // {"type": "field", "field": id, "add" | "set" | "max": n, "radius": r}: grid field cells (RtsGridFields.h)
+    Field,      // {"type": "field", "field": id, "add" | "set" | "max": n, "radius": r}: grid field cells (GridFields.h)
     Pull,       // magnet (RtsSkillObjects.cpp): units fly straight into the goal structure with a velocity profile
     Defeat,     // the players chosen by the filter lose (BW PointsEndGameOnCatch: DefeatEnemies)
     GarrisonSend, // a share of the garrison walks out as the owner's sends to the nearest structures of `runTo` (BW Panic)

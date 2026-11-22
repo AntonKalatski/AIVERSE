@@ -17,27 +17,28 @@
 #include "../../engine/game/Components.h"
 #include "../../engine/game/Stats.h"
 #include "../../engine/game/GameState.h"
+#include "../../engine/game/GameHost.h"
 #include "../../engine/game/AIControllers.h"
 #include "../../engine/game/MapGrid.h"
 #include "../../engine/game/Colliders.h"
 #include "../../engine/game/Triggers.h"
 #include "RtsScript.h"
 #include "../../engine/game/Mech.h"
-#include "RtsGridFields.h"
-#include "RtsRaid.h"
+#include "../../engine/game/GridFields.h"
+#include "../../engine/game/Raid.h"
 #include "RtsNative.h"
-#include "RtsTopDown.h"
-#include "RtsEncounters.h"
-#include "RtsEnv.h"
-#include "RtsDriving.h"
-#include "RtsCommerce.h"
-#include "RtsCareer.h"
-#include "RtsPrompt.h"
-#include "RtsSensors.h"
-#include "RtsFieldOps.h"
+#include "../../engine/game/TopDown.h"
+#include "../../engine/game/Encounters.h"
+#include "../../engine/game/Environment.h"
+#include "../../engine/game/Driving.h"
+#include "../../engine/game/Commerce.h"
+#include "../../engine/game/Career.h"
+#include "../../engine/game/Prompts.h"
+#include "../../engine/game/Sensors.h"
+#include "../../engine/game/FieldOps.h"
 #include "../../engine/game/Routes.h"
-#include "RtsArsenal.h"
-#include "RtsTraffic.h"
+#include "../../engine/game/Arsenal.h"
+#include "../../engine/game/Traffic.h"
 #include <memory>
 
 namespace aiverse::game {
@@ -51,8 +52,8 @@ struct VisionCache;   // RtsVision.cpp
 // hashed nor saved (checksums and save layouts of every game stay as they were).
 struct MatchOutcome { int result = 0; uint32_t tick = 0; std::vector<uint8_t> blob; };
 
-class Progression;   // RtsProgression.h (rules "progression")
-class RtsModule final : public GameModule {
+class Progression;   // Progression.h (rules "progression")
+class RtsModule final : public GameModule, public GameHost {
 public:
     RtsModule();
     explicit RtsModule(std::vector<NativeDefinition> nativeDefinitions);
@@ -85,25 +86,25 @@ public:
     const AIPlayerRules* aiPlayer(uint8_t p) const { return p < aiPlayers_.size() ? &aiPlayers_[p] : nullptr; }
     const TriggerSet& triggers() const { return triggers_; }
     ScriptEngine* scripts() const { return script_.get(); }   // the Lua VM (standard library + game scripts)
-    GridFields* gridFields() const { return fields_.get(); }  // grid fields (RtsGridFields.h); null before setup
-    Raid* raid() const { return raid_.get(); }                // extraction raids (RtsRaid.h); inactive without rules "raid"
-    Prompts* prompts() const { return prompts_.get(); }        // script choice menus (RtsPrompt.h); null before setup
-    Sensors* sensors() const { return sensors_ && sensors_->active() ? sensors_.get() : nullptr; }      // radar / sonar / jammers (RtsSensors.h)
-    FieldOps* fieldOps() const { return fieldOps_ && fieldOps_->active() ? fieldOps_.get() : nullptr; }  // repair, reclaim, stockpiles... (RtsFieldOps.h)
-    Career* career() const { return career_.get(); }           // career ladders and perks (RtsCareer.h); null before setup
-    Commerce* commerce() const { return commerce_.get(); }     // premises, businesses, the bank (RtsCommerce.h); null before setup
-    Arsenal* arsenal() const { return arsenal_.get(); }        // the hero's weapons, ammo, crates, money (RtsArsenal.h); null before setup
-    Traffic* traffic() const { return traffic_.get(); }        // city traffic: AI cars, signals, pedestrians (RtsTraffic.h); null before setup
-    Driving* driving() const { return driving_.get(); }        // vehicles the hero drives (RtsDriving.h); null before setup
-    TopDown* topDown() const { return topDown_.get(); }        // top-down heroes (RtsTopDown.h); null before setup
-    Progression* progression() const { return progression_.get(); }   // in-match progression (RtsProgression.h); inactive without rules "progression"
-    Encounters* encounters() const { return encounters_.get(); }   // boss encounters (RtsEncounters.h); null before setup
-    Environment* environment() const { return env_ && env_->active() ? env_.get() : nullptr; }   // map environment (RtsEnv.h); null without one
+    GridFields* gridFields() const { return fields_.get(); }  // grid fields (GridFields.h); null before setup
+    Raid* raid() const { return raid_.get(); }                // extraction raids (Raid.h); inactive without rules "raid"
+    Prompts* prompts() const { return prompts_.get(); }        // script choice menus (Prompts.h); null before setup
+    Sensors* sensors() const { return sensors_ && sensors_->active() ? sensors_.get() : nullptr; }      // radar / sonar / jammers (Sensors.h)
+    FieldOps* fieldOps() const { return fieldOps_ && fieldOps_->active() ? fieldOps_.get() : nullptr; }  // repair, reclaim, stockpiles... (FieldOps.h)
+    Career* career() const { return career_.get(); }           // career ladders and perks (Career.h); null before setup
+    Commerce* commerce() const { return commerce_.get(); }     // premises, businesses, the bank (Commerce.h); null before setup
+    Arsenal* arsenal() const { return arsenal_.get(); }        // the hero's weapons, ammo, crates, money (Arsenal.h); null before setup
+    Traffic* traffic() const { return traffic_.get(); }        // city traffic: AI cars, signals, pedestrians (Traffic.h); null before setup
+    Driving* driving() const { return driving_.get(); }        // vehicles the hero drives (Driving.h); null before setup
+    TopDown* topDown() const { return topDown_.get(); }        // top-down heroes (TopDown.h); null before setup
+    Progression* progression() const { return progression_.get(); }   // in-match progression (Progression.h); inactive without rules "progression"
+    Encounters* encounters() const { return encounters_.get(); }   // boss encounters (Encounters.h); null before setup
+    Environment* environment() const { return env_ && env_->active() ? env_.get() : nullptr; }   // map environment (Environment.h); null without one
     const NativeModules& native() const { return native_; }   // native modules of this game (hooks: docs/native-modules.md)
     // The map the simulation was set up from when the map had a "generate" block (nullptr otherwise):
     // presentation reads terrainMaterial / heights / regions from it (agent-terrain-gen).
     const Json* generatedMap() const { return generated_.isObject() ? &generated_ : nullptr; }
-    GameState& state(Simulation& sim) { return *sim.world().resource<GameState>(); }
+    using GameHost::state;
 
     // ---- queries shared with AI, client and editor
     Entity spawn(Simulation& sim, uint16_t type, uint8_t owner, Vec3 pos, bool underConstruction = false);
@@ -426,7 +427,7 @@ private:
     void initProjectileProgram(Simulation& sim, Projectile& p, Vec3 start) const;
     int liveResult(Simulation& sim);                 // the result the state shows now (result(): frozen once decided)
     void freezeOutcome(Simulation& sim);             // "outcome" system: latches the first result + its report blob
-    friend class Arsenal;   // free fire launches weapon projectile programs at a point (RtsArsenal.cpp)
+    friend class Arsenal;   // free fire launches weapon projectile programs at a point (Arsenal.cpp)
     void bakeProjectileProgram(Projectile& p, const ProjectileFlight& f) const;
     void sysProjectilePrograms(Simulation& sim, const std::vector<Entity>& projectiles);
     // skill objects (RtsSkillObjects.cpp): objects spawned from units, goals, magnets, death payloads
@@ -546,7 +547,7 @@ private:
     std::unique_ptr<TopDown> topDown_;     // rules "topDown" (state: TopDownStore resource)
     std::unique_ptr<Progression> progression_;   // rules "progression" (state: ProgressionStore resource)
     std::unique_ptr<Encounters> encounters_;   // rules "encounters" (state: EncounterStore resource)
-    std::unique_ptr<Environment> env_;     // map environment (RtsEnv.h; state: EnvState resource)
+    std::unique_ptr<Environment> env_;     // map environment (Environment.h; state: EnvState resource)
     std::vector<NativeDefinition> nativeDefinitions_;
     std::vector<Entity> mapPlaced_;
     NativeModules native_;

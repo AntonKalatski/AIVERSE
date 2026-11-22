@@ -29,7 +29,7 @@ void RtsModule::sysTargeting(Simulation& sim) {
         if (auto* sh = w.tryGet<Shield>(t)) left += sh->value;
         return it->second >= left;
     };
-    // radar targeting (rules radar.targeting, RtsSensors.cpp): acquire up to weapon range what the side sees or tracks
+    // radar targeting (rules radar.targeting, Sensors.cpp): acquire up to weapon range what the side sees or tracks
     Sensors* sensors = this->sensors();
     const bool radarAcq = sensors && sensors->radarTargeting();
     if (radarAcq) sensors->beginTargeting(sim);
@@ -158,7 +158,7 @@ void RtsModule::sysWeapons(Simulation& sim) {
             if (!m->moving || (sim.tick() + e.index) % 20 == 0) moveTo(sim, e, tp, range);
             return;
         }
-        // in range: stop and shoot; top-down squad followers keep walking to their slot while they fire (RtsTopDown.cpp)
+        // in range: stop and shoot; top-down squad followers keep walking to their slot while they fire (TopDown.cpp)
         if (c.autoTarget && ord && ord->queue.empty() && m && m->moving && dist <= range && !(u.flags & kUnitFollower)) stopMoving(sim, e);
         Vec3 face = flat(tp - tr.pos);
         if (face.length().raw > 0) u.facing = face / face.length();
@@ -182,7 +182,7 @@ void RtsModule::sysWeapons(Simulation& sim) {
             c.cooldown[i] = wd.cooldown;
             sim.emit({kEvAttack, o.player, e, c.target, int64_t(i), tr.pos});
             const bool prog = progression_ && progression_->active();
-            if (prog) progression_->onShot(sim, e);   // perks that fire on every Nth shot (RtsProgression.cpp)
+            if (prog) progression_->onShot(sim, e);   // perks that fire on every Nth shot (Progression.cpp)
             const int volley = prog ? progression_->fireCount(sim, e) : 1;   // fireCount stat: bullets per shot
             // shooting uphill can miss (StarCraft); the roll uses the shared deterministic RNG
             // (a full level or more below: the whole chance; less on a heightfield slope: proportionally less)
@@ -341,7 +341,7 @@ bool RtsModule::canCast(Simulation& sim, Entity caster, int index) const {
         if (st && st->busyUntil > sim.tick()) return false;
         if (st && a.chargesMax > 0) return st->charges[index] > 0;
     }
-    if (fieldOps_ && fieldOps_->active() && !fieldOps_->castReady(sim, caster, index)) return false;   // stockpile charge (RtsFieldOps.cpp)
+    if (fieldOps_ && fieldOps_->active() && !fieldOps_->castReady(sim, caster, index)) return false;   // stockpile charge (FieldOps.cpp)
     return !st || st->readyAt[index] <= sim.tick();
 }
 

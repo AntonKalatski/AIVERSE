@@ -1,4 +1,4 @@
-// The `raid` table of the scripting API (extraction raids, RtsRaid.h). Queries in simulation and view scripts,
+// The `raid` table of the scripting API (extraction raids, Raid.h). Queries in simulation and view scripts,
 // actions in simulation scripts only. Events: on("raid_phase" | "raid_point" | "raid_channel" | "raid_extracted" |
 // "raid_loot" | "raid_interact" | "raid_objective" | "raid_player", fn); veto hook: raid_can_extract(player, point_id).
 // Reference: docs/raid.md (keep scriptApiReference() in RtsScriptApi.cpp in sync).

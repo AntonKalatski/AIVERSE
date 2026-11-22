@@ -695,7 +695,7 @@ bool commandParam(lua_State* L, Vm& vm, int t, Command& c) {
         ok = res(a) && num("reward", b, 0);
         if (ok && !field("param")) c.param = a | b << 8;
         break;
-    case kCmdTopDown: {   // hero stick (RtsTopDown.h): angle / aim_angle in binary turns (0..65535, 0 = +z), magnitude per mille
+    case kCmdTopDown: {   // hero stick (TopDown.h): angle / aim_angle in binary turns (0..65535, 0 = +z), magnitude per mille
         ok = num("angle", a, 0) && num("magnitude", b, 0) && num("aim_angle", d, 0);
         topdown::Input in;
         in.moveAngle = int32_t(a & 0xFFFF); in.moveMag = int32_t(std::clamp<int64_t>(b, 0, topdown::kMagMax)); in.aimAngle = int32_t(d & 0xFFFF);
@@ -704,7 +704,7 @@ bool commandParam(lua_State* L, Vm& vm, int t, Command& c) {
         if (ok && !field("param")) c.param = topdown::pack(in);
         break;
     }
-    case kCmdProgression: {   // level-up offers (RtsProgression.h): op = "choose" | "reroll" | "close" | "open", card (1-based), revision
+    case kCmdProgression: {   // level-up offers (Progression.h): op = "choose" | "reroll" | "close" | "open", card (1-based), revision
         int64_t op = kProgChoose;
         if (field("op")) {
             const char* o = lua_tostring(L, -1);
@@ -1524,7 +1524,7 @@ void openGameApi(Vm& vm) {
     openDrivingApi(vm);    // vehicles (RtsDrivingApi.cpp)
     openServicesApi(vm);   // traffic services (RtsServicesApi.cpp)
     openCareerApi(vm);     // career ladders (RtsCareerApi.cpp)
-    openPromptApi(vm);     // script choice menus (RtsPrompt.cpp)
+    openPromptApi(vm);     // script choice menus (Prompts.cpp)
 }
 
 } // namespace script

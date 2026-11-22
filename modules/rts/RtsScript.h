@@ -37,6 +37,7 @@
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
 #include "../../engine/game/Components.h"
+#include "../../engine/game/ScriptHooks.h"
 
 namespace aiverse { class Simulation; class Hasher; struct Command; }
 
@@ -125,7 +126,7 @@ enum class StdFn : uint8_t { Victory, Waves, Triggers, AutoBuild, Sell, Count };
 
 // The simulation VM of one match (owned by RtsModule). It always runs the standard library;
 // game scripts (rules/map "scripts") are loaded on top.
-class ScriptEngine {
+class ScriptEngine : public ScriptHooks {
 public:
     explicit ScriptEngine(RtsModule& module);
     ~ScriptEngine();

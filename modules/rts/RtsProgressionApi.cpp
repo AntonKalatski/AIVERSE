@@ -1,4 +1,4 @@
-// The `progression` table of the scripting API (in-match progression, RtsProgression.h). Queries in simulation and
+// The `progression` table of the scripting API (in-match progression, Progression.h). Queries in simulation and
 // view scripts (HUD: xp bar, level, the level-up cards), actions in simulation scripts only. Events:
 // on("progression_xp" | "progression_level" | "progression_offer" | "progression_perk" | "progression_recruit" |
 // "progression_orb" | "progression_summon", fn); offer veto hook: progression_can_offer(player, perk_key | "recruit:<type>").

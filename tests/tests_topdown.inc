@@ -1,6 +1,6 @@
-// Top-down heroes (rules "topDown", RtsTopDown.h; client model TopDownControls.h): input packing, movement, walls,
+// Top-down heroes (rules "topDown", TopDown.h; client model TopDownControls.h): input packing, movement, walls,
 // unit bodies, auto-fire / aim policy, abilities, bots, determinism, saves and rollback snapshots.
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/TopDown.h"
 #include "modules/rts/view/TopDownControls.h"
 #include "modules/rts/view/TopDownPrediction.h"
 

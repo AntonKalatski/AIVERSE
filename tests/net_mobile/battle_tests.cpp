@@ -12,7 +12,7 @@
 #include "apps/battle/HeroDuel.h"
 #include "apps/battle/RtsBattle.h"
 #include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/TopDown.h"
 #include "engine/net/BattleJoin.h"
 #include "engine/net/HeroInput.h"
 #include "engine/net/Conn.h"

@@ -1602,7 +1602,7 @@ altitude yet.
 
 ## Radar, sonar and jammers
 
-Type keys (all optional; `modules/rts/RtsSensors.h`). Radii are in cells.
+Type keys (all optional; `engine/game/Sensors.h`). Radii are in cells.
 
 ```jsonc
 "radar_tower": {"radar": 30, "income": {"energy": -20}},        // enemies inside the circle are contacts of its side
@@ -1626,7 +1626,7 @@ Type keys (all optional; `modules/rts/RtsSensors.h`). Radii are in cells.
 
 ## Field operations
 
-Optional blocks for flow-economy wars (`modules/rts/RtsFieldOps.h`; state in the `FieldOpsStore` resource: hashed,
+Optional blocks for flow-economy wars (`engine/game/FieldOps.h`; state in the `FieldOpsStore` resource: hashed,
 saved). Games without them have no extra system and keep their checksums.
 
 ```jsonc

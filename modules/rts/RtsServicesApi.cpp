@@ -1,11 +1,11 @@
-// The `services` table of the scripting API: state of the traffic services (RtsServiceState.h) for mission and
+// The `services` table of the scripting API: state of the traffic services (ServiceState.h) for mission and
 // view scripts, and the handles scripts use to take a person, a vehicle or a hero over for a while.
 #include "RtsScriptInternal.h"
 #include "RtsInternal.h"
-#include "RtsServiceState.h"
-#include "RtsTraffic.h"
-#include "RtsTopDown.h"
-#include "RtsDriving.h"
+#include "../../engine/game/ServiceState.h"
+#include "../../engine/game/Traffic.h"
+#include "../../engine/game/TopDown.h"
+#include "../../engine/game/Driving.h"
 
 namespace aiverse::game::script {
 
@@ -43,7 +43,7 @@ int sStandIn(lua_State* L, Vm& vm) {
     lua_pushstring(L, s->original < types.size() ? types[s->original].id.c_str() : "");
     return 2;
 }
-// services.custody_car(car) -> phase, prisoner | nil   (phase 0: none; 1 cuffing ... 7 handing over: RtsServiceState.h)
+// services.custody_car(car) -> phase, prisoner | nil   (phase 0: none; 1 cuffing ... 7 handing over: ServiceState.h)
 int sCustodyCar(lua_State* L, Vm& vm) {
     Entity e;
     const CustodyCar* c = trafficOn(vm) && aliveArg(L, vm, 1, e) ? vm.sim->world().tryGet<CustodyCar>(e) : nullptr;

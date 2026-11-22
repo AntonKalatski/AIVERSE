@@ -2,7 +2,7 @@
 // simulation updates with deterministic C++ kernels (decay, diffuse, spread, flow, consume), fed by unit
 // emitters and "field" effects, read by per-cell effects on units (damage, speed, statuses, yield) and by
 // pathing / line of sight / fog. Fire, water, lava, poison gas, creep, influence, noise... are data.
-// Implementation: RtsGridFields.cpp (kernels, store, effects), RtsGridFieldsApi.cpp (Lua `field` table),
+// Implementation: GridFields.cpp (kernels, store, effects), RtsGridFieldsApi.cpp (Lua `field` table),
 // GridFieldData.cpp (parsing). Reference: docs/fields.md.
 //
 // Values are int32 per field cell: "int" fields store integers, "fixed" fields store Q16.16 raw values

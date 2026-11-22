@@ -1,5 +1,5 @@
-// Grid fields (G5, RtsGridFields.h, docs/fields.md): kernels, effects, Lua API, saves, rollback, perf.
-#include "modules/rts/RtsGridFields.h"
+// Grid fields (G5, GridFields.h, docs/fields.md): kernels, effects, Lua API, saves, rollback, perf.
+#include "engine/game/GridFields.h"
 
 namespace {
 // fire + fuel + water + creep on a 48x32 map; a few units for the per-cell effects

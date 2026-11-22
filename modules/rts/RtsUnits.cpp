@@ -485,7 +485,7 @@ bool RtsModule::runOrder(Simulation& sim, Entity e, Order& o) {
     case OrderType::Trade: return runTrade(sim, e, o);
     case OrderType::PickItem: return runPickItem(sim, e, o);
     case OrderType::Merge: return runMerge(sim, e, o);
-    case OrderType::Reclaim: return !fieldOps_ || fieldOps_->runReclaim(sim, e, o);   // RtsFieldOps.cpp
+    case OrderType::Reclaim: return !fieldOps_ || fieldOps_->runReclaim(sim, e, o);   // FieldOps.cpp
     case OrderType::Return: {
         auto* cargo = w.tryGet<Cargo>(e);
         if (!cargo || cargo->res < 0 || cargo->amount.raw <= 0) return true;
@@ -783,10 +783,10 @@ void RtsModule::sysMovement(Simulation& sim) {
     });
 
     if (rules_.dungeon) movePossessed(sim);
-    if (topDown_ && topDown_->active()) topDown_->tick(sim);   // top-down heroes: stick movement, aim, auto-fire (RtsTopDown.cpp)
-    if (traffic_ && traffic_->active()) traffic_->tick(sim);   // traffic cars plan their pedals, pedestrians walk (RtsTraffic.cpp)
-    if (driving_ && driving_->active()) driving_->tick(sim);   // vehicles: controller step, collisions, damage (RtsDriving.cpp)
-    if (arsenal_ && arsenal_->active()) arsenal_->tick(sim);   // the hero's weapons: crates, free fire along the aim (RtsArsenal.cpp)
+    if (topDown_ && topDown_->active()) topDown_->tick(sim);   // top-down heroes: stick movement, aim, auto-fire (TopDown.cpp)
+    if (traffic_ && traffic_->active()) traffic_->tick(sim);   // traffic cars plan their pedals, pedestrians walk (Traffic.cpp)
+    if (driving_ && driving_->active()) driving_->tick(sim);   // vehicles: controller step, collisions, damage (Driving.cpp)
+    if (arsenal_ && arsenal_->active()) arsenal_->tick(sim);   // the hero's weapons: crates, free fire along the aim (Arsenal.cpp)
 
     if (rules_.movement.separation) {
     // 2) separation between overlapping mobile units on the same layer. Bodies are move.radius; who yields

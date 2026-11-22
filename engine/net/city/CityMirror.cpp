@@ -1,9 +1,9 @@
 #include "CityMirror.h"
 #include <cmath>
 #include "engine/net/HeroInput.h"
-#include "modules/rts/RtsCommerce.h"
+#include "engine/game/Commerce.h"
 #include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/TopDown.h"
 
 namespace aiverse::net::city {
 namespace {

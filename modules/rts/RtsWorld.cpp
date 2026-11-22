@@ -1,7 +1,7 @@
 // World rules (vision: RtsVision.cpp): creep, control points / flags / regions, tickets,
 // neutral creeps and wanderers (waves and victory conditions: lua/waves.lua, lua/victory.lua).
 #include "RtsInternal.h"
-#include "RtsEncounters.h"
+#include "../../engine/game/Encounters.h"
 #include <algorithm>
 
 namespace aiverse::game {
@@ -115,7 +115,7 @@ void RtsModule::sysNeutrals(Simulation& sim) {
         const UnitType& t = rules_.types[u.type];
         auto* m = w.tryGet<Mobile>(e);
         if (!m) return;
-        if (enc && encounters_->drives(w.get<Owner>(e).player, u.type)) return;   // rules "encounters" walk it (RtsEncounters.cpp)
+        if (enc && encounters_->drives(w.get<Owner>(e).player, u.type)) return;   // rules "encounters" walk it (Encounters.cpp)
         Fixed fromHome = dist2D(tr.pos, g.home);
         if (t.wanders) {
             if (!m->moving && sim.tick() >= g.nextWander) {

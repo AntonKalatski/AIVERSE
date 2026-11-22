@@ -1,8 +1,8 @@
-// The `career` table of the scripting API (RtsCareer.h, docs/careers.md). Queries in simulation and view scripts,
+// The `career` table of the scripting API (Career.h, docs/careers.md). Queries in simulation and view scripts,
 // join / leave / add in simulation scripts only.
 #include "RtsScriptInternal.h"
 #include "RtsInternal.h"
-#include "RtsCareer.h"
+#include "../../engine/game/Career.h"
 
 namespace aiverse::game::script {
 

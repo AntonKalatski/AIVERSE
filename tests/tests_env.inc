@@ -1,6 +1,6 @@
-// Map environment (RtsEnv.h, docs/game-format.md § Map environment): weather, wind, zones, trample fields, auto
+// Map environment (Environment.h, docs/game-format.md § Map environment): weather, wind, zones, trample fields, auto
 // skills on splines, fog options, saves and determinism; gameplay hooks of native modules (docs/native-modules.md).
-#include "modules/rts/RtsEnv.h"
+#include "engine/game/Environment.h"
 
 namespace {
 const char* kEnvRules = R"J({

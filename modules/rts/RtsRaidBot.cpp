@@ -1,4 +1,4 @@
-// Raid bot (RtsRaid.h): required objectives first, then loot while the clock allows, then the nearest usable
+// Raid bot (Raid.h): required objectives first, then loot while the clock allows, then the nearest usable
 // extraction point (calling it when it waits for a call). It reads the state and submits Commands only.
 #include "RtsInternal.h"
 #include <algorithm>
@@ -17,7 +17,7 @@ void raidBotThink(Simulation& sim, RtsModule& m, uint8_t player) {
     RaidStore* st = raid->store(sim);
     RaidPlayer* p = st ? st->find(player) : nullptr;
     World& w = sim.world();
-    // a top-down hero ignores move / attack orders: steer its stick instead (kCmdTopDown, RtsTopDown.cpp)
+    // a top-down hero ignores move / attack orders: steer its stick instead (kCmdTopDown, TopDown.cpp)
     TopDown* td = m.topDown();
     const Entity myHero = td && td->active() ? td->heroOf(sim, player) : kNullEntity;
     auto steer = [&](Vec3 goal, Fixed stand) {

@@ -54,7 +54,7 @@ void screenToWorld(float sx, float sy, float yaw, float& wx, float& wz) {
     wx = rightX * sx - fwdX * sy;
     wz = rightZ * sx - fwdZ * sy;
 }
-int32_t binaryAngle(float wx, float wz) {   // 0 = +z, a quarter turn = +x (RtsTopDown.h)
+int32_t binaryAngle(float wx, float wz) {   // 0 = +z, a quarter turn = +x (TopDown.h)
     float t = std::atan2(wx, wz) / (2 * kPi);
     if (t < 0) t += 1;
     return int32_t(std::lround(t * 65536.0f)) & 0xFFFF;

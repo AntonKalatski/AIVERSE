@@ -1,7 +1,7 @@
 // Hero weapon adapter for packaged clients built without the "arsenal" engine module
 // (packaging.engineModules, CMake AIVERSE_GAME_WITH_ARSENAL=OFF). The arsenal stays inactive, exactly
 // like rules without "arsenal"; rules with that block fail at match start with a readable error.
-#include "../RtsArsenal.h"
+#include "../../../engine/game/Arsenal.h"
 #include <stdexcept>
 
 namespace aiverse::game {

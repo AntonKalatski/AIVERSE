@@ -1,6 +1,6 @@
 #include "RtsAI.h"
 #include "RtsAITerrain.h"
-#include "RtsProgression.h"
+#include "../../engine/game/Progression.h"
 #include <algorithm>
 #include <vector>
 #include <cstdio>
@@ -50,8 +50,8 @@ void RtsAI::update(Simulation& sim) {
     auto* gs = sim.world().resource<GameState>();
     if (m->rules().mech.turns && !mechTurnAI(sim, *m)) return;   // agent-mech TB: act only on its own turn
     if (std::find(gs->wavePlayers.begin(), gs->wavePlayers.end(), player_) != gs->wavePlayers.end()) return; // scripted side
-    if (Progression* pg = m->progression(); pg && pg->active()) { Command c; if (pg->botCommand(sim, player_, c)) send(sim, c); }   // level-up offers (RtsProgression.cpp)
-    if (auto* enc = m->encounters(); enc && enc->active() && enc->monsterPlayer(player_)) return;   // monsters: driven by RtsEncounters.cpp
+    if (Progression* pg = m->progression(); pg && pg->active()) { Command c; if (pg->botCommand(sim, player_, c)) send(sim, c); }   // level-up offers (Progression.cpp)
+    if (auto* enc = m->encounters(); enc && enc->active() && enc->monsterPlayer(player_)) return;   // monsters: driven by Encounters.cpp
     if (Raid* raid = m->raid(); raid && raid->active() && raid->store(sim)->find(player_)) { raidBotThink(sim, *m, player_); return; }   // RtsRaidBot.cpp
     bool hasGarrisons = false, hasOther = false;
     sim.world().each<Unit, Owner>([&](Entity e, Unit& u, Owner& o) {
@@ -64,7 +64,7 @@ void RtsAI::update(Simulation& sim) {
     if (m->rules().fidelity && hasOther) fidelity(sim, *m);
     if (hasGarrisons) garrisonPlay(sim, *m);
     if (hasOther) {
-        if (auto* td = m->topDown(); td && td->active()) {   // hero stick (RtsTopDown.cpp); opt-in: progression goals first
+        if (auto* td = m->topDown(); td && td->active()) {   // hero stick (TopDown.cpp); opt-in: progression goals first
             Command c;
             Vec3 g; Fixed s;
             Progression* pg = td->rules().botProgression ? m->progression() : nullptr;   // rules topDown.bot.progression
@@ -671,7 +671,7 @@ void RtsAI::economy(Simulation& sim, RtsModule& m) {
         for (auto& [n, ti] : cands) if (build(sim, m, uint16_t(ti))) return;
     }
     const bool buildOk = canBuildNow && !holdForArmy;
-    // 1d) games with radar (RtsSensors.h): one radar structure once the base runs - contacts for long-range guns
+    // 1d) games with radar (Sensors.h): one radar structure once the base runs - contacts for long-range guns
     if (const Sensors* sn = m.sensors(); sn && buildOk && sim.tick() > 150 * sim.tickRate()) {
         int have = 0, pick = -1;
         for (size_t ti = 0; ti < R.types.size(); ++ti) {

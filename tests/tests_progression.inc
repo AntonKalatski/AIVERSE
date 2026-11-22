@@ -1,7 +1,7 @@
-// In-match progression on real units (rules "progression", RtsProgression.h; match-progression library package):
+// In-match progression on real units (rules "progression", Progression.h; match-progression library package):
 // kills -> xp orbs -> pickup -> level-up offer -> command / bot choice, perk stats on the unit pipelines, bullet perks
 // through the projectile programs, on-hit payloads, recruits + summon circles, determinism, saves, rollback, Lua.
-#include "modules/rts/RtsProgression.h"
+#include "engine/game/Progression.h"
 
 namespace {
 const char* kProgRules = R"J({

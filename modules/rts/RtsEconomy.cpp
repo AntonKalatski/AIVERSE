@@ -72,7 +72,7 @@ void RtsModule::sysEconomy(Simulation& sim) {
         if (!off) for (auto& a : t.income) p.income[a.res] += mechOn(sim) ? a.value * mechIncomeMult(sim, e) : a.value;
     });
     if (rules_.dungeon) roomEconomy(sim); // painted rooms add supply, storage, capacity and income per cell
-    if (fieldOps_ && fieldOps_->active()) fieldOps_->economy(sim);   // ambient income: wind, tide (RtsFieldOps.cpp)
+    if (fieldOps_ && fieldOps_->active()) fieldOps_->economy(sim);   // ambient income: wind, tide (FieldOps.cpp)
     if (rules_.originals) economyOriginals(sim); // power fields, upkeep per resource / on income, territory income
     for (size_t pi = 1; pi < gs.players.size(); ++pi) {
         auto& p = gs.players[pi];

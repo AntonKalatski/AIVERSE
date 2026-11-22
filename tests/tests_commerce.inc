@@ -1,6 +1,6 @@
-// Commerce (rules "commerce", RtsCommerce.h): renting and buying premises, businesses, daily income, weekly rent
+// Commerce (rules "commerce", Commerce.h): renting and buying premises, businesses, daily income, weekly rent
 // and loan instalments, the credit limit, eviction, foreclosure, saves and the Lua table.
-#include "modules/rts/RtsCommerce.h"
+#include "engine/game/Commerce.h"
 
 namespace {
 const char* kCommerceRules = R"J({

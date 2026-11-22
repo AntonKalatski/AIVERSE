@@ -23,8 +23,8 @@
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/RtsScript.h"
 #include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsTopDown.h"
-#include "modules/rts/RtsTraffic.h"
+#include "engine/game/TopDown.h"
+#include "engine/game/Traffic.h"
 
 using namespace aiverse;
 namespace city = aiverse::net::city;

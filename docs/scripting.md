@@ -336,7 +336,7 @@ read and write them: `field.get(id, x, z [, player])`, `field.set` / `field.add`
 
 ## The `services` table (traffic services)
 
-State of the city services (`traffic.services`, RtsServiceState.h) and the handles a script uses to take a person,
+State of the city services (`traffic.services`, ServiceState.h) and the handles a script uses to take a person,
 a vehicle or a hero over for a while. Queries work in view scripts too; the actions only in simulation scripts.
 
 | Query | Returns |

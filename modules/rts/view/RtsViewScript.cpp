@@ -7,7 +7,7 @@
 #include <algorithm>
 #include "../RtsModule.h"
 #include "../RtsScriptInternal.h"
-#include "../RtsProgression.h"
+#include "../../../engine/game/Progression.h"
 
 namespace aiverse::game {
 using namespace script;
@@ -781,7 +781,7 @@ int vSend(lua_State* L, Vm& vm) {
     return 1;
 }
 // view.progression_choose(card) / view.progression_reroll(): the local player's level-up card (rules "progression",
-// RtsProgression.h) as a kCmdProgression command for the open offer's revision; a stale click is ignored by the sim.
+// Progression.h) as a kCmdProgression command for the open offer's revision; a stale click is ignored by the sim.
 int vProgressionCmd(lua_State* L, Vm& vm, int64_t op) {
     auto& im = viewOf(vm);
     Progression* pg = vm.module ? vm.module->progression() : nullptr;

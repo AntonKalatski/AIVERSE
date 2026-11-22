@@ -1,8 +1,8 @@
-// Boss encounters (rules "encounters", RtsEncounters.h over the boss-encounters library): parsing and errors,
+// Boss encounters (rules "encounters", Encounters.h over the boss-encounters library): parsing and errors,
 // boss phases / patterns / adds / enrage on real units, telegraph strikes -> damage + rules statuses + immunity,
 // ability-bound attacks, mob wander / hunt / flee orders, the personal boss schedule, determinism, saves, rollback,
 // games without the block untouched, and the Golem Pit sample to a result.
-#include "modules/rts/RtsEncounters.h"
+#include "engine/game/Encounters.h"
 #include "modules/rts/RtsAI.h"
 
 namespace {

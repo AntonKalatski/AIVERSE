@@ -11,8 +11,8 @@
 #include "engine/render/CameraModelSnapshot.h"
 #include "../../../engine/data/JsonCompose.h"
 #include "../RtsModule.h"
-#include "../RtsArsenal.h"
-#include "../RtsTopDown.h"
+#include "../../../engine/game/Arsenal.h"
+#include "../../../engine/game/TopDown.h"
 #include "imgui.h"
 #include "../../../engine/platform/Platform.h"
 
@@ -1817,7 +1817,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         territoryTeamTypes[type] = uint8_t(R.types[type].view.getBool("teamFromTerritory", false));
     auto* arsenal = m->arsenal();
     auto* topDown = m->topDown();
-    // radar / sonar contacts of the viewer outside its sight: drawn as blips (RtsSensors.h)
+    // radar / sonar contacts of the viewer outside its sight: drawn as blips (Sensors.h)
     std::vector<Entity> blips;
     if (Sensors* sn = m->sensors(); sn && viewer != 0) { blips = sn->blips(sim, viewer); std::sort(blips.begin(), blips.end(), [](Entity a, Entity b) { return a.index < b.index; }); }
     w.each<Unit, Owner, Transform>([&](Entity e, Unit& u, Owner& o, Transform& t) {

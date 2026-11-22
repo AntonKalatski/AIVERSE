@@ -1,4 +1,4 @@
-// The `encounters` table of the scripting API (boss encounters, RtsEncounters.h). Queries in simulation and view
+// The `encounters` table of the scripting API (boss encounters, Encounters.h). Queries in simulation and view
 // scripts, actions in simulation scripts only. Events: on("boss_engaged" | "boss_phase" | "boss_enraged" |
 // "boss_adds" | "boss_defeated" | "boss_window" | "telegraph_start" | "telegraph_strike" | "telegraph_end", fn);
 // statuses an attack applies arrive as the ordinary "status_start". Reference: docs/encounters.md (keep

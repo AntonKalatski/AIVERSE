@@ -1,5 +1,5 @@
 // Commands, events and the ECS components of the game simulation (units, orders, combat, production, abilities,
-// statuses, needs, lanes ...). Rules data: GameData.h. The simulation that runs on them: modules/rts (RtsModule).
+// statuses, needs, lanes ...). Rules data: GameData.h. The simulation that runs on them: modules/rts (GameHost).
 #pragma once
 #include <cstdint>
 #include <string>
@@ -72,19 +72,19 @@ enum CommandType : uint16_t {
     kCmdLock,         // gates / doors: param 1 lock (closed for everyone), 2 unlock, 0 toggle
     kCmdEndTurn,      // turn-based mode: the active player ends the turn
     kCmdScript,       // rules "commands" (RtsScript.h): param = command index, args = encoded arguments, units = selection
-    kCmdRaid,         // extraction raids (RtsRaid.h): param = RaidOp | point index << 8 (call: -1 = nearest)
-    // in-match progression (rules "progression", RtsProgression.h)
+    kCmdRaid,         // extraction raids (Raid.h): param = RaidOp | point index << 8 (call: -1 = nearest)
+    // in-match progression (rules "progression", Progression.h)
     kCmdProgression,  // no units; param = ProgressionOp | card index << 8 | offer revision << 16 (choose / reroll / close / open)
-    kCmdTopDownEnter,   // no units (rules "driving", RtsDriving.h): the hero gets into the nearest free vehicle / out of his car
-    kCmdCommerce,       // no units (rules "commerce", RtsCommerce.h): param = commercePack(op, premises, value)
-    kCmdTopDownWeapon,  // no units (rules "arsenal", RtsArsenal.h): param kWeaponNext / kWeaponPrev, or kWeaponSlot + slot
-    kCmdCareer,         // no units (rules "careers", RtsCareer.h): param = careerPack(op, career); open careers only
-    kCmdPrompt,         // no units (rules "prompts", RtsPrompt.h): param = option picked (0-based), -1 = the interact key
-    // field operations (RtsFieldOps.h)
+    kCmdTopDownEnter,   // no units (rules "driving", Driving.h): the hero gets into the nearest free vehicle / out of his car
+    kCmdCommerce,       // no units (rules "commerce", Commerce.h): param = commercePack(op, premises, value)
+    kCmdTopDownWeapon,  // no units (rules "arsenal", Arsenal.h): param kWeaponNext / kWeaponPrev, or kWeaponSlot + slot
+    kCmdCareer,         // no units (rules "careers", Career.h): param = careerPack(op, career); open careers only
+    kCmdPrompt,         // no units (rules "prompts", Prompts.h): param = option picked (0-based), -1 = the interact key
+    // field operations (FieldOps.h)
     kCmdRepair,         // builders; target = damaged own / allied unit (rules "repair" units: mobile ones too)
     kCmdReclaim,        // builders; target = resource node (gather) or a unit to take apart (rules "reclaim")
     kCmdSelfDestruct,   // units: arm the countdown (rules "selfDestruct"); again: disarm
-    // top-down heroes (rules "topDown", RtsTopDown.h). Engine-reserved hero ids (engine/net/HeroInput.h: net::kCmdHeroInput / kCmdHeroAbility), so hosted battles,
+    // top-down heroes (rules "topDown", TopDown.h). Engine-reserved hero ids (engine/net/HeroInput.h: net::kCmdHeroInput / kCmdHeroAbility), so hosted battles,
     // the battle load test and every top-down game share one command scheme.
     kCmdTopDown = 0xF100, // no units; param = topdown::pack(Input): sticky move vector / aim / fire of the player's hero
     kCmdTopDownAbility,   // no units; param = topdown::abilityParam(Ability) (old clients: the ability index = tap);
@@ -161,7 +161,7 @@ enum GameEvent : uint16_t {
     kEvMorale,          // a = unit, value = 0 steady / 1 wavering / 2 routing (stage 4)
     kEvTurn,            // turn-based mode: player = whose turn starts, value = turn number
     kEvFortified,       // dungeon walls: value = cell, player = new wall owner (0: the wall fell back to plain rock), a = worker
-    // extraction raids (RtsRaid.h, docs/raid.md)
+    // extraction raids (Raid.h, docs/raid.md)
     kEvRaidPhase,       // value = RaidPhase (1 running, 2 over)
     kEvRaidPoint,       // extraction point phase: value = RaidPointPhase | point << 8, pos = centre, player = caller
     kEvRaidChannel,     // player, value = point | RaidChannelEv << 16 (0 start, 1 interrupted), pos = centre
@@ -170,7 +170,7 @@ enum GameEvent : uint16_t {
     kEvRaidInteract,    // player, a = raider, b = object, value = object type | RaidChannelEv << 16 (0 start, 1 interrupted, 2 done)
     kEvRaidObjective,   // player, value = objective | 1 << 16 (completed)
     kEvRaidPlayer,      // player, value = RaidStatus (1 in raid, 2 extracted, 3 dead, 4 timed out, 5 abandoned)
-    // in-match progression (RtsProgression.h, docs/progression.md)
+    // in-match progression (Progression.h, docs/progression.md)
     kEvProgXp,          // player, a = hero, value = xp gained (after the pickupXp stat), pos = hero
     kEvProgLevel,       // player: a level is banked; value = levels banked | level reached << 32
     kEvProgOffer,       // player, value = offer revision | cards << 32 | ProgOfferEv << 40 (0 opened, 1 rerolled, 2 closed, 3 empty)
@@ -178,7 +178,7 @@ enum GameEvent : uint16_t {
     kEvProgRecruit,     // player, a = new ally, value = deck slot, pos
     kEvProgOrb,         // player = collector (0: none), value = xp | ProgOrbEv << 40 (0 spawned, 1 collected, 2 expired, 3 merged), pos
     kEvProgSummon,      // player, a = ally (confirmed / died / expired), value = point id | SummonEventKind << 32, pos = circle centre
-    // boss encounters (rules "encounters", RtsEncounters.h, docs/encounters.md)
+    // boss encounters (rules "encounters", Encounters.h, docs/encounters.md)
     kEvBossEngaged,     // a = boss, b = its target, value = boss type, player = boss owner
     kEvBossPhase,       // a = boss, b = target, value = phase index (0 = first)
     kEvBossEnraged,     // a = boss, b = target, value = boss type
@@ -188,12 +188,12 @@ enum GameEvent : uint16_t {
     kEvTelegraphStart,  // a = caster, b = aimed unit, value = attack index, pos = area origin, player = caster owner
     kEvTelegraphStrike, // a = caster, b = unit struck, value = attack index | damage (whole units) << 16, pos = unit struck
     kEvTelegraphEnd,    // a = caster, value = attack index | 1 << 16 when cancelled (caster died in the windup)
-    kEvEnv,             // map environment (RtsEnv.h): value = EnvEventKind << 16 | data, a / pos per kind (weather, lightning, wind)
+    kEvEnv,             // map environment (Environment.h): value = EnvEventKind << 16 | data, a / pos per kind (weather, lightning, wind)
     kEvModePhase,       // match modes (RtsModes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
     kEvShotEnd,         // a free-fire shot (rules "arsenal") stopped at a wall / its range, or went off (splash): a = shooter, value = weapon index of its type, pos
     kEvAssault,         // a unit assaulted a defended garrison: player = attacker, a = structure, b = the unit, value = defenders lost
     kEvNative,          // emitted by native modules for the view / scripts: value, a, b, pos are the module's (docs/native-modules.md)
-    kEvFieldOp,         // field operations (RtsFieldOps.h): value = FieldOpEvent | data << 8, a = unit, b = projectile (intercepted)
+    kEvFieldOp,         // field operations (FieldOps.h): value = FieldOpEvent | data << 8, a = unit, b = projectile (intercepted)
 };
 // kEvModePhase values
 enum ModePhaseEvent : int64_t { kModeSdCounter = 1, kModeSdPreview, kModeSdStart, kModeSdEnd, kModeTimeStep, kModeTimeUp,
@@ -205,7 +205,7 @@ enum UnitFlags : uint16_t { kUnitHold = 1, kUnitUnderConstruction = 2, kUnitDisa
                           kUnitInTransit = 64 /*between bodies (set together with kUnitInHand: off every surface)*/,
                           kUnitInCargo = 128 /*inside a transport: off the map (agent-mech)*/,
                           kUnitInfected = 256 /*killed by an infecting unit: rises as the infect type (originals)*/,
-                          kUnitFollower = 512 /*top-down squad member: follows its hero, not RTS orders / AI (RtsTopDown.cpp)*/ };
+                          kUnitFollower = 512 /*top-down squad member: follows its hero, not RTS orders / AI (TopDown.cpp)*/ };
 constexpr uint16_t kUnitOffMap = kUnitInHand | kUnitInCargo;
 // Mask for clearing unit flags. Clearing used to go through uint8_t masks, which also dropped kUnitInfected; that
 // stays exactly as it was (checksums), while kUnitFollower (and later high flags) survive.
@@ -233,7 +233,7 @@ enum class OrderType : uint8_t { Move, AttackMove, Attack, Patrol, Gather, Retur
                                  Trade,      // trader loop between its markets (Trader component)
                                  PickItem,   // walk to `point` and pick up the ground item there
                                  Merge,      // walk to `target` and merge with it
-                                 Reclaim };  // take the unit `target` apart for its cost (RtsFieldOps.cpp)
+                                 Reclaim };  // take the unit `target` apart for its cost (FieldOps.cpp)
 
 struct Order {
     OrderType type = OrderType::Move;

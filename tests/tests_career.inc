@@ -1,6 +1,6 @@
-// Careers (rules "careers", RtsCareer.h): ladders, ranks and perks, several careers at once, open careers by
+// Careers (rules "careers", Career.h): ladders, ranks and perks, several careers at once, open careers by
 // command and closed ones by script only, saves, the Lua table; fines of the commerce module.
-#include "modules/rts/RtsCareer.h"
+#include "engine/game/Career.h"
 
 namespace {
 const char* kCareerRules = R"J({

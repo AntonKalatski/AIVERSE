@@ -254,7 +254,7 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
-# the race adapter. The grid-map host (modules/rts/RtsDriving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
+# the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (modules/fps/FpsVehicles.cpp)
 # only implement its world queries.
 add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
 add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
@@ -2240,39 +2240,39 @@ if(NOT MSVC)
     set_source_files_properties(modules/rts/RtsScriptIeee.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 # grid fields (G5): data, kernels, Lua `field` table (docs/fields.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp engine/game/GridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/GridFields.cpp engine/game/GridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
-target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp engine/game/RaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp modules/rts/RtsPrompt.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Raid.cpp engine/game/RaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp engine/game/Prompts.cpp modules/rts/RtsPromptApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
-    modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
+    modules/rts/disabled/Commerce.cpp engine/game/Commerce.cpp modules/rts/RtsCommerceApi.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_CAREERS "Include career ladders (rules \"careers\")"
-    modules/rts/disabled/Career.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsSensors.cpp modules/rts/RtsFieldOps.cpp)   # radar / sonar / jammers, field operations
+    modules/rts/disabled/Career.cpp engine/game/Career.cpp modules/rts/RtsCareerApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Sensors.cpp engine/game/FieldOps.cpp)   # radar / sonar / jammers, field operations
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsTopDown.cpp)
+target_sources(aiverse_game PRIVATE engine/game/TopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsProgression.cpp engine/game/ProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Progression.cpp engine/game/ProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
 # boss encounters (agent-df-encounters-glue): rules "encounters" over the boss-encounters library package (docs/encounters.md)
 aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules \"encounters\")"
-    modules/rts/disabled/Encounters.cpp modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
+    modules/rts/disabled/Encounters.cpp engine/game/Encounters.cpp modules/rts/RtsEncountersApi.cpp)
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsMapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
 # map environment (weather, wind, zones, trample fields, auto skills on splines, fog options)
-target_sources(aiverse_game PRIVATE modules/rts/RtsEnv.cpp modules/rts/RtsEnvData.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Environment.cpp engine/game/EnvironmentData.cpp)
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Driving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp engine/game/RoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_ARSENAL "Include hero weapons (rules \"arsenal\")"
-    modules/rts/disabled/Arsenal.cpp modules/rts/RtsArsenal.cpp)
+    modules/rts/disabled/Arsenal.cpp engine/game/Arsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
 aiverse_game_module(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"traffic\") in the simulation"
     modules/rts/disabled/Traffic.cpp
-    modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+    engine/game/Traffic.cpp engine/game/TrafficCity.cpp engine/game/TrafficPopulation.cpp engine/game/TrafficCommute.cpp engine/game/TrafficGangs.cpp)
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficRoads.cpp)
+target_sources(aiverse_game PRIVATE engine/game/TrafficRoads.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_roads)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
 target_sources(aiverse_game PRIVATE modules/rts/view/RtsWater.cpp)

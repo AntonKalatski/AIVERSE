@@ -6,7 +6,7 @@
 // entity index) become half-plane constraints on its velocity; the 2D linear program (RVO2's
 // linearProgram1/2/3) picks the velocity closest to the preferred one. Cost is O(agents * K^2).
 #include "RtsInternal.h"
-#include "RtsDriving.h"
+#include "../../engine/game/Driving.h"
 #include <aiverselib/SweptShapes.h>
 #include <algorithm>
 
@@ -130,7 +130,7 @@ void RtsModule::moveAgents(Simulation& sim) {
     std::vector<int32_t> byIndex;
     w.each<Mobile, Unit, Transform>([&](Entity e, Mobile& m, Unit& u, Transform& tr) {
         if (u.flags & kUnitOffMap) return;
-        if (u.flags & kUnitPossessed) {   // top-down heroes (RtsTopDown.cpp) are moving obstacles; other possessed units are ignored
+        if (u.flags & kUnitPossessed) {   // top-down heroes (TopDown.cpp) are moving obstacles; other possessed units are ignored
             Vec3 hv;
             if (!topDown_ || !topDown_->active() || !topDown_->heroVelocity(sim, e, hv)) return;
             if (byIndex.size() <= e.index) byIndex.resize(e.index + 1, -1);

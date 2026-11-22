@@ -578,7 +578,7 @@ void RtsModule::applyEffect(Simulation& sim, const EffectDef& e, int list, int i
         }
         break;
     }
-    case EffectKind::Field:    // grid field cells (RtsGridFields.cpp)
+    case EffectKind::Field:    // grid field cells (GridFields.cpp)
         if (fields_) fields_->applyEffect(sim, e, ctx);
         break;
     case EffectKind::Script:   // deferred to the scripts phase of this tick (never runs inside a system's loop)
@@ -846,6 +846,15 @@ void RtsModule::hashEffects(Simulation& sim, Hasher& h) {
     for (auto& pl : gs.playerAbilities) for (auto& st : pl) { h.u32(st.owned); h.u32(st.level); h.u32(st.pendingAt); h.u32(st.stolenUntil); h.u32(st.nextAuto); }
     h.u32(gs.nextGroupId);
     hashSkillObjects(sim, h);
+}
+
+bool RtsModule::payloadAccepts(Simulation& sim, int payload, Entity e, uint8_t owner) const {
+    for (int depth = 0; depth < 4 && payload >= 0 && size_t(payload) < rules_.payloads.size() && !rules_.payloads[size_t(payload)].empty(); ++depth) {
+        const EffectDef& ef = rules_.payloads[size_t(payload)][0];
+        if ((ef.kind == EffectKind::Area || ef.kind == EffectKind::Projectile || ef.kind == EffectKind::Chain) && ef.payload >= 0) { payload = ef.payload; continue; }
+        return filterOk(sim, ef.filter, e, owner, kNullEntity);
+    }
+    return sim.world().has<Owner>(e) && hostile(sim, owner, sim.world().get<Owner>(e).player);
 }
 
 } // namespace aiverse::game

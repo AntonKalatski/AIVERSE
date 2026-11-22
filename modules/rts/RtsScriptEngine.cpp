@@ -389,7 +389,7 @@ struct ScriptEngine::Impl {
         }
     }
 
-    // grid field threshold crossings recorded since the last scripts phase (RtsGridFields.cpp); handlers may
+    // grid field threshold crossings recorded since the last scripts phase (GridFields.cpp); handlers may
     // write fields: crossings they cause are dispatched in the next tick
     void tickFieldHooks(Simulation& sim) {
         GridFields* gf = m.gridFields();

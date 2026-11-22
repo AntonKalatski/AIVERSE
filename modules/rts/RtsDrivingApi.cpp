@@ -1,8 +1,8 @@
-// The `driving` table of the scripting API (RtsDriving.h, docs/driving.md): queries for mission scripts and the HUD.
+// The `driving` table of the scripting API (Driving.h, docs/driving.md): queries for mission scripts and the HUD.
 #include "RtsScriptInternal.h"
 #include "RtsInternal.h"
-#include "RtsDriving.h"
-#include "RtsTopDown.h"
+#include "../../engine/game/Driving.h"
+#include "../../engine/game/TopDown.h"
 
 namespace aiverse::game::script {
 

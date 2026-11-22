@@ -1,7 +1,7 @@
-// Extraction raids (RtsRaid.h, docs/raid.md): the sample's bot extracts, points / channels / contest / interrupts,
+// Extraction raids (Raid.h, docs/raid.md): the sample's bot extracts, points / channels / contest / interrupts,
 // interactables and loot, death drops, Lua API and veto, receipts, saves and rollback, rule errors.
-#include "modules/rts/RtsRaid.h"
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/Raid.h"
+#include "engine/game/TopDown.h"
 
 namespace {
 const std::string kRaidDir = std::string(AIVERSE_SOURCE_DIR) + "/templates/extraction";

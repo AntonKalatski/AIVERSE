@@ -60,7 +60,7 @@ Fixed polylineLength(const std::vector<Vec2>& pts);
 // AI length: control-point distances, slowdown segments stretched.
 Fixed routeAiLength(const RouteDef& r);
 // Lane offset label of line k: even lines to the left (-1, -2, ...), odd to the right (+1, +2, ...), so sorting by
-// |offset| keeps the line order (RtsModule::lanesBetween).
+// |offset| keeps the line order (GameHost::lanesBetween).
 inline int routeLineOffset(int k) { return (k % 2 == 0) ? -(k / 2 + 1) : (k / 2 + 1); }
 // Straight flying route between two points.
 RouteDef flyingRoute(Vec2 from, Vec2 to, const RouteRules& rr);

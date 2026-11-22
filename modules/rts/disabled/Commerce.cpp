@@ -2,7 +2,7 @@
 // (packaging.engineModules, CMake AIVERSE_GAME_WITH_COMMERCE=OFF). Commerce stays inactive: no system,
 // hash, save block or command handling, exactly like rules without "commerce". Rules with a "commerce"
 // block fail at match start with a readable error. The Lua table `commerce` keeps only active() (false).
-#include "../RtsCommerce.h"
+#include "../../../engine/game/Commerce.h"
 #include "../RtsScriptInternal.h"
 #include <stdexcept>
 

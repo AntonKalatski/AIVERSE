@@ -1,8 +1,8 @@
-// The `commerce` table of the scripting API (RtsCommerce.h, docs/commerce.md). Queries in simulation and view
+// The `commerce` table of the scripting API (Commerce.h, docs/commerce.md). Queries in simulation and view
 // scripts, commerce.act in simulation scripts only. The UI sends game.command{type = "commerce", param = commerce.param(...)}.
 #include "RtsScriptInternal.h"
 #include "RtsInternal.h"
-#include "RtsCommerce.h"
+#include "../../engine/game/Commerce.h"
 
 namespace aiverse::game::script {
 

@@ -7,7 +7,7 @@
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/RtsScript.h"
 #include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsTopDown.h"
+#include "engine/game/TopDown.h"
 
 namespace aiverse::battle {
 

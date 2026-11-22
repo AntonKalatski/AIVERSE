@@ -407,7 +407,7 @@ block is registered — identical to the full build for rules without
 `aiversebuild` rejects them unless `traffic` (or `auto`) is selected; `auto`
 selects it from an enabled `traffic` block in the composed rules. CMake fails
 if OFF is combined with editor, tests, headless, server or HTML5 Studio.
-`RtsTrafficRoads.cpp` (road nets) is unaffected.
+`TrafficRoads.cpp` (road nets) is unaffected.
 
 Verification actually run (cloud Linux x86_64, Emscripten 3.1.50 from source
 with Ubuntu LLVM 18.1.3 and binaryen 116; `templates/skirmish` content,

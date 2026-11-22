@@ -5,7 +5,7 @@
 //   rowSpacing, the garrison pays per row, a second send on the same route merges, an owner change closes it.
 // - map "screen": garrisons off the screen do not grow, scripts move the screen.
 #include "RtsInternal.h"
-#include "RtsEnv.h"
+#include "../../engine/game/Environment.h"
 #include <algorithm>
 #include <stdexcept>
 
