@@ -1,6 +1,6 @@
 // fps.royale: battle-royale package wiring (insertion, phased zone, supply drops, standings, saves, snapshots).
 void royale() {
-    auto rules=Json::parse(R"({"fps":{"tickRate":20,"mode":"battleRoyale","worldLimit":2000,"roundTicks":20000,
+    auto rules=Json::parse(R"({"actor":{"tickRate":20,"mode":"battleRoyale","worldLimit":2000,"roundTicks":20000,
       "mechanics":{"enabled":true,"knockdown":true},
       "royale":{"bounds":{"min":[-200,-200],"max":[200,200]},
         "zone":{"radius":300,"startTick":600,"phases":[{"wait":20,"shrink":40,"radius":100,"damage":5,"interval":5},{"wait":10,"shrink":20,"radius":0,"damage":50,"interval":5}]},
@@ -9,8 +9,8 @@ void royale() {
         "supplyDrops":{"firstTick":10,"interval":100,"maxDrops":1,"fall":20,"altitude":50}}}})");
     auto map=Json::parse(R"({"players":[{"team":1,"bot":true},{"team":1,"bot":true},{"team":2,"bot":true},{"team":2,"bot":true}],
       "spawns":[[-50,0.01,-50],[-40,0.01,-50],[50,0.01,50],[40,0.01,50]],"colliders":[{"id":1,"min":[-1000,-2,-1000],"max":[1000,0,1000]}]})");
-    auto bad=rules;bad.member("fps").set("mode",Json::string("deathmatch"));
-    try{actor::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.royale: requires")!=std::string::npos);}
+    auto bad=rules;bad.member("actor").set("mode",Json::string("deathmatch"));
+    try{actor::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("actor.royale: requires")!=std::string::npos);}
     auto sim=simulation(rules,map),twin=simulation(rules,map);
     auto& s=state(*sim);CHECK(s.royale.enabled&&s.royale.divers.size()==4&&character(*sim,1).pos.y==100_fx);
     auto& module=actor::host(*sim);

@@ -10,17 +10,17 @@
 namespace aiverse::actor {
 namespace {
 int64_t integer(const Json& j,const char* key,int64_t fallback,int64_t lo,int64_t hi) {
-    if(j.has(key)&&(!j[key].isNumber()||j[key].fx().raw%Fixed::kOne))throw JsonError(std::string("fps.")+key+": expected integer");
-    auto v=j.getInt(key,fallback);if(v<lo||v>hi)throw JsonError(std::string("fps.")+key+": outside supported range");return v;
+    if(j.has(key)&&(!j[key].isNumber()||j[key].fx().raw%Fixed::kOne))throw JsonError(std::string("actor.")+key+": expected integer");
+    auto v=j.getInt(key,fallback);if(v<lo||v>hi)throw JsonError(std::string("actor.")+key+": outside supported range");return v;
 }
 Fixed number(const Json& j,const char* key,Fixed fallback,Fixed lo,Fixed hi) {
-    if(j.has(key)&&!j[key].isNumber())throw JsonError(std::string("fps.")+key+": expected number");
-    auto v=j.getFx(key,fallback);if(v<lo||v>hi)throw JsonError(std::string("fps.")+key+": outside supported range");return v;
+    if(j.has(key)&&!j[key].isNumber())throw JsonError(std::string("actor.")+key+": expected number");
+    auto v=j.getFx(key,fallback);if(v<lo||v>hi)throw JsonError(std::string("actor.")+key+": outside supported range");return v;
 }
 Vec3 vector(const Json& j) {
-    if(!j.isArray()||j.size()!=3)throw JsonError("fps: expected three coordinates");
+    if(!j.isArray()||j.size()!=3)throw JsonError("actor: expected three coordinates");
     Vec3 v;Fixed* p[]={&v.x,&v.y,&v.z};
-    for(int i=0;i<3;++i){if(!j[size_t(i)].isNumber())throw JsonError("fps: non-numeric coordinate");*p[i]=j[size_t(i)].fx();if(fxAbs(*p[i])>100000_fx)throw JsonError("fps: coordinate exceeds 100 km");}return v;
+    for(int i=0;i<3;++i){if(!j[size_t(i)].isNumber())throw JsonError("actor: non-numeric coordinate");*p[i]=j[size_t(i)].fx();if(fxAbs(*p[i])>100000_fx)throw JsonError("actor: coordinate exceeds 100 km");}return v;
 }
 void royaleIo(Archive& a,RoyaleRun& r) {
     using lib::genre::io;
@@ -32,13 +32,13 @@ void royaleIo(Archive& a,RoyaleRun& r) {
 }
 }
 Config readConfig(const Json& root) {
-    if(!root["fps"].isObject())throw JsonError("rules.fps: expected object");
+    if(!root["actor"].isObject())throw JsonError("rules.actor: expected object");
     // Capability blocks that are not specific to this host may sit at the top level of the rules (shared names,
-    // docs/no-genre-split-audit.md G6); the legacy place rules.fps.<key> still loads. One place per block.
-    Json j=root["fps"];
+    // docs/no-genre-split-audit.md G6); the legacy place rules.actor.<key> still loads. One place per block.
+    Json j=root["actor"];
     for(const char* key:{"royale","gear","crate","vehicleTypes","bots","weapons","weapon"}){
         if(!root.has(key))continue;
-        if(j.has(key))throw JsonError(std::string("rules.")+key+" and rules.fps."+key+": keep one of them");
+        if(j.has(key))throw JsonError(std::string("rules.")+key+" and rules.actor."+key+": keep one of them");
         j.set(key,root[key]);
     }
     Config c;
@@ -50,7 +50,7 @@ Config readConfig(const Json& root) {
     c.interestRadius=number(j,"interestRadius",250_fx,10_fx,10000_fx);
     c.worldLimit=number(j,"worldLimit",100000_fx,10_fx,100000_fx);
     c.mode=j.getStr("mode","deathmatch");
-    if(c.mode!="deathmatch"&&c.mode!="elimination"&&c.mode!="battleRoyale"&&c.mode!="bomb")throw JsonError("fps.mode: unknown mode");
+    if(c.mode!="deathmatch"&&c.mode!="elimination"&&c.mode!="battleRoyale"&&c.mode!="bomb")throw JsonError("actor.mode: unknown mode");
     c.friendlyFire=j.getBool("friendlyFire",false);
     c.roundTicks=uint32_t(integer(j,"roundTicks",7200,1,10000000));
     c.respawnTicks=uint32_t(integer(j,"respawnTicks",180,1,100000));
@@ -64,7 +64,7 @@ Config readConfig(const Json& root) {
     c.motor.jumpSpeed=number(m,"jumpSpeed",6_fx,Fixed{},30_fx);
     c.motor.stepHeight=number(m,"stepHeight",c.motor.stepHeight,Fixed{},1_fx);
     auto weapon=[&](const Json& w) {
-        if(!w.isNull()&&!w.isObject())throw JsonError("fps.weapon: expected object");
+        if(!w.isNull()&&!w.isObject())throw JsonError("actor.weapon: expected object");
         WeaponConfig v;
         v.damage=int32_t(integer(w,"damage",25,1,1000));
         v.magazine=int32_t(integer(w,"magazine",30,1,1000));
@@ -80,8 +80,8 @@ Config readConfig(const Json& root) {
         v.bulletSpeed=number(w,"bulletSpeed",Fixed{},Fixed{},2000_fx);
         v.bulletGravity=number(w,"bulletGravity",10_fx,Fixed{},100_fx);
         if(w.has("flight")){
-            v.flight=projectile::parseProjectileFlight(w["flight"],"fps.weapon.flight");
-            if(v.bulletSpeed<=Fixed{})throw JsonError("fps.weapon.flight requires bulletSpeed > 0");
+            v.flight=projectile::parseProjectileFlight(w["flight"],"actor.weapon.flight");
+            if(v.bulletSpeed<=Fixed{})throw JsonError("actor.weapon.flight requires bulletSpeed > 0");
             if(!w["flight"].has("gravity"))v.flight.gravity=v.bulletGravity;
         }
         v.penetration=number(w,"penetration",Fixed{},Fixed{},10_fx);
@@ -90,11 +90,11 @@ Config readConfig(const Json& root) {
         v.price=int32_t(integer(w,"price",600,0,16000));
         v.pellets=uint32_t(integer(w,"pellets",1,1,16));
         v.automatic=w.getBool("automatic",true);
-        v.nameKey=w.getStr("nameKey","fps.weapon.rifle");
+        v.nameKey=w.getStr("nameKey","actor.weapon.rifle");
         return v;
     };
     if(j.has("weapons")) {
-        if(!j["weapons"].isArray()||j["weapons"].size()<1||j["weapons"].size()>4)throw JsonError("fps.weapons: expected 1..4 weapons");
+        if(!j["weapons"].isArray()||j["weapons"].size()<1||j["weapons"].size()>4)throw JsonError("actor.weapons: expected 1..4 weapons");
         for(const auto& w:j["weapons"].items())c.weapons.push_back(weapon(w));
     }else c.weapons.push_back(weapon(j["weapon"]));
     c.weapon=c.weapons.front(); // Legacy single-weapon rules remain supported.
@@ -106,14 +106,14 @@ Config readConfig(const Json& root) {
     c.zoneDuration=uint32_t(integer(z,"durationTicks",7200,1,10000000));
     c.zoneDamage=int32_t(integer(z,"damagePerSecond",5,1,100));
     if(j.has("royale")){
-        if(c.mode!="battleRoyale")throw JsonError("fps.royale: requires fps.mode \"battleRoyale\"");
-        c.royale=lib::genre::readRoyale(j["royale"],"fps.royale");
+        if(c.mode!="battleRoyale")throw JsonError("actor.royale: requires fps.mode \"battleRoyale\"");
+        c.royale=lib::genre::readRoyale(j["royale"],"actor.royale");
     }
     if(j.has("crate")){
-        if(!j["crate"].isArray()||j["crate"].size()>16)throw JsonError("fps.crate: expected at most 16 items");
+        if(!j["crate"].isArray()||j["crate"].size()>16)throw JsonError("actor.crate: expected at most 16 items");
         for(const auto& item:j["crate"].items()){
             auto type=integer(item,"type",0,1,255),count=integer(item,"count",1,1,20);
-            if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(c.weapons.size()))||type>=200))throw JsonError("fps.crate: invalid item type "+std::to_string(type));
+            if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(c.weapons.size()))||type>=200))throw JsonError("actor.crate: invalid item type "+std::to_string(type));
             c.crate.push_back({int32_t(type),int32_t(count)});
         }
     }else if(c.royale)c.crate={{2,1},{1,2},{8,1},{9,3}};
@@ -134,21 +134,21 @@ Config readConfig(const Json& root) {
     mcfg.blastRadius=number(systems,"blastRadius",8_fx,1_fx,30_fx);
     mcfg.smokeRadius=number(systems,"smokeRadius",6_fx,1_fx,20_fx);
     mcfg.flashRadius=number(systems,"flashRadius",20_fx,1_fx,50_fx);
-    if(c.mode=="bomb"&&!mcfg.enabled)throw JsonError("fps bomb mode requires mechanics.enabled");
+    if(c.mode=="bomb"&&!mcfg.enabled)throw JsonError("actor bomb mode requires mechanics.enabled");
     if(j.has("gear")){
-        if(!c.systems.enabled)throw JsonError("fps.gear: requires mechanics.enabled");
-        c.gear=lib::systems::readGearCatalog(j["gear"],"fps.gear");
-        for(const auto& [id,g]:c.gear)if(id>55)throw JsonError("fps.gear: ids must be 1..55 (loot type 200 + id)");
+        if(!c.systems.enabled)throw JsonError("actor.gear: requires mechanics.enabled");
+        c.gear=lib::systems::readGearCatalog(j["gear"],"actor.gear");
+        for(const auto& [id,g]:c.gear)if(id>55)throw JsonError("actor.gear: ids must be 1..55 (loot type 200 + id)");
     }
-    for(auto item:c.crate)if(item.type>=200&&!c.gear.contains(item.type-200))throw JsonError("fps.crate: unknown gear "+std::to_string(item.type-200));
-    if(j.has("bots")){if(!j["bots"].isObject())throw JsonError("fps.bots: expected object");c.bots=j["bots"];}
+    for(auto item:c.crate)if(item.type>=200&&!c.gear.contains(item.type-200))throw JsonError("actor.crate: unknown gear "+std::to_string(item.type-200));
+    if(j.has("bots")){if(!j["bots"].isObject())throw JsonError("actor.bots: expected object");c.bots=j["bots"];}
     if(j.has("vehicleTypes")){
-        if(!c.systems.enabled)throw JsonError("fps.vehicleTypes: requires mechanics.enabled");
+        if(!c.systems.enabled)throw JsonError("actor.vehicleTypes: requires mechanics.enabled");
         c.vehicleTypes=lib::genre::readVehicleDefinitions(j["vehicleTypes"]);
-        for(const auto& [id,d]:c.vehicleTypes->vehicles)if(d.seats.seats.empty())throw JsonError("fps.vehicleTypes: vehicle "+std::to_string(id)+" needs seats");
+        for(const auto& [id,d]:c.vehicleTypes->vehicles)if(d.seats.seats.empty())throw JsonError("actor.vehicleTypes: vehicle "+std::to_string(id)+" needs seats");
     }
     const auto& melee=j["melee"];auto& mel=c.melee;
-    if(!melee.isNull()&&!melee.isObject())throw JsonError("fps.melee: expected object");
+    if(!melee.isNull()&&!melee.isObject())throw JsonError("actor.melee: expected object");
     mel.enabled=melee.getBool("enabled",false);
     mel.damage=int32_t(integer(melee,"damage",50,1,1000));
     mel.windup=uint32_t(integer(melee,"windupTicks",c.tickRate/10,0,3600));
@@ -182,12 +182,12 @@ Entity ActorHost::characterEntity(const Simulation& sim,uint8_t slot) const {
 }
 CharacterRef ActorHost::character(Simulation& sim,uint8_t slot) const {
     const Entity e=characterEntity(sim,slot);
-    if(!e.valid())throw std::out_of_range("fps: no character in slot "+std::to_string(slot));
+    if(!e.valid())throw std::out_of_range("actor: no character in slot "+std::to_string(slot));
     return makeCharacterRef<false>(sim.world(),e);
 }
 ConstCharacterRef ActorHost::character(const Simulation& sim,uint8_t slot) const {
     const Entity e=characterEntity(sim,slot);
-    if(!e.valid())throw std::out_of_range("fps: no character in slot "+std::to_string(slot));
+    if(!e.valid())throw std::out_of_range("actor: no character in slot "+std::to_string(slot));
     return makeCharacterRef<true>(sim.world(),e);
 }
 CharacterSnapshot ActorHost::snapshot(const Simulation& sim,uint8_t slot) const { return actor::snapshot(character(sim,slot)); }
@@ -201,7 +201,7 @@ std::vector<HitPose> ActorHost::livePoses(Simulation& sim) const {
     std::vector<HitPose> out;if(!index)return out;out.reserve(index->bySlot.size());
     for(const Entity e:index->bySlot){
         const auto* id=w.tryGetConst<CharacterId>(e);const auto* body=w.tryGetConst<CharacterBody>(e);const auto* health=w.tryGetConst<CharacterHealth>(e);
-        if(!id||!body||!health)throw std::logic_error("fps: character components missing");
+        if(!id||!body||!health)throw std::logic_error("actor: character components missing");
         out.push_back({id->slot,id->team,id->life,health->health,body->pos,body->crouched,body->prone,health->downed});
     }
     return out;
@@ -268,38 +268,38 @@ void ActorHost::resetLootAndVehicles(Simulation& sim) {
 // ---------------------------------------------------------------- setup
 void ActorHost::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
-    if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
-    if(sim.players().empty()||sim.players().size()>config_.maxPlayers)throw JsonError("fps: invalid player count");
+    if(sim.tickRate()!=config_.tickRate)throw JsonError("actor.tickRate differs from simulation tickRate");
+    if(sim.players().empty()||sim.players().size()>config_.maxPlayers)throw JsonError("actor: invalid player count");
     streamedCollision_.reset();streamManifest_=map["world"];
     if(streamManifest_.getBool("async"))world::WorldAssets::parse(streamManifest_);
     collision_.clear();spawns_.clear();bots_.clear();
     const auto& boxes=map["colliders"];
-    if(!boxes.isArray()||boxes.size()>100000)throw JsonError("fps.colliders: expected at most 100000 boxes");
+    if(!boxes.isArray()||boxes.size()>100000)throw JsonError("actor.colliders: expected at most 100000 boxes");
     uint32_t rotated=kRotatedColliderBase;
     for(const auto& b:boxes.items()) {
         if(b.has("yaw")){   // rotated box: {"id","center","half","yaw" (turns)} -> 12 exact triangles
             auto id=integer(b,"id",0,1,kBuildingColliderBase-1);(void)id;
-            if(!b["yaw"].isNumber())throw JsonError("fps.collider.yaw: expected turns");
-            auto half=vector(b["half"]);if(half.x<=Fixed{}||half.y<=Fixed{}||half.z<=Fixed{}||half.x>2048_fx||half.z>2048_fx)throw JsonError("fps.collider.half: expected positive half sizes up to 2048");
+            if(!b["yaw"].isNumber())throw JsonError("actor.collider.yaw: expected turns");
+            auto half=vector(b["half"]);if(half.x<=Fixed{}||half.y<=Fixed{}||half.z<=Fixed{}||half.x>2048_fx||half.z>2048_fx)throw JsonError("actor.collider.half: expected positive half sizes up to 2048");
             for(const auto& t:world::orientedBoxTriangles(vector(b["center"]),half,b["yaw"].fx()))
-                if(!collision_.addTriangle(rotated++,t))throw JsonError("fps.collider: invalid rotated box");
+                if(!collision_.addTriangle(rotated++,t))throw JsonError("actor.collider: invalid rotated box");
             continue;
         }
         auto id=integer(b,"id",0,1,UINT32_MAX);
-        if(collision_.colliders().contains(uint32_t(id))||!collision_.add({uint32_t(id),{vector(b["min"]),vector(b["max"])}}))throw JsonError("fps.collider: invalid or duplicate box");
+        if(collision_.colliders().contains(uint32_t(id))||!collision_.add({uint32_t(id),{vector(b["min"]),vector(b["max"])}}))throw JsonError("actor.collider: invalid or duplicate box");
     }
     auto buildingLoot=buildMapBuildings(map);
     const auto& spawns=map["spawns"];
-    if(!spawns.isArray()||spawns.size()<sim.players().size())throw JsonError("fps.spawns: one spawn per player required");
+    if(!spawns.isArray()||spawns.size()<sim.players().size())throw JsonError("actor.spawns: one spawn per player required");
     std::vector<CharacterSnapshot> characters;
     for(size_t i=0;i<sim.players().size();++i) {
         CharacterSnapshot a;a.slot=uint8_t(i+1);a.team=sim.players()[i].team;
-        if(a.team==0)throw JsonError("fps.player.team: must be positive");
+        if(a.team==0)throw JsonError("actor.player.team: must be positive");
         a.pos=vector(spawns[i]);
-        if(fxAbs(a.pos.x)>config_.worldLimit||fxAbs(a.pos.y)>config_.worldLimit||fxAbs(a.pos.z)>config_.worldLimit)throw JsonError("fps.spawn: outside world limit");
+        if(fxAbs(a.pos.x)>config_.worldLimit||fxAbs(a.pos.y)>config_.worldLimit||fxAbs(a.pos.z)>config_.worldLimit)throw JsonError("actor.spawn: outside world limit");
         equipInitial(a);
         auto b=actorBounds(a,config_.motor);b.min.y+=Fixed::fromRatio(1,1000);
-        if(collision_.blocked(b))throw JsonError("fps.spawn: intersects collision");
+        if(collision_.blocked(b))throw JsonError("actor.spawn: intersects collision");
         characters.push_back(a);spawns_.push_back(a.pos);bots_.push_back(map["players"][i].getBool("bot",false));
     }
     World& world=sim.world();
@@ -320,20 +320,20 @@ void ActorHost::setup(Simulation& sim,const Json& rules,const Json& map) {
     if(config_.melee.enabled){
         const auto& m=config_.melee;auto total=m.windup+m.active+m.recovery;
         meleeAttacks_[1]={1,m.windup,m.active,m.recovery,total,m.bufferTicks,{1}};
-        if(!lib::genre::valid(meleeAttacks_))throw JsonError("fps.melee: invalid attack timing");
+        if(!lib::genre::valid(meleeAttacks_))throw JsonError("actor.melee: invalid attack timing");
     }
     Hasher hash;hash.str(rules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
     // Stage order: programmed projectiles, ordinary projectiles (bullets, grenades, smoke), then the
     // match / royale / character tick. Immediate hits of the projectile stages precede everything else.
-    sim.addSystem("fps.projectilePrograms",[this](Simulation& s) {
+    sim.addSystem("actor.projectilePrograms",[this](Simulation& s) {
         if(state(s).winner)return;
         tickProjectilePrograms(s);
     });
-    sim.addSystem("fps.ordinaryProjectiles",[this](Simulation& s) {
+    sim.addSystem("actor.ordinaryProjectiles",[this](Simulation& s) {
         if(state(s).winner || !config_.systems.enabled)return;
         tickOrdinaryProjectiles(s);
     });
-    sim.addSystem("fps",[this](Simulation& s){tick(s);});
+    sim.addSystem("actor",[this](Simulation& s){tick(s);});
 }
 void ActorHost::applyCommand(Simulation& sim,const Command& c) {
     Input input;

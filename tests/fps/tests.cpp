@@ -84,7 +84,7 @@ void chunks() {
     scene.update({2560_fx,{},{}},1,2,read);CHECK(scene.residentCount()==1&&reads==2);CHECK(scene.chunks().begin()->first.x==10);
 }
 void stress(Json rules,Json map) {
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     net::authority::Server server(rules,map);std::vector<std::unique_ptr<net::authority::Client>> clients;
     for(uint8_t i=1;i<=100;++i){auto pair=net::makeLoopbackPair({20,5,i});CHECK(server.attach(i,std::move(pair.first)));clients.push_back(std::make_unique<net::authority::Client>(rules,map,std::move(pair.second)));}
     auto start=std::chrono::steady_clock::now();
@@ -101,7 +101,7 @@ void stress(Json rules,Json map) {
     std::printf("100 clients / 300 ticks / sparse 16 km world: %lld ms (debug/local loopback, not WAN capacity)\n",(long long)elapsed);
 }
 void parallelMotorParityFixture(Json rules,Json map) {
-    auto& settings=rules.member("fps");
+    auto& settings=rules.member("actor");
     settings.set("maxPlayers",Json::number(int64_t(100)));
     settings.set("mode",Json::string("deathmatch"));
     settings.erase("mechanics");
@@ -177,7 +177,7 @@ void parallelMotorParityFixture(Json rules,Json map) {
         (unsigned long long)combatHistory.value());
 }
 void cowSnapshotsFps(Json rules,Json map) {
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     auto baseline=simulation(rules,map),incremental=simulation(rules,map);
     incremental->world().enableCowSnapshots(true);
     for(uint32_t tick=0;tick<120;++tick) {
@@ -220,7 +220,7 @@ void cowSnapshotsFps(Json rules,Json map) {
 void incrementalRollbackFps(Json rules,Json map) {
     // Actual FPS module under RollbackSession: a confirmed remote input
     // arrives after several predicted ticks, forcing replay in both modes.
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     auto deep=simulation(rules,map),cow=simulation(rules,map);
     auto run=[&](Simulation& sim,bool incremental) {
         net::SessionConfig config;
@@ -260,8 +260,8 @@ void incrementalRollbackFps(Json rules,Json map) {
 void reloadTimeline(Json rules,Json map) {
     // Real FPS tick uses the same stepWeaponReload policy as generic ECS hosts.
     // Check input/reload ordering, weapon switching, save and rollback replay.
-    rules.member("fps").set("mode",Json::string("deathmatch"));
-    rules.member("fps").set("weapons",Json::parse(
+    rules.member("actor").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("weapons",Json::parse(
         R"([{"automatic":false,"damage":10,"magazine":3,"reserve":8,"reloadTicks":3,"intervalTicks":1,"switchTicks":1},
             {"automatic":true,"damage":5,"magazine":4,"reserve":8,"reloadTicks":2,"intervalTicks":1,"switchTicks":1}])"));
     map.member("players").itemsMut().resize(2);
@@ -312,7 +312,7 @@ void reloadTimeline(Json rules,Json map) {
 
 void damageScoring(Json rules,Json map) {
     // Shot resolution scores damage, hit counts, death and kills on the character components.
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     map.member("players").itemsMut().resize(2);
     map.member("players").at(1).set("team",Json::number(int64_t(2)));
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
@@ -333,8 +333,8 @@ void damageScoring(Json rules,Json map) {
 // order must hold for shotgun pellets, historical views, saves and replay
 // after a rollback.
 void simultaneousHitscanRollback(Json rules,Json map) {
-    rules.member("fps").set("mode",Json::string("deathmatch"));
-    rules.member("fps").set("weapons",Json::parse(
+    rules.member("actor").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("weapons",Json::parse(
         R"([{"automatic":true,"damage":8,"magazine":24,"reserve":0,"reloadTicks":4,"intervalTicks":1,"pellets":3,"spread":0,"bulletSpeed":0}])"));
     map.member("players").itemsMut().resize(2);
     map.member("players").at(1).set("team",Json::number(int64_t(2)));
@@ -388,7 +388,7 @@ void dynamicObjectEntities(Json rules,Json map) {
     // Projectiles, loot and vehicles are entities with the Projectile / Loot / Vehicle components:
     // natively created, edited and destroyed entities are the simulation state (accessors, checksum,
     // save, rollback) without any other registration.
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     auto sim=simulation(rules,map);
     auto& module=fpsModule(*sim);
     auto& world=sim->world();
@@ -446,7 +446,7 @@ void dynamicObjectEntities(Json rules,Json map) {
     CHECK(findLoot(lootId)&&findLoot(lootId)->count==2);
 }
 void deterministic(Json rules,Json map) {
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
     for(uint32_t t=0;t<240;++t) {
         actor::Input in;in.sequence=t+1;in.forward=t<100?1000:0;in.buttons=t==130?uint32_t(actor::Jump):0u;
@@ -461,7 +461,7 @@ void deterministic(Json rules,Json map) {
     c=actor::command(201,{});a->module().applyCommand(*a,c);CHECK(before==fpsModule(*a).snapshot(*a,1));
 }
 void combat(Json rules,Json map) {
-    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
     auto& players=map.member("players").itemsMut();players.resize(2);players[1].set("team",Json::number(int64_t(2)));
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
@@ -472,8 +472,8 @@ void combat(Json rules,Json map) {
     CHECK(character(*sim,2).health==100);
 }
 void weapons(Json rules,Json map) {
-    rules.member("fps").set("mode",Json::string("deathmatch"));
-    rules.member("fps").set("weapons",Json::parse(R"([{"automatic":false,"damage":10,"magazine":3,"reloadTicks":3,"intervalTicks":1,"switchTicks":2},{"damage":1,"magazine":8,"intervalTicks":1,"switchTicks":2},{"damage":1,"magazine":8,"pellets":9,"spread":0.006,"switchTicks":2}])"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("weapons",Json::parse(R"([{"automatic":false,"damage":10,"magazine":3,"reloadTicks":3,"intervalTicks":1,"switchTicks":2},{"damage":1,"magazine":8,"intervalTicks":1,"switchTicks":2},{"damage":1,"magazine":8,"pellets":9,"spread":0.006,"switchTicks":2}])"));
     map.member("players").itemsMut().resize(2);map.member("players").at(1).set("team",Json::number(int64_t(2)));
     map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
     auto sim=simulation(rules,map);
@@ -488,7 +488,7 @@ void weapons(Json rules,Json map) {
     step(actor::selectWeapon(1));CHECK(character(*sim,1).ammo==6);
     auto before=character(*sim,1).weaponIndex;step(actor::selectWeapon(3));CHECK(character(*sim,1).weaponIndex==before);
     auto bytes=sim->serialize();auto restored=simulation(rules,map);CHECK(restored->deserialize(bytes));CHECK(restored->checksum()==sim->checksum());
-    auto invalid=rules;invalid.member("fps").set("weapons",Json::parse("[]"));bool rejected=false;try{actor::readConfig(invalid);}catch(const std::exception&){rejected=true;}CHECK(rejected);
+    auto invalid=rules;invalid.member("actor").set("weapons",Json::parse("[]"));bool rejected=false;try{actor::readConfig(invalid);}catch(const std::exception&){rejected=true;}CHECK(rejected);
     // Shotgun consumes one shell per nine independently occluded rays.
     step(actor::selectWeapon(2));step(0);step(actor::Fire);CHECK(character(*sim,1).ammo==7);
 }
@@ -497,9 +497,9 @@ void weapons(Json rules,Json map) {
 #include "projectile_spawn.inc"
 #include "melee.inc"
 void network(Json rules,Json map) {
-    rules.member("fps").set("weapons",Json::parse(R"([{"magazine":12},{"magazine":30}])"));
-    rules.member("fps").set("mode",Json::string("deathmatch"));
-    rules.member("fps").set("interestRadius",Json::number(int64_t(50)));
+    rules.member("actor").set("weapons",Json::parse(R"([{"magazine":12},{"magazine":30}])"));
+    rules.member("actor").set("mode",Json::string("deathmatch"));
+    rules.member("actor").set("interestRadius",Json::number(int64_t(50)));
     net::authority::Server server(rules,map);auto pair=net::makeLoopbackPair({30,8,42});
     CHECK(server.attach(1,std::move(pair.first)));net::authority::Client client(rules,map,std::move(pair.second));
     for(uint64_t now=0;now<6000;now+=5) {

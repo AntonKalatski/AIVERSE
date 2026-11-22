@@ -142,8 +142,8 @@ using ConstCharacterRef=BasicCharacterRef<true>;
 template<bool Const,class W> BasicCharacterRef<Const> makeCharacterRef(W& world,Entity e) {
     auto get=[&](auto tag)->auto&{
         using C=typename decltype(tag)::type;
-        if constexpr(Const){auto* p=world.template tryGetConst<C>(e);if(!p)throw std::out_of_range("fps: character component missing");return *p;}
-        else {auto* p=world.template tryGet<C>(e);if(!p)throw std::out_of_range("fps: character component missing");return *p;}
+        if constexpr(Const){auto* p=world.template tryGetConst<C>(e);if(!p)throw std::out_of_range("actor: character component missing");return *p;}
+        else {auto* p=world.template tryGet<C>(e);if(!p)throw std::out_of_range("actor: character component missing");return *p;}
     };
     return BasicCharacterRef<Const>(e,get(std::type_identity<CharacterId>{}),get(std::type_identity<CharacterBody>{}),get(std::type_identity<CharacterHealth>{}),
         get(std::type_identity<CharacterWeapons>{}),get(std::type_identity<CharacterInventory>{}),get(std::type_identity<CharacterControl>{}),

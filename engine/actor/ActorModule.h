@@ -29,7 +29,7 @@ struct WeaponConfig {
     int32_t price=600;
     uint32_t pellets=1,switchTicks=15;
     bool automatic=true;
-    std::string nameKey="fps.weapon.rifle";
+    std::string nameKey="actor.weapon.rifle";
     projectile::ProjectileFlight flight;
 };
 // Opt-in close combat (`fps.melee`); timing and hit history use the shared melee-combat library.

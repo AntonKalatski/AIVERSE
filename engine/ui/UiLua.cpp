@@ -21,8 +21,8 @@ struct RequireCtx {
     std::vector<std::string> dirs;
 };
 
-const char* kRequireKey = "rts.require";
-const char* kLoadedKey = "rts.loaded";
+const char* kRequireKey = "game.require";
+const char* kLoadedKey = "game.loaded";
 
 RequireCtx* requireCtx(lua_State* L) {
     lua_getfield(L, LUA_REGISTRYINDEX, kRequireKey);

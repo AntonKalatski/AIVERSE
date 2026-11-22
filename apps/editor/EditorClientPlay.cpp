@@ -58,7 +58,7 @@ bool Editor::prefersClientPlay() const {
 }
 
 void Editor::startClientPlay() {
-    if(ws_.project.actorSessionPlay()){startFpsPlay();return;}
+    if(ws_.project.actorSession()){startFpsPlay();return;}
     if (ws_.project.dir.empty()) { status = "Нет открытого проекта"; return; }
     if (checkNativeModules(true)) return;   // the banner offers to build an editor with them
     if (playing()) stopPlay();

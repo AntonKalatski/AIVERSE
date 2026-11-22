@@ -5,7 +5,7 @@
   "id": "com.aiverse.metaltide",
   "version": "0.1.0",
   "build": 1,
-  "module": "rts",
+  "module": "game",
   "sourceLanguage": "ru",
   "languages": ["ru", "en"],
   "rules": "rules.json",

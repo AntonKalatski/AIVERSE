@@ -60,7 +60,7 @@ for mode in off on; do
   }
   echo "=== FPS tests: $mode ==="
   ctest --test-dir "$build" --no-tests=error -R "^(fps|fps_transport)$" --output-on-failure
-  "$build/modules/fps/aiverse_fps_tests" examples/fps/arena > "$ROOT/fps-$mode.log" 2>&1 || {
+  "$build/engine/actor/aiverse_fps_tests" examples/fps/arena > "$ROOT/fps-$mode.log" 2>&1 || {
     cat "$ROOT/fps-$mode.log"; exit 1;
   }
   grep -E '^FPS_(MOTOR|COMBAT)_PARITY_HASH=' "$ROOT/fps-$mode.log" > "$ROOT/fps-$mode.hash" || {

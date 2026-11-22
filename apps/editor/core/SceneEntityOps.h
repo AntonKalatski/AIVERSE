@@ -29,7 +29,7 @@ inline Json sceneEntityView(const MapDoc& map,const EditorSceneNode& node) {
 inline void commitSceneDocument(Workspace& ws,MapDoc& draft) {
     if(ws.map.data.worldSpace) {
         Json args=Json::object();args.set("map",draft.toJson());
-        const auto result=ws.call("fps_set",args,"scene-entity");
+        const auto result=ws.call("actor_set",args,"scene-entity");
         if(result.has("error"))throw std::runtime_error(result.getStr("error"));
     } else {ws.map.beginEdit();ws.map.data=std::move(draft.data);ws.map.touched();}
 }

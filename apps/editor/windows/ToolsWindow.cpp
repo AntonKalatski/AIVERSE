@@ -37,8 +37,8 @@ public:
 
     void draw(Editor& ed) override {
         if(ed.ws().map.data.worldSpace) {
-            ImGui::TextWrapped("%s",engineText(ed.ws(),"fps.editor.hint").c_str());
-            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+            ImGui::TextWrapped("%s",engineText(ed.ws(),"actor.editor.hint").c_str());
+            if(ImGui::Button(engineText(ed.ws(),"actor.editor.open").c_str()))ed.focusWindow("actor");
             return;
         }
         toolGrid(ed);

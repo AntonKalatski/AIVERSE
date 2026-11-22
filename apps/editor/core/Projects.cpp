@@ -89,7 +89,7 @@ std::vector<TemplateInfo> listTemplates(const std::string& engineDir) {
             Json m = Json::parseFile((e.path() / "game.json").string());
             t.name = m.getStr("name", t.id);
             t.description = m.getStr("description", "");
-            t.genre = m.getStr("genre", m.getStr("module", "rts"));
+            t.genre = m.getStr("genre", m.getStr("module", "game"));
             t.maps = int(m["maps"].size());
             std::string pv = m.getStr("preview", "");
             if (pv.empty() && m["icons"].isObject()) pv = m["icons"].getStr("default", "");
@@ -214,7 +214,7 @@ std::string createProject(const std::string& engineDir, const std::string& templ
         m.set("name", Json::string(title));
         m.set("id", Json::string("com.aiverse." + slug(name)));
         m.set("version", Json::string("0.1.0"));
-        if (!m.has("module")) m.set("module", Json::string("rts"));
+        if (!m.has("module")) m.set("module", Json::string("game"));
         if (!m.has("rules")) m.set("rules", Json::string("rules.json"));
         if (!m.has("maps") || templateId == "empty") {
             Json maps = Json::array();

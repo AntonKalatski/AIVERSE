@@ -1,4 +1,4 @@
-// Contract for authoring light data in a genre-specific document via fps_set.
+// Contract for authoring light data in a genre-specific document via actor_set.
 // Only validation here; actual mutation/serialization happens on the engine thread.
 #pragma once
 #include "StudioLightingValidation.h"

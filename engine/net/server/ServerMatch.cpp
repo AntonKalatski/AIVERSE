@@ -449,12 +449,12 @@ std::string Server::Impl::saveReplay(const MatchRecord& M, uint32_t endTick, uin
     Replay rep;
     std::string dir;
     if (auto it = cfg.gameDirs.find(M.gameId); it != cfg.gameDirs.end()) dir = it->second + "/";
-    rep.module = "rts";
+    rep.module = "game";
     std::string rules = "rules.json";
     try {
         if (!dir.empty()) {
             Json manifest = Json::parseFile(dir + "game.json");
-            rep.module = manifest.getStr("module", "rts");
+            rep.module = manifest.getStr("module", "game");
             rules = manifest.getStr("rules", rules);
         }
     } catch (const std::exception&) {}

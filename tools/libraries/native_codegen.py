@@ -37,7 +37,7 @@ def check(f,expr):
 def validate(s):
     obj(s,('module','version','commandType','fields','commands','migrations'));ident(s['module']);num(s['version'],1,2**32-1);num(s['commandType'],32768,65535)
 
-    if s['module'] in ('std','rts','main'):raise ValueError('reserved module name')
+    if s['module'] in ('std','game','actor','main'):raise ValueError('reserved module name')
     if len(s['fields'])>128:raise ValueError('too many state fields')
     fields(s['fields']);ids=set();names=set()
     if not isinstance(s['commands'],list):raise ValueError('commands must be an array')

@@ -37,5 +37,5 @@ helper; `voxel`, `strategic`, `genres` unchanged.
 
 ## Still to do
 - D in full: the actor host still runs as its own GameModule ("fps"); one simulation means its systems on GameCore.
-- F: data-format names (`"module": "rts"/"fps"`, Lua `rts` table, i18n keys `fps.*`).
+- F: data-format names (`"module": "game"/"fps"`, Lua `rts` table, i18n keys `fps.*`).
 - GTA2 migration (separate repository).

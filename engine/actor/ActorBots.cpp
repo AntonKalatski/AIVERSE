@@ -16,7 +16,7 @@ void ActorHost::setupBots(Simulation& sim,const Json&) {
     for(const auto& region:buildingRegions_){
         lib::bots::NavBuildConfig c;c.bounds=region.bounds;c.cellSize=Fixed::fromRatio(1,2);
         c.radius=config_.motor.radius;c.height=config_.motor.height;c.stepHeight=config_.motor.stepHeight;
-        auto built=lib::bots::buildNavMesh(collision_,c);if(!built.mesh)throw JsonError("fps.bots: "+built.error);
+        auto built=lib::bots::buildNavMesh(collision_,c);if(!built.mesh)throw JsonError("actor.bots: "+built.error);
         host->meshes.push_back(std::move(*built.mesh));
     }
     botHost_=host;

@@ -90,7 +90,7 @@ def main():
         for b in BINARIES[a.platform]:
             p = os.path.join(a.bin, b)
             if not os.path.exists(p) and b.startswith("aiverse_fps_"):
-                p = os.path.join(a.bin, "modules", "fps", b)
+                p = os.path.join(a.bin, "engine", "actor", b)
             if os.path.exists(p):
                 add_tree(z, p, "AIVERSE/bin/" + b)
         z.writestr("AIVERSE/BUILD.txt", f"AIVERSE {ver}\ncommit {commit} ({date})\nplatform {a.platform}\n")

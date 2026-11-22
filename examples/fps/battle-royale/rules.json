@@ -1,5 +1,5 @@
 {
-  "fps": {
+  "actor": {
     "tickRate": 30,
     "snapshotRate": 10,
     "maxPlayers": 100,

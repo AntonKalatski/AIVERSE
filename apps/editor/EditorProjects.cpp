@@ -21,9 +21,8 @@ namespace {
 struct HubState {
     int tab = 0;                       // 0 projects, 1 new project, 2 make a game (EditorGameWizard.cpp)
     char search[128] = "";
-    char title[128] = "Моя стратегия";
+    char title[128] = "Моя игра";
     char location[1024] = "";
-    int genre = 0;
     int templ = 1;                     // index into listTemplates (0 = empty)
     std::string error;
     // folder browser
@@ -263,19 +262,6 @@ void Editor::drawGamePicker() {
         drawGameWizard();
     } else {
         ui::heading("Новый проект");
-        ui::heading(engineText(ws_, "hub.genre").c_str());
-        const float genreWidth=std::max(120.0f,(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)*0.5f);
-        for(int genre=0;genre<2;++genre) {
-            if(genre)ImGui::SameLine();
-            ImGui::PushID(genre+10000);
-            if(ImGui::Selectable(engineText(ws_,genre?"hub.genre.fps":"hub.genre.rts").c_str(),H.genre==genre,0,ImVec2(genreWidth,42))) {
-                H.genre=genre;H.templ=-1;
-                if(std::string(H.title)=="Моя стратегия"||std::string(H.title)=="Мой шутер")std::snprintf(H.title,sizeof H.title,"%s",genre?"Мой шутер":"Моя стратегия");
-            }
-            ImGui::SetItemTooltip("%s",engineText(ws_,genre?"hub.genre.fps.detail":"hub.genre.rts.detail").c_str());
-            ImGui::PopID();
-        }
-        ImGui::TextWrapped("%s",engineText(ws_,H.genre?"hub.genre.fps.detail":"hub.genre.rts.detail").c_str());
         ui::heading(engineText(ws_, "hub.template").c_str());
         ImGui::SetItemTooltip("Шаблоны: %s", (fs::path(ws_.engineDir) / "templates").string().c_str());
         ImGui::Separator();
@@ -285,12 +271,11 @@ void Editor::drawGamePicker() {
         const int cols = std::max(1, int((ImGui::GetContentRegionAvail().x + gapX) / (210 + gapX)));
         const float cardW = std::floor((ImGui::GetContentRegionAvail().x - gapX * float(cols - 1)) / float(cols));   // cards fill the row
         std::vector<size_t> visible;
-        for(size_t i=0;i<H.templates.size();++i)if((H.templates[i].genre=="fps")==bool(H.genre))visible.push_back(i);
+        for(size_t i=0;i<H.templates.size();++i)visible.push_back(i);   // every template, one list (no genre split)
         if(std::find(visible.begin(),visible.end(),size_t(H.templ))==visible.end())H.templ=visible.empty()?-1:int(visible.front());
         size_t shown=0;
         for (size_t i = 0; i < H.templates.size(); ++i) {
             const TemplateInfo& t = H.templates[i];
-            if((t.genre=="fps")!=bool(H.genre))continue;
             if (shown++ % size_t(cols)) ImGui::SameLine();
             ImGui::PushID(int(i));
             const ImVec2 p0 = ImGui::GetCursorScreenPos();

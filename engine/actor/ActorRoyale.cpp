@@ -16,18 +16,18 @@ void ActorHost::setupRoyale(Simulation& sim,const Json& map) {
     auto& s=state(sim);const size_t count=characterCount(sim);
     if(map.has("royale"))config_.royale=readRoyale(map["royale"],"map.royale");
     if(!config_.royale)return;
-    if(config_.mode!="battleRoyale")throw JsonError("fps.royale: requires fps.mode \"battleRoyale\"");
+    if(config_.mode!="battleRoyale")throw JsonError("actor.royale: requires fps.mode \"battleRoyale\"");
     auto& r=*config_.royale;auto& run=s.royale;run.enabled=true;
     run.zone=beginSafeZone(seedFrom(sim,1));
     run.bombardment=beginBombardment(r.bombardment.value_or(BombardmentDef{}),seedFrom(sim,2));
     run.drops=beginSupplyDrops(seedFrom(sim,3));
     if(r.flight){
-        auto f=planInsertionFlight(*r.flight,r.bounds,seedFrom(sim,4),0);if(!f)throw JsonError("fps.royale.flight: path does not fit");
+        auto f=planInsertionFlight(*r.flight,r.bounds,seedFrom(sim,4),0);if(!f)throw JsonError("actor.royale.flight: path does not fit");
         run.flight=*f;run.divers.assign(count,SkydiverState{});
         forEachCharacter(sim,[&](CharacterRef a){a.pos=insertionPosition(run.flight,0);});
     }
     forEachCharacter(sim,[&](CharacterRef a){addRoyaleCompetitor(run.standings,a.slot,a.team);});
-    if(!startRoyaleStandings(run.standings,0))throw JsonError("fps.royale: invalid standings");
+    if(!startRoyaleStandings(run.standings,0))throw JsonError("actor.royale: invalid standings");
     run.lastAttacker.assign(count,0);run.lastWeapon.assign(count,0);
 }
 Fixed ActorHost::groundBelow(Vec3 p) const {

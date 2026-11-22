@@ -48,31 +48,31 @@ inline void drawRoyaleHud(const i18n::Localization& lang,const net::authority::S
     draw->AddTriangleFilled(add(me,std::sin(yaw)*8,std::cos(yaw)*8),add(me,std::sin(yaw+2.5f)*5,std::cos(yaw+2.5f)*5),add(me,std::sin(yaw-2.5f)*5,std::cos(yaw-2.5f)*5),IM_COL32(255,240,80,255));
     draw->PopClipRect();
     // Phase line and counters (top centre).
-    auto phase=lang.tr(v.stage==0?"fps.royale.waiting":v.stage==1?"fps.royale.wait":v.stage==2?"fps.royale.shrink":"fps.royale.closed",
+    auto phase=lang.tr(v.stage==0?"actor.royale.waiting":v.stage==1?"actor.royale.wait":v.stage==2?"actor.royale.shrink":"actor.royale.closed",
         i18n::Args().num("phase",int(v.phase)+1).str("time",clock(v.ticksLeft,config.tickRate)));
-    auto counts=lang.tr("fps.royale.counts",i18n::Args().num("alive",int(v.alive)).num("teams",int(v.teamsIn)).num("kills",int(v.kills)));
+    auto counts=lang.tr("actor.royale.counts",i18n::Args().num("alive",int(v.alive)).num("teams",int(v.teamsIn)).num("kills",int(v.kills)));
     auto line=phase+"   "+counts;auto ts=ImGui::CalcTextSize(line.c_str());
     draw->AddRectFilled({w/2-ts.x/2-10,8},{w/2+ts.x/2+10,ts.y+20},IM_COL32(0,0,0,140),4);draw->AddText({w/2-ts.x/2,14},IM_COL32_WHITE,line.c_str());
     // Hints and warnings (centre).
     std::string hint;
-    if(v.divePhase==0)hint=lang.tr(v.doorOpen?"fps.royale.jump":"fps.royale.doorClosed");
-    else if(v.divePhase==1)hint=lang.tr("fps.royale.freefall");
-    else if(v.outside&&self.health>0)hint=lang.tr("fps.royale.outside");
+    if(v.divePhase==0)hint=lang.tr(v.doorOpen?"actor.royale.jump":"actor.royale.doorClosed");
+    else if(v.divePhase==1)hint=lang.tr("actor.royale.freefall");
+    else if(v.outside&&self.health>0)hint=lang.tr("actor.royale.outside");
     if(!hint.empty()){auto hs=ImGui::CalcTextSize(hint.c_str());draw->AddText({w/2-hs.x/2,h*0.62f},v.outside&&v.divePhase==3?IM_COL32(255,90,70,255):IM_COL32(230,230,230,255),hint.c_str());}
     if(v.outside&&v.divePhase==3)draw->AddRect(ImVec2(2,2),ImVec2(w-2,h-2),IM_COL32(220,40,30,160),0.f,0,6.f);
     // Kill feed (right, under the minimap).
     float fy=y0+side+12;
     for(auto it=v.feed.rbegin();it!=v.feed.rend();++it){
-        const auto& e=*it;const char* key=e.kind==lib::genre::KillFeedKind::Knocked?"fps.royale.feed.knocked":e.kind==lib::genre::KillFeedKind::Eliminated?"fps.royale.feed.eliminated":
-            e.kind==lib::genre::KillFeedKind::Revived?"fps.royale.feed.revived":e.kind==lib::genre::KillFeedKind::TeamOut?"fps.royale.feed.teamOut":nullptr;
+        const auto& e=*it;const char* key=e.kind==lib::genre::KillFeedKind::Knocked?"actor.royale.feed.knocked":e.kind==lib::genre::KillFeedKind::Eliminated?"actor.royale.feed.eliminated":
+            e.kind==lib::genre::KillFeedKind::Revived?"actor.royale.feed.revived":e.kind==lib::genre::KillFeedKind::TeamOut?"actor.royale.feed.teamOut":nullptr;
         if(!key)continue;
         auto text=lang.tr(key,i18n::Args().num("victim",int(e.subject)).num("actor",int(e.actor)).num("place",int(e.value)));
-        if(e.kind!=lib::genre::KillFeedKind::TeamOut&&!e.actor)text=lang.tr("fps.royale.feed.environment",i18n::Args().num("victim",int(e.subject)));
+        if(e.kind!=lib::genre::KillFeedKind::TeamOut&&!e.actor)text=lang.tr("actor.royale.feed.environment",i18n::Args().num("victim",int(e.subject)));
         auto fs=ImGui::CalcTextSize(text.c_str());draw->AddText({w-16-fs.x,fy},e.subject==self.slot?IM_COL32(255,120,90,255):e.actor==self.slot?IM_COL32(255,230,120,255):IM_COL32(220,220,220,255),text.c_str());fy+=fs.y+3;
     }
     // Result banner.
     if(v.finished||(self.health<=0&&v.placement)){
-        auto text=v.placement==1?lang.tr("fps.royale.winner"):lang.tr("fps.royale.placed",i18n::Args().num("place",int(v.placement)).num("teams",int(v.teams)));
+        auto text=v.placement==1?lang.tr("actor.royale.winner"):lang.tr("actor.royale.placed",i18n::Args().num("place",int(v.placement)).num("teams",int(v.teams)));
         ImGui::SetWindowFontScale(1);auto rs=ImGui::CalcTextSize(text.c_str());float sc=2.f;
         draw->AddRectFilled({w/2-rs.x*sc/2-20,h*0.4f-10},{w/2+rs.x*sc/2+20,h*0.4f+rs.y*sc+10},IM_COL32(0,0,0,170),6);
         draw->AddText(ImGui::GetFont(),ImGui::GetFontSize()*sc,{w/2-rs.x*sc/2,h*0.4f},IM_COL32(255,215,90,255),text.c_str());

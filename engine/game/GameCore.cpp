@@ -422,7 +422,7 @@ void GameCore::setupMap(Simulation& sim, const Json& map) {
     };
     bool anyPose = false;
     for (auto& ej : map["entities"].items()) anyPose = anyPose || mapPose(ej).posed;
-    if (anyPose) sim.registerPersistentComponent<AuthoredPose>("rts.authored_pose", 1);
+    if (anyPose) sim.registerPersistentComponent<AuthoredPose>("game.authored_pose", 1);
     for (auto& ej : map["entities"].items()) {
         int t = rules_.findType(ej.getStr("type"));
         if (t < 0) throw std::runtime_error("map entity: unknown type '" + ej.getStr("type") + "'");

@@ -14,7 +14,7 @@ for gd in templates/* "$DIR"/games/*; do
   [ -f "$gd/game.json" ] || continue
   # This baseline guards the deterministic RTS module; other genres have separate suites.
   module=$(python3 .github/scripts/game-info.py "$gd" | sed -n 's/^MODULE=//p')
-  [ "$module" = "rts" ] || continue
+  [ "$module" = "game" ] || continue
   g=$(basename "$gd")
   for s in 1 2 3; do
     line=$("$B/aiverse_headless" --project "$gd" --seed $s --quiet 2>&1)

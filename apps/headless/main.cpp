@@ -29,7 +29,7 @@ using namespace aiverse;
 namespace fs = std::filesystem;
 
 static std::unique_ptr<GameModule> makeModule(const std::string& name) {
-    if (name == "rts") return std::make_unique<game::GameCore>();
+    if (name == "game") return std::make_unique<game::GameCore>();
     return nullptr;
 }
 
@@ -63,7 +63,7 @@ static Json loadRules(const std::string& rulesPath, const Json& map, const std::
 
 // Script log lines (errors always, prints unless --quiet).
 static void attachScriptLog(Simulation& sim, bool quiet) {
-    auto* m = sim.module().name() == "rts" ? static_cast<game::GameCore*>(&sim.module()) : nullptr;
+    auto* m = sim.module().name() == "game" ? static_cast<game::GameCore*>(&sim.module()) : nullptr;
     if (!m || !m->scripts()) return;
     for (auto& e : m->scripts()->log()) if (e.error || !quiet) std::printf("[script%s] %s\n", e.error ? " error" : "", e.text.c_str());
     m->scripts()->onLog = [quiet](const game::ScriptLogEntry& e) {
@@ -450,7 +450,7 @@ static int play(const Args& a) {
     Json manifest = Json::parseFile(a.project + "/game.json");
     std::string rulesPath = a.project + "/" + manifest.getStr("rules", "rules.json");
     std::string mapPath = a.project + "/" + (a.map.empty() ? manifest["maps"][size_t(0)].getStr("file") : a.map);
-    std::string module = manifest.getStr("module", "rts");
+    std::string module = manifest.getStr("module", "game");
 
     SimConfig cfg;
     cfg.seed = a.seed;
@@ -720,7 +720,7 @@ int main(int argc, char** argv) {
     }
     if (a.verifyRestore && (!a.replay.empty() || a.benchPaths>0 || a.benchNav>0 || a.benchGroup>0 || a.maxSeconds==0)) { std::fprintf(stderr,"restore verification requires a normal match\n");return 2; }
     try {
-        if(a.replay.empty()&&Json::parseFile(a.project+"/game.json").getStr("module","rts")=="fps")return playFps(a);
+        if(a.replay.empty()&&Json::parseFile(a.project+"/game.json").getStr("module","game")=="actor")return playFps(a);
         return a.replay.empty() ? play(a) : replay(a);
     }
     catch (const std::exception& e) { std::fprintf(stderr, "error: %s\n", e.what()); return 2; }

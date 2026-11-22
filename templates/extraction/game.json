@@ -6,7 +6,7 @@
   "id": "com.aiverse.extraction",
   "version": "0.1.0",
   "build": 1,
-  "module": "rts",
+  "module": "game",
   "sourceLanguage": "en",
   "languages": ["en"],
   "rules": "rules.json",

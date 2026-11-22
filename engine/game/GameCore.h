@@ -68,7 +68,7 @@ public:
     actor::ActorHost* actor() const { return actor_.get(); }
     static bool worldSpaceMap(const Json& map) { return map["colliders"].isArray() && map["spawns"].isArray(); }
     bool readyToStep(Simulation& sim) override;
-    std::string name() const override { return "rts"; }
+    std::string name() const override { return "game"; }
     void setup(Simulation& sim, const Json& rules, const Json& map) override;
     void applyCommand(Simulation& sim, const Command& cmd) override;
     void hashState(Simulation& sim, Hasher& h) override;

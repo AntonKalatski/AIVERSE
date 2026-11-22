@@ -15,7 +15,7 @@ struct StudioGameLaunch {
 };
 inline StudioGameLaunch studioGameLaunch(const editor::Workspace& ws,bool currentMap) {
     if (ws.project.dir.empty()) throw std::runtime_error("Open a project before Play");
-    if (ws.project.actorSessionPlay()) throw std::runtime_error("Play of actor-session projects needs the actor-session client; Studio host migration is pending (G1)");
+    if (ws.project.actorSession()) throw std::runtime_error("Play of actor-session projects needs the actor-session client; Studio host migration is pending (G1)");
     if (ws.map.dirty || ws.project.rulesDirty || ws.project.manifestDirty)
         throw std::runtime_error("Save changes before Play");
     const auto missing=editor::missingNativeModules(ws.project.rulesJson,editor::compiledNativeIds());

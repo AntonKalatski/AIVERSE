@@ -835,7 +835,7 @@ bool ViewScripts::load(Simulation& sim, const Json& rules, const Json& map, uint
     log_.clear();
     im.paint=std::make_shared<render::PaintLayers>();im.fx=std::make_shared<EntityFxStore>();im.targeting={};im.dragDx=im.dragDy=0;im.cameraRequested=false;
     const auto files = scriptFiles(rules, map, true);
-    if (files.empty() || sim.module().name() != "rts") return false;
+    if (files.empty() || sim.module().name() != "game") return false;
     Vm& vm = im.vm;
     vm.owner = &im;
     vm.module = static_cast<GameCore*>(&sim.module());

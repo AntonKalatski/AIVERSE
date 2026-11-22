@@ -8,7 +8,7 @@ using namespace aiverse;using namespace aiverse::lib::bots;
 int main(int argc,char** argv){try{
     if(argc!=4){std::cerr<<"Usage: aiverse_navmesh <FPS project> <bots.json with navmesh settings> <output.json>\n";return 2;}
     std::filesystem::path root=argv[1],output=argv[3];if(std::filesystem::exists(output))throw std::runtime_error("output exists; choose a new file");
-    auto manifest=Json::parseFile((root/"game.json").string());if(manifest.getStr("module")!="fps")throw JsonError("navmesh: expected FPS project");
+    auto manifest=Json::parseFile((root/"game.json").string());if(manifest.getStr("module")!="actor")throw JsonError("navmesh: expected an actor project (game.json "module": "actor")");
     auto rules=Json::parseFile((root/manifest.getStr("rules","rules.json")).string());auto map=Json::parseFile((root/manifest["maps"][size_t(0)].getStr("file")).string());
     Simulation sim({1,actor::readConfig(rules).tickRate,0},std::make_unique<game::GameCore>());sim.setup(rules,map);const auto& module=actor::host(sim);const auto& motor=module.config().motor;
     auto settings=Json::parseFile(argv[2]);auto config=readNavConfig(settings["navmesh"],motor.radius,motor.height,motor.stepHeight);

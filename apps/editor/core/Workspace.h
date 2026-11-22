@@ -37,11 +37,12 @@ struct Project {
     // Legacy simulation host (game.json "module": rts | fps | voxel | genres | strategic). The hosts are being
     // merged into one simulation (docs/no-genre-split-audit.md G1): never branch a feature on the host or on a
     // genre; ask for the capability the code needs instead (below), and widen that capability, not the branch.
-    std::string hostId() const { return manifest.getStr("module", "rts"); }
+    std::string hostId() const { return manifest.getStr("module", "game"); }
     // Capabilities (G2). Each says what the open project's data and host can do today.
     // Map kind is a property of the document (MapDoc data.worldSpace), never of the project.
-    bool actorSessionPlay() const { return hostId() == "fps"; }    // Play runs the actor-session client (separate process)
-    bool actorSessionRules() const { return hostId() == "fps"; }   // rules are the actor-session config, not game::Rules
+    // game.json "module": "actor": Play runs the actor-session client (separate process) and the rules are the
+    // actor-session config (rules "actor"), not game::Rules.
+    bool actorSession() const { return hostId() == "actor"; }
     bool reloadRules();           // parse rulesJson -> rules; false keeps the previous rules
     // rulesJson + the game's scripts embedded for a simulation of `map` (ScriptOps.cpp; missing files are
     // left out and reported by the script engine)

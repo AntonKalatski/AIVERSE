@@ -36,7 +36,7 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
     left: ['human_creator'], center: ['scene', 'facial_rig'], right: ['inspector', 'human_appearance'], bottom: ['assets', 'console'],
     leftRatio: .34, bodyRatio: .86, legacy: [] },
   logic: { id: 'logic', title: 'Logic', purpose: 'Rules, scripts, runtime', key: '5',
-    left: ['hierarchy'], center: ['rules', 'scripts', 'game', 'scene'], right: ['runtime', 'inspector', 'input', 'overlays', 'fps', 'raid', 'balance', 'stats'], bottom: ['console', 'assets', 'agent'],
+    left: ['hierarchy'], center: ['rules', 'scripts', 'game', 'scene'], right: ['runtime', 'inspector', 'input', 'overlays', 'actor', 'raid', 'balance', 'stats'], bottom: ['console', 'assets', 'agent'],
     legacy: [] },
   publish: { id: 'publish', title: 'Publish', purpose: 'Build and audit', key: '6',
     left: ['project', 'hierarchy'], center: ['build', 'game', 'scene', 'snapshot_diff'], right: ['inspector', 'branding', 'asset_audit', 'project_import', 'extensions'], bottom: ['console', 'assets', 'frame_capture'],
@@ -89,7 +89,7 @@ export function saveActiveWorkspace(id: StudioWorkspace, store: Storage | null =
 }
 const WORKSPACE_ADDED: Partial<Record<StudioWorkspace, StudioPanel[]>> = {
   publish: ['build', 'branding', 'asset_audit', 'project_import', 'snapshot_diff', 'frame_capture', 'extensions'], look: ['wind', 'postfx', 'effects', 'lightbake', 'models', 'modeling', 'fx_graph', 'fx_functions', 'texture_resources'], scene: ['history', 'agent'],
-  world: ['terrain', 'water', 'roads', 'tiles', 'fog', 'generate', 'fields', 'physis'], logic: ['scripts', 'input', 'overlays', 'agent', 'fps', 'raid', 'balance', 'stats'],
+  world: ['terrain', 'water', 'roads', 'tiles', 'fog', 'generate', 'fields', 'physis'], logic: ['scripts', 'input', 'overlays', 'agent', 'actor', 'raid', 'balance', 'stats'],
   animate: ['anim_assets', 'anim_graph', 'anim_rig', 'model_anim', 'attachments'],
 };
 /** Saved layout of a workspace; the Scene workspace inherits the pre-workspace layout once. */
