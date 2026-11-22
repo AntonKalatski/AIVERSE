@@ -10,7 +10,7 @@
 #include <string>
 
 namespace aiverse::render {
-namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
+namespace strata { struct ModelAsset; struct PortableCompactBuffer; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
     struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
     struct GpuSelectionReadback; class GpuClusterCulling;
     class PortableSource;
@@ -43,6 +43,8 @@ public:
         uint32_t strataPortableSharedModels=0;
         // strata.select auto: sources kept on the ordinary LOD path / sent to STRATA.
         uint32_t strataAutoLodSources=0, strataAutoStrataSources=0;
+        float strataStageMs=0; // CPU time of building STRATA clusters at load
+        uint64_t strataCompactUploads=0, strataCompactReuses=0;
         uint64_t strataPortableSharedReuses=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
@@ -392,6 +394,8 @@ private:
     // Reservation tokens are released AFTER GPU sidecars are destroyed.
     std::map<const Model*,uint64_t> strataGlobalIndexLeases_;
     std::map<const Instance*, std::unique_ptr<Model>> strataPortableDrawModels_;
+    // Compacted submission: one dynamic index stream per drawn instance.
+    std::map<const Instance*, std::shared_ptr<strata::PortableCompactBuffer>> strataCompactBuffers_;
     struct StrataSharedAlias { std::unique_ptr<Model> model; uint64_t lastFrame=0; };
     // (source model, selected-cluster signature) -> shared drawn alias.
     std::map<std::pair<const Model*,uint64_t>,StrataSharedAlias> strataSharedAliases_;

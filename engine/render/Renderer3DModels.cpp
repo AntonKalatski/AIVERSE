@@ -1211,7 +1211,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
     }
     if (!customVertexStream) recordPersistentModel(d);
-    if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0) {   // light baker: the static scene, every node in world space
+    if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0 && !d.materialMask) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
         for (size_t i = 0; i < pose.size(); ++i) nodeWorld[i] = d.world * pose[i];
@@ -1628,12 +1628,12 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool gpuPacketSource = d.gpuIndexed.valid() ||
                                      !d.gpuIndexedPrimitives.empty() ||
                                      !d.gpuShadowPrimitives.empty();
-        const bool shadowBatch = !customVertexStream && d.primitiveMaterialFilter < 0 &&
+        const bool shadowBatch = !customVertexStream && d.primitiveMaterialFilter < 0 && !d.materialMask &&
                                  !gpuPacketSource && !m->geometry &&
                                  !d.nodeMaterial && d.variant < 0 &&
                                  shadowBatchCompatible(drawMesh,mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (!customVertexStream && !shadowOnly && d.primitiveMaterialFilter < 0 && !gpuPacketSource &&
+        if (!customVertexStream && !shadowOnly && d.primitiveMaterialFilter < 0 && !d.materialMask && !gpuPacketSource &&
             !m->geometry && !d.nodeMaterial &&
             d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
@@ -1647,6 +1647,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (p.indexCount == 0 ||
                 (d.primitiveMaterialFilter >= 0 &&
                  p.material != d.primitiveMaterialFilter)) return;
+            if (d.materialMask && (p.material < 0 || size_t(p.material) >= d.materialMask->size() ||
+                                   !(*d.materialMask)[size_t(p.material)])) return;
             int mi = p.material;
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];

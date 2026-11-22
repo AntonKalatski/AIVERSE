@@ -40,7 +40,8 @@ std::vector<std::array<float, 15>> attributesFor(const Model& model) {
 
 bool buildModelAsset(const Model& model, const BuildOptions& options,
                      ModelAsset& out, std::string* error,
-                     bool allowPreparedRootLods) {
+                     bool allowPreparedRootLods,
+                     bool tolerateSourceSeamDefects) {
     if (error) error->clear();
     ModelAsset next;
     // Presentation-only integration: GeometryScene's immutable rigid CPU
@@ -55,6 +56,9 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
     }();
     std::vector<std::array<float, 15>> attributes;
     bool builtAttributes = false;
+    std::vector<uint32_t> globalToLocal, localToGlobal, localIndices;
+    std::vector<float> localPositions;
+    std::vector<std::array<float, 15>> localAttributes;
     std::set<size_t> rootMeshes;
     if (allowPreparedRootLods)
         for (const auto& node : model.nodes)
@@ -99,14 +103,41 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
                 attributes = attributesFor(model);
                 builtAttributes = true;
             }
+            // Compact this primitive's vertices: the builder and
+            // meshoptimizer work in O(vertex count) per call, and a
+            // multi-million vertex model would make every cluster group
+            // touch the whole shared buffer. Output ids are mapped back to
+            // the model's global vertex ids below.
+            if (globalToLocal.size() != model.vertices.size())
+                globalToLocal.assign(model.vertices.size(), UINT32_MAX);
+            localToGlobal.clear(); localIndices.clear(); localPositions.clear(); localAttributes.clear();
+            localIndices.reserve(p.indexCount);
+            for (uint32_t k = 0; k < p.indexCount; ++k) {
+                const uint32_t g = model.indices[size_t(p.firstIndex) + k];
+                if (g >= model.vertices.size()) { localIndices.push_back(UINT32_MAX); continue; }
+                uint32_t& l = globalToLocal[g];
+                if (l == UINT32_MAX) {
+                    l = uint32_t(localToGlobal.size());
+                    localToGlobal.push_back(g);
+                    const auto& v = model.vertices[g].pos;
+                    localPositions.insert(localPositions.end(), {v.x, v.y, v.z});
+                    localAttributes.push_back(attributes[g]);
+                }
+                localIndices.push_back(l);
+            }
+            for (uint32_t g : localToGlobal) globalToLocal[g] = UINT32_MAX;
+            if (localToGlobal.empty()) {
+                if (error) *error = "mesh=" + std::to_string(mi) + ", primitive=" + std::to_string(pi) + ": no valid vertices";
+                return false;
+            }
             BuildInput input;
-            input.indices = model.indices.data() + p.firstIndex;
-            input.indexCount = p.indexCount;
-            input.positions = &model.vertices.front().pos.x;
-            input.vertexCount = model.vertices.size();
-            input.positionStride = sizeof(ModelVertex);
-            input.attributes = attributes.front().data();
-            input.attributeStride = sizeof(attributes.front());
+            input.indices = localIndices.data();
+            input.indexCount = localIndices.size();
+            input.positions = localPositions.data();
+            input.vertexCount = localToGlobal.size();
+            input.positionStride = 3 * sizeof(float);
+            input.attributes = localAttributes.front().data();
+            input.attributeStride = sizeof(localAttributes.front());
             input.attributeWeights = kWeights;
             input.attributeComponents = 15;
             input.materialGroup = uint32_t(p.material);
@@ -120,13 +151,15 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
                     ", primitive=" + std::to_string(pi) + ": " + why;
                 return false; // Preserve old output on failure
             }
+            for (auto& i : prepared.geometry.indices) i = localToGlobal[i];
+            for (auto& i : prepared.geometry.meshletVertices) i = localToGlobal[i];
             next.primitives.push_back(std::move(prepared));
         }
     }
     if(!next.primitives.empty()){
         SourceSeamAudit seamReport{};
         std::string seamError;
-        if(!auditModelSourceSeams(model,next,seamReport,&seamError)){
+        if(!auditModelSourceSeams(model,next,seamReport,&seamError,tolerateSourceSeamDefects)){
             if(error)*error="source-wide seam validation: "+seamError;
             return false; // preserve the caller's previous asset on failure
         }
@@ -156,7 +189,7 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
     ModelAsset built;
     std::string error;
     if (!buildModelAsset(model, options_, built, &error,
-                         allowPreparedRootLods_)) {
+                         allowPreparedRootLods_, tolerateSourceSeamDefects_)) {
         ++stats_.failedSources;
         warnings_.push_back("Strata staging failed '" + key + "': " + error);
         return false;

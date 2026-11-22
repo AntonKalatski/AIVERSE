@@ -319,6 +319,13 @@ void Editor::registerGuiOps() {
                 auto list=Json::array();
                 for(const auto& d:view_.geometryScene().strataSelectDecisions())list.push(Json::string(d));
                 st.set("select",list);
+                auto warn=Json::array();
+                for(const auto& w:view_.geometryScene().warnings())
+                    if(w.find("Strata")!=std::string::npos||w.find("STRATA")!=std::string::npos)warn.push(Json::string(w.substr(0,400)));
+                st.set("warnings",warn);
+                st.set("stageMs",Json::number(double(g.strataStageMs)));
+                st.set("compactUploads",Json::number(int64_t(g.strataCompactUploads)));
+                st.set("compactReuses",Json::number(int64_t(g.strataCompactReuses)));
             }
             r.set("strata",st);
         }

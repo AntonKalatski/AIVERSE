@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <numeric>
 #include <set>
+#include <chrono>
 #include <tuple>
 #include <utility>
 
@@ -231,6 +232,9 @@ void GeometryScene::retireResident(gfx::Device& dev) {
     strataPortableDrawModels_.clear();
     strataSharedAliases_.clear();
     strataPortableLodHistories_.clear();
+    for (auto& [instance, compact] : strataCompactBuffers_)
+        if (compact) compact->release(dev);
+    strataCompactBuffers_.clear();
     for (auto& [source, staged] : strataPortableSources_)
         if (staged) staged->shutdown(dev);
     strataPortableSources_.clear();
@@ -307,7 +311,10 @@ void GeometryScene::shutdown(gfx::Device& dev) {
     if(!retirement_.completeForShutdown(dev))
         throw std::runtime_error("geometry scene: GPU shutdown barrier failed");
 }
-void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
+// Source vertex budget of a file-loaded scene: room for multi-million
+// triangle scans/buildings, which STRATA exists for (loadPrepared caps 16M).
+static constexpr size_t kSceneSourceVertexBudget=12000000;
+void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},kSceneSourceVertexBudget);}
 void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const FileReader& read) {
     // The host may call recoverFailedStagesAfterGpuIdle() explicitly when
     // the device becomes responsive. Do not block here or create more GPU
@@ -325,7 +332,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     // transactional reload would otherwise silently turn STRATA off.
     staged->copyStrataConfigFrom(*this);
     try {
-        staged->loadImpl(dev,json,read,{},2000000);
+        staged->loadImpl(dev,json,read,{},kSceneSourceVertexBudget);
     } catch (...) {
         // loadImpl enqueues partial GPU uploads in this staging owner.
         // Never drop its retirement queue on a refused device-idle barrier.
@@ -358,6 +365,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataPortableSources_=std::move(staged->strataPortableSources_);
     strataGlobalIndexLeases_=std::move(staged->strataGlobalIndexLeases_);
     strataPortableDrawModels_=std::move(staged->strataPortableDrawModels_);
+    strataCompactBuffers_=std::move(staged->strataCompactBuffers_);
     strataSharedAliases_=std::move(staged->strataSharedAliases_);
     strataPortableLodHistories_=std::move(staged->strataPortableLodHistories_);
     strataDebugGeometry_=std::move(staged->strataDebugGeometry_);
@@ -382,6 +390,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     staged->strataPortableSources_.clear();
     staged->strataGlobalIndexLeases_.clear();
     staged->strataPortableDrawModels_.clear();
+    staged->strataCompactBuffers_.clear();
     staged->strataSharedAliases_.clear();
     staged->strataPortableLodHistories_.clear();
     staged->strataDebugGeometry_.clear();
@@ -536,9 +545,12 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             // Build once for each *source* model before uploadModel may release
             // CPU vertex streams. Surface/HLOD proxies retain legacy ownership
             // and are never duplicated here. This path does NOT draw Strata.
+            const auto stageStart=std::chrono::steady_clock::now();
             strataStaging_ = std::make_shared<strata::SceneStaging>();
-            if (strataPortableRenderingEnabled_)
+            if (strataPortableRenderingEnabled_) {
                 strataStaging_->setAllowPreparedRootLods(true);
+                strataStaging_->setTolerateSourceSeamDefects(true);
+            }
             std::set<const Model*> usedSources;
             for (const auto& instance : instances_)
                 if (!strataLodSources.count(instance.model))
@@ -556,6 +568,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                                 std::move(geometry);
                     }
                 }
+            stats_.strataStageMs=float(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-stageStart).count());
             const auto& st = strataStaging_->stats();
             stats_.strataSources = st.stagedSources;
             stats_.strataPrimitives = st.stagedPrimitives;
@@ -713,6 +726,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 auto source=std::make_shared<strata::PortableSource>();
                 // Scene-authored STRATA draws adjacent clusters as one primitive.
                 source->setMergeAdjacentClusters(strataMergeClusters_);
+                // One draw per material instead of one per cluster.
+                source->setCompactSelection(strataMergeClusters_);
                 if (!source->stage(dev, *model, *asset, &error,
                                    sourceBudget,
                                    strataIncrementalIndexStreamingEnabled_,
@@ -1400,8 +1415,24 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             }
             const uint64_t oldTransitions=
                 staged->second->stats().hysteresisTransitions;
+            const ModelDraw legacyPart=d; // original source, for unstaged parts
+            auto& compactSlot=strataCompactBuffers_[&i];
+            if (!compactSlot) compactSlot=std::make_shared<strata::PortableCompactBuffer>();
+            const uint64_t uploadsBefore=compactSlot->uploads, reusesBefore=compactSlot->reuses;
             if (staged->second->prepareModel(i.world, views, forceFinest,
-                    *slot, &error,history,strataLodHysteresisFraction_)) {
+                    *slot, &error,history,strataLodHysteresisFraction_,
+                    compactSlot.get())) {
+                stats_.strataCompactUploads+=compactSlot->uploads-uploadsBefore;
+                stats_.strataCompactReuses+=compactSlot->reuses-reusesBefore;
+                // Partial source (e.g. blended glass not staged): draw only
+                // those materials from the original model, then the alias.
+                if (staged->second->partial()) {
+                    ModelDraw rest=legacyPart;
+                    rest.materialMask=&staged->second->legacyMaterialMask();
+                    rest.staticCache=nullptr;
+                    rest.persistentId=0;
+                    r.drawModel(rest);++stats_.submitted;
+                }
                 stats_.strataLodHysteresisTransitions+=
                     staged->second->stats().hysteresisTransitions-
                     oldTransitions;
