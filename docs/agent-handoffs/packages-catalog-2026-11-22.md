@@ -105,8 +105,9 @@ clusters; `loader.py --check`; Studio `npm run typecheck`, `npm run build`, `npm
 2 fail — the same 2 fail on the merge base), `tools/studio/test_*.py` (3 fail on the base too);
 site build + Chrome screenshots of the loader (catalog, releases); `build.py check`, skills audit.
 
-NOT RUN: the WebAssembly viewer (emsdk download is blocked here; built by the catalog `pages`
-workflow, check the deployed page), the web game shell with the new default mark, Studio in the
+Web: after the catalog `pages` run the deployed viewer was opened in a browser
+(vegetation-pbr: shapes cube/cylinder, item switching, info panel with 1024×1024 sizes, Russian UI,
+loading mark). NOT RUN: LOD/STRATA in the web build (no model package in the catalog yet), the web game shell with the new default mark, Studio in the
 native app. No model packages exist in the catalog yet, so LOD/STRATA show up on the site only with one.
 
 Next: after the merge, set `ENGINE_REF` in AIVERSE-PLUGINS `pages.yml` to `main`; a first model
