@@ -1,6 +1,7 @@
 // Combat: target acquisition, weapons (height advantage, misses, squads), projectiles, damage,
 // abilities (autocast, auras, buffs, stuns, summons, blink), hero experience, death (bounty, score,
 // wrecks, depleted extractors).
+#include "../../engine/game/Damage.h"
 #include "RtsInternal.h"
 #include "../../libraries/include/aiverselib/mechanics/EcsKinematicProjectileSystems.h"
 #include "../../libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h"
@@ -95,56 +96,27 @@ void RtsModule::sysTargeting(Simulation& sim) {
 // ================================================================= damage
 
 void RtsModule::dealDamage(Simulation& sim, Entity target, Fixed dmg, uint16_t dmgType, Entity source, uint8_t sourceOwner, const WeaponDef* wd) {
-    World& w = sim.world();
-    auto* u = w.tryGet<Unit>(target);
-    if (!u || u->hp.raw <= 0) return;
-    const UnitType& t = rules_.types[u->type];
-    if (t.invulnerable) return;
-    if (native_.has(kHookDamage)) { native_.damage(*this, sim, target, source, dmg); if (dmg.raw <= 0) return; }   // native modules (docs/native-modules.md § Hooks)
-    const Fixed raw = dmgType == kDamagePure ? dmg : dmg * rules_.damageMult(dmgType, t.armorType);
-    Fixed fin = mitigate(sim, target, raw, wd, dmgType);   // bonuses, shields, armor model (RtsOriginals.cpp)
-    if (mechOn(sim)) fin = fin * mechDamageTaken(sim, target, source);   // agent-mech (retreat, cover, armor arcs)
-    if (rules_.advancedEffects) {
-        uint32_t fl = statusFlags(sim, target);
-        if (fl & kStInvulnerable) return;
-        if (wd && rules_.anyHitCap)
-            if (auto* st = w.tryGet<Statuses>(target)) {
-                bool absorbed = false;
-                for (auto& in : st->list) {
-                    const Fixed cap = rules_.statuses[in.def].hitCap;
-                    if (cap.raw <= 0 || in.until <= sim.tick()) continue;
-                    const uint32_t end = sim.tick() + std::max<uint32_t>(1, uint32_t((cap * int64_t(sim.tickRate())).toInt()));
-                    if (in.until > end) in.until = end;
-                    absorbed = true;
-                }
-                if (absorbed) return;
-            }
-        if (fl & kStFake) { u->hp = Fixed{}; u->flags |= kUnitSilent; return; }  // illusions pop on any hit
-        fin = fin * stat(sim, target, Stat::DamageTaken);
-        if (auto* st = w.tryGet<Statuses>(target))
-            for (auto& in : st->list) {
-                if (in.shield.raw <= 0 || fin.raw <= 0) continue;
-                Fixed absorb = fxMin(in.shield, fin);
-                in.shield -= absorb; fin -= absorb;
-                if (in.shield.raw <= 0 && rules_.statuses[in.def].shield.raw > 0) in.until = sim.tick(); // shield broken
-            }
-        if (w.alive(source) && w.has<Unit>(source)) {
-            Fixed ls = stat(sim, source, Stat::Lifesteal);
-            if (ls.raw > 0) { Unit& su = w.get<Unit>(source); su.hp = fxMin(stat(sim, source, Stat::MaxHp), su.hp + fin * ls); }
+    struct Hooks {
+        RtsModule& m; Simulation& sim;
+        bool before(Entity t, Entity s, Fixed& d) {   // native modules (docs/native-modules.md § Hooks)
+            if (m.native_.has(kHookDamage)) { m.native_.damage(m, sim, t, s, d); if (d.raw <= 0) return false; }
+            return true;
         }
-    }
-    if (progression_ && progression_->active()) fin = progression_->damage(sim, target, source, fin);   // perks: crits, incoming damage (RtsProgression.cpp)
-    if (script_ && (script_->hooks() & ScriptEngine::kHookDamage)) fin = script_->beforeDamage(sim, target, source, sourceOwner, fin, dmgType);   // before_damage (G12)
-    u->hp -= fin;
-    if (sourceOwner != 0) u->lastAttacker = sourceOwner;
-    if (source.valid()) u->lastHitBy = source;
-    if ((rules_.mech.veterancy || rules_.mech.infection || rules_.mech.morale) && w.alive(source)) mechOnHit(sim, target, source, fin);   // agent-mech: last hitter, morale
-    sim.emit({kEvHit, sourceOwner, target, source, fin.raw, w.get<Transform>(target).pos});
-    if (rules_.originals) afterHit(sim, target, source, wd, u->hp.raw <= 0);   // crews, infection, eaters
-    // creeps fight back as a camp
-    if (auto* g = w.tryGet<Guard>(target); g && w.alive(source) && w.has<Unit>(source)) {
-        if (auto* c = w.tryGet<Combat>(target); c && !w.alive(c->target)) { c->target = source; c->autoTarget = true; }
-    }
+        Fixed mitigate(Entity t, Fixed raw, const WeaponDef* wd, uint16_t type) { return m.mitigate(sim, t, raw, wd, type); }   // bonuses, shields, armor model (RtsOriginals.cpp)
+        Fixed taken(Entity t, Entity s, Fixed fin) { return m.mechOn(sim) ? fin * m.mechDamageTaken(sim, t, s) : fin; }   // agent-mech (retreat, cover, armor arcs)
+        uint32_t statusFlags(Entity t) { return m.statusFlags(sim, t); }
+        Fixed stat(Entity e, Stat s) { return m.stat(sim, e, s); }
+        Fixed finish(Entity t, Entity s, uint8_t owner, uint16_t type, Fixed fin) {
+            if (m.progression_ && m.progression_->active()) fin = m.progression_->damage(sim, t, s, fin);   // perks: crits, incoming damage
+            if (m.script_ && (m.script_->hooks() & ScriptEngine::kHookDamage)) fin = m.script_->beforeDamage(sim, t, s, owner, fin, type);   // before_damage (G12)
+            return fin;
+        }
+        void hit(Entity t, Entity s, Fixed fin) {
+            if ((m.rules_.mech.veterancy || m.rules_.mech.infection || m.rules_.mech.morale) && sim.world().alive(s)) m.mechOnHit(sim, t, s, fin);   // agent-mech: last hitter, morale
+        }
+        void afterHit(Entity t, Entity s, const WeaponDef* wd, bool killed) { if (m.rules_.originals) m.afterHit(sim, t, s, wd, killed); }   // crews, infection, eaters
+    };
+    applyDamage(sim, rules_, target, dmg, dmgType, source, sourceOwner, wd, Hooks{*this, sim});
 }
 
 void RtsModule::sysWeapons(Simulation& sim) {

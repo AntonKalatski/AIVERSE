@@ -36,6 +36,7 @@
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
+#include "../../engine/game/Components.h"
 
 namespace aiverse { class Simulation; class Hasher; struct Command; }
 
@@ -67,21 +68,6 @@ struct ScriptStore {
     bool userScripts = false;                   // the game has its own simulation scripts: hashed only then (the
                                                 // standard library keeps its state in the C++ GameState)
     void hash(Hasher& h) const;
-};
-
-// Per-entity Lua data (game.data(h)): canonical serialization of the entity's table, written when the
-// table changed (flush), hashed through `hash`, saved with the world, gone with the entity.
-struct ScriptData {
-    std::string blob;
-    uint64_t hash = 0;     // FNV-1a of blob (hashState feeds entity + hash)
-    uint64_t serial = 0;   // VM write stamp (not saved, not hashed): the VM's cached table is current when equal
-};
-
-// Base stat overrides set by game.set_stat_base(h, stat, value): replace the unit type's base value
-// before techs / levels / buffs apply (RtsModule::stat). Saved and hashed; only games with scripts read it.
-struct ScriptStats {
-    struct Entry { uint8_t stat = 0; Fixed base{}; };
-    std::vector<Entry> list;
 };
 
 // A script-defined player command (rules "commands": {id: {...}}). Sent as kCmdScript: param = index

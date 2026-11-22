@@ -2,6 +2,7 @@
 // statuses, needs, lanes ...). Rules data: GameData.h. The simulation that runs on them: modules/rts (RtsModule).
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/ECS.h"
@@ -435,6 +436,21 @@ struct Carrier { Entity from = kNullEntity, to = kNullEntity; int16_t res = -1; 
 
 // Mushroom Wars 2 lanes
 struct Lane { Entity a = kNullEntity, b = kNullEntity; int offset = 0; std::vector<Vec3> points; }; // offset: <0 left, >0 right
+// Per-entity Lua data (game.data(h)): canonical serialization of the entity's table, written when the
+// table changed (flush), hashed through `hash`, saved with the world, gone with the entity.
+struct ScriptData {
+    std::string blob;
+    uint64_t hash = 0;     // FNV-1a of blob (hashState feeds entity + hash)
+    uint64_t serial = 0;   // VM write stamp (not saved, not hashed): the VM's cached table is current when equal
+};
+
+// Base stat overrides set by game.set_stat_base(h, stat, value): replace the unit type's base value
+// before techs / levels / buffs apply (Stats.h). Saved and hashed; only games with scripts read it.
+struct ScriptStats {
+    struct Entry { uint8_t stat = 0; Fixed base{}; };
+    std::vector<Entry> list;
+};
+
 struct LaneWalker { int lane = -1; uint16_t pos = 0; bool reverse = false; };
 
 } // namespace aiverse::game

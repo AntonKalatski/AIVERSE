@@ -15,6 +15,7 @@
 #include "../../engine/sim/Simulation.h"
 #include "../../engine/game/GameData.h"
 #include "../../engine/game/Components.h"
+#include "../../engine/game/Stats.h"
 #include "../../engine/game/AIControllers.h"
 #include "../../engine/game/MapGrid.h"
 #include "RtsColliders.h"
@@ -41,7 +42,6 @@
 namespace aiverse::game {
 
 // ---------------------------------------------------------------- per-player state
-struct TypeMods { Fixed add[size_t(Stat::Count)]; Fixed mul[size_t(Stat::Count)]; };
 
 struct PlayerEconomy {
     std::vector<Fixed> stock, cap, income;

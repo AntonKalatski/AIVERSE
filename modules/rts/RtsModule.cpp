@@ -770,64 +770,23 @@ Fixed RtsModule::typeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s
 Fixed RtsModule::stat(Simulation& sim, Entity e, Stat s) const {
     World& w = sim.world();
     const Unit& u = w.get<Unit>(e);
-    const UnitType& t = rules_.types[u.type];
-    Fixed base{};
-    switch (s) {
-        case Stat::MaxHp: base = t.maxHp; break;
-        case Stat::Armor: base = t.armor; break;
-        case Stat::Damage: base = kOne; break;          // multiplier on weapon damage
-        case Stat::Range: base = Fixed{}; break;        // bonus added to weapon range
-        case Stat::Speed: base = t.speed; break;
-        case Stat::Sight: base = t.sight; break;
-        case Stat::GatherRate: base = kOne; break;
-        case Stat::AttackSpeed: base = kOne; break;
-        case Stat::ProductionSpeed: base = kOne; break;
-        case Stat::EnergyRegen: case Stat::Defense: case Stat::CooldownRate: case Stat::UpgradeCost: case Stat::DamageTaken: case Stat::Scale: base = kOne; break;
-        case Stat::GarrisonCap: base = Fixed::fromInt(t.garrisonMax); break;
-        case Stat::Lifesteal: base = Fixed{}; break;
-        case Stat::Armor2: base = t.armor2; break;
-        default: break;
+    const uint8_t owner = w.get<Owner>(e).player;
+    StatSources src;
+    src.scriptBase = script_ && script_->hasUserScripts();   // game.set_stat_base overrides
+    if (auto* gs = w.resource<GameState>(); owner < gs->players.size()) {
+        if (!gs->players[owner].mods.empty()) src.mods = &gs->players[owner].mods[u.type];
+        src.playerStatuses = &gs->players[owner].statuses;
     }
-    if (script_ && script_->hasUserScripts())   // game.set_stat_base overrides
-        if (auto* ss = w.tryGet<ScriptStats>(e))
-            for (auto& x : ss->list) if (x.stat == uint8_t(s)) base = x.base;
-    uint8_t owner = w.get<Owner>(e).player;
-    Fixed add{}, mul = kOne, lerp{};
-    if (auto* gs = w.resource<GameState>(); owner < gs->players.size() && !gs->players[owner].mods.empty()) {
-        const TypeMods& m = gs->players[owner].mods[u.type];
-        add += m.add[size_t(s)]; mul *= m.mul[size_t(s)];
-    }
-    if (auto* h = w.tryGet<Hero>(e)) for (auto& pl : t.perLevel) if (pl.stat == s) { add += pl.add * (h->level - 1); }
-    if (auto* b = w.tryGet<Buffs>(e)) {
-        for (auto& bf : b->list) if (bf.stat == s && bf.until > sim.tick()) { add += bf.add; mul *= bf.mul; }
-    }
-    if (rules_.advancedEffects) {
-        Fixed smul = kOne, floor{};
-        if (auto* st = w.tryGet<Statuses>(e))
-            for (auto& in : st->list)
-                for (auto& m : rules_.statuses[in.def].mods)
-                    if (m.stat == s) floor = fxMax(floor, m.floor);
-        if (auto* st = w.tryGet<Statuses>(e))
-            for (auto& in : st->list)
-                for (auto& m : rules_.statuses[in.def].mods)
-                    if (m.stat == s) { add += m.add * in.stacks; lerp += m.lerp * in.stacks; for (int k = 0; k < in.stacks; ++k) (floor.raw > 0 ? smul : mul) *= m.mul; }
-        if (floor.raw > 0) mul *= fxMax(smul, floor);
-        if (auto* gs = w.resource<GameState>(); owner < gs->players.size())
-            for (auto& in : gs->players[owner].statuses)
-                for (auto& m : rules_.statuses[in.def].mods)
-                    if (m.stat == s) { add += m.add * in.stacks; for (int k = 0; k < in.stacks; ++k) mul *= m.mul; }
-    }
-    if (mechOn(sim)) mechStatMod(sim, e, s, add, mul);   // agent-mech states (retreat speed, cargo arrows, veterancy)
-    if (rules_.originals) add += playerModsStat(sim, owner, u.type, s, mul);   // forges, morale
-    if (s == Stat::Speed && fields_ && fields_->hasSpeed()) if (auto* tr = w.tryGet<Transform>(e)) mul *= fields_->speedMul(sim, tr->pos, owner);   // grid fields
-    if (s == Stat::Speed && encounters_ && encounters_->hasSpeed()) mul *= encounters_->speedMul(sim, e);   // boss phase / enrage speed
-    if (s == Stat::Speed && env_ && env_->active()) env_->speed(sim, e, add, mul);   // environment: wind, zones, weather, trample fields
-    if (s == Stat::Speed && native_.has(kHookSpeed)) native_.unitSpeed(const_cast<RtsModule&>(*this), sim, e, add, mul);
-    // Damage/Range/GatherRate/AttackSpeed "add" are fractional bonuses on top of 1 / absolute range
-    Fixed v = (base + add) * mul;
-    if (progression_ && progression_->active()) progression_->modStat(sim, e, s, v);   // perk pipeline (RtsProgression.cpp)
-    if (lerp.raw > 0) v = v + (kOne - v) * fxMin(kOne, lerp);   // BW skills: pull the stat toward 1
-    return v;
+    return effectiveStat(sim, rules_, e, s, src,
+        [&](Fixed& add, Fixed& mul) {
+            if (mechOn(sim)) mechStatMod(sim, e, s, add, mul);   // agent-mech states (retreat speed, cargo arrows, veterancy)
+            if (rules_.originals) add += playerModsStat(sim, owner, u.type, s, mul);   // forges, morale
+            if (s == Stat::Speed && fields_ && fields_->hasSpeed()) if (auto* tr = w.tryGet<Transform>(e)) mul *= fields_->speedMul(sim, tr->pos, owner);   // grid fields
+            if (s == Stat::Speed && encounters_ && encounters_->hasSpeed()) mul *= encounters_->speedMul(sim, e);   // boss phase / enrage speed
+            if (s == Stat::Speed && env_ && env_->active()) env_->speed(sim, e, add, mul);   // environment: wind, zones, weather, trample fields
+            if (s == Stat::Speed && native_.has(kHookSpeed)) native_.unitSpeed(const_cast<RtsModule&>(*this), sim, e, add, mul);
+        },
+        [&](Fixed& v) { if (progression_ && progression_->active()) progression_->modStat(sim, e, s, v); });   // perk pipeline
 }
 
 int RtsModule::membersAlive(Simulation& sim, Entity e) const {
