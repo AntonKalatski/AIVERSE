@@ -2143,7 +2143,8 @@ units/structures standing on slopes too steep for them. Sculpting: `terrain_scul
 ## Planets: visual keys (map `world` block)
 
 The bodies themselves are described in `docs/planets.md` §1-2 (`world.bodies`, `kind`, `radius`, `faceSize`,
-`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`). What only the view reads:
+`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`, `nereid` = the sea as a NEREID water body for buoyancy and
+currents, §1). What only the view reads:
 
 ```jsonc
 {"id": "terra", "kind": "planet", ...,

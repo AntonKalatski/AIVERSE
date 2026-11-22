@@ -2165,7 +2165,8 @@ MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_
 ## Планеты: визуальные ключи (блок `world` карты)
 
 Сами тела описаны в `docs/planets.md` §1-2 (`world.bodies`, `kind`, `radius`, `faceSize`,
-`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`). Что читает только представление:
+`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`, `nereid` — море как водоём NEREID для плавучести и
+течений, §1). Что читает только представление:
 
 ```jsonc
 {"id": "terra", "kind": "planet", ...,

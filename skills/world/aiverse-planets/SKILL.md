@@ -25,8 +25,11 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
    uses NEREID's wave model (`engine/render/NereidWaveShaders.h`, the same functions as plane water) sampled
    triplanar on the sphere, with colour by depth, shallow water and foam along the coast, cut per pixel where
    the ground is above `seaLevel`. Change waves or foam in `NereidWaveShaders.h`, not in the planet shader.
-   Still missing: NEREID water bodies on spheres (buoyancy, currents, contact sampling). Set the sea with
-   `seaLevel` / the generator's `water`; check the coast on a close screenshot.
+   Set the sea with `seaLevel` / the generator's `water`; check the coast on a close screenshot. For gameplay in
+   the sea (ships, swimmers, floating wrecks) add `"nereid": true` or `{"depth", "current", "axis"}` to the body:
+   the sea becomes a NEREID sphere water body (`NereidSphereWater.h`, docs/planets.md §1). Give the floating
+   entities `WaterProbeComponent` + `WaterSphereContactComponent` (+ buoyancy components) from a native module;
+   depth, up and buoyancy are radial, the current flows east about the axis. Never write planet-only water code.
 6. Cube-sphere terrain: relief and materials with the heightfield tools; check seams between faces on screenshots (`view_focus` on edges).
 7. Bots: `rules.ai.invasionSize` sets the orbit fleet; bots build orbital yards when the enemy is reachable only through orbit. `match_run` must show transfers between bodies and a winner (`skills/ai/aiverse-bots-debug` otherwise).
 8. Determinism: same seed -> same checksum; `templates/` checksums unchanged when engine code is touched.
