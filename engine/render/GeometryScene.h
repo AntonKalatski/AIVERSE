@@ -48,7 +48,7 @@ public:
         // pass / rejected as stale; time spent reading vs building.
         uint32_t strataCookedSources=0, strataCookWrittenSources=0, strataCookStaleSources=0;
         float strataCookedLoadMs=0, strataBuildMs=0;
-        uint64_t strataCompactUploads=0, strataCompactReuses=0;
+        uint64_t strataCompactUploads=0, strataCompactReuses=0, strataPlanReuses=0;
         uint64_t strataPortableSharedReuses=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
@@ -416,6 +416,12 @@ private:
     struct StrataSharedAlias { std::unique_ptr<Model> model; uint64_t lastFrame=0; };
     // (source model, selected-cluster signature) -> shared drawn alias.
     std::map<std::pair<const Model*,uint64_t>,StrataSharedAlias> strataSharedAliases_;
+    // Last plan per instance: when the views (camera, sizes, thresholds) and
+    // the instance transform are unchanged, the selection is unchanged too,
+    // so the alias is reused without re-planning (static cameras, paused or
+    // idle views cost no STRATA CPU time).
+    struct StrataLastPlan { uint64_t key=0, signature=0; gfx::BufferHandle ib; };
+    std::map<const Instance*,StrataLastPlan> strataLastPlans_;
     uint64_t strataDrawFrame_=0;
     std::map<const Instance*,std::shared_ptr<strata::PortableLodHistory>>
         strataPortableLodHistories_;
