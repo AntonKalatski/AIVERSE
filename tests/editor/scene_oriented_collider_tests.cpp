@@ -19,8 +19,8 @@ int main() {
     collider.set("yaw", Json::number(0.25, 6));
     Json colliders = Json::array();
     colliders.push(collider);
-    map.data.fps = Json::object();
-    map.data.fps.set("colliders", colliders);
+    map.data.extra = Json::object(); map.data.worldSpace = true;
+    map.data.extra.set("colliders", colliders);
 
     const auto ref = DocumentEntityRef::fpsCollider(0);
     DocumentTransform pos;
@@ -49,7 +49,7 @@ int main() {
     for (double n : {8.0, 4.0, 10.0}) scales.push(Json::number(n));
     changes.set("scale", scales);
     require(writeDocumentComponent(map, ref, DocumentComponentKind::Transform, changes));
-    const Json& updated = map.data.fps["colliders"][0];
+    const Json& updated = map.data.extra["colliders"][0];
     require(std::abs(updated["yaw"].toDouble() - 0.5) < 0.00001);
     require(updated["half"][0].toDouble() == 4.0);
     require(updated["half"][1].toDouble() == 2.0);

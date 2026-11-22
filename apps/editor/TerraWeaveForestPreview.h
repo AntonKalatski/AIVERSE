@@ -68,7 +68,7 @@ public:
               const MapDoc& doc, int64_t cameraXcm, int64_t cameraZcm,
               const std::function<int32_t(int64_t, int64_t)>& sampleHeightCm) {
         visibleCount_ = 0;
-        if (!enabled_ || doc.data.planet() || doc.data.fps.isObject()) return;
+        if (!enabled_ || doc.data.planet() || doc.data.worldSpace) return;
         const Json& recipe = doc.data.extra["terraweave"];
         if (!recipe.isObject() || recipe.getInt("version", 0) != 1) return;
         if (!sampleHeightCm) throw std::invalid_argument("TerraWeave preview missing height sampler");

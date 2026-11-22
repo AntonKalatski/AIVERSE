@@ -372,7 +372,7 @@ void Editor::openGame(const std::string& idOrDir) {
     checkNativeModules(false);
     if(ws_.project.worldSpaceMaps()) {
         focusWindow("fps");
-        const auto& spawn=doc().data.fps["spawns"][0];
+        const auto& spawn=doc().data.extra["spawns"][0];
         sceneCam.target={float(spawn[0].toDouble()),0,float(spawn[2].toDouble())};sceneCam.distance=35;
     }
 }

@@ -16,17 +16,17 @@ inline float lightScalar(const Json& object, const char* key, float fallback) {
     const double v=field.toDouble();
     return std::isfinite(v) && v>=-1000000 && v<=1000000 ? float(v) : fallback;
 }
-inline PreviewDayLighting previewDocumentDay(const editor::MapDoc& doc, bool fpsProject) {
-    const Json& source=fpsProject ? doc.data.fps : doc.data.extra;
+inline PreviewDayLighting previewDocumentDay(const editor::MapDoc& doc) {
+    const Json& source=doc.data.extra;
     const Json& block=source["lighting"];
     return studioPreviewDayLighting(lightScalar(block,"time",.5f),
         lightScalar(block,"nightLevel",.18f),lightScalar(block,"clouds",0),lightScalar(block,"storm",0));
 }
 inline std::vector<render::PointLight> studioAuthoredLights(
-    const editor::MapDoc& doc,bool fpsProject,float levelHeight=1.5f,size_t limit=render::LightSystem::kMaxLights) {
-    const Json& source=fpsProject ? doc.data.fps : doc.data.extra;
+    const editor::MapDoc& doc,float levelHeight=1.5f,size_t limit=render::LightSystem::kMaxLights) {
+    const Json& source=doc.data.extra;
     const Json& list=source["lights"];
-    const auto day=previewDocumentDay(doc,fpsProject);
+    const auto day=previewDocumentDay(doc);
     std::vector<render::PointLight> lights;
     if (!list.isArray()) return lights;
     const size_t count=std::min(list.size(),limit);
@@ -42,7 +42,7 @@ inline std::vector<render::PointLight> studioAuthoredLights(
         const float intensity=lightScalar(item,"intensity",1.5f);
         if(radius<=0 || radius>100000 || intensity<0 || intensity>10000)continue;
         render::PointLight light;
-        light.pos={x,height+(fpsProject ? 0.f : terrainPreviewHeight(doc.data,x,z,levelHeight)),z};
+        light.pos={x,height+(doc.data.worldSpace ? 0.f : terrainPreviewHeight(doc.data,x,z,levelHeight)),z};
         light.radius=radius;
         light.intensity=intensity;
         light.color={1.f,.8f,.6f};

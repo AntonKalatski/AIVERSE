@@ -248,7 +248,7 @@ void DetailsPanel::draw(Editor& ed) {
             ui::hint("Invalid scene object reference");
             return;
         }
-        const Json* source = fpsDocumentEntity(ed.doc().data.fps, ref);
+        const Json* source = fpsDocumentEntity(ed.doc().data.extra, ref);
         if (!source) {
             ui::hint("Scene object no longer exists");
             return;

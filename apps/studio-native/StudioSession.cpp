@@ -97,7 +97,7 @@ int StudioSession::indexFor(const std::string& id) const {
 Json StudioSession::propertiesFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     Json fields = Json::array();
-    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps())) {
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map)) {
         if (nodeId(ws_.map,node.ref) != entityId) continue;
         if(node.ref.isLight()) {
             const auto& light=*editor::documentLight(ws_.map,node.ref);
@@ -203,7 +203,7 @@ Json StudioSession::componentCatalog(const std::string& entityId) const {
     return out;
 }
 bool StudioSession::documentHas(const std::string& id) const {
-    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps()))
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map))
         if (nodeId(ws_.map,node.ref) == id) return true;
     return false;
 }
@@ -220,7 +220,7 @@ void StudioSession::dropOrdinalFlags() {
 }
 Json StudioSession::inspectorFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
-    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps())) {
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map)) {
         if (nodeId(ws_.map,node.ref) != entityId) continue;
         Json result=Json::object(),components=Json::array();
         result.set("id",str(entityId));result.set("name",str(node.label));
@@ -407,7 +407,7 @@ Json StudioSession::snapshot() const {
     Json scene = Json::object();
     scene.set("name", str(ws_.map.data.name));
     Json rows = Json::array();
-    const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.worldSpaceMaps());
+    const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map);
     for (const auto& node : nodes) {
         Json row = Json::object();
         row.set("id", str(nodeId(ws_.map,node.ref)));
@@ -1067,7 +1067,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
         if((method=="studio.lightUpdate" || method=="studio.lightDelete") && params.has("entityId")) {
             if(!params["entityId"].isString())throw std::runtime_error("Invalid light entity ID");
             bool found=false;
-            for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.worldSpaceMaps()))
+            for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map))
                 if(node.ref.isLight() && nodeId(ws_.map,node.ref)==params.getStr("entityId")) {
                     params.set("index",num(int64_t(node.ref.index)));found=true;break;
                 }
@@ -2144,7 +2144,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                     throw std::runtime_error("Map path escapes the project");
                 editor::MapDoc draft;std::string error;
                 if (!draft.load(path.string(),&error)) throw std::runtime_error(error);
-                if (ws_.project.worldSpaceMaps()!=draft.data.fps.isObject()) throw std::runtime_error("Map format does not match the project");
+                if (ws_.project.worldSpaceMaps()!=draft.data.worldSpace) throw std::runtime_error("Map format does not match the project");
                 draft.revision=ws_.map.revision+1;
                 ws_.map=std::move(draft);
                 ws_.note({editor::Change::Map,0,0,-1,-1,-1,"Opened map"});
@@ -2563,7 +2563,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
             }
             if(entityId.compare(0,6,"light:")==0) {
                 bool found=false;size_t index=0;
-                for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map,ws_.project.worldSpaceMaps()))
+                for(const auto& node:editor::enumerateDocumentSceneNodes(ws_.map))
                     if(node.ref.isLight() && nodeId(ws_.map,node.ref)==entityId){index=node.ref.index;found=true;break;}
                 if(!found)throw std::runtime_error("Light entity no longer exists");
                 const std::string owner=key=="name"?"Entity":
@@ -2617,7 +2617,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 bool found = false;
                 editor::DocumentEntityRef ref;
                 editor::DocumentTransform target{};
-                for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, true)) {
+                for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map)) {
                     if (nodeId(ws_.map,node.ref) != entityId) continue;
                     if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity ||
                         !node.hasPosition)
@@ -2638,7 +2638,7 @@ Json StudioSession::dispatchImpl(const Json& request) {
                 else target.z = number;
 
                 editor::MapDoc draft;
-                draft.data.fps = ws_.map.toJson();
+                draft.data.extra = ws_.map.toJson(); draft.data.worldSpace = true;
                 if (!editor::setDocumentPosition(draft, ref, target))
                     throw std::runtime_error("Document transform validation failed");
                 if (draft.toJson() == ws_.map.toJson()) {

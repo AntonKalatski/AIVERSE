@@ -323,7 +323,7 @@ public:
                             const float3 pivot{float(position.x), float(position.y),
                                                float(position.z)};
                             const float extent = std::max(0.35f, ed.sceneCam.distance * 0.075f);
-                            const Json* source = fpsDocumentEntity(ed.doc().data.fps, selectedRef);
+                            const Json* source = fpsDocumentEntity(ed.doc().data.extra, selectedRef);
                             const bool oriented = selectedRef.source ==
                                 DocumentEntityRef::Source::ActorCollider && source &&
                                 (*source)["yaw"].isNumber();
@@ -375,7 +375,7 @@ public:
                     const bool validRef = documentEntityFromSelection(ed.selection, ref) &&
                         ref.source == DocumentEntityRef::Source::ActorCollider;
                     const Json* source = validRef
-                        ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+                        ? fpsDocumentEntity(ed.doc().data.extra, ref) : nullptr;
                     if (source && (*source)["yaw"].isNumber()) {
                         Json transform;
                         if (readDocumentComponent(ed.doc(), ref,
@@ -1258,7 +1258,7 @@ private:
             const bool hasDocRef = documentEntityFromSelection(ed.selection, ref);
             const Json* fpsSource = hasDocRef && ref.source ==
                 DocumentEntityRef::Source::ActorCollider
-                ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+                ? fpsDocumentEntity(ed.doc().data.extra, ref) : nullptr;
             const bool fpsOriented = fpsSource && (*fpsSource)["yaw"].isNumber();
             const DocEntity* rtsSource = hasDocRef && ref.source ==
                 DocumentEntityRef::Source::MapEntity

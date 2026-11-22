@@ -16,13 +16,13 @@ int main() {
     AIVERSE_TEST_CHECK(map[0].id=="entity:0");
     AIVERSE_TEST_CHECK(map[0].center.x==3 && map[0].center.z==4);
     AIVERSE_TEST_CHECK(map[0].boundsMin.x<map[0].center.x);
-    doc.data.fps=Json::parse(R"({
+    doc.data.extra = Json::parse(R"({
       "colliders":[
         {"min":[0,0,0],"max":[4,6,8]},
         {"center":[10,2,5],"half":[3,1,2],"yaw":0.125}
       ],
       "spawns":[[5,3,2]]
-    })");
+    })"); doc.data.worldSpace = true;
     const auto visual=studio::studioDocumentProxies(doc,true);
     AIVERSE_TEST_CHECK(visual.size()==3);
     AIVERSE_TEST_CHECK(visual[0].id=="collider:0");

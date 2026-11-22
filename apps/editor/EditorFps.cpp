@@ -219,8 +219,8 @@ void Editor::enqueueFpsSceneGeometry(const render::Camera& camera, bool editOver
     const uint64_t selectedKey = selection.kind == Selection::ActorObject ? selection.ref : 0;
     fpsSceneObjects_.clear();
     auto& instances = fpsSceneObjects_;
-    const auto& fps = doc().data.fps;
-    for (const auto& node : enumerateDocumentSceneNodes(doc(), true)) {
+    const auto& fps = doc().data.extra;
+    for (const auto& node : enumerateDocumentSceneNodes(doc())) {
         if (!node.hasPosition) continue;
         const Json* source = fpsDocumentEntity(fps, node.ref);
         if (!source) continue;
@@ -353,7 +353,7 @@ void Editor::enqueueFpsSceneGeometry(const render::Camera& camera, bool editOver
         const float3 centre{float(position.x), float(position.y),
                             float(position.z)};
         const float extent = std::max(0.35f, camera.distance * 0.075f);
-        const Json* source = fpsDocumentEntity(doc().data.fps, ref);
+        const Json* source = fpsDocumentEntity(doc().data.extra, ref);
         const bool oriented = source && (*source)["yaw"].isNumber();
         if (oriented && transformTool == TransformTool::Rotate) {
             constexpr int segments = 64;
