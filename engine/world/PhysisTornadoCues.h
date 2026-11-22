@@ -305,7 +305,7 @@ inline const char* physisTornadoScarEffectJson() {
   "emitters": [
     { "texture": "builtin:soft", "blend": "alpha", "align": "ground", "loop": true, "prewarm": true,
       "rate": 0.1, "maxParticles": 1, "ringBuffer": true, "life": [60, 60], "speed": [0, 0],
-      "size": [1.5, 1.5],
+      "size": [2.4, 2.4],
       "color": [[0, "#3b2b1cff"], [1, "#3b2b1cff"]] }
   ]
 })";

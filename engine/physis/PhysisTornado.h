@@ -434,7 +434,8 @@ inline std::uint32_t natureFire(World& world, const StormEvent& storm, const Tor
         for (const auto& v : cellsUnder(world, storm)) {
             auto* hz = world.tryGet<HazardCell>(v.cell);
             if (!hz) continue;
-            if (hz->fire > Fixed{}) {
+            // Over water the vortex draws no fire (it is quenched instead).
+            if (hz->fire > Fixed{} && !n.overWater) {
                 const Fixed drawn = fxMin(hz->fire, hz->fire * fxClamp(n.intakePerTick * intensity * v.weight, Fixed{}, one));
                 hz->fire -= drawn;
                 n.absorbed += drawn * area;

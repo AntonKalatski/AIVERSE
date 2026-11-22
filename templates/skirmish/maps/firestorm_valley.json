@@ -11,27 +11,27 @@
     "floodMode": "ExternalAuthority",
     "enableDisasters": true,
     // slow meadow fire that burns long enough for the twister to reach it
-    "disasterConfig": { "fireSpreadRate": 0.004, "fireGrowthRate": 0.01, "fuelConsumptionRate": 0.0015 },
+    "disasterConfig": { "fireSpreadRate": 0.0012, "fireGrowthRate": 0.006, "fuelConsumptionRate": 0.0012 },
     "noFuelOnWater": true,
     "scourCellMeters": 1,
     "ignitions": [
-      { "center": [20, 31], "radiusMeters": 6, "strength": 1, "startSeconds": 1 },
-      { "center": [14, 37], "radiusMeters": 4, "strength": 0.8, "startSeconds": 2 }
+      { "center": [21, 30], "radiusMeters": 6, "strength": 1, "startSeconds": 1 },
+      { "center": [26, 35], "radiusMeters": 4, "strength": 0.8, "startSeconds": 2 }
     ],
     "tornadoes": [
       {
         "id": "fire_twister",
-        "center": [8, 42],
+        "center": [3, 45],
         "coreRadiusMeters": 2.5, "outerRadiusMeters": 10, "heightMeters": 45,
         "tangentialWind": 42, "updraft": 16, "radialInflow": 6,
         "startSeconds": 3, "durationSeconds": 140, "rampSeconds": 3,
         "path": { "mode": "waypoints", "speed": 1.1,
-                  "points": [[14, 37], [20, 31], [24, 26], [28, 21], [31.5, 18], [37, 14], [44, 10], [50, 9]] },
+                  "points": [[10, 39], [16, 34], [21, 30], [24, 26], [28, 21], [31.5, 18], [37, 14], [44, 10], [50, 9]] },
         "damagePerSecond": 4, "damageRadiusMeters": 5,
         // Pulls the meadow fire in and becomes a fire whirl; ignites its path,
         // throws embers, burns units in its ring; quenched over the river/lake.
         "fire": { "suppression": 0.8, "fanning": 0.5, "intake": 0.6, "halfHeat": 50,
-                  "ignite": 0.4, "embersPerSecond": 6, "heatDamagePerSecond": 3 },
+                  "ignite": 0.4, "embersPerSecond": 4, "emberIgnite": 0.3, "heatDamagePerSecond": 3 },
         "surface": { "kind": "auto", "waterDecay": 0.12 },
         "erosion": { "rate": 0.05, "maxDepthMeters": 0.5 },
         "debris": { "max": 40, "perSecond": 8, "massKg": 0.4, "areaSqMeters": 0.06, "lifeSeconds": 14 }
