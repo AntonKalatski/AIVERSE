@@ -69,8 +69,6 @@
   border-radius:var(--au-radius-md);box-shadow:var(--au-shadow-md);color:var(--au-text)}
 .studio-editor-settings label{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px}
 .studio-editor-settings input[type=range]{width:100%;accent-color:var(--au-accent)}
-.studio-editor-settings__preset{display:flex;gap:6px}.studio-editor-settings__preset>button:first-child{flex:1}
-.studio-editor-settings input[type=text],.studio-editor-settings input:not([type]){width:100%;background:var(--au-field);border:1px solid var(--au-line-strong);border-radius:var(--au-radius-sm);padding:6px 8px;color:var(--au-text)}
 .studio-editor-settings button{background:var(--au-field);border:1px solid var(--au-line-strong);
   border-radius:var(--au-radius-sm);padding:8px;color:var(--au-text);cursor:pointer}
 

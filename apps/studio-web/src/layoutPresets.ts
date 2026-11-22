@@ -1,6 +1,6 @@
 /** Named editor layouts. One factory set per workspace, plus layouts the user saves in this browser. */
 import { normalizeDockTree, type DockTree } from './nestedDock.ts';
-import { WORKSPACE_INFO, isWorkspace, workspaceDockTree, type StudioWorkspace } from './workspaces.ts';
+import { WORKSPACE_INFO, WORKSPACES, isWorkspace, saveWorkspaceDock, workspaceDockTree, type StudioWorkspace } from './workspaces.ts';
 
 export interface LayoutPreset {
   id: string;
@@ -90,4 +90,34 @@ export function deleteLayoutPreset(id: string, store: Store | null = browserStor
   const next = readSavedPresets(null, store).filter(preset => preset.id !== id);
   writeAll(next, store);
   return next;
+}
+
+/** Put every workspace back on its factory arrangement. Named presets stay. */
+export function resetWorkspaceLayouts(store: Store | null = browserStore()): void {
+  for (const id of WORKSPACES) saveWorkspaceDock(id, workspaceDockTree(id), store);
+}
+
+export const LAYOUT_FILE_KIND = 'aiverse.studio.layout';
+
+export function layoutDownloadName(title: string): string {
+  const clean = title.trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  return (clean || 'layout') + '.layout.json';
+}
+
+/** A layout file is a download the user asked for. It is not a project write. */
+export function serializeLayoutFile(title: string, workspace: StudioWorkspace, tree: DockTree): string {
+  return JSON.stringify({
+    kind: LAYOUT_FILE_KIND, version: 1,
+    title: title.trim().slice(0, 40) || 'Layout',
+    workspace, tree: normalizeDockTree(tree),
+  });
+}
+
+export function parseLayoutFile(text: string): { title: string; workspace: StudioWorkspace; tree: DockTree } | null {
+  try {
+    const value = JSON.parse(text) as { kind?: unknown; version?: unknown; title?: unknown; workspace?: unknown; tree?: unknown };
+    if (!value || value.kind !== LAYOUT_FILE_KIND || value.version !== 1 || !isWorkspace(value.workspace)) return null;
+    const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim().slice(0, 40) : 'Layout';
+    return { title, workspace: value.workspace, tree: normalizeDockTree(value.tree) };
+  } catch { return null; }
 }
