@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=fffa3ec9cc">
+<link rel="stylesheet" href="../style.css?v=fa11721460">
 </head>
 <body>
 <header class="top">
@@ -512,7 +512,7 @@ models/ ui/ ...  assets (glTF models, textures, UI, sounds); 2D images may be pa
 <h3 id="пошаговый-режим-heroes-xcom-сражения-advance-wars">Пошаговый режим (Heroes, XCOM, сражения Advance Wars)<a class="anchor" href="#пошаговый-режим-heroes-xcom-сражения-advance-wars" aria-label="#">#</a></h3>
 <p><code>&quot;turns&quot;: {&quot;moveSeconds&quot;: 4, &quot;attacks&quot;: 1, &quot;timeLimit&quot;: 0}</code>: игроки действуют по очереди в одной и той же симуляции. Во время хода двигаются (не дальше скорости типа x <code>moveSeconds</code> клеток) и стреляют (<code>attacks</code> выстрелов на оружие) только юниты активного игрока; остальные стоят на месте и не отвечают огнём; команды других игроков игнорируются. Команда <code>end_turn</code> (или <code>timeLimit</code> секунд) передаёт ход следующему живому игроку; событие <code>turn</code> (игрок, номер хода). Боты раз за ход посылают своих бойцов на ближайшего врага и завершают ход, когда те перестают двигаться.</p>
 <h3 id="стратегическая-карта-кампания-total-war-company-of-heroes-3-empire-at-war">Стратегическая карта (кампания Total War, Company of Heroes 3, Empire at War)<a class="anchor" href="#стратегическая-карта-кампания-total-war-company-of-heroes-3-empire-at-war" aria-label="#">#</a></h3>
-<p><code>modules/strategic/Strategic.h</code>: провинции и армии поверх <code>rules.json</code> игры; сражения рассчитываются автоматически (квадратичный закон Ланчестера по здоровью x урону в секунду) или симулируются на RTS-симуляции с ботами, а выжившие возвращаются на карту.</p>
+<p><code>engine/game/Strategic.h</code>: провинции и армии поверх <code>rules.json</code> игры; сражения рассчитываются автоматически (квадратичный закон Ланчестера по здоровью x урону в секунду) или симулируются на RTS-симуляции с ботами, а выжившие возвращаются на карту.</p>
 <pre><code class="lang-json">{<span class="hl-key">&quot;players&quot;</span>: [{<span class="hl-key">&quot;name&quot;</span>: <span class="hl-str">&quot;Red&quot;</span>}, {<span class="hl-key">&quot;name&quot;</span>: <span class="hl-str">&quot;Blue&quot;</span>}], <span class="hl-key">&quot;start&quot;</span>: {<span class="hl-key">&quot;gold&quot;</span>: <span class="hl-num">100</span>}, <span class="hl-key">&quot;movesPerTurn&quot;</span>: <span class="hl-num">1</span>,
  <span class="hl-key">&quot;recruit&quot;</span>: {<span class="hl-key">&quot;spear&quot;</span>: {}, <span class="hl-key">&quot;archer&quot;</span>: {<span class="hl-key">&quot;gold&quot;</span>: <span class="hl-num">40</span>}},
  <span class="hl-key">&quot;battle&quot;</span>: {<span class="hl-key">&quot;mode&quot;</span>: <span class="hl-str">&quot;simulate&quot;</span>, <span class="hl-key">&quot;seconds&quot;</span>: <span class="hl-num">240</span>, <span class="hl-key">&quot;size&quot;</span>: [<span class="hl-num">48</span>, <span class="hl-num">32</span>]},

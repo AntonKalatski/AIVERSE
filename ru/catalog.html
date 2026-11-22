@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=fffa3ec9cc">
+<link rel="stylesheet" href="../style.css?v=fa11721460">
 </head>
 <body>
 <header class="top">
@@ -51,7 +51,7 @@ python3 tools/pkg/aiverse_pkg.py add terrain-pbr --project ~/Games/MyGame</code>
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-<script>window.CAT_CFG={"index": "https://raw.githubusercontent.com/chromealex/AIVERSE-PACKAGES/main/index.json", "lang": "ru", "t": {"more": "Подробнее", "engine": "Движок", "size": "Размер", "license": "Лицензия", "kind": "Тип", "copy": "Копировать", "copied": "Скопировано", "download": "Скачать", "readme": "README", "none": "Ничего не нашлось", "error": "Не удалось загрузить каталог. Список пакетов есть в index.json репозитория каталога.", "view3d": "3D-просмотр", "view3dClose": "Закрыть 3D"}, "cats": {"templates": "Шаблоны", "materials": "Материалы", "textures": "Текстуры", "models": "Модели", "audio": "Звук", "vfx": "Эффекты", "ui": "Интерфейс", "scripts": "Скрипты", "plugins": "Плагины", "tools": "Инструменты"}, "kinds": {"content": "контент проекта", "template": "шаблон проекта", "source": "исходники", "script": "скрипты", "plugin": "плагин", "tool": "инструмент"}};</script><script>
+<script>window.CAT_CFG={"index": "https://raw.githubusercontent.com/chromealex/AIVERSE-PACKAGES/main/index.json", "lang": "ru", "t": {"more": "Подробнее", "engine": "Движок", "size": "Размер", "license": "Лицензия", "kind": "Тип", "copy": "Копировать", "copied": "Скопировано", "download": "Скачать", "readme": "README", "none": "Ничего не нашлось", "error": "Не удалось загрузить каталог. Список пакетов есть в index.json репозитория каталога.", "view3d": "3D-просмотр", "view3dClose": "Закрыть 3D", "link": "Ссылка", "linkCopied": "Ссылка скопирована"}, "cats": {"templates": "Шаблоны", "materials": "Материалы", "textures": "Текстуры", "models": "Модели", "audio": "Звук", "vfx": "Эффекты", "ui": "Интерфейс", "scripts": "Скрипты", "plugins": "Плагины", "tools": "Инструменты"}, "kinds": {"content": "контент проекта", "template": "шаблон проекта", "source": "исходники", "script": "скрипты", "plugin": "плагин", "tool": "инструмент"}};</script><script>
 (function(){var cfg=window.CAT_CFG;if(!cfg)return;var T=cfg.t,lang=cfg.lang;
 function loc(o,k){return (lang!=='en'&&o[k+'-'+lang])||o[k]||'';}
 function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
@@ -77,12 +77,18 @@ cp.onclick=function(){navigator.clipboard&&navigator.clipboard.writeText(code.te
 pre.appendChild(code);pre.appendChild(cp);body.appendChild(pre);
 var act=el('div','cat-actions'),dl=el('a','btn btn-ink btn-sm',T.download+' · '+mb(v.size));dl.href=v.url;dl.title='sha256 '+v.sha256;act.appendChild(dl);
 if(p.readme){var r=el('a','btn btn-line btn-sm',T.readme);r.href=p.readme;act.appendChild(r);}
-if(p.viewer){var v3=el('button','btn btn-accent btn-sm cat-3d',T.view3d);v3.type='button';v3.onclick=function(){
-var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;a.classList.remove('is-open');a.scrollIntoView({block:'nearest'});return;}
-cards.forEach(function(c){var o=c.el.querySelector('.cat-frame');if(o&&c.el!==a)c.el.querySelector('.cat-3d').click();});
-a.classList.add('is-open');setTimeout(function(){a.scrollIntoView({behavior:'smooth',block:'start'});},30);
-f=el('iframe','cat-frame');f.src=p.viewer+(p.viewer.indexOf('?')<0?'?':'&')+'lang='+lang;f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
-img.hidden=true;media.appendChild(f);v3.textContent=T.view3dClose;};act.insertBefore(v3,act.firstChild);}
+a.item=0;a.link=function(){return location.origin+location.pathname+'#pkg-'+p.id+(a.classList.contains('is-open')&&a.item?'/'+a.item:'');};
+if(p.viewer){var v3=el('button','btn btn-accent btn-sm cat-3d',T.view3d);v3.type='button';
+a.open3d=function(item){var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;a.classList.remove('is-open');
+history.replaceState(null,'','#pkg-'+p.id);a.scrollIntoView({block:'nearest'});return;}
+cards.forEach(function(c){if(c.el!==a&&c.el.querySelector('.cat-frame'))c.el.open3d();});
+a.item=item||0;a.classList.add('is-open');setTimeout(function(){a.scrollIntoView({behavior:'smooth',block:'start'});},30);
+f=el('iframe','cat-frame');f.src=p.viewer+(p.viewer.indexOf('?')<0?'?':'&')+'lang='+lang+(a.item?'&item='+a.item:'');f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
+img.hidden=true;media.appendChild(f);v3.textContent=T.view3dClose;history.replaceState(null,'','#pkg-'+p.id+(a.item?'/'+a.item:''));};
+v3.onclick=function(){a.open3d(0);};act.insertBefore(v3,act.firstChild);}
+var ln=el('button','btn btn-line btn-sm',T.link);ln.type='button';ln.title=T.link;
+ln.onclick=function(){var u=a.link();history.replaceState(null,'','#'+u.split('#')[1]);navigator.clipboard&&navigator.clipboard.writeText(u).then(function(){ln.textContent=T.linkCopied;setTimeout(function(){ln.textContent=T.link;},1500);});};
+act.appendChild(ln);
 body.appendChild(act);a.appendChild(body);
 cards.push({el:a,cat:p.category,hay:[p.id].concat(Object.keys(p).filter(function(k){return /^(title|summary)(-|$)/.test(k);}).map(function(k){return p[k];}),
 (p.tags||[]).join(' '),JSON.stringify(p.provides||{})).join(' ').toLowerCase()});
@@ -101,7 +107,11 @@ history.replaceState(null,'',cur?'#cat='+cur:location.pathname);apply();};});
 document.querySelector('.cat-n').textContent=pk.length;document.querySelector('.cat-c').textContent=Object.keys(used).length;
 var h=location.hash.match(/^#cat=([a-z]+)/);if(h){var b=bar.querySelector('[data-cat="'+h[1]+'"]');if(b)b.click();}
 status.textContent='';apply();
-var m=location.hash.match(/^#pkg-([a-z0-9-]+)/);if(m){var t=document.getElementById('pkg-'+m[1]);if(t)t.scrollIntoView();}
+var m=location.hash.match(/^#pkg-([a-z0-9-]+)(?:[/]([0-9]+))?/);if(m){var t=document.getElementById('pkg-'+m[1]);
+if(t){if(t.open3d)t.open3d(parseInt(m[2]||'0',10));else t.scrollIntoView();}}
+// the 3D viewer tells which model it shows: the address points to it (#pkg-<id>/<model>)
+window.addEventListener('message',function(e){var d=e.data;if(!d||d.cv!=='item')return;cards.forEach(function(c){
+var f=c.el.querySelector('.cat-frame');if(f&&f.contentWindow===e.source){c.el.item=d.item;history.replaceState(null,'','#'+c.el.link().split('#')[1]);}});});
 }).catch(function(){status.textContent=T.error;});
 search.addEventListener('input',apply);})();
 </script>

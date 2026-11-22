@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=fffa3ec9cc">
+<link rel="stylesheet" href="style.css?v=fa11721460">
 </head>
 <body>
 <header class="top">
@@ -512,7 +512,7 @@ models/ ui/ ...  assets (glTF models, textures, UI, sounds); 2D images may be pa
 <h3 id="turn-based-mode-heroes-xcom-advance-wars-battles">Turn-based mode (Heroes, XCOM, Advance Wars battles)<a class="anchor" href="#turn-based-mode-heroes-xcom-advance-wars-battles" aria-label="#">#</a></h3>
 <p><code>&quot;turns&quot;: {&quot;moveSeconds&quot;: 4, &quot;attacks&quot;: 1, &quot;timeLimit&quot;: 0}</code>: players act one after another on the same simulation. During a turn only the active player's units move (at most type speed x <code>moveSeconds</code> cells) and shoot (<code>attacks</code> shots per weapon); the others stand still and don't return fire; commands of other players are ignored. Command <code>end_turn</code> (or <code>timeLimit</code> seconds) passes the turn to the next living player; event <code>turn</code> (player, turn number). Bots send their fighters at the nearest enemy once per turn and end the turn when they stop moving.</p>
 <h3 id="strategic-map-total-war-campaign-company-of-heroes-3-empire-at-war">Strategic map (Total War campaign, Company of Heroes 3, Empire at War)<a class="anchor" href="#strategic-map-total-war-campaign-company-of-heroes-3-empire-at-war" aria-label="#">#</a></h3>
-<p><code>modules/strategic/Strategic.h</code>: provinces and armies on top of the game's <code>rules.json</code>; battles are auto-resolved (Lanchester square law on hp x dps) or simulated on the RTS simulation with bots, and the survivors return to the map.</p>
+<p><code>engine/game/Strategic.h</code>: provinces and armies on top of the game's <code>rules.json</code>; battles are auto-resolved (Lanchester square law on hp x dps) or simulated on the RTS simulation with bots, and the survivors return to the map.</p>
 <pre><code class="lang-json">{<span class="hl-key">&quot;players&quot;</span>: [{<span class="hl-key">&quot;name&quot;</span>: <span class="hl-str">&quot;Red&quot;</span>}, {<span class="hl-key">&quot;name&quot;</span>: <span class="hl-str">&quot;Blue&quot;</span>}], <span class="hl-key">&quot;start&quot;</span>: {<span class="hl-key">&quot;gold&quot;</span>: <span class="hl-num">100</span>}, <span class="hl-key">&quot;movesPerTurn&quot;</span>: <span class="hl-num">1</span>,
  <span class="hl-key">&quot;recruit&quot;</span>: {<span class="hl-key">&quot;spear&quot;</span>: {}, <span class="hl-key">&quot;archer&quot;</span>: {<span class="hl-key">&quot;gold&quot;</span>: <span class="hl-num">40</span>}},
  <span class="hl-key">&quot;battle&quot;</span>: {<span class="hl-key">&quot;mode&quot;</span>: <span class="hl-str">&quot;simulate&quot;</span>, <span class="hl-key">&quot;seconds&quot;</span>: <span class="hl-num">240</span>, <span class="hl-key">&quot;size&quot;</span>: [<span class="hl-num">48</span>, <span class="hl-num">32</span>]},

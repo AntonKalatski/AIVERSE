@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=fffa3ec9cc">
+<link rel="stylesheet" href="../style.css?v=fa11721460">
 </head>
 <body>
 <header class="top">
@@ -175,7 +175,7 @@ platform/    шаблоны упаковки (Info.plist, Gradle-проект, H
 <span class="hl-fn">docker</span> build <span class="hl-opt">-f</span> apps/server/Dockerfile <span class="hl-opt">-t</span> aiverse-server .             <span class="hl-com"># сервер в контейнере</span></code></pre>
 <p>Для <code>wss://</code> (страница игры по HTTPS) поставьте перед сервером TLS-прокси (nginx, Caddy).</p>
 <h2 id="звук">Звук<a class="anchor" href="#звук" aria-label="#">#</a></h2>
-<p><code>engine/audio</code> — микшер, банки звуков из данных, процедурный синтез, музыка; вывод через <a href="https://github.com/chromealex/AIVERSE/tree/main/../third_party/miniaudio">miniaudio</a> (CoreAudio, AAudio/OpenSL ES, Web Audio, WASAPI, ALSA/PulseAudio). <code>modules/rts/audio</code> превращает события симуляции в звуки; в симуляцию ничего не пишет. Нет устройства — игра идёт молча. Нет <code>audio.json</code> — игра просто без звука.</p>
+<p><code>engine/audio</code> — микшер, банки звуков из данных, процедурный синтез, музыка; вывод через <a href="https://github.com/chromealex/AIVERSE/tree/main/../third_party/miniaudio">miniaudio</a> (CoreAudio, AAudio/OpenSL ES, Web Audio, WASAPI, ALSA/PulseAudio). <code>engine/audio</code> превращает события симуляции в звуки; в симуляцию ничего не пишет. Нет устройства — игра идёт молча. Нет <code>audio.json</code> — игра просто без звука.</p>
 <p>Звук игры — файл <code>audio.json</code> рядом с <code>game.json</code> (другое имя: <code>&quot;audio&quot;</code> в game.json). Полное описание формата — <code>docs/game-format.md</code>, раздел audio.json; коротко:</p>
 <pre><code class="lang-jsonc">{
   <span class="hl-key">&quot;volume&quot;</span>: { <span class="hl-key">&quot;sfx&quot;</span>: <span class="hl-num">0.9</span>, <span class="hl-key">&quot;music&quot;</span>: <span class="hl-num">0.6</span>, <span class="hl-key">&quot;voice&quot;</span>: <span class="hl-num">1</span>, <span class="hl-key">&quot;ui&quot;</span>: <span class="hl-num">0.7</span>, <span class="hl-key">&quot;ambient&quot;</span>: <span class="hl-num">0.7</span> },
