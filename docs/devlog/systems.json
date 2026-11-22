@@ -236,7 +236,16 @@
      "textEn": "Wind and wildfire drive SpectraFX, audio and TerraWeave grass; “Live nature” shows in the editor Scene view.",
      "date": "2026-11-21"
     },
-    {"status": "done", "date": "2026-11-22", "title": "Смерчи", "text": "Смерч из данных карты: маршрут или блуждание, вихрь в ветре PHYSIS, огонь, обломки, урон; воронка, звук, ветер в траве и волнение воды.", "titleEn": "Tornadoes", "textEn": "Tornadoes from map data: a path or a wander, a vortex in PHYSIS wind, fire, debris, damage; a funnel, sound, wind in the grass and choppy water."}
+    {"status": "done", "date": "2026-11-22", "title": "Смерчи", "text": "Смерч из данных карты: маршрут или блуждание, вихрь в ветре PHYSIS, огонь, обломки, урон; воронка, звук, ветер в траве и волнение воды.", "titleEn": "Tornadoes", "textEn": "Tornadoes from map data: a path or a wander, a vortex in PHYSIS wind, fire, debris, damage; a funnel, sound, wind in the grass and choppy water."},
+    {"status": "in-progress", "title": "Огненные и водяные смерчи, размытие земли", "text": "Смерч затягивает пожар и становится огненным вихрем (поджог, угли, жар), слабеет и гаснет над водой, водяной смерч на озере, размытый след на суше. В ветке, ждёт слияния; рельеф пока не опускается.", "titleEn": "Fire whirls, waterspouts, scoured ground", "textEn": "A tornado draws a wildfire in and becomes a fire whirl (ignition, embers, heat), weakens and is quenched over water, waterspouts on lakes, a scoured track on land. On a branch, awaiting merge; terrain is not lowered yet."},
+    {
+      "status": "planned",
+      "target": null,
+      "title": "Реалистичный огонь",
+      "text": "Сейчас пожар и огненный вихрь рисуются анимированными текстурами пламени. Дальше: ядро вихря без видимых краёв частиц, чёткость вблизи, искры и угли, огонь мельче клеток PHYSIS.",
+      "titleEn": "Realistic fire",
+      "textEn": "Ground fire and fire whirls now use animated flame textures. Next: a whirl core without visible particle edges, sharp close-ups, sparks and embers, fire finer than PHYSIS cells."
+    }
    ],
    "taglineEn": "A living environment: wind, fire, earth",
    "essenceEn": "Nature fields in ECS: wind, fire, earthquakes and structural stress that react to each other.",
@@ -731,7 +740,8 @@
      "titleEn": "Follow camera in ECS, presets in Studio and MCP, planet orbit",
      "textEn": "An ECS scene camera can work like the game follow camera: angle, distance, smoothing, velocity lead, speed zoom and bounds come from a follow block in cameras.json, presets included. The Studio cameras window applies a preset in one pick, and the MCP tool lens_camera_presets lists presets for agents. The planet camera became one of the system's bodies — an orbit over a sphere.",
      "date": "2026-11-22"
-    }
+    },
+    {"status": "in-progress", "target": null, "title": "Камера от третьего лица для персонажей", "titleEn": "Third-person camera for characters", "text": "Камера-штанга с плечом, обходом препятствий и стеком профилей становится телом LENS и включается в FPS-клиенте; прицел из камеры сводится к лучу персонажа.", "textEn": "The boom camera with a shoulder, obstacle avoidance and a profile stack becomes a LENS body and runs in the FPS client; the camera crosshair converges on the character's ray."}
    ],
    "taglineEn": "Cameras and cinematic frames",
    "essenceEn": "Camera scenes as data: several cameras, frame scheduling, image capture and authoring through MCP and Studio.",
@@ -1814,6 +1824,14 @@
    "taglineEn": "Spherical worlds and maps from a seed",
    "essence": "Планеты на кубе-сфере с орбитами и генератор рельефа: эрозия, реки, биомы и честные стартовые позиции.",
    "essenceEn": "Cube-sphere planets with orbits and a terrain generator: erosion, rivers, biomes and fair starting positions.",
+   "roadmap": [
+     {"status": "done", "date": "2026-11-22", "title": "Берега из генератора", "titleEn": "Coasts from the generator", "text": "Моря и озёра строит генератор карт, без квадратных водоёмов.", "textEn": "Seas and lakes come from the map generator, no square lakes."},
+     {"status": "done", "date": "2026-11-22", "title": "Рельеф и флора TerraWeave", "titleEn": "TerraWeave terrain and flora", "text": "Высоты, биомы и растения планеты считает TerraWeave.", "textEn": "TerraWeave computes the planet's heights, biomes and plants."},
+     {"status": "done", "date": "2026-11-22", "title": "Море NEREID", "titleEn": "NEREID sea", "text": "Волны, цвет по глубине и пена у берега.", "textEn": "Waves, colour by depth and coast foam."},
+     {"status": "done", "date": "2026-11-22", "title": "Водоёмы NEREID на сферах", "titleEn": "NEREID water bodies on spheres", "text": "Глубина, течение, волны, плавучесть и всплески по радиусу.", "textEn": "Radial depth, current, waves, buoyancy and splashes."},
+     {"status": "planned", "target": null, "title": "Дрейф по течению", "titleEn": "Drift with the current", "text": "Корабли и обломки сносит течением моря.", "textEn": "The sea's current carries ships and wrecks."},
+     {"status": "planned", "target": null, "title": "Одни волны в симуляции и на экране", "titleEn": "One wave model for simulation and screen", "text": "Корабль качается на тех же волнах, что видны.", "textEn": "A ship rides the same waves that are drawn."}
+   ],
    "includes": [
     {
      "name": "Куб-сфера",
@@ -2139,6 +2157,36 @@
     "Работать вместе с агентом в одном проекте.",
     "Проверить вёрстку на экранах разных телефонов."
    ],
+   "roadmap": [
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Studio на Windows",
+     "titleEn": "Studio on Windows",
+     "text": "Общее с Mac ядро редактора, интерфейс в WebView2, сцена и игра на Vulkan. Приложение собирается, первый запуск на Windows впереди.",
+     "textEn": "An editor core shared with the Mac, the interface in WebView2, Scene and Game on Vulkan. The application builds; the first run on Windows is ahead."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Плавающие окна панелей на Windows",
+     "titleEn": "Floating panel windows on Windows"
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Перетаскивание файлов и ассетов на Windows",
+     "titleEn": "Dragging files and assets on Windows",
+     "text": "Из Проводника в Assets и из Assets в сцену.",
+     "textEn": "From Explorer into Assets and from Assets into the Scene."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Режим без Vulkan на Windows",
+     "titleEn": "A mode without Vulkan on Windows"
+    }
+   ],
    "enablesEn": [
     "Make and test a game without leaving the editor.",
     "Work together with an agent on one project.",
@@ -2311,6 +2359,16 @@
     "Ship a game to stores without a separate build project.",
     "Build the Windows version on a Mac or Linux.",
     "Keep the web build size under control."
+   ],
+   "roadmap": [
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Один экран загрузки во всех проектах",
+     "titleEn": "One loading screen in every project",
+     "text": "Экран загрузки движка теперь и в FPS, и в воксельных проектах; проект в game.json оставляет его, меняет отдельные поля, ставит свой или убирает совсем.",
+     "textEn": "The engine loading screen now also runs in FPS and voxel projects; in game.json a project keeps it, changes single fields, sets its own or removes it entirely."
+    }
    ]
   },
   {
@@ -2377,7 +2435,101 @@
    "id": "gameplay",
    "name": "Жанры и механики",
    "nameEn": "Genres and mechanics",
-   "doc": "docs/mechanics-packages.md"
+   "doc": "docs/mechanics-packages.md",
+   "core": true,
+   "article": "docs/mechanics-packages.md",
+   "tagline": "Механики для любого жанра",
+   "taglineEn": "Mechanics for any genre",
+   "essence": "Детерминированные пакеты механик, которые подключает любой проект: движение персонажа, бой, оружие, предметы, транспорт, карты, головоломки, колонии и выживание.",
+   "essenceEn": "Deterministic mechanics packages any project plugs in: character movement, combat, weapons, items, vehicles, cards, puzzles, colonies and survival.",
+   "includes": [
+    {
+     "name": "Движение персонажа",
+     "text": "Склоны, уступы, лестницы, плавание, лазание, перелезание; рывок, бег и скольжение по стене, крюк, планирование.",
+     "nameEn": "Character movement",
+     "textEn": "Slopes, ledges, ladders, swimming, climbing, mantling; dash, wall run and slide, grapple, glide."
+    },
+    {
+     "name": "Бой и оружие",
+     "text": "Кадровые хитбоксы, парирование, lock-on, разброс, отдача, рикошеты, пробитие, взрывы.",
+     "nameEn": "Combat and weapons",
+     "textEn": "Frame-keyed hitboxes, parry, lock-on, spread, recoil, ricochets, penetration, explosions."
+    },
+    {
+     "name": "Предметы и прогресс",
+     "text": "Инвентарь, лут, аффиксы и сокеты, перки, уровни, журнал квестов.",
+     "nameEn": "Items and progression",
+     "textEn": "Inventory, loot, affixes and sockets, perks, levels, a quest journal."
+    },
+    {
+     "name": "Транспорт и гонки",
+     "text": "Колёсный, гусеничный, воздушный и водный транспорт, места и повреждения, гоночная сессия и боты.",
+     "nameEn": "Vehicles and races",
+     "textEn": "Wheeled, tracked, air and water vehicles, seats and damage, race sessions and bots."
+    },
+    {
+     "name": "Колонии и выживание",
+     "text": "Нужды и расписания колонистов, производство и сети, температура тела, раны, экология и приручение.",
+     "nameEn": "Colonies and survival",
+     "textEn": "Colonist needs and schedules, production and networks, body temperature, wounds, ecology and taming."
+    },
+    {
+     "name": "Карты, ходы и головоломки",
+     "text": "Карточные правила со стеком, тактическая сетка, поиск хода ботом, match-3, Sokoban и решатели.",
+     "nameEn": "Cards, turns and puzzles",
+     "textEn": "Card rules with a stack, tactical grids, bot move search, match-3, Sokoban and solvers."
+    }
+   ],
+   "enables": [
+    "Собрать механику любого жанра из готовых пакетов вместо своего кода.",
+    "Включить новые движения в FPS одним блоком rules «locomotion».",
+    "Сохранять и повторять матчи побитово: всё на fixed-point и тиках."
+   ],
+   "enablesEn": [
+    "Build any genre's mechanics from ready packages instead of own code.",
+    "Turn the new moves on in an FPS with one rules \"locomotion\" block.",
+    "Save and replay matches bit for bit: everything runs on fixed point and ticks."
+   ],
+   "roadmap": [
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Новые движения персонажа",
+     "titleEn": "New character moves",
+     "text": "Рывок с зарядами в воздухе, бег и скольжение по стене, крюк (подтягивание и маятник), планирование и спрыгивание с односторонних платформ в общем автомате движения. Готово в ветке, ждёт слияния в main.",
+     "textEn": "Dash with air charges, wall run and slide, grapple (pull and swing), glide and dropping through one-way platforms in the shared movement machine. Done in a branch, waiting for the merge into main."
+    },
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Новые движения в FPS с предсказанием",
+     "titleEn": "New moves in the FPS with prediction",
+     "text": "Блок rules «locomotion» переводит персонажей на автомат движения; клиент предсказывает режимы и сверяется с сервером, сохранения и контрольные суммы меняются только с блоком.",
+     "textEn": "A rules \"locomotion\" block moves characters through the movement machine; the client predicts the modes and reconciles with the server, saves and checksums change only with the block."
+    },
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Пакеты для пробелов реестра возможностей",
+     "titleEn": "Packages for the capability gaps",
+     "text": "Аффиксы предметов, журнал квестов, раны и болезни, стада и приручение, водный транспорт, дипломатия, матч героев, связи навигации, разрушение построек и другие — по сверке реестра с кодом.",
+     "textEn": "Item affixes, a quest journal, wounds and disease, herds and taming, watercraft, diplomacy, hero matches, navigation links, structure destruction and more, from the registry checked against code."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Анимации и камера новых движений",
+     "titleEn": "Animation and camera for the new moves"
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Уступы, лестницы и вода в картах FPS",
+     "titleEn": "Ledges, ladders and water in FPS maps",
+     "text": "Метки в формате карты, чтобы хост сообщал эти режимы.",
+     "textEn": "Map format tags so the host reports these modes."
+    }
+   ]
   }
  ]
 }

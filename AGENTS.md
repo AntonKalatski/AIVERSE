@@ -4,6 +4,18 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Current release: 3.0.0 released, 3.1.0 in preparation (2026-11-22)
+
+- **3.0.0** is out (tag `v3.0.0`, GitHub release, site `releases.html`). Do not change its
+  entry in `docs/devlog/releases.json` and do not move the tag.
+- **The next release is 3.1.0.** Everything merged into `main` from now on goes into 3.1.0:
+  `next.version` in `docs/devlog/releases.json` is `3.1.0`. A flagship system that reaches
+  `main` gets `"release": "3.1.0"` in `docs/devlog/systems.json` (site: «появится в 3.1.0»).
+- Do not bump `project(AIVERSE VERSION ...)` in `CMakeLists.txt` and do not tag or publish
+  builds yourself: the integrator (MAIN agent) does it at release time (§8). Write in your
+  handoff what of your work should be mentioned in the 3.1.0 notes, including breaking changes
+  (save/format changes, renamed paths or APIs).
+
 ## Ход разработки на сайте — обязательная запись (2026-11-21, указание пользователя)
 
 Сайт движка (`site/`, GitHub Pages из ветки `gh-pages`) показывает страницу «Ход разработки»:
@@ -16,13 +28,24 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   `docs/devlog/media/<id>/`. Порядок и формат: навык
   [skills/workflow/aiverse-devlog/SKILL.md](skills/workflow/aiverse-devlog/SKILL.md),
   описание формата — [docs/devlog/README.md](docs/devlog/README.md).
+- **Как выложить на сайт и что обновить** (указание пользователя 2026-11-22): навык
+  [skills/workflow/aiverse-site-publish/SKILL.md](skills/workflow/aiverse-site-publish/SKILL.md).
+  Автопубликации нет: после пуша в `main` интегратор выполняет
+  `python3 tools/site/build.py publish` на чистом `origin/main` (проверка, сборка, один коммит в
+  `gh-pages`). Изменение системы затрагивает не только дневник: карточку на главной, страницу
+  `system-<id>.html`, роадмап, «Что входит», документацию и релизы — обнови всё, что устарело.
+- **Роадмап — до начала работы** (указание пользователя 2026-11-22): прежде чем взять расширение
+  фичи, агент добавляет пункт в `roadmap` её системы в `systems.json` со статусом `in-progress`
+  (флагманской или `core`; у `core`-системы без роадмапа его заводят) и коммитит это первым
+  коммитом этапа. По завершении — `done` с датой и новые `planned`.
 - **Блог разработки** (`blog.html`) — для всего, чего нет среди систем на главной: редактор
   Studio, сборка и платформы, сеть, мета, геймплей и жанры, рендер, мир, ECS, инструменты
   агентов. Агент, закончивший такой этап, пишет такую же запись `docs/devlog/entries/*.json`,
   указывая в `system` тему из `systems.json` без `flagship` (`studio`, `build`, `network`,
   `meta`, `gameplay`, `render`, `world`, `ecs`, `agents`); новую тему можно добавить туда же.
-  Скриншоты в блоге желательны, но не обязательны. Правила ниже — только успешное, для людей —
-  те же.
+  Если фича видимая (рендер, вода, рельеф, UI, окна редактора, эффекты, анимация, камера), кадры
+  обязательны и в блоге; без кадра — только невидимая работа. Правила ниже — только успешное,
+  для людей — те же.
 - В дневник идут **только успешные этапы**: то, что работает и показано на кадре. Неудачные,
   брошенные и незаконченные попытки, ошибки сборки и падения тестов остаются в handoff, на сайт
   не попадают. Этап без того, что можно показать (рефакторинг, внутренний API), описывается
@@ -66,8 +89,9 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   (`[{src, caption, captionEn}]`, PNG/JPG). Тогда карточка ведёт на `system-<система>-<id>.html`,
   первый кадр — её миниатюра. Картинки статьи — относительные пути от `.md`, ссылки на документы
   репозитория тоже. Только реальные кадры и проверенные факты, как в записях хода разработки.
-- Не редактировать `gh-pages` вручную и не коммитить `build/site`: после слияния в `main`
-  `.github/workflows/site.yml` проверяет записи, собирает сайт и публикует `gh-pages`.
+- Не редактировать `gh-pages` вручную и не коммитить `build/site`. Workflow `site.yml` не
+  установлен (только шаблон `tools/site/site-workflow.yml`): сайт публикует
+  `python3 tools/site/build.py publish` после пуша в `main`, иначе он не обновится.
 - Сайт двуязычный: русский в корне, английский в `en/`. У каждого текстового поля записи и
   системы есть английская пара с суффиксом `En` (`titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`,
   `limitsEn`, `captionEn`; в `systems.json` — `nameEn`, `taglineEn`, `essenceEn`, `enablesEn`,
@@ -79,7 +103,9 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 - Страница «Релизы» (`releases.html`) берёт версии из `docs/devlog/releases.json`, а ссылки на
   сборки — из `index.json` ветки `builds` прямо в браузере. Выпуская релиз (тег + GitHub release,
   §8), интегратор добавляет запись в начало `releases.json`: версия, тег, дата, коммит, заголовок,
-  описание и главное на русском и английском; `verified` — только реально проверенное.
+  описание и главное на русском и английском; у видимых пунктов «главного» — кадр (`media`) из
+  записей хода разработки; `verified` — только реально проверенное. Все кадры записей сами
+  попадают в «Галерея: скрины из хода разработки» (`gallery.html`).
   «В следующем релизе» собирается само из записей хода разработки после даты последнего релиза.
   У флагманской системы в `systems.json` поле `release` — версия, в которой она вышла, или
   `next.version` из `releases.json`, если она уже в `main`, но ещё не в теге (карточка: «с версии
@@ -2046,6 +2072,26 @@ This overrides earlier local/worktree build examples and release paths in this f
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
 
+### Mac launcher scripts from a VM / Cowork session (all agents)
+
+**Owner instruction (2026-11-22): a `.command` handed to the user must open on the first
+double-click.** Finder runs only executable files; otherwise it shows "could not be executed
+because you do not have appropriate access privileges".
+
+- Writing a script through the mounted folder (`sed -i`, the Write/commit tools, a Python
+  rewrite, `git checkout`) replaces the file and **drops its execute bit**, and a `chmod`
+  issued right after the rewrite is sometimes lost in the sync. After every change to a
+  `.command` / `.sh` the user or Finder will run:
+  `chmod +x <files>; sleep 5; stat -c '%a %n' <files>` — every mode must be `7xx`; repeat
+  the `chmod` until it is. Check this before asking the user to run anything, and again
+  before each double-click you make yourself.
+- Prefer editing launchers in place (`open(path, "r+")`, write, `truncate()`), which keeps
+  the mode; never assume a rewritten script is still executable.
+- KINGSTON can remount under another name (`/Volumes/KINGSTON 1` after a reconnect). Keep
+  the drive root in one place per script (a variable or the link
+  `~/Projects/AIVERSE/build/kingston`), re-point it when the name changes, and give the
+  moved sources new CMake/package build directories: old caches keep the old path.
+
 Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
 
 **Never create builds in the shared engine checkout's `build/` folder** (the user's main
@@ -2257,6 +2303,8 @@ themselves (`engine/platform/EngineDir.h`), so the unpacked folder runs anywhere
    5 versions per platform (force-push), so the repository does not grow with every build.
    It also writes `index.json` (platform, arch, url, size, sha256, aiversemcp path per zip) that other apps
    download from: keep its fields backward compatible (README § Готовые сборки движка).
+   A zip over 95 MB (GitHub refuses files over 100 MB in a branch) is not committed: pass `--release v<x.y.z>`,
+   attach the zip to that GitHub release under the same name, and index.json points to the release asset.
    Linux is optional: `package_engine.py --platform linux --bin build/linux-release` (tools only is fine).
 
 When a version is tagged as a GitHub release, also add it to the top of `docs/devlog/releases.json`
@@ -3339,6 +3387,7 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - **Nature presentation host (2026-11-21):** `engine/world/PhysisNature{Presentation,Cues,FxHost,AudioHost,Grass}.h` drive TerraWeave grass burn/wind, SpectraFX fire/smoke/light and audio from read-only PHYSIS; editor «Живая природа» (`apps/editor/PhysisNaturePreview.h`, MCP `physis_nature_preview`) shows it without a play-test. Reuse these; do not write a second fire/grass/VFX bridge. Game client hookup and macOS visual QA pending: `docs/agent-handoffs/physis-nature-host-2026-11-21.md`.
 - **Automatic + parallel + streaming (2026-11-22):** a map `"physis"` block installs PHYSIS in `Simulation::setup` for every module (`engine/physis/PhysisAutoInstall.cpp`, CMake `AIVERSE_SIM_PHYSIS`); `engine/world/PhysisNatureRuntime.h` drives SpectraFX/audio/TerraWeave wind/NEREID wind/PRISMA sky from it in the game client — reuse it in other hosts, do not wire hosts by hand. Grid passes take `workerThreads` lanes (`PhysisParallel.h`, bit-identical; per-cell writes only, providers read-only) and `streaming.chunkCells` + `ActivityAnchor` (`PhysisStreaming.h`). CI builds the aggregate target `aiverse_physis_tests`; never hand-list PHYSIS test targets. Handoff `docs/agent-handoffs/physis-next-2026-11-22.md`.
 - **Tornadoes (2026-11-22):** map `"physis.tornadoes"` → `engine/physis/PhysisTornado.h` (`TornadoTrack` on a Tornado `StormEvent`: wander/waypoint paths, life ramp, fire blown out/fanned, debris resource, `NatureCarriable` props) + system `physis.tornadoes`; unit/building damage only through the generic `GameModule::environmentDamage` (RTS override in `RtsCombat.cpp`). Presentation (funnel/debris FX, roar, vegetation/water wind) in `PhysisNatureRuntime` via `PhysisTornadoCues.h`. Tests `physis_tornado`, `physis_tornado_cues`; docs/physis.md "Tornadoes"; handoff `docs/agent-handoffs/physis-tornado-2026-11-22.md`.
+- **Fire whirls, water, ground scour (2026-11-22):** `engine/physis/PhysisTornadoNature.h` (`TornadoNature` on every map tornado: drawn fire -> fireness, ignition/embers/heat damage; land tornado weakens over water, waterspouts; `GroundScourField`). Water under a vortex only via `GameModule::environmentWaterDepth` (or PHYSIS local flood). Map keys: tornado `fire`/`surface`/`erosion`, `physis.ignitions`/`disasterConfig`/`noFuelOnWater`/`scourCellMeters`. Tests `physis_firestorm`; handoff `docs/agent-handoffs/physis-firestorm-2026-11-22.md`.
 - **Remaining work:** PHYSIS-owned climate/wind/gravity/storm/force fields and host-facing presentation APIs and host-owned opt-in Terra/NEREID/VFX/Foliage/Physics/editor adapters (other agents own canonical water and terrain), spatial indexing, sparse hazards, streaming/LOD, deterministic partitions, network deltas, platform validation and physical-unit calibration. Follow the cross-agent ownership matrix below and `docs/physis-nereid-terraweave-integration.md`; do not duplicate Water or Terra systems.
 
 ## Cross-agent ownership: PHYSIS / NEREID / TerraWeave (2026-11-18)
