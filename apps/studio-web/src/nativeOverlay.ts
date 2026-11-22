@@ -6,7 +6,7 @@
  * dialogs, menus and [data-native-overlay] elements are found automatically.
  */
 export const NATIVE_OVERLAY_SELECTOR =
-  '[data-native-overlay],[role="dialog"],[role="menu"],.nested-panels-list[open] .nested-panels-popover,.studio-editor-settings';
+  '[data-native-overlay],[role="dialog"],[role="menu"],.nested-drop-zones,.nested-root-zones,.nested-panels-list[open] .nested-panels-popover,.studio-editor-settings';
 
 export function overlayBlocks(rect: { left: number; top: number; right: number; bottom: number },
   root: ParentNode = document): boolean {
@@ -18,7 +18,20 @@ export function overlayBlocks(rect: { left: number; top: number; right: number; 
   return false;
 }
 
-/** Calls `changed` (rAF-debounced) whenever overlays may have appeared, moved or closed. */
+/** While a tab is dragged, native Scene/Game windows must step aside or they swallow the drop. */
+let dockDrag = false;
+const dockDragListeners = new Set<() => void>();
+export function dockDragActive(): boolean { return dockDrag; }
+export function setDockDrag(active: boolean): void {
+  if (dockDrag === active) return;
+  dockDrag = active;
+  for (const listener of dockDragListeners) listener();
+}
+export function watchDockDrag(listener: () => void): () => void {
+  dockDragListeners.add(listener);
+  return () => { dockDragListeners.delete(listener); };
+}
+
 export function watchOverlays(changed: () => void): () => void {
   let frame = 0;
   const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; changed(); }); };
