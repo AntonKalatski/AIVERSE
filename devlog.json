@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T17:31:04+00:00",
+ "generated": "2026-11-22T17:42:41+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -216,6 +216,31 @@
     }
    ],
    "author": "studio"
+  },
+  {
+   "id": "2026-11-22-studio-catalog-window",
+   "date": "2026-11-22",
+   "system": "studio",
+   "title": "Catalog window in Studio and packages over MCP",
+   "summary": "Studio has a Catalog window: search the package catalog, see a package and install it into the open project with one button. Agents do the same through the package_* MCP commands.",
+   "body": [
+    "The window opens in the Look and Publish workspaces or from command search. The list shows section, size and version; installed packages are marked. The card shows the description, version, minimum engine version, licence, where the package goes and which packages come with it. Install adds the package with its dependencies, Remove takes its files out.",
+    "When the project's packages have missing or changed files, the window warns and restores them from aiverse.lock with one button.",
+    "For agents: package_search, package_info, package_status, package_add, package_remove, package_install and package_skill do the same on the open project."
+   ],
+   "status": "in-progress",
+   "verified": "The window is shown in the Studio browser preview with demo data; the MCP commands were built into the editor on Linux.",
+   "limits": "The window has not been checked in the native macOS Studio yet. Package previews load from GitHub and do not show offline.",
+   "branch": "feature/aiv20261122_catalog_studio",
+   "commit": null,
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-22-studio-catalog-window/01.jpg",
+     "caption": "The Catalog window: the package list and the tree pack card"
+    }
+   ],
+   "links": [],
+   "author": null
   },
   {
    "id": "2026-11-22-strata-phone-60fps",
@@ -982,11 +1007,11 @@
     "The catalog index is short now: the root lists only the sections and the folder of each package; the description is its aiverse.package.json and the published versions and hashes are in versions.json next to it. Plain keys are English, translations are title-ru, summary-zh-CN and so on; the catalog README exists in nine languages.",
     "The Catalog page has five steps for offering a package and a link to the full instructions in the docs."
    ],
-   "status": "in-progress",
+   "status": "done",
    "verified": "Models with textures from their dependency packages were captured in the desktop viewer (Linux, OpenGL), including STRATA on the oak; installing with dependencies is covered by the aiverse_pkg test; the catalog page with the new index was checked in Chrome against a local copy of the catalog.",
    "limits": "The trees are for hand placement; the forest the engine grows and places itself is still built by TerraWeave. Package descriptions are translated into Russian only so far.",
    "branch": "feature/aiv20261122_model_packages",
-   "commit": null,
+   "commit": "6bc2fd9ed",
    "media": [
     {
      "src": "media/docs/devlog/media/2026-11-22-build-catalog-models/01.jpg",
