@@ -130,5 +130,6 @@
  "nnDone": "Done",
  "nnNext": "Next",
  "nnSystem": "System",
- "docsTranslated": "Translated. The original may be newer: <a href=\"{href}\">source document</a>."
+ "docsTranslated": "Translated. The original may be newer: <a href=\"{href}\">source document</a>.",
+ "coreMore": "Learn more →"
 }

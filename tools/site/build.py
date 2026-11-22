@@ -232,6 +232,16 @@ def check_systems(systems):
         p = f'systems.json {s["id"]}'
         if s.get('doc') and not (ROOT / s['doc']).is_file():
             errors.append(f'{p}: doc not found: {s["doc"]}')
+        if s.get('core'):
+            for key in ('tagline', 'essence', 'taglineEn', 'essenceEn'):
+                if not (s.get(key) or '').strip():
+                    errors.append(f'{p}: core system needs "{key}"')
+            for key in ('includes', 'enables', 'enablesEn'):
+                if not isinstance(s.get(key), list) or not s[key]:
+                    errors.append(f'{p}: core system needs a non-empty "{key}" list')
+            if s.get('cover') and not (repo_file(s['cover']['src']) or ROOT / '_').is_file():
+                errors.append(f'{p}: cover not found: {s["cover"]["src"]}')
+            continue
         if not s.get('flagship'):
             continue
         for key in ('tagline', 'essence', 'coverBrief', 'where'):
@@ -373,7 +383,7 @@ def check_releases():
 
 from render import (Ctx, roadmap_lines, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
-                    systems_html, fill_tokens)
+                    systems_html, core_html, fill_tokens)
 
 LANGS = ('ru', 'en')
 DOCS_MANIFEST = SITE / 'docs.json'
@@ -478,7 +488,8 @@ def cmd_build(args):
     frame = json.loads(SHOWCASE.read_text(encoding='utf-8'))['frames'][0]
     copy_media(frame['src'])
     flagships = [s for s in systems if s.get('flagship')]
-    for s in flagships:
+    paged = flagships + [s for s in systems if s.get('core')]
+    for s in paged:
         if s.get('cover'):
             copy_media(s['cover']['src'])
             if s['cover'].get('video'):
@@ -516,18 +527,19 @@ def cmd_build(args):
                 sys.exit(f'site page missing: {f.relative_to(out)}')
             text = fill_tokens(f.read_text(encoding='utf-8'), ctx, name)
             if name == 'index.html':
-                for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->', '<!--ROADMAP_LINES-->'):
+                for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->', '<!--CORE_SYSTEMS-->', '<!--ROADMAP_LINES-->'):
                     if mark not in text:
                         sys.exit(f'{lang}/index.html lost the {mark} placeholder')
                 text = text.replace('<!--SHOWCASE-->', showcase_html(frame, by_id, ctx))
                 text = text.replace('<!--SYSTEMS-->', systems_html(systems, ctx))
+                text = text.replace('<!--CORE_SYSTEMS-->', core_html(systems, ctx))
                 text = text.replace('<!--ROADMAP_LINES-->', roadmap_lines(flagships, ctx))
                 text = text.replace('<!--RELEASE_CHIP-->', release_chip(rel_data['releases'], ctx))
             f.write_text(text, encoding='utf-8')
-        for s in flagships:
-            body = system_page(s, flagships, loc_entries, ctx, manifest['repoBlob'], doc_pages)
+        for s in paged:
+            body = system_page(s, paged, loc_entries, ctx, manifest['repoBlob'], doc_pages)
             (d / f'system-{s["id"]}.html').write_text(render_page(
-                layout, ctx, f'system-{s["id"]}.html', f'{s["name"]} — {ctx.loc(s, "tagline")} · AIVERSE',
+                layout, ctx, f'system-{s["id"]}.html', f'{ctx.loc(s, "name")} — {ctx.loc(s, "tagline")} · AIVERSE',
                 ctx.loc(s, 'essence'), body, nav='systems', script=TRACK_JS), encoding='utf-8')
             pages += 1
             for it in s['includes']:
@@ -576,7 +588,7 @@ def cmd_build(args):
             name = f'devblog-{s["id"]}.html'
             (d / name).write_text(render_page(
                 layout, ctx, name, f'{T["blogTitle"]}: {s["name"]} · AIVERSE', T['blogLead'].format(s=s['name']),
-                devblog_page(s, mine, ctx, s['id'] in flag_ids), nav='devlog', script=FEATURE_JS), encoding='utf-8')
+                devblog_page(s, mine, ctx, s['id'] in {p['id'] for p in paged}), nav='devlog', script=FEATURE_JS), encoding='utf-8')
             pages += 1
         (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
                                                     roadmap_page(flagships, ctx), nav='roadmap', script=ROADMAP_JS),

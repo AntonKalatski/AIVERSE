@@ -141,6 +141,20 @@ def systems_html(systems, ctx):
     return '\n'.join(cards)
 
 
+def core_html(systems, ctx):
+    """Compact cards of the other big engine systems (no cover, no roadmap line)."""
+    cards = []
+    for s in systems:
+        if not s.get('core'):
+            continue
+        sid = esc(s['id'])
+        tags = ''.join(f'<span>{esc(ctx.loc(it, "name"))}</span>' for it in s['includes'][:4])
+        cards.append(f'<a class="core-card" href="system-{sid}.html" id="sys-{sid}"><h3>{esc(ctx.loc(s, "name"))}</h3>'
+                     f'<p class="core-tag">{esc(ctx.loc(s, "tagline"))}</p><p>{esc(ctx.loc(s, "essence"))}</p>'
+                     f'<div class="core-inc">{tags}</div><span class="sys-link">{ctx.T["coreMore"]}</span></a>')
+    return '\n'.join(cards)
+
+
 # ---------------------------------------------------------------- system pages and roadmap
 
 def sorted_roadmap(items):
@@ -309,21 +323,28 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
     elif art:
         href = art if art.startswith('https://') else f'{repo_blob}/{art}'
         buttons.append(f'<a class="btn btn-ink" href="{esc(href)}">{ctx.T["article"]}</a>')
-    buttons.append(f'<a class="btn btn-line" href="{f"devblog-{sid}.html" if mine else f"devlog.html#system={sid}"}">{ctx.T["blogTitle"]} · {len(mine)}</a>')
-    hero = (f'<section class="sp-hero"><p class="crumbs"><a href="./#systems">{ctx.T["crumbSystems"]}</a> / {esc(s["name"])}</p>'
-            f'<div class="sp-title"><h1>{esc(s["name"])}</h1>{version_badge(s, ctx)}</div><p class="sp-tag">{esc(ctx.loc(s, "tagline"))}</p>'
-            f'<p class="sp-lead">{esc(ctx.loc(s, "essence"))}</p>'
-            f'<p class="sp-since mono">{ctx.T["since"]} {ctx.fmt_date(s["started"])}</p>'
+    core = bool(s.get('core'))
+    if mine or not core:
+        buttons.append(f'<a class="btn btn-line" href="{f"devblog-{sid}.html" if mine else f"devlog.html#system={sid}"}">{ctx.T["blogTitle"]} · {len(mine)}</a>')
+    badge = '' if core else version_badge(s, ctx)
+    since = f'<p class="sp-since mono">{ctx.T["since"]} {ctx.fmt_date(s["started"])}</p>' if s.get('started') else ''
+    hero = (f'<section class="sp-hero"><p class="crumbs"><a href="./#{"core" if core else "systems"}">{ctx.T["crumbSystems"]}</a> / {esc(ctx.loc(s, "name"))}</p>'
+            f'<div class="sp-title"><h1>{esc(ctx.loc(s, "name"))}</h1>{badge}</div><p class="sp-tag">{esc(ctx.loc(s, "tagline"))}</p>'
+            f'<p class="sp-lead">{esc(ctx.loc(s, "essence"))}</p>{since}'
             f'<div class="actions">{"".join(buttons)}</div></section>')
     c = s.get('cover')
     if c:
         cover = f'<figure class="sp-cover">{cover_visual(c, ctx, lazy=False)}<figcaption>{esc(ctx.loc(c, "caption"))}</figcaption></figure>'
+    elif core:
+        cover = ''
     else:
         cover = (f'<div class="sp-cover sp-pending"><div class="sys-placeholder">{MARK_LIGHT}<span>{esc(s["name"])}</span></div>'
                  f'<p><strong>{ctx.T["pendingTitle"]}</strong> {esc(ctx.loc(s, "coverBrief"))}</p></div>')
     inc = ''.join(include_card(s, i, ctx) for i in s['includes'])
     ena = ''.join(f'<li>{esc(x)}</li>' for x in (ctx.loc(s, 'enables') or []))
-    rm = rm_track(s['roadmap'], ctx)
+    rm = (f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secRoadmap"]}</h2>'
+          f'<a href="roadmap.html#{sid}">{ctx.T["secRoadmapAll"]}</a></div>{rm_track(s["roadmap"], ctx)}</section>'
+          if s.get('roadmap') else '')
     shots = []
     for e in mine[:6]:
         m = next((m for m in e['media'] if not re.search(r'\.(mp4|webm)$', m['src'], re.I)), None)
@@ -332,15 +353,14 @@ def system_page(s, flagships, entries, ctx, repo_blob, doc_pages):
                      f'<strong>{esc(e["title"])}</strong><span>{esc(e["summary"])}</span></a>')
     blog_link = (f'<a href="devblog-{sid}.html">{esc(ctx.T["blogAll"].format(n=len(mine)))}</a>' if mine else '')
     log = (f'<div class="sp-entries">{"".join(shots)}</div>' if shots else f'<p class="empty">{ctx.T["noEntries"]}</p>')
-    others = ''.join(f'<a class="chip{" chip-ink" if o["id"] == s["id"] else ""}" href="system-{esc(o["id"])}.html">{esc(o["name"])}</a>'
-                     for o in flagships)
+    others = ''.join(f'<a class="chip{" chip-ink" if o["id"] == s["id"] else ""}" href="system-{esc(o["id"])}.html">{esc(ctx.loc(o, "name"))}</a>'
+                     for o in flagships if bool(o.get('core')) == core)
     return (hero + cover +
             f'<section class="sp-sec" id="inc"><h2 class="h2">{ctx.T["secIncludes"]}</h2><div class="grid sp-inc">{inc}</div></section>'
             f'<section class="sp-sec"><h2 class="h2">{ctx.T["secEnables"]}</h2><ul class="sp-ena">{ena}</ul></section>'
-            f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secRoadmap"]}</h2>'
-            f'<a href="roadmap.html#{sid}">{ctx.T["secRoadmapAll"]}</a></div>{rm}</section>'
-            f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secDevlog"]}</h2>'
-            f'{blog_link}</div>{log}</section>'
+            + rm
+            + (f'<section class="sp-sec"><div class="sp-sec-head"><h2 class="h2">{ctx.T["secDevlog"]}</h2>'
+               f'{blog_link}</div>{log}</section>' if (mine or not core) else '') +
             f'<section class="sp-sec sp-others"><p class="eyebrow">{ctx.T["otherSystems"]}</p><div class="chips">{others}</div></section>')
 
 

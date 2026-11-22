@@ -626,3 +626,14 @@ a.badge-ink { color: var(--on-ink); }
 .plugins-cols h4 { font: 600 15px var(--mono); margin: 0 0 8px; letter-spacing: .04em; }
 .plugins-cols p { margin: 0; opacity: .85; line-height: 1.6; }
 @media (max-width: 760px) { .plugins-cols { grid-template-columns: 1fr; gap: 18px; } }
+
+/* engine foundation: compact cards of the other big systems */
+.core-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+.core-card { display: flex; flex-direction: column; gap: 10px; padding: 24px 24px 22px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; color: inherit; text-decoration: none; transition: border-color .15s, transform .15s; }
+.core-card:hover { border-color: var(--ink); transform: translateY(-2px); }
+.core-card h3 { margin: 0; font-size: 20px; }
+.core-card p { margin: 0; color: var(--text-2); line-height: 1.55; font-size: 15px; }
+.core-card p.core-tag { color: var(--ink); font-weight: 600; font-size: 16px; }
+.core-inc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.core-inc span { font-size: 12px; line-height: 1; padding: 6px 9px; border-radius: 999px; background: var(--paper-2); color: var(--text-2); white-space: nowrap; }
+.core-card .sys-link { margin-top: auto; }
