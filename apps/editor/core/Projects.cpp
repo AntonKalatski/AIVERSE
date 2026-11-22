@@ -225,12 +225,16 @@ std::string createProject(const std::string& engineDir, const std::string& templ
         if (templateId != "empty") m.set("template", Json::string(templateId));
         if (templateId == "empty") {
             // New blank projects start with a neutral scale reference, never procedural grass.
-            // Copy runtime assets into the project so packaging stays self-contained.
+            // Copy runtime assets into the project so packaging stays self-contained. The engine
+            // ships only the checkerboard; the full library is the catalog package terrain-pbr
+            // (tools/pkg/aiverse_pkg.py add terrain-pbr). Only textures/ is copied, so that package
+            // installs over it without conflicts (identical checkerboard files and material id).
             const fs::path pack = fs::path(engineDir) / "engine/assets/materials/terrain";
             if (!fs::exists(pack / "default-terrain.json"))
                 return fail("bundled terrain PBR materials are missing: " + pack.string());
-            for (const auto& entry : fs::recursive_directory_iterator(pack)) {
-                const fs::path target = dst / "materials/terrain" / fs::relative(entry.path(), pack);
+            fs::create_directories(dst / "materials/terrain/textures");
+            for (const auto& entry : fs::recursive_directory_iterator(pack / "textures")) {
+                const fs::path target = dst / "materials/terrain/textures" / fs::relative(entry.path(), pack / "textures");
                 if (entry.is_directory()) fs::create_directories(target);
                 else aiverse::pack::copyFileReplaceOrThrow(entry.path(), target);
             }
