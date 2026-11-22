@@ -415,6 +415,8 @@ struct App {
         auto next = loadModel(path(it.getStr("model")), readFile, &warn);
         for (auto& w : warn) log(w);
         if (!next) { log("cannot load " + it.getStr("model")); return; }
+        // the camera alone picks the LOD on screen; the shadow map (fixed to the model bounds) picks its own
+        next->batching.independentShadowLod = true;
         prepareModelUpload(*next);
         wireData.build(*next);   // the CPU geometry is released by the upload
         shownLevel = -1;
