@@ -170,7 +170,7 @@ inline void registerTerraWeaveOps(Workspace& ws) {
         "Use terraweave_generate to bake the full heightfield; flat grid map only.",
         Json::parse(schema), [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
-            if (w->project.worldSpaceMaps()) throw std::runtime_error(
+            if (w->map.data.worldSpace) throw std::runtime_error(
                 "TerraWeave MapDoc heightfield adapter is for flat grid maps only (world-space maps: G2)");
             if (w->map.data.planet()) throw std::runtime_error(
                 "TerraWeave flat map adapter does not support planet maps");
@@ -198,7 +198,7 @@ inline void registerTerraWeaveOps(Workspace& ws) {
         "Both choices are mutually exclusive. Creates one undo step.",
         Json::parse(schema), [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
-            if (w->project.worldSpaceMaps()) throw std::runtime_error(
+            if (w->map.data.worldSpace) throw std::runtime_error(
                 "TerraWeave MapDoc heightfield adapter is for flat grid maps only (world-space maps: G2)");
             auto settings = terraweave_ops_detail::terrain(p);
             auto origin = terraweave_ops_detail::origin(p);
@@ -275,7 +275,7 @@ inline void registerTerraWeaveOps(Workspace& ws) {
           "seedOffset":{"type":"integer","minimum":0}}})"),
         [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
-            if (w->project.worldSpaceMaps() || w->map.data.planet()) throw std::runtime_error(
+            if (w->map.data.worldSpace || w->map.data.planet()) throw std::runtime_error(
                 "TerraWeave forest recipe is for flat heightfield maps");
             // Merge over the current recipe: unspecified fields keep their value.
             Json merged=terraweave_ops_detail::forestRecipeJson(

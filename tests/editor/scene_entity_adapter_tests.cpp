@@ -52,7 +52,7 @@ int main() {
     sedan.z = 64.0f;
     map.data.entities.push_back(sedan);
 
-    const auto rts = enumerateDocumentSceneNodes(map, false);
+    const auto rts = enumerateDocumentSceneNodes(map);
     require(rts.size() == 1);
     require(rts[0].ref.source == DocumentEntityRef::Source::MapEntity);
     require(rts[0].label == "sedan #sedan_01");
@@ -76,11 +76,11 @@ int main() {
     spawn.push(Json::number(7.0)); spawn.push(Json::number(8.0)); spawn.push(Json::number(9.0));
     Json spawns = Json::array();
     spawns.push(spawn);
-    map.data.fps = Json::object();
-    map.data.fps.set("colliders", colliders);
-    map.data.fps.set("spawns", spawns);
+    map.data.extra = Json::object(); map.data.worldSpace = true;
+    map.data.extra.set("colliders", colliders);
+    map.data.extra.set("spawns", spawns);
 
-    const auto fps = enumerateDocumentSceneNodes(map, true);
+    const auto fps = enumerateDocumentSceneNodes(map);
     require(fps.size() == 2);
     require(fps[0].group == "Colliders" && fps[0].label == "Box Collider #1");
     require(fps[1].group == "Spawn Points" && fps[1].label == "Spawn #1");

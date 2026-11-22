@@ -1,8 +1,9 @@
 #pragma once
+// Pose limits and exponential easing of a ground camera (target x/z, zoom, yaw, pitch in degrees). The engine
+// follow camera (engine/render/CameraBehavior.h) runs on these; the result goes to the host camera, never the sim.
 #include <algorithm>
 #include <cmath>
 namespace aiverse::lib::gameplay::camera {
-enum class Mode { Rts,Follow,Orbit,Strategic };
 struct Pose { float x=0,z=0,zoom=20,yaw=0,pitch=45; };
 struct Limits { float minX=-10000,maxX=10000,minZ=-10000,maxZ=10000,minZoom=1,maxZoom=200,minPitch=5,maxPitch=89; };
 inline bool valid(const Pose& p) { return std::isfinite(p.x)&&std::isfinite(p.z)&&std::isfinite(p.zoom)&&std::isfinite(p.yaw)&&std::isfinite(p.pitch); }
@@ -22,15 +23,4 @@ inline bool advance(Pose& current,Pose target,const Limits& limits,float delta,f
 }
 // Pan/follow/zoom compute the target; apply it to the host camera, never the simulation.
 inline bool pan(Pose& target,float x,float z,const Limits& limits) { auto next=target;next.x+=x;next.z+=z;if(!constrain(next,limits))return false;target=next;return true; }
-struct Input {float panX=0,panZ=0,yaw=0,pitch=0,zoom=0,followX=0,followZ=0;};
-inline bool updateTarget(Pose& target,Mode mode,const Input& input,const Limits& limits) {
-    auto next=target;
-    if(mode==Mode::Follow){next.x=input.followX;next.z=input.followZ;}
-    else {next.x+=input.panX;next.z+=input.panZ;}
-    next.yaw+=input.yaw;next.pitch+=input.pitch;next.zoom+=input.zoom;
-    if(!constrain(next,limits))return false;
-    target=next;
-    return true;
-}
-inline bool strategicIcons(const Pose& p,float threshold){return p.zoom>=threshold;}
 }

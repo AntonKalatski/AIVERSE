@@ -229,6 +229,7 @@ constexpr size_t kPoolsBefore7 = kPools::count - 4, kPoolsBefore8 = kPools::coun
 } // namespace
 
 bool GameCore::serializeState(Simulation& sim, Archive& a) {
+    if (actor_) return actorSerialize(sim, a);
     World& w = sim.world();
     GameState& gs = state(sim);
     if (!a.writing() && a.formatVersion < 5) {

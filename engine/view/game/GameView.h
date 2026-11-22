@@ -1048,7 +1048,7 @@ private:
     std::unique_ptr<roads::RoadView> pendingRoadRecovery_;
     std::unique_ptr<GameShoreView> pendingShoreRecovery_;
     GameGroundFx groundFx_;   // territory, diggable rock, lanes, roads (GameGroundFx.cpp)
-    FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
+    FogOfWar fog_;           // fog of war look + sheet (GameFog.cpp)
     GameOverlays overlays_;   // data-driven overlays (GameOverlays.cpp)
     GameFieldView fieldView_; // grid field overlays (GameFieldView.cpp)
     const std::vector<GridFieldDef>* fieldDefsSeen_ = nullptr;
@@ -1063,11 +1063,11 @@ private:
     render::float3 camPos_;
     // planets
     PlanetRenderer planets_;
-    GamePlanetGroundFx planetGroundFx_;
+    GamePlanetGroundFx planetGroundFx_;   // territory, rock, roads, lanes on sphere faces
     PlanetFlora planetFlora_;            // TerraWeave trees and rocks on planet bodies
-    void rebuildPlanetFlora();   // territory, rock, roads, lanes on sphere faces
+    void rebuildPlanetFlora();
     PlanetCamera planetCam_;
-    PlanetViewFrame pframe_;
+    render::SphereViewFrame pframe_;
     double planetSeconds_ = 0;
     std::vector<uint8_t> barOk_;
     std::vector<std::vector<uint8_t>> planetVision_;   // per body

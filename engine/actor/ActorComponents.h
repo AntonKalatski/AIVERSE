@@ -10,7 +10,7 @@
 //   Vehicle (ActorSystems.h) and the shared vehicles::VehicleDrive on typed vehicles. Deterministic order = ascending `id`.
 // * Match-level data: the World resource actor::State (round, winner, nextObject, match, royale, history).
 //
-// Public API of actor::Module (ActorModule.h) for consumers (Session, client, HUD, editor, bots, tools, tests):
+// Public API of actor::ActorHost (ActorModule.h) for consumers (Session, client, HUD, editor, bots, tools, tests):
 //   size_t            characterCount(const Simulation&) const;
 //   Entity            characterEntity(const Simulation&, uint8_t slot) const;          // kNullEntity if invalid
 //   CharacterRef      character(Simulation&, uint8_t slot) const;                      // writable view, throws std::out_of_range
@@ -110,7 +110,7 @@ struct CharacterIndex { std::vector<Entity> bySlot; };
 
 // Non-owning view of one character's components with the old Actor field names (reference members).
 // Valid while the character's component pools are not restructured (characters are never created or
-// destroyed during a match, so a view stays valid for a whole tick). Build it with Module::character.
+// destroyed during a match, so a view stays valid for a whole tick). Build it with ActorHost::character.
 template<bool Const> struct BasicCharacterRef {
     template<class C> using Part=std::conditional_t<Const,const C,C>;
     Entity entity;

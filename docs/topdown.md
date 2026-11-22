@@ -2,7 +2,8 @@
 
 One hero per player is steered directly (virtual joystick / WASD / gamepad) instead of with RTS orders, as in
 Drone Fall and other mobile top-down shooters. Simulation: `modules/rts/RtsTopDown.{h,cpp}`; client model
-(sticks, buttons, keys, camera): `modules/rts/view/TopDownControls.{h,cpp}`; client glue: `apps/client/ClientTopDown.cpp`.
+(sticks, buttons, keys): `engine/view/game/TopDownControls.{h,cpp}`; the camera is the shared LENS follow body
+(`engine/render/CameraBehavior.h`, presets and keys: [camera-behaviors.md](camera-behaviors.md)); client glue: `apps/client/ClientTopDown.cpp`.
 Sample: `templates/topdown_arena` ("Scrapyard Arena").
 
 ## How it works
@@ -196,6 +197,9 @@ false` keeps the authored density). `yaw` is any angle (180: the camera stands n
 sticks and keys stay screen-relative). `"projection": "ortho"` draws orthographically with the same framing
 (`"perspective"` forces perspective; absent: whatever the game's camera has). Test:
 `topdown_camera_fov_far_yaw_ortho_and_map_override`.
+
+**Presets.** `topDown.camera` and the map's block may start from a preset: `{"preset": "follow-speed", "margin": 4}`
+(list: [camera-behaviors.md](camera-behaviors.md)).
 
 **Per-map camera.** A map's top-level `"camera"` block overrides `topDown.camera` key by key for that map
 (`pitch`, `yaw`, `distance`, `minDistance`, `maxDistance`, `fov`, `projection`, `smoothing`, look-ahead, bounds...):

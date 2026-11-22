@@ -28,7 +28,7 @@ public:
     // Per frame (planet maps): rescans the layers a few times per second, rebuilds changed tiles, queues meshes.
     // Returns true when the rock layer seen by the viewer changed (the planet terrain then needs the new cell
     // flags: GameView::drawPlanets).
-    bool draw(gfx::Device& dev, render::Renderer3D& r, const PlanetRenderer& planets, const PlanetViewFrame& frame, const GameScene& s,
+    bool draw(gfx::Device& dev, render::Renderer3D& r, const PlanetRenderer& planets, const render::SphereViewFrame& frame, const GameScene& s,
               double time, const std::vector<uint8_t>* vision, const MapGrid& grid, const GameGroundFx& looks, const Rules& rules);
     int quads() const { return quads_; }
     render::GpuOwnedMemoryStats ownedGpuMemoryStats(const gfx::Device& dev) const {

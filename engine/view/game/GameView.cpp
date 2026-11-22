@@ -1530,7 +1530,7 @@ void GameView::draw(Renderer3D& r, const GameScene& input, double time, const st
         }
     }
     // Remove presentation entities for no-longer-eligible objects every
-    // frame. No model draws here; RtsViewDraw still applies materials,
+    // frame. No model draws here; GameViewDraw still applies materials,
     // terrain height, outlines, shadow, effects and other scene features.
     if(genericObjects.size()!=0 && !genericView_) {
         genericView_=std::make_unique<::aiverse::view::View>(

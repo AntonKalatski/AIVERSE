@@ -38,6 +38,6 @@ Examples: races (`mechanics/RaceSession.h`, `RaceSessionData.h`, `docs/races.md`
 `engine/vehicles/VehicleRace.h`), the vehicle system (`engine/vehicles`: components + one step, hosts implement only
 `VehicleHost` / `RaceHost`; docs/driving.md), controls -> pedals (`mechanics/VehicleDrive.h`), spline roads
 (`engine/roads`, drawn by both clients; the old forwarders are deleted), the race HUD (`engine/ui/RaceHud.h`) and chase camera
-(`engine/render/CameraModes.h`).
+(`engine/render/CameraBehavior.h`).
 
 Runtime library: none (workflow).

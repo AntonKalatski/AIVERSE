@@ -155,7 +155,7 @@ inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
                 drawDocumentRotationScaleFields(map, ref);
                 break;
             case DocumentComponentKind::Collider: {
-                const Json* object = fpsDocumentEntity(map.data.fps, ref);
+                const Json* object = fpsDocumentEntity(map.data.extra, ref);
                 if (object && (*object)["yaw"].isNumber()) {
                     ImGui::TextDisabled("Oriented box uses the Transform rotation and scale.");
                     if ((*object)["id"].isNumber())

@@ -6,7 +6,12 @@
 #include <cstdint>
 
 namespace aiverse {
-enum class CameraRigMode : uint8_t { Static, LookAt, Follow, Orbit, Rail };
+// Chase / FirstPerson (appended) run the same math as the view cameras (render/CameraBehavior.h):
+//   Chase       - behind the target's heading: distance, pitch, offset.y = height, offset.z = lead ahead,
+//                 yaw = turn around the heading (radians);
+//   FirstPerson - eyes at target + offset (offset turns with the target), looking along the target's +Z,
+//                 yaw / pitch added on top.
+enum class CameraRigMode : uint8_t { Static, LookAt, Follow, Orbit, Rail, Chase, FirstPerson };
 struct CameraRigComponent {
     CameraRigMode mode=CameraRigMode::Static;
     Entity target=kNullEntity;                // stable generation checked target
@@ -16,6 +21,20 @@ struct CameraRigComponent {
     bool trackTarget=true;
     bool enabled=true;
     constexpr bool operator==(const CameraRigComponent&) const = default;
+};
+// Optional modifiers of the Follow rig mode (the shared follow body, render/CameraBehavior.h): when present, a
+// Follow rig frames its target like the game follow camera (angle, distance, smoothing, velocity lead, speed zoom,
+// bounds) instead of a fixed offset. Angles in degrees; distances in world units. Scene JSON: "follow": {"preset"...}.
+struct CameraFollowComponent {
+    Fixed pitch=58_fx, yaw=0_fx;
+    Fixed distance=20_fx, minDistance=10_fx, maxDistance=40_fx;
+    Fixed smoothing=6_fx, lookAheadSmoothing=3_fx;
+    Fixed velocityLookAhead=0_fx, maxLookAhead=0_fx;          // seconds of velocity ahead; cap (0: none)
+    Fixed speedFrom=0_fx, speedTo=0_fx, speedDistance=0_fx, speedSmoothing=Fixed::fromRatio(3,2);
+    Fixed fov=0_fx;                                           // degrees, 0 = keep the camera's
+    bool bounds=false;                                        // keep the focus inside [minX..maxX] x [minZ..maxZ]
+    Fixed minX=0_fx, minZ=0_fx, maxX=0_fx, maxZ=0_fx, margin=0_fx;
+    constexpr bool operator==(const CameraFollowComponent&) const = default;
 };
 enum class CameraRailInterpolation : uint8_t { Linear, CatmullRom };
 enum class CameraRailEase : uint8_t { None, InOut };

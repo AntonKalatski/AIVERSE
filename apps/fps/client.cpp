@@ -1,7 +1,8 @@
 #include <aiverselib/net/Admission.h>
+#include "engine/game/GameCore.h"
 #include "engine/net/authority/Session.h"
 #include "engine/actor/Project.h"
-#include "engine/render/CameraModes.h"
+#include "engine/render/CameraBehavior.h"
 #include "RoyaleHud.h"
 #include "engine/ui/RaceHud.h"
 #include "engine/roads/RoadView.h"
@@ -201,7 +202,7 @@ struct App {
     uint32_t shownShots=0,shownHits=0,shownLife=0;
     double flash=0,hitFlash=0;
     double accumulated=0;bool listen=false;
-    render::Look look;
+    render::CameraLook look;render::CameraChaseSettings chase;
     net::authority::Snapshot previousSnapshot,received;uint32_t lastSnapshotTick=0;double snapshotAge=0;
 
     // Data-driven semantic mapping: games may replace this context with their own JSON assets.
@@ -312,6 +313,14 @@ struct App {
         configureInput();
         loadInputConfig();
         renderer.setGpuDeviceLease(gpuLifetime->lease());
+        // LENS camera blocks (CameraBehavior.h, presets in CameraPresets.h): rules "camera", the map's on top.
+        const auto cameraBlock=[&](const char* key){
+            Json block=render::resolveCameraPreset(rules["camera"][key]);
+            if(!block.isObject())block=Json::object();
+            for(const auto& [k,v]:render::resolveCameraPreset(map["camera"][key]).members())block.set(k,v);
+            return block;};
+        look.settings=render::cameraLookFrom(cameraBlock("firstPerson"));
+        chase=render::cameraChaseFrom(cameraBlock("chase"));
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
         if(!fxScene.init(device,
              [this](const std::string& p,std::string& out) {
@@ -339,8 +348,8 @@ struct App {
         render::MeshBuilder builder;builder.color(render::rgba(255,255,255)).box({0,0.5f,0},{1,1,1});cube=builder.upload(device);
         loadAnimatedCharacter(device);
         lang.load([](const auto& path,auto& out){return platform::readContentFile(path,out);},"en",{"engine/assets/lang"});
-        Simulation sim({1,config.tickRate,0},std::make_unique<actor::Module>());sim.setup(rules,map);
-        geometry=static_cast<actor::Module&>(sim.module()).collision();
+        Simulation sim({1,config.tickRate,0},std::make_unique<game::GameCore>());sim.setup(rules,map);
+        geometry=actor::host(sim).collision();
         rotatedBoxes.clear();
         for(const auto& b:map["colliders"].items())if(b.has("yaw"))rotatedBoxes.push_back({world::worldVector(b["center"],100000_fx),world::worldVector(b["half"],100000_fx),b["yaw"].fx()});
         if(map["world"].getBool("async"))streamedScene=std::make_unique<world::WorldScene>(map["world"],contentReader);
@@ -869,11 +878,11 @@ struct App {
             auto held=[&](const char* name){const auto* state=actions.state(name);return state&&state->active;};
             fireHeld=held("Fire");aimHeld=held("Aim");
             if(const auto* mouse=actions.state("Look");mouse&&mouse->active)
-                look.motion(mouse->value.x,mouse->value.y,aimHeld?0.00015f:0.0004f);
+                look.motion(mouse->value.x,mouse->value.y,aimHeld);
             if(const auto* stick=actions.state("LookStick");stick&&stick->active){
                 const float pxPerSecond=1400.0f;
                 const float scaled=float(std::min(dt,0.25))*pxPerSecond;
-                look.motion(stick->value.x*scaled,stick->value.y*scaled,aimHeld?0.00015f:0.0004f);
+                look.motion(stick->value.x*scaled,stick->value.y*scaled,aimHeld);
             }
         }else{
             inputAdapter.focusLost();
@@ -987,7 +996,7 @@ struct App {
         if(ride){
             auto at=visual(world::relativeTo(ride->pos,origin,32));float yaw=float(ride->yaw.toDouble());
             if(rideBefore){auto from=visual(world::relativeTo(rideBefore->pos,origin,32));at=from+(at-from)*interpolation;yaw=render::lerpTurns(float(rideBefore->yaw.toDouble()),yaw,interpolation);}
-            cam=render::chaseCamera(at,yaw);localEye=cam.eye();
+            cam=render::chaseCamera(at,yaw,chase);localEye=cam.eye();
         }
         if(aimHeld)cam.fovY=(weapon.range>=700_fx||(actor.attachments[actor.weaponIndex]&1))?0.28f:0.65f;
         audio::ListenerPose listener;auto globalEye=visual(eye);listener.pos[0]=globalEye.x;listener.pos[1]=globalEye.y;listener.pos[2]=globalEye.z;auto forward=render::normalize(cam.target-cam.eye());listener.forward[0]=forward.x;listener.forward[1]=forward.y;listener.forward[2]=forward.z;audio.setListener(listener);

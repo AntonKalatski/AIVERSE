@@ -17,6 +17,7 @@ using namespace detail;
 // ================================================================= setup
 
 void GameCore::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
+    if (worldSpaceMap(map)) { setupActor(sim, rulesIn, map); return; }
     // every block below reads entries with their "extends" applied (engine/data/JsonCompose.h)
     const Json resolvedRules = needsExtends(rulesIn) ? resolveExtends(rulesIn) : Json();
     const Json& baseRules = resolvedRules.isObject() ? resolvedRules : rulesIn;
@@ -1077,6 +1078,7 @@ void GameCore::issue(Simulation& sim, Entity e, const Order& o, bool queue) {
 }
 
 void GameCore::applyCommand(Simulation& sim, const Command& cmd) {
+    if (actor_) { actorCommand(sim, cmd); return; }
     World& w = sim.world();
     GameState& gs = state(sim);
     auto* pi = sim.player(cmd.player);
@@ -1573,6 +1575,7 @@ bool GameCore::castPlayerAbilityFree(Simulation& sim, uint8_t player, int index,
 }
 
 int GameCore::result(Simulation& sim) {
+    if (actor_) return actorResult(sim);
     if (auto* o = sim.world().resource<MatchOutcome>(); o && o->result) return o->result;   // frozen (freezeOutcome)
     return liveResult(sim);
 }
@@ -1631,6 +1634,7 @@ int GameCore::liveResult(Simulation& sim) {
 }
 
 void GameCore::hashState(Simulation& sim, Hasher& h) {
+    if (actor_) { actorHash(sim, h); return; }
     World& w = sim.world();
     GameState& gs = state(sim);
     for (auto& p : gs.players) {

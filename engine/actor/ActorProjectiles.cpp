@@ -12,7 +12,7 @@ namespace aiverse::actor {
 // another projectile owner while this function runs. All direct effects
 // (damage, shields, loot, hit events, scripted bullet branches) execute at
 // the original time, before the next projectile is advanced.
-bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
+bool ActorHost::stepProgrammedProjectile(Simulation& sim,Projectile& p,
                                      std::vector<Projectile>& children,
                                      std::size_t liveCount) {
     auto& state_=state(sim);
@@ -139,7 +139,7 @@ bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
     return alive;
 }
 
-void Module::tickProjectilePrograms(Simulation& sim) {
+void ActorHost::tickProjectilePrograms(Simulation& sim) {
     // Ascending id (creation order). A projectile that ends is removed after the pass (no other projectile is
     // read meanwhile); branches spawned this tick are appended after all existing ones, in spawn order.
     World& world=sim.world();

@@ -47,7 +47,7 @@ inline void registerTerraWeaveEarthworksOps(Workspace& ws) {
         })"),[w=&ws](const Json& p) -> Json {
             if(w->project.dir.empty())
                 throw std::runtime_error("open game first");
-            if(w->project.worldSpaceMaps() || w->map.data.planet())
+            if(w->map.data.worldSpace || w->map.data.planet())
                 throw std::invalid_argument(
                     "TerraWeave Earthworks flat MapDoc adapter requires a flat grid map (world-space maps: G2)");
             const MapData& map=w->map.data;

@@ -82,6 +82,17 @@ int main() {
     if (!ec) require(call("lens_scene_get").has("error"), "symlink accepted");
     unsigned tools=0;
     for (const auto& op:ws.ops()) if(op.name.rfind("lens_",0)==0) { ++tools; require(!op.guiOnly,"authoring needs GUI"); }
-    require(tools==5,"MCP registry missing LENS tools");
+    require(tools==6,"MCP registry missing LENS tools");
+    // presets: the list, one by name, unknown names fail; a follow preset is accepted in a camera record
+    auto presets = call("lens_camera_presets");
+    require(presets.getBool("ok") && presets["presets"].size() >= 8, "preset list");
+    auto one = call("lens_camera_presets", Json::parse(R"({"name":"follow-speed"})"));
+    require(one["presets"].size() == 1 && one["presets"][size_t(0)].getStr("body") == "follow", "one preset by name");
+    require(call("lens_camera_presets", Json::parse(R"({"name":"nope"})")).has("error"), "unknown preset accepted");
+    auto followScene = call("lens_scene_validate", Json::parse(R"({"scene":{"version":1,"cameras":[{"id":7,"name":"Follow","camera":{},
+        "rig":{"mode":2},"follow":{"preset":"follow-speed","bounds":[0,0,100,80]}}]}})"));
+    require(followScene.getBool("ok"), "follow preset camera rejected");
+    auto badFollow = call("lens_scene_validate", Json::parse(R"({"scene":{"version":1,"cameras":[{"id":7,"camera":{},"follow":{"preset":"nope"}}]}})"));
+    require(!badFollow.getBool("ok"), "unknown follow preset accepted");
     std::cout << "PASS LENS operations: CRUD, stale edits, validation, bounds, symlinks, registry\n";
 }

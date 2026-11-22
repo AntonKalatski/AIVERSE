@@ -57,10 +57,10 @@ public:
     const char* dockArea() const override { return "left"; }
 
     void draw(Editor& ed) override {
-        if (ed.ws().project.worldSpaceMaps()) {
+        if (ed.ws().map.data.worldSpace) {
             // The same authoring-node index is shared with Scene/Inspector.
             // This lists document objects, never synthetic ECS components.
-            const auto nodes = enumerateDocumentSceneNodes(ed.doc(), true);
+            const auto nodes = enumerateDocumentSceneNodes(ed.doc());
             ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
             ImGui::Spacing();
             ui::searchField("##fpsSceneFilter", filter_,

@@ -2136,7 +2136,7 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     u.cliffTint[3] = cliffNrm_.valid() ? 1.0f : 0.0f;
     u.fog[0] = 120.0f / 255.0f; u.fog[1] = 235.0f / 255.0f;
     u.fogColor[0] = 8.0f / 255.0f; u.fogColor[1] = 10.0f / 255.0f; u.fogColor[2] = 14.0f / 255.0f;
-    if (fogField_) { // look from RtsFog (rules / game.json "fogOfWar")
+    if (fogField_) { // look from GameFog (rules / game.json "fogOfWar")
         u.fog[0] = fogLook_.explored; u.fog[1] = fogLook_.unexplored; u.fog[2] = fogLook_.gridEverywhere ? 1.0f : 0.0f;
         for (int i = 0; i < 3; ++i) { u.fogColor[i] = fogLook_.color[i]; u.fogGrid[i] = fogLook_.gridColor[i]; }
         u.fogColor[3] = fogLook_.style == FogLook::Cells || fogLook_.style == FogLook::Grid ? 1.0f : 0.0f;

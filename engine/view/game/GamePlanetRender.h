@@ -10,7 +10,7 @@
 // triplanar splat by cell kind + slope cliff texture), ocean sphere at seaLevel (same chunks projected,
 // alpha blended), fog of war per cell (vision atlas), aerial haze; star = emissive sphere, sun direction
 // from the star; atmosphere shell (rim scattering, Medium+), starfield sky, orbit lines.
-// Coordinates: everything is drawn in the view world of PlanetViewFrame (GamePlanetCamera.h).
+// Coordinates: everything is drawn in the view world of render::SphereViewFrame (GamePlanetCamera.h).
 #pragma once
 #include <memory>
 #include <string>
@@ -46,7 +46,7 @@ public:
     struct Options { bool orbits = true, atmosphere = true, sky = true; float lodRange = 48; };
     Options options;
     // Queues everything; the lighting of `r` gets the star direction of `lightBody`.
-    void draw(render::Renderer3D& r, const PlanetViewFrame& frame, double seconds, int lightBody, float planetBlend);
+    void draw(render::Renderer3D& r, const render::SphereViewFrame& frame, double seconds, int lightBody, float planetBlend);
 
     struct Stats { int chunks = 0, drawn = 0, built = 0, culledHorizon = 0, culledFrustum = 0; uint64_t triangles = 0; double buildMs = 0; };
     const Stats& stats() const { return stats_; }

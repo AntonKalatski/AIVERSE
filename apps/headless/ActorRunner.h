@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/actor/ActorModule.h"
+#include "engine/game/GameCore.h"
 #include "engine/actor/Project.h"
 #include "engine/platform/ContentReader.h"
 #include <thread>
@@ -8,9 +9,9 @@ static int playFps(const Args& args) {
     auto data=actor::readProject([&](const std::string& file,std::string& text){std::ifstream f(args.project+"/"+file);if(!f)return false;text.assign(std::istreambuf_iterator<char>(f),{});return true;});
     if(!args.map.empty())data.map=Json::parseFile((fs::path(args.project)/args.map).string());
     if(!args.record.empty()||!args.generate.empty())throw std::runtime_error("FPS runner: recording and RTS map generation are not supported");
-    auto cfg=actor::readConfig(data.rules);Simulation sim({args.seed,cfg.tickRate,0},std::make_unique<actor::Module>());sim.setup(data.rules,data.map);
+    auto cfg=actor::readConfig(data.rules);Simulation sim({args.seed,cfg.tickRate,0},std::make_unique<game::GameCore>());sim.setup(data.rules,data.map);
     auto contentReader=platform::makeContentReader(args.project);
-    static_cast<actor::Module&>(sim.module()).setContentReader(contentReader);
+    actor::host(sim).setContentReader(contentReader);
     auto step=[](Simulation& target){auto before=target.tick();auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
         do{target.step();if(target.tick()!=before)return;if(std::chrono::steady_clock::now()>deadline)throw std::runtime_error("world: collision loading stalled (budget, missing/corrupt asset or incompatible terrain seam)");std::this_thread::sleep_for(std::chrono::milliseconds(1));}while(true);};
     auto read=[](const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)throw std::runtime_error("cannot read FPS save");return std::string(std::istreambuf_iterator<char>(f),{});};
@@ -20,8 +21,8 @@ static int playFps(const Args& args) {
     while(sim.tick()<limit&&!sim.result()) {
         step(sim);
         if(args.verifyRestore&&!verified&&sim.tick()>=uint64_t(args.restoreAt)*cfg.tickRate) {
-            auto bytes=sim.serialize();Simulation check({args.seed,cfg.tickRate,0},std::make_unique<actor::Module>());check.setup(data.rules,data.map);
-            static_cast<actor::Module&>(check.module()).setContentReader(contentReader);
+            auto bytes=sim.serialize();Simulation check({args.seed,cfg.tickRate,0},std::make_unique<game::GameCore>());check.setup(data.rules,data.map);
+            actor::host(check).setContentReader(contentReader);
             if(!check.deserialize(bytes)||check.checksum()!=sim.checksum())throw std::runtime_error("FPS restore mismatch");
             SimSnapshot snapshot;sim.saveState(snapshot);
             for(uint32_t i=0;i<args.restoreTicks;++i){step(sim);step(check);if(sim.checksum()!=check.checksum())throw std::runtime_error("FPS continuation mismatch");}
