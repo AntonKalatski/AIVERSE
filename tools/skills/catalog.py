@@ -107,7 +107,7 @@ WORKFLOWS=[
  ('aiverse-niagara-vfx','Legacy Niagara-style discovery alias; use the official SpectraFX workflow','docs/spectrafx.md'),
  ('aiverse-spectrafx','SpectraFX universal graphs, particle assets and ECS presentation for native games','docs/spectrafx.md'),
  ('aiverse-prisma','PRISMA universal HDR post-processing, screen effects, volumes, camera profiles and GPU quality','docs/prisma.md'),
- ('aiverse-animation-ecs','Legacy C++ presentation ECS animation API and fixed-point root-motion handoff','libraries/include/aiverselib/animation/EcsAnimationSystems.h'),
+ ('aiverse-animation-ecs','Legacy C++ presentation ECS animation API and fixed-point root-motion handoff','engine/animation/EcsAnimationSystems.h'),
  ('aiverse-view','Genre-independent scene View: appearance, layers, visibility, packets and rendering adapters','docs/view.md'),
  ('aiverse-game-screens','Game screens and HUD with RmlUi and Lua, validation, phone previews','docs/ui-scripting.md'),
  ('aiverse-release-build','Platform packaging: branding, toolchains, size estimate, build and status','docs/overview.md'),

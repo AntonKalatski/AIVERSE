@@ -178,7 +178,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `geometry` | presentation / engine-reference | **P** | `engine/render/Geometry.h` |
 | `math` | simulation / engine-reference | **A** | `engine/core/FixedMath.h` |
 | `collections` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Collections.h` |
-| `graphs` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Graphs.h` |
+| `graphs` | simulation / cpp-foundation | **A** | `engine/core/Graphs.h` |
 | `spatial` | simulation / engine-reference | **D** | `engine/game/GameCore.h` |
 | `grid` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Grid.h` |
 | `navigation` | simulation / engine-reference | **D** | `docs/pathfinding.md` |
@@ -186,7 +186,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `tasks` | simulation / cpp-foundation | **S** | `libraries/include/aiverselib/Tasks.h` |
 | `logistics` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Logistics.h` |
 | `rules` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Rules.h` |
-| `progression` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Progression.h` |
+| `progression` | simulation / cpp-foundation | **A** | `engine/core/progression/Progression.h` |
 | `objectives` | simulation / cpp-foundation | **A** | `libraries/include/aiverselib/Objectives.h` |
 | `generation` | simulation / engine-reference | **D** | `engine/game/gen/MapGen.h` |
 | `presentation` | presentation / cpp-foundation | **P** | `libraries/include/aiverselib/Presentation.h` |
@@ -235,7 +235,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `object-interactions` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/Interactions.h` |
 | `reservations` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/Reservations.h` |
 | `action-sequences` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/Sequence.h` |
-| `loot-tables` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/systems/Loot.h` |
+| `loot-tables` | simulation / cpp-subsystem | **A** | `engine/core/progression/Loot.h` |
 | `progression-curves` | simulation / cpp-subsystem | **A** | `libraries/include/aiverselib/systems/Curves.h` |
 | `ai-perception` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/systems/Perception.h` |
 | `decision-explanations` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/systems/Decisions.h` |
@@ -269,7 +269,7 @@ Classification is a **migration destination**, not a claim of existing ECS integ
 | `run-graph` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/RunGraph.h` |
 | `puzzle-machine` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/strategy/PuzzleMachine.h` |
 | `session-admission` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/net/Admission.h` |
-| `snapshot-delta` | presentation / cpp-subsystem | **P** | `libraries/include/aiverselib/net/SnapshotDelta.h` |
+| `snapshot-delta` | presentation / cpp-subsystem | **P** | `engine/net/SnapshotDelta.h` |
 | `physical-interactions` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/PhysicalInteractions.h` |
 | `vehicle-controllers` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Vehicles.h` |
 | `sports-rules` | simulation / cpp-subsystem | **S** | `libraries/include/aiverselib/mechanics/Sports.h` |

@@ -2,7 +2,7 @@
 
 Необязательные скелетные анимации FPS работают на **AIVERSE MotionWeave**.
 Новые нативные модули линкуют `AIVERSE::MotionWeave` и подключают
-`<aiverselib/motionweave/MotionWeave.h>`.
+`"engine/animation/MotionWeave.h"`.
 См. [MotionWeave](motionweave.md). Старый ECS-таргет анимации остаётся рабочим.
 
 Проекты FPS используют `game.json` с `module: "fps"` и `genre: "fps"`. Выберите FPS в

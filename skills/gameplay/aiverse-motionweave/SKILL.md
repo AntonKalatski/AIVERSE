@@ -5,7 +5,7 @@ description: Modular ECS animation system for AIVERSE native projects across FPS
 # AIVERSE MotionWeave
 
 Canonical public API:
-- Header: `<aiverselib/motionweave/MotionWeave.h>`
+- Header: `"engine/animation/MotionWeave.h"`
 - CMake: `AIVERSE::MotionWeave`
 - C++ namespace: `aiverse::motionweave`
 - Scheduler: `motionweave::MotionWeave::update(presentationWorld, dt)`
@@ -63,7 +63,7 @@ non-authoritative debugging overlay. The independent CTest targets are
 
 NEVER introduce genre/app includes into `engine/render`,
 `libraries/include/aiverselib/animation` or
-`libraries/include/aiverselib/motionweave`.
+`engine/animation`.
 A generic source frame carries stable source ID, generation,
 model, graph and named animation parameter values; the source adapter
 `MotionWeaveSourceBridge` projects those into a presentation ECS World.
@@ -83,7 +83,7 @@ without duplicating generic event/animation algorithms.
 
 ## Stage 180: semantic facial rig and existing IK (source-only)
 
-Use `<aiverselib/animation/FacialControlRig.h>` and
+Use `"engine/animation/FacialControlRig.h"` and
 `FacialControlRig::compile(model, authoredV1, declaredParameters)`.
 This compiles explicit importer-authored **mesh-local morph names** and
 optional existing native `render::AnimationRig` `rig` operators

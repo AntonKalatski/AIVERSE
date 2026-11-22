@@ -9,7 +9,7 @@ add_library(AIVERSE::strategy ALIAS aiverse_strategy_library)
 target_link_libraries(aiverse_strategy_library INTERFACE aiverse_libraries)
 target_include_directories(aiverse_strategy_library INTERFACE "${CMAKE_CURRENT_LIST_DIR}/..")
 target_compile_features(aiverse_libraries INTERFACE cxx_std_20)
-target_include_directories(aiverse_libraries INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_include_directories(aiverse_libraries INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include" "${CMAKE_CURRENT_LIST_DIR}/..")   # library headers include engine/... (lower layer)
 # Optional engine adapter includes native Command types. Pure gameplay headers remain standalone.
 add_library(aiverse_gameplay_native INTERFACE)
 add_library(AIVERSE::gameplay_native ALIAS aiverse_gameplay_native)

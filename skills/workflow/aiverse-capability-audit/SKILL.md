@@ -10,13 +10,19 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
 
 ## Sources of truth, in this order
 
-1. `docs/capability-status.json` - status of every capability area  (`planned` / partial / done) with
-   `scope`, `acceptance` and `remaining`. Quote area ids (W1, W2, S2...) in the answer.
+1. `docs/capability-status.json` (schema 2) - every cross-genre area with `scope`, `acceptance`, `status`,
+   `libraries`, `tests` and `gameReady`. `planned` = no reusable code; `partial` = tested libraries exist but the
+   acceptance criterion is not fully checked; `core` = the acceptance criterion is checked by the listed `tests`
+   (all run by `./run-tests.sh`), and `gameReady` says what a shipped game still needs (UI, content,
+   integration). Quote area ids (W1, W2, S2...) in the answer.
+   When your work makes an area's acceptance testable, add the CTest names to `tests`, set `core`, move what is
+   left to `gameReady`; `tools/genre/check_registry.py` (CTest `genre_registry`) rejects a `core` without tests
+   and tests that `./run-tests.sh` does not run.
 2. Skill catalog: `python3 tools/skills/catalog.py search <words>` (English and Russian keywords), then read
    the matching `skills/<category>/<id>/SKILL.md`. Library packages: `python3 tools/libraries/catalog.py search
    <words>`, `libraries/catalog.json`, `docs/mechanics-packages.md`, `docs/libraries.md`.
 3. Module and subsystem docs: `docs/overview.md`, then the specific doc (table below). Each states its own
-   limits ("Not added", "Limits (known)", "remaining") - copy those, do not invent them.
+   limits ("Not added", "Limits (known)", "remaining", `gameReady`) - copy those, do not invent them.
 4. Code when a doc is silent: `git log -1 --format=%cd` on the main checkout, then grep the module.
 5. Notes outside the repository (claude.ai project docs, chat summaries, old reports) are dated snapshots.
    Use them only for history; check each claim against 1-4 and say which ones turned out stale.
@@ -48,7 +54,7 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
 
 1. Restate the target game as concrete capabilities (world, player, rules, AI, network, content, tools).
 2. For each capability run step 1-3 lookups above; record `exists` (path), `partial` (path + its stated limit)
-   or `missing` (capability-status id or "not tracked").
+   or `missing` (capability-status id or "not tracked"). A `core` area is not "done for a game": read `gameReady`.
 3. Pick the network model explicitly from the three above; justify it by player count, hidden information and
    persistence, not by habit.
 4. Report: one table capability -> status -> source path; then the real gaps ordered by risk; then what was

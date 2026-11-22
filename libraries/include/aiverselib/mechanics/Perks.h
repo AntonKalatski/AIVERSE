@@ -8,7 +8,7 @@
 // units (stat values are read back through evaluateStat), spawns recruits and dispatches event hooks
 // (e.g. to Lua functions). Integer math, owner-saved PCG32 stream, deterministic order (ascending ids).
 #include "BattleDeck.h"
-#include "../Progression.h"
+#include "engine/core/progression/Progression.h"
 #include "../systems/Curves.h"
 #include "engine/core/Random.h"
 #include <functional>

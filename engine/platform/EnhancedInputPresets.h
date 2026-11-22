@@ -2,7 +2,7 @@
 // Use this as a starting project asset; gameplay rules remain in Commands/ECS systems.
 #pragma once
 #include "EnhancedInputConfig.h"
-#include <aiverselib/gameplay/InputFlow.h>
+#include "input/InputFlowCore.h"
 #include <cstdint>
 #include <utility>
 

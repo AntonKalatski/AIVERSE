@@ -2902,6 +2902,46 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_library_royale_tests PRIVATE AIVERSE::lib_battle_royale)
     add_test(NAME library_royale COMMAND aiverse_library_royale_tests ${PROJECT_SOURCE_DIR})
 endif()
+# Genre library suites that used to run only in CI through tests/libraries/run.py. They check the acceptance
+# criteria of docs/capability-status.json (D1, P3, Q1, Q2, Q5, I1, T1, C2, ...), so ./run-tests.sh must run them.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_strategy_library_tests tests/libraries/strategy_tests.cpp)
+    target_link_libraries(aiverse_strategy_library_tests PRIVATE aiverse_engine AIVERSE::libraries)
+    add_test(NAME strategy_libraries COMMAND aiverse_strategy_library_tests)
+    add_executable(aiverse_library_genre_puzzles_tests tests/libraries/genre_puzzles_tests.cpp)
+    add_executable(aiverse_puzzles_example examples/libraries/mechanics/puzzles/PuzzlesExample.cpp)
+    add_executable(aiverse_library_cards_turns_tests tests/libraries/genre_cards_turns_tests.cpp)
+    add_executable(aiverse_cards_turns_example examples/libraries/mechanics/cards-turns/main.cpp)
+    add_executable(aiverse_library_vehicles_sports_tests tests/libraries/genre_vehicles_sports_tests.cpp)
+    add_executable(aiverse_vehicles_sports_example examples/libraries/mechanics/vehicles-sports/VehiclesSportsExample.cpp)
+    add_executable(aiverse_library_genre_production_survival_tests tests/libraries/genre_production_survival_tests.cpp)
+    add_executable(aiverse_library_production_survival_example examples/libraries/mechanics/production-survival/production_survival.cpp)
+    foreach(_aiverse_gt aiverse_library_genre_puzzles_tests aiverse_puzzles_example aiverse_library_cards_turns_tests
+            aiverse_cards_turns_example aiverse_library_vehicles_sports_tests aiverse_vehicles_sports_example
+            aiverse_library_genre_production_survival_tests aiverse_library_production_survival_example)
+        target_link_libraries(${_aiverse_gt} PRIVATE aiverse_engine AIVERSE::gameplay_native)
+    endforeach()
+    add_test(NAME library_genre_puzzles COMMAND aiverse_library_genre_puzzles_tests ${PROJECT_SOURCE_DIR})
+    add_test(NAME library_genre_puzzles_example COMMAND ${CMAKE_COMMAND}
+        -DEXAMPLE=$<TARGET_FILE:aiverse_puzzles_example>
+        -DLEVELS=${PROJECT_SOURCE_DIR}/examples/libraries/mechanics/puzzles/levels.json
+        -P ${PROJECT_SOURCE_DIR}/examples/libraries/mechanics/puzzles/run_twice.cmake)
+    add_test(NAME library_cards_turns COMMAND aiverse_library_cards_turns_tests ${PROJECT_SOURCE_DIR})
+    add_test(NAME library_cards_turns_example COMMAND aiverse_cards_turns_example ${PROJECT_SOURCE_DIR}/examples/libraries/mechanics/cards-turns 7)
+    set_tests_properties(library_cards_turns_example PROPERTIES PASS_REGULAR_EXPRESSION "deterministic replay: identical, winners: yes")
+    add_test(NAME library_vehicles_sports COMMAND aiverse_library_vehicles_sports_tests ${PROJECT_SOURCE_DIR})
+    add_test(NAME library_vehicles_sports_example COMMAND ${CMAKE_COMMAND}
+        -DEXAMPLE=$<TARGET_FILE:aiverse_vehicles_sports_example>
+        -DDATA=${PROJECT_SOURCE_DIR}/examples/libraries/mechanics/vehicles-sports
+        -P ${PROJECT_SOURCE_DIR}/tests/libraries/vehicles_sports_example.cmake)
+    add_test(NAME library_genre_production_survival COMMAND aiverse_library_genre_production_survival_tests ${PROJECT_SOURCE_DIR})
+    add_test(NAME library_production_survival_example COMMAND aiverse_library_production_survival_example
+        ${PROJECT_SOURCE_DIR}/examples/libraries/mechanics/production-survival --quiet)
+endif()
+# docs/capability-status.json stays honest: libraries exist, listed tests run here, "core" areas name their tests.
+if(AIVERSE_BUILD_TESTS AND Python3_EXECUTABLE)
+    add_test(NAME genre_registry COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/genre/check_registry.py ${PROJECT_SOURCE_DIR})
+endif()
 if(AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_TOOLS)
     add_executable(aiverse_encounter tools/libraries/encounter_main.cpp)
     target_link_libraries(aiverse_encounter PRIVATE AIVERSE::lib_boss_encounters)
@@ -4339,7 +4379,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_ENABLE_PHYSICS AND
         tests/physis_terraweave_fall_bridge_test.cpp)
     # TerraWeaveEcsAuthority.h transitively reads the NEREID shoreline
     # policy through TerraWeaveNereidSoilBridge.h. AIVERSE::lib_nereid_water
-    # exports libraries/include for <aiverselib/water/NereidErosion.h>.
+    # exports libraries/include for "engine/world/nereid/NereidErosion.h".
     # Do not compensate with a global compiler include path.
     target_link_libraries(aiverse_physis_terraweave_fall_bridge_test PRIVATE
         aiverse_engine aiverse_physics aiverse_models aiverse_zstd_dec
