@@ -203,6 +203,7 @@ void GameClient::initAudio() {
         try {
             Json bank = Json::parse(text);
             world::addPhysisNatureSounds(bank);   // synth fallbacks unless audio.json has its own
+            world::addPhysisTornadoSounds(bank);
             std::string err;
             if (!audio_.loadBank(bank, platform::readContentFile, &err) || !sound_.init(audio_, rules_, bank, &err)) error_ = err;
             for (auto& w : sound_.warnings()) std::fprintf(stderr, "audio: %s\n", w.c_str());
@@ -364,9 +365,10 @@ void GameClient::natureUpdate(float dt) {
     static const bool dbg = std::getenv("AIVERSE_PHYSIS_DEBUG") != nullptr;
     static int frames = 0;
     if (dbg && stats.active && ++frames % 60 == 0)
-        std::fprintf(stderr, "[physis] tick %llu flames %zu smoke %zu voices %zu wind %.1f,%.1f\n",
+        std::fprintf(stderr, "[physis] tick %llu flames %zu smoke %zu voices %zu wind %.1f,%.1f tornadoes %zu debris %zu\n",
                      static_cast<unsigned long long>(stats.tick), stats.flames, stats.smoke,
-                     stats.voices, double(stats.meanWindX), double(stats.meanWindZ));
+                     stats.voices, double(stats.meanWindX), double(stats.meanWindZ),
+                     stats.tornadoes, stats.debris);
 }
 
 void GameClient::natureStop() { nature_.stop(natureTargets()); }

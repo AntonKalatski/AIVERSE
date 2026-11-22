@@ -4,6 +4,7 @@
 // before AudioEngine::loadBank (project recordings with those names win).
 #pragma once
 #include "engine/world/PhysisNatureCues.h"
+#include "engine/world/PhysisTornadoCues.h"
 #include "engine/audio/Audio.h"
 #include <map>
 
@@ -16,9 +17,14 @@ public:
     void update(audio::AudioEngine& engine, const NaturePresentationFrame& frame,
                 float listenerX, float listenerY, float listenerZ, float dt) {
         apply(engine, planner_.plan(frame, listenerX, listenerY, listenerZ, dt));
+        applyTornado(engine, tornado_.plan(frame, listenerX, listenerY, listenerZ, dt));
     }
-    void reset(audio::AudioEngine& engine) { apply(engine, planner_.clear()); voices_.clear(); }
-    std::size_t voices() const { return voices_.size(); }
+    void reset(audio::AudioEngine& engine) {
+        apply(engine, planner_.clear());
+        applyTornado(engine, tornado_.clear());
+        voices_.clear(); roars_.clear();
+    }
+    std::size_t voices() const { return voices_.size() + roars_.size(); }
 
 private:
     void apply(audio::AudioEngine& engine, const std::vector<NatureAudioCommand>& commands) {
@@ -51,7 +57,38 @@ private:
             }
         }
     }
+    // Tornado roar (bank sound physis_tornado_loop, addPhysisTornadoSounds).
+    void applyTornado(audio::AudioEngine& engine, const std::vector<TornadoAudioCommand>& commands) {
+        for (const auto& c : commands) {
+            switch (c.op) {
+            case TornadoAudioOp::Start: {
+                audio::PlayParams p;
+                p.volume = c.volume; p.pitch = c.pitch; p.loop = 1;
+                p.positional = true; p.x = c.x; p.y = c.y; p.z = c.z;
+                const auto v = engine.play(tornadoSoundName(), p);
+                if (v != audio::kNoVoice) roars_[c.key] = v;
+                break;
+            }
+            case TornadoAudioOp::Update:
+                if (auto it = roars_.find(c.key); it != roars_.end()) {
+                    audio::VoiceParams vp;
+                    vp.volume = c.volume; vp.pitch = c.pitch;
+                    engine.setVoice(it->second, vp);
+                    engine.setVoicePosition(it->second, c.x, c.y, c.z);
+                }
+                break;
+            case TornadoAudioOp::Stop:
+                if (auto it = roars_.find(c.key); it != roars_.end()) {
+                    engine.stop(it->second, 1.2f);
+                    roars_.erase(it);
+                }
+                break;
+            }
+        }
+    }
     NatureAudioPlanner planner_;
+    TornadoAudioPlanner tornado_;
+    std::map<std::uint64_t, audio::VoiceId> roars_;
     std::map<std::pair<std::uint8_t, std::uint64_t>, audio::VoiceId> voices_;
 };
 
