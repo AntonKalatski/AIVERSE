@@ -157,3 +157,10 @@ trunks (footprints exist, adapter not written), upper-crown/branch collision (tr
 tests built in 316 s; CTest 6/6 PASS: `terraweave_ops`, `terraweave_preview`, `terraweave_streaming`,
 `terraweave_streaming_physics`, `terraweave_editor` (forest recipe ops: defaults, merge, rejection without
 mutation, undo), `studio_session` (panel op group, read-only get, set is a History step, invalid rejected).
+
+### After merging origin/main (4657a4744) — commit 5f95666d5
+Main removed `Project::isFps()` (no-genre rule); the forest op now uses `worldSpaceMaps()` like the
+other TerraWeave ops. Full rebuild of the TerraWeave tests, `aiverse_studio_session_tests` and
+`aiverse_editor` (677 s, no new warnings from this branch) and CTest **22/22 PASS**: the 19 TerraWeave
+tests listed above + `terraweave_streaming`, `terraweave_streaming_physics`, `studio_session`.
+The editor perf tables above were measured BEFORE this merge (on d677f8a2f + branch commits).
