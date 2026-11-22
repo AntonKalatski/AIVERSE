@@ -7,6 +7,7 @@
 #include <aiverselib/water/NereidCascades.h>
 #include <aiverselib/water/NereidConfluences.h>
 #include <aiverselib/water/NereidShorelineSystems.h>
+#include <aiverselib/water/NereidSphereInteractions.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,9 @@ struct NativeWaterPipelineConfig {
     bool probeFromTransform=true;
     AdaptiveWaterSamplingConfig adaptive{};
     bool enableRiverGrade=false;
+    // Sphere seas (planets, moons, any round water): NereidSphereWater.h shells, radial sampling, waves,
+    // buoyancy (with enableBuoyancy) and events (with enableInteractions). Bodies: spawnWaterSpheres.
+    bool enableSphereWater=false;
 };
 
 // Register the ECS components and ordered systems once during native setup.
@@ -65,6 +69,15 @@ inline void registerNativeWaterPipeline(Simulation& sim,
         addWaterBuoyancySystem(sim,prefix+".buoyancy");
     if(config.enableInteractions)
         addWaterInteractionSystem(sim,prefix+".interaction");
+    if(config.enableSphereWater) {
+        registerNereidSphereWaterPersistence(sim);
+        addSphereWaterSamplingSystem(sim,prefix+".sphere.sample");
+        if(config.enableBuoyancy)addSphereWaterBuoyancySystem(sim,prefix+".sphere.buoyancy");
+        if(config.enableInteractions) {
+            registerNereidSphereInteractionPersistence(sim);
+            addSphereWaterInteractionSystem(sim,prefix+".sphere.interaction");
+        }
+    }
 }
 
 // Deterministic body entity creation order, same across independent hosts.
