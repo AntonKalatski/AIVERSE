@@ -44,7 +44,9 @@ inline const char* kAo = R"(
     float d = TEX0(uv).r;
     if (d >= 0.99999) RETURN(vec4(1.0, 1.0, 0.0, 1.0));
     vec3 P = pxWorld(s, d, ivp0, ivp1, ivp2, ivp3, cam.w);
-    vec2 e = p2.xy;
+    // Normals over a 3-texel baseline: one-texel differences of a grazing
+    // floor are dominated by depth quantisation (banding).
+    vec2 e = p2.xy * 3.0;
     // Normal from the smaller of the two one-sided depth differences on each
     // axis: no halo of wrong normals along silhouettes.
     float dR = TEX0(TUV(s + vec2(e.x, 0.0))).r, dL = TEX0(TUV(s - vec2(e.x, 0.0))).r;
@@ -63,10 +65,14 @@ inline const char* kAo = R"(
     // Screen radius of the world radius at this depth.
     vec3 T = normalize(cross(V, abs(V.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
     vec2 rs = pxProject(P + T * p0.x, vp0, vp1, vp2, vp3, cam.w).xy - s;
-    float radiusPx = min(length(rs / e), p1.w);
+    float radiusPx = min(length(rs / p2.xy), p1.w);
     if (radiusPx < 1.0) RETURN(vec4(1.0, 0.0, 0.0, 1.0));
-    float noise = pxHash(floor(s / e) + vec2(px.w * 7.0, px.w * 3.0));
-    float noise2 = pxHash(floor(s / e) * 1.7 + vec2(19.0, 47.0));
+    // Lift the origin off the surface by the depth-precision error at this
+    // distance: coplanar neighbours then read as open, not as banded acne on
+    // grazing floors.
+    P += N * (viewDist * 0.01 + p0.x * 0.02);
+    float noise = pxHash(floor(s / p2.xy) + vec2(px.w * 7.0, px.w * 3.0));
+    float noise2 = pxHash(floor(s / p2.xy) * 1.7 + vec2(19.0, 47.0));
     float occlusion = 0.0, samples = 0.0;
     float r2 = p0.x * p0.x;
     for (int i = 0; i < 8; i++) {
@@ -76,7 +82,7 @@ inline const char* kAo = R"(
         for (int j = 0; j < 8; j++) {
             if (float(j) >= p1.y) break;
             float t = (float(j) + 0.5 + noise2 * 0.5) / p1.y;
-            vec2 q = s + dir * e * (radiusPx * t);
+            vec2 q = s + dir * p2.xy * (radiusPx * t);
             if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) continue;
             float ds = TEX0(TUV(q)).r;
             if (ds >= 0.99999) { samples += 1.0; continue; }
@@ -153,22 +159,26 @@ inline const char* kSsr = R"(
     float cosTheta = clamp(dot(N, V), 0.0, 1.0);
     float schlick = 0.04 + 0.96 * pow(1.0 - cosTheta, 5.0);
     float reflectance = p0.x * mix(1.0, schlick, p1.y);
-    float stepLen = p0.y / max(p0.w, 1.0);
     float jitter = pxHash(floor(s / e) + vec2(px.w * 5.0, px.w * 11.0));
+    P += N * (length(toCam) * 0.002);
     vec3 prev = P;
+    float prevT = 0.0;
     vec3 hitUv = vec3(-1.0);
     float hitT = 0.0;
     for (int i = 0; i < 96; i++) {
         if (float(i) >= p0.w) break;
-        float t = (float(i) + 0.5 + jitter * 0.5) * stepLen;
+        // Quadratic spacing: fine steps near the surface (contact reflections),
+        // coarse ones far away.
+        float f = (float(i) + 0.5 + jitter * 0.5) / max(p0.w, 1.0);
+        float t = f * f * p0.y;
         vec3 Q = P + R * t;
         vec3 q = pxProject(Q, vp0, vp1, vp2, vp3, cam.w);
         if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) break;
         float sd = TEX1(TUV(q.xy)).r;
-        if (sd >= 0.99999) { prev = Q; continue; }
+        if (sd >= 0.99999) { prev = Q; prevT = t; continue; }
         vec3 S = pxWorld(q.xy, sd, ivp0, ivp1, ivp2, ivp3, cam.w);
         float delta = length(Q - cam.xyz) - length(S - cam.xyz);
-        if (delta > 0.0 && delta < p0.z) {
+        if (delta > 0.0 && delta < max(p0.z, (t - prevT) * 1.5)) {
             // Binary refinement between the last free point and the hit.
             vec3 a = prev, b = Q;
             for (int k = 0; k < 6; k++) {
@@ -184,6 +194,7 @@ inline const char* kSsr = R"(
             break;
         }
         prev = Q;
+        prevT = t;
     }
     if (hitUv.x < 0.0) RETURN(color);
     vec2 edge = min(hitUv.xy, vec2(1.0) - hitUv.xy);
@@ -418,9 +429,10 @@ PF_FN vec4 pxFsrTapW(vec2 off, vec2 dir, vec2 len, float lob, float clp, vec3 c)
 }
 )";
 inline const char* kFsrEasu = R"(
-    // Output pixel -> input pixel position of 'f' (top-left convention of the reference).
+    // Output pixel -> input pixel position of 'f', in screen (y-up) pixels; the taps
+    // apply the render-target flip once (flipping here too turned Metal upside down).
     vec2 rcpIn = vec2(1.0) / p0.xy;
-    vec2 outPix = floor((px.z > 0.5 ? vec2(s.x, 1.0 - s.y) : s) * p0.zw);
+    vec2 outPix = floor(s * p0.zw);
     vec2 pp = outPix * (p0.xy / p0.zw) + (0.5 * p0.xy / p0.zw - vec2(0.5));
     vec2 fp = floor(pp);
     pp -= fp;

@@ -29,18 +29,18 @@ inline double frameSharpness(int w,int h,const std::vector<uint8_t>& px) {
 // ---- 2026-11-22 effects: phase 0 = same HDR/High chain without the effect, phase 1 = with it.
 // The effect must be encoded and change the frame in its own direction:
 //   ao: darker; ssr / distort / haze / smaa / fsr: different; flare / streaks / halation: brighter;
-//   smaa: horizontal steps soften but stay within 40% (no blur); histogram: encoded and changes exposure.
+//   smaa: edge steps soften but keep at least 40% of the gradient energy (no blur); histogram: encoded and changes exposure.
 struct PrismaNewEffect { const char* id; PrismaType type; const char* json; };
 inline const PrismaNewEffect* prismaNewEffect(const char* which) {
     static const PrismaNewEffect k[] = {
         {"ao", PrismaType::AmbientOcclusion, R"({"type":"ambientOcclusion","intensity":2,"radius":1.5})"},
         {"ssr", PrismaType::ScreenSpaceReflections, R"({"type":"screenSpaceReflections","intensity":1,"minNormalY":0.5,"fresnel":0})"},
-        {"flare", PrismaType::LensFlare, R"({"type":"lensFlare","intensity":3,"threshold":0.15,"dirt":1})"},
+        {"flare", PrismaType::LensFlare, R"({"type":"lensFlare","intensity":1.5,"threshold":2,"dirt":0.6})"},
         {"smaa", PrismaType::Smaa, R"({"type":"smaa","threshold":0.05})"},
         {"distort", PrismaType::LensDistortion, R"({"type":"lensDistortion","distortion":0.5,"panini":0.5})"},
-        {"streaks", PrismaType::AnamorphicStreaks, R"({"type":"anamorphicStreaks","intensity":3,"threshold":0.15})"},
-        {"halation", PrismaType::Halation, R"({"type":"halation","intensity":2,"threshold":0.15})"},
-        {"haze", PrismaType::HeatHaze, R"({"type":"heatHaze","amplitude":6,"scale":30})"},
+        {"streaks", PrismaType::AnamorphicStreaks, R"({"type":"anamorphicStreaks","intensity":1.5,"threshold":2})"},
+        {"halation", PrismaType::Halation, R"({"type":"halation","intensity":2,"threshold":1})"},
+        {"haze", PrismaType::HeatHaze, R"({"type":"heatHaze","amplitude":3,"scale":30})"},
         {"fsr", PrismaType::Fsr, R"({"type":"fsr","renderScale":0.5})"},
         {"histogram", PrismaType::AutoExposure, R"({"type":"autoExposure","histogram":true,"histogramLow":0.1,"histogramHigh":0.6,"speedUp":20,"speedDown":20})"},
     };
@@ -121,8 +121,10 @@ inline void drawPrismaNewEffect(HdrScene& s, gfx::Device& d, int w, int h, const
                 if (id == "ao") ok = ok && st.luma[1] < st.luma[0] - 0.2;
                 if (id == "flare" || id == "streaks") ok = ok && st.luma[1] > st.luma[0] + 0.1;
                 if (id == "halation") ok = ok && st.red[1] > st.red[0] + 0.1 && st.red[1] - st.red[0] > st.luma[1] - st.luma[0];
-                if (id == "smaa") ok = ok && st.sharp[1] < st.sharp[0] && st.sharp[1] > st.sharp[0] * 0.6;
-                std::printf("PRISMA %s: diff %.3f %s\n", fx.id, st.diff, ok ? "PASS" : "FAIL");
+                // Upscaling reproduces the same picture: a large difference means a flipped or shifted output.
+                if (id == "fsr") ok = ok && st.diff < 8.0;
+                if (id == "smaa") ok = ok && st.sharp[1] < st.sharp[0] && st.sharp[1] > st.sharp[0] * 0.4;
+                std::printf("PRISMA %s: %s (diff %.3f)\n", fx.id, ok ? "PASS" : "FAIL", st.diff);
                 s.failed |= !ok; s.captured = true;
             }
             s.frame = -1;

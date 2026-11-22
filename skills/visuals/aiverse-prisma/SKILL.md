@@ -19,7 +19,7 @@ existing native interfaces and distinguishes them from PHYSIS authoring MCP.
 - SpectraFX owns **simulation/presentation of 3D VFX**: emitter graphs, sprite/mesh/ribbon particles, smoke/fire/explosions/trails, ECS FX events. It adds linear HDR pixels to the scene BEFORE PRISMA processes the result.
 - Shared Renderer3D/RHI, generic Shader Graph compiler and ECS transport adapters are engine infrastructure, not a second postprocess implementation. **Do not duplicate features or couple them to genres.**
 
-## Effect catalog additions (Stage 97, 2026-11-22)
+## Effect catalog additions (Stage 99, 2026-11-22)
 
 Besides colour grade, LUT, bloom, DoF, motion blur, auto exposure, TAA, FXAA and the others, the
 catalog has `ambientOcclusion`, `screenSpaceReflections`, `lensFlare` (lens dirt texture or
@@ -29,7 +29,7 @@ procedural; dirt also lifts bloom), `smaa`, `lensDistortion` (barrel / pincushio
 NVIDIA NGX only with `AIVERSE_DLSS_SDK_DIR`, Windows + Vulkan). `autoExposure` has
 `histogram` percentile metering. Stylized looks are presets: `toon`, `sketch`, `crt`, `scanlines`,
 `dither`, `kuwahara`, plus `lens` and `realistic`; the postfx Shader Graph node `sceneColor` samples
-the display-referred scene at any uv. Details and limits: `docs/prisma.md` § Stage 97.
+the display-referred scene at any uv. Details and limits: `docs/prisma.md` § Stage 99 (handoff `docs/handoffs/prisma-stage-99-new-effects.md`).
 
 ## Native C++ integration
 

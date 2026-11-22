@@ -2628,13 +2628,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             put(pre.px, 0.5f / float(sw), 0.5f / float(sh), flip, 0);
             put(pre.p0, st->get("threshold"), 0.5f, 0, 0);
             draw(set, a, pipes_[kPrefilter], &pre, sizeof pre, {{0, src.tex}});
-            // Horizontal only, the spread triples each pass: streaks of ~3^passes texels.
+            // Horizontal only, the spread doubles each pass (tripling left gaps between the
+            // five taps and smeared the whole row): streaks of ~2^passes * 6 texels.
             const float base = 0.6f + 2.4f * st->get("length");
             Target from = a, to = b;
             for (int i = 0; i < plan.passes; ++i) {
                 SimpleU bu{};
                 put(bu.px, 1.0f / float(sw), 1.0f / float(sh), flip, 0);
-                put(bu.p0, base * std::pow(3.0f, float(i)) * (float(sw) / 480.0f + 0.5f), 0, 0, 0);
+                put(bu.p0, base * std::pow(2.0f, float(i)) * (float(sw) / 480.0f + 0.5f), 0, 0, 0);
                 draw(set, to, pipes_[kBlur], &bu, sizeof bu, {{0, from.tex}});
                 std::swap(from, to);
             }
