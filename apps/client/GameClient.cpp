@@ -202,6 +202,7 @@ void GameClient::initAudio() {
     if (platform::readContentFile(manifest_.getStr("audio", "audio.json"), text)) { // a game without audio.json is silent
         try {
             Json bank = Json::parse(text);
+            world::addPhysisNatureSounds(bank);   // synth fallbacks unless audio.json has its own
             std::string err;
             if (!audio_.loadBank(bank, platform::readContentFile, &err) || !sound_.init(audio_, rules_, bank, &err)) error_ = err;
             for (auto& w : sound_.warnings()) std::fprintf(stderr, "audio: %s\n", w.c_str());
@@ -255,6 +256,7 @@ void GameClient::toMenu() {
     hostPaused_ = hostStep_ = false;
     mapLoading_ = false; loadingTypes_.clear(); loadingSplash_.shutdown();
     sound_.detach();
+    natureStop();
     fx_.stopMatch();
     audio_.stopAll(0.2f, combatBuses());
     city_.reset(); sim_.reset();
@@ -334,6 +336,41 @@ void GameClient::shutdown() {
     dev_=nullptr;
 }
 
+world::PhysisNatureRuntime::Targets GameClient::natureTargets() {
+    world::PhysisNatureRuntime::Targets t;
+#ifndef AIVERSE_CLIENT_NO_FX
+    t.particles = &fx_.particles();
+#endif
+    t.files = [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); };
+    t.audio = &audio_;
+    t.scene = worldScene_.get();
+    t.prisma = &prisma_;
+    return t;
+}
+
+void GameClient::natureStart(const Json& map) {
+    if (nature_.start(map, natureTargets()))
+        std::fprintf(stderr, "[physis] nature presentation on\n");
+}
+
+void GameClient::natureUpdate(float dt) {
+    if (!sim_ || !nature_.configured()) return;
+    world::PhysisNatureRuntime::View v;
+    v.focusX = cam_.target.x; v.focusY = cam_.target.y; v.focusZ = cam_.target.z;
+    v.dt = dt;
+    v.secondsPerTick = 1.0 / double(std::max<uint32_t>(1, sim_->tickRate()));
+    v.sourceToken = uint64_t(uintptr_t(sim_.get()));
+    const auto stats = nature_.update(sim_->world(), v, natureTargets());
+    static const bool dbg = std::getenv("AIVERSE_PHYSIS_DEBUG") != nullptr;
+    static int frames = 0;
+    if (dbg && stats.active && ++frames % 60 == 0)
+        std::fprintf(stderr, "[physis] tick %llu flames %zu smoke %zu voices %zu wind %.1f,%.1f\n",
+                     static_cast<unsigned long long>(stats.tick), stats.flames, stats.smoke,
+                     stats.voices, double(stats.meanWindX), double(stats.meanWindZ));
+}
+
+void GameClient::natureStop() { nature_.stop(natureTargets()); }
+
 void GameClient::configurePrisma(const Json& map) {
     prisma_.configure(manifest_["postfx"], map["postfx"]);
     std::vector<std::string> prismaWarnings;
@@ -397,6 +434,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         view_.lights().configure(manifest_["lighting"], map["lighting"], map["lights"]); // day/night, map lights
         if (auto pe = game::configurePlayerColors(manifest_["playerColors"]); !pe.empty()) std::fprintf(stderr, "%s\n", pe.c_str());
         configurePrisma(map);
+        natureStart(map);
         configureBakedLighting(maps_[idx].file);
         quality_.reset(int(r3d_.shadowQuality()), int(r3d_.lights.quality()));
     } catch (const std::exception& e) {
@@ -1380,6 +1418,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         g_stages.lap(3);   // view
         for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
+        natureUpdate(screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)

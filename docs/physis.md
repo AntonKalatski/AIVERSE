@@ -60,7 +60,7 @@ All values used by gameplay use `Fixed`; never feed presentation floats back int
 - The implemented weather evolution is a deterministic simplified local model, not a physically accurate global circulation model; seasons are triangle waves, fronts have Manhattan falloff.
 - Fire, flood and quakes are base ECS mechanics; hurricane/tornado are simplified deterministic vortex/forcing fields, **not** complete atmospheric CFD, volcano, avalanche, fluid, terrain deformation or destruction solvers.
 - Responses like traction multiplier and runoff potential are coefficients/hints. An **optional, explicit** `engine/physics/PhysisBox3D.h` adapter now applies PHYSIS wind/ gravity corrections to `physics::Scene` dynamic bodies, but no automatic Scene/WorldScene hookup is wired. Since 2026-11-21 an opt-in **nature presentation host** drives TerraWeave grass (burn/wind), SpectraFX fire/smoke, fire light and audio, and the editor shows it live without a play-test (see «Nature presentation host» below); the native game client is not hooked up yet.
-- Grid updates are currently serial and eager; do not advertise parallel job execution, streaming, distributed weather or efficient millions-of-cells throughput.
+- Grid updates can run on several threads (bit-identical) and only in active chunks (see "Automatic integration, parallel update and streaming" below). Still no distributed weather, disk paging of cells or grids above 1,048,576 cells.
 - No compile/CTest/CI verification has been completed in this connector session; **code present does not mean tests passed**.
 
 ## Tests
@@ -98,6 +98,72 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Main merge: [merged InputFlow/main verification](agent-handoffs/physis-main-merge-2026-11-18.md)
 - Stage 18: [Scene overlay + Inspector authoring/Undo](agent-handoffs/physis-editor-scene-inspector-2026-11-18.md)
 - Stage 19: [Field assets, Gizmos and single-Undo editing](agent-handoffs/physis-field-assets-gizmos-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+
+## Automatic integration, parallel update and streaming (2026-11-22)
+
+### PHYSIS from map data in every game
+
+`Simulation::setup` calls `physis::autoInstallFromMap` (`engine/physis/PhysisAutoInstall.cpp`)
+after `GameModule::setup`, for **every** module. A map with an enabled `"physis"` block now runs
+the nature simulation in the client, headless, server and editor play-test alike (lockstep peers
+and replays agree). Opt-outs: `"physis.enabled": false`, `"physis.autoInstall": false` (the module
+installs it itself later), or a module that already called `installFromMap` in its own setup.
+`"physis.trackedFields": true` selects `installTrackedFromMap`. CMake `AIVERSE_SIM_PHYSIS=OFF`
+removes it from the link. Maps without the block are unchanged (no state, no system, same hash).
+
+### Presentation without hand wiring — `engine/world/PhysisNatureRuntime.h`
+
+One object per view, called once per rendered frame with optional targets. The native game client
+(`apps/client/GameClient.cpp`, `natureStart/natureUpdate/natureStop`) does this for every map with
+a `physis` block. What each part does:
+
+| Part | Consumer | What it does | Data switch |
+|---|---|---|---|
+| Fire / smoke / fire light | SpectraFX `fx::ParticleSystem` via `PhysisNatureFxHost` | stable flame points + smoke from burning PHYSIS cells, particle drift from wind; project may override `fx/physis_flame.json`, `fx/physis_smoke.json` | `presentation.fx` |
+| Sound | `audio::AudioEngine` via `PhysisNatureAudioHost` | positional looping fire per fire cluster, wind bed by wind speed; synth fallbacks `physis_fire_loop` / `physis_wind_loop` are added to the bank unless `audio.json` defines them | `presentation.audio` |
+| Vegetation wind | TerraWeave through `WorldScene::setVegetationWind` + `setVegetationWindField` | region-mean PHYSIS wind (cm/s, gust by speed) and a bounded spatial lattice (`windFieldNodes`, ≤64², equal spacing) incl. WindZone/WindShelter/storms; only republished when it changes; authored wind restored on stop | `presentation.vegetationWind`, `windFieldNodes` |
+| Water wind | NEREID through `WorldScene::setNereidVisualWind` (`NereidPhysisWindBridge.h`) | PHYSIS wind at the camera focus drives NEREID's visual waves/ripples; authored NEREID wind zones are not touched | `presentation.waterWind` |
+| Sky | PRISMA physical sky via `PhysisSkyBridge.h` | humidity/precipitation → cloud coverage, haze, extinction; cloud drift by wind. Only when the map already enabled the physical sky; authored sky restored on stop | `presentation.sky` |
+
+```json
+"physis": { "...": "...", "presentation": { "fx": true, "audio": true, "vegetationWind": true,
+  "waterWind": true, "sky": true, "radiusMeters": 160, "maxRegionCells": 96,
+  "fxWindScale": 0.35, "windFieldNodes": 16 } }
+```
+`"presentation": false` keeps the simulation and switches all presentation off. Grass burn
+overlay (`PhysisNatureGrass.h`) is still editor-only: `WorldScene` does not expose a
+`GrassPatchRenderer` to hosts yet.
+
+### Parallel grid update — `engine/physis/PhysisParallel.h`
+
+`InstallOptions::workerThreads` / map `"physis.workerThreads"` (1 = serial default, 0 = hardware,
+N lanes). Atmosphere, surface and the disaster read/compute/commit passes split their cell ranges
+over a persistent thread pool; flood transfer is gathered per receiving cell, so results are
+**bit-identical** to serial for every lane count (test `physis_parallel`; serial checksum A/B
+against the previous sources is equal). Custom providers passed to `advanceWith` while lanes are
+active must only read the World. Measured on the user's Mac (Release, 28 logical cores, other
+builds running, load ≈24), 1024×768 grid with storms + disasters, 10 ticks, 3 runs:
+1 lane 161.6–162.5 ms/tick; 2 lanes ×1.92–1.95; 4 lanes ×3.69–3.73; 6 lanes ×5.33–5.40;
+8 lanes ×6.62–7.00. Linux VM (Debug, 4 cores): ×3.54 on 4 lanes.
+
+### Chunk streaming — `engine/physis/PhysisStreaming.h`
+
+`"physis.streaming": {"chunkCells": 32}` splits the grid into chunks. Any entity with an
+`ActivityAnchor` (position + radius; players, cameras, vehicles, scripted regions) keeps chunks
+within its radius simulated; other chunks are dormant (weather, surface, fire, flood frozen;
+dormant cells are walls for flood transfer and never ignite). The mask (`ActiveChunks`) and
+anchors are persistent, hashed ECS data recomputed by the `physis.streaming` system at the start
+of every tick. No anchors = whole grid. Static anchors can be listed in `"physis.anchors"`.
+This is simulation streaming (what is updated); cell data stays resident — no disk paging.
+Test `physis_streaming`; bench `aiverse_physis_streaming_test bench 1024 10`.
+
+### CI
+
+`.github/workflows/physis.yml` builds the aggregate CMake target `aiverse_physis_tests` (every
+`aiverse_physis_*_test(s)` target, plus `aiversemcp` when present) and runs `ctest -R ^physis_`
+on Linux x64, Linux arm64, macOS and Windows MSVC, and builds the core tests with Emscripten and
+runs them in Node. Before this, the hand-written target list missed `physis_nature_presentation`
+/ `physis_nature_cues`, and the workflow failed on main with ctest exit 8 (run 44956413363).
 
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 

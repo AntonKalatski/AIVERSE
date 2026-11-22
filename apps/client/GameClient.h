@@ -37,6 +37,7 @@
 #include "engine/sim/Simulation.h"
 #include "engine/ui/UiLayer.h"
 #include "engine/world/WorldScene.h"
+#include "engine/world/PhysisNatureRuntime.h"
 #include "engine/world/TerraWeaveHorizonFrameTimingBridge.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsLocalize.h"
@@ -380,6 +381,12 @@ private:
     render::Prisma prisma_;               // post-processing: game.json / map "postfx" (engine/render/Prisma.h)
     render::PrismaQuality prismaBase_ = render::PrismaQuality::Medium;   // tier before the governor stepped down
     void configurePrisma(const Json& map);
+    // PHYSIS nature presentation (fire/smoke, sound, vegetation + water wind, sky)
+    // for maps with a "physis" block; engine/world/PhysisNatureRuntime.h.
+    world::PhysisNatureRuntime::Targets natureTargets();
+    void natureStart(const Json& map);
+    void natureUpdate(float dt);
+    void natureStop();
     render::BakedLighting baked_;         // the map's baked lightmaps / probes, "<map>.bake" (ClientBaked.cpp, agent-lightbake)
     void configureBakedLighting(const std::string& mapFile);
     RtsView view_;
@@ -394,6 +401,7 @@ private:
     bool padAiming_ = false; float padOriginX_ = 0, padOriginY_ = 0;
     void drawGamepadCursor();             // social / push / links Lua tables (ClientServices.cpp)                   // Spine skeletons in UI documents (ClientSpine.cpp, agent-bw-client)
     ClientFx fx_;                         // particle effects (ClientFx.cpp)
+    world::PhysisNatureRuntime nature_;   // PHYSIS -> SpectraFX / audio / TerraWeave / NEREID / PRISMA
     game::ViewScripts viewScripts_;       // rules "viewScripts" (docs/scripting.md): notices / effects / sounds
     std::vector<game::ViewGroundBatch> groundCanvas_;   // view.draw_ground triangles of the last view-script update
     std::vector<game::ViewDrawBatch> canvas_;   // view.draw triangles of the last view-script update
