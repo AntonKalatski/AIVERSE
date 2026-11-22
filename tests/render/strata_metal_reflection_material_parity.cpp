@@ -472,6 +472,9 @@ struct Fixture {
         cam.distance=view==0?5.f:6.f;
         cam.pitch=view==0?.2f:.55f;
         cam.yaw=view==0?0.f:.7f;
+        // Frozen shader clock: the animated water surface must not differ
+        // between the Legacy and STRATA frames (only geometry may).
+        renderer.setPresentationTime(0.f);
         renderer.beginScene(cam,kWidth,kHeight);
         renderer.drawMesh(floor,{}, {.6f,.6f,.6f,1.f});
         // Required trigger for the ACTUAL LightSystem reflection RTT. The

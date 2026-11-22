@@ -3183,6 +3183,10 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_model_adapter_tests PRIVATE
             aiverse_strata_model_adapter aiverse_zstd_dec)
         add_test(NAME strata_model_adapter COMMAND aiverse_strata_model_adapter_tests)
+        # Manual load-time benchmark on a real asset (no CTest: needs an external model).
+        add_executable(aiverse_strata_stage_bench tests/render/strata_stage_bench.cpp)
+        target_link_libraries(aiverse_strata_stage_bench PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
         add_executable(aiverse_strata_source_seams_tests
             tests/render/strata_source_seams.cpp)
         target_link_libraries(aiverse_strata_source_seams_tests PRIVATE

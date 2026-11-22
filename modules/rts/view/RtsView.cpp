@@ -20,6 +20,9 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 #include <chrono>
 #include <cstdlib>
 #include <exception>
@@ -1715,6 +1718,36 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if(!publication.finish())
         throw std::logic_error("RtsView: incomplete visual frame publication");
     if(animationLease)animationLease->commit();
+    // AIVERSE_STRATA_LOG=1: one "[strata]" line per 300 frames for STRATA on/off
+    // acceptance runs (GLES/Vulkan on devices, desktop): static geometry scene
+    // routing plus this frame's renderer counters. Diagnostic only.
+    if (geometryScene_.instanceCount()>0) {
+        static const bool strataLog=[]{const char* e=std::getenv("AIVERSE_STRATA_LOG");return e&&*e&&*e!='0';}();
+        static unsigned strataFrames=0;static uint64_t lastDraws=0,lastClusters=0,lastFallbacks=0;
+        static double tris=0,calls=0;
+        if(strataLog){
+            tris+=double(r.profile().cameraModelTriangles);calls+=double(r.drawCalls());
+            if(++strataFrames==300){
+                const auto& g=geometryScene_.stats();
+                char line[512];
+                std::snprintf(line,sizeof line,
+                    "[strata] enabled=%d instances=%zu staged=%u portableSources=%u autoStrata=%u autoLod=%u failures=%u "
+                    "draws/frame=%.2f clusters/frame=%.1f fallbacks/frame=%.2f cameraModelTris/frame=%.0f drawCalls/frame=%.1f",
+                    int(geometryScene_.strataPortableRenderingEnabled()),geometryScene_.instanceCount(),
+                    unsigned(g.strataSources),unsigned(g.strataPortableSources),unsigned(g.strataAutoStrataSources),
+                    unsigned(g.strataAutoLodSources),unsigned(g.strataFailures),
+                    double(g.strataPortableDraws-lastDraws)/300.0,double(g.strataPortableClusters-lastClusters)/300.0,
+                    double(g.strataPortableFallbacks-lastFallbacks)/300.0,tris/300.0,calls/300.0);
+#if defined(__ANDROID__)
+                __android_log_print(ANDROID_LOG_INFO,"AIVERSE","%s",line);
+#else
+                std::fprintf(stderr,"%s\n",line);
+#endif
+                lastDraws=g.strataPortableDraws;lastClusters=g.strataPortableClusters;lastFallbacks=g.strataPortableFallbacks;
+                strataFrames=0;tris=calls=0;
+            }
+        }
+    }
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};
