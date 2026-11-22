@@ -1,0 +1,46 @@
+{
+  "id": "2026-11-22-lighting-luma-area-lights",
+  "date": "2026-11-22",
+  "system": "lighting",
+  "title": "Luma: площадные источники, свет частиц и скорость объектов",
+  "summary": "Luma умеет сферические и трубчатые источники, принимает свет частиц и учитывает движение объектов при сглаживании по времени; заодно на Metal заработали векторы движения объектов.",
+  "body": [
+    "Кроме точечных и прожекторных источников Luma теперь освещает сферами и трубками (лампы, неоновые трубки). Сфера светит как её центр, но без перегрева, когда поверхность оказывается внутри неё; трубка светит из ближайшей к поверхности точки своей оси. Блик расширяется по видимому размеру источника. В редакторе и через MCP свет задаётся типом `sphere` или `tube` с радиусом и длиной.",
+    "Свет частиц можно передать в Luma каждый кадр с постоянными ключами по частице (`fx::appendLumaFxLights`, `LumaHost::setDynamicLights`). Если Luma не рисует прямой свет, частицы по-прежнему идут в обычную систему света — дважды свет не добавляется.",
+    "Сглаживание Luma по времени берёт скорость движущихся объектов из PRISMA, поэтому свет на них не тянется шлейфом. При проверке выяснилось, что на Metal скорость объектов вообще не считалась: два шейдера векторов движения не компилировались. Это исправлено: на Metal эффекты PRISMA теперь получают скорость движущихся моделей."
+  ],
+  "status": "done",
+  "verified": "Mac Studio (Metal): `ctest -L Lighting` — Luma во всех 12 сценах, включая движущуюся плиту с motion blur, сферу и трубку. Телефон Samsung Galaxy A05s (Adreno 610, Vulkan): те же 12 сцен совпадают с эталоном. Расчёт на CPU (`lumaweave_direct_reference`) проверяет сферу, трубку, упаковку для GPU и ключи частиц.",
+  "limits": "Площадные источники приближённые: трубка светит из одной ближайшей точки, а не интегрируется по длине, прямоугольных источников нет. Ни один хост пока не передаёт частицы в Luma: в Studio нет частиц, а клиент игры не использует Luma — готов только API.",
+  "branch": "main",
+  "commit": "4657a4744",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-lighting-luma-area-lights/01.jpg",
+      "caption": "Трубчатый источник Luma над полом, Vulkan на Android",
+      "captionEn": "A Luma tube light over a floor, Vulkan on Android"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-lighting-luma-area-lights/02.jpg",
+      "caption": "Сферический источник, поверхность внутри сферы, Vulkan на Android",
+      "captionEn": "A sphere light with the surface inside the sphere, Vulkan on Android"
+    }
+  ],
+  "links": [
+    {
+      "title": "Luma",
+      "titleEn": "Luma",
+      "href": "docs/luma-native-lighting.md"
+    }
+  ],
+  "author": "lighting",
+  "titleEn": "Luma: area lights, particle lights and object motion",
+  "summaryEn": "Luma handles sphere and tube lights, takes particle lights and uses object motion in its temporal smoothing; on the way, object motion vectors started working on Metal.",
+  "bodyEn": [
+    "Besides point and spot lights Luma now lights with spheres and tubes (bulbs, neon tubes). A sphere lights like its centre, without blowing up when the surface is inside it; a tube lights from the point of its axis nearest the surface. Highlights widen with the source's apparent size. In the editor and over MCP a light takes type `sphere` or `tube` with a radius and a length.",
+    "Particle lights can be handed to Luma every frame with stable per-particle keys (`fx::appendLumaFxLights`, `LumaHost::setDynamicLights`). When Luma does not draw direct light, particles keep going to the regular light system — light is never added twice.",
+    "Luma's temporal smoothing takes the velocity of moving objects from PRISMA, so light on them does not smear. The check showed that on Metal object velocity was not computed at all: two motion-vector shaders did not compile. That is fixed: on Metal PRISMA effects now get the velocity of moving models."
+  ],
+  "verifiedEn": "Mac Studio (Metal): `ctest -L Lighting` — Luma in all 12 scenes, including a moving slab with motion blur, a sphere and a tube. Samsung Galaxy A05s phone (Adreno 610, Vulkan): the same 12 scenes match the reference. The CPU reference (`lumaweave_direct_reference`) checks the sphere, the tube, GPU packing and particle keys.",
+  "limitsEn": "Area lights are approximate: a tube lights from one nearest point rather than integrating along its length, and there are no rectangular lights. No host feeds particles into Luma yet: Studio has no particles and the game client does not use Luma — only the API is ready."
+}
