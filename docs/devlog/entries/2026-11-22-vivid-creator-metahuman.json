@@ -1,0 +1,33 @@
+{
+  "id": "2026-11-22-vivid-creator-metahuman",
+  "date": "2026-11-22",
+  "system": "vivid",
+  "title": "Цифровые люди: Character Creator в Studio и адаптер MetaHuman",
+  "summary": "Редактор внешности персонажа прямо в Studio — смешивание лица, лепка, кожа, макияж, волосы, тело и одежда с примеркой — и адаптер, который распознаёт экспорт MetaHuman без Unreal в рантайме.",
+  "body": [
+    "Character Creator живёт в отдельном рабочем пространстве Character. Лицо смешивается кругом архетипов, а отдельные части — нос, рот, глаза, челюсть — получают свою ручку и выбираются кликом во вьюпорте. Скульпт идёт протяжкой с кругом кисти, слайдеры кожи, глаз, волос и тела меняют модель на ходу, общая история отменяется ⌘Z.",
+    "Макияж (помада, румяна, тени, щетина) ложится слоями на текстуру кожи и сам находит губы, щёки и веки по геометрии лица. Одежда и причёски примеряются во вьюпорте без сборки; сборка добавляет LOD для скинованных частей, показывает бюджет треугольников и одной кнопкой ставит персонажа в игру как тип юнита.",
+    "Адаптер MetaHuman читает обычный экспорт glTF / GLB / FBX: узнаёт скелет UE5 и меши лица, расставляет роли материалов, выбирает меши лица и считает, сколько из 52 мимических каналов ARKit есть в модели. Суставы-корректоры *_half и твисты предплечья, а также челюсть и глаза ведутся по этим каналам, если морфы их ещё не двигают. GLB со сжатием Draco распаковывается офлайн-скриптом."
+  ],
+  "status": "done",
+  "verified": "Сборка Studio на Mac, CTest 9/9 PASS, включая vivid_metahuman_adapter на трёх настоящих экспортах MetaHuman (Ada, Bruce, Bruce из Draco) и vivid_human_lod; веб-тесты 149/149. Скриншоты — нативный вывод Studio без ретуши.",
+  "limits": "Не полный RigLogic: корректоры bulge, in/out, fwd/bck стоят в bind pose; грум только карточками; .dna читается лишь офлайн-инструментом; в экспорте Ada нет канала tongueOut. Положение макияжа — по ближайшим вершинам кожи, на необычных UV может потребоваться ручная правка.",
+  "branch": "main",
+  "commit": "638596b31",
+  "media": [
+    {"src": "docs/devlog/media/2026-11-22-vivid-creator-metahuman/metahuman-adapter.jpg", "caption": "Адаптер MetaHuman: Ada распознана, 51 из 52 каналов, 128 корректоров ведёт VIVID", "captionEn": "MetaHuman adapter: Ada detected, 51 of 52 channels, 128 correctives driven by VIVID"},
+    {"src": "docs/devlog/media/2026-11-22-vivid-creator-metahuman/face-blend.jpg", "caption": "Смешивание по частям: нос отдельно тянется к «Широкому»", "captionEn": "Per-part blending: only the nose pulled towards Broad"},
+    {"src": "docs/devlog/media/2026-11-22-vivid-creator-metahuman/expression.jpg", "caption": "Проверка мимики: «Смех» на ARKit-каналах", "captionEn": "Expression check: Laugh on ARKit channels"}
+  ],
+  "links": [],
+  "author": "vivid",
+  "titleEn": "Digital humans: Character Creator in Studio and a MetaHuman adapter",
+  "summaryEn": "A character appearance editor right in Studio — face blending, sculpting, skin, makeup, hair, body and outfit try-on — and an adapter that recognises MetaHuman exports with no Unreal at runtime.",
+  "bodyEn": [
+    "Character Creator has its own Character workspace. The face blends on an archetype circle, and single parts — nose, mouth, eyes, jaw — get their own handle and are picked with a click in the viewport. Sculpting works by dragging with a brush circle, skin, eye, hair and body sliders update the model live, and one shared history undoes with ⌘Z.",
+    "Makeup (lipstick, blush, eyeshadow, stubble) is layered on the skin texture and finds the lips, cheeks and eyelids from the face geometry. Clothing and hairstyles are tried on in the viewport without a build; the build adds LODs for skinned parts, shows a triangle budget and places the character in the game as a unit type in one click.",
+    "The MetaHuman adapter reads an ordinary glTF / GLB / FBX export: it recognises the UE5 skeleton and face meshes, assigns material roles, selects the face meshes and counts how many of the 52 ARKit facial channels the model has. *_half corrective joints and forearm twists, as well as the jaw and eyes, follow those channels when the morphs do not already move them. Draco-compressed GLB is decoded by an offline script."
+  ],
+  "verifiedEn": "Studio Mac build, CTest 9/9 PASS including vivid_metahuman_adapter on three real MetaHuman exports (Ada, Bruce, Draco-decoded Bruce) and vivid_human_lod; web tests 149/149. Screenshots are native Studio output without retouching.",
+  "limitsEn": "Not full RigLogic: bulge, in/out, fwd/bck correctives stay in bind pose; groom is cards only; .dna is read only by the offline tool; the Ada export has no tongueOut channel. Makeup placement uses the nearest skin vertices; unusual UVs may need a manual tweak."
+}
