@@ -31,7 +31,7 @@ Full reference: `docs/spectrafx-entity-effects.md`.
   inline `"spectraFx"` rule on rules `types.<id>`, their `weapons[]` / `abilities[]` (RTS) or `fps.weapons[i]` (FPS).
   Selectors: `*`, `unit|structure|projectile|actor|vehicle`, `type:<id>`, `weapon:<id|index>`, `ability:<id>`,
   `player:<n>|player:local|player:remote`, `team:<n>`. Cues: `spawned`, `died`, `despawned`, `fired`, `hit`, `ability`.
-- Both the RTS client (`apps/client/ClientFx`) and the FPS client (`SpectraFxSceneHost`) feed the same presenter
+- Both the RTS client (`apps/client/ClientFx.cpp`) and the FPS client (`SpectraFxSceneHost`) feed the same presenter
   `engine/fx/SpectraFxEntityEffects.h`. New hosts: enumerate entities with selectors, forward cues; never add a
   genre-specific copy.
 - An effect name resolves to `fx/gpu/<name>.gpu.json` (GPU compute on Metal, CPU twin of the same kernel elsewhere or
