@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T16:18:47+00:00",
+ "generated": "2026-11-22T16:20:02+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -544,6 +544,48 @@
     {
      "src": "../media/docs/devlog/media/2026-11-22-physis-firestorm/physis-firestorm-5-scour.jpg",
      "caption": "The tornado's scoured track on the ground"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/physis.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/physis.md"
+    }
+   ],
+   "author": "physis"
+  },
+  {
+   "id": "2026-11-22-physis-fire-textures",
+   "date": "2026-11-22",
+   "system": "physis",
+   "title": "PHYSIS: realistic fire on the ground and in fire whirls",
+   "summary": "PHYSIS wildfires and fire whirls are now drawn with animated textures of real flame instead of blurry orange blobs.",
+   "body": [
+    "Burning grass is now made of small flame licks from an animated flipbook. They stand on the ground, glow additively without burning out to white, with a soft glow and fire light below them, and smoke comes as a separate translucent flipbook.",
+    "In a fire whirl the flame tongues are stretched along the spiral, with a ring of fire at the base. The core glows and lights its surroundings, sparks fly out, and dark smoke covers the top of the vortex.",
+    "The textures come from Unity's free VFX flipbook set under CC0 and live in the engine assets, so PHYSIS fire looks like this in every game. A project can replace any of the effects with its own."
+   ],
+   "status": "in-progress",
+   "verified": "Game client on a Mac (Metal), Firestorm Valley map: ground fire close-up, the fire whirl and a wide view before and after the texture change. The simulation is unchanged: checksums are the same.",
+   "limits": "Fire still burns on coarse PHYSIS cells. The textures are downscaled to 1024 pixels, so flipbook frames look soft in extreme close-ups.",
+   "branch": "agent-physis-firestorm",
+   "commit": "",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-fire-textures/fire-before-ground-fire.jpg",
+     "caption": "Before: the fire as blurry blobs"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-fire-textures/fire-after-ground-fire.jpg",
+     "caption": "After: flame licks on the ground"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-fire-textures/fire-after-firewhirl.jpg",
+     "caption": "The fire whirl with the new textures"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-fire-textures/fire-after-wide.jpg",
+     "caption": "Wide view: the fire, the fire whirl and a waterspout on the lake"
     }
    ],
    "links": [
