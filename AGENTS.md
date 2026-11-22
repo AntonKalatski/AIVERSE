@@ -2586,6 +2586,14 @@ For plazas, courtyards, planting beds and street furniture, read
 units and support surfaces; keep soil inside planter walls. Project generators and assets
 stay in the game's repository. Workflow ownership: city-blocks task; additive catalog routing.
 
+## Missing capability requests from user projects
+
+When a user's project request reveals a possible engine gap, use
+`skills/workflow/aiverse-capability-request/SKILL.md`. Verify the gap against the current
+repository, prepare a minimal public issue draft, and request the project user's explicit
+consent before sending anything to GitHub. Never publish their project description, files,
+prompts, assets, or identity. Continue useful project work regardless of whether they consent.
+
 ## Adding and updating repository skills
 
 - Write every skill in English: frontmatter `name`/`description` and the body. This applies to
