@@ -29,7 +29,8 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
    the sea (ships, swimmers, floating wrecks) add `"nereid": true` or `{"depth", "current", "axis"}` to the body:
    the sea becomes a NEREID sphere water body (`NereidSphereWater.h`, docs/planets.md §1). Give the floating
    entities `WaterProbeComponent` + `WaterSphereContactComponent` (+ buoyancy components) from a native module;
-   depth, up and buoyancy are radial, the current flows east about the axis. Never write planet-only water code.
+   depth, up and buoyancy are radial, the current flows east about the axis, `waves` adds a swell. Naval units get
+   probes and splash / wake events automatically. Never write planet-only water code.
 6. Cube-sphere terrain: relief and materials with the heightfield tools; check seams between faces on screenshots (`view_focus` on edges).
 7. Bots: `rules.ai.invasionSize` sets the orbit fleet; bots build orbital yards when the enemy is reachable only through orbit. `match_run` must show transfers between bodies and a winner (`skills/ai/aiverse-bots-debug` otherwise).
 8. Determinism: same seed -> same checksum; `templates/` checksums unchanged when engine code is touched.

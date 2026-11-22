@@ -58,7 +58,7 @@ repository skills" and §9 "Where library code goes".
    it needs, `-Wall -Wextra -Werror -pedantic`).
 4. Pitfall: never `for(auto e:*step(...))` - in C++20 the temporary optional dies before the loop body; store the
    result first (tests use a `val(optional)` helper).
-5. Integration into a legacy host (`modules/rts`, `engine/actor`) is an adapter over the shared code, never a second copy: a test in that module's suite, a headless match on every affected template
+5. Integration into a host (`engine/game`, `engine/actor`) is an adapter over the shared code, never a second copy: a test in that module's suite, a headless match on every affected template
    with `--verify-restore-at`, and proof that templates without the new block keep their checksums.
 
 ## 4. The skill file
