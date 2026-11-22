@@ -560,7 +560,7 @@
     }
   ],
   "verification": {
-    "audit": "2026-11-22: статусы сверены с кодом origin/main bb3d910ed — заголовки libraries/include/aiverselib, libraries/catalog.json (134 пакета), тесты tests/libraries и tests/*; тесты в этом аудите не запускались (сборка прервана: отключился диск KINGSTON)",
+    "audit": "2026-11-22: статусы сверены с кодом origin/main bb3d910ed — заголовки libraries/include/aiverselib, libraries/catalog.json (134 пакета), тесты tests/libraries и tests/*.",
     "previous": {
       "strategy_packages": 10,
       "catalog_entries": 83,
@@ -591,6 +591,9 @@
         "browser": "login page inspected; authenticated screens not inspected",
         "profile_to_match": "Dedicated FPS: issued profile token, slot 1, acknowledged inputs, reconnect and live revocation passed; UDP/WS bound to IPv4 loopback"
       }
-    }
+    },
+    "library_tests": "tests/libraries (отдельное дерево): 28/28 ctest passed, Linux x86-64 GCC 11.4 (VM 4 ГБ: genre_tests.cpp собран с -O1). FPS-боты и navmesh в этом дереве теперь opt-in (AIVERSE_LIBRARY_FPS_STANDALONE), их собирает корневой CMakeLists — там не запускались.",
+    "headers": "325 публичных заголовков компилируются по одному (-std=c++20 -Wall -Wextra -Werror -pedantic) и все mechanics+bots вместе.",
+    "not_run": "Корневая сборка движка, aiverse_tests, headless-матчи, macOS/Windows/Web."
   }
 }

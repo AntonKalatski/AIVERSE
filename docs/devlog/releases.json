@@ -6,7 +6,7 @@
     "branch": "https://github.com/chromealex/AIVERSE/tree/builds"
   },
   "next": {
-    "version": "2.2.0",
+    "version": "3.1.0",
     "note": "Planned number of the next tag: system cards say a feature in main 'will appear' in it. The integrator updates this when the release is tagged (then the entry moves into releases)."
   },
   "releases": [
