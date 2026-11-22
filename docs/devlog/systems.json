@@ -1529,9 +1529,9 @@
     "Hang flags and cloth on hundreds of objects with one draw call."
    ],
    "cover": {
-    "src": "docs/devlog/media/systems/physics-sandbox.jpg",
-    "caption": "Песочница Box3D: башня из ящиков, наклонная плоскость, шар, капсула и маятник",
-    "captionEn": "The Box3D sandbox: a tower of boxes, a slope, a ball, a capsule and a pendulum",
+    "src": "docs/devlog/media/systems/physics-cloth.jpg",
+    "caption": "XPBD-ткань: 256 флагов по 10 тысяч треугольников, расчёт на CPU",
+    "captionEn": "XPBD cloth: 256 flags of 10,000 triangles each, simulated on the CPU",
     "approved": false
    }
   },
@@ -1995,7 +1995,13 @@
     "Restyle a whole game with one stylesheet.",
     "Translate a game into any language without touching markup.",
     "Let an agent lay out screens like web pages."
-   ]
+   ],
+   "cover": {
+    "src": "docs/devlog/media/systems/ui-mushrooms-hud.jpg",
+    "caption": "HUD шаблона «Грибная битва»: счёт, таймер, миникарта и кнопки на RmlUi",
+    "captionEn": "The HUD of the Mushroom Battle template: score, timer, minimap and buttons in RmlUi",
+    "approved": false
+   }
   },
   {
    "id": "audio",
