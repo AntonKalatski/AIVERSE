@@ -2291,6 +2291,8 @@ themselves (`engine/platform/EngineDir.h`), so the unpacked folder runs anywhere
    5 versions per platform (force-push), so the repository does not grow with every build.
    It also writes `index.json` (platform, arch, url, size, sha256, aiversemcp path per zip) that other apps
    download from: keep its fields backward compatible (README § Готовые сборки движка).
+   A zip over 95 MB (GitHub refuses files over 100 MB in a branch) is not committed: pass `--release v<x.y.z>`,
+   attach the zip to that GitHub release under the same name, and index.json points to the release asset.
    Linux is optional: `package_engine.py --platform linux --bin build/linux-release` (tools only is fine).
 
 When a version is tagged as a GitHub release, also add it to the top of `docs/devlog/releases.json`
