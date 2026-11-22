@@ -406,6 +406,7 @@ private:
     // AIVERSE_VK_DEPS=narrow   render pass dependencies limited to the stages that really touch attachments
     // AIVERSE_VK_DEPTH_STORE=0 depth/stencil are not written back to memory after a pass
     bool gpuTiming_ = false, narrowDeps_ = false, depthStore_ = true;
+    bool preUploadAllowed_ = false;   // updateTexture() inside a pass: upload via the pre-frame buffer
     double timestampNs_ = 1.0;
     uint64_t timestampMask_ = ~0ull;
     std::map<std::string, std::pair<double, int>> timingAcc_;
