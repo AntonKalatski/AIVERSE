@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-22-studio-windows",
+  "date": "2026-11-22",
+  "system": "studio",
+  "title": "Studio — редактор теперь и для Windows",
+  "titleEn": "Studio, the editor, now for Windows too",
+  "summary": "AIVERSE Studio собирается под Windows: тот же интерфейс, сцена, кисти и Play, что на Mac, работают через WebView2 и Vulkan. Mac и Windows делят одно ядро редактора, поэтому новые возможности появляются сразу на обеих системах.",
+  "summaryEn": "AIVERSE Studio builds for Windows: the same interface, Scene, brushes and Play as on the Mac, running on WebView2 and Vulkan. Mac and Windows share one editor core, so new features reach both systems at once.",
+  "body": [
+    "На Windows Studio — это приложение AiverseStudio.exe. Интерфейс тот же, что на Mac: рабочие пространства, панели, хаб проектов и экран загрузки. Окна Scene и Game рисует движок через Vulkan прямо поверх своих панелей, без копирования кадров через браузер.",
+    "Всё, кроме окна, системных диалогов и ввода, у Mac и Windows общее: открытие проектов, выделение и трансформации, кисти рельефа, тайлов, полей, объектов, дорог и рек, Play, превью ассетов, панель агента. Сцена на обеих системах рисуется в отдельном потоке рендера, поэтому интерфейс не ждёт кадра.",
+    "Собрать редактор на Windows можно скриптом studio_windows.cmd в корне репозитория. Для работы нужны WebView2 Runtime — в Windows 11 он уже встроен — и драйвер с поддержкой Vulkan.",
+    "Заодно в обоих редакторах текст из консоли теперь можно выделять и копировать, а долгие операции больше не обрываются ошибкой ожидания."
+  ],
+  "bodyEn": [
+    "On Windows, Studio is the AiverseStudio.exe application. The interface is the same as on the Mac: workspaces, panels, the project hub and the loading screen. The Scene and Game views are drawn by the engine with Vulkan right over their panels, with no frame copying through the browser.",
+    "Everything except the window, system dialogs and input is shared between Mac and Windows: opening projects, selection and transforms, the terrain, tile, field, object, road and river brushes, Play, asset previews and the Agent panel. On both systems the Scene renders on its own render thread, so the interface never waits for a frame.",
+    "To build the editor on Windows, run studio_windows.cmd at the repository root. It needs the WebView2 Runtime (built into Windows 11) and a Vulkan-capable driver.",
+    "Along the way, Console text can now be selected and copied in both editors, and long operations no longer fail with a timeout error."
+  ],
+  "status": "in-progress",
+  "verified": "На Mac редактор на общем ядре проверен на экране: сцена с потоком рендера, выделение объектов, гизмо, меню правки. Версия для Windows собирается в готовое приложение, но на Windows ещё не запускалась.",
+  "verifiedEn": "On the Mac the editor on the shared core was checked on screen: the Scene on its render thread, object selection, gizmos and the Edit menu. The Windows version builds into a complete application but has not been run on Windows yet.",
+  "limits": "На Windows пока нет плавающих окон панелей, перетаскивания файлов из Проводника и ассетов в сцену, рамки устройства в окне Game и запасного режима без Vulkan. Первый запуск на настоящей Windows ещё впереди.",
+  "limitsEn": "Windows does not have floating panel windows yet, nor dragging files from Explorer or assets into the Scene, the device frame in the Game view, or a fallback without Vulkan. The first run on a real Windows machine is still ahead.",
+  "branch": "main",
+  "commit": "5a3df7eff",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-studio-windows/01.jpg",
+      "caption": "Studio на Mac после переноса на общее с Windows ядро: проект Iron and Gold, сцена рисуется в отдельном потоке",
+      "captionEn": "Studio on the Mac after moving to the core shared with Windows: the Iron and Gold project, the Scene drawn on its own thread"
+    }
+  ],
+  "links": [
+    {
+      "title": "Описание этапа",
+      "titleEn": "Stage notes",
+      "href": "docs/handoff/studio-html5/113-windows-studio-host.md"
+    }
+  ],
+  "author": "studio"
+}

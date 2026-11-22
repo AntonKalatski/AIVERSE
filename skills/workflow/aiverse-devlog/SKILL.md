@@ -15,8 +15,9 @@ own development diary on the site (`devblog-<system>.html`, newest first) and th
 
 - Work outside the flagship systems (Studio, builds, networking, meta, gameplay, render, world,
   ECS, agent tools) goes to the development blog `blog.html`: same entry file, `system` set to a
-  non-flagship topic from `systems.json` (add a topic there if none fits). Screenshots are welcome
-  but optional for blog posts; flagship diary entries always need one.
+  non-flagship topic from `systems.json` (add a topic there if none fits). A visible change
+  (render, water, terrain, UI, editor windows, effects, animation, camera) needs real frames
+  in the blog too; only invisible work (API, refactor, tests) goes without one.
 - Only successful stages: a result that works and is shown in a real frame. Failed, abandoned or
   partial attempts, build errors and red tests stay in the handoff and never reach the site.
 - A stage with nothing to show (refactor, internal API, test-only work) is written up together
@@ -48,12 +49,19 @@ own development diary on the site (`devblog-<system>.html`, newest first) and th
    twins the site needs (`titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`, `limitsEn`, `captionEn`).
 5. `python3 tools/site/build.py check` must print `0 errors`. Optionally
    `python3 tools/site/build.py build && python3 -m http.server -d build/site 8000`.
-6. Commit the entry and media with the feature (or as the stage's handoff commit). Do not
-   push `gh-pages` and do not commit `build/site`: `.github/workflows/site.yml` publishes from `main`.
+6. Commit the entry and media with the feature (or as the stage's handoff commit). Never commit
+   `build/site`. Publishing is a separate step after the push to `main`:
+   `python3 tools/site/build.py publish` on a clean `origin/main` checkout. Nothing publishes
+   automatically. Steps, and which other site data a change touches:
+   [aiverse-site-publish](../aiverse-site-publish/SKILL.md).
 
 ## System page and roadmap
 
-If your stage belongs to a flagship system in `docs/devlog/systems.json`, update that system in
+Before you start extending a feature, add its roadmap item as `in-progress` and commit it first
+(aiverse-site-publish §1). This applies to flagship and core systems; a core system without a
+`roadmap` list gets one.
+
+If your stage belongs to a flagship or core system in `docs/devlog/systems.json`, update that system in
 the same commit: move the finished `roadmap` item to `"status": "done"` with today's `date` (or
 add one), mark what you are starting as `in-progress`, add newly planned features from your
 handoff as `planned` with `"target": null` unless the user gave a date, and keep `includes` and

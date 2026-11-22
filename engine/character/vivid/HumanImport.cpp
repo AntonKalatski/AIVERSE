@@ -135,14 +135,14 @@ void HumanImportManifest::validate() const {
     require(routes.size()<=4096 && materials.size()<=512,
             "VIVID import: route/material budget exceeded");
     for(const auto& route:routes) {
-        require(int(route.channel)>=0 && int(route.channel)<int(Channel::Count) &&
+        require(int(route.channel)<int(Channel::Count) &&
                 !route.targetName.empty() && route.targetName.size()<=128 &&
                 std::isfinite(route.gain)&&route.gain>=0&&route.gain<=4,
                 "VIVID import: invalid shape mapping");
     }
     for(const auto& [name,surface]:materials) {
         require(!name.empty()&&name.size()<=128 &&
-                int(surface)>=0&&int(surface)<=int(HumanSurface::Teeth),
+                int(surface)<=int(HumanSurface::Teeth),
                 "VIVID import: invalid human material mapping");
     }
 }

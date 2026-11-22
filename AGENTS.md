@@ -16,13 +16,24 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   `docs/devlog/media/<id>/`. Порядок и формат: навык
   [skills/workflow/aiverse-devlog/SKILL.md](skills/workflow/aiverse-devlog/SKILL.md),
   описание формата — [docs/devlog/README.md](docs/devlog/README.md).
+- **Как выложить на сайт и что обновить** (указание пользователя 2026-11-22): навык
+  [skills/workflow/aiverse-site-publish/SKILL.md](skills/workflow/aiverse-site-publish/SKILL.md).
+  Автопубликации нет: после пуша в `main` интегратор выполняет
+  `python3 tools/site/build.py publish` на чистом `origin/main` (проверка, сборка, один коммит в
+  `gh-pages`). Изменение системы затрагивает не только дневник: карточку на главной, страницу
+  `system-<id>.html`, роадмап, «Что входит», документацию и релизы — обнови всё, что устарело.
+- **Роадмап — до начала работы** (указание пользователя 2026-11-22): прежде чем взять расширение
+  фичи, агент добавляет пункт в `roadmap` её системы в `systems.json` со статусом `in-progress`
+  (флагманской или `core`; у `core`-системы без роадмапа его заводят) и коммитит это первым
+  коммитом этапа. По завершении — `done` с датой и новые `planned`.
 - **Блог разработки** (`blog.html`) — для всего, чего нет среди систем на главной: редактор
   Studio, сборка и платформы, сеть, мета, геймплей и жанры, рендер, мир, ECS, инструменты
   агентов. Агент, закончивший такой этап, пишет такую же запись `docs/devlog/entries/*.json`,
   указывая в `system` тему из `systems.json` без `flagship` (`studio`, `build`, `network`,
   `meta`, `gameplay`, `render`, `world`, `ecs`, `agents`); новую тему можно добавить туда же.
-  Скриншоты в блоге желательны, но не обязательны. Правила ниже — только успешное, для людей —
-  те же.
+  Если фича видимая (рендер, вода, рельеф, UI, окна редактора, эффекты, анимация, камера), кадры
+  обязательны и в блоге; без кадра — только невидимая работа. Правила ниже — только успешное,
+  для людей — те же.
 - В дневник идут **только успешные этапы**: то, что работает и показано на кадре. Неудачные,
   брошенные и незаконченные попытки, ошибки сборки и падения тестов остаются в handoff, на сайт
   не попадают. Этап без того, что можно показать (рефакторинг, внутренний API), описывается
@@ -66,8 +77,9 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   (`[{src, caption, captionEn}]`, PNG/JPG). Тогда карточка ведёт на `system-<система>-<id>.html`,
   первый кадр — её миниатюра. Картинки статьи — относительные пути от `.md`, ссылки на документы
   репозитория тоже. Только реальные кадры и проверенные факты, как в записях хода разработки.
-- Не редактировать `gh-pages` вручную и не коммитить `build/site`: после слияния в `main`
-  `.github/workflows/site.yml` проверяет записи, собирает сайт и публикует `gh-pages`.
+- Не редактировать `gh-pages` вручную и не коммитить `build/site`. Workflow `site.yml` не
+  установлен (только шаблон `tools/site/site-workflow.yml`): сайт публикует
+  `python3 tools/site/build.py publish` после пуша в `main`, иначе он не обновится.
 - Сайт двуязычный: русский в корне, английский в `en/`. У каждого текстового поля записи и
   системы есть английская пара с суффиксом `En` (`titleEn`, `summaryEn`, `bodyEn`, `verifiedEn`,
   `limitsEn`, `captionEn`; в `systems.json` — `nameEn`, `taglineEn`, `essenceEn`, `enablesEn`,
@@ -79,7 +91,9 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 - Страница «Релизы» (`releases.html`) берёт версии из `docs/devlog/releases.json`, а ссылки на
   сборки — из `index.json` ветки `builds` прямо в браузере. Выпуская релиз (тег + GitHub release,
   §8), интегратор добавляет запись в начало `releases.json`: версия, тег, дата, коммит, заголовок,
-  описание и главное на русском и английском; `verified` — только реально проверенное.
+  описание и главное на русском и английском; у видимых пунктов «главного» — кадр (`media`) из
+  записей хода разработки; `verified` — только реально проверенное. Все кадры записей сами
+  попадают в «Галерея: скрины из хода разработки» (`gallery.html`).
   «В следующем релизе» собирается само из записей хода разработки после даты последнего релиза.
   У флагманской системы в `systems.json` поле `release` — версия, в которой она вышла, или
   `next.version` из `releases.json`, если она уже в `main`, но ещё не в теге (карточка: «с версии
@@ -2045,6 +2059,26 @@ This overrides earlier local/worktree build examples and release paths in this f
   stop the build and report it; never silently fall back to the internal disk or `/tmp`.
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
+
+### Mac launcher scripts from a VM / Cowork session (all agents)
+
+**Owner instruction (2026-11-22): a `.command` handed to the user must open on the first
+double-click.** Finder runs only executable files; otherwise it shows "could not be executed
+because you do not have appropriate access privileges".
+
+- Writing a script through the mounted folder (`sed -i`, the Write/commit tools, a Python
+  rewrite, `git checkout`) replaces the file and **drops its execute bit**, and a `chmod`
+  issued right after the rewrite is sometimes lost in the sync. After every change to a
+  `.command` / `.sh` the user or Finder will run:
+  `chmod +x <files>; sleep 5; stat -c '%a %n' <files>` — every mode must be `7xx`; repeat
+  the `chmod` until it is. Check this before asking the user to run anything, and again
+  before each double-click you make yourself.
+- Prefer editing launchers in place (`open(path, "r+")`, write, `truncate()`), which keeps
+  the mode; never assume a rewritten script is still executable.
+- KINGSTON can remount under another name (`/Volumes/KINGSTON 1` after a reconnect). Keep
+  the drive root in one place per script (a variable or the link
+  `~/Projects/AIVERSE/build/kingston`), re-point it when the name changes, and give the
+  moved sources new CMake/package build directories: old caches keep the old path.
 
 Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
 

@@ -442,7 +442,6 @@ bool GameView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     fieldDefsSeen_ = nullptr;
     read_ = incomingRead;
     {   // Reuse the exact parsed snapshot used for sprite staging.
-        const Json& game=incomingGame;
         const Json& rj=incomingRules;
         fog_.setLook(incomingFogLook);
         spriteDefaults_ = incomingSpriteDefaults;   // same snapshot as staged sprites
