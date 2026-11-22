@@ -1216,7 +1216,12 @@
       "where": "main",
       "tagline": "Анимация персонажей",
       "essence": "Графы анимации, ретаргет между ригами, LOD скелетов и вложения.",
-      "cover": null,
+      "cover": {
+        "src": "docs/devlog/media/2026-11-22-motionweave-battle/battle.jpg",
+        "caption": "MotionWeave: два строя на одном графе анимации",
+        "captionEn": "MotionWeave: two ranks on one animation graph",
+        "approved": false
+      },
       "coverBrief": "Персонаж в движении: смешение анимаций, ретаргет на разные риги или толпа с LOD; стоп-кадр должен читаться как движение.",
       "article": "docs/motionweave.md",
       "started": "2026-11-18",
