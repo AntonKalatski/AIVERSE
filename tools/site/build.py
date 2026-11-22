@@ -404,7 +404,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, MENU_SPY_JS, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, ROOT_LANG, MENU_SPY_JS, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, core_html, fill_tokens)
 
@@ -544,10 +544,10 @@ def cmd_build(args):
         ctx = Ctx(lang, T, LANGS)
         ctx.rel = {'released': {r['version'] for r in rel_data.get('releases') or []},
                    'next': (rel_data.get('next') or {}).get('version', '')}
-        d = out if lang == 'ru' else out / lang
+        d = out if lang == ROOT_LANG else out / lang
         d.mkdir(parents=True, exist_ok=True)
         loc_entries = localized_entries(entries, ctx)
-        # static pages per language: site/<page>.html (ru) and site/<lang>/<page>.html
+        # static pages per language: site/<page>.html (English, the root) and site/<lang>/<page>.html
         for name in ('index.html', 'devlog.html'):
             f = d / name
             if not f.is_file():
@@ -667,6 +667,15 @@ def cmd_build(args):
         (d / 'devlog.json').write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
         pages += 6
     (out / '.nojekyll').write_text('', encoding='utf-8')
+    # English moved from en/ to the site root: old en/<page> links redirect to the same page.
+    legacy = out / 'en'
+    legacy.mkdir(exist_ok=True)
+    for page in sorted(out.glob('*.html')):
+        (legacy / page.name).write_text(
+            f'<!doctype html><meta charset="utf-8"><title>AIVERSE</title>'
+            f'<link rel="canonical" href="../{page.name}">'
+            f'<meta http-equiv="refresh" content="0; url=../{page.name}">'
+            f'<script>location.replace("../{page.name}"+location.hash)</script>', encoding='utf-8')
     # Cache busting: the CDN and browsers keep style.css / devlog.js for minutes, so a fresh page
     # could meet a stale stylesheet. Every page asks for the exact version it was built with.
     for asset in ('style.css', 'devlog.js'):

@@ -1,6 +1,6 @@
 """Page generators for the AIVERSE website, one call per language (stdlib only).
 
-Russian pages are written to the site root, other languages to <lang>/ with the same
+English pages are written to the site root, other languages (ru) to <lang>/ with the same
 file names. Shared assets (style.css, favicon.svg, media/) stay at the root; `B` is
 the relative prefix to them. Data fields are localised by suffix: `title` (ru) and
 `titleEn` (en); a missing translation falls back to the Russian text.
@@ -23,12 +23,16 @@ def esc(text):
     return html.escape(str(text or ''), quote=True)
 
 
+ROOT_LANG = 'en'  # language served at the site root
+
+
 class Ctx:
     def __init__(self, lang, strings, langs):
         self.lang = lang
         self.T = strings
-        self.B = '' if lang == 'ru' else '../'
-        self.other = 'en' if lang == 'ru' else 'ru'
+        # The site root is English; every other language lives in its own folder (ru/).
+        self.B = '' if lang == ROOT_LANG else '../'
+        self.other = 'ru' if lang == ROOT_LANG else ROOT_LANG
         self.langs = langs
         self.rel = {'released': set(), 'next': ''}
 
@@ -43,7 +47,7 @@ class Ctx:
         return f'{self.B}media/{src}'
 
     def other_href(self, page):
-        return (f'en/{page}' if self.lang == 'ru' else f'../{page}')
+        return (f'{self.other}/{page}' if self.lang == ROOT_LANG else f'../{page}')
 
     def fmt_date(self, iso):
         y, m, d = iso.split('-')
