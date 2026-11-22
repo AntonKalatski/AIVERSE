@@ -637,3 +637,6 @@ a.badge-ink { color: var(--on-ink); }
 .core-inc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .core-inc span { font-size: 12px; line-height: 1; padding: 6px 9px; border-radius: 999px; background: var(--paper-2); color: var(--text-2); white-space: nowrap; }
 .core-card .sys-link { margin-top: auto; }
+.core-card.has-thumb { padding-top: 0; overflow: hidden; }
+.core-thumb { display: block; margin: 0 -24px 6px; background: var(--ink); }
+.core-thumb img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
