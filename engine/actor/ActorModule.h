@@ -18,6 +18,7 @@
 #include <span>
 #include <utility>
 
+#include "../game/HostSystems.h"
 namespace aiverse::actor {
 constexpr uint32_t kBuildingColliderBase=0x40000000;
 constexpr uint32_t kRotatedColliderBase=0x50000000;   // triangles of map colliders with a "yaw" (12 per box)   // collider ids of map `buildings` (building-gen)
@@ -96,21 +97,21 @@ bool decodeInput(const Command& command,Input& input);
 Vec3 direction(Fixed yaw,Fixed pitch);
 struct BotHost;   // ActorBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
 // Actor systems (characters, weapons, projectiles, vehicles, royale, race, bots) on world-space maps.
-// Not a GameModule: game::GameCore owns one and runs it when the map is world-space (colliders + spawns).
-class ActorHost final {
+// game::GameCore owns one and runs it when the map is world-space (colliders + spawns).
+class ActorHost final : public game::HostSystems {
 public:
     // Limits of the dynamic object pools (spawns beyond them are dropped).
     static constexpr size_t kMaxProjectiles=256,kMaxLoot=256,kMaxVehicles=32;
-    void setup(Simulation&,const Json&,const Json&);
-    void applyCommand(Simulation&,const Command&);
-    void hashState(Simulation&,Hasher&);
-    bool serializeState(Simulation&,Archive&);
-    int result(Simulation& sim) { return state(sim).winner; }
+    void setup(Simulation&,const Json&,const Json&) override;
+    void applyCommand(Simulation&,const Command&) override;
+    void hashState(Simulation&,Hasher&) override;
+    bool serializeState(Simulation&,Archive&) override;
+    int result(Simulation& sim) override { return state(sim).winner; }
     const Config& config() const { return config_; }
 
     const world::SpatialWorld& collision() const { return collision_; }
     void setContentReader(world::AssetReader);
-    bool readyToStep(Simulation&);
+    bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     // Match-level data (round, winner, nextObject, match, royale, history).
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }

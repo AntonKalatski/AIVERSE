@@ -1,8 +1,8 @@
 // aiverse_voxel_server: dedicated authoritative server of the voxel sandbox.
 //   aiverse_voxel_server [--project DIR] [--port 27200] [--ticks N] [--loopback]
 // UDP on --port, WebSocket on --port + 1; one slot per map player; prints the checksum when --ticks ends the run.
-#include "modules/voxel/VoxelSession.h"
-#include "modules/voxel/Project.h"
+#include "engine/voxel/VoxelSession.h"
+#include "engine/voxel/Project.h"
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include <chrono>
