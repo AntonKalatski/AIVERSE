@@ -3015,7 +3015,7 @@
       "package": null,
       "path": "skills/workflow/aiverse-packages/SKILL.md",
       "domain": "workflow",
-      "summary": "Optional content from the AIVERSE-PLUGINS catalog: search, install into projects, lock, verify, publish by PR",
+      "summary": "Optional content from the AIVERSE-PACKAGES catalog: search, install into projects, lock, verify, publish by PR",
       "side": "tools",
       "runtime": "none",
       "target": null,
