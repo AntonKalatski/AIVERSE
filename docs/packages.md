@@ -46,6 +46,11 @@ python3 tools/pkg/aiverse_pkg.py create <template-id> ~/Games/New    # new proje
 - Offline: `AIVERSE_PACKAGES_OFFLINE=1` uses only the cache and the last downloaded index.
 - C++ host tools and the editor find cached packages with `engine/pack/Packages.h`
   (`aiverse::pack::cachedPackageDir("vegetation-pbr")`). A game never reads the cache.
+- Editor: the Studio window **Catalog** (Look and Publish workspaces, or "Catalog" in Search or run)
+  searches the catalog, shows a package and installs or removes it in one click; it warns when the
+  project's packages have missing or changed files and restores them from `aiverse.lock`. Agents use the
+  same through MCP: `package_search`, `package_info`, `package_status`, `package_add`, `package_remove`,
+  `package_install`, `package_skill` (they run `aiverse_pkg.py` on the open project).
 
 ## Web viewer
 
