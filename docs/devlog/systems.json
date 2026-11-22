@@ -138,7 +138,7 @@
    "where": "main",
    "tagline": "Живая среда: ветер, огонь, земля",
    "essence": "Поля природы в ECS: ветер, огонь, землетрясения и нагрузки на конструкции, которые реагируют друг на друга.",
-   "cover": null,
+   "cover": {"src": "docs/devlog/media/systems/physis-tornado.jpg", "caption": "PHYSIS: смерч идёт по долине, поднимая пыль и обломки", "captionEn": "PHYSIS: a tornado crossing the valley, raising dust and debris", "approved": true},
    "coverBrief": "Момент, где среда действует сама: пожар, который гонит ветер по траве, или постройка, ломающаяся от нагрузки. Видимые последствия, не тепловая карта отладки.",
    "article": "docs/physis.md",
    "started": "2026-11-18",
