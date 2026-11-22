@@ -12,7 +12,7 @@
   "verified": "Кадры сняты в игровом клиенте (OpenGL); матч ботов на новой карте доходит до победителя.",
   "limits": "Шейдер для Metal обновлён, но на Маке ещё не запускался. Маленькая карта Two Worlds пока на старых высотах: на неё завязаны тесты.",
   "branch": "main",
-  "commit": "",
+  "commit": "6f6b23bab",
   "media": [
     {
       "src": "docs/devlog/media/2026-11-22-planets-generated-coasts/coasts.jpg",
