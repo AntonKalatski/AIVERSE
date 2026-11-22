@@ -515,6 +515,16 @@ def doc_sections(page_id, title, body_html):
     return out
 
 
+MENU_SPY_JS = """<script>
+(function(){var map=[['systems','systems'],['core','systems'],['genres','genres'],['roadmap','roadmap']],links={};
+document.querySelectorAll('.menu a[data-nav]').forEach(function(a){links[a.dataset.nav]=a;});
+var secs=map.map(function(m){return [document.getElementById(m[0]),m[1]];}).filter(function(m){return m[0]&&links[m[1]];});if(!secs.length)return;
+function spy(){var y=innerHeight*.35,cur=null;secs.forEach(function(m){var r=m[0].getBoundingClientRect();if(r.top<=y&&r.bottom>y)cur=m[1];});
+Object.keys(links).forEach(function(k){if(k===cur)links[k].setAttribute('aria-current','page');else if(links[k].getAttribute('aria-current')==='page')links[k].removeAttribute('aria-current');});}
+addEventListener('scroll',spy,{passive:true});addEventListener('resize',spy);addEventListener('hashchange',function(){setTimeout(spy,50);});spy();})();
+</script>"""
+
+
 DOCS_SEARCH_JS = """<script>
 (function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
 function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}

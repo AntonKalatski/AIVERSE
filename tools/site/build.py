@@ -404,7 +404,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, MENU_SPY_JS, roadmap_lines, FEATURE_JS, DOCS_SEARCH_JS, doc_sections, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, core_html, fill_tokens)
 
@@ -563,6 +563,9 @@ def cmd_build(args):
             text, n = head_re.subn(lambda _m: shared, text, count=1)
             if n != 1:
                 sys.exit(f'{lang}/{name} lost its <header class="top">')
+            if name == 'index.html':
+                # The main page is one long page: the menu item of the section in view is current.
+                text = text.replace('</body>', MENU_SPY_JS + '</body>', 1)
             if name == 'index.html':
                 for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->', '<!--CORE_SYSTEMS-->', '<!--ROADMAP_LINES-->'):
                     if mark not in text:
