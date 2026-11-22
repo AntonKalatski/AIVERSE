@@ -1823,9 +1823,9 @@
     "Check a map's fairness with bot matches."
    ],
    "cover": {
-    "src": "docs/devlog/media/systems/planets-generated.jpg",
-    "caption": "Планета из генератора: шум рельефа, моря и берега по высотам",
-    "captionEn": "A planet from the generator: noise relief, seas and coasts that follow the heights",
+    "src": "docs/devlog/media/2026-11-22-planets-nereid-sea/coast.jpg",
+    "caption": "Берег планеты: море NEREID, деревья TerraWeave",
+    "captionEn": "A planet coast: NEREID sea, TerraWeave trees",
     "approved": false
    }
   },
