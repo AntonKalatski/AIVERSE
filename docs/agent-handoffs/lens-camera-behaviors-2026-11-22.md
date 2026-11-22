@@ -41,3 +41,17 @@ See the stage log appended below (Mac build, ctest, frames).
   its owner — fetched from the Mac repo) at `462a1d715`: Mac build OK, ctest 434/434 pass (lens_metal_frame skipped
   without AIVERSE_LENS_METAL_VALIDATE). The TerraWeave sparse editor test was moved to the world-space scene
   document (`MapData::worldSpace` + `extra`), rebuilt and passed with camera_behavior and aiverse_tests.
+
+## Stage B, finish (2026-11-22)
+- `CameraFollowComponent` (sim) + cameras.json `"follow"` block (`cameraFollowFromJson` / `cameraFollowJson`,
+  presets, `"bounds": [minX, minZ, maxX, maxZ]`): a Follow rig with it runs `render::CameraFollow` in
+  `CameraRigEvaluator` (velocity lead only, focus height kept). Test: `camera_behavior` (lead, bounds, round trip).
+- `render::CameraSphereOrbit` + `SphereViewFrame` (`engine/render/CameraSphereOrbit.h`): the planet camera math;
+  `game::PlanetCamera` is a thin host (body, centres, extent). `PlanetViewFrame` renamed everywhere.
+- Presets helpers moved to `CameraPresets.h` (`cameraPresets`, `cameraPresetNames`, `resolveCameraPreset`,
+  `cameraPresetBody` by name prefix: overhead / follow / chase / first-person).
+- MCP `lens_camera_presets` (six LENS tools now); Studio cameras window "Follow Body" with preset apply.
+- Mac (merged with main `02f9337af`): build OK, ctest 433/434 then `lens_ops` fixed (tool count, ok flag) and
+  re-run with camera_behavior: pass. Planet frame `shots/pl-orbit` checked by eye.
+- Remaining: ECS chase / first-person still read rig fields only (no cameras.json "chase" block); no preset picker
+  for game.json camera blocks in the editor UI.
