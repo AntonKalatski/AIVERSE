@@ -9,7 +9,8 @@ Contract: `docs/planets.md`. A map without `world` / `generate` behaves exactly 
 
 1. Bodies: the map's `world.bodies` (star, planet, moon: id, kind, radius, orbit, visual) via `map_set`; `planet_info` reports what the engine sees.
 2. Generate: `gen_presets` -> `map_generate {preset: rocky|ocean|moon, players, params}`; `params.layout` `shared` (all players on one body, polar rotational symmetry) or `separate` (an identical planet each); moons get `params.moonResources`. Read the answer: starts, path lengths, connectivity.
-3. Heights come from the generator, not from hand-made formulas: a height function built from bands
+3. Heights come from the generator (TerraWeave fields on the sphere: relief and climate biomes;
+   `params.heights: "fbm"` only for old maps), not from hand-made formulas: a height function built from bands
    (`abs(z)`, latitude rings) gives straight-edged lowlands that the sea fills as squares on the cube faces.
    Bake a static map with `aiverse_headless --project <dir> --generate rocky --seed N --players 2 --gen-out <map>`
    (the project's first map supplies the bodies; `templates/planets/maps/big_planet.json` is made this way).

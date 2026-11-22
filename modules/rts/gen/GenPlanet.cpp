@@ -6,12 +6,28 @@
 #include "GenInternal.h"
 #include "modules/rts/RtsSphere.h"
 #include "engine/core/FixedMath.h"
+#include "engine/world/TerraWeaveSphere.h"
 
 namespace aiverse::gen {
 
 using game::sphereArcTurns;
 namespace {
 constexpr int32_t Q(int num, int den) { return int32_t(int64_t(num) * kOne / den); }
+
+// TerraWeave fields on the planet (the default height source): the sampling sphere is fixed, the scale
+// sets the feature size relative to the body (the same "scale" / faceSize relation as the fbm source).
+constexpr int64_t kTwSphereCm = 1000000;
+terraweave::SphereSettings twSphere() { terraweave::SphereSettings s; s.radiusCm = kTwSphereCm; return s; }
+terraweave::TerrainSettings twTerrain(const Ctx& c, int N, int octaves) {
+    terraweave::TerrainSettings t;
+    t.seed = (uint64_t(c.sub(31)) << 32) | c.sub(33);
+    t.reliefCm = kOne;   // heights come out as a relief fraction in Q16
+    const int64_t scale = std::clamp(c.pq("scale", Q(24, 1)), Q(2, 1), Q(400, 1));
+    t.basePeriodCm = int32_t(std::clamp<int64_t>(kTwSphereCm * 6 * scale / (int64_t(4) * N * kOne), 64, kTwSphereCm * 9 / 10));
+    t.octaves = uint32_t(std::clamp(octaves, 1, 8));
+    return t;
+}
+bool useTerraWeave(const Ctx& c) { return c.pstr("heights", "terraweave") != "fbm"; }
 }
 
 Vec3 rotY(Vec3 d, int k, int n) {
@@ -72,11 +88,15 @@ void planetHeights(Ctx& c, PlanetGen& pg, int symN) {
         craters.push_back({fxNormalize(d), int64_t(Q(2, 100)) + int64_t(b >> 26) * 300});   // radius in turns
     }
     symN = std::max(1, symN);
+    const bool tw = useTerraWeave(c);
+    const terraweave::TerrainSettings twT = twTerrain(c, N, f.octaves);
+    const terraweave::SphereSettings twS = twSphere();
     for (size_t k = 0; k < pg.hc.size(); ++k) {
         int64_t sum = 0;
         for (int r = 0; r < symN; ++r) {    // average over the rotations: the same set for every rotated point
             const Vec3 d = rotY(pg.dirs[k], r, symN);
-            int64_t v = fbm3(d.x.raw * freq, d.y.raw * freq, d.z.raw * freq, c.sub(31), f);
+            int64_t v = tw ? terraweave::heightAtSphere(twT, terraweave::spherePoint(twS, d.x.raw, d.y.raw, d.z.raw))
+                           : fbm3(d.x.raw * freq, d.y.raw * freq, d.z.raw * freq, c.sub(31), f);
             for (auto& [cd, cr] : craters) {
                 const int64_t arc = sphereArcTurns(d, cd).raw;
                 if (arc >= cr * 3 / 2) continue;
@@ -112,6 +132,12 @@ void planetClassify(Ctx& c, PlanetGen& pg) {
     for (int id = 0; id < cells; ++id) if (pg.cellH(id) >= 0 || !pg.hasSea) land.push_back(pg.cellH(id));
     const int32_t peak = land.empty() ? INT32_MAX : quantile(land, c.pq("peaks", Q(97, 100)));
     const int32_t ice = std::clamp(c.pq("ice", Q(1, 10)), 0, kOne);
+    const bool tw = useTerraWeave(c);
+    const terraweave::SphereSettings twS = twSphere();
+    terraweave::BiomeSettings twB;
+    twB.seed = (uint64_t(c.sub(32)) << 32) | c.sub(34);
+    twB.seaLevelCm = 0;
+    twB.climatePeriodCm = int32_t(kTwSphereCm / 2);
     for (int id = 0; id < cells; ++id) {
         const Vec3 d = pg.S.cellCenterDir(id);
         const int64_t lat = d.y.raw < 0 ? -d.y.raw : d.y.raw;
@@ -121,7 +147,17 @@ void planetClassify(Ctx& c, PlanetGen& pg) {
         if (pg.hasSea && hv < 0) { ch = '~'; b = BOcean; }
         else if (hv >= peak && c.model != game::TerrainModel::Heightfield) { ch = '#'; b = BRock; }
         if (lat > kOne - ice) b = BSnow;                                 // ice caps (over water too: frozen sea)
-        else if (b == BGrass) {
+        else if (b == BGrass && tw) {   // TerraWeave climate: temperature / humidity fields, colder towards the poles
+            const auto p = terraweave::spherePoint(twS, d.x.raw, d.y.raw, d.z.raw);
+            switch (terraweave::climateAtSphere(twS, twB, p, int32_t(int64_t(hv) * 100 / kHU)).biome) {
+            case terraweave::Biome::Desert: b = BDesert; break;
+            case terraweave::Biome::Forest: b = BForest; break;
+            case terraweave::Biome::Wetland: b = BSwamp; break;
+            case terraweave::Biome::Tundra: b = BSteppe; break;
+            case terraweave::Biome::Alpine: b = BRock; break;
+            default: break;
+            }
+        } else if (b == BGrass) {
             const int32_t moist = fbm3(d.x.raw * 3, d.y.raw * 3, d.z.raw * 3, c.sub(32), Fbm{}) / 2 + kOne / 2;
             if (lat < Q(3, 10) && moist < Q(45, 100)) b = BDesert;
             else if (moist > Q(58, 100)) b = BForest;

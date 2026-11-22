@@ -188,6 +188,17 @@ inline int32_t heightAtCm(const TerrainSettings& s, int64_t xCm, int64_t zCm) {
                            static_cast<int64_t>(s.reliefCm) * sum / totalWeight);
 }
 
+// Biome from temperature, humidity and height above the sea (shared by planes and spheres).
+inline Biome classifyBiome(const ClimateSample& c, int32_t heightCm, int32_t seaLevelCm) {
+    if (heightCm < seaLevelCm) return Biome::Ocean;
+    if (static_cast<int64_t>(heightCm) - seaLevelCm > 300000) return Biome::Alpine;
+    if (c.temperature < 250) return Biome::Tundra;
+    if (c.humidity > 750) return Biome::Wetland;
+    if (c.temperature > 650 && c.humidity < 320) return Biome::Desert;
+    if (c.humidity < 440) return Biome::Grassland;
+    return Biome::Forest;
+}
+
 inline ClimateSample climateAt(const TerrainSettings& t, const BiomeSettings& b,
                                int64_t xCm, int64_t zCm) {
     if (b.climatePeriodCm <= 0 || b.variation < 0)
@@ -199,13 +210,7 @@ inline ClimateSample climateAt(const TerrainSettings& t, const BiomeSettings& b,
     const int64_t humidity = static_cast<int64_t>(b.baseHumidity) +
         detail::noise(xCm, zCm, b.climatePeriodCm, b.seed ^ 0xf19c54d1ULL) * b.variation / 65536;
     ClimateSample out{detail::clamp1000(temperature), detail::clamp1000(humidity), Biome::Grassland};
-    if (h < b.seaLevelCm) out.biome = Biome::Ocean;
-    else if (h - static_cast<int64_t>(b.seaLevelCm) > 300000) out.biome = Biome::Alpine;
-    else if (out.temperature < 250) out.biome = Biome::Tundra;
-    else if (out.humidity > 750) out.biome = Biome::Wetland;
-    else if (out.temperature > 650 && out.humidity < 320) out.biome = Biome::Desert;
-    else if (out.humidity < 440) out.biome = Biome::Grassland;
-    else out.biome = Biome::Forest;
+    out.biome = classifyBiome(out, h, b.seaLevelCm);
     return out;
 }
 

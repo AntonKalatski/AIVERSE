@@ -144,7 +144,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   (MW2), classic Warcraft/Red Alert land maps, TA metal maps, planets (rocky, ocean, moon).
 
 Implemented (agent-terrain-gen, `modules/rts/gen/`, format and params: docs/game-format.md § Map generation):
-- `body.generate` with presets `rocky`, `ocean`, `moon`: heights from 3D fBm sampled at `CubeSphere::cornerDir` (RtsSphere.h),
+- `body.generate` with presets `rocky`, `ocean`, `moon`: heights and land biomes from TerraWeave fields on the sphere (`engine/world/TerraWeaveSphere.h`: the TerraWeave octave sum and climate model sampled in 3D, so faces join without seams; `params.heights: "fbm"` keeps the older 3D fBm) at `CubeSphere::cornerDir` (RtsSphere.h),
   so duplicated seam corners are bit-identical (and averaged defensively); craters for moons; sea level by quantile (written
   relative to `seaLevel` 0); faces get `rows` (`~` water, `#` peaks, `.` ice over polar seas), `terrain.material` per face
   (layer digits like `terrainMaterial`), `corners`; `generated.starts` = maximally separated land sites

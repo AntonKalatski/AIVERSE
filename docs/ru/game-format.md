@@ -2277,7 +2277,7 @@ MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_
 | `caves` | caves | Dungeon Keeper (`diggable`) | `size` [48,32], `gold` 0.03 / `gems` 0.004 (доля породы, которая является жилой / бесконечным пластом), `bedrock` 0.06, `caverns` 0.06 |
 | `lanes` | lanes | lane battlers / MOBA | `size` [32,64], `lanes` 3, `laneWidth` 4, `bend` 0.35 (везде остальное — порода) |
 | `field` | lanes, `open` | Mushroom Wars 2 (гарнизоны + дороги) | `size` [44,28], `obstacles` 0.12, `roads` из шаблона |
-| `rocky` / `ocean` / `moon` | planet | целые карты планет или рельеф одного тела | `faceSize`, `water` 0.25 / 0.7 / 0, `relief`, `ice` (полярные шапки), `craters` (луна), `layout`, `moonResources`, `baseRadius` (луна 11) |
+| `rocky` / `ocean` / `moon` | planet | целые карты планет или рельеф одного тела | `faceSize`, `water` 0.25 / 0.7 / 0, `relief`, `ice` (полярные шапки), `craters` (луна), `layout`, `moonResources`, `baseRadius` (луна 11), `heights` (`terraweave` по умолчанию: рельеф и климатические биомы TerraWeave; `fbm`: прежний шум) |
 
 **Карты планет.** Планетный пресет в `generate` карты строит весь блок `world`: тела (и их орбиты,
 визуальные параметры) берутся из `world` карты-шаблона (например, `templates/planets`), иначе — солнце + планета + луна. Каждое тело с поверхностью
