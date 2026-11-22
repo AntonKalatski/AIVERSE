@@ -18,7 +18,7 @@ wire format, numbers and limits: `docs/replica.md`. Tests: `tests/replica` (`aiv
 |---|---|
 | Small PvP, every client simulates deterministic `Fixed` state | lockstep + rollback: `engine/net/server`, `engine/net/Rollback.h`, `skills/network/aiverse-online-battles/SKILL.md` |
 | City mirror of a lockstep world | `engine/net/city`, `skills/network/aiverse-city-server/SKILL.md` |
-| Directly controlled actors with lag compensation (legacy `modules/fps` host) | `engine/net/authority`, `docs/fps.md` |
+| Directly controlled actors with lag compensation (legacy `engine/actor` host) | `engine/net/authority`, `docs/fps.md` |
 | Many players, server-only float simulation (Box3D, Lua), join any time, objects of game-defined classes | **replica** |
 
 Replica never runs game code on clients except the owner's prediction. Do not replicate RTS sim state with it.

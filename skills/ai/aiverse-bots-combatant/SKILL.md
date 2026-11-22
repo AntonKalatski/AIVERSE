@@ -5,7 +5,7 @@ description: Reuse the AIVERSE combatant bot (one agent: perception, reaction, a
 
 # Combatant bot (package `bots-fps`, legacy id)
 
-Current host: commands are `fpsCommand` for the legacy `modules/fps` actor host; using it on other hosts is debt G3/G5 in `docs/no-genre-split-audit.md`.
+Current host: commands are `fpsCommand` for the legacy `engine/actor` actor host; using it on other hosts is debt G3/G5 in `docs/no-genre-split-audit.md`.
 
 1. Read `docs/bots.md` and this catalog entry. Read `libraries/include/aiverselib/bots/Fps.h` for exact APIs.
 2. Run on one authoritative host with map bot:false for owned slots. Use fpsCommand then sim.submit; never mutate actors. Persist FpsState with the simulation. Supply generated navmesh or authored waypoint graph; no bomb, loot or vehicle mechanics are implied.
