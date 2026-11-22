@@ -38,7 +38,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/sim/Simulation.h"
 #include "../../../engine/game/GameData.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 #include "Rts2DView.h"
 #include "RtsGroundFx.h"
 #include "RtsPaintLayers.h"
@@ -608,7 +608,7 @@ public:
     // Match maps: the simulation's Surface is the source of bodies, orbits, corner heights and cell flags
     // (map JSON only for visual keys). Call after the sim is set up, before buildTerrain().
     void setSimWorld(std::shared_ptr<const Surface> surf, const MapGrid& grid, const Json& map);
-    // Sim-space positions (anchor(body) + local, RtsSurface.h) <-> body + body-local position.
+    // Sim-space positions (anchor(body) + local, Surface.h) <-> body + body-local position.
     static bool simToBody(render::float3 sim, int& body, render::float3& local);
     static render::float3 bodyToSim(int body, render::float3 local) { return anchorF(body) + local; }
     // Body-local surface point of a face position (cells), e.g. a map "at" {body, face, x, y}.

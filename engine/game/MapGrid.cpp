@@ -1,4 +1,4 @@
-#include "RtsMap.h"
+#include "MapGrid.h"
 #include "../../engine/sim/CommonComponents.h"
 #include <algorithm>
 #include <climits>

@@ -87,7 +87,7 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
     framePublication_.invalidate();
     ++terrainGeneration_; // conservative invalidation: cell edits can retain the MapGrid address
     if (planets_.active()) {
-        paintLayers_.shutdown(); // planet maps: the grid holds the stacked faces of every body (RtsSurface.h)
+        paintLayers_.shutdown(); // planet maps: the grid holds the stacked faces of every body (Surface.h)
         const PlanetWorld& W = planets_.world();
         if (W.sim && g.surf == W.sim) // cell flags changed (editor play / sim): recolour those bodies
             for (size_t i = 0; i < W.bodies.size(); ++i) {

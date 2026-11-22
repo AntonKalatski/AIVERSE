@@ -55,7 +55,7 @@
 #include "../../../engine/data/Json.h"
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/game/GameData.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 
 namespace aiverse::game {
 

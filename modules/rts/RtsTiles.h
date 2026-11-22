@@ -28,7 +28,7 @@ struct TileVariant { int tile = 0; int weight = 1; };   // weight in 1/1000 (int
 struct TileTerrain {
     std::string id, name;
     char ch = '?';                 // character in the map's tiles.rows
-    char cell = '.';               // gameplay cell kind written into terrain.rows (see RtsMap.h)
+    char cell = '.';               // gameplay cell kind written into terrain.rows (see MapGrid.h)
     int level = -1;                // cliff level written into terrain.levels (-1 keeps the map's)
     std::string fieldResource;     // non-empty: a resource field of `fieldDensity` (1..9) on these cells
     int fieldDensity = 0;

@@ -45,7 +45,7 @@
 #include "engine/render/RetirementDiagnosticRing.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
-#include "modules/rts/RtsMap.h"
+#include "engine/game/MapGrid.h"
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/fx/RtsFx.h"
 #include "modules/rts/view/RtsView.h"

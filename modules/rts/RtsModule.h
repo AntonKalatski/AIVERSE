@@ -16,7 +16,7 @@
 #include "../../engine/game/GameData.h"
 #include "../../engine/game/Components.h"
 #include "../../engine/game/AIControllers.h"
-#include "RtsMap.h"
+#include "../../engine/game/MapGrid.h"
 #include "RtsColliders.h"
 #include "RtsTriggers.h"
 #include "RtsScript.h"
@@ -160,7 +160,7 @@ struct GameState {
     uint32_t laneSignature = 0;              // garrisons/obstacles the lanes were built for
     std::vector<uint32_t> laneRoundRobin;    // per garrison entity index: next lane slot
     RouteState routes;                       // authored routes, row groups, multiscreen (RtsRoutes.cpp)
-    // planets (map `world` block): bodies, cube-sphere layout of the grid rows (RtsSurface.h); null on flat maps
+    // planets (map `world` block): bodies, cube-sphere layout of the grid rows (Surface.h); null on flat maps
     std::shared_ptr<const Surface> surface;
     // fidelity mechanics: eaters (sandworms) that submerged and come back later
     struct Resurface { uint16_t type; uint8_t owner; uint32_t at; };

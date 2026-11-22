@@ -17,7 +17,7 @@
 #include "../../../engine/render/SpriteBatch.h"
 #include "../../../engine/render/TextureCache.h"
 #include "../../../engine/game/GameData.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 #include "../RtsTiles.h"
 #include "RtsSpriteShadow.h"
 #include "EntityFx.h"

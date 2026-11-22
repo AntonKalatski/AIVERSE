@@ -3,7 +3,7 @@
 //
 // Data source: loadPlanetWorld() reads the map JSON `world` block. It is the one place to switch to the
 // simulation's bodies once the sim provides them (positions, orbits, per-face corners).
-// Faces / cells / corners follow modules/rts/RtsSphere.h; corner directions come from CubeSphere
+// Faces / cells / corners follow engine/game/Sphere.h; corner directions come from CubeSphere
 // (bit-identical on seams) converted to float once per body.
 #pragma once
 #include <cmath>
@@ -13,8 +13,8 @@
 #include <vector>
 #include "../../../engine/data/Json.h"
 #include "../../../engine/render/Math3D.h"
-#include "../RtsMap.h"
-#include "../RtsSurface.h"
+#include "../../../engine/game/MapGrid.h"
+#include "../../../engine/game/Surface.h"
 
 namespace aiverse::game {
 
@@ -92,7 +92,7 @@ private:
     std::vector<uint16_t> row_;
 };
 
-// Sim-space positions of planet maps: body b's things live around Surface::anchor(b) (RtsSurface.h).
+// Sim-space positions of planet maps: body b's things live around Surface::anchor(b) (Surface.h).
 inline render::float3 anchorF(int body) { return {float(Surface::kSphereOrigin + body * Surface::kBodySpacing), 0, 0}; }
 inline bool onSphereF(render::float3 p) { return p.x >= float(Surface::kSphereOrigin - Surface::kBodySpacing / 2); }
 inline int bodyAtF(render::float3 p) { return int(std::floor((p.x - float(Surface::kSphereOrigin - Surface::kBodySpacing / 2)) / float(Surface::kBodySpacing))); }

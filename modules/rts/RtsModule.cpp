@@ -138,7 +138,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     if (g.bigMap())
         for (auto& t : rules_.types)
             if (t.speed.raw > 0 && (!(t.layer & kLayerAir) || g.airSolid)) g.prepareHpa(t.pathLayer);
-    // planets: HPA* on bodies above the cell threshold (RtsHpaSphere.cpp). AIVERSE_PLANET_HPA=1 / 0 forces it on / off
+    // planets: HPA* on bodies above the cell threshold (MapHpaSphere.cpp). AIVERSE_PLANET_HPA=1 / 0 forces it on / off
     // (testing and benchmarks only: every peer of a match must use the same setting)
     g.sphereHpaMinCells = rules_.movement.planetHpaCells;
     g.flowMaxFields = rules_.movement.flow.maxFields;
@@ -150,7 +150,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
             if (t.speed.raw > 0 && (!(t.layer & kLayerAir) || g.airSolid)) g.prepareNavMesh(t.pathLayer);
     g.flowBudgetBytes = size_t(rules_.movement.flow.budgetMB) << 20;
     if (const char* f = std::getenv("AIVERSE_PLANET_HPA"); f && *f) g.sphereHpaMinCells = *f == '0' ? (1 << 30) : 0;
-    if (g.surf)   // planets: bodies above the cell threshold (RtsHpaSphere.cpp)
+    if (g.surf)   // planets: bodies above the cell threshold (MapHpaSphere.cpp)
         for (auto& t : rules_.types)
             if (t.speed.raw > 0 && !(t.layer & kLayerAir)) g.prepareHpaSphere(t.pathLayer);
     native_.load(*this, sim, rulesJson, nativeDefinitions_);

@@ -14,7 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <utility>
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 
 namespace aiverse::game::terrain {
 

@@ -216,13 +216,13 @@ add_subdirectory(engine/meta)
 # Generic data-driven RTS gameplay (units, orders, economy, combat, garrisons, AI)
 add_library(aiverse_game STATIC
     engine/game/GameData.cpp
-    modules/rts/RtsMap.cpp
-    modules/rts/RtsHpa.cpp
-    modules/rts/RtsMapSphere.cpp
-    modules/rts/RtsHpaSphere.cpp
+    engine/game/MapGrid.cpp
+    engine/game/MapHpa.cpp
+    engine/game/MapGridSphere.cpp
+    engine/game/MapHpaSphere.cpp
     modules/rts/RtsFlowField.cpp
-    modules/rts/RtsSphere.cpp
-    modules/rts/RtsSurface.cpp
+    engine/game/Sphere.cpp
+    engine/game/Surface.cpp
     modules/rts/RtsModule.cpp
     modules/rts/RtsPlanets.cpp
     modules/rts/RtsEconomy.cpp

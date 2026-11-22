@@ -37,7 +37,7 @@ extern "C" {
 #include "../engine/roads/RoadNet.h"   // agent-roads
 #include "modules/rts/RtsScriptIeee.h"
 #include "modules/rts/RtsTiles.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/Sphere.h"
 #include <algorithm>
 
 using namespace aiverse;
@@ -6402,7 +6402,7 @@ TEST(sphere_great_circle_steps) {
 #include "modules/rts/gen/MapGen.h"
 #include "modules/rts/gen/GenNoise.h"
 #include "modules/rts/gen/GenField.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/Sphere.h"
 
 static const char* kGenRules = R"({
   "resources": {"gold": {"start": 500}, "wood": {"start": 200}, "ore": {"field": true, "cellMax": 100}},

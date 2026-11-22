@@ -12,8 +12,8 @@
 #include <cstdlib>
 #include <cstring>
 #include "../../../engine/platform/Platform.h"
-#include "../RtsMap.h"
-#include "../RtsSphere.h"
+#include "../../../engine/game/MapGrid.h"
+#include "../../../engine/game/Sphere.h"
 #include "RtsPlanetShaders.h"
 
 namespace aiverse::game {

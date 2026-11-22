@@ -10,7 +10,7 @@
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 #include "../../engine/nav/NavMesh.h"
-#include "RtsSurface.h"
+#include "Surface.h"
 #include <memory>
 
 namespace aiverse::game {
@@ -55,7 +55,7 @@ struct HpaGraph {
     std::vector<std::vector<uint32_t>> dist;                      // per cluster: k*k intra costs (UINT32_MAX: none)
 };
 
-// HPA* on cube-sphere bodies (RtsHpaSphere.cpp). Clusters are kC x kC tiles of each face (the last row/column of a
+// HPA* on cube-sphere bodies (MapHpaSphere.cpp). Clusters are kC x kC tiles of each face (the last row/column of a
 // face may be partial); clusters touching through an orthogonal cell step - inside a face or across a face seam,
 // including the three faces meeting at a cube corner - share a border. Topology is static per map; graphs per
 // path layer are derived from the grid exactly like the flat HpaGraph (never hashed, rebuilt lazily when dirty).
@@ -120,7 +120,7 @@ struct FlowField {
 
 struct MapGrid {
     int w = 0, h = 0;
-    // Planet maps (world block): the cube-sphere faces of every body stacked as rows (RtsSurface.h). Null on flat
+    // Planet maps (world block): the cube-sphere faces of every body stacked as rows (Surface.h). Null on flat
     // maps, where every function below keeps its classic behaviour bit for bit.
     std::shared_ptr<const Surface> surf;
     bool sphere() const { return surf != nullptr; }

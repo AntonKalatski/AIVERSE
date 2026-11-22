@@ -19,7 +19,7 @@
 #include "../../../engine/data/Json.h"
 #include "../../../engine/render/Math3D.h"
 #include "../../../engine/render/Renderer3D.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 
 namespace aiverse::game {
 

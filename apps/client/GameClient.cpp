@@ -476,7 +476,7 @@ void GameClient::fitCamera() {
 // ------------------------------------------------------------------ picking / selection
 
 bool GameClient::groundAt(float sx, float sy, float3& out) const {
-    if (planet()) { // planet picking -> sim-space point (anchor(body) + body-local, RtsSurface.h)
+    if (planet()) { // planet picking -> sim-space point (anchor(body) + body-local, Surface.h)
         int body; float3 local;
         if (!view_.pickPlanet(cam_, sx, sy, platform::windowWidth(), platform::windowHeight(), body, local)) return false;
         out = RtsView::bodyToSim(body, local);

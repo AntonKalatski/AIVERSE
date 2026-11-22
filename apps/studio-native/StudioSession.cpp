@@ -6,7 +6,7 @@
 #include "engine/world/NereidFlowAuthoring.h"
 #include "apps/editor/core/ProjectFile.h"
 #include "apps/editor/core/Projects.h"
-#include "modules/rts/RtsMap.h"
+#include "engine/game/MapGrid.h"
 #include "apps/editor/EditorWorldEdit.h"
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioAssetCatalog.h"

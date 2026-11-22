@@ -8,8 +8,8 @@
 #include <map>
 #include <stdexcept>
 #include "PlanetOps.h"
-#include "modules/rts/RtsMap.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/MapGrid.h"
+#include "engine/game/Sphere.h"
 #include "modules/rts/view/RtsPlanet.h"
 
 namespace aiverse::editor {

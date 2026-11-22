@@ -1,5 +1,5 @@
-// Hierarchical pathfinding (HPA*) on cube-sphere bodies; the planet counterpart of RtsHpa.cpp (same costs,
-// entrance rule and refinement), on the stacked face rows of the planet MapGrid (RtsSurface.h).
+// Hierarchical pathfinding (HPA*) on cube-sphere bodies; the planet counterpart of MapHpa.cpp (same costs,
+// entrance rule and refinement), on the stacked face rows of the planet MapGrid (Surface.h).
 //
 // Topology (static per map, shared): every face of a body is cut into kC x kC clusters, the last row / column
 // partial when faceSize is not a multiple of kC. A cluster is a plain rect of grid cells (a face's rows are
@@ -10,7 +10,7 @@
 // Bodies never share a border (no edges between bodies; transit is separate).
 // Graphs (one per path layer, incl. slope classes) are pure functions of the grid: rebuilt per dirty cluster,
 // with the borders of a dirty cluster and the clusters on their other side, so lockstep peers always agree.
-#include "RtsMap.h"
+#include "MapGrid.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 #include <climits>
@@ -116,7 +116,7 @@ void MapGrid::markSphereDirty(int cell) {
 }
 
 // Entrances on one border: runs of consecutive pairs (same side, adjacent positions) that can step across both
-// ways; a short run keeps its middle, a long one both ends (as RtsHpa.cpp).
+// ways; a short run keeps its middle, a long one both ends (as MapHpa.cpp).
 void MapGrid::hpaSphereBorder(SphereHpaGraph& G, int bi) {
     const auto& B = sphereTopo_->borders[size_t(bi)];
     auto& out = G.trans[size_t(bi)];

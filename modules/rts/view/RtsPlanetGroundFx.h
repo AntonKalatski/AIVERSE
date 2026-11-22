@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 #include "RtsGroundFx.h"
 #include "RtsPlanetRender.h"
 

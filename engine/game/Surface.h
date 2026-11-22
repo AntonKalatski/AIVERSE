@@ -13,7 +13,7 @@
 //   World (render) position at time t = bodyPosition(b, t) + (pos - anchor(b)).
 // - Surface point of a cell = dir * (radius + height); "up" = normalize(local).
 #pragma once
-#include "RtsSphere.h"
+#include "Sphere.h"
 #include <memory>
 #include <string>
 #include <vector>

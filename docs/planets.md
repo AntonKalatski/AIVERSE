@@ -53,13 +53,13 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   loaders average duplicates defensively; tools must write them equal.
 - Per-face gameplay layers use the flat-map characters (`rows`, `levels`, fields, ...) per face.
 - Neighbours across a face edge follow from the basis above (helper functions live in the sim; the view and
-  the generator use the same code, `modules/rts/RtsSphere.h`, owned by agent-planet-sim — until it lands,
+  the generator use the same code, `engine/game/Sphere.h`, owned by agent-planet-sim — until it lands,
   agents implement against this table).
 - Map objects/players on a planet: `"at": {"body": "terra", "face": 2, "x": 10.5, "y": 7}` (cell coordinates).
 
 ## 3. Simulation model (agent-planet-sim) — implemented
 
-- **Grid layout.** `Surface` (`modules/rts/RtsSurface.h`) stacks the 6 faces of every surface body as rows of the one
+- **Grid layout.** `Surface` (`engine/game/Surface.h`) stacks the 6 faces of every surface body as rows of the one
   `MapGrid`: width = max faceSize, body b occupies rows `[rowBase, rowBase + 6N)`, grid cell = `(rowBase + f*N + y) * W + x`.
   Every per-cell layer (flags, levels, fields, vision, blocked, clearance, ...) works unchanged; cells `x >= N` of a smaller
   body are void. `Surface::gridCell(body, face, x, y)` / `cellFace(c, ...)` convert.
@@ -72,7 +72,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   free spots, auto-build spots and melee slots go through them. `dist2D` is the 3D chord on planets (xz on flat maps).
   Spatial hash: coarse cube-sphere buckets (~4x4 cells) per body. Movement: tangent-plane steps re-projected onto the
   surface / shell (`moveSphere`), slope speed from corner heights; separation in the tangent plane.
-- **HPA\* on planets** (`RtsHpaSphere.cpp`, the counterpart of `RtsHpa.cpp`: same 10/14 costs, entrance rule, A\*
+- **HPA\* on planets** (`MapHpaSphere.cpp`, the counterpart of `MapHpa.cpp`: same 10/14 costs, entrance rule, A\*
   refinement). Bodies with >= `rules movement.planetHpaCells` cells (default 65,536 = the flat 256x256 threshold, i.e.
   faceSize >= 105) route trips longer than 2 clusters through it; smaller bodies (templates/planets) keep plain A\*.
   `AIVERSE_PLANET_HPA=1|0` / headless `--planet-hpa on|off` force it (tests, benchmarks; all peers must agree).
@@ -126,7 +126,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
 | fog per body | `RtsModule::cellVision(sim, player, body, face, x, y)` (0/1/2), or `GameState::vision[player][surface->gridCell(body, face, x, y)]` |
 | place players / objects (generator, map JSON) | `"at": {"body", "face", "x", "y"}` on entities / players' `start` / waves (`RtsModule::mapPos`); fields per face |
 | sphere paths (fair starts) | `MapGrid::findPath(fromPos, toPos, layer, out, maxNodes)` (HPA\* on big bodies; raw cells: `sphereCellPath(s, g, layer, hpa, cells)`) with positions from `Surface::cellCenter(gridCell(...))` or `anchor(b) + facePoint(...)`; after `Simulation::setup`, the module's `state(sim).grid` |
-| cube-sphere maths | `CubeSphere` (`RtsSphere.h`): cells, dirs, seams, `offset`, corners |
+| cube-sphere maths | `CubeSphere` (`Sphere.h`): cells, dirs, seams, `offset`, corners |
 
 ## 4. Terrain generation (agent-terrain-gen)
 
@@ -144,7 +144,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   (MW2), classic Warcraft/Red Alert land maps, TA metal maps, planets (rocky, ocean, moon).
 
 Implemented (agent-terrain-gen, `modules/rts/gen/`, format and params: docs/game-format.md § Map generation):
-- `body.generate` with presets `rocky`, `ocean`, `moon`: heights from 3D fBm sampled at `CubeSphere::cornerDir` (RtsSphere.h),
+- `body.generate` with presets `rocky`, `ocean`, `moon`: heights from 3D fBm sampled at `CubeSphere::cornerDir` (Sphere.h),
   so duplicated seam corners are bit-identical (and averaged defensively); craters for moons; sea level by quantile (written
   relative to `seaLevel` 0); faces get `rows` (`~` water, `#` peaks, `.` ice over polar seas), `terrain.material` per face
   (layer digits like `terrainMaterial`), `corners`; `generated.starts` = maximally separated land sites

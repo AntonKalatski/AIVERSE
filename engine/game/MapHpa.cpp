@@ -1,7 +1,7 @@
 // Hierarchical pathfinding (HPA*) for big maps. The graph is a pure function of the grid (clusters are
 // rebuilt from the current cells whenever something marked them dirty), so lockstep peers agree on every
 // route no matter which queries each of them ran before. Integer costs (10 straight / 14 diagonal).
-#include "RtsMap.h"
+#include "MapGrid.h"
 #include <algorithm>
 #include <climits>
 #include <cstdlib>

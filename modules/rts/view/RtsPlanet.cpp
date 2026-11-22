@@ -1,8 +1,8 @@
 #include "RtsPlanet.h"
 #include <algorithm>
 #include <cmath>
-#include "../RtsMap.h"
-#include "../RtsSphere.h"
+#include "../../../engine/game/MapGrid.h"
+#include "../../../engine/game/Sphere.h"
 
 namespace aiverse::game {
 

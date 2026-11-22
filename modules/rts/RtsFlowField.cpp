@@ -1,8 +1,8 @@
-// Flow fields (see FlowField in RtsMap.h and docs/pathfinding.md): one integration field per goal area shared by
+// Flow fields (see FlowField in MapGrid.h and docs/pathfinding.md): one integration field per goal area shared by
 // every unit heading there. Flat maps and planets alike: neighbours, step legality and clusters come from the same
 // sources as A* / HPA* (stepOk / canMoveDir, HpaGraph / SphereHpaGraph), so a field descends exactly along legal
 // A* moves, across face seams and cube corners included.
-#include "RtsMap.h"
+#include "../../engine/game/MapGrid.h"
 #include <algorithm>
 #include <queue>
 

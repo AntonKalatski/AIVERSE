@@ -1,10 +1,10 @@
 // Planet terrain (docs/planets.md §2/§4): six cube-sphere faces sampled with 3D noise on the surface direction
-// (RtsSphere.h), so the duplicated seam corners get bit-identical heights and faces join without cracks.
+// (Sphere.h), so the duplicated seam corners get bit-identical heights and faces join without cracks.
 // Optional rotational symmetry about the polar (Y) axis for fair starts: heights are the average of the noise
 // over the n rotations, exact for n = 2 and 4 (quarter turns map the cube-sphere onto itself). Latitude
 // biomes and ice caps, craters for moons, sea level by quantile, flattened base areas. Integer / fixed only.
 #include "GenInternal.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/Sphere.h"
 #include "engine/core/FixedMath.h"
 
 namespace aiverse::gen {

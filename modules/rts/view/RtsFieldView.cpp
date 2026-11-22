@@ -1,6 +1,6 @@
 #include "RtsFieldView.h"
 #include "RtsView.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>

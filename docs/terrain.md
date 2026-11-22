@@ -37,7 +37,7 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
 - `terrain.cornersFile`: raw int16 LE; `applyCornersFile(map, reader)` (called by `applyTilesToMap`, so every
   loader gets it) attaches the bytes as in-memory `terrain.cornersBlob`; `MapDoc` loads/saves it (file above
   257x257 corners). Size cap `kMaxMapSize` = 2048.
-- Large maps: HPA* (`RtsHpa.cpp`) on maps >= 256x256, built at setup, clusters invalidated by `MapGrid::block` /
+- Large maps: HPA* (`MapHpa.cpp`) on maps >= 256x256, built at setup, clusters invalidated by `MapGrid::block` /
   `cellChanged`; clearance updated locally on block; fog reset, soft obstacles and spatial hash reset are O(used).
 - The view should keep reading `corners` for its own surface; on heightfield games mobile units now carry a real
   `pos.y` (the view may keep using `heightAt`, which matches the sim surface when it is bilinear on corners).

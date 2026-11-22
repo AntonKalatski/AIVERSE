@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 #include "../../../engine/data/Json.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 
 namespace aiverse::game::terrain {
 

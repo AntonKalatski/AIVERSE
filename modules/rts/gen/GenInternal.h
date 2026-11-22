@@ -8,8 +8,8 @@
 #include "MapGen.h"
 #include <algorithm>
 #include <array>
-#include "modules/rts/RtsMap.h"
-#include "modules/rts/RtsSphere.h"
+#include "engine/game/MapGrid.h"
+#include "engine/game/Sphere.h"
 
 namespace aiverse::gen {
 

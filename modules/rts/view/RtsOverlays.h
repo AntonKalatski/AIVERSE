@@ -22,7 +22,7 @@
 #include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/TextureCache.h"
 #include "../../../engine/sim/Simulation.h"
-#include "../RtsMap.h"
+#include "../../../engine/game/MapGrid.h"
 #include "RtsOverlayData.h"
 #include "ViewCanvas.h"
 

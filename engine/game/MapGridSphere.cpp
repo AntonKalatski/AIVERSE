@@ -1,6 +1,6 @@
 // MapGrid on cube-sphere surfaces (planet maps): pathing, clearance, slopes and the spatial hash over the
-// stacked face rows (RtsSurface.h). Flat maps never reach this file.
-#include "RtsMap.h"
+// stacked face rows (Surface.h). Flat maps never reach this file.
+#include "MapGrid.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 #include <cstdlib>
@@ -167,7 +167,7 @@ bool MapGrid::findPathSphere(Vec3 from, Vec3 to, uint8_t layer, std::vector<Vec3
     if (goalOk && lineWalkableSphere(s, gl, layer)) { out.push_back(to); return true; }
     std::vector<int> cells;
     bool found = false, routed = false;
-    // long trips on big bodies: HPA* route refined with A* (RtsHpaSphere.cpp)
+    // long trips on big bodies: HPA* route refined with A* (MapHpaSphere.cpp)
     const int body = surf->bodyOfCell(s);
     if (sphereHpaBody(body)) {
         // goal inside a structure / obstacle (walking up to a building): head for the nearest passable cell
