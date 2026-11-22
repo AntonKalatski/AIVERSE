@@ -56,7 +56,10 @@
 .studio-statusbar__action {color:#ffd640;font-family:ui-monospace,Menlo,monospace;font-size:10px}
 /* Play / Pause / Step in the centre of the title bar (Unity): equal side columns keep them centred
    while both sides fit; a crowded side pushes them instead of overlapping. */
-.compact-shell .titlebar {display:grid;grid-template-columns:minmax(max-content,1fr) auto minmax(max-content,1fr);align-items:center}
-.compact-shell .titlebar__side {display:flex;align-items:center;gap:14px;min-width:0;height:100%}
+.compact-shell .titlebar {display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;overflow:hidden}
+.compact-shell .titlebar__side {display:flex;align-items:center;gap:14px;min-width:0;height:100%;overflow:hidden}
 .compact-shell .titlebar__side--right {justify-content:flex-end}
+/* Restored window: keep minimize / maximize / close on the window edge. The rest of the header shrinks first. */
+.compact-shell--windows .titlebar {padding-right:138px}
+.compact-shell--windows .window-controls {position:absolute;top:0;right:0;bottom:0;margin:0;z-index:6;background:var(--au-shell-header)}
 .header-game-controls{position:relative}.header-game-note{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);white-space:nowrap;padding:4px 9px;border-radius:7px;background:var(--au-panel-raised);border:1px solid var(--au-line-strong);color:var(--au-text);font-size:var(--au-font-xs);z-index:50;pointer-events:none}

@@ -35,6 +35,8 @@ interface BranchProperties extends Properties {
   setForeign: (value: boolean) => void;
   actionsPanel: StudioPanel | null;
   showActions: (panel: StudioPanel) => void;
+  /** Pointer drag: HTML5 drag dies when the cursor crosses the native Scene window. */
+  beginDrag: (event: ReactPointerEvent<HTMLElement>, panel: StudioPanel) => void;
 }
 const validPanel = (input: string): input is StudioPanel => (STUDIO_PANELS as readonly string[]).includes(input);
 // Tabs also travel between Studio windows (same origin); text/plain is the fallback.
@@ -49,7 +51,7 @@ function draggedPanel(event: DragEvent<HTMLElement>, dragging: StudioPanel | nul
 // Only the tab MIME (never plain text: asset drags carry text/plain too).
 const carriesTab = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes(MIME);
 function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
-                    stacks, onFloat, onAdopt, onDockBack, foreign, setForeign }: BranchProperties & { node: DockStack }) {
+                    stacks, onFloat, onAdopt, onDockBack, foreign, setForeign, beginDrag }: BranchProperties & { node: DockStack }) {
   const [hover, setHover] = useState<DockEdge | 'center' | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; panel: StudioPanel } | null>(null);
   // Unity-style dock menu (also on tab right-click): close, split, move to another area.
@@ -98,6 +100,7 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
     <div className="nested-tabs" role="tablist" aria-label={'Tabs '+node.id}
       onWheel={event=>{if(Math.abs(event.deltaY)>Math.abs(event.deltaX))event.currentTarget.scrollLeft+=event.deltaY;}}>
       {node.tabs.map(panel => <div key={panel} className={'nested-tab'+(node.active===panel?' nested-active':'')}
+        data-dock="tab" data-stack={node.id} data-before={panel}
         ref={node.active===panel ? revealTab : undefined}
         onMouseDown={event=>{
           // Middle click closes the tab. preventDefault stops the browser autoscroll cursor.
@@ -107,20 +110,13 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
           setTree(t=>closeTab(t,panel));
         }}
         onAuxClick={event=>{if(event.button===1)event.preventDefault();}}
-        onDragOver={event=>{event.preventDefault();event.stopPropagation();}}
-        onDrop={event=>transfer(event,undefined,panel)}
+        onPointerDown={event=>beginDrag(event, panel)}
         onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,panel});}}>
-        {/* A button does not start a drag in Chromium, so the label is the handle. */}
-        <span role="tab" aria-selected={node.active===panel} tabIndex={0} draggable
+        <span role="tab" aria-selected={node.active===panel} tabIndex={0}
           onClick={()=>setTree(t=>activateTab(t,node.id,panel))}
-          onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setTree(t=>activateTab(t,node.id,panel));}}}
-          onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.setData('text/plain',TEXT_PREFIX+panel);
-            event.dataTransfer.effectAllowed='move';setDockDrag(true);setDragging(panel);}}
-          onDragEnd={event=>{setDockDrag(false);setDragging(null);setHover(null);
-            // Dropped on no dock target: the native host floats it if the mouse left the window.
-            if(event.dataTransfer.dropEffect==='none')onFloat?.(panel,true);}}>{STUDIO_PANEL_TITLES[panel]}</span>
-        <button className="nested-tab-close" draggable={false} title={'Close '+STUDIO_PANEL_TITLES[panel]}
-          aria-label={'Close '+STUDIO_PANEL_TITLES[panel]} onMouseDown={event=>event.stopPropagation()}
+          onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setTree(t=>activateTab(t,node.id,panel));}}}>{STUDIO_PANEL_TITLES[panel]}</span>
+        <button className="nested-tab-close" title={'Close '+STUDIO_PANEL_TITLES[panel]}
+          aria-label={'Close '+STUDIO_PANEL_TITLES[panel]} onPointerDown={event=>event.stopPropagation()}
           onClick={()=>setTree(t=>closeTab(t,panel))}>×</button>
       </div>)}
       <span className="nested-tabs-fill"/>
@@ -135,18 +131,16 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
       {node.active ? renderPanel(node.active) : <div className="nested-empty">Drop a panel here</div>}
       {showEdges && <div className="nested-drop-zones">
         {(['left','right','top','bottom'] as const).map(edge=><div key={edge}
-          className={'nested-drop-edge nested-drop-'+edge+(hover===edge?' hovered':'')}
-          onDragOver={event=>{event.preventDefault();event.stopPropagation();setHover(edge);}}
-          onDragLeave={()=>setHover(null)} onDrop={event=>transfer(event,edge)}>{edge}</div>)}
-        <div className={'nested-drop-center'+(hover==='center'?' hovered':'')}
-          onDragOver={event=>{event.preventDefault();event.stopPropagation();setHover('center');}}
-          onDragLeave={()=>setHover(null)} onDrop={event=>transfer(event)}>Tab</div>
+          data-dock="edge" data-edge={edge} data-stack={node.id}
+          className={'nested-drop-edge nested-drop-'+edge+(hover===edge?' hovered':'')}>{edge}</div>)}
+        <div data-dock="center" data-stack={node.id}
+          className={'nested-drop-center'+(hover==='center'?' hovered':'')}>Tab</div>
       </div>}
     </div>
   </section>;
 }
 function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging,
-                         stacks, actionsPanel, showActions, onFloat, onAdopt, onDockBack, foreign, setForeign }: BranchProperties & { node: DockSplit }) {
+                         stacks, actionsPanel, showActions, onFloat, onAdopt, onDockBack, foreign, setForeign, beginDrag }: BranchProperties & { node: DockSplit }) {
   const horizontal=node.axis==='horizontal';
   const adjust=(ratio:number)=>setTree(t=>resizeDockSplit(t,node.id,ratio));
   const resize=(event: ReactPointerEvent<HTMLDivElement>)=>{
@@ -177,7 +171,7 @@ function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging
       event.preventDefault();adjust(event.key==='Home'?.12:.88);
     }
   };
-  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions,onFloat,onAdopt,onDockBack,foreign,setForeign};
+  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions,onFloat,onAdopt,onDockBack,foreign,setForeign,beginDrag};
   return <div className={'nested-split '+(horizontal?'nested-horizontal':'nested-vertical')}>
     <div className="nested-child" style={{flex:node.ratio+' 1 0%'}}>
       <DockBranch node={node.first} {...shared}/>
@@ -209,6 +203,59 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloa
   const docking=dragging!==null || foreign;
   useEffect(()=>{ setDockDrag(docking); },[docking]);
   useEffect(()=>()=>setDockDrag(false),[]);
+  const ghost=useRef<HTMLDivElement>(null);
+  const point=useRef({x:0,y:0});
+  useEffect(()=>{
+    if(!dragging || !ghost.current) return;
+    ghost.current.style.transform=`translate(${point.current.x+14}px,${point.current.y+14}px)`;
+  },[dragging]);
+  const beginDrag=(event: ReactPointerEvent<HTMLElement>, panel: StudioPanel)=>{
+    if(event.button!==0)return;
+    if((event.target as HTMLElement).closest('.nested-tab-close,button,a,input'))return;
+    const startX=event.clientX, startY=event.clientY;
+    let moved=false;
+    const track=(x:number,y:number)=>{
+      point.current={x,y};
+      const chip=ghost.current;
+      if(chip) chip.style.transform=`translate(${x+14}px,${y+14}px)`;
+      const zone=document.elementFromPoint(x,y)?.closest<HTMLElement>('[data-dock]');
+      document.querySelectorAll('[data-dock].hovered').forEach(node=>node.classList.remove('hovered'));
+      zone?.classList.add('hovered');
+    };
+    const move=(ev: PointerEvent)=>{
+      if(!moved && Math.hypot(ev.clientX-startX, ev.clientY-startY)<5)return;
+      if(!moved){moved=true; setDockDrag(true); setDragging(panel);}
+      track(ev.clientX, ev.clientY);
+    };
+    const up=(ev: PointerEvent)=>{
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      document.querySelectorAll('[data-dock].hovered').forEach(node=>node.classList.remove('hovered'));
+      setDockDrag(false);
+      setDragging(null);
+      if(!moved)return;
+      const zone=document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('[data-dock]');
+      if(!zone){
+        if(ev.clientX<=0||ev.clientY<=0||ev.clientX>=window.innerWidth||ev.clientY>=window.innerHeight) onFloat?.(panel, true);
+        return;
+      }
+      const edge=zone.dataset.edge as DockEdge | undefined;
+      const stack=zone.dataset.stack;
+      const before=zone.dataset.before;
+      const adopted=panelStack(tree, panel)===null;
+      setTree(current=>{
+        if(zone.dataset.dock==='root' && edge) return splitDockRoot(current, panel, edge);
+        if(zone.dataset.dock==='edge' && edge && stack) return splitDockStack(current, panel, stack, edge);
+        if(stack) return moveTab(current, panel, stack, before && validPanel(before) ? before : undefined);
+        return current;
+      });
+      if(adopted) onAdopt?.(panel);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
   const dropOnRoot=(event: DragEvent<HTMLElement>, edge: DockEdge)=>{
     event.preventDefault();
     event.stopPropagation();
@@ -282,16 +329,18 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloa
     <div className="nested-workspace-body">
     <DockBranch node={tree.root} tree={tree} setTree={setTree} renderPanel={renderPanel} onFloat={onFloat}
       onAdopt={onAdopt} onDockBack={onDockBack} foreign={foreign} setForeign={setForeign}
-      dragging={dragging} setDragging={setDragging} stacks={stacks}
+      dragging={dragging} setDragging={setDragging} stacks={stacks} beginDrag={beginDrag}
       actionsPanel={actionsPanel} showActions={panel=>setActionsPanel(current=>
         current===panel?null:panel)}/>
     {docking && <div className="nested-root-zones" data-native-overlay="">
       {(['left','right','top','bottom'] as const).map(edge=><div key={edge}
+        data-dock="root" data-edge={edge}
         className={'nested-root-edge nested-root-'+edge+(rootHover===edge?' hovered':'')}
         title={'Dock to the '+edge+' of the window'}
         onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move';setRootHover(edge);}}
         onDragLeave={()=>setRootHover(null)} onDrop={event=>dropOnRoot(event,edge)}/>)}
     </div>}
+    {dragging && <div ref={ghost} className="nested-drag-ghost">{STUDIO_PANEL_TITLES[dragging]}</div>}
     </div>
   </div>;
 }
