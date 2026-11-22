@@ -1029,6 +1029,12 @@ endif()
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
     add_executable(aiverse_motionweave_bench tools/animation/motionweave_bench.cpp)
     target_link_libraries(aiverse_motionweave_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    # 53-bone procedural humanoid: per-character cost of clip/blend/IK/motion matching.
+    add_executable(aiverse_motionweave_humanoid_bench tools/animation/motionweave_humanoid_bench.cpp)
+    target_link_libraries(aiverse_motionweave_humanoid_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    # Locomotion review: foot sliding / pops / broken poses + CSV for contact sheets.
+    add_executable(aiverse_motionweave_locomotion_review tools/animation/motionweave_locomotion_review.cpp)
+    target_link_libraries(aiverse_motionweave_locomotion_review PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_motionweave_phase_tests tests/animation/motionweave_phase.cpp)

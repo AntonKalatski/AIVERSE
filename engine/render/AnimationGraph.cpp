@@ -137,6 +137,18 @@ std::shared_ptr<const AnimationGraph> AnimationGraph::compileImpl(const Model& m
         } else if(kind=="blend"||kind=="additive") {
             n.kind=kind=="blend"?Kind::Blend:Kind::Additive;
             n.a=ref(ids,v.getStr("a"),"earlier input node"); n.b=ref(ids,v.getStr("b"),"earlier input node");
+            n.sync=v.getBool("sync",false);
+            if(n.sync) {
+                if(n.kind!=Kind::Blend||n.a==n.b) bad("node '"+n.id+"': sync requires a blend of two different clips");
+                for(int input:{n.a,n.b}) {
+                    const auto& clip=g->nodes_[size_t(input)];
+                    if(clip.kind!=Kind::Clip||!clip.loop||!(m.clips[size_t(clip.clip)].duration>0.f))
+                        bad("node '"+n.id+"': sync inputs must be looping clips with a positive duration");
+                    for(const auto& other:g->nodes_)
+                        if(other.sync&&(other.a==input||other.b==input))
+                            bad("node '"+n.id+"': clip '"+clip.id+"' already belongs to another sync blend");
+                }
+            }
         } else if(kind=="twoBoneIK") {
             n.kind=Kind::TwoBoneIK; n.a=ref(ids,v.getStr("input"),"earlier input node");
             n.hip=m.findNode(v.getStr("hip")); n.knee=m.findNode(v.getStr("knee")); n.foot=m.findNode(v.getStr("foot"));
@@ -245,6 +257,7 @@ void AnimationGraphInstance::reset(std::shared_ptr<const AnimationGraph> g) {
     if(!graph_) return;
     parameters_=graph_->defaults(); state_=graph_->initial(); bindPose(*graph_->model(),bind_);
     poses_.resize(graph_->nodes().size(),bind_); nativeState_.resize(poses_.size()); clocks_.resize(poses_.size()); unwrappedClocks_.resize(poses_.size()); clipStarted_.assign(poses_.size(),1); last_=bind_;
+    syncRate_.assign(poses_.size(),-1.); syncLeader_.assign(poses_.size(),-1);
     for(size_t i=0;i<poses_.size();++i) if(graph_->nodes()[i].operation)
         nativeState_[i].resize(graph_->nodes()[i].operation->stateFloats);
     resetNodes();
@@ -470,6 +483,22 @@ void AnimationGraphInstance::update(float dt) {
     if(!graph_||!std::isfinite(dt)||dt<0) return;
     dt=std::min(dt,1.f); // bound work and clocks after a suspended host resumes
     time_=std::min(time_+dt,1000000.f); fadeTime_+=dt;
+    // Sync groups: a synced blend drives both clips at the weight-blended
+    // cycle rate; the later clip follows the earlier clip's normalized phase.
+    std::fill(syncRate_.begin(),syncRate_.end(),-1.);
+    std::fill(syncLeader_.begin(),syncLeader_.end(),-1);
+    for(int instruction:graph_->states()[size_t(state_)].program) {
+        const auto& n=graph_->nodes()[size_t(instruction)];
+        if(!n.sync) continue;
+        const auto& a=graph_->nodes()[size_t(n.a)];const auto& b=graph_->nodes()[size_t(n.b)];
+        const double da=graph_->model()->clips[size_t(a.clip)].duration,db=graph_->model()->clips[size_t(b.clip)].duration;
+        const double ra=std::clamp(value(parameters_,a.parameter,a.speed),0.f,1000000.f)/da;
+        const double rb=std::clamp(value(parameters_,b.parameter,b.speed),0.f,1000000.f)/db;
+        const double w=std::clamp(value(parameters_,n.parameter,n.weight),0.f,1.f);
+        const double cycles=ra>0&&rb>0?1./((1.-w)/ra+w/rb):(1.-w)*ra+w*rb; // blended cycle duration
+        syncRate_[size_t(n.a)]=cycles*da; syncRate_[size_t(n.b)]=cycles*db;
+        syncLeader_[size_t(std::max(n.a,n.b))]=std::min(n.a,n.b);
+    }
     for(int instruction:graph_->states()[size_t(state_)].program) {
         const size_t i=size_t(instruction);
         const auto& n=graph_->nodes()[i];
@@ -494,7 +523,12 @@ void AnimationGraphInstance::update(float dt) {
         if(n.kind!=AnimationGraph::Kind::Clip) continue;
         const float duration=graph_->model()->clips[size_t(n.clip)].duration;
         const double prev=unwrappedClocks_[i];
-        const double advance=double(dt)*std::clamp(value(parameters_,n.parameter,n.speed),0.f,1000000.f);
+        double advance=syncRate_[i]>=0.?double(dt)*syncRate_[i]:
+            double(dt)*std::clamp(value(parameters_,n.parameter,n.speed),0.f,1000000.f);
+        if(const int leader=syncLeader_[i];leader>=0) {
+            const double leaderDuration=graph_->model()->clips[size_t(graph_->nodes()[size_t(leader)].clip)].duration;
+            advance=unwrappedClocks_[size_t(leader)]/leaderDuration*double(duration)-prev;
+        }
         const double next=prev+advance;
         if(duration>0.f && !n.notifies.empty()) {
             constexpr size_t kNotifyLimit=1024;
