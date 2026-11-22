@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T10:33:55+00:00",
+ "generated": "2026-11-22T10:45:09+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -262,6 +262,30 @@
      "caption": "Big Planet from orbit: relief and seas from TerraWeave fields"
     }
    ],
+   "links": [
+    {
+     "title": "docs/planets.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/planets.md"
+    }
+   ],
+   "author": "planets"
+  },
+  {
+   "id": "2026-11-22-planets-nereid-water-bodies",
+   "date": "2026-11-22",
+   "system": "planets",
+   "title": "Planet seas became NEREID water bodies",
+   "summary": "A planet's sea can now be turned on as a NEREID water body: depth, up, current and buoyancy follow the sphere's radius, deterministically and with saves.",
+   "body": [
+    "NEREID gained sphere water bodies: a shell around the planet's centre with the surface at sea level and the floor at a set depth. For any point they return the radial depth, the direction up from the centre and a current flowing east around an axis.",
+    "The same buoyancy components as for flat water push an object along the radius on a sphere. A map turns this on with a single nereid key on a body; without the key nothing is registered, and saves and checksums of old maps stay the same. Big Planet already has it on."
+   ],
+   "status": "done",
+   "verified": "The new ecs_nereid_sphere_water_test (sampling, current, buoyancy, determinism, saves) passes; a bot match on Big Planet plays to a winner, the save restore check passes, and the planets template checksums match the baseline.",
+   "limits": "Water probes on units are added by the game's native module for now; built-in RTS ships and swimmers do not use this yet. Waves remain visual only: the water height on a sphere is constant.",
+   "branch": "main",
+   "commit": "997956cfe",
+   "media": [],
    "links": [
     {
      "title": "docs/planets.md",
