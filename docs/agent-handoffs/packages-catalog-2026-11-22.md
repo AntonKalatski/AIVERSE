@@ -72,3 +72,43 @@ that is fine: published versions are never rebuilt.
 - MCP ops `package_search/info/add/status` and a Studio "Catalog" window (Studio UI v1).
 - Web viewer on the website for package models/materials (owner request 2026-11-22).
 - `create` for template packages: move sample games out of `templates/` when wanted.
+
+## Stage 3 (2026-11-22): viewer shapes, LOD / STRATA, textures as published, animated loading mark
+
+Branch `feature/aiv20261122_packages` (main merged in first). Catalog repo `chromealex/AIVERSE-PLUGINS` main.
+
+What changed:
+- `apps/catalogview/main.cpp`: material shapes (sphere / cube / cylinder / plane, `cv_shape`), own UV
+  sphere with a duplicated seam column (the old `atan2` UVs squeezed the whole texture into the seam
+  triangles), equal texel density on every shape; model modes `cv_lod(-1 auto | N | -2 STRATA)`
+  (STRATA = a one-instance `GeometryScene` with `strata.enabled/select all`, built on first request),
+  `cv_wire` (edges per LOD level captured from the CPU copy before upload; STRATA uses its debug
+  wireframe), `cv_clusters` (STRATA debug fill). Reports `catalogview-info: {...}` JSON (texture sizes,
+  triangles per level, the level the renderer drew from `modelStats().lodNodes`, STRATA state) to
+  `window.cvInfo` and stdout. Replaced models go through `NativePresentationRetirement` (GPU tokens)
+  instead of the old "3 frames" guess.
+- `apps/catalogview/shell.html`: shape / LOD / STRATA / wireframe / clusters buttons, info panel
+  (ru/en by `lang`), URL params `shape lod wire clusters lang`, loader while fetching and while
+  STRATA builds. CMake exports `_cv_shape _cv_lod _cv_wire _cv_clusters`, runtime `UTF8ToString`.
+- Catalog repo `tools/catalog.py`: view files are copied as published (no 512 px downscale, no
+  Pillow); `pages.yml` no longer installs Pillow.
+- Animated mark: `tools/branding/logo/loader.py` (geometry from `make_logo.py`) writes the SVG+CSS
+  into marked regions of `apps/catalogview/shell.html`, `platform/web/shell.html` (shown only when the
+  game has no `splash` block), `tools/site/render.py` (`LOADER_SVG`, `loader()`: catalog status and
+  the releases download block) and `apps/studio-web/src/ui/StudioLoader.tsx` (new `StudioLoader`,
+  replaces `au-spinner` in `StudioButton` and every `Loader2` spinner). CTest `branding_loader`
+  (`loader.py --check`).
+
+Verified: native `aiverse_catalogview` build (gcc, no new warnings) and screenshots under Xvfb/GL for
+all four shapes, LOD 0/3, auto (shown level 0), STRATA (rock: 250 clusters, 147 ms) with wireframe and
+clusters; `loader.py --check`; Studio `npm run typecheck`, `npm run build`, `npm run test:web` (26 pass,
+2 fail — the same 2 fail on the merge base), `tools/studio/test_*.py` (3 fail on the base too);
+site build + Chrome screenshots of the loader (catalog, releases); `build.py check`, skills audit.
+
+NOT RUN: the WebAssembly viewer (emsdk download is blocked here; built by the catalog `pages`
+workflow, check the deployed page), the web game shell with the new default mark, Studio in the
+native app. No model packages exist in the catalog yet, so LOD/STRATA show up on the site only with one.
+
+Next: after the merge, set `ENGINE_REF` in AIVERSE-PLUGINS `pages.yml` to `main`; a first model
+package (with authored or generated LODs) to exercise LOD/STRATA on the site; cooked STRATA archives
+for large models (staging is synchronous).

@@ -48,13 +48,26 @@ python3 tools/pkg/aiverse_pkg.py create <template-id> ~/Games/New    # new proje
 ## Web viewer
 
 `apps/catalogview` (CMake `-DAIVERSE_BUILD_CATALOGVIEW=ON`, target `aiverse_catalogview`) shows a
-package's materials on a sphere and a tiled slab, or its glTF / GLB models, through Renderer3D with an
-orbit camera. A package opts in with a `viewer` block in its manifest; the catalog's `pages` workflow
-builds `view/<id>/<version>/` (view.json + textures downscaled to 512 px) and the WebAssembly viewer
+package's materials or its glTF / GLB models through Renderer3D with an orbit camera. A package opts in
+with a `viewer` block in its manifest; the catalog's `pages` workflow builds `view/<id>/<version>/`
+(view.json + the files exactly as published, textures at their own size) and the WebAssembly viewer
 from this repository, and deploys both to the catalog's GitHub Pages. The website's Catalog card gets
-a **3D preview** button that opens `viewer/?src=../view/<id>/<version>` in the card. Desktop check:
-`aiverse_catalogview --src <view folder> [--item N] [--yaw deg] [--pitch deg]` (`AIVERSE_SCREENSHOT`
-works as in the client).
+a **3D preview** button that opens `viewer/?src=../view/<id>/<version>&lang=ru|en` in the card.
+
+- **Materials:** a shape switch (sphere, cube, cylinder, plane) over a tiled slab; texel density is the
+  same on every shape (one repeat per `repeat` metres, whole repeats around closed shapes so the seams
+  meet). The info panel lists every texture map with its size in pixels and its file size.
+- **Models:** Auto LOD (the level the renderer picked is highlighted), a fixed LOD 0…n, or STRATA
+  (clusters built from the model on first request; *Clusters* colours them). *Wireframe* shows the
+  edges of the shown level. The panel lists triangles per level, whether the engine generated the
+  LODs, STRATA cluster count and build time, and the model's textures.
+- Every loading state shows the animated AIVERSE mark (the same one as the site, Studio and web
+  builds; `tools/branding/logo/loader.py` keeps the copies in sync, CTest `branding_loader`).
+
+URL parameters: `src`, `item`, `shape=sphere|cube|cylinder|plane`, `lod=auto|strata|N`, `wire`,
+`clusters`, `lang`. Desktop check: `aiverse_catalogview --src <view folder> [--item N] [--shape S]
+[--lod auto|strata|N] [--wire] [--clusters] [--yaw deg] [--pitch deg]` (`AIVERSE_SCREENSHOT` works as
+in the client; every change prints a `catalogview-info: {...}` line, the same JSON the page receives).
 
 ## Packages that left the engine repository (2026-11-22)
 

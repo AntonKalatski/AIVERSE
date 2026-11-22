@@ -13,6 +13,20 @@ import re
 from mdhtml import Converter
 
 _ARM = '-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58'
+# Animated AIVERSE mark for every loading state of the site (copy kept in sync by tools/branding/logo/loader.py).
+LOADER_SVG = (
+    # aiverse-loader:begin (tools/branding/logo/loader.py)
+"<svg class=\"aiv-mark\" viewBox=\"0 60 1000 880\" role=\"img\" aria-label=\"Loading\"><style>.aiv-mark{display:block;overflow:visible}.aiv-mark .aiv-b{fill:var(--aiv-mark-ink,#141210);opacity:0;animation:.55s cubic-bezier(.2,.7,.25,1) forwards}.aiv-mark .aiv-t{animation-name:aiv-t}.aiv-mark .aiv-l{animation-name:aiv-l;animation-delay:.1s}.aiv-mark .aiv-r{animation-name:aiv-r;animation-delay:.2s}.aiv-mark .aiv-d{fill:var(--aiv-mark-accent,#E9C3A4);opacity:0;transform-box:view-box;transform-origin:500px 588px;animation:aiv-d .5s .55s cubic-bezier(.2,.7,.25,1) forwards,aiv-p 1.6s 1.05s ease-in-out infinite}@keyframes aiv-t{from{opacity:0;transform:translate(0,-70px)}to{opacity:1;transform:none}}@keyframes aiv-l{from{opacity:0;transform:translate(-60px,32px)}to{opacity:1;transform:none}}@keyframes aiv-r{from{opacity:0;transform:translate(60px,32px)}to{opacity:1;transform:none}}@keyframes aiv-d{from{opacity:0;transform:rotate(-90deg) scale(.3)}to{opacity:1;transform:none}}@keyframes aiv-p{0%,100%{opacity:1;transform:none}50%{opacity:1;transform:scale(1.07)}}@media (prefers-reduced-motion:reduce){.aiv-mark .aiv-b,.aiv-mark .aiv-d{animation:none;opacity:1}}</style><polygon class=\"aiv-b aiv-t\" points=\"500,94 373,179 373,476 500,397 627,476 627,179\"/><polygon class=\"aiv-b aiv-l\" points=\"433,741 147,907 23,833 23,719 307,561 307,663\"/><polygon class=\"aiv-b aiv-r\" points=\"567,741 853,907 977,833 977,719 693,561 693,663\"/><polygon class=\"aiv-d\" points=\"500,438 350,588 500,738 650,588\"/></svg>"
+    # aiverse-loader:end
+)
+
+
+def loader(cls='aiv-loader', label=''):
+    """Loading indicator: the animated mark, optionally with a caption under it."""
+    cap = f'<span>{label}</span>' if label else ''
+    return f'<span class="{cls}" role="status">{LOADER_SVG}{cap}</span>'
+
+
 MARK_LIGHT = ('<svg width="72" height="68" viewBox="-280 -280 560 530"><g fill="#F3EFE8">'
               f'<polygon points="{_ARM}"/><polygon points="{_ARM}" transform="rotate(120)"/>'
               f'<polygon points="{_ARM}" transform="rotate(240)"/></g>'
@@ -696,7 +710,7 @@ def releases_page(data, entries, systems, ctx, repo):
             + (f'<ul class="rel-hl">{hl}</ul>' if hl else '')
             + (f'<p class="rel-verified"><b>{ctx.T["relVerified"]}</b> {esc(ver)}</p>' if ver else '') +
             f'<div class="rel-dl" data-version="{esc(r["version"])}"><span class="rel-dl-title">{ctx.T["relDownloads"]}</span>'
-            f'<div class="rel-dl-list"><a class="btn btn-line btn-sm" href="{esc(builds["branch"])}">{ctx.T["relBuildsBranch"]}</a></div></div>'
+            f'<div class="rel-dl-list">{loader("aiv-loader aiv-loader-inline")}<a class="btn btn-line btn-sm" href="{esc(builds["branch"])}">{ctx.T["relBuildsBranch"]}</a></div></div>'
             f'<a class="rel-notes" href="{notes}">{ctx.T["relNotes"]}</a></div></article>')
     other = (f'<section class="rel-other" hidden><h2>{ctx.T["relOtherTitle"]}</h2><p>{ctx.T["relOtherLead"]}</p>'
              f'<div class="rel-other-list"></div></section>')
@@ -758,7 +772,7 @@ if(other.length){var box=document.querySelector('.rel-other'),list=box.querySele
 other.forEach(function(p){var k=p.version+' · '+p.commit;(g[k]=g[k]||[]).push(p);});
 Object.keys(g).forEach(function(k){var row=document.createElement('div');row.className='rel-other-row';
 var c=document.createElement('code');c.textContent=k;row.appendChild(c);g[k].forEach(function(p){row.appendChild(btn(p));});list.appendChild(row);});
-box.hidden=false;}}).catch(function(){});})();
+box.hidden=false;}}).catch(function(){}).then(function(){document.querySelectorAll('.rel-dl .aiv-loader').forEach(function(e){e.remove();});});})();
 </script>"""
 
 
@@ -773,7 +787,7 @@ def catalog_page(cfg, ctx):
             f'<button class="filter" type="button" data-cat="" aria-pressed="true">{T["catAll"]}</button></div>'
             f'<label class="dl-search cat-search"><span aria-hidden="true">⌕</span>'
             f'<input type="search" placeholder="{T["catSearch"]}" aria-label="{T["catSearch"]}"></label></div>'
-            f'<p class="cat-status">{T["catLoading"]}</p>'
+            f'<p class="cat-status">{loader("aiv-loader", T["catLoading"])}</p>'
             f'<div class="cat-grid"></div>'
             f'<section class="cat-howto"><div><h2>{T["catHowTitle"]}</h2><p>{T["catHowLead"]}</p>'
             f'<pre><code>python3 tools/pkg/aiverse_pkg.py search terrain\n'
@@ -811,7 +825,7 @@ var act=el('div','cat-actions'),dl=el('a','btn btn-ink btn-sm',T.download+' · '
 if(p.readme){var r=el('a','btn btn-line btn-sm',T.readme);r.href=p.readme;act.appendChild(r);}
 if(p.viewer&&p.viewer.url){var v3=el('button','btn btn-accent btn-sm cat-3d',T.view3d);v3.type='button';v3.onclick=function(){
 var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;return;}
-f=el('iframe','cat-frame');f.src=p.viewer.url;f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
+f=el('iframe','cat-frame');f.src=p.viewer.url+(p.viewer.url.indexOf('?')<0?'?':'&')+'lang='+lang;f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
 img.hidden=true;media.appendChild(f);v3.textContent=T.view3dClose;};act.insertBefore(v3,act.firstChild);}
 body.appendChild(act);a.appendChild(body);
 cards.push({el:a,cat:p.category,hay:[p.id,p.title,p.titleEn,p.summary,p.summaryEn,(p.tags||[]).join(' '),JSON.stringify(p.provides||{})].join(' ').toLowerCase()});

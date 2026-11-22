@@ -40,11 +40,11 @@ python3 tools/pkg/aiverse_pkg.py --json skill <skill-id> --project <project>   #
 
 1. Branch in AIVERSE-PLUGINS, folder `<category>/<id>/` (categories: templates, materials, textures,
    models, audio, vfx, ui, scripts, plugins, tools).
-2. `aiverse.package.json` (its `docs/manifest.md`): id, version, kind, category, `title`/`titleEn`,
+2. `aiverse.package.json` (catalog repository: docs/manifest.md): id, version, kind, category, `title`/`titleEn`,
    `summary`/`summaryEn`, SPDX licence, `minEngine`, `provides`, `install`.
 3. `README.md` and 1..6 previews (real engine frames or the asset itself; 640..2400 px, <= 1 MB).
-4. Payload: `files/` (<= 25 MB), or `archive` (https zip from `tools/catalog.py archive`), or `source`
+4. Payload: `files/` (<= 25 MB), or `archive` (https zip from the catalog repository's tools/catalog.py archive), or `source`
    (`{repo, commit, path}` of a public GitHub repository).
-5. `python3 tools/catalog.py check` -> 0 errors; open a pull request. Only the owner merges; the
+5. in the catalog repository, python3 tools/catalog.py check -> 0 errors; open a pull request. Only the owner merges; the
    `publish` workflow then creates the release and `index.json`, and the website Catalog page shows it.
 6. Updating: raise `version`; published versions are immutable.

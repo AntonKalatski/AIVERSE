@@ -1860,8 +1860,8 @@ if(AIVERSE_BUILD_CATALOGVIEW AND (AIVERSE_DESKTOP OR EMSCRIPTEN))
         target_link_options(aiverse_catalogview PRIVATE
             "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/apps/catalogview/shell.html"
             "-sFORCE_FILESYSTEM=1"
-            "-sEXPORTED_FUNCTIONS=['_main','_cv_select']"
-            "-sEXPORTED_RUNTIME_METHODS=['FS','ccall']")
+            "-sEXPORTED_FUNCTIONS=['_main','_cv_select','_cv_shape','_cv_lod','_cv_wire','_cv_clusters']"
+            "-sEXPORTED_RUNTIME_METHODS=['FS','ccall','UTF8ToString']")
         set_property(TARGET aiverse_catalogview APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/apps/catalogview/shell.html")
     endif()
 endif()
@@ -2460,6 +2460,7 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     endif()
     # Package catalog client (tools/pkg): local index, no network
     add_test(NAME aiverse_pkg COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/pkg/test_aiverse_pkg.py)
+    add_test(NAME branding_loader COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/branding/logo/loader.py --check)
     # Total Annihilation importer + HPI unpacker on made-up data (tools/importers/ta)
     add_test(NAME ta_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/ta/test_ta.py)
     if(TARGET aiverse_headless)
