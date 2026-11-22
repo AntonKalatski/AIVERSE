@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=8e703d54e3">
+<link rel="stylesheet" href="../style.css?v=7d1fbd2ff3">
 </head>
 <body>
 <header class="top">
@@ -44,14 +44,14 @@
 <p><img src="../media/docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg" alt="LOD levels: finest up close, coarse in the distance" loading="lazy"></p>
 <h2 id="presentation-only">Presentation only<a class="anchor" href="#presentation-only" aria-label="#">#</a></h2>
 <p>The view changes nothing in how STRATA works: it does not select LODs, touch routing, upload GPU data or read back GPU selections. It draws ordinary <code>Renderer3D</code> lines and triangles and is off by default. Code that configures <code>GeometryScene</code> turns it on:</p>
-<pre><code class="lang-cpp">scene.<span class="hl-fn">setStrataPortableRenderingEnabled</span>(<span class="hl-kw">true</span>);
-scene.<span class="hl-fn">setStrataDebugGeometryCaptureEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// before load: for wireframe and fill</span>
-scene.<span class="hl-fn">load</span>(<span class="hl-kw">device</span>, json, reader);
-strata::<span class="hl-ty">DebugViewOptions</span> debug;
-debug.enabled = <span class="hl-kw">true</span>;
-debug.clusterWireframe = <span class="hl-kw">true</span>;
-debug.color = strata::<span class="hl-ty">DebugColorMode</span>::<span class="hl-ty">LodDepth</span>;
-scene.<span class="hl-fn">setStrataDebugView</span>(debug);</code></pre>
+<pre><code class="lang-cpp">scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataDebugGeometryCaptureEnabled(true); // before load: for wireframe and fill
+scene.load(device, json, reader);
+strata::DebugViewOptions debug;
+debug.enabled = true;
+debug.clusterWireframe = true;
+debug.color = strata::DebugColorMode::LodDepth;
+scene.setStrataDebugView(debug);</code></pre>
 <h2 id="the-frames-on-this-site">The frames on this site<a class="anchor" href="#the-frames-on-this-site" aria-label="#">#</a></h2>
 <p>The scene is procedural terrain (about 105 k triangles) and 20 rocks (about 82 k each), about 1.7 M source triangles in total. STRATA selected 15,280 clusters in the frame: small finest-level clusters up close, increasingly coarse ones towards the horizon. Captured on Linux through OpenGL (Mesa llvmpipe) at 1920×1080.</p>
 <p><img src="../media/docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg" alt="The same view in the normal render" loading="lazy"></p>
