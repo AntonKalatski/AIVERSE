@@ -1211,6 +1211,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
     }
     if (!customVertexStream) recordPersistentModel(d);
+    // Partial primitive draws and per-instance vertex parameters cannot
+    // replay an immutable whole-model static packet/cache.
+    const bool specialDraw = d.primitiveMaterialFilter >= 0 || d.useVertexParameters;
     if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0 && !d.materialMask) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
@@ -1239,9 +1242,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         eligibility = cachedStaticModelEligibility(*m);
     const StaticModelCache* cache = d.staticCache;
     if (customVertexStream) cache = nullptr;
-    if (cache && !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement))
+    if (cache && (specialDraw || !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement)))
         cache = nullptr;
-    if (!customVertexStream && !cache && staticModelCacheEnabled_) {
+    if (!customVertexStream && !cache && !specialDraw && staticModelCacheEnabled_) {
         if (staticModelCacheDrawCandidate(d, activeDisplacement, eligibility)) {
             auto& entry = staticModelCaches_[d.persistentId];
             const bool unchanged =
@@ -1299,7 +1302,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     }();
     // Tracked draws need current-frame provenance, never cached invocation IDs.
     const bool packetEligible = !customVertexStream && trackedModelCount_ == 0 &&
-        staticRenderPacketsEnabled_ && !m->batching.independentShadowLod && !gpuPacketLod &&
+        staticRenderPacketsEnabled_ && !m->batching.independentShadowLod && !gpuPacketLod && !specialDraw &&
         staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
                                         lodDiagnosticsEnabled_, eligibility);
     const size_t packetStart = modelItems_.size();

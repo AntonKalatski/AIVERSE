@@ -121,6 +121,149 @@ int main() {
     assert(linked.totalRunoffExportUnits==32);
     assert(deadwoodLedgerBalanced(linked));
 
+    // Regression: 32m/4m floor mapping must not truncate negative keys
+    // toward zero. An invalid cross-cell claim is an atomic no-op.
+    assert((microToCoarse({1,-1,-1})==
+            std::pair<int64_t,int64_t>{-1,-1}));
+    assert((microToCoarse({1,-8,-8})==
+            std::pair<int64_t,int64_t>{-1,-1}));
+    assert((microToCoarse({1,-9,-1})==
+            std::pair<int64_t,int64_t>{-2,-1}));
+    ForestDeadwoodResource negative;
+    negative.totalInitialUnits=90;
+    negative.water={{-1,-1,90}};
+    ForestLegacyMicroClaim invalidNegative;
+    invalidNegative.coarseX=-1;invalidNegative.coarseZ=-1;
+    invalidNegative.allocations={
+        {{1,-8,-8},40},{{2,0,-1},50}};
+    rejected=false;
+    try{
+        claimForestLegacyWater(negative,
+            std::span<const ForestLegacyMicroClaim>(&invalidNegative,1),
+            [](ForestMicroKey){return true;});
+    }catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected && negative.revision==0);
+    assert(negative.microWater.empty() && negative.water.size()==1);
+    assert(negative.water.front().dissolvedUnits==90);
+    invalidNegative.allocations[1].key={2,-1,-1};
+    rejected=false;
+    try{
+        claimForestLegacyWater(negative,
+            std::span<const ForestLegacyMicroClaim>(&invalidNegative,1),
+            [](ForestMicroKey){return false;});
+    }catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected && negative.revision==0 && negative.microWater.empty());
+    assert(claimForestLegacyWater(negative,
+        std::span<const ForestLegacyMicroClaim>(&invalidNegative,1),
+        [](ForestMicroKey){return true;})==90);
+    assert(negative.water.empty() && negative.microWater.size()==2);
+    assert(deadwoodLedgerBalanced(negative));
+    std::string negativeWire;
+    aiverse::Archive negativeWriter(&negativeWire);
+    io(negativeWriter,negative);
+    assert(negativeWriter.ok());
+    aiverse::Archive negativeReader(negativeWire);
+    ForestDeadwoodResource negativeRestored;
+    io(negativeReader,negativeRestored);
+    assert(negativeReader.ok() && negativeReader.remaining()==0);
+    assert(negativeRestored.microWater==negative.microWater);
+    assert(deadwoodLedgerBalanced(negativeRestored));
+
+    // Regression: processing B,C from [A,B,C,D] and removing B must
+    // resume at D, not A. The saved cursor indexes the compacted vector.
+    ForestMicroSettings slices;
+    slices.maxSoilPerStep=2;
+    slices.maxWaterPerStep=2;
+    std::vector<int64_t> soilVisited;
+    auto slicedSoil=[&soilVisited](int64_t x,int64_t){
+        soilVisited.push_back(x);
+        return ForestMicroSoilSample{0,700,uint32_t(x==1?20:0)};
+    };
+    auto dry=[](int64_t,int64_t,uint64_t){
+        return ForestMicroSample{};
+    };
+    ForestDeadwoodResource soilCursorState;
+    soilCursorState.totalInitialUnits=50;
+    soilCursorState.soil={
+        {0,0,10},{1,0,20},{2,0,10},{3,0,10}};
+    soilCursorState.soilCursor=1;
+    const auto soilFirst=advanceForestMicroNutrients(
+        soilCursorState,256,slicedSoil,dry,slices);
+    assert(soilFirst.soilProcessed==2);
+    assert(soilCursorState.soil.size()==3);
+    assert(soilCursorState.soilCursor==2);
+    const auto soilSecond=advanceForestMicroNutrients(
+        soilCursorState,512,slicedSoil,dry,slices);
+    assert(soilSecond.soilProcessed==2);
+    assert((soilVisited==std::vector<int64_t>{1,2,3,0}));
+    assert(deadwoodLedgerBalanced(soilCursorState));
+
+    // Regression: outgoing nutrient flow removes x=1 while processing
+    // x=1,2. Next saved water cursor must resume at x=3, not x=0.
+    ForestDeadwoodResource waterCursorState;
+    waterCursorState.totalInitialUnits=40;
+    waterCursorState.microWater={
+        {1,0,0,10},{1,1,0,10},{1,2,0,10},{1,3,0,10}};
+    waterCursorState.microWaterCursor=1;
+    slices.maxTransportPerWater=10;
+    auto slicedRiver=[](int64_t x,int64_t z,uint64_t expected){
+        if(z || x<0 || x>3 || (expected && expected!=1))
+            return ForestMicroSample{};
+        return ForestMicroSample{1,true,
+            (x==1 || x==2)?100:0,0};
+    };
+    const auto waterFirst=advanceForestMicroNutrients(
+        waterCursorState,256,soil,slicedRiver,slices);
+    assert(waterFirst.waterProcessed==2);
+    assert(waterFirst.advected==20);
+    assert(waterCursorState.microWater.size()==3);
+    assert(waterCursorState.microWaterCursor==2);
+    assert(waterCursorState.microWater[2].x==3);
+    assert(deadwoodLedgerBalanced(waterCursorState));
+
+    // Full persisted 4m cap: process bounded slices over 65,536
+    // distinct body-tagged cells without changing any organic mass.
+    // This is a correctness/limit fixture, NOT a performance benchmark.
+    ForestDeadwoodResource capacity;
+    capacity.totalInitialUnits=ForestDeadwoodResource::kMaxMicroWaterCells;
+    capacity.microWater.reserve(
+        ForestDeadwoodResource::kMaxMicroWaterCells+1);
+    for(int64_t x=0;
+        x<int64_t(ForestDeadwoodResource::kMaxMicroWaterCells);++x)
+        capacity.microWater.push_back({1,x,0,1});
+    assert(deadwoodLedgerBalanced(capacity));
+    ForestMicroSettings capacitySettings;
+    capacitySettings.maxWaterPerStep=1024;
+    const auto stationaryRiver=[](int64_t,int64_t,uint64_t expected){
+        return expected==1?
+            ForestMicroSample{1,true,0,0}:ForestMicroSample{};
+    };
+    const auto firstSlice=advanceForestMicroNutrients(
+        capacity,256,soil,stationaryRiver,capacitySettings);
+    assert(firstSlice.due && firstSlice.waterProcessed==1024);
+    assert(capacity.microWaterCursor==1024);
+    const auto secondSlice=advanceForestMicroNutrients(
+        capacity,512,soil,stationaryRiver,capacitySettings);
+    assert(secondSlice.due && secondSlice.waterProcessed==1024);
+    assert(capacity.microWaterCursor==2048);
+    assert(capacity.microWater.size()==
+           ForestDeadwoodResource::kMaxMicroWaterCells);
+    assert(capacity.totalInitialUnits==
+           ForestDeadwoodResource::kMaxMicroWaterCells);
+    assert(deadwoodLedgerBalanced(capacity));
+    // An oversized saved reservoir is rejected BEFORE any processing.
+    capacity.microWater.push_back({
+        1,int64_t(ForestDeadwoodResource::kMaxMicroWaterCells),0,1});
+    capacity.totalInitialUnits++;
+    rejected=false;
+    try{
+        advanceForestMicroNutrients(
+            capacity,768,soil,stationaryRiver,capacitySettings);
+    }catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected && capacity.microWater.size()==
+           ForestDeadwoodResource::kMaxMicroWaterCells+1);
+    assert(capacity.lastNutrientTick==512);
+
     // Bad NEREID body link and old tick must fail without mutation.
     const std::vector<ForestMicroJunction> wrong={
         {1,{1,0,0},{1,1,0},32}

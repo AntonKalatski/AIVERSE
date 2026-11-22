@@ -17,6 +17,7 @@
 #include "engine/world/TerraWeavePhysisNutrientBridge.h"
 #include <cassert>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -43,6 +44,78 @@ int main() {
     (void)terraweavePhysisWeatherAvailable();
     ForestMicroSettings cfg;
     validateForestMicroSettings(cfg);
+    // Out-of-range NEREID mouth positions must fail BEFORE raw Fixed
+    // -> centimetre scaling; no water query is permitted for bad input.
+    const ForestMicroWaterSampler neverQuery=[](int64_t,int64_t,uint64_t)
+        -> ForestMicroSample {
+        throw std::logic_error("TerraWeave out-of-world mouth queried water");
+    };
+    ForestNereidMicroJunctionSettings mouthCfg;
+    assert(!nearestNereidMicroCell(
+        {Fixed::fromRaw(std::numeric_limits<int64_t>::max()),
+         Fixed{},Fixed{}},1,neverQuery,mouthCfg));
+    assert(!nearestNereidMicroCell(
+        {Fixed::fromRaw(std::numeric_limits<int64_t>::min()),
+         Fixed{},Fixed{}},1,neverQuery,mouthCfg));
+    assert(!nearestNereidMicroCell(
+        {Fixed{},Fixed{},Fixed::fromRaw(
+            std::numeric_limits<int64_t>::max())},
+        1,neverQuery,mouthCfg));
+    // Exercise the other public entry point directly. Empty ECS has no
+    // NEREID water bodies: extreme 4m indices must return dry *before*
+    // Earthworks or the water index is sampled or integer-scaled.
+    World emptyWorld;
+    const EarthworksLayer terrain(400,
+        [](int64_t,int64_t)->int32_t{return 0;});
+    const lib::nereid::WaterQueryIndex waterIndex(emptyWorld);
+    const auto emptyRiver=makeNereidMicroWaterSampler(terrain,waterIndex);
+    assert(!emptyRiver(std::numeric_limits<int64_t>::max(),0,0).submerged);
+    assert(!emptyRiver(std::numeric_limits<int64_t>::min(),0,0).submerged);
+    assert(!emptyRiver(0,std::numeric_limits<int64_t>::max(),0).submerged);
+    assert(!emptyRiver(0,std::numeric_limits<int64_t>::min(),0).submerged);
+    assert(!emptyRiver(-1,-1,0).submerged);
+    // Direct public helper calls must validate bounded search settings,
+    // a nonzero body ID and a present sampler, even without the native
+    // junction planner. Invalid requests must not invoke waterAt.
+    const Vec3 origin{};
+    bool rejectedSearch=false;
+    ForestNereidMicroJunctionSettings badSearch=mouthCfg;
+    badSearch.searchRadiusFineCells=std::numeric_limits<uint32_t>::max();
+    try { (void)nearestNereidMicroCell(
+        origin,1,neverQuery,badSearch); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    badSearch=mouthCfg;
+    badSearch.searchRadiusFineCells=0;
+    rejectedSearch=false;
+    try { (void)nearestNereidMicroCell(
+        origin,1,neverQuery,badSearch); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    rejectedSearch=false;
+    try { (void)nearestNereidMicroCell(
+        origin,0,neverQuery,mouthCfg); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    rejectedSearch=false;
+    try { (void)nearestNereidMicroCell(
+        origin,1,ForestMicroWaterSampler{},mouthCfg); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    // Normal negative coordinates must still discover the nearest
+    // correct body, with deterministic signed lattice floor.
+    const ForestMicroWaterSampler wetNegative=[](int64_t x,int64_t z,
+                                                   uint64_t expected) {
+        if(x==-1 && z==-1 && expected==7)
+            return ForestMicroSample{7,true,0,0};
+        return ForestMicroSample{};
+    };
+    const auto nearNegative=nearestNereidMicroCell(
+        {Fixed::fromInt(-2),Fixed{},Fixed::fromInt(-2)},
+        7,wetNegative,mouthCfg);
+    assert(nearNegative.has_value());
+    assert(nearNegative->bodyKey==7 &&
+           nearNegative->x==-1 && nearNegative->z==-1);
 #if defined(AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS)
     // A source-facing regression for the exact Clang precedence warning:
     // zero/zero is invalid, either nonzero budget is allowed, and
