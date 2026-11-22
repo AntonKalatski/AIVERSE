@@ -38,6 +38,11 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
 | Saves | `skills/core/aiverse-save-migrations`, `docs/native-modules.md` | "no state serialization" |
 | Terrain, water, cities | `skills/world/aiverse-terrain`, `skills/world/aiverse-water`, `skills/world/aiverse-city-planner` | "terrain is fixed cells only" |
 | Visual extras | `skills/visuals/aiverse-cloth`, `skills/visuals/aiverse-cables`, `skills/visuals/aiverse-modeling`, `skills/visuals/aiverse-paint-layers` | "needs an external DCC or physics engine" |
+| Animation (MotionWeave) | `docs/motionweave.md`, `libraries/include/aiverselib/animation/`, `skills/gameplay/aiverse-motionweave` | "no montages / root motion / retargeting / ragdoll" - all exist (A3 partial) |
+| Melee and action combat | `libraries/include/aiverselib/mechanics/CombatActions.h`, `skills/gameplay/aiverse-combat-actions` | "no hitboxes, parry, stagger, lock-on" - they exist (A1 partial) |
+| Physical interactions | `mechanics/Carry.h`, `Push.h`, `Ropes.h`, `Doors.h`, `Platforms.h`, `Breakables.h`, `skills/gameplay/aiverse-physical-interactions` | "no carry/throw, ropes, moving platforms, breakables" (Q3, P1, F3 partial) |
+| Turn tactics, cards, puzzles | `mechanics/TacticsGrid.h`, `TacticsWeGo.h`, `CardGame*.h`, `Puzzle*.h`, `bots/CardBot.h` | "no hex grid, overwatch, sudoku/match-3, bot lookahead" (T2, T4, Q1, Q2 partial) |
+| Narrative and survival body | `mechanics/NarrativeScenes.h`, `mechanics/Survival.h`, `mechanics/ColonyPower.h`, `mechanics/Traffic.h` | "no relationships, body temperature, power grids, traffic lanes" (A4, S1, C2, C4 partial) |
 
 ## Steps
 
@@ -50,6 +55,33 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
    not verified (platforms, performance). State the repository commit you read.
 5. If a gap is real and untracked, propose adding it to `docs/capability-status.json` (owner per AGENTS.md
    area table) instead of only mentioning it in chat.
+
+## A gap is real only after a code search
+
+`docs/capability-status.json` and skills lag behind code. On 2026-11-22 a code audit moved 21 areas from
+`planned` to `partial` (F1-F4, A1-A4, S1, S2, W3, C1, C4, T2-T4, M1, P1, P2, D2, Q3): the code existed, the
+status file had not been updated. Before writing "missing":
+
+1. Grep headers and engine code for the concept in English (and the obvious class names):
+   `git grep -liE '<words>' -- engine libraries modules ':!*.md' ':!*.json'`; read the top comment of each hit.
+2. Read the area's `code` list in `docs/capability-status.json` (paths of what exists) and its `remaining`.
+3. If the code exists but the status, the library catalog or a skill does not say so, fix them in the same
+   change: `remaining`/`status`/`code` in the status file, an entry in `libraries/catalog.json`
+   (`python3 tools/libraries/catalog.py check`), the feature skill and the search aliases in
+   `tools/skills/catalog.py` (then `python3 tools/skills/catalog.py generate` and `check`).
+
+### Gaps confirmed in code on 2026-11-22 (main 02f9337af)
+
+No implementation found: off-mesh navmesh links and volumetric 3D navigation (F2, R5); wall-run, grapple,
+dash, one-way platforms (F1, P1); third-person camera with obstacle avoidance (P2); arbitrary geometry
+destruction with collision/navmesh rebuild and debris replication (F3); audio-driven lip-sync and live scene
+binding of MotionWeave (A3); item affixes/sockets (A2); quest journal (A4); wounds/diseases (S1); herds and
+taming (S2); families/relationships of colonists (C1); pressure, heat, railways (C2); zoning, households,
+budgets (C3); public transport timetables (C4); multi-storey tactical cells (T2); treaties and 4X AI (T3);
+generic search bot (T4); draft/ban, in-match shop, recall, courier (M1); boats as vehicles and aerodynamics
+beyond drag (V2); secret-state transport for cards (K2); portals and gameplay time rewind (Q4; the actor
+rewind history is lag compensation only); touch/controller UX and accessibility beyond QTE scaling (U1).
+Re-check before reusing this list.
 
 ## Worked example: voxel sandbox (Minecraft-like), main at 2026-11-16
 

@@ -20,6 +20,12 @@ Existing `AnimationGraph`, `Animator`, `Pose` and special-purpose headers under
 continue using `aiverse::lib::animation` and `AIVERSE::animation_ecs`.
 Do not fork/duplicate the runtime for another genre.
 
+Library catalog id: `motionweave` (`python3 tools/libraries/catalog.py info motionweave`); capability area
+A3 in `docs/capability-status.json`. Exists: montages with sections, slots and bone masks, clip notifies, root
+motion extraction/baking, motion warping, humanoid and generic retargeting, pose inertialization, crowd
+budgets, facial rig, Box3D ragdoll bridge. Not done (2026-11-22): audio-driven lip-sync (Vivid visemes are set
+by hand), live game-scene/prefab binding, HTML5 Studio viewport.
+
 Read `docs/motionweave.md`, `docs/animation-graphs.md`,
 `docs/agent-handoffs/animation-universal.md` and `AGENTS.md`.
 **After each code stage**, commit a separate dated handoff entry listing

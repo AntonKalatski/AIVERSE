@@ -1301,6 +1301,19 @@
       "packageDependencies": []
     },
     {
+      "id": "motionweave",
+      "version": "0.1.0",
+      "layer": "presentation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/motionweave/MotionWeave.h",
+      "skill": "skills/gameplay/aiverse-motionweave/SKILL.md",
+      "summary": "MotionWeave presentation animation for any project: graph player, blend trees, IK, motion matching, sectioned montages with slots and bone masks, clip notifies, root motion extraction and baking with a fixed-point motor adapter, motion warping, humanoid and generic retargeting, pose inertialization, crowd budgets and jobs, facial control rig, optional Box3D ragdoll bridge",
+      "notes": "Headers live in libraries/include/aiverselib/animation/ (AnimationMontage.h, AnimationPlayback.h, EcsRootMotionSystems.h, RootMotionBaker.h, AnimationMotionWarp.h, HumanoidRetarget.h, GenericRetarget.h, PoseInertialization.h, AnimationCrowdSystems.h, FacialControlRig.h, PhysicsRagdollBridge.h). Presentation World only: never put float graph state or poses in Simulation::world(); authoritative root motion goes through the fixed-point motor adapter. Legacy target AIVERSE::animation_ecs stays valid; ragdoll needs AIVERSE_ENABLE_PHYSICS=ON (AIVERSE::animation_physics). Tests: tests/animation. Not done: audio-driven lip-sync, live game-scene/prefab binding, HTML5 Studio viewport. Read docs/motionweave.md.",
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "cmakeTarget": "AIVERSE::MotionWeave"
+    },
+    {
       "id": "card-games",
       "version": "0.1.0",
       "layer": "simulation",
