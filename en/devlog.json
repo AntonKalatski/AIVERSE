@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T10:45:09+00:00",
+ "generated": "2026-11-22T11:24:39+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -153,6 +153,47 @@
    ],
    "links": [],
    "author": "vivid"
+  },
+  {
+   "id": "2026-11-22-strata-cooked-mobile",
+   "date": "2026-11-22",
+   "system": "strata",
+   "title": "STRATA: cooked geometry on disk, a working hierarchy and a first phone measurement",
+   "summary": "STRATA cluster hierarchies are now built ahead of time and stored next to the content: the game loads them in a fraction of a second instead of minutes. Bugs that kept STRATA from simplifying geometry were found and fixed, and an automatic triangle budget was added.",
+   "body": [
+    "The test scene is 20 bumpy spheres of 1,002,252 triangles each (4 different models), about 20 M triangles in total, with no terrain, sky or interface: geometry only. The camera stands next to the nearest sphere and the row recedes into the distance.",
+    "Cooking. The aiverse_strata_cook tool builds the cluster hierarchy of every model in a scene and writes it to the geometry scene's strata.cooked folder. A file is tied to its source geometry and the builder version: if the model changes the file is ignored and the hierarchy is built as before. Loading 4 spheres takes 0.4 s on a Mac and about 1.2 s on a phone instead of roughly 6 minutes of building per sphere.",
+    "The hierarchy. Leaf clusters were cut in file order and came out as strips with almost every vertex on a border; borders stay locked while simplifying, so the tree stalled: a sphere's coarsest level still had 743 k triangles. Clusters are now compact patches and a group's error tolerance follows its children's size. A sphere's coarsest level is 13 k triangles, and STRATA draws 1.1 M triangles in 20 draw calls instead of 19.4 M.",
+    "Cluster selection is cheaper: errors are computed only for nodes the traversal reaches, clusters outside the view are not refined, and the index set is uploaded again only when the selection changes.",
+    "The triangle budget (strata.triangleBudget or AIVERSE_STRATA_TRI_BUDGET) raises the error threshold while there are more triangles than the budget. A corner panel shows the STRATA route, whether data came from disk, triangles, threshold, draw calls, memory and frame time; a window on the right shows the clusters coloured by detail level.",
+    "Every object of the scene can choose its drawing path in the editor: Auto (STRATA or ordinary LODs per model), STRATA or LOD — in the Static geometry window or the object's strata field."
+   ],
+   "status": "in-progress",
+   "verified": "Mac Studio (M3 Ultra, Metal): 1.1 M triangles and 20 draw calls versus 20 M without STRATA. Samsung Galaxy A05s (Adreno 610, rendering at 1200×540): no budget 16 fps on Vulkan and 20 fps on GLES; with a 250 k triangle budget 35 and 45 fps; without STRATA 4 fps.",
+   "limits": "No 60 fps on this phone yet: frame time grows almost linearly with triangles, and in the measurement the builder stopped at 8 levels so STRATA could not go below about 270 k triangles for 20 spheres; the limit is now 16 levels, not yet re-measured. Vulkan is slower than GLES on this phone; the cause is not found yet. The process takes about 750 MB: indices are kept whole and vertices are 60 bytes. Disk streaming of index pages exists but was not enabled in this scene.",
+   "branch": "main",
+   "commit": "",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-spheres-lod-inset.jpg",
+     "caption": "20 spheres of a million triangles each; on the right the clusters, coloured by detail level"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-spheres-clusters-inset.jpg",
+     "caption": "The same frame: every cluster in its own colour"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-phone-budget.jpg",
+     "caption": "Galaxy A05s, Vulkan: 250 k triangle budget, 35 fps"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/strata.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/strata.md"
+    }
+   ],
+   "author": "strata"
   },
   {
    "id": "2026-11-22-prisma-dof-motion-blur",
@@ -363,6 +404,40 @@
     }
    ],
    "author": "planets"
+  },
+  {
+   "id": "2026-11-22-physis-tornado",
+   "date": "2026-11-22",
+   "system": "physis",
+   "title": "PHYSIS: tornadoes",
+   "summary": "PHYSIS now has tornadoes: defined in map data, they follow a path or wander, twist the wind, fan and snuff fire, tear up debris and deal damage.",
+   "body": [
+    "A tornado is an entry of the tornadoes array in the map's physis block: centre, core and outer radius, height, spin, updraft and inflow, start and lifetime, spin-up and decay. The path is a straight drift, a wander inside bounds, or waypoints, looping or once.",
+    "The vortex changes PHYSIS wind, so everything that reads the wind feels it: forces, load on vegetation and buildings, grass, particles. It snuffs fire at the centre and fans it in the ring around. Debris is torn up at the base, carried by the wind and falls. Light game objects with NatureCarriable are lifted and carried away. Units and buildings take damage through a common environment hook, already connected in RTS.",
+    "On screen a tornado is a dust funnel with a dust ring at the ground and flying debris, with a positional roar, strong wind in the grass and choppy water nearby. The example is the Tornado Valley map of the skirmish template."
+   ],
+   "status": "done",
+   "verified": "Game client on a Mac (Metal), Tornado Valley map: the tornado follows its path with 9 to 24 pieces of debris in the frame. A match with one seed repeats with the same checksum; replay and restore from a save match.",
+   "limits": "Only RTS games take tornado damage so far. Debris does not collide with anything. Grass bending, water and sound were not checked separately. The funnel is simple — a project can replace the effect with its own fx/physis_tornado.json.",
+   "branch": "main",
+   "commit": "",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-tornado/physis-tornado-close.jpg",
+     "caption": "A tornado on the Tornado Valley map"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-physis-tornado/physis-tornado-wide.jpg",
+     "caption": "Wide view: the tornado crossing the valley"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/physis.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/physis.md"
+    }
+   ],
+   "author": "physis"
   },
   {
    "id": "2026-11-22-motionweave-battle",
