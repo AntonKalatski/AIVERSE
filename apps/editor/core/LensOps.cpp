@@ -221,6 +221,7 @@ void registerLensOps(Workspace& ws) {
             }
             if (!only.empty() && list.size() == 0) throw std::runtime_error("unknown camera preset '" + only + "'");
             Json result = Json::object();
+            result.set("ok", Json::fromBool(true));
             result.set("presets", std::move(list));
             return result;
         });
