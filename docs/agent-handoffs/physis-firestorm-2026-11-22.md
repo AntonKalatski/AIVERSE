@@ -58,3 +58,16 @@ locked), from `origin/main`, origin/main merged before the build stage. Not merg
 
 - `cmake --build -- -k` of every target: rc 0 (723 s). Full `ctest -j 6`: **100% tests passed, 0 failed out of 466**
   (1 skipped: `lens_metal_frame`). Logs `physis-firestorm/logs/build-full.log`, `ctest-full.log`.
+
+## Fire textures (same day, later)
+
+- `488edeba7`, `180ce5070`: CC0 flipbooks from Unity's free VFX set in `engine/assets/fx/physis/`
+  (`flame_16x4.png` <- SmallFlame01, `flame_tall_16x4.png` <- Flame02, `fireball_8x8.png` <- FireBall01,
+  `smoke_8x8.png` <- WispySmoke01; 1024/512 px, frame-edge alpha fade, `LICENSE-fx.txt`). Built-in
+  `physis_flame` / `physis_smoke` / `physis_tornado_fire` use them. Originals (zip/tga/exr) stay outside the
+  repo in `kingston/AIVERSE-builds/assets/fire-textures/`.
+- `50eec4069` merge origin/main (f36403a2d). Build `kingston/AIVERSE-builds/physis-firestorm/mac2` (arm64 Release).
+  Full ctest: 466/466 PASS (1 skipped). The run before it had one `aiverse_tests` SEGFAULT after
+  `mech_campaign` under `-j 6`; the same code passed alone (41/41) and in the next full run — flaky, not in PHYSIS.
+- Firestorm Valley checksum unchanged (`fa942ca6b8d975ad`), default skirmish seeds = baseline.
+- Frames before/after: `kingston/AIVERSE-builds/physis-firestorm/shots/{before,after}_{ground_fire,firewhirl,wide}.png`.
