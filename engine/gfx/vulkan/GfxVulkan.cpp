@@ -1,6 +1,7 @@
 // Vulkan backend: instance, device, swapchain and the frame loop. See Vulkan.h for the conventions.
 #include "VkDevice.h"
 #include "VkSurface.h"
+#include "VkShaderCompiler.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -430,6 +431,31 @@ bool VulkanDevice::createSwapchain() {
     ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;   // filled by a flipped blit from the back buffer
     ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ci.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR : caps.currentTransform;
+    // Pre-rotation (see rotatePresent_). Needs an RGBA8 UNORM surface format
+    // that can be a storage image; otherwise the compositor rotates as before.
+    // AIVERSE_VK_PRE_ROTATE=0 turns it off.
+    rotatePresent_ = 0;
+    if (window_.kind == VulkanWindow::Kind::Android && !rotFailed_ &&
+        (caps.currentTransform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)) &&
+        (caps.supportedTransforms & caps.currentTransform) &&
+        (caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        const char* off = std::getenv("AIVERSE_VK_PRE_ROTATE");
+        VkFormatProperties rgba{};
+        vkGetPhysicalDeviceFormatProperties(gpu_, VK_FORMAT_R8G8B8A8_UNORM, &rgba);
+        bool surfaceRgba = false;
+        for (const auto& f : formats)
+            if (f.format == VK_FORMAT_R8G8B8A8_UNORM && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) surfaceRgba = true;
+        if (!(off && *off == '0') && surfaceRgba && (rgba.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
+            fmt = {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+            ci.imageFormat = fmt.format;
+            ci.imageColorSpace = fmt.colorSpace;
+            ci.preTransform = caps.currentTransform;
+            std::swap(ext.width, ext.height);
+            ci.imageExtent = ext;
+            ci.imageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
+            rotatePresent_ = (caps.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) ? 1 : 2;
+        }
+    }
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     for (auto a : {VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR, VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR})
         if (caps.supportedCompositeAlpha & a) { ci.compositeAlpha = a; break; }
@@ -448,6 +474,18 @@ bool VulkanDevice::createSwapchain() {
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, nullptr);
     swapImages_.resize(n);
     vkGetSwapchainImagesKHR(device_, swapchain_, &n, swapImages_.data());
+    if (rotatePresent_) {
+        swapViews_.resize(n, VK_NULL_HANDLE);
+        for (uint32_t k = 0; k < n; ++k) {
+            auto vi = vkStruct<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+            vi.image = swapImages_[k];
+            vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            vi.format = swapFormat_;
+            vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            if (vkCreateImageView(device_, &vi, nullptr, &swapViews_[k]) != VK_SUCCESS) { rotatePresent_ = 0; rotFailed_ = true; break; }
+        }
+        std::fprintf(stderr, "[gfx] Vulkan: swapchain pre-rotated (%s), %ux%u\n", rotatePresent_ == 1 ? "90" : "270", swapExtent_.width, swapExtent_.height);
+    }
     swapRendered_.resize(n);
     for (auto& s : swapRendered_) { auto si = vkStruct<VkSemaphoreCreateInfo>(VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO); vkCreateSemaphore(device_, &si, nullptr, &s); }
     VkFormatProperties fp;
@@ -470,6 +508,8 @@ void VulkanDevice::destroySwapchain() {
     vkDeviceWaitIdle(device_);
     for (auto s : swapRendered_) vkDestroySemaphore(device_, s, nullptr);
     swapRendered_.clear();
+    for (auto v : swapViews_) if (v) vkDestroyImageView(device_, v, nullptr);
+    swapViews_.clear();
     swapImages_.clear();
     vkDestroySwapchainKHR(device_, swapchain_, nullptr);
     swapchain_ = VK_NULL_HANDLE;
@@ -839,9 +879,106 @@ void VulkanDevice::beginFrame(int w, int h) {
     }
 }
 
+bool VulkanDevice::ensureRotatePipeline() {
+    if (rotPipe_) return true;
+    if (rotFailed_) return false;
+    static const char* kRotate = R"(#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D dst;
+layout(push_constant) uniform Push { int mode; } push;
+void main() {
+    ivec2 size = imageSize(dst);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= size.x || p.y >= size.y) return;
+    vec2 xy = (vec2(p) + 0.5) / vec2(size);
+    // Swapchain pixel -> logical (landscape) screen -> bottom-up back buffer.
+    vec2 s = push.mode == 1 ? vec2(xy.y, xy.x) : vec2(1.0 - xy.y, 1.0 - xy.x);
+    imageStore(dst, p, textureLod(src, s, 0.0));
+})";
+    std::vector<uint32_t> spv;
+    std::string err;
+    if (!compileComputeProgram(std::string(kRotate), spv, &err)) {
+        std::fprintf(stderr, "[gfx] Vulkan: pre-rotation shader failed: %s\n", err.c_str());
+        rotFailed_ = true;
+        return false;
+    }
+    VkDescriptorSetLayoutBinding b[2]{};
+    b[0].binding = 0; b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; b[0].descriptorCount = 1; b[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    b[1].binding = 1; b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; b[1].descriptorCount = 1; b[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    auto li = vkStruct<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
+    li.bindingCount = 2; li.pBindings = b;
+    VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 4};
+    auto pli = vkStruct<VkPipelineLayoutCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+    VkDescriptorPoolSize sizes[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2}};
+    auto poi = vkStruct<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
+    poi.maxSets = 2; poi.poolSizeCount = 2; poi.pPoolSizes = sizes;
+    auto si = vkStruct<VkSamplerCreateInfo>(VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
+    si.magFilter = si.minFilter = VK_FILTER_LINEAR;
+    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    si.maxLod = 0.f;
+    const VkShaderModule module = createModule(spv);
+    bool ok = module != VK_NULL_HANDLE &&
+        vkCreateDescriptorSetLayout(device_, &li, nullptr, &rotLayout_) == VK_SUCCESS;
+    if (ok) {
+        pli.setLayoutCount = 1; pli.pSetLayouts = &rotLayout_;
+        pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pr;
+        ok = vkCreatePipelineLayout(device_, &pli, nullptr, &rotPipeLayout_) == VK_SUCCESS;
+    }
+    if (ok) {
+        auto ci = vkStruct<VkComputePipelineCreateInfo>(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);
+        ci.stage = vkStruct<VkPipelineShaderStageCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);
+        ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        ci.stage.module = module;
+        ci.stage.pName = "main";
+        ci.layout = rotPipeLayout_;
+        ok = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &ci, nullptr, &rotPipe_) == VK_SUCCESS;
+    }
+    if (module) vkDestroyShaderModule(device_, module, nullptr);
+    ok = ok && vkCreateDescriptorPool(device_, &poi, nullptr, &rotPool_) == VK_SUCCESS &&
+         vkCreateSampler(device_, &si, nullptr, &rotSampler_) == VK_SUCCESS;
+    if (ok) {
+        VkDescriptorSetLayout layouts[2] = {rotLayout_, rotLayout_};
+        auto ai = vkStruct<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
+        ai.descriptorPool = rotPool_; ai.descriptorSetCount = 2; ai.pSetLayouts = layouts;
+        ok = vkAllocateDescriptorSets(device_, &ai, rotSets_) == VK_SUCCESS;
+    }
+    if (!ok) {
+        std::fprintf(stderr, "[gfx] Vulkan: pre-rotation pipeline unavailable, compositor rotates\n");
+        rotFailed_ = true;
+        if (rotPipe_) { vkDestroyPipeline(device_, rotPipe_, nullptr); rotPipe_ = VK_NULL_HANDLE; }
+        return false;
+    }
+    return true;
+}
+
 void VulkanDevice::present() {
     VkCommandBuffer cb = slots_[size_t(slot_)].main;
     VkImage dst = swapImages_[swapIndex_];
+    if (rotatePresent_ && swapIndex_ < swapViews_.size() && swapViews_[swapIndex_] && ensureRotatePipeline()) {
+        // The back buffer's writes become visible to the compute read.
+        barrierImage(cb, back_.image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        barrierImage(cb, dst, false, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        const VkDescriptorSet set = rotSets_[size_t(slot_) % 2];
+        VkDescriptorImageInfo srcInfo{rotSampler_, back_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkDescriptorImageInfo dstInfo{VK_NULL_HANDLE, swapViews_[swapIndex_], VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet w[2]{};
+        for (int k = 0; k < 2; ++k) {
+            w[k] = vkStruct<VkWriteDescriptorSet>(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+            w[k].dstSet = set; w[k].dstBinding = uint32_t(k); w[k].descriptorCount = 1;
+        }
+        w[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; w[0].pImageInfo = &srcInfo;
+        w[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; w[1].pImageInfo = &dstInfo;
+        vkUpdateDescriptorSets(device_, 2, w, 0, nullptr);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, rotPipe_);
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, rotPipeLayout_, 0, 1, &set, 0, nullptr);
+        const int32_t mode = rotatePresent_;
+        vkCmdPushConstants(cb, rotPipeLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, 4, &mode);
+        vkCmdDispatch(cb, (swapExtent_.width + 7) / 8, (swapExtent_.height + 7) / 8, 1);
+        barrierImage(cb, dst, false, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        return;
+    }
     barrierImage(cb, back_.image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     barrierImage(cb, dst, false, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     VkImageBlit blit{};

@@ -527,6 +527,22 @@
      "textEn": "A Nanite-style debug view: clusters, LOD depth, error, materials."
     },
     {
+      "status": "done",
+      "date": "2026-11-22",
+      "title": "Готовая иерархия на диске",
+      "text": "aiverse_strata_cook: загрузка 4 сфер по миллиону треугольников — 1,2 с на телефоне вместо минут построения.",
+      "titleEn": "Cooked hierarchy on disk",
+      "textEn": "aiverse_strata_cook: four million-triangle spheres load in 1.2 s on a phone instead of minutes of building."
+    },
+    {
+      "status": "done",
+      "date": "2026-11-22",
+      "title": "60 fps на Galaxy A05s",
+      "text": "20 сфер по миллиону треугольников, GLES, бюджет 60 тыс. треугольников, PSS 437 МБ; Vulkan — 48 fps.",
+      "titleEn": "60 fps on a Galaxy A05s",
+      "textEn": "20 million-triangle spheres, GLES, 60 k triangle budget, PSS 437 MB; Vulkan 48 fps."
+    },
+    {
      "status": "in-progress",
      "target": null,
      "title": "Приёмка на реальном железе Vulkan, GLES и WebGL",
