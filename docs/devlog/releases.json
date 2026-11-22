@@ -6,10 +6,76 @@
     "branch": "https://github.com/chromealex/AIVERSE/tree/builds"
   },
   "next": {
-    "version": "2.2.0",
+    "version": "3.1.0",
     "note": "Planned number of the next tag: system cards say a feature in main 'will appear' in it. The integrator updates this when the release is tagged (then the entry moves into releases)."
   },
   "releases": [
+    {
+      "version": "3.0.0",
+      "tag": "v3.0.0",
+      "date": "2026-11-22",
+      "commit": "9e7e3b807",
+      "title": "Один движок для любой игры и десять флагманских систем",
+      "titleEn": "One engine for any game and ten flagship systems",
+      "summary": "Деление на жанры убрано, а для миров, света, воды, камер, людей и эффектов появились флагманские системы. Есть ломающие изменения: токен agent-link, новые пути пакетов, сохранения NEREID v2.",
+      "summaryEn": "The genre split is gone, and flagship systems arrive for worlds, light, water, cameras, people and effects. Breaking changes: an agent-link token, new package paths, NEREID saves v2.",
+      "highlights": [
+        {
+          "title": "Один движок для любой игры",
+          "text": "Игровые системы переехали из RTS-модуля в engine/game на один GameHost; в пакетах и форматах данных больше нет жанров. Гонки, битвы и город работают на одном хосте.",
+          "titleEn": "One engine for any game",
+          "textEn": "The game systems moved from the RTS module to engine/game on a single GameHost; packages and data formats no longer carry genre names. Races, battles and city games run on one host."
+        },
+        {
+          "title": "LUMA",
+          "text": "Динамический GI с каскадами за камерой, запечённый свет, сферические и трубчатые источники, свет частиц и скорость объектов в истории — на Metal, Vulkan и Android.",
+          "titleEn": "LUMA",
+          "textEn": "Dynamic GI with cascades that follow the camera, baked lighting, sphere and tube area lights, particle lights and object motion in the temporal history — on Metal, Vulkan and Android."
+        },
+        {
+          "title": "PRISMA",
+          "text": "Постобработка как обычные эффекты: глубина резкости, motion blur, AO, отражения, эффекты линзы, SMAA и FSR.",
+          "titleEn": "PRISMA",
+          "textEn": "Post-processing as ordinary effects: depth of field, motion blur, AO, reflections, lens effects, SMAA and FSR."
+        },
+        {
+          "title": "STRATA",
+          "text": "Виртуализированная геометрия: иерархия кластеров, готовая геометрия на диске, 60 fps на бюджетном Android-телефоне.",
+          "titleEn": "STRATA",
+          "textEn": "Virtualized geometry: a cluster hierarchy, pre-built geometry on disk, 60 fps on a budget Android phone."
+        },
+        {
+          "title": "TerraWeave, NEREID и планеты",
+          "text": "Процедурный рельеф, биомы, лес и камни — и на планетах; вода с паводками, эрозией, мутностью и волнами, моря планет стали водоёмами NEREID.",
+          "titleEn": "TerraWeave, NEREID and planets",
+          "textEn": "Procedural terrain, biomes, forests and rocks — also on planets; water with floods, erosion, turbidity and waves, and planet seas are NEREID water bodies."
+        },
+        {
+          "title": "PHYSIS",
+          "text": "Живая среда: ветер, огонь, земля и смерч.",
+          "titleEn": "PHYSIS",
+          "textEn": "A living environment: wind, fire, earth and tornadoes."
+        },
+        {
+          "title": "LENS",
+          "text": "Камеры как данные сцены: физический объектив, пресеты, панорамы, зеркала, порталы, стерео, сплит-скрин, режиссёр и слои видимости.",
+          "titleEn": "LENS",
+          "textEn": "Cameras as scene data: physical lenses, presets, panoramas, mirrors, portals, stereo, split screen, a director and visibility layers."
+        },
+        {
+          "title": "VIVID",
+          "text": "Цифровые люди: Character Creator в Studio, адаптер MetaHuman, мягкие тени на лице.",
+          "titleEn": "VIVID",
+          "textEn": "Digital humans: Character Creator in Studio, a MetaHuman adapter, soft facial shadows."
+        },
+        {
+          "title": "SpectraFX и MotionWeave",
+          "text": "Эффекты частиц на GPU с редактором графа; анимация персонажей, где целая битва идёт на одном графе.",
+          "titleEn": "SpectraFX and MotionWeave",
+          "textEn": "GPU particle effects with a graph editor; character animation where a whole battle runs on one animation graph."
+        }
+      ]
+    },
     {
       "version": "2.1.0",
       "tag": "v2.1.0",

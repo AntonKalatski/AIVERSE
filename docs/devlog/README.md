@@ -90,7 +90,7 @@ package to the release with the same `version`. Packages without a release appea
 
 `next.version` is the planned number of the next tag. Each flagship system in `systems.json` has
 `release`: the version it shipped in (a version in `releases`) or `next.version` for systems already
-in `main` but not tagged. Cards and system pages show "since 2.0.0" / "coming in 2.2.0"; a system on
+in `main` but not tagged. Cards and system pages show "since 2.0.0" / "coming in 3.1.0"; a system on
 a branch (`where: branch`, no `release`) shows "in development". When the release is tagged, move
 it from `next` into `releases` and set the next planned number; new systems merged into `main` get
 `release` = `next.version`. `build.py check` rejects a `release` that is neither.
