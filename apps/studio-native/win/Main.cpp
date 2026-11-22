@@ -15,6 +15,7 @@
 #endif
 #include <windows.h>
 #include <windowsx.h>
+#include <dwmapi.h>
 #include <objbase.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -125,6 +126,16 @@ template <class I, class... Args, class F> I* makeCallback(const IID& iid, F&& f
     return new Callback<I, Args...>(iid, std::function<HRESULT(Args...)>(std::forward<F>(fn)));
 }
 
+// WS_SYSMENU / WS_MINIMIZEBOX / WS_MAXIMIZEBOX make Windows paint a caption even when WS_CAPTION
+// is left out. Keep those styles (snap, Alt+Space, the taskbar) and give the client the whole window.
+void extendClientOverCaption(HWND hwnd) {
+    const MARGINS shadow{0, 0, 0, 1};
+    DwmExtendFrameIntoClientArea(hwnd, &shadow);
+    const DWM_WINDOW_CORNER_PREFERENCE corners = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 constexpr UINT kRunTask = WM_APP + 1; // lParam: std::function<void()>* to run on the UI thread
 constexpr UINT_PTR kTickTimer = 1;
 constexpr wchar_t kMainClass[] = L"AiverseStudioWindow";
@@ -173,13 +184,14 @@ public:
         RegisterClassExW(&sc);
 
         const UINT dpi = GetDpiForSystem();
-        RECT r{0, 0, MulDiv(1440, int(dpi), 96), MulDiv(900, int(dpi), 96)};
-        // No WS_CAPTION: the HTML title bar is the window chrome. Thick frame keeps resize.
-        constexpr DWORD kFrame = WS_OVERLAPPED | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN;
-        AdjustWindowRectExForDpi(&r, kFrame, FALSE, 0, dpi);
+        // The HTML title bar is the chrome. The client fills the frame; WM_NCCALCSIZE drops the system caption.
+        constexpr DWORD kFrame = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+        const int width = MulDiv(1440, int(dpi), 96);
+        const int height = MulDiv(900, int(dpi), 96);
         main_ = CreateWindowExW(0, kMainClass, L"AIVERSE", kFrame, CW_USEDEFAULT, CW_USEDEFAULT,
-                                r.right - r.left, r.bottom - r.top, nullptr, nullptr, instance, nullptr);
+                                width, height, nullptr, nullptr, instance, nullptr);
         if (!main_) { fatal("The main window could not be created"); return 1; }
+        extendClientOverCaption(main_);
         for (int i = 0; i < 2; ++i) {
             surfaces_[i] = CreateWindowExW(0, kSurfaceClass, nullptr, WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0, 16, 16,
                                            main_, nullptr, instance, nullptr);
@@ -376,6 +388,43 @@ public:
         case WM_SIZE:
             s->resizeWeb();
             return 0;
+        case WM_NCCALCSIZE:
+            if (wp) {
+                // The proposed window rect becomes the client, so Windows does not reserve a caption.
+                if (IsZoomed(h)) {
+                    HMONITOR mon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+                    MONITORINFO info{sizeof(info)};
+                    if (GetMonitorInfoW(mon, &info)) reinterpret_cast<NCCALCSIZE_PARAMS*>(lp)->rgrc[0] = info.rcWork;
+                }
+                return 0;
+            }
+            break;
+        case WM_NCPAINT:
+            return 0;
+        case WM_NCACTIVATE:
+            // -1 keeps the active state without asking Windows to repaint a caption.
+            return DefWindowProcW(h, msg, wp, -1);
+        case WM_NCHITTEST: {
+            if (IsZoomed(h)) return HTCLIENT;
+            POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            RECT rc{};
+            GetWindowRect(h, &rc);
+            const UINT frameDpi = GetDpiForWindow(h);
+            const int border = GetSystemMetricsForDpi(SM_CXFRAME, frameDpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, frameDpi);
+            const bool left = pt.x < rc.left + border;
+            const bool right = pt.x >= rc.right - border;
+            const bool top = pt.y < rc.top + border;
+            const bool bottom = pt.y >= rc.bottom - border;
+            if (top && left) return HTTOPLEFT;
+            if (top && right) return HTTOPRIGHT;
+            if (bottom && left) return HTBOTTOMLEFT;
+            if (bottom && right) return HTBOTTOMRIGHT;
+            if (left) return HTLEFT;
+            if (right) return HTRIGHT;
+            if (top) return HTTOP;
+            if (bottom) return HTBOTTOM;
+            return HTCLIENT;
+        }
         case WM_GETMINMAXINFO: {
             // Without a caption the maximized window would cover the taskbar.
             HMONITOR mon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
