@@ -93,6 +93,10 @@ public:
         for(auto& pool:pools_) pool.second.arena->setGlobalQuality(quality);
     }
     FxQuality globalQuality() const {return globalQuality_;}
+    // Host/QA switch: every NEW emitter runs its asset on the CPU twin
+    // (what a compute-less RHI does). Env AIVERSE_SPECTRAFX_CPU=1 in hosts.
+    void setForceCpuTwin(bool enabled) {forceCpuTwin_=enabled;}
+    bool forceCpuTwin() const {return forceCpuTwin_;}
     // Disabled unless explicitly requested by a host/debugger.
     // CPU wall time spent issuing commands, NOT asynchronous GPU time.
     void setCpuEncodeProfiling(bool enabled) {cpuEncodeProfiling_=enabled;}
@@ -194,7 +198,7 @@ public:
         // Shared pools are explicit project opt-ins. Unsupported devices,
         // heterogeneous settings, or an exhausted pool use the existing
         // per-emitter HybridEmitter path with the authored CPU fallback.
-        if(!route->second.sharedPool.empty()) {
+        if(!route->second.sharedPool.empty() && !forceCpuTwin_) {
             PooledRef pooled;
             if(tryStartPooled(route->second,entry->config,cue,pooled)) {
                 if(!oneShot && !retireKey(cue.key)) {
@@ -218,6 +222,10 @@ public:
         // particles are currently dormant. Exceeding the cap falls back to
         // the authored CPU effect only if the route explicitly allows it.
         auto selected=entry->config; // never mutate the cached authored asset
+        if(forceCpuTwin_) {
+            selected.backend.preference=SpectraFxExecutionPreference::Cpu;
+            selected.cpuFallback=SpectraFxHybridEmitter::Config::CpuFallback::Twin;
+        }
         // If a prior frame marked this group failed, new sources must not
         // re-enter it or create more GPU work until the safe-point recovery.
         if(!route->second.sharedPool.empty()) {
@@ -946,6 +954,7 @@ private:
     uint64_t nextPoolTicket_=0;
     render::float3 lastCameraEye_{};
     bool cpuEncodeProfiling_=false;
+    bool forceCpuTwin_=false;
     SpectraFxGpuBudgetGovernor gpuGovernor_{};
     FxQuality globalQuality_=FxQuality::High;
     Stats stats_{};

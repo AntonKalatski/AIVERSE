@@ -4029,6 +4029,17 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Data-driven entity effects shared by every host (table + presenter).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_spectrafx_entity_effects_tests
+        tests/spectrafx_entity_effects_test.cpp)
+    target_include_directories(aiverse_spectrafx_entity_effects_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_entity_effects_tests PRIVATE aiverse_fx)
+    add_test(NAME spectrafx_entity_effects COMMAND aiverse_spectrafx_entity_effects_tests)
+    set_tests_properties(spectrafx_entity_effects PROPERTIES LABELS "SpectraFX")
+endif()
+
 # CPU/GPU linkage: one asset on the Metal compute kernel and on its CPU twin
 # (kernel state parity, emitter image parity, particles/ms perf print).
 if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")

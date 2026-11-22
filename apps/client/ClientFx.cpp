@@ -4,10 +4,13 @@
 #include <cstdlib>
 #include "engine/fx/FxModelMesh.h"
 #include "engine/platform/Platform.h"
+#include "modules/rts/RtsModule.h"
 
 namespace aiverse::client {
 
 void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
+    dev_ = &dev;
+    rules_ = &rules;
     ps_.setQuality(fx::defaultQualityFor(dev, platform::isTouchDevice()));
     ps_.setFileReader([](const std::string& path, std::string& out) { return platform::readContentFile(path, out); });
     textures_.init(dev);
@@ -43,12 +46,7 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
             std::fprintf(stderr,"SpectraFX GPU routes: %s\n",issue.c_str());
         else if(!routes.empty()) {
             gpuRoutes_=std::move(routes);
-            gpuLibrary_=std::make_unique<fx::SpectraFxGpuEmitterLibrary>(
-                [](const std::string& path,std::string& out) {
-                    return platform::readContentFile(path,out);
-                });
-            gpuPlayback_=std::make_unique<fx::SpectraFxHybridPlayback>(
-                dev,ps_,*gpuLibrary_);
+            ensureGpuPlayback(dev);
             gpuPlayback_->configureGpuBudget(gpuBudget);
             if(sceneQuality) {
                 ps_.setQuality(*sceneQuality);
@@ -64,7 +62,119 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
 
 }
 
+bool ClientFx::ensureGpuPlayback(gfx::Device& dev) {
+    if(gpuPlayback_) return true;
+    gpuLibrary_=std::make_unique<fx::SpectraFxGpuEmitterLibrary>(
+        [](const std::string& path,std::string& out) {
+            return platform::readContentFile(path,out);
+        });
+    gpuPlayback_=std::make_unique<fx::SpectraFxHybridPlayback>(
+        dev,ps_,*gpuLibrary_);
+    gpuPlayback_->setGlobalQuality(ps_.quality());
+    gpuPlayback_->setForceCpuTwin(std::getenv("AIVERSE_SPECTRAFX_CPU")!=nullptr);
+    return true;
+}
+
+void ClientFx::configureEntityEffects(const Json& rulesJson, const Json& map) {
+    fx::SpectraFxEntityTable table;
+    std::string error;
+    bool ok=true;
+    // Inline declarations: types, then their weapons and abilities.
+    ok=ok && table.readInline(rulesJson["types"],"type:","id",&error);
+    if(rulesJson["types"].isObject())
+        for(const auto& [id,type]:rulesJson["types"].members()) {
+            (void)id;
+            ok=ok && table.readInline(type["weapons"],"weapon:","id",&error);
+            ok=ok && table.readInline(type["abilities"],"ability:","id",&error);
+        }
+    ok=ok && table.read(rulesJson["spectraFx"],&error) && table.read(map["spectraFx"],&error);
+    if(!ok) std::fprintf(stderr,"SpectraFX entity effects: %s\n",error.c_str());
+    entities_.reset(true);
+    entityRules_.clear();
+    if(!ok || table.empty() || !dev_) {entities_.configure({}, {});return;}
+    ensureGpuPlayback(*dev_);
+    fx::SpectraFxEntityEffects::Backend backend;
+    backend.cpu=&ps_;
+    backend.isGpuAsset=[this](const std::string& name) {
+        return gpuLibrary_ && gpuLibrary_->load(name).valid;
+    };
+    backend.routeGpu=[this](uint32_t id,const std::string& asset,float seconds) {
+        if(!gpuPlayback_) return;
+        fx::SpectraFxHybridPlayback::Route route;
+        route.asset=asset;
+        route.oneShotSeconds=seconds;
+        gpuPlayback_->route(id,route);
+    };
+    entities_.configure(std::move(table),std::move(backend));
+    std::fprintf(stderr,"[spectrafx-entities] %zu selector rules\n",entities_.table().size());
+}
+
+int ClientFx::entityRule(uint64_t key, const std::vector<std::string>& selectors) {
+    const auto it=entityRules_.find(key);
+    if(it!=entityRules_.end()) return it->second;
+    const int rule=entities_.rule(selectors);
+    entityRules_.emplace(key,rule);
+    return rule;
+}
+
+void ClientFx::presentEntityEffects(Simulation& sim, const game::RtsScene& scene, float dt) {
+    (void)sim;
+    if(!entities_.enabled() || !rules_ || planet_) return;
+    const auto& types=rules_->types;
+    entities_.beginFrame(dt);
+    for(const auto& o:scene.objects) {
+        if(!o.entity.valid() || !o.visible || o.blip || o.type>=types.size()) continue;
+        const auto& type=types[o.type];
+        std::string weapon;
+        if(o.isProjectile && o.shooterType<types.size() && o.shotWeapon>=0 &&
+           size_t(o.shotWeapon)<types[o.shooterType].weapons.size())
+            weapon=types[o.shooterType].weapons[size_t(o.shotWeapon)].id;
+        const uint64_t key=(uint64_t(o.type)<<32)|(uint64_t(o.isProjectile)<<31)|
+            (uint64_t(o.shooterType)<<12)|(uint64_t(uint8_t(o.shotWeapon+1))<<4)|uint64_t(o.owner&15);
+        std::vector<std::string> selectors{"*",o.isProjectile?"projectile":type.structure?"structure":"unit",
+                                           "type:"+type.id,"player:"+std::to_string(o.owner)};
+        if(!weapon.empty()) selectors.push_back("weapon:"+weapon);
+        const int rule=entityRule(key,selectors);
+        fx::SpectraFxEntityEffects::Pose pose{o.pos,o.facing};
+        entities_.entity(o.entity.packed(),rule,pose,o.isProjectile||o.hp>0,o.isProjectile?-1.0f:o.hp);
+    }
+    if(entityInbox_) {
+        for(const auto& ev:entityInbox_->pending) {
+            fx::SpectraFxEntityEffects::Pose pose;
+            if(!entities_.pose(ev.a,pose)) continue;   // not presented (fog, other body)
+            switch(ev.type) {
+            case game::kEvDied: entities_.cue(ev.a,"died",pose); break;
+            case game::kEvHit: entities_.cue(ev.a,"hit",pose); break;
+            case game::kEvAttack:
+                entities_.cue(ev.a,"fired",pose);
+                // Weapon data: rules types.<t>.weapons[i].spectraFx "on.fired".
+                if(ev.unitType>=0 && size_t(ev.unitType)<types.size() && ev.value>=0 &&
+                   size_t(ev.value)<types[size_t(ev.unitType)].weapons.size()) {
+                    const auto& id=types[size_t(ev.unitType)].weapons[size_t(ev.value)].id;
+                    entities_.cueAt(entityRule((uint64_t(1)<<62)|(uint64_t(ev.unitType)<<16)|uint64_t(ev.value),
+                                               {"weapon:"+id}),"fired",pose);
+                }
+                break;
+            case game::kEvAbility:
+                entities_.cue(ev.a,"ability",pose);
+                // Ability data: rules types.<t>.abilities[i].spectraFx "on.cast".
+                if(ev.unitType>=0 && size_t(ev.unitType)<types.size() && ev.value>=0 &&
+                   size_t(ev.value)<types[size_t(ev.unitType)].abilities.size()) {
+                    const auto& id=types[size_t(ev.unitType)].abilities[size_t(ev.value)].id;
+                    entities_.cueAt(entityRule((uint64_t(2)<<62)|(uint64_t(ev.unitType)<<16)|uint64_t(ev.value),
+                                               {"ability:"+id}),"cast",pose);
+                }
+                break;
+            default: break;
+            }
+        }
+        entityInbox_->pending.clear();
+    }
+    entities_.endFrame();
+}
+
 void ClientFx::shutdown() {
+    entities_.configure({}, {});
     stopMatch();
     gpuPlayback_.reset(); // destroy RHI handles before ParticleSystem/device
     gpuLibrary_.reset();
@@ -81,6 +191,25 @@ void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& 
     bridge_.setAttackOriginFn([&view](Entity e, fx::float3& pos, fx::float3& dir) { return view.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     bridge_.attach(sim, viewer);
     attached_ = true;
+    entities_.reset(true);
+    if(entities_.enabled()) {
+        entityInbox_=std::make_shared<EntityEventInbox>();
+        entityInbox_->active=true;
+        const std::weak_ptr<EntityEventInbox> weak=entityInbox_;
+        sim.addSystem("spectrafx_entities.collect",[weak](Simulation& observed) {
+            const auto inbox=weak.lock();
+            if(!inbox || !inbox->active) return;
+            for(const auto& event:observed.events()) {
+                if(event.type!=game::kEvDied && event.type!=game::kEvHit &&
+                   event.type!=game::kEvAttack && event.type!=game::kEvAbility) continue;
+                if(inbox->pending.size()>=4096) inbox->pending.pop_front();
+                World& w=observed.world();
+                const auto* unit=w.alive(event.a)?w.tryGet<game::Unit>(event.a):nullptr;
+                inbox->pending.push_back({event.type,event.a.packed(),event.b.packed(),
+                                          event.value,unit?int32_t(unit->type):-1});
+            }
+        });
+    }
     if(gpuPlayback_ && !gpuRoutes_.empty()) {
         gpuPlayback_->reset();
         gpuInbox_=std::make_shared<GpuEventInbox>();
@@ -114,6 +243,8 @@ void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& 
 }
 
 void ClientFx::stopMatch() {
+    if(entityInbox_) {entityInbox_->active=false;entityInbox_.reset();}
+    entities_.reset(true);
     lightBuf_.clear();
     preparedLightsValid_ = false;
     if (attached_) bridge_.detach();
@@ -124,6 +255,7 @@ void ClientFx::stopMatch() {
         gpuInbox_.reset();
     }
     if(gpuPlayback_) gpuPlayback_->reset();
+    entities_.flushGpu([](const fx::SpectraFxCue&) {}); // playback reset dropped them
     ps_.clear();
 }
 
@@ -157,6 +289,7 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
     // presentation sub-effects bounded and submit after current camera setup.
     if(gpuPlayback_ && !planet_) gpuPlayback_->playGpuImpactEffects(32);
     if (attached_ && dt > 0) bridge_.update(sim, &scene.objects, dt);
+    if (attached_) presentEntityEffects(sim, scene, dt);
     ps_.update(dt);
     static const bool dbg = std::getenv("AIVERSE_FX_DEBUG") != nullptr;
     static int frames = 0;
@@ -165,6 +298,21 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
             "[fx] played %d rejected %d particles %d culled %d drawn %d\n",
             bridge_.played(),bridge_.rejected(),ps_.stats().particles,
             ps_.stats().culled,ps_.stats().drawn);
+        if(entities_.enabled()) {
+            const auto& es=entities_.stats();
+            std::fprintf(stderr,
+                "[spectrafx-entities] entities=%zu attached=%zu spawned=%llu died=%llu "
+                "cues=%llu cpuPlays=%llu gpuPlays=%llu missing=%llu\n",
+                es.entities,es.liveAttachments,(unsigned long long)es.spawned,
+                (unsigned long long)es.died,(unsigned long long)es.cues,
+                (unsigned long long)es.cpuPlays,(unsigned long long)es.gpuPlays,
+                (unsigned long long)es.missingEffects);
+            if(gpuPlayback_) {
+                const auto snap=gpuPlayback_->backendSnapshot();
+                std::fprintf(stderr,"[spectrafx-backend] gpu=%zu cpuTwin=%zu cpuEffect=%zu\n",
+                             snap.dedicatedGpu,snap.dedicatedCpuTwin,snap.dedicatedCpu);
+            }
+        }
         if(gpuPlayback_) {
             const auto& budget=gpuPlayback_->gpuBudgetStats();
             std::fprintf(stderr,
@@ -230,6 +378,10 @@ void ClientFx::prepareGpuFrame(float dt,const render::Camera& camera) {
     if(!gpuPlayback_ || planet_) return;
     // Called inside Device::beginFrame, before Renderer3D::beginScene:
     // GPU buffers and compute are not touched by Simulation::step().
+    // Entity effects queued GPU cues last frame; this is the safe point.
+    entities_.flushGpu([this](const fx::SpectraFxCue& cue) {
+        gpuPlayback_->dispatch(cue);
+    });
     if(gpuInbox_) {
         while(!gpuInbox_->pending.empty()) {
             const auto cue=gpuInbox_->pending.front();

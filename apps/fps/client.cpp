@@ -35,6 +35,7 @@
 #include "engine/audio/Audio.h"
 #include "engine/platform/EngineDir.h"
 #include <fstream>
+#include <unordered_map>
 #include <algorithm>
 #include <filesystem>
 #include <iterator>
@@ -66,6 +67,86 @@ struct App {
     roads::RoadView roads;bool hasRoads=false;   // map "roadNetwork": the shared spline road view (engine/roads, docs/roads.md)
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
     fx::SpectraFxSceneHost fxScene;
+    // Shared data-driven entity effects: rule per selector set, and the last
+    // shot/hit counters per character life to turn them into cues.
+    std::unordered_map<std::string,int> fxRules;
+    struct FxCounters {uint32_t life=0,shots=0;int32_t health=0;};
+    std::unordered_map<uint8_t,FxCounters> fxCounters;
+    int fxRule(std::vector<std::string> selectors) {
+        std::string key;for(const auto& s:selectors){key+=s;key+='|';}
+        const auto it=fxRules.find(key);
+        if(it!=fxRules.end())return it->second;
+        const int rule=fxScene.entities().rule(selectors);
+        fxRules.emplace(key,rule);
+        return rule;
+    }
+    // Presents characters, vehicles and projectiles of the snapshot to the
+    // shared SpectraFxEntityEffects; game code declares nothing here.
+    void presentEntityEffects(float dt,const fps::CharacterSnapshot& local,world::Cell origin) {
+        auto& fxe=fxScene.entities();
+        if(!fxe.enabled())return;
+        const auto at=[&](Vec3 p){return visual(world::relativeTo(p,origin,32));};
+        const auto heading=[](Fixed yaw){const float a=float(yaw.toDouble())*6.28318530718f;return render::float3{std::sin(a),0,std::cos(a)};};
+        fxe.beginFrame(dt);
+        const auto& snap=client->snapshot();
+        for(const auto& snapshotCharacter:snap.characters) {
+            const auto& c=snapshotCharacter.slot==local.slot?local:snapshotCharacter;
+            const uint64_t id=(uint64_t(1)<<40)|(uint64_t(c.slot)<<32)|c.life;
+            const int rule=fxRule({"*","actor",c.slot==local.slot?"player:local":"player:remote",
+                                   "team:"+std::to_string(c.team),"weapon:"+std::to_string(c.weaponIndex)});
+            fx::SpectraFxEntityEffects::Pose pose{at(c.pos),heading(c.yaw)};
+            fxe.entity(id,rule,pose,c.health>0,std::clamp(float(c.health)/100.0f,0.0f,1.0f));
+            auto& counters=fxCounters[c.slot];
+            if(counters.life==c.life) {
+                if(c.shots>counters.shots) {
+                    fx::SpectraFxEntityEffects::Pose muzzle=pose;
+                    muzzle.position=muzzle.position+render::float3{0,1.5f,0};
+                    fxe.cue(id,"fired",muzzle);
+                    fxe.cueAt(fxRule({"weapon:"+std::to_string(c.weaponIndex)}),"fired",muzzle);
+                }
+                if(c.health<counters.health) fxe.cue(id,"hit",pose);   // it was hit
+            }
+            counters={c.life,c.shots,c.health};
+        }
+        for(const auto& v:snap.vehicles)
+            fxe.entity((uint64_t(2)<<40)|v.id,fxRule({"*","vehicle"}),{at(v.pos),heading(v.yaw)},
+                       v.health>0,std::clamp(float(v.health)/500.0f,0.0f,1.0f));
+        for(const auto& p:snap.projectiles) {
+            const auto velocity=visual(p.velocity);
+            fxe.entity((uint64_t(3)<<40)|p.id,
+                       fxRule({"*","projectile","projectile:"+std::to_string(p.kind),
+                               "weapon:"+std::to_string(p.weapon)}),
+                       {at(p.pos),render::length(velocity)>1e-4f?render::normalize(velocity):render::float3{0,0,1}});
+        }
+        fxe.endFrame();
+        static const bool debug=std::getenv("AIVERSE_FX_DEBUG")!=nullptr;
+        static int frames=0;
+        if(debug && ++frames%60==0) {
+            const auto& es=fxe.stats();
+            const auto* playback=fxScene.playback();
+            const auto backend=playback?playback->backendSnapshot():fx::SpectraFxHybridPlayback::BackendSnapshot{};
+            std::fprintf(stderr,"[spectrafx-entities] entities=%zu attached=%zu spawned=%llu died=%llu "
+                         "cues=%llu cpuPlays=%llu gpuPlays=%llu missing=%llu gpu=%zu cpuTwin=%zu\n",
+                         es.entities,es.liveAttachments,(unsigned long long)es.spawned,
+                         (unsigned long long)es.died,(unsigned long long)es.cues,
+                         (unsigned long long)es.cpuPlays,(unsigned long long)es.gpuPlays,
+                         (unsigned long long)es.missingEffects,backend.dedicatedGpu,backend.dedicatedCpuTwin);
+            if(playback) {
+                const auto& ps=playback->stats();
+                std::fprintf(stderr,"[spectrafx-playback] played=%llu moved=%llu failed=%llu refused=%llu missing=%llu slots=%llu\n",
+                    (unsigned long long)ps.played,(unsigned long long)ps.moved,(unsigned long long)ps.failed,
+                    (unsigned long long)ps.refused,(unsigned long long)ps.missing,(unsigned long long)playback->usedGpuSlots());
+            }
+            const auto& cpuStats=fxScene.particles().stats();
+            std::fprintf(stderr,"[spectrafx-cpu] particles=%d culled=%d drawn=%d\n",
+                         cpuStats.particles,cpuStats.culled,cpuStats.drawn);
+            for(const auto& c:snap.characters) {
+                const auto p=at(c.pos);
+                std::fprintf(stderr,"[spectrafx-pose] slot=%u local=%d health=%d pos=%.2f,%.2f,%.2f\n",
+                             unsigned(c.slot),c.slot==local.slot?1:0,int(c.health),p.x,p.y,p.z);
+            }
+        }
+    }
     world::Cell fxOrigin{};
     bool fxOriginValid=false;
     // One explicit generation for this FPS host/device lifetime. Do not
@@ -240,6 +321,12 @@ struct App {
             std::fprintf(stderr,"SpectraFX FPS scene: %s\n",
                          fxScene.lastError().c_str());
         }
+        // Data-declared entity effects (rules/map "spectraFx", inline
+        // "spectraFx" on rules fps.weapons -> selector "weapon:<index>").
+        if(!fxScene.configureEntityEffects(rules,map,
+               {{"weapon:",&rules["fps"]["weapons"],"id"}}))
+            std::fprintf(stderr,"SpectraFX entity effects: %s\n",
+                         fxScene.lastError().c_str());
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
             auto reader=[&](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);};
             std::string text;if(!reader(file,text))throw std::runtime_error("geometryScene: file not found: "+file);
@@ -813,6 +900,18 @@ struct App {
                 if(held("Block"))input.buttons|=fps::Block;
                 if(held("LockOn"))input.buttons|=fps::LockOn;
             }
+            // Testing (screenshots): AIVERSE_FPS_WATCH=1 turns the view to the nearest living remote character.
+            static const bool watchRemote=std::getenv("AIVERSE_FPS_WATCH")!=nullptr;
+            if(watchRemote) {
+                const auto& self=client->predicted();float best=1e9f;
+                for(const auto& other:client->snapshot().characters) {
+                    if(other.slot==self.slot||other.health<=0)continue;
+                    const auto d=visual(other.pos-self.pos);
+                    const bool hidden=geometry.cast(self.pos+Vec3{{},1_fx,{}},other.pos-self.pos).hit;
+                    const float dist=render::length(d)+(hidden?1000.0f:0.0f);   // prefer characters in sight
+                    if(dist>0.5f&&dist<best){best=dist;look.yaw=std::atan2(d.x,d.z)/6.28318530718f;if(look.yaw<0)look.yaw+=1;look.pitch=-0.01f;}
+                }
+            }
             input.yaw=Fixed::fromRaw(int64_t(look.yaw*65536));input.pitch=Fixed::fromRaw(int64_t(look.pitch*65536));
             if(client->submit(input)){
                 fireQueued=jumpQueued=false;
@@ -903,6 +1002,7 @@ struct App {
                 cue.direction=forward;
                 fxScene.enqueueCue(std::move(cue),true,fxScene.cueEpoch());
             }
+            presentEntityEffects(float(std::clamp(dt,0.0,0.1)),actor,origin);
         }
         if(streamedScene)streamedScene->update(device,{&actor.pos,1});
         // Prepare GPU particle evolution outside render passes.

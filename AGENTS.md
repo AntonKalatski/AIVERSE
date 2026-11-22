@@ -162,6 +162,11 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 **Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).
 **Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).
 **System documentation:** [docs/spectrafx.md](docs/spectrafx.md).
+**Effects in data + one CPU/GPU path (2026-11-22):** [docs/spectrafx-entity-effects.md](docs/spectrafx-entity-effects.md).
+Entity effects are declared in rules/map/type/weapon/ability `"spectraFx"` data and presented by the shared
+`engine/fx/SpectraFxEntityEffects.h` in every host (RTS client, FPS client); never add a host-specific copy. A
+`fx/gpu/*.gpu.json` asset runs on the Metal kernel or its CPU twin (`SpectraFxEvolutionKernel.h`, keep in lockstep
+with `SpectraFxComputeShaders.h`); `spectrafx_cpu_gpu_parity` must stay green.
 
 <!-- Historical incoming Inspector/SpectraFX branch contracts; current integration gates still apply. -->
 **Latest implementation handoff (Stage 44, actual standalone tests RUN):**

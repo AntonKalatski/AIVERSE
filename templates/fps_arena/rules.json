@@ -1,4 +1,60 @@
 {
+  "spectraFx": {
+    "entities": {
+      "player:remote": {
+        "attach": [
+          {
+            "effect": "team_aura",
+            "offset": [
+              0,
+              2.25,
+              0
+            ]
+          }
+        ],
+        "on": {
+          "died": {
+            "effect": "death_burst",
+            "offset": [
+              0,
+              0.9,
+              0
+            ]
+          },
+          "fired": {
+            "effect": "muzzle_sparks",
+            "offset": [
+              0,
+              1.5,
+              0.6
+            ],
+            "direction": "forward"
+          }
+        }
+      },
+      "projectile": {
+        "attach": [
+          {
+            "effect": "tracer_glow"
+          }
+        ]
+      },
+      "actor": {
+        "attach": [
+          {
+            "effect": "dust_kick",
+            "when": "moving",
+            "offset": [
+              0,
+              0.05,
+              -0.3
+            ],
+            "direction": "backward"
+          }
+        ]
+      }
+    }
+  },
   "fps": {
     "tickRate": 60,
     "snapshotRate": 20,
@@ -47,7 +103,20 @@
         "moveSpread": 0.006,
         "recoil": 0.0025,
         "price": 1500,
-        "penetration": 1
+        "penetration": 1,
+        "spectraFx": {
+          "on": {
+            "fired": {
+              "effect": "muzzle_sparks",
+              "offset": [
+                0,
+                0,
+                0.6
+              ],
+              "direction": "forward"
+            }
+          }
+        }
       },
       {
         "nameKey": "fps.weapon.shotgun",
