@@ -4282,4 +4282,4 @@ Tests: `prisma_new_effects` (GPU-free catalog/plans/cost/presets/shader contract
 `prisma_<fx>_gpu` / `_gl` / `_vulkan` for `ao ssr flare smaa distort streaks
 halation haze fsr histogram` (phase 0 without, phase 1 with the effect; it must be
 encoded and change the frame in its direction), `prisma_style_presets_fresh`.
-Handoff: `docs/handoffs/prisma-stage-97-new-effects.md`.
+Handoff: `docs/handoffs/prisma-stage-99-new-effects.md`.
