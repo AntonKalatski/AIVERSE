@@ -1,0 +1,32 @@
+{
+  "windows/AIVERSE-3.0.0-9e7e3b80-windows.zip": {
+    "platform": "windows",
+    "arch": "x86_64",
+    "version": "3.0.0",
+    "commit": "9e7e3b80",
+    "file": "windows/AIVERSE-3.0.0-9e7e3b80-windows.zip",
+    "url": "https://github.com/chromealex/aiverse/releases/download/v3.0.0/AIVERSE-3.0.0-9e7e3b80-windows.zip",
+    "size": 269408272,
+    "sha256": "af543f28d35d39f945c7c04a49b8a6313b501b7e8f644ad7e866290a738d9d10",
+    "root": "AIVERSE",
+    "rtsmcp": "AIVERSE/bin/aiversemcp.exe",
+    "editor": "AIVERSE/bin/aiverse_editor.exe",
+    "headless": "AIVERSE/bin/aiverse_headless.exe",
+    "external": true
+  },
+  "macos/AIVERSE-3.0.0-9e7e3b80-macos.zip": {
+    "platform": "macos",
+    "arch": "x86_64",
+    "version": "3.0.0",
+    "commit": "9e7e3b80",
+    "file": "macos/AIVERSE-3.0.0-9e7e3b80-macos.zip",
+    "url": "https://github.com/chromealex/aiverse/releases/download/v3.0.0/AIVERSE-3.0.0-9e7e3b80-macos.zip",
+    "size": 251336980,
+    "sha256": "fb6a28a44b7d538198e4cc125e40a14c66bc176b56cdf074f04f326882bc7d10",
+    "root": "AIVERSE",
+    "rtsmcp": "AIVERSE/bin/aiversemcp",
+    "editor": "AIVERSE/bin/AiverseEditor.app",
+    "headless": "AIVERSE/bin/aiverse_headless",
+    "external": true
+  }
+}
