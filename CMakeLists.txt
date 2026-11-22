@@ -5047,6 +5047,15 @@ option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
 if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
     add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
+    # STRATA debug view, SpectraFX and MotionWeave website frames
+    add_executable(aiverse_fx_showcase tools/site/fx_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_fx_showcase PRIVATE aiverse_runtime aiverse_fx)
+    add_executable(aiverse_anim_showcase tools/site/anim_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_anim_showcase PRIVATE aiverse_runtime)
+    if(AIVERSE_BUILD_STRATA)
+        add_executable(aiverse_strata_showcase tools/site/strata_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_showcase PRIVATE aiverse_runtime aiverse_strata_portable)
+    endif()
 endif()
 
 # DLSS runtime library next to the client (the SDK ships it as lib/Windows_x86_64/rel/nvngx_dlss.dll).
