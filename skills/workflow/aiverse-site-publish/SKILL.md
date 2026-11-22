@@ -45,7 +45,7 @@ Do all of this in the same commit as the devlog entry.
 | Something without its own system (studio, build, network, meta, gameplay, render, world, ecs, agents) | devlog entry with that topic id: goes to `blog.html`; add a topic to `systems.json` if none fits |
 | One card of "Что входит" grew into a story | `includes[].id` + `docs/devlog/features/<system>/<id>.md` and `.en.md`, optional `media` |
 | A guide or format that game developers read | `site/docs.json` entry; update `docs/ru/` and `docs/en/` translations of that doc in the same commit |
-| A tagged release (integrator) | top of `docs/devlog/releases.json`; `release` of the systems it ships |
+| A tagged release (integrator) | top of `docs/devlog/releases.json` with a frame (`media`) on every visible highlight; `release` of the systems it ships |
 | Interface strings of the site | `site/i18n/ru.json` and `site/i18n/en.json` |
 
 A system can appear in several places: main-page card, `system-<id>.html`, its devblog,
@@ -63,6 +63,10 @@ too: a Studio window or a render tweak in `blog.html` needs its frame.
 - Frames come from the engine (MCP screenshot tools, LENS capture, `tests/render`, headless
   client `AIVERSE_SCREENSHOT`, Studio screenshots). Never use mockups, references or generated images.
 - An `includes` card with its own article should get a `media` thumbnail from the same frames.
+- Release highlights about something visible get a frame too (`highlights[].media`), taken from
+  the devlog entries of that release.
+- Every entry frame also lands in `gallery.html` ("Галерея: скрины из хода разработки"). Write
+  captions that make sense on their own there.
 - Only invisible work (internal API, refactor, tests) goes without a frame. Pair it with the next
   visible stage when there is one.
 

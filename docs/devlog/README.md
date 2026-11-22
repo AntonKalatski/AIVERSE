@@ -78,12 +78,18 @@ with no article the page is a captioned gallery. `check` validates slugs, files,
 `coverBrief` says what the frame must show; the owning agent renders it and, if it has no cover
 yet, may set `cover` with `"approved": false`. Replacing an existing cover needs the user.
 
+## Gallery: `gallery.html`
+
+"Галерея: скрины из хода разработки" collects every still frame of every devlog entry, newest first,
+with a filter by system and links back to the entry. It is built from the entries: nothing to edit.
+
 ## Releases: `docs/devlog/releases.json`
 
 `releases.html` lists engine releases newest first. Each entry: `version`, `tag` (the git tag of the
 GitHub release), `date` (YYYY-MM-DD), `commit` (hex SHA of the tag), `title`, `summary`,
-`highlights` (`[{"title", "text"}]`, may be empty), optional `verified` — each text field with its
-`En` twin. The integrator adds the entry when a release is tagged (AGENTS.md §8).
+`highlights` (`[{"title", "text", "media"?}]`, may be empty), optional `verified` — each text field with its
+`En` twin. A highlight about something visible carries `media: [{"src", "caption", "captionEn"}]`: a real
+frame already in the repository (usually from that system's devlog entry), shown on top of the card. The integrator adds the entry when a release is tagged (AGENTS.md §8).
 
 Download buttons are not stored here: the page reads `builds.index` (the `index.json` of the
 `builds` branch written by `tools/release/publish_builds.py`) in the browser and attaches each

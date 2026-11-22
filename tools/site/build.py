@@ -381,6 +381,15 @@ def check_releases():
         for j, h in enumerate(r.get('highlights') or []):
             if not h.get('title') or not h.get('text'):
                 errors.append(f'{q} highlights[{j}]: "title" and "text" are required')
+            for k, m in enumerate(h.get('media') or []):
+                mq = f'{q} highlights[{j}] media[{k}]'
+                f = repo_file(m.get('src')) if isinstance(m, dict) else None
+                if f is None or not f.is_file():
+                    errors.append(f'{mq}: image not found: {m.get("src") if isinstance(m, dict) else m!r}')
+                elif f.suffix.lower() not in STILL_EXT:
+                    errors.append(f'{mq}: must be a PNG or JPG')
+                elif not (m.get('caption') or '').strip():
+                    errors.append(f'{mq}: needs a caption')
     nxt = (data.get('next') or {}).get('version')
     if nxt is not None and (not isinstance(nxt, str) or nxt in seen):
         errors.append(f'{p}: next.version must be a version that is not released yet')
@@ -395,7 +404,7 @@ def check_releases():
     return errors
 
 
-from render import (Ctx, roadmap_lines, FEATURE_JS, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
+from render import (Ctx, roadmap_lines, FEATURE_JS, GALLERY_JS, gallery_page, MARK_LIGHT, RELEASES_JS, ROADMAP_JS, TRACK_JS, BLOG_JS, Converter, blog_page, devblog_page, feature_page, docs_index, doc_page, esc, localized_entries,  # noqa: E402
                     release_chip, releases_page, render_page, roadmap_page, showcase_html, system_page,
                     systems_html, core_html, fill_tokens)
 
@@ -523,6 +532,10 @@ def cmd_build(args):
                 link['href'] = f'{manifest["repoBlob"]}/{link["href"]}'
     layout = (SITE / '_layout.html').read_text(encoding='utf-8')
     rel_data = load_releases()
+    for r in rel_data.get('releases') or []:
+        for h in r.get('highlights') or []:
+            for m in h.get('media') or []:
+                copy_media(m['src'])
     doc_pages = {p['source']: p['id'] for sec in manifest_docs['sections'] for p in sec['pages']}
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
     pages = 0
@@ -604,6 +617,10 @@ def cmd_build(args):
                 layout, ctx, name, f'{T["blogTitle"]}: {s["name"]} · AIVERSE', T['blogLead'].format(s=s['name']),
                 devblog_page(s, mine, ctx, s['id'] in {p['id'] for p in paged}), nav='devlog', script=FEATURE_JS), encoding='utf-8')
             pages += 1
+        (d / 'gallery.html').write_text(render_page(
+            layout, ctx, 'gallery.html', f'{T["galTitle"]} · AIVERSE', T['galLead'],
+            gallery_page(loc_entries, systems, ctx), nav='gallery', script=FEATURE_JS + GALLERY_JS), encoding='utf-8')
+        pages += 1
         (d / 'roadmap.html').write_text(render_page(layout, ctx, 'roadmap.html', T['rmPageTitle'], T['rmDesc'],
                                                     roadmap_page(flagships + [s for s in systems if s.get('core') and s.get('roadmap')], ctx), nav='roadmap', script=ROADMAP_JS),
                                         encoding='utf-8')
