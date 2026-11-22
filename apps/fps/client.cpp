@@ -908,6 +908,10 @@ struct App {
                 if(held("Block"))input.buttons|=actor::Block;
                 if(held("LockOn"))input.buttons|=actor::LockOn;
             }
+            if(config.locomotion){
+                if(held("Dash"))input.buttons|=actor::Dash;
+                if(held("Grapple"))input.buttons|=actor::Grapple;
+            }
             // Testing (screenshots): AIVERSE_FPS_WATCH=1 turns the view to the nearest living remote character.
             static const bool watchRemote=std::getenv("AIVERSE_FPS_WATCH")!=nullptr;
             if(watchRemote) {
