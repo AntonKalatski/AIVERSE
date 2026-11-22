@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems">Systems</a>
-<a href="./#genres">Genres</a>
+<a href="./#genres" data-nav="genres">Genres</a>
 <a href="roadmap.html" data-nav="roadmap">Roadmap</a>
 <a href="releases.html" data-nav="releases">Releases</a>
 <a href="gallery.html" data-nav="gallery">Gallery</a>
@@ -32,31 +32,31 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html" aria-current="page">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="complete-meta-service-c20">Complete meta service (C++20)<a class="anchor" href="#complete-meta-service-c20" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="ds-box"><input class="ds-input" type="search" placeholder="Search the docs  /" aria-label="Search the docs  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html" aria-current="page">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="complete-meta-service-c20">Complete meta service (C++20)<a class="anchor" href="#complete-meta-service-c20" aria-label="#">#</a></h1>
 <p>The reusable <code>aiverse::meta::Service</code> adds friends/clans, instance items, entitlements and ranked tournament groups to the existing economy, leaderboard and chat policies. <code>engine/meta/Service.h</code> is public to both engine and external native C++ hosts. No Lua, GPU, network library or running RTS match is required.</p>
 <h2 id="build-and-run">Build and run<a class="anchor" href="#build-and-run" aria-label="#">#</a></h2>
-<pre><code class="lang-sh">cmake -S tests/meta -B build/.temp/meta -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/.temp/meta -j 4
-ctest --test-dir build/.temp/meta --output-on-failure
+<pre><code class="lang-sh"><span class="hl-fn">cmake</span> <span class="hl-opt">-S</span> tests/meta <span class="hl-opt">-B</span> build/.temp/meta <span class="hl-opt">-DCMAKE_BUILD_TYPE</span>=Debug
+<span class="hl-fn">cmake</span> <span class="hl-opt">--build</span> build/.temp/meta <span class="hl-opt">-j</span> 4
+<span class="hl-fn">ctest</span> <span class="hl-opt">--test-dir</span> build/.temp/meta <span class="hl-opt">--output-on-failure</span>
 
-python3 tools/meta/scaffold.py --preset full --with-ui --out /path/to/game
-python3 tools/meta/compose.py --project /path/to/game --validator build/.temp/meta/aiverse_meta_validate
-python3 tools/meta/server.py --db /path/to/game/meta.sqlite user player1
-# Copy the printed player token into the browser sign-in form.
-python3 tools/meta/server.py --db /path/to/game/meta.sqlite serve \
-  --binary build/.temp/meta/aiverse_meta_service \
-  --config /path/to/game/meta/service.generated.json --ui /path/to/game/ui/meta
-# Open http://127.0.0.1:8765</code></pre>
+<span class="hl-fn">python3</span> tools/meta/scaffold.py <span class="hl-opt">--preset</span> full <span class="hl-opt">--with-ui</span> <span class="hl-opt">--out</span> /path/to/game
+<span class="hl-fn">python3</span> tools/meta/compose.py <span class="hl-opt">--project</span> /path/to/game <span class="hl-opt">--validator</span> build/.temp/meta/aiverse_meta_validate
+<span class="hl-fn">python3</span> tools/meta/server.py <span class="hl-opt">--db</span> /path/to/game/meta.sqlite user player1
+<span class="hl-com"># Copy the printed player token into the browser sign-in form.</span>
+<span class="hl-fn">python3</span> tools/meta/server.py <span class="hl-opt">--db</span> /path/to/game/meta.sqlite serve \
+  <span class="hl-fn">--binary</span> build/.temp/meta/aiverse_meta_service \
+  <span class="hl-fn">--config</span> /path/to/game/meta/service.generated.json <span class="hl-opt">--ui</span> /path/to/game/ui/meta
+<span class="hl-com"># Open http://127.0.0.1:8765</span></code></pre>
 <p><code>economy.json</code>, <code>boards.json</code>, <code>chats.json</code> and <code>extensions.json</code> are editable sources. <code>compose.py</code> validates before replacing <code>service.generated.json</code>; never hand-edit that output. The generator refuses to overwrite definitions or UI. <code>full</code> adds all new policies; minimal/mobile/competitive retain their narrower presets. Remove optional extension sections to disable features. Restart the reference host after changing configuration. Keep configuration versioned while orders/tournaments are pending.</p>
 <p>The browser UI is a working reference client with shop, quests/daily/energy, leaderboards, global chat, friends/clans, item collection, inbox and tournaments. Text is inserted with <code>textContent</code>; RU/EN labels are in <code>ui/lang.json</code>; colors/layout are CSS variables. No framework or CDN. It is not automatically mounted in RmlUi. For a native UI use the same <code>view</code> projection and RPC actions with the host's localization and existing RmlUi components. Real-money offers show a store handoff; the reference browser does not initiate native platform payments.</p>
 <h2 id="native-integration">Native integration<a class="anchor" href="#native-integration" aria-label="#">#</a></h2>
-<pre><code class="lang-cpp">#include &quot;engine/meta/Service.h&quot;
-using namespace aiverse::meta;
-auto definitions = ServiceConfig::parse(json);
-Service service(definitions, savedSnapshot, atomicCompareAndSwap);
-ServiceRequest request{&quot;friends&quot;, &quot;request&quot;, &quot;stable-request-id&quot;, args};
-auto reply = service.execute(authenticatedPrincipal, request, trustedUtcSeconds);
-auto presentation = service.view(authenticatedPrincipal.player, trustedUtcSeconds);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/meta/Service.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::meta;
+<span class="hl-kw">auto</span> definitions = <span class="hl-ty">ServiceConfig</span>::<span class="hl-fn">parse</span>(json);
+<span class="hl-ty">Service</span> <span class="hl-fn">service</span>(definitions, savedSnapshot, atomicCompareAndSwap);
+<span class="hl-ty">ServiceRequest</span> request{<span class="hl-str">&quot;friends&quot;</span>, <span class="hl-str">&quot;request&quot;</span>, <span class="hl-str">&quot;stable-request-id&quot;</span>, args};
+<span class="hl-kw">auto</span> reply = service.<span class="hl-fn">execute</span>(authenticatedPrincipal, request, trustedUtcSeconds);
+<span class="hl-kw">auto</span> presentation = service.<span class="hl-fn">view</span>(authenticatedPrincipal.player, trustedUtcSeconds);</code></pre>
 <p>Link <code>aiverse::meta</code>; registered game modules use <code>aiverse_native_use_meta(aiverse_native_ID)</code>. Keep the service in the native UI/service host, never in simulation <code>tick</code> callbacks. Use engine commands for any validated meta snapshot that affects the match. <code>RemoteBackend</code> accepts a host transport function and delivers callbacks during <code>pump</code>. The host owns HTTPS, session acquisition, timeout/retry and response decoding. All completion and pump calls occur on the owning thread; the adapter does not create threads. Late callbacks after adapter destruction drop into an unobserved queue safely.</p>
 <h2 id="state-and-authority">State and authority<a class="anchor" href="#state-and-authority" aria-label="#">#</a></h2>
 <p>A <code>Principal</code> comes from the host, not client JSON. Ordinary players may create their own profile once, spend their own balances, claim earned rewards, send messages and manage permitted social actions. Only <code>authority=true</code> may grant rewards/items, record progression, submit scores, settle tournaments, fulfill/cancel purchases, moderate messages or deliver entitlement provider events. This flag is not a receipt validator: the host must first verify the platform event or authoritative match result.</p>
@@ -88,6 +88,23 @@ auto presentation = service.view(authenticatedPrincipal.player, trustedUtcSecond
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Nothing found"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>

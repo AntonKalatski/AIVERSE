@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems">Systems</a>
-<a href="./#genres">Genres</a>
+<a href="./#genres" data-nav="genres">Genres</a>
 <a href="roadmap.html" data-nav="roadmap">Roadmap</a>
 <a href="releases.html" data-nav="releases">Releases</a>
 <a href="gallery.html" data-nav="gallery">Gallery</a>
@@ -32,7 +32,7 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html" aria-current="page">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="strata-aiverse-virtual-geometry">Strata — AIVERSE virtual geometry<a class="anchor" href="#strata-aiverse-virtual-geometry" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="ds-box"><input class="ds-input" type="search" placeholder="Search the docs  /" aria-label="Search the docs  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html" aria-current="page">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="strata-aiverse-virtual-geometry">Strata — AIVERSE virtual geometry<a class="anchor" href="#strata-aiverse-virtual-geometry" aria-label="#">#</a></h1>
 <p>Status (2026-11-22): <strong>integrated into main; experimental and opt-in, with CPU planning, streaming, portable indexed rendering and gated Vulkan GPU selection/indirect routing implemented. Real-hardware acceptance ran on Metal (native arm64), GLES 3.2 and Vulkan (Android): pictures, draw calls and frame times match the LOD path; synchronous staging and memory keep STRATA OFF by default — see <a href="#hardware-acceptance-and-default-on-decision-2026-11-22">Hardware acceptance and default-on decision</a>.</strong></p>
 <h2 id="current-implementation-and-verification">Current implementation and verification<a class="anchor" href="#current-implementation-and-verification" aria-label="#">#</a></h2>
 <div class="table"><table><thead><tr><th>Subsystem</th><th>Implemented behavior</th><th>Verification and remaining limits</th></tr></thead><tbody><tr><td>Builder, source seams, LOD planning</td><td>Rigid opaque source adaptation, hierarchy and source seam certification, per-view CPU selection and hysteresis</td><td>CPU fixtures pass; certificates do not prove lossy visual quality</td></tr><tr><td>Residency and disk streaming</td><td>Budgeted index pages, root fallback, asynchronous disk reads and shared multi-world coordination</td><td>CPU/recording lifecycle, corrupt-archive and budget tests pass, including repeated runs; hardware residency-pressure orbit remains open</td></tr><tr><td>Portable rendering</td><td>CPU-selected frontiers, compacted per primitive into one draw per material, submitted through the existing Renderer3D and original source vertex buffers</td><td>Metal lossless fixtures 6/6 on native arm64; 732 k triangle castle on Metal, GLES 3.2 and Vulkan (Adreno 610) matches the LOD path in pixels, draw calls and frame time (2026-11-22); WebGL and macOS Vulkan not runnable on the acceptance Mac</td></tr><tr><td>GPU selection and temporal state</td><td>Metal/Vulkan compute culling and bounded GPU temporal histories</td><td>Actual Metal selection and three-frame temporal fixtures pass; Vulkan runtime requires its own real device gate</td></tr><tr><td>Vulkan GPU indirect rendering</td><td>Explicitly gated per-material/instance/pass packets consumed by Renderer3D</td><td>Recording contracts and GLSL/SPIR-V compilation pass; real Vulkan compute/indirect/temporal and raster/depth/reflection acceptance is not certified</td></tr><tr><td>Production readiness</td><td>Experimental flags and manual parity gates stay OFF by default</td><td>Native arm64 and device acceptance done 2026-11-22; default-on blocked by synchronous staging (37 s desktop, ~6.5 min phone) and memory (criteria below); spot-shadow, lossy seam ROI and hardware pressure/popping still open</td></tr></tbody></table></div>
@@ -71,16 +71,16 @@
 <ul><li><code>engine/render/StrataGeometry.h</code>: <code>ClusterNode</code>, <code>SelectionInput</code>, <code>SelectionOutput</code>, <code>validate()</code>, CPU reference <code>select()</code>.</li><li><code>engine/render/StrataBuilder.h</code>: <code>BuildInput</code>, <code>BuildOptions</code>, <code>Meshlet</code>, <code>ClusterBounds</code>, <code>Asset</code>, <code>build()</code>.</li><li><code>engine/render/StrataModelAdapter.h</code>: <code>ModelAsset</code>, <code>ModelPrimitiveAsset</code>, <code>ModelPrimitiveSkip</code>, <code>buildModelAsset()</code>. This is a read-only, opt-in adapter for CPU <code>Model</code> assets, not a renderer hook.</li><li>Link <code>aiverse_strata_builder</code> or <code>aiverse_strata_model_adapter</code> in project CMake when <code>AIVERSE_BUILD_STRATA=ON</code> (ON by default). Both reuse the pinned <code>aiverse_meshoptimizer_lod</code> dependency. Runtime integration uses the separate <code>aiverse_strata_view</code>, <code>aiverse_strata_portable</code>, <code>aiverse_strata_gpu_scene</code>, <code>aiverse_strata_gpu_culling</code> and <code>aiverse_strata_render_routing</code> targets.</li><li><code>build()</code> accepts <strong>one material partition per invocation</strong>; vertex positions begin with three floats and may be interleaved. Source indices and positions are borrowed during the call only. On failure, output stays unchanged. Output is a CPU-owned asset independent of gfx::Device.</li><li><code>Meshlet</code> is a <strong>leaf</strong> with compact local uint8 triangle indices and a map to original global vertex indices. Defaults: max 64 vertices, max 124 triangles. Original global indices are retained for indexed fallback.</li><li><code>ClusterNode</code> is a <strong>drawable group</strong> in the current schema; interior nodes are not guaranteed to fit a single hardware meshlet. <code>firstIndex</code> and <code>indexCount</code> reference the asset's flat index array. Children are contiguous and listed after parents (breadth-first reordering). <code>Asset::bounds</code> aligns one-to-one with <code>Asset::nodes</code>.</li><li>Parent clusters use <code>meshopt_simplify</code> (position-only inputs) or <code>meshopt_simplifyWithAttributes</code> (optional 1..32 weighted float attributes), with <code>meshopt_SimplifyLockBorder | meshopt_SimplifyErrorAbsolute</code>. The parent's geometric error is conservatively accumulated from its children. A group with under 10% reduction stays unmerged; multiple roots are permitted. Max levels, target ratio and relative error are configurable. Error in <code>ClusterNode</code> is in object units; the caller must project it to pixels using the correct pass and transform.</li><li><code>select()</code> requires <strong>all roots resident</strong>. A missing child prevents refinement of its parent; budget pressure retains the parent. The caller supplies a valid projected error for every node. The implementation is a CPU reference selector, not GPU culling or residency.</li><li><code>buildModelAsset()</code> projects 15 attribute components per vertex from <code>Model</code> (normal xyz, UV0, tangent xyzw, vertex RGBA, packed lightmap UV1), with weighted seam-aware simplification. It does not mutate source Model or LOD0. It skips mutable nodes, skinned/morphed, already uploaded, meshes with existing authored/generated LODs, material variants and alpha/custom-shader materials. It returns explicit skip reasons and fails transactionally on invalid eligible geometry. GeometryScene staging consumes these assets; the adapter itself does not submit draws or take ownership from Renderer3D.</li><li>This is still experimental; the limited verified scenarios are listed above. Do not automatically route displaced surfaces here. Importers should preserve existing meshes and exact LOD0 as a fallback.</li></ul>
 <h2 id="stage-4-optional-cpu-staging-in-geometryscene">Stage 4 — optional CPU staging in GeometryScene<a class="anchor" href="#stage-4-optional-cpu-staging-in-geometryscene" aria-label="#">#</a></h2>
 <p><code>GeometryScene</code> remains the source-of-truth for scene instances, model ownership, existing HLOD, visibility and draw submission. New APIs:</p>
-<pre><code class="lang-cpp">render::GeometryScene scene;
-scene.setStrataStagingEnabled(true);  // Before load/loadPrepared, default OFF
-scene.loadPrepared(device, sceneJson, std::move(models));
-// Scene draws through the existing Renderer3D exactly as before.
-const auto&amp; counters = scene.stats(); // strataSources, strataNodes,
-// strataMeshlets, strataIndexBytes, strataSkippedSources,
-// strataSkippedPrimitives, strataFailures
-const auto* cpuAsset = scene.strataAsset(&quot;models/stone.glb&quot;);
-// cpuAsset is nullptr when unavailable or the key is not staged.
-scene.shutdown(device); // invalidates cpuAsset and all staging handles</code></pre>
+<pre><code class="lang-cpp">render::<span class="hl-ty">GeometryScene</span> scene;
+scene.<span class="hl-fn">setStrataStagingEnabled</span>(<span class="hl-kw">true</span>);  <span class="hl-com">// Before load/loadPrepared, default OFF</span>
+scene.<span class="hl-fn">loadPrepared</span>(<span class="hl-kw">device</span>, sceneJson, <span class="hl-ty">std</span>::<span class="hl-fn">move</span>(models));
+<span class="hl-com">// Scene draws through the existing Renderer3D exactly as before.</span>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span>&amp; counters = scene.<span class="hl-fn">stats</span>(); <span class="hl-com">// strataSources, strataNodes,</span>
+<span class="hl-com">// strataMeshlets, strataIndexBytes, strataSkippedSources,</span>
+<span class="hl-com">// strataSkippedPrimitives, strataFailures</span>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span>* cpuAsset = scene.<span class="hl-fn">strataAsset</span>(<span class="hl-str">&quot;models/stone.glb&quot;</span>);
+<span class="hl-com">// cpuAsset is nullptr when unavailable or the key is not staged.</span>
+scene.<span class="hl-fn">shutdown</span>(<span class="hl-kw">device</span>); <span class="hl-com">// invalidates cpuAsset and all staging handles</span></code></pre>
 <p>Staging is compiled only when <code>AIVERSE_BUILD_STRATA=ON</code>, and is inert unless <code>setStrataStagingEnabled(true)</code> is called before loading a scene. <code>strataStagingSupported()</code> reports compile-time availability. The method returns false on builds where Strata was disabled. Scene staging is configured by <strong>native API</strong>, not via scene JSON, so no existing saved scene is affected. There are no additional draw calls and no GPU-resident Strata buffers.</p>
 <p>The CPU <code>SceneStaging</code> object is in <code>engine/render/StrataModelAdapter.h</code> and can also be used by tools without creating a scene or renderer. It stores at most one copy per unique source key. It preserves the source <code>Model</code>, reports skip/failure diagnostics and has configurable default caps of 250k vertices and 750k indices per source. These are <strong>per-source preparation bounds</strong>, not global Strata/VRAM limits. All staged data is released with <code>GeometryScene::shutdown</code> and re-created on subsequent loads. Source proxies and generated HLOD proxies are deliberately excluded. Models ineligible for Strata continue through the existing renderer unchanged. A failed staging operation must never fail the scene's legacy upload.</p>
 <p>The <code>strataIndexBytes</code> counter measures only auxiliary Strata flat index storage (not total Strata CPU heap usage); do not report it as resident VRAM. All counters are diagnostics and are not part of a public save/network schema.</p>
@@ -93,20 +93,20 @@ scene.shutdown(device); // invalidates cpuAsset and all staging handles</code></
 <p>Do not conflate the already existing <code>GeometryCluster</code>/static pooling path with Strata's new <code>ClusterNode</code> hierarchy. Strata staging currently stores auxiliary CPU data; it is NOT a substitute for pooled GPU pages and must not double-submit scene primitives.</p>
 <h2 id="stage-6-per-pass-strata-selection-contract">Stage 6 — per-pass Strata selection contract<a class="anchor" href="#stage-6-per-pass-strata-selection-contract" aria-label="#">#</a></h2>
 <p><code>engine/render/StrataView.h/.cpp</code> introduces a CPU-only per-pass reference selector. The selected geometry uses <strong>Asset-local index ranges</strong>; ranges are not GPU draw commands and MUST NOT be passed to <code>gfx::Device::drawIndexedIndirect</code> without first arranging the auxiliary index stream through the shared geometry residency/allocator and correct material/instance grouping.</p>
-<pre><code class="lang-cpp">#include &quot;engine/render/StrataView.h&quot;
-render::strata::ViewConfig pass{};
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/render/StrataView.h&quot;</span>
+render::strata::<span class="hl-ty">ViewConfig</span> pass{};
 pass.objectToClip = cameraViewProj * instanceWorld * bindNodeWorld;
 pass.width = renderTargetWidth;
 pass.height = renderTargetHeight;
-pass.clipDepthZeroToOne = device.info().clipDepthZeroToOne;
-pass.errorThresholdPixels = 1.0f;
-pass.maxSelectedNodes = 65536;
-render::strata::ViewPlan selected;
-std::string error;
-bool ok = scene.planStrataView(
-    &quot;models/stone.glb&quot;, /* mesh */ 0, /* primitive */ 0,
+pass.clipDepthZeroToOne = <span class="hl-kw">device</span>.<span class="hl-fn">info</span>().clipDepthZeroToOne;
+pass.errorThresholdPixels = <span class="hl-num">1.0f</span>;
+pass.maxSelectedNodes = <span class="hl-num">65536</span>;
+render::strata::<span class="hl-ty">ViewPlan</span> selected;
+<span class="hl-ty">std</span>::<span class="hl-ty">string</span> error;
+<span class="hl-ty">bool</span> ok = scene.<span class="hl-fn">planStrataView</span>(
+    <span class="hl-str">&quot;models/stone.glb&quot;</span>, <span class="hl-com">/* mesh */</span> <span class="hl-num">0</span>, <span class="hl-com">/* primitive */</span> <span class="hl-num">0</span>,
     pass, selected, &amp;error);
-// Existing Renderer3D remains the sole draw issuer regardless of &#x27;ok&#x27;.</code></pre>
+<span class="hl-com">// Existing Renderer3D remains the sole draw issuer regardless of &#x27;ok&#x27;.</span></code></pre>
 <p><code>planStrataView</code> resolves the already-staged source once and calls the independent <code>strata::planView(asset, pass, result, error)</code>. The caller must supply the correct mesh-to-clip matrix <strong>for each node and pass</strong>. The API does not silently reuse the main view for shadows, reflections, portals or stereo. <code>strata::planView</code> validates bounds, index ranges, matrix and viewport; projects the existing per-cluster geometric error with <code>geometryErrorPixels</code>, runs the resident-parent fallback selector, then conservatively rejects offscreen selected nodes through <code>geometryBoxVisible</code>. Errors leave prior output unchanged. The resulting ranges identify node ID, firstIndex, indexCount and material group in their individual <code>strata::Asset</code> index stream; stats include tested/cut nodes, triangles, residency misses and budget pressure.</p>
 <p>The planner is packaged as <code>aiverse_strata_view</code>, using the existing <code>aiverse_models</code> geometry helpers. The CTest target is <code>aiverse_strata_view_tests</code> / <code>strata_view</code>. Neither test execution nor Metal/Vulkan validation has been claimed. The implementation remains a CPU reference path to compare eventual compute culling against; there is <strong>no GPU scene buffer, RHI command upload or Strata draw path</strong> yet.</p>
 <h2 id="stage-7a-experimental-gpu-cluster-metadata-not-geometry-residency">Stage 7A — experimental GPU cluster metadata (not geometry residency)<a class="anchor" href="#stage-7a-experimental-gpu-cluster-metadata-not-geometry-residency" aria-label="#">#</a></h2>
@@ -115,69 +115,69 @@ bool ok = scene.planStrataView(
 <div class="table"><table><thead><tr><th>GPU metadata record</th><th>Size</th><th>Purpose</th></tr></thead><tbody><tr><td><code>GpuMetadataHeader</code></td><td>32 B</td><td>Version, counts, byte offsets</td></tr><tr><td><code>GpuPrimitive</code></td><td>32 B</td><td>Model mesh/primitive IDs, global node/root spans</td></tr><tr><td><code>GpuNode</code></td><td>64 B</td><td>AABB, global child ID, <strong>source-local</strong> index span, error/flags</td></tr><tr><td>Root IDs</td><td>4 B each</td><td>Global root IDs, padded to 16-byte total length</td></tr></tbody></table></div>
 <p>The compact arrays are stored in one RHI <code>BufferType::Storage</code> buffer per eligible source (not per instance). Default bounds: 1 MiB per source, 8 MiB per scene for metadata. Experimental upload is restricted to Metal and Vulkan devices reporting compute support and a matching existing <code>Model::geometryPoolPage</code>, shared VB/IB and nonempty pooled extents. Noneligible sources do not abort scene loading and continue normal rendering. <code>Model::geometryRevision</code>, source identity and source GPU handles are checked when retrieving metadata; stale source records are never silently reused.</p>
 <p>Native integration is explicit:</p>
-<pre><code class="lang-cpp">render::GeometryScene scene;
-scene.setStrataStagingEnabled(true);
-scene.setStrataGpuMetadataEnabled(true); // both OFF by default
-scene.loadPrepared(dev, sceneJson, std::move(models));
-auto gpuBuffer = scene.strataGpuMetadataBuffer(&quot;models/stone.glb&quot;);
-auto stats = scene.stats();
-// strataGpuMetadataSources, strataGpuMetadataDeclined,
-// strataGpuMetadataFailures, strataGpuMetadataBytes
-scene.shutdown(dev); // call before destroying gfx::Device</code></pre>
+<pre><code class="lang-cpp">render::<span class="hl-ty">GeometryScene</span> scene;
+scene.<span class="hl-fn">setStrataStagingEnabled</span>(<span class="hl-kw">true</span>);
+scene.<span class="hl-fn">setStrataGpuMetadataEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// both OFF by default</span>
+scene.<span class="hl-fn">loadPrepared</span>(dev, sceneJson, <span class="hl-ty">std</span>::<span class="hl-fn">move</span>(models));
+<span class="hl-kw">auto</span> gpuBuffer = scene.<span class="hl-fn">strataGpuMetadataBuffer</span>(<span class="hl-str">&quot;models/stone.glb&quot;</span>);
+<span class="hl-kw">auto</span> stats = scene.<span class="hl-fn">stats</span>();
+<span class="hl-com">// strataGpuMetadataSources, strataGpuMetadataDeclined,</span>
+<span class="hl-com">// strataGpuMetadataFailures, strataGpuMetadataBytes</span>
+scene.<span class="hl-fn">shutdown</span>(dev); <span class="hl-com">// call before destroying gfx::Device</span></code></pre>
 <p>The metadata buffer is read-only for future compute code; it is <strong>not</strong> a GPU scene draw list and no compute shader consumes it yet. <code>GpuNode::resident</code> is a snapshot of the CPU cluster flag, NOT proof of GPU-resident Strata geometry. Most importantly, <code>GpuNode::sourceFirstIndex</code> references the auxiliary CPU <code>strata::Asset::indices</code>, not the <code>Model::ib</code> index stream or any pooled GPU allocation. Until the shared pool gains safe, versioned <strong>auxiliary Strata index-stream allocations</strong>, <strong>do not emit</strong> indexed or indirect draws from these metadata offsets.</p>
 <p>Existing <code>GeometryCluster</code> preparation can make <code>Model::geometry</code> non-null and intentionally exclude that model from the current rigid shared geometry pool. Such a source will decline experimental GPU metadata staging. Resolve the pool's admission/ownership policy explicitly; do not bypass its safety guards. This stage leaves <code>GlobalGeometryPool.cpp</code>, active <code>Renderer3D</code> batching, all render passes, ECS and saved scene formats unmodified.</p>
 <p><code>aiverse_strata_gpu_scene</code> builds the metadata and shared-page sidecar layer; CTest <code>strata_gpu_scene</code> checks CPU binary layout, multi-primitive global offsets, source flags, malformed ranges and transactional failure. <strong>Native compilation and GPU/CTest execution have not been verified</strong>.</p>
 <h2 id="stage-7b-shared-page-auxiliary-strata-index-residency">Stage 7B — shared-page auxiliary Strata index residency<a class="anchor" href="#stage-7b-shared-page-auxiliary-strata-index-residency" aria-label="#">#</a></h2>
 <p><strong>Status: code committed; native/GPU validation NOT RUN.</strong> All data remains experimental and the draw path remains the existing <code>Renderer3D</code>.</p>
 <p><code>GlobalGeometryPool.h/.cpp</code> now offers the following opt-in source-attached API. It does not introduce a second GPU geometry allocator:</p>
-<pre><code class="lang-cpp">render::GeometryPoolIndexSpan lease;
-if (render::uploadAuxiliaryGeometryIndices(
-        device, sourceModel, strataIndices.data(), strataIndices.size(), lease)) {
-    // lease.buffer == sourceModel.ib == sourceModel.vb (same page).
-    // lease.firstIndex is an absolute uint32 GPU index element offset.
-    // lease.indexCount counts only uploaded indices in the sidecar stream.
-    // Indices remain relative to sourceModel.gpuBaseVertex.
-    assert(render::auxiliaryGeometryIndicesValidFor(lease, sourceModel));
+<pre><code class="lang-cpp">render::<span class="hl-ty">GeometryPoolIndexSpan</span> lease;
+<span class="hl-kw">if</span> (render::<span class="hl-fn">uploadAuxiliaryGeometryIndices</span>(
+        <span class="hl-kw">device</span>, sourceModel, strataIndices.<span class="hl-fn">data</span>(), strataIndices.<span class="hl-fn">size</span>(), lease)) {
+    <span class="hl-com">// lease.buffer == sourceModel.ib == sourceModel.vb (same page).</span>
+    <span class="hl-com">// lease.firstIndex is an absolute uint32 GPU index element offset.</span>
+    <span class="hl-com">// lease.indexCount counts only uploaded indices in the sidecar stream.</span>
+    <span class="hl-com">// Indices remain relative to sourceModel.gpuBaseVertex.</span>
+    <span class="hl-fn">assert</span>(render::<span class="hl-fn">auxiliaryGeometryIndicesValidFor</span>(lease, sourceModel));
 }
-// Explicitly retire before destroying device / source GPU objects:
-render::releaseAuxiliaryGeometryIndices(device, lease);</code></pre>
+<span class="hl-com">// Explicitly retire before destroying device / source GPU objects:</span>
+render::<span class="hl-fn">releaseAuxiliaryGeometryIndices</span>(<span class="hl-kw">device</span>, lease);</code></pre>
 <p>The function accepts only models <strong>already uploaded into the existing <code>GlobalGeometryPool</code></strong>, valid shared VB/IB handles, a complete checked shared-buffer write, and source-relative indices that fit the reserved vertex slice. It never creates a new page for Strata indices. If the page's remaining vertex-to-index gap is too small, the caller keeps the existing legacy renderer. No change is committed to the allocator if the RHI write fails; all previous model and sidecar byte ranges remain reserved.</p>
 <p>Index-only allocations use the same <code>GeometryPoolPage::indexBegin</code> frontier as ordinary model index allocations. A sidecar lease retains its GPU page through <code>shared_ptr</code>, preventing page destruction even if the source <code>Model</code> releases its own lease first. The source revision, base vertex, first index, shared page and GPU buffer handles must all match for a binding to be usable. <code>geometryPoolStats</code> now reports separate <em>actual</em> <code>liveModels</code> and live/retired/reusable auxiliary index counters.</p>
 <p>Released auxiliary spans may be recycled only when the existing <code>AIVERSE_GEOMETRY_POOL_RECYCLE=1</code> opt-in is enabled <strong>and</strong> the backend reports a nonzero, healthy <code>completedFrameSerial()</code> at or past the recorded release <code>frameSerial()</code>. Otherwise, storage remains conservatively quarantined/stranded until the entire page is destroyed. This is intentional: no CPU allocator is allowed to overwrite an in-flight GPU read. There is no extra Strata-specific fencing or background worker.</p>
 <p><code>GpuMetadataScene::stage()</code> now concatenates each eligible primitive's <code>strata::Asset::indices</code> and uploads that stream to its source model's shared page (default max 1 MiB per source and 8 MiB per scene). Once uploaded, it publishes a <strong>version 2</strong> cluster metadata buffer: <code>GpuPrimitive::gpuFirstIndex</code> contains the <em>absolute GPU sidecar index base for that primitive</em>; <code>GpuNode::sourceFirstIndex</code> remains local to the primitive, so the future draw offset is their sum. The original, pure CPU <code>packGpuMetadata()</code> intentionally emits <strong>version 1</strong> with <code>gpuFirstIndex=invalidNode</code>; that format is <strong>not GPU drawable</strong>.</p>
-<pre><code class="lang-cpp">scene.setStrataStagingEnabled(true);
-scene.setStrataGpuMetadataEnabled(true); // both default OFF
-scene.loadPrepared(device, json, std::move(models));
-GeometryScene::StrataIndexBinding binding;
-if (scene.strataGpuIndexBinding(&quot;models/stone.glb&quot;, binding)) {
-    // binding.buffer: same pool as the source Model.
-    // binding.firstIndex: base of the entire Strata sidecar.
-    // binding.baseVertex: original pooled source vertex base.
-    // No Strata draw/dispatch is issued by this API.
+<pre><code class="lang-cpp">scene.<span class="hl-fn">setStrataStagingEnabled</span>(<span class="hl-kw">true</span>);
+scene.<span class="hl-fn">setStrataGpuMetadataEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// both default OFF</span>
+scene.<span class="hl-fn">loadPrepared</span>(<span class="hl-kw">device</span>, json, <span class="hl-ty">std</span>::<span class="hl-fn">move</span>(models));
+<span class="hl-ty">GeometryScene</span>::<span class="hl-ty">StrataIndexBinding</span> binding;
+<span class="hl-kw">if</span> (scene.<span class="hl-fn">strataGpuIndexBinding</span>(<span class="hl-str">&quot;models/stone.glb&quot;</span>, binding)) {
+    <span class="hl-com">// binding.buffer: same pool as the source Model.</span>
+    <span class="hl-com">// binding.firstIndex: base of the entire Strata sidecar.</span>
+    <span class="hl-com">// binding.baseVertex: original pooled source vertex base.</span>
+    <span class="hl-com">// No Strata draw/dispatch is issued by this API.</span>
 }</code></pre>
 <p>The metadata and sidecar allocations share one source lifetime and are released <strong>before</strong> <code>GeometryScene</code> frees its source models. Source geometry remains immutable; existing materials, HLOD, batching and shadows remain authoritative. No GPU compute culling, Hi-Z, indirect command generation, Strata render pass, texture streaming or actual measured FPS benefit yet.</p>
 <p><code>tests/render/strata_gpu_scene.cpp</code> extends the CPU packing fixture with a recording RHI and exercises same-page reservation, index byte identity, neighboring model protection, upload failure rollback, revision invalidation, source-vs-sidecar lifetime and release behavior. These scenarios are <strong>not claimed to pass until run</strong>. The next stage must validate deferred recycling under real backend serials, build all focused CTests, add OFF/ON draw parity, then implement a capability-gated single render submission owner.</p>
 <h2 id="stage-8-diagnostic-metal-gpu-cluster-culling">Stage 8 — diagnostic Metal GPU cluster culling<a class="anchor" href="#stage-8-diagnostic-metal-gpu-cluster-culling" aria-label="#">#</a></h2>
 <p><strong>Experimental, no render integration or visual parity claim.</strong> The <code>aiverse_strata_gpu_culling</code> library adds a Metal compute kernel that traverses the version-2 Strata GPU metadata hierarchy for each static source instance and applies the same projected-error and conservative frustum policies as the CPU <code>strata::planView</code> reference.</p>
 <p>Inputs are a staged metadata v2 storage buffer, a bounded per-source list of <code>GpuSceneInstance</code> records (object-to-world matrices including each Model node bind transform, GPU primitive index, enabled flag, diagnostic token), and <code>GpuPassConfig</code> with a separate <strong>view-projection</strong> matrix. Do not pass a pre-multiplied objectToClip matrix to the GPU and multiply the instance twice. Use <code>strata::cpuReferenceView(pass, instance)</code> to obtain the matching CPU per-instance <code>ViewConfig</code>.</p>
-<pre><code class="lang-cpp">render::GeometryScene scene;
-scene.setStrataStagingEnabled(true);
-scene.setStrataGpuMetadataEnabled(true);
-scene.setStrataGpuCullingEnabled(true); // ALL opt-in, default OFF
-scene.loadPrepared(device, sceneJson, std::move(models));
+<pre><code class="lang-cpp">render::<span class="hl-ty">GeometryScene</span> scene;
+scene.<span class="hl-fn">setStrataStagingEnabled</span>(<span class="hl-kw">true</span>);
+scene.<span class="hl-fn">setStrataGpuMetadataEnabled</span>(<span class="hl-kw">true</span>);
+scene.<span class="hl-fn">setStrataGpuCullingEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// ALL opt-in, default OFF</span>
+scene.<span class="hl-fn">loadPrepared</span>(<span class="hl-kw">device</span>, sceneJson, <span class="hl-ty">std</span>::<span class="hl-fn">move</span>(models));
 
-// Within the graphics frame and OUTSIDE any render/compute encoder:
-render::strata::GpuPassConfig pass;
+<span class="hl-com">// Within the graphics frame and OUTSIDE any render/compute encoder:</span>
+render::strata::<span class="hl-ty">GpuPassConfig</span> pass;
 pass.viewProjection = mainCameraViewProj;
 pass.width = viewportWidth;
 pass.height = viewportHeight;
-pass.clipDepthZeroToOne = device.info().clipDepthZeroToOne;
-pass.errorThresholdPixels = 1.f;
-pass.maxOutputClusters = 65536;
-render::strata::GpuSelectionSubmission result;
-bool encoded = scene.dispatchStrataGpuView(
-    device, &quot;models/stone.glb&quot;, pass, device.frameSerial(), result);
-// result.ranges / result.counters are GPU buffers; NOT a draw command list.</code></pre>
+pass.clipDepthZeroToOne = <span class="hl-kw">device</span>.<span class="hl-fn">info</span>().clipDepthZeroToOne;
+pass.errorThresholdPixels = <span class="hl-num">1</span>.f;
+pass.maxOutputClusters = <span class="hl-num">65536</span>;
+render::strata::<span class="hl-ty">GpuSelectionSubmission</span> result;
+<span class="hl-ty">bool</span> encoded = scene.<span class="hl-fn">dispatchStrataGpuView</span>(
+    <span class="hl-kw">device</span>, <span class="hl-str">&quot;models/stone.glb&quot;</span>, pass, <span class="hl-kw">device</span>.<span class="hl-fn">frameSerial</span>(), result);
+<span class="hl-com">// result.ranges / result.counters are GPU buffers; NOT a draw command list.</span></code></pre>
 <p><code>GeometryScene::collectStrataGpuInstances(sourceKey, output)</code> constructs the static scene input from its <strong>existing</strong> instance and node transforms; it does not copy ECS state into a second world. A token is a local diagnostic identifier, not a persistent Entity ID. More than 4096 staged primitive instances is rejected conservatively. The source must have valid Strata v2 metadata backed by the same <code>GlobalGeometryPool</code> index lease.</p>
 <p><code>GpuClusterCulling::dispatch()</code> uses Metal <code>gfx::Device::createCompute()</code> and slots 0/1/2/3 for metadata, instances, selected clusters and atomic counters, with pass uniform bytes on slot 8. Each GPU thread walks one primitive instance's cluster hierarchy, refining only when all child clusters are resident. The 128-item local traversal stack and bounded output flag malformed/excessive work; <strong>overflow/invalid results must never be used for drawing</strong>. The shader emits <code>GpuSelectedCluster</code> entries with instance token, absolute pooled GPU index offset, count, material ID, global node ID and primitive ID. The atomic compaction order is undefined, so eventual GPU/CPU comparisons must sort by stable instance/node keys.</p>
 <p>This stage does NOT issue any <code>drawIndexed</code>, GPU-authored indexed indirect commands, GPU ICBs, or readback in the normal render loop. The existing <code>Renderer3D</code> remains sole draw owner and continues drawing all original geometry, even when the diagnostic dispatch succeeds. No Hi-Z, occlusion history, mesh shading, streaming or Vulkan compute path has been added.</p>
@@ -187,54 +187,54 @@ bool encoded = scene.dispatchStrataGpuView(
 <h2 id="stage-82-asynchronous-readback-cpu-oracle-and-real-metal-parity-runner">Stage 8.2 — asynchronous readback, CPU oracle and real Metal parity runner<a class="anchor" href="#stage-82-asynchronous-readback-cpu-oracle-and-real-metal-parity-runner" aria-label="#">#</a></h2>
 <p>The owner ran the <strong>previous Stage 8 code</strong> on Mac Studio on 2026-11-19. <code>aiverse_strata_gpu_culling_tests</code> built, and all five focused CTests (<code>strata_builder</code>, <code>strata_model_adapter</code>, <code>strata_view</code>, <code>strata_gpu_scene</code>, <code>strata_gpu_culling</code>) <strong>passed (5/5, 1.19 s)</strong>. That evidence proves the prior native C++ tests, <strong>not</strong> actual Metal shader execution or the new Stage 8.2 code.</p>
 <p>Stage 8.2 adds a bounded, asynchronous diagnostics API:</p>
-<pre><code class="lang-cpp">render::strata::GpuSelectionSubmission selected;
-if (scene.dispatchStrataGpuView(device, sourceKey, pass,
-                                device.frameSerial(), selected)) {
-    scene.requestStrataGpuReadback(device, selected,
-        [&amp;](render::strata::GpuSelectionReadback readback) {
-            // Device owner thread at a subsequent beginFrame.
-            // Incomplete/overflow/invalid results may NEVER be drawn.
-            if (!readback.valid()) return;
-            // Verify against CPU planView before considering rendering.
+<pre><code class="lang-cpp">render::strata::<span class="hl-ty">GpuSelectionSubmission</span> selected;
+<span class="hl-kw">if</span> (scene.<span class="hl-fn">dispatchStrataGpuView</span>(<span class="hl-kw">device</span>, sourceKey, pass,
+                                <span class="hl-kw">device</span>.<span class="hl-fn">frameSerial</span>(), selected)) {
+    scene.<span class="hl-fn">requestStrataGpuReadback</span>(<span class="hl-kw">device</span>, selected,
+        [&amp;](render::strata::<span class="hl-ty">GpuSelectionReadback</span> readback) {
+            <span class="hl-com">// Device owner thread at a subsequent beginFrame.</span>
+            <span class="hl-com">// Incomplete/overflow/invalid results may NEVER be drawn.</span>
+            <span class="hl-kw">if</span> (!readback.<span class="hl-fn">valid</span>()) <span class="hl-kw">return</span>;
+            <span class="hl-com">// Verify against CPU planView before considering rendering.</span>
         });
 }</code></pre>
 <p><code>GpuClusterCulling::requestReadback</code> submits two independent RHI <code>Device::readBufferAsync</code> requests (GPU counters and selected ranges). The existing Metal backend limits each request to 64 KiB, so requests with <code>GpuSelectionSubmission::capacity &gt; 2048</code> are rejected instead of publishing an apparently complete prefix. Callbacks run later on the <strong>device owner thread</strong>, not synchronously with the GPU dispatch. The output is a <code>GpuSelectionReadback</code> containing counters and a status (<code>Valid</code>, <code>Overflow</code>, <code>Invalid</code>, <code>ReadbackFailed</code>). It never allocates new GPU geometry or submits draw commands. Do not retain pointers to an unloaded <code>GeometryScene</code> in readback callbacks; manage observer lifetime explicitly. On rejected readback scheduling, the callback reports failure.</p>
 <p><code>strata::compareGpuSelection(source, instances, pass, pooledFirstIndex, readback, error)</code> is the CPU/GPU oracle. It independently projects each instance via <code>cpuReferenceView()</code> and <code>planView()</code>, converts each local range into absolute shared-pool index/node addresses, sorts CPU/GPU records by their stable record fields, and requires exact equality. It rejects malformed instances, duplicate/zero enabled tokens, output overflow and invalid GPU status. GPU atomic ordering is explicitly not significant. The pooledFirstIndex must be the original v2 sidecar binding base from the same source/revision. This comparison is <strong>diagnostic</strong>, never an authority for production draw submission.</p>
 <p>A separate <strong>real Metal GPU</strong> executable was added at <code>tests/render/strata_metal_parity.cpp</code>, gated by the CMake option <code>AIVERSE_STRATA_METAL_GPU_TESTS=ON</code> (default OFF, macOS only). It uses the real <code>platform::run</code> + CAMetalLayer, actual <code>GlobalGeometryPool</code> source upload, Strata metadata v2, diagnostic compute and asynchronous GPU readback. It executes five cases: fine LOD with two instances (four leaves), coarse LOD (two parents), frustum rejection, a disabled instance, and deliberate output overflow. It reports the result of each GPU/CPU comparison on the console and exits nonzero on failure. It enables only the old <strong>CPU shared pool admission</strong> (<code>AIVERSE_METAL_CPU_MDI=1</code>) locally for the fixture; it does not submit ICB or Strata draws.</p>
 <p>Mac Studio commands:</p>
-<pre><code class="lang-sh">cd ~/Projects/AIVERSE-strata-stage8
-git status --short
-git fetch origin feature/strata-virtual-geometry
-git switch --detach origin/feature/strata-virtual-geometry
-cmake -S . -B build/strata \
-  -DAIVERSE_BUILD_TESTS=ON \
-  -DAIVERSE_BUILD_STRATA=ON \
-  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
-cmake --build build/strata \
-  --target aiverse_strata_gpu_culling_tests aiverse_strata_metal_parity \
-  --parallel 8
-ctest --test-dir build/strata \
-  -R &#x27;^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)
-- **One scene/instance truth**: `GeometryScene` owns static render instances
-  and HLOD; do not create separate Strata transforms or introduce gameplay
-  entities solely for rendering.
-- **One grouping authority**: indirect draw grouping/material binding stays
-  in the existing renderer, with a future Strata adapter supplying visible
-  cluster ranges. Never double-submit the same primitives.
-- **GPU capability negotiation**: GLES3/WebGL2 should retain traditional
-  indexing paths. Metal/Vulkan/D3D future paths must gate compute, indirect
-  count, storage resources and synchronization independently.
-- **Multi-world**: geometry assets can be shared by handle across worlds,
-  while scene-resident instance tables and render budgets are per world/view.
-- **Dynamic terrain**: TerraWeave owns chunk geometry and versions; Strata
-  consumes immutable snapshots and schedules deferred release. PHYSIS owns
-  simulation/events, not GPU buffers.
-- **Pass separation**: main-camera, shadows, reflections and portals may
-  require distinct culling/error metrics and shadow caster inclusion.
+<pre><code class="lang-sh"><span class="hl-kw">cd</span> ~/Projects/AIVERSE-strata-stage8
+<span class="hl-fn">git</span> status <span class="hl-opt">--short</span>
+<span class="hl-fn">git</span> fetch origin feature/strata-virtual-geometry
+<span class="hl-fn">git</span> switch <span class="hl-opt">--detach</span> origin/feature/strata-virtual-geometry
+<span class="hl-fn">cmake</span> <span class="hl-opt">-S</span> . <span class="hl-opt">-B</span> build/strata \
+  <span class="hl-fn">-DAIVERSE_BUILD_TESTS</span>=ON \
+  <span class="hl-fn">-DAIVERSE_BUILD_STRATA</span>=ON \
+  <span class="hl-fn">-DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake</span> <span class="hl-opt">--build</span> build/strata \
+  <span class="hl-fn">--target</span> aiverse_strata_gpu_culling_tests aiverse_strata_metal_parity \
+  <span class="hl-fn">--parallel</span> 8
+<span class="hl-fn">ctest</span> <span class="hl-opt">--test-dir</span> build/strata \
+  <span class="hl-fn">-R</span> &#x27;^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)
+<span class="hl-fn">-</span> **One scene/instance truth**: `GeometryScene` owns static render instances
+  <span class="hl-fn">and</span> HLOD; <span class="hl-kw">do</span> not create separate Strata transforms or introduce gameplay
+  <span class="hl-fn">entities</span> solely <span class="hl-kw">for</span> rendering.
+<span class="hl-fn">-</span> **One grouping authority**: indirect draw grouping/material binding stays
+  <span class="hl-fn">in</span> the existing renderer, with a future Strata adapter supplying visible
+  <span class="hl-fn">cluster</span> ranges. Never double-submit the same primitives.
+<span class="hl-fn">-</span> **GPU capability negotiation**: GLES3/WebGL2 should retain traditional
+  <span class="hl-fn">indexing</span> paths. Metal/Vulkan/D3D future paths must gate compute, indirect
+  <span class="hl-fn">count</span>, storage resources and synchronization independently.
+<span class="hl-fn">-</span> **Multi-world**: geometry assets can be shared by handle across worlds,
+  <span class="hl-fn">while</span> scene-resident instance tables and render budgets are per world/view.
+<span class="hl-fn">-</span> **Dynamic terrain**: TerraWeave owns chunk geometry and versions; Strata
+  <span class="hl-fn">consumes</span> immutable snapshots and schedules deferred release. PHYSIS owns
+  <span class="hl-fn">simulation/events</span>, not GPU buffers.
+<span class="hl-fn">-</span> **Pass separation**: main-camera, shadows, reflections and portals may
+  <span class="hl-fn">require</span> distinct culling/error metrics and shadow caster inclusion.
 
-## Known shortcomings / next steps
+<span class="hl-com">## Known shortcomings / next steps</span>
 
-1. Compile and execute focused tests on a native project checkout:</code></pre>
+<span class="hl-fn">1.</span> Compile and execute focused tests on a native project checkout:</code></pre>
 <p>cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests aiverse_strata_gpu_culling_tests -j 8 ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene) --output-on-failure</p>
 <pre><code>2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
 instance deduplication, material/LOD/shadow draw parity and unload/reload.
@@ -500,12 +500,12 @@ are not passing results.
 <ul><li>Explicitly use <code>Device::setScreenReadable(true)</code> at fixture initialization, before the platform begins drawing, so drawable textures can be captured in the intended frame. Reset the flag before shutdown.</li><li>Request each image in the middle of its steady test mode: <strong>frame 4 Empty, 15 Legacy, 26 Strata Fine, 37 Strata Coarse</strong>. These slots remain safe even if a supported RHI adds up to two capture frames of delay.</li><li>Print requested mode/frame and actual callback frame, with main/shadow pass counters. If Empty and Legacy remain identical, print captured mode counters before failing, to distinguish model invisibility from screenshot phase errors.</li><li>Retain strict <code>Empty != Legacy</code>, <code>Legacy == Fine</code> and <code>Legacy == Coarse</code> bytewise GPU screenshot checks. Do not alter production renderer, shadow pipelines, asset builder, global GPU source pool or the indexed sidecar.</li></ul>
 <p><strong>Validation:</strong> This fix is committed in GitHub but has <strong>NOT yet been compiled or run by the assistant</strong>. The owner's pre-fix Stage 11 raster result is FAIL, not PASS. The owner-confirmed six focused CPU/mock tests and five real Metal compute parity scenarios remain independently PASS on their prior tested snapshot. Real main/shadow screenshot parity remains unverified until a post-fix successful Mac run; a pure CMake build or queued CI is not proof of visual correctness.</p>
 <p>From the existing worktree, after making sure local changes are preserved:</p>
-<pre><code class="lang-sh">cd ~/Projects/AIVERSE-strata-validation
-git status --short
-git fetch origin feature/strata-virtual-geometry
-git switch --detach origin/feature/strata-virtual-geometry
-cmake --build build/strata --target aiverse_strata_metal_raster_parity --parallel 8
-./build/strata/aiverse_strata_metal_raster_parity</code></pre>
+<pre><code class="lang-sh"><span class="hl-kw">cd</span> ~/Projects/AIVERSE-strata-validation
+<span class="hl-fn">git</span> status <span class="hl-opt">--short</span>
+<span class="hl-fn">git</span> fetch origin feature/strata-virtual-geometry
+<span class="hl-fn">git</span> switch <span class="hl-opt">--detach</span> origin/feature/strata-virtual-geometry
+<span class="hl-fn">cmake</span> <span class="hl-opt">--build</span> build/strata <span class="hl-opt">--target</span> aiverse_strata_metal_raster_parity <span class="hl-opt">--parallel</span> 8
+<span class="hl-fn">./build/strata/aiverse_strata_metal_raster_parity</span></code></pre>
 <p>If the corrected baseline still fails, inspect the new <code>capture requested</code> / <code>capture received</code> frame indices, the <code>shadow/opaque</code> counters, and four saved PPM files. Confirm actual model visibility/culling and valid source pooled base offsets before changing Strata geometry or relaxing screenshot parity. Future real raster parity still needs separate shadow-map depth readback, water reflection view, multi-material and simplified LOD error-budget tests before production draw routing.</p>
 <h2 id="architectural-constraints">Architectural constraints<a class="anchor" href="#architectural-constraints" aria-label="#">#</a></h2>
 <ul><li><strong>One scene/instance truth</strong>: <code>GeometryScene</code> owns static render instances and HLOD; do not create separate Strata transforms or introduce gameplay entities solely for rendering.</li><li><strong>One grouping authority</strong>: indirect draw grouping/material binding stays in the existing renderer, with a future Strata adapter supplying visible cluster ranges. Never double-submit the same primitives.</li><li><strong>GPU capability negotiation</strong>: GLES3/WebGL2 should retain traditional indexing paths. Metal/Vulkan/D3D future paths must gate compute, indirect count, storage resources and synchronization independently.</li><li><strong>Multi-world</strong>: geometry assets can be shared by handle across worlds, while scene-resident instance tables and render budgets are per world/view.</li><li><strong>Dynamic terrain</strong>: TerraWeave owns chunk geometry and versions; Strata consumes immutable snapshots and schedules deferred release. PHYSIS owns simulation/events, not GPU buffers.</li><li><strong>Pass separation</strong>: main-camera, shadows, reflections and portals may require distinct culling/error metrics and shadow caster inclusion.</li></ul>
@@ -1828,6 +1828,23 @@ On-screen pixels have not been checked on any backend.
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Nothing found"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>

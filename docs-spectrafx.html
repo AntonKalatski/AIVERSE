@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems">Системы</a>
-<a href="./#genres">Жанры</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
 <a href="roadmap.html" data-nav="roadmap">Роадмап</a>
 <a href="releases.html" data-nav="releases">Релизы</a>
 <a href="gallery.html" data-nav="gallery">Галерея</a>
@@ -32,7 +32,7 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html" aria-current="page">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/spectrafx.md">исходный документ</a>.</p><h1 id="aiverse-spectrafx">AIVERSE SpectraFX<a class="anchor" href="#aiverse-spectrafx" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html" aria-current="page">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/spectrafx.md">исходный документ</a>.</p><h1 id="aiverse-spectrafx">AIVERSE SpectraFX<a class="anchor" href="#aiverse-spectrafx" aria-label="#">#</a></h1>
 <p><strong>SpectraFX</strong> — официальное название универсальной, не зависящей от жанра системы визуальных эффектов в AIVERSE. Её устройство вдохновлено процессом авторинга и событийной моделью Unreal Niagara, но это <strong>не</strong> копия кода, форматов ассетов или редактора Unreal. <code>aiverse::spectra</code> — пространство имён публичного C++ API.</p>
 <blockquote><p><strong>Текущий объём (2026-11-18):</strong> фронтенд Graph v1, переиспользуемый CPU-бэкенд частиц, варианты графовых ассетов и горячая перезагрузка, а также необязательный адаптер ECS-представления только для чтения <strong>закоммичены</strong>. Базовый редактор графа v1 на холсте узлов и предпросмотр на CPU в памяти <strong>закоммичены, но не проверены</strong>; ограниченный прототип GPU-частиц на Metal <strong>закоммичен, но не проверен</strong>; полная интеграция GPU/CPU, поток данных в духе Niagara и автоматическая продакшн-интеграция в RTS/FPS <strong>не завершены</strong>. Тесты добавлены, но в среде разработки <strong>ещё не запускались</strong>. Точные SHA и статус проверки см. в <code>docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md</code>.</p></blockquote>
 <h2 id="граница-интеграции-с-prisma">Граница интеграции с PRISMA<a class="anchor" href="#граница-интеграции-с-prisma" aria-label="#">#</a></h2>
@@ -65,60 +65,60 @@ Future opt-in path: GPU simulation/backend + advanced Niagara dataflow nodes</co
 <h3 id="создание-графа">Создание графа<a class="anchor" href="#создание-графа" aria-label="#">#</a></h3>
 <p>Поместите этот файл в <code>fx/graphs/engine_fire.vfx.json</code> внутри проекта:</p>
 <pre><code class="lang-json">{
-  &quot;version&quot;: 1,
-  &quot;parameters&quot;: {
-    &quot;color&quot;: [[0, &quot;#ffe8a0ff&quot;], [1, &quot;#ff330000&quot;]]
+  <span class="hl-key">&quot;version&quot;</span>: <span class="hl-num">1</span>,
+  <span class="hl-key">&quot;parameters&quot;</span>: {
+    <span class="hl-key">&quot;color&quot;</span>: [[<span class="hl-num">0</span>, <span class="hl-str">&quot;#ffe8a0ff&quot;</span>], [<span class="hl-num">1</span>, <span class="hl-str">&quot;#ff330000&quot;</span>]]
   },
-  &quot;nodes&quot;: [
-    {&quot;id&quot;: &quot;spawn&quot;, &quot;type&quot;: &quot;Spawn&quot;, &quot;properties&quot;: {&quot;rate&quot;: 24, &quot;duration&quot;: 1, &quot;loop&quot;: true}},
-    {&quot;id&quot;: &quot;initialize&quot;, &quot;type&quot;: &quot;Initialize&quot;, &quot;properties&quot;: {&quot;life&quot;: 0.6, &quot;speed&quot;: 1.0, &quot;size&quot;: 0.4}},
-    {&quot;id&quot;: &quot;update&quot;, &quot;type&quot;: &quot;Update&quot;, &quot;properties&quot;: {&quot;color&quot;: {&quot;$param&quot;: &quot;color&quot;}}},
-    {&quot;id&quot;: &quot;output&quot;, &quot;type&quot;: &quot;SpriteOutput&quot;, &quot;properties&quot;: {&quot;texture&quot;: &quot;builtin:smoke&quot;}}
+  <span class="hl-key">&quot;nodes&quot;</span>: [
+    {<span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;spawn&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;Spawn&quot;</span>, <span class="hl-key">&quot;properties&quot;</span>: {<span class="hl-key">&quot;rate&quot;</span>: <span class="hl-num">24</span>, <span class="hl-key">&quot;duration&quot;</span>: <span class="hl-num">1</span>, <span class="hl-key">&quot;loop&quot;</span>: <span class="hl-kw">true</span>}},
+    {<span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;initialize&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;Initialize&quot;</span>, <span class="hl-key">&quot;properties&quot;</span>: {<span class="hl-key">&quot;life&quot;</span>: <span class="hl-num">0.6</span>, <span class="hl-key">&quot;speed&quot;</span>: <span class="hl-num">1.0</span>, <span class="hl-key">&quot;size&quot;</span>: <span class="hl-num">0.4</span>}},
+    {<span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;update&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;Update&quot;</span>, <span class="hl-key">&quot;properties&quot;</span>: {<span class="hl-key">&quot;color&quot;</span>: {<span class="hl-key">&quot;$param&quot;</span>: <span class="hl-str">&quot;color&quot;</span>}}},
+    {<span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;output&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;SpriteOutput&quot;</span>, <span class="hl-key">&quot;properties&quot;</span>: {<span class="hl-key">&quot;texture&quot;</span>: <span class="hl-str">&quot;builtin:smoke&quot;</span>}}
   ],
-  &quot;links&quot;: [
-    {&quot;from&quot;: &quot;spawn&quot;, &quot;to&quot;: &quot;initialize&quot;},
-    {&quot;from&quot;: &quot;initialize&quot;, &quot;to&quot;: &quot;update&quot;},
-    {&quot;from&quot;: &quot;update&quot;, &quot;to&quot;: &quot;output&quot;}
+  <span class="hl-key">&quot;links&quot;</span>: [
+    {<span class="hl-key">&quot;from&quot;</span>: <span class="hl-str">&quot;spawn&quot;</span>, <span class="hl-key">&quot;to&quot;</span>: <span class="hl-str">&quot;initialize&quot;</span>},
+    {<span class="hl-key">&quot;from&quot;</span>: <span class="hl-str">&quot;initialize&quot;</span>, <span class="hl-key">&quot;to&quot;</span>: <span class="hl-str">&quot;update&quot;</span>},
+    {<span class="hl-key">&quot;from&quot;</span>: <span class="hl-str">&quot;update&quot;</span>, <span class="hl-key">&quot;to&quot;</span>: <span class="hl-str">&quot;output&quot;</span>}
   ],
-  &quot;outputs&quot;: [&quot;output&quot;]
+  <span class="hl-key">&quot;outputs&quot;</span>: [<span class="hl-str">&quot;output&quot;</span>]
 }</code></pre>
 <p>Компилятор v1 принимает цепочки <code>Spawn → Initialize → Update* → SpriteOutput|MeshOutput|RibbonOutput</code> с разветвлением на выходы, но без слияния нескольких входов в одном узле. У каждого узла есть объект <code>properties</code>, ключи которого проверяются по <code>engine/fx/FxEffect.h</code>. Цепочка модулей компилируется в существующий <code>fx::EffectDef</code> — она <strong>не</strong> исполняет произвольные графовые инструкции для каждой частицы.</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::Runtime particles;
-particles.init(device); // The native host owns gfx::Device.
-particles.setFileReader(readGameContent);
-aiverse::spectra::GraphAssets assets(particles, readGameContent);
+aiverse::spectra::<span class="hl-ty">Runtime</span> particles;
+particles.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>); <span class="hl-com">// The native host owns gfx::Device.</span>
+particles.<span class="hl-fn">setFileReader</span>(readGameContent);
+aiverse::spectra::<span class="hl-ty">GraphAssets</span> <span class="hl-fn">assets</span>(particles, readGameContent);
 
-// Converts a versioned graph asset into a CPU particle effect.
-auto flame = assets.load(&quot;engine_fire&quot;);
-if (flame.effect &gt;= 0)
-    particles.play(flame.effect, {0.0f, 1.0f, 0.0f});
+<span class="hl-com">// Converts a versioned graph asset into a CPU particle effect.</span>
+<span class="hl-kw">auto</span> flame = assets.<span class="hl-fn">load</span>(<span class="hl-str">&quot;engine_fire&quot;</span>);
+<span class="hl-kw">if</span> (flame.effect &gt;= <span class="hl-num">0</span>)
+    particles.<span class="hl-fn">play</span>(flame.effect, {<span class="hl-num">0.0f</span>, <span class="hl-num">1.0f</span>, <span class="hl-num">0.0f</span>});
 
-// Overrides produce independent graph variants:
-auto cold = assets.load(&quot;engine_fire&quot;,
-    aiverse::Json::parse(R&quot;({&quot;color&quot;:[[0,&quot;#aaddffff&quot;],[1,&quot;#0044ff00&quot;]]})&quot;));</code></pre>
+<span class="hl-com">// Overrides produce independent graph variants:</span>
+<span class="hl-kw">auto</span> cold = assets.<span class="hl-fn">load</span>(<span class="hl-str">&quot;engine_fire&quot;</span>,
+    aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">parse</span>(R<span class="hl-str">&quot;({&quot;</span>color<span class="hl-str">&quot;:[[0,&quot;</span>#aaddffff<span class="hl-str">&quot;],[1,&quot;</span>#0044ff00<span class="hl-str">&quot;]]})&quot;</span>));</code></pre>
 <p>Цикл выполнения: вызывайте <code>setView(camera, viewProj, width, height)</code>, <code>update(dt)</code>, затем <code>render(fog)</code> после отрисовки сцены, пока её проход ещё открыт, как описано в <code>engine/fx/ParticleSystem.h</code>.</p>
 <h3 id="необязательное-нативное-ecs-представление">Необязательное нативное ECS-представление<a class="anchor" href="#необязательное-нативное-ecs-представление" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">#include &lt;aiverselib/genre/SpectraFX.h&gt;
-using namespace aiverse;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&lt;aiverselib/genre/SpectraFX.h&gt;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse;
 
-auto entity = world.create();
-spectra::SourceComponent source;
-source.effect = &quot;graph:engine_fire:&lt;hash&gt;&quot;; // Better: use GraphLoadResult::runtimeName.
-source.killOnDetach = false;
-world.add&lt;spectra::SourceComponent&gt;(entity, source);
+<span class="hl-kw">auto</span> entity = world.<span class="hl-fn">create</span>();
+spectra::<span class="hl-ty">SourceComponent</span> source;
+source.effect = <span class="hl-str">&quot;graph:engine_fire:&lt;hash&gt;&quot;</span>; <span class="hl-com">// Better: use GraphLoadResult::runtimeName.</span>
+source.killOnDetach = <span class="hl-kw">false</span>;
+world.add&lt;spectra::<span class="hl-ty">SourceComponent</span>&gt;(entity, source);
 
-spectra::PresentationSystem presenter(particles);
-presenter.sync(world, [](const World&amp; w, Entity e,
-                         fx::float3&amp; position, fx::float3&amp; direction) {
-    // Resolve the render transform using YOUR game&#x27;s component types.
-    // Do not hardcode FPS/RTS into SpectraFX.
-    return gameResolveEffectPose(w, e, position, direction);
+spectra::<span class="hl-ty">PresentationSystem</span> <span class="hl-fn">presenter</span>(particles);
+presenter.<span class="hl-fn">sync</span>(world, [](<span class="hl-kw">const</span> <span class="hl-ty">World</span>&amp; w, <span class="hl-ty">Entity</span> e,
+                         fx::<span class="hl-ty">float3</span>&amp; position, fx::<span class="hl-ty">float3</span>&amp; direction) {
+    <span class="hl-com">// Resolve the render transform using YOUR game&#x27;s component types.</span>
+    <span class="hl-com">// Do not hardcode FPS/RTS into SpectraFX.</span>
+    <span class="hl-kw">return</span> <span class="hl-fn">gameResolveEffectPose</span>(w, e, position, direction);
 });
 
-presenter.consumeTickEvents(tick, sim.events(),
-    {{hitEventId, spectra::EventBinding{&quot;impact_flash&quot;, 1_fx}}});</code></pre>
+presenter.<span class="hl-fn">consumeTickEvents</span>(tick, sim.<span class="hl-fn">events</span>(),
+    {{hitEventId, spectra::<span class="hl-ty">EventBinding</span>{<span class="hl-str">&quot;impact_flash&quot;</span>, 1_fx}}});</code></pre>
 <p>Для непрерывных графовых ассетов после <code>GraphAssets::load</code> используйте фактическое значение <code>GraphLoadResult.runtimeName</code>; реестр <code>fx/graphs</code> не инициализирует все графы автоматически при запуске игры. После отката или начала нового матча вызовите <code>presenter.reset()</code>, чтобы отбросить оставшиеся хэндлы представления и сбросить курсор показанного тика; состояние GPU/CPU-симуляции по-прежнему принадлежит хосту.</p>
 <h3 id="совместимость">Совместимость<a class="anchor" href="#совместимость" aria-label="#">#</a></h3>
 <p>Новые брендированные типы <code>Spectra*</code> введены без изменения идентичности старых псевдонимов <code>Vfx*</code>. Существующие <code>fx/&lt;effect&gt;.json</code>, <code>fx/fx.json</code>, <code>aiverse_fx</code> и <code>compileVfxGraph</code> остаются доступными. Файлы рантайма движка на время миграции остаются в <code>engine/fx</code>. Не удаляйте псевдонимы совместимости и не меняйте постоянные двоичные идентификаторы сохранений, пока нативные проекты не перейдут на новый API и не пройдут регрессионные тесты.</p>
@@ -140,74 +140,74 @@ view_screenshot {&quot;window&quot;:&quot;scene&quot;}</code></pre>
 <p>Это <strong>лишь базовый редактор v1</strong>, а не полное соответствие Niagara: нет произвольного типизированного потока данных, графов функций, исполнения на GPU compute, столкновений по глубине, связанного предпросмотра графов в поставляемых клиентах и полноценного UI модулей в стиле UE. В <code>tests/vfx_graph_compiler_test.cpp</code> добавлена проверка на уровне исходников для метаданных раскладки узлов; запуск GUI, взаимодействия перетаскивания и связывания, а также GPU-скриншоты в среде разработки через коннектор <strong>НЕ ЗАПУСКАЛИСЬ</strong>. Требуется ручная проверка.</p>
 <h2 id="типизированные-свойства-модулей-этап-9-исходники-закоммичены-сборка-ещё-не-проверена">Типизированные свойства модулей (этап 9 — исходники закоммичены, сборка ещё не проверена)<a class="anchor" href="#типизированные-свойства-модулей-этап-9-исходники-закоммичены-сборка-ещё-не-проверена" aria-label="#">#</a></h2>
 <p><code>engine/fx/SpectraModuleSchema.h</code> предоставляет <strong>безголовый, не зависящий от жанра</strong> каталог распространённых полей графа v1. Канонический публичный заголовок <code>engine/fx/SpectraFX.h</code> подключает его, чтобы нативные проекты и редактор использовали одни и те же типы и границы значений.</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::Json node = aiverse::Json::parse(
-    R&quot;({&quot;id&quot;:&quot;emitter&quot;,&quot;type&quot;:&quot;Spawn&quot;,&quot;properties&quot;:{&quot;burst&quot;:8}})&quot;);
-std::string error;
-bool changed = aiverse::spectra::applyTypedField(
-    node, &quot;burst&quot;, aiverse::Json::number(int64_t(24)), error);
-// Also available: fieldsForNode(&quot;Spawn&quot;), fieldForNode(...),
-// validateTypedField(...), removeTypedField(...).</code></pre>
+aiverse::<span class="hl-ty">Json</span> node = aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">parse</span>(
+    R<span class="hl-str">&quot;({&quot;</span>id<span class="hl-str">&quot;:&quot;</span>emitter<span class="hl-str">&quot;,&quot;</span>type<span class="hl-str">&quot;:&quot;</span><span class="hl-ty">Spawn</span><span class="hl-str">&quot;,&quot;</span>properties<span class="hl-str">&quot;:{&quot;</span>burst<span class="hl-str">&quot;:8}})&quot;</span>);
+<span class="hl-ty">std</span>::<span class="hl-ty">string</span> error;
+<span class="hl-ty">bool</span> changed = aiverse::spectra::<span class="hl-fn">applyTypedField</span>(
+    node, <span class="hl-str">&quot;burst&quot;</span>, aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">number</span>(<span class="hl-ty">int64_t</span>(<span class="hl-num">24</span>)), error);
+<span class="hl-com">// Also available: fieldsForNode(&quot;Spawn&quot;), fieldForNode(...),</span>
+<span class="hl-com">// validateTypedField(...), removeTypedField(...).</span></code></pre>
 <p>В визуальном окне <strong>SpectraFX</strong> теперь есть раздел <strong>Типизированные модули</strong> над <strong>Расширенные свойства (JSON)</strong>. Типизированный инспектор поддерживает свойства типов число, целое, логическое значение, строка, выбор из списка и трёхкомпонентный вектор. Сейчас его каталог включает:</p>
 <div class="table"><table><thead><tr><th>Стадия</th><th>Распространённые поля</th></tr></thead><tbody><tr><td>Spawn</td><td><code>burst</code>, <code>rate</code>, <code>perMeter</code>, <code>delay</code>, <code>duration</code>, <code>loop</code></td></tr><tr><td>Initialize</td><td><code>life</code>, <code>speed</code>, <code>size</code>, <code>direction</code>, <code>spread</code>, <code>shape</code>, <code>radius</code>, <code>gravity</code></td></tr><tr><td>Update</td><td><code>drag</code>, <code>spin</code>, <code>rotation</code>, <code>speedLimit</code>, <code>stretch</code>, <code>velocity</code>, <code>hidden</code></td></tr><tr><td>SpriteOutput</td><td><code>texture</code>, <code>blend</code>, <code>align</code>, <code>fps</code></td></tr><tr><td>MeshOutput</td><td><code>blend</code>, <code>align</code></td></tr><tr><td>RibbonOutput</td><td><code>hidden</code></td></tr></tbody></table></div>
 <p>Все операции с типизированными полями — <strong>необязательные правки</strong>. Проверка отклоняет неверные типы, недопустимые значения перечислений и значения вне объявленных диапазонов, не изменяя исходный узел. Инспектор не приводит к скаляру MinMaxCurve, массив-диапазон, цветовой градиент, список мешей или вложенный модуль эффекта: такие поля остаются нетронутыми, и их нужно редактировать через расширенный JSON или существующие инструменты модулей частиц. Неизвестные свойства всегда сохраняются при обновлении одного типизированного поля. Последним авторитетом при проверке остаётся компилятор графа (<code>parseEffect</code>).</p>
 <p>Это только метаданные авторинга, а не исполняемая программа узлов на GPU. Эти изменения требуют <strong>проверки нативной сборки и GUI</strong>; коммиты исходников и добавленные тесты не доказывают успешную сборку редактора. <code>tests/vfx_graph_compiler_test.cpp</code> содержит проверки схемы и контракта компиляции поверх уже существующей цели CTest SpectraFX.</p>
 <h2 id="прототип-gpu-частиц-на-metal-этап-10-исходники-закоммичены-не-проверено">Прототип GPU-частиц на Metal (этап 10 — исходники закоммичены, не проверено)<a class="anchor" href="#прототип-gpu-частиц-на-metal-этап-10-исходники-закоммичены-не-проверено" aria-label="#">#</a></h2>
 <p>Новый <strong>необязательный</strong> класс <code>aiverse::spectra::ComputeParticles</code> в <code>engine/fx/SpectraGpuParticles.{h,cpp}</code> исполняет ограниченное подмножество частиц-билбордов на <strong>compute-пути Metal RHI</strong>. Он не подключён к существующим клиентам RTS/FPS и не заменяет старый <code>aiverse::fx::ParticleSystem</code>. Это подмножество намеренно содержит единственный аддитивный эмиттер с мягкой текстурой и настраиваемыми числом частиц во вспышке, временем жизни, начальной скоростью, размером, гравитацией, линейным сопротивлением и альфой по времени жизни. Сложные атрибуты, шум, шлейфы, меш-частицы, столкновения, GPU-субэмиттеры, поток данных Niagara и пользовательские шейдерные графы остаются на существующем CPU-бэкенде эмиттеров, пока не будут реализованы отдельно.</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::ComputeParticles particles;
-aiverse::spectra::ComputeEmitterDesc params;
-params.capacity = 1024;
-params.burst = 16;
-params.backend = aiverse::spectra::ComputePreference::Automatic;
-params.quality = aiverse::fx::FxQuality::High;
+aiverse::spectra::<span class="hl-ty">ComputeParticles</span> particles;
+aiverse::spectra::<span class="hl-ty">ComputeEmitterDesc</span> params;
+params.capacity = <span class="hl-num">1024</span>;
+params.burst = <span class="hl-num">16</span>;
+params.backend = aiverse::spectra::<span class="hl-ty">ComputePreference</span>::<span class="hl-ty">Automatic</span>;
+params.quality = aiverse::fx::<span class="hl-ty">FxQuality</span>::<span class="hl-ty">High</span>;
 
-// Initialization can occur outside a frame. Device may be nullptr for
-// pure CPU/headless tests; RequireGpu fails if compute is unavailable.
-if (!particles.init(device, params)) {
-    // inspect particles.reason()
+<span class="hl-com">// Initialization can occur outside a frame. Device may be nullptr for</span>
+<span class="hl-com">// pure CPU/headless tests; RequireGpu fails if compute is unavailable.</span>
+<span class="hl-kw">if</span> (!particles.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>, params)) {
+    <span class="hl-com">// inspect particles.reason()</span>
 }
 
-// Presentation frame, AFTER Device::beginFrame, BEFORE scene render pass:
-particles.setView(camera, viewProjection, width, height);
-particles.burstAt({0,2,0}, {0,1,0}, {1,0.5f,0.1f,1});
-if (!particles.step(1.f/60)) {
-    // RHI timing/encoder order error; inspect particles.reason()
+<span class="hl-com">// Presentation frame, AFTER Device::beginFrame, BEFORE scene render pass:</span>
+particles.<span class="hl-fn">setView</span>(camera, viewProjection, width, height);
+particles.<span class="hl-fn">burstAt</span>({<span class="hl-num">0</span>,<span class="hl-num">2</span>,<span class="hl-num">0</span>}, {<span class="hl-num">0</span>,<span class="hl-num">1</span>,<span class="hl-num">0</span>}, {<span class="hl-num">1</span>,<span class="hl-num">0.5f</span>,<span class="hl-num">0.1f</span>,<span class="hl-num">1</span>});
+<span class="hl-kw">if</span> (!particles.<span class="hl-fn">step</span>(<span class="hl-num">1</span>.f/<span class="hl-num">60</span>)) {
+    <span class="hl-com">// RHI timing/encoder order error; inspect particles.reason()</span>
 }
 
-// During the scene&#x27;s existing still-open depth-tested render pass:
-particles.draw();
-// After the render pass: Device::endPass, Device::endFrame.
-// Before destroying gfx::Device: particles.shutdown().</code></pre>
+<span class="hl-com">// During the scene&#x27;s existing still-open depth-tested render pass:</span>
+particles.<span class="hl-fn">draw</span>();
+<span class="hl-com">// After the render pass: Device::endPass, Device::endFrame.</span>
+<span class="hl-com">// Before destroying gfx::Device: particles.shutdown().</span></code></pre>
 <p>Чистая безголовая политика <code>chooseComputeBackend(backend, supportsCompute, preference)</code> выбирает GPU-путь только для Metal с поддержкой compute. <code>CpuOnly</code> принудительно выбирает CPU; <code>Automatic</code> и <code>PreferGpu</code> откатываются на CPU при неподдерживаемом RHI или неудачном создании конвейера; <code>RequireGpu</code> отклоняет неподдерживаемые устройства, а не молча работает на CPU. Конфигурации GPU с низким качеством намеренно выбирают CPU, соблюдая существующее поведение качества частиц. Вызовы compute в RHI должны выполняться вне проходов отрисовки и внутри GPU-кадра. Вызывающая сторона отвечает за единственного владельца представления/поток устройства и за очистку до уничтожения устройства; этот модуль не содержит игровой ECS или состояния детерминированного симулятора.</p>
 <p><strong>Реализация на Metal:</strong> три compute-прохода за кадр представления (очередь принятых рождений → интегрирование возраста/скорости/позиции → разворачивание вершин квадов, обращённых к камере). GPU-буферы постоянные: 64 байта на частицу для состояний и сидов, 4-байтовый индекс слота и 40 байт на вершину билборда. Compute-шейдер пишет вершинный буфер, который напрямую читается обычным вершинным шейдером частиц RHI; в обычных кадрах позиции с GPU обратно на CPU <strong>не</strong> читаются. Пул рисуется одним аддитивным вызовом с тестом глубины. Текущий прототип рисует весь ограниченный массив индексов слотов (мёртвые слоты дают вырожденные квады); это не уплотнённый и не GPU-indirect рендерер. Максимальный пул — 4096 слотов, не более 64 рождений за вызов.</p>
 <p><strong>Исходник на GLSL</strong> приложен для будущего compute на Vulkan, но <code>gfx::Device::supportsCompute</code> для Vulkan в текущем RHI не реализован. GLES3/GL33/WebGL2 не запускают compute-ядро, поэтому вместо него используется существующий CPU-рендерер частиц. Не заявляйте эти платформы как поддерживающие GPU. Отдельный тест <code>tests/vfx_gpu_backend_test.cpp</code> проверяет политику выбора, границы, выпуск частиц при безголовом откате на CPU и время жизни. Он также содержит записывающий мок Metal RHI, который проверяет порядок диспетчеризации spawn→integrate→expand и последовательность команд прохода отрисовки <strong>без компиляции и запуска настоящих GPU-шейдеров</strong>. Это не интеграционный тест Metal GPU. По-прежнему нужны CI и проверка на нативном GPU.</p>
 <p><strong>Известные ограничения:</strong> нет уплотнения на GPU, нет отсечения по камере и LOD для отрисовки отдельных частиц, нет мягкого пересечения GPU-частиц, нет отрисовки мешей и лент на GPU, нет продвинутых графов эмиттеров, нет планировщика эффектов между CPU и GPU, нет автоматической миграции рантайма FPS/RTS и нет замеров производительности GPU. Компиляция шейдеров Metal в рантайме, конфликты ресурсов GPU, корректность на нескольких кадрах и вывод во фреймбуфер остаются <strong>НЕ ПРОВЕРЕНЫ</strong>.</p>
 <h2 id="автоматическая-маршрутизация-графа-на-бэкенд-этап-11-исходники-закоммичены-не-проверено">Автоматическая маршрутизация графа на бэкенд (этап 11 — исходники закоммичены, не проверено)<a class="anchor" href="#автоматическая-маршрутизация-графа-на-бэкенд-этап-11-исходники-закоммичены-не-проверено" aria-label="#">#</a></h2>
 <p><code>engine/fx/SpectraGraphRuntime.{h,cpp}</code> вводит новый <strong>необязательный, не зависящий от жанра</strong> <code>aiverse::spectra::GraphRuntime</code>. Он компилирует графовый ассет v1 или принимает заранее скомпилированный <code>fx::EffectDef</code> и решает, может ли тот без потери смысла исполняться на существующем compute-прототипе Metal. Каждый неподдерживаемый граф исполняется с <strong>точно тем же полным EffectDef</strong> в <code>fx::ParticleSystem</code>; сложные модули никогда не урезаются, чтобы уместиться на GPU.</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::GraphRuntime runner;
-aiverse::spectra::GraphRuntimeOptions options;
-options.preference = aiverse::spectra::ComputePreference::Automatic;
-options.quality = aiverse::fx::FxQuality::High;
-options.capacity = 1024;
+aiverse::spectra::<span class="hl-ty">GraphRuntime</span> runner;
+aiverse::spectra::<span class="hl-ty">GraphRuntimeOptions</span> options;
+options.preference = aiverse::spectra::<span class="hl-ty">ComputePreference</span>::<span class="hl-ty">Automatic</span>;
+options.quality = aiverse::fx::<span class="hl-ty">FxQuality</span>::<span class="hl-ty">High</span>;
+options.capacity = <span class="hl-num">1024</span>;
 
-if (!runner.initGraph(device, graphJson, aiverse::Json::object(), options)) {
-    // runner.reason() and runner.errors() describe the rejection
+<span class="hl-kw">if</span> (!runner.<span class="hl-fn">initGraph</span>(<span class="hl-kw">device</span>, graphJson, aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">object</span>(), options)) {
+    <span class="hl-com">// runner.reason() and runner.errors() describe the rejection</span>
 }
 
-// After Device::beginFrame, before the scene render pass:
-runner.setView(camera, viewProj, width, height);
-runner.burstAt({0, 1, 0}, {0, 1, 0});
-runner.step(1.f / 60.f);
+<span class="hl-com">// After Device::beginFrame, before the scene render pass:</span>
+runner.<span class="hl-fn">setView</span>(camera, viewProj, width, height);
+runner.<span class="hl-fn">burstAt</span>({<span class="hl-num">0</span>, <span class="hl-num">1</span>, <span class="hl-num">0</span>}, {<span class="hl-num">0</span>, <span class="hl-num">1</span>, <span class="hl-num">0</span>});
+runner.<span class="hl-fn">step</span>(<span class="hl-num">1</span>.f / <span class="hl-num">60</span>.f);
 
-// While the scene pass is open:
-runner.draw(fog);
-// On match change/rollback: runner.clear() outside an active encoder.
-// Before device shutdown: runner.shutdown().</code></pre>
+<span class="hl-com">// While the scene pass is open:</span>
+runner.<span class="hl-fn">draw</span>(fog);
+<span class="hl-com">// On match change/rollback: runner.clear() outside an active encoder.</span>
+<span class="hl-com">// Before device shutdown: runner.shutdown().</span></code></pre>
 <p>Валидатор схемы <code>inspectGraphGpuEligibility(effect, options)</code> не требует GPU и безопасен для нативных модулей, безголовых тестов и инструментов редактора. Он возвращает <code>GraphGpuEligibility { eligible, gpu, reason }</code>. GPU v1 разрешён <strong>только</strong> для одного аддитивного точечного эмиттера <code>builtin:soft</code>, выровненного по камере, с одной вспышкой из 1–64 частиц, постоянными скоростью/временем жизни/размером/сопротивлением, нулевым разбросом, гравитацией по мировой оси Y и цветовой шкалой по умолчанию от белого к прозрачному. Текущий прототип поддерживает только такую нагрузку. Пользовательские цвета и градиенты, несколько эмиттеров, случайные диапазоны и кривые, пользовательские шейдерные графы, шлейфы и ленты, шум, силовые поля, субэмиттеры, источники света, столкновения, анимация текстур или любой другой неподдерживаемый модуль принудительно переводят эффект целиком на CPU. Валидатор сравнивает нормализованные полные определения эффектов с известным поддерживаемым шаблоном и дополнительно явно проверяет чувствительные неподдерживаемые модули и цветовые ключи.</p>
 <p><code>ComputePreference::RequireGpu</code> завершается неудачей, если граф не подходит, реальное устройство не предоставляет Metal compute, уровень качества слишком низок или шейдер/конвейер не удаётся инициализировать. <code>Automatic</code> и <code>PreferGpu</code> вместо этого используют неизменённый CPU-ассет. <code>CpuOnly</code> никогда не пытается использовать GPU. Сбой работоспособности GPU внутри <code>ComputeParticles</code> может затем откатиться на его ограниченный CPU-эквивалент; <code>GraphRuntime</code> продолжает владеть этим экземпляром и сообщает фактический бэкенд.</p>
 <p>Ответы редактора и MCP <code>fx_graph_validate</code>, <code>fx_graph_get</code>, <code>fx_graph_list</code> после успешной компиляции теперь содержат <strong><code>metalGpuEligible</code></strong> и <strong><code>metalGpuReason</code></strong>. Это лишь <strong>диагностика возможностей ассета</strong>, а <strong>не</strong> доказательство наличия Metal или успешного исполнения на GPU. Визуальный редактор SpectraFX показывает тот же вердикт под инспектором свойств; его предпросмотр графа в памяти по-прежнему использует проверенный CPU-рендерер.</p>
@@ -229,14 +229,14 @@ runner.draw(fog);
 <p><strong>Объём и ограничения:</strong> это <em>сбор вершин</em> на GPU по списку живых слотов, поддерживаемому CPU. Он исключает отрисовку разреженных мёртвых слотов, но это <strong>не полностью резидентное на GPU уплотнение через атомики и префиксные суммы</strong> и не indirect-отрисовка, сформированная на GPU. CPU по-прежнему просматривает до 4096 записей возраста за кадр, а загрузка живых индексов расходует пропускную способность. Фиксированный 16-битный индексный буфер по-прежнему ограничивает пул 4096 билбордами. Бэкенд ограничен аддитивными мягкими спрайтами, допустимыми для <code>GraphRuntime</code>, и по умолчанию не включён в существующих клиентах RTS/FPS. Компиляция шейдеров Metal, вывод изображения и производительность на Apple Silicon остаются <strong>НЕ ПРОВЕРЕНЫ</strong>, пока не завершатся нативные CI- и аппаратные тесты. Пути RHI, отличные от Metal, продолжают использовать исходный CPU <code>ParticleSystem</code>.</p>
 <h2 id="экспериментальная-отрисовка-частиц-сформированная-на-gpu-этап-14">Экспериментальная отрисовка частиц, сформированная на GPU (этап 14)<a class="anchor" href="#экспериментальная-отрисовка-частиц-сформированная-на-gpu-этап-14" aria-label="#">#</a></h2>
 <p>Подмножество Metal теперь имеет <strong>явно включаемый</strong> режим уплотнения и отрисовки на стороне GPU, использующий существующие необязательные методы RHI. Это не меняет бэкенд по умолчанию и не затрагивает существующие рантаймы FPS/RTS:</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::GraphRuntimeOptions opts;
-opts.preference = aiverse::spectra::ComputePreference::Automatic;
-opts.gpuIndirect = true; // experimental; default is false
-// For the standalone billboard emitter:
-// aiverse::spectra::ComputeEmitterDesc cfg;
-// cfg.gpuIndirect = true;</code></pre>
+aiverse::spectra::<span class="hl-ty">GraphRuntimeOptions</span> opts;
+opts.preference = aiverse::spectra::<span class="hl-ty">ComputePreference</span>::<span class="hl-ty">Automatic</span>;
+opts.gpuIndirect = <span class="hl-kw">true</span>; <span class="hl-com">// experimental; default is false</span>
+<span class="hl-com">// For the standalone billboard emitter:</span>
+<span class="hl-com">// aiverse::spectra::ComputeEmitterDesc cfg;</span>
+<span class="hl-com">// cfg.gpuIndirect = true;</span></code></pre>
 <h3 id="контракт-rhi-и-compute-проходы">Контракт RHI и compute-проходы<a class="anchor" href="#контракт-rhi-и-compute-проходы" aria-label="#">#</a></h3>
 <p>Переносимый <code>gfx::Device</code> получает запрос возможности <code>supportsGpuAuthoredIndirectDraw()</code>, по умолчанию возвращающий false. Metal сообщает о поддержке через свой существующий простой путь <code>drawIndexedGpuIndirect</code>, независимо от экспериментальных возможностей ICB. Vulkan/GL/GLES/WebGL по-прежнему возвращают false. Устройства, объявляющего только <code>supportsCompute()</code>, недостаточно.</p>
 <p>Compute на Metal использует два дополнительных постоянных буфера хранения: <code>aliveCounter</code> (4-байтовый атомарный uint, compute-слот <strong>5</strong>) и <code>gpuDrawArgs</code> (20-байтовый <code>gfx::DrawIndexedIndirectCommand</code>, слот <strong>6</strong>). Существующие форматы <code>ParticleState</code> и 40-байтовой развёрнутой вершины не изменились.</p>
@@ -256,32 +256,32 @@ Render  gfx::Device::drawIndexedGpuIndirect(gpuDrawArgs, 0)</code></pre>
 <p>Все эти изменения — <strong>закоммиченные исходники, а не проверенное исполнение</strong>. При последнем запросе workflow новые CI-задания SpectraFX всё ещё стояли в очереди. Никаких утверждений об успешной компиляции MSL, диспетчеризации Metal, offscreen-изображении, таймингах или визуальном совпадении на GPU не делается. Прежде чем выбирать GPU для поставки или по умолчанию, по-прежнему нужен реальный тест Metal на уровне изображения с несколькими кадрами в полёте.</p>
 <h2 id="пакетирование-материалов-между-экземплярами-этап-14b-исходники-закоммичены-не-проверено">Пакетирование материалов между экземплярами (этап 14B — исходники закоммичены, не проверено)<a class="anchor" href="#пакетирование-материалов-между-экземплярами-этап-14b-исходники-закоммичены-не-проверено" aria-label="#">#</a></h2>
 <p>Раньше несколько экземпляров <code>GraphRuntime</code> владели отдельными объектами <code>fx::ParticleSystem</code> и каждый мог отправлять один и тот же спрайтовый материал отдельным вызовом отрисовки на GPU. Необязательный <strong><code>spectra::BatchWorld</code></strong> (<code>engine/fx/SpectraBatchWorld.{h,cpp}</code>) помещает произвольные определения графов и эффектов в <strong>одну общую ParticleSystem представления</strong>. Это повторно использует существующий глобальный <code>ParticleSystem::Impl::batchFor</code> и очередь рендеринга <code>FxRender.cpp</code>, которая уже группирует частицы <strong>независимо от ID эффектов и экземпляров</strong>.</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::BatchWorld shared;
-shared.init(device, aiverse::fx::FxQuality::High);
+aiverse::spectra::<span class="hl-ty">BatchWorld</span> shared;
+shared.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>, aiverse::fx::<span class="hl-ty">FxQuality</span>::<span class="hl-ty">High</span>);
 
-aiverse::spectra::GraphRuntime smoke, fire;
-// smokeJson and fireJson may represent different effects/parameters.
-smoke.initGraph(shared, smokeJson);
-fire.initGraph(shared, fireJson);
+aiverse::spectra::<span class="hl-ty">GraphRuntime</span> smoke, fire;
+<span class="hl-com">// smokeJson and fireJson may represent different effects/parameters.</span>
+smoke.<span class="hl-fn">initGraph</span>(shared, smokeJson);
+fire.<span class="hl-fn">initGraph</span>(shared, fireJson);
 
-// Each GraphRuntime keeps its OWN handles; no CPU renderer per source.
-smoke.burstAt({0,1,0});
-fire.burstAt({2,1,0});
+<span class="hl-com">// Each GraphRuntime keeps its OWN handles; no CPU renderer per source.</span>
+smoke.<span class="hl-fn">burstAt</span>({<span class="hl-num">0</span>,<span class="hl-num">1</span>,<span class="hl-num">0</span>});
+fire.<span class="hl-fn">burstAt</span>({<span class="hl-num">2</span>,<span class="hl-num">1</span>,<span class="hl-num">0</span>});
 
-// ONCE PER FRAME (not once per GraphRuntime):
-shared.setView(camera, viewProjection, width, height);
-shared.update(dt);
-// INSIDE the existing scene render pass, ONCE:
-shared.draw(fog);
+<span class="hl-com">// ONCE PER FRAME (not once per GraphRuntime):</span>
+shared.<span class="hl-fn">setView</span>(camera, viewProjection, width, height);
+shared.<span class="hl-fn">update</span>(dt);
+<span class="hl-com">// INSIDE the existing scene render pass, ONCE:</span>
+shared.<span class="hl-fn">draw</span>(fog);
 
-// Kill smoke&#x27;s particles without affecting fire:
-smoke.clear();
-// Full scene/match reset: shared.clear().
-smoke.shutdown();
-fire.shutdown();
-shared.shutdown(); // MUST outlive all attached GraphRuntime instances.</code></pre>
+<span class="hl-com">// Kill smoke&#x27;s particles without affecting fire:</span>
+smoke.<span class="hl-fn">clear</span>();
+<span class="hl-com">// Full scene/match reset: shared.clear().</span>
+smoke.<span class="hl-fn">shutdown</span>();
+fire.<span class="hl-fn">shutdown</span>();
+shared.<span class="hl-fn">shutdown</span>(); <span class="hl-com">// MUST outlive all attached GraphRuntime instances.</span></code></pre>
 <p><code>BatchWorld::defineEffect</code> кэширует эквивалентные полностью сериализованные определения эффектов, сохраняя различающиеся данные эмиттеров. <code>defineGraph</code> компилирует JSON v1 каноническим компилятором и регистрирует его эффект в том же мире. <code>play</code>, <code>move</code>, <code>stop</code>, <code>kill</code> и <code>playing</code> — операции над хэндлами нижележащей ParticleSystem. Вызывающая сторона может задать загрузчики текстур и мешей в общем мире до регистрации эффектов, получать <code>stats()</code>, вызывать <code>collectLights</code> и пользоваться его существующим глобальным бюджетом качества. Эти API <strong>не зависят от FPS, RTS или какого-либо конкретного игрового модуля</strong> и живут вне авторитетного состояния ECS и отката.</p>
 <p><strong>Ключ пакетирования отрисовки:</strong> фактический нижележащий хэндл текстуры или атласа RHI, <strong>режим смешивания</strong>, идентичность скомпилированного шейдерного графа и вид примитива (меш или квад). Эффекты с разными анимациями, размерами, экземплярами или параметрами рождения могут использовать один вызов отрисовки, если эти требования к состоянию рендеринга совпадают. Даже разные спрайты в <strong>одном атласе</strong> могут пакетироваться, поскольку их UV независимо закодированы в вершинных данных. Одна и та же текстура с разным альфа/аддитивным смешиванием или шейдерным графом НЕ должна пакетироваться. Вызов отрисовки разбивается на пределе 16-битных индексов в 16 384 квада. Сортировка альфы по-прежнему следует существующим правилам упорядочивания текущего рендерера; единая глобально отсортированная очередь прозрачной отрисовки по разным текстурам — отдельная архитектурная задача.</p>
 <p><code>GraphRuntime::initGraph(BatchWorld&amp;, ...)</code> и <code>initEffect(BatchWorld&amp;, ...)</code> явно подключают экземпляр к этому общему рендереру. Его <code>burstAt</code> запоминает хэндлы, а <code>clear()/shutdown()</code> уничтожают <strong>только эти хэндлы</strong>, а не все частицы мира. Список хэндлов источника ограничен 65 536 элементами: самый старый хэндл уничтожается до переполнения предела. В общем режиме <code>step</code>, <code>setView</code> и <code>draw</code> отдельных источников ничего не делают, чтобы предотвратить двойные обновления и дублирующие вызовы отрисовки. <strong>Хост должен вызывать методы общего мира один раз за кадр.</strong> <code>RequireGpu</code> отклоняется при регистрации в общем мире, а не молча понижается; текущее объединение рассчитано на зрелый путь эмиттеров с симуляцией на CPU и отрисовкой через RHI.</p>
@@ -290,39 +290,39 @@ shared.shutdown(); // MUST outlive all attached GraphRuntime instances.</code></
 <h2 id="планирование-сигналов-без-привязки-к-жанру-и-мост-ecs-источников-этап-15">Планирование сигналов без привязки к жанру и мост ECS-источников (этап 15)<a class="anchor" href="#планирование-сигналов-без-привязки-к-жанру-и-мост-ecs-источников-этап-15" aria-label="#">#</a></h2>
 <p>Необязательный <strong><code>spectra::CueScheduler</code></strong> в <code>engine/fx/SpectraCueScheduler.{h,cpp}</code> координирует множество независимых источников событий и прикреплённых эффектов поверх уже существующего <strong><code>BatchWorld</code></strong>. Он <strong>не</strong> создаёт ещё одну ParticleSystem и сам не вызывает <code>update</code>/<code>draw</code>; хост представления, которому он принадлежит, по-прежнему вызывает <code>BatchWorld</code> один раз за кадр. Всё планирование и хэндлы частиц остаются вне игровой ECS, детерминированных хэшей и состояния отката.</p>
 <p>Используйте канонический заголовок <code>engine/fx/SpectraFX.h</code> для чистого API представления или <code>&lt;aiverselib/genre/SpectraFX.h&gt;</code> в нативных ECS-проектах, чтобы также получить доступ к <code>syncEcsCueSources</code> и <code>acceptSimCueTick</code>. ECS-адаптер <strong>переиспользует</strong> <code>SpectraSourceComponent</code> (без нового типа или ID ECS-компонента). Хост предоставляет тот же универсальный резолвер позы для рендеринга, что и существующий <code>SpectraPresentationSystem</code>. Ключи источников используют <code>Entity::packed()</code>, поэтому переиспользованные индексы с новыми поколениями не могут переиспользовать старый хэндл эффекта.</p>
-<pre><code class="lang-cpp">#include &lt;aiverselib/genre/SpectraFX.h&gt;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&lt;aiverselib/genre/SpectraFX.h&gt;</span>
 
-// BatchWorld and CueScheduler must outlive each other&#x27;s handles in this
-// order: shared BatchWorld initialized first, CueScheduler destroyed first.
-aiverse::spectra::BatchWorld shared;
-shared.init(device, aiverse::fx::FxQuality::High);
-aiverse::spectra::CueBudgets limits;
-limits.maxQueued = 512;
-limits.maxPerTick = 64;
-limits.maxPerFrame = 128;
-limits.maxAttachments = 1024;
-limits.maxTrackedOneShots = 2048;
-aiverse::spectra::CueScheduler cues(shared, limits);
+<span class="hl-com">// BatchWorld and CueScheduler must outlive each other&#x27;s handles in this</span>
+<span class="hl-com">// order: shared BatchWorld initialized first, CueScheduler destroyed first.</span>
+aiverse::spectra::<span class="hl-ty">BatchWorld</span> shared;
+shared.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>, aiverse::fx::<span class="hl-ty">FxQuality</span>::<span class="hl-ty">High</span>);
+aiverse::spectra::<span class="hl-ty">CueBudgets</span> limits;
+limits.maxQueued = <span class="hl-num">512</span>;
+limits.maxPerTick = <span class="hl-num">64</span>;
+limits.maxPerFrame = <span class="hl-num">128</span>;
+limits.maxAttachments = <span class="hl-num">1024</span>;
+limits.maxTrackedOneShots = <span class="hl-num">2048</span>;
+aiverse::spectra::<span class="hl-ty">CueScheduler</span> <span class="hl-fn">cues</span>(shared, limits);
 
-cues.registerEffect(&quot;impact&quot;, impactEffectDef); // or registerGraph(...)
-cues.registerEffect(&quot;engine_fire&quot;, loopingEffectDef);
-cues.bindCue(72, &quot;impact&quot;); // game-defined event type, not an FPS/RTS enum
+cues.<span class="hl-fn">registerEffect</span>(<span class="hl-str">&quot;impact&quot;</span>, impactEffectDef); <span class="hl-com">// or registerGraph(...)</span>
+cues.<span class="hl-fn">registerEffect</span>(<span class="hl-str">&quot;engine_fire&quot;</span>, loopingEffectDef);
+cues.<span class="hl-fn">bindCue</span>(<span class="hl-num">72</span>, <span class="hl-str">&quot;impact&quot;</span>); <span class="hl-com">// game-defined event type, not an FPS/RTS enum</span>
 
-// On the presentation thread, after a committed gameplay tick:
-aiverse::spectra::acceptSimCueTick(cues, tick, simEvents);
+<span class="hl-com">// On the presentation thread, after a committed gameplay tick:</span>
+aiverse::spectra::<span class="hl-fn">acceptSimCueTick</span>(cues, tick, simEvents);
 
-// ONCE per presentation frame, with graphics Device in a valid frame:
-shared.setView(camera, viewProj, width, height);
-aiverse::spectra::syncEcsCueSources(world, cues, resolvePose);
-cues.flush();          // deferred one-shots, bounded per frame
-shared.update(dt);     // exactly once for ALL sources
-// With the scene render pass open:
-shared.draw(fog);      // exactly once, batches compatible materials
+<span class="hl-com">// ONCE per presentation frame, with graphics Device in a valid frame:</span>
+shared.<span class="hl-fn">setView</span>(camera, viewProj, width, height);
+aiverse::spectra::<span class="hl-fn">syncEcsCueSources</span>(world, cues, resolvePose);
+cues.<span class="hl-fn">flush</span>();          <span class="hl-com">// deferred one-shots, bounded per frame</span>
+shared.<span class="hl-fn">update</span>(dt);     <span class="hl-com">// exactly once for ALL sources</span>
+<span class="hl-com">// With the scene render pass open:</span>
+shared.<span class="hl-fn">draw</span>(fog);      <span class="hl-com">// exactly once, batches compatible materials</span>
 
-// Before replaying restored ticks after rollback/new match:
-cues.resetForRollback();  // kills only this scheduler&#x27;s cues/sources
-// Do not call shared.clear() unless resetting ALL other presentation owners.
-// Destroy cues BEFORE shared.shutdown()/gfx::Device destruction.</code></pre>
+<span class="hl-com">// Before replaying restored ticks after rollback/new match:</span>
+cues.<span class="hl-fn">resetForRollback</span>();  <span class="hl-com">// kills only this scheduler&#x27;s cues/sources</span>
+<span class="hl-com">// Do not call shared.clear() unless resetting ALL other presentation owners.</span>
+<span class="hl-com">// Destroy cues BEFORE shared.shutdown()/gfx::Device destruction.</span></code></pre>
 <h3 id="бюджеты-и-правила-владения">Бюджеты и правила владения<a class="anchor" href="#бюджеты-и-правила-владения" aria-label="#">#</a></h3>
 <p><code>CueBudgets</code> ограничивает число ожидающих событий, допуски за тик, запуски одноразовых эффектов за кадр, одновременные ECS-прикрепления и кольцо хэндлов одноразовых эффектов, отслеживаемых для отката. Входные значения ограничиваются безопасными жёсткими потолками; ёмкость отслеживаемых одноразовых эффектов не может быть нулевой. <code>CueScheduler::acceptTick(tick, events)</code> игнорирует повторяющиеся или убывающие тики до вызова <code>resetForRollback()</code>, но <strong>не</strong> продвигает нижележащий рендерер частиц. <code>flush()</code> запускает эффекты в пределах бюджета кадра и оставляет остаток ограниченной очереди на последующие кадры. Очередь хранит ID эффектов, разрешённые в момент принятия, чтобы избежать молчаливых изменений поведения при горячей перезагрузке ассетов.</p>
 <p>Когда кольцо отслеживаемых хэндлов одноразовых эффектов заполняется, самый старый эффект <strong>уничтожается до</strong> повторного использования его слота, поэтому его частицы не могут выйти из-под владения отката. <code>syncAttachments</code> принимает полный набор активных источников текущего кадра, перемещает существующие хэндлы, перезапускает их при изменении эффекта, ревизии или масштаба и снимает отсутствующие источники <strong>до</strong> применения лимита прикреплений к новым. Обычное открепление следует политике stop или kill каждого компонента; <strong>откат всегда уничтожает</strong> собственные хэндлы планировщика и очищает его очередь ожидания, позволяя заново проиграть более ранние восстановленные зафиксированные тики. Другие производители, использующие тот же <code>BatchWorld</code>, не затрагиваются.</p>
@@ -350,40 +350,40 @@ cues.resetForRollback();  // kills only this scheduler&#x27;s cues/sources
 <h2 id="переиспользуемые-типизированные-подграфы-функций-этап-18">Переиспользуемые типизированные подграфы функций (этап 18)<a class="anchor" href="#переиспользуемые-типизированные-подграфы-функций-этап-18" aria-label="#">#</a></h2>
 <p>Граф SpectraFX v2 теперь поддерживает переиспользуемые <strong>чистые функции значений</strong>. Тела функций — это вложенные типизированные графы значений, не зависящие от рендеринга, игровых жанров и состояния ECS:</p>
 <pre><code class="lang-json">{
-  &quot;version&quot;: 2,
-  &quot;functions&quot;: {
-    &quot;scale_speed&quot;: {
-      &quot;parameters&quot;: { &quot;base&quot;: 1, &quot;gain&quot;: 1 },
-      &quot;returns&quot;: &quot;number&quot;,
-      &quot;nodes&quot;: [
-        { &quot;id&quot;: &quot;a&quot;, &quot;type&quot;: &quot;Parameter&quot;,
-          &quot;properties&quot;: { &quot;name&quot;: &quot;base&quot; } },
-        { &quot;id&quot;: &quot;b&quot;, &quot;type&quot;: &quot;Parameter&quot;,
-          &quot;properties&quot;: { &quot;name&quot;: &quot;gain&quot; } },
-        { &quot;id&quot;: &quot;out&quot;, &quot;type&quot;: &quot;Multiply&quot;,
-          &quot;properties&quot;: {
-            &quot;a&quot;: { &quot;$node&quot;: &quot;a&quot; },
-            &quot;b&quot;: { &quot;$node&quot;: &quot;b&quot; }
+  <span class="hl-key">&quot;version&quot;</span>: <span class="hl-num">2</span>,
+  <span class="hl-key">&quot;functions&quot;</span>: {
+    <span class="hl-key">&quot;scale_speed&quot;</span>: {
+      <span class="hl-key">&quot;parameters&quot;</span>: { <span class="hl-key">&quot;base&quot;</span>: <span class="hl-num">1</span>, <span class="hl-key">&quot;gain&quot;</span>: <span class="hl-num">1</span> },
+      <span class="hl-key">&quot;returns&quot;</span>: <span class="hl-str">&quot;number&quot;</span>,
+      <span class="hl-key">&quot;nodes&quot;</span>: [
+        { <span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;a&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;Parameter&quot;</span>,
+          <span class="hl-key">&quot;properties&quot;</span>: { <span class="hl-key">&quot;name&quot;</span>: <span class="hl-str">&quot;base&quot;</span> } },
+        { <span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;b&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;Parameter&quot;</span>,
+          <span class="hl-key">&quot;properties&quot;</span>: { <span class="hl-key">&quot;name&quot;</span>: <span class="hl-str">&quot;gain&quot;</span> } },
+        { <span class="hl-key">&quot;id&quot;</span>: <span class="hl-str">&quot;out&quot;</span>, <span class="hl-key">&quot;type&quot;</span>: <span class="hl-str">&quot;Multiply&quot;</span>,
+          <span class="hl-key">&quot;properties&quot;</span>: {
+            <span class="hl-key">&quot;a&quot;</span>: { <span class="hl-key">&quot;$node&quot;</span>: <span class="hl-str">&quot;a&quot;</span> },
+            <span class="hl-key">&quot;b&quot;</span>: { <span class="hl-key">&quot;$node&quot;</span>: <span class="hl-str">&quot;b&quot;</span> }
           } }
       ],
-      &quot;output&quot;: &quot;out&quot;
+      <span class="hl-key">&quot;output&quot;</span>: <span class="hl-str">&quot;out&quot;</span>
     }
   }
 }</code></pre>
 <p>Вызывающий граф ссылается на функцию через узел значения <code>FunctionCall</code>:</p>
-<pre><code class="lang-json">{&quot;id&quot;:&quot;scale&quot;,&quot;type&quot;:&quot;FunctionCall&quot;,&quot;properties&quot;:{
-  &quot;function&quot;:&quot;scale_speed&quot;,
-  &quot;arguments&quot;:{&quot;base&quot;:{&quot;$param&quot;:&quot;speed&quot;},&quot;gain&quot;:1.5}
+<pre><code class="lang-json">{<span class="hl-key">&quot;id&quot;</span>:<span class="hl-str">&quot;scale&quot;</span>,<span class="hl-key">&quot;type&quot;</span>:<span class="hl-str">&quot;FunctionCall&quot;</span>,<span class="hl-key">&quot;properties&quot;</span>:{
+  <span class="hl-key">&quot;function&quot;</span>:<span class="hl-str">&quot;scale_speed&quot;</span>,
+  <span class="hl-key">&quot;arguments&quot;</span>:{<span class="hl-key">&quot;base&quot;</span>:{<span class="hl-key">&quot;$param&quot;</span>:<span class="hl-str">&quot;speed&quot;</span>},<span class="hl-key">&quot;gain&quot;</span>:<span class="hl-num">1.5</span>}
 }}</code></pre>
 <p>Сигнатуры функций объявляют типизированные <code>parameters</code> со значениями по умолчанию, ID выходного узла и необязательный строгий тип <code>returns</code>: <code>number</code>, <code>bool</code>, <code>string</code>, <code>vec2</code>, <code>vec3</code>, <code>vec4</code>. Вызовы наследуют контекст вызывающего — время компиляции или дискретизацию по нормализованному возрасту, — что позволяет создавать переиспользуемые функции затухания, ветра и отклика, компилирующиеся в существующие CPU-кривые FxRange. Определения функций содержат только узлы DAG значений и никогда — стадии Spawn/Update/Output. Компилятор графа отклоняет неизвестные функции, аргументы неверных типов, рекурсию (включая несвязанные определения), более 32 объявленных функций или более восьми вложенных вызовов. Никакие нативные скрипты, рефлексия или произвольный исполняемый код не вычисляются.</p>
 <h3 id="общие-библиотеки-функций-ассетов">Общие библиотеки функций-ассетов<a class="anchor" href="#общие-библиотеки-функций-ассетов" aria-label="#">#</a></h3>
 <p><code>engine/fx/SpectraFunctionAssets.h</code> предоставляет <code>validateFunctionLibrary</code>, <code>mergeFunctionLibrary</code> и <code>FunctionLibraryAssets</code> с внедряемым читателем файлов и откатом к последней корректной версии при перезагрузке. Файлы библиотек используют <code>fx/functions/&lt;name&gt;.vfxfn.json</code>:</p>
-<pre><code class="lang-json">{&quot;version&quot;:1,&quot;functions&quot;:{&quot;my_function&quot;:{
-  &quot;parameters&quot;:{&quot;x&quot;:1},
-  &quot;returns&quot;:&quot;number&quot;,
-  &quot;nodes&quot;:[{&quot;id&quot;:&quot;result&quot;,&quot;type&quot;:&quot;Parameter&quot;,
-            &quot;properties&quot;:{&quot;name&quot;:&quot;x&quot;}}],
-  &quot;output&quot;:&quot;result&quot;
+<pre><code class="lang-json">{<span class="hl-key">&quot;version&quot;</span>:<span class="hl-num">1</span>,<span class="hl-key">&quot;functions&quot;</span>:{<span class="hl-key">&quot;my_function&quot;</span>:{
+  <span class="hl-key">&quot;parameters&quot;</span>:{<span class="hl-key">&quot;x&quot;</span>:<span class="hl-num">1</span>},
+  <span class="hl-key">&quot;returns&quot;</span>:<span class="hl-str">&quot;number&quot;</span>,
+  <span class="hl-key">&quot;nodes&quot;</span>:[{<span class="hl-key">&quot;id&quot;</span>:<span class="hl-str">&quot;result&quot;</span>,<span class="hl-key">&quot;type&quot;</span>:<span class="hl-str">&quot;Parameter&quot;</span>,
+            <span class="hl-key">&quot;properties&quot;</span>:{<span class="hl-key">&quot;name&quot;</span>:<span class="hl-str">&quot;x&quot;</span>}}],
+  <span class="hl-key">&quot;output&quot;</span>:<span class="hl-str">&quot;result&quot;</span>
 }}}</code></pre>
 <p>Импорт библиотеки в граф v2 явно копирует её проверенные определения функций; если уже существуют функции с теми же именами, но другими телами, импорт отклоняется, если замена не запрошена явно. Импорт работает с незавершёнными черновиками редактора, а чистый компилятор графа по-прежнему не выполняет файлового ввода-вывода. Нативный API доступен из <code>engine/fx/SpectraFX.h</code>.</p>
 <p>MCP поддерживает <code>fx_function_list</code>, <code>fx_function_get</code>, <code>fx_function_set</code>, <code>fx_function_import</code> и <code>fx_function_export</code>. Импорт возвращает отредактированный граф в памяти; пользователь явно публикует его или сохраняет черновик. В редакторе SpectraFX есть селектор FunctionCall, встроенный JSON-редактор функций, а также элементы импорта и экспорта для имён переиспользуемых библиотек функций. Примеры ассетов: <code>examples/spectrafx/common_math.vfxfn.json</code> и <code>examples/spectrafx/function_calls_v2.vfx.json</code>.</p>
@@ -392,19 +392,19 @@ cues.resetForRollback();  // kills only this scheduler&#x27;s cues/sources
 <p>Существующая <code>fx::ParticleSystem</code> теперь может исполнять необязательную <code>EmitterDef::particleProgram</code>: небольшую скомпилированную ограниченную программу-выражение, выполняемую на стадиях жизненного цикла <strong>отдельной частицы</strong>. Она НЕ интерпретирует JSON заново для каждой частицы и не запускает никаких скриптов C++/Lua из файла эффекта. Компилятор проверяет опкоды, цели, вложенность, конечность констант и бюджеты и преобразует JSON в предкомпилированные инструкции в <code>engine/fx/SpectraParticleProgram.h</code>. На каждом шаге частицы VM использует стек фиксированного размера <strong>без динамического выделения памяти</strong>. Состояние игровой ECS не читается и не записывается.</p>
 <p>Используйте узел конвейера <code>ParticleProgramModule</code> в графе v2 перед выходом или задайте <code>particleProgram</code> в обычном старом определении эмиттера. Поддерживаемые именованные стадии программы — <code>spawn</code>, <code>update</code>, <code>death</code>, <code>collision</code>, <code>trigger</code>. Каждая стадия содержит не более 32 присваиваний/обновлений и 256 постфиксных инструкций VM. Выражение — это конечное число, <code>{&quot;var&quot;:&quot;field&quot;}</code> или дерево встроенных операций арифметики, clamp, lerp, сравнения и тригонометрии. Глубина рекурсии ограничена 16. Не допускаются произвольный исполняемый исходный код, сеть, доступ к файлам или вызов плагинов.</p>
 <pre><code class="lang-json">{
-  &quot;version&quot;:1,
-  &quot;spawn&quot;:[
-    {&quot;target&quot;:&quot;attribute0&quot;,&quot;value&quot;:0.75}
+  <span class="hl-key">&quot;version&quot;</span>:<span class="hl-num">1</span>,
+  <span class="hl-key">&quot;spawn&quot;</span>:[
+    {<span class="hl-key">&quot;target&quot;</span>:<span class="hl-str">&quot;attribute0&quot;</span>,<span class="hl-key">&quot;value&quot;</span>:<span class="hl-num">0.75</span>}
   ],
-  &quot;update&quot;:[
-    {&quot;op&quot;:&quot;addRate&quot;,&quot;target&quot;:&quot;velocity.y&quot;,
-     &quot;value&quot;:{&quot;op&quot;:&quot;multiply&quot;,
-       &quot;a&quot;:2.2,
-       &quot;b&quot;:{&quot;op&quot;:&quot;subtract&quot;,&quot;a&quot;:1,
-            &quot;b&quot;:{&quot;var&quot;:&quot;ageNormalized&quot;}}}},
-    {&quot;op&quot;:&quot;set&quot;,&quot;target&quot;:&quot;tint.a&quot;,
-     &quot;value&quot;:{&quot;op&quot;:&quot;saturate&quot;,&quot;a&quot;:{
-       &quot;op&quot;:&quot;subtract&quot;,&quot;a&quot;:1,&quot;b&quot;:{&quot;var&quot;:&quot;ageNormalized&quot;}}}}
+  <span class="hl-key">&quot;update&quot;</span>:[
+    {<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;addRate&quot;</span>,<span class="hl-key">&quot;target&quot;</span>:<span class="hl-str">&quot;velocity.y&quot;</span>,
+     <span class="hl-key">&quot;value&quot;</span>:{<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;multiply&quot;</span>,
+       <span class="hl-key">&quot;a&quot;</span>:<span class="hl-num">2.2</span>,
+       <span class="hl-key">&quot;b&quot;</span>:{<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;subtract&quot;</span>,<span class="hl-key">&quot;a&quot;</span>:<span class="hl-num">1</span>,
+            <span class="hl-key">&quot;b&quot;</span>:{<span class="hl-key">&quot;var&quot;</span>:<span class="hl-str">&quot;ageNormalized&quot;</span>}}}},
+    {<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;set&quot;</span>,<span class="hl-key">&quot;target&quot;</span>:<span class="hl-str">&quot;tint.a&quot;</span>,
+     <span class="hl-key">&quot;value&quot;</span>:{<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;saturate&quot;</span>,<span class="hl-key">&quot;a&quot;</span>:{
+       <span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;subtract&quot;</span>,<span class="hl-key">&quot;a&quot;</span>:<span class="hl-num">1</span>,<span class="hl-key">&quot;b&quot;</span>:{<span class="hl-key">&quot;var&quot;</span>:<span class="hl-str">&quot;ageNormalized&quot;</span>}}}}
   ]
 }</code></pre>
 <p>Поддерживаемые скалярные чтения включают <code>age</code>, <code>ageNormalized</code>, <code>dt</code>, <code>uid</code>, мировые <code>position.x/y/z</code>, <code>velocity.x/y/z</code>, <code>size</code>, <code>rotation</code>, <code>tint.r/g/b/a</code> и восемь независимых пользовательских значений <code>attribute0..7</code> с плавающей точкой, хранящихся у каждой визуальной частицы. Поля жизненного цикла только для чтения программа записывать не может. Действия <code>set</code>, <code>add</code>, <code>multiply</code>, <code>addRate</code> (<code>value * dt</code> в секунду) применяются к записываемым полям. Выходные значения конечны и ограничены, каналы оттенка ограничиваются диапазоном 0..1, а размер — неотрицательными значениями.</p>
@@ -414,28 +414,28 @@ cues.resetForRollback();  // kills only this scheduler&#x27;s cues/sources
 <p>Графы могут объявлять до <strong>восьми именованных скалярных входов CPU VM частиц</strong> отдельно от <code>parameters</code> времени компиляции. Значения экземпляров во время работы можно менять без пересборки эффекта, перекомпиляции графа или изменения данных другого экземпляра. Это <strong>только представление</strong>, не зависящее от жанра, и значения не записываются в игровую ECS.</p>
 <p>Корневой элемент графа v2 <code>instanceParameters</code> сопоставляет безопасное имя с <code>{slot,default,min,max}</code> (уникальные слоты 0..7, конечные ограниченные числа). Узел данных типа <code>InstanceParameter</code> ссылается на <code>properties.name</code>, а выражение <code>ParticleProgramModule</code>, использующее <code>{&quot;$runtime&quot;:&quot;node_id&quot;}</code>, во время компиляции понижается до чтения CPU VM <code>param0</code> … <code>param7</code>. Значения остаются динамическими во время работы частиц, в отличие от обычных литералов графа <code>$param</code>.</p>
 <pre><code class="lang-json">{
-  &quot;version&quot;: 2,
-  &quot;instanceParameters&quot;: {
-    &quot;lift&quot;: {&quot;slot&quot;: 0, &quot;default&quot;: 2.2, &quot;min&quot;: 0, &quot;max&quot;: 25},
-    &quot;intensity&quot;: {&quot;slot&quot;: 1, &quot;default&quot;: 1, &quot;min&quot;: 0, &quot;max&quot;: 10}
+  <span class="hl-key">&quot;version&quot;</span>: <span class="hl-num">2</span>,
+  <span class="hl-key">&quot;instanceParameters&quot;</span>: {
+    <span class="hl-key">&quot;lift&quot;</span>: {<span class="hl-key">&quot;slot&quot;</span>: <span class="hl-num">0</span>, <span class="hl-key">&quot;default&quot;</span>: <span class="hl-num">2.2</span>, <span class="hl-key">&quot;min&quot;</span>: <span class="hl-num">0</span>, <span class="hl-key">&quot;max&quot;</span>: <span class="hl-num">25</span>},
+    <span class="hl-key">&quot;intensity&quot;</span>: {<span class="hl-key">&quot;slot&quot;</span>: <span class="hl-num">1</span>, <span class="hl-key">&quot;default&quot;</span>: <span class="hl-num">1</span>, <span class="hl-key">&quot;min&quot;</span>: <span class="hl-num">0</span>, <span class="hl-key">&quot;max&quot;</span>: <span class="hl-num">10</span>}
   }
 }</code></pre>
 <p>Размещайте это объявление рядом с обычными полями <code>nodes</code>, <code>links</code>, <code>outputs</code> и <code>parameters</code>. См. <code>examples/spectrafx/per_instance_parameters_v2.vfx.json</code> — полный граф, в котором ускорение каждой частицы вверх использует именованное значение <code>lift</code>. <code>engine/fx/SpectraInstanceParameters.h</code> содержит общие метаданные проверки.</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-// Same graph asset can be compiled by multiple independent runtimes:
-aiverse::spectra::GraphRuntime fireA, fireB;
-fireA.initGraph(device, graphJson);
-fireB.initGraph(device, graphJson);
+<span class="hl-com">// Same graph asset can be compiled by multiple independent runtimes:</span>
+aiverse::spectra::<span class="hl-ty">GraphRuntime</span> fireA, fireB;
+fireA.<span class="hl-fn">initGraph</span>(<span class="hl-kw">device</span>, graphJson);
+fireB.<span class="hl-fn">initGraph</span>(<span class="hl-kw">device</span>, graphJson);
 
-fireA.setNamedProgramParameter(&quot;lift&quot;, 2.5f);
-fireB.setNamedProgramParameter(&quot;lift&quot;, 10.0f);
+fireA.<span class="hl-fn">setNamedProgramParameter</span>(<span class="hl-str">&quot;lift&quot;</span>, <span class="hl-num">2.5f</span>);
+fireB.<span class="hl-fn">setNamedProgramParameter</span>(<span class="hl-str">&quot;lift&quot;</span>, <span class="hl-num">10.0f</span>);
 
-// For already-live particles, propagate the new value explicitly:
-fireA.setNamedProgramParameter(&quot;lift&quot;, 5.0f, true);
+<span class="hl-com">// For already-live particles, propagate the new value explicitly:</span>
+fireA.<span class="hl-fn">setNamedProgramParameter</span>(<span class="hl-str">&quot;lift&quot;</span>, <span class="hl-num">5.0f</span>, <span class="hl-kw">true</span>);
 
-// Or without a graph schema, use raw CPU VM slot 0..7:
-fireA.setProgramParameter(0, 5.0f, true);</code></pre>
+<span class="hl-com">// Or without a graph schema, use raw CPU VM slot 0..7:</span>
+fireA.<span class="hl-fn">setProgramParameter</span>(<span class="hl-num">0</span>, <span class="hl-num">5.0f</span>, <span class="hl-kw">true</span>);</code></pre>
 <p>Вызов <code>setProgramParameter(slot,value,affectExisting=false)</code> у <code>GraphRuntime</code> меняет будущие рождения <strong>только для этого источника</strong>; <code>affectExisting=true</code> дополнительно обновляет текущие частицы, принадлежащие его отслеживаемым хэндлам. Публичная <code>fx::ParticleSystem</code> также предлагает <code>setProgramParameter(handle,slot,value,affectExisting)</code> и атомарный <code>playWithProgramParameters(effect,pos,dir,scale,tint,params)</code>, который задаёт все восемь скаляров <strong>до предварительного прогрева и колбэков Spawn</strong>. <code>spectra::BatchWorld</code> предоставляет такое же атомарное воспроизведение и сеттер для отдельного хэндла. Стандартный <code>play</code> остаётся совместимым на уровне исходников и передаёт нули.</p>
 <p><code>spectra::CueEvent</code> и <code>AttachedCue</code> могут дополнительно нести <code>programParams[8]</code> и <code>programParamMask</code>. Планировщик сигналов применяет включённые значения до запуска нового одноразового или прикреплённого эффекта. Изменения параметров у существующего непрерывного источника обновляют текущие частицы <strong>без перезапуска эффекта</strong>. Выключенные слоты остаются нулевыми; удаление переопределения очищает старое значение слота. Планировщик по-прежнему владеет хэндлами исключительно на стороне представления.</p>
 <p>В редакторе SpectraFX (версия 2) на правой панели есть <strong>Параметры экземпляра (runtime)</strong>. Там редактируется проверяемая JSON-схема, показываются именованные значения ползунков для текущего экземпляра предпросмотра, и <code>instanceValues</code> передаются в операцию <code>fx_graph_preview</code>, работающую в памяти. Предпросмотр запускает существующую CPU ParticleSystem со значениями, применёнными до первого Spawn, и сохраняет их при перезапусках цикла. Новые файлы <code>fx/*.json</code> при этом не создаются.</p>
@@ -445,7 +445,7 @@ fireA.setProgramParameter(0, 5.0f, true);</code></pre>
 <p>Эмиттеры теперь могут по желанию включить <strong>четырёхканальную карту входов shader graph</strong> через <code>graphInputs</code>. Рендерер использует уже существующий 40-байтный формат вершины и его поле <code>float4 graphData</code>, поэтому совместимое батчирование отрисовки и прежние форматы вершин спрайтов/мешей не меняются. Карта источников проверяется в <code>fx::parseEffect</code>, сериализуется в <code>fx::effectToJson</code> и один раз предвычисляется в <code>ParticleSystem::Impl::build</code> в четыре небольших целочисленных селектора. В цикл отрисовки каждой частицы не добавляется никакого разбора JSON.</p>
 <p>Пример внутри любого эмиттера в <code>fx/&lt;name&gt;.json</code> или в плоских свойствах <code>MaterialModule</code> / выходного узла graph-v2:</p>
 <pre><code class="lang-json">{
-  &quot;graphInputs&quot;: [&quot;attribute0&quot;, &quot;attribute1&quot;, &quot;param0&quot;, &quot;age&quot;]
+  <span class="hl-key">&quot;graphInputs&quot;</span>: [<span class="hl-str">&quot;attribute0&quot;</span>, <span class="hl-str">&quot;attribute1&quot;</span>, <span class="hl-str">&quot;param0&quot;</span>, <span class="hl-str">&quot;age&quot;</span>]
 }</code></pre>
 <p>Требуется ровно <strong>четыре</strong> имени источника. Допустимые имена: <code>age</code>, <code>lifetime</code>, <code>random</code>, <code>zero</code>, от <code>attribute0</code> до <code>attribute7</code> и от <code>param0</code> до <code>param7</code>. Скалярные пользовательские атрибуты записывает CPU <code>particleProgram</code> на этапах Spawn/Update/событий. Параметры экземпляра захватываются при испускании или обновляются посредством сеттеров на экземпляр из Stage 20. И то и другое относится только к представлению.</p>
 <p><code>shaderGraph</code> уже получает четыре вершинных канала как <code>sg_particle</code> во встроенном компиляторе графов материалов. Этот Stage 21 отображает выбранные значения VM в эти каналы; авторы могут комбинировать их с математическими/цветовыми/текстурными узлами графа. Он <strong>не</strong> меняет язык графов материалов, число вершинных каналов или бюджеты слотов шейдеров/текстур.</p>
@@ -455,23 +455,23 @@ fireA.setProgramParameter(0, 5.0f, true);</code></pre>
 <h2 id="экспериментальное-выполнение-скалярной-vm-частиц-на-metal-stage-22-исходники-закоммичены-не-проверено">Экспериментальное выполнение скалярной VM частиц на Metal (Stage 22 — исходники закоммичены, не проверено)<a class="anchor" href="#экспериментальное-выполнение-скалярной-vm-частиц-на-metal-stage-22-исходники-закоммичены-не-проверено" aria-label="#">#</a></h2>
 <p><code>engine/fx/SpectraGpuProgram.h</code> предоставляет фиксированный двоичный payload для строгого подмножества программ частиц CPU. Вычислительное ядро Metal из Stage 22 теперь <strong>интерпретирует</strong> этот проверенный payload напрямую во время Spawn и Update частиц. Это не динамическая генерация шейдеров MSL; шейдер компилируется один раз, а payload — обычный постоянный storage-буфер RHI. Более ранняя подготовка компилятора/ABI существовала до реализации выполнения на GPU; фактическое вычислительное выполнение и буферы параметров были добавлены в Stage 22.</p>
 <p><strong>Явное включение обязательно и по умолчанию выключено:</strong></p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::GraphRuntimeOptions options;
-options.preference=aiverse::spectra::ComputePreference::Automatic;
-options.gpuProgram=true;  // EXPERIMENTAL; defaults to false
-options.gpuIndirect=false; // independent option from Stage 14
+aiverse::spectra::<span class="hl-ty">GraphRuntimeOptions</span> options;
+options.preference=aiverse::spectra::<span class="hl-ty">ComputePreference</span>::<span class="hl-ty">Automatic</span>;
+options.gpuProgram=<span class="hl-kw">true</span>;  <span class="hl-com">// EXPERIMENTAL; defaults to false</span>
+options.gpuIndirect=<span class="hl-kw">false</span>; <span class="hl-com">// independent option from Stage 14</span>
 
-aiverse::spectra::GraphRuntime emitter;
-if(!emitter.initGraph(device,graphJson,aiverse::Json::object(),options)) {
-    // emitter.reason(), emitter.errors()
+aiverse::spectra::<span class="hl-ty">GraphRuntime</span> emitter;
+<span class="hl-kw">if</span>(!emitter.<span class="hl-fn">initGraph</span>(<span class="hl-kw">device</span>,graphJson,aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">object</span>(),options)) {
+    <span class="hl-com">// emitter.reason(), emitter.errors()</span>
 }
-emitter.setNamedProgramParameter(&quot;lift&quot;,3.5f);
-emitter.burstAt({0,1,0}); // parameters snapshotted before Spawn
-// Per-frame device sequence: beginFrame -&gt; emitter.step -&gt; beginPass -&gt;
-// emitter.draw -&gt; endPass -&gt; endFrame.
-emitter.setNamedProgramParameter(&quot;lift&quot;,5.0f,true);
-// affectExisting = true queues a GPU parameter-buffer upload for next step.</code></pre>
+emitter.<span class="hl-fn">setNamedProgramParameter</span>(<span class="hl-str">&quot;lift&quot;</span>,<span class="hl-num">3.5f</span>);
+emitter.<span class="hl-fn">burstAt</span>({<span class="hl-num">0</span>,<span class="hl-num">1</span>,<span class="hl-num">0</span>}); <span class="hl-com">// parameters snapshotted before Spawn</span>
+<span class="hl-com">// Per-frame device sequence: beginFrame -&gt; emitter.step -&gt; beginPass -&gt;</span>
+<span class="hl-com">// emitter.draw -&gt; endPass -&gt; endFrame.</span>
+emitter.<span class="hl-fn">setNamedProgramParameter</span>(<span class="hl-str">&quot;lift&quot;</span>,<span class="hl-num">5.0f</span>,<span class="hl-kw">true</span>);
+<span class="hl-com">// affectExisting = true queues a GPU parameter-buffer upload for next step.</span></code></pre>
 <p>Опциональный шлюз допуска к GPU сначала сравнивает <strong>каждое</strong> скомпилированное поле эмиттера с единственным контрактом аддитивного точечного всплеска <code>builtin:soft</code>; он допускает <code>particleProgram</code>, только если вся программа проходит <code>gpu_program::prepareForMetal</code>. Любой другой модуль, произвольный материальный <code>shaderGraph</code>, <code>graphInputs</code>, события, столкновения, следы, несколько эмиттеров, частицы-меши, принудительные поля, сортировка, случайные диапазоны или этапы графа вне поддерживаемого подмножества по-прежнему используют <strong>точно исходный полный эффект на CPU</strong>. <code>RequireGpu</code> завершается ошибкой вместо того, чтобы молча отбрасывать поведение.</p>
 <p>Поддерживаемые этапы VM: <strong>Spawn</strong> и <strong>Update</strong>. Читаемые скалярные поля: <code>age</code>, <code>ageNormalized</code>, <code>dt</code>, <code>position.x/y/z</code>, <code>velocity.x/y/z</code>, <code>size</code>, <code>tint.r/g/b/a</code> и доступные только для чтения параметры экземпляра <code>param0..param7</code>. Записываемые поля: компоненты позиции/скорости, размер и оттенок. Действия: <code>set</code>, <code>add</code>, <code>addRate</code>, <code>multiply</code>. Поддерживаемые операции выражений: конечные константы и чтения полей, сложение/вычитание/умножение, min/max, abs/negate/saturate, clamp и lerp. Числовые результаты конечны/ограничены; размер ограничивается снизу нулём, каналы оттенка — диапазоном [0,1]. Ядро отклоняет некорректные инструкции и пропускает неудачные операторы, не изменяя состояние частицы.</p>
 <p>Не поддерживаются: пользовательские регистры <code>attribute0..7</code>, <code>uid</code>, вращение, деление/pow/тригонометрия/sqrt/floor/ceil, сравнения, условный Select, программы столкновения/триггера/смерти, циклы/рекурсия, пользовательские скрипты во время выполнения и все вычислительные бэкенды, кроме Metal. GPU-интерпретатор ограничен <strong>24 операторами всего</strong>, <strong>192 инструкциями</strong> и <strong>48 инструкциями на оператор</strong>. Номера ABI/опкодов/полей проверяются на этапе компиляции по перечислениям CPU VM; эти проверки всё ещё требуют фактической нативной сборки для подтверждения.</p>
@@ -490,25 +490,25 @@ emitter.setNamedProgramParameter(&quot;lift&quot;,5.0f,true);
 <h2 id="ограниченные-материалы-shader-graph-на-gpu-metal-stage-27-исходники-закоммичены-тесты-отложены">Ограниченные материалы shader graph на GPU Metal (Stage 27 — исходники закоммичены, тесты отложены)<a class="anchor" href="#ограниченные-материалы-shader-graph-на-gpu-metal-stage-27-исходники-закоммичены-тесты-отложены" aria-label="#">#</a></h2>
 <p>Опциональный бэкенд билбордов на GPU Metal теперь поддерживает <strong>ограниченное подмножество существующего языка <code>shaderGraph</code> домена частиц</strong>, включая пользовательские входы VM на частицу <code>attribute0..7</code> и входы <code>param0..7</code> на источник. Это тот же компилятор <code>render::graph::compile(graph,&quot;particle&quot;)</code>, который уже используется полным CPU ParticleSystem, <strong>а не дублирующий язык узлов материалов</strong>. Сложные эффекты продолжают использовать свои полные определения эффектов для CPU.</p>
 <p>Нативное включение (оба переключателя по умолчанию false):</p>
-<pre><code class="lang-cpp">aiverse::spectra::GraphRuntimeOptions options;
-options.preference = aiverse::spectra::ComputePreference::Automatic;
-options.gpuProgram = true; // if ParticleProgramModule is present
-options.gpuMaterial = true; // enables the restricted particle shaderGraph
-options.gpuIndirect = false; // optional, independent, experimental</code></pre>
+<pre><code class="lang-cpp">aiverse::spectra::<span class="hl-ty">GraphRuntimeOptions</span> options;
+options.preference = aiverse::spectra::<span class="hl-ty">ComputePreference</span>::<span class="hl-ty">Automatic</span>;
+options.gpuProgram = <span class="hl-kw">true</span>; <span class="hl-com">// if ParticleProgramModule is present</span>
+options.gpuMaterial = <span class="hl-kw">true</span>; <span class="hl-com">// enables the restricted particle shaderGraph</span>
+options.gpuIndirect = <span class="hl-kw">false</span>; <span class="hl-com">// optional, independent, experimental</span></code></pre>
 <p>Используйте узел <code>SpriteOutput</code> (или устаревший эмиттер) с такими полными полями авторинга:</p>
 <pre><code class="lang-json">{
-  &quot;texture&quot;: &quot;builtin:soft&quot;,
-  &quot;blend&quot;: &quot;additive&quot;,
-  &quot;graphInputs&quot;: [&quot;attribute0&quot;, &quot;param0&quot;, &quot;age&quot;, &quot;lifetime&quot;],
-  &quot;shaderGraph&quot;: {
-    &quot;version&quot;: 1,
-    &quot;domain&quot;: &quot;particle&quot;,
-    &quot;nodes&quot;: [
-      {&quot;id&quot;:&quot;input&quot;,&quot;op&quot;:&quot;input&quot;},
-      {&quot;id&quot;:&quot;gain&quot;,&quot;op&quot;:&quot;particleAge&quot;},
-      {&quot;id&quot;:&quot;tint&quot;,&quot;op&quot;:&quot;multiply&quot;,&quot;inputs&quot;:[&quot;input&quot;,&quot;gain&quot;]}
+  <span class="hl-key">&quot;texture&quot;</span>: <span class="hl-str">&quot;builtin:soft&quot;</span>,
+  <span class="hl-key">&quot;blend&quot;</span>: <span class="hl-str">&quot;additive&quot;</span>,
+  <span class="hl-key">&quot;graphInputs&quot;</span>: [<span class="hl-str">&quot;attribute0&quot;</span>, <span class="hl-str">&quot;param0&quot;</span>, <span class="hl-str">&quot;age&quot;</span>, <span class="hl-str">&quot;lifetime&quot;</span>],
+  <span class="hl-key">&quot;shaderGraph&quot;</span>: {
+    <span class="hl-key">&quot;version&quot;</span>: <span class="hl-num">1</span>,
+    <span class="hl-key">&quot;domain&quot;</span>: <span class="hl-str">&quot;particle&quot;</span>,
+    <span class="hl-key">&quot;nodes&quot;</span>: [
+      {<span class="hl-key">&quot;id&quot;</span>:<span class="hl-str">&quot;input&quot;</span>,<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;input&quot;</span>},
+      {<span class="hl-key">&quot;id&quot;</span>:<span class="hl-str">&quot;gain&quot;</span>,<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;particleAge&quot;</span>},
+      {<span class="hl-key">&quot;id&quot;</span>:<span class="hl-str">&quot;tint&quot;</span>,<span class="hl-key">&quot;op&quot;</span>:<span class="hl-str">&quot;multiply&quot;</span>,<span class="hl-key">&quot;inputs&quot;</span>:[<span class="hl-str">&quot;input&quot;</span>,<span class="hl-str">&quot;gain&quot;</span>]}
     ],
-    &quot;outputs&quot;:{&quot;color&quot;:&quot;tint&quot;}
+    <span class="hl-key">&quot;outputs&quot;</span>:{<span class="hl-key">&quot;color&quot;</span>:<span class="hl-str">&quot;tint&quot;</span>}
   }
 }</code></pre>
 <p>Полный пример графа: <code>examples/spectrafx/gpu_vm_material_inputs_v2.vfx.json</code>. Он захватывает именованный <code>intensity</code> в <code>attribute0</code> частицы на Spawn, затем использует <code>sg_particle.x</code> в узле particleAge материала, чтобы модулировать базовый оттенок спрайта.</p>
@@ -519,40 +519,40 @@ options.gpuIndirect = false; // optional, independent, experimental</code></pre>
 <h2 id="общий-мир-ресурсов-эмиттеров-cpugpu-stage-28-исходники-закоммичены-тесты-отложены">Общий мир ресурсов эмиттеров CPU/GPU (Stage 28 — исходники закоммичены, тесты отложены)<a class="anchor" href="#общий-мир-ресурсов-эмиттеров-cpugpu-stage-28-исходники-закоммичены-тесты-отложены" aria-label="#">#</a></h2>
 <p>Опциональный, не зависящий от жанра <code>spectra::GpuPoolWorld</code> создаёт <strong>одну постоянную группу ресурсов эмиттера на GPU для каждого уникального полного эффекта</strong> и повторно использует этот ресурс для нескольких логических имён источников. Два транспортных средства, оружия или эффекта заклинаний, ссылающиеся на точно тот же граф и GPU-политику, делят один буфер симуляции <code>ComputeParticles</code>, payload VM и графический конвейер. Неподдерживаемые модули графа попадают в <strong>один существующий CPU <code>spectra::BatchWorld</code></strong>, который может батчировать совместимые материалы/типы примитивов независимо от жанра геймплея.</p>
 <p>Публичный API экспортируется из <code>engine/fx/SpectraFX.h</code> и линкуется с <code>AIVERSE::spectrafx</code>:</p>
-<pre><code class="lang-cpp">#include &quot;engine/fx/SpectraFX.h&quot;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/fx/SpectraFX.h&quot;</span>
 
-aiverse::spectra::GpuPoolWorld pool;
-aiverse::spectra::PoolWorldBudgets budgets;
-budgets.maxGpuGroups = 16;
-budgets.maxGroupCapacity = 1024;
-budgets.maxBurstsPerFrame = 256;
-pool.init(device, budgets);
+aiverse::spectra::<span class="hl-ty">GpuPoolWorld</span> pool;
+aiverse::spectra::<span class="hl-ty">PoolWorldBudgets</span> budgets;
+budgets.maxGpuGroups = <span class="hl-num">16</span>;
+budgets.maxGroupCapacity = <span class="hl-num">1024</span>;
+budgets.maxBurstsPerFrame = <span class="hl-num">256</span>;
+pool.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>, budgets);
 
-aiverse::spectra::GraphRuntimeOptions gpu;
-gpu.gpuProgram = true;
-gpu.gpuMaterial = true;
-gpu.capacity = 1024;
-pool.defineGraph(&quot;ship_left&quot;, graphJson, aiverse::Json::object(), gpu);
-pool.defineGraph(&quot;ship_right&quot;, graphJson, aiverse::Json::object(), gpu);
-// Identical full graph + matching options =&gt; ONE GPU resource group.
-// Runtime instance values remain independent for each source name.
-pool.setNamedParameter(&quot;ship_left&quot;, &quot;intensity&quot;, 0.3f);
-pool.setNamedParameter(&quot;ship_right&quot;, &quot;intensity&quot;, 0.9f);
+aiverse::spectra::<span class="hl-ty">GraphRuntimeOptions</span> gpu;
+gpu.gpuProgram = <span class="hl-kw">true</span>;
+gpu.gpuMaterial = <span class="hl-kw">true</span>;
+gpu.capacity = <span class="hl-num">1024</span>;
+pool.<span class="hl-fn">defineGraph</span>(<span class="hl-str">&quot;ship_left&quot;</span>, graphJson, aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">object</span>(), gpu);
+pool.<span class="hl-fn">defineGraph</span>(<span class="hl-str">&quot;ship_right&quot;</span>, graphJson, aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">object</span>(), gpu);
+<span class="hl-com">// Identical full graph + matching options =&gt; ONE GPU resource group.</span>
+<span class="hl-com">// Runtime instance values remain independent for each source name.</span>
+pool.<span class="hl-fn">setNamedParameter</span>(<span class="hl-str">&quot;ship_left&quot;</span>, <span class="hl-str">&quot;intensity&quot;</span>, <span class="hl-num">0.3f</span>);
+pool.<span class="hl-fn">setNamedParameter</span>(<span class="hl-str">&quot;ship_right&quot;</span>, <span class="hl-str">&quot;intensity&quot;</span>, <span class="hl-num">0.9f</span>);
 
-// After gfx::Device::beginFrame(), BEFORE scene beginPass():
-pool.beginPresentationFrame(camera, viewProj, width, height);
-pool.burst(&quot;ship_left&quot;, {0, 1, 0});
-pool.burst(&quot;ship_right&quot;, {3, 1, 0});
-pool.step(1.f/60.f); // ONE CPU BatchWorld update + ONE update per GPU group
+<span class="hl-com">// After gfx::Device::beginFrame(), BEFORE scene beginPass():</span>
+pool.<span class="hl-fn">beginPresentationFrame</span>(camera, viewProj, width, height);
+pool.<span class="hl-fn">burst</span>(<span class="hl-str">&quot;ship_left&quot;</span>, {<span class="hl-num">0</span>, <span class="hl-num">1</span>, <span class="hl-num">0</span>});
+pool.<span class="hl-fn">burst</span>(<span class="hl-str">&quot;ship_right&quot;</span>, {<span class="hl-num">3</span>, <span class="hl-num">1</span>, <span class="hl-num">0</span>});
+pool.<span class="hl-fn">step</span>(<span class="hl-num">1</span>.f/<span class="hl-num">60</span>.f); <span class="hl-com">// ONE CPU BatchWorld update + ONE update per GPU group</span>
 
-// DURING the already open scene render pass:
-pool.draw(fog);      // one CPU batching pass + one draw per live GPU group
-// After ending the render pass:
-pool.endPresentationFrame();
+<span class="hl-com">// DURING the already open scene render pass:</span>
+pool.<span class="hl-fn">draw</span>(fog);      <span class="hl-com">// one CPU batching pass + one draw per live GPU group</span>
+<span class="hl-com">// After ending the render pass:</span>
+pool.<span class="hl-fn">endPresentationFrame</span>();
 
-// Between frames (no active render/compute encoder):
-pool.resetForRollback(); // clears this pool&#x27;s entire visual scene
-pool.shutdown();         // BEFORE destroying the graphics Device</code></pre>
+<span class="hl-com">// Between frames (no active render/compute encoder):</span>
+pool.<span class="hl-fn">resetForRollback</span>(); <span class="hl-com">// clears this pool&#x27;s entire visual scene</span>
+pool.<span class="hl-fn">shutdown</span>();         <span class="hl-com">// BEFORE destroying the graphics Device</span></code></pre>
 <h3 id="идентичность-ресурсов-бюджеты-и-семантика-параметров">Идентичность ресурсов, бюджеты и семантика параметров<a class="anchor" href="#идентичность-ресурсов-бюджеты-и-семантика-параметров" aria-label="#">#</a></h3>
 <ul><li>Идентичность группы ресурсов на GPU включает <strong>полный канонический <code>fx::effectToJson(effect)</code></strong>, ёмкость, эффективный уровень качества и флаги <code>gpuProgram</code>, <code>gpuMaterial</code>, <code>gpuIndirect</code>. Сериализованный ключ с префиксом длины предотвращает коллизии с заданными строками shader graph. Совпадающие определения делят ровно одну группу <code>ComputeParticles</code>; разные определения эффектов или GPU-политики не делят состояние ошибочно.</li><li><code>PoolWorldBudgets</code> ограничивает число групп GPU (0..64), физическую ёмкость частиц на группу (1..4096), запуски одноразовых всплесков за кадр (0..4096) и общее качество CPU. Запрошенные качество/ёмкость для определения не могут превышать бюджет мира. Когда группа GPU не поддерживается, недоступна или бюджет исчерпан, <code>Automatic</code>/<code>PreferGpu</code> сохраняют полный <code>EffectDef</code> в общем мире CPU. <code>RequireGpu</code> явно завершается ошибкой.</li><li><code>GpuPoolWorld::defineGraph</code> хранит независимые значения по умолчанию <code>instanceParameters</code> для каждого логического имени, даже если его граф делит группу GPU. Используйте <code>setNamedParameter(name,parameter,value)</code>, чтобы менять значения по умолчанию для будущего испускания, с ограниченными проверками типа/диапазона. <code>burst(...,const std::array&lt;float,8&gt;* sourceParams)</code> опционально переопределяет все восемь значений на один вызов. Перед рождением на GPU мир обновляет <strong>будущий</strong> набор параметров группы, а <code>ComputeParticles</code> захватывает этот набор на Spawn. Более старые частицы из других источников сохраняют свои собственные снимки; рождения на CPU используют <code>BatchWorld::playWithProgramParameters</code>.</li><li>Stage 28 также допускает именованные входы <code>param0..7</code> в графе GPU <strong>только с материалом</strong>, когда <code>ParticleProgramModule</code> отсутствует. Это не включает неподдерживаемые операции GPU VM: сам материал должен пройти строгий шлюз возможностей shaderGraph из Stage 27.</li><li><code>beginPresentationFrame / step / draw / endPresentationFrame</code> обеспечивают <strong>одно обновление и одну отрисовку на каждый собственный мир за кадр представления</strong>. Хост по-прежнему отвечает за фактический порядок RHI beginFrame/beginPass/endPass/endFrame. Сцена не должна отрисовывать батч CPU повторно через другого владельца.</li><li><code>PoolWorldStats</code> сообщает число уникальных групп ресурсов GPU и определений эффектов CPU, число отправленных и отброшенных всплесков, память GPU, оценки частиц CPU/GPU и число отрисовок. Бюджеты CPU и GPU остаются на стороне рендерера и никогда не изменяют детерминированную симуляцию ECS.</li></ul>
 <h3 id="текущие-границы">Текущие границы<a class="anchor" href="#текущие-границы" aria-label="#">#</a></h3>
@@ -560,10 +560,10 @@ pool.shutdown();         // BEFORE destroying the graphics Device</code></pre>
 <p>Ни один существующий клиент RTS/FPS не мигрирует молча. <code>CueScheduler</code> остаётся отдельным устоявшимся общим путём событий/привязок на CPU. Адаптируйте постоянные источники ECS и отмену на GPU для каждого источника только тогда, когда можно сохранить семантику, идентификаторы поколений и соответствие при откате.</p>
 <p><strong>Проверка:</strong> пользователь явно отложил тестирование до завершения функциональности. Ни нативные CMake/CTest, ни компиляция шейдеров, ни захват кадра GPU, ни скриншот редактора, ни бенчмарк бюджета ресурсов CPU/GPU не запускались для Stage 28. Реализация — закоммиченный <strong>исходный код</strong>, а не проверенная графическая функция для продакшна.</p>
 <h2 id="чек-лист-проверки">Чек-лист проверки<a class="anchor" href="#чек-лист-проверки" aria-label="#">#</a></h2>
-<pre><code class="lang-bash">cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests aiverse_vfx_cue_scheduler_tests -j4
-ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
-python3 tools/skills/catalog.py check</code></pre>
+<pre><code class="lang-bash"><span class="hl-fn">cmake</span> <span class="hl-opt">-S</span> . <span class="hl-opt">-B</span> build/vfx-test <span class="hl-opt">-DAIVERSE_BUILD_TESTS</span>=ON
+<span class="hl-fn">cmake</span> <span class="hl-opt">--build</span> build/vfx-test <span class="hl-opt">--target</span> aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests aiverse_vfx_cue_scheduler_tests <span class="hl-opt">-j4</span>
+<span class="hl-fn">ctest</span> <span class="hl-opt">--test-dir</span> build/vfx-test <span class="hl-opt">--output-on-failure</span> <span class="hl-opt">-L</span> SpectraFX
+<span class="hl-fn">python3</span> tools/skills/catalog.py check</code></pre>
 <p>Текущие тесты сосредоточены на компиляции графов, кэшировании/проверке ассетов и межжанровом представлении ECS только для чтения. Скриншоты визуальной регрессии, производительность GPU на Android/Metal, UX графов в редакторе/MCP и соответствие игровых событий FPS/RTS в продакшне остаются обязательными условиями для полного релиза уровня Niagara.</p>
 <h2 id="запланированная-работа">Запланированная работа<a class="anchor" href="#запланированная-работа" aria-label="#">#</a></h2>
 <ol><li>Проверить текущий CRUD графов и базовый холст визуальных узлов, затем добавить типизированный инспектор модулей, масштабируемое выполнение графов, более богатый поток данных и функции удобства редактора.</li><li>Проверить прототип вычислений/отрисовки на GPU Metal на реальном устройстве; реализовать компактизацию, отсечение, сортировку на GPU, более богатые рендереры и выполнение графов с откатом на CPU для GLES3/мобильных устройств/WebGL.</li><li>Богатый поток данных в графах, обработчики событий, функциональные модули, этапы симуляции, пользовательские параметры, плагины рендереров, мягкие частицы, столкновения по глубине, расширенные качество/масштабируемость.</li><li>Миграция существующих адаптеров представления RTS/FPS на единый путь SpectraFX, примеры нативных игровых проектов, QA производительности и платформ.</li></ol>
@@ -599,29 +599,29 @@ python3 tools/skills/catalog.py check</code></pre>
 <p><strong>НЕ ЗАПУСКАЛОСЬ:</strong> Clang/CMake, CTest, компиляция шейдеров Metal, реальные контрольная точка/восстановление на GPU, внедрение отказов и анализ производительности. Этот API экспериментальный и не является гарантией восстановления, безопасной для продакшна.</p>
 <h2 id="stage-29-общий-мост-сигналов-зафиксированных-тиков-для-пула-gpu-функциональные-исходники-тесты-отложены">Stage 29 — общий мост сигналов зафиксированных тиков для пула GPU (функциональные исходники, тесты отложены)<a class="anchor" href="#stage-29-общий-мост-сигналов-зафиксированных-тиков-для-пула-gpu-функциональные-исходники-тесты-отложены" aria-label="#">#</a></h2>
 <p><code>spectra::GpuCueBridge</code> адаптирует ограниченные одноразовые события представления к существующему <code>spectra::GpuPoolWorld</code>. Он <strong>не</strong> создаёт собственный симулятор частиц, группу GPU, ресурсы RHI или игровые компоненты ECS. Пул продолжает объединять совместимые политики графа/материала/VM в общие группы <code>ComputeParticles</code> и использует исходный общий CPU <code>BatchWorld</code> для неподдерживаемых эффектов.</p>
-<pre><code class="lang-cpp">#include &lt;aiverselib/genre/SpectraFX.h&gt;
-aiverse::spectra::GpuPoolWorld pool;
-pool.init(device);
-pool.defineGraph(&quot;impact&quot;, graphJson, aiverse::Json::object(), options);
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&lt;aiverselib/genre/SpectraFX.h&gt;</span>
+aiverse::spectra::<span class="hl-ty">GpuPoolWorld</span> pool;
+pool.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>);
+pool.<span class="hl-fn">defineGraph</span>(<span class="hl-str">&quot;impact&quot;</span>, graphJson, aiverse::<span class="hl-ty">Json</span>::<span class="hl-fn">object</span>(), options);
 
-aiverse::spectra::GpuCueBridge cues(pool);
-cues.bind(42, &quot;impact&quot;);
+aiverse::spectra::<span class="hl-ty">GpuCueBridge</span> <span class="hl-fn">cues</span>(pool);
+cues.<span class="hl-fn">bind</span>(<span class="hl-num">42</span>, <span class="hl-str">&quot;impact&quot;</span>);
 
-// Once AFTER a committed gameplay simulation tick:
-aiverse::spectra::acceptSimGpuCueTick(cues, tick, simEvents);
+<span class="hl-com">// Once AFTER a committed gameplay simulation tick:</span>
+aiverse::spectra::<span class="hl-fn">acceptSimGpuCueTick</span>(cues, tick, simEvents);
 
-// Per render frame, after Device::beginFrame and before its scene pass:
-pool.beginPresentationFrame(camera, viewProjection, width, height);
-cues.flush(); // queues are bounded; effects route to GPU/CPU via pool
-pool.step(dt);
-// Within the open render pass:
-pool.draw(fog);
-// After the render pass:
-pool.endPresentationFrame();
+<span class="hl-com">// Per render frame, after Device::beginFrame and before its scene pass:</span>
+pool.<span class="hl-fn">beginPresentationFrame</span>(camera, viewProjection, width, height);
+cues.<span class="hl-fn">flush</span>(); <span class="hl-com">// queues are bounded; effects route to GPU/CPU via pool</span>
+pool.<span class="hl-fn">step</span>(dt);
+<span class="hl-com">// Within the open render pass:</span>
+pool.<span class="hl-fn">draw</span>(fog);
+<span class="hl-com">// After the render pass:</span>
+pool.<span class="hl-fn">endPresentationFrame</span>();
 
-// On a gameplay rollback: outside GPU render/compute passes,
-// before replaying any restored committed tick:
-if (!cues.resetForRollback()) { /* handle cues.reason() */ }</code></pre>
+<span class="hl-com">// On a gameplay rollback: outside GPU render/compute passes,</span>
+<span class="hl-com">// before replaying any restored committed tick:</span>
+<span class="hl-kw">if</span> (!cues.<span class="hl-fn">resetForRollback</span>()) { <span class="hl-com">/* handle cues.reason() */</span> }</code></pre>
 <p><code>GpuCueBudgets</code> управляет <code>queued</code>, <code>acceptedPerTick</code> и <code>dispatchedPerFrame</code> независимо от глобального <code>maxBurstsPerFrame</code> пула. <code>accept(tick, span&lt;GpuCueEvent&gt;)</code> отклоняет дублирующиеся или убывающие тики. Принятые сигналы захватывают <strong>имя</strong> эффекта в момент допуска, так что последующая перепривязка типа события не меняет события в очереди. Мост отслеживает допуски, отбрасывания, успешные запуски и отказы на уровне мира. Сбои во время <code>flush</code> не считаются испущенными и отбрасываются, а не блокируют будущие кадры. <code>GpuCueEvent</code> опционально предоставляет ключ поколения источника, направление, оттенок и снимок восьми значений <code>param0..7</code>.</p>
 <p><code>resetForRollback()</code> вызывает <code>GpuPoolWorld::resetForRollback()</code> <strong>до</strong> очистки событий в очереди и своего курсора тиков. Отклонённый сброс оставляет состояние моста нетронутым, так что возможна безопасная повторная попытка. Этот сброс очищает <strong>весь пул</strong>, а не только частицы моста: хост должен выделить пул под ту же область отката представления.</p>
 <p>Нативные проекты ECS используют <code>libraries/include/aiverselib/genre/SpectraGpuCueEcsAdapter.h</code> и <code>acceptSimGpuCueTick</code> для существующего типа <code>SimEvent</code>. Адаптер работает только на чтение и не делает никаких предположений о FPS/RTS/жанре.</p>
@@ -629,53 +629,53 @@ if (!cues.resetForRollback()) { /* handle cues.reason() */ }</code></pre>
 <p><strong>Проверка:</strong> тесты явно отложены пользователем. CMake/CTest, выполнение на Metal Apple Silicon, соответствие скриншотов/визуала, интеграция с нативными хостами FPS/RTS и производительность <strong>НЕ ЗАПУСКАЛИСЬ</strong>. Это закоммиченный исходный код, а не подтверждённая готовность к релизу.</p>
 <h2 id="stage-32-допуск-обратного-считывания-контрольных-точек-в-пуле-и-живая-телеметрия">Stage 32 — допуск обратного считывания контрольных точек в пуле и живая телеметрия<a class="anchor" href="#stage-32-допуск-обратного-считывания-контрольных-точек-в-пуле-и-живая-телеметрия" aria-label="#">#</a></h2>
 <p>Контрольные точки GPU опциональны и относятся <strong>только к визуалу</strong>. Stage 32 добавляет <code>SpectraCheckpointReadbackBudget.h</code> — ограничитель, работающий в потоке-владельце графики, который резервирует <strong>байты и количество блоков обратного считывания на кадр GPU и для запросов в полёте</strong>. Запрос, превышающий любую из границ, возвращает <code>false</code>; частичная контрольная точка не публикуется. <code>ComputeStats</code> каждого эмиттера сообщает <code>checkpointBudgetDenied</code> и <code>checkpointBytesReturned</code> в дополнение к существующим счётчикам завершённых/неудачных/запросов. Счётчик байтов измеряет корректную полезную нагрузку обратного вызова, полученную на CPU; это <strong>не</strong> профиль пропускной способности оборудования. Резервирование удерживается до завершения обратных вызовов или уничтожения их замыканий, включая отклонённые частичные постановки в очередь.</p>
-<pre><code class="lang-cpp">using namespace aiverse::spectra;
-auto limiter=std::make_shared&lt;CheckpointReadbackBudget&gt;(
-    CheckpointReadbackLimits{});
-GraphRuntimeOptions options;
-options.checkpointEveryFrames=15; // 0 disables automatic snapshots
-options.checkpointBudget=limiter;  // share across standalone GraphRuntime objects
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::spectra;
+<span class="hl-kw">auto</span> limiter=<span class="hl-ty">std</span>::make_shared&lt;<span class="hl-ty">CheckpointReadbackBudget</span>&gt;(
+    <span class="hl-ty">CheckpointReadbackLimits</span>{});
+<span class="hl-ty">GraphRuntimeOptions</span> options;
+options.checkpointEveryFrames=<span class="hl-num">15</span>; <span class="hl-com">// 0 disables automatic snapshots</span>
+options.checkpointBudget=limiter;  <span class="hl-com">// share across standalone GraphRuntime objects</span>
 
-PoolWorldBudgets poolOptions;
+<span class="hl-ty">PoolWorldBudgets</span> poolOptions;
 poolOptions.sharedCheckpointBudget=limiter;
-GpuPoolWorld pool;
-pool.init(device,poolOptions); // now every GPU group uses this same limiter
+<span class="hl-ty">GpuPoolWorld</span> pool;
+pool.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>,poolOptions); <span class="hl-com">// now every GPU group uses this same limiter</span>
 
-// After any presentation frame / callback deliveries:
-const PoolCheckpointStats info=pool.checkpointStats();
-// info.pendingGroups / staleGroups / freshGroups / missingGroups
-// info.restoreEligibleGroups / budgetDenied / bytesReturned
-// info.budget.bytesInFlight / chunksInFlight / frameBytesReserved</code></pre>
+<span class="hl-com">// After any presentation frame / callback deliveries:</span>
+<span class="hl-kw">const</span> <span class="hl-ty">PoolCheckpointStats</span> info=pool.<span class="hl-fn">checkpointStats</span>();
+<span class="hl-com">// info.pendingGroups / staleGroups / freshGroups / missingGroups</span>
+<span class="hl-com">// info.restoreEligibleGroups / budgetDenied / bytesReturned</span>
+<span class="hl-com">// info.budget.bytesInFlight / chunksInFlight / frameBytesReserved</span></code></pre>
 <p>Если <code>sharedCheckpointBudget</code> не задан, <code>GpuPoolWorld</code> создаёт один ограничитель для всех своих групп GPU, используя <code>PoolWorldBudgets::checkpointReadback</code>. Потолок по умолчанию — 512 KiB и 16 блоков на кадр; 1536 KiB и 24 блока в полёте. RHI Metal поддерживает всего 32 одновременных диапазонных чтения в полёте; потолок в 24 блока оставляет запас для диагностики VM, но не гарантирует допуск, когда активны другие клиенты обратного считывания. Несколько миров на <strong>одном и том же</strong> графическом устройстве должны передавать <strong>один и тот же общий ограничитель</strong>, чтобы соблюдать единый бюджет на устройство; иначе независимые миры соблюдают только свои локальные границы. Самостоятельный <code>GraphRuntime</code> сохраняет прежнее независимое поведение, если не задан <code>GraphRuntimeOptions::checkpointBudget</code>.</p>
 <p>Идентичные эффекты в пуле группируются по полному сериализованному эффекту, GPU-политике и теперь также по периодичности контрольных точек. Пул поворачивает начальную группу GPU в покадровой отправке, чтобы одна постоянно первая группа не расходовала весь общий бюджет контрольных точек. Это меняет порядок диспетчеризации только для представления, а не симуляцию ECS или авторитетный геймплей.</p>
 <p><code>PoolCheckpointStats</code> вычисляется по запросу без обратного считывания с GPU и включает счётчики полезной нагрузки успешных обратных вызовов плюс классификацию свежести из <code>checkpointStatus()</code>. Метрики бюджета отражают весь ограничитель, если он намеренно разделён с другими мирами. Свежая контрольная точка лишь актуальна на последней <strong>отправленной</strong> ревизии симуляции GPU и не является доказательством завершённого числового соответствия GPU/CPU, непрерывности источников или восстановления без потерь. Ни один устаревший снимок не импортируется автоматически.</p>
 <p><strong>НЕ ЗАПУСКАЛОСЬ:</strong> сборки C++/Metal, CTest, внедрение потери устройства, имитация отказа частичной постановки в очередь, стресс-тесты нескольких пулов и замеры производительности.</p>
 <h2 id="stage-33-адаптивное-планирование-контрольных-точек-и-безопасный-к-источникам-vfx-в-пуле">Stage 33 — адаптивное планирование контрольных точек и безопасный к источникам VFX в пуле<a class="anchor" href="#stage-33-адаптивное-планирование-контрольных-точек-и-безопасный-к-источникам-vfx-в-пуле" aria-label="#">#</a></h2>
 <p>Обратные считывания контрольных точек теперь могут адаптировать свою частоту, когда отправка GPU скапливается. Опциональная <code>AdaptiveCheckpointPolicy</code> определена в <code>engine/fx/SpectraAdaptiveCheckpoint.h</code> и передаётся через <code>GraphRuntimeOptions</code> в <code>ComputeParticles</code>. Планирование считает <strong>успешные отправки симуляции на GPU</strong>, а не кадры реального времени или тики ECS.</p>
-<pre><code class="lang-cpp">using namespace aiverse::spectra;
-GraphRuntimeOptions o;
-o.checkpointEveryFrames=15;
-o.adaptiveCheckpoint.enabled=true;
-o.adaptiveCheckpoint.maxIntervalFrames=240;
-o.adaptiveCheckpoint.recoverAfterCompletions=3;
-o.checkpointBudget=sharedBudget; // optional Stage 32 shared limiter
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::spectra;
+<span class="hl-ty">GraphRuntimeOptions</span> o;
+o.checkpointEveryFrames=<span class="hl-num">15</span>;
+o.adaptiveCheckpoint.enabled=<span class="hl-kw">true</span>;
+o.adaptiveCheckpoint.maxIntervalFrames=<span class="hl-num">240</span>;
+o.adaptiveCheckpoint.recoverAfterCompletions=<span class="hl-num">3</span>;
+o.checkpointBudget=sharedBudget; <span class="hl-com">// optional Stage 32 shared limiter</span>
 
-// Runtime accepts the options during initGraph / initEffect.
-// A budget denial, a pending earlier capture, or RHI rejection doubles
-// the interval up to maxIntervalFrames; fully completed captures restore
-// it by halves after the configured number of successes.
-const auto st=runtime.checkpointStatus();
-// st.checkpointIntervalFrames; st.nextCheckpointRevision
-// runtime.gpuStats().checkpointAdaptiveBackoffs / Recoveries</code></pre>
+<span class="hl-com">// Runtime accepts the options during initGraph / initEffect.</span>
+<span class="hl-com">// A budget denial, a pending earlier capture, or RHI rejection doubles</span>
+<span class="hl-com">// the interval up to maxIntervalFrames; fully completed captures restore</span>
+<span class="hl-com">// it by halves after the configured number of successes.</span>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> st=runtime.<span class="hl-fn">checkpointStatus</span>();
+<span class="hl-com">// st.checkpointIntervalFrames; st.nextCheckpointRevision</span>
+<span class="hl-com">// runtime.gpuStats().checkpointAdaptiveBackoffs / Recoveries</span></code></pre>
 <p>Состояние планирования опционально и не блокирует рендеринг. Оно не может сделать старый снимок актуальным или гарантировать откат на CPU без потерь. Завершение захвата считается успешной передачей, даже если симуляция продвинулась и снимок поэтому устарел.</p>
 <p><code>GpuPoolWorld</code> теперь поддерживает <strong>безопасные к поколениям</strong> дескрипторы источников представления. Источник владеет привязанной к имени ревизией эффекта и отдельным снимком из 8 скалярных параметров. Он может приостанавливаться, возобновляться, выводиться из эксплуатации и испускать несколько всплесков через общие пулированные ресурсы GPU/CPU:</p>
-<pre><code class="lang-cpp">PoolSourceId source=pool.createSource(&quot;impact&quot;);
-pool.setSourceNamedParameter(source,&quot;speed&quot;,2.5f); // if &quot;speed&quot; is declared
-pool.emitSource(source,position);
-pool.pauseSource(source);        // prevents future emission
-pool.resumeSource(source);
-pool.emitSource(source,newPosition);
-pool.retireSource(source);       // invalidates this handle</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">PoolSourceId</span> source=pool.<span class="hl-fn">createSource</span>(<span class="hl-str">&quot;impact&quot;</span>);
+pool.<span class="hl-fn">setSourceNamedParameter</span>(source,<span class="hl-str">&quot;speed&quot;</span>,<span class="hl-num">2.5f</span>); <span class="hl-com">// if &quot;speed&quot; is declared</span>
+pool.<span class="hl-fn">emitSource</span>(source,position);
+pool.<span class="hl-fn">pauseSource</span>(source);        <span class="hl-com">// prevents future emission</span>
+pool.<span class="hl-fn">resumeSource</span>(source);
+pool.<span class="hl-fn">emitSource</span>(source,newPosition);
+pool.<span class="hl-fn">retireSource</span>(source);       <span class="hl-com">// invalidates this handle</span></code></pre>
 <p>Дескрипторы источников несут <code>worldEpoch</code>, <code>slot</code> и <code>generation</code>. Выведенный из эксплуатации, повторно использованный, полученный до отката или до повторной инициализации дескриптор не может законно испускать. Переопределение именованного эффекта делает недействительными ревизии привязки старых дескрипторов вместо того, чтобы молча менять граф, используемый для будущих всплесков. <code>maxSources</code> ограничивает активные/повторно используемые слоты (по умолчанию 4096, максимум 65536). Это остаётся не зависящим от жанра состоянием представления, доступным ECS только на чтение.</p>
 <p><strong>Важное ограничение:</strong> <code>pauseSource</code> и <code>retireSource</code> предотвращают <strong>будущие</strong> испускания. Уже рождённые частицы GPU продолжают своё естественное время жизни и пока не могут быть выборочно уничтожены или перенесены в другую группу источников. Владение слотами GPU на уровне частиц и безопасное по fence выборочное уничтожение — отдельная функция. Откат сбрасывает общий пул и делает недействительными дескрипторы источников. <code>PoolWorldStats::activeSources</code> считает активные дескрипторы, включая приостановленные.</p>
 <p>В окне графов SpectraFX в редакторе есть опциональная панель телеметрии <strong>Metal GPU checkpoint — live</strong>, использующая <code>PoolCheckpointStats</code>. Хост может подключить невладеющий пул через <code>Editor::setSpectraGpuTelemetry(&amp;pool)</code> и <strong>обязан отключить</strong> его до уничтожения пула. Существующий предпросмотр VFX в Scene работает только на CPU и <strong>не</strong> создаёт автоматически пул GPU Metal; без подключённого пула окно показывает явное сообщение о недоступности. Диагностика включает fresh/stale/missing/pending, давление на бюджет обратного считывания, возвращённые байты, адаптивные отступления/восстановления, текущий максимальный интервал и число активных источников. Это не означает завершённой проверки на GPU.</p>
@@ -683,26 +683,26 @@ pool.retireSource(source);       // invalidates this handle</code></pre>
 <h2 id="stage-34-частицы-во-владении-источников-непрерывное-испускание-и-предпросмотр-metal-в-редакторе">Stage 34 — частицы во владении источников, непрерывное испускание и предпросмотр Metal в редакторе<a class="anchor" href="#stage-34-частицы-во-владении-источников-непрерывное-испускание-и-предпросмотр-metal-в-редакторе" aria-label="#">#</a></h2>
 <p>Stage 34 снимает ограничение Stage 33, согласно которому частицы GPU в пуле нельзя выборочно уничтожать. Группа ресурсов по-прежнему владеет одним общим экземпляром <code>ComputeParticles</code> на уникальный эффект/политику: это <strong>не</strong> отдельный вычислительный эмиттер для каждого игрового объекта и не жанрово-специфичная система VFX.</p>
 <p>API источников, относящийся только к представлению, теперь поддерживает упорядоченное выборочное уничтожение, ограниченный планировщик непрерывного испускания и трансформ рендера, обновляемый хостом:</p>
-<pre><code class="lang-cpp">using namespace aiverse::spectra;
-PoolSourceId flame=pool.createSource(&quot;flame&quot;);
-pool.setSourceTransform(flame,{10,1,20},{0,1,0},{1,0.5f,0.2f,1});
-pool.configureContinuous(flame,PoolContinuousEmission{
-    .burstsPerSecond=12, .metresPerBurst=0.5f,
-    .lifetimeSeconds=0, .maxBurstsPerFrame=8
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::spectra;
+<span class="hl-ty">PoolSourceId</span> flame=pool.<span class="hl-fn">createSource</span>(<span class="hl-str">&quot;flame&quot;</span>);
+pool.<span class="hl-fn">setSourceTransform</span>(flame,{<span class="hl-num">10</span>,<span class="hl-num">1</span>,<span class="hl-num">20</span>},{<span class="hl-num">0</span>,<span class="hl-num">1</span>,<span class="hl-num">0</span>},{<span class="hl-num">1</span>,<span class="hl-num">0.5f</span>,<span class="hl-num">0.2f</span>,<span class="hl-num">1</span>});
+pool.<span class="hl-fn">configureContinuous</span>(flame,<span class="hl-ty">PoolContinuousEmission</span>{
+    .burstsPerSecond=<span class="hl-num">12</span>, .metresPerBurst=<span class="hl-num">0.5f</span>,
+    .lifetimeSeconds=<span class="hl-num">0</span>, .maxBurstsPerFrame=<span class="hl-num">8</span>
 });
 
-// Once after gfx::Device::beginFrame and before the scene pass:
-pool.beginPresentationFrame(camera,viewProj,width,height);
-// Native scene updates the current transform once or more before pool.step().
-pool.setSourceTransform(flame,updatedPosition,forward,tint);
-pool.step(dt);   // emits at configured time/distance gates, then simulates
-// During depth-tested scene pass: pool.draw(fog);
-// After render pass: pool.endPresentationFrame();
+<span class="hl-com">// Once after gfx::Device::beginFrame and before the scene pass:</span>
+pool.<span class="hl-fn">beginPresentationFrame</span>(camera,viewProj,width,height);
+<span class="hl-com">// Native scene updates the current transform once or more before pool.step().</span>
+pool.<span class="hl-fn">setSourceTransform</span>(flame,updatedPosition,forward,tint);
+pool.<span class="hl-fn">step</span>(dt);   <span class="hl-com">// emits at configured time/distance gates, then simulates</span>
+<span class="hl-com">// During depth-tested scene pass: pool.draw(fog);</span>
+<span class="hl-com">// After render pass: pool.endPresentationFrame();</span>
 
-pool.pauseSource(flame);         // future emissions only
-pool.resumeSource(flame);        // resumes bounded scheduler
-pool.stopSource(flame,true);     // also selectively kill current particles
-pool.retireSource(flame);        // invalidate handle/release source slot</code></pre>
+pool.<span class="hl-fn">pauseSource</span>(flame);         <span class="hl-com">// future emissions only</span>
+pool.<span class="hl-fn">resumeSource</span>(flame);        <span class="hl-com">// resumes bounded scheduler</span>
+pool.<span class="hl-fn">stopSource</span>(flame,<span class="hl-kw">true</span>);     <span class="hl-com">// also selectively kill current particles</span>
+pool.<span class="hl-fn">retireSource</span>(flame);        <span class="hl-com">// invalidate handle/release source slot</span></code></pre>
 <p><code>PoolContinuousEmission</code> задаёт шлюз по частоте в всплесках в секунду, шлюз по расстоянию в метрах на всплеск, опциональное прошедшее время жизни (0 означает отсутствие истечения) и дополнительный максимум всплесков/кадр на источник. Оба шлюза дают рождения, ограниченные глобальным <code>PoolWorldBudgets::maxBurstsPerFrame</code>. Избыток <strong>отбрасывается</strong>, а не ставится в очередь для неограниченного догоняния. <code>PoolWorldStats::continuousBursts</code> и <code>continuousSkipped</code> отслеживают и то, и другое. Привязанные трансформы — значения, подаваемые рендерером; движок не вносит графическое состояние в авторитетный ECS. Нативный адаптер ECS может вызывать <code>setSourceTransform</code> из неизменяемого/зафиксированного снимка позы рендера.</p>
 <p>Для групп GPU <code>ComputeParticles::burstAt(...,sourceToken)</code> помечает каждый физический слот токеном владения источника. Токен уникален в течение времени жизни пула и не совпадает с дескриптором заново переиспользованного источника. <code>killSourceParticles(token)</code> удаляет соответствующие источнику рождения, которые так и не были отправлены, и ставит отправленные физические слоты в очередь на инвалидацию на GPU. На следующем <code>step</code> смежные уничтоженные слоты объединяются в обновления буфера мёртвого состояния <strong>до</strong> вычислительного энкодера; лишь после упорядоченной отправки на GPU эти физические слоты возвращаются в free list. Компактизация GPU indirect затем пропускает инвалидированные частицы. Это ограниченное по области уничтожение, а не глобальная очистка буфера. CPU-путь источника сохраняет ограниченное владение <code>FxHandle</code> и по требованию вызывает существующий общий <code>kill</code> на CPU. Счётчик <code>selectivelyKilled</code> — это частицы GPU, помеченные/отменённые, а не количество, наблюдаемое на стороне GPU. Ожидающие уничтожения делают контрольные точки непригодными для восстановления на CPU, а очистка делает недействительными данные ревизии предыдущей контрольной точки.</p>
 <p><strong>Предпросмотр на GPU в редакторе (опционально):</strong> окно графов SpectraFX предлагает <strong>Metal GPU</strong> наряду с исходным CPU <strong>Предпросмотр</strong>. Эквивалентная операция MCP — <code>fx_graph_preview {graph:..., gpu:true, loop?:true, instanceValues?:{...}}</code>. Графы проверяются с помощью <code>inspectGraphGpuEligibility</code> и реальной проверки возможностей вычислений Metal: <code>RequireGpu</code> отклоняет неподдерживаемые эффекты, а не молча отбрасывает функции или рисует приближение на CPU. Редактор ставит в очередь скомпилированный эффект, создаёт пул GPU из одной группы на следующей фазе перед проходом, отправляет вычисления до <code>r3d_.render</code>, рисует в открытом проходе сцены и освобождает предпросмотр после прохода. Этот живой пул автоматически подключается к панели телеметрии контрольных точек SpectraFX. Путь предпросмотра на CPU по умолчанию остаётся доступным, и семантика его вывода не изменилась. Предпросмотр на GPU пока не повторяет функцию <code>advance</code>/<code>freeze</code> предпросмотра на CPU и лишь показывает строгое подмножество одноразовых билбордов Metal.</p>
@@ -714,30 +714,30 @@ pool.retireSource(flame);        // invalidate handle/release source slot</code>
 <p><code>ComputeParticles::killSourceParticles(token)</code> по-прежнему отменяет неотправленные рождения и загружает мёртвое состояние только в физические слоты, принадлежащие источнику. Stage 35 теперь ставит записи уничтожения в очередь через метод RHI с сообщением об ошибках и удерживает ID отправленных физических слотов в покадровом карантине. Он возвращает их в free list порождения <strong>только после того, как</strong> <code>completedFrameSerial() &gt;= submittedFrame</code>. Если проверяемая загрузка не удалась, ожидающие слоты удерживаются, а не используются повторно. Диагностика <code>GpuCheckpointStatus::killsAwaitingGpuFence</code>, <code>ComputeStats::gpuKillFencesPending/killedSlotsReclaimed</code> и <code>PoolCheckpointStats::killedSlotsAwaitingFence/killedSlotsReclaimed</code> показывает состояние на стороне CPU. Пока какие-либо уничтожения источников ожидают завершения, свежие контрольные точки непригодны для отката, а блокирующие или асинхронные захваты отклоняются.</p>
 <h3 id="общий-мост-привязок-для-нативного-ecs">Общий мост привязок для нативного ECS<a class="anchor" href="#общий-мост-привязок-для-нативного-ecs" aria-label="#">#</a></h3>
 <p><code>&lt;aiverselib/genre/SpectraFX.h&gt;</code> теперь экспортирует заголовочный <code>spectra::GpuEcsAttachmentPresenter</code>, реализованный в <code>libraries/include/aiverselib/genre/SpectraGpuAttachmentEcsAdapter.h</code>. Он читает <strong>существующий</strong> <code>lib::genre::SpectraSourceComponent</code> из <code>const World&amp;</code> с помощью <code>eachExistingConst</code>. Каждый источник адресуется ключом <code>Entity::packed()</code>, поэтому переиспользованные ID ECS не могут унаследовать дескриптор VFX другой сущности. Вызывающая сторона предоставляет тот же не зависящий от жанра <code>SpectraPresentationSystem::ResolvePose</code>, что используется путём на CPU.</p>
-<pre><code class="lang-cpp">using namespace aiverse::spectra;
-GpuPoolWorld pool;
-pool.init(device);
-pool.defineEffect(&quot;engine_flame&quot;,compiledEffect,gpuOptions);
-GpuEcsAttachmentPresenter ecsFx(pool);
-PoolContinuousEmission rate{};
-rate.burstsPerSecond=15;
-rate.maxBurstsPerFrame=6;
-ecsFx.bindEffect(&quot;engine_flame&quot;,rate);
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::spectra;
+<span class="hl-ty">GpuPoolWorld</span> pool;
+pool.<span class="hl-fn">init</span>(<span class="hl-kw">device</span>);
+pool.<span class="hl-fn">defineEffect</span>(<span class="hl-str">&quot;engine_flame&quot;</span>,compiledEffect,gpuOptions);
+<span class="hl-ty">GpuEcsAttachmentPresenter</span> <span class="hl-fn">ecsFx</span>(pool);
+<span class="hl-ty">PoolContinuousEmission</span> rate{};
+rate.burstsPerSecond=<span class="hl-num">15</span>;
+rate.maxBurstsPerFrame=<span class="hl-num">6</span>;
+ecsFx.<span class="hl-fn">bindEffect</span>(<span class="hl-str">&quot;engine_flame&quot;</span>,rate);
 
-// Once per presentation frame, after Device::beginFrame:
-pool.beginPresentationFrame(cam,viewProj,width,height);
-// Only the committed (or immutable copied) authoritative ECS snapshot
-// is read; renderer pose resolver may interpolate visual positions.
-if(!ecsFx.syncCommitted(committedTick,world,resolveRenderPose)) {
-    // Handle ecsFx.reason(); never pretend that emission succeeded.
+<span class="hl-com">// Once per presentation frame, after Device::beginFrame:</span>
+pool.<span class="hl-fn">beginPresentationFrame</span>(cam,viewProj,width,height);
+<span class="hl-com">// Only the committed (or immutable copied) authoritative ECS snapshot</span>
+<span class="hl-com">// is read; renderer pose resolver may interpolate visual positions.</span>
+<span class="hl-kw">if</span>(!ecsFx.<span class="hl-fn">syncCommitted</span>(committedTick,world,resolveRenderPose)) {
+    <span class="hl-com">// Handle ecsFx.reason(); never pretend that emission succeeded.</span>
 }
-pool.step(dt); // GPU/CPU group simulation once BEFORE render pass.
-// pool.draw(fog) once INSIDE open render pass.
-// pool.endPresentationFrame() after render pass.
+pool.<span class="hl-fn">step</span>(dt); <span class="hl-com">// GPU/CPU group simulation once BEFORE render pass.</span>
+<span class="hl-com">// pool.draw(fog) once INSIDE open render pass.</span>
+<span class="hl-com">// pool.endPresentationFrame() after render pass.</span>
 
-// When a rollback is observed: at a safe point outside active encoders,
-// before replaying committed ticks or new presentation frames:
-bool cleared=ecsFx.resetForRollback();</code></pre>
+<span class="hl-com">// When a rollback is observed: at a safe point outside active encoders,</span>
+<span class="hl-com">// before replaying committed ticks or new presentation frames:</span>
+<span class="hl-ty">bool</span> cleared=ecsFx.<span class="hl-fn">resetForRollback</span>();</code></pre>
 <p><code>syncCommitted(tick,...)</code> идемпотентен в отношении создания источников при повторном тике, но может обновлять позу рендера несколько раз; убывающие тики отклоняются до явного <code>resetForRollback()</code>. Отсутствующие/отключённые компоненты выводятся из эксплуатации; если задан <code>killOnDetach</code>, их существующие частицы уничтожаются выборочно. Временно неразрешённая поза приостанавливает новые рождения и возобновляет их без пересоздания дескриптора, когда снова становится корректной. Изменения эффекта/ревизии/политики отсоединяют устаревшие источники и создают новые. Политики явно регистрируются через <code>bindEffect</code>; правил по умолчанию для жанров нет. Адаптер предоставляет <code>detachAll(killLiving)</code> для явного завершения работы.</p>
 <p><strong>Никакого молчаливого несоответствия масштаба:</strong> исходный <code>SpectraSourceComponent::scale</code> имеет семантику, которую текущее подмножество пулированных билбордов на GPU не может полностью сохранить. Этот мост сейчас требует единичного масштаба и сообщает об ошибке для любого неединичного значения. Он никогда не изменяет компоненты ECS, не вставляет <code>PoolSourceId</code> в компонент симуляции, не записывает игровое состояние и не использует частицы GPU для авторитетных столкновений. Для каждой области отката требуется отдельный пул, поскольку <code>GpuPoolWorld::resetForRollback()</code> сбрасывает <em>все</em> его эффекты.</p>
 <h3 id="управление-предпросмотром-на-gpu-metal">Управление предпросмотром на GPU Metal<a class="anchor" href="#управление-предпросмотром-на-gpu-metal" aria-label="#">#</a></h3>
@@ -763,12 +763,12 @@ bool cleared=ecsFx.resetForRollback();</code></pre>
 <h3 id="проверяемый-сброс-gpu-при-откате">Проверяемый сброс GPU при откате<a class="anchor" href="#проверяемый-сброс-gpu-при-откате" aria-label="#">#</a></h3>
 <p><code>ComputeParticles::tryClear()</code> — новый явный API с результатом успех/неудача, а <code>clear()</code> остаётся обёрткой совместимости. Сброс в Metal требует <strong>активного кадра gfx Device вне энкодеров рендера/вычислений</strong>, а не просто завершённого предыдущего кадра. Он использует <code>updateStorageBufferChecked</code> для записей сброса состояния частиц, параметров VM и пользовательских атрибутов. Он не фиксирует CPU-зеркало свободных слотов/возраста, пока не будут приняты <em>все</em> три упорядоченные передачи. При частичной неудаче <code>gpuResetDirty_</code> блокирует последующие рождения на GPU, симуляцию и захват контрольных точек до успешного повторного сброса; он никогда не выдаёт устаревшее состояние за точное восстановление. Эти проверяемые загрузки по-прежнему подтверждают <strong>кодирование команд</strong>, а не успешное завершение на оборудовании. Последующие сбои GPU нужно обрабатывать с помощью состояния устройства и телеметрии завершённых кадров.</p>
 <p><code>GpuPoolWorld::resetForRollback()</code> вызывает <code>tryClear()</code> для всех GPU-групп перед очисткой общего CPU-мира эффектов или освобождением ECS-источников презентации. Если какая-то группа не справилась, он возвращает false и сохраняет отслеживание CPU/источников для повторной попытки. Более ранняя GPU-группа к этому моменту уже могла успешно очиститься; поэтому операция является <strong>операцией по принципу «наилучшего усилия» для нескольких GPU-групп</strong>, а не атомарной транзакцией по нескольким группам. Клиенты-источники не должны заново проигрывать тики презентации, пока сброс не пройдёт успешно.</p>
-<pre><code class="lang-cpp">// At a rollback boundary: finish the old scene/graphics frame first.
-device.beginFrame(width,height); // active RHI command buffer required
-bool resetOk=attachmentPresenter.resetForRollback();
-device.endFrame();
-if(!resetOk) {
-    // Do not claim visual reset. Retry at a subsequent safe frame.
+<pre><code class="lang-cpp"><span class="hl-com">// At a rollback boundary: finish the old scene/graphics frame first.</span>
+<span class="hl-kw">device</span>.<span class="hl-fn">beginFrame</span>(width,height); <span class="hl-com">// active RHI command buffer required</span>
+<span class="hl-ty">bool</span> resetOk=attachmentPresenter.<span class="hl-fn">resetForRollback</span>();
+<span class="hl-kw">device</span>.<span class="hl-fn">endFrame</span>();
+<span class="hl-kw">if</span>(!resetOk) {
+    <span class="hl-com">// Do not claim visual reset. Retry at a subsequent safe frame.</span>
 }</code></pre>
 <p>Пример нативной интеграции из этапа 36 обновлён и показывает этот обязательный порядок кадра.</p>
 <h3 id="таймлайн-gpu-превью-только-вперёд">Таймлайн GPU-превью (только вперёд)<a class="anchor" href="#таймлайн-gpu-превью-только-вперёд" aria-label="#">#</a></h3>
@@ -780,25 +780,25 @@ if(!resetOk) {
 <p>У SpectraFX <code>GpuPoolWorld</code> теперь есть доступный только для чтения <code>PoolResetReport resetReport()</code> и шлюз <code>presentationBlocked()</code>. Попытка отката запоминает <strong>маску принятых сбросов для каждой GPU-группы</strong>, а не сбрасывает уже подготовленные группы повторно. Если группа номер N отклоняет свои проверяемые загрузки сброса, <code>resetForRollback()</code> возвращает false, записывает <code>groupsAccepted</code>, <code>groupCount</code> и <code>failedGroup</code> и блокирует создание новых источников, всплески, отправку GPU-кадров и рисование. Последующая повторная попытка в безопасном кадре презентации пропускает группы, чьи загрузки уже приняты. CPU-мир эффектов и дескрипторы источников рендерера не становятся недействительными, пока ВСЕ GPU-группы не примут свои упорядоченные команды сброса.</p>
 <p>Это <strong>перезапускаемая подготовка</strong>, а не аппаратно-атомарный сброс. <code>groupsAccepted</code> означает, что RHI <strong>закодировал</strong> загрузки сброса; GPU мог их ещё не завершить. Если последующий командный буфер Metal завершится сбоем, хост должен обработать состояние/потерю устройства и заново инициализировать графический стек. Потерянный Device фиксирует <code>resetReport().deviceLost</code>; пул не возобновляет работу ложно лишь потому, что флаг состояния позже стал true.</p>
 <p>Новый каталог определений только для CPU, <code>PoolRecoveryManifest</code>, позволяет нативному хосту воссоздать эффекты на <strong>новом, исправном графическом Device</strong>. Он сохраняет имена эффектов, исходный скомпилированный <code>EffectDef</code>, параметры графа, объявленную схему параметров времени выполнения и действующие значения по умолчанию. Он НЕ содержит идентификаторов источников рендерера, графических дескрипторов, буферов частиц, тайминга эмиттеров или GPU-контрольных точек.</p>
-<pre><code class="lang-cpp">using namespace aiverse::spectra;
-PoolRecoveryManifest snapshot=oldPool.exportRecoveryManifest();
-// Keep OLD graphics Device alive until oldPool.shutdown() finishes.
-oldPool.shutdown();
-GpuPoolWorld recovered;
-bool ok=recovered.importRecoveryManifest(&amp;newHealthyDevice,snapshot);
-// Recreate the ECS attachment presenter against recovered and re-sync
-// the latest committed ECS World only if ok == true.</code></pre>
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::spectra;
+<span class="hl-ty">PoolRecoveryManifest</span> snapshot=oldPool.<span class="hl-fn">exportRecoveryManifest</span>();
+<span class="hl-com">// Keep OLD graphics Device alive until oldPool.shutdown() finishes.</span>
+oldPool.<span class="hl-fn">shutdown</span>();
+<span class="hl-ty">GpuPoolWorld</span> recovered;
+<span class="hl-ty">bool</span> ok=recovered.<span class="hl-fn">importRecoveryManifest</span>(&amp;newHealthyDevice,snapshot);
+<span class="hl-com">// Recreate the ECS attachment presenter against recovered and re-sync</span>
+<span class="hl-com">// the latest committed ECS World only if ok == true.</span></code></pre>
 <p>Импорт завершается неудачей без публикации пригодного частичного пула, если эффект <code>RequireGpu</code> не поддерживается новым бэкендом. Старый ограничитель чтения обратно не переиспользуется через границу Device: создаётся новый бюджет контрольных точек. GPU-частицы намеренно теряются; цель — безопасное воссоздание определений эффектов и нативных привязок презентации.</p>
 <h3 id="интерполяция-позы-рендера-для-ecs-источников">Интерполяция позы рендера для ECS-источников<a class="anchor" href="#интерполяция-позы-рендера-для-ecs-источников" aria-label="#">#</a></h3>
 <p>Публичный нативный заголовок <code>&lt;aiverselib/genre/SpectraFX.h&gt;</code> экспортирует <code>GpuEcsPoseInterpolator</code> из <code>libraries/include/aiverselib/genre/SpectraEcsRenderPose.h</code>. Нативный хост передаёт тот же обратный вызов <code>ResolvePose</code>, что используется <code>GpuEcsAttachmentPresenter</code>. Интерполятор хранит не более двух снимков поз на стороне рендерера, захватываемых один раз за <strong>зафиксированный</strong> тик ECS через константный обход World, и выбирает значения между ними с <code>alpha</code> в диапазоне 0..1.</p>
-<pre><code class="lang-cpp">GpuEcsPoseInterpolator poses;
-poses.captureCommitted(committedTick,world,resolvePose);
-pool.beginPresentationFrame(camera,viewProj,width,height);
-presenter.syncCommitted(committedTick,world,poses.resolver(renderAlpha));
-pool.step(dt);
-// draw scene + VFX, then end presentation frame
-// On rollback: presenter.resetForRollback() at safe frame;
-// only when it succeeds: poses.resetForRollback();</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">GpuEcsPoseInterpolator</span> poses;
+poses.<span class="hl-fn">captureCommitted</span>(committedTick,world,resolvePose);
+pool.<span class="hl-fn">beginPresentationFrame</span>(camera,viewProj,width,height);
+presenter.<span class="hl-fn">syncCommitted</span>(committedTick,world,poses.<span class="hl-fn">resolver</span>(renderAlpha));
+pool.<span class="hl-fn">step</span>(dt);
+<span class="hl-com">// draw scene + VFX, then end presentation frame</span>
+<span class="hl-com">// On rollback: presenter.resetForRollback() at safe frame;</span>
+<span class="hl-com">// only when it succeeds: poses.resetForRollback();</span></code></pre>
 <p>Интерполируются только последовательные зафиксированные тики и совпадающие идентичности <code>Entity::packed()</code>. Новые/переиспользованные сущности сразу переходят в текущую позу, что исключает утечку истории между поколениями ECS. Неконечные позы, чрезмерное число источников или убывающие тики отклоняются без замены корректной истории поз. Если поза недоступна, презентер привязок приостанавливает новое испускание; интерполятор никогда не записывает позиции с плавающей точкой в авторитетный ECS. Обновлённый <code>examples/spectrafx/native_ecs_attachments.h</code> показывает эту интеграцию и явную пересборку после потери устройства.</p>
 <h3 id="диагностическая-история-только-для-чтения-в-gpu-превью-metal">Диагностическая история только для чтения в GPU-превью Metal<a class="anchor" href="#диагностическая-история-только-для-чтения-в-gpu-превью-metal" aria-label="#">#</a></h3>
 <p>Необязательное GPU-превью Metal в редакторе записывает последние <strong>180 отрисованных попыток превью</strong> как таймлайн на стороне CPU с <code>deviceFrame</code>, успешно накопленным визуальным временем, оценочным числом GPU-частиц, количеством свежих/устаревших/ожидающих контрольных точек, уничтожениями источников, ожидающими барьера завершения, состоянием GPU и тем, был ли принят шаг симуляции. Редактор SpectraFX показывает небольшой график истории и может копировать эти записи в виде JSON через <code>spectraGpuPreviewHistoryJson()</code>.</p>
@@ -807,22 +807,22 @@ pool.step(dt);
 <h2 id="этап-39-события-хоста-восстановления-ограниченный-экспорт-свежих-gpu-данных-и-справедливое-ограничение-нагрузки-vfx">Этап 39 — события хоста восстановления, ограниченный экспорт свежих GPU-данных и справедливое ограничение нагрузки VFX<a class="anchor" href="#этап-39-события-хоста-восстановления-ограниченный-экспорт-свежих-gpu-данных-и-справедливое-ограничение-нагрузки-vfx" aria-label="#">#</a></h2>
 <h3 id="нативные-уведомления-о-восстановлении-gpu-и-явная-замена-device">Нативные уведомления о восстановлении GPU и явная замена Device<a class="anchor" href="#нативные-уведомления-о-восстановлении-gpu-и-явная-замена-device" aria-label="#">#</a></h3>
 <p>Жанрово-нейтральный нативный заголовок презентации <code>&lt;aiverselib/genre/SpectraFX.h&gt;</code> теперь экспортирует <code>GpuPoolRecoveryHost</code> из <code>libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h</code>. Этот объект хранит <strong>только ссылки</strong> на инициализированный <code>GpuPoolWorld</code>, принадлежащий презентации <code>GpuEcsAttachmentPresenter</code> и, при необходимости, интерполятор позы рендера. Он не забирает владение платформенным <code>gfx::Device</code> и не выполняет фоновую работу.</p>
-<pre><code class="lang-cpp">GpuPoolRecoveryHost recovery(pool,ecsPresenter,&amp;poseHistory);
-recovery.onChange([](const PoolRecoveryEvent&amp; e) {
-    // e.phase/e.next: Ready, retry rollback in an active gfx frame,
-    // recreate Device, inspect unknown failure or initialize the pool.
-    // e.resetGroupsAccepted, e.resetGroupsTotal, e.resetAttempts, e.reason
+<pre><code class="lang-cpp"><span class="hl-ty">GpuPoolRecoveryHost</span> <span class="hl-fn">recovery</span>(pool,ecsPresenter,&amp;poseHistory);
+recovery.<span class="hl-fn">onChange</span>([](<span class="hl-kw">const</span> <span class="hl-ty">PoolRecoveryEvent</span>&amp; e) {
+    <span class="hl-com">// e.phase/e.next: Ready, retry rollback in an active gfx frame,</span>
+    <span class="hl-com">// recreate Device, inspect unknown failure or initialize the pool.</span>
+    <span class="hl-com">// e.resetGroupsAccepted, e.resetGroupsTotal, e.resetAttempts, e.reason</span>
 });
-auto status=recovery.poll();
-if(status.next==PoolRecoveryAction::RetryResetInGraphicsFrame) {
-    // Only after Device::beginFrame, BEFORE any active encoder:
-    if(!recovery.retryPresentationReset()) { /* do not render VFX */ }
+<span class="hl-kw">auto</span> status=recovery.<span class="hl-fn">poll</span>();
+<span class="hl-kw">if</span>(status.next==<span class="hl-ty">PoolRecoveryAction</span>::<span class="hl-ty">RetryResetInGraphicsFrame</span>) {
+    <span class="hl-com">// Only after Device::beginFrame, BEFORE any active encoder:</span>
+    <span class="hl-kw">if</span>(!recovery.<span class="hl-fn">retryPresentationReset</span>()) { <span class="hl-com">/* do not render VFX */</span> }
 }
-if(status.next==PoolRecoveryAction::RecreateGraphicsDevice) {
-    // Host/platform explicitly creates a healthy replacement Device.
-    // OLD Device remains alive through old-pool shutdown.
-    bool restored=recovery.replaceDevice(newHealthyDevice);
-    // Compiled effect definitions survive; live GPU particles do not.
+<span class="hl-kw">if</span>(status.next==<span class="hl-ty">PoolRecoveryAction</span>::<span class="hl-ty">RecreateGraphicsDevice</span>) {
+    <span class="hl-com">// Host/platform explicitly creates a healthy replacement Device.</span>
+    <span class="hl-com">// OLD Device remains alive through old-pool shutdown.</span>
+    <span class="hl-ty">bool</span> restored=recovery.<span class="hl-fn">replaceDevice</span>(newHealthyDevice);
+    <span class="hl-com">// Compiled effect definitions survive; live GPU particles do not.</span>
 }</code></pre>
 <p><code>poll()</code> сообщает своему обратному вызову только переходы фазы/прогресса/состояния и никогда не выдумывает успешное восстановление. Фактическое пересоздание устройства платформы выполняет хост. <code>replaceDevice()</code> экспортирует манифест восстановления только для CPU, освобождает старые графические ресурсы, делает недействительными принадлежащие презентации дескрипторы источников и историю интерполированных поз, а затем импортирует определения эффектов в заново инициализированный пул. Никакие находящиеся на GPU буферы частиц, авторитетные данные ECS, сетевое состояние или прежние поколения источников рендерера не воскрешаются. Автономный пример нативной интеграции в <code>examples/spectrafx/native_ecs_attachments.h</code> теперь использует этот контроллер для отката и пересоздания нового Device.</p>
 <h3 id="строгая-и-ограниченная-бинарная-диагностика-gpu-контрольных-точек">Строгая и ограниченная бинарная диагностика GPU-контрольных точек<a class="anchor" href="#строгая-и-ограниченная-бинарная-диагностика-gpu-контрольных-точек" aria-label="#">#</a></h3>
@@ -831,13 +831,13 @@ if(status.next==PoolRecoveryAction::RecreateGraphicsDevice) {
 <p><code>PoolCheckpointStats::exportReadyGroups</code> подсчитывает группы, которые в данный момент удовлетворяют этим условиям. Редактор SpectraFX теперь показывает это число и предлагает <strong>Save fresh GPU checkpoint</strong>, только когда какая-либо группа подходит. Он сохраняет один ограниченный файл <code>.spfx</code> в <code>platform::userDataDir()/spectrafx-diagnostics/</code>, используя временный файл с последующим переименованием. Если асинхронное чтение на момент работы интерфейса устарело, кнопка отключена или возвращается понятная ошибка; нет ни поддельного снимка, ни блокирующего синхронного чтения. Эта функция требует, чтобы хост включил реальную периодичность контрольных точек или завершил ручную контрольную точку; по умолчанию никакие контрольные точки автоматически не захватываются.</p>
 <h3 id="справедливое-автоматическое-ограничение-нагрузки-vfx-включается-вручную">Справедливое автоматическое ограничение нагрузки VFX (включается вручную)<a class="anchor" href="#справедливое-автоматическое-ограничение-нагрузки-vfx-включается-вручную" aria-label="#">#</a></h3>
 <p><code>PoolLoadSheddingPolicy</code> доступна внутри <code>PoolWorldBudgets::loadShedding</code> и через <code>GpuPoolWorld::setLoadShedding(policy)</code> между кадрами презентации:</p>
-<pre><code class="lang-cpp">PoolLoadSheddingPolicy policy{};
-policy.enabled=true;
-policy.maxContinuousBurstsPerFrame=64;
-policy.reserveManualBursts=16;
-policy.estimatedParticleSoftLimit=8000; // previous frame&#x27;s estimate
-policy.maxReadbackBytesInFlight=1024u*1024u;
-pool.setLoadShedding(policy);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">PoolLoadSheddingPolicy</span> policy{};
+policy.enabled=<span class="hl-kw">true</span>;
+policy.maxContinuousBurstsPerFrame=<span class="hl-num">64</span>;
+policy.reserveManualBursts=<span class="hl-num">16</span>;
+policy.estimatedParticleSoftLimit=<span class="hl-num">8000</span>; <span class="hl-com">// previous frame&#x27;s estimate</span>
+policy.maxReadbackBytesInFlight=<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+pool.<span class="hl-fn">setLoadShedding</span>(policy);</code></pre>
 <p>Планировщик каждый кадр сдвигает начальный слот источника, поэтому постоянно занятый эмиттер с малым индексом не может навсегда лишить ресурсов эмиттеры с бо́льшими индексами. Включённая политика ограничивает автоматические рождения, сохраняя существующий глобальный предел и явное выделение ёмкости под ручные одноразовые всплески. Давление по частицам основывается на <strong>оценочном</strong> числе CPU + GPU частиц <strong>предыдущего отрисованного шага</strong>; давление по чтению использует зарезервированные байты «в полёте» существующего планировщика из этапа 32. Это не измерение производительности GPU и не жёсткая гарантия резидентности памяти. Лишние автоматические всплески отбрасываются, <strong>а не</strong> ставятся в неограниченную очередь догоняющей обработки. Отключение политики сохраняет прежнее общее поведение испускания (за исключением справедливой ротации). <code>PoolWorldStats</code> сообщает <code>continuousFrameBudget</code>, <code>pressureActive</code>, <code>pressureSkipped</code> и <code>sourceCapacity</code>; редактор отображает эти значения, когда подключён GPU-пул.</p>
 <p><strong>Проверка этапа 39:</strong> только коммиты исходного кода через GitHub и проверка API исходников. <strong>НЕ ЗАПУСКАЛОСЬ:</strong> нативная компиляция C++/ObjC++/MSL, CTest, запуск редактора, симуляция на устройстве Metal, экспорт полных/свежих контрольных точек при различных ревизиях, внедрение сбоев сброса GPU/потери устройства, проверка давления/голодания или бенчмарки производительности. Реализация не проверена для продакшена.</p>
 <h2 id="этап-40-gpu-снимки-замороженной-ревизии-проверяемая-подготовка-входных-данных-и-гистерезис-vfx">Этап 40 — GPU-снимки замороженной ревизии, проверяемая подготовка входных данных и гистерезис VFX<a class="anchor" href="#этап-40-gpu-снимки-замороженной-ревизии-проверяемая-подготовка-входных-данных-и-гистерезис-vfx" aria-label="#">#</a></h2>
@@ -859,27 +859,27 @@ pool.setLoadShedding(policy);</code></pre>
 <p>Новый чистый заголовок <code>engine/fx/SpectraCheckpointInspector.h</code> предоставляет <code>inspectGpuCheckpointDiagnostic(bytes)</code> и <code>gpuDiagnosticErrorString(error)</code>. Он проверяет один ограниченный диагностический захват <code>.spfx</code> V2 той же сборки, не обращаясь ни к каким ресурсам Metal, коду рендеринга, состоянию ECS или API чтения с GPU.</p>
 <p>Инспектор различает неверную сигнатуру, неподдерживаемые версии V1/другие версии, усечённые заголовки/данные, неверные числа слотов в заголовке/физических слотов, несовпадающие объявленные размеры, неожиданные хвостовые байты и несовпадение CRC32. Только после того как полная ограниченная структура и контрольная сумма прошли проверку, он читает отдельные 128-байтные записи частиц и 4-байтные CPU-зеркала времени жизни. Структурно корректный файл всё равно может нести семантические предупреждения: NaN/неконечные значения частиц, неверный возраст, несогласованные CPU-зеркала оставшегося времени жизни или необычные времена жизни. Он сообщает оценочное число живых/мёртвых физических слотов и ограничивающие координаты для конечных позиций живых частиц. Структурный успех НЕ подтверждает численный паритет CPU/Metal или корректное игровое состояние.</p>
 <p>Переиспользуемый офлайн-CLI <code>tools/spectrafx/inspect_spfx.cpp</code> требует лишь нативного компилятора C++20 и заголовков репозитория:</p>
-<pre><code class="lang-sh">c++ -std=c++20 -O2 -I. tools/spectrafx/inspect_spfx.cpp -o inspect_spfx
-./inspect_spfx path/to/checkpoint.spfx
-./inspect_spfx --json path/to/checkpoint.spfx</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">c</span>++ <span class="hl-opt">-std</span>=c++20 <span class="hl-opt">-O2</span> <span class="hl-opt">-I</span>. tools/spectrafx/inspect_spfx.cpp <span class="hl-opt">-o</span> inspect_spfx
+<span class="hl-fn">./inspect_spfx</span> path/to/checkpoint.spfx
+<span class="hl-fn">./inspect_spfx</span> <span class="hl-opt">--json</span> path/to/checkpoint.spfx</code></pre>
 <p>CLI проверяет размер файла на диске <strong>до</strong> выделения памяти и чтения, ограничивает память значением <code>kGpuCheckpointExportMaxBytes</code> (540,720 байт при текущем максимуме в 4096 слотов), обнаруживает файлы, которые меняются во время чтения, и выводит диагностику обычным текстом или в JSON. Он возвращает код выхода 0 для структурно корректного файла V2 (даже если тот содержит семантические предупреждения), код 1 для неверного формата/целостности V2 и код 2 для неверного вызова или ошибок ввода-вывода. Полное описание использования и ограничения «той же сборки» приведены в <code>tools/spectrafx/README.md</code>.</p>
 <p>Контрольная сумма V2 охватывает <strong>данные</strong> контрольной точки. Заголовок и раскладка пакетов по-прежнему зависят от ABI нативной сборки и порядка байтов; преобразование V1, миграции между произвольными версиями, переносимость сериализации, импорт GPU-буферов и обратная перемотка GPU намеренно не поддерживаются. Диагностика может включать мировые позиции и параметры графа, и с ней следует обращаться как с данными проекта.</p>
 <h3 id="нативный-захват-в-потоке-владельце-и-время-жизни-обратных-вызовов">Нативный захват в потоке-владельце и время жизни обратных вызовов<a class="anchor" href="#нативный-захват-в-потоке-владельце-и-время-жизни-обратных-вызовов" aria-label="#">#</a></h3>
 <p>Новая публичная интеграция <code>&lt;aiverselib/genre/SpectraFX.h&gt;</code> <code>spectra::GpuPoolCaptureHost</code> (реализована в <code>libraries/include/aiverselib/genre/SpectraGpuCaptureHost.h</code>) предоставляет ограниченный API запросов <strong>по одному за раз</strong>:</p>
-<pre><code class="lang-cpp">GpuPoolCaptureHost captures(pool);
-// Between frames: one requested GPU group with an explicit byte cap.
-captures.request(0);
-// Each frame, AFTER Device.beginFrame delivers earlier readbacks and
-// BEFORE any new pool.step(dt) can invalidate the captured revision:
-auto status=captures.pollBeforeStep();
-// Between pool.step(0) and the scene render pass, on the same owner thread:
-if(captures.status().phase==GpuCapturePhase::Queued)
-    captures.submitAfterStepBeforePass();
-// Once Ready, bytes are already copied and validated (no new GPU read).
-std::vector&lt;uint8_t&gt; bytes;
-if(captures.takeReady(bytes)) { /* offline diagnosis only */ }
-// Always cancel before pool rollback, shutdown or graphics-Device recreation.
-captures.cancel();</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">GpuPoolCaptureHost</span> <span class="hl-fn">captures</span>(pool);
+<span class="hl-com">// Between frames: one requested GPU group with an explicit byte cap.</span>
+captures.<span class="hl-fn">request</span>(<span class="hl-num">0</span>);
+<span class="hl-com">// Each frame, AFTER Device.beginFrame delivers earlier readbacks and</span>
+<span class="hl-com">// BEFORE any new pool.step(dt) can invalidate the captured revision:</span>
+<span class="hl-kw">auto</span> status=captures.<span class="hl-fn">pollBeforeStep</span>();
+<span class="hl-com">// Between pool.step(0) and the scene render pass, on the same owner thread:</span>
+<span class="hl-kw">if</span>(captures.<span class="hl-fn">status</span>().phase==<span class="hl-ty">GpuCapturePhase</span>::<span class="hl-ty">Queued</span>)
+    captures.<span class="hl-fn">submitAfterStepBeforePass</span>();
+<span class="hl-com">// Once Ready, bytes are already copied and validated (no new GPU read).</span>
+<span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;<span class="hl-ty">uint8_t</span>&gt; bytes;
+<span class="hl-kw">if</span>(captures.<span class="hl-fn">takeReady</span>(bytes)) { <span class="hl-com">/* offline diagnosis only */</span> }
+<span class="hl-com">// Always cancel before pool rollback, shutdown or graphics-Device recreation.</span>
+captures.<span class="hl-fn">cancel</span>();</code></pre>
 <p>Контроллер хранит точный <code>GpuPoolWorld::lifecycleEpoch()</code> и идентификатор запроса, отбрасывает результаты от переиспользованного/пересозданного пула, хранит не более одного ограниченного вектора байтов и допускает до 600 опросов в графических кадрах потока-владельца, прежде чем вернуть тайм-аут. Асинхронные обратные вызовы RHI держат только слабые ссылки на общее состояние завершения запроса; они не захватывают висячий объект хоста и не навязывают второго владельца графики. Отмена делает публикацию недействительной, но не может принудительно отменить уже отправленную работу Metal; общий бюджет контрольных точек из этапа 32 и урегулирование обратных вызовов RHI по-прежнему действуют. Статус различает Idle, Queued, InFlight, Ready и Failed, с конкретной ошибкой, если полное чтение с GPU устарело до экспорта.</p>
 <p>Пример <code>examples/spectrafx/native_ecs_attachments.h</code> теперь встраивает контроллер захвата в единый жизненный цикл нативного кадра рендера. Он замораживает развитие VFX и откладывает синхронизацию ECS-источников/поз только для чтения, пока захват находится в состоянии Queued/InFlight/Ready. Каждый кадр продолжает рисовать текущие частицы через <code>pool.step(0)</code>; хост забирает или отменяет результат до возобновления обычной презентации. При откате или потере устройства захват отменяется <strong>до</strong> процесса восстановления этапов 38/39, и никакое потерянное/старое GPU-состояние частиц не публикуется как авторитетные данные ECS. Восстановление корректного GPU-состояния по-прежнему требует существующего явного пересоздания нового Device хостом; захваченные байты V2 не импортируются.</p>
 <h3 id="усиление-восстановления">Усиление восстановления<a class="anchor" href="#усиление-восстановления" aria-label="#">#</a></h3>
@@ -888,14 +888,14 @@ captures.cancel();</code></pre>
 <h2 id="этап-42-диагностика-с-редактированием-приватных-данных-захват-по-группам-и-явные-запросы-восстановления">Этап 42 — диагностика с редактированием приватных данных, захват по группам и явные запросы восстановления<a class="anchor" href="#этап-42-диагностика-с-редактированием-приватных-данных-захват-по-группам-и-явные-запросы-восстановления" aria-label="#">#</a></h2>
 <h3 id="безопасная-с-точки-зрения-приватности-диагностика-по-умолчанию">Безопасная с точки зрения приватности диагностика — по умолчанию<a class="anchor" href="#безопасная-с-точки-зрения-приватности-диагностика-по-умолчанию" aria-label="#">#</a></h3>
 <p>Инспектор только для чтения из этапа 41 раскрывал мировые границы и идентификаторы GPU-кадров в выводе JSON/консоли. Этап 42 вводит <code>engine/fx/SpectraDiagnosticReport.h</code> и <code>GpuDiagnosticReportPrivacy</code>. Новый <code>gpuDiagnosticReportJson(inspection,privacy)</code> возвращает <strong>фиксированную схему только с агрегатами</strong>, без исходных путей файлов, позиций отдельных частиц, скалярных значений VM или сырых бинарных данных GPU. По умолчанию он также скрывает границы в координатах сцены, серийный номер/ревизию GPU и отпечатки содержимого на основе CRC. Каждая чувствительная категория требует отдельного намеренного включения:</p>
-<pre><code class="lang-cpp">auto inspected=inspectGpuCheckpointDiagnostic(checkpointBytes);
-GpuDiagnosticReportPrivacy privacy{}; // all sensitive categories OFF
-std::string redacted=gpuDiagnosticReportJson(inspected,privacy);
+<pre><code class="lang-cpp"><span class="hl-kw">auto</span> inspected=<span class="hl-fn">inspectGpuCheckpointDiagnostic</span>(checkpointBytes);
+<span class="hl-ty">GpuDiagnosticReportPrivacy</span> privacy{}; <span class="hl-com">// all sensitive categories OFF</span>
+<span class="hl-ty">std</span>::<span class="hl-ty">string</span> redacted=<span class="hl-fn">gpuDiagnosticReportJson</span>(inspected,privacy);
 
-// Only when a developer specifically requires bounds:
-privacy.includeWorldBounds=true;
-// Similarly, frame serial/revision/CRC fingerprints are opt-in:
-privacy.includeGpuIdentifiers=true;</code></pre>
+<span class="hl-com">// Only when a developer specifically requires bounds:</span>
+privacy.includeWorldBounds=<span class="hl-kw">true</span>;
+<span class="hl-com">// Similarly, frame serial/revision/CRC fingerprints are opt-in:</span>
+privacy.includeGpuIdentifiers=<span class="hl-kw">true</span>;</code></pre>
 <p><code>tools/spectrafx/inspect_spfx.cpp</code> теперь по умолчанию выводит отредактированный текст и <code>--json</code>. Явный аргумент <code>--report &lt;safe.json&gt;</code> создаёт один локальный JSON-отчёт, никогда не выгружается автоматически и не включает автоматически сырую контрольную точку. Необязательные флаги CLI <code>--include-coordinates</code> и <code>--include-identifiers</code> включают только соответствующие агрегированные поля. Никакой параметр CLI никогда не выводит исходные массивы параметров VM отдельных частиц.</p>
 <p>Редактор добавляет <strong>Save safe JSON report</strong> и намеренно отдельный <strong>Save RAW GPU checkpoint (sensitive)</strong>. Безопасный отчёт содержит агрегированные счётчики проверки и не более 180 отфильтрованных по приватности выборок GPU-превью (порядковый номер выборки, оценочное число частиц, результат шага, число свежих/устаревших/ожидающих и число ожидающих уничтожений). Он исключает точные серийные номера кадров RHI, авторские имена графов, имена файлов, а также позиции и входы VM отдельных частиц. Флажки разрешают необязательные ГРАНИЦЫ в мировых координатах и GPU-идентификаторы, но никогда не сырое состояние внутри безопасного отчёта. Сохранение — это прямое локальное действие пользователя в <code>platform::userDataDir()/spectrafx-diagnostics</code>; система НЕ выгружает диагностику и не создаёт повторяющихся заданий.</p>
 <h3 id="выбор-группы-в-пулированном-gpu-мире">Выбор группы в пулированном GPU-мире<a class="anchor" href="#выбор-группы-в-пулированном-gpu-мире" aria-label="#">#</a></h3>
@@ -917,7 +917,7 @@ preview_timeline.json</code></pre>
 <p>Манифест явно объявляет ограничения приватности: <code>redacted=true</code>, <code>containsRawCheckpoint=false</code>, <code>containsWorldCoordinates=false</code>, <code>containsVmScalars=false</code>, <code>containsGpuIdentifiers=false</code> и <code>uploadedAutomatically=false</code>. У сборщика ZIP намеренно <strong>нет входного аргумента для сырых байтов SPFX, путей авторских графов или произвольных имён записей ZIP</strong>. Вызов сборщика не может случайно упаковать сырой GPU-снимок. Даже если разработчик включает мировые границы или GPU-идентификаторы для отдельного JSON-отчёта этапа 42, ZIP остаётся полностью отредактированным. Это локальный артефакт поддержки, а не сохранение ECS, GPU-воспроизведение или импортёр SPFX между сборками.</p>
 <p>Действие редактора <code>Save SAFE ZIP bundle</code> создаёт один <code>.zip</code> в <code>platform::userDataDir()/spectrafx-diagnostics/</code> только после того, как пользователь нажал кнопку и подходящая контрольная точка V2 текущей ревизии готова. Оно использует локальное имя файла <code>safe-bundle-group-N-M.zip</code>, <strong>а не</strong> серийный номер GPU-кадра, и отказывается перезаписывать существующий безопасный пакет. Связанный безопасный JSON-отчёт также использует нумерацию имён файлов без серийных номеров. Только когда отчёт относится к <strong>собственному</strong> GPU-превью редактора, в него включаются последние 180 очищенных счётчиков выборок; внешние GPU-пулы не наследуют не относящуюся к ним историю превью редактора.</p>
 <p>Офлайн-утилита <code>tools/spectrafx/inspect_spfx.cpp</code> теперь также поддерживает:</p>
-<pre><code class="lang-sh">./inspect_spfx --bundle /path/to/support.safe.zip /path/to/checkpoint.spfx</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">./inspect_spfx</span> <span class="hl-opt">--bundle</span> /path/to/support.safe.zip /path/to/checkpoint.spfx</code></pre>
 <p>У офлайн-ZIP пустой таймлайн превью. Бинарный исходный SPFX <strong>никогда</strong> не добавляется как запись архива. Нет никакой неявной выгрузки, электронной почты, создания задач или внешнего обмена. Существующая кнопка <code>Save RAW GPU checkpoint (sensitive)</code> намеренно является отдельным действием пользователя.</p>
 <h3 id="нативный-почтовый-ящик-захвата-без-владения">Нативный почтовый ящик захвата без владения<a class="anchor" href="#нативный-почтовый-ящик-захвата-без-владения" aria-label="#">#</a></h3>
 <p>Публичный <code>&lt;aiverselib/genre/SpectraFX.h&gt;</code> включает <code>GpuCaptureRequestMailbox</code> из <code>libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h</code>. Почтовый ящик — это хранилище намерения/статуса для того же потока-владельца с состояниями <code>Idle / Requested / Claimed / InFlight / Ready / Failed / ReleaseRequested</code>. Он хранит один запрошенный индекс группы, монотонно возрастающую последовательность и ограниченную информацию о сбоях; он <strong>не выполняет никаких GPU-команд</strong> и не несёт ни данных частиц, ни графических дескрипторов, ни изменений ECS, ни фонового планирования.</p>
@@ -964,6 +964,23 @@ tests/vfx_spfx_diagnostics_test.cpp      94884afbc46b7cd41b2aff12f5b8d1cc07356d9
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>

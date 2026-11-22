@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems" aria-current="page">Системы</a>
-<a href="./#genres">Жанры</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
 <a href="roadmap.html" data-nav="roadmap">Роадмап</a>
 <a href="releases.html" data-nav="releases">Релизы</a>
 <a href="gallery.html" data-nav="gallery">Галерея</a>
@@ -44,14 +44,14 @@
 <p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-lod.jpg" alt="Уровни LOD: от финального вблизи к грубым вдали" loading="lazy"></p>
 <h2 id="только-презентация">Только презентация<a class="anchor" href="#только-презентация" aria-label="#">#</a></h2>
 <p>Режим ничего не меняет в работе STRATA: не выбирает LOD, не трогает маршрутизацию, не загружает данные на GPU и не читает обратно GPU-выборку. Он рисует обычными линиями и треугольниками <code>Renderer3D</code> и по умолчанию выключен. Включается из кода, который настраивает <code>GeometryScene</code>:</p>
-<pre><code class="lang-cpp">scene.setStrataPortableRenderingEnabled(true);
-scene.setStrataDebugGeometryCaptureEnabled(true); // до load: для каркаса и заливки
-scene.load(device, json, reader);
-strata::DebugViewOptions debug;
-debug.enabled = true;
-debug.clusterWireframe = true;
-debug.color = strata::DebugColorMode::LodDepth;
-scene.setStrataDebugView(debug);</code></pre>
+<pre><code class="lang-cpp">scene.<span class="hl-fn">setStrataPortableRenderingEnabled</span>(<span class="hl-kw">true</span>);
+scene.<span class="hl-fn">setStrataDebugGeometryCaptureEnabled</span>(<span class="hl-kw">true</span>); <span class="hl-com">// до load: для каркаса и заливки</span>
+scene.<span class="hl-fn">load</span>(<span class="hl-kw">device</span>, json, reader);
+strata::<span class="hl-ty">DebugViewOptions</span> debug;
+debug.enabled = <span class="hl-kw">true</span>;
+debug.clusterWireframe = <span class="hl-kw">true</span>;
+debug.color = strata::<span class="hl-ty">DebugColorMode</span>::<span class="hl-ty">LodDepth</span>;
+scene.<span class="hl-fn">setStrataDebugView</span>(debug);</code></pre>
 <h2 id="кадры-на-сайте">Кадры на сайте<a class="anchor" href="#кадры-на-сайте" aria-label="#">#</a></h2>
 <p>Сцена для кадров — процедурный рельеф (около 105 тыс. треугольников) и 20 камней (около 82 тыс. каждый), всего около 1,7 млн треугольников исходной геометрии. В кадре STRATA выбрала 15 280 кластеров: вблизи — мелкие кластеры финального уровня, к горизонту — всё более крупные. Сняты на Linux через OpenGL (Mesa llvmpipe), 1920×1080.</p>
 <p><img src="media/docs/devlog/media/2026-11-21-strata-debug-view/strata-normal.jpg" alt="Тот же ракурс в обычном рендере" loading="lazy"></p>

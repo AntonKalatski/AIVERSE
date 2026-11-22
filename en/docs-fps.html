@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="../style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems">Systems</a>
-<a href="./#genres">Genres</a>
+<a href="./#genres" data-nav="genres">Genres</a>
 <a href="roadmap.html" data-nav="roadmap">Roadmap</a>
 <a href="releases.html" data-nav="releases">Releases</a>
 <a href="gallery.html" data-nav="gallery">Gallery</a>
@@ -32,7 +32,7 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html" aria-current="page">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="fps-reference-runtime-and-examples">FPS: reference runtime and examples<a class="anchor" href="#fps-reference-runtime-and-examples" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="ds-box"><input class="ds-input" type="search" placeholder="Search the docs  /" aria-label="Search the docs  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html" aria-current="page">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="fps-reference-runtime-and-examples">FPS: reference runtime and examples<a class="anchor" href="#fps-reference-runtime-and-examples" aria-label="#">#</a></h1>
 <p>Optional FPS skeletal animations are powered by <strong>AIVERSE MotionWeave</strong>. New native modules link <code>AIVERSE::MotionWeave</code> and include <code>&lt;aiverselib/motionweave/MotionWeave.h&gt;</code>. See <a href="docs-motionweave.html">MotionWeave</a>. The old animation ECS target remains valid.</p>
 <p>FPS projects use <code>game.json</code> with <code>module: &quot;fps&quot;</code> and <code>genre: &quot;fps&quot;</code>. Choose FPS in New Project: <code>fps_training</code> (stationary targets), <code>fps_arena</code> (5 vs 5 bots), or <code>fps_survival</code> (100 slots, sparse large world, battle royale with air insertion and a phased zone). The editor launches a separate FPS client. Existing copied projects are not overwritten when engine templates change.</p>
 <h2 id="shared-blocks-at-the-top-level-of-rules">Shared blocks at the top level of rules<a class="anchor" href="#shared-blocks-at-the-top-level-of-rules" aria-label="#">#</a></h2>
@@ -41,27 +41,27 @@
 <p>LMB captures the mouse and fires. Short clicks are retained until an input tick is submitted. WASD moves, Shift sprints, Ctrl crouches, Space jumps, R reloads, Escape releases the cursor. Keys 1–4 select the corresponding entry in <code>fps.weapons</code>.</p>
 <p>The templates provide pistol, automatic rifle, nine-pellet shotgun and sniper rifle. Pistol, shotgun and sniper require a new press for each shot. All are hitscan weapons. Weapon changes preserve separate magazine/reserve counts, cancel the current reload, and apply a switch delay. Fire cooldown survives switching. Reload completion transfers only the missing rounds from reserve. Respawn restores the configured loadout.</p>
 <p>Optional <code>rules.json</code> block (1–4 entries):</p>
-<pre><code class="lang-json">{&quot;fps&quot;:{&quot;weapons&quot;:[
-  {&quot;nameKey&quot;:&quot;fps.weapon.pistol&quot;,&quot;damage&quot;:28,&quot;magazine&quot;:12,&quot;reserve&quot;:72,
-   &quot;automatic&quot;:false,&quot;intervalTicks&quot;:15,&quot;reloadTicks&quot;:75,&quot;switchTicks&quot;:15,&quot;range&quot;:150},
-  {&quot;nameKey&quot;:&quot;fps.weapon.rifle&quot;,&quot;damage&quot;:25,&quot;magazine&quot;:30,&quot;reserve&quot;:120,
-   &quot;intervalTicks&quot;:6,&quot;reloadTicks&quot;:120,&quot;range&quot;:400},
-  {&quot;nameKey&quot;:&quot;fps.weapon.shotgun&quot;,&quot;damage&quot;:14,&quot;magazine&quot;:8,&quot;reserve&quot;:40,
-   &quot;automatic&quot;:false,&quot;intervalTicks&quot;:54,&quot;reloadTicks&quot;:150,&quot;range&quot;:60,
-   &quot;pellets&quot;:9,&quot;spread&quot;:0.006},
-  {&quot;nameKey&quot;:&quot;fps.weapon.sniper&quot;,&quot;damage&quot;:100,&quot;magazine&quot;:5,&quot;reserve&quot;:25,
-   &quot;automatic&quot;:false,&quot;intervalTicks&quot;:72,&quot;reloadTicks&quot;:160,&quot;range&quot;:1500}
+<pre><code class="lang-json">{<span class="hl-key">&quot;fps&quot;</span>:{<span class="hl-key">&quot;weapons&quot;</span>:[
+  {<span class="hl-key">&quot;nameKey&quot;</span>:<span class="hl-str">&quot;fps.weapon.pistol&quot;</span>,<span class="hl-key">&quot;damage&quot;</span>:<span class="hl-num">28</span>,<span class="hl-key">&quot;magazine&quot;</span>:<span class="hl-num">12</span>,<span class="hl-key">&quot;reserve&quot;</span>:<span class="hl-num">72</span>,
+   <span class="hl-key">&quot;automatic&quot;</span>:<span class="hl-kw">false</span>,<span class="hl-key">&quot;intervalTicks&quot;</span>:<span class="hl-num">15</span>,<span class="hl-key">&quot;reloadTicks&quot;</span>:<span class="hl-num">75</span>,<span class="hl-key">&quot;switchTicks&quot;</span>:<span class="hl-num">15</span>,<span class="hl-key">&quot;range&quot;</span>:<span class="hl-num">150</span>},
+  {<span class="hl-key">&quot;nameKey&quot;</span>:<span class="hl-str">&quot;fps.weapon.rifle&quot;</span>,<span class="hl-key">&quot;damage&quot;</span>:<span class="hl-num">25</span>,<span class="hl-key">&quot;magazine&quot;</span>:<span class="hl-num">30</span>,<span class="hl-key">&quot;reserve&quot;</span>:<span class="hl-num">120</span>,
+   <span class="hl-key">&quot;intervalTicks&quot;</span>:<span class="hl-num">6</span>,<span class="hl-key">&quot;reloadTicks&quot;</span>:<span class="hl-num">120</span>,<span class="hl-key">&quot;range&quot;</span>:<span class="hl-num">400</span>},
+  {<span class="hl-key">&quot;nameKey&quot;</span>:<span class="hl-str">&quot;fps.weapon.shotgun&quot;</span>,<span class="hl-key">&quot;damage&quot;</span>:<span class="hl-num">14</span>,<span class="hl-key">&quot;magazine&quot;</span>:<span class="hl-num">8</span>,<span class="hl-key">&quot;reserve&quot;</span>:<span class="hl-num">40</span>,
+   <span class="hl-key">&quot;automatic&quot;</span>:<span class="hl-kw">false</span>,<span class="hl-key">&quot;intervalTicks&quot;</span>:<span class="hl-num">54</span>,<span class="hl-key">&quot;reloadTicks&quot;</span>:<span class="hl-num">150</span>,<span class="hl-key">&quot;range&quot;</span>:<span class="hl-num">60</span>,
+   <span class="hl-key">&quot;pellets&quot;</span>:<span class="hl-num">9</span>,<span class="hl-key">&quot;spread&quot;</span>:<span class="hl-num">0.006</span>},
+  {<span class="hl-key">&quot;nameKey&quot;</span>:<span class="hl-str">&quot;fps.weapon.sniper&quot;</span>,<span class="hl-key">&quot;damage&quot;</span>:<span class="hl-num">100</span>,<span class="hl-key">&quot;magazine&quot;</span>:<span class="hl-num">5</span>,<span class="hl-key">&quot;reserve&quot;</span>:<span class="hl-num">25</span>,
+   <span class="hl-key">&quot;automatic&quot;</span>:<span class="hl-kw">false</span>,<span class="hl-key">&quot;intervalTicks&quot;</span>:<span class="hl-num">72</span>,<span class="hl-key">&quot;reloadTicks&quot;</span>:<span class="hl-num">160</span>,<span class="hl-key">&quot;range&quot;</span>:<span class="hl-num">1500</span>}
 ]}}</code></pre>
 <p>This is an excerpt, not a complete rules file. Times are simulation ticks; these values assume 60 Hz. <code>spread</code> is a turn offset in the deterministic pellet grid; <code>damage</code> is per pellet, one shell is consumed for the entire shot. <code>nameKey</code> is a localization key. The legacy <code>fps.weapon</code> block remains supported when <code>weapons</code> is absent. The editor weapon panel edits each loadout entry. Existing projects can add the array in the FPS panel's advanced rules editor and Apply.</p>
 <p>The client displays a procedural placeholder weapon, flash, cosmetic shot streak, magazine/reserve, reload state and a hit marker. Flash and hit markers follow accepted server shot/hit counters (they may be delayed by network latency). They are not a complete animated weapon asset. Extended mode adds synthesized audio. Damage and ammo are server-owned.</p>
 <h2 id="runtime-and-verification">Runtime and verification<a class="anchor" href="#runtime-and-verification" aria-label="#">#</a></h2>
 <p>Build <code>aiverse_fps_client</code>, <code>aiverse_fps_server</code>, <code>aiverse_fps_tests</code>, <code>aiverse_headless</code> with CMake. The first three binaries are under <code>&lt;build&gt;/modules/fps/</code>.</p>
-<pre><code class="lang-sh">&lt;build&gt;/modules/fps/aiverse_fps_client --project templates/fps_training
-&lt;build&gt;/modules/fps/aiverse_fps_client --project templates/fps_arena --listen
-&lt;build&gt;/modules/fps/aiverse_fps_server --project templates/fps_arena --port 27100
-&lt;build&gt;/modules/fps/aiverse_fps_client --project templates/fps_arena --connect udp://127.0.0.1:27100
+<pre><code class="lang-sh">&lt;build&gt;/modules/fps/aiverse_fps_client <span class="hl-opt">--project</span> templates/fps_training
+&lt;build&gt;/modules/fps/aiverse_fps_client <span class="hl-opt">--project</span> templates/fps_arena <span class="hl-opt">--listen</span>
+&lt;build&gt;/modules/fps/aiverse_fps_server <span class="hl-opt">--project</span> templates/fps_arena <span class="hl-opt">--port</span> 27100
+&lt;build&gt;/modules/fps/aiverse_fps_client <span class="hl-opt">--project</span> templates/fps_arena <span class="hl-opt">--connect</span> udp://127.0.0.1:27100
 &lt;build&gt;/modules/fps/aiverse_fps_tests examples/fps/arena
-&lt;build&gt;/aiverse_headless --project templates/fps_arena --seed 3 --verify-restore-at 1 --verify-restore-ticks 20</code></pre>
+&lt;build&gt;/aiverse_headless <span class="hl-opt">--project</span> templates/fps_arena <span class="hl-opt">--seed</span> 3 <span class="hl-opt">--verify-restore-at</span> 1 <span class="hl-opt">--verify-restore-ticks</span> 20</code></pre>
 <p>Client and server require identical content and protocol. The current FPS save version is 9 (gear and battle royale; versions 3, 6 and 7 still load); earlier experimental FPS saves and older peers are rejected. RTS save/protocol versions are unchanged.</p>
 <h2 id="scope">Scope<a class="anchor" href="#scope" aria-label="#">#</a></h2>
 <p>Offline loopback, listen host and dedicated reference server share the authoritative simulation. It has bounded input queues, movement prediction/reconciliation, snapshots, interest filtering and bounded hitscan rewind. UDP latest snapshots use fragmentation; WebSocket uses its reliable transport. Production authentication, matchmaking, admission, reconnect, anti-cheat operations and WAN capacity qualification remain separate work. Snapshots travel as deltas against the newest snapshot the client acknowledged (its input <code>viewTick</code>) through the <a href="https://github.com/chromealex/AIVERSE/blob/main/skills/network/aiverse-snapshot-delta/SKILL.md">snapshot-delta</a> package (protocol 5); <code>Server::snapshotStats()</code> reports packets, bytes and the full-snapshot equivalent. A 100-client loopback test is not evidence of production PUBG capacity.</p>
@@ -103,8 +103,8 @@
 <p>The current client HUD/viewmodel/smoke and audio changes require a successful live visual/audio check. The automated GUI launch was interrupted; do not treat a compiled client or the headless scenarios as proof of visual quality. Windows, web and mobile integration of these new controls has not been verified.</p>
 <h3 id="opt-in-animated-remote-fps-characters">Opt-in animated remote FPS characters<a class="anchor" href="#opt-in-animated-remote-fps-characters" aria-label="#">#</a></h3>
 <p>The reference FPS client now supports an optional character model without changing authoritative FPS simulation, saves, or network protocol:</p>
-<pre><code class="lang-json">{ &quot;fps&quot;: { &quot;visual&quot;: { &quot;model&quot;: &quot;models/hero.glb&quot;, &quot;scale&quot;: 1.0,
-                       &quot;heightOffset&quot;: 0.0 } } }</code></pre>
+<pre><code class="lang-json">{ <span class="hl-key">&quot;fps&quot;</span>: { <span class="hl-key">&quot;visual&quot;</span>: { <span class="hl-key">&quot;model&quot;</span>: <span class="hl-str">&quot;models/hero.glb&quot;</span>, <span class="hl-key">&quot;scale&quot;</span>: <span class="hl-num">1.0</span>,
+                       <span class="hl-key">&quot;heightOffset&quot;</span>: <span class="hl-num">0.0</span> } } }</code></pre>
 <p>Place the model under the FPS project directory. An optional <code>fps.visual.animationGraph</code> object uses the existing AnimationGraph JSON format; otherwise, the client builds a basic Idle/Walk or Idle/Run blend graph from recognized clip names. Input parameters projected from snapshots: <code>speed</code>, <code>moving</code>, <code>dead</code>, <code>grounded</code>, <code>reloading</code>.</p>
 <p>The reference client runs a separate presentation ECS World, not a gameplay world, and computes remote actor poses per render frame. Invalid model/graph assets retain the previous box rendering fallback. The procedural first-person weapon remains unchanged. This path requires a real model and visual testing.</p>
 <h3 id="optional-instanced-gpu-crowd-skinning">Optional instanced GPU crowd skinning<a class="anchor" href="#optional-instanced-gpu-crowd-skinning" aria-label="#">#</a></h3>
@@ -117,12 +117,12 @@
 <p>CPU graph animation automatically uses the host-owned persistent MotionWeave scheduler when 16 or more remote presentation actors exist. Its cost-aware worker jobs avoid custom callback/rig operations, which execute on the submitting thread after a barrier. Set <code>fps.visual.animationStats: true</code> to see CPU/GPU path, worker count, work estimates, jobs, and CPU timings in the FPS HUD. This is presentation profiling, not deterministic simulation state.</p>
 <h3 id="motionweave-cosmetic-montages-from-replicated-fps-actions">MotionWeave cosmetic Montages from replicated FPS actions<a class="anchor" href="#motionweave-cosmetic-montages-from-replicated-fps-actions" aria-label="#">#</a></h3>
 <p>Optional project-local JSON assets can be authored in the editor (<code>animations/montage/</code>) or through Workspace/MCP:</p>
-<pre><code class="lang-json">{&quot;fps&quot;:{&quot;visual&quot;:{
-  &quot;model&quot;:&quot;models/hero.glb&quot;,
-  &quot;montages&quot;:{
-    &quot;shot&quot;:&quot;animations/montage/fire.json&quot;,
-    &quot;reload&quot;:&quot;animations/montage/reload.json&quot;,
-    &quot;death&quot;:&quot;animations/montage/death.json&quot;
+<pre><code class="lang-json">{<span class="hl-key">&quot;fps&quot;</span>:{<span class="hl-key">&quot;visual&quot;</span>:{
+  <span class="hl-key">&quot;model&quot;</span>:<span class="hl-str">&quot;models/hero.glb&quot;</span>,
+  <span class="hl-key">&quot;montages&quot;</span>:{
+    <span class="hl-key">&quot;shot&quot;</span>:<span class="hl-str">&quot;animations/montage/fire.json&quot;</span>,
+    <span class="hl-key">&quot;reload&quot;</span>:<span class="hl-str">&quot;animations/montage/reload.json&quot;</span>,
+    <span class="hl-key">&quot;death&quot;</span>:<span class="hl-str">&quot;animations/montage/death.json&quot;</span>
   }
 }}}</code></pre>
 <p>Montage files reference imported clip names, sections, optional masks, blend-in/out and cosmetic notifies. Missing or invalid files are logged and skipped; no crash or authoritative gameplay action is generated. While a death Montage is active the dead actor may still render until its visual section completes. Replicated shot count, reload deadline and health/life transitions are used for one-shot visual triggers; stale/duplicate snapshots never replay the same Montage. A newly visible actor doesn't invent a shot. The FPS game server, hit detection, ammo, damage and reloading remain authoritative. When any valid Montage is configured, the backend stays on the CPU Graph path so its upper-body mask/sections can be evaluated.</p>
@@ -142,6 +142,23 @@
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Nothing found"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>

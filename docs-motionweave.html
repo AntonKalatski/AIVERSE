@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems">Системы</a>
-<a href="./#genres">Жанры</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
 <a href="roadmap.html" data-nav="roadmap">Роадмап</a>
 <a href="releases.html" data-nav="releases">Релизы</a>
 <a href="gallery.html" data-nav="gallery">Галерея</a>
@@ -32,17 +32,17 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html" aria-current="page">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/motionweave.md">исходный документ</a>.</p><h1 id="aiverse-motionweave">AIVERSE MotionWeave<a class="anchor" href="#aiverse-motionweave" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html" aria-current="page">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/motionweave.md">исходный документ</a>.</p><h1 id="aiverse-motionweave">AIVERSE MotionWeave<a class="anchor" href="#aiverse-motionweave" aria-label="#">#</a></h1>
 <p><strong>MotionWeave</strong> — каноническое название модульной, не зависящей от жанра подсистемы анимации AIVERSE: AnimationGraph, клипы, деревья смешивания, IK, Motion Matching, Montage, root motion, позы ragdoll, инерциализация и LOD анимации/GPU-толпы.</p>
 <h2 id="публичный-api">Публичный API<a class="anchor" href="#публичный-api" aria-label="#">#</a></h2>
 <p>В нативных проектах используйте новую цель CMake и брендированный публичный заголовок:</p>
-<pre><code class="lang-cmake">target_link_libraries(my_game PRIVATE AIVERSE::MotionWeave)</code></pre>
-<pre><code class="lang-cpp">#include &lt;aiverselib/motionweave/MotionWeave.h&gt;
+<pre><code class="lang-cmake"><span class="hl-kw">target_link_libraries</span>(my_game <span class="hl-kw">PRIVATE</span> AIVERSE::MotionWeave)</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&lt;aiverselib/motionweave/MotionWeave.h&gt;</span>
 
-// Separate client presentation ECS World; never Simulation::world().
-aiverse::World presentation;
-// Configure animation asset, player and output pose components first.
-aiverse::motionweave::MotionWeave::update(presentation, frameDt);</code></pre>
+<span class="hl-com">// Separate client presentation ECS World; never Simulation::world().</span>
+aiverse::<span class="hl-ty">World</span> presentation;
+<span class="hl-com">// Configure animation asset, player and output pose components first.</span>
+aiverse::motionweave::<span class="hl-ty">MotionWeave</span>::<span class="hl-fn">update</span>(presentation, frameDt);</code></pre>
 <p>Это <em>та же самая</em> реализация, что и у существующей библиотеки, а не второй движок:</p>
 <div class="table"><table><thead><tr><th>Рекомендуемый новый символ</th><th>Совместимый существующий символ</th></tr></thead><tbody><tr><td><code>AIVERSE::MotionWeave</code></td><td><code>AIVERSE::animation_ecs</code></td></tr><tr><td><code>AIVERSE::motionweave</code></td><td><code>AIVERSE::animation_ecs</code></td></tr><tr><td><code>aiverse::motionweave</code></td><td><code>aiverse::lib::animation</code></td></tr><tr><td><code>MotionWeave::update(world,dt)</code></td><td><code>stepAnimationPresentation(world,dt)</code></td></tr><tr><td><code>&lt;aiverselib/motionweave/MotionWeave.h&gt;</code></td><td><code>&lt;aiverselib/animation/EcsAnimationSystems.h&gt;</code></td></tr></tbody></table></div>
 <p>Все специализированные библиотеки по-прежнему доступны по историческим путям <code>&lt;aiverselib/animation/...&gt;</code>. Существующие имена <code>render::AnimationGraph</code>, <code>render::Animator</code> и <code>Pose</code> намеренно оставлены без изменений.</p>
@@ -55,10 +55,10 @@ aiverse::motionweave::MotionWeave::update(presentation, frameDt);</code></pre>
 <p>Перед дальнейшей реализацией прочитайте <code>AGENTS.md</code> и последнюю запись в <code>docs/agent-handoffs/animation-universal.md</code>. За каждым этапом реализации должен следовать <strong>собственный закоммиченный handoff, который только дополняется</strong>.</p>
 <h2 id="многопоточная-среда-выполнения-представления">Многопоточная среда выполнения представления<a class="anchor" href="#многопоточная-среда-выполнения-представления" aria-label="#">#</a></h2>
 <p>Для игры с множеством анимированных персонажей один раз создайте <strong>постоянный, принадлежащий хосту</strong> планировщик и передавайте его в трёхаргументный вызов обновления MotionWeave:</p>
-<pre><code class="lang-cpp">#include &lt;aiverselib/motionweave/MotionWeave.h&gt;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&lt;aiverselib/motionweave/MotionWeave.h&gt;</span>
 
-aiverse::motionweave::MotionWeaveScheduler scheduler;
-auto stats = aiverse::motionweave::MotionWeave::update(
+aiverse::motionweave::<span class="hl-ty">MotionWeaveScheduler</span> scheduler;
+<span class="hl-kw">auto</span> stats = aiverse::motionweave::<span class="hl-ty">MotionWeave</span>::<span class="hl-fn">update</span>(
     presentationWorld, frameDt, scheduler);</code></pre>
 <p>Существующий двухаргументный <code>MotionWeave::update(world,dt)</code> по-прежнему <strong>последовательный</strong> ради совместимости. Планировщик владеет постоянным ограниченным пулом потоков с перехватом работы (до семи фоновых потоков плюс поток кадра). Каждый кадр он классифицирует модели и скомпилированные графы, разделяет независимую работу клипов, смешивания, контроллеров, motion matching и совместимого IK на порции, взвешенные по стоимости, а затем выполняет их параллельно. Нативные/Lua-колбэки, traits анимации, контакты с окружением и операции рига, чувствительные к колбэкам, <strong>всегда выполняются в потоке кадра после завершения рабочих потоков</strong>. Компонент <code>AnimationWorkHintComponent</code> с <code>mainThread=true</code> явно направляет работу в эту очередь.</p>
 <p><code>MotionWeaveScheduleOptions</code> задаёт минимальное число сущностей, минимальную оценку работы и размеры порций. <code>AnimationWorkHintComponent</code> также поддерживает множитель стоимости для отдельного персонажа. Планы безопасности и стоимости графов мемоизируются в пределах кадра, а ёмкость плотных списков работы переиспользуется. Невидимые персонажи с уже действительной позой получают уменьшенную оценку работы. Вызывающий код не должен менять структуру World или делать её снимок, пока <code>MotionWeave::update</code> не вернёт управление.</p>
@@ -69,9 +69,9 @@ auto stats = aiverse::motionweave::MotionWeave::update(
 <p><strong>Статус тестов:</strong> все новые CTest-фикстуры для рабочих потоков, планировщика и бэкендов закоммичены, но <strong>NOT RUN</strong> (отложено по просьбе пользователя). Проверьте компиляцию, TSAN, скриншоты FPS на macOS, паритет сохранений и сети FPS, а также реальные бенчмарки FPS/RTS, прежде чем объявлять готовность к продакшену.</p>
 <h3 id="фикстура-производительности-cpu-отложена">Фикстура производительности CPU (отложена)<a class="anchor" href="#фикстура-производительности-cpu-отложена" aria-label="#">#</a></h3>
 <p>Соберите отдельный (без GPU и файлов моделей) бенчмарк после настройки <code>AIVERSE_BUILD_TOOLS=ON</code>:</p>
-<pre><code class="lang-sh">cmake --build build/ecs-test --target aiverse_motionweave_bench
-./build/ecs-test/aiverse_motionweave_bench --actors 1000 --frames 120
-./build/ecs-test/aiverse_motionweave_bench --actors 5000 --frames 120 --ik</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">cmake</span> <span class="hl-opt">--build</span> build/ecs-test <span class="hl-opt">--target</span> aiverse_motionweave_bench
+<span class="hl-fn">./build/ecs-test/aiverse_motionweave_bench</span> <span class="hl-opt">--actors</span> 1000 <span class="hl-opt">--frames</span> 120
+<span class="hl-fn">./build/ecs-test/aiverse_motionweave_bench</span> <span class="hl-opt">--actors</span> 5000 <span class="hl-opt">--frames</span> 120 <span class="hl-opt">--ik</span></code></pre>
 <p>Он создаёт одинаковые World для последовательного режима и для постоянных рабочих потоков, прогревает оба, измеряет среднее время кадра на CPU и проверяет одну выходную позу на паритет. Бенчмарк намеренно <strong>не зарегистрирован в CTest</strong>, потому что время зависит от машины. Его нужно запускать вместе с ThreadSanitizer, скриншотами Metal на реальных моделях и показательной трассировкой кадра RTS/FPS, прежде чем менять пороги рабочих потоков в продакшене. <strong>NOT RUN</strong>.</p>
 <h2 id="строгий-контракт-независимости-от-жанра">Строгий контракт независимости от жанра<a class="anchor" href="#строгий-контракт-независимости-от-жанра" aria-label="#">#</a></h2>
 <p>MotionWeave НИКОГДА не должен зависеть от модулей FPS/RTS/RPG или заглядывать в них. Зависимость направлена в одну сторону:</p>
@@ -209,6 +209,23 @@ Host rendering, audio/VFX and host-owned gameplay motor</code></pre>
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>

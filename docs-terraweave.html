@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7d1fbd2ff3">
+<link rel="stylesheet" href="style.css?v=8e703d54e3">
 </head>
 <body>
 <header class="top">
@@ -18,7 +18,7 @@
 <a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
 <div class="menu">
 <a href="./#systems" data-nav="systems">Системы</a>
-<a href="./#genres">Жанры</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
 <a href="roadmap.html" data-nav="roadmap">Роадмап</a>
 <a href="releases.html" data-nav="releases">Релизы</a>
 <a href="gallery.html" data-nav="gallery">Галерея</a>
@@ -32,7 +32,7 @@
 </header>
 
 <main class="wrap docs-main">
-<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html" aria-current="page">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/TERRAWEAVE.md">исходный документ</a>.</p><h1 id="terraweave-процедурный-рельеф-биомы-и-растительность-aiverse">TerraWeave — процедурный рельеф, биомы и растительность (AIVERSE)<a class="anchor" href="#terraweave-процедурный-рельеф-биомы-и-растительность-aiverse" aria-label="#">#</a></h1>
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html" aria-current="page">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/terrain/TERRAWEAVE.md">исходный документ</a>.</p><h1 id="terraweave-процедурный-рельеф-биомы-и-растительность-aiverse">TerraWeave — процедурный рельеф, биомы и растительность (AIVERSE)<a class="anchor" href="#terraweave-процедурный-рельеф-биомы-и-растительность-aiverse" aria-label="#">#</a></h1>
 <p>Статус (2026-11-19): <strong>ядро + Arbor/Flora, Horizon HLOD, асинхронные адаптеры сцены леса и рельефа, авторская сшивка ближнего и дальнего рельефа в Q16 и диагностика Stage 22 реализованы в исходном коде</strong>. Проверка на GPU, в редакторе, интеграционная и проверка производительности ещё не выполнены; точный статус тестов см. в Draft PR и в handoff. Реализация: <code>engine/world/TerraWeave.h</code>. Тест: <code>tests/terraweave_test.cpp</code>. Handoff: <code>docs/terrain/AGENT_HANDOFF.md</code>.</p>
 <h2 id="связь-с-существующим-рельефом">Связь с существующим рельефом<a class="anchor" href="#связь-с-существующим-рельефом" aria-label="#">#</a></h2>
 <p>В AIVERSE уже есть чанковый рендеринг карты высот RTS, операции лепки и раскраски в редакторе, симуляция карты высот <code>MapGrid</code>, <code>modules/rts/gen/GenNoise.*</code>, а также вода и дороги. <strong>Не дублируйте и не заменяйте их</strong>. TerraWeave поставляет независимые от жанра результаты генерации мира, вычисляемые только на CPU. Жанровые адаптеры используют их, не меняя устаревшие контракты проектов, сохранений, повторов и сетевого взаимодействия.</p>
@@ -41,17 +41,17 @@
 <p>Пространство имён: <code>aiverse::terraweave</code>.</p>
 <ul><li><code>heightAtCm(TerrainSettings, worldXcm, worldZcm) -&gt; int32_t</code>: знаковая высота рельефа в см.</li><li><code>climateAt(TerrainSettings, BiomeSettings, xCm, zCm) -&gt; ClimateSample</code>: температура, влажность в диапазоне [0,1000] и один категориальный Biome.</li><li><code>generateChunk(TerrainSettings, BiomeSettings, ChunkKey, resolution, spacingCm)</code> возвращает <code>TerrainChunk</code> с (resolution+1)^2 знаковыми высотами и идентификаторами биомов. Координаты абсолютные; границы соседних чанков совпадают.</li><li><code>scatter(TerrainSettings, BiomeSettings, ScatterSettings, RectCm worldBounds, vector&lt;FoliageSpecies&gt;, vector&lt;RectCm&gt; exclusions)</code> возвращает стабильно отсортированные по строкам экземпляры растительности. Идентификаторы прототипов — uint32, уникальные в пределах одного вызова. Выбор кандидатов привязан к <strong>глобальной</strong> решётке; разбиение на чанки и порядок прототипов не могут изменить результат.</li><li><code>slopePermilleAt</code> оценивает локальный уклон по максимальной оси на основе знаковых разностей высот.</li><li><code>TerrainChunkComponent</code>, <code>VegetationPatchComponent</code> — небольшие дескрипторы, готовые для ECS; они пока не зарегистрированы в планировщике ECS.</li><li><code>FoliageInstance::key</code> — стабильный хеш глобальных координат решётки и seed разброса. Сохраняйте удаления и сбор урожая по ключу и ревизии генерации мира, а не по индексу буфера GPU.</li></ul>
 <p>Пример (C++20; без зависимости от рендерера или RTS):</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeave.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeave.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-TerrainSettings terrain;
-BiomeSettings climate;
-auto tile = generateChunk(terrain, climate, {0, 0}, 32, 100);
-FoliageSpecies oak;
-oak.id = 1001;
-oak.biomeMask = biomeBit(Biome::Forest) | biomeBit(Biome::Grassland);
-auto trees = scatter(terrain, climate, {}, {0, 0, 3200, 3200},
-                     {oak}, {{1000, 1000, 1600, 1600}}); // building exclusion</code></pre>
+<span class="hl-ty">TerrainSettings</span> terrain;
+<span class="hl-ty">BiomeSettings</span> climate;
+<span class="hl-kw">auto</span> tile = <span class="hl-fn">generateChunk</span>(terrain, climate, {<span class="hl-num">0</span>, <span class="hl-num">0</span>}, <span class="hl-num">32</span>, <span class="hl-num">100</span>);
+<span class="hl-ty">FoliageSpecies</span> oak;
+oak.id = <span class="hl-num">1001</span>;
+oak.biomeMask = <span class="hl-fn">biomeBit</span>(<span class="hl-ty">Biome</span>::<span class="hl-ty">Forest</span>) | <span class="hl-fn">biomeBit</span>(<span class="hl-ty">Biome</span>::<span class="hl-ty">Grassland</span>);
+<span class="hl-kw">auto</span> trees = <span class="hl-fn">scatter</span>(terrain, climate, {}, {<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">3200</span>, <span class="hl-num">3200</span>},
+                     {oak}, {{<span class="hl-num">1000</span>, <span class="hl-num">1000</span>, <span class="hl-num">1600</span>, <span class="hl-num">1600</span>}}); <span class="hl-com">// building exclusion</span></code></pre>
 <h2 id="детерминизм-и-многопоточность">Детерминизм и многопоточность<a class="anchor" href="#детерминизм-и-многопоточность" aria-label="#">#</a></h2>
 <p>Все результаты фазы 1 целочисленные, зависят от seed и не зависят от порядка вызовов. Нет <code>rand()</code>, платформенного времени, глобального изменяемого состояния или <code>float</code>. Вспомогательные функции используют стабильное 64-битное перемешивание и знаковое деление с округлением вниз для отрицательных мировых координат. Чистые генераторы можно вызывать параллельно. Их планирует система задач хоста; порядок фиксации в ECS в главном потоке или под защитой должен оставаться детерминированным. Результаты CPU являются авторитетными; размещение или рендеринг на GPU не должны влиять на игровой RNG или коллизии. Изменения параметров генератора, преобразований координат или хеширования являются <strong>изменениями версии формата мира</strong> и требуют миграции или явной ревизии.</p>
 <p>Используйте одну сущность ECS на <strong>участок рельефа/растительности</strong> или интерактивное дерево, а не на травинку. Миллионы травинок только для рендеринга относятся к буферам экземпляров. Декоративная растительность не может иметь игрового состояния. Собираемая растительность должна иметь стабильную запись об удалении, которую реплицирует и хеширует владелец симуляции игры.</p>
@@ -60,9 +60,9 @@ auto trees = scatter(terrain, climate, {}, {0, 0, 3200, 3200},
 <h2 id="интеграция-в-сцену">Интеграция в сцену<a class="anchor" href="#интеграция-в-сцену" aria-label="#">#</a></h2>
 <ol><li>Конфигурация мира выбирает seed и настройки TerraWeave и явную версию генератора.</li><li>Стриминг видимого мира выбирает ключи чанков; рабочие потоки вызывают чистую <code>generateChunk</code>.</li><li>Адаптер переводит сантиметры в существующую карту высот <code>MapGrid</code> или документ редактора либо в общий меш рельефа; изменения проходят через существующий конвейер грязных чанков, <em>никогда</em> не через второй конкурирующий рендерер рельефа.</li><li>Перед разбросом запросите дороги, здания, водные пути и ручные правки дизайнера как источники исключений и штампов.</li><li><code>scatter</code> возвращает дескрипторы экземпляров для групп рендеринга прототипов; отдельными сущностями ECS становятся только интерактивные объекты.</li><li>Все загрузки для рендеринга и работа на GPU идут через <code>gfx::Device</code> с паритетом GLSL+MSL и уровнями качества; генерация не вызывает графический бэкенд напрямую.</li></ol>
 <h2 id="тесты">Тесты<a class="anchor" href="#тесты" aria-label="#">#</a></h2>
-<pre><code class="lang-sh">cmake -S . -B build/terraweave-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/terraweave-test --target aiverse_terraweave_test -j
-ctest --test-dir build/terraweave-test --output-on-failure -R &#x27;^terraweave$&#x27;</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">cmake</span> <span class="hl-opt">-S</span> . <span class="hl-opt">-B</span> build/terraweave-test <span class="hl-opt">-DAIVERSE_BUILD_TESTS</span>=ON
+<span class="hl-fn">cmake</span> <span class="hl-opt">--build</span> build/terraweave-test <span class="hl-opt">--target</span> aiverse_terraweave_test <span class="hl-opt">-j</span>
+<span class="hl-fn">ctest</span> <span class="hl-opt">--test-dir</span> build/terraweave-test <span class="hl-opt">--output-on-failure</span> <span class="hl-opt">-R</span> <span class="hl-str">&#x27;^terraweave$&#x27;</span></code></pre>
 <p>Тест охватывает границы соседних тайлов, отрицательные координаты тайлов, стабильный seed, независимость растительности от разбиения, перестановку входных прототипов, мировые исключения, неверные конфигурации и чистоту вызовов из рабочих потоков.</p>
 <p>Когда рельеф отображается в симуляцию, также запускайте существующие полные наборы тестов детерминизма, headless, повторов и представления редактора согласно <code>AGENTS.md</code>.</p>
 <h2 id="будущие-названия-подсистем">Будущие названия подсистем<a class="anchor" href="#будущие-названия-подсистем" aria-label="#">#</a></h2>
@@ -70,31 +70,31 @@ ctest --test-dir build/terraweave-test --output-on-failure -R &#x27;^terraweave$
 <p>Точные приоритеты и риски интеграции см. в файле handoff.</p>
 <h2 id="stage-2a-процедурная-геометрия-деревьев-arbor">Stage 2a: процедурная геометрия деревьев Arbor<a class="anchor" href="#stage-2a-процедурная-геометрия-деревьев-arbor" aria-label="#">#</a></h2>
 <p>Добавлены <code>engine/world/TerraWeaveArbor.h</code> (целочисленный авторитетный скелет дерева) и <code>engine/world/TerraWeaveArborMesh.h</code> (тесселяция на CPU только для рендеринга). Это не зависит ни от какого жанра, и нативный модуль C++ может подключить эти заголовки.</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeaveArborMesh.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeaveArborMesh.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-TreeProfile oak;
-oak.speciesId = 1001;
-oak.shape = CrownShape::Broadleaf;
-oak.primaryBranches = 22;
-const TreeSkeleton skeleton = generateTree(oak, instance.key, TreeLOD::High);
-const ArborMesh renderGeometry = buildArborMesh(skeleton, {6, true});
-// Upload through gfx::Device (not implemented in this stage).</code></pre>
+<span class="hl-ty">TreeProfile</span> oak;
+oak.speciesId = <span class="hl-num">1001</span>;
+oak.shape = <span class="hl-ty">CrownShape</span>::<span class="hl-ty">Broadleaf</span>;
+oak.primaryBranches = <span class="hl-num">22</span>;
+<span class="hl-kw">const</span> <span class="hl-ty">TreeSkeleton</span> skeleton = <span class="hl-fn">generateTree</span>(oak, instance.key, <span class="hl-ty">TreeLOD</span>::<span class="hl-ty">High</span>);
+<span class="hl-kw">const</span> <span class="hl-ty">ArborMesh</span> renderGeometry = <span class="hl-fn">buildArborMesh</span>(skeleton, {<span class="hl-num">6</span>, <span class="hl-kw">true</span>});
+<span class="hl-com">// Upload through gfx::Device (not implemented in this stage).</span></code></pre>
 <p><code>TreeProfile</code> задаёт диапазон высоты дерева, радиус ствола, начало кроны, основные ветви, вылет и подъём ветвей, радиус кластера листвы и форму: лиственная, хвойная или колоновидная. Seed дерева выводится из стабильного ключа экземпляра растительности + ID вида; одинаковые входные данные дают одинаковую целочисленную структуру в локальном пространстве независимо от рабочего потока или разбиения сцены. <code>TreeLOD</code> High/Medium/Low сокращают число ветвей и кластеров листвы. Impostor возвращает только границы; запекание атласа билбордов <strong>не реализовано</strong>.</p>
 <p><code>TreeSkeleton</code> содержит корневой ствол, дочерние сегменты ветвей с индексами родителей, кластеры листвы и консервативные границы высоты и радиуса кроны. <code>buildArborMesh</code> превращает ветви в цилиндрические трубки коры, а кластеры — в перекрещенные quad-карточки с альфой, UV, нормалями и признаком материала коры или листвы. Возвращаемый меш использует float только для <strong>представления</strong>, а не для игрового состояния. У мешей пока нет касательных и привязки материалов GPU. Первый визуальный проход — это простая листва из карточек, а не фотореалистичная геометрия уровня SpeedTree.</p>
 <p>Меш задан в локальном пространстве в <strong>сантиметрах</strong>. Перенос, поворот и масштаб экземпляра задаются извне через <code>FoliageInstance</code>. Если игре нужны коллизии или хитбоксы деревьев, выводите детерминированные прокси из <code>TreeSkeleton</code>, а не из float-вершин рендеринга. Выбор LOD представления и загрузки на GPU должны находиться в адаптере рендерера, а не в lockstep-симуляции ECS.</p>
 <p>Исходник теста: <code>tests/terraweave_arbor_test.cpp</code>. Имя в CTest: <code>terraweave_arbor</code>. Проверяются детерминизм по seed, все архетипы кроны, корректность родителей ветвей, топология LOD, независимое параллельное вычисление, корректность индексов геометрии рендеринга и неверные профили. Результаты компиляции и CTest отслеживаются в <code>docs/terrain/AGENT_HANDOFF.md</code>.</p>
 <h2 id="stage-2b-видимость-flora-на-cpu-и-подготовка-инстансинга">Stage 2b: видимость Flora на CPU и подготовка инстансинга<a class="anchor" href="#stage-2b-видимость-flora-на-cpu-и-подготовка-инстансинга" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveFlora.h</code> содержит организатор списков отрисовки только для представления, который <strong>не</strong> добавляет по одной сущности ECS на травинку или дерево.</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeaveFlora.h&quot;
-using namespace aiverse::terraweave;
-FloraView view;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeaveFlora.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+<span class="hl-ty">FloraView</span> view;
 view.cameraXcm = cameraXcm;
 view.cameraZcm = cameraZcm;
-auto batches = buildFloraBatches(placements, view);
-for (const FloraBatch&amp; batch : batches) {
-    // Resolve species prototype + TreeLOD, pack instance transforms.
-    // Upload/submit via gfx::Device in a future renderer adapter.
+<span class="hl-kw">auto</span> batches = <span class="hl-fn">buildFloraBatches</span>(placements, view);
+<span class="hl-kw">for</span> (<span class="hl-kw">const</span> <span class="hl-ty">FloraBatch</span>&amp; batch : batches) {
+    <span class="hl-com">// Resolve species prototype + TreeLOD, pack instance transforms.</span>
+    <span class="hl-com">// Upload/submit via gfx::Device in a future renderer adapter.</span>
 }</code></pre>
 <p><code>FloraView</code> выбирает радиальные диапазоны для уровней мешей High/Medium/Low/Impostor, жёсткий радиус отсечения и стабильное прореживание по seed на дальних дистанциях. <code>FloraBatch</code> группирует копии <code>FoliageInstance</code> по <code>(speciesId, lod)</code>. Порядок каноничен независимо от порядка завершения рабочих потоков и чанков, а перекрывающиеся одинаковые размещения дедуплицируются внутри итоговой группы. Это <strong>только</strong> подготовка списков отрисовки, а не GPU-инстансинг, отсечение или непрямая отрисовка, отсечение по пирамиде видимости или окклюзия Hi-Z или кроссфейд. LOD в экранном пространстве, отсечение по пирамиде камеры и тени по полю расстояний остаются будущими этапами.</p>
 <p>Никогда не передавайте решения о видимости обратно в авторитетное состояние ECS или сетевую симуляцию; игровое размещение по-прежнему использует <code>scatter</code>. Исходник теста: <code>tests/terraweave_flora_test.cpp</code>; CTest <code>terraweave_flora</code>.</p>
@@ -103,11 +103,11 @@ for (const FloraBatch&amp; batch : batches) {
 <p>Не удаляйте эти проверки при введении стримингового мира. Для поддержки больших миров дополнительно нужны рендеринг относительно камеры, перенос начала координат и ограниченная резидентность чанков, которые пока не реализованы.</p>
 <h2 id="stage-2d-стандартный-адаптер-rendermodel-в-aiverse">Stage 2d: стандартный адаптер render::Model в AIVERSE<a class="anchor" href="#stage-2d-стандартный-адаптер-rendermodel-в-aiverse" aria-label="#">#</a></h2>
 <p><code>engine/render/TerraWeaveModelAdapter.h</code> — тонкий адаптер только для рендеринга к уже существующему <code>render::Model</code> и его пути <code>prepareModelUpload</code> / <code>uploadModel(gfx::Device&amp;, Model&amp;)</code>:</p>
-<pre><code class="lang-cpp">#include &quot;engine/render/TerraWeaveModelAdapter.h&quot;
-auto tree = aiverse::terraweave::makeArborModel(profile, instance.key);
-// On the render-owning thread:
-aiverse::render::prepareModelUpload(*tree);
-aiverse::render::uploadModel(device, *tree);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/render/TerraWeaveModelAdapter.h&quot;</span>
+<span class="hl-kw">auto</span> tree = aiverse::terraweave::<span class="hl-fn">makeArborModel</span>(profile, instance.key);
+<span class="hl-com">// On the render-owning thread:</span>
+aiverse::render::<span class="hl-fn">prepareModelUpload</span>(*tree);
+aiverse::render::<span class="hl-fn">uploadModel</span>(<span class="hl-kw">device</span>, *tree);</code></pre>
 <p>Адаптер строит явные варианты мешей High/Medium/Low в одном <code>render::Model</code> с переключением LOD меша 0 при 128 и 32 проецируемых пикселях. Он использует стандартные <code>render::ModelVertex</code>, <code>Primitive</code>, <code>Material</code>, <code>Node</code> и <code>Model::finalize()</code>; позиции переводятся из целых см в метры с плавающей точкой. Существующая инфраструктура рендерера моделей отвечает за шейдеры, плавную смену LOD, отсечение по пирамиде видимости, загрузку в бэкенд и инстансированную отрисовку.</p>
 <p>Материалы коры и листвы по умолчанию имеют простые нетекстурированные цвета PBR. Карточки листвы остаются <strong>непрозрачными прямоугольниками</strong>, пока вызывающая сторона не привяжет настоящую текстуру листвы с альфа-отсечением и не установит <code>AlphaMode::Mask</code>; не выдавайте это за листву производственного качества. Генерация атласа билбордов, реестр материалов и текстур, деформация ветром и фактическая отправка отрисовки сцены остаются незавершёнными.</p>
 <p><code>tests/terraweave_model_test.cpp</code> проверяет три меша LOD, корректность диапазонов и индексов, границы и стабильную топологию. Он линкуется с <code>aiverse_models</code>; цель <code>aiverse_terraweave_model_test</code> и CTest <code>terraweave_model</code> зарегистрированы в CMake. Все четыре тестовые цели TerraWeave явно отменяют определение <code>NDEBUG</code> на GCC/Clang, чтобы их проверки выполнялись в сборках Release.</p>
@@ -115,33 +115,33 @@ aiverse::render::uploadModel(device, *tree);</code></pre>
 <h2 id="stage-2f-запекание-terraweave-в-существующие-карты-высот-mapdoc-редактора">Stage 2f: запекание TerraWeave в существующие карты высот MapDoc редактора<a class="anchor" href="#stage-2f-запекание-terraweave-в-существующие-карты-высот-mapdoc-редактора" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveHeightmap.h</code> предоставляет чистый адаптер <code>generateLegacyCorners(TerrainSettings, widthCells, heightCells, LegacyHeightfieldOptions)</code>. Входные данные задаются в сантиметрах; результат — это существующий формат углов MapData со знаковыми int16, <strong>1/16 метра карты</strong> на отсчёт. Координаты и диапазоны результата проверяются; при переполнении или насыщении выбрасывается исключение, а не портятся высоты карты. Смещение и шаг можно настроить.</p>
 <p><code>apps/editor/core/TerraWeaveMapAdapter.h</code> предоставляет:</p>
-<pre><code class="lang-cpp">#include &quot;apps/editor/core/TerraWeaveMapAdapter.h&quot;
-aiverse::editor::bakeTerraWeaveTerrain(
-    mapDoc, terrainSettings, {0, 0, 100});
-// For intentional regeneration replacing authored corner data:
-aiverse::editor::bakeTerraWeaveTerrain(
-    mapDoc, terrainSettings, {0, 0, 100},
-    aiverse::editor::TerraWeaveExistingTerrain::ReplaceExplicitly);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;apps/editor/core/TerraWeaveMapAdapter.h&quot;</span>
+aiverse::editor::<span class="hl-fn">bakeTerraWeaveTerrain</span>(
+    mapDoc, terrainSettings, {<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">100</span>});
+<span class="hl-com">// For intentional regeneration replacing authored corner data:</span>
+aiverse::editor::<span class="hl-fn">bakeTerraWeaveTerrain</span>(
+    mapDoc, terrainSettings, {<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">100</span>},
+    aiverse::editor::<span class="hl-ty">TerraWeaveExistingTerrain</span>::<span class="hl-ty">ReplaceExplicitly</span>);</code></pre>
 <p>Адаптер редактора записывает через <code>MapDoc::beginEdit()</code> и <code>MapDoc::touched()</code> после построения всех сгенерированных высот, сохраняя отмену и существующее уведомление о ревизии представления. Он никогда молча не перезаписывает ручную лепку, никогда не меняет <code>rules.terrain.model</code> и отклоняет карты планет (нужен отдельный адаптер для кубосферы). Это <strong>API одноразового запекания</strong>, а пока не кнопка редактора, граф регенерации, стриминговый рельеф или стек нарисованных правок.</p>
 <p>Исходный тест: <code>tests/terraweave_heightmap_test.cpp</code> (CTest <code>terraweave_heightmap</code>) проверяет знаковые высоты, непрерывность швов, отклонение переполнения устаревшего формата и неверные входные данные. Встроенная вспомогательная функция <code>MapDoc</code> пока не проверена от начала до конца в запущенном редакторе.</p>
 <h2 id="stage-2f-общий-адаптер-отправки-моделей-леса-мост-cpu-rhi">Stage 2f — общий адаптер отправки моделей леса (мост CPU / RHI)<a class="anchor" href="#stage-2f-общий-адаптер-отправки-моделей-леса-мост-cpu-rhi" aria-label="#">#</a></h2>
 <p><code>engine/render/TerraWeaveForestAdapter.h</code> предоставляет <code>aiverse::terraweave::ArborForestAdapter</code>. Он связывает детерминированные экземпляры <code>FloraBatch</code> с <strong>существующим</strong> путём <code>render::Renderer3D::drawModel</code>. Он не владеет Renderer3D, ECS, стримингом или шейдерами и не заменяет их.</p>
 <ul><li><code>addPrototype(TreeProfile, meshSeed, ArborMeshSettings)</code> строит <strong>один</strong> <code>render::Model</code> на вид. Повторяющиеся и нулевые ID видов отклоняются. Смена меша дерева для каждого экземпляра сводит батчинг на нет; по <code>FoliageInstance</code> различаются только перенос, поворот и масштаб. Все узлы используют существующие LOD моделей по проецируемому размеру.</li><li><code>prototype(speciesId)</code> даёт стабильный указатель на общую модель, действительный, пока жив адаптер. <code>uploadModels(gfx::Device&amp;)</code> и <code>releaseModels(gfx::Device&amp;)</code> ОБЯЗАНЫ выполняться в потоке рендеринга, владеющем GPU. Освобождайте ресурсы GPU до уничтожения устройства или адаптера.</li><li><code>forEachDraw(batches, ForestRenderOriginCm, callback)</code> — примитив проверки и отправки без GPU, а <code>submit(Renderer3D&amp;, batches, origin)</code> передаёт вызовы напрямую в <code>Renderer3D::drawModel</code>. Вызывайте <code>submit</code> между <code>beginScene</code> и <code>render</code>, только после загрузки моделей.</li><li><code>ForestRenderOriginCm</code> — знаковые мировые <strong>сантиметры</strong> с полями <code>x,y,z</code>. Для X/Z вычитайте начало координат в int64 ДО перевода в метры float, чтобы сохранить точность в больших мирах. Камера и рендерер должны использовать одну и ту же перенесённую систему координат; преобразования отрисовки моделей задаются в метрах.</li><li><code>ModelDraw::persistentId</code> — стабильный хеш с пространством имён от <code>FoliageInstance::key</code> и вида, не зависящий от индекса отрисовки. Флаги отрисовки — <code>kDrawStatic</code>. Пакет Flora уровня <code>Impostor</code> теперь выбирает отдельную модель билборда дерева с альфа-маской, повёрнутую к камере (один quad и один процедурный силуэт RGBA), а не самый простой меш геометрии. Это силуэт с одного ракурса, а не многоракурсный атлас.</li></ul>
 <p>Минимальный набросок интеграции в нативный рендеринг или рендеринг хоста:</p>
-<pre><code class="lang-cpp">#include &quot;engine/render/TerraWeaveForestAdapter.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/render/TerraWeaveForestAdapter.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-ArborForestAdapter forest;
-TreeProfile pine;
-pine.speciesId = 21;
-pine.shape = CrownShape::Conifer;
-forest.addPrototype(pine, 0x5678);           // CPU / setup stage
-forest.uploadModels(device);                 // render thread, check bool
-auto batches = buildFloraBatches(placements, view);
-renderer.beginScene(camera, width, height);
-forest.submit(renderer, batches, {originXcm, originYcm, originZcm});
-// ... other scene draws and renderer.render(pass)
-forest.releaseModels(device);                // render thread at shutdown</code></pre>
+<span class="hl-ty">ArborForestAdapter</span> forest;
+<span class="hl-ty">TreeProfile</span> pine;
+pine.speciesId = <span class="hl-num">21</span>;
+pine.shape = <span class="hl-ty">CrownShape</span>::<span class="hl-ty">Conifer</span>;
+forest.<span class="hl-fn">addPrototype</span>(pine, <span class="hl-num">0x5678</span>);           <span class="hl-com">// CPU / setup stage</span>
+forest.<span class="hl-fn">uploadModels</span>(<span class="hl-kw">device</span>);                 <span class="hl-com">// render thread, check bool</span>
+<span class="hl-kw">auto</span> batches = <span class="hl-fn">buildFloraBatches</span>(placements, view);
+renderer.<span class="hl-fn">beginScene</span>(camera, width, height);
+forest.<span class="hl-fn">submit</span>(renderer, batches, {originXcm, originYcm, originZcm});
+<span class="hl-com">// ... other scene draws and renderer.render(pass)</span>
+forest.<span class="hl-fn">releaseModels</span>(<span class="hl-kw">device</span>);                <span class="hl-com">// render thread at shutdown</span></code></pre>
 <p>Адаптер <strong>пока не регистрируется в WorldScene или в редакторе</strong>. Он не обеспечивает вариативность геометрии для каждого дерева, гарантированное число непрямых отрисовок, настоящие импостеры, текстуры альфа-отсечения материалов, снимки сцены, проверку на GPU или формат манифеста с явным включением. Существующие проекты остаются нетронутыми. Проверки добавлены в <code>tests/terraweave_model_test.cpp</code>; наблюдаемые результаты тестов и следующую задачу см. в <code>AGENT_HANDOFF.md</code>.</p>
 <h2 id="иерархический-branchlod-независимые-части-дерева-stage-2g">Иерархический BranchLOD — независимые части дерева (Stage 2g)<a class="anchor" href="#иерархический-branchlod-независимые-части-дерева-stage-2g" aria-label="#">#</a></h2>
 <p>Новый <code>engine/world/TerraWeaveBranchLod.h</code> и <code>makeArborBranchLodModel(profile, seed, BranchLodSettings)</code> в <code>engine/render/TerraWeaveModelAdapter.h</code> строят переиспользуемый нативный <code>render::Model</code>, содержащий <strong>по одному узлу рендеринга на ветвь дерева</strong>. Каждый узел сохраняет <code>TreeBranch::parent</code> и имеет собственные три варианта <code>MeshDef</code>. <code>Renderer3D</code> уже выбирает LOD узла по его проецируемому размеру через существующий путь <code>selectModelLod</code>, учитывая представления камеры и теней. Это позволяет, например, крупному стволу на переднем плане оставаться в полной детализации, пока отдельные меньшие ветви на заднем плане переключаются на самую дешёвую форму. Переключения меша всего дерева для этих трёх геометрических уровней нет.</p>
@@ -169,15 +169,15 @@ forest.releaseModels(device);                // render thread at shutdown</code>
 <ul><li><code>terraweave_preview</code>: возвращает сетку выборки высот 9×9 в целых см плюс <code>minCm</code> и <code>maxCm</code>; <strong>не</strong> изменяет карту.</li><li><code>terraweave_generate</code>: явно запекает полную карту высот в существующие <code>MapDoc::corners</code>, создаёт снимок для отмены, вызывает <code>MapDoc::touched()</code>, ставит в очередь инвалидацию <code>Change::Map</code> и записывает очищенные метаданные генератора в <code>map.extra.terraweave</code> (версия 1).</li></ul>
 <p>Обе операции зарегистрированы в <code>apps/editor/core/TerraWeaveOps.h</code> через <code>registerTerrainOps</code> и доступны через существующий реестр редактора и MCP. Пример:</p>
 <pre><code class="lang-json">{
-  &quot;seed&quot;: 42,
-  &quot;baseHeightCm&quot;: 0,
-  &quot;reliefCm&quot;: 5000,
-  &quot;basePeriodCm&quot;: 6400,
-  &quot;octaves&quot;: 5,
-  &quot;originXcm&quot;: 0,
-  &quot;originZcm&quot;: 0,
-  &quot;cellSizeCm&quot;: 100,
-  &quot;overwrite&quot;: false
+  <span class="hl-key">&quot;seed&quot;</span>: <span class="hl-num">42</span>,
+  <span class="hl-key">&quot;baseHeightCm&quot;</span>: <span class="hl-num">0</span>,
+  <span class="hl-key">&quot;reliefCm&quot;</span>: <span class="hl-num">5000</span>,
+  <span class="hl-key">&quot;basePeriodCm&quot;</span>: <span class="hl-num">6400</span>,
+  <span class="hl-key">&quot;octaves&quot;</span>: <span class="hl-num">5</span>,
+  <span class="hl-key">&quot;originXcm&quot;</span>: <span class="hl-num">0</span>,
+  <span class="hl-key">&quot;originZcm&quot;</span>: <span class="hl-num">0</span>,
+  <span class="hl-key">&quot;cellSizeCm&quot;</span>: <span class="hl-num">100</span>,
+  <span class="hl-key">&quot;overwrite&quot;</span>: <span class="hl-kw">false</span>
 }</code></pre>
 <p><strong>Безопасность и совместимость:</strong> без явного <code>overwrite: true</code> адаптер отказывается заменять как существующую карту высот по углам, так и авторскую детальную поверхность. При явной замене предыдущий детальный слой (включая splat/file/scale) очищается <em>после</em> записи снимка для отмены, чтобы он не перекрывал новые углы в рендерере. Карты планет и FPS этот устаревший адаптер <code>MapDoc</code> отклоняет; универсальный генератор мира TerraWeave на C++ и ForestAdapter по-прежнему работают независимо от жанра. Операция <strong>не</strong> меняет молча <code>rules.terrain.model</code>; авторы игры сами решают, влияют ли углы на симуляцию. Пока пользователь не вызовет Generate, проект не меняется.</p>
 <p><strong>Ограничения:</strong> <code>preview</code> — это числовая выборка 9×9, а не живой 3D- предпросмотр. Генерация — одноразовое запекание, а не процедурный стриминг, постоянный недеструктивный граф или редактор биомов с кистью. Блок карты <code>terraweave</code> записывает входные данные генератора, но пока не вычисляется заново автоматически при загрузке.</p>
@@ -197,45 +197,45 @@ forest.releaseModels(device);                // render thread at shutdown</code>
 <p><code>engine/world/TerraWeaveForestManifest.h</code> реализует необязательный JSON-адаптер <code>world::forestSceneFromManifest</code>, а <code>WorldScene</code> владеет лесом, обновляет, отправляет и завершает его <strong>только если</strong> в корне манифеста есть <code>terraweaveForest</code>. Ни один существующий манифест <code>WorldScene</code> без этого ключа не меняется. Хост с явным включением использует <strong>первого</strong> наблюдателя из <code>WorldScene::update</code>; сейчас он не объединяет бюджеты нескольких наблюдателей.</p>
 <p>Пример фрагмента корня манифеста (все координаты внутри объекта <code>terraweaveForest</code> в см; существующие координаты мешей мира и камеры вне этого блока по-прежнему используют обычные метры WorldScene):</p>
 <pre><code class="lang-json">{
-  &quot;terraweaveForest&quot;: {
-    &quot;terrainSeed&quot;: 42,
-    &quot;biomeSeed&quot;: 143,
-    &quot;scatterSeed&quot;: 55,
-    &quot;baseHeightCm&quot;: 0,
-    &quot;reliefCm&quot;: 6000,
-    &quot;basePeriodCm&quot;: 6400,
-    &quot;octaves&quot;: 5,
-    &quot;spacingCm&quot;: 450,
-    &quot;densityPermille&quot;: 650,
-    &quot;chunkSizeCm&quot;: 6400,
-    &quot;radiusChunks&quot;: 4,
-    &quot;maxResidentChunks&quot;: 64,
-    &quot;highRangeCm&quot;: 3000,
-    &quot;mediumRangeCm&quot;: 9000,
-    &quot;lowRangeCm&quot;: 12000,
-    &quot;cullRangeCm&quot;: 24000,
-    &quot;impostorBlendWidthCm&quot;: 3000,
-    &quot;species&quot;: [
+  <span class="hl-key">&quot;terraweaveForest&quot;</span>: {
+    <span class="hl-key">&quot;terrainSeed&quot;</span>: <span class="hl-num">42</span>,
+    <span class="hl-key">&quot;biomeSeed&quot;</span>: <span class="hl-num">143</span>,
+    <span class="hl-key">&quot;scatterSeed&quot;</span>: <span class="hl-num">55</span>,
+    <span class="hl-key">&quot;baseHeightCm&quot;</span>: <span class="hl-num">0</span>,
+    <span class="hl-key">&quot;reliefCm&quot;</span>: <span class="hl-num">6000</span>,
+    <span class="hl-key">&quot;basePeriodCm&quot;</span>: <span class="hl-num">6400</span>,
+    <span class="hl-key">&quot;octaves&quot;</span>: <span class="hl-num">5</span>,
+    <span class="hl-key">&quot;spacingCm&quot;</span>: <span class="hl-num">450</span>,
+    <span class="hl-key">&quot;densityPermille&quot;</span>: <span class="hl-num">650</span>,
+    <span class="hl-key">&quot;chunkSizeCm&quot;</span>: <span class="hl-num">6400</span>,
+    <span class="hl-key">&quot;radiusChunks&quot;</span>: <span class="hl-num">4</span>,
+    <span class="hl-key">&quot;maxResidentChunks&quot;</span>: <span class="hl-num">64</span>,
+    <span class="hl-key">&quot;highRangeCm&quot;</span>: <span class="hl-num">3000</span>,
+    <span class="hl-key">&quot;mediumRangeCm&quot;</span>: <span class="hl-num">9000</span>,
+    <span class="hl-key">&quot;lowRangeCm&quot;</span>: <span class="hl-num">12000</span>,
+    <span class="hl-key">&quot;cullRangeCm&quot;</span>: <span class="hl-num">24000</span>,
+    <span class="hl-key">&quot;impostorBlendWidthCm&quot;</span>: <span class="hl-num">3000</span>,
+    <span class="hl-key">&quot;species&quot;</span>: [
       {
-        &quot;id&quot;: 1,
-        &quot;shape&quot;: &quot;broadleaf&quot;,
-        &quot;minHeightCm&quot;: 900,
-        &quot;maxHeightCm&quot;: 1400,
-        &quot;branches&quot;: 24,
-        &quot;weight&quot;: 4,
-        &quot;prototypeSeed&quot;: 1001
+        <span class="hl-key">&quot;id&quot;</span>: <span class="hl-num">1</span>,
+        <span class="hl-key">&quot;shape&quot;</span>: <span class="hl-str">&quot;broadleaf&quot;</span>,
+        <span class="hl-key">&quot;minHeightCm&quot;</span>: <span class="hl-num">900</span>,
+        <span class="hl-key">&quot;maxHeightCm&quot;</span>: <span class="hl-num">1400</span>,
+        <span class="hl-key">&quot;branches&quot;</span>: <span class="hl-num">24</span>,
+        <span class="hl-key">&quot;weight&quot;</span>: <span class="hl-num">4</span>,
+        <span class="hl-key">&quot;prototypeSeed&quot;</span>: <span class="hl-num">1001</span>
       },
       {
-        &quot;id&quot;: 2,
-        &quot;shape&quot;: &quot;conifer&quot;,
-        &quot;minHeightCm&quot;: 1100,
-        &quot;maxHeightCm&quot;: 2100,
-        &quot;branches&quot;: 32,
-        &quot;weight&quot;: 2,
-        &quot;prototypeSeed&quot;: 2002
+        <span class="hl-key">&quot;id&quot;</span>: <span class="hl-num">2</span>,
+        <span class="hl-key">&quot;shape&quot;</span>: <span class="hl-str">&quot;conifer&quot;</span>,
+        <span class="hl-key">&quot;minHeightCm&quot;</span>: <span class="hl-num">1100</span>,
+        <span class="hl-key">&quot;maxHeightCm&quot;</span>: <span class="hl-num">2100</span>,
+        <span class="hl-key">&quot;branches&quot;</span>: <span class="hl-num">32</span>,
+        <span class="hl-key">&quot;weight&quot;</span>: <span class="hl-num">2</span>,
+        <span class="hl-key">&quot;prototypeSeed&quot;</span>: <span class="hl-num">2002</span>
       }
     ],
-    &quot;exclusions&quot;: [[0, 0, 1200, 1500]]
+    <span class="hl-key">&quot;exclusions&quot;</span>: [[<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">1200</span>, <span class="hl-num">1500</span>]]
   }
 }</code></pre>
 <p>Фрагмент добавляется в иначе корректный существующий корневой манифест <code>WorldScene</code>, в котором <code>async</code>, <code>assets</code> и <code>chunks</code> заполнены согласно <code>docs/large-worlds.md</code>. Это не подразумевает нового формата мира для устаревших карт RTS <code>MapDoc</code>; их генератор в редакторе находится в <code>TerraWeaveOps.h</code> и отделён. Лес здесь <strong>только для рендеринга</strong>: он не создаёт авторитетных коллайдеров, препятствий navmesh, сущностей собранных ресурсов и не меняет контрольные суммы симуляции RTS/FPS. Высоты рельефа выводятся из процедурного seed TerraWeave; пока не реализован адаптер поставщика карты высот, они могут не совпадать с независимо созданной авторской поверхностью рельефа. <code>WorldScene</code> освобождает модели леса через свой существующий путь <code>shutdown(device)</code>. Загрузка на GPU идёт в том же потоке обновления, что и загрузки остальных моделей мира.</p>
@@ -249,20 +249,20 @@ forest.releaseModels(device);                // render thread at shutdown</code>
 <p><strong>Тестирование:</strong> <code>tests/terraweave_preview_test.cpp</code> проверяет компиляцию заголовка предпросмотра, флажок явного включения и маски авторского размещения. Изолированный процесс GCC/Clang также собирает <code>terraweave_preview</code>. На этом этапе нет подтверждений успешной сборки редактора, снимка рендерера или измеренной производительности GPU; держите PR #24 в статусе Draft.</p>
 <h2 id="stage-5-авторский-рельеф-и-поставщики-размещения-для-универсальных-лесов">Stage 5 — авторский рельеф и поставщики размещения для универсальных лесов<a class="anchor" href="#stage-5-авторский-рельеф-и-поставщики-размещения-для-универсальных-лесов" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveForestScene.h</code> теперь поддерживает два необязательных обратных вызова хоста, независимых от RTS, FPS и фактического хранилища рельефа:</p>
-<pre><code class="lang-cpp">TerraWeaveForestScene forest(settings);
-forest.addSpecies(profile, species, prototypeSeed);
+<pre><code class="lang-cpp"><span class="hl-ty">TerraWeaveForestScene</span> <span class="hl-fn">forest</span>(settings);
+forest.<span class="hl-fn">addSpecies</span>(profile, species, prototypeSeed);
 
-// A snapshot from a project/engine physics terrain provider, integer cm:
-forest.setHeightSource([&amp;surface](int64_t xCm, int64_t zCm) -&gt; int32_t {
-    return surface.heightAtCm(xCm, zCm);
+<span class="hl-com">// A snapshot from a project/engine physics terrain provider, integer cm:</span>
+forest.<span class="hl-fn">setHeightSource</span>([&amp;surface](<span class="hl-ty">int64_t</span> xCm, <span class="hl-ty">int64_t</span> zCm) -&gt; <span class="hl-ty">int32_t</span> {
+    <span class="hl-kw">return</span> surface.<span class="hl-fn">heightAtCm</span>(xCm, zCm);
 });
 
-// Exclusion/footprint/water provider; evaluated after height sampling:
-forest.setPlacementFilter([&amp;surface](const FoliageInstance&amp; tree) -&gt; bool {
-    return surface.allowTree(tree.xCm, tree.zCm, tree.heightCm);
+<span class="hl-com">// Exclusion/footprint/water provider; evaluated after height sampling:</span>
+forest.<span class="hl-fn">setPlacementFilter</span>([&amp;surface](<span class="hl-kw">const</span> <span class="hl-ty">FoliageInstance</span>&amp; tree) -&gt; <span class="hl-ty">bool</span> {
+    <span class="hl-kw">return</span> surface.<span class="hl-fn">allowTree</span>(tree.xCm, tree.zCm, tree.heightCm);
 });
 
-forest.streamAt({cameraXcm, cameraZcm});</code></pre>
+forest.<span class="hl-fn">streamAt</span>({cameraXcm, cameraZcm});</code></pre>
 <p>Поставщики вызываются только во время <code>streamAt()</code> в фазе работы на CPU у владельца. Любая замена автоматически инвалидирует резидентные участки и увеличивает ревизию хоста. Детерминированные ID размещений не меняются при изменении высоты или фильтрации; меняться могут только итоговые <code>heightCm</code> и наличие. Неверная возвращённая высота за пределами поддерживаемого размера мира леса вызывает исключение до отправки на GPU.</p>
 <p><strong>Важно:</strong> обратные вызовы должны читать неизменяемый снимок рельефа и коллизий на всё время перегенерации. Не захватывайте изменяемые данные ECS, создавая гонку с асинхронными рабочими потоками. Текущий хост по-прежнему синхронный, и эти обратные вызовы относятся только к представлению. Они <strong>не</strong> меняют оценку биома и уклона в базовой <code>scatter()</code>: если в проекте есть независимо созданный очень крутой или подводный рельеф, его <code>PlacementFilter</code> должен отклонять неподходящих кандидатов. Позднее API ядра сможет поддерживать полную выборку поверхности рельефа и для отбора, и для итоговой высоты.</p>
 <p>Тесты: <code>tests/terraweave_forest_scene_test.cpp</code> и цель CTest <code>terraweave_forest_scene</code> (переопределение высоты, стабильные ключи, фильтр, инвалидация ревизии, неверная высота). Тесты написаны, но их выполнение не заявляется.</p>
@@ -287,21 +287,21 @@ forest.streamAt({cameraXcm, cameraZcm});</code></pre>
 <p>Это <em>намного</em> дешевле по геометрии, чем дальняя растительность из отдельных деревьев, но не буквально бесплатно: перерисовка альфы, однократное запекание на CPU, загрузка текстуры, память и композиция теней и атмосферы по-прежнему расходуют ресурсы.</p>
 <h3 id="необязательный-манифест-worldscene">Необязательный манифест WorldScene<a class="anchor" href="#необязательный-манифест-worldscene" aria-label="#">#</a></h3>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;terrainSeed&quot;: 1,
-    &quot;biomeSeed&quot;: 2,
-    &quot;middleTileCm&quot;: 12800,
-    &quot;middleTilesPerSide&quot;: 16,
-    &quot;distantTileCm&quot;: 51200,
-    &quot;distantTilesPerSide&quot;: 24,
-    &quot;closeForestEndCm&quot;: 25000,
-    &quot;middleForestEndCm&quot;: 100000,
-    &quot;terrainBeginCm&quot;: 110000,
-    &quot;terrainSkirtDepthCm&quot;: 1200,
-    &quot;terrainResolution&quot;: 48,
-    &quot;atlasTilePixels&quot;: 48,
-    &quot;canopyHeightCm&quot;: 1800,
-    &quot;distantTerrain&quot;: true
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;terrainSeed&quot;</span>: <span class="hl-num">1</span>,
+    <span class="hl-key">&quot;biomeSeed&quot;</span>: <span class="hl-num">2</span>,
+    <span class="hl-key">&quot;middleTileCm&quot;</span>: <span class="hl-num">12800</span>,
+    <span class="hl-key">&quot;middleTilesPerSide&quot;</span>: <span class="hl-num">16</span>,
+    <span class="hl-key">&quot;distantTileCm&quot;</span>: <span class="hl-num">51200</span>,
+    <span class="hl-key">&quot;distantTilesPerSide&quot;</span>: <span class="hl-num">24</span>,
+    <span class="hl-key">&quot;closeForestEndCm&quot;</span>: <span class="hl-num">25000</span>,
+    <span class="hl-key">&quot;middleForestEndCm&quot;</span>: <span class="hl-num">100000</span>,
+    <span class="hl-key">&quot;terrainBeginCm&quot;</span>: <span class="hl-num">110000</span>,
+    <span class="hl-key">&quot;terrainSkirtDepthCm&quot;</span>: <span class="hl-num">1200</span>,
+    <span class="hl-key">&quot;terrainResolution&quot;</span>: <span class="hl-num">48</span>,
+    <span class="hl-key">&quot;atlasTilePixels&quot;</span>: <span class="hl-num">48</span>,
+    <span class="hl-key">&quot;canopyHeightCm&quot;</span>: <span class="hl-num">1800</span>,
+    <span class="hl-key">&quot;distantTerrain&quot;</span>: <span class="hl-kw">true</span>
   }
 }</code></pre>
 <p>Отсутствие блока <code>terraweaveHorizon</code> означает <strong>отсутствие дополнительной памяти, работы GPU и изменений существующего мира</strong>. Если в манифесте есть и <code>terraweaveForest</code>, Horizon наследует seed рельефа и биомов ближнего леса, если они явно не переопределены. Используйте совпадающие seed и соглашения о высотах, чтобы избежать расхождений цвета и силуэта между ближним и дальним планом. <code>distantTerrain: false</code> рисует только кластерные леса; это полезно, когда существующий рендерер рельефа мира уже покрывает дальнюю землю.</p>
@@ -321,10 +321,10 @@ forest.streamAt({cameraXcm, cameraZcm});</code></pre>
 <p><code>estimateHorizonBudget</code> проверяет оба варианта в пределах ограничения упакованного атласа 16 MiB. Для реальной производительности используйте <code>TerraWeaveHorizonScene::runtimeStats()</code> (число кластеров, байты загруженного атласа, вершины, треугольники, миллисекунды подготовки на CPU, миллисекунды загрузки в потоке рендеринга, ожидающие и отменённые асинхронные задачи). Это измерения, которые запущенный хост собирает <strong>только когда сцена действительно выполняется</strong>, а не результаты бенчмарков, приводимые в этом документе.</p>
 <p>Пример настроек качества с явным включением внутри <code>terraweaveHorizon</code>:</p>
 <pre><code class="lang-json">{
-  &quot;crownDetail&quot;: 3,
-  &quot;orientationViews&quot;: 2,
-  &quot;nearBlendCm&quot;: 6000,
-  &quot;tierBlendCm&quot;: 16000
+  <span class="hl-key">&quot;crownDetail&quot;</span>: <span class="hl-num">3</span>,
+  <span class="hl-key">&quot;orientationViews&quot;</span>: <span class="hl-num">2</span>,
+  <span class="hl-key">&quot;nearBlendCm&quot;</span>: <span class="hl-num">6000</span>,
+  <span class="hl-key">&quot;tierBlendCm&quot;</span>: <span class="hl-num">16000</span>
 }</code></pre>
 <p>Компромиссы и непроверенное:</p>
 <ul><li>Пространственная маска может создавать пропуски или частично удвоенный полог в полосах перекрытия; для лучшего взаимодополняющего попиксельного затухания и переходов кадров, управляемых материалом, нужны снимки с GPU, тестирование покрытия альфы и, возможно, отдельный проход шейдера.</li><li>Различия в плотности ближнего леса, пользовательские виды, авторские дороги и непроцедурный ландшафт по-прежнему требуют производственной интеграции.</li><li>Запекатель изображений на CPU работает в существующих фоновых рабочих потоках, а ограничение памяти атласа является аналитической границей. Ни тайминги GPU, ни стабильность кадров, ни качество изображения на этом этапе не проверялись на Metal, Vulkan или GLES.</li></ul>
@@ -347,24 +347,24 @@ forest.streamAt({cameraXcm, cameraZcm});</code></pre>
 <p>Применяются те же ~832 потенциальных слота кластеров; меняется разрешение атласа, а не число карточек кластеров леса. Minimal и mobile намеренно не удерживают дополнительные атласы на CPU. Двухракурсный пресет high увеличивает бюджет текстуры примерно до 14.77 MiB <strong>без mip-уровней</strong> и требует профилирования на реальных устройствах, прежде чем его можно будет рекомендовать по умолчанию. Это задуманные пресеты, а не измеренный FPS или проверенные настройки качества для платформ.</p>
 <h3 id="заранее-запечённые-ассеты-архивы-horizon-stage-9e">Заранее запечённые ассеты-архивы Horizon (stage 9e)<a class="anchor" href="#заранее-запечённые-ассеты-архивы-horizon-stage-9e" aria-label="#">#</a></h3>
 <p>Статичные миры могут избежать дорогой растеризации полога при каждом перезапуске игры, подготовив регион офлайн и поставляя ассет <code>.twh</code>. <code>engine/world/TerraWeaveHorizonArchive.h</code> предоставляет чистые переносимые API C++20 (без зависимостей от файловой системы, ОС или рендеринга):</p>
-<pre><code class="lang-cpp">const uint64_t fingerprint =
-    terraweave::horizonArchiveFingerprint(terrain, biomes, settings);
-auto bake = terraweave::bakeHorizon(terrain, biomes, settings,
+<pre><code class="lang-cpp"><span class="hl-kw">const</span> <span class="hl-ty">uint64_t</span> fingerprint =
+    terraweave::<span class="hl-fn">horizonArchiveFingerprint</span>(terrain, biomes, settings);
+<span class="hl-kw">auto</span> bake = terraweave::<span class="hl-fn">bakeHorizon</span>(terrain, biomes, settings,
                                     regionCenterXcm, regionCenterZcm);
-std::vector&lt;uint8_t&gt; bytes =
-    terraweave::encodeHorizonArchive(bake, fingerprint);
-// The game/editor build tool writes bytes into its own asset pack.
+<span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;<span class="hl-ty">uint8_t</span>&gt; bytes =
+    terraweave::<span class="hl-fn">encodeHorizonArchive</span>(bake, fingerprint);
+<span class="hl-com">// The game/editor build tool writes bytes into its own asset pack.</span>
 
-// At runtime, given the *same* settings and matching world content:
-terraweave::HorizonBake decoded =
-    terraweave::decodeHorizonArchive(bytes, fingerprint);</code></pre>
+<span class="hl-com">// At runtime, given the *same* settings and matching world content:</span>
+terraweave::<span class="hl-ty">HorizonBake</span> decoded =
+    terraweave::<span class="hl-fn">decodeHorizonArchive</span>(bytes, fingerprint);</code></pre>
 <p>Формат архива сейчас имеет версию <code>TWH3</code>: явные целочисленные поля в little-endian, упакованный атлас RGBA, вершины рельефа и метаданные кластеров, 64-битная контрольная сумма FNV полезной нагрузки и максимальный сериализованный размер 20 MiB. Он предназначен для <em>доверенных ассетов приложения</em>; контрольная сумма <strong>не является криптографической аутентификацией</strong>. Декодер проверяет версию, отпечаток, размеры, границы кадров атласа, целостность полезной нагрузки и лишние байты в конце, прежде чем вернуть какое-либо запекание.</p>
 <p><code>TerraWeaveHorizonScene::setArchiveStore(...)</code> принимает необязательный разделяемый <code>HorizonArchiveStore</code> с обратными вызовами <code>read</code> и/или <code>write</code> и необязательным стабильным <code>authoredContentHash</code>. Настраивайте его <strong>до первого update()</strong>, потому что затем обратные вызовы вызывает ограниченный рабочий поток. Рабочий поток сначала проверяет LRU в памяти, затем заранее запечённый архив, затем переходит к свежему процедурному запеканию. Неудачные, повреждённые или устаревшие чтения архива и ошибки записи — это промахи кеша по принципу «насколько получится», <strong>а не фатальные ошибки</strong>. Среда выполнения хранит только одну загруженную модель Horizon на GPU, независимо от того, сколько архивов доступно на CPU. <code>runtimeStats().archiveHits</code> считает успешные восстановления из архива.</p>
 <p>Для игровых манифестов <code>WorldScene</code> можно дополнительно добавить:</p>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;quality&quot;: &quot;balanced&quot;,
-    &quot;archivePrefix&quot;: &quot;world/horizon-cache&quot;
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;quality&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+    <span class="hl-key">&quot;archivePrefix&quot;</span>: <span class="hl-str">&quot;world/horizon-cache&quot;</span>
   }
 }</code></pre>
 <p>Он ищет <code>world/horizon-cache/&lt;cellX&gt;_&lt;cellZ&gt;.twh</code>, где X/Z — знаковые <strong>ключи сетки камеры среднего плана Horizon</strong>, через обычный игровой <code>AssetReader</code>. Без настроенного префикса поиск ассетов не выполняется. Адаптер WorldScene работает <strong>только на чтение</strong>; за создание и упаковку блобов отвечает конвейер сборки.</p>
@@ -374,10 +374,10 @@ terraweave::HorizonBake decoded =
 <h3 id="массовое-запекание-только-на-хосте">Массовое запекание только на хосте<a class="anchor" href="#массовое-запекание-только-на-хосте" aria-label="#">#</a></h3>
 <p>Переиспользуемый <code>engine/world/TerraWeaveHorizonBatch.h</code> объявляет <code>HorizonBatchBounds</code>, <code>HorizonBatchOptions</code>, <code>HorizonBatchStorage</code> (callback-и чтения/записи/отмены, которые предоставляет игра), <code>HorizonBatchProgress</code> и <code>bakeHorizonBatch(...)</code>. Он генерирует детерминированные знаковые ключи регионов камеры в порядке z-старший, x-младший, используя <strong>ту же сетку и те же отпечатки, что и runtime</strong> HorizonScene. По умолчанию допускается до 4 096 регионов. Существующие корректные архивы TWH2 пропускаются; ассеты с неверными настройками, версией или CRC, а также отсутствующие ассеты генерируются заново. Инструмент никогда не обращается к GPU или к авторитетному ECS.</p>
 <p><code>aiverse_horizon_bake</code> — CMake-цель только для хоста, собирается с <code>AIVERSE_BUILD_TOOLS=ON</code> и отключена для Emscripten. Пример:</p>
-<pre><code class="lang-sh">aiverse_horizon_bake \
-  --manifest content/world.json \
-  --out content/world/horizon-cache \
-  --cells -4 -4 4 4</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">aiverse_horizon_bake</span> \
+  <span class="hl-fn">--manifest</span> content/world.json \
+  <span class="hl-fn">--out</span> content/world/horizon-cache \
+  <span class="hl-fn">--cells</span> -4 -4 4 4</code></pre>
 <p>Для каждого региона в этой выходной папке создаётся <code>&lt;x&gt;_&lt;z&gt;.twh</code>. Упакуйте файлы как обычный контент и задайте тот же <code>terraweaveHorizon.archivePrefix</code> в runtime-манифесте. <code>--force</code> отключает пропуск существующих; <code>--max-regions N</code> ограничивает объём работы. Исполняемый файл собирает только <em>процедурные</em> поверхности Horizon. Проекты с авторскими коллизиями, дорогами и водой вместо этого вызывают <code>bakeHorizonBatch</code> напрямую со своим неизменяемым снимком <code>HorizonSurfaceSources</code> и ненулевым <code>authoredContentHash</code>.</p>
 <h3 id="стабильные-слоты-атласа-и-частичные-обновления-на-cpu">Стабильные слоты атласа и частичные обновления на CPU<a class="anchor" href="#стабильные-слоты-атласа-и-частичные-обновления-на-cpu" aria-label="#">#</a></h3>
 <p>Перед частичной регенерацией каждый кластер получает <strong>стабильный слот атласа, не зависящий от числа видимых кластеров</strong>: <code>(layerBase + row*rowCount + col) * orientationViews</code>. Изменения маски дорог и берегов, высоты рельефа или биома в одном регионе не сдвигают UV-подпрямоугольники несвязанных кластеров. Это изменение раскладки атласа подняло формат архива до <strong>TWH2/версии 2</strong>; прежние блобы TWH1 нужно сгенерировать заново.</p>
@@ -486,25 +486,25 @@ terraweave::HorizonBake decoded =
 <p>Это влияет <strong>только на затенение при рендеринге</strong>. Защита сварки по высоте <code>maxNearWeldSlopePermille</code> по принципу «всё или ничего» из этапа 20, ближнее отсечение X/Z, раскладка TWH8 <code>NearSeamSample</code> и существующий выбор патча атласа, VB или полной модели остаются в силе. Шаблон нормалей не должен сглаживать настоящий обрыв на стыке независимо созданных тайлов.</p>
 <h3 id="чтение-живого-состояния-регионов">Чтение живого состояния регионов<a class="anchor" href="#чтение-живого-состояния-регионов" aria-label="#">#</a></h3>
 <p>После обновления сцены в её потоке-владельце нативный хост или редактор может прочитать <code>TerraWeaveHorizonScene::runtimeStats()</code>:</p>
-<pre><code class="lang-cpp">const auto h = horizon.runtimeStats();
-if (h.requestedRegionPending) {
-    // A requested region is not yet resolved at the current source revision.
-    // h.preparing is a separate worker status; &quot;pending&quot; != &quot;CPU is running&quot;.
+<pre><code class="lang-cpp"><span class="hl-kw">const</span> <span class="hl-kw">auto</span> h = horizon.<span class="hl-fn">runtimeStats</span>();
+<span class="hl-kw">if</span> (h.requestedRegionPending) {
+    <span class="hl-com">// A requested region is not yet resolved at the current source revision.</span>
+    <span class="hl-com">// h.preparing is a separate worker status; &quot;pending&quot; != &quot;CPU is running&quot;.</span>
 }
-if (h.activeRegionResolved &amp;&amp; h.activeRegionEmpty) {
-    // Accepted bake for the active cell, intentionally no drawable GPU model.
+<span class="hl-kw">if</span> (h.activeRegionResolved &amp;&amp; h.activeRegionEmpty) {
+    <span class="hl-com">// Accepted bake for the active cell, intentionally no drawable GPU model.</span>
 }
-if (h.staleProxy) {
-    // Active resolved cell is from an older authored source revision.
+<span class="hl-kw">if</span> (h.staleProxy) {
+    <span class="hl-com">// Active resolved cell is from an older authored source revision.</span>
 }
-if (h.nearNormalProvenanceAvailable) {
-    // Counts are unique sampled seam points, NOT vertices or draw calls.
-    auto neighbor = h.continuousNearNormalSamples;
-    auto local = h.localFallbackNearNormalSamples;
-    (void)neighbor; (void)local;
+<span class="hl-kw">if</span> (h.nearNormalProvenanceAvailable) {
+    <span class="hl-com">// Counts are unique sampled seam points, NOT vertices or draw calls.</span>
+    <span class="hl-kw">auto</span> neighbor = h.continuousNearNormalSamples;
+    <span class="hl-kw">auto</span> local = h.localFallbackNearNormalSamples;
+    (<span class="hl-ty">void</span>)neighbor; (<span class="hl-ty">void</span>)local;
 }
-// Only inspect requestedCellX/Z if requestedRegionPresent is true.
-// Only inspect activeCellX/Z if activeRegionResolved is true.</code></pre>
+<span class="hl-com">// Only inspect requestedCellX/Z if requestedRegionPresent is true.</span>
+<span class="hl-com">// Only inspect activeCellX/Z if activeRegionResolved is true.</span></code></pre>
 <div class="table"><table><thead><tr><th>Поле</th><th>Контракт</th></tr></thead><tbody><tr><td><code>sourceRevision</code> / <code>activeRevision</code></td><td>Текущая неизменяемая ревизия источника / принятая ревизия активного региона.</td></tr><tr><td><code>requestedRegionPresent</code>, <code>requestedCellX/Z</code></td><td>Существует цель, выбранная камерой; координаты — <strong>индексы сетки средних тайлов</strong>, а не сантиметры; действует гистерезис камеры.</td></tr><tr><td><code>activeRegionResolved</code>, <code>activeCellX/Z</code></td><td>Результат региона принят (включая намеренно пустой результат); активные координаты определены только при resolved.</td></tr><tr><td><code>activeRegionPresent</code></td><td>У принятого региона сейчас есть отрисовываемая GPU-модель; <strong>false не означает pending</strong>.</td></tr><tr><td><code>activeRegionEmpty</code></td><td>У разрешённого региона намеренно нет GPU-модели (например, пустой океанский Horizon).</td></tr><tr><td><code>requestedRegionPending</code></td><td>Цель существует и не разрешена, отличается от активной ячейки или ревизия активного региона устарела. Пустой разрешённый регион в той же ячейке и с той же ревизией <strong>не является pending</strong>.</td></tr><tr><td><code>staleProxy</code></td><td>Ревизия активного разрешённого региона отличается от <code>sourceRevision</code>; флаг может описывать и устаревший <strong>пустой</strong> регион. Состояние «не та ячейка камеры» без правок источника относится к <code>requestedRegionPending</code>, а не к этому флагу.</td></tr><tr><td><code>preparing</code> / <code>discarded</code></td><td>Состояние асинхронного стрима; проверяйте независимо от <code>requestedRegionPending</code>.</td></tr><tr><td><code>continuousNearNormalSamples</code></td><td>Уникальные сэмплы ближнего шва Q16 с корректными уклонами с учётом соседей в CPU-запекании.</td></tr><tr><td><code>localFallbackNearNormalSamples</code></td><td>Уникальные сэмплы ближнего шва Q16, использующие производную локальной высоты, потому что результаты с учётом соседей были недоступны или некорректны.</td></tr><tr><td><code>nearNormalProvenanceAvailable</code></td><td>Для счётчиков выше известно происхождение CPU-сэмплирования. Если false, считайте оба счётчика <strong>неизвестными</strong>, даже если они численно равны нулю.</td></tr><tr><td><code>matchedAuthoredNearNormals</code></td><td>Число <strong>вершин рендеринга</strong>, сопоставленных с нормалью авторского ближнего источника; не складывайте со счётчиками сэмплов.</td></tr></tbody></table></div>
 <p><strong>Поведение архива:</strong> TWH8 хранит высоту, уклон и бит валидности нормали ближнего шва, но <strong>не</strong> счётчики происхождения и флаг их доступности. Попадание в дисковый кэш архива может вполне законно сообщать <code>nearNormalProvenanceAvailable=false</code> и нулевые счётчики происхождения, даже когда сохранённые нормали корректны; это <strong>неизвестно</strong>, а не измеренный ноль. Свежее запекание может сообщать корректные нулевые счётчики, если ни один сэмпл шва не подходит. Откат сварки по принципу «всё или ничего» может отбросить сэмплы и обнулить счётчики, при этом флаг доступности пути CPU-сэмплирования остаётся true.</p>
 <p><strong>Жизненный цикл:</strong> <code>shutdown(device)</code> очищает текущий регион, запрошенный регион, метаданные геометрии и диагностические счётчики. Вытеснение в GPU-кэш и восстановление из него переносят счётчики происхождения и их доступность. Обновление ревизии источника может временно сохранять более старый GPU-прокси, пока обновлённое запекание не завершится успешно. <code>activeRegionPresent</code> сообщает лишь о наличии модели, а <code>requestedRegionPending</code> — о неразрешённом выборе. Крупную телепортацию может скрыть отдельная проверка покрытия камеры в <code>submit()</code>; это не отражается в <code>staleProxy</code>.</p>
@@ -512,45 +512,45 @@ if (h.nearNormalProvenanceAvailable) {
 <h2 id="этап-24-разреженное-детерминированное-возобновление-леса-и-тики-презентации">Этап 24 — разреженное детерминированное возобновление леса и тики презентации<a class="anchor" href="#этап-24-разреженное-детерминированное-возобновление-леса-и-тики-презентации" aria-label="#">#</a></h2>
 <p><strong>Статус:</strong> нативный исходный код C++ закоммичен, проверка в runtime, компиляцией, CTest и на GPU намеренно отложена до отдельной фазы тестирования. Эта функция расширяет уже существующие сохраняемые удаления <code>ForestTreeIdentity</code>; она <strong>не</strong> вводит ECS-сущности на каждое дерево, новый шейдер, ещё один RHI-бэкенд, новый формат файла сохранений или вторую GPU-модель леса.</p>
 <p>Теперь <code>TerraWeaveForestScene</code> поддерживает <code>ForestRegrowthSchedule</code> — разреженный тип-значение:</p>
-<pre><code class="lang-cpp">struct ForestRegrowthSchedule {
-    ForestTreeIdentity tree;        // {key, speciesId}: stable across chunks
-    uint64_t regrowAtTick;          // hidden before this tick
-    uint64_t matureAtTick;          // full generator scale at/after this tick
-    uint32_t initialScalePermille;  // 1..1000, defaults to 150
+<pre><code class="lang-cpp"><span class="hl-kw">struct</span> <span class="hl-ty">ForestRegrowthSchedule</span> {
+    <span class="hl-ty">ForestTreeIdentity</span> tree;        <span class="hl-com">// {key, speciesId}: stable across chunks</span>
+    <span class="hl-ty">uint64_t</span> regrowAtTick;          <span class="hl-com">// hidden before this tick</span>
+    <span class="hl-ty">uint64_t</span> matureAtTick;          <span class="hl-com">// full generator scale at/after this tick</span>
+    <span class="hl-ty">uint32_t</span> initialScalePermille;  <span class="hl-com">// 1..1000, defaults to 150</span>
 };</code></pre>
 <p>Используйте <strong>собственный детерминированный тик симуляции игры</strong>, а не время по настенным часам, с <code>setPresentationTick(uint64_t)</code>. <code>scheduleRegrowth(schedule)</code> удаляет дерево из сохраняемого набора <code>removedTrees</code> и скрывает его до <code>regrowAtTick</code>. Для тиков между появлением и зрелостью <code>visibleBatches()</code> изменяет <strong>копию для презентации</strong> <code>FoliageInstance::scalePermille</code> с помощью ограниченной целочисленной интерполяции — от <code>initialScalePermille</code> до 1000 промилле его исходного сгенерированного масштаба. <code>matureAtTick == regrowAtTick</code> означает мгновенное восстановление. В авторитетных ключах размещения, высотах, сиде, коллизиях, навмеше или GPU-моделях прототипов ничего не меняется. При последующем движении камеры или повторной подгрузке та же идентичность получает тот же масштаб для того же тика.</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeaveForestScene.h&quot;
-using namespace aiverse::terraweave;
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeaveForestScene.h&quot;</span>
+<span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
 
-// Use an existing configured scene and a stable ID obtained from foliage.
-ForestTreeIdentity oak{stableTreeKey, 1001};
-forest.removeTree(oak); // optional gameplay-driven harvest
-forest.scheduleRegrowth({oak, 6000, 12000, 120});
-forest.setPresentationTick(gameplayTick);
-const auto batches = forest.visibleBatches();
-// Host still calls uploadModels()/submit() on the renderer owner thread.
-// Persist forest.removedTrees() and forest.regrowthSchedules() in game saves.</code></pre>
+<span class="hl-com">// Use an existing configured scene and a stable ID obtained from foliage.</span>
+<span class="hl-ty">ForestTreeIdentity</span> oak{stableTreeKey, <span class="hl-num">1001</span>};
+forest.<span class="hl-fn">removeTree</span>(oak); <span class="hl-com">// optional gameplay-driven harvest</span>
+forest.<span class="hl-fn">scheduleRegrowth</span>({oak, <span class="hl-num">6000</span>, <span class="hl-num">12000</span>, <span class="hl-num">120</span>});
+forest.<span class="hl-fn">setPresentationTick</span>(gameplayTick);
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> batches = forest.<span class="hl-fn">visibleBatches</span>();
+<span class="hl-com">// Host still calls uploadModels()/submit() on the renderer owner thread.</span>
+<span class="hl-com">// Persist forest.removedTrees() and forest.regrowthSchedules() in game saves.</span></code></pre>
 <p>Здесь <code>stableTreeKey</code> и <code>gameplayTick</code> — значения нативной игры, а не глобальные переменные движка. <code>setRegrowthSchedules(...)</code> атомарно проверяет и заменяет сохранённый отсортированный список; <code>regrowthSchedules()</code> предоставляет стабильный отсортированный снимок для сохранения и репликации. <code>cancelRegrowth(id)</code> отменяет расписание, не скрывая и не удаляя дерево автоматически. <code>removeTree(id)</code> отменяет любое ожидающее возобновление и скрывает дерево; <code>restoreTree(id)</code> сбрасывает и скрытое, и запланированное состояние; <code>setRemovedTrees(...)</code> очищает пересекающиеся расписания возобновления, чтобы явно удалённые деревья оставались скрытыми. Для решений о жизненном цикле используйте полномочия сохранений и сети вызывающей стороны.</p>
 <p>Реализация ограничивает возобновление не более чем <strong>1 000 000</strong> разреженных записей, отклоняет нулевые виды, дублирующиеся ключи замены, <code>initialScalePermille</code> вне 1..1000, расписания, идущие назад, и интервалы созревания больше <strong>1e12 тиков</strong>. Эти границы удерживают <code>elapsed * (1000 - minScale)</code> в пределах знакового и беззнакового 64-битного целого без платформенно-зависимой 128-битной арифметики. Даже при асинхронной генерации леса изменения тика вычисляются во время презентации и <strong>не</strong> отменяют и не пересобирают воркеры чанков.</p>
 <p><code>ForestSceneStats</code> предоставляет дополнительные завершающие поля <code>scheduledRegrowth</code> и <code>presentationTick</code>, не ломая прежнее агрегатное использование существующих членов.</p>
 <h3 id="доступ-из-worldscene">Доступ из WorldScene<a class="anchor" href="#доступ-из-worldscene" aria-label="#">#</a></h3>
 <p>Подключаемый по выбору (opt-in) <code>world::WorldScene</code> предоставляет <code>terraweave::TerraWeaveForestScene* forestScene() noexcept</code> (и const-перегрузку). Он возвращает null, если манифест мира не включает <code>terraweaveForest</code>. Нативные игры могут подключить и <code>engine/world/WorldScene.h</code>, и <code>engine/world/TerraWeaveForestScene.h</code> и напрямую передавать игровое время или сохранённые записи жизненного цикла без какого-либо жанрово-специфичного API:</p>
-<pre><code class="lang-cpp">if (auto* forest = worldScene.forestScene()) {
-    forest-&gt;setPresentationTick(gameplayTick);
-    forest-&gt;scheduleRegrowth({oak, 6000, 12000, 120});
+<pre><code class="lang-cpp"><span class="hl-kw">if</span> (<span class="hl-kw">auto</span>* forest = worldScene.<span class="hl-fn">forestScene</span>()) {
+    forest-&gt;<span class="hl-fn">setPresentationTick</span>(gameplayTick);
+    forest-&gt;<span class="hl-fn">scheduleRegrowth</span>({oak, <span class="hl-num">6000</span>, <span class="hl-num">12000</span>, <span class="hl-num">120</span>});
 }</code></pre>
 <p><strong>Владение и ограничения:</strong> это только <em>косметическая презентация</em>. Авторитетный игровой слой отвечает за решения о том, когда происходит рубка, а также за изменение коллизий, навмеша и ресурсов, версионирование сохранений, репликацию для реплеев и сети и любую более широкую симуляцию экосистемы. Рубка отдельного дерева пока не пробивает индивидуальную дыру в <strong>силуэтах кластеров дальнего Horizon HLOD</strong>; на следующем этапе согласуйте маски вырубленных участков с Horizon, чтобы избежать несоответствий между ближним и дальним планом. На этой фазе «сначала функциональность» реализация не собиралась и визуально не тестировалась.</p>
 <h2 id="этап-25-runtime-вырубки-леса-общие-для-ближней-flora-и-horizon-hlod">Этап 25 — runtime-вырубки леса, общие для ближней Flora и Horizon HLOD<a class="anchor" href="#этап-25-runtime-вырубки-леса-общие-для-ближней-flora-и-horizon-hlod" aria-label="#">#</a></h2>
 <p><strong>Исходный код реализован, тесты отложены</strong> по просьбе пользователя. Нативный <code>world::WorldScene</code> теперь предоставляет:</p>
-<pre><code class="lang-cpp">void setVegetationClearings(std::vector&lt;terraweave::RectCm&gt; clearings);
-const std::vector&lt;terraweave::RectCm&gt;&amp; vegetationClearings() const;</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">void</span> <span class="hl-fn">setVegetationClearings</span>(<span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;terraweave::<span class="hl-ty">RectCm</span>&gt; clearings);
+<span class="hl-kw">const</span> <span class="hl-ty">std</span>::<span class="hl-ty">vector</span>&lt;terraweave::<span class="hl-ty">RectCm</span>&gt;&amp; <span class="hl-fn">vegetationClearings</span>() <span class="hl-kw">const</span>;</code></pre>
 <p>Вырубки — это <strong>полуоткрытые прямоугольники X/Z в знаковых мировых сантиметрах</strong>, а не единицы сетки RTS-карты. Игра может использовать их, чтобы очищать целые строительные площадки, зоны лесозаготовки или участки ландшафта (в отличие от индивидуального <code>ForestRegrowthSchedule</code> для каждого дерева из этапа 24). Все входные прямоугольники должны быть непустыми и находиться в пределах протяжённости TerraWeave <code>+/-kWorldLimitCm</code>; принимается не более 4096. Сеттер нормализует порядок и удаляет точные дубликаты; передача идентичного канонического набора ничего не делает. Возвращаемый список подходит для сохранения и репликации на стороне вызывающего; движок <strong>не</strong> создаёт авторитетных игровых событий, правок коллизий или новой схемы сохранений.</p>
-<pre><code class="lang-cpp">using aiverse::terraweave::RectCm;
-worldScene.setVegetationClearings({
-    RectCm{siteX0cm,siteZ0cm,siteX1cm,siteZ1cm}
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> aiverse::terraweave::<span class="hl-ty">RectCm</span>;
+worldScene.<span class="hl-fn">setVegetationClearings</span>({
+    <span class="hl-ty">RectCm</span>{siteX0cm,siteZ0cm,siteX1cm,siteZ1cm}
 });
-// Call worldScene.update(device, observers, radius) from the owner thread.
-// Later: worldScene.setVegetationClearings({}) to restore the area.</code></pre>
+<span class="hl-com">// Call worldScene.update(device, observers, radius) from the owner thread.</span>
+<span class="hl-com">// Later: worldScene.setVegetationClearings({}) to restore the area.</span></code></pre>
 <p>Значения <code>site*cm</code> в этом примере — координаты, предоставляемые игрой.</p>
 <p>Следующий <code>WorldScene::update</code> захватывает одну неизменяемую <code>FoliageExclusionMask</code>, содержащую и прямоугольники активных вырубок, и следы резидентных авторских объектов и рельефа. <strong>Один и тот же</strong> снимок используется совместно:</p>
 <ul><li><code>TerraWeaveForestScene::setLandscapeSources</code> для размещения ближней Flora. Её ограниченные асинхронные патчи инвалидируются одной ревизией источника и безопасно пересобираются после освобождения захваченных ими callback-ов.</li><li><code>HorizonSurfaceSources::allowsCanopyAt</code> для сэмплирования атласа силуэтов дальнего леса. Он подавляет кроны в замаскированных позициях во время обычного ограниченного CPU-запекания региона и переиспользует существующий асинхронный путь Horizon и путь GPU-обновления. Существующий меш рельефа и сварка высот ближнего и дальнего плана не меняются.</li></ul>
@@ -558,29 +558,29 @@ worldScene.setVegetationClearings({
 <p><strong>Оговорки:</strong> маска подавляет отдельные CPU-сэмплы крон и может оставлять пустые дальние карточки кластеров, если исключены все сэмплы в кластере; это задача на будущее по эффективности рендеринга. Потоковое обновление авторского леса или города также может вызвать повторную публикацию общей маски независимо от игровых вырубок. Пока не поддерживаются поворот фигур, вырубка по полигонам, репликация по секторам, авторитетные изменения ресурсов и коллизий, а также связь с погодой и сезонами. Повторное запекание в runtime, исключения через границы, визуальные переходы и бюджеты производительности <strong>НЕ</strong> проверены; эти тесты принадлежат другому агенту.</p>
 <h2 id="этап-26-пространственные-запросы-к-резидентным-деревьям-для-нативного-геймплея">Этап 26 — пространственные запросы к резидентным деревьям для нативного геймплея<a class="anchor" href="#этап-26-пространственные-запросы-к-резидентным-деревьям-для-нативного-геймплея" aria-label="#">#</a></h2>
 <p>TerraWeave теперь поддерживает выбор деревьев, <em>резидентных для презентации</em>, не заставляя переносить каждое декоративное дерево в ECS:</p>
-<pre><code class="lang-cpp">// TerraWeaveForestScene forest already configured / streamed.
-const auto closest=forest.nearestTreeAt(playerXcm,playerZcm,500);
-if(closest) {
-    forest.removeTree({closest-&gt;key,closest-&gt;speciesId});
-    // The authoritative game must still update lumber, collider and save.
+<pre><code class="lang-cpp"><span class="hl-com">// TerraWeaveForestScene forest already configured / streamed.</span>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> closest=forest.<span class="hl-fn">nearestTreeAt</span>(playerXcm,playerZcm,<span class="hl-num">500</span>);
+<span class="hl-kw">if</span>(closest) {
+    forest.<span class="hl-fn">removeTree</span>({closest-&gt;key,closest-&gt;speciesId});
+    <span class="hl-com">// The authoritative game must still update lumber, collider and save.</span>
 }
 
-const auto trees=forest.treesInRect(
-    {plotMinXcm,plotMinZcm,plotMaxXcm,plotMaxZcm},1024);</code></pre>
+<span class="hl-kw">const</span> <span class="hl-kw">auto</span> trees=forest.<span class="hl-fn">treesInRect</span>(
+    {plotMinXcm,plotMinZcm,plotMaxXcm,plotMaxZcm},<span class="hl-num">1024</span>);</code></pre>
 <p>Координаты выше — предоставляемые игрой знаковые <strong>мировые сантиметры</strong>.</p>
 <ul><li><code>nearestTreeAt(xCm,zCm,radiusCm=500) -&gt; optional&lt;FoliageInstance&gt;</code>: ищет по резидентным CPU-патчам размещения, используя предварительную проверку AABB и расстояние по окружности. Радиус должен быть в пределах 1..10 000 000cm; центры за пределами мира отклоняются. При равных расстояниях выбирается наименьшая стабильная <code>ForestTreeIdentity{speciesId,key}</code>, независимо от порядка обхода карты. Результат не зависит от камеры, frustum или LOD.</li><li><code>treesInRect(RectCm,size_t maxResults=1024) -&gt; vector&lt;FoliageInstance&gt;</code>: проверяет только резидентные патчи, пересекающие непустой полуоткрытый прямоугольник, исключает удалённые деревья и деревья, ожидающие возобновления, и сортирует результаты по ID вида, ключу, затем по X/Z. Бюджет результата — 1..100 000; при переполнении выбрасывается <code>std::length_error</code>, а не молча возвращается произвольно усечённый набор.</li><li>Оба используют тот же фильтр жизненного цикла <code>presentationInstance</code>, что и <code>visibleBatches()</code>; срубленные деревья невидимы для запросов; запланированное дерево скрыто до своего <code>regrowAtTick</code>, а возвращаемые растущие деревья несут текущий визуальный масштаб. Запросы никогда не переразмещают рельеф, не меняют GPU, не опрашивают внешнюю игровую физику и не используют платформенные часы.</li><li>Результаты охватывают только <strong>загруженные патчи леса</strong>. Невыгруженное дерево или дерево за пределами настроенной области резидентности нельзя найти через этот API, предназначенный только для презентации; коллизии, рубка на большом расстоянии и постоянные задания остаются ответственностью авторитетных систем геймплея и мира.</li></ul>
 <p>Общий аксессор <code>WorldScene::forestScene()</code> из этапа 24 даёт нативным проектам доступ к этим методам для миров с включённой функцией. В огромных мирах, если частые запросы станут горячей точкой, после профилирования стоит рассмотреть необязательный пространственный индекс на каждый чанк; на этом этапе «сначала функциональность» никаких заявленных бенчмарков производительности, проверок компилятором, CTest или на GPU не выполнялось.</p>
 <h2 id="этап-27-общая-фенология-крон-для-flora-и-horizon">Этап 27 — общая фенология крон для Flora и Horizon<a class="anchor" href="#этап-27-общая-фенология-крон-для-flora-и-horizon" aria-label="#">#</a></h2>
 <p><strong>Исходный код закоммичен; компиляция, CTest, скриншоты и GPU-бенчмарки намеренно отложены.</strong> Теперь движок принимает <strong>принадлежащее хосту сезонное состояние внешнего вида</strong>, а не встроенный календарь или симуляцию погоды. PHYSIS и игровые системы времени года могут передавать один и тот же небольшой POD через не зависящий от жанра мост:</p>
-<pre><code class="lang-cpp">#include &quot;engine/world/TerraWeavePhenology.h&quot;
-// A non-default fall/autumn profile; choose values in the host.
-aiverse::terraweave::CanopyPhenology autumn;
-autumn.broadleafCoverPermille = 480;
-autumn.evergreenCoverPermille = 960;
-autumn.tintRPermille = 1350;
-autumn.tintGPermille = 810;
-autumn.tintBPermille = 580;
-worldScene.setVegetationPhenology(autumn);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-pre">#include</span> <span class="hl-str">&quot;engine/world/TerraWeavePhenology.h&quot;</span>
+<span class="hl-com">// A non-default fall/autumn profile; choose values in the host.</span>
+aiverse::terraweave::<span class="hl-ty">CanopyPhenology</span> autumn;
+autumn.broadleafCoverPermille = <span class="hl-num">480</span>;
+autumn.evergreenCoverPermille = <span class="hl-num">960</span>;
+autumn.tintRPermille = <span class="hl-num">1350</span>;
+autumn.tintGPermille = <span class="hl-num">810</span>;
+autumn.tintBPermille = <span class="hl-num">580</span>;
+worldScene.<span class="hl-fn">setVegetationPhenology</span>(autumn);</code></pre>
 <p>Значения выше — <strong>пример</strong>, а не запечённый климатический прогноз. Каждое значение покрытия лежит в пределах 0..1000; RGB-множители оттенка — целые промилле 0..2000; 1000 = тождественное преобразование. <code>validateCanopyPhenology</code>, <code>canopyCoverPermille</code> и <code>tintCanopyChannel</code> — чистые хелперы C++20 в <code>engine/world/TerraWeavePhenology.h</code>. Они не подключают PHYSIS, RTS, FPS, GPU или платформенные таймеры. Климат, сезонная хронология, сохранение и репликация принадлежат вызывающей стороне.</p>
 <p>Подключаемый по выбору <code>world::WorldScene::setVegetationPhenology(state)</code> сохраняет каноническую политику, передаёт её в <code>TerraWeaveForestScene::setPhenology</code> и ставит в очередь ревизию источника Horizon для следующего <code>WorldScene::update</code>. Неизменённое состояние ничего не делает. Ближняя Flora обновляет общие <em>переопределения материалов на вид</em> в <code>ArborForestAdapter</code> без повторного размещения и без отмены асинхронных воркеров. Прототипы хвойных используют покрытие вечнозелёных; остальные формы — покрытие лиственных. Материал коры остаётся нетронутым, а материал листвы получает RGB-оттенок и необязательную смешанную альфу, когда покрытие кроны неполное. Переопределения нельзя менять после отправки отрисовок в Renderer3D, но до рендеринга этого кадра, потому что <code>ModelDraw::materials</code> хранит заимствованный указатель.</p>
 <p>Для ближних азимутальных импосторов та же политика обновляет <strong>существующие общие переопределения материалов билбордов для каждого вида</strong>; исходный атлас содержит кору и листву на одном квадрате, поэтому альфа покрытия затухает весь билборд, а не только листья. Это известное ограничение паритета LOD, <strong>а не</strong> маска билборда только для листвы и не попиксельное сезонное решение для листвы. По замыслу оно не добавляет ни атласа, ни меша, ни дополнительного прохода отрисовки. Частично прозрачные кроны могут вызывать стандартный overdraw смешанного рендеринга; это нужно измерить в будущей фазе тестирования.</p>
@@ -590,20 +590,20 @@ worldScene.setVegetationPhenology(autumn);</code></pre>
 <h2 id="этап-28-жанрово-нейтральная-подача-ветра-для-леса-arbor">Этап 28 — жанрово-нейтральная подача ветра для леса Arbor<a class="anchor" href="#этап-28-жанрово-нейтральная-подача-ветра-для-леса-arbor" aria-label="#">#</a></h2>
 <p><strong>Код закоммичен, тесты намеренно отложены.</strong> API движения ветром — это адаптер только для отображения: игры или PHYSIS передают векторы ветра и тики симуляции; TerraWeave не запускает собственную погоду, физические силы, коллизии, ECS или таймеры на платформенном времени.</p>
 <p>Новый <code>engine/world/TerraWeaveWind.h</code> определяет:</p>
-<pre><code class="lang-cpp">struct ForestWindState {
-    int32_t xCmPerSec = 0, zCmPerSec = 0;
-    uint32_t gustPermille = 350;
-    uint32_t cycleTicks = 120;
-    uint32_t maxLeanMilliDegrees = 1500;
+<pre><code class="lang-cpp"><span class="hl-kw">struct</span> <span class="hl-ty">ForestWindState</span> {
+    <span class="hl-ty">int32_t</span> xCmPerSec = <span class="hl-num">0</span>, zCmPerSec = <span class="hl-num">0</span>;
+    <span class="hl-ty">uint32_t</span> gustPermille = <span class="hl-num">350</span>;
+    <span class="hl-ty">uint32_t</span> cycleTicks = <span class="hl-num">120</span>;
+    <span class="hl-ty">uint32_t</span> maxLeanMilliDegrees = <span class="hl-num">1500</span>;
 };
-ForestLeanMilliDegrees forestTreeLean(
-    const ForestWindState&amp; state, uint64_t tick, uint64_t stableTreeKey);</code></pre>
+<span class="hl-ty">ForestLeanMilliDegrees</span> <span class="hl-fn">forestTreeLean</span>(
+    <span class="hl-kw">const</span> <span class="hl-ty">ForestWindState</span>&amp; state, <span class="hl-ty">uint64_t</span> tick, <span class="hl-ty">uint64_t</span> stableTreeKey);</code></pre>
 <p>Обе компоненты ветра задаются в знаковых <strong>мировых сантиметрах в секунду по X/Z</strong>. Состояние корректно, если горизонтальная величина не превышает 5000cm/s (50m/s), <code>gustPermille</code> лежит в 0..1000, <code>cycleTicks</code> — в 8..4096, а <code>maxLeanMilliDegrees</code> — в 0..3000. Хелпер вычисляет ограниченную целочисленную фазу треугольной волны с помощью <code>mix64(stableTreeKey)</code>; у каждого дерева стабильное смещение, поэтому лес не наклоняется синхронно целиком. Значение по умолчанию с нулевым ветром сохраняет трансформы моделей без изменений.</p>
-<pre><code class="lang-cpp">aiverse::terraweave::ForestWindState wind;
-wind.xCmPerSec = 900;   // 9 m/s toward +X
-wind.zCmPerSec = -300;
-worldScene.setVegetationWind(wind);
-worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">ForestWindState</span> wind;
+wind.xCmPerSec = <span class="hl-num">900</span>;   <span class="hl-com">// 9 m/s toward +X</span>
+wind.zCmPerSec = -<span class="hl-num">300</span>;
+worldScene.<span class="hl-fn">setVegetationWind</span>(wind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);</code></pre>
 <p><code>WorldScene</code> передаёт эти значения своему необязательному <code>TerraWeaveForestScene</code>; нативные проекты, использующие лес отдельно, могут вызывать <code>forest.setWind(wind)</code> и <code>forest.setPresentationTick(tick)</code> напрямую. Для подключаемого рендерера <code>ArborForestAdapter</code> вычисляет небольшой наклон в мировом пространстве относительно основания модели, до локального поворота дерева по рысканию, а затем использует существующий <code>Renderer3D::drawModel</code>. Стабильная идентичность деревьев, сантиметры с перенесённым началом координат, LOD по видам, общие меши и атлас билбордов остаются без изменений. Фазы и углы для каждого дерева вычисляются на стороне отображения; изменения ветра/тика <strong>не</strong> вызывают повторную расстановку, перезапуск воркеров или принудительную загрузку атласа Horizon.</p>
 <p><strong>Важные ограничения:</strong> это дешёвое приближение раскачивания от корня/всего дерева, а не скиннинг ветвей/листьев и не деформация ветром в вершинном шейдере. Дальний Horizon HLOD остаётся статичным (перемещать лесные атласы на 12km каждый тик было бы чрезмерно); поэтому самая дальняя линия леса не качается по отдельным деревьям. Импосторы-билборды наклоняются одним квадом. Итоговый float-трансформ косметический и не обязан побитово совпадать на разных бэкендах рендеринга; авторитетная физика или логика рубки никогда не должны его использовать. PHYSIS может отображать своё поле скоростей в эту POD-структуру из хоста игры-владельца, не связывая движок TerraWeave с PHYSIS.</p>
 <p><strong>Производительность и корректность:</strong> новой геометрии моделей и вызовов отрисовки не добавляется; однако при ненулевом ветре для каждого отправленного дерева выполняется математика трансформов на CPU, поэтому реальную стоимость кадра и визуальное качество ещё предстоит проверить на отдельно запланированном этапе бенчмарков и GPU-тестов. В будущем необязательный шейдер вершинной деформации мог бы сохранить неподвижные корни и при этом изгибать кроны естественнее. На этом этапе «сначала функции» не запускались ни компилятор, ни GPU/CTest.</p>
@@ -624,15 +624,15 @@ worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
 <p>Не добавляются ни ECS-сущности деревьев, ни анимационные клипы, ни матрицы скиннинга, ни изменение GPU-меша, ни варианты шейдеров, ни перестройка атласов, ни дополнительные проходы отрисовки. Исходная геометрия меша Arbor, <code>TreeProfile</code>, упрощение LOD ветвей и канонические процедурные семена деревьев остаются неизменными. Уровни по дальности обзора ослабляют дополнительное раскачивание ветвей (High 100%, Medium 65%, Low 25%, Impostor 0%), чтобы ограничить разрыв при переходе от ближней модели к билборду. Дальний статистический Horizon, как и было описано, остаётся статичным; он намеренно НЕ перестраивается на каждый тик ветра.</p>
 <p>Закрытая временная арена поз — это <code>std::deque&lt;std::vector&lt;render::mat4&gt;&gt;</code>, чтобы ссылки в <code>ModelDraw::nodeWorld</code> оставались стабильными в течение вызова forEachDraw; арена очищается при следующем forEachDraw. <code>Renderer3D::drawModel</code> читает трансформы узлов синхронно и копирует их в элементы рендеринга. <strong>Нативные колбэки, собирающие ModelDraw, могут использовать свои указатели nodeWorld только до следующего вызова forEachDraw</strong> и не должны использовать адаптер леса одновременно из нескольких потоков. <code>ArborForestAdapter::setBranchPoseBudgetBytes(bytes)</code> (пробрасывается через <code>TerraWeaveForestScene</code>) принимает 0..8MiB, по умолчанию <strong>4MiB</strong>. Отрисовка, чей снимок матриц узлов превысил бы оставшийся бюджет, использует вместо этого раскачивание только от корня. Бюджет относится к временным матрицам на CPU, а не к новой резидентной памяти GPU.</p>
 <p>Пример (в потоке хоста/обновления, владеющем сценой):</p>
-<pre><code class="lang-cpp">if(auto* forest = worldScene.forestScene()) {
-    forest-&gt;setBranchPoseBudgetBytes(4u * 1024u * 1024u);
+<pre><code class="lang-cpp"><span class="hl-kw">if</span>(<span class="hl-kw">auto</span>* forest = worldScene.<span class="hl-fn">forestScene</span>()) {
+    forest-&gt;<span class="hl-fn">setBranchPoseBudgetBytes</span>(<span class="hl-num">4u</span> * <span class="hl-num">1024u</span> * <span class="hl-num">1024u</span>);
 }
-aiverse::terraweave::ForestWindState wind;
-wind.xCmPerSec=700;
-wind.gustPermille=450;
-wind.branchFlexPermille=850; // optional, 0 = whole-tree-only
-worldScene.setVegetationWind(wind);
-worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
+aiverse::terraweave::<span class="hl-ty">ForestWindState</span> wind;
+wind.xCmPerSec=<span class="hl-num">700</span>;
+wind.gustPermille=<span class="hl-num">450</span>;
+wind.branchFlexPermille=<span class="hl-num">850</span>; <span class="hl-com">// optional, 0 = whole-tree-only</span>
+worldScene.<span class="hl-fn">setVegetationWind</span>(wind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);</code></pre>
 <p>Реальный решатель PHYSIS может передавать компоненты скорости по мировым X/Z; этот мост не требует заголовков PHYSIS, не меняет коллизии/навмеш/авторитетную физику и не помещает ветер в компонент ECS. <code>WorldScene</code> по-прежнему пробрасывает то же проверенное состояние ветра и тик, поэтому нативный код использует существующие публичные методы.</p>
 <p><strong>Ограничения/долг по QA:</strong> ветви жёстко поворачиваются в сочленениях, а не изгибаются непрерывно как упругая кривая со скиннингом. При сильном ветре в тонких сочленениях могут появляться зазоры. Исходный код использует целочисленные хэшированные фазы ветра, но в отображении рендерера переводит градусы во float-матрицы; побитовый детерминизм на разных GPU не обещается. Очень плотные ближние леса могут упереться в бюджет поз CPU и переключиться на движение только от корня. Колбэки-сборщики исходного <code>forEachDraw</code> должны соблюдать время жизни заимствованных поз. Ни CMake, ни CTest, ни GPU-скриншоты, ни покадровый бенчмарк CPU, ни кроссплатформенная проверка рендеринга не выполнялись. Отдельный агент тестирования должен проверить непрерывность иерархии/опорных точек, сочетание сезона и ветра, переходы LOD, откат при исчерпании бюджета, указатели материалов/отрисовок и нативную интеграцию с PHYSIS, прежде чем помечать функцию готовой к продакшену.</p>
 <h2 id="этап-31-общий-gpu-ветер-крон-для-ближнего-arbor-и-horizon">Этап 31 — общий GPU-ветер крон для ближнего Arbor и Horizon<a class="anchor" href="#этап-31-общий-gpu-ветер-крон-для-ближнего-arbor-и-horizon" aria-label="#">#</a></h2>
@@ -648,33 +648,33 @@ worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
 <p><code>makeHorizonModel</code> сохраняет <strong>одну объединённую модель</strong>, исходный примитив рельефа и общий примитив/атлас лесных кластеров. Альфа вершин лесных билбордов теперь кодирует вес 0 у основания и 1 на вершине кроны; материал леса игнорирует альфу вершин при затенении фрагментов, поэтому она не может случайно стереть половину леса. Только его слот материала кроны 1 подключает тот же граф. <code>TerraWeaveHorizonScene::setWind</code> и <code>setPresentationTick</code> принимают ту же POD-структуру/тик, что и ближний Arbor. В <code>submit</code> материалы текущих и кроссфейдящихся лесных регионов получают общий граф и сдержанную <strong>30% силу GPU-ветра</strong>. Материал рельефа и вершины шва ближнего/дальнего не меняются. Статические архивы TWH8 и частичные загрузки атласа/VB остаются нетронутыми; покадровое движение — это вершинное смещение на GPU, а не перерисовка атласа. Ревизии снимка источника <strong>не</strong> увеличиваются только из-за изменения ветра.</p>
 <p><code>WorldScene::setVegetationWind</code> и <code>setVegetationPresentationTick</code> пробрасывают политику/время <strong>обоим</strong> — ближнему ForestScene и дальнему HorizonScene, сохраняя поведение с отключёнными (null) необязательными модулями.</p>
 <p><strong>Пример API:</strong></p>
-<pre><code class="lang-cpp">aiverse::terraweave::ForestWindState wind;
-wind.xCmPerSec = 650;
-wind.zCmPerSec = -250;
-wind.branchFlexPermille = 700; // 0 restores root-only sway
-worldScene.setVegetationWind(wind);
-worldScene.setVegetationPresentationTick(gameplayTick);</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">ForestWindState</span> wind;
+wind.xCmPerSec = <span class="hl-num">650</span>;
+wind.zCmPerSec = -<span class="hl-num">250</span>;
+wind.branchFlexPermille = <span class="hl-num">700</span>; <span class="hl-com">// 0 restores root-only sway</span>
+worldScene.<span class="hl-fn">setVegetationWind</span>(wind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);</code></pre>
 <p><strong>Границы/ограничения:</strong> это <em>процедурное, только визуальное</em> трепетание крон, а не физическая симуляция листьев/ветвей; ветер влияет на позиции вершин в шейдере, но не на коллизии, навмеш, авторитетные позиции деревьев или игровой ECS. Эффект намеренно сохраняет существующие трансформы корня/ветвей и лишь добавляет небольшое дополнительное смещение вершин. Пространственные фазы — детерминированные функции тика хоста и координат в пространстве модели/мировых координат с перенесённым началом, но синусы и float-математика на GPU не обещают побитового совпадения на разных устройствах. Модели с ограниченными графами теперь по-прежнему участвуют в отсечении узлов/LOD; консервативность нужно подтвердить скриншотами при сильном ветре. Сырой <code>ModelDraw::vertexParameters</code> несовместим с одновременным использованием упакованного слота <code>Inst.anim</code> для запечённых клипов или лайтмапов. Движение дальнего леса — сдвиг кроны целой карточкой, а не симуляция отдельных дальних ветвей. Изменения конвейера/материалов рендерера, тени, интеграция с PHYSIS, переходы на больших площадях и тайминги CPU/GPU <strong>ещё не проверены</strong>.</p>
 <p><strong>Тесты намеренно отложены:</strong> независимый агент тестирования должен обновить ожидания для импосторов этапа 29, скомпилировать GCC/Clang и шейдерные конвейеры бэкендов, проверить данные U0/цвета вершин на Metal, Vulkan и GL, протестировать нулевой и максимальный ветер, сезон + GPU-трепетание, совместимость кроссфейда, границы вершин и отсечение, а также измерить число конвейеров материалов/стоимость кадра. Не считайте коммиты исходников пройденными тестами.</p>
 <h2 id="этап-32-пространственная-сетка-ветра-и-переход-от-ближнего-к-horizon">Этап 32 — пространственная сетка ветра и переход от ближнего к Horizon<a class="anchor" href="#этап-32-пространственная-сетка-ветра-и-переход-от-ближнего-к-horizon" aria-label="#">#</a></h2>
 <p><strong>Исходный код функции закоммичен, сборка и тесты отложены</strong> согласно приоритету владельца проекта «сначала функции».</p>
 <p>Нативные игры/PHYSIS могут публиковать один ограниченный, <strong>неизменяемый пространственный снимок ветра</strong> для ближних деревьев Arbor и дальнего Horizon, не связывая PHYSIS с рендерером леса. Новый <code>engine/world/TerraWeaveWindField.h</code> определяет <code>ForestWindField</code> как регулярную решётку по X/Z из <code>ForestWindSample {xCmPerSec,zCmPerSec,gustPermille}</code>, всё в знаковых <strong>мировых сантиметрах</strong> и cm/sec. Вызывающая сторона отвечает за выборку из своего реального поля ветра/погоды PHYSIS; TerraWeave выполняет только интерполяцию на стороне рендеринга:</p>
-<pre><code class="lang-cpp">using namespace aiverse::terraweave;
-auto mutableField=std::make_shared&lt;ForestWindField&gt;();
-mutableField-&gt;originXcm=-12800;
-mutableField-&gt;originZcm=-12800;
-mutableField-&gt;spacingCm=6400;
-mutableField-&gt;columns=5;
-mutableField-&gt;rows=5;
-mutableField-&gt;samples.assign(25,{800,0,400});
-// Optionally fill specific nodes with different PHYSIS velocities.
-mutableField-&gt;samples[12]={-100,550,750};
-mutableField-&gt;validate(); // reject invalid geometry/oversized winds
-std::shared_ptr&lt;const ForestWindField&gt; published=mutableField;
-worldScene.setVegetationWindField(published);
-worldScene.setVegetationPresentationTick(gameplayTick);
-// Publish a NEW immutable object when the weather field changes:
-worldScene.setVegetationWindField({});</code></pre>
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+<span class="hl-kw">auto</span> mutableField=<span class="hl-ty">std</span>::make_shared&lt;<span class="hl-ty">ForestWindField</span>&gt;();
+mutableField-&gt;originXcm=-<span class="hl-num">12800</span>;
+mutableField-&gt;originZcm=-<span class="hl-num">12800</span>;
+mutableField-&gt;spacingCm=<span class="hl-num">6400</span>;
+mutableField-&gt;columns=<span class="hl-num">5</span>;
+mutableField-&gt;rows=<span class="hl-num">5</span>;
+mutableField-&gt;samples.<span class="hl-fn">assign</span>(<span class="hl-num">25</span>,{<span class="hl-num">800</span>,<span class="hl-num">0</span>,<span class="hl-num">400</span>});
+<span class="hl-com">// Optionally fill specific nodes with different PHYSIS velocities.</span>
+mutableField-&gt;samples[<span class="hl-num">12</span>]={-<span class="hl-num">100</span>,<span class="hl-num">550</span>,<span class="hl-num">750</span>};
+mutableField-&gt;<span class="hl-fn">validate</span>(); <span class="hl-com">// reject invalid geometry/oversized winds</span>
+<span class="hl-ty">std</span>::<span class="hl-ty">shared_ptr</span>&lt;<span class="hl-kw">const</span> <span class="hl-ty">ForestWindField</span>&gt; published=mutableField;
+worldScene.<span class="hl-fn">setVegetationWindField</span>(published);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);
+<span class="hl-com">// Publish a NEW immutable object when the weather field changes:</span>
+worldScene.<span class="hl-fn">setVegetationWindField</span>({});</code></pre>
 <p><strong>Не изменяйте</strong> поле после публикации, даже если ещё существует изменяемый псевдоним shared pointer. Для каждого обновления создавайте и публикуйте новый снимок. <code>WorldScene::vegetationWindField()</code> возвращает активный константный общий снимок (или null). Нативные проекты, напрямую использующие лес/Horizon, могут вызывать их методы <code>setWindField(shared_ptr&lt;const ForestWindField&gt;)</code>. Равномерный запасной вариант по-прежнему берётся из существующего <code>ForestWindState</code> (<code>setVegetationWind</code>) и задаёт авторитетный период анимации ветра, силу/изгиб и пределы. Сетка переопределяет только локальные скорости ветра по X/Z и интенсивность порывов.</p>
 <h3 id="семантика-выборки-и-перехода">Семантика выборки и перехода<a class="anchor" href="#семантика-выборки-и-перехода" aria-label="#">#</a></h3>
 <ul><li>Пределы: либо пустое поле/поле по умолчанию, либо 2..64 узла по каждой оси, не более <strong>4096</strong> узловых выборок; шаг 100..10,000,000cm; координаты всех узлов в пределах <code>+/-kWorldLimitCm</code>. Каждый узел проверяется с помощью <code>validateForestWind</code> (горизонтальная величина &lt;=5000cm/s; порыв 0..1000). Некорректный ввод отклоняется до замены активного снимка мира.</li><li><code>sampleForestWindField(field,xCm,zCm,fallback)</code> использует билинейную интерполяцию Q16 в абсолютных знаковых мировых сантиметрах, включая отрицательные позиции. Вне решётки возвращается <code>fallback</code>; <strong>внутреннее растушёвывание</strong> на половину шага узлов плавно переводит граничные значения обратно к запасному варианту, чтобы избежать резких скачков направления/скорости на краю поля. Нет шейдерной текстуры, буфера RHI, глобального изменяемого состояния или зависимости от реального времени.</li><li><code>blendForestWind(local,macro,macroPermille)</code> — ограниченная целочисленная интерполяция скорости и порыва. Изгиб ветвей, период и максимальный наклон остаются теми, что у запасного источника.</li><li>Ближний <code>ArborForestAdapter</code> выбирает значения из неизменяемого поля в <strong>стабильной мировой позиции каждого резидентного дерева</strong>. Его геометрический наклон от корня, иерархические CPU-позы ветвей и GPU-смещение листьев этапа 31 используют один и тот же эффективный ветер для дерева. Для согласованности вблизи дальних уровней рендеринга ветер непрерывно смешивается с <strong>макро-выборкой в позиции наблюдателя</strong> между <code>FloraView.mediumRangeCm</code> и <code>FloraView.cullRangeCm</code> (с использованием консервативного чебышёвского расстояния по X/Z и ограниченной промилле-интерполяции). Сцена леса настраивает эти границы один раз; неизменённая конфигурация/без поля сохраняет прежний путь выполнения.</li><li>Дальний <code>TerraWeaveHorizonScene</code> берёт одну макро-выборку ветра в пространстве наблюдателя в <code>submit</code>, общую для отрисовок активного и уходящего регионов во время кроссфейда. Это предотвращает разрыв вектора ветра при смене региона Horizon и сохраняет батчинг геометрии/атласа HLOD. Отдельный вектор ветра PHYSIS для каждого статистического дальнего лесного кластера он <strong>пока</strong> не формирует. Будущая необязательная грубая GPU-сетка ветра или запечённый вектор на кластер могут улучшить микровариацию на километровом масштабе, если это оправдано.</li><li><code>WorldScene::setVegetationWindField</code> передаёт <strong>один и тот же</strong> <code>shared_ptr&lt;const ForestWindField&gt;</code> своим необязательным модулям леса и Horizon, без инвалидации воркеров рельефа и без изменений архива TWH8. Повторная передача того же указателя ничего не делает; передача null очищает поле, так что остаётся только равномерный ветер.</li></ul>
@@ -687,16 +687,16 @@ worldScene.setVegetationWindField({});</code></pre>
 <p>Во время выполнения собственный граф <strong>GLSL + Metal</strong> <code>horizonSpatialWindGraph()</code> использует те же унаследованные данные экземпляра <code>I.anim</code>, что и граф кроны этапа 31. Один общий макро-вектор ветра (из существующего <code>ForestWindField</code>, выбранного в позиции наблюдателя, или из запасного равномерного ветра) поворачивается не более чем на <strong>30 градусов</strong> для каждого кластера, масштабируется между <strong>0.75 и 1.25</strong> и получает согласованное, но зависящее от кластера смещение фазы. Точные коэффициенты для каждого кластера зафиксированы запечёнными RGB-метаданными вершин и никогда не требуют новой работы над атласом на CPU при смене тика ветра. Корни остаются на месте, поскольку альфа внизу карточки по-прежнему равна нулю. Направление, амплитуда и фаза меняются <em>плавно</em> между соседними кластерами в мировом пространстве, а не скачут между тайлами камеры.</p>
 <p><code>makeHorizonModel</code> записывает эти метаданные только в вершины дальнего леса, а не в авторский/грубый рельеф. Материал дальнего леса уже имеет <code>vertexColors=false</code>, что гарантирует, что эти упакованные значения RGB8 не будут неожиданно тонировать листву или менять непрозрачность. Ближний авторский рельеф, отсечение, сварка высот Q16, пиксели атласа крон и сериализованные данные TWH8 не менялись.</p>
 <h3 id="нативный-api-и-переключатель-качества">Нативный API и переключатель качества<a class="anchor" href="#нативный-api-и-переключатель-качества" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">// Already supported PHYSIS/game wind setup:
-worldScene.setVegetationWind(baseWind);
-worldScene.setVegetationWindField(immutableSpatialWind);
-worldScene.setVegetationPresentationTick(gameplayTick);
+<pre><code class="lang-cpp"><span class="hl-com">// Already supported PHYSIS/game wind setup:</span>
+worldScene.<span class="hl-fn">setVegetationWind</span>(baseWind);
+worldScene.<span class="hl-fn">setVegetationWindField</span>(immutableSpatialWind);
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);
 
-// New optional comparison/quality switch. True by default:
-worldScene.setVegetationHorizonSpatialWind(true);
+<span class="hl-com">// New optional comparison/quality switch. True by default:</span>
+worldScene.<span class="hl-fn">setVegetationHorizonSpatialWind</span>(<span class="hl-kw">true</span>);
 
-// Return to Stage 31&#x27;s identical macro wind for every far card:
-worldScene.setVegetationHorizonSpatialWind(false);</code></pre>
+<span class="hl-com">// Return to Stage 31&#x27;s identical macro wind for every far card:</span>
+worldScene.<span class="hl-fn">setVegetationHorizonSpatialWind</span>(<span class="hl-kw">false</span>);</code></pre>
 <p>Отдельные <code>TerraWeaveHorizonScene::setSpatialWindVariation(bool)</code> и <code>spatialWindVariation()</code> предоставляют тот же переключатель, а <code>WorldScene::vegetationHorizonSpatialWind()</code> возвращает текущий выбор. Настройка относится только к отображению и должна задаваться в потоке-владельце рендеринга/обновления до вызова <code>submit()</code>; переключение меняет только <em>выбор общей программы ShaderGraph</em>, а не меш, атлас, запекание на CPU или ревизию источника. Первое использование варианта может повлечь существующие затраты рендерера на прогрев конвейера, но не перекомпиляцию шейдера на каждый тик симуляции. По умолчанию функция включена; если задан нулевой ветер, ни старый, ни новый граф ветра не активны.</p>
 <p><strong>Важное разграничение области:</strong> поле этапа 32 выбирается точно в <em>ближнем отдельном дереве</em> и в <em>наблюдателе Horizon</em>. Независимая <strong>вариация дальних кластеров этапа 33 процедурная</strong> и применяется к этому выбранному макро-вектору. Это <strong>не</strong> прямая выборка исходного поля PHYSIS в каждом дальнем кластере, поэтому она предназначена оживить линию леса на 1–12 km, а не симулировать точные погодные границы километрового масштаба или траектории торнадо. Точные поля PHYSIS для каждого кластера потребовали бы динамического обновления метаданных вершин или дополнительного ограниченного GPU-ресурса сетки ветра — и то и другое выходит за рамки этого режима без дополнительных ресурсов.</p>
 <p><strong>Ограниченный визуальный эффект:</strong> базовая сила GPU-смещения кроны в Horizon остаётся 30% от графа ближних деревьев; амплитуда на кластер не превышает 1.25, а множитель синуса/порыва графа ограничен. Текущее <code>ModelDraw::maxVertexOffsetMetres = 0.65f</code> остаётся консервативным для проверенных пределов ветра хоста. Стоимость на GPU — дополнительная ALU-работа вершинного шейдера и общий вариант шейдера, а не дополнительная отрисовка или материал на кластер. Реальная производительность, границы пирамиды видимости, внешний вид при движущейся камере, компиляция шейдеров GLSL/Metal и точный батчинг материалов <strong>ещё не тестировались</strong>.</p>
@@ -704,17 +704,17 @@ worldScene.setVegetationHorizonSpatialWind(false);</code></pre>
 <h2 id="этап-34-точный-ветер-physis-для-каждого-дальнего-кластера-horizon">Этап 34 — точный ветер PHYSIS для каждого дальнего кластера Horizon<a class="anchor" href="#этап-34-точный-ветер-physis-для-каждого-дальнего-кластера-horizon" aria-label="#">#</a></h2>
 <p><strong>Функциональность закоммичена; компилятор, CTest и GPU-проверка намеренно отложены.</strong> Этап 32 предоставляет небольшое неизменяемое <code>ForestWindField</code>, источником которого являются PHYSIS/геймплей. Этап 33 дал дальним кластерам Horizon плавную <em>процедурную</em> подвариацию вокруг одного макро-ветра, но не мог воспроизвести противоположные ветры в разных дальних областях. Этап 34 добавляет подключаемую <strong>прямую выборку текущего поля для каждого кластера</strong> в исходном центре кластера в мировых сантиметрах, закодированную в существующий поток цветов вершин леса Horizon.</p>
 <h3 id="публичный-нативный-интерфейс">Публичный нативный интерфейс<a class="anchor" href="#публичный-нативный-интерфейс" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">auto field = std::make_shared&lt;terraweave::ForestWindField&gt;();
-// Host fills the validated &lt;=64x64 node field from PHYSIS.
-field-&gt;validate();
-worldScene.setVegetationWindField(field); // shared near + far immutable snapshot
-worldScene.setVegetationHorizonExactWindField(true); // default: true
-worldScene.setVegetationPresentationTick(gameplayTick);
+<pre><code class="lang-cpp"><span class="hl-kw">auto</span> field = <span class="hl-ty">std</span>::make_shared&lt;terraweave::<span class="hl-ty">ForestWindField</span>&gt;();
+<span class="hl-com">// Host fills the validated &lt;=64x64 node field from PHYSIS.</span>
+field-&gt;<span class="hl-fn">validate</span>();
+worldScene.<span class="hl-fn">setVegetationWindField</span>(field); <span class="hl-com">// shared near + far immutable snapshot</span>
+worldScene.<span class="hl-fn">setVegetationHorizonExactWindField</span>(<span class="hl-kw">true</span>); <span class="hl-com">// default: true</span>
+worldScene.<span class="hl-fn">setVegetationPresentationTick</span>(gameplayTick);
 
-// Revert to the original procedural 2.4km pattern in distant forests:
-worldScene.setVegetationHorizonExactWindField(false);
-// Or remove the exact PHYSIS field entirely, keeping the uniform fallback:
-worldScene.setVegetationWindField({});</code></pre>
+<span class="hl-com">// Revert to the original procedural 2.4km pattern in distant forests:</span>
+worldScene.<span class="hl-fn">setVegetationHorizonExactWindField</span>(<span class="hl-kw">false</span>);
+<span class="hl-com">// Or remove the exact PHYSIS field entirely, keeping the uniform fallback:</span>
+worldScene.<span class="hl-fn">setVegetationWindField</span>({});</code></pre>
 <p><code>TerraWeaveHorizonScene::setExactSpatialWindField(bool)</code>, <code>exactSpatialWindField()</code> и соответствующий геттер <code>WorldScene</code> дают нативным играм управление этим режимом <strong>только для отображения</strong>. <code>WorldScene::setVegetationHorizonSpatialWind(bool)</code> остаётся переключателем качества этапа 33 для <em>процедурной</em> вариации, когда точное поле не активно; режим точного поля имеет приоритет, если передано ненулевое поле. <code>ForestWindState</code> по-прежнему определяет максимальный наклон, изгиб ветвей и период тиков; точные выбранные скорость по X/Z и порыв берутся из <code>sampleForestWindField</code> в позиции каждого дальнего кластера. В рендерер не вносятся ни заголовки игры/PHYSIS, ни ECS-сущности, ни физическое состояние, ни симулируемая погода.</p>
 <h3 id="поток-данных-gpu-формат-и-бюджеты">Поток данных GPU, формат и бюджеты<a class="anchor" href="#поток-данных-gpu-формат-и-бюджеты" aria-label="#">#</a></h3>
 <ul><li>При первой публикации Horizon на GPU <code>captureHorizonForestWindOverlay</code> копирует только существующий непрерывный <strong>диапазон вершин лесных карточек</strong> (не рельеф и не всю модель) и сохраняет компактный список точных мировых координат кластеров. Обе скрещённые карточки кластера используют одну выборку ветра; 8 вершин на кластер несут один и тот же RGB ветра, но сохраняют A=0 внизу и 255 наверху. Захват происходит до того, как <code>uploadModel</code> отбрасывает данные меша на CPU. Эта теневая копия на CPU перемещается вместе с активными, уходящими при кроссфейде и закэшированными GPU-моделями в <code>HorizonGpuRegion::forestWind</code>.</li><li><code>horizonFieldWindVertexColor</code> упаковывает <strong>знаковую скорость по X/Z</strong> (каждая -5000..+5000 cm/s) в RG8 с центрированным 8-битным квантованием, при котором <strong>нулевой ветер кодируется точно как байт 128</strong>; B8 хранит порыв 0..1000 промилле; A8 остаётся весом изгиба от корня к кроне. Значения берутся из реальных выборок PHYSIS/сетки в центре каждого кластера с разрешением примерно <strong>40 cm/s на канал</strong>. Это точность пространственно выбранного поля, <strong>а не точность без потерь</strong>.</li><li><code>horizonExactFieldWindGraph()</code> — одна общая собственная программа <code>vertexOffset</code> на GLSL/MSL. В отличие от псевдовариации этапа 33, она восстанавливает вектор скорости из RG8 и использует локальный порыв из B8 с фазой по тику вызывающего/низкочастотной вариацией; шейдер использует существующие силу и фазу жёсткого <code>U0 Inst.anim</code>, без нового uniform-буфера, текстуры, прохода, атласа или шейдера на кластер. Рельеф сохраняет слот материала 0 без изменений; эту программу использует только единственный слот материала леса 1.</li><li><code>TerraWeaveHorizonScene::setWindField</code> или изменение запасного ветра создаёт <strong>ревизию поля ветра для отображения</strong>, отдельную от ревизии источника рельефа/биомов Horizon. Следующий <code>update(device,observer)</code> в потоке-владельце RHI вызывает <code>refreshForestWindGpu</code>, создавая кандидат обновления только цветов и фиксируя его <strong>одной непрерывной записью <code>gfx::Device::updateBuffer</code> на каждую видимую GPU-модель</strong> тогда и только тогда, когда значения RGB действительно изменились. За одно обновление по активным и уходящим регионам отправляется не более <strong>2 MiB байт вершин лесных карточек</strong>, и хранится не более <strong>2 MiB теневой копии леса на CPU на регион</strong>. Нет перегенерации атласа на CPU, правки вершин рельефа, изменения топологии кластеров, записи архива TWH8 и загрузок по тикам погоды.</li><li>Обновление GPU проверяет <code>canUpdateSharedBuffers()</code>, требует не пулового независимого VB/IB модели и сохраняет старые цвета, когда обновления нельзя безопасно выполнить. Незавершённое обновление не переключается на шейдер точного поля: используется существующее безопасное отображение макро-ветра, пока не завершится полное согласованное обновление региона. <code>appliedRevision</code> каждого региона переживает смену владения при LRU/кроссфейде, а устаревшие закэшированные регионы обновляются при следующем обновлении у владельца рендеринга после принятия. Отключение точного режима или очистка пространственного поля <strong>восстанавливает процедурный RGB этапа 33</strong> через тот же ограниченный путь GPU-патча.</li><li><code>HorizonRuntimeStats</code> дополняется накопительными <code>windOverlayPatchWrites</code>, <code>windOverlayPatchBytes</code> и текущими индикаторами <code>windOverlayPending</code> / <code>exactWindFieldActive</code>. Пропущенное обновление не сообщается как успешное.</li></ul>
@@ -725,11 +725,11 @@ worldScene.setVegetationWindField({});</code></pre>
 <p><strong>Функциональный исходный код закоммичен; компиляция, CTest и выполнение на GPU отложены по просьбе.</strong> Этап 34 ввёл точные выборки пространственного ветра для каждого кластера из неизменяемого <code>ForestWindField</code> PHYSIS/игры хоста, но передавал в RHI <strong>весь</strong> диапазон вершин лесных карточек, как только менялся хотя бы один выбранный кластер. Этап 35 сохраняет те же публичные API мира и Horizon и тот же GPU-формат, заменяя это грубое обновление ограниченным планировщиком <em>разреженных изменённых участков</em>.</p>
 <h3 id="выбор-изменённых-кластеров-и-обновления">Выбор изменённых кластеров и обновления<a class="anchor" href="#выбор-изменённых-кластеров-и-обновления" aria-label="#">#</a></h3>
 <p><code>engine/render/TerraWeaveHorizonWindPatch.h</code> теперь предоставляет чистый C++-планировщик:</p>
-<pre><code class="lang-cpp">std::optional&lt;HorizonForestWindUploadPlan&gt; planHorizonForestWindUpload(
-    std::span&lt;const render::ModelVertex&gt; oldVertices,
-    std::span&lt;const render::ModelVertex&gt; newVertices,
-    size_t maxRanges = 8,
-    uint32_t fullFallbackPercent = 70);</code></pre>
+<pre><code class="lang-cpp"><span class="hl-ty">std</span>::<span class="hl-ty">optional</span>&lt;<span class="hl-ty">HorizonForestWindUploadPlan</span>&gt; <span class="hl-fn">planHorizonForestWindUpload</span>(
+    <span class="hl-ty">std</span>::<span class="hl-ty">span</span>&lt;<span class="hl-kw">const</span> render::<span class="hl-ty">ModelVertex</span>&gt; oldVertices,
+    <span class="hl-ty">std</span>::<span class="hl-ty">span</span>&lt;<span class="hl-kw">const</span> render::<span class="hl-ty">ModelVertex</span>&gt; newVertices,
+    <span class="hl-ty">size_t</span> maxRanges = <span class="hl-num">8</span>,
+    <span class="hl-ty">uint32_t</span> fullFallbackPercent = <span class="hl-num">70</span>);</code></pre>
 <p>Он сравнивает только <strong>атрибуты цвета вершин</strong> каждого восьмивершинного лесного кластера (две скрещённые карточки), поскольку обновления погоды никогда не меняют позицию, нормаль, UV, индексы или назначение материалов. Соседние изменённые кластеры объединяются в один непрерывный <code>HorizonForestWindUploadRange{firstVertex,vertexCount}</code>. При не более чем восьми отдельных изменённых участках и менее чем 70% изменённых кластеров в существующий <code>render::Model::vb</code> через <code>gfx::Device::updateBuffer</code> передаются только эти диапазоны; нет выделения памяти на GPU, перестановки шейдеров или дополнительного прохода рендеринга.</p>
 <p>Если изменено больше восьми несмежных участков или не менее 70% кластеров, планировщик <strong>откатывается к одной полной загрузке лесного хвоста</strong>. Максимальная резидентная теневая копия на CPU по-прежнему 2 MiB на модель, а совокупный бюджет обновлений у владельца рендеринга остаётся <strong>2 MiB на <code>update()</code> для активного и уходящего при кроссфейде регионов вместе</strong>. Если <em>выбранный</em> разреженный или полный план превысил бы оставшийся бюджет или <code>canUpdateSharedBuffers()</code> равно false, все записи для этой модели откладываются и сохраняется прежний безопасный режим рендеринга. Ни одна запись в RHI не происходит, пока не проверен каждый выбранный диапазон; копия на CPU и ревизия поля фиксируются только после выдачи запланированной последовательности записей. Как и на этапе 34, <code>updateBuffer</code> бэкенда возвращает void, поэтому сбой устройства посреди последовательности здесь обнаружить нельзя; по-прежнему требуется восстановление после потери устройства на уровне движка.</p>
 <p><strong>Важное следствие:</strong> небольшую изменённую область теперь можно обновить, даже если полный лесной хвост <strong>больше оставшегося бюджета загрузок кадра</strong>. Например, после того как активный регион израсходовал часть бюджета, уходящий регион с одним изменённым кластером всё ещё может быть обновлён одной записью на 8 вершин вместо многократного откладывания. Планировщик сообщает пустой план, если новые квантованные значения RGB8 совпадают с существующими; в этом случае применённая ревизия поля погоды продвигается при <strong>нулевом</strong> GPU-трафике. Поэтому снимок поля может измениться без визуальных затрат и затрат RHI, если все выборки кластеров квантуются одинаково.</p>
@@ -739,12 +739,12 @@ worldScene.setVegetationWindField({});</code></pre>
 <p><strong>Проверка намеренно отложена:</strong> только коммиты исходников и их просмотр; новый планировщик и код RHI не компилировались, CTest не запускался, никаких скриншотов/данных производительности бэкендов Metal/Vulkan/GL или интеграции с PHYSIS не получено. Последующий тестировщик должен проверить один изменённый кластер, соседние кластеры, восемь против девяти несмежных участков, порог 70%, отрицательные мировые координаты, одинаковые квантованные выборки, снижение пропускной способности, совместные бюджеты активного/уходящего регионов, отключённые обновления буферов, повторную активацию старых закэшированных GPU-регионов и корректность полного отката перед выпуском. Устаревшие тесты импосторов этапа 29 также остаются в ожидании.</p>
 <h2 id="этап-36-настраиваемая-политика-качества-загрузки-ветра-дальнего-horizon">Этап 36 — настраиваемая политика качества загрузки ветра дальнего Horizon<a class="anchor" href="#этап-36-настраиваемая-политика-качества-загрузки-ветра-дальнего-horizon" aria-label="#">#</a></h2>
 <p><code>engine/world/TerraWeaveWindUploadPolicy.h</code> предоставляет небольшую жанрово-нейтральную <code>HorizonWindUploadPolicy</code> для игр на C++. Значения по умолчанию сохраняют поведение этапа 35: <code>maxBytesPerUpdate=2*1024*1024</code> (один совместный бюджет пропускной способности RHI для активного и уходящего при кроссфейде GPU-регионов), <code>maxSparseRanges=8</code> и <code>fullFallbackPercent=70</code>. Задавайте её из потока владельца/обновления рендеринга WorldScene или напрямую в необязательном <code>TerraWeaveHorizonScene</code>:</p>
-<pre><code class="lang-cpp">aiverse::terraweave::HorizonWindUploadPolicy policy;
-policy.maxBytesPerUpdate = 256u * 1024u; // e.g. mobile: 256 KiB/update
-policy.maxSparseRanges = 4;              // &lt;= 4 runs per region
-policy.fullFallbackPercent = 85;         // full range if &gt;=85% dirty
-worldScene.setVegetationHorizonWindUploadPolicy(policy);
-auto applied = worldScene.vegetationHorizonWindUploadPolicy();</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">HorizonWindUploadPolicy</span> policy;
+policy.maxBytesPerUpdate = <span class="hl-num">256u</span> * <span class="hl-num">1024u</span>; <span class="hl-com">// e.g. mobile: 256 KiB/update</span>
+policy.maxSparseRanges = <span class="hl-num">4</span>;              <span class="hl-com">// &lt;= 4 runs per region</span>
+policy.fullFallbackPercent = <span class="hl-num">85</span>;         <span class="hl-com">// full range if &gt;=85% dirty</span>
+worldScene.<span class="hl-fn">setVegetationHorizonWindUploadPolicy</span>(policy);
+<span class="hl-kw">auto</span> applied = worldScene.<span class="hl-fn">vegetationHorizonWindUploadPolicy</span>();</code></pre>
 <p>Нативный API Horizon — <code>setWindUploadPolicy(policy)</code> / <code>windUploadPolicy()</code>. <code>validateHorizonWindUploadPolicy</code> отклоняет загрузки больше 2 MiB, число диапазонов вне [1,8] или плотность вне [1,100] <strong>до изменения действующей политики</strong>. Байт загрузки может быть <strong>ноль</strong>: это явно приостанавливает <em>изменённые</em> метаданные GPU-ветра, позволяя при этом продвигаться ревизиям с одинаковым квантованием и нулём байт. Последующее повышение повторяет отложенную ревизию; перезапекание рельефа или леса не требуется.</p>
 <p><code>applyHorizonForestWindOverlay</code> сохраняет обратно совместимый аргумент политики по умолчанию после <code>remainingUploadBytes</code>. Теперь он передаёт настройки диапазонов/плотности из политики существующему чистому <code>planHorizonForestWindUpload</code> и соблюдает и оставшийся бюджет вызывающего, и собственный максимум политики до любой записи в RHI. Обновлятель <code>TerraWeaveHorizonScene::refreshForestWindGpu</code> в потоке-владельце начинает с настроенного бюджета и расходует его по активным и уходящим моделям, сначала активным. План, который не помещается, откладывается <strong>как полная ревизия региона</strong>, с существующим запасным шейдером макро-ветра.</p>
 <p>Это <strong>политика GPU-трафика / планирования обновлений</strong>, а не селектор качества CPU-кэша: каждая резидентная на GPU модель по-прежнему может хранить до 2 MiB теневой копии вершин леса на CPU, а резидентность активных/закэшированных моделей по-прежнему управляется существующими настройками Horizon. Нет нового выделения вершин/индексов/текстур, изменения топологии HLOD, шейдера, зависимости от PHYSIS, данных ECS/геймплея, формата атласа или версии архива TWH8. Хост не должен задавать политику параллельно с <code>update</code>/<code>submit</code>.</p>
@@ -752,10 +752,10 @@ auto applied = worldScene.vegetationHorizonWindUploadPolicy();</code></pre>
 <h2 id="этап-37-ограниченный-cpu-кэш-теневых-копий-ветра-неактивного-horizon">Этап 37 — ограниченный CPU-кэш теневых копий ветра неактивного Horizon<a class="anchor" href="#этап-37-ограниченный-cpu-кэш-теневых-копий-ветра-неактивного-horizon" aria-label="#">#</a></h2>
 <p>Попадание в GPU-кэш Horizon обычно сохраняет соответствующую <strong>CPU-накладку ветра</strong> региона (до 2 MiB данных вершин леса плюс центры кластеров). Эта накладка необходима планировщику разреженных RGB-патчей ветра этапа 35: на GPU уже могут находиться точные метаданные PHYSIS, а не запечённые процедурные цвета. Отбрасывание <em>одной только</em> накладки сделало бы будущие сравнения цветов неверными, а гарантированного чтения вершинного буфера RHI обратно на всех бэкендах нет.</p>
 <p>Этап 37 добавляет отдельный CPU-бюджет <strong>неактивного кэша</strong> через <code>&lt;engine/world/TerraWeaveWindShadowCachePolicy.h&gt;</code>:</p>
-<pre><code class="lang-cpp">aiverse::terraweave::HorizonWindShadowCachePolicy cpuPolicy{};
-cpuPolicy.maxCachedShadowBytes=1u*1024u*1024u;
-worldScene.setVegetationHorizonWindShadowCachePolicy(cpuPolicy);
-auto configured=worldScene.vegetationHorizonWindShadowCachePolicy();</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">HorizonWindShadowCachePolicy</span> cpuPolicy{};
+cpuPolicy.maxCachedShadowBytes=<span class="hl-num">1u</span>*<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+worldScene.<span class="hl-fn">setVegetationHorizonWindShadowCachePolicy</span>(cpuPolicy);
+<span class="hl-kw">auto</span> configured=worldScene.<span class="hl-fn">vegetationHorizonWindShadowCachePolicy</span>();</code></pre>
 <p>Прямое использование сцены: <code>TerraWeaveHorizonScene::setWindShadowCachePolicy(cpuPolicy)</code> и <code>windShadowCachePolicy()</code>. Значение по умолчанию — <strong>16 MiB</strong>, больше максимума ожидаемых трёх закэшированных накладок ветра, поэтому резидентность по умолчанию до этапа 37 сохраняется. Настройка ограничена 0..16 MiB и проверяется до публикации. <code>0</code> не позволяет неактивным записям GPU-кэша хранить какую-либо CPU-накладку ветра; это <strong>не</strong> отключает анимацию ветра активного или уходящего при переходе региона и не меняет покадровый бюджет передачи на GPU этапа 36. Этот бюджет измеряет фактические <strong>ёмкости</strong> векторов <code>forestWind.vertices</code> и <code>forestWind.centersCm</code>, а не только текущие логические длины векторов.</p>
 <p><code>HorizonGpuRegionCache::trimWindShadowBytes(device,budget)</code> выполняется только в потоке-владельце графики. Когда ёмкость закэшированных теневых копий ветра превышает бюджет, он выводит из обращения <strong>весь дольше всех не использовавшийся закэшированный GPU-регион с теневой копией</strong>, освобождая его вершинные/индексные/атласные ресурсы через обычный путь владельца RHI вместе со связанной CPU-теневой копией ветра. Он никогда не удаляет теневую копию у сохраняемой GPU-модели, никогда не трогает активную модель или текущий уходящий фейд и не вытесняет посторонние записи без теневой копии только ради соблюдения этой политики. CPU-бюджет соблюдается сразу при <code>retain()</code> и повторно при следующем <code>update(device)</code> после изменения политики или ревизий источника рельефа. Он не требует нового выделения на GPU, чтения из RHI, шейдера, формата ассетов или CPU-воркера.</p>
 <p>Когда камера возвращается в регион, чья <strong>вся запись GPU-кэша</strong> была вытеснена из-за этого бюджета, существующий путь подготовки/загрузки <code>AsyncChunkStream</code> восстанавливает HLOD-модель и захватывает согласованную новую теневую копию ветра <strong>до</strong> загрузки. Он может переиспользовать подходящий CPU-архив запекания/ассета Horizon, если это включено; иначе выполняется перезапекание. Старый видимый прокси сохраняется на время стриминга. Устаревшие байты цветов на GPU никогда не принимаются за свежую CPU-теневую копию. Если запись кэша не была вытеснена, она сохраняет и GPU-, и CPU- метаданные и остаётся обычным мгновенным попаданием в кэш. Жёсткий бюджет обменивает долю попаданий в GPU-кэш/работу по повторной загрузке на ограниченную память спящих CPU-теневых копий.</p>
@@ -765,10 +765,10 @@ auto configured=worldScene.vegetationHorizonWindShadowCachePolicy();</code></pre
 <h2 id="этап-38-сжатие-без-потерь-теневых-копий-gpu-ветра-спящего-horizon">Этап 38 — сжатие без потерь теневых копий GPU-ветра спящего Horizon<a class="anchor" href="#этап-38-сжатие-без-потерь-теневых-копий-gpu-ветра-спящего-horizon" aria-label="#">#</a></h2>
 <p>На этапе 37 приходилось вытеснять полную запись GPU-кэша всякий раз, когда её неактивная CPU- теневая копия ветра превышала настроенный бюджет. Этап 38 при желании экономит память спящих данных на CPU <strong>без вытеснения соответствующего GPU-региона</strong>. Поле ветра, владелец PHYSIS, процедурная карта, шейдер материала и существующие GPU-буферы RHI остаются без изменений.</p>
 <p>Используйте публичную политику <strong>этапа 37</strong> из нативного проекта:</p>
-<pre><code class="lang-cpp">aiverse::terraweave::HorizonWindShadowCachePolicy policy;
-policy.maxCachedShadowBytes=2u*1024u*1024u;
-policy.compressCachedShadows=true;  // Stage38 optional; default false
-worldScene.setVegetationHorizonWindShadowCachePolicy(policy);</code></pre>
+<pre><code class="lang-cpp">aiverse::terraweave::<span class="hl-ty">HorizonWindShadowCachePolicy</span> policy;
+policy.maxCachedShadowBytes=<span class="hl-num">2u</span>*<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+policy.compressCachedShadows=<span class="hl-kw">true</span>;  <span class="hl-com">// Stage38 optional; default false</span>
+worldScene.<span class="hl-fn">setVegetationHorizonWindShadowCachePolicy</span>(policy);</code></pre>
 <p>Этот сеттер вызывается в потоке-владельце WorldScene. Необязательный <code>TerraWeaveHorizonScene::setWindShadowCachePolicy</code> принимает ту же POD-структуру. Политика <strong>загрузки на GPU</strong> за одно обновление отдельна (<code>HorizonWindUploadPolicy</code>). Все значения API по умолчанию сохраняют поведение этапа 37 (сжатие отключено, пока не включено явно). Текущий бюджет 0..16 MiB для неактивных CPU-теневых копий остаётся действительным и неизменным.</p>
 <p><strong>Хранение без потерь:</strong> <code>TerraWeaveHorizonWindCompression.h</code> предоставляет <code>packHorizonWindVertexBytes</code> и <code>unpackHorizonWindVertexBytes</code> с простым ограниченным побайтовым кодеком нулевых серий/литералов (1..128 байт на токен). Он хранит сырые <strong>байты ModelVertex</strong>, включая все 32-битные float-поля, RGBA-метаданные ветра и поля суставов/весов; он никогда не перемасштабирует и не пересчитывает геометрию или выборку ветра PHYSIS. Это хранение только в памяти внутри процесса, а не постоянный формат файла. Перед упаковкой <code>HorizonForestWindOverlay</code> должна быть целой и уже связанной со своей резидентной на GPU моделью. Сжатая накладка сохраняет свои знаковые <code>centersCm</code> в мировых сантиметрах, точную применённую ревизию ветра и смещение первой вершины, и хранит <code>packedVertices</code> и <code>packedVertexCount</code> вместо полного массива вершин. Сжатие принимается <strong>только когда фактическая ёмкость упакованного вектора меньше ёмкости исходного вектора вершин</strong>; иначе исходная сырая теневая копия остаётся нетронутой.</p>
 <p><strong>Жизненный цикл кэша и бюджет:</strong> <code>HorizonGpuRegionCache::retain</code> упаковывает только <strong>неактивные</strong> записи (не активную и не уходящую при кроссфейде модель). Он сжимает уже закэшированные записи, когда политика включается в работающей сцене, при следующем <code>update(device)</code> до обрезки по бюджету. <code>windCompressionAttempted</code> предотвращает повторное сканирование несжимаемых записей каждый кадр. Бюджет спящих данных на CPU теперь учитывает фактические ёмкости сырых вершин, упакованных байт и центров кластеров. Вытеснение целого региона по LRU этапа 37 запускается, только если сжатая/сырая ёмкость всё равно превышает бюджет. При упаковке теневой копии <strong>нет</strong> загрузки на GPU, нового буфера, перестройки атласа или перегенерации геометрии.</p>
@@ -784,21 +784,21 @@ worldScene.setVegetationHorizonWindShadowCachePolicy(policy);</code></pre>
 <div class="table"><table><thead><tr><th>Пресет</th><th>Точное поле PHYSIS по кластерам</th><th>Процедурный пространственный граф</th><th>Байт загрузки GPU-ветра за обновление</th><th>Макс. разреженных участков</th><th>Порог полного диапазона</th><th>CPU-бюджет неактивного ветра</th><th>Сжатие без потерь</th></tr></thead><tbody><tr><td>BatterySaver</td><td>Выкл</td><td>Выкл</td><td>0</td><td>1</td><td>70%</td><td>0</td><td>Выкл</td></tr><tr><td>Mobile</td><td>Выкл</td><td>Вкл</td><td>128 KiB</td><td>2</td><td>90%</td><td>1 MiB</td><td>Вкл</td></tr><tr><td>Balanced</td><td>Вкл</td><td>Вкл</td><td>512 KiB</td><td>4</td><td>75%</td><td>4 MiB</td><td>Вкл</td></tr><tr><td>Desktop</td><td>Вкл</td><td>Вкл</td><td>2 MiB</td><td>8</td><td>70%</td><td>16 MiB</td><td>Вкл</td></tr></tbody></table></div>
 <p>Это <strong>начальные решения политики движка</strong>, А НЕ рекомендации по измеренной производительности. Низкий предел загрузки может бесконечно откладывать плотный патч метаданных погоды на полный хвост; существующий макро-граф ветра этапа 34 остаётся безопасным запасным вариантом. BatterySaver намеренно приостанавливает изменения VB от погоды и не обещает немедленного восстановления процедурного графа после выхода из режима точного поля. Неактивные модели GPU-кэша могут вытесняться, когда суммарный объём их CPU-теневых копий ветра превышает выбранный бюджет. Фактическое влияние на GPU и CPU зависит от геометрии рельефа и распределения поля ветра и требует QA на устройствах.</p>
 <h3 id="api-нативного-проекта">API нативного проекта<a class="anchor" href="#api-нативного-проекта" aria-label="#">#</a></h3>
-<pre><code class="lang-cpp">using namespace aiverse::terraweave;
-worldScene.setVegetationHorizonPresentationQualityPreset(
-    HorizonPresentationQualityPreset::Mobile);
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+worldScene.<span class="hl-fn">setVegetationHorizonPresentationQualityPreset</span>(
+    <span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Mobile</span>);
 
-// Fine-tune after preset (or define a fully custom value policy):
-auto quality=worldScene.vegetationHorizonPresentationPolicy();
-quality.windUpload.maxBytesPerUpdate=256u*1024u;
-quality.windShadowCache.maxCachedShadowBytes=2u*1024u*1024u;
-worldScene.setVegetationHorizonPresentationPolicy(quality);</code></pre>
+<span class="hl-com">// Fine-tune after preset (or define a fully custom value policy):</span>
+<span class="hl-kw">auto</span> quality=worldScene.<span class="hl-fn">vegetationHorizonPresentationPolicy</span>();
+quality.windUpload.maxBytesPerUpdate=<span class="hl-num">256u</span>*<span class="hl-num">1024u</span>;
+quality.windShadowCache.maxCachedShadowBytes=<span class="hl-num">2u</span>*<span class="hl-num">1024u</span>*<span class="hl-num">1024u</span>;
+worldScene.<span class="hl-fn">setVegetationHorizonPresentationPolicy</span>(quality);</code></pre>
 <p>Прямой API владельца рендерера — <code>TerraWeaveHorizonScene::setPresentationQualityPreset</code>, <code>setPresentationPolicy</code> и <code>presentationPolicy()</code>. Эти вызовы <strong>только для потока-владельца</strong>; никаких параллельных <code>update(device)</code>, <code>submit</code> или выборок из изменяемого поля PHYSIS. <code>WorldScene</code> обновляет свои существующие отдельные геттеры при установке целой политики, поэтому отдельные сеттеры и агрегированные геттеры остаются согласованными. Сеттер целой политики проверяет все поля до изменения действующего источника Horizon; ошибки не могут оставить пресет применённым наполовину. Имя «текущего активного пресета» после ручных переопределений не сохраняется: вместо этого запрашивайте <strong>эффективные</strong> значения политики.</p>
 <h3 id="манифест-только-при-запуске">Манифест (только при запуске)<a class="anchor" href="#манифест-только-при-запуске" aria-label="#">#</a></h3>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;quality&quot;: &quot;high&quot;,
-    &quot;presentationQuality&quot;: &quot;mobile&quot;
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;quality&quot;</span>: <span class="hl-str">&quot;high&quot;</span>,
+    <span class="hl-key">&quot;presentationQuality&quot;</span>: <span class="hl-str">&quot;mobile&quot;</span>
   }
 }</code></pre>
 <p><code>quality</code> по-прежнему выбирает настройки <em>геометрии</em> CPU/рельефа/атласа и входит в совместимость ассетов TWH8. НОВЫЙ необязательный <code>presentationQuality</code> принимает ровно <code>&quot;battery-saver&quot;</code>, <code>&quot;mobile&quot;</code>, <code>&quot;balanced&quot;</code>, <code>&quot;desktop&quot;</code>. Он настраивает отображение и бюджеты времени выполнения <strong>после</strong> проверки настроек геометрии Horizon; отсутствующее значение в точности сохраняет существующие значения по умолчанию этапа 38. Некорректные значения выбрасывают <code>JsonError</code>. <code>WorldScene</code> при инициализации копирует эффективные значения времени выполнения из манифеста из <code>TerraWeaveHorizonScene</code>, чтобы публичный геттер не сообщал ошибочно значения по умолчанию после пресета из манифеста.</p>
@@ -808,23 +808,23 @@ worldScene.setVegetationHorizonPresentationPolicy(quality);</code></pre>
 <p>Этап 40 добавляет ограниченный контроллер <em>представления во время выполнения</em> в <code>engine/world/TerraWeaveHorizonAdaptiveQuality.h</code>. Он комбинирует только четыре профиля этапа 39 (BatterySaver, Mobile, Balanced, Desktop) и существующую политику шейдера ветра, пропускной способности и CPU-кэша этапов 33–38. <strong>Геометрия рельефа и леса, ближний шов, атлас, поле PHYSIS, нативное состояние ECS, топология GPU-ресурсов и архив TWH8 не меняются</strong>. Контроллер <strong>по умолчанию выключен</strong> и сам никогда не начинает измерять кадр.</p>
 <h3 id="входные-данные-api-и-интеграция">Входные данные, API и интеграция<a class="anchor" href="#входные-данные-api-и-интеграция" aria-label="#">#</a></h3>
 <p>Игра или платформенный хост, который уже отвечает за кадр и его вывод, передаёт измеренное время кадра CPU и/или завершённого кадра GPU в <strong>микросекундах</strong> вместе с монотонно возрастающим номером кадра:</p>
-<pre><code class="lang-cpp">using namespace aiverse::terraweave;
-HorizonAdaptiveQualityConfig adaptive;
-adaptive.enabled=true;
-adaptive.minimum=HorizonPresentationQualityPreset::Mobile;
-adaptive.maximum=HorizonPresentationQualityPreset::Desktop;
-adaptive.initial=HorizonPresentationQualityPreset::Balanced;
-adaptive.targetFrameUs=16667;  // 60 Hz frame budget, not a GPU benchmark
-worldScene.setVegetationHorizonAdaptiveQualityConfig(adaptive);
+<pre><code class="lang-cpp"><span class="hl-kw">using</span> <span class="hl-kw">namespace</span> aiverse::terraweave;
+<span class="hl-ty">HorizonAdaptiveQualityConfig</span> adaptive;
+adaptive.enabled=<span class="hl-kw">true</span>;
+adaptive.minimum=<span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Mobile</span>;
+adaptive.maximum=<span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Desktop</span>;
+adaptive.initial=<span class="hl-ty">HorizonPresentationQualityPreset</span>::<span class="hl-ty">Balanced</span>;
+adaptive.targetFrameUs=<span class="hl-num">16667</span>;  <span class="hl-com">// 60 Hz frame budget, not a GPU benchmark</span>
+worldScene.<span class="hl-fn">setVegetationHorizonAdaptiveQualityConfig</span>(adaptive);
 
-// On the scene owner thread, after the host has a frame measurement:
-const HorizonFrameTimingSample timing{
+<span class="hl-com">// On the scene owner thread, after the host has a frame measurement:</span>
+<span class="hl-kw">const</span> <span class="hl-ty">HorizonFrameTimingSample</span> timing{
     .frameId=completedFrameId,
     .cpuFrameUs=measuredCpuFrameUs,
-    .gpuFrameUs=measuredCompletedGpuFrameUs // 0 when unavailable
+    .gpuFrameUs=measuredCompletedGpuFrameUs <span class="hl-com">// 0 when unavailable</span>
 };
-const bool switched=worldScene.submitVegetationHorizonFrameTiming(timing);
-auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
+<span class="hl-kw">const</span> <span class="hl-ty">bool</span> switched=worldScene.<span class="hl-fn">submitVegetationHorizonFrameTiming</span>(timing);
+<span class="hl-kw">auto</span> state=worldScene.<span class="hl-fn">vegetationHorizonAdaptiveQualityState</span>();</code></pre>
 <p>Прямой API сцены: <code>TerraWeaveHorizonScene::setAdaptiveQualityConfig(config)</code>, <code>adaptiveQualityConfig()</code>, <code>adaptiveQualityState()</code>, <code>submitAdaptiveFrameTiming(timing)</code>. Нативная WorldScene без модуля Horizon возвращает false при передаче замеров. <code>setVegetationHorizonAdaptiveQualityConfig</code> применяет начальный профиль <strong>сразу</strong> только при включении адаптации. При выключении текущий профиль сохраняется. Явные ручные вызовы сеттера всей политики этапа 39 или любого из четырёх существующих отдельных сеттеров представления <strong>выключают</strong> адаптацию, а не спорят с выбором разработчика. Публикация поля ветра, обычные такты симуляции и обновления камеры не считаются ручным переопределением. Повторное включение начинает историю заново.</p>
 <p><code>Device::gpuFrameMs()</code> из gfx движка может сообщать длительность последнего завершённого кадра GPU бэкенда, но это реализовано не везде и может приходить с задержкой. Хост должен отличать настоящие замеры завершённых кадров от недоступных или устаревших значений и может передавать ноль для отсутствующего GPU или CPU. Этап 40 <strong>не</strong> придумывает время GPU и не приравнивает собственный <code>HorizonRuntimeStats::gpuUploadMs</code> к длительности рендера всего кадра. Нужна хотя бы одна ненулевая реальная длительность кадра CPU/GPU; кадр без замеров игнорируется. Отдельный замер больше 10 секунд, номер кадра не по порядку или повторный, а также выключенная адаптация игнорируются. Пропущенные номера кадров прерывают непрерывные серии, поэтому редкие метрики не выдаются за устойчивое падение FPS. CPU и GPU вместе дают <strong>худшую доступную</strong> длительность. Это управление качеством всего кадра, а не доказательство того, что вся работа CPU/GPU вызвана самим TerraWeave.</p>
 <h3 id="гистерезис-и-жёсткие-пределы">Гистерезис и жёсткие пределы<a class="anchor" href="#гистерезис-и-жёсткие-пределы" aria-label="#">#</a></h3>
@@ -832,20 +832,20 @@ auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
 <p>Проверка отвергает ранги качества вне [0,3], перевёрнутые границы, начальное значение вне границ, цель вне 4–100 мс, порог понижения вне 101–200%, повышения вне 25–99%, серию понижения вне 2–600 кадров, серию повышения вне 2–3600 и паузу больше 36 000 кадров. Контроллер — это чисто состояние представления, управляемое замерами хоста, и ему не место в авторитетных сохранениях и повторах ECS. <code>advanceHorizonAdaptiveQuality(config,state,sample)</code> — детерминированный шаг состояния без бэкенда для будущих модульных тестов.</p>
 <h3 id="необязательная-настройка-в-манифесте">Необязательная настройка в манифесте<a class="anchor" href="#необязательная-настройка-в-манифесте" aria-label="#">#</a></h3>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;quality&quot;: &quot;high&quot;,
-    &quot;presentationQuality&quot;: &quot;balanced&quot;,
-    &quot;adaptiveQuality&quot;: {
-      &quot;enabled&quot;: true,
-      &quot;minimum&quot;: &quot;mobile&quot;,
-      &quot;maximum&quot;: &quot;desktop&quot;,
-      &quot;initial&quot;: &quot;balanced&quot;,
-      &quot;targetFrameUs&quot;: 16667,
-      &quot;downgradePercent&quot;: 115,
-      &quot;upgradePercent&quot;: 80,
-      &quot;downgradeFrames&quot;: 30,
-      &quot;upgradeFrames&quot;: 240,
-      &quot;cooldownFrames&quot;: 240
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;quality&quot;</span>: <span class="hl-str">&quot;high&quot;</span>,
+    <span class="hl-key">&quot;presentationQuality&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+    <span class="hl-key">&quot;adaptiveQuality&quot;</span>: {
+      <span class="hl-key">&quot;enabled&quot;</span>: <span class="hl-kw">true</span>,
+      <span class="hl-key">&quot;minimum&quot;</span>: <span class="hl-str">&quot;mobile&quot;</span>,
+      <span class="hl-key">&quot;maximum&quot;</span>: <span class="hl-str">&quot;desktop&quot;</span>,
+      <span class="hl-key">&quot;initial&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+      <span class="hl-key">&quot;targetFrameUs&quot;</span>: <span class="hl-num">16667</span>,
+      <span class="hl-key">&quot;downgradePercent&quot;</span>: <span class="hl-num">115</span>,
+      <span class="hl-key">&quot;upgradePercent&quot;</span>: <span class="hl-num">80</span>,
+      <span class="hl-key">&quot;downgradeFrames&quot;</span>: <span class="hl-num">30</span>,
+      <span class="hl-key">&quot;upgradeFrames&quot;</span>: <span class="hl-num">240</span>,
+      <span class="hl-key">&quot;cooldownFrames&quot;</span>: <span class="hl-num">240</span>
     }
   }
 }</code></pre>
@@ -862,13 +862,13 @@ auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
 <p><strong>Владение замерами бэкенда:</strong> AIVERSE уже предоставляет <code>gfx::Device::timeGpuFrame(tag)</code> и <code>takeGpuTimings()</code>; Metal записывает помеченный командный буфер и возвращает асинхронно завершённый интервал <code>GPUStartTime/GPUEndTime</code>, а поддерживаемый GL может использовать <code>GL_TIME_ELAPSED</code> вокруг своего активного интервала. У разных бэкендов разная семантика охвата GPU (в Metal — весь командный буфер, в GL — от начала запроса до конца кадра), и это НЕ изолированное время рендера TerraWeave. Неподдерживаемые бэкенды возвращают false, и адаптер использует только данные CPU. API <code>takeGpuTimings()</code> <strong>разрушающе забирает все готовые теги замеров устройства</strong>, поэтому адаптер должен быть единственным потребителем замеров для этих экземпляров Device игровых клиентов, либо будущие интеграции должны ввести общий маршрутизатор замеров устройства вместо независимого опроса API из другого бенчмарка. Сейчас у этих игровых клиентов нет другого сборщика тегов замеров устройства на путях выполнения. Клиент FPS сам управляет своими <code>beginFrame/endFrame</code>; клиент RTS работает внутри существующего внешнего кадра платформы. Не добавляйте второй вызов begin/end.</p>
 <p><strong>Использование:</strong> существующего манифеста этапа 40 достаточно; новые поля не нужны:</p>
 <pre><code class="lang-json">{
-  &quot;terraweaveHorizon&quot;: {
-    &quot;presentationQuality&quot;: &quot;balanced&quot;,
-    &quot;adaptiveQuality&quot;: {
-      &quot;enabled&quot;: true,
-      &quot;minimum&quot;: &quot;mobile&quot;,
-      &quot;maximum&quot;: &quot;desktop&quot;,
-      &quot;targetFrameUs&quot;: 16667
+  <span class="hl-key">&quot;terraweaveHorizon&quot;</span>: {
+    <span class="hl-key">&quot;presentationQuality&quot;</span>: <span class="hl-str">&quot;balanced&quot;</span>,
+    <span class="hl-key">&quot;adaptiveQuality&quot;</span>: {
+      <span class="hl-key">&quot;enabled&quot;</span>: <span class="hl-kw">true</span>,
+      <span class="hl-key">&quot;minimum&quot;</span>: <span class="hl-str">&quot;mobile&quot;</span>,
+      <span class="hl-key">&quot;maximum&quot;</span>: <span class="hl-str">&quot;desktop&quot;</span>,
+      <span class="hl-key">&quot;targetFrameUs&quot;</span>: <span class="hl-num">16667</span>
     }
   }
 }</code></pre>
@@ -889,9 +889,9 @@ auto state=worldScene.vegetationHorizonAdaptiveQualityState();</code></pre>
 <h2 id="нативный-источник-альпийского-рельефа-необязательные-гребнистые-массивы">Нативный источник альпийского рельефа: необязательные гребнистые массивы<a class="anchor" href="#нативный-источник-альпийского-рельефа-необязательные-гребнистые-массивы" aria-label="#">#</a></h2>
 <p><code>TerraWeaveAlpine.h</code> принимает добавленное в конец поле <code>AlpinePeak::morphology</code>. По умолчанию остаётся <code>LegacyCone</code>: существующие инициализаторы из шести полей и старые рецепты ландшафта сохраняют прежний источник в точности. <code>RidgedMassif</code> сочетает эллиптическую опору с нулевым уклоном, засеянное искажение области и пять гребнистых октав с обратной связью. Выборки используют целые сантиметры со знаком и арифметику Q16. Это профиль генерации без состояния, а не решатель гидравлической эрозии или физики скал. Опора пика, сдвиг, высота и защита долин сохраняют прежние пределы.</p>
 <p>Нативный экспортёр <code>aiverse_terraweave_landscape</code> принимает для каждого пика <code>&quot;morphology&quot;:&quot;ridged_massif&quot;</code>, <code>&quot;cragged_massif&quot;</code> или <code>&quot;legacy&quot;</code>. Неизвестные имена отвергаются. <code>CraggedMassif</code> сохраняет ту же ограниченную опору, но переносит умеренный рельеф на масштабы в треть радиуса со спадом амплитуды октав .42 и более высокой широкой несущей. Существующие выборки legacy/ridged остаются точными; это косметический рельеф, а не физическая гидравлическая эрозия. <a href="https://github.com/chromealex/AIVERSE/blob/main/examples/terraweave/alpine-valley.json">Рецепт альпийской долины</a> размещает широкий горный хребет за лесной зоной, со 128 тайлами рельефа и явной рекой NEREID. Экспортируйте в новый каталог на внешнем диске сборок:</p>
-<pre><code class="lang-sh">aiverse_terraweave_landscape --recipe examples/terraweave/alpine-valley.json \
-  --out NEW_PACK --materials engine/assets/materials/terrain/textures
-python3 tests/terrain/check_landscape_export.py NEW_PACK</code></pre>
+<pre><code class="lang-sh"><span class="hl-fn">aiverse_terraweave_landscape</span> <span class="hl-opt">--recipe</span> examples/terraweave/alpine-valley.json \
+  <span class="hl-fn">--out</span> NEW_PACK <span class="hl-opt">--materials</span> engine/assets/materials/terrain/textures
+<span class="hl-fn">python3</span> tests/terrain/check_landscape_export.py NEW_PACK</code></pre>
 <p>Аудит экспорта сравнивает реальные высоты и нормали краёв соседних glTF и сверяет вершины рендера с общей целочисленной сеткой высот для посадки. Заново запеките маски материалов и растительность по новому <code>ground.json</code>; при переносе существующих деревьев и камней на новую поверхность сохраняйте глубину посадки корней. Статический экспорт — не живой хост эрозии и падения. Полная визуальная приёмка примера и бюджет рендерера проверяются отдельно от корректности исходников и швов.</p>
 <h2 id="неизменяемые-lod-участков-рельефа">Неизменяемые LOD участков рельефа<a class="anchor" href="#неизменяемые-lod-участков-рельефа" aria-label="#">#</a></h2>
 <p><code>engine/render/TerraWeaveTerrainLod.h</code> предоставляет <code>appendTerrainPatchLods(model, patch, targetErrorPixels=1.5f)</code> для CPU-модели до загрузки. Нативный экспортёр ландшафта вызывает его после сглаживания нормалей в мировом пространстве и генерации касательных. Живой изменяемый путь <code>makeEarthworksTerrainModel</code> по умолчанию сохраняет исходную поверхность полного разрешения и столкновения.</p>
@@ -910,6 +910,23 @@ python3 tests/terrain/check_landscape_export.py NEW_PACK</code></pre>
 <small>MIT License · AIVERSE</small>
 </div>
 </footer>
-
+<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
 </body>
 </html>
