@@ -2640,6 +2640,19 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
+    # Legacy RTS cell water -> NEREID conversion (CPU-only).
+    add_executable(aiverse_rts_water_nereid_test tests/rts_water_nereid_test.cpp)
+    target_link_libraries(aiverse_rts_water_nereid_test PRIVATE
+        aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
+    add_test(NAME rts_water_nereid_test COMMAND aiverse_rts_water_nereid_test)
+    # NEREID large-world ocean LOD: legacy coverage, stitched rings (CPU-only).
+    add_executable(aiverse_ecs_nereid_ocean_lod_test
+        tests/ecs_nereid_ocean_lod_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_ocean_lod_test PRIVATE
+        aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_ocean_lod_test
+        COMMAND aiverse_ecs_nereid_ocean_lod_test
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/nereid/ocean-large-world.json)
     # NEREID stages 41-44: JSON links, reference/indexed/scene flow parity
     # and shader-only water mesh upload identity (CPU-only).
     add_executable(aiverse_ecs_nereid_confluence_contract_test

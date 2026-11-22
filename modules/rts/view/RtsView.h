@@ -468,6 +468,8 @@ public:
         terrain_.setDetail(d, splat);
     }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
+    // Water drawn by NEREID from the map cells this frame (0 = legacy or none).
+    const world::NereidWaterScene& nereidMapWater() const { return nereidLegacy_; }
     // After a synchronous map-size transition, all resource owners already
     // agree on dimensions. GroundFX mesh fills still await primary draw.
     bool surfacePresentationMapReady(const MapGrid& grid) const noexcept {
@@ -933,6 +935,9 @@ private:
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
     TerrainRenderer terrain_;    // chunked terrain + water (RtsTerrainRender.cpp)
+    world::NereidWaterScene nereidLegacy_;   // map water cells drawn by NEREID (RtsWaterNereid.h)
+    std::string nereidLegacySignature_;
+    void drawNereidLegacyWater(render::Renderer3D& r,bool terrainReady);
     bool hasTerrain_ = false;
     std::vector<ViewEvent> events_;
     std::vector<ViewEffect> effects_;
