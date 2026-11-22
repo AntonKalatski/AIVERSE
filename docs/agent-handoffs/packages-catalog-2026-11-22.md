@@ -137,3 +137,9 @@ for large models (staging is synchronous).
 - Checked: catalog check + self-test, aiverse_pkg test, skills catalog/audit, site check/build, the site
   catalog page against a local copy of the catalog in Chrome, native viewer frames of rocks/trees with
   dependency textures (Linux GL) incl. STRATA on the oak. Not checked yet: the live pages after publish.
+- Payload without history (owner, 2026-11-22): a package PR carries `files/` up to 2 GB (git: files up
+  to 100 MB; bigger single files via `tools/catalog.py upload <id> --repo <fork>`). The owner accepts with
+  the label `accept` (workflow `accept.yml`, `pull_request_target`, PR checkout read as data only): the
+  files become the release archive and the package is committed to main without them, manifest gets
+  `archive`. The `merge-guard` check job fails on PRs with `files/` so nobody presses Merge. The PR head
+  ref on GitHub still holds the files (GitHub keeps `refs/pull/N/head`); clones of main never fetch it.

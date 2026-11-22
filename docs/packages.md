@@ -139,17 +139,19 @@ a real engine frame or the asset itself as a preview, and a GitHub account.
    `source` stays in the cache for tools. All fields: `docs/manifest.md` of the catalog.
 3. **Add `README.md`** (what it is, how to use it, licence and origin) and at least one
    `preview.jpg` (640..2400 px wide, up to 1 MB, up to 6 previews).
-4. **Put the payload.** Up to 25 MB (files up to 10 MB): the folder `files/`, laid out as it should
-   appear under `install.mount`. Bigger: zip it with `python3 tools/catalog.py archive <id> --from <folder>`,
-   host the zip over https (for example a release of your fork) and copy the printed `"archive"` fields
-   into the manifest. Textures another package already has are not copied: depend on that package and
-   refer to its files with a relative path from your mount (`../../../materials/terrain/textures/…`);
-   `aiverse_pkg.py add` installs dependencies first.
+4. **Put the payload** into `files/`, laid out as it should appear under `install.mount` — up to 2 GB
+   in total. Git takes files up to 100 MB; for a bigger single file run
+   `python3 tools/catalog.py upload <id> --repo <you>/AIVERSE-PACKAGES` (zips `files/` into a release of your
+   fork and writes `"archive"` into the manifest) and remove `files/` from the pull request. Textures
+   another package already has are not copied: depend on that package and refer to its files with a
+   relative path from your mount (`../../../materials/terrain/textures/…`); `aiverse_pkg.py add` installs
+   dependencies first.
 5. **Check:** `python3 tools/catalog.py check` must print 0 errors. To try it in a project, copy
    `files/` into the `install.mount` folder of a test project and open it in the editor.
-6. **Open a pull request.** CI repeats the check. After the merge the release `<id>@<version>`, the
-   package's `versions.json` and its line in `index.json` appear automatically; the website card and
-   the 3D preview follow within minutes.
+6. **Open a pull request.** CI repeats the check. The owner accepts it with the label `accept`, not the
+   Merge button: the files become the release archive `<id>@<version>` and the package lands in `main`
+   without them (its manifest gets `"archive"`), so uploaded files never enter the repository history.
+   `versions.json`, the line in `index.json`, the website card and the 3D preview follow within minutes.
 
 Updating: change the files, **raise `version`** and open a pull request. A published version is
 never replaced (projects pin the archive hash in `aiverse.lock`).

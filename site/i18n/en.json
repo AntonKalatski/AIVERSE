@@ -193,7 +193,7 @@
   "Fork <code>AIVERSE-PACKAGES</code> and create the folder <code>&lt;category&gt;/&lt;id&gt;/</code>.",
   "Write <code>aiverse.package.json</code>: English <code>title</code> and <code>summary</code>, translations as <code>title-ru</code>, <code>summary-de</code>…, licence, <code>minEngine</code>, <code>install.mount</code>.",
   "Add <code>README.md</code> and a <code>preview.jpg</code> (a real engine frame or the asset itself).",
-  "Put the files into <code>files/</code> (up to 25 MB) or host a zip and fill <code>archive</code>. Textures of another package are not copied: depend on it.",
+  "Put the files into <code>files/</code>, up to 2 GB. The owner accepts the pull request with the label <code>accept</code>: the files become a release archive and never enter the repository history. Textures of another package are not copied: depend on it.",
   "Run <code>python3 tools/catalog.py check</code> (0 errors) and open a pull request."
  ]
 }

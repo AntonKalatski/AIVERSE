@@ -193,7 +193,7 @@
   "Форкните <code>AIVERSE-PACKAGES</code> и создайте папку <code>&lt;раздел&gt;/&lt;id&gt;/</code>.",
   "Напишите <code>aiverse.package.json</code>: <code>title</code> и <code>summary</code> на английском, переводы — <code>title-ru</code>, <code>summary-de</code>…, лицензия, <code>minEngine</code>, <code>install.mount</code>.",
   "Добавьте <code>README.md</code> и <code>preview.jpg</code> (настоящий кадр движка или сам ассет).",
-  "Положите файлы в <code>files/</code> (до 25 МБ) или выложите zip и заполните <code>archive</code>. Текстуры другого пакета не копируйте — укажите его в зависимостях.",
+  "Положите файлы в <code>files/</code>, до 2 ГБ. Владелец принимает pull request меткой <code>accept</code>: файлы становятся архивом релиза и в историю репозитория не попадают. Текстуры другого пакета не копируйте — укажите его в зависимостях.",
   "Запустите <code>python3 tools/catalog.py check</code> (0 ошибок) и откройте pull request."
  ]
 }
