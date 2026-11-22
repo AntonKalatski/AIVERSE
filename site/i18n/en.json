@@ -131,5 +131,9 @@
  "nnNext": "Next",
  "nnSystem": "System",
  "docsTranslated": "Translated. The original may be newer: <a href=\"{href}\">source document</a>.",
- "coreMore": "Learn more →"
+ "coreMore": "Learn more →",
+ "navGallery": "Gallery",
+ "galTitle": "Gallery: screenshots from development",
+ "galLead": "Every engine frame that appeared during development, newest first. Click a frame to open it large, or its caption to read the entry.",
+ "galShots": "frames"
 }
