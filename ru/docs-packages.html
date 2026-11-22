@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пакеты и каталог — AIVERSE</title>
+<meta name="description" content="Дополнительный контент из каталога AIVERSE-PLUGINS: поиск, установка в проект, lock-файл, публикация через pull request.">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
+<link rel="alternate icon" href="../favicon.ico">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<meta name="theme-color" content="#F3EFE8">
+<link rel="alternate" hreflang="en" href="../docs-packages.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=ef79e6fb4e">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Системы</a>
+<a href="./#genres" data-nav="genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="catalog.html" data-nav="catalog">Каталог</a>
+<a href="gallery.html" data-nav="gallery">Галерея</a>
+<a href="devlog.html" data-nav="devlog">Ход разработки</a>
+<a href="blog.html" data-nav="blog">Блог</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Документация</a>
+</div>
+<a class="lang-switch" href="../docs-packages.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap docs-main">
+<div class="docs-layout"><nav class="docs-nav" aria-label="Документация"><div class="ds-box"><input class="ds-input" type="search" placeholder="Поиск по документации  /" aria-label="Поиск по документации  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Начало</span><a href="docs-overview.html">Обзор движка</a><a href="docs-engine-import.html">Импорт из Unity и Godot</a></div><div class="dn-sec"><span>Создание игры</span><a href="docs-game-format.html">Формат игры</a><a href="docs-packages.html" aria-current="page">Пакеты и каталог</a><a href="docs-scripting.html">Скрипты на Lua</a><a href="docs-mechanics-packages.html">Пакеты механик</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Мета-сервис</a><a href="docs-battle-net.html">Сетевые бои</a><a href="docs-editor-windows.html">Окна редактора</a></div><div class="dn-sec"><span>Системы движка</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: поведение камер</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator и MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: динамический непрямой свет</a><a href="docs-lightbake.html">Запекание света</a></div></nav><article class="doc" lang="ru"><p class="doc-note">Перевод. Оригинал может быть новее: <a href="https://github.com/chromealex/AIVERSE/blob/main/docs/packages.md">исходный документ</a>.</p><h1 id="пакеты-дополнительный-контент-из-каталога">Пакеты: дополнительный контент из каталога<a class="anchor" href="#пакеты-дополнительный-контент-из-каталога" aria-label="#">#</a></h1>
+<p>В репозитории движка — код и минимум ассетов. Тяжёлый дополнительный контент (библиотеки PBR-материалов, их исходники, шаблоны проектов, наборы моделей, звук, эффекты) лежит в каталоге пакетов <a href="https://github.com/chromealex/AIVERSE-PLUGINS">AIVERSE-PLUGINS</a>. Проект скачивает только то, что использует.</p>
+<div class="table"><table><thead><tr><th>Что</th><th>Где</th></tr></thead><tbody><tr><td>Каталог: пакеты по разделам (<code>materials/</code>, <code>textures/</code>, <code>templates/</code>, <code>models/</code>, <code>audio/</code>, <code>vfx/</code>, <code>ui/</code>, <code>scripts/</code>, <code>plugins/</code>, <code>tools/</code>)</td><td>AIVERSE-PLUGINS, <code>&lt;раздел&gt;/&lt;id&gt;/aiverse.package.json</code></td></tr><tr><td>Архивы <code>&lt;id&gt;-&lt;версия&gt;.zip</code></td><td>GitHub-релизы <code>&lt;id&gt;@&lt;версия&gt;</code> репозитория AIVERSE-PLUGINS</td></tr><tr><td>Индекс (его читают движок и сайт)</td><td><code>index.json</code> в его <code>main</code>, пишет workflow <code>publish</code></td></tr><tr><td>Клиент</td><td><code>tools/pkg/aiverse_pkg.py</code> (Python, только стандартная библиотека; <code>--json</code> у всех команд)</td></tr><tr><td>Кэш на компьютере</td><td><code>~/.aiverse/packages/&lt;id&gt;/&lt;версия&gt;/</code> (<code>AIVERSE_PACKAGES_HOME</code>), скачанное проверяется по SHA-256</td></tr><tr><td>Сайт</td><td>страница <strong>Каталог</strong> (<code>catalog.html</code>): превью, описание, минимальная версия движка, скачивание</td></tr></tbody></table></div>
+<h2 id="как-пользоваться">Как пользоваться<a class="anchor" href="#как-пользоваться" aria-label="#">#</a></h2>
+<pre><code class="lang-sh"><span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py search terrain              <span class="hl-com"># ещё --category materials, --kind content</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py info terrain-pbr
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py add terrain-pbr <span class="hl-opt">--project</span> ~/Games/MyGame
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py status <span class="hl-opt">--project</span> ~/Games/MyGame
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py install <span class="hl-opt">--project</span> ~/Games/MyGame   <span class="hl-com"># после клонирования: всё из aiverse.lock</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py verify <span class="hl-opt">--project</span> ~/Games/MyGame    <span class="hl-com"># код 1, если установленные файлы изменены</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py remove terrain-pbr <span class="hl-opt">--project</span> ~/Games/MyGame
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py fetch terrain-pbr-sources   <span class="hl-com"># исходники для запекания: печатает папку в кэше</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py create &lt;id-шаблона&gt; ~/Games/New   <span class="hl-com"># новый проект из пакета-шаблона</span></code></pre>
+<ul><li>Пакеты <strong><code>content</code></strong> копируются в проект в папку <code>install.mount</code> (у <code>terrain-pbr</code> — <code>materials/terrain</code>); <code>install.mergeJson</code> добавляет их библиотеку материалов в <code>materials.json</code> проекта. Id, которые проект уже использует с другим значением, не перезаписываются (<code>add</code> останавливается; <code>--force</code> перезаписывает). Файлы становятся частью проекта, поэтому сборке не нужна сеть, а <code>aiversebuild</code> пакует только то, что лежит в проекте.</li><li><code>game.json</code> → <code>&quot;packages&quot;: {&quot;terrain-pbr&quot;: &quot;^1.0.0&quot;}</code> — нужные диапазоны версий; <code>aiverse.lock</code> рядом фиксирует точную версию, хеш архива и хеш каждого установленного файла. Коммитьте оба файла.</li><li>Пакеты <strong><code>source</code></strong> (входные данные запекания) и другие данные инструментов в проект не копируются: инструменты вызывают <code>aiverse_pkg.package_dir(&#x27;&lt;id&gt;&#x27;)</code> и получают папку в кэше (скачивается один раз).</li><li>Пакеты <strong><code>template</code></strong> — целые папки проектов: <code>create</code> копирует такой пакет и ставит пакеты из его <code>game.json</code>.</li><li>Диапазоны версий: точная <code>1.2.3</code>, <code>^1.2</code> (та же старшая), <code>~1.2.3</code> (та же средняя), <code>&gt;=1.0.0</code>, <code>*</code>. У каждого пакета есть <code>minEngine</code>; <code>add</code> предупреждает, если этот checkout движка старше.</li><li>Без сети: <code>AIVERSE_PACKAGES_OFFLINE=1</code> берёт только кэш и последний скачанный индекс.</li><li>C++-инструменты и редактор находят пакеты в кэше через <code>engine/pack/Packages.h</code> (<code>aiverse::pack::cachedPackageDir(&quot;vegetation-pbr&quot;)</code>). Игра кэш не читает.</li></ul>
+<h2 id="web-просмотрщик">Web-просмотрщик<a class="anchor" href="#web-просмотрщик" aria-label="#">#</a></h2>
+<p><code>apps/catalogview</code> (CMake <code>-DAIVERSE_BUILD_CATALOGVIEW=ON</code>, цель <code>aiverse_catalogview</code>) показывает материалы пакета или его glTF / GLB-модели через Renderer3D с орбитальной камерой. Пакет включает просмотр блоком <code>viewer</code> в манифесте; workflow <code>pages</code> каталога собирает <code>view/&lt;id&gt;/&lt;версия&gt;/</code> (view.json и файлы ровно в том виде, в каком они опубликованы, текстуры в своём размере) и WebAssembly-просмотрщик из этого репозитория и выкладывает их на GitHub Pages каталога. В карточке каталога на сайте появляется кнопка <strong>3D-просмотр</strong>: она открывает <code>viewer/?src=../view/&lt;id&gt;/&lt;версия&gt;&amp;lang=ru|en</code> прямо в карточке.</p>
+<ul><li><strong>Материалы:</strong> переключатель формы (сфера, куб, цилиндр, плоскость) над плиткой пола; плотность текселей одинакова на всех формах (один повтор на <code>repeat</code> метров, на замкнутых формах — целое число повторов, чтобы швы сходились). Панель показывает каждую карту текстуры с размером в пикселях и размером файла.</li><li><strong>Модели:</strong> Авто LOD (подсвечен уровень, который выбрал рендер), фиксированный LOD 0…n или STRATA (кластеры строятся из модели при первом выборе; <em>Кластеры</em> раскрашивают их). <em>Сетка</em> показывает рёбра текущего уровня. Панель показывает треугольники по уровням, сгенерировал ли LOD движок, число кластеров STRATA и время их сборки, текстуры модели.</li><li>Все загрузки показывают анимированный знак AIVERSE (тот же, что на сайте, в Studio и веб-сборках; копии синхронизирует <code>tools/branding/logo/loader.py</code>, CTest <code>branding_loader</code>).</li></ul>
+<p>Параметры URL: <code>src</code>, <code>item</code>, <code>shape=sphere|cube|cylinder|plane</code>, <code>lod=auto|strata|N</code>, <code>wire</code>, <code>clusters</code>, <code>lang</code>. Проверка на компьютере: <code>aiverse_catalogview --src &lt;папка view&gt; [--item N] [--shape S] [--lod auto|strata|N] [--wire] [--clusters] [--yaw град] [--pitch град]</code> (<code>AIVERSE_SCREENSHOT</code> работает как в клиенте; каждое изменение печатает строку <code>catalogview-info: {...}</code> — тот же JSON, что получает страница).</p>
+<h2 id="что-вынесено-из-репозитория-движка-2026-11-22">Что вынесено из репозитория движка (2026-11-22)<a class="anchor" href="#что-вынесено-из-репозитория-движка-2026-11-22" aria-label="#">#</a></h2>
+<div class="table"><table><thead><tr><th>Пакет</th><th>Было</th><th>Осталось в движке</th></tr></thead><tbody><tr><td><code>terrain-pbr</code> (материалы, 14 PBR-материалов земли)</td><td><code>engine/assets/materials/terrain</code></td><td>только шахматка (для пустых проектов)</td></tr><tr><td><code>vegetation-pbr</code> (материалы: кора, атласы листвы, проекция коры, зима)</td><td><code>engine/assets/materials/vegetation</code></td><td>—</td></tr><tr><td><code>terrain-pbr-sources</code> (текстуры)</td><td><code>tools/terrain/pbr_sources</code></td><td>—</td></tr><tr><td><code>vegetation-pbr-sources</code> (текстуры)</td><td><code>tools/vegetation/pbr_sources</code></td><td>—</td></tr></tbody></table></div>
+<p>Инструменты, которые читали эти папки, теперь берут их из каталога: <code>tools/terrain/install_pbr_pack.py</code> (то же, что <code>add terrain-pbr</code>), <code>bake_pbr_pack.py --root &lt;копия содержимого пакета&gt;</code> (исходники из каталога), <code>build_detail_materials.py</code>, <code>bake_landscape_pbr.py</code>, <code>tools/vegetation/*</code>. Превью леса TerraWeave в редакторе берёт текстуры <code>vegetation-pbr</code> из проекта, иначе из кэша.</p>
+<h2 id="навыки-указывают-нужные-пакеты">Навыки указывают нужные пакеты<a class="anchor" href="#навыки-указывают-нужные-пакеты" aria-label="#">#</a></h2>
+<p>Навык репозитория перечисляет нужные пакеты во frontmatter:</p>
+<pre><code>---
+name: aiverse-terra-vegetation
+description: ...
+packages: vegetation-pbr, terrain-pbr
+---</code></pre>
+<p><code>python3 tools/skills/catalog.py search|plan</code> показывает их (<code>contentPackages</code>, в <code>plan</code> — готовые команды установки), а <code>python3 tools/pkg/aiverse_pkg.py skill &lt;id-навыка&gt; --project P</code> ставит их. Агенты: прежде чем выполнять такой навык в проекте, поставьте его пакеты; файлы пакетов в репозиторий движка не копируются.</p>
+<h2 id="добавить-или-обновить-пакет">Добавить или обновить пакет<a class="anchor" href="#добавить-или-обновить-пакет" aria-label="#">#</a></h2>
+<p>Pull request в AIVERSE-PLUGINS (его <code>CONTRIBUTING.md</code>); владелец проверяет и принимает. CI проверяет манифест, превью, лицензию и содержимое; после слияния <code>publish</code> выпускает версию и обновляет <code>index.json</code>, который движок и сайт читают напрямую. Маленькое содержимое лежит в <code>files/</code> пакета, большое — <code>archive</code> по https или <code>source</code> (папка публичного GitHub-репозитория на зафиксированном коммите). Опубликованная версия не меняется: для изменений нужна новая <code>version</code>. Тяжёлые ассеты в репозиторий движка больше не коммитятся.</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/packages.md">Исходник на GitHub: docs/packages.md</a></p></article><aside class="doc-toc" aria-label="На странице"><span>На странице</span><a class="toc-2" href="#как-пользоваться">Как пользоваться</a><a class="toc-2" href="#web-просмотрщик">Web-просмотрщик</a><a class="toc-2" href="#что-вынесено-из-репозитория-движка-2026-11-22">Что вынесено из репозитория движка (2026-11-22)</a><a class="toc-2" href="#навыки-указывают-нужные-пакеты">Навыки указывают нужные пакеты</a><a class="toc-2" href="#добавить-или-обновить-пакет">Добавить или обновить пакет</a></aside></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="catalog.html">Каталог</a><a href="devlog.html">Ход разработки</a><a href="blog.html">Блог</a><a href="docs.html">Документация</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+<script>window.DS_L={"none": "Ничего не нашлось"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
+</body>
+</html>

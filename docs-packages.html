@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packages and the catalog — AIVERSE</title>
+<meta name="description" content="Optional content from the AIVERSE-PLUGINS catalog: search, project install, lock file, publishing by pull request.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#F3EFE8">
+<link rel="alternate" hreflang="ru" href="ru/docs-packages.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=ef79e6fb4e">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="catalog.html" data-nav="catalog">Catalog</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs" aria-current="page">Docs</a>
+</div>
+<a class="lang-switch" href="ru/docs-packages.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap docs-main">
+<div class="docs-layout"><nav class="docs-nav" aria-label="Docs"><div class="ds-box"><input class="ds-input" type="search" placeholder="Search the docs  /" aria-label="Search the docs  /" autocomplete="off" spellcheck="false"><div class="ds-results" hidden></div></div><div class="dn-sec"><span>Getting started</span><a href="docs-overview.html">Engine overview</a><a href="docs-engine-import.html">Import from Unity and Godot</a></div><div class="dn-sec"><span>Making a game</span><a href="docs-game-format.html">Game data format</a><a href="docs-packages.html" aria-current="page">Packages and the catalog</a><a href="docs-scripting.html">Lua scripting</a><a href="docs-mechanics-packages.html">Mechanics packages</a><a href="docs-fps.html">FPS</a><a href="docs-meta-service.html">Meta service</a><a href="docs-battle-net.html">Hosted battles</a><a href="docs-editor-windows.html">Editor windows</a></div><div class="dn-sec"><span>Engine systems</span><a href="docs-terraweave.html">TerraWeave</a><a href="docs-physis.html">PHYSIS</a><a href="docs-nereid.html">NEREID</a><a href="docs-strata.html">STRATA</a><a href="docs-lens.html">LENS</a><a href="docs-camera-behaviors.html">LENS: camera behaviours</a><a href="docs-prisma.html">PRISMA</a><a href="docs-spectrafx.html">SpectraFX</a><a href="docs-motionweave.html">MotionWeave</a><a href="docs-vivid-creator.html">VIVID: Character Creator and MetaHuman</a><a href="docs-dynamic-gi.html">LUMA: dynamic indirect light</a><a href="docs-lightbake.html">Light baking</a></div></nav><article class="doc" lang="en"><h1 id="packages-optional-content-from-the-catalog">Packages: optional content from the catalog<a class="anchor" href="#packages-optional-content-from-the-catalog" aria-label="#">#</a></h1>
+<p>The engine repository carries code and a minimal set of assets. Heavy optional content — PBR material libraries, their source images, project templates, model packs, sound, effects — lives in the package catalog <a href="https://github.com/chromealex/AIVERSE-PLUGINS">AIVERSE-PLUGINS</a>. A project downloads only what it uses.</p>
+<div class="table"><table><thead><tr><th>Piece</th><th>Where</th></tr></thead><tbody><tr><td>Catalog: packages by category (<code>materials/</code>, <code>textures/</code>, <code>templates/</code>, <code>models/</code>, <code>audio/</code>, <code>vfx/</code>, <code>ui/</code>, <code>scripts/</code>, <code>plugins/</code>, <code>tools/</code>)</td><td>AIVERSE-PLUGINS, <code>&lt;category&gt;/&lt;id&gt;/aiverse.package.json</code></td></tr><tr><td>Archives <code>&lt;id&gt;-&lt;version&gt;.zip</code></td><td>GitHub releases <code>&lt;id&gt;@&lt;version&gt;</code> of AIVERSE-PLUGINS</td></tr><tr><td>Index (everything the engine and the website read)</td><td><code>index.json</code> on its <code>main</code>, written by its <code>publish</code> workflow</td></tr><tr><td>Client</td><td><code>tools/pkg/aiverse_pkg.py</code> (stdlib Python; <code>--json</code> on every command)</td></tr><tr><td>Cache on this machine</td><td><code>~/.aiverse/packages/&lt;id&gt;/&lt;version&gt;/</code> (<code>AIVERSE_PACKAGES_HOME</code>), downloads verified by SHA-256</td></tr><tr><td>Website</td><td>page <strong>Catalog</strong> (<code>catalog.html</code>): previews, description, minimum engine version, download</td></tr></tbody></table></div>
+<h2 id="using-packages">Using packages<a class="anchor" href="#using-packages" aria-label="#">#</a></h2>
+<pre><code class="lang-sh"><span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py search terrain              <span class="hl-com"># also --category materials, --kind content</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py info terrain-pbr
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py add terrain-pbr <span class="hl-opt">--project</span> ~/Games/MyGame
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py status <span class="hl-opt">--project</span> ~/Games/MyGame
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py install <span class="hl-opt">--project</span> ~/Games/MyGame   <span class="hl-com"># fresh clone: restore from aiverse.lock</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py verify <span class="hl-opt">--project</span> ~/Games/MyGame    <span class="hl-com"># exit 1 when installed files changed</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py remove terrain-pbr <span class="hl-opt">--project</span> ~/Games/MyGame
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py fetch terrain-pbr-sources   <span class="hl-com"># authoring sources: prints the cached folder</span>
+<span class="hl-fn">python3</span> tools/pkg/aiverse_pkg.py create &lt;template-id&gt; ~/Games/New    <span class="hl-com"># new project from a template package</span></code></pre>
+<ul><li><strong><code>content</code></strong> packages are copied into the project at <code>install.mount</code> (for <code>terrain-pbr</code>: <code>materials/terrain</code>); <code>install.mergeJson</code> merges their material library into the project's <code>materials.json</code>. Ids the project already uses with another value are never overwritten (<code>add</code> fails; <code>--force</code> overrides). The project ships the files like any of its own, so a build needs no network and <code>aiversebuild</code> packs only what the project holds.</li><li><code>game.json</code> → <code>&quot;packages&quot;: {&quot;terrain-pbr&quot;: &quot;^1.0.0&quot;}</code> lists the wanted ranges; <code>aiverse.lock</code> next to it pins the exact version, archive hash and every installed file's hash. Commit both.</li><li><strong><code>source</code></strong> packages (bake inputs) and other tool data are never copied into projects: tools call <code>aiverse_pkg.package_dir(&#x27;&lt;id&gt;&#x27;)</code> (Python) and get the cached folder, downloading it once.</li><li><strong><code>template</code></strong> packages are whole project folders: <code>create</code> copies one and installs the packages its <code>game.json</code> lists.</li><li>Version ranges: exact <code>1.2.3</code>, <code>^1.2</code> (same major), <code>~1.2.3</code> (same minor), <code>&gt;=1.0.0</code>, <code>*</code>. Every package declares <code>minEngine</code>; <code>add</code> prints a note when this checkout is older.</li><li>Offline: <code>AIVERSE_PACKAGES_OFFLINE=1</code> uses only the cache and the last downloaded index.</li><li>C++ host tools and the editor find cached packages with <code>engine/pack/Packages.h</code> (<code>aiverse::pack::cachedPackageDir(&quot;vegetation-pbr&quot;)</code>). A game never reads the cache.</li></ul>
+<h2 id="web-viewer">Web viewer<a class="anchor" href="#web-viewer" aria-label="#">#</a></h2>
+<p><code>apps/catalogview</code> (CMake <code>-DAIVERSE_BUILD_CATALOGVIEW=ON</code>, target <code>aiverse_catalogview</code>) shows a package's materials or its glTF / GLB models through Renderer3D with an orbit camera. A package opts in with a <code>viewer</code> block in its manifest; the catalog's <code>pages</code> workflow builds <code>view/&lt;id&gt;/&lt;version&gt;/</code> (view.json + the files exactly as published, textures at their own size) and the WebAssembly viewer from this repository, and deploys both to the catalog's GitHub Pages. The website's Catalog card gets a <strong>3D preview</strong> button that opens <code>viewer/?src=../view/&lt;id&gt;/&lt;version&gt;&amp;lang=ru|en</code> in the card.</p>
+<ul><li><strong>Materials:</strong> a shape switch (sphere, cube, cylinder, plane) over a tiled slab; texel density is the same on every shape (one repeat per <code>repeat</code> metres, whole repeats around closed shapes so the seams meet). The info panel lists every texture map with its size in pixels and its file size.</li><li><strong>Models:</strong> Auto LOD (the level the renderer picked is highlighted), a fixed LOD 0…n, or STRATA (clusters built from the model on first request; <em>Clusters</em> colours them). <em>Wireframe</em> shows the edges of the shown level. The panel lists triangles per level, whether the engine generated the LODs, STRATA cluster count and build time, and the model's textures.</li><li>Every loading state shows the animated AIVERSE mark (the same one as the site, Studio and web builds; <code>tools/branding/logo/loader.py</code> keeps the copies in sync, CTest <code>branding_loader</code>).</li></ul>
+<p>URL parameters: <code>src</code>, <code>item</code>, <code>shape=sphere|cube|cylinder|plane</code>, <code>lod=auto|strata|N</code>, <code>wire</code>, <code>clusters</code>, <code>lang</code>. Desktop check: <code>aiverse_catalogview --src &lt;view folder&gt; [--item N] [--shape S] [--lod auto|strata|N] [--wire] [--clusters] [--yaw deg] [--pitch deg]</code> (<code>AIVERSE_SCREENSHOT</code> works as in the client; every change prints a <code>catalogview-info: {...}</code> line, the same JSON the page receives).</p>
+<h2 id="packages-that-left-the-engine-repository-2026-11-22">Packages that left the engine repository (2026-11-22)<a class="anchor" href="#packages-that-left-the-engine-repository-2026-11-22" aria-label="#">#</a></h2>
+<div class="table"><table><thead><tr><th>Package</th><th>Was</th><th>Now in the engine</th></tr></thead><tbody><tr><td><code>terrain-pbr</code> (materials, 14 PBR ground materials)</td><td><code>engine/assets/materials/terrain</code></td><td>checkerboard only (empty projects)</td></tr><tr><td><code>vegetation-pbr</code> (materials, bark + leaf atlases, bark projection, winter)</td><td><code>engine/assets/materials/vegetation</code></td><td>—</td></tr><tr><td><code>terrain-pbr-sources</code> (textures)</td><td><code>tools/terrain/pbr_sources</code></td><td>—</td></tr><tr><td><code>vegetation-pbr-sources</code> (textures)</td><td><code>tools/vegetation/pbr_sources</code></td><td>—</td></tr></tbody></table></div>
+<p>The tools that used those folders now take them from the catalog: <code>tools/terrain/install_pbr_pack.py</code> (= <code>add terrain-pbr</code>), <code>bake_pbr_pack.py --root &lt;payload copy&gt;</code> (sources from the catalog), <code>build_detail_materials.py</code>, <code>bake_landscape_pbr.py</code>, <code>tools/vegetation/*</code>. The editor's TerraWeave forest preview reads <code>vegetation-pbr</code> textures from the project, else from the cache.</p>
+<h2 id="skills-name-their-packages">Skills name their packages<a class="anchor" href="#skills-name-their-packages" aria-label="#">#</a></h2>
+<p>A repository skill lists the packages it needs in its frontmatter:</p>
+<pre><code>---
+name: aiverse-terra-vegetation
+description: ...
+packages: vegetation-pbr, terrain-pbr
+---</code></pre>
+<p><code>python3 tools/skills/catalog.py search|plan</code> shows them (<code>contentPackages</code>, with ready install commands in <code>plan</code>), and <code>python3 tools/pkg/aiverse_pkg.py skill &lt;skill-id&gt; --project P</code> installs them. Agents: before following such a skill in a project, install its packages; never copy package files into the engine repository.</p>
+<h2 id="adding-or-updating-a-package">Adding or updating a package<a class="anchor" href="#adding-or-updating-a-package" aria-label="#">#</a></h2>
+<p>Pull request to AIVERSE-PLUGINS (its <code>CONTRIBUTING.md</code>); the owner reviews and merges. Its CI checks the manifest, previews, licence and payload; after the merge <code>publish</code> releases the version and rewrites <code>index.json</code>, which the engine and the website read directly. Small payloads live in the package's <code>files/</code>; big ones are an https <code>archive</code> or a <code>source</code> folder of a public GitHub repository at a fixed commit. A published version is immutable: changes need a new <code>version</code>. Heavy assets are never committed to the engine repository again.</p><p class="doc-src"><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/packages.md">Source on GitHub: docs/packages.md</a></p></article><aside class="doc-toc" aria-label="On this page"><span>On this page</span><a class="toc-2" href="#using-packages">Using packages</a><a class="toc-2" href="#web-viewer">Web viewer</a><a class="toc-2" href="#packages-that-left-the-engine-repository-2026-11-22">Packages that left the engine repository (2026-11-22)</a><a class="toc-2" href="#skills-name-their-packages">Skills name their packages</a><a class="toc-2" href="#adding-or-updating-a-package">Adding or updating a package</a></aside></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="catalog.html">Catalog</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+<script>window.DS_L={"none": "Nothing found"};</script><script>
+(function(){var boxes=document.querySelectorAll('.ds-box');if(!boxes.length)return;var idx=null,loading=null,L=window.DS_L||{};
+function load(){if(idx)return Promise.resolve(idx);if(!loading)loading=fetch('docs-search.json').then(function(r){return r.json();}).then(function(d){idx=d.map(function(s){s.lt=(s.t+' '+s.h).toLowerCase();s.lx=s.x.toLowerCase();return s;});return idx;});return loading;}
+function esc(t){return t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function mark(t,ws){var h=esc(t);ws.forEach(function(w){if(w.length<2)return;h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');});return h;}
+function snip(s,ws){var x=s.x,i=-1;ws.some(function(w){i=s.lx.indexOf(w);return i>=0;});if(i<0)return x.slice(0,140);var a=Math.max(0,i-60);return (a?'…':'')+x.slice(a,a+170)+(a+170<x.length?'…':'');}
+function search(q){var ws=q.toLowerCase().split(/\s+/).filter(Boolean);if(!ws.length)return [];var r=[];
+idx.forEach(function(s){var sc=0;for(var k=0;k<ws.length;k++){var w=ws[k],inT=s.lt.indexOf(w)>=0,inX=s.lx.indexOf(w)>=0;if(!inT&&!inX)return;sc+=inT?10:1;if(inX)sc+=Math.min(3,s.lx.split(w).length-1)*.2;}
+if(!s.h)sc-=.5;r.push([sc,s]);});r.sort(function(a,b){return b[0]-a[0];});return r.slice(0,14).map(function(x){return x[1];});}
+boxes.forEach(function(box){var inp=box.querySelector('.ds-input'),res=box.querySelector('.ds-results'),sel=-1;
+function render(){var q=inp.value.trim();if(!q){res.hidden=true;return;}load().then(function(){var ws=q.toLowerCase().split(/\s+/).filter(Boolean),hits=search(q);sel=-1;
+res.innerHTML=hits.length?hits.map(function(s){return '<a class="ds-hit" href="docs-'+s.p+'.html'+(s.a?'#'+s.a:'')+'"><strong>'+mark(s.t,ws)+(s.h?' <span>› '+mark(s.h,ws)+'</span>':'')+'</strong><em>'+mark(snip(s,ws),ws)+'</em></a>';}).join(''):'<p class="ds-none">'+esc(L.none||'')+'</p>';res.hidden=false;});}
+inp.addEventListener('input',render);inp.addEventListener('focus',function(){load();if(inp.value.trim())render();});
+inp.addEventListener('keydown',function(e){var hs=res.querySelectorAll('.ds-hit');if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!hs.length)return;sel=(sel+(e.key==='ArrowDown'?1:-1)+hs.length)%hs.length;hs.forEach(function(h,i){h.classList.toggle('on',i===sel);});hs[sel].scrollIntoView({block:'nearest'});}
+else if(e.key==='Enter'){var h=hs[sel>=0?sel:0];if(h){e.preventDefault();location.href=h.href;}}else if(e.key==='Escape'){res.hidden=true;inp.blur();}});
+document.addEventListener('click',function(e){if(!box.contains(e.target))res.hidden=true;});});
+document.addEventListener('keydown',function(e){if(e.key==='/'&&!/input|textarea/i.test((document.activeElement||{}).tagName||'')){e.preventDefault();boxes[0].querySelector('.ds-input').focus();}});})();
+</script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Package catalog — AIVERSE</title>
+<meta name="description" content="Materials, textures, project templates and other content that is not part of the engine. Download what you need or add it to a project with one command.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#F3EFE8">
+<link rel="alternate" hreflang="ru" href="ru/catalog.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=ef79e6fb4e">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres" data-nav="genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="catalog.html" data-nav="catalog" aria-current="page">Catalog</a>
+<a href="gallery.html" data-nav="gallery">Gallery</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="blog.html" data-nav="blog">Blog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
+</div>
+<a class="lang-switch" href="ru/catalog.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="eyebrow">Package catalog</p><h1>Catalog</h1><p>Materials, textures, project templates and other content that is not part of the engine. Download what you need or add it to a project with one command.</p></div><div class="dl-stats"><div><strong class="cat-n">—</strong><span>packages</span></div><div><strong class="cat-c">—</strong><span>sections</span></div></div></section><div class="cat-bar"><div class="dl-filters cat-filters" role="group" aria-label="Section"><button class="filter" type="button" data-cat="" aria-pressed="true">All</button></div><label class="dl-search cat-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search the catalog" aria-label="Search the catalog"></label></div><p class="cat-status"><span class="aiv-loader" role="status"><svg class="aiv-mark" viewBox="0 60 1000 880" role="img" aria-label="Loading"><style>.aiv-mark{display:block;overflow:visible}.aiv-mark .aiv-b{fill:var(--aiv-mark-ink,#141210);opacity:0;animation:.55s cubic-bezier(.2,.7,.25,1) forwards}.aiv-mark .aiv-t{animation-name:aiv-t}.aiv-mark .aiv-l{animation-name:aiv-l;animation-delay:.1s}.aiv-mark .aiv-r{animation-name:aiv-r;animation-delay:.2s}.aiv-mark .aiv-d{fill:var(--aiv-mark-accent,#E9C3A4);opacity:0;transform-box:view-box;transform-origin:500px 588px;animation:aiv-d .5s .55s cubic-bezier(.2,.7,.25,1) forwards,aiv-p 1.6s 1.05s ease-in-out infinite}@keyframes aiv-t{from{opacity:0;transform:translate(0,-70px)}to{opacity:1;transform:none}}@keyframes aiv-l{from{opacity:0;transform:translate(-60px,32px)}to{opacity:1;transform:none}}@keyframes aiv-r{from{opacity:0;transform:translate(60px,32px)}to{opacity:1;transform:none}}@keyframes aiv-d{from{opacity:0;transform:rotate(-90deg) scale(.3)}to{opacity:1;transform:none}}@keyframes aiv-p{0%,100%{opacity:1;transform:none}50%{opacity:1;transform:scale(1.07)}}@media (prefers-reduced-motion:reduce){.aiv-mark .aiv-b,.aiv-mark .aiv-d{animation:none;opacity:1}}</style><polygon class="aiv-b aiv-t" points="500,94 373,179 373,476 500,397 627,476 627,179"/><polygon class="aiv-b aiv-l" points="433,741 147,907 23,833 23,719 307,561 307,663"/><polygon class="aiv-b aiv-r" points="567,741 853,907 977,833 977,719 693,561 693,663"/><polygon class="aiv-d" points="500,438 350,588 500,738 650,588"/></svg><span>Loading the catalog…</span></span></p><div class="cat-grid"></div><section class="cat-howto"><div><h2>How to install</h2><p>A package is copied into the project folder; its version and file hashes go to aiverse.lock. Downloads are kept once per computer.</p><pre><code>python3 tools/pkg/aiverse_pkg.py search terrain
+python3 tools/pkg/aiverse_pkg.py add terrain-pbr --project ~/Games/MyGame</code></pre></div><div><h2>Add your package</h2><p>Packages are added by pull request to the catalog repository. Once reviewed and merged, the package appears here and in the engine by itself.</p><p><a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE-PLUGINS/blob/main/CONTRIBUTING.md">How to add a package</a> <a class="btn btn-line btn-sm" href="https://github.com/chromealex/AIVERSE-PLUGINS">GitHub</a></p></div></section>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="catalog.html">Catalog</a><a href="devlog.html">Devlog</a><a href="blog.html">Blog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE</small>
+</div>
+</footer>
+<script>window.CAT_CFG={"index": "https://raw.githubusercontent.com/chromealex/AIVERSE-PLUGINS/main/index.json", "lang": "en", "t": {"more": "More", "engine": "Engine", "size": "Size", "license": "Licence", "kind": "Type", "copy": "Copy", "copied": "Copied", "download": "Download", "readme": "README", "none": "Nothing found", "error": "Could not load the catalog. The package list is in index.json of the catalog repository.", "view3d": "3D preview", "view3dClose": "Close 3D"}, "cats": {"templates": "Templates", "materials": "Materials", "textures": "Textures", "models": "Models", "audio": "Audio", "vfx": "Effects", "ui": "UI", "scripts": "Scripts", "plugins": "Plugins", "tools": "Tools"}, "kinds": {"content": "project content", "template": "project template", "source": "sources", "script": "scripts", "plugin": "plugin", "tool": "tool"}};</script><script>
+(function(){var cfg=window.CAT_CFG;if(!cfg)return;var T=cfg.t,lang=cfg.lang;
+function loc(o,k){return (lang!=='ru'&&o[k+'En'])||o[k]||'';}
+function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+function mb(n){return n>=1048576?(n/1048576).toFixed(n>=104857600?0:1)+' MB':Math.max(1,Math.round(n/1024))+' KB';}
+var grid=document.querySelector('.cat-grid'),status=document.querySelector('.cat-status'),bar=document.querySelector('.cat-filters'),
+search=document.querySelector('.cat-search input'),cur='',cards=[];
+function apply(){var q=(search.value||'').toLowerCase().trim(),n=0;cards.forEach(function(c){var ok=(!cur||c.cat===cur)&&(!q||c.hay.indexOf(q)>=0);
+c.el.hidden=!ok;if(ok)n++;});status.textContent=n?'':T.none;status.hidden=!!n;}
+function card(p){var v=p.versions[p.latest],a=el('article','cat-card');a.id='pkg-'+p.id;
+var media=el('div','cat-media'),img=el('img');img.loading='lazy';img.alt=loc(p,'title');img.src=(p.previews||[])[0]||'';media.appendChild(img);
+if((p.previews||[]).length>1){var th=el('div','cat-thumbs');p.previews.forEach(function(src,i){var b=el('button','cat-thumb');b.type='button';
+b.setAttribute('aria-label',(i+1)+'/'+p.previews.length);var t=el('img');t.src=src;t.alt='';t.loading='lazy';b.appendChild(t);
+b.onclick=function(){img.src=src;};th.appendChild(b);});media.appendChild(th);}a.appendChild(media);
+var body=el('div','cat-body'),meta=el('div','cat-meta');meta.appendChild(el('span','chip',cfg.cats[p.category]||p.category));
+meta.appendChild(el('span','cat-ver','v'+p.latest));body.appendChild(meta);
+body.appendChild(el('h2',null,loc(p,'title')));body.appendChild(el('p','cat-summary',loc(p,'summary')));
+var d=loc(p,'description');if(d){var det=el('details','cat-more');det.appendChild(el('summary',null,T.more));det.appendChild(el('p',null,d));body.appendChild(det);}
+var facts=el('dl','cat-facts');[[T.engine,(v.minEngine||'—')+'+'],[T.size,mb(v.size)],[T.license,p.license||'—'],[T.kind,cfg.kinds[p.kind]||p.kind]].forEach(function(f){
+var w=el('div');w.appendChild(el('dt',null,f[0]));w.appendChild(el('dd',null,f[1]));facts.appendChild(w);});body.appendChild(facts);
+var cmd=(p.kind==='content'?'add '+p.id+' --project <project>':p.kind==='template'?'create '+p.id+' <folder>':'fetch '+p.id);
+var pre=el('div','cat-cmd'),code=el('code',null,'python3 tools/pkg/aiverse_pkg.py '+cmd),cp=el('button','cat-copy',T.copy);cp.type='button';
+cp.onclick=function(){navigator.clipboard&&navigator.clipboard.writeText(code.textContent).then(function(){cp.textContent=T.copied;setTimeout(function(){cp.textContent=T.copy;},1500);});};
+pre.appendChild(code);pre.appendChild(cp);body.appendChild(pre);
+var act=el('div','cat-actions'),dl=el('a','btn btn-ink btn-sm',T.download+' · '+mb(v.size));dl.href=v.url;dl.title='sha256 '+v.sha256;act.appendChild(dl);
+if(p.readme){var r=el('a','btn btn-line btn-sm',T.readme);r.href=p.readme;act.appendChild(r);}
+if(p.viewer&&p.viewer.url){var v3=el('button','btn btn-accent btn-sm cat-3d',T.view3d);v3.type='button';v3.onclick=function(){
+var f=media.querySelector('iframe');if(f){f.remove();img.hidden=false;v3.textContent=T.view3d;return;}
+f=el('iframe','cat-frame');f.src=p.viewer.url+(p.viewer.url.indexOf('?')<0?'?':'&')+'lang='+lang;f.title=loc(p,'title')+' — 3D';f.setAttribute('allow','fullscreen');f.loading='lazy';
+img.hidden=true;media.appendChild(f);v3.textContent=T.view3dClose;};act.insertBefore(v3,act.firstChild);}
+body.appendChild(act);a.appendChild(body);
+cards.push({el:a,cat:p.category,hay:[p.id,p.title,p.titleEn,p.summary,p.summaryEn,(p.tags||[]).join(' '),JSON.stringify(p.provides||{})].join(' ').toLowerCase()});
+return a;}
+fetch(cfg.index,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(d){
+var pk=d.packages||[],used={};pk.forEach(function(p){used[p.category]=1;grid.appendChild(card(p));});
+Object.keys(cfg.cats).forEach(function(c){if(!used[c])return;var b=el('button','filter',cfg.cats[c]);b.type='button';b.dataset.cat=c;b.setAttribute('aria-pressed','false');bar.appendChild(b);});
+bar.querySelectorAll('.filter').forEach(function(b){b.onclick=function(){cur=b.dataset.cat;bar.querySelectorAll('.filter').forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
+history.replaceState(null,'',cur?'#cat='+cur:location.pathname);apply();};});
+document.querySelector('.cat-n').textContent=pk.length;document.querySelector('.cat-c').textContent=Object.keys(used).length;
+var h=location.hash.match(/^#cat=([a-z]+)/);if(h){var b=bar.querySelector('[data-cat="'+h[1]+'"]');if(b)b.click();}
+status.textContent='';apply();
+var m=location.hash.match(/^#pkg-([a-z0-9-]+)/);if(m){var t=document.getElementById('pkg-'+m[1]);if(t)t.scrollIntoView();}
+}).catch(function(){status.textContent=T.error;});
+search.addEventListener('input',apply);})();
+</script>
+</body>
+</html>
