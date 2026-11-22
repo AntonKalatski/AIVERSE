@@ -63,7 +63,7 @@ if(MSVC)
 else()
     set(_aiverse_studio_manifest win/AiverseStudio.rc)       # RT_MANIFEST resource for MinGW
 endif()
-add_executable(aiverse_studio WIN32 win/Main.cpp ${AIVERSE_STUDIO_SOURCES} ${_aiverse_studio_manifest})
+add_executable(aiverse_studio WIN32 win/Main.cpp ${AIVERSE_STUDIO_SOURCES} ${_aiverse_studio_manifest} win/AiverseStudio.icon.rc)
 target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
 target_include_directories(aiverse_studio SYSTEM PRIVATE "${AIVERSE_WEBVIEW2_DIR}/build/native/include")
 if(NOT MSVC)

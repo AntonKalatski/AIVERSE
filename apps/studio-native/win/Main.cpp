@@ -159,6 +159,7 @@ public:
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = CreateSolidBrush(RGB(14, 17, 23));
         wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
+        wc.hIconSm = wc.hIcon;
         wc.lpszClassName = kMainClass;
         RegisterClassExW(&wc);
         WNDCLASSEXW sc{sizeof(sc)};

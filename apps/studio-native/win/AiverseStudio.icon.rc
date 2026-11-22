@@ -1,0 +1,2 @@
+// Taskbar and Alt-Tab icon. Resource 1 is what WinShell loads; the manifest uses the same number with a different type.
+1 ICON "AiverseStudio.ico"
