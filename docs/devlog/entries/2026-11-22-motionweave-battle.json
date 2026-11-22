@@ -15,8 +15,8 @@
     "The sword is not baked into the model: every frame it takes the hand position from the evaluated pose. The team colour goes onto the cloth through the material, with no separate model per army."
   ],
   "status": "done",
-  "verified": "Снято на Linux через OpenGL, 1920×1080: 90 персонажей, 63 идут, 21 в бою, 6 упали.",
-  "verifiedEn": "Captured on Linux through OpenGL at 1920×1080: 90 characters, 63 marching, 21 fighting, 6 fallen.",
+  "verified": "Снято на Linux через OpenGL: кадр 1920×1080 и ролик 1280×720, 2 секунды. 90 персонажей: 63 идут, 21 в бою, 6 упали.",
+  "verifiedEn": "Captured on Linux through OpenGL: a 1920×1080 frame and a 1280×720 two-second clip. 90 characters: 63 marching, 21 fighting, 6 fallen.",
   "limits": "Кадр не снят на Metal. Модель простая, из шаблона движка; ретаргет на другие риги и LOD скелетов на этом кадре не показаны.",
   "limitsEn": "Not captured on Metal. The model is the simple one from the engine template; retargeting to other rigs and skeleton LODs are not shown in this frame.",
   "branch": "main",
@@ -25,6 +25,11 @@
       "src": "docs/devlog/media/2026-11-22-motionweave-battle/battle.jpg",
       "caption": "Два строя сходятся: у каждого персонажа свой экземпляр графа",
       "captionEn": "Two ranks meet: every character runs its own graph instance"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-motionweave-battle/battle.mp4",
+      "caption": "Две секунды боя: каждый персонаж двигается по своему экземпляру графа",
+      "captionEn": "Two seconds of the battle: every character moves by its own graph instance"
     }
   ]
 }
