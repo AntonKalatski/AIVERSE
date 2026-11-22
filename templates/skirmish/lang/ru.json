@@ -23,6 +23,12 @@
   "map.tornado_valley.player.1": "Синие",
   "map.tornado_valley.player.2": "Красные",
 
+  // maps/firestorm_valley.json
+  "map.firestorm_valley.title": "Огненная долина (1 на 1, PHYSIS)",
+  "map.firestorm_valley.name": "Огненная долина",
+  "map.firestorm_valley.player.1": "Синие",
+  "map.firestorm_valley.player.2": "Красные",
+
   // rules.json resources
   "resource.gold": "Золото",
   "resource.wood": "Дерево",
