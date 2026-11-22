@@ -1821,13 +1821,7 @@
     "Make a strategy game on planets with an orbital layer.",
     "Get a new map for every match.",
     "Check a map's fairness with bot matches."
-   ],
-   "cover": {
-    "src": "docs/devlog/media/systems/planets-surface.jpg",
-    "caption": "Планета на кубе-сфере: атмосфера, море и рельеф",
-    "captionEn": "A cube-sphere planet: atmosphere, sea and terrain",
-    "approved": false
-   }
+   ]
   },
   {
    "id": "voxel",
