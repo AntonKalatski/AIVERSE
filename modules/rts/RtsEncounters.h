@@ -21,9 +21,9 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "aiverselib/genre/BossEncounter.h"
-#include "aiverselib/genre/BossSchedule.h"
-#include "aiverselib/genre/MobBehaviour.h"
+#include "aiverselib/mechanics/BossEncounter.h"
+#include "aiverselib/mechanics/BossSchedule.h"
+#include "aiverselib/mechanics/MobBehaviour.h"
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"

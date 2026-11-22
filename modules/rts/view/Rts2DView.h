@@ -77,7 +77,7 @@ public:
 
     // ---- per frame (RtsView::draw)
     // `grid`: ground for projected decals (blob shadows, ground-mode sprites); `r`: sun + shadow tier
-    void beginFrame(const render::RTSCamera& cam, double time, const render::Renderer3D& r, const MapGrid* grid, float levelHeight);
+    void beginFrame(const render::Camera& cam, double time, const render::Renderer3D& r, const MapGrid* grid, float levelHeight);
     // fx: view.entity_fx (sprite width / height scale, opacity); null = none
     void addObject(const SceneObject& o, float groundY, const EntityFxValues* fx = nullptr);
     void endFrame(const MapGrid& grid);          // death animations of objects that disappeared
@@ -91,7 +91,7 @@ public:
     // world point at the top centre of the drawn sprite (health bars)
     render::float3 barPoint(const SceneObject& o, float groundY) const;
     // screen-space hit test against the drawn sprite quad
-    bool hit(const render::RTSCamera& cam, const SceneObject& o, float groundY, float sx, float sy, float w, float h) const;
+    bool hit(const render::Camera& cam, const SceneObject& o, float groundY, float sx, float sy, float w, float h) const;
 
     // ---- tiles (RtsTileView.cpp)
     void setTiles(const Json& tiles);             // map "tiles" block (null: no tile map)
@@ -162,7 +162,7 @@ private:
     gfx::Device* resourceDevice_ = nullptr;
     bool ready_ = false;
 
-    render::RTSCamera cam_;
+    render::Camera cam_;
     render::float3 camRight_, camUp_, camFwd_, groundRight_, groundFront_;
     double time_ = 0;
     uint32_t frame_ = 0;

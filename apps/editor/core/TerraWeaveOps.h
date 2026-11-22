@@ -165,11 +165,11 @@ inline void registerTerraWeaveOps(Workspace& ws) {
     Workspace* w = &ws;
     ws.registerOp({"terraweave_preview",
         "Preview 9x9 deterministic TerraWeave heights in cm, no map mutations. "
-        "Use terraweave_generate to bake the full heightfield; flat RTS map only.",
+        "Use terraweave_generate to bake the full heightfield; flat grid map only.",
         Json::parse(schema), [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
-            if (w->project.isFps()) throw std::runtime_error(
-                "TerraWeave MapDoc heightfield adapter is for RTS grid maps only");
+            if (w->project.worldSpaceMaps()) throw std::runtime_error(
+                "TerraWeave MapDoc heightfield adapter is for flat grid maps only (world-space maps: G2)");
             if (w->map.data.planet()) throw std::runtime_error(
                 "TerraWeave flat map adapter does not support planet maps");
             const auto settings = terraweave_ops_detail::terrain(p);
@@ -188,7 +188,7 @@ inline void registerTerraWeaveOps(Workspace& ws) {
                                                    w->map.data.w, w->map.data.h);
         }});
     ws.registerOp({"terraweave_generate",
-        "Generate full deterministic TerraWeave heightfield in the current RTS map. "
+        "Generate full deterministic TerraWeave heightfield in the current grid map. "
         "By default refuses to overwrite existing sculpt/detail. Set overwrite=true "
         "to explicitly replace authored terrain, or preserveEdits=true to move "
         "the existing authored height and detail residuals onto a new generator base "
@@ -196,8 +196,8 @@ inline void registerTerraWeaveOps(Workspace& ws) {
         "Both choices are mutually exclusive. Creates one undo step.",
         Json::parse(schema), [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
-            if (w->project.isFps()) throw std::runtime_error(
-                "TerraWeave MapDoc heightfield adapter is for RTS grid maps only");
+            if (w->project.worldSpaceMaps()) throw std::runtime_error(
+                "TerraWeave MapDoc heightfield adapter is for flat grid maps only (world-space maps: G2)");
             auto settings = terraweave_ops_detail::terrain(p);
             auto origin = terraweave_ops_detail::origin(p);
             const bool overwrite=p.getBool("overwrite",false);

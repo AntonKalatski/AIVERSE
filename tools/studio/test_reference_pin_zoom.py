@@ -268,7 +268,7 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("viewForAxis(arm.axis, arm.sign)",gizmo)
         self.assertIn("[self sendStudioEventPayload:\"viewport.camera\" payload:payload]",host)
         self.assertIn("void StudioMetalScene::setOrientation(",renderer)
-        self.assertIn("render::RTSCamera StudioMetalScene::viewCamera() const",renderer)
+        self.assertIn("render::Camera StudioMetalScene::viewCamera() const",renderer)
         self.assertIn("viewCamera().screenRay(",renderer)
         self.assertIn("window.addEventListener('keyup',keyup)",web)
         self.assertIn("window.addEventListener('blur',blur)",web)

@@ -1522,6 +1522,7 @@ void openGameApi(Vm& vm) {
     openEncounterApi(vm);   // boss encounters (RtsEncountersApi.cpp)
     openCommerceApi(vm);   // premises, businesses, the bank (RtsCommerceApi.cpp)
     openDrivingApi(vm);    // vehicles (RtsDrivingApi.cpp)
+    openServicesApi(vm);   // traffic services (RtsServicesApi.cpp)
     openCareerApi(vm);     // career ladders (RtsCareerApi.cpp)
     openPromptApi(vm);     // script choice menus (RtsPrompt.cpp)
 }

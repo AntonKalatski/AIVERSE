@@ -26,7 +26,7 @@ struct Showcase {
     std::vector<game::RtsAI> bots;
     render::Renderer3D renderer;
     game::RtsView view;
-    render::RTSCamera camera;
+    render::Camera camera;
     ui::UiLayer ui;
     i18n::Localization language;
     Rml::ElementDocument* document=nullptr;

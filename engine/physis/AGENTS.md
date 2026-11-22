@@ -95,7 +95,7 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   apps/editor/PhysisFieldEditor.h. Do not include either in engine/physis.
 - Five pivot modes use physis_authoring::computeFieldPivot with selected
   authored IDs. Pivots and selection are session-only, never ECS schemas.
-- World-axis X/Y/Z translation relies on RTSCamera::screenRay and exact
+- World-axis X/Y/Z translation relies on Camera::screenRay and exact
   ray-axis closest point; skip near-parallel rays. Marquee captures only
   opt-in empty-scene drag, not normal scene selection by default.
 - Rotation ring Y changes field centre POSITIONS, not wind/gravity force

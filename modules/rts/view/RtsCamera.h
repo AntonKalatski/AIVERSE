@@ -38,14 +38,14 @@ inline CameraSetup cameraSetupFrom(const Json& manifest) {
     return c;
 }
 
-// Converts a zoom value of the block into RTSCamera::distance.
+// Converts a zoom value of the block into Camera::distance.
 inline float cameraDistanceFor(const CameraSetup& c, float zoom) {
     return c.ortho ? zoom * 0.5f / std::tan(c.fovY * 0.5f) : zoom;
 }
 
 // Applies projection, angles and zoom limits. Sets the zoom when the block gives one (zoom or
 // pixelsPerCell) and returns true; otherwise the caller's framing distance stays.
-inline bool applyCameraSetup(const CameraSetup& c, render::RTSCamera& cam, float viewHeightPx) {
+inline bool applyCameraSetup(const CameraSetup& c, render::Camera& cam, float viewHeightPx) {
     if (!c.present) return false;
     cam.ortho = c.ortho;
     cam.pitch = c.pitch;

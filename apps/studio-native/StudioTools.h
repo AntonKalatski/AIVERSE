@@ -48,7 +48,7 @@ inline const std::vector<StudioToolGroup>& studioToolGroups() {
         {"modeling", {"modeling_catalog", "modeling_list", "modeling_get", "modeling_create", "modeling_edit", "modeling_apply", "modeling_build",
                       "modeling_duplicate", "modeling_lod", "modeling_export", "modeling_graph_set", "modeling_graph_import", "modeling_graph_publish",
                       "texture_patterns", "texture_generate"}},
-        {"anim_assets", {"animation_asset_get", "animation_asset_save", "animation_generate", "animation_bake", "animation_sample"}},
+        {"anim_assets", {"modeling_list", "animation_get", "animation_asset_get", "animation_asset_save", "animation_generate", "animation_bake", "animation_sample"}},
         {"anim_graph", {"animation_graph_list", "animation_graph_get", "animation_graph_validate", "animation_graph_set", "animation_graph_apply",
                         "animation_montage_validate"}},
         {"anim_rig", {"animation_avatar_suggest", "animation_avatar_validate", "rig_auto_weights", "rig_edit", "animation_ragdoll_generate",

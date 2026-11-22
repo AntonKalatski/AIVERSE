@@ -132,7 +132,7 @@ void Traffic::gangs(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& 
         if (!foci.empty() && drv && drv->active() && shop.piece >= 0 && (nearestSq(foci, home.pos) <= sight || nearestSq(foci, shop.pos) <= sight)) {
             Fixed best = Fixed::fromInt(12 * 12);
             gs.hash.query(v3(home.pos), Fixed::fromInt(12), [&](Entity o) {
-                const DrivingCar* dc = drv->car(sim, o);
+                const vehicles::VehicleDrive* dc = drv->car(sim, o);
                 if (!dc || dc->driver.valid() || !living(w, o) || carOf(st, o)) return;
                 bool cruiser = false;   // not a patrol car, a bus, an ambulance
                 for (auto& sv : rules_.services) for (auto& t : sv.types) cruiser = cruiser || t.type == w.get<Unit>(o).type;

@@ -132,7 +132,7 @@ public:
     // Between Renderer3D::beginScene and render. `live` may be null.
     void draw(gfx::Device& device, render::Renderer3D& renderer, fx::ParticleSystem& ps,
               const Reader& reader, const MapDoc& doc, const World* live,
-              const render::RTSCamera& cam, double timeSeconds, const HeightAt& heightAt,
+              const render::Camera& cam, double timeSeconds, const HeightAt& heightAt,
               const Retire& retire) {
         if (!settings.enabled) { if (active_) release(device, ps); return; }
         if (!heightAt) return;

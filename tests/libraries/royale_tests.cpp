@@ -1,5 +1,5 @@
 // battle-royale: phased zone, bombardment, supply drops, air insertion, standings, lobby, persistence and JSON.
-#include <aiverselib/genre/royale/BattleRoyale.h>
+#include <aiverselib/mechanics/royale/BattleRoyale.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -162,7 +162,7 @@ void golden(){
 }
 }
 int main(int argc,char** argv){
-    try{zone();bombardment();supply();insertion();standings();lobby();data((std::string(argc>1?argv[1]:".")+"/examples/libraries/genre/royale/royale.json").c_str());golden();}
+    try{zone();bombardment();supply();insertion();standings();lobby();data((std::string(argc>1?argv[1]:".")+"/examples/libraries/mechanics/royale/royale.json").c_str());golden();}
     catch(const std::exception& e){std::cerr<<"royale tests failed: "<<e.what()<<"\n";return 1;}
     std::cout<<"royale tests passed\n";return 0;
 }

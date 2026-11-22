@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Brush } from 'lucide-react';
+import { Brush, Spline } from 'lucide-react';
 import { invoke, onNativeEvent } from '../bridge';
 import type { StudioSceneBrush } from '../types';
 
@@ -11,10 +11,16 @@ const OPS: Array<[StudioSceneBrush['op'], string]> = [['raise', 'Raise'], ['lowe
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 const op = async (name: string, params: Record<string, unknown> = {}) => (await invoke('studio.op', { op: name, params })).result as Record<string, any>;
 
+/** Choices as chips (filterable when there are many): clickable without a native pop-up menu. */
 function Choice({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
-  return <label className="ptp__row"><span>{label}</span>
-    <select className="au-input" value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">Choose…</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select></label>;
+  const [filter, setFilter] = useState('');
+  const shown = options.filter(o => !filter || o.toLowerCase().includes(filter.toLowerCase())).slice(0, 60);
+  return <div className="tbrush__choice"><span>{label}</span>
+    {options.length > 12 && <input className="au-input tbrush__filter" placeholder="Filter" value={filter} onChange={e => setFilter(e.target.value)}/>}
+    <div className="tbrush__chips" role="radiogroup" aria-label={label}>
+      {shown.map(o => <button key={o} type="button" role="radio" aria-checked={value === o} className={value === o ? 'is-on' : ''} onClick={() => onChange(o)}>{o}</button>)}
+      {!options.length && <em>none in this project</em>}
+    </div></div>;
 }
 function Slider({ label, value, min, max, step, onCommit }: { label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void }) {
   const [v, setV] = useState(value);
@@ -31,6 +37,7 @@ function Slider({ label, value, min, max, step, onCommit }: { label: string; val
 export default function SceneBrushBar({ kinds }: { kinds: BrushKind[] }) {
   const [brush, setBrush] = useState<StudioSceneBrush | null>(null);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
   const [options, setOptions] = useState<{ tiles: string[]; fields: string[]; types: string[]; roads: string[] }>({ tiles: [], fields: [], types: [], roads: [] });
   const set = (patch: Partial<StudioSceneBrush>) =>
     void invoke('studio.sceneBrush', patch).then(b => { setBrush(b); setError(''); }).catch(e => setError(message(e)));
@@ -39,7 +46,7 @@ export default function SceneBrushBar({ kinds }: { kinds: BrushKind[] }) {
       kinds.includes(b.kind) ? setBrush(b) : invoke('studio.sceneBrush', { kind: kinds[0], armed: false }).then(setBrush)).catch(() => {});
     const off = onNativeEvent((event, payload) => { if (event === 'brush.changed' && payload) setBrush(payload as StudioSceneBrush); });
     // Leaving the panel puts the brush down: Scene clicks select again.
-    return () => { off(); void invoke('studio.sceneBrush', { armed: false }).catch(() => {}); };
+    return () => { off(); void invoke('studio.sceneBrush', { armed: false }).catch(() => {}); void invoke('studio.splineEdit', { kind: '' }).catch(() => {}); };
   }, [kinds.join()]); // eslint-disable-line react-hooks/exhaustive-deps
   const kind = brush && kinds.includes(brush.kind) ? brush.kind : kinds[0];
   useEffect(() => {
@@ -50,13 +57,25 @@ export default function SceneBrushBar({ kinds }: { kinds: BrushKind[] }) {
     if (kind === 'road') void op('road_types').then(r => setOptions(o => ({ ...o, roads: (r.types ?? []).map((t: any) => t.id ?? t.name).filter(Boolean) }))).catch(() => {});
     if (kind === 'objects') void invoke('studio.rules', {}).then((r: any) => setOptions(o => ({ ...o, types: Object.keys(r.types ?? {}).sort() }))).catch(() => {});
   }, [kind]);
+  // A tool with nothing chosen yet takes the first choice, so a stroke never fails on an empty setting.
+  useEffect(() => {
+    if (!brush) return;
+    if (kind === 'tiles' && !brush.tile && options.tiles[0]) set({ tile: options.tiles[0] });
+    if (kind === 'field' && !brush.field && options.fields[0]) set({ field: options.fields[0] });
+    if (kind === 'road' && !brush.roadType && options.roads[0]) set({ roadType: options.roads[0] });
+    if (kind === 'objects' && !brush.type && options.types[0]) set({ type: options.types.find(t => /tree|rock|stone/i.test(t)) ?? options.types[0] });
+  }, [kind, options, brush?.tile, brush?.field, brush?.roadType, brush?.type]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!brush) return null;
   const continuous = kind === 'terrain' || kind === 'paint' || kind === 'tiles' || kind === 'field' || kind === 'objects';
   return <div className={'tbrush' + (brush.armed ? ' is-armed' : '')}>
     <div className="tbrush__row">
       <button type="button" className={'au-button au-button--sm' + (brush.armed ? ' au-button--primary' : '')} aria-pressed={brush.armed}
-        onClick={() => set({ armed: !brush.armed, kind })} title="Drag in the Scene (Alt+drag orbits, [ ] size, Esc stops)">
+        onClick={() => { set({ armed: !brush.armed, kind }); if (!brush.armed) setEditing(false); }} title="Drag in the Scene (Alt+drag orbits, [ ] size, Esc stops)">
         <Brush size={13}/>{brush.armed ? 'Brush on' : 'Brush'}</button>
+      {(kind === 'road' || kind === 'river') && <button type="button" className={'au-button au-button--sm' + (editing ? ' au-button--primary' : '')}
+        aria-pressed={editing} title="Show the nodes in the Scene and drag them (each move is one History step)"
+        onClick={() => void invoke('studio.splineEdit', { kind: editing ? '' : kind }).then(r => { setEditing(!!r.kind); if (r.kind) setBrush(b => b && { ...b, armed: false }); setError(''); })
+          .catch(e => setError(message(e)))}><Spline size={13}/>{editing ? 'Editing nodes' : 'Edit nodes'}</button>}
       {kinds.length > 1 && <div className="ptp__seg" role="radiogroup" aria-label="Brush tool">
         {kinds.map(k => <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? 'is-on' : ''}
           onClick={() => set({ kind: k })}>{KIND_LABEL[k]}</button>)}</div>}
@@ -68,7 +87,7 @@ export default function SceneBrushBar({ kinds }: { kinds: BrushKind[] }) {
     {kind === 'tiles' && <Choice label="Terrain" value={brush.tile} options={options.tiles} onChange={v => set({ tile: v })}/>}
     {kind === 'field' && <>
       <Choice label="Field" value={brush.field} options={options.fields} onChange={v => set({ field: v })}/>
-      <Choice label="Mode" value={brush.fieldMode} options={['set', 'add', 'max', 'erase']} onChange={v => v && set({ fieldMode: v as StudioSceneBrush['fieldMode'] })}/>
+      <Choice label="Mode" value={brush.fieldMode} options={['set', 'add', 'max', 'erase']} onChange={v => set({ fieldMode: v as StudioSceneBrush['fieldMode'] })}/>
       <Slider label="Value" value={brush.value} min={0} max={100} step={1} onCommit={v => set({ value: v })}/></>}
     {kind === 'objects' && <>
       <Choice label="Type" value={brush.type} options={options.types} onChange={v => set({ type: v })}/>
@@ -80,6 +99,7 @@ export default function SceneBrushBar({ kinds }: { kinds: BrushKind[] }) {
     {continuous && <Slider label={kind === 'objects' ? 'Spacing' : 'Radius'} value={brush.radius} min={0.5} max={24} step={0.5} onCommit={v => set({ radius: v })}/>}
     {(kind === 'terrain' || kind === 'paint') && <Slider label="Strength" value={brush.strength} min={0.05}
       max={kind === 'paint' || brush.op === 'smooth' || brush.op === 'flatten' || brush.op === 'erode' ? 1 : 6} step={0.05} onCommit={v => set({ strength: v })}/>}
+    {editing && <p className="ptp__hint">Drag a {kind === 'road' ? 'road node' : 'river point'} in the Scene to move it</p>}
     {brush.armed && <p className="ptp__hint">{continuous ? 'Drag in the Scene to paint' : 'Drag the path in the Scene; it is built on release'} · one History step per stroke · [ ] size · Esc stops</p>}
     {error && <div className="tool__error" role="alert">{error}</div>}
   </div>;

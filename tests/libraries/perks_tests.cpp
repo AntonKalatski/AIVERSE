@@ -1,14 +1,14 @@
 // match-progression: perks/modifier pipeline, xp + level curve + offers, xp pickups, summons, battle deck.
-#include <aiverselib/genre/PerksData.h>
-#include <aiverselib/genre/PerksConfigured.h>
-#include <aiverselib/genre/PerksPersistence.h>
+#include <aiverselib/mechanics/PerksData.h>
+#include <aiverselib/mechanics/PerksConfigured.h>
+#include <aiverselib/mechanics/PerksPersistence.h>
 #include <iostream>
 #include <stdexcept>
 using namespace aiverse;using namespace aiverse::lib::genre;
 #define CHECK(x) do{if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);}while(false)
 namespace {
 std::string root;
-Json file(const std::string& name){return Json::parseFile(root+"/examples/libraries/genre/"+name);}
+Json file(const std::string& name){return Json::parseFile(root+"/examples/libraries/mechanics/"+name);}
 PerkDefinitions defs(){return readPerkDefinitions(file("perks.json"));}
 BattleDeck deck(){return readBattleDeck(file("perks-deck.json"));}
 template<class F> std::string jsonError(F f){try{f();}catch(const JsonError& e){return e.what();}return {};}

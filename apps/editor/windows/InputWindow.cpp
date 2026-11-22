@@ -145,7 +145,7 @@ public:
         if(dir!=loadedDir_) load(dir);
         ImGui::TextWrapped("Project: input/actions.json. These are project-owned mappings; "
                            "player rebindings are saved separately in the user's profile.");
-        if(ed.ws().project.isFps())
+        if(ed.ws().project.actorSessionPlay())
             ImGui::TextWrapped("FPS: this asset REPLACES ALL built-in actions, not just edited keys. "
                                "Save only a complete FPS action scheme.");
         if(ImGui::Button("Use FPS defaults")) {

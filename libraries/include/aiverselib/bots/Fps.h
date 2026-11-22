@@ -5,6 +5,7 @@
 #include "modules/fps/FpsModule.h"
 #include "engine/core/FixedMath.h"
 #include <limits>
+#include <vector>
 namespace aiverse::lib::bots {
 enum class FpsDecision : uint8_t {Idle,Patrol,Investigate,Engage,Reload,Retreat,Zone,Blocked};
 struct FpsConfig {
@@ -53,18 +54,19 @@ inline bool valid(const FpsState& s){
 inline Vec3 flat(Vec3 v){v.y={};return v;}
 inline Fixed wrapTurn(Fixed angle){angle.raw%=Fixed::kOne;if(angle<Fixed{})angle+=1_fx;return angle;}
 inline Fixed turnDelta(Fixed to,Fixed from){auto d=wrapTurn(to-from);return d>Fixed::fromRatio(1,2)?d-1_fx:d;}
-inline Vec3 eye(const fps::Actor& a,const fps::MotorConfig& c){return a.pos+Vec3{{},fps::stanceHeight(a,c)-Fixed::fromRatio(1,10),{}};}
-inline Vec3 center(const fps::Actor& a,const fps::MotorConfig& c){return a.pos+Vec3{{},fps::stanceHeight(a,c)/2,{}};}
-inline bool visible(const fps::Actor& self,const fps::Actor& other,const fps::Module& module,const FpsConfig& c){
+template<class C> Vec3 eye(const C& a,const fps::MotorConfig& c){return a.pos+Vec3{{},fps::stanceHeight(a,c)-Fixed::fromRatio(1,10),{}};}
+template<class C> Vec3 center(const C& a,const fps::MotorConfig& c){return a.pos+Vec3{{},fps::stanceHeight(a,c)/2,{}};}
+template<class A,class B> bool visible(const A& self,const B& other,const fps::Module& module,const FpsConfig& c){
     if(other.slot==self.slot||other.team==self.team||other.health<=0)return false;
     auto delta=center(other,module.config().motor)-eye(self,module.config().motor);auto distance=delta.length();
     if(distance>c.sightRange)return false;
     if(distance>Fixed{}&&fps::direction(self.yaw,self.pitch).dot(delta)/distance<fxCosTurns(c.halfFov))return false;
     return !module.collision().cast(eye(self,module.config().motor),delta).hit;
 }
-inline bool friendlyInLine(const fps::Actor& self,const fps::State& world,const fps::Module& module,Fixed yaw,Fixed pitch,Fixed distance){
+// `characters`: every character in slot order (views from fps::Module::character or snapshots).
+template<class A,class Characters> bool friendlyInLine(const A& self,const Characters& characters,const fps::Module& module,Fixed yaw,Fixed pitch,Fixed distance){
     auto start=eye(self,module.config().motor),delta=fps::direction(yaw,pitch)*distance;
-    for(const auto& a:world.actors)if(a.slot!=self.slot&&a.team==self.team&&a.health>0){
+    for(const auto& a:characters)if(a.slot!=self.slot&&a.team==self.team&&a.health>0){
         Fixed fraction;Vec3 normal;if(world::intersect(start,delta,fps::actorBounds(a,module.config().motor),fraction,normal))return true;
     }
     return false;
@@ -72,22 +74,25 @@ inline bool friendlyInLine(const fps::Actor& self,const fps::State& world,const 
 // Run once before the authoritative simulation step; return one ordinary input Command.
 // State is explicit: save it alongside Simulation, or through a game-owned NativeState record.
 inline std::optional<Command> fpsCommand(Simulation& sim,const fps::Module& module,uint8_t slot,const FpsConfig& c,const Waypoints& nodes,FpsState& state,std::optional<Vec3> objective={},const NavMesh* navigation=nullptr) {
-    const auto& world=module.state(sim);if(!slot||slot>world.actors.size()||!valid(c)||!valid(state)||!valid(nodes)||sim.result()!=0)return {};
+    const Simulation& view=sim;if(!slot||slot>module.characterCount(view)||!valid(c)||!valid(state)||!valid(nodes)||sim.result()!=0)return {};
     if(objective&&(objective->x< -100000_fx||objective->x>100000_fx||objective->y< -100000_fx||objective->y>100000_fx||objective->z< -100000_fx||objective->z>100000_fx))return {};
-    const auto& self=world.actors[slot-1];const auto tick=sim.tick();
+    // Read-only views of every character in slot order (the same order and fields as the former State::actors).
+    std::vector<fps::ConstCharacterRef> characters;characters.reserve(module.characterCount(view));
+    module.forEachCharacter(view,[&](fps::ConstCharacterRef a){characters.push_back(a);});
+    const auto& self=characters[slot-1];const auto tick=sim.tick();
     if(state.initialized&&(state.slot!=slot||tick<=state.lastTick))return {};
     auto s=state;
     if(!s.initialized||s.life!=self.life){s={};s.slot=slot;s.life=self.life;s.initialized=true;}
     s.lastTick=tick;s.decision=FpsDecision::Idle;
     fps::Input input;input.yaw=self.yaw;input.pitch=self.pitch;input.viewTick=tick;
     auto seq=std::max(s.sequence,self.lastSequence);if(seq==UINT32_MAX)return {};s.sequence=seq+1;input.sequence=s.sequence;
-    const fps::Actor* target=nullptr;
+    const fps::ConstCharacterRef* target=nullptr;
     // Recheck current target each tick for LOS; new sightings are sampled at the configured cadence.
-    for(const auto& a:world.actors)if(a.slot==s.target&&a.life==s.targetLife&&visible(self,a,module,c))target=&a;
+    for(const auto& a:characters)if(a.slot==s.target&&a.life==s.targetLife&&visible(self,a,module,c))target=&a;
     if(self.blindUntil>tick)target=nullptr;
     if(self.blindUntil<=tick&&!target&&(!state.initialized||tick-s.lastSensor>=c.sensorTicks)){
         s.lastSensor=tick;Fixed best=c.sightRange*c.sightRange;
-        for(const auto& a:world.actors)if(visible(self,a,module,c)){
+        for(const auto& a:characters)if(visible(self,a,module,c)){
             auto d=(a.pos-self.pos).lengthSq();if(!target||d<best||(d==best&&a.slot<target->slot)){best=d;target=&a;}
         }
     }
@@ -155,7 +160,7 @@ inline std::optional<Command> fpsCommand(Simulation& sim,const fps::Module& modu
         if(target&&!retreat&&!reload&&self.reloadUntil==0&&self.ammo>0&&tick>=self.switchUntil&&
            (weapon.automatic||(!self.fireHeld&&tick>=self.nextFire))&&tick-s.acquired>=c.reactionTicks&&
            fxAbs(turnDelta(desired,input.yaw))<=c.aimTolerance&&fxAbs(pitch-input.pitch)<=c.aimTolerance&&
-           delta.length()<=weapon.range&&!friendlyInLine(self,world,module,input.yaw,input.pitch,delta.length()+cfg.motor.radius))input.buttons|=fps::Fire;
+           delta.length()<=weapon.range&&!friendlyInLine(self,characters,module,input.yaw,input.pitch,delta.length()+cfg.motor.radius))input.buttons|=fps::Fire;
     }
     const auto arrival=navigation?fxMin(navigation->config.cellSize/8,Fixed::fromRatio(1,10)):c.arrivalRadius;
     if(goal&&(self.pos-*goal).xz().length()>arrival){

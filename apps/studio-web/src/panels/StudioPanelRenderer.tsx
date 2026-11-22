@@ -3,12 +3,12 @@
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
 import {
-  Activity, Box, FolderOpen,
+  Activity,
   Focus, RotateCcw
 } from 'lucide-react';
 import type { StudioEntity, StudioInspector, StudioSnapshot } from '../types';
 import { invoke } from '../bridge';
-import { STUDIO_PANEL_TITLES, type StudioPanel } from '../nestedDock';
+import type { StudioPanel } from '../nestedDock';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
 import SceneToolbar from '../components/SceneToolbar';
 import RulesPanel from './RulesPanel';
@@ -29,6 +29,9 @@ import BuildPanel from './BuildPanel';
 import ConsolePanel from './ConsolePanel';
 import ToolPanel from './ToolPanel';
 import AgentPanel from './AgentPanel';
+import AnimationTimeline from './AnimationTimeline';
+import PostFxPanel from './PostFxPanel';
+import ProjectHub from '../components/ProjectHub';
 import ExtensionsPanel from './ExtensionsPanel';
 import AttachmentsPanel from './AttachmentsPanel';
 import { FrameCapturePanel, SnapshotDiffPanel, StatsPanel, TextureResourcesPanel } from './InsightPanels';
@@ -83,7 +86,7 @@ function PlayInspector({ ctx }: { ctx: StudioPanelContext }) {
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,selected,select}=ctx;
+  const {snapshot,connected,openProject,selected,select}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
@@ -92,7 +95,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return ctx.playing ? <PlayInspector ctx={ctx}/> : <InspectorPanel {...ctx}/>;
-      case 'terrain': case 'water': case 'roads': case 'tiles': case 'generate': case 'postfx':
+      case 'postfx': return <PostFxPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
+      case 'terrain': case 'water': case 'roads': case 'tiles': case 'generate':
       case 'effects': case 'lightbake': case 'models': case 'overlays': case 'branding':
       case 'fields': case 'physis': case 'fps': case 'raid': case 'balance': case 'fx_graph': case 'fx_functions': case 'modeling':
       case 'anim_assets': case 'anim_graph': case 'anim_rig': case 'model_anim': case 'project_import':
@@ -134,15 +138,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             </span>
           </div>
           {sceneMode === 'welcome' ?
-            <div className="studio-no-project" role="status">
-              <div className="studio-no-project-symbol"><FolderOpen size={32} strokeWidth={1.25}/></div>
-              <h2>No project open</h2>
-              <p>Open an AIVERSE project to inspect its scene, edit objects,
-                and render the world using the native engine.</p>
-              <button className="studio-no-project-action"
-                disabled={busy}
-                onClick={() => void openProject()}><FolderOpen size={15}/> Open Project</button>
-            </div> :
+            <ProjectHub onOpened={ctx.commitSnapshot} openOther={() => void openProject()}/> :
             <ViewportPlaceholder title="Scene viewport" active/>}
         </>;
       case 'console':
@@ -165,15 +161,6 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'terraweave_generator': return <TerraweaveGeneratorPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
-      case 'animation':
-        return <div className="dock-unported" role="status">
-          <Box size={28}/>
-          <strong>{panel.charAt(0).toUpperCase() + panel.slice(1)} editor</strong>
-          <p>Clips, state graphs, rigs and model animation are edited in their panels. The timeline view is not ported yet.</p>
-          <div className="dock-unported-links">
-            {(['anim_assets', 'anim_graph', 'anim_rig', 'model_anim'] as const).map(p =>
-              <button key={p} type="button" className="au-button au-button--sm" onClick={() => ctx.showPanel(p)}>{STUDIO_PANEL_TITLES[p]}</button>)}
-          </div>
-        </div>;
+      case 'animation': return <AnimationTimeline snapshot={snapshot} showPanel={ctx.showPanel}/>;
     }
 }

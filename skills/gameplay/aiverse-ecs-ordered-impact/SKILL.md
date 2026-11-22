@@ -5,7 +5,7 @@ description: Resolve ECS projectile hits through reusable, deterministic direct/
 
 # Shared ECS ordered impact policy
 
-Use `<aiverselib/genre/EcsOrderedImpactSystems.h>`, package
+Use `<aiverselib/mechanics/EcsOrderedImpactSystems.h>`, package
 `AIVERSE::lib_ecs_ordered_impact`, or in a native project
 `aiverse_native_use_libraries(your_target ecs-ordered-impact)`.
 

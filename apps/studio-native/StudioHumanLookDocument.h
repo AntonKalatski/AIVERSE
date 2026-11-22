@@ -96,6 +96,9 @@ inline Json saveStudioHumanLook(const std::string& root,
     // preset before a complete payload has been written.
     const std::string filename=name+".json";
     const std::string pending=filename+".pending";
+#ifdef _WIN32
+    platform::stagedWrite(file.parent_path(),filename,pending,doc.dump(2)+"\n","human look");
+#else
     const int dir=::open(file.parent_path().c_str(),
                          O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
     if(dir<0)throw std::runtime_error("Cannot open human look project folder");
@@ -126,6 +129,7 @@ inline Json saveStudioHumanLook(const std::string& root,
         (void)::close(dir);
         throw;
     }
+#endif
     Json result=Json::object();
     result.set("name",Json::string(name));
     result.set("look",doc);
