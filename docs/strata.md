@@ -1,8 +1,11 @@
 # Strata — AIVERSE virtual geometry
 
-Status (2026-11-20): **integrated into main; experimental and opt-in, with
+Status (2026-11-22): **integrated into main; experimental and opt-in, with
 CPU planning, streaming, portable indexed rendering and gated Vulkan GPU
-selection/indirect routing implemented. Full production acceptance is open.**
+selection/indirect routing implemented. Real-hardware acceptance ran on Metal
+(native arm64), GLES 3.2 and Vulkan (Android): pictures, draw calls and frame
+times match the LOD path; synchronous staging and memory keep STRATA OFF by
+default — see [Hardware acceptance and default-on decision](#hardware-acceptance-and-default-on-decision-2026-11-22).**
 
 ## Current implementation and verification
 
@@ -10,10 +13,10 @@ selection/indirect routing implemented. Full production acceptance is open.**
 | --- | --- | --- |
 | Builder, source seams, LOD planning | Rigid opaque source adaptation, hierarchy and source seam certification, per-view CPU selection and hysteresis | CPU fixtures pass; certificates do not prove lossy visual quality |
 | Residency and disk streaming | Budgeted index pages, root fallback, asynchronous disk reads and shared multi-world coordination | CPU/recording lifecycle, corrupt-archive and budget tests pass, including repeated runs; hardware residency-pressure orbit remains open |
-| Portable rendering | CPU-selected frontiers submitted through the existing Renderer3D and original source vertex buffers | Actual Metal lossless raster, sun-depth and reflection fixtures pass; Vulkan/GLES/GL/WebGL hardware visual acceptance remains open |
+| Portable rendering | CPU-selected frontiers, compacted per primitive into one draw per material, submitted through the existing Renderer3D and original source vertex buffers | Metal lossless fixtures 6/6 on native arm64; 732 k triangle castle on Metal, GLES 3.2 and Vulkan (Adreno 610) matches the LOD path in pixels, draw calls and frame time (2026-11-22); WebGL and macOS Vulkan not runnable on the acceptance Mac |
 | GPU selection and temporal state | Metal/Vulkan compute culling and bounded GPU temporal histories | Actual Metal selection and three-frame temporal fixtures pass; Vulkan runtime requires its own real device gate |
 | Vulkan GPU indirect rendering | Explicitly gated per-material/instance/pass packets consumed by Renderer3D | Recording contracts and GLSL/SPIR-V compilation pass; real Vulkan compute/indirect/temporal and raster/depth/reflection acceptance is not certified |
-| Production readiness | Experimental flags and manual parity gates stay OFF by default | Spot-shadow, lossy mixed-LOD seam ROI, hardware pressure/popping, native arm64 and performance acceptance are not established by the current QA run |
+| Production readiness | Experimental flags and manual parity gates stay OFF by default | Native arm64 and device acceptance done 2026-11-22; default-on blocked by synchronous staging (37 s desktop, ~6.5 min phone) and memory (criteria below); spot-shadow, lossy seam ROI and hardware pressure/popping still open |
 
 The latest [system QA report](qa/strata-system-2026-11-20.md) records the
 tested SHA, actual device, evidence and failures. That Mac run used x86_64
@@ -32,6 +35,141 @@ and its follow-up fixes. The [original feature log](agent-handoffs/strata-virtua
 and numbered stages below are historical implementation checkpoints;
 their dated “not implemented/not tested” statements describe those stages,
 not the current summary above.
+
+## Hardware acceptance and default-on decision (2026-11-22)
+
+Real-hardware run of the portable STRATA path against the LOD/instancing path
+(`AIVERSE_STRATA=off`) on the same scenes, branch `agent-strata-accept`
+(includes the compacted submission and multi-million staging of
+`agent-wind-masks` 8f63db5c0). Drivers: `tools/strata/accept-mac.sh`, `accept-android.sh`, `stage-bench.sh`.
+Raw logs and screenshots: `/Volumes/KINGSTON/AIVERSE-builds/strata-accept/`
+(`logs/`, `runs/`, `android/runs-v2/`;
+`runs-v1/` and `android/runs/` hold the earlier pass without compaction).
+Other agents shared the Mac (load average 4–23): treat Mac frame times as
+±15 %; every mode ran twice, alternating.
+
+### What could run where
+
+| Backend | Device | Status |
+| --- | --- | --- |
+| Metal | Mac Studio, Apple M3 Ultra, macOS 15.6, **native arm64 Release** | Ran: fixtures, CTests, castle editor scene |
+| GLES 3.2 | Samsung Galaxy A05s (SM-A057F), Adreno 610, Android 15, USB | Ran: castle game scene, STRATA on/off |
+| Vulkan | same Android device (Adreno 610 Vulkan driver) | Ran: castle game scene, STRATA on/off |
+| Vulkan on macOS | — | **Not possible on this Mac**: no Vulkan loader and no MoltenVK (`vulkaninfo`, `libvulkan*.dylib`, `libMoltenVK.dylib`, Vulkan SDK absent). The engine now looks for `libvulkan.1.dylib` / `libMoltenVK.dylib` and enables `VK_KHR_portability_enumeration` / `VK_KHR_portability_subset` when present (unverified until the LunarG SDK or `brew install molten-vk vulkan-loader` is installed). The macOS game client creates only a Metal device; a `VK_EXT_metal_surface` window path does not exist, so only the headless Vulkan tests could use MoltenVK. `strata_vulkan_kernel` reports `SKIP no device: Vulkan: loader not found` (exit 77); `strata_vulkan_compile` passes. |
+| WebGL2 | — | **Not possible on this Mac**: no Emscripten SDK (`emcc` absent; no emsdk in home, `/opt`, KINGSTON). `aiversebuild --target web --install-missing` would download it, which needs the owner's consent. Chrome and Safari are installed for the run once emsdk exists. |
+
+Earlier QA binaries were x86_64 under Rosetta because `/usr/local/bin/cmake`
+is an x86_64 binary and the compilers it starts pick the x86_64 slice.
+Configure with `-DCMAKE_OSX_ARCHITECTURES=arm64` (as `accept-mac.sh` does);
+`file` then reports `Mach-O 64-bit executable arm64` for the editor and every fixture.
+
+### Native arm64: fixtures and tests
+
+- `ctest -R '^strata_'`: **19/19 pass** (the Vulkan runtime case is the skip above).
+- Real Metal fixtures, native arm64: **6/6 PASS** — parity 5/5 cases, temporal 3
+  submissions, raster (44 frames), depth multiview (2 views × 4 modes),
+  reflection material, portable.
+- `strata_metal_reflection_material_parity` first FAILED on arm64: main RGBA
+  differed by 1–11 levels only on the reflective floor (animated water normals;
+  shadow and reflection RTT were exact). The fixture now freezes the shader clock
+  with `Renderer3D::setPresentationTime(0)` and passes. Not a STRATA defect.
+
+### Load time (staging) on real assets
+
+`aiverse_strata_stage_bench <model>` (tests/render/strata_stage_bench.cpp):
+load → `prepareModelUpload` → `SceneStaging::stage` with tolerant source seams,
+as GeometryScene does. `geometry_stats.strata.stageMs` reports the same in the editor.
+
+| Asset | Triangles | Stage time | Result | Peak RSS |
+| --- | --- | --- | --- | --- |
+| Loarre castle `loarre.glb`, before the staging fixes | 732 376 | 871 s | **failed**: source seam audit exceeds boundary budget | 1.9 GB |
+| same, current branch (M3 Ultra) | 732 376 | 37 s idle Mac (editor `stageMs` 36.5–41.4 s), 75 s under build load | staged: 11 primitives, 13 974 nodes, 12 460 meshlets, 12.5 MB indices | 1.6 GB |
+| Intel Sponza 2022 (M3 Ultra) | 3 747 018 | 46–73 s (+25–44 s glTF load) | staged: 401 primitives (4 blended skipped), 72 905 nodes, 90.5 MB indices | 10.6 GB |
+| castle on the A05s phone (game start → first frame window) | 732 376 | 406 s vs 17 s off (GLES), 405 s vs 23 s off (Vulkan) | staged | — |
+
+Staging runs synchronously inside the geometry scene load on one thread: the
+editor and the game are unresponsive for that time.
+
+### Castle scene, Metal (editor, copy of `.wind-qa/alpine-review`, `static-castle.json`)
+
+`lod_diag.py` views, `geometry_stats` per view, runs S1/L1/S2/L2. The castle is
+staged (`portableSources=1`, `nodes=13974`, `failures=0`, `fallbacks=0`); the
+16 trees stay on the LOD path (`select: auto`, alpha-cut foliage).
+
+| View | Draw calls on / off | Camera model triangles on / off | Sun shadow triangles on / off | Frame interval ms on / off |
+| --- | --- | --- | --- | --- |
+| castle-near | 78 / 78 | 881 676 / 957 648 (−7.9 %) | 833 924 / 909 896 | 13.7, 15.7 / 11.8, 13.6 |
+| castle-mid | 196 / 196 | 1 744 578 / 1 872 614 (−6.8 %) | 1 163 928 / 1 291 964 | 20.7, 18.9 / 20.8, 20.1 |
+| castle-far | 526 / 526 | 6 392 327 / 6 535 847 (−2.2 %) | 3 264 277 / 3 264 277 | 31.7, 33.1 / 35.1, 34.9 |
+| bank (castle off-screen) | 255 / 255 | 2 751 210 / 2 873 820 | 437 432 / 437 432 | 16.9, 20.4 / 20.1, 17.2 |
+
+GPU times (`completedGpuFrameMs`) vary 11–64 ms with the shared GPU and show
+no consistent direction. Before the compacted submission the same castle drew
+one draw per selected cluster: 22 218 draws at castle-near (frame interval
+20.8 ms vs 11–13 ms), 15 621 draws per frame on the phone (GLES).
+
+Pixels (1280×720 clean captures): STRATA vs LOD differ in 0.004 % / 0.080 % /
+0.030 % of pixels by more than 8 levels at near / mid / far; run-to-run noise of
+one mode is 0.002 % / 0.023 % / 0.024 %. Above 32 levels: ≤ 0.003 %. The extra
+differences are scattered single pixels on the castle silhouette.
+
+### Castle scene on Android (game client, skirmish copy + castle, 1200 frames)
+
+Current branch (compacted submission), one run per mode, 1200 frames after load:
+
+| Backend | STRATA | fps | wall ms avg / p95 | Draw calls / frame | Start → first frame window |
+| --- | --- | --- | --- | --- | --- |
+| GLES 3.2 | on | 6.4 | 155.0 / 157.4 | 43.6 | 406 s |
+| GLES 3.2 | off | 6.5 | 153.7 / 156.4 | 43.6 | 17 s |
+| Vulkan | on | 5.7 | 176.0 / 180.0 | 23.5 | 405 s |
+| Vulkan | off | 5.4 | 185.1 / 188.6 | 23.4 | 23 s |
+
+Earlier pass without compaction (two runs per mode): GLES on 169.9 / 168.4 ms
+(15 621 draws) vs off 154.2 / 155.2 ms; Vulkan on 271.4 / 275.8 ms vs off
+177.8 / 183.7 ms. The device is GPU-bound on this 732 k triangle scan in both
+modes (the LOD chain draws the full mesh at this distance; STRATA selects
+11 compacted primitives per frame and the same draw count).
+
+Screenshots (`android/runs*/*.png`): the castle renders on both backends with
+STRATA on and off and looks the same. A strict pixel diff is not meaningful
+there: captures happen at different game-clock times (day cycle, units,
+water), and off-vs-off GLES vs Vulkan already differs in 8.75 % of castle
+pixels by more than 8 levels, while on-vs-off differs in 2.61 % (GLES) and
+3.08 % (Vulkan). `AIVERSE_STRATA_LOG=1` prints the `[strata]` counters to logcat
+(`cameraModelTris` reads 0 at that point of the RTS frame; use draw calls and
+clusters). The Vulkan backend counts draw calls differently from GLES.
+
+### Default-on criteria and decision
+
+STRATA may become the default for geometry scenes with `strata.select: auto`
+only when **all** hold on Metal, Vulkan and GLES (and WebGL once it can run):
+
+1. Staging of every acceptance asset is off the main thread or loaded from a
+   prepared archive: no load stall beyond the LOD path + 20 %.
+2. Draw calls with STRATA ≤ 1.5× the LOD path at every acceptance view.
+3. Frame interval and GPU time not worse than the LOD path beyond run-to-run
+   noise at every view.
+4. Pixels within the noise floor of the LOD path (lossy ROI rules of
+   `strata-stage18-visual-acceptance.md`); lossless fixtures exact.
+5. Peak memory within the mobile budget for the target asset size.
+6. `AIVERSE_STRATA=off` and instance `"strata": false` keep working.
+
+Result 2026-11-22: criteria 2, 3, 4 and 6 pass (Metal, GLES, Vulkan).
+Criteria 1 and 5 fail, so **STRATA stays OFF by default** (only scenes with
+`"strata": {"enabled": true}` use it). Blockers:
+
+- **Synchronous staging** (criterion 1): 37 s desktop / ~6.5 min phone
+  for a 732 k triangle source, 46–73 s for Sponza. Needed: STRATA archives
+  written at import (`SceneStaging::writeDiskArchives`, Stage 15.3 disk pages)
+  and loaded at runtime, or staging on a worker with the LOD path drawing
+  until the source is ready.
+- **Memory** (criterion 5): 10.6 GB peak RSS for Sponza load + staging,
+  1.6 GB for the castle: the same archive route, plus dropping the CPU index
+  copy after upload (`setStrataDropArchivedCpuIndicesEnabled`).
+- **Small triangle savings at these views** (−2…−8 %): tune the selection
+  error (`hysteresis 0.1`, `shadowErrorScale 8`) against the LOD chain; the
+  benefit is expected on far views of very dense unique meshes (Sponza-class).
+- **Vulkan on macOS and WebGL** not runnable on the acceptance Mac (above).
 
 ## Scope and ownership
 Strata is a genre-independent **presentation** system for rigid, opaque geometry.

@@ -942,6 +942,7 @@ private:
     // unique_ptr silently drop the recovery path.
     std::unique_ptr<Rts2DView> pendingSpriteRecovery_;
     SpriteDefaults spriteDefaults_;
+    float modelLodScale_=1.f, shadowLodScale_=1.f, reflectionCullPixels_=0.f, lodFadeWidth_=-1.f; // game.json "lod"
     std::string contentBase_;
     std::vector<render::float3> bars_;   // per scene object: health bar anchor of sprite objects
     double lastTime_ = -1;

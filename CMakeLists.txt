@@ -615,6 +615,12 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_model_batching_policy_tests tests/render/model_batching_policy.cpp)
     target_link_libraries(aiverse_model_batching_policy_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME model_batching_policy COMMAND aiverse_model_batching_policy_tests)
+    add_executable(aiverse_static_impostor_lod_tests tests/render/static_impostor_lod.cpp)
+    target_link_libraries(aiverse_static_impostor_lod_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME static_impostor_lod COMMAND aiverse_static_impostor_lod_tests)
+    add_executable(aiverse_strata_auto_select_tests tests/render/strata_auto_select.cpp)
+    target_link_libraries(aiverse_strata_auto_select_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME strata_auto_select COMMAND aiverse_strata_auto_select_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_tests tests/animation/graphs.cpp apps/editor/core/AnimationDocument.cpp)
@@ -3223,6 +3229,13 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_model_adapter_tests PRIVATE
             aiverse_strata_model_adapter aiverse_zstd_dec)
         add_test(NAME strata_model_adapter COMMAND aiverse_strata_model_adapter_tests)
+        # Manual load-time benchmark on a real asset (no CTest: needs an external model).
+        add_executable(aiverse_strata_stage_bench tests/render/strata_stage_bench.cpp)
+        target_link_libraries(aiverse_strata_stage_bench PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
+        add_executable(aiverse_strata_stage_probe tools/strata/stage_probe.cpp)
+        target_link_libraries(aiverse_strata_stage_probe PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
         add_executable(aiverse_strata_source_seams_tests
             tests/render/strata_source_seams.cpp)
         target_link_libraries(aiverse_strata_source_seams_tests PRIVATE

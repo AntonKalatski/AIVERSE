@@ -74,6 +74,16 @@ struct PortableRenderStats {
 // NOT be uploaded or releaseModel()'d. Keep it alive until Renderer3D::render
 // has consumed the draw; discard it after the frame completes.
 // Explicit fallback: leave output untouched on failure and draw the original.
+// Per-instance dynamic index stream for compacted submission. Owned by the
+// host (one per drawn instance); release() with the staging device.
+struct PortableCompactBuffer {
+    gfx::BufferHandle buffer;
+    size_t capacityBytes=0;
+    uint64_t signature=0;
+    std::vector<uint32_t> scratch;
+    uint64_t uploads=0, reuses=0;
+    void release(gfx::Device& dev){ if(buffer.valid())dev.destroyBuffer(buffer); buffer={}; capacityBytes=0; signature=0; }
+};
 class PortableSource final {
 public:
     PortableSource() = default;
@@ -111,7 +121,8 @@ public:
                       bool forceFinestForUnspecifiedPass,
                       Model& output, std::string* error = nullptr,
                       PortableLodHistory* temporalHistory = nullptr,
-                      float hysteresisFraction = 0.f);
+                      float hysteresisFraction = 0.f,
+                      PortableCompactBuffer* compact = nullptr);
     bool validFor(const Model& source) const;
     // Must be called with the same live device used by stage(). A wrong
     // device is refused without destroying foreign RHI buffer handles.
@@ -126,12 +137,28 @@ public:
         if(!on)std::vector<SelectedCluster>().swap(debugSelection_);
     }
     bool debugCaptureEnabled() const { return debugCapture_; }
+    // Draw adjacent selected clusters of one source primitive as a single
+    // primitive (fewer draws; per-cluster culling becomes per-run). Off by
+    // default: one primitive per selected cluster, as before.
+    void setMergeAdjacentClusters(bool on) { mergeAdjacent_=on; }
+    // Compacted submission (set before stage): the selected clusters of each
+    // source primitive are copied into one per-instance dynamic index stream,
+    // so a multi-million triangle source draws one primitive per material
+    // instead of one per cluster. Re-uploaded only when the selection
+    // changes. Non-streaming sources only; keeps a CPU copy of the indices.
+    void setCompactSelection(bool on) { compactSelection_=on; }
+    bool compactSelection() const { return compactSelection_ && !cpuIndices_.empty(); }
+    bool mergeAdjacentClusters() const { return mergeAdjacent_; }
     const std::vector<SelectedCluster>& debugSelection() const {
         return debugSelection_;
     }
     const ModelAsset* debugAsset() const { return asset_; }
     gfx::BufferHandle indexBuffer() const { return indexBuffer_; }
     uint32_t firstIndex() const { return firstIndex_; }
+    // Partial sources: materials of primitives STRATA did not stage (e.g.
+    // blended glass). The host draws the original model with this mask.
+    const std::vector<uint8_t>& legacyMaterialMask() const { return legacyMaterialMask_; }
+    bool partial() const { return !legacyMaterialMask_.empty(); }
 private:
     gfx::Device* device_ = nullptr; // borrowed: index handles belong to this RHI device
     const Model* source_ = nullptr; // borrowed, never dereference after unload
@@ -150,8 +177,12 @@ private:
     uint64_t sourceGeometryRevision_ = 0;
     uint64_t sourceMaterialRevision_ = 0;
     std::vector<uint32_t> primitiveOffsets_;
+    std::vector<uint8_t> legacyMaterialMask_;
+    bool compactSelection_=false;
+    std::vector<uint32_t> cpuIndices_; // compacted submission source
     PortableRenderStats stats_{};
     bool debugCapture_ = false;
+    bool mergeAdjacent_ = false;
     std::vector<SelectedCluster> debugSelection_;
 };
 

@@ -287,6 +287,9 @@ void Editor::registerGuiOps() {
         r.set("occluded",Json::number(int64_t(s.occluded)));
         r.set("occluderTriangles",Json::number(int64_t(s.occluderTriangles)));
         r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls())));
+        // Wall-clock frame interval (ImGui's 60-frame average): includes CPU work,
+        // drawable waits and vsync, unlike completedGpuFrameMs.
+        r.set("frameIntervalMs",Json::number(ImGui::GetIO().Framerate>0?1000.0/double(ImGui::GetIO().Framerate):0.0));
         r.set("cameraModelTriangles",Json::number(int64_t(r3d_.profile().cameraModelTriangles)));
         r.set("cameraMeshTriangles",Json::number(int64_t(r3d_.profile().cameraMeshTriangles)));
         r.set("opaqueSceneCapture",Json::fromBool(r3d_.ssrActive()));
@@ -308,6 +311,22 @@ void Editor::registerGuiOps() {
             st.set("seamUnsafeDeclined",Json::number(int64_t(g.strataSeamUnsafeDeclined)));
             st.set("globalBudgetDeclined",Json::number(int64_t(g.strataGlobalBudgetDeclined)));
             st.set("instances",Json::number(int64_t(view_.geometryScene().instanceCount())));
+            st.set("sharedModels",Json::number(int64_t(g.strataPortableSharedModels)));
+            st.set("sharedReuses",Json::number(int64_t(g.strataPortableSharedReuses)));
+            st.set("autoLodSources",Json::number(int64_t(g.strataAutoLodSources)));
+            st.set("autoStrataSources",Json::number(int64_t(g.strataAutoStrataSources)));
+            {   // strata.select auto: one line per source, model and reason.
+                auto list=Json::array();
+                for(const auto& d:view_.geometryScene().strataSelectDecisions())list.push(Json::string(d));
+                st.set("select",list);
+                auto warn=Json::array();
+                for(const auto& w:view_.geometryScene().warnings())
+                    if(w.find("Strata")!=std::string::npos||w.find("STRATA")!=std::string::npos)warn.push(Json::string(w.substr(0,400)));
+                st.set("warnings",warn);
+                st.set("stageMs",Json::number(double(g.strataStageMs)));
+                st.set("compactUploads",Json::number(int64_t(g.strataCompactUploads)));
+                st.set("compactReuses",Json::number(int64_t(g.strataCompactReuses)));
+            }
             r.set("strata",st);
         }
         // Reuse completed host-owned queries only; do not poll, wait or add
