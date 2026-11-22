@@ -94,6 +94,14 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
       onWheel={event=>{if(Math.abs(event.deltaY)>Math.abs(event.deltaX))event.currentTarget.scrollLeft+=event.deltaY;}}>
       {node.tabs.map(panel => <div key={panel} draggable className={'nested-tab'+(node.active===panel?' nested-active':'')}
         ref={node.active===panel ? revealTab : undefined}
+        onMouseDown={event=>{
+          // Middle click closes the tab. preventDefault stops the browser autoscroll cursor.
+          if(event.button!==1)return;
+          event.preventDefault();
+          event.stopPropagation();
+          setTree(t=>closeTab(t,panel));
+        }}
+        onAuxClick={event=>{if(event.button===1)event.preventDefault();}}
         onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.setData('text/plain',TEXT_PREFIX+panel);
           event.dataTransfer.effectAllowed='move';setDragging(panel);}}
         onDragEnd={event=>{setDragging(null);setHover(null);
