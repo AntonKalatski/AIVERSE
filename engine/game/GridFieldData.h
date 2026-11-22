@@ -71,7 +71,7 @@ struct FieldEffectDef {
     bool all = false;                   // reveal: to every player (else the layer's owner / everyone for plain fields)
 };
 
-struct FieldViewDef { Json look; };     // presentation keys ("view"), read by modules/rts/view/RtsFieldView
+struct FieldViewDef { Json look; };     // presentation keys ("view"), read by engine/view/GameFieldView
 
 struct GridFieldDef {
     std::string id;

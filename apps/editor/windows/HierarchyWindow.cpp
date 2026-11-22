@@ -414,7 +414,7 @@ private:
                 r.dot = n.owner > 0;
                 r.icon = n.owner == 0 ? ICON_TREES : n.owner < 0 ? ICON_SWORDS : "";
                 if (n.owner > 0) {
-                    const render::float4 c = game::RtsView::playerColor(n.owner);
+                    const render::float4 c = game::GameView::playerColor(n.owner);
                     r.iconColor = ImVec4(c.x, c.y, c.z, 1);
                     const auto& pl = ed.doc().data.players;
                     if (n.owner <= int(pl.size())) {
@@ -450,7 +450,7 @@ private:
         r.dim = !en.editable;
         r.icon = row.kind == WorldKind::Structure ? ICON_CASTLE : row.kind == WorldKind::Projectile ? ICON_ZAP
                : row.kind == WorldKind::Effect ? ICON_FLAME : row.kind == WorldKind::Resource ? ICON_FIELDS : ICON_DOT;
-        if (row.owner > 0) { const render::float4 c = game::RtsView::playerColor(row.owner); r.iconColor = ImVec4(c.x, c.y, c.z, 1); }
+        if (row.owner > 0) { const render::float4 c = game::GameView::playerColor(row.owner); r.iconColor = ImVec4(c.x, c.y, c.z, 1); }
         r.hasPos = row.hasPos;
         r.fx = row.x; r.fz = row.z;
         // label / tooltip: when the row is first drawn (lists of thousands are clipped)

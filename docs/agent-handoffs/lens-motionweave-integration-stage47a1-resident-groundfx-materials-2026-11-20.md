@@ -8,7 +8,7 @@ Prior handoff: docs/agent-handoffs/lens-motionweave-integration-stage47a-groundf
 
 ## Source changes
 
-- RtsGroundFx owns two procedural default material TextureRefs (cobble 64x64, dirt 32x32) as part of its staged GPU kit. initUnpublished allocates both after the white fallback texture, and fails the whole candidate kit if either GPU allocation fails.
+- GameGroundFx owns two procedural default material TextureRefs (cobble 64x64, dirt 32x32) as part of its staged GPU kit. initUnpublished allocates both after the white fallback texture, and fails the whole candidate kit if either GPU allocation fails.
 - init swaps the fully prepared TextureCache GPU owner, then copies refs from the prepared kit. shutdown clears references and lets TextureCache shutdown own and release their GPU texture handles after host idle proof.
 - drawPrepared no longer executes TextureCache::addGenerated or makes procedural noise; it captures stable TextureRefs owned by published GroundFX GPU kit. This avoids late texture creation after GroundFX/Roads/Shores/Fog owner publication.
 - tests/tests.cpp: adjusted the staged kit idle-rejection cleanup count to include the 2 new generated textures, added a no-texture-allocation-in-groundfx-preparation-or-draw regression fixture.

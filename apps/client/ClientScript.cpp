@@ -495,7 +495,7 @@ void GameClient::initLua() {
 #endif
     spine_.onEvent = [this](const Json& e) { luaEmit("spine", e); };
     services_.attach(lua_, luaAlive_, [this](const char* name, const Json& e) { luaEmit(name, e); });
-    openPadLua(lua_);   // game.sendPercent / game.useAbility   // `sound`: voice handles, music (modules/rts/view/ScriptSound.h)
+    openPadLua(lua_);   // game.sendPercent / game.useAbility   // `sound`: voice handles, music (engine/view/ScriptSound.h)
     ui_.attachLua(lua_);
     // purchases that complete outside store.buy (pending -> purchased, after a restart)
     auto alive = luaAlive_;
@@ -534,7 +534,7 @@ void GameClient::luaTick(double dt) {
     lua_pop(lua_, 1);
 }
 
-// view.ui_call (modules/rts/view/RtsViewScript.h): a global of this state called from a view script
+// view.ui_call (engine/view/GameViewScript.h): a global of this state called from a view script
 int GameClient::luaUiCall(lua_State* V) { return ui::luaCallAcross(V, lua_); }
 
 void GameClient::runGameScript() {

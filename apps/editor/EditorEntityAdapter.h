@@ -95,7 +95,7 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
     if(ref.isLight()) {
         const auto* light=documentLight(map,ref);if(!light)return false;
         // Legacy map lights store "pos":[x,z]; the runtime reads it before x/z
-        // (RtsLights::parseMapLights), so the editor must too or a move teleports to 0.
+        // (GameLights::parseMapLights), so the editor must too or a move teleports to 0.
         const Json& pos=(*light)["pos"];
         const bool legacy=pos.isArray() && pos.size()>=2 && pos[0].isNumber() && pos[1].isNumber();
         out={legacy?pos[0].toDouble():(*light)["x"].toDouble(),(*light)["height"].toDouble(1),

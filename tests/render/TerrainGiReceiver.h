@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/render/Renderer3D.h"
-#include "modules/rts/view/RtsTerrainShaders.h"
+#include "engine/view/GameTerrainShaders.h"
 namespace aiverse::test {
 // Real production terrain shader and vertex ABI, with an asset-free receiver.
 struct TerrainGiReceiver {

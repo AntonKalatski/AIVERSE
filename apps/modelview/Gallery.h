@@ -1,11 +1,11 @@
 // Gallery mode of aiverse_modelview: every type of a game in a row, drawn by the game's own view
-// (RtsView: view blocks, material overrides, clips, procedural animation), driven by a scripted
+// (GameView: view blocks, material overrides, clips, procedural animation), driven by a scripted
 // scene that cycles each object through idle -> move -> attack (+ hit) -> death -> respawn.
 #pragma once
 #include <memory>
 #include <string>
 #include <vector>
-#include "../../modules/rts/view/RtsPortrait.h"
+#include "../../engine/view/GamePortrait.h"
 
 namespace aiverse::modelview {
 
@@ -29,9 +29,9 @@ public:
 private:
     struct Slot { uint16_t type; render::float3 base; uint32_t gen = 0; float lastPhase = -1; bool alive = true; };
     game::Rules rules_;
-    game::RtsView view_;
+    game::GameView view_;
     game::MapGrid grid_;
-    game::RtsScene scene_;
+    game::GameScene scene_;
     std::vector<Slot> slots_;
     std::string dir_;
     render::float3 center_;

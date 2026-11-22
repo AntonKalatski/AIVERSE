@@ -1,4 +1,4 @@
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/GameView.h"
 #include <iostream>
 #include <map>
 #include <thread>
@@ -57,7 +57,7 @@ int aiverseMain(int, char**) {
         if(path=="a.obj" || path=="b.obj") { out="v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n"; return true; }
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     view.setDeferredLoading(true);
     check(view.init(dev,rules,reader),"init");
     check(reads["a.obj"]==0 && reads["b.obj"]==0,"menu read type assets");

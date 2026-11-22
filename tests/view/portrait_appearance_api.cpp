@@ -1,7 +1,7 @@
 // Stage 105 deferred compile-time contract: generic authored ModelDraw
 // portrait consumer never requires the calling native project to own
-// RtsView or create an additional animation evaluation World.
-#include "modules/rts/view/RtsPortrait.h"
+// GameView or create an additional animation evaluation World.
+#include "engine/view/GamePortrait.h"
 #include <type_traits>
 #include <utility>
 

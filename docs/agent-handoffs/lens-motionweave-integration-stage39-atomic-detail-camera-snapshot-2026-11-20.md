@@ -5,13 +5,13 @@ Repository: chromealex/AIVERSE
 Branch: feature/lens-motionweave-integration (not merged to main).
 Starting HEAD: 94b473270595184a45f9c0a5c5478dc5f559512e (Stage 38).
 Source commits:
-- e5398d1405da9e149694b66232e38545e1beafa6: RtsTerrainRender.h material layer edit dirtiness.
-- 2992228f192d468b1b338ab96d5db3f47ecd8e66: RtsTerrainRender.cpp atomic staging for complete Detail Terrain surface, normal/splat textures, cell textures, water, apron and coarse LODs.
+- e5398d1405da9e149694b66232e38545e1beafa6: GameTerrainRender.h material layer edit dirtiness.
+- 2992228f192d468b1b338ab96d5db3f47ecd8e66: GameTerrainRender.cpp atomic staging for complete Detail Terrain surface, normal/splat textures, cell textures, water, apron and coarse LODs.
 - 34a5d27ead1e21c127460398a7977909631bab97: resolve terrain material kit before map publication, retire abandoned detail GPU textures when switching to non-detail mode.
-- 220beceee0ac62947b6f67ffa51e91a328e632a3: RtsTerrainDetailMesh.cpp reject invalid normal/splat GPU allocations.
+- 220beceee0ac62947b6f67ffa51e91a328e632a3: GameTerrainDetailMesh.cpp reject invalid normal/splat GPU allocations.
 - ff73d807a3f885421cd1bf7f4854e2c3874c300e: tests/tests.cpp fault-injection regression test for Stage 39.
-- ae50500accc307b9c354f7e43abd3aa64f3011d8: RtsTerrainRender.cpp immutable terrain LOD/texture bindings in deferred camera draws.
-- f666bf3385c9240de8c928d5906bed6bbdb75dbb: RtsTerrainRender.cpp trace height field GPU texture replacement with deferred retirement.
+- ae50500accc307b9c354f7e43abd3aa64f3011d8: GameTerrainRender.cpp immutable terrain LOD/texture bindings in deferred camera draws.
+- f666bf3385c9240de8c928d5906bed6bbdb75dbb: GameTerrainRender.cpp trace height field GPU texture replacement with deferred retirement.
 - e1636c91c707dcb2ef60da2004c23ac664ce068a: explicit stdexcept include for detail allocation failures.
 Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage38-atomic-map-textures-2026-11-20.md.
 
@@ -36,7 +36,7 @@ TEST(terrain_detail_stage_rolls_back_late_lod_and_normal_splat_failures) in test
 - Uses existing fake fogfaulttest::Device. This is a CPU fake RHI test, not a GPU parity test.
 
 ## Verification actually done
-- Read RtsTerrainDetailMesh.cpp and RtsTerrainDetail.h, RtsTerrainRender.cpp/.h, current tests/tests.cpp and the Stage 38 handoff.
+- Read GameTerrainDetailMesh.cpp and GameTerrainDetail.h, GameTerrainRender.cpp/.h, current tests/tests.cpp and the Stage 38 handoff.
 - Published source and test commits to the feature branch.
 - Re-fetched latest files and checked source anchors for transaction, texture retirement, complete staged coarse LOD and immutable draw-command bindings.
 - NOT RUN: any CMake generation, native compiler, aiverse_tests execution, CTest, Metal/Vulkan/GLES build, GPU runtime, pixel parity or performance profiling. Do not treat static checks as passing tests.
@@ -46,10 +46,10 @@ TEST(terrain_detail_stage_rolls_back_late_lod_and_normal_splat_failures) in test
 2. Fine detail LODs remain lazily uploaded on primary draws. Per-frame LRU eviction and budget interactions are not yet independently tested with multiple RT cameras; add coverage for secondary camera fallback under heavy memory pressure.
 3. The traced height map still has a 0.3-second regeneration throttle; same-size detail edits may temporarily use the previous shadow height texture. Snapshot lifetime is safe, but strict same-frame visual parity and timing need testing.
 4. The unchanged detail fast path still updates live per-cell/dynamic textures in place; field/creep changes do not yet have an immutable per-camera image generation. Generalize the pixel snapshot where necessary for simultaneous RT captures.
-5. Terrain's whole-map staging does not make RtsView's reload of all other view owners atomic. GroundFX batch mesh updates and multi-owner render reload still need coordination; apply the same owner lease and completion-token rules.
+5. Terrain's whole-map staging does not make GameView's reload of all other view owners atomic. GroundFX batch mesh updates and multi-owner render reload still need coordination; apply the same owner lease and completion-token rules.
 6. Staged full-map non-detail updates (Stages 37/38) are separate from Stage 39 detail mode and should receive the same deferred draw snapshot treatment (now done for the shared Terrain draw command).
 7. The owner must call build only at the supported pre-render publication boundary and process retirement only after GPU submission/completion semantics. The draw callback retains captured GPU handle values, but that is not a substitute for correct RHI retirement ordering.
-8. Latest MotionWeave branch integration still requires actual merge-base/conflict-aware reconciliation preserving animation, editor and RtsView changes.
+8. Latest MotionWeave branch integration still requires actual merge-base/conflict-aware reconciliation preserving animation, editor and GameView changes.
 
 ## Next exact stage
 Stage 40: incremental dirty-region Detail Terrain transactions and bounded GPU/CPU staging budget; then grouped GroundFX updates and full multi-owner reload. After all feature work, one consolidated native CMake/CTest validation and supported Metal/Vulkan/GLES builds, with failures fixed before merging main. Continue writing one handoff per stage.

@@ -30,9 +30,9 @@
 #include <iterator>
 #include <unordered_map>
 #include "engine/game/Tiles.h"
-#include "modules/rts/view/RtsCamera.h"
-#include "modules/rts/view/RtsOverlayData.h"
-#include "modules/rts/view/RtsSelectionPresentation.h"
+#include "engine/view/GameCamera.h"
+#include "engine/view/GameOverlayData.h"
+#include "engine/view/GameSelectionPresentation.h"
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -445,7 +445,7 @@ size_t Editor::reloadVisualModelSources(
         const std::vector<std::string>& paths) {
     if(!dev_ || playing() || clientPlaying() || paths.empty())return 0;
     // The caller runs at the editor frame boundary, after the previous
-    // render submission. TypeLook/animation sources are detached by RtsView
+    // render submission. TypeLook/animation sources are detached by GameView
     // before the independent resource owner destroys GPU allocations.
     const size_t invalidated=view_.reloadModelSources(paths);
     if(invalidated) {
@@ -593,7 +593,7 @@ void Editor::retainEditorType(uint16_t type) {
         modelDemand_.resize(rules().types.size());
     modelDemand_.touch(type,time_,game::view_adapter::ModelDemandPriority::Interactive);
     // The Model/Materials windows and model_info must work when the type has
-    // no instances on the map. The RtsView loader caches this call per type.
+    // no instances on the map. The GameView loader caches this call per type.
     // Eager mode already has resident types; still consume the demand
     // queue to avoid retaining stale requests across editor frames.
     modelDemand_.drain(modelDemand_.pendingCount(),
@@ -733,7 +733,7 @@ bool Editor::groundAt(const Viewport& vp, const Camera& cam, float sx, float sy,
         return true;
     }
     // the drawn surface under the cursor (high ground, detail relief): march the view ray against
-    // RtsView::heightAt, then bisect; the y = 0 plane only when the ray never meets it
+    // GameView::heightAt, then bisect; the y = 0 plane only when the ray never meets it
     float3 o, d;
     if (cam.screenRay(sx - vp.originX, sy - vp.originY, vp.pointsW, vp.pointsH, o, d) && d.y < -1e-4f) {
         const game::MapGrid& gr = editGrid();
@@ -981,7 +981,7 @@ std::string Editor::planetBodyId(int body) const {
     return body >= 0 && size_t(body) < W.bodies.size() ? W.bodies[size_t(body)].id : std::string();
 }
 
-void Editor::buildEditScene(game::RtsScene& out) const {
+void Editor::buildEditScene(game::GameScene& out) const {
     const auto& d = ws_.map.data;
     out.objects.clear();
     out.roads.clear();
@@ -1148,7 +1148,7 @@ void Editor::drawEditOverlays3D() {
         }
     for (size_t p = 0; p < d.players.size(); ++p) {
         if (!d.players[p].hasStart) continue;
-        float4 c = game::RtsView::playerColor(int(p + 1));
+        float4 c = game::GameView::playerColor(int(p + 1));
         float sx = d.players[p].startX, sz = d.players[p].startZ, gy = view_.heightAt(grid_, sx, sz);
         r3d_.circleXZ({sx, 0, sz}, 1.2f, rgbaf({c.x, c.y, c.z, 1}), 24, gy + 0.15f);
         r3d_.line({sx, gy, sz}, {sx, gy + 2.5f, sz}, rgbaf({c.x, c.y, c.z, 1}));
@@ -1955,7 +1955,7 @@ void Editor::renderGame(Viewport& vp, const Camera& cam, uint64_t prismaViewId) 
         view_.buildTerrain(*dev_, gs.grid);
         playTerrainBuilt_ = true;
     }
-    game::RtsScene sc;
+    game::GameScene sc;
     game::sceneFromSim(*sim_, sc, float(sim_->alpha()), uint8_t(human_));
     sc.paintLayers = paintLayers;
     sc.entityFx = entityFx;
@@ -2142,7 +2142,7 @@ void Editor::startPlay(int humanSlot) {
     fxPreview_ = {};
     fxFrozen_ = false;
     gameFxBridge_.setHeightFn([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : 0.0f; });
-    gameFxBridge_.setPlayerColorFn([](int p) { return game::RtsView::playerColor(p); });
+    gameFxBridge_.setPlayerColorFn([](int p) { return game::GameView::playerColor(p); });
     gameFxBridge_.setAttackOriginFn([this](Entity e, fx::float3& pos, fx::float3& dir) { return view_.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     gameFxBridge_.attach(*sim_, uint8_t(human_));
     fxTime_ = -1;

@@ -429,7 +429,7 @@ docker build -f apps/server/Dockerfile -t aiverse-server .             # server 
 - **高度なアニメーション**：歩き/走りのブレンドスペース、加算クリップ（呼吸、反動）、地形に合わせた足の IK、目標への頭の向き、坂での乗り物の傾き、
   GPU でのモーフターゲット（ブレンドシェイプ）。
 - **ソケット**：手に持つ武器、背中の荷物（運んでいる資源に応じて）、弾の発射点、エフェクトの位置（煙、炎、排気）。クリップのイベントと
-  `RtsView::events()/effects()` を音とパーティクルに使います。
+  `GameView::events()/effects()` を音とパーティクルに使います。
 - **段階**：足場と建設段階、体力に応じた損傷版、出現時と死亡時のディゾルブ、選択時の輪郭線、建物を置くときの半透明のゴースト、ポートレート。
 - **形式**：さらに **FBX**（ufbx）と圧縮テクスチャ **KTX2**（ETC2/BC/ASTC、GPU 上でも圧縮のまま）。**Collada**、**3DS**、**PLY**、
   **STL**。ボクセル **MagicaVoxel .vox** と **.vxl/.hva**（Tiberian Sun、Red Alert 2）。ユーザーが持つゲームのコピーからのクラシック RTS の
@@ -464,7 +464,7 @@ docker build -f apps/server/Dockerfile -t aiverse-server .             # server 
 - **エディター** — 「Lighting」ウィンドウ：時刻と雷雨のプレビュー、ライトの品質レベル、光源一覧。エージェント向け：`light_add`、
   `light_update`、`light_delete`、`light_list`、`lighting_set`、`view_lighting`。
 
-フィールドの形式は `modules/rts/view/RtsLights.h` のヘッダーにあります。テスト用変数：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、
+フィールドの形式は `engine/view/GameLights.h` のヘッダーにあります。テスト用変数：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、
 `AIVERSE_CLOUDS`、`AIVERSE_STORM`。
 
 ## MCP によるメカニクスの検証

@@ -54,13 +54,13 @@ Previous: [Stage 122](animation-stage122-rig-retarget-2026-11-19.md)
    Older hosts with ONLY `ModelLod::retarget` keep the Stage 122
    compatibility path, including its per-draw validation.
 4. `25d30da91d63b5ea8f99ecdbaea327c05780e607` —
-   `modules/rts/view/RtsView.h`: appends
+   `engine/view/GameView.h`: appends
    `ModelChoice::modelGeneration` and
    `compiledPoseRetarget`. This source-only publication
    generation is separate from gameplay entity life and motion
    source generation.
 5. `9ac6b4f1e708fe8b2509d3dde3e35f8b77898d09` —
-   `modules/rts/view/RtsLook.cpp`: a monotonic atomic ID stamps
+   `engine/view/GameLook.cpp`: a monotonic atomic ID stamps
    each loaded `ModelChoice`. `buildLook` compiles and stores
    one immutable plan per imported LOD, shared across all instances
    that use that choice. The existing source-name/node map is
@@ -69,7 +69,7 @@ Previous: [Stage 122](animation-stage122-rig-retarget-2026-11-19.md)
    build new TypeLooks and go through `loadChoice`, so a
    rebuilt asset/choice receives a new generation.
 6. `1d73a8a5c92a74517a4d0027c13cca9bf422562d` —
-   `modules/rts/view/RtsViewDraw.cpp`: uses the precompiled
+   `engine/view/GameViewDraw.cpp`: uses the precompiled
    plan during an RTS LOD draw. A generation mismatch or invalid
    live Pose yields target bind pose; the historical nodeWorld
    fallback remains ONLY for older LOD choices that never
@@ -77,11 +77,11 @@ Previous: [Stage 122](animation-stage122-rig-retarget-2026-11-19.md)
    retire this legacy behavior after real visual comparison.
 7. `620b8e6a8996bc7545f29f7fd67388d26a39c5e6` and
    `5c46d7e825bdaf4ec9f3331a6532c0cdb0e9efd9` —
-   `RtsView.h` and `RtsViewDraw.cpp`: replace one global
+   `GameView.h` and `GameViewDraw.cpp`: replace one global
    static Pose/mat4 temporary LOD buffer with buffers owned
    by the individual RTS View instance. No accidental mutable
    scratch sharing between Editor scene, GameClient and other
-   RtsView instances; vector capacity is reused per draw.
+   GameView instances; vector capacity is reused per draw.
 8. `d6204946fdebbc375662864cb9f2fe6d49ca2fcb` —
    `ModelPoseRetarget.h`: validate static source/target bind
    transforms and reject source bones with near-zero bind scale
@@ -178,7 +178,7 @@ view.submitOne(renderer, actor);
 6. Plan evaluation still allocates a new visual Pose/matrix array
    in generic View per draw. Use a presentation-owner scratch
    arena only after verifying no deferred pointers escape from
-   Renderer3D. RtsView now reuses per-instance scratch.
+   Renderer3D. GameView now reuses per-instance scratch.
 7. Introduce specific failure tests for reused Model pointers
    with bumped generations, stale compiled plans, mismatched
    morph mapping, parent hierarchy cycles, zero bind scales,

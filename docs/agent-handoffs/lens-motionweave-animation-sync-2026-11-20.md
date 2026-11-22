@@ -31,6 +31,6 @@
 - The integrated LENS+MotionWeave branch may still have pre-existing compile or functional issues from earlier integration stages unrelated to this zero-conflict sync.
 
 ## Next work
-1. Continue prepared immutable render-packet capture in the animation team's View / RtsView presentation path, including attachment lifetimes, so secondary cameras display animated models without repeating event processing.
+1. Continue prepared immutable render-packet capture in the animation team's View / GameView presentation path, including attachment lifetimes, so secondary cameras display animated models without repeating event processing.
 2. Finish per-camera visual/material binding and event invariance tests.
 3. Run one consolidated native build/test pass, fix errors and record actual results before merging to `main`.

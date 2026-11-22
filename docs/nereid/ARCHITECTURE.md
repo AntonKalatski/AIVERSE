@@ -7,7 +7,7 @@ water remains active until explicit, tested migration.
 ## Existing water (do not remove)
 
 - `modules/rts/view/RtsWater.{h,cpp}`: spline networks, shores, geometry, water cells.
-- `modules/rts/view/RtsShoreView.{h,cpp}`: shores, props and foam rendering.
+- `modules/rts/view/GameShoreView.{h,cpp}`: shores, props and foam rendering.
 - `apps/editor/core/WaterOps.{h,cpp}`: editor bake and water operations.
 - `apps/editor/windows/WaterWindow.cpp`: water editing UI.
 - `tests/tests_water.inc`: existing water/shore/map behavior.
@@ -178,7 +178,7 @@ Coordinates are X/Z world metres, `cellMeters` is explicitly Fixed,
 and body heights are provided by the caller. There is no change to
 existing NEREID schemas.
 
-`modules/rts/view/NereidLegacyWaterAdapter.h` is the only
+`engine/view/NereidLegacyWaterAdapter.h` is the only
 legacy-dependent header:
 - `importWaterNetworkToNereid` uses the untouched legacy
   `buildGeometry` + `waterCells` rasterizer, and is appropriate for

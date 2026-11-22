@@ -1,7 +1,7 @@
 # Editor visual selection
 
 Authoring Scene suppresses gameplay overlays: HP/build bars, labels and RTS ground
-indicators are owned by the game presenter. RtsScene.gameplayOverlays is appended
+indicators are owned by the game presenter. GameScene.gameplayOverlays is appended
 with defaulttrue for existing game hosts; authoring Scene and Scene during play
 opt out. Game view retains its module's HUD. No authoritative health/state change.
 

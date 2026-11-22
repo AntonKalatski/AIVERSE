@@ -9,8 +9,8 @@
 
 #include "GameClient.h"
 #include "RegionSettings.h"
-#include "modules/rts/view/ScriptHud.h"
-#include "modules/rts/view/WorldCounters.h"
+#include "engine/view/ScriptHud.h"
+#include "engine/view/WorldCounters.h"
 #include "engine/net/NetLocalize.h"
 #include "engine/game/Localize.h"
 #include "engine/atlas/AtlasFormat.h"
@@ -337,7 +337,7 @@ void GameClient::buildTopBar(UiState& s) {
             // online: names come from the lobby (bots and unnamed players as "@net.*" keys)
             const std::string name = netMatch_ ? net::displayName(loc_, p.name, p.slot)
                                    : mapIndex_ >= maps_.size() ? p.name : localizedPlayerName(loc_, maps_[mapIndex_].file, size_t(p.slot - 1), p.name);
-            s.top.push_back({fmt("%s %d", name.c_str(), g) + (p.alive ? "" : tr("hud.eliminated")), "", cssColor(RtsView::playerColor(p.slot)), false});
+            s.top.push_back({fmt("%s %d", name.c_str(), g) + (p.alive ? "" : tr("hud.eliminated")), "", cssColor(GameView::playerColor(p.slot)), false});
         }
     }
     const auto& vic = gs.victory;
@@ -345,7 +345,7 @@ void GameClient::buildTopBar(UiState& s) {
         for (size_t t = 1; t < gs.tickets.size(); ++t) s.top.push_back({tr("hud.team", Args().num("team", int64_t(t)).num("tickets", gs.tickets[t].toInt())), "", "", false});
     if (vic.mode == VictoryMode::Score)
         for (size_t t = 1; t < gs.score.size(); ++t)
-            s.top.push_back({fmt("%lld", (long long)gs.score[t].toInt()), "", cssColor(RtsView::playerColor(uint8_t(t))), false});
+            s.top.push_back({fmt("%lld", (long long)gs.score[t].toInt()), "", cssColor(GameView::playerColor(uint8_t(t))), false});
     if (vic.mode == VictoryMode::Survive || vic.mode == VictoryMode::Score) {
         int64_t left = std::max<int64_t>(0, (vic.surviveSeconds * int64_t(sim_->tickRate())).toInt() - int64_t(sim_->tick())) / sim_->tickRate();
         s.top.push_back({tr("hud.time_left", Args().str("time", clockText(left))), "", "", left < 30});
@@ -623,7 +623,7 @@ void GameClient::buildOverlays(UiState& s) {
             row.style=fmt("left: %.1fpx; top: %.1fpx; width: %.1fpx; height: %.1fpx;",box.x*k,box.y*k,box.w*k,box.h*k);
             s.entityActions.push_back(std::move(row));
         }
-        const auto color=RtsView::playerColor(human_);
+        const auto color=GameView::playerColor(human_);
         for(auto q:regionSwipe_.controlFlags(cam_,float(platform::windowWidth()),float(platform::windowHeight()))){
             s.lines.push_back(fmt("left: %.1fpx; top: %.1fpx; width: %.1fpx; height: %.1fpx; background-color: #f5f5eb; border: 1px #142332;",(q.x-1)*k,(q.y-26)*k,2*k,26*k));
             s.lines.push_back(fmt("left: %.1fpx; top: %.1fpx; width: %.1fpx; height: %.1fpx; background-color: rgb(%d,%d,%d); border: 1px white; border-radius: 2px;",(q.x+1)*k,(q.y-25)*k,19*k,13*k,int(color.x*255),int(color.y*255),int(color.z*255)));

@@ -437,7 +437,7 @@ to the build host; they affect `index.data`, not `index.wasm`.
 
 Remaining wasm (B, pre-optimisation code 16.2 MB): `aiverse::game` ~40%.
 Rule-gated systems following the same pattern, by code size: ComputerPlayer 0.37 MB,
-Encounters 0.14, TopDown 0.14, Planet (RtsPlanetGroundFx + PlanetRenderer)
+Encounters 0.14, TopDown 0.14, Planet (GamePlanetGroundFx + PlanetRenderer)
 ~0.14, city generator + roadkit + road geometry ~0.22, Progression 0.08,
 Driving 0.08, FieldOps 0.08, BwImpl 0.07, RegionSwipe 0.06, Arsenal 0.06,
 Raid 0.06, Commerce 0.06; also ImGui ~0.36 MB and RmlUi Debugger 0.04 MB.
@@ -519,7 +519,7 @@ product decision for the editor owners.
 CMake `aiverse_game_module(var description stub sources...)` replaces a
 system's sources with an adapter from `modules/rts/disabled/` when the option
 is OFF (FATAL with editor, tests, headless, server or HTML5 Studio). Traffic
-moved to it (`modules/rts/disabled/Traffic.cpp`). New switches:
+moved to it (`engine/game/disabled/Traffic.cpp`). New switches:
 
 | engineModules | CMake | needed when | adapter |
 |---|---|---|---|

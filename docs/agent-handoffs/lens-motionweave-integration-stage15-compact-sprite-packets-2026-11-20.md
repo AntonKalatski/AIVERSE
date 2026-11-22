@@ -2,8 +2,8 @@
 
 ## Branch and implementation commits
 - Branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- Implementation commit `725805dbb9c251268d8cfd23aa17a2b8bfc1e66a`: `modules/rts/view/Rts2DView.h`.
-- Implementation commit `8f600871130c73277529be11cadf628ac1681a97`: `modules/rts/view/RtsSprites.cpp`.
+- Implementation commit `725805dbb9c251268d8cfd23aa17a2b8bfc1e66a`: `engine/view/Game2DView.h`.
+- Implementation commit `8f600871130c73277529be11cadf628ac1681a97`: `engine/view/GameSprites.cpp`.
 - Preceded by `docs/agent-handoffs/lens-motionweave-integration-stage14-universal-light-snapshot-2026-11-20.md`.
 
 ## Architecture and API

@@ -1,4 +1,4 @@
-// Visual effects for "Planets" (see modules/rts/fx/RtsFx.h): effect files copied from templates/skirmish (built-in
+// Visual effects for "Planets" (see engine/fx/GameFx.h): effect files copied from templates/skirmish (built-in
 // particle textures only). On planets the effects stand on the local surface: gravity, smoke and debris follow the
 // body's up direction (docs/planets.md).
 {

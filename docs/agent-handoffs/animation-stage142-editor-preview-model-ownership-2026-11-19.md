@@ -54,7 +54,7 @@ Actually inspected `EditorWindow`, `Editor::frame`, `Editor::shutdown`, `Viewpor
 - `AnimationEditorPanel` keeps its Portrait render target allocated while its tab is closed for fast reopening; it queues the Model but does not claim a fully unloaded editor window. Final target release occurs during window destruction.
 - The existing Editor frame hook must be the *true Device owner pre-render boundary*. It is sourced from the same `Editor::frame` path already responsible for View, image rollback, offscreen targets and renderer tokens; the C++ call order is verified, real graphics timing is not.
 - There may be direct `ModelResourceCache` or `ModelAssetProvider` callers that retained `noexcept` wrappers or unowned raw pointers; continue auditing.
-- **Next functional gaps:** GeometryScene's direct Model GPU release and WorldScene streaming lifecycle, editor preview owner/graph consistency under source hot reload, remaining Universal View/legacy RtsView adapters, native FPS/RTS/editor parity, model/LOD/retarget continuity and Stage 137 feature-closure gate. A large and divergent PR cannot be marked feature-complete yet.
+- **Next functional gaps:** GeometryScene's direct Model GPU release and WorldScene streaming lifecycle, editor preview owner/graph consistency under source hot reload, remaining Universal View/legacy GameView adapters, native FPS/RTS/editor parity, model/LOD/retarget continuity and Stage 137 feature-closure gate. A large and divergent PR cannot be marked feature-complete yet.
 
 ## Next Stage 143 (feature-only)
 

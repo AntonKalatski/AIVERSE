@@ -4,12 +4,12 @@
 - Repository: chromealex/AIVERSE
 - Feature branch: feature/lens-motionweave-integration. Nothing merged into main.
 - Stage 39 base: 878987bc89a7fbc5a5667ea35e6f85faec0252ea
-- e87dc97478be292586b3c7a6f0c3e0f12f1f7897 — modules/rts/view/RtsTerrainRender.h: private tryBuildDetailIncremental entry point.
-- b788fdfcb7d7ebd5166bf0a56b0f0b2b2bc7fa2f — modules/rts/view/RtsTerrainDetailMesh.cpp: copy-on-write normal/splat CPU texel cache, update only dirty region where sizes match.
-- a0580bbd5a1144013388e58103ae8cdf7554531b — modules/rts/view/RtsTerrainDetailMesh.cpp: transactional same-map detail updates.
-- 2337bc9f292538a6f9e6464176c399c1b9c1f4d1 — modules/rts/view/RtsTerrainRender.cpp: incremental path before Stage 39 full transaction, rollback of changed preflight metadata on exception.
+- e87dc97478be292586b3c7a6f0c3e0f12f1f7897 — engine/view/GameTerrainRender.h: private tryBuildDetailIncremental entry point.
+- b788fdfcb7d7ebd5166bf0a56b0f0b2b2bc7fa2f — engine/view/GameTerrainDetailMesh.cpp: copy-on-write normal/splat CPU texel cache, update only dirty region where sizes match.
+- a0580bbd5a1144013388e58103ae8cdf7554531b — engine/view/GameTerrainDetailMesh.cpp: transactional same-map detail updates.
+- 2337bc9f292538a6f9e6464176c399c1b9c1f4d1 — engine/view/GameTerrainRender.cpp: incremental path before Stage 39 full transaction, rollback of changed preflight metadata on exception.
 - 400f6bc9e2f276ee9eb08f53b6c5bc6f266db074 — tests/tests.cpp: two new fault-injection/perf-shape regression tests.
-- f9c9076a8b2c395ab30815663e926128b30b8086 — modules/rts/view/RtsTerrainDetailMesh.cpp: explicit utility header for handle exchange.
+- f9c9076a8b2c395ab30815663e926128b30b8086 — engine/view/GameTerrainDetailMesh.cpp: explicit utility header for handle exchange.
 
 ## Actual functionality
 1. Same-size Detail Terrain edits are classified using existing published per-chunk hash, the pending explicit detail dirty-sample rectangle, active texture dimensions and current quality-dependent detail resolution. Global remap, changed scale, changed material-layer assignments or invalid cache use the existing Stage 39 complete staged rebuild.
@@ -46,7 +46,7 @@
 5. The fast path excludes painted material layer changes and source detail dimension/scale changes; those correctly take the full transaction.
 6. Same-size dynamic field/creep updates in build's unchanged detail path still update GPU textures in place. Simultaneous cross-camera pixel-generation determinism needs an immutable per-view dynamic texture scheme.
 7. Validate later that synthetic detail editing far from boundaries changes exactly one chunk; the new test asserts this but HAS NOT BEEN RUN.
-8. All owners of RtsView still need batch atomic GroundFX publication and a conflict-aware MotionWeave merge. DO NOT overwrite editor/animation branches.
+8. All owners of GameView still need batch atomic GroundFX publication and a conflict-aware MotionWeave merge. DO NOT overwrite editor/animation branches.
 
 ## Suggested next Stage 41
 Transactional batch publication of GroundFX meshes with bounds on temporary GPU memory; add two-chunk late-failure tests and preserve per-camera packet ownership. Then audit cross-view epoch and resource retirement. Keep one handoff file for every stage. Do the user's requested single comprehensive CMake/CTest validation and backend compilation after completing functions, not now.

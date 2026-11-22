@@ -44,7 +44,7 @@ The resulting `EffectDef` uses the CURRENT CPU simulation and rendering code; it
   ```
 - **Critical caveat:** Graph v1 is a data IR compiled to the old effect schema, not a complete programmable Niagara graph. No arithmetic/dataflow nodes, custom attributes, multi-input merge, function graphs, runtime GPU kernels, visual graph editor, depth-based collisions or soft particles yet.
 - Handle branch concurrency carefully: other agents are changing editor/ECS/Metal code. Never force-push or overwrite unrelated work.
-- Existing RTS FX bridge: `modules/rts/fx/RtsFx.*` and `apps/client/ClientFx.*`. Existing particle renderer: `engine/fx/{ParticleSystem,FxEmit,FxRender,FxInternal}.*`; CPU dynamic vertex expansion, batch-by-texture/blend, capped quality tiers.
+- Existing RTS FX bridge: `modules/rts/fx/GameFx.*` and `apps/client/ClientFx.*`. Existing particle renderer: `engine/fx/{ParticleSystem,FxEmit,FxRender,FxInternal}.*`; CPU dynamic vertex expansion, batch-by-texture/blend, capped quality tiers.
 - Stability: `fx/<name>.json` assets and `fx/fx.json` RTS bindings are unchanged. New graph frontend opt-in; no migration of existing assets.
 
 ## Next stages (DO NOT claim completed)
@@ -102,7 +102,7 @@ ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs
 
 ### Constraints / next step
 
-- Neither RTS nor FPS game loops have been migrated to call this adapter yet. The old `RtsFx` bindings must remain until event parity is verified; do not claim integration done.
+- Neither RTS nor FPS game loops have been migrated to call this adapter yet. The old `GameFx` bindings must remain until event parity is verified; do not claim integration done.
 - The bridge consumes `SimEvent` and `World` **only** on the presentation side, not via an ECS gameplay `Simulation::addSystem`; timing remains under the host's render loop.
 - Duplicate-tick suppression is global per presenter. On rollback or replay, call `reset()` before replay; split-screen/multiple worlds need separate presenters. Future work should generalize stable presentation event IDs across snapshot/resimulation.
 - Next: Stage 3 — load and hot-reload versioned graph assets in a reusable registry; integrate graph asset edits with the existing FX editor/MCP and add graph-aware tests. Then GPU simulation and visual node editor are separate stages, not implicit in the current work.
@@ -239,7 +239,7 @@ aiverse::spectra::PresentationSystem presenter(particles);
 
 Native CMake: `target_link_libraries(my_native_target PRIVATE AIVERSE::spectrafx)` (include dirs already follow the existing aiverse_fx target; `libraries/include` must also be in the native project's include paths for the `aiverselib/genre` header).
 
-**Migration/compatibility:** no change to legacy `fx/<name>.json`, `fx/fx.json`, old effect runtime IDs, serialized simulation state or `RtsFx`; no duplicate renderer. Old names `compileVfxGraph`, `VfxGraphAssets`, `VfxSourceComponent`, `VfxPresentationSystem`, `VfxEventBinding` are source-level aliases/wrappers. Because the ECS component type aliases resolve to the exact same types, existing ECS type IDs are preserved (do not replace aliases with wrappers or derived types). Graph asset path stays `fx/graphs/*.vfx.json` for compatibility.
+**Migration/compatibility:** no change to legacy `fx/<name>.json`, `fx/fx.json`, old effect runtime IDs, serialized simulation state or `GameFx`; no duplicate renderer. Old names `compileVfxGraph`, `VfxGraphAssets`, `VfxSourceComponent`, `VfxPresentationSystem`, `VfxEventBinding` are source-level aliases/wrappers. Because the ECS component type aliases resolve to the exact same types, existing ECS type IDs are preserved (do not replace aliases with wrappers or derived types). Graph asset path stays `fx/graphs/*.vfx.json` for compatibility.
 
 ### Test record — NOT RUN
 
@@ -280,7 +280,7 @@ python3 tools/skills/catalog.py check
 
 Registered in `registerFxOps` through `registerSpectraGraphOps`: `fx_graph_list`, `fx_graph_get`, `fx_graph_validate`, `fx_graph_set`, `fx_graph_delete`, `fx_graph_bake`. Graph validation uses `aiverse::spectra::compileGraph` and is CPU-only. Graphs live in `fx/graphs/<name>.vfx.json` and are limited to 1 MiB. `fx_graph_set` rejects invalid compilation without overwriting the source; valid changes call `Workspace::note(Change::Fx)`. `fx_graph_bake {name,effect,overrides?,overwrite?}` materializes a separate `fx/<effect>.json` compatible with existing `fx_preview` and legacy clients; old effect files are not overwritten unless `overwrite:true`. Bake is a snapshot: editing source graphs does not automatically refresh baked effects.
 
-Game simulation, deterministic ECS authority, rollback state and old `RtsFx` are untouched. There is no node-canvas editor and no GPU simulation in this stage.
+Game simulation, deterministic ECS authority, rollback state and old `GameFx` are untouched. There is no node-canvas editor and no GPU simulation in this stage.
 
 ### Verification status — NOT RUN
 
@@ -413,7 +413,7 @@ Manual editor QA: open **Графика → SpectraFX**; test each typed control
 - The RHI `engine/gfx/Gfx.h` already defines an optional compute contract: `supportsCompute`, `createCompute`, `beginCompute`, `setComputeBuffer`, `setComputeUniforms`, `dispatch`, `endCompute`, storage buffers and debug readback.
 - Current `engine/gfx/metal/GfxMetal.mm` implements compute and guarantees per-dispatch barriers; storage `MTLBuffer` can be bound through `setVertexBuffer` in the render encoder. The existing `engine/cloth/ClothGpu.cpp` uses this API.
 - Vulkan, GL33 and GLES3 in this branch do **not** expose a functional general RHI compute implementation. Do not activate the GPU path there on the basis of GLSL source alone.
-- Existing CPU emitter contract is in `engine/fx/ParticleSystem.*`; `modules/rts/fx/RtsFx.*` remains production.
+- Existing CPU emitter contract is in `engine/fx/ParticleSystem.*`; `modules/rts/fx/GameFx.*` remains production.
 
 ### Implementation commits
 
@@ -459,7 +459,7 @@ emitter.shutdown();
 - Persistent Metal storage buffers: 64-byte particle `positionAge/velocityLife/tint/size` state, 64-byte seed records, uint32 spawn slots, and 40-byte expanded GPU vertex per quad corner; static 16-bit indices and a soft RGBA8 texture. The renderer reuses existing vertex/fragment particle shaders and RHI draw/pass bindings.
 - Each `step`: enqueue CPU-written seed+slot arrays as Metal blits, dispatch compute mode 0 (birth), mode 1 (age, speed, gravity/drag, position), mode 2 (expand billboard geometry), then draw without GPU→CPU readback. A CPU-side time-to-live/free-slot pool is bookkeeping only (particle motion is computed on Metal).
 - GPU render currently draws the full allocated slot index array; inactive slots emit degenerate zero-alpha quads. There is **NO GPU compaction, indirect count or per-particle occlusion/culling/sorting**. Maximum 4096 slots prevents unbounded GPU work.
-- All existing `fx/*.json`, `fx/graphs/*.vfx.json`, `RtsFx`, native API aliases and ECS save/rollback formats are unchanged. There is **no production RTS/FPS integration** in this stage.
+- All existing `fx/*.json`, `fx/graphs/*.vfx.json`, `GameFx`, native API aliases and ECS save/rollback formats are unchanged. There is **no production RTS/FPS integration** in this stage.
 
 ### Actual verification (DO NOT OVERSTATE)
 
@@ -532,7 +532,7 @@ Implementation `1b8b58cabfe5d27b278a73344dc4894708d562e8` removes unused anonymo
 ## Stage 11 — capability-routed graph runtime with lossless CPU fallback (COMMITTED, TESTS NOT RUN)
 
 **Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.
-**Aim:** provide a **genre-independent, opt-in** bridge from compiled SpectraFX graph-v1 effects to the Stage-10 Metal compute prototype **only** when the complete graph effect can run without silently dropping any modules. For all other graphs retain the original CPU `EffectDef`. No change to authoritative gameplay ECS, save/rollback, existing `RtsFx`, or production FPS/RTS clients.
+**Aim:** provide a **genre-independent, opt-in** bridge from compiled SpectraFX graph-v1 effects to the Stage-10 Metal compute prototype **only** when the complete graph effect can run without silently dropping any modules. For all other graphs retain the original CPU `EffectDef`. No change to authoritative gameplay ECS, save/rollback, existing `GameFx`, or production FPS/RTS clients.
 
 ### Implementation commits and affected paths
 
@@ -580,7 +580,7 @@ view.shutdown();
 - `inspectGraphGpuEligibility(const fx::EffectDef&, GraphRuntimeOptions)` is a **pure schema check**, not a GPU capability probe. `GraphGpuEligibility {eligible, gpu, reason}` exposes an option-independent evaluation of the compiled graph's actual emitter modules. GPU v1 allows exactly one additive `builtin:soft` camera-facing point burst (1..64 particles), constant life/speed/size/drag, zero spread, only Y-gravity, default white alpha fade, and no other modules. The canonical `effectToJson` comparison against a known-supported template plus explicit complex-module/colour checks prevents dropping authoring data. Any additional emitter/output, shader graph, texture, gradient, noise, force field, collisions, sub-emitter, trail/light, random range, size curve, etc. rejects GPU.
 - `GraphRuntime::initGraph(device,graph,overrides,options)` calls existing graph compiler; `initEffect(device,compiled,options)` accepts native-compiled `EffectDef` directly. For **eligible + Metal** graphs, the class attempts `ComputeParticles` and only reports `Metal` if its GPU init succeeds. For unsupported device, unsupported graph, shader-creation failure or low quality, `Automatic`/`PreferGpu` use the **original full** `fx::ParticleSystem`, not the Stage-10 simplified fallback emitter. `CpuOnly` explicitly uses CPU. `RequireGpu` fails with diagnostics.
 - `burstAt/setView/step/draw/clear/shutdown` own one presentation runtime instance; production clients and editor preview are **not** transparently replaced. The internal Stage-10 GPU wrapper may fall back to its simplified CPU equivalent after a GPU health failure only for an already-compatible graph; `GraphRuntime` preserves the wrapper's lifetime and reports its actual backend.
-- No authoritative ECS `World` changes; no new deterministic simulation component or cross-genre fork. Legacy `fx/*.json`, `fx/graphs/*.vfx.json`, `RtsFx` and existing C++ aliases are untouched.
+- No authoritative ECS `World` changes; no new deterministic simulation component or cross-genre fork. Legacy `fx/*.json`, `fx/graphs/*.vfx.json`, `GameFx` and existing C++ aliases are untouched.
 - The graph editor and MCP `fx_graph_validate/get/list` now expose **schema** `metalGpuEligible` and `metalGpuReason`, which **do not confirm a real Metal device or successful GPU pipeline**. GUI preview deliberately stays CPU-only.
 
 ### Verification status (actual)

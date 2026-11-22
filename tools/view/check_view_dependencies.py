@@ -13,7 +13,7 @@ FORBIDDEN = re.compile(
 )
 GAME_NAMESPACE = re.compile(
     r'\b(?:aiverse::)?(?:fps|rts|game)::|'
-    r'\b(?:FpsModule|GameCore|RtsScene|RtsView|OrderType)\b'
+    r'\b(?:FpsModule|GameCore|GameScene|GameView|OrderType)\b'
 )
 
 
@@ -30,7 +30,7 @@ def check(root: pathlib.Path) -> list[str]:
                     f"{relative}: forbidden include {match.group(1)}"
                 )
         # Strip comments and string literals before scanning for typed
-        # references. "RtsView" in a migration comment is not a dependency.
+        # references. "GameView" in a migration comment is not a dependency.
         stripped = re.sub(
             r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\])*"',
             "", content, flags=re.DOTALL,

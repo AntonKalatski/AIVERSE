@@ -3,7 +3,7 @@
 ## Commit and ownership
 - Branch `feature/universal-multicamera-render-targets`, forked from main `58e29ab052458fffcdebebffe27022b53adb9367`.
 - Stage 2 implementation commit `b385ca427cf8db1175ae4438ce1767af42220d38`.
-- Files: new `engine/render/PortraitRenderer.h`; changed `modules/rts/view/RtsPortrait.h` and `modules/rts/view/RtsPortrait.cpp`.
+- Files: new `engine/render/PortraitRenderer.h`; changed `engine/view/GamePortrait.h` and `engine/view/GamePortrait.cpp`.
 - Existing native and Studio consumers of `game::Portrait` need not change their method signatures.
 
 ## Architecture / API
@@ -11,7 +11,7 @@
 - Public `capture(const render::Camera&, Submit&& draw, std::array<float,4> clear)` accepts an arbitrary renderer-submission callback and renders into its own color/depth RT. Call before an active gfx render pass, and sample texture after the capture. No RTS/FPS/editor headers.
 - `renderPose(const Model&,const Pose&,yaw)` previews arbitrary animated models and supports any native game.
 - Public `texture()`, `depthTexture()`, `renderer()`, `device()`, `size()`, `lastError()`.
-- `game::Portrait` remains in `modules/rts/view` as an adapter for RTS `RtsView::modelOf/selectionRadius/drawPreview/applyMaterial`. Procedural material-preview shapes remain in that adapter for now; common capture is no longer RTS-specific.
+- `game::Portrait` remains in `modules/rts/view` as an adapter for RTS `GameView::modelOf/selectionRadius/drawPreview/applyMaterial`. Procedural material-preview shapes remain in that adapter for now; common capture is no longer RTS-specific.
 - Existing `game::Portrait::init/renderPose/renderMaterial/render/texture/lastError/shutdown` signatures preserved. Output clear and camera framing values preserved.
 - No on-disk format or wire protocol changes; new generic API is header-only and avoids CMake source additions.
 

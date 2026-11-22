@@ -28,7 +28,7 @@ owners and for planning the same mechanics as data. The rules block currently ru
    visibility-authorized. Personal bosses: `stepSchedule` with the participants, place the boss for each `Pending`
    request, then `markBossSpawned` / `markBossDefeated` (kills only) / `cancelBossRequests` (leaving is not a win);
    gate ordinary waves with `ordinaryWavesAllowed`. Persist `BossRotation` in the player profile between matches.
-5. Views: draw `TelegraphView` (shape, pose, `progressMilli` fill) with `telegraphDecal` -> `RtsGroundCanvas` /
+5. Views: draw `TelegraphView` (shape, pose, `progressMilli` fill) with `telegraphDecal` -> `GameGroundCanvas` /
    Lua `view.draw_ground`; status visuals follow `StatusViewEvent` (one per instance, Ground or ModelTop anchor).
    Presentation reads these records only.
 6. Determinism: Fixed math, integer ticks, one step per object per tick (repeated/backwards ticks return nullopt and

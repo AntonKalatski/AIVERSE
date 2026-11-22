@@ -13,7 +13,7 @@ Branch `feature/aiv20261122_review_deferred` (from main `d677f8a2f`). Follows th
 | physis-terraweave 6: Box3D publisher not wired | DONE | Coordinator keeps a listener list (`addPatchListener`); `TerrainBox3DPublisher::attach`. GI bridge now adds instead of replacing. Test in `physis_box3d`. |
 | physis-terraweave 7: remote edit unreachable | NOT DONE | Needs an authenticated host transport; AGENTS.md forbids a default anonymous admin listener. Left as API. |
 | physis-terraweave 5: ecology containers | NOT DONE | Perf only, needs a benchmark first. |
-| prisma-view 3: capture-mode fingerprints | NOT DONE | Needs revision counters in sim MapGrid / RtsScene. |
+| prisma-view 3: capture-mode fingerprints | NOT DONE | Needs revision counters in sim MapGrid / GameScene. |
 | editor-input 12: per-frame allocations | NOT DONE | Restructure only with benchmarks (reviewer's call stands). |
 | ci-lens: MinGW full CTest | NOT DONE | Python drivers call .exe without Wine; needs CI access to iterate. |
 

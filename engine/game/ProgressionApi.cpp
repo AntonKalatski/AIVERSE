@@ -2,7 +2,7 @@
 // view scripts (HUD: xp bar, level, the level-up cards), actions in simulation scripts only. Events:
 // on("progression_xp" | "progression_level" | "progression_offer" | "progression_perk" | "progression_recruit" |
 // "progression_orb" | "progression_summon", fn); offer veto hook: progression_can_offer(player, perk_key | "recruit:<type>").
-// View scripts choose cards with view.progression_choose(index) / view.progression_reroll() (RtsViewScript.cpp).
+// View scripts choose cards with view.progression_choose(index) / view.progression_reroll() (GameViewScript.cpp).
 // Reference: docs/progression.md (keep scriptApiReference() in ScriptApi.cpp in sync).
 #include "ScriptInternal.h"
 #include "Internal.h"

@@ -1,6 +1,6 @@
 // The game simulation as its systems see it (heroes, vehicles, traffic, arsenal, raids, encounters, progression,
 // commerce, careers, fields, environment, prompts, sensors, field operations): rules, match state, the shared
-// queries and actions on units, and the other systems. The game module (modules/rts GameHost) implements it.
+// queries and actions on units, and the other systems. The game module (GameCore) implements it.
 #pragma once
 #include <cstdint>
 #include "../../engine/core/ECS.h"

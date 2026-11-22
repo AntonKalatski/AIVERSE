@@ -2,7 +2,7 @@
 
 The standalone client initializes shared presentation services at boot and defers unit models
 and sprite sheets until a map is selected. The editor also defers type loading, while the
-standalone model viewer keeps eager loading. `RtsView::setDeferredLoading(true)` must precede
+standalone model viewer keeps eager loading. `GameView::setDeferredLoading(true)` must precede
 `init`; `loadType` is idempotent and resolves the visual definition (model variants,
 attachments, stages and sprite sheet). The editor additionally calls
 `setDeferAppearanceVariants(false)` so a selected type still exposes all its appearances.

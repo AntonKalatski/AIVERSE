@@ -1,6 +1,6 @@
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
-#include "modules/rts/view/RtsTerrainShaders.h"
+#include "engine/view/GameTerrainShaders.h"
 #include "engine/gfx/ColorSpace.h"
 #include <cstdio>
 int main(){@autoreleasepool {

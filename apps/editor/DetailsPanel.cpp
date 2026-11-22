@@ -77,7 +77,7 @@ std::string inlineText(const Json& v) {
 
 ImVec4 ownerColor(int owner) {
     if (owner <= 0) return ImVec4(0, 0, 0, 0);
-    const render::float4 c = game::RtsView::playerColor(owner);
+    const render::float4 c = game::GameView::playerColor(owner);
     return ImVec4(c.x, c.y, c.z, 1);
 }
 } // namespace

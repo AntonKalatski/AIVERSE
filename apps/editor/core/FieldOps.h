@@ -8,9 +8,9 @@
 #include <vector>
 #include "Workspace.h"
 #include "engine/game/GridFieldData.h"
-#include "modules/rts/view/RtsFieldView.h"
+#include "engine/view/GameFieldView.h"
 
-namespace aiverse::game { struct RtsScene; }
+namespace aiverse::game { struct GameScene; }
 
 namespace aiverse::editor {
 
@@ -27,7 +27,7 @@ int paintMapField(MapDoc& doc, const game::Rules& rules, const std::string& id, 
 // Decoded initial values for the Scene view (rebuilt when the map or rules change).
 class FieldPreview {
 public:
-    void fill(const game::Rules& rules, const MapDoc& doc, game::RtsScene& scene);
+    void fill(const game::Rules& rules, const MapDoc& doc, game::GameScene& scene);
 private:
     uint64_t revision_ = ~0ull;
     const game::Rules* rules_ = nullptr;

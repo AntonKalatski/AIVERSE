@@ -84,11 +84,11 @@ simulation state or recorded events if required. Territory layers reconstruct au
 - Call `flush()`/`upload()`/`blit()` outside an active render pass. Sample `handle()` inside subsequent passes;
   do not simultaneously sample and render into the same target. Call `shutdown()` before device death.
 - `PaintLayers` holds CPU descriptions shared by Lua and the view. GPU resources belong to
-  `RtsPaintLayers`, not the Lua VM. It renders before fog/UI, with depth testing and no depth writes.
+  `GamePaintLayers`, not the Lua VM. It renders before fog/UI, with depth testing and no depth writes.
 - Surface geometry is cached until the visible/land mask changes or terrain is rebuilt. The current
   implementation uses one quad per map cell and one surface draw per layer; very large maps may need
   chunking. Coverage scans remain O(map cells × territory layers); this is not a GPU ownership solver.
-- Client and editor both pass the active view-script layers into `RtsScene`; stop/restart/reload releases
+- Client and editor both pass the active view-script layers into `GameScene`; stop/restart/reload releases
   old GPU resources. Ordinary games without paint layers use their existing rendering unchanged.
 
 ## Validation
@@ -126,11 +126,11 @@ Canvas GPU lifetime is now explicit and independent of game genre:
   brushes remain queued for retry. Every transient buffer and
   temporary upload image is retired by a real GPU fence, rather than
   destroyed immediately after `endPass`.
-- `RtsPaintLayers` creates one shared retirement pool for all canvases,
+- `GamePaintLayers` creates one shared retirement pool for all canvases,
   meshes, coast textures and shader programs. Layer removal/resize/
   source reset queues old resources; the pool survives until its
   owner-host shutdown and drains after actual GPU idle. The existing
-  RtsView GPU lease is forwarded. Editor and GameClient poll the pool
+  GameView GPU lease is forwarded. Editor and GameClient poll the pool
   once at their GPU owner frame boundary (outside render passes).
 - Paint mesh replacement is transactional: failed new GPU allocation
   preserves the previous mesh. Editor Stats reports pending resources,
@@ -150,7 +150,7 @@ the GPU blit vertex buffer returns false without claiming the
 partial target update succeeded. The staging texture is still
 GPU-fence-retired through Stage 120's canvas owner.
 
-`RtsPaintLayers` now retries source image updates safely:
+`GamePaintLayers` now retries source image updates safely:
 categorical palette/cell changes retain dirty flags when staging
 fails; coastline texture allocation failure does not acknowledge
 the new sea-mask hash; territory coverage layers remember failed

@@ -9,7 +9,7 @@
 #include <limits>
 #include "../Editor.h"
 #include "../EditorUtil.h"
-#include "modules/rts/view/RtsPortrait.h"
+#include "engine/view/GamePortrait.h"
 #include "engine/render/RenderResourceOwnerGroup.h"
 
 namespace aiverse::editor {
@@ -169,7 +169,7 @@ public:
         time_ += ImGui::GetIO().DeltaTime;
         bool rawDrawn=false;
         if(rawMode_ && canShowRaw) {
-            // Keep this provider entirely separate from RtsView's model
+            // Keep this provider entirely separate from GameView's model
             // ownership; rebind at project/cache revision boundaries.
             const auto& project=ed.ws().project.dir;
             const auto revision=ed.view().modelResources().generation();
@@ -197,7 +197,7 @@ public:
                 rawRevision_=revision;
             }
             // One resource budget across THREE live native host owners:
-            // the world RtsView, this portrait's generated geometry and the
+            // the world GameView, this portrait's generated geometry and the
             // independent raw-source model provider. Shared GPU pool pages
             // and texture-owner allocations are never charged per Model.
             render::RenderResourceOwnerGroup ownerGroup;

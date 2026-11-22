@@ -11,8 +11,8 @@ Previous: docs/agent-handoffs/lens-motionweave-integration-stage45-road-shore-fo
 - engine/view/VisibilityField.h/.cpp: introduced RAII PreparedSheet. It owns staged vertex/index GPU buffers, the target map dimensions and a new blank field baseline for map resizes. Its destructor frees unpublished buffers. prepareSheet() generates sheet geometry without mutating published state and without waitForResourceIdle().
 - prepareUpdate(..., const PreparedSheet*): accepts the staged dimensions and (for resize) the staged blank CPU baseline. Creates and uploads a private R8 texture for the correct map size. A GPU upload error leaves the live sheet and live field unchanged.
 - commitPreparedFrame(sheet, field) noexcept: checks the single-thread source revision, retires the old sheet VB/IB through NativePresentationRetirement (GPU completion tokens), publishes new sheet geometry and correct dimensions, then publishes prepared field R8 texture and CPU visibility. It never uploads, allocates or waits for GPU idle. An invalid two-phase contract terminates instead of allowing a half-published frame.
-- modules/rts/view/RtsView.cpp: removed legacy early fog_.build() preflight. The existing Roads -> Shores -> Fog OwnerPrepareCommit cohort now stages Fog sheet and field together as its final participant, including grid-size changes. fogMeshDirty_ clears only on successful publication, not on rejected preparation.
-- modules/rts/view/RtsView.h: setFogLook invalidates camera FramePublicationEpoch.
+- engine/view/GameView.cpp: removed legacy early fog_.build() preflight. The existing Roads -> Shores -> Fog OwnerPrepareCommit cohort now stages Fog sheet and field together as its final participant, including grid-size changes. fogMeshDirty_ clears only on successful publication, not on rejected preparation.
+- engine/view/GameView.h: setFogLook invalidates camera FramePublicationEpoch.
 - tests/tests.cpp: added the Stage 46 late owner fault rollback test (same-size replacement) and staged map-resize GPU field test (no full GPU idle). Both exercise retirement counts and preservation of previous published field/texture.
 
 ## Verification honestly performed
@@ -24,11 +24,11 @@ Previous: docs/agent-handoffs/lens-motionweave-integration-stage45-road-shore-fo
 
 ## Known risks and limitations
 
-1. Legacy VisibilityField::build() remains in place for callers outside RtsView; it still uses an explicit GPU-idle replacement barrier. Convert those callers independently only after auditing their resource fences.
+1. Legacy VisibilityField::build() remains in place for callers outside GameView; it still uses an explicit GPU-idle replacement barrier. Convert those callers independently only after auditing their resource fences.
 2. The two new tests are not compiled; check the fake Device's retirement accounting and any platform differences during the consolidated test pass.
 3. CPU layout and R8 texture are swapped without backend draw on the owner thread, but owner code must not mutate VisibilityField between prepareAll and publish. Invalid revision is fail-closed.
 4. The prepare path duplicates sheet CPU vertex/index memory and private GPU allocations. There is not yet a global per-frame staging memory budget.
-5. Roads, Shores and Fog are one cohort, but Terrain/Detail, GroundFX, sprites, animation, lighting and overlays are still independent; entire RtsView remains non-atomic.
+5. Roads, Shores and Fog are one cohort, but Terrain/Detail, GroundFX, sprites, animation, lighting and overlays are still independent; entire GameView remains non-atomic.
 6. The legacy hot reload and device-loss generation paths still need integration tests with multi-camera secondary capture and resource retirement.
 
 ## Next stage — Stage 47

@@ -12,7 +12,7 @@
 - `submitOne` does not explicitly advance the animation graph. HOWEVER, its mutable `lodState_[obj.id]` and retarget performance counters/scratch are modified by submissions.
 - It therefore cannot currently be called from N camera passes using one shared View instance with camera-independent LOD history without risking cross-camera LOD hysteresis contamination.
 - Proper integration should: (a) snapshot stable immutable Object/model/pose and material ownership after the one animation update, (b) use a per-camera LOD state map keyed by camera generation-safe identity + model identity, and (c) submit prepared data to N cameras without firing events or updating animation clocks.
-- `RtsView::draw` remains stateful; do not replay it for secondary cameras. Existing client integration deliberately draws streamed scenery only until packet snapshot is implemented.
+- `GameView::draw` remains stateful; do not replay it for secondary cameras. Existing client integration deliberately draws streamed scenery only until packet snapshot is implemented.
 
 ## Backend and client status
 - Stage 3 transferred Metal, GL/GLES, Vulkan offscreen capture implementations and GPU-idle hooks, plus editor shutdown and opt-in GameClient RT camera integration.

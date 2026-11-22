@@ -166,7 +166,7 @@ in one pass; outputs still exclusively on KINGSTON.
 Quick runner with MAKEFLAGS=-k at `139584fc8`, KINGSTON report
 `20261120-144503-17388`: configure PASS, build FAIL, full CTest NOT RUN.
 Commit `71a85246955f65892bbc136dcb59b2a4f6f6104f` fixes all emitted failures: qualified kNullEntity in packet
-fixture; RtsView polls void Road/Shore collection then checks pending count,
+fixture; GameView polls void Road/Shore collection then checks pending count,
 uses ScenePacketBatch::size; Overlays separates heterogeneous auto handles;
 AnimationOps uses render::findNodePath; sprite fault fixture links game_view/
 content_reader and uses runtime aiverseMain. Six affected files named above.
@@ -179,7 +179,7 @@ Next: repeat full keep-going quick runner, then terrain fault coverage.
 
 The preceding entry overstates commit 71a852469: the edit script stopped on
 an assertion (AnimationOps uses the motionweave namespace alias, not literal
-lib::animation). Only packets.cpp, RtsView.cpp and RtsOverlaysDraw.cpp were
+lib::animation). Only packets.cpp, GameView.cpp and GameOverlaysDraw.cpp were
 changed in that commit. Commit `02fcb8ceac1fef646bab0b7c1cd9c23ebd0016b3` completes the other three files:
 AnimationOps, sprite fixture entrypoint, CMake linkage. No tests yet for these
 three fixes. The full build already started at 6b211f13a (report
@@ -193,10 +193,10 @@ configure PASS, build FAIL, CTest NOT RUN. It compiled the terrain implementatio
 but core tests lacked Road/Shore includes and used heterogeneous auto; editor
 mutated a const model-cache accessor; camera window used absent completedFrameSerial.
 Sprite link failure used the old generated CMake graph; regenerate next run.
-Commit `065fa9c87f52850b4391224e485a25b1efc91940` adds narrow RtsView model-diagnostic setter, switches Editor
+Commit `065fa9c87f52850b4391224e485a25b1efc91940` adds narrow GameView model-diagnostic setter, switches Editor
 callers, fixes core fixture declarations and replaces camera-window serial queue
 with existing Editor offscreen target owner/lease (collected before submissions).
-Affected: RtsView.h, Editor.cpp, StudioCamerasWindow.cpp, tests/tests.cpp.
+Affected: GameView.h, Editor.cpp, StudioCamerasWindow.cpp, tests/tests.cpp.
 No save-format change; public API adds setter only. Branch codex/lens-completion.
 CI/GPU screenshots NOT RUN. Next: reproducible full quick runner from this HEAD.
 
@@ -240,7 +240,7 @@ map even when hasTerrain_ was false (the Terrain participant already skips
 that case). Commit `a2ef3047f7ff2417a5777b450fb1b9b19ec6dd1d` scopes the map-match gate to hasTerrain_,
 preserving the epoch fixture and non-terrain hosts. Deferred-loading fake
 device also supplies explicit idle=true (no real GPU), fixing its shutdown
-abort; production idle safety is unchanged. Two affected paths: RtsView.cpp
+abort; production idle safety is unchanged. Two affected paths: GameView.cpp
 and tests/deferred_loading.cpp. Branch codex/lens-completion; no API/save change.
 Focused rerun at 8987223a9 report `20261120-150848-57940`: all six preceding
 regression fixes PASS after targeted 3-target rebuild. Full CTest still pending
@@ -345,7 +345,7 @@ Paths: engine/render/AnimationGraph.h/.cpp, tests/animation/graphs.cpp. Added
 native-state retry/isolation and interrupted-fade continuity tests.
 `git diff --check` PASS. Integrated native all-target build still RUNNING on
 KINGSTON; tests/Metal/Vulkan NOT RUN for this stage. Full LENS owner transaction
-remains partial; this primitive alone does not make RtsView atomic. Next:
+remains partial; this primitive alone does not make GameView atomic. Next:
 connect detached graph state to presentation/legacy owner staging, preserve
 single evaluation and commit only after all owners prepare.
 
@@ -368,7 +368,7 @@ mutable callback/component state is outside the contract. No simulation/save
 format changes. Tests exercise native graph isolation, discard/retry and invalid
 source rejection. Paths engine/view/View.h and tests/view/packets.cpp.
 `git diff --check` PASS; integrated native build still RUNNING on KINGSTON,
-new tests/GPU tests NOT RUN yet. No full RtsView atomicity claim: connect the
+new tests/GPU tests NOT RUN yet. No full GameView atomicity claim: connect the
 candidate at the host along with legacy animation, Sprite/light/overlay staging.
 
 | Subsystem | Status | Remaining |
@@ -381,10 +381,10 @@ candidate at the host along with legacy animation, Sprite/light/overlay staging.
 ## LENS captured animation/event rollback — 2026-11-20
 
 Branch `codex/lens-completion`, code `e378c94da9c52d86251d1016032f036fc7595a41`.
-For frames with CameraPreparedCapture, legacy RtsView animation state is cloned
+For frames with CameraPreparedCapture, legacy GameView animation state is cloned
 alongside generic View and retained until whole-frame success. On failure restore
 clocks, tick/event cursor, entity poses/graphs/procedural state, reload seeds,
-streaming choices, tracers, emitted events/effects, bars/shadows and RtsLights
+streaming choices, tracers, emitted events/effects, bars/shadows and GameLights
 CPU state. LightSystem::swapPrepared restores camera-neutral light inputs without
 allocation. Renderer3D::discardSceneSubmission clears borrowed CPU draw queues
 before destroying failed candidate poses, and camera capture is cleared.
@@ -427,11 +427,11 @@ build, run correct targeted fixtures and continue owner staging.
 ## LENS overlay frame candidate — 2026-11-20
 
 Branch codex/lens-completion, code `e6870d64429713dd1b3f0a625a9e27cfaee2b97b`.
-RtsOverlays::beginFramePreparation captures CPU popup/event/definition/UI frame
+GameOverlays::beginFramePreparation captures CPU popup/event/definition/UI frame
 state before drawWorld. A newly allocated VB remains private; old VB retires
 only at commitFramePreparation. Discard restores old buffer/capacity and CPU
 state after renderer queues are cleared. Reject a second growing upload in one
-preparation scope before allocation. RtsView capture lease now owns this guard.
+preparation scope before allocation. GameView capture lease now owns this guard.
 Noncapture legacy path unchanged; actual GPU draw/update failures during later
 Renderer3D::render remain outside this preparation-stage transaction.
 Tests add popup cancellation and same-tick retry/commit to existing overlay
@@ -487,7 +487,7 @@ and private SpriteBatch uploads before queuing draw-only callbacks. Failed
 frames restore old CPU/tile resources; successful frames retire old GPU handles
 at host completion boundaries. buildTiles now constructs local metadata/mesh
 first and retains the old mesh on allocation/atlas failure; normal replacements
-also use deferred retirement. RtsView polls sprite/tile queues and owns the
+also use deferred retirement. GameView polls sprite/tile queues and owns the
 frame guard alongside animation and overlay guards. LENS overlay uploads now
 use a private VB every prepared frame, upload before publication and replay
 without a later write; ordinary path remains snapshotUpdates-backed.
@@ -537,7 +537,7 @@ Next run fresh KINGSTON build, fault fixtures, full CTest and GPU validation.
 
 ## Native Metal acceptance fixture — 2026-11-20
 Code `d960bc2fbe5a9bc08f09579a44ad7c54b995034a`, codex/lens-completion. New lens_metal_frame uses real native
-Metal Renderer3D, RtsView, topology staging, pooled color/depth targets and
+Metal Renderer3D, GameView, topology staging, pooled color/depth targets and
 asynchronous captureTexture readback. Compares primary/prepared replay pixels
 (tolerance 2), requires nonblank output and different pixels for another camera;
 checks secondary replay never advances publication/source frame. Explicit

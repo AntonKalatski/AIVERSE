@@ -1,5 +1,5 @@
 #pragma once
-#include "modules/rts/view/RtsPortrait.h"
+#include "engine/view/GamePortrait.h"
 #include "engine/render/Prisma.h"
 #include "engine/fx/ParticleSystem.h"
 #include "engine/render/TextureCache.h"

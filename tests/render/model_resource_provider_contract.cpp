@@ -1,7 +1,7 @@
 // Stage 99: generic model source contract (native run deferred).
 #include "engine/render/ModelResourceCache.h"
-#include "modules/rts/view/RtsModelResourceCache.h"
-#include "modules/rts/view/RtsModelPreparationService.h"
+#include "engine/view/GameModelResourceCache.h"
+#include "engine/view/GameModelPreparationService.h"
 #include "../AlwaysCheck.h"
 #include <memory>
 #include <type_traits>
@@ -10,10 +10,10 @@
 using namespace aiverse;
 int main() {
     static_assert(std::is_same_v<
-        game::view_adapter::RtsModelResourceCache,
+        game::view_adapter::GameModelResourceCache,
         render::ModelResourceCache>);
     static_assert(std::is_same_v<
-        game::view_adapter::RtsModelPreparationService,
+        game::view_adapter::GameModelPreparationService,
         render::ModelPreparationService>);
     render::ModelResourceCache owner;
     AIVERSE_TEST_CHECK(owner.generation()==0);

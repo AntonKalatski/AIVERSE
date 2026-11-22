@@ -66,9 +66,9 @@ Neither `engine/view` nor MotionWeave may import `modules/rts`,
 `modules/fps` or any other gameplay module. World simulation remains
 authoritative and separate from presentation.
 
-## Migration status from legacy RtsView
+## Migration status from legacy GameView
 
-The old `game::RtsView` is a compatibility adapter, not the canonical
+The old `game::GameView` is a compatibility adapter, not the canonical
 View. A subset of simple AnimationGraph objects already delegates
 pose evaluation and styled ModelDraw submission to `aiverse::View`;
 complex procedural/contact IK and RTS-specific object decisions remain
@@ -207,7 +207,7 @@ time and a height sampler for the GPU sheet. Grid blur/fade,
 visibility texture upload and draw are reusable in strategy,
 stealth, exploration, spectator views and editors alike.
 
-`modules/rts/view/RtsFog.h` remains a compatibility-only
+`engine/view/GameFog.h` remains a compatibility-only
 header: `game::FogOfWar` and `game::FogLook` are aliases to the
 engine types and `game::parseFogLook` forwards to
 `view::parseVisibilityLook`. Existing RTS project settings and
@@ -413,7 +413,7 @@ in one `ScenePacketBatch` and calls `View::update(batch,dt)` once
 before ordinary scene rendering. View's presentation World is the
 single evaluator for each selected source.
 
-`RtsAnimate.cpp` then obtains the evaluated pose from View. When
+`GameAnimate.cpp` then obtains the evaluated pose from View. When
 `EntityAnim::genericViewPose` is true, legacy `Animator::update` and
 bind-pose fallback **must not execute**, even if the model has imported
 clips. Objects that fail eligibility or pose validation keep the existing
@@ -430,7 +430,7 @@ executed for this stage.
 ## RTS animation owner fallback verification (Stage 79)
 
 When a pure graph object becomes ineligible for the generic View path,
-`RtsAnimate.cpp` validates the current frame's generic pose before
+`GameAnimate.cpp` validates the current frame's generic pose before
 recording the owner transition. If it cannot consume a valid pose, it
 reinitializes **both** legacy graph and imported clip Animator clocks
 (`setModel(nullptr)`, then `setModel(&model)`) and resets the clip
@@ -446,7 +446,7 @@ and a dormant legacy Animator. The scenario checks per-frame View graph
 clock and local pose progression, that the dormant Animator clock does not
 advance, View-source removal, legacy clock reinitialization and a new
 View player after re-entry. This checks the reusable animation contract;
-**it does not directly invoke `RtsView::animate`**, so RTS in-game parity
+**it does not directly invoke `GameView::animate`**, so RTS in-game parity
 and rendering still need native/visual integration validation.
 
 ## Generic transformed bounds for mesh presentation
@@ -483,7 +483,7 @@ or nonfinite width/height values skip submission.
 The legacy RTS road-link overlay now submits the same endpoints, width,
 colour and lift through View, with the same immediate overlay layer and
 draw order. This is an incremental extraction, **not** retirement of
-`game::RtsView`. The mixed packet regression test checks the new
+`game::GameView`. The mixed packet regression test checks the new
 variant and parameter ordering but has **NOT RUN** as of this stage.
 
 ## Universal View owns the synchronous layer submission barrier (Stage 82)
@@ -504,7 +504,7 @@ terrain, roads, visibility decisions and effects remain owned by their
 adapters.
 
 The legacy RTS host delegates both normal and planet-scene layer
-submission to `aiverse::View`. The old `RtsView` still constructs
+submission to `aiverse::View`. The old `GameView` still constructs
 some passes and handles gameplay-derived authoring; it cannot yet be
 removed. A deferred `tests/view/view.cpp` regression covers disabled
 layers, ordering, single submission and provider collection.
@@ -512,10 +512,10 @@ layers, ordering, single submission and provider collection.
 **NOT RUN**: CMake/CTest, native compilation and GPU parity checks
 have not been performed on this stage.
 
-## Decoupling editor selection from legacy RtsView (Stage 83)
+## Decoupling editor selection from legacy GameView (Stage 83)
 
 The native/editor RTS host now uses
-`modules/rts/view/RtsSelectionPresentation.h` for visual picking
+`engine/view/GameSelectionPresentation.h` for visual picking
 radii. This is **RTS-specific authoring**, not a generic engine
 algorithm: `view_adapter::selectionRadius(const UnitType&)` takes
 authored footprint/radius and implements the existing building
@@ -523,18 +523,18 @@ footprint and unit radius policy; the overload taking
 `const Rules&` validates the type index.
 
 `apps/editor/Editor.cpp::pickEntity` no longer needs a mutable
-`RtsView` to calculate picking bounds (four former
-`const_cast<RtsView&>` calls removed). The existing
-`RtsView::selectionRadius` remains as a compatibility forwarder,
+`GameView` to calculate picking bounds (four former
+`const_cast<GameView&>` calls removed). The existing
+`GameView::selectionRadius` remains as a compatibility forwarder,
 not an independent source of logic. This contributes to retirement
 of the legacy renderer without leaking `Rules` or `UnitType`
 into `engine/view`.
 
 The larger remaining coupling is explicit:
-`apps/client/GameClient.h` still owns a `game::RtsView`;
+`apps/client/GameClient.h` still owns a `game::GameView`;
 `apps/client/GameClient.cpp` still calls `draw`, `drawGhost`,
 `drawOverlays` and planetary conversion helpers;
-`apps/editor/Editor.h` still owns and exposes `RtsView`;
+`apps/editor/Editor.h` still owns and exposes `GameView`;
 `apps/editor/Editor.cpp` still calls drawing/overlay/preview APIs
 and `heightAt`; third-party/specialized game adapters may also use
 the legacy view. Full class deletion requires an independent host
@@ -548,8 +548,8 @@ to be executed.
 
 ## Standalone RTS ghost and model preview authoring (Stage 84)
 
-`modules/rts/view/RtsPreviewPresentation.h` owns pure host-side
-presentation descriptions, independent of the `game::RtsView` class:
+`engine/view/GamePreviewPresentation.h` owns pure host-side
+presentation descriptions, independent of the `game::GameView` class:
 
 - `makeGhostPresentation(type,position,allowed,time)` chooses placement
   position, owner, valid/invalid tint and the existing animated alpha pulse.
@@ -558,34 +558,34 @@ presentation descriptions, independent of the `game::RtsView` class:
 - `previewFrameDt(now,previous)` clamps animation time to the
   historical 0..0.1s window, with a zero-delta first frame.
 
-The legacy `RtsView::drawGhost` and `drawPreview` now consume these
+The legacy `GameView::drawGhost` and `drawPreview` now consume these
 descriptions. Complex model choice, placement-on-planets, LODs, material
 overrides and GPU submissions remain in the specialized host renderer,
 which already forwards reusable draw commands to `aiverse::View`.
 The former `static EntityAnim ghost` has been changed to the
 instance-owned `ghostAnim_`, preventing ghost runtime state from
-crossing independent editor/client `RtsView` instances.
+crossing independent editor/client `GameView` instances.
 
 This is a **bounded architecture migration** and not full removal
 of the legacy class. To retire it, extract host-owned model/terrain
 resource providers and wire the editor/client to those providers
 and the canonical View. The dedicated `view_rts_preview_presentation`
-test covers adapter data without constructing RtsView. Native
+test covers adapter data without constructing GameView. Native
 compile/CTest/visual comparison are **NOT RUN** at this stage.
 
 ## RTS preview rendering provider boundary (Stage 85)
 
-The new `modules/rts/view/RtsPreviewRenderProvider.h` is a standalone,
-renderer-agnostic host adapter. `RtsPreviewRenderProvider::submitGhost`
+The new `engine/view/GamePreviewRenderProvider.h` is a standalone,
+renderer-agnostic host adapter. `GamePreviewRenderProvider::submitGhost`
 requests resource availability, constructs the already-defined
 `GhostPresentation` and submits it via the host-supplied drawing callback.
 `submitModelPreview` similarly resolves the per-owner preview description,
 queries the host-owned animation clock once, clamps the delta and calls the
 host's renderer callback. If a type is unavailable, no render or clock
-callbacks execute. The provider knows nothing about `RtsView`,
+callbacks execute. The provider knows nothing about `GameView`,
 `MapGrid`, `Rules`, ECS or GPU resources.
 
-`game::RtsView::drawGhost` and `drawPreview` now delegate their
+`game::GameView::drawGhost` and `drawPreview` now delegate their
 orchestration to this provider, supplying their existing model loader,
 planet/terrain placement, instance-owned ghost state, animation and
 `drawObject` implementation as callbacks. This is the **first renderer
@@ -596,12 +596,12 @@ client and portrait call sites still invoke the compatibility methods.
 
 The existing `view_rts_preview_presentation` CTest source now tests
 provider callback order, unavailable type short-circuiting and preview
-clock forwarding, with no `RtsView` linkage. **NOT RUN**: source and
+clock forwarding, with no `GameView` linkage. **NOT RUN**: source and
 CMake setup have not been compiled or executed on this stage.
 
 ## Static previews without legacy animation ownership (Stage 86)
 
-A new standalone header `modules/rts/view/RtsStaticPreviewModel.h`
+A new standalone header `engine/view/GameStaticPreviewModel.h`
 accepts a `view_adapter::StaticPreviewModel` description of an
 already-resolved model, geometry/material overrides, type presentation
 style and model-space correction. Its
@@ -609,9 +609,9 @@ style and model-space correction. Its
 `view::Object` with a complete borrowed `render::ModelDraw`.
 `submitStaticPreview(renderer,packet)` delegates to
 `aiverse::View::submitModel`. It does **not** construct an ECS
-animation player, simulate gameplay or depend on `RtsView`.
+animation player, simulate gameplay or depend on `GameView`.
 
-`RtsView::drawPreview` now uses this independent renderer path
+`GameView::drawPreview` now uses this independent renderer path
 for models satisfying **all** of these requirements: one resolved
 model variant; no build/damage stages or distance LOD; no imported
 clips, AnimationGraph, bake, pose or procedural bones; no attachments,
@@ -627,7 +627,7 @@ Static-preview submission uses the existing View renderer directly,
 so no second MotionWeave World can evaluate the same entity.
 The renderer/resource owner must keep borrowed material and model
 pointers alive through synchronous submission. This is not complete
-`RtsView` retirement; host/editor/client/portrait entrypoints and
+`GameView` retirement; host/editor/client/portrait entrypoints and
 resource/terrain providers still need migration.
 
 Per the user's implementation-first instruction, **NO TESTS RUN**
@@ -643,7 +643,7 @@ the preview to the sampled flat-ground height, applies the valid/invalid
 pulsating ghost tint, disables shadow casting and does not classify ghost
 models as immutable/light-baked static scenery.
 
-`RtsView::drawGhost` now submits eligible flat-ground rigid objects
+`GameView::drawGhost` now submits eligible flat-ground rigid objects
 directly via `aiverse::View::submitModel`. Its eligibility deliberately
 requires one model choice without stage/LOD overrides, imported clips,
 AnimationGraph, pose/baked skinning, procedural animation/IK,
@@ -652,13 +652,13 @@ placement, complex rendering and noneligible models still use the
 existing compatibility draw path, which continues to own their model
 lifecycle and special model placement.
 
-This is not the deletion of legacy `RtsView`; its API and host
+This is not the deletion of legacy `GameView`; its API and host
 callers remain intact. **NOT RUN:** tests, compilation and visual
 parity checks were intentionally deferred by the user.
 
 ## Shared RTS preview resource resolution (Stage 88)
 
-`modules/rts/view/RtsPreviewResourceProvider.h` supplies
+`engine/view/GamePreviewResourceProvider.h` supplies
 `view_adapter::resolveStaticPreviewModel(look,type,playerColor,out)`.
 The host passes already-loaded appearance and type descriptions; the
 provider applies the **same** eligibility test for ghost and portrait
@@ -666,16 +666,16 @@ previews, then builds one `StaticPreviewModel` with borrowed model,
 materials, node-material bindings, geometry policy, variant, correction,
 type transform settings, tint, and squared linear team color.
 
-Both `RtsView::drawGhost` and `drawPreview` now call this single
+Both `GameView::drawGhost` and `drawPreview` now call this single
 resolver before their respective `buildStaticGhostPacket` and
 `buildStaticPreviewPacket` submission. Ineligible models continue
-unchanged through `RtsPreviewRenderProvider` and the legacy
+unchanged through `GamePreviewRenderProvider` and the legacy
 animation/material/planet-specific draw path. No new model copies or
 animation players are introduced in the direct path.
 
 Resource residency/loading and lifetime are **still host-owned**;
 the resolver is a renderer-independent borrowed-data adapter, not a
-new asset cache. It has no dependency on `RtsView` or engine-side
+new asset cache. It has no dependency on `GameView` or engine-side
 genre enums and cannot mutate gameplay ECS state. The old class
 and client/editor/portrait call sites are not yet retired.
 
@@ -684,7 +684,7 @@ sanitizer checks remain deferred.
 
 ## External preview model-resource ownership (Stage 89)
 
-`modules/rts/view/RtsModelResourceProvider.h` introduces a host-facing
+`engine/view/GameModelResourceProvider.h` introduces a host-facing
 `view_adapter::ModelResourceProvider` contract and the
 `submitResolvedPreview(resources,renderer,type,owner,yaw)` helper.
 The provider resolves model residency and appearance into the existing
@@ -693,27 +693,27 @@ borrowed `StaticPreviewModel`; the helper produces one generic
 animation update. It returns false for unsupported assets, allowing
 the consumer to invoke its existing animated/complex fallback.
 
-The legacy `RtsView` implements this resource contract temporarily.
+The legacy `GameView` implements this resource contract temporarily.
 It still owns models, GPU resources and per-type appearance data, but
 `Portrait::render` now consumes the contract directly and submits
 eligible static models using its own View-backed renderer instead of
-calling `RtsView::drawPreview`. Animated portraits, LOD, contact IK,
+calling `GameView::drawPreview`. Animated portraits, LOD, contact IK,
 attachments and specialized effects still call the old method.
-`RtsView::drawPreview` uses the same resolver to avoid duplication.
+`GameView::drawPreview` uses the same resolver to avoid duplication.
 
 This is **resource access separation**, not independent upload/cache
-ownership and not the deletion of `RtsView`. Model and material
+ownership and not the deletion of `GameView`. Model and material
 pointers are borrowed only until synchronous submission ends.
 Any future independent editor or project model provider can implement
-this interface without inheriting from `RtsView`.
+this interface without inheriting from `GameView`.
 
 **NOT RUN**: user deferred native compilation, CTest, rendering
 parity and CI until feature work is complete.
 
 ## Per-host RTS model/texture ownership (Stage 90)
 
-`modules/rts/view/RtsModelResourceCache.h` is the new per-host
-`view_adapter::RtsModelResourceCache`. It owns the canonical
+`engine/view/GameModelResourceCache.h` is the new per-host
+`view_adapter::GameModelResourceCache`. It owns the canonical
 `std::map<std::string,std::unique_ptr<render::Model>>` model assets
 (including procedural `shape:` models) and the shared
 `render::ModelTextureCache`. Its surface includes
@@ -724,23 +724,23 @@ render thread after outstanding asynchronous preparation has joined.
 An optional host callback invalidates graph/animation entries before
 a model is destroyed.
 
-`RtsLook.cpp` model loading, asynchronous prepared-result insertion,
+`GameLook.cpp` model loading, asynchronous prepared-result insertion,
 residency trimming, and model listing now access this one cache.
-`RtsShapes.cpp` inserts procedural fallback shapes into the same
-owner. `RtsView.cpp` delegates complete model/texture shutdown
+`GameShapes.cpp` inserts procedural fallback shapes into the same
+owner. `GameView.cpp` delegates complete model/texture shutdown
 instead of independently iterating raw model pointers. Existing
-`RtsView::textureCache()`, `assetResidencyStats()` and
+`GameView::textureCache()`, `assetResidencyStats()` and
 `modelFiles()` remain source compatible and forward to the owner.
-A read-only `RtsView::modelResources()` accessor exposes this
+A read-only `GameView::modelResources()` accessor exposes this
 per-host resource owner to native presentation adapters.
 
 The resource cache itself does **not** depend on RTS Rules, View
 simulation, FPS, AnimationGraph scheduling, or genre-specific game
 commands; it stores `render::Model` and texture assets only.
-The legacy `RtsView` still *contains* its resource-owner instance
+The legacy `GameView` still *contains* its resource-owner instance
 and still selects/loading model variants. This stage is ownership
 extraction, not fully independent lifecycle or complete elimination
-of RtsView.
+of GameView.
 
 **NOT RUN:** per user instruction, no CMake/configure, native compile,
 CTest, sanitizers, Metal graphics, CI or visual comparison was executed.
@@ -750,7 +750,7 @@ scene switching.
 
 ## Independent model preparation lifecycle (Stage 91)
 
-`modules/rts/view/RtsModelPreparationService.h` provides a
+`engine/view/GameModelPreparationService.h` provides a
 per-resource-owner asynchronous CPU preparation queue. It owns the
 current source type/variant request, ordered source/key list, cursor,
 displayed in-progress resource name, and at most one `std::future`
@@ -761,10 +761,10 @@ exposes `begin`, `appendPath`, `launch`, `ready`, `take`,
 The caller still supplies immutable model/reader/texture-cache
 inputs to the CPU task and publishes GPU uploads on the render thread.
 
-The per-host `RtsModelResourceCache` **owns** this scheduler on
+The per-host `GameModelResourceCache` **owns** this scheduler on
 non-Emscripten builds and resets it before freeing models and textures.
-`RtsView` no longer carries independent worker futures, type/cursor
-or path state. `RtsLook.cpp` sends requests and polls completion
+`GameView` no longer carries independent worker futures, type/cursor
+or path state. `GameLook.cpp` sends requests and polls completion
 through `resources_.preparation()`; it still determines RTS model
 choices, skinning policy, variant order, warning destinations and
 render-thread uploads. Clearing loaded types or replacing hot-reloaded
@@ -774,8 +774,8 @@ This separates resource scheduling and lifetime from legacy rendering,
 but it is **not yet a fully independent RTS asset-loading service**:
 the host still owns source discovery and the model-file loading policy,
 and it still stores rules-driven appearance data. New native hosts can
-own `RtsModelResourceCache` independently and supply equivalent CPU
-work/publish callbacks without instantiating `RtsView`.
+own `GameModelResourceCache` independently and supply equivalent CPU
+work/publish callbacks without instantiating `GameView`.
 
 The browser/Emscripten path retains its original synchronous/no-worker
 behaviour. **NOT RUN:** no CMake, compiler, CTest, sanitizer, Metal
@@ -783,33 +783,33 @@ visuals or CI on this feature stage, by user request.
 
 ## Reusable model streaming operations (Stage 92)
 
-`modules/rts/view/RtsModelStreaming.h` provides two host-agnostic
+`engine/view/GameModelStreaming.h` provides two host-agnostic
 model-loading building blocks: `discoverModelPaths(authored,geometry,
 alreadyCached,append)` traverses an authored JSON subtree in existing
 order (including model variants, LOD and attachments), and
 `prepareModelCpu(path,reader,textures,{geometry,animationBake})`
 performs model decoding, optional cluster preparation, optional
 animation-bake preparation and CPU upload staging. The latter returns
-a `RtsModelPreparationService::PreparedModel` with warnings; it does
+a `GameModelPreparationService::PreparedModel` with warnings; it does
 **not** issue GPU commands.
 
-`RtsModelResourceCache::publishPrepared(device,key,prepared)` runs
+`GameModelResourceCache::publishPrepared(device,key,prepared)` runs
 synchronously on the render thread, skips replacing an asset already
 published by a synchronous loader, and uploads/inserts a prepared model
 (including the existing null-model failure cache semantics). The cache
 still owns the model/texture lifecycle, while
-`RtsModelPreparationService` owns the future and ordered queue.
+`GameModelPreparationService` owns the future and ordered queue.
 
-`RtsLook.cpp::prepareType` now composes these three operations.
+`GameLook.cpp::prepareType` now composes these three operations.
 The RTS host retains policy decisions: which authored variants to
 request, geometry/skinning flags, warning routing, and when to poll
 or publish a result. Native hosts may reuse these functions and own
-a `RtsModelResourceCache` without constructing `RtsView`.
+a `GameModelResourceCache` without constructing `GameView`.
 The service remains serial (one in-flight CPU job per owner);
 browser/no-worker behaviour is unchanged.
 
 This moves the streaming **operations** out of the legacy class, but
-does not yet replace RtsView's rules-driven type choice and residency
+does not yet replace GameView's rules-driven type choice and residency
 coordination. Material variant configuration and model hot-reload
 invalidations still require the owning host. No animation ECS,
 networking, save data, or renderer packet contract changed.
@@ -819,7 +819,7 @@ and cross-platform verification remain deferred per user instruction.
 
 ## Native editor model demand scheduler (Stage 93)
 
-`modules/rts/view/RtsModelDemandScheduler.h` adds a small host-owned
+`engine/view/GameModelDemandScheduler.h` adds a small host-owned
 policy service for model demand. It tracks per-type last-use times,
 batches and de-duplicates demand requests, upgrades each request to
 the highest priority (`Background`, `Visible`, `Interactive`),
@@ -837,7 +837,7 @@ selection, placement and overlay-preview keep rules still apply.
 Both lazy and eager modes consume the queue; eager mode does not
 reload already-resident models. Rules reload resets scheduler state.
 
-`RtsModelResourceCache::generation()` additionally exposes a
+`GameModelResourceCache::generation()` additionally exposes a
 monotonic counter updated on `publishPrepared`, `trimUnused`
 and `shutdown`. **Important limitation:** the existing legacy
 `models()` mutable map access is still supported and does not
@@ -847,13 +847,13 @@ owner API.
 
 This feature establishes an externally owned scheduling/policy
 component and integrates it with an actual editor host. It does not
-yet move all rules-driven asset selection/hot reload from `RtsView`
+yet move all rules-driven asset selection/hot reload from `GameView`
 or change MotionWeave. **NOT RUN**: CMake/native compiler, CTest,
 Metal screenshots, sanitizers and CI remain deferred per user request.
 
 ## Tracked model cache writes and budgeted editor prefetch (Stage 94)
 
-`RtsModelResourceCache` now exposes read-only `models()`, plus
+`GameModelResourceCache` now exposes read-only `models()`, plus
 `contains`, `find`, `insertIfAbsent`, and `replace(device,key,
 replacement,onRelease)`. All known RTS model-map writes have moved
 through this resource-owner API: synchronous imports preserve null
@@ -865,7 +865,7 @@ and shutdown. This covers every currently identified mutation in the
 RTS loaders, but callers must still rebuild/invalidate borrowed raw
 `Model*` pointers after replacement, trim, or full reload.
 
-The editor's `RtsModelDemandScheduler` adds `drainBudget(budgetMs,
+The editor's `GameModelDemandScheduler` adds `drainBudget(budgetMs,
 maxCount,load)`, prioritizing interactive/visible requests and
 preserving FIFO within equal priority. The editor continues to service
 interactive selection/Inspector loads synchronously. Its residency
@@ -873,13 +873,13 @@ sweep queues missing *retained* map/type models for background
 prefetch, and each non-playing non-FPS editor frame consumes at most
 two requests with a nominal 1 ms wall-clock budget. Because
 `loadType` can be synchronous, one load may exceed this soft budget.
-Rules reload resets demand and the existing RtsView shutdown releases
+Rules reload resets demand and the existing GameView shutdown releases
 all cache resources, advancing their generation; targeted per-file
 hot reload still needs a safe external invalidation API.
 
 Genre-specific keep rules (map references, current selection,
 placement/overlay preview, and recent use) remain in the editor.
-The generic engine View and MotionWeave are unchanged. RtsView is
+The generic engine View and MotionWeave are unchanged. GameView is
 still a compatibility host and owns the cache instance.
 
 **NOT RUN**: native compilation, CMake, CTest, sanitizers, Metal
@@ -905,7 +905,7 @@ synchronous interactive loads and lower-priority opportunistic prefetch remain.
 
 This is a **whole-visual-view refresh**, not selective reload of changed models
 or animation graphs. The watcher currently sees only model paths reported by
-`RtsView::modelFiles()` (resident assets), not every uninstantiated type,
+`GameView::modelFiles()` (resident assets), not every uninstantiated type,
 texture dependency or external graph JSON. The model cache's tracked
 `generation()` is not yet a per-source dependency revision. A later stage
 must index source paths to cache keys, detach all referencing TypeLooks and
@@ -916,14 +916,14 @@ verification are **NOT RUN**, per request to implement features first.
 
 ## Selective model-source and animation presentation reload (Stage 96)
 
-Model/animation hot reload no longer requires a full `RtsView` restart for a
+Model/animation hot reload no longer requires a full `GameView` restart for a
 changed **resident model source**. The editor watcher invokes
 `Editor::reloadVisualModelSources(paths)`, which invokes
-`RtsView::reloadModelSources(paths)` on the presentation/render thread
+`GameView::reloadModelSources(paths)` on the presentation/render thread
 outside play mode. `Editor::reloadVisualAssets()` remains available as the
 legacy full-view fallback for non-model asset categories.
 
-The independently owned `view_adapter::RtsModelResourceCache` now supports:
+The independently owned `view_adapter::GameModelResourceCache` now supports:
 - `sourceForKey(key)`: maps both `model.glb` and `model.glb#geometry`
   cache entries to the original source path.
 - `affectedBySource(path)`: enumerates affected keys and borrowed model
@@ -958,7 +958,7 @@ FPS host caches are not routed into this targeted model path. They require
 explicit dependency indexing and safe texture/graph invalidation next.
 GPU submission completion, shared texture retention, active portrait
 render targets and exact visual parity require native/graphics validation
-before this is production-safe. `RtsView` remains a compatibility adapter.
+before this is production-safe. `GameView` remains a compatibility adapter.
 
 **NOT RUN** by request: no local native compiler, CMake/CTest, Metal/RTS/FPS/
 editor runtime, ASan/TSan, benchmarks or CI. The code was committed through
@@ -967,7 +967,7 @@ the GitHub API; source review is not a substitute for compilation.
 ## Source dependency index and revisioned external visuals (Stage 97)
 
 `game::view_adapter::ModelSourceDependencyIndex` (new
-`modules/rts/view/RtsModelSourceDependencies.h`) provides a reusable,
+`engine/view/GameModelSourceDependencies.h`) provides a reusable,
 host-owned index of source path -> dependency categories and type IDs.
 `rebuild(types,materialLibrary)` uses authored view descriptions, not
 loaded models: nested variants, LOD, stages, attachments, streaming
@@ -1029,7 +1029,7 @@ nested external graph includes, imported model-specific sidecars that
 are not exposed as models/images, runtime-generated external texture
 paths that never enter the cache, or arbitrary dependencies produced by
 custom loaders. The watcher currently lives in ModelWindow and is
-editor-only. Targeted reload still depends on RtsView for appearance
+editor-only. Targeted reload still depends on GameView for appearance
 rebuild and must run between GPU submissions. Model-derived external
 materials/texture lease lifetimes and render synchronization require
 real platform verification before production deployment.
@@ -1058,7 +1058,7 @@ External graph file paths nested in authored model choices are now watched
 as well as top-level graph references.
 
 For graph-only or `materials.json`-only modifications,
-`RtsView::reloadAppearanceTypes(types,reloadMaterialLibrary,&count)`
+`GameView::reloadAppearanceTypes(types,reloadMaterialLibrary,&count)`
 implements a staged appearance update. The host joins any pending CPU
 model-preparation task, parses the new material library transactionally if
 requested, builds candidate `TypeLook` resources for all affected **loaded**
@@ -1082,9 +1082,9 @@ model destruction with appearance graph swapping in one transaction.
 **Public surfaces:** `VisualAssetDependencyService::due/scan/impact/
 changedSources/acknowledge/reset` are editor-only; the generic
 `ModelSourceDependencyIndex` and MotionWeave source bridge retain the same
-engine boundaries. `RtsView::reloadAppearanceTypes` is an additive
+engine boundaries. `GameView::reloadAppearanceTypes` is an additive
 compatibility-adapter API. No simulation ECS, save/checksum, networking,
-render packet or authored JSON format changes. The `RtsView` compatibility
+render packet or authored JSON format changes. The `GameView` compatibility
 owner is NOT removed.
 
 **GPU lifetime caveat:** this stage does NOT introduce a GPU completion
@@ -1136,7 +1136,7 @@ async fence/timeline implementation.
   callback returns success.
 
 Compatibility headers in `modules/rts/view` now alias
-`RtsModelResourceCache` and `RtsModelPreparationService` to those
+`GameModelResourceCache` and `GameModelPreparationService` to those
 generic render classes, preserving old method signatures and
 `view_adapter` names. No conversion of game-authoritative state
 is involved. No special renderer view object or second animation
@@ -1194,7 +1194,7 @@ GPU commands in the **current** frame, so hosts MUST only call it
 before those commands can reference any retired object. Other older
 engine renderers, FX targets and raw device clients still destroy
 GPU handles directly and have not been converted to the universal
-owner. Full legacy `game::RtsView` removal remains incomplete.
+owner. Full legacy `game::GameView` removal remains incomplete.
 Native compilation and Metal/Vulkan/GL correctness are UNVERIFIED;
 do not merge or claim runtime parity before the deferred checks.
 
@@ -1243,7 +1243,7 @@ Native projects may pass its borrowed `Model*` to the existing generic
 
 `game::Portrait::renderStaticModel(ModelAssetProvider&,source,yaw)` is a
 real static model consumer: its renderer and canonical View submit the
-provider's model without constructing `game::RtsView`, creating another
+provider's model without constructing `game::GameView`, creating another
 MotionWeave graph evaluator or assuming the resource provider owns game
 rules. Complex/animated RTS portraits keep the existing compatibility
 fallback until further migration.
@@ -1295,7 +1295,7 @@ already prepared by the legacy RTS service are not discarded simply
 because the queue reaches its limit. No timeout or backpressure signal
 ever allows a model to be destroyed before its GPU fence completes.
 
-`RtsView::assetResidencyStats` forwards these counters and the Stats
+`GameView::assetResidencyStats` forwards these counters and the Stats
 window displays waiting models, fence batches, queue peak, throttle
 state and fallbacks. The actual GPU texture bytes, shared geometry-pool
 allocations and other render targets remain outside this statistic.
@@ -1377,7 +1377,7 @@ priority job system; the editor source preview is opt-in and differs
 visually from a fully authored type by design. Backend device-loss
 recovery and GPU-fence error states still require real hardware
 validation. The generic resource owner is suitable for native projects,
-but the full legacy `game::RtsView` scene adapter is not retired.
+but the full legacy `game::GameView` scene adapter is not retired.
 
 ## Stage 102 — estimated GPU retirement footprint and prioritized native asset publication
 
@@ -1445,7 +1445,7 @@ variants, team colour and precomputed animation pose) through canonical
 The option intentionally excludes merge and animated-model paths,
 which retain their previous import/motion logic. It is a comparable
 static source inspection path, NOT a blanket switch of all games to a
-new renderer or a claim that `RtsView` is retired.
+new renderer or a claim that `GameView` is retired.
 
 ### Deferred verification
 
@@ -1526,7 +1526,7 @@ allocated/occupied page sizes belong to the *device-wide* owner and
 must be queried separately via `geometryPoolStats(device)`.
 Do **not** sum the device-global geometry pool once per model/cache,
 nor add borrowed per-model textures to the owner texture count.
-`RtsView::assetResidencyStats()` and the Editor Statistics window
+`GameView::assetResidencyStats()` and the Editor Statistics window
 expose these categories separately. The numbers remain diagnostic,
 source-derived approximations, not vendor GPU heap measurements.
 
@@ -1565,7 +1565,7 @@ rather than keeping persistent thread-pool workers, and it does not
 support live preemption. Memory accounting excludes unknown
 driver allocations and must not be treated as a guaranteed budget.
 Shared geometry pool accounting is device-wide, not attributable
-without additional ownership tags. Remaining RtsView type appearance,
+without additional ownership tags. Remaining GameView type appearance,
 simulation-specific visuals and animated portrait wrappers are still
 not retired.
 
@@ -1678,7 +1678,7 @@ reader synchronously; the ready queue limit has a concurrency-sized
 overshoot; global geometry page identities are reliable only for
 models whose page is still owned on the target device. Backend GPU
 completion and multithreaded source parsing still require real
-platform verification. `game::RtsView` remains a compatibility
+platform verification. `game::GameView` remains a compatibility
 host for authored type appearances and advanced animated portraits.
 
 ## Stage 105 — cross-host resource group and fully-authored generic portrait rendering
@@ -1715,7 +1715,7 @@ control only. They never bypass a GPU completion fence, evict
 resident assets forcibly, or claim to recover a lost GPU.
 
 The editor Model window's optional raw-static-model inspection is a
-concrete three-owner consumer: `RtsView::modelResources()`,
+concrete three-owner consumer: `GameView::modelResources()`,
 `Portrait::modelResources()`, and its own `ModelAssetProvider`
 are grouped. A 256 MiB **estimated, group-wide** visual admission
 budget is used in this opt-in mode, in addition to the raw provider's
@@ -1735,11 +1735,11 @@ the offscreen target using a caller-provided camera and clear colour.
 Existing native raw-model `renderStaticModel` and precomputed-pose
 `renderPose` now delegate to this one generic path, retaining
 their original camera/clear-colour/lighting parameters.
-The RTS `Portrait::render(RtsView&, ...)` path first resolves
+The RTS `Portrait::render(GameView&, ...)` path first resolves
 `StaticPreviewModel` via the legacy host but passes the resulting
 full `ModelDraw` to `renderAppearance` with the SAME camera for
 static cases. Animated/complex cases still use the original
-`RtsView::drawPreview` fallback; there is no second MotionWeave
+`GameView::drawPreview` fallback; there is no second MotionWeave
 graph writer or extra animation tick.
 
 **Deferred tests:** `tests/render/resource_owner_group.cpp` checks
@@ -1859,7 +1859,7 @@ backends that implement the three-state probe; tokens cannot
 include commands not yet submitted on their GPU queue; no
 automatic lost-device recreation exists; group memory numbers
 are source-derived estimates, not measured driver allocations.
-`RtsView` is still needed for complex authored animation and
+`GameView` is still needed for complex authored animation and
 visual effects. The next agent must validate with real build and
 hardware before claiming parity or merging.
 
@@ -1874,7 +1874,7 @@ its earlier non-owning `lifetimeToken()` remains available.
 `collectRetired`, `invalidateSources`, `replace`,
 `trimUnused`, `publishPrepared` and `shutdown` now verify this
 identity; `ModelAssetProvider` verifies it before import/upload,
-`RtsView::init` before presentation model setup and
+`GameView::init` before presentation model setup and
 `Portrait::init` before preview GPU creation. After successful,
 explicit GPU-safe cache shutdown the device binding is cleared, so
 the cache may be reused by a different GPU device. Failed shutdown
@@ -1941,7 +1941,7 @@ when it has no graph; graph-backed instances must instead use
 one owning `View::update` followed by `submitOne`, so no graph is
 evaluated twice.
 
-`modules/rts/view/RtsStaticPreviewModel.h` now maps the existing
+`engine/view/GameStaticPreviewModel.h` now maps the existing
 authored RTS static model/placement fields into the genre-independent
 `AppearanceSpec`, then asks the generic builder to compose the
 materials/variant/geometry/tint/flags packet. RTS still owns the
@@ -1976,7 +1976,7 @@ terrain/FX, external direct `uploadModel` calls and a destroyed
 gfx::Device are still host lifecycle responsibilities. Scoped
 registration is thread-confined, not thread-safe. Synthetic timing
 is not an actual GPU completion proof; real Metal/Vulkan/GL tests
-are required before merging this work. Full `game::RtsView`
+are required before merging this work. Full `game::GameView`
 removal and full dynamic material/graph host migration remain
 future stages.
 
@@ -2029,7 +2029,7 @@ retirement. This ring does **not** hold Models, GPU handles
 or fence leases, and diagnostics can never prove completion
 or authorize resource destruction.
 
-The Editor attaches a 128-event ring to its RtsView Model
+The Editor attaches a 128-event ring to its GameView Model
 resource owner and displays retained/overflow counts in the
 Statistics window. The trace is retained across ordinary
 scene reloads and detached on editor shutdown, never kept
@@ -2042,7 +2042,7 @@ reported, not inserted into the non-thread-safe deque.
 New `engine/view/AppearanceAuthoringService.h` is a
 genre-independent authoring service usable from native
 projects without `UnitType`, RTS/FPS gameplay rules or
-`RtsView`. It provides:
+`GameView`. It provides:
 
 - `resolveMaterial(library,reference,warn,depth)`: the same
   bounded `base`/`use` reference overlay semantics and
@@ -2058,12 +2058,12 @@ projects without `UnitType`, RTS/FPS gameplay rules or
   and immutable `render::AnimationGraph::compile` without
   constructing a graph playback instance
 
-The RTS adapter `RtsView::resolveMaterial` and
-`RtsView::applyMaterial` now delegate to this common service
+The RTS adapter `GameView::resolveMaterial` and
+`GameView::applyMaterial` now delegate to this common service
 and supply their previous warning scoping, external texture
-upload and material library. `RtsView::configureChoice`
+upload and material library. `GameView::configureChoice`
 compiles inline/external type-level graphs through the
-service, and `RtsAnimate.cpp` uses the same compile entry
+service, and `GameAnimate.cpp` uses the same compile entry
 for dynamic control-authored graph definitions. **No
 second MotionWeave graph clock is created**: the existing
 graph instance / generic View presentation remains the
@@ -2155,7 +2155,7 @@ descendant inheritance, later rules overriding earlier assignments), and
 `variant` into a pure CPU `AppearanceChoicePlan`. No GPU call, gameplay
 state, renderer ownership or animation clock exists in that resolver. It
 retains the layering order, including the `replace` material flag. The
-legacy RTS `RtsView::configureChoice` now consumes this plan but keeps
+legacy RTS `GameView::configureChoice` now consumes this plan but keeps
 RTS team-tint decisions, dynamic stages, LOD, weapons, IK, sockets,
 procedural animation and texture upload in its compatibility adapter.
 
@@ -2227,7 +2227,7 @@ prevalidates material-library references, shader DAG programs and external
 AnimationGraph definitions. Invalid external graph content or an invalid
 material shader program rejects the staged type before that choice's
 additional texture overrides are uploaded. On a successful publication,
-`RtsView::drawObject` uses the immutable snapshot's material overrides,
+`GameView::drawObject` uses the immutable snapshot's material overrides,
 node material assignments, GeometryPolicy and variant. The host still owns
 GPU texture indices and the underlying imported Models.
 
@@ -2241,17 +2241,17 @@ signature or model changes, the affected animation sources are forgotten
 and rebuilt as before. Per-type eligibility is conservative; all modeled
 choices/stages/LODs must match. The simulation remains authoritative.
 
-`RtsView::shutdown` now detaches generic View source handles, RTS
+`GameView::shutdown` now detaches generic View source handles, RTS
 animation state and TypeLooks (including their snapshots) **before**
 `ModelResourceCache::shutdown` begins GPU retirement. The original cache
 wait-for-idle safety requirement is unchanged.
 
 A native `GameClient` creates one `RenderDeviceLifetime` in
-`initStep(0)`, binds its `RtsView` model-cache resources to that epoch
+`initStep(0)`, binds its `GameView` model-cache resources to that epoch
 during `initStep(2)`, and retires the epoch only after shutdown of its
 render resource owners. For an editor-embedded GameClient, the editor
 passes its **own** generation-aware lease through
-`EditorClientPlay -> ClientHost -> GameClient -> RtsView`. The hosted
+`EditorClientPlay -> ClientHost -> GameClient -> GameView`. The hosted
 client neither constructs nor retires a separate GPU device epoch;
 the Editor owns the generation for the entire shared gfx::Device.
 External mismatched/expired generations fail closed.
@@ -2304,7 +2304,7 @@ an orphaned GPU allocation until the actual device is destroyed
 rather than freeing in-flight GPU work. Diagnostics expose pending
 images, enqueue failures and unrecoverable batch counts.
 
-`RtsView::reloadAppearanceTypes` now uses this transaction for all
+`GameView::reloadAppearanceTypes` now uses this transaction for all
 GPU material images added during candidate construction across
 every selected type, model variant, LOD and damage/construction stage.
 Its texture loader stages in the transaction instead of immediately
@@ -2314,7 +2314,7 @@ prepared appearance snapshots succeed, `commit()` publishes the
 Model images before the TypeLook/snapshot swap. On exceptions before
 commit, live Model image counts, last-good appearance snapshots and
 running animations remain unchanged. The existing separate
-`RtsView::collectRetiredModels()` now polls both model and rolled-back
+`GameView::collectRetiredModels()` now polls both model and rolled-back
 image queues. The GameClient and Editor frame boundaries explicitly
 invoke it whenever **either** queue has pending resources; an
 image-only failed hot reload must not strand its retirement tokens.
@@ -2324,7 +2324,7 @@ the image queue after detaching borrowed snapshots and before
 shutting down the Model resource cache.
 
 Generation-aware checks were extended to `render::PostFx`,
-`TerrainRenderer`, `RtsGroundFx`, `fx::ParticleSystem` and
+`TerrainRenderer`, `GameGroundFx`, `fx::ParticleSystem` and
 Editor Scene/Game `Viewport`, using the SAME editor/client epoch
 already established in Stage 111. The particle renderer refuses an
 invalid device at initialization and stops emitting draw commands
@@ -2347,7 +2347,7 @@ No native CMake build, CTest or real backend validation was run.
 
 The Stage 112 `ModelImageUploadTransaction` now also participates in a
 **scratch Model** transaction for RTS authored appearance hot reload.
-`RtsView::reloadAppearanceTypes` supplies a temporary
+`GameView::reloadAppearanceTypes` supplies a temporary
 `ModelResourceCache::ModelMap` to its `loadModelCached` adapter.
 Uncached choices/LODs/stage alternatives/attachments are decoded and
 uploaded into that map, without inserting them into the live Model
@@ -2426,7 +2426,7 @@ existing normalized source, sampler and source revision policy.
 To remain correct when `Model::images` reallocates, the plan stores
 **Model pointer + image index** rather than pointers to vector elements.
 
-During RTS authored hot reload, `RtsView::loadTexture` uses the shared
+During RTS authored hot reload, `GameView::loadTexture` uses the shared
 CPU-decoded `ModelTextureCache::read` and stages its GPU image outside
 the Model. The complete GPU promotion plan combines those future
 material images with scratch imported Model images. Texture duplicates
@@ -2440,7 +2440,7 @@ GPU ShaderGraph authoring now has an **optional host-renderer preflight**.
 `Renderer3D::warmModelPipelinesChecked` returns
 `PipelineWarmStatus::Ready / Pending / Failed` rather than conflating
 asynchronous compiler progress and invalid shader/pipeline handles.
-`RtsView::setAppearancePipelineValidator` invokes the host's single
+`GameView::setAppearancePipelineValidator` invokes the host's single
 Renderer3D preflight for each staged choice, LOD and damage/construction
 stage before committing Model/texture/TypeLook changes. Failed GPU
 programs keep the previous live appearance and animation clocks. For
@@ -2671,7 +2671,7 @@ See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-20
 fence retirement for temporary render canvas buffers, staging images,
 texture targets, shader and pipeline programs. This is independent
 of FPS/RTS and does not own a second renderer, Device epoch or
-MotionWeave clock. The legacy `RtsPaintLayers` adapter borrows the
+MotionWeave clock. The legacy `GamePaintLayers` adapter borrows the
 same pool for all canvases and cached meshes; Editor and GameClient
 poll that shared pool at safe pre-render frame boundaries.
 
@@ -2987,7 +2987,7 @@ Model, allocate GPU buffers or alter the animation clock.
 animation update and synchronous draw.
 
 The legacy RTS adapter takes a coarse cache read scope after its
-upfront model loads in `RtsView::draw`, covering animation
+upfront model loads in `GameView::draw`, covering animation
 evaluation and scene submission. Editor Stats reports active
 cache readers when any exist. GPU command completion STILL
 requires the owner's independent deferred retirement queue;
@@ -3036,7 +3036,7 @@ Model map. A foreign-thread lookup rejects with `logic_error`;
 this is not a cross-thread reader-writer lock and does not make
 the underlying Model memory concurrently mutable.
 
-`RtsView::draw` continues to guard Model lifetime with a
+`GameView::draw` continues to guard Model lifetime with a
 coarse `ModelCacheReadScope` acquired after upfront type
 loads and held until synchronous Renderer3D submission returns.
 NEW Model keys may still be published by the owner thread

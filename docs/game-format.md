@@ -861,7 +861,7 @@ garrisons, or within `maxDistance`), `screen_set`; the Scene view draws the line
 
 ## Terrain overlays (visual `terrain` block)
 
-Presentation only (`modules/rts/view/RtsGroundFx.*`): the view reads the territory, dig, room and road layers and
+Presentation only (`modules/rts/view/GameGroundFx.*`): the view reads the territory, dig, room and road layers and
 the lanes and never writes them. All keys are optional; put them under `terrain` in rules.json or game.json (game.json
 wins per block; sim keys like `model` live in the same block). Each block may be `false` to switch the overlay off.
 Colours are `[r, g, b]` (0..1) or `"#rrggbb"`. `texture` paths go through `TextureCache::resolve` (atlases work);
@@ -2085,7 +2085,7 @@ kind. Painted with the editor's **Рельеф** window or `terrain_material`.
 **Quality tiers** (pause menu *Ground textures*, `Renderer3D::materialQuality()`, capped by the device default;
 `AIVERSE_TERRAIN=low|medium|high` overrides for testing): Low = vertex colours (weak Mali / Adreno / PowerVR, also every
 game without `layers`), Medium = splat textures + cliff texture, High = + normal maps and triplanar cliffs. Shaders:
-`modules/rts/view/RtsTerrainShaders.h` (GLSL + MSL, sun + soft shadows + point lights + clouds as the lit shader).
+`engine/view/GameTerrainShaders.h` (GLSL + MSL, sun + soft shadows + point lights + clouds as the lit shader).
 
 **Performance**: the terrain is cut into 32x32-cell chunks, frustum-culled; the editor rebuilds only chunks whose cells
 changed; during a match nothing is rebuilt: resource fields, creep and (heightfield maps) fog of war are read by the
@@ -2138,7 +2138,7 @@ Everything is integer / fixed point and deterministic.
 
 MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_heightfield {"enabled"}` adds a flat
 heightfield or removes it, `map_validate` warns when the model is heightfield but the map has no corners and flags
-units/structures standing on slopes too steep for them. Sculpting: `terrain_sculpt`, heightmap PNG import/export (see Terrain materials). The view draws the relief from the corners (two triangles per cell, diagonal (0,0)-(1,1)); `RtsView::heightAt` follows the same triangles, so models and overlays sit on the drawn ground.
+units/structures standing on slopes too steep for them. Sculpting: `terrain_sculpt`, heightmap PNG import/export (see Terrain materials). The view draws the relief from the corners (two triangles per cell, diagonal (0,0)-(1,1)); `GameView::heightAt` follows the same triangles, so models and overlays sit on the drawn ground.
 
 ## Planets: visual keys (map `world` block)
 

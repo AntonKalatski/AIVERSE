@@ -285,7 +285,7 @@ bool AudioEngine::loadBank(const Json& bank, const FileReader& read, std::string
         else return fail("volume: unknown bus '" + key + "' (master, sfx, ui, voice, music, ambient)");
     }
 
-    // RtsAudio reads the gameplay mapping sections; anything else is most likely a typo
+    // GameAudio reads the gameplay mapping sections; anything else is most likely a typo
     static const std::set<std::string> kTopKeys = {"volume", "spatial", "groups", "sounds", "music", "events", "types", "weapons", "abilities", "build", "scripted"};
     for (auto& [k, unused] : bank.members())
         if (!kTopKeys.count(k)) warnings.push_back("unknown section '" + k + "' (volume, spatial, groups, sounds, music, events, types, weapons, abilities, build, scripted)");

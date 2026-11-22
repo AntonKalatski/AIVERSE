@@ -35,14 +35,14 @@
 #include "ClientSplash.h"
 #include "GameClient.h"
 #include "StartPlayers.h"
-#include "modules/rts/view/EncounterDecals.h"   // boss encounters: ground marks
+#include "engine/view/EncounterDecals.h"   // boss encounters: ground marks
 #include "engine/platform/ContentReader.h"
 #include "engine/platform/EnhancedInputConfig.h"
 #include "RegionSettings.h"
 #include "engine/game/Localize.h"
 #include "engine/game/Tiles.h"
-#include "modules/rts/view/RtsCamera.h"
-#include "modules/rts/view/RtsOverlayData.h"
+#include "engine/view/GameCamera.h"
+#include "engine/view/GameOverlayData.h"
 
 using namespace aiverse;
 using platform::Event;
@@ -230,7 +230,7 @@ void GameClient::updateAudio(double dt) {
         }
         const float3 eye = cam_.eye();
         const float target[3] = {cam_.target.x, cam_.target.y, cam_.target.z}, eyeP[3] = {eye.x, eye.y, eye.z};
-        audio_.setListener(RtsAudio::cameraListener(target, eyeP));
+        audio_.setListener(GameAudio::cameraListener(target, eyeP));
     }
     if (volume_ != boundVolume_ || musicVolume_ != boundMusicVolume_ || sfxVolume_ != boundSfxVolume_ ||
         musicOn_ != boundMusicOn_ || sfxOn_ != boundSfxOn_) { // changed from the pause menu / settings screen
@@ -479,7 +479,7 @@ bool GameClient::groundAt(float sx, float sy, float3& out) const {
     if (planet()) { // planet picking -> sim-space point (anchor(body) + body-local, Surface.h)
         int body; float3 local;
         if (!view_.pickPlanet(cam_, sx, sy, platform::windowWidth(), platform::windowHeight(), body, local)) return false;
-        out = RtsView::bodyToSim(body, local);
+        out = GameView::bodyToSim(body, local);
         return true;
     }
     return cam_.screenToGround(sx, sy, platform::windowWidth(), platform::windowHeight(), out);
@@ -508,7 +508,7 @@ Entity GameClient::pick(float sx, float sy) const {
         float d = std::hypot(g.x - o.pos.x, g.z - o.pos.z);
         if (planet()) { // same body, 3D distance between the picked ground point and the object's (body-local)
             int gb; float3 gl;
-            if (o.body < 0 || !RtsView::simToBody(g, gb, gl) || gb != o.body) continue;
+            if (o.body < 0 || !GameView::simToBody(g, gb, gl) || gb != o.body) continue;
             d = length(gl - o.pos);
         }
         if (d < r && d < bestD) { best = o.entity; bestD = d; }
@@ -1078,7 +1078,7 @@ bool GameClient::requestHostStep() {
 
 namespace {
 // AIVERSE_CLIENT_PROFILE=1: average time of the client frame stages, printed every 120 frames
-// ("[client-stages] ..."): sim, scene, ui (update), view (RtsView::draw), fx, render (scene + PRISMA),
+// ("[client-stages] ..."): sim, scene, ui (update), view (GameView::draw), fx, render (scene + PRISMA),
 // hud (overlays, RmlUi), other. Used for the Android benchmarks (tools/perf/android-bench.sh).
 struct ClientStageProfile {
     static constexpr int kStages = 8;
@@ -1364,10 +1364,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             view_.setOverlayContext(oc);
         }
         render::CameraModelSnapshot::CaptureGuard lensCaptureGuard;
-        // Automatically clear the borrowed RtsView capture pointer if
+        // Automatically clear the borrowed GameView capture pointer if
         // any rendering/animation callback throws before the normal end.
         struct PreparedCaptureReset {
-            game::RtsView* view=nullptr;
+            game::GameView* view=nullptr;
             ~PreparedCaptureReset() {
                 if(view)view->setCameraPreparedCapture(nullptr);
             }
@@ -1442,7 +1442,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     g_stages.lap(6);   // hud
     g_stages.endFrame();
     // A separate offscreen path after the already presented scene/UI pass.
-    // Never replay RtsView::draw: its animation, event and appearance updates
+    // Never replay GameView::draw: its animation, event and appearance updates
     // are stateful, even with MotionWeave's universal View adapter.
     if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy() &&
        view_.visualFrameReadyFor(mod().state(*sim_).grid,time_)) {
@@ -1469,7 +1469,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 // Reuse primary-frame particle lights without collecting FX again.
                 renderer.lights.replayPrepared(lensLightingSnapshot);
                 // Re-submit final pose/material/attachment packets directly.
-                // RtsView::draw and MotionWeave::update are NOT repeated.
+                // GameView::draw and MotionWeave::update are NOT repeated.
                 snapshot.submit(renderer,camera.entity.packed());
             },{},[&](const render::EcsCameraView& camera,
                      render::Renderer3D& renderer,int width,int height) {

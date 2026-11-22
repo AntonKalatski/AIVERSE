@@ -79,5 +79,5 @@ Then validate Stage 132 POSIX death fixtures; test with ASan/TSan/UBSan on suppo
 1. Run/fix native build and `render_device_epoch` (including newly added callback visitor and retirement fallback scenarios); preserve logs and warnings.
 2. Inspect and protect the asynchronous `publishPrepared` Model upload/admission transaction and any diagnostic observer reentrancy around `collectRetired`. Avoid an early release of partially uploaded GPU Models on failures.
 3. Review missing `main` 305 commits and PR-base 615 commits on a throwaway integration worktree, especially batching/Model and graphics API changes, and coordinate with other owners.
-4. Finish remaining generic View/legacy RtsView integration and validate native FPS/RTS/editor visual parity and performance.
+4. Finish remaining generic View/legacy GameView integration and validate native FPS/RTS/editor visual parity and performance.
 5. Add a separate Stage 136 handoff and append to `docs/agent-handoffs/animation-universal.md`, `AGENTS.md`, `docs/animation-graphs.md`; PR stays Draft until verified.

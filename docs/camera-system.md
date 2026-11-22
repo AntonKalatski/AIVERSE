@@ -160,7 +160,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 - `Renderer3D::beginScene(camera, w, h) -> draw* -> render(gfx::PassDesc, PostProcess*) -> [resolvePostFx()] -> gfx::Device::endPass()`.
 - `gfx::PassDesc` already supports separate `colorTarget` / `depthTarget` textures.
 - `apps/editor/Editor.h::Viewport` already contains independent render-target pair for Scene/Game windows.
-- `engine/render/PortraitRenderer.h` is a genre-free offscreen Renderer3D + model-pose capture host (Stage 2); `modules/rts/view/RtsPortrait.cpp` is its RTS-specific adapter.
+- `engine/render/PortraitRenderer.h` is a genre-free offscreen Renderer3D + model-pose capture host (Stage 2); `engine/view/GamePortrait.cpp` is its RTS-specific adapter.
 - `engine/render/Prisma`, `ScreenLighting`, `Lights`, existing Metal, GL, Vulkan RHI are reused rather than replaced.
 - Shared `aiverselib/gameplay/Camera.h` is a camera controller helper, not a render/capture scheduler; avoid conflating the concepts.
 
@@ -175,7 +175,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 - `engine/render/CameraView.h` — immutable `RenderView` snapshot (Camera, viewport, output, masks, clip overrides, quality, temporal key, clear).
 - **Implemented Stage 5:** `engine/render/RenderTargetPool.h` — managed color/depth, HDR, resize and GPU-serial deferred destruction. MSAA, format negotiation, asset persistence and host integration remain planned.
 - **Implemented Stage 5:** `engine/render/CameraRenderPipeline.h` — offscreen and primary screen camera execution using existing Renderer3D, GPU target readiness and dependency checks. It is opt-in by native code; not yet wired to Studio cameras or game clients.
-- `engine/render/PortraitRenderer.h/.cpp` — purely model/pose/material preview renderer without `RtsView`, `UnitType` or `modules/rts` includes. RTS stays a thin adapter and other hosts call directly.
+- `engine/render/PortraitRenderer.h/.cpp` — purely model/pose/material preview renderer without `GameView`, `UnitType` or `modules/rts` includes. RTS stays a thin adapter and other hosts call directly.
 - `apps/editor/windows/CameraWindow.cpp` — per-entity camera inspector, selection, live preview/RT visualization, capture flags and instrumentation.
 - `engine/camera/CaptureAsset.h` (later) — named RT assets exposed to materials, UI and scripts without raw transient texture handles in save data.
 

@@ -35,7 +35,7 @@ separate simulations; each project gets only that host's features.
 - `apps/server/GameData.cpp:31` runs only `rts`; `engine/net/server/ServerMatch.cpp:452` defaults `module` to `rts`.
 - `apps/headless/main.cpp:66,453,723` — static cast to `GameCore` by name, separate `playFps`.
 - `modules/fps/Project.h:14`, `modules/voxel/Project.h:13` reject other modules;
-  `modules/rts/view/RtsViewScript.cpp:838` view scripts only when `module().name()=="rts"`.
+  `engine/view/GameViewScript.cpp:838` view scripts only when `module().name()=="rts"`.
 - `modules/genres/MotionModule.cpp:38` — `motion.kind` must be `platformer` or `racing` (genre names as a mode).
 - 36 `dynamic_cast<GameCore*>` (campaign, scenario, AI, audio, fx, overlays, view).
 
@@ -160,20 +160,20 @@ Each step: merge origin/main, KINGSTON build, CTest, template checksums, handoff
 
 Audit of origin/main: the shared render layers (`engine/render`, `gfx`, `view`, `fx`, `world`, `ui`, `character`)
 include nothing from `modules/` or `apps/`, and genre words there are comments only. The split is one level up:
-- `modules/rts/view` (87 files, ~28k lines, 40 drawing directly): `RtsView` is the presentation of grid maps;
+- `modules/rts/view` (87 files, ~28k lines, 40 drawing directly): `GameView` is the presentation of grid maps;
   `engine/view/View.h` itself calls it a compatibility adapter;
 - `apps/fps/client.cpp` and `apps/voxel/client.cpp` are separate game executables with their own render loops;
   `modules/fps/view` holds `FirstPersonCamera`, `FpsAnimationEvents`;
 - the editor picks render paths by `isFps()` (play-test render, field preview, planets, overlays) over two scene
-  documents (`data.fps` / `data.extra`); `apps/client` + `ClientFx` are built on `game::RtsView`.
+  documents (`data.fps` / `data.extra`); `apps/client` + `ClientFx` are built on `game::GameView`.
 Steps:
 1. done (8832de38a): `render::RTSCamera` alias removed, 109 files on `render::Camera`.
 2. done: CTest `genre_free_engine` (`tools/genre/check_engine_genre_free.py`): no `Rts*` / `Fps*` / `rts::` / `fps::`
    / `isFps` in engine code; debt only `engine/net/authority` (FPS host session) and `engine/net/city` (RTS host),
    52 names, the limits only shrink.
-3. Everything that draws the world goes through `engine/view` (`View`): reusable parts of `RtsView` (terrain,
+3. Everything that draws the world goes through `engine/view` (`View`): reusable parts of `GameView` (terrain,
    visibility / fog, units and models, overlays, planets, portraits, animation) move to `engine/view` or
-   `engine/<capability>/view` (like `engine/roads`); `RtsView` is deleted.
+   `engine/<capability>/view` (like `engine/roads`); `GameView` is deleted.
 4. One client for any project instead of `apps/client`, `apps/fps`, `apps/voxel`: the project's data enables
    capabilities, not the executable.
 5. Camera rigs in `engine` (overhead / orbit / chase / first person as modes of one camera component).

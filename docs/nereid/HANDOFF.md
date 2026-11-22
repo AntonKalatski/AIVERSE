@@ -304,14 +304,14 @@ water geometry changes. This test has **not run**.
 Changed files:
 - Added `libraries/include/aiverselib/water/NereidRasterImport.h`: pure
   generic row-run rectangularisation, water-body conversion.
-- Added `modules/rts/view/NereidLegacyWaterAdapter.h`: optional read-only
+- Added `engine/view/NereidLegacyWaterAdapter.h`: optional read-only
   legacy map bridge, under the *legacy* module (core remains genre-free).
 - Added `tests/ecs_nereid_legacy_raster_test.cpp`: cell-centre parity
   against the existing waterCells raster, baked-tile parity,
   indexed-vs-reference checks, two independent native hosts,
   persistence, COW and rollback.
 - Updated `CMakeLists.txt`: `aiverse_ecs_nereid_legacy_raster_test`
-  links the core engine and `RtsWater.cpp` directly (no editor/runtime
+  links the core engine and `GameWater.cpp` directly (no editor/runtime
   or rendering target).
 - Updated `libraries/catalog.json` description to reflect stages 1–5.
 
@@ -329,7 +329,7 @@ Changed files:
   Each wet grid cell centre is covered, each dry centre is excluded.
   Input cap 4,194,304 cells (4 MiB mask); rectangle cap defaults 262,144.
 
-`modules/rts/view/NereidLegacyWaterAdapter.h`:
+`engine/view/NereidLegacyWaterAdapter.h`:
 - `game::water::importBakedWaterCellsToNereid(cells,w,h,cfg,'~')`
   reads **canonical simulation map tiles**, exact matching `~`.
   Prefer this path for games which edit baked maps after `waterNetwork`.
@@ -347,7 +347,7 @@ legacy body type from the merged mask.
 
 Example:
 ```cpp
-#include "modules/rts/view/NereidLegacyWaterAdapter.h"
+#include "engine/view/NereidLegacyWaterAdapter.h"
 namespace nw=aiverse::lib::nereid;
 nw::registerNereidWaterPersistence(sim);
 nw::WaterRasterImportConfig cfg;
@@ -4236,7 +4236,7 @@ HTML5 UI is being implemented independently on feature/studio-html5 using genera
 
 ## 2026-11-20 explicit surface ownership and shoreline coverage
 
-Implementation 8457e97bd7712ebcf187d964220aeaadef787b08 on feature/aiv87_terrain_pbr. TerrainLook.render defaulttrue for legacy projects; game/rules terrain.render=false suppresses legacy terrain/water and stale trace heightfield. New MapDoc.reset writes terrainPresentation=entities; old loaded maps missing key retain legacy behavior. RtsView per-map enable flag and editor sync honor the document mode. Root HTML5 Studio is receiving the corresponding flag/empty-grid suppression separately. User explicitly confirmed green rectangular pieces were the unwanted standard plane and now requires no automatic terrain on blank maps, plus individually selectable entity/component terrain, rocks, trees and grass. Current packed single-valley entity must therefore be replaced, not relabeled as finished.
+Implementation 8457e97bd7712ebcf187d964220aeaadef787b08 on feature/aiv87_terrain_pbr. TerrainLook.render defaulttrue for legacy projects; game/rules terrain.render=false suppresses legacy terrain/water and stale trace heightfield. New MapDoc.reset writes terrainPresentation=entities; old loaded maps missing key retain legacy behavior. GameView per-map enable flag and editor sync honor the document mode. Root HTML5 Studio is receiving the corresponding flag/empty-grid suppression separately. User explicitly confirmed green rectangular pieces were the unwanted standard plane and now requires no automatic terrain on blank maps, plus individually selectable entity/component terrain, rocks, trees and grass. Current packed single-valley entity must therefore be replaced, not relabeled as finished.
 
 NEREID shader adds undistorted depth shoreline coverage and lower broken foam (GLSL/MSL), avoiding refraction moving the physical shoreline. Offline PBR baker darkens/roughness-adjusts wet sand by the same water plane. Executed: actual GLSL330 and GLES300 compile/link via glslangValidator PASS; native editor/renderbench build PASS for renderer/rules flag and shader. Later new-map default/per-map flag source additions need fresh build/test. Metal capture /private/tmp/nereid-final-shore.png has0pipelineFailures; visually white rim reduced but water looks excessively transparent, so final water optics acceptance is NOT claimed. No-optics debug /private/tmp/water-nooptics.ppm pending to isolate opacity vs contact. Wet atlas48tiles currently rebaking.
 

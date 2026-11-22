@@ -8,7 +8,7 @@
 #include "engine/game/GameCore.h"
 #include "engine/game/ComputerPlayer.h"
 #include "engine/game/Script.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/GameView.h"
 #include "libraries/adapters/rmlui/ScreenBinding.h"
 #include <aiverselib/app/Lifecycle.h>
 #include <aiverselib/app/MatchBridge.h>
@@ -25,7 +25,7 @@ struct Showcase {
     std::unique_ptr<Simulation> sim;
     std::vector<game::ComputerPlayer> bots;
     render::Renderer3D renderer;
-    game::RtsView view;
+    game::GameView view;
     render::Camera camera;
     ui::UiLayer ui;
     i18n::Localization language;
@@ -130,7 +130,7 @@ button:hover { background-color: #347dac; }
         advanceGame();
         refresh();ui.update();
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());
-        game::RtsScene scene;game::sceneFromSim(*sim,scene,1.0f,0);
+        game::GameScene scene;game::sceneFromSim(*sim,scene,1.0f,0);
         renderer.beginScene(camera,device.framebufferWidth(),device.framebufferHeight());auto& module=static_cast<game::GameCore&>(sim->module());
         view.draw(renderer,scene,sim->tick()/20.0,nullptr,module.state(*sim).grid);gfx::PassDesc pass;renderer.render(pass);ui.render();device.endPass();
         if(automatic&&finished&&!captured){captured=true;device.captureNextFrame([this](int w,int h,std::vector<std::uint8_t> rgba){

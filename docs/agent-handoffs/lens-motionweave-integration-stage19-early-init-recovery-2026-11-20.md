@@ -4,8 +4,8 @@
 - Branch: `feature/lens-motionweave-integration`. `main` untouched.
 - `3c9859236f782176afeb0932f0f3bb398f75d6fe`: `engine/render/SpriteBatch.h` adds retryable `shutdownAfterGpuIdle()`.
 - `94b8f78ece37979cc3b75c13de331fb8fb461ff3`: `engine/render/SpriteBatch.cpp` implements idle-gated shutdown and resets destroyed GPU handles to allow subsequent initialization.
-- `ed530bd33f08b9468cc085f81cc112593cd43b83`: `modules/rts/view/Rts2DView.h` adds `shutdownAfterGpuIdle(gfx::Device&)`.
-- `c7a8fd1c4f59b8567078311caf30208f48c930d4`: `modules/rts/view/RtsSprites.cpp` moves ALL init stages, including first/second batch initialization, under a common try/catch transaction; on failure it requests GPU idle before destroying any allocated resources.
+- `ed530bd33f08b9468cc085f81cc112593cd43b83`: `engine/view/Game2DView.h` adds `shutdownAfterGpuIdle(gfx::Device&)`.
+- `c7a8fd1c4f59b8567078311caf30208f48c930d4`: `engine/view/GameSprites.cpp` moves ALL init stages, including first/second batch initialization, under a common try/catch transaction; on failure it requests GPU idle before destroying any allocated resources.
 - `5bb01e7fa4e4b2e6656cd8d34474a98bb43c9426`: corrects the sprite pipeline error log newline escape.
 - Prior handoff: `docs/agent-handoffs/lens-motionweave-integration-stage18-exception-gpu-rollback-2026-11-20.md`.
 

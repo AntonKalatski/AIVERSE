@@ -105,7 +105,7 @@ compile_run ecs-nereid-confluence-contract -Ilibraries/include \
 compile_run ecs-nereid-surface-mesh -Ilibraries/include \
     tests/ecs_nereid_surface_mesh_test.cpp "${NEREID_CORE[@]}"
 compile_run ecs-nereid-legacy-raster -Ilibraries/include \
-    tests/ecs_nereid_legacy_raster_test.cpp modules/rts/view/RtsWater.cpp \
+    tests/ecs_nereid_legacy_raster_test.cpp engine/view/GameWater.cpp \
     "${NEREID_CORE[@]}"
 compile_run ecs-native-persistence tests/ecs_native_persistence_test.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp \

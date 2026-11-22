@@ -1,6 +1,6 @@
 // Map generation in the editor core (Генерация window and MCP agents): generate into the open map with a
 // preset + params + seed, regenerate, keep a match-time "generate" block or bake a static map, list presets.
-// The generator itself is modules/rts/gen (deterministic, the same code runs at match start).
+// The generator itself is engine/game/gen (deterministic, the same code runs at match start).
 #pragma once
 #include <string>
 #include "Workspace.h"

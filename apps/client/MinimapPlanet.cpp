@@ -25,7 +25,7 @@ Globe globeOf(const PlanetCamera& pc) { const float3 d = pc.dir(), f = pc.forwar
 
 static void dumpMinimap(const std::vector<uint32_t>& p, int w, int h);
 
-void Minimap::buildPlanet(gfx::Device& dev, const RtsView& view) {
+void Minimap::buildPlanet(gfx::Device& dev, const GameView& view) {
     release(dev);
     w_ = h_ = kSide;
     gridW_ = gridH_ = 0;
@@ -39,7 +39,7 @@ void Minimap::buildPlanet(gfx::Device& dev, const RtsView& view) {
     (void)view;
 }
 
-void Minimap::updatePlanet(gfx::Device& dev, const RtsView& view, const RtsScene& scene, const Rules& rules, bool fog) {
+void Minimap::updatePlanet(gfx::Device& dev, const GameView& view, const GameScene& scene, const Rules& rules, bool fog) {
     if (!tex_.valid()) return;
     const PlanetCamera& pc = view.planetCamera();
     const PlanetWorld& W = view.planets().world();
@@ -155,7 +155,7 @@ void Minimap::updatePlanet(gfx::Device& dev, const RtsView& view, const RtsScene
         if (node && ut.footprintW <= 1) continue;
         float2 p;
         if (!project(local, p)) continue;
-        const float4 c = RtsView::playerColor(o.owner);
+        const float4 c = GameView::playerColor(o.owner);
         disc(p.x, p.y, ut.structure ? 2.0f : 1.2f, node ? px(255, 216, 50) : px(int(c.x * 255), int(c.y * 255), int(c.z * 255)));
     }
     { // view footprint: a square around the focus, sized by the camera distance
@@ -182,7 +182,7 @@ static void dumpMinimap(const std::vector<uint32_t>& p, int w, int h) {
     }
 }
 
-bool Minimap::planetPointer(RtsView& view, float u, float v) const {
+bool Minimap::planetPointer(GameView& view, float u, float v) const {
     PlanetCamera& pc = view.planetCamera();
     const PlanetWorld& W = view.planets().world();
     if (system_) { // nearest body with a surface

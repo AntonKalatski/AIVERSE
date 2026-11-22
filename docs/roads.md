@@ -134,7 +134,7 @@ pipelines (depth bias, lit, shadows). No shaders of its own.
 
 ### Wet roads and puddles
 
-Rain is the game's: its weather calls `RtsView::roads().setWeather(wet, puddles)` every frame (both 0..1). `wet`
+Rain is the game's: its weather calls `GameView::roads().setWeather(wet, puddles)` every frame (both 0..1). `wet`
 darkens every road surface — carriageways, junction boxes; wet dirt turns a darker brown, wet asphalt a cooler grey —
 except in tunnels. `puddles` fills the puddle spots of the network: in the gutters along kerbs (sparser on roads
 without kerbs), now and then in a lane's wheel track, in the ruts of dirt and gravel roads (sometimes one broad pool
@@ -155,7 +155,7 @@ dirt or not), and sizes them with `RoadView::puddleScale(spot, puddles)`.
 ### Surface for wheels
 
 The carriageway is drawn a little over the ground, kerbs and raised sidewalks higher still. `RoadView::surfaceAt`
-(and `RtsView::groundAt`, which falls back to the ground) returns the drawn top of the road surfaces: carriageways,
+(and `GameView::groundAt`, which falls back to the ground) returns the drawn top of the road surfaces: carriageways,
 kerbs, sidewalks, junctions, medians, driveways, verges and low embankments, sampled 8 times per cell and interpolated,
 so a kerb is a short ramp a wheel rolls up. Barriers, poles, signal heads, pillars and props are not part of it, nor
 are decks higher than a bridge clearance (the simulation's driving decks carry those). Moving ground units are drawn

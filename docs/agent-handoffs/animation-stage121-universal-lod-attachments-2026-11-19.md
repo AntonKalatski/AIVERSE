@@ -49,7 +49,7 @@ Previous: [Stage 120](animation-stage120-canvas-gpu-retirement-2026-11-19.md)
    the child doesn't specify its own. Child draws do NOT advance a
    separate animation clock.
 3. `1fb03e65804db3572d80101b1bedcf3b4b2360b0`
-   `modules/rts/view/RtsViewDraw.cpp`: existing RTS weapon/cargo/
+   `engine/view/GameViewDraw.cpp`: existing RTS weapon/cargo/
    banner socket visuals now use the same genre-neutral
    `view::composeAttachment` helper instead of manually
    multiplying frame transforms. RTS-owned filtering by weapon,
@@ -66,11 +66,11 @@ Previous: [Stage 120](animation-stage120-canvas-gpu-retirement-2026-11-19.md)
    Temporary staging textures still retire through the generic
    CanvasGpuRetirement fence queue introduced in Stage 120.
 5. `cab96173cab581590a5f059171e5ec1e5e846fd1`
-   `modules/rts/view/RtsPaintLayers.h`: each paint layer tracks
+   `engine/view/GamePaintLayers.h`: each paint layer tracks
    `uploadRetry` so an uncommitted partial texture update is
    never mistaken for completed GPU content.
 6. `e25f06e58bd2fec685be2fbe72a1e2dafeb72e40`
-   `modules/rts/view/RtsPaintLayers.cpp`:
+   `engine/view/GamePaintLayers.cpp`:
    - categorical raster/palette upload retains dirty flags when
      GPU staging or blit fails;
    - a failed initial coastline target creation does not

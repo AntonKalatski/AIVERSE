@@ -5,9 +5,9 @@
 //   Lobby.cpp     online play: NetClient, lobby / room screens, network matches
 #pragma once
 #include "UiModel.h"
-#include "modules/rts/view/EntityActionControls.h"
-#include "modules/rts/view/TopDownControls.h"
-#include "modules/rts/view/TopDownPrediction.h"
+#include "engine/view/EntityActionControls.h"
+#include "engine/view/TopDownControls.h"
+#include "engine/view/TopDownPrediction.h"
 #include <chrono>
 #include "engine/splash/SplashScreen.h"
 #include <array>
@@ -41,16 +41,16 @@
 #include "engine/game/ComputerPlayer.h"
 #include "engine/game/Localize.h"
 #include "engine/game/GameCore.h"
-#include "modules/rts/audio/RtsAudio.h"
-#include "modules/rts/audio/AudioScriptSound.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/audio/GameAudio.h"
+#include "engine/audio/AudioScriptSound.h"
+#include "engine/view/GameView.h"
 #include "ClientFx.h"
 #include "ClientSpine.h"
 #include "ClientServices.h"
 #include "ClientGamepad.h"
 #include "ClientInputRouting.h"
-#include "modules/rts/view/RtsViewScript.h"
-#include "modules/rts/view/RegionSwipe.h"
+#include "engine/view/GameViewScript.h"
+#include "engine/view/RegionSwipe.h"
 
 namespace Rml { class ElementDocument; class Element; }
 typedef struct lua_State lua_State;
@@ -66,7 +66,7 @@ struct Notice { std::string text; double until; };
 class Minimap {
 public:
     void build(gfx::Device& dev, const GameState& gs, const Rules& rules);  // per match: terrain colours, texture
-    void update(gfx::Device& dev, const GameState& gs, const Rules& rules, const RtsScene& scene, const std::vector<uint8_t>* vision,
+    void update(gfx::Device& dev, const GameState& gs, const Rules& rules, const GameScene& scene, const std::vector<uint8_t>* vision,
                 const float3 (&viewQuad)[4], bool haveQuad, const std::vector<OverlayMinimapMark>* marks = nullptr);
     void release(gfx::Device& dev);
     gfx::TextureHandle texture() const { return tex_; }
@@ -74,10 +74,10 @@ public:
     int height() const { return h_; }
     float cellsPerPixel() const { return cellsPerPx_; }
     // planet maps (MinimapPlanet.cpp): a globe around the camera focus, or the system seen from above
-    void buildPlanet(gfx::Device& dev, const RtsView& view);
-    void updatePlanet(gfx::Device& dev, const RtsView& view, const RtsScene& scene, const Rules& rules, bool fog);
+    void buildPlanet(gfx::Device& dev, const GameView& view);
+    void updatePlanet(gfx::Device& dev, const GameView& view, const GameScene& scene, const Rules& rules, bool fog);
     // u, v in [0, 1] of the image -> new camera focus (globe) or focused body (system); false = outside
-    bool planetPointer(RtsView& view, float u, float v) const;
+    bool planetPointer(GameView& view, float u, float v) const;
 
 private:
     // planet minimap state
@@ -186,7 +186,7 @@ private:
     void fitCamera();
     float startCamera_[5] = {};
     bool hasStartCamera_ = false;
-    // planet maps (ClientPlanet.cpp): orbit camera input, picking through RtsView; flat maps never get here
+    // planet maps (ClientPlanet.cpp): orbit camera input, picking through GameView; flat maps never get here
     bool planet() const { return view_.planetMode(); }
     void planetCameraKeys(double dt);
     void fitPlanetCamera();
@@ -334,7 +334,7 @@ private:
     int hostW_ = 0, hostH_ = 0;
     int fbW() const { return hostColor_.valid() ? hostW_ : dev_->framebufferWidth(); }
     int fbH() const { return hostColor_.valid() ? hostH_ : dev_->framebufferHeight(); }
-    ImGuiLayer overlay_;      // world-space overlays of RtsView (health bars) still draw through ImGui
+    ImGuiLayer overlay_;      // world-space overlays of GameView (health bars) still draw through ImGui
     ui::UiLayer ui_;
     Rml::DataModelHandle model_;
     Rml::ElementDocument* menuDoc_ = nullptr;
@@ -382,7 +382,7 @@ private:
     void configurePrisma(const Json& map);
     render::BakedLighting baked_;         // the map's baked lightmaps / probes, "<map>.bake" (ClientBaked.cpp, agent-lightbake)
     void configureBakedLighting(const std::string& mapFile);
-    RtsView view_;
+    GameView view_;
     ClientSpine spine_;
     ClientServices services_;
     ClientGamepad gamepad_;               // pad cursor / pan / zoom / bindings (ClientGamepad.cpp)
@@ -399,7 +399,7 @@ private:
     std::vector<game::ViewDrawBatch> canvas_;   // view.draw triangles of the last view-script update
     void runViewScripts(float dt);
     audio::AudioEngine audio_;
-    RtsAudio sound_;
+    GameAudio sound_;
     game::AudioScriptSound scriptSoundImpl_{audio_};   // the Lua `sound` table of view scripts and the UI Lua
     game::ScriptSound* scriptSound_ = nullptr;          // set once the audio engine is up
     std::vector<Entity> heardSelection_;  // selection when the last select sound played
@@ -432,7 +432,7 @@ private:
     void cityAttach();
     float cityFrame(double dt);
     std::vector<ComputerPlayer> bots_;
-    RtsScene scene_;
+    GameScene scene_;
     uint8_t human_ = 1;
     bool spectator_ = false;
     int difficulty_ = 1;

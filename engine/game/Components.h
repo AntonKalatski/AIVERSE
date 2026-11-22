@@ -1,5 +1,5 @@
 // Commands, events and the ECS components of the game simulation (units, orders, combat, production, abilities,
-// statuses, needs, lanes ...). Rules data: GameData.h. The simulation that runs on them: modules/rts (GameHost).
+// statuses, needs, lanes ...). Rules data: GameData.h. The simulation that runs on them: GameCore.
 #pragma once
 #include <cstdint>
 #include <string>

@@ -8,9 +8,9 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3b1-scene-ma
 
 ## Completed implementation
 
-- `RtsView::prepareTerrainAtomicFrame(dev,grid,renderer,scene,time,vision)` stages an **unpublished** map topology and camera-visible GroundFX scene into the existing `PreparedSurfaceLease` (not a second GPU owner). Includes full Terrain PreparedMap, forced Roads/Shores, scene-aware GroundFX chunks and Fog Sheet with initial R8 or retained same-size visibility knowledge. All five owners are privately staged behind `OwnerPrepareCommit`.
+- `GameView::prepareTerrainAtomicFrame(dev,grid,renderer,scene,time,vision)` stages an **unpublished** map topology and camera-visible GroundFX scene into the existing `PreparedSurfaceLease` (not a second GPU owner). Includes full Terrain PreparedMap, forced Roads/Shores, scene-aware GroundFX chunks and Fog Sheet with initial R8 or retained same-size visibility knowledge. All five owners are privately staged behind `OwnerPrepareCommit`.
 - No owner's `commit*` runs at prewarm time. The original Terrain surface, Road generation, GroundFX, Fog and last submitted camera frame stay unmodified, except the previous camera epoch is explicitly invalidated to forbid secondary replay.
-- The transaction is held across calls with **only stable owner/candidate commit+rollback closures**. All prepare callbacks referencing a stack `MapGrid`, temporary staged surface height function, camera/scene and R8 baseline are cleared before storing the lease. The temporary `RtsView::heightAt` override is scoped to synchronous GroundFX preparation and always reset on exceptions.
+- The transaction is held across calls with **only stable owner/candidate commit+rollback closures**. All prepare callbacks referencing a stack `MapGrid`, temporary staged surface height function, camera/scene and R8 baseline are cleared before storing the lease. The temporary `GameView::heightAt` override is scoped to synchronous GroundFX preparation and always reset on exceptions.
 - Same Stage 48B.2B input validation covers owner/device, scene/map/vision pointer identities, time, frame stamp, generation, five owner revisions, Grid / scene / camera / visibility fingerprints and tile policy. It runs both AFTER private upload and AGAIN at primary draw; changed source causes reverse rollback and a synchronous `buildTerrainAtomicScene` retry from the actual inputs, not a partial publication.
 - `prepareMapFrame` directly recognizes an existing topology lease, returning its validity without repeating old-map prewarm. At the start of `draw()`, before `FramePublicationEpoch::begin`, hierarchy resolution or model height lookup, a valid topology lease publishes once and performs terrain change notifications. The normal primary `publishSurfaceFrame` then prepares only the published-map dynamic visibility/LOD resources. No duplicate full Terrain/Road/Shore/ Fog Sheet upload, and GroundFX visible meshes built in the topology candidate are not invalidated a second time.
 - Preserve existing `buildTerrain()`, `buildTerrainAtomic()`, and `buildTerrainAtomicScene()` synchronous APIs. Initial unprimed GPU terrain, planet, hierarchy and 2D tile paths explicitly return false from the new opt-in prewarm rather than advertise unsupported behavior. Renderer must be configured with `beginScene()`.
@@ -19,8 +19,8 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3b1-scene-ma
 
 ## Changed source
 
-- `modules/rts/view/RtsView.h`: public topology prewarm API, private draw-time lease publication declaration.
-- `modules/rts/view/RtsView.cpp`: extends existing one-shot lease and shared source validation, prepares unpublished full map/scene, consumes before draw with stale fallback, reuses normal `prepareMapFrame` protocol.
+- `engine/view/GameView.h`: public topology prewarm API, private draw-time lease publication declaration.
+- `engine/view/GameView.cpp`: extends existing one-shot lease and shared source validation, prepares unpublished full map/scene, consumes before draw with stale fallback, reuses normal `prepareMapFrame` protocol.
 - `tests/tests.cpp`: `lens_stage48b3b2_unpublished_map_lease_consumes_with_primary`, `lens_stage48b3b2_stale_map_lease_discards_and_rebuilds`, `lens_stage48b3b2_failed_prewarm_preserves_live_map`, `lens_stage48b3b2_resized_map_prewarms_all_five_owners`.
 - This handoff.
 

@@ -14,7 +14,7 @@ live shader kit; new pipeline misses remain owned by PreparedFrame.
 `commitMap` transfers topology first and privately rebinds this exact frame
 before committing it, without GPU uploads. Candidate rollback owns both.
 
-`modules/rts/view/RtsView.{h,cpp}` stages the actual processed viewer Fog
+`modules/rts/view/GameView.{h,cpp}` stages the actual processed viewer Fog
 against the new sheet, then prepares Terrain with that field. A consumed
 topology lease returns an optional Fog-change result so primary draw skips
 the redundant surface cohort. Stale input still uses the existing synchronous

@@ -2,8 +2,8 @@
 // Runs only on the editor/presentation thread; no renderer or ECS state.
 // Changing projects resets the watch baseline and every pending request.
 #pragma once
-#include "modules/rts/view/RtsModelSourceDependencies.h"
-#include "modules/rts/view/RtsModelResourceCache.h"
+#include "engine/view/GameModelSourceDependencies.h"
+#include "engine/view/GameModelResourceCache.h"
 #include "engine/render/Model.h"
 #include <filesystem>
 #include <map>
@@ -47,13 +47,13 @@ public:
     template<class Types,class Convert,class Log>
     void scan(const std::string& project,const Types& types,
               const Json& materialLibrary,
-              const game::view_adapter::RtsModelResourceCache& resources,
+              const game::view_adapter::GameModelResourceCache& resources,
               Convert&& convert,Log&& log) {
         dependencies_.rebuild(types,materialLibrary);
         for(const auto& [key,model]:resources.models()) {
             if(key.rfind("shape:",0)==0)continue;
             const auto source=
-                game::view_adapter::RtsModelResourceCache::sourceForKey(key);
+                game::view_adapter::GameModelResourceCache::sourceForKey(key);
             dependencies_.addResidentModel(source);
             if(model)for(const auto& img:model->images)
                 if(!img.textureKey.empty())

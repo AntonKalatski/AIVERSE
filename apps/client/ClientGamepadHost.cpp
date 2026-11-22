@@ -5,7 +5,7 @@ extern "C" {
 #include <lua.h>
 }
 #include "imgui.h"
-#include "modules/rts/view/ScriptHud.h"
+#include "engine/view/ScriptHud.h"
 
 namespace aiverse::client {
 

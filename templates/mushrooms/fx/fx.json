@@ -1,4 +1,4 @@
-// Visual effects for "Mushroom Clash" (see modules/rts/fx/RtsFx.h). Built-in textures only.
+// Visual effects for "Mushroom Clash" (see engine/fx/GameFx.h). Built-in textures only.
 {
   "events": {
     "died":     "spore_pop",

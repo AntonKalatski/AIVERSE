@@ -1,4 +1,4 @@
-// Script UI (G2): the bridge between the game's view scripts (modules/rts/view/RtsViewScript.cpp: ui.set /
+// Script UI (G2): the bridge between the game's view scripts (engine/view/GameViewScript.cpp: ui.set /
 // ui.open / ui.close / ui.on) and the client's UI Lua state, where engine/ui/lib/scriptui.lua keeps the
 // RmlUi data model "script" and the documents ui/hud/<name>.rml. docs/scripting.md § Script UI.
 extern "C" {

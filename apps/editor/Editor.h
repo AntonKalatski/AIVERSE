@@ -20,7 +20,7 @@
 #include "EditorProfile.h"
 #include "EditorTheme.h"
 #include "EditorNativeBuild.h"
-#include "modules/rts/view/RtsViewScript.h"
+#include "engine/view/GameViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
 #include "PhysisNaturePreview.h"
@@ -47,9 +47,9 @@
 #include "engine/game/ComputerPlayer.h"
 #include "engine/game/MapGrid.h"
 #include "engine/game/GameCore.h"
-#include "modules/rts/fx/RtsFx.h"
-#include "modules/rts/view/RtsView.h"
-#include "modules/rts/view/RtsModelDemandScheduler.h"
+#include "engine/fx/GameFx.h"
+#include "engine/view/GameView.h"
+#include "engine/view/GameModelDemandScheduler.h"
 
 namespace aiverse::spectra {
 class GpuPoolWorld;
@@ -188,7 +188,7 @@ public:
         }
         return authoredWater_;
     }
-    game::RtsView& view() { return view_; }
+    game::GameView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
     // Pin a type that an editor panel or preview uses (also loads it lazily).
     void retainEditorType(uint16_t type);
@@ -493,7 +493,7 @@ private:
     void drawActivityToasts();
     void handleShortcuts();
     void syncGrid();
-    void buildEditScene(game::RtsScene& out) const;
+    void buildEditScene(game::GameScene& out) const;
     void drawEditOverlays3D();
     void applyChanges();
     void pollVisualAssets(double dt); // editor-owned asset watcher, independent of windows
@@ -512,7 +512,7 @@ private:
     void syncSelection();
     void registerWorldOps();  // EditorWorld.cpp: world_entities, world_entity, editor_select
     void deliverShots(gfx::Device& dev);
-    void setOverlayContext(const Viewport& vp, const render::Camera& cam, bool play);   // input state for RtsOverlays
+    void setOverlayContext(const Viewport& vp, const render::Camera& cam, bool play);   // input state for GameOverlays
 
     Options opt_;
     Workspace ws_;
@@ -557,9 +557,9 @@ private:
     render::PrismaVolumeStack prismaVolumes_; // editor camera profiles, presentation-only
     std::string prismaVolumesSignature_;
     void refreshPrismaVolumes();
-    game::RtsView view_;
+    game::GameView view_;
     bool lazyEditorAssets_ = true;
-    game::view_adapter::RtsModelDemandScheduler modelDemand_;
+    game::view_adapter::GameModelDemandScheduler modelDemand_;
     VisualAssetDependencyService visualAssets_;
     bool showPicker_ = false;
     bool resetLayout_ = false;
@@ -584,7 +584,7 @@ private:
     uint64_t worldHash_ = 0;   // map world block as last given to the view (planets)
     double gridRebuildAt_ = 0;
     bool playTerrainBuilt_ = false;
-    game::RtsScene scene_;
+    game::GameScene scene_;
     // Opt-in edit-scene snapshot: immutable document-derived objects only.
     // Selection/hover and live world preview remain updated every frame.
     struct EditSceneCacheEntry {
@@ -657,7 +657,7 @@ private:
     std::array<float,8> spectraPreviewParams_{};
     fx::float3 spectraPreviewPosition_{};
     fx::ParticleSystem gameFx_;
-    game::RtsFx gameFxBridge_;
+    game::GameFx gameFxBridge_;
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
     double fxTime_ = -1;
     struct FxPreview { std::string name; fx::float3 pos{}; float scale = 1; fx::float4 tint{1, 1, 1, 1}; bool loop = false; fx::FxHandle h; double next = 0;

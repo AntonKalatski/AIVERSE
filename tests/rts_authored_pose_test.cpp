@@ -1,9 +1,9 @@
 // RTS runtime applies the Studio-authored map Transform (components.Transform):
 // Y rotation -> unit facing, height / X-Z tilt / per-axis scale -> AuthoredPose,
-// persisted and checksummed; RtsView turns it into the same world frame Studio shows.
+// persisted and checksummed; GameView turns it into the same world frame Studio shows.
 #include "engine/data/JsonCompose.h"
 #include "engine/game/GameCore.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/GameView.h"
 #include <cmath>
 #include <iostream>
 #include <memory>

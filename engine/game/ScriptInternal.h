@@ -1,5 +1,5 @@
 // Internals shared by the scripting files (Script.cpp: VM, sandbox, fx, state; ScriptApi.cpp:
-// the `game` table; view/RtsViewScript.cpp: presentation VM). Not a public header.
+// the `game` table; view/GameViewScript.cpp: presentation VM). Not a public header.
 //
 // Error discipline: Lua is compiled as C, so lua_error() is a longjmp that skips C++ destructors.
 // Bindings are therefore written as `int impl(lua_State*, Vm&)` returning the number of results, or

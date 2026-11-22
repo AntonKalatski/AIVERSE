@@ -113,7 +113,7 @@ private:
     }
     static ImVec4 ownerColor(int owner) {
         if (owner <= 0) return ImVec4(0, 0, 0, 0);   // accent
-        const render::float4 c = game::RtsView::playerColor(owner);
+        const render::float4 c = game::GameView::playerColor(owner);
         return ImVec4(c.x, c.y, c.z, 1);
     }
 

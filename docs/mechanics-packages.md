@@ -1539,7 +1539,7 @@ phase, three personal boss windows at 3:00 / 6:00 / 9:00 with rotation. Bind `en
 
 **Views.** `telegraphDecal(view, groundY, own, colors)` returns x, y, z, rgba triangles: background shape plus a fill
 growing with `progressMilli` (circle / ring outward, cone from the apex, line from its start), own vs enemy colours
-as Drone Fall's `TelegraphColorConfig`. Feed them to `RtsGroundCanvas` (`ViewGroundBatch`) or a Lua
+as Drone Fall's `TelegraphColorConfig`. Feed them to `GameGroundCanvas` (`ViewGroundBatch`) or a Lua
 `view.draw_ground` list. Status visuals: one view per `StatusViewEvent` serial (Started / Refreshed / Ended) at the
 Ground or ModelTop anchor.
 

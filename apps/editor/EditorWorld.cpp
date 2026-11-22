@@ -230,7 +230,7 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
             const int owner = !o ? 0 : o->player == game::kHostileNeutral ? -1 : int(o->player);
             const std::string& tid = rules().types[u.type].id;
             if (objectHidden(owner, tid) || objectLocked(owner, tid)) return;
-            const float rad = const_cast<game::RtsView&>(view_).selectionRadius(u.type) + 0.2f;
+            const float rad = const_cast<game::GameView&>(view_).selectionRadius(u.type) + 0.2f;
             const float dd = std::hypot(x - float(tr.pos.x.toDouble()), z - float(tr.pos.z.toDouble()));
             if (dd < rad && dd < bestD) { bestE = e; bestD = dd; }
         });
@@ -245,7 +245,7 @@ Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, floa
         if (!r.hasPos || r.type < 0 || (!worldLive_ && r.doc >= 0) || (r.flags & game::kUnitOffMap)) continue;
         const std::string& tid = rules().types[size_t(r.type)].id;
         if (objectHidden(r.owner, tid) || objectLocked(r.owner, tid)) continue;
-        const float rad = const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(r.type)) + 0.2f;
+        const float rad = const_cast<game::GameView&>(view_).selectionRadius(uint16_t(r.type)) + 0.2f;
         const float dd = std::hypot(x - r.x, z - r.z);
         if (dd < rad && dd < bestD) { best = &r; bestD = dd; }
     }

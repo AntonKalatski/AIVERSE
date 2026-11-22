@@ -17,7 +17,7 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
 ## Rules for the view
 - The view reads the sim layers and never writes them. `heights` and (outside `model: "heightfield"`) `corners` are presentation.
 - Surface height in the view: `corners` when present (bilinear), otherwise today's `heights` + `level * levelHeight` + ramps.
-  `RtsView::heightAt` stays the single function every visual uses to put things on the ground.
+  `GameView::heightAt` stays the single function every visual uses to put things on the ground.
 - Geometry is static per chunk (32x32 cells); what changes in a match (fields, creep, territory, dig, fog) is sampled from
   small per-cell textures, so the mesh is not rebuilt during play. Editor edits rebuild only dirty chunks.
 - Maps up to 1024x1024 (and larger): chunk culling + CDLOD-style LOD with geomorphing on large maps.
@@ -72,11 +72,11 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
 | `agent-terrain-sim` | `terrain.model`, heightfield in the simulation, `cornersFile`, hierarchical pathfinding, sample heightfield game map |
 
 ## View implementation (agent-terrain)
-- `modules/rts/view/RtsTerrainSurface.h`: the surface math (levels mode as before; heightfield = two triangles per
-  cell, diagonal (0,0)-(1,1)). `RtsView::heightAt` and the editor's sculpt ops use it; the mesh is built from it.
+- `engine/view/GameTerrainSurface.h`: the surface math (levels mode as before; heightfield = two triangles per
+  cell, diagonal (0,0)-(1,1)). `GameView::heightAt` and the editor's sculpt ops use it; the mesh is built from it.
 - `RtsTerrainRender.*`: 32x32 chunks with a per-chunk input hash (only dirty chunks rebuild), frustum culling, CDLOD
   (5 levels, geomorph + skirts) on heightfield maps above 256 cells, per-cell textures for fields / creep / fog of war,
-  water sheet or water bodies. `RtsGroundFx` is invalidated whenever terrain geometry changes.
+  water sheet or water bodies. `GameGroundFx` is invalidated whenever terrain geometry changes.
 - Materials, tiers, editor ops and MCP tools: `docs/game-format.md` § Terrain materials.
 - Measured (VM, Mesa llvmpipe, 1280x800, whole 1024² map in view): LOD off 1.19M triangles / 374 ms,
   LOD on 41k / 112 ms; gameplay zoom 32k triangles / ~20 ms on 512² and 1024² alike; full build 1024² ~100 ms.
@@ -100,7 +100,7 @@ detail. The detail surface is a visual heightmap with `k` samples per cell, deco
   at the corners) + fine noise;
 - edits rebuild only the samples around changed chunks (`synthMargin`).
 
-**Rendering** (`RtsTerrainDetailMesh.cpp`, shader variant `TERRAIN_DETAIL`):
+**Rendering** (`GameTerrainDetailMesh.cpp`, shader variant `TERRAIN_DETAIL`):
 - per 32x32-cell chunk, CDLOD levels with steps of 2^L samples, built lazily when first drawn and LRU-evicted over
   `detailBudgetMB` (96); geomorph to the next level in the vertex shader; skirts + walls to the apron;
 - per-pixel normals from a detail normal texture (rg = n.xz, b = cavity, a = macro variation) - on every tier, so the
@@ -110,7 +110,7 @@ detail. The detail surface is a visual heightmap with `k` samples per cell, deco
   blending between layers, macro variation and a second rotated sample on High against visible tiling;
 - texture sides capped at 4096 (WebGL2 / GLES3 safe); quality: Low tier caps k at 2, samples capped at 4097² desktop
   / 2049² mobile (`detailScaleFor`);
-- `RtsView::heightAt` samples the detail surface (same triangles as the mesh), so units, overlays and fog follow it;
+- `GameView::heightAt` samples the detail surface (same triangles as the mesh), so units, overlays and fog follow it;
   water bodies sit at the detail shore and extend one cell under the bank (organic lake outlines). Straits, rivers and
   the sea from splines with their shores (embankments, cliffs, beaches): `docs/water.md`.
 
@@ -152,7 +152,7 @@ direction (bit-identical on every face), one averaged height, one normal. Synthe
 except the Catmull-Rom basis (rows continue across the seam through the coarse surface), and the seam average removes
 that. Normals / cavity of edge samples read their neighbours across the seam (no one-sided bias, no seam lines).
 
-**Synthesis** (`modules/rts/view/RtsPlanetDetail.cpp`, `PlanetSurface::initDetail`): Catmull-Rom through the corners
+**Synthesis** (`engine/view/GamePlanetDetail.cpp`, `PlanetSurface::initDetail`): Catmull-Rom through the corners
 + 3D value noise on the direction (2 octaves, scaled per cell kind like the flat roughness) + on moons a crater field
 (3D cell lattice, 2 octaves: 3-cell spacing with 0.5-1.4-cell craters and 1.1-cell spacing with small ones; bowl +
 raised rim). Explicit detail at another k is resampled bilinearly. `heightAt`, `normalAt`, `raycast` follow the grid

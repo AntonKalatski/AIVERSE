@@ -13,7 +13,7 @@
 - `VisibilityField::init(dev)` now creates shader and pipeline in unpublished local variables. On failures, local resources are destroyed directly because no renderer could have submitted them. The member device pointer and handles are published only after both are valid. Already-initialized calls on the same device are idempotent; a different device throws `logic_error`.
 - `VisibilityField::build(dev,w,h,height)` generates CPU vertices, indices and replacement zero-initialized visibility arrays first. It creates a private replacement VB, IB, and (only when changing dimensions or no texture exists) R8 texture. Any create failure or thrown exception destroys only *unpublished* handles, then propagates; previously published sheet and visibility state are unaffected.
 - A successful `dev.waitForResourceIdle()` is mandatory *if* previously published fog mesh buffers or a replaced old texture exist. Only then are old handles destroyed and the new handles and optional visibility arrays committed. The barrier may block; invoke rebuild at a safe render-owner frame boundary outside an open pass. This stage intentionally chooses safety over an asynchronous token queue; optimize with retirement tokens later after device-backed validation.
-- `shutdownAfterGpuIdle()` returns false and retains GPU handles if the device cannot establish GPU idle. Regular `shutdown()` remains the low-level immediate cleanup for call sites like `RtsView::shutdown(dev)`, which already waits for full-device idle first.
+- `shutdownAfterGpuIdle()` returns false and retains GPU handles if the device cannot establish GPU idle. Regular `shutdown()` remains the low-level immediate cleanup for call sites like `GameView::shutdown(dev)`, which already waits for full-device idle first.
 - `VisibilityField::update`, shading behavior and gameplay/simulation visibility masks were not changed. No genre-specific logic was introduced into the generic engine-level `VisibilityField`.
 - A failure in a backend's own `destroyBuffer/destroyTexture` *after* a successful idle barrier is not yet made fully exception-transactional; real RHI resource-destroy failures require separate host/device-loss policy.
 
@@ -24,13 +24,13 @@
 - This is a simulated synchronous RHI, NOT a real device test and NOT proof of Metal/Vulkan/GLES parity.
 
 ## Source checks actually performed
-- Read current `VisibilityField.h/.cpp`, `Gfx.h`, `RtsView` call sites, and the existing recording test device.
+- Read current `VisibilityField.h/.cpp`, `Gfx.h`, `GameView` call sites, and the existing recording test device.
 - GitHub commits and post-commit fetch verified new API, staged shader/pipeline ownership, staging/idle/commit order, wrong-device check, and both regression test functions.
 - **NOT RUN:** CMake configuration, native C++ compile, any CTest, Metal/Vulkan/GLES build/GPU test, pixel-parity regression, benchmarks. Do not claim those pass.
 
 ## Risks and next exact work
 1. Check under native C++ compiler and execute the new tests. In particular verify `RecordingDevice` handle counters, shader/pipeline failure injection and resource destruction; fix any failures before final acceptance.
 2. For Fog, consider an async GPU-retirement queue for old VB/IB/texture when terrain is rebuilt frequently; current safe fallback waits for a full device idle barrier on rebuild. Retain old handles on failed GPU idle.
-3. `RtsView::init` still calls `fog_.init(dev)` after publishing sprites and does not inspect the return value; a future whole-RtsView transaction should stage fog initialization before publication and define fatal vs optional fog failure policy.
-4. `RtsOverlays::initGpu` still partially creates shader, pipelines, textures and VB without an atomic publication/rollback guarantee. Road/Shore kit texture initialization and TerrainRenderer GPU construction also need explicit staging/recovery. Continue Stage 33 with these owners, avoiding destruction of in-flight resources.
+3. `GameView::init` still calls `fog_.init(dev)` after publishing sprites and does not inspect the return value; a future whole-GameView transaction should stage fog initialization before publication and define fatal vs optional fog failure policy.
+4. `GameOverlays::initGpu` still partially creates shader, pipelines, textures and VB without an atomic publication/rollback guarantee. Road/Shore kit texture initialization and TerrainRenderer GPU construction also need explicit staging/recovery. Continue Stage 33 with these owners, avoiding destruction of in-flight resources.
 5. After all features are complete, reconcile latest `feature/universal-ecs-animation-pipeline` via conflict-aware merge, then perform one consolidated native build/CTest and supported Metal/Vulkan/GLES verification before merging `main`.

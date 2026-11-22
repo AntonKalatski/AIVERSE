@@ -1,6 +1,6 @@
 # World-anchored entity actions (implementation in progress)
 
-`modules/rts/view/EntityActionControls.h` is a presentation-only model for controls
+`engine/view/EntityActionControls.h` is a presentation-only model for controls
 that belong to a specific entity. The client and editor now share this model, with world-anchored controls rendered
 by the game HUD and pointer capture in their region-input paths.
 

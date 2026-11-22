@@ -62,11 +62,11 @@ Previous: [Stage 130](animation-stage130-read-lease-lifecycle-diagnostics-2026-1
 
 ## Streaming and owner-lifetime audit
 
-- Inspected `modules/rts/view/RtsView.cpp`: the up-front
+- Inspected `engine/view/GameView.cpp`: the up-front
   `loadType` loop precedes `resources_.acquireFrameReadScope()`;
   the scope then covers View layer callbacks, MotionWeave worker
   evaluation (after join) and synchronous Renderer3D submission.
-- Inspected `modules/rts/view/RtsLook.cpp`:
+- Inspected `engine/view/GameLook.cpp`:
   `ModelPreparationService` can publish **new** models into
   the cache via `resources_.publishPrepared`; the
   `ModelResourceCache` read guard does not prohibit

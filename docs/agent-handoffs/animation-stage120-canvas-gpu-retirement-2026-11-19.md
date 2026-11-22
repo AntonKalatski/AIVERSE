@@ -56,18 +56,18 @@ Previous: [Stage 119](animation-stage119-playback-continuity-2026-11-19.md)
    likewise retires through the shared fence queue; no direct
    post-blit `destroyTexture`.
 6. `a1708bb9e0f75c67902322b3a85b8789b181b7d5`:
-   `modules/rts/view/RtsPaintLayers.h` owns one shared
+   `engine/view/GamePaintLayers.h` owns one shared
    `CanvasGpuRetirement` per GPU epoch (no new frame or device
    clock); exposes frame-boundary pending/collect and diagnostics.
 7. `cfd1a864c41fd506dacff87187d58df8ac1c5cf7`:
-   `modules/rts/view/RtsPaintLayers.cpp` changes layer source/size/
+   `engine/view/GamePaintLayers.cpp` changes layer source/size/
    viewer/clock resets to `resetLayers` that queues old canvas
    images, coast textures, meshes, shaders and pipelines but DOES
    NOT destroy the shared queue. Deleting a layer is asynchronous.
    Final `shutdown` drains once, with a proven GPU idle barrier.
    All generated canvas instances borrow that single lifetime owner.
 8. `bec759b6017f522d7aa325767c02213be0fc2988`:
-   `modules/rts/view/RtsView.h` forwards the existing host
+   `engine/view/GameView.h` forwards the existing host
    RenderDeviceLifetime lease to paint layers and exposes generic
    pending/collect/orphan metrics.
 9. `044ffe2179240d3407dd95d14d76bf17ba4e5f1b` and
@@ -76,7 +76,7 @@ Previous: [Stage 119](animation-stage119-playback-continuity-2026-11-19.md)
    collect queued paint GPU handles ONLY at the owner frame boundary
    before new GPU draw passes (alongside existing Model/PostFx queues).
 10. `47f6ecc25091a85ac357a792deeb1079c56ad73a`:
-    `RtsPaintLayers.cpp` now preserves its last-good paint mesh
+    `GamePaintLayers.cpp` now preserves its last-good paint mesh
     when replacement vb/ib upload fails, while retaining/retiring
     partial new GPU handles. Empty geometry is handled explicitly;
     failed surface shader recompilations retire previous handles.
@@ -93,7 +93,7 @@ Previous: [Stage 119](animation-stage119-playback-continuity-2026-11-19.md)
     `f151011657461bbbabeed6c3e38e92c718645b1a` and
     `17ed5a6716023736945dcf549632d43b32139dcb`:
     expose GPU fence Pending/Failed/idle fallback and enqueue
-    failures from the RtsPaintLayers owner through RtsView into
+    failures from the GamePaintLayers owner through GameView into
     the editor Statistics window.
 
 ## Resource ownership and API guarantees
@@ -108,14 +108,14 @@ Previous: [Stage 119](animation-stage119-playback-continuity-2026-11-19.md)
   and be polled at one real host frame boundary per device frame.
   A standalone canvas owns a private queue and must be explicitly
   drained; otherwise it may need one blocking idle on shutdown.
-- `RtsPaintLayers` is a host-side adapter of that generic owner.
+- `GamePaintLayers` is a host-side adapter of that generic owner.
   One shared queue survives per-layer removal, scene resets, editor
-  multiple-view redraw and Lua source replacement. `RtsView`
+  multiple-view redraw and Lua source replacement. `GameView`
   forwards the host GPU lease. Both GameClient and Editor poll at
   the beginning of the frame; they never poll inside a render pass.
 - Direct `destroyBuffer/destroyTexture/destroyShader/destroyPipeline`
   calls have been removed from the modified
-  `RenderTexture.cpp` and `RtsPaintLayers.cpp` files.
+  `RenderTexture.cpp` and `GamePaintLayers.cpp` files.
   Graphics shaders, brushes, Lua gameplay and MotionWeave ECS
   animation logic are unchanged.
 - Last-good paint geometry remains resident until a valid
@@ -126,7 +126,7 @@ Previous: [Stage 119](animation-stage119-playback-continuity-2026-11-19.md)
 
 Performed:
 - Fetched current GitHub source/PR, compared branch with main,
-  checked RtsView/RtsPaintLayers lifecycle and Editor/GameClient
+  checked GameView/GamePaintLayers lifecycle and Editor/GameClient
   frame ownership, performed exact branch blob-SHA updates and
   re-read edited files.
 - Source inspection confirmed no direct `destroy*` calls remain
@@ -152,7 +152,7 @@ PR #22 must remain Draft until full feature completion and testing.
 3. Shader, pipeline and transient GPU resource allocation error
    paths and rendering exception cleanup are source-only and not
    experimentally verified.
-4. `RtsPaintLayers::drawCells` still retains legacy CPU palette/
+4. `GamePaintLayers::drawCells` still retains legacy CPU palette/
    coast updates; this stage did not overhaul its visual algorithm
    or island-boundary sampling. A returned void `upload` API
    cannot propagate every async failure to Lua; later retry and
@@ -161,7 +161,7 @@ PR #22 must remain Draft until full feature completion and testing.
    GPU owners are separate domain contracts. Do not overwrite
    parallel agents' code or assume their lifetime is solved by
    this canvas queue.
-6. Full retirement of legacy `RtsView` and exhaustive FPS/RTS/
+6. Full retirement of legacy `GameView` and exhaustive FPS/RTS/
    editor model/LOD/attachment visual parity remain incomplete.
 
 ## Exact next Stage 121

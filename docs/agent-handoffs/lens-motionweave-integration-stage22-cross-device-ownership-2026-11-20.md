@@ -2,8 +2,8 @@
 
 ## Branch and implementation commits
 - Repo: `chromealex/AIVERSE`. Branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- `1a18eeef624ccdc7c2e70021089cced4b061098e`: `modules/rts/view/Rts2DView.h`, borrowed `resourceDevice_` field.
-- `a95a8507a970076be3a32792db3d4b78ab5efe0b`: `modules/rts/view/RtsSprites.cpp`, reject shutdown/guarded recovery with wrong gfx::Device, remember owner even when early initialization throws, clear only after successful teardown.
+- `1a18eeef624ccdc7c2e70021089cced4b061098e`: `engine/view/Game2DView.h`, borrowed `resourceDevice_` field.
+- `a95a8507a970076be3a32792db3d4b78ab5efe0b`: `engine/view/GameSprites.cpp`, reject shutdown/guarded recovery with wrong gfx::Device, remember owner even when early initialization throws, clear only after successful teardown.
 - `fa4bc6da81f3e3b78ac9f25bd721d849473ed76b`: `tests/render/lens_sprite_gpu_fault_injection.cpp`, extend existing fault test with a failed initial shader allocation + refused idle, cross-device cleanup refusal and correct-device retry.
 - Previous: `docs/agent-handoffs/lens-motionweave-integration-stage21-reload-preflight-2026-11-20.md`.
 
@@ -11,7 +11,7 @@
 - `Rts2DView::init` checks `ready_`, `rules_`, `resourceDevice_` before a new initialization. The borrowed device pointer is set BEFORE the first GPU allocation, retained after any failed GPU idle barrier and cleared only by completed `shutdown`.
 - Both `shutdown(gfx::Device&)` and `shutdownAfterGpuIdle(gfx::Device&)` refuse mismatched device arguments via `std::logic_error`. A wrong device is not asked to wait idle and cannot destroy buffers/textures allocated by the original.
 - `shutdownAfterGpuIdle` returns true without waiting when no device/resources are owned, supporting idempotent retry after successful cleanup. On idle refusal it returns false with ownership unchanged.
-- No ECS, genre-neutral render API, scene schema or asset changes. All logic is inside the existing genre view adapter. Stage 21 early `RtsView` reload preflight remains in place.
+- No ECS, genre-neutral render API, scene schema or asset changes. All logic is inside the existing genre view adapter. Stage 21 early `GameView` reload preflight remains in place.
 
 ## MotionWeave branch status
 - Compared `feature/lens-motionweave-integration` against `feature/universal-ecs-animation-pipeline`: histories are divergent, with 74 commits ahead and 128 behind in the direction of the animation branch at comparison time. `apps/modelview/main.cpp` is a materially changed path.

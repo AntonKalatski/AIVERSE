@@ -2,7 +2,7 @@
 
 ## Repository, exact branch and commits
 - Repo `chromealex/AIVERSE`; working integration branch `integration/lighting-main-stage1-20261120`, DRAFT PR #91 against main; original base `f9aed9a705982e2c6b77b29869e309995ce8b163`. `main` unchanged.
-- Source commit `392422db88e8380b12767ee8eb573473a7361bc0`: `engine/render/Renderer3D.h`, `modules/rts/view/RtsTerrainShaders.h`, `RtsTerrainRender.cpp`, `RtsTerrainRender.h`, `tests/render/lighting_terrain_gi_shader_contract.cpp`.
+- Source commit `392422db88e8380b12767ee8eb573473a7361bc0`: `engine/render/Renderer3D.h`, `engine/view/GameTerrainShaders.h`, `GameTerrainRender.cpp`, `GameTerrainRender.h`, `tests/render/lighting_terrain_gi_shader_contract.cpp`.
 - This is a bounded addition on top of Stages 10 and 11, which use sampler21 for Metal/Vulkan. It does not merge or overwrite unrelated renderer or TerraWeave work.
 
 ## Implemented behavior

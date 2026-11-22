@@ -13,7 +13,7 @@
 - `View::selectCameraLodLevel(obj,distance,scope)` updates LOD history only; no animation graph updates, GPU calls or event consumption. A separate camera's hysteresis cannot steer another's.
 - Scoped maps are pruned in `update` and `beginPreparedFrame`, cleared on `clear`, and source IDs are erased on forget/reimport; `forgetCameraScope(scope)` supports entity lifecycle. Recycled entities use generation-safe packed keys.
 - New borrowed `MotionWeaveCameraFrame` references a previously evaluated generic `view::View` and `span<const view::Object>`. Its `submit` calls `animatedView->submit(renderer,objects,camera.entity.packed())`; `makeMotionWeaveCameraVisualFrame` bridges generic `CameraVisualFrame`.
-- Host contract: call `View::update` once per presentation frame, then render N cameras using the same valid borrowed objects and already evaluated poses. No `RtsView::draw` replay. The renderer initiates each camera scene separately.
+- Host contract: call `View::update` once per presentation frame, then render N cameras using the same valid borrowed objects and already evaluated poses. No `GameView::draw` replay. The renderer initiates each camera scene separately.
 - Camera-specific LOD is intentionally mutable presentation cache; model pose/animation clocks are not advanced by submit.
 - This does NOT automatically capture all RTS scene objects: the RTS adapter must publish a stable immutable packet collection, including material and attachment lifetime, after its one view update. Current `GameClient` still renders scenery-only in its optional LENS pass.
 
@@ -23,7 +23,7 @@
 - Check C++ header compile with `MotionWeaveCameraFrame.h` and source lifetime during attachment reimports.
 
 ## Next
-1. Provide a snapshot export API from RtsView's single MotionWeave `genericView_->update` pass and fallback authored draw path. Avoid copying borrowed graph/model pointers beyond their owner lifetime. If GPU-resource retirement occurs before callback completion, prevent use-after-free.
+1. Provide a snapshot export API from GameView's single MotionWeave `genericView_->update` pass and fallback authored draw path. Avoid copying borrowed graph/model pointers beyond their owner lifetime. If GPU-resource retirement occurs before callback completion, prevent use-after-free.
 2. Wire GameClient LENS render callback to MotionWeaveCameraFrame rather than scenery-only rendering.
 3. Test one update for N camera renders with unchanged animation playback time and event counts.
 4. Run consolidated builds/tests and write measured results. Do not merge into main until validated.

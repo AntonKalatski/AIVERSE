@@ -51,7 +51,7 @@ Previous: [Stage 124](animation-stage124-pose-scratch-authoring-2026-11-19.md)
      address is reused. This is a *CPU asset identity*, not an ECS
      entity generation or GPU completion fence.
 3. `eb4d92ae729fb630a54922ebe58f091300d5f64a` —
-   `modules/rts/view/RtsLook.cpp`: removes its private per-module
+   `engine/view/GameLook.cpp`: removes its private per-module
    publication atomic and uses `ModelPublicationEpoch::next()`
    for new ModelChoice versions. Retarget plans remain compiled at
    load/publication, not at every character draw.
@@ -79,13 +79,13 @@ Previous: [Stage 124](animation-stage124-pose-scratch-authoring-2026-11-19.md)
    `compiledInvalidPoseOrShape`, on actual rejected compiled
    submissions. On any reject, visual Model uses bind pose.
 7. `8988e4915c9228e31518e1acb8fff90a5768919a` —
-   `modules/rts/view/RtsView.h`: opt-in
+   `engine/view/GameView.h`: opt-in
    `LegacyLodFallbackMode { PreserveWorldMatrices, BindPose }`,
    setter/getter and `LegacyLodFallbackStats` counters.
    Default remains `PreserveWorldMatrices` for existing authored
    RTS projects until native visual parity confirms migration.
 8. `b71058d362f6ebc9d0d0a4405dfbb22d74b99ff1` —
-   `modules/rts/view/RtsViewDraw.cpp`: without an accepted
+   `engine/view/GameViewDraw.cpp`: without an accepted
    compiled plan, choose the historical node-matrix mapping
    (default) or strict bind-pose fallback (opt-in). A REJECTED
    previously compiled plan always falls back safely to bind
@@ -97,14 +97,14 @@ Previous: [Stage 124](animation-stage124-pose-scratch-authoring-2026-11-19.md)
    visual behavior, plus lifetime fallback counters. This is
    a diagnostic/preview control, not a gameplay setting.
 10. `7f62a3c23e5501fc13db357e127581eb19117004` —
-    `modules/rts/view/RtsView.h`: declares host scratch budget setter
+    `engine/view/GameView.h`: declares host scratch budget setter
     and capacity accessor for its lazily constructed generic View.
 11. `d77d4ecaa57a1df4ab3f26472867531b7b2d80fe` —
-    `modules/rts/view/RtsView.cpp`: forwards budget changes
+    `engine/view/GameView.cpp`: forwards budget changes
     to live `genericView_` and applies the chosen budget upon
     future View construction. It never starts a second clock.
 12. `007bf73ebe4fa7d86e15030c50a8494032a87c4e` —
-    `RtsView.h`: read-only scratch budget accessor for diagnostics.
+    `GameView.h`: read-only scratch budget accessor for diagnostics.
 13. `3be01b3bc4544125a9517fa4229e24bfc83639fb` —
     `StatsWindow.cpp`: reports retained MotionWeave scratch
     capacity vs configured budget in KiB.
@@ -144,7 +144,7 @@ packet.animationModelGeneration = modelEpoch;
   regenerated, even if the underlying Model bytes did not change.
 - In an RTS adapter, opt into strict compatibility mode with
   `view.setLegacyLodFallbackMode(
-  game::RtsView::LegacyLodFallbackMode::BindPose)`. The Editor
+  game::GameView::LegacyLodFallbackMode::BindPose)`. The Editor
   Statistics window exposes the same switch for visual comparison.
   Normal compiled LOD maps are unaffected by this toggle.
 - No second MotionWeave source clock or simulation writer was added.
@@ -156,7 +156,7 @@ ACTUALLY performed in this ChatGPT turn:
   targeted source updates, and re-read of relevant GPU-renderer
   pointer-lifetime contracts from the previous Stage 124 handoff.
 - Source-level inspection only for View, ModelPoseRetarget,
-  AppearanceAssetRegistry, RtsView/RtsLook/RTS draw and Editor stats.
+  AppearanceAssetRegistry, GameView/RtsLook/RTS draw and Editor stats.
 
 **NOT RUN:** local checkout, native CMake configure, C++ compile/link,
 CTest, GitHub Actions CI, Metal/Vulkan/GL rendering, visual parity

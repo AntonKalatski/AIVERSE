@@ -2,7 +2,7 @@
 
 ## Commits and scope
 - Branch: `feature/lens-motionweave-integration`; `main` not changed.
-- Implementation: `62368463165c5c012b256ee2038ef40d8aa4a7e2` (`modules/rts/view/Rts2DView.h`), `854ef094569ac1c8b65aff8f3307c654e906b816` (`modules/rts/view/RtsSprites.cpp`).
+- Implementation: `62368463165c5c012b256ee2038ef40d8aa4a7e2` (`engine/view/Game2DView.h`), `854ef094569ac1c8b65aff8f3307c654e906b816` (`engine/view/GameSprites.cpp`).
 - Follows Stage 12: `docs/agent-handoffs/lens-motionweave-integration-stage12-particle-lights-2026-11-20.md`.
 
 ## Architecture and API

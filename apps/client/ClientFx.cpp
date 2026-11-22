@@ -73,11 +73,11 @@ void ClientFx::shutdown() {
     textures_.shutdown();
 }
 
-void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& view, const game::MapGrid& grid) {
+void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::GameView& view, const game::MapGrid& grid) {
     ps_.clear();
     bridge_.setHeightFn([&view, &grid](float x, float z) { return view.heightAt(grid, x, z); });
     ps_.setGroundHeight([&view, &grid](float x, float z) { return view.heightAt(grid, x, z); });   // "collision" module
-    bridge_.setPlayerColorFn([](int p) { return game::RtsView::playerColor(p); });
+    bridge_.setPlayerColorFn([](int p) { return game::GameView::playerColor(p); });
     bridge_.setAttackOriginFn([&view](Entity e, fx::float3& pos, fx::float3& dir) { return view.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     bridge_.attach(sim, viewer);
     attached_ = true;
@@ -127,7 +127,7 @@ void ClientFx::stopMatch() {
     ps_.clear();
 }
 
-void ClientFx::setPlanetView(const game::RtsView* view) {
+void ClientFx::setPlanetView(const game::GameView* view) {
     if (!view || !view->planetMode()) {
         if (planet_) { ps_.setViewSpace(nullptr); ps_.setUpFunction({}); ps_.setAltitudeFunction({}); bridge_.setPlaceFn({}); }
         planet_ = nullptr;
@@ -148,7 +148,7 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
     ps_.setViewSpace(&space_);
 }
 
-void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::Camera& cam, const render::mat4& viewProj,
+void ClientFx::update(Simulation& sim, const game::GameScene& scene, const render::Camera& cam, const render::mat4& viewProj,
                       int fbW, int fbH, float dt) {
     preparedLightsValid_ = false;
     lightBuf_.clear();

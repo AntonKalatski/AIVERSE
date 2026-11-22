@@ -3,8 +3,8 @@
 #include "apps/client/RegionSettings.h"
 #include "engine/i18n/GameLanguage.h"
 #include "engine/ui/UiColor.h"
-#include "modules/rts/view/ScriptHud.h"
-#include "modules/rts/view/WorldCounters.h"
+#include "engine/view/ScriptHud.h"
+#include "engine/view/WorldCounters.h"
 #include <cstdio>
 
 namespace aiverse::editor {

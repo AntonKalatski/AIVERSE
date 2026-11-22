@@ -462,7 +462,7 @@ Un type est dessiné d’après son bloc `"view"` : une forme intégrée (`"shap
 - **Animation avancée** : blend space marche/course, clips additifs (respiration, recul), IK des pieds sur le terrain, tête qui
   se tourne vers la cible, véhicules inclinés sur les pentes, morph targets (blend shapes) sur le GPU.
 - **Sockets** : une arme en main, une charge sur le dos (selon la ressource portée), points de départ des projectiles, points
-  d’effets (fumée, feu, échappement) ; événements de clips et `RtsView::events()/effects()` pour le son et les particules.
+  d’effets (fumée, feu, échappement) ; événements de clips et `GameView::events()/effects()` pour le son et les particules.
 - **Étapes** : échafaudages et étapes de construction, variante endommagée selon la santé, dissolution à l’apparition et à la
   mort, contour de sélection, fantôme translucide pendant le placement d’un bâtiment, portraits.
 - **Formats** : aussi **FBX** (ufbx) et textures compressées **KTX2** (ETC2/BC/ASTC, qui restent compressées sur le GPU) ;
@@ -505,7 +505,7 @@ dans le menu désactive ce mécanisme (`AIVERSE_ADAPTIVE=off`).
 - **Éditeur** — la fenêtre « Lighting » : aperçu de l’heure et de l’orage, niveau de qualité de la lumière, liste des
   sources. Pour les agents : `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-Le format des champs est dans l’en-tête de `modules/rts/view/RtsLights.h`. Variables de test : `AIVERSE_TIME_OF_DAY`,
+Le format des champs est dans l’en-tête de `engine/view/GameLights.h`. Variables de test : `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Vérifier les mécaniques via MCP

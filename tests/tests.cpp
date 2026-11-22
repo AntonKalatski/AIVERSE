@@ -927,8 +927,8 @@ TEST(pack_sample_games_match_folder) {
 #include "engine/audio/Audio.h"
 #include "engine/audio/AudioMixer.h"   // spatialize / distanceGain (pure functions)
 #include "engine/audio/Synth.h"
-#include "modules/rts/audio/RtsAudio.h"
-#include "modules/rts/audio/AudioScriptSound.h"
+#include "engine/audio/GameAudio.h"
+#include "engine/audio/AudioScriptSound.h"
 
 namespace {
 
@@ -1239,7 +1239,7 @@ TEST(audio_sample_games_banks_load_cleanly) {
         std::string err;
         CHECK(a->loadBank(bank, [&](const std::string& p, std::string& out) { out = readSource(dir + p); return !out.empty(); }, &err));
         CHECK(a->warnings().empty());
-        game::RtsAudio s;
+        game::GameAudio s;
         CHECK(s.init(*a, rules, bank, &err));
         CHECK(s.warnings().empty());
         for (auto& w : s.warnings()) std::printf("    %s: %s\n", g, w.c_str());
@@ -1250,7 +1250,7 @@ TEST(audio_aiverse_mapping_warnings) {
     auto a = offlineAudio();
     CHECK(loadBank(*a, R"({"sounds":{"s":{"synth":{}}}})"));
     game::Rules rules = game::loadRules(Json::parse(R"({"resources":{"gold":{"kind":"stock"}},"types":{"guy":{"weapons":[{"id":"axe"}]}}})"));
-    game::RtsAudio s;
+    game::GameAudio s;
     std::string err;
     CHECK(s.init(*a, rules, Json::parse(R"({"events":{"died":"s","explode":"s","notEnough.gold":"s","notEnough.oil":"s"},
         "types":{"guy":{"select":"nope","weapons":{"axe":{"hit":"s"},"bow":{"hit":"s"}}},"ghost":{"died":"s"}}})"), &err));
@@ -1268,7 +1268,7 @@ TEST(audio_aiverse_events_keep_sim_deterministic) {
     game::Rules rules = game::loadRules(rulesJson);
     auto play = [&](bool withAudio, int& played) {
         auto a = offlineAudio();
-        game::RtsAudio sound;
+        game::GameAudio sound;
         if (withAudio) {
             a->loadBank(bank, [&](const std::string& p, std::string& out) { out = readSource(dir + p); return !out.empty(); });
             sound.init(*a, rules, bank);
@@ -3235,7 +3235,7 @@ TEST(audio_music_per_map) {
     std::map<std::string, std::string> files = {{"m.wav", wavOf(48000, 0.5f, [](float t) { return tone(300, t); })}};
     Json bank = Json::parse(R"({"music":{"match":"m.wav","match.valley":"m.wav"}})");
     CHECK(loadBank(*a, bank.dump(), nullptr, files));
-    game::RtsAudio s;
+    game::GameAudio s;
     CHECK(s.init(*a, rules, bank));
     Simulation sim(SimConfig{}, std::make_unique<game::GameCore>());
     sim.setup(rulesJson, Json::parse(readSource(dir + "maps/valley.json")));
@@ -3363,7 +3363,7 @@ TEST(audiopack_stage_game_folder) {
 #include <cstdlib>
 #include "engine/fx/ParticleSystem.h"
 #include "engine/fx/FxModelMesh.h"
-#include "modules/rts/fx/RtsFx.h"
+#include "engine/fx/GameFx.h"
 
 namespace {
 fx::EffectDef fxParse(const char* text, std::vector<std::string>* errs = nullptr) {
@@ -3457,7 +3457,7 @@ TEST(fx_sample_games_have_valid_effects) {
         ps.init(nullptr);
         ps.setFileReader([&](const std::string& p, std::string& out) { out = readSource(dir + p); return !out.empty(); });
         game::Rules rules = game::loadRules(Json::parse(readSource(dir + "rules.json")));
-        game::RtsFx bridge;
+        game::GameFx bridge;
         std::string err;
         CHECK(bridge.init(ps, rules, Json::parse(readSource(dir + "fx/fx.json")), &err));
         for (auto& w : bridge.warnings()) std::printf("    %s: %s\n", g.c_str(), w.c_str());
@@ -3484,7 +3484,7 @@ TEST(fx_aiverse_events_keep_sim_deterministic) {
         ps.setQuality(fx::FxQuality::Low);
         ps.init(nullptr);
         ps.setFileReader([&](const std::string& p, std::string& out) { out = readSource(dir + p); return !out.empty(); });
-        game::RtsFx bridge;
+        game::GameFx bridge;
         if (withFx) bridge.init(ps, rules, bank);
         SimConfig cfg;
         cfg.seed = 11;
@@ -4373,8 +4373,8 @@ TEST(terrain_corners_file_roundtrip) {
     CHECK(!game::applyCornersFile(missing, [](const std::string&, std::string&) { return false; }, &err));
 }
 
-// ---- terrain rendering (agent-terrain): the view's surface math (RtsTerrainSurface.h)
-#include "modules/rts/view/RtsTerrainSurface.h"
+// ---- terrain rendering (agent-terrain): the view's surface math (GameTerrainSurface.h)
+#include "engine/view/GameTerrainSurface.h"
 
 TEST(terrain_view_surface_levels_matches_classic) {
     game::MapGrid g;
@@ -4884,7 +4884,7 @@ TEST(models_baked_clips_match_the_pose) {
 }
 
 // ---------------- fog of war modes (rules / map "fogOfWar") and the view look ----------------
-#include "modules/rts/view/RtsFog.h"
+#include "engine/view/GameFog.h"
 TEST(fog_of_war_modes_and_look) {
     auto withFog = [](const char* mode, bool inMap) {
         Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
@@ -5161,14 +5161,14 @@ TEST(vision_fast_equals_reference_planet) {
 }
 
 // ---------------- Lighting (lighting agent): GPU-free logic ----------------
-#include "modules/rts/view/RtsLights.h"
+#include "engine/view/GameLights.h"
 #include "engine/render/QualityGovernor.h"
 
 TEST(lighting_day_night_cycle) {
     const game::Rules rules = game::loadRules(Json::parseFile(kSkirmish + "/rules.json"));
     const render::Lighting base;
     auto sky = [&](const char* block, double seconds, float* night = nullptr) {
-        game::RtsLights L;
+        game::GameLights L;
         L.init(rules);
         L.configure(Json::parse(block), Json{}, Json{});
         render::Lighting l = base;
@@ -5191,18 +5191,18 @@ TEST(lighting_day_night_cycle) {
     render::Lighting dusk = sky(R"({"time": 0.71})", 0, &n);
     CHECK(dusk.sunColor.z < base.sunColor.z - 0.1f);            // warm evening sun
     // the simulation's day phase (mechanic E) drives the sky even without a lighting block
-    { game::RtsLights L; L.init(rules); render::Lighting l = base; L.updateSky(l, 0, 0.0f); CHECK(L.night() > 0.95f); }
-    { game::RtsLights L; L.init(rules); L.configure(Json::parse(R"({"time": 0.0})"), Json{}, Json{});
+    { game::GameLights L; L.init(rules); render::Lighting l = base; L.updateSky(l, 0, 0.0f); CHECK(L.night() > 0.95f); }
+    { game::GameLights L; L.init(rules); L.configure(Json::parse(R"({"time": 0.0})"), Json{}, Json{});
       render::Lighting l = base; L.updateSky(l, 0, 0.5f); CHECK(L.night() < 0.01f); }   // and wins over the block's clock
     // no block: the renderer's lighting is left alone
-    { game::RtsLights L; L.init(rules); render::Lighting l = base; L.updateSky(l, 1234); CHECK(l.sunIntensity == base.sunIntensity && L.night() == 0); }
+    { game::GameLights L; L.init(rules); render::Lighting l = base; L.updateSky(l, 1234); CHECK(l.sunIntensity == base.sunIntensity && L.night() == 0); }
 }
 
 TEST(lighting_presets) {
     const game::Rules rules = game::loadRules(Json::parseFile(kSkirmish + "/rules.json"));
     const render::Lighting base;
     auto run = [&](const char* block, std::string* preset = nullptr, float* night = nullptr) {
-        game::RtsLights L;
+        game::GameLights L;
         L.init(rules);
         L.configure(Json::parse(block), Json{}, Json{});
         render::Lighting l = base;
@@ -5224,7 +5224,7 @@ TEST(lighting_presets) {
     CHECK(id.empty());
     // a cave map in a daylight game stays a cave: map preset beats game fields
     {
-        game::RtsLights L;
+        game::GameLights L;
         L.init(rules);
         L.configure(Json::parse(R"({"time": 0.35, "dayLength": 480})"), Json::parse(R"({"preset": "cave"})"), Json{});
         render::Lighting l = base;
@@ -5234,14 +5234,14 @@ TEST(lighting_presets) {
 }
 
 TEST(lighting_lightning_deterministic) {
-    CHECK(game::RtsLights::lightningAt(10.3, 0) == 0);
+    CHECK(game::GameLights::lightningAt(10.3, 0) == 0);
     int strikes = 0, weak = 0;
     bool same = true, was = false, wasWeak = false;
     for (int i = 0; i < 120000; ++i) {          // 10 minutes in 5 ms steps; count rising edges
         const double t = i * 0.005;
-        const float a = game::RtsLights::lightningAt(t, 1.0f);
-        same &= a == game::RtsLights::lightningAt(t, 1.0f);
-        const bool on = a > 0.5f, onWeak = game::RtsLights::lightningAt(t, 0.2f) > 0.5f;
+        const float a = game::GameLights::lightningAt(t, 1.0f);
+        same &= a == game::GameLights::lightningAt(t, 1.0f);
+        const bool on = a > 0.5f, onWeak = game::GameLights::lightningAt(t, 0.2f) > 0.5f;
         strikes += on && !was;
         weak += onWeak && !wasWeak;
         was = on; wasWeak = onWeak;
@@ -5253,7 +5253,7 @@ TEST(lighting_lightning_deterministic) {
 
 TEST(lighting_type_and_map_data) {
     const game::Rules sk = game::loadRules(Json::parseFile(kSkirmish + "/rules.json"));
-    game::RtsLights L;
+    game::GameLights L;
     L.init(sk);
     const auto& hall = L.typeLights(uint16_t(sk.findType("townhall")));
     CHECK(hall.glows.size() == 1 && hall.glows[0].radius > 4 && hall.glows[0].halo > 0 && !hall.glows[0].spot);
@@ -5265,7 +5265,7 @@ TEST(lighting_type_and_map_data) {
     const std::string fc = std::string(AIVERSE_SOURCE_DIR) + "/templates/frostcrown/rules.json";
     if (std::filesystem::exists(fc)) {
         const game::Rules fr = game::loadRules(Json::parseFile(fc));
-        game::RtsLights F;
+        game::GameLights F;
         F.init(fr);
         const int t = fr.findType("far_seer");   // chain lightning: damage -> orange
         CHECK(t >= 0);
@@ -5275,68 +5275,68 @@ TEST(lighting_type_and_map_data) {
             CHECK(!d.abilities.empty() && d.abilities[0].on && d.abilities[0].color.x > 0.9f && d.abilities[0].color.z < 0.5f);
         }
     }
-    const auto ml = game::RtsLights::parseMapLights(Json::parse(R"([{"x": 1, "z": 2}, {"pos": [3, 4], "radius": 6, "halo": false}, 7])"));
+    const auto ml = game::GameLights::parseMapLights(Json::parse(R"([{"x": 1, "z": 2}, {"pos": [3, 4], "radius": 6, "halo": false}, 7])"));
     CHECK(ml.size() == 2);
     CHECK(ml[0].x == 1 && ml[0].z == 2 && ml[0].radius == 4 && ml[0].halo > 0);
     CHECK(ml[1].x == 3 && ml[1].z == 4 && ml[1].radius == 6 && ml[1].halo == 0);
 }
 
 TEST(lighting_spot_lights) {
-    using game::RtsLights;
-    const RtsLights::Glow point = RtsLights::parseGlow(Json::parse(R"({"radius": 3})"));
+    using game::GameLights;
+    const GameLights::Glow point = GameLights::parseGlow(Json::parse(R"({"radius": 3})"));
     CHECK(!point.spot && point.radius == 3);
-    CHECK(!RtsLights::glowLight(point, {0, 0, 0}, 0, 1, 0, 0).spot());
-    const RtsLights::Glow s = RtsLights::parseGlow(Json::parse(R"({"type": "spot", "pitch": 30, "angle": 40, "offset": [0.5, 0.2]})"));
+    CHECK(!GameLights::glowLight(point, {0, 0, 0}, 0, 1, 0, 0).spot());
+    const GameLights::Glow s = GameLights::parseGlow(Json::parse(R"({"type": "spot", "pitch": 30, "angle": 40, "offset": [0.5, 0.2]})"));
     CHECK(s.spot && s.radius == 9 && s.angle == 40);
-    render::PointLight l = RtsLights::glowLight(s, {10, 2, 5}, 0, 1, 0, 0);   // facing +X
+    render::PointLight l = GameLights::glowLight(s, {10, 2, 5}, 0, 1, 0, 0);   // facing +X
     CHECK(l.spot() && l.dir.x > 0.8f && l.dir.y < -0.4f && std::fabs(l.dir.z) < 1e-4f);
     CHECK(std::fabs(l.pos.x - 10.5f) < 1e-4f && std::fabs(l.pos.z - 5.2f) < 1e-4f && l.groundY == 2);
     CHECK(l.cosOuter < l.cosInner && std::fabs(l.cosOuter - std::cos(20.0f * 0.0174532925f)) < 1e-4f);
-    render::PointLight turned = RtsLights::glowLight(s, {0, 0, 0}, 1.5707963f, 1, 0, 0);   // facing +Z
+    render::PointLight turned = GameLights::glowLight(s, {0, 0, 0}, 1.5707963f, 1, 0, 0);   // facing +Z
     CHECK(turned.dir.z > 0.8f && std::fabs(turned.dir.x) < 1e-3f);
     // a searchlight sweeps: its direction changes over time, within the amplitude
-    const RtsLights::Glow sw = RtsLights::parseGlow(Json::parse(R"({"angle": 30, "pitch": 30, "yaw": 90, "sweep": 45, "sweepSpeed": 30})"));
+    const GameLights::Glow sw = GameLights::parseGlow(Json::parse(R"({"angle": 30, "pitch": 30, "yaw": 90, "sweep": 45, "sweepSpeed": 30})"));
     float minA = 1e9f, maxA = -1e9f;
     for (int i = 0; i < 400; ++i) {
-        const render::PointLight x = RtsLights::glowLight(sw, {0, 0, 0}, 0, 1, i * 0.05f, 0);
+        const render::PointLight x = GameLights::glowLight(sw, {0, 0, 0}, 0, 1, i * 0.05f, 0);
         const float a = std::atan2(x.dir.z, x.dir.x) / 0.0174532925f;
         minA = std::min(minA, a); maxA = std::max(maxA, a);
     }
     CHECK(minA > 44 && minA < 50 && maxA > 130 && maxA < 136);
-    const auto ml = RtsLights::parseMapLights(Json::parse(R"([{"x": 4, "z": 6, "type": "spot", "yaw": 90}])"));
+    const auto ml = GameLights::parseMapLights(Json::parse(R"([{"x": 4, "z": 6, "type": "spot", "yaw": 90}])"));
     CHECK(ml.size() == 1 && ml[0].spot && ml[0].x == 4 && ml[0].yaw == 90);
 }
 
 TEST(lighting_reactive_patterns) {
-    using game::RtsLights;
-    auto avg = [](const RtsLights::Glow& g, float hp, bool powered, float night, float* mn = nullptr, float* mx = nullptr) {
+    using game::GameLights;
+    auto avg = [](const GameLights::Glow& g, float hp, bool powered, float night, float* mn = nullptr, float* mx = nullptr) {
         float sum = 0, lo = 1e9f, hi = -1e9f;
-        for (int i = 0; i < 2000; ++i) { const float v = RtsLights::glowLevel(g, i * 0.01f, 0.3f, hp, powered, night); sum += v; lo = std::min(lo, v); hi = std::max(hi, v); }
+        for (int i = 0; i < 2000; ++i) { const float v = GameLights::glowLevel(g, i * 0.01f, 0.3f, hp, powered, night); sum += v; lo = std::min(lo, v); hi = std::max(hi, v); }
         if (mn) *mn = lo;
         if (mx) *mx = hi;
         return sum / 2000;
     };
-    const RtsLights::Glow steady = RtsLights::parseGlow(Json::parse(R"({})"));
+    const GameLights::Glow steady = GameLights::parseGlow(Json::parse(R"({})"));
     CHECK(std::fabs(avg(steady, 1, true, 0) - 1) < 1e-4f);
     CHECK(std::fabs(avg(steady, 0.1f, false, 0) - 1) < 1e-4f);   // a fire ignores power and damage
     float lo = 0, hi = 0;
-    avg(RtsLights::parseGlow(Json::parse(R"({"pattern": "pulse", "rate": 1})")), 1, true, 0, &lo, &hi);
+    avg(GameLights::parseGlow(Json::parse(R"({"pattern": "pulse", "rate": 1})")), 1, true, 0, &lo, &hi);
     CHECK(lo > 0.05f && lo < 0.2f && hi > 0.95f);
-    const float strobe = avg(RtsLights::parseGlow(Json::parse(R"({"pattern": "strobe", "rate": 2})")), 1, true, 0);
+    const float strobe = avg(GameLights::parseGlow(Json::parse(R"({"pattern": "strobe", "rate": 2})")), 1, true, 0);
     CHECK(strobe > 0.06f && strobe < 0.18f);                     // short flashes
-    const RtsLights::Glow night = RtsLights::parseGlow(Json::parse(R"({"nightOnly": true})"));
-    CHECK(RtsLights::glowLevel(night, 1, 0, 1, true, 0) == 0 && RtsLights::glowLevel(night, 1, 0, 1, true, 1) == 1);
-    const RtsLights::Glow lamp = RtsLights::parseGlow(Json::parse(R"({"electric": true})"));
+    const GameLights::Glow night = GameLights::parseGlow(Json::parse(R"({"nightOnly": true})"));
+    CHECK(GameLights::glowLevel(night, 1, 0, 1, true, 0) == 0 && GameLights::glowLevel(night, 1, 0, 1, true, 1) == 1);
+    const GameLights::Glow lamp = GameLights::parseGlow(Json::parse(R"({"electric": true})"));
     const float brown = avg(lamp, 1, false, 0), broken = avg(lamp, 0.05f, true, 0);
     CHECK(brown > 0.15f && brown < 0.5f);                        // low power: dim and stuttering
     CHECK(broken < 0.8f && broken > 0.2f);                       // badly damaged: sparks out now and then
-    CHECK(RtsLights::glowLevel(lamp, 3.21f, 0.5f, 0.05f, false, 0) == RtsLights::glowLevel(lamp, 3.21f, 0.5f, 0.05f, false, 0));
-    CHECK(RtsLights::parseGlow(Json::parse(R"({"type": "spot"})")).electric);
+    CHECK(GameLights::glowLevel(lamp, 3.21f, 0.5f, 0.05f, false, 0) == GameLights::glowLevel(lamp, 3.21f, 0.5f, 0.05f, false, 0));
+    CHECK(GameLights::parseGlow(Json::parse(R"({"type": "spot"})")).electric);
     // a beacon spot rotates all the way round
-    const RtsLights::Glow beacon = RtsLights::parseGlow(Json::parse(R"({"type": "spot", "pattern": "beacon", "rate": 0.5})"));
+    const GameLights::Glow beacon = GameLights::parseGlow(Json::parse(R"({"type": "spot", "pattern": "beacon", "rate": 0.5})"));
     float minA = 1e9f, maxA = -1e9f;
     for (int i = 0; i < 100; ++i) {
-        const render::PointLight l = RtsLights::glowLight(beacon, {0, 0, 0}, 0, 1, i * 0.02f, 0);
+        const render::PointLight l = GameLights::glowLight(beacon, {0, 0, 0}, 0, 1, i * 0.02f, 0);
         const float a = std::atan2(l.dir.z, l.dir.x) / 0.0174532925f;
         minA = std::min(minA, a); maxA = std::max(maxA, a);
     }
@@ -5541,10 +5541,10 @@ TEST(store_and_ads_through_mock_plugins) {
 
 // ---------------- overlays (data-driven helper elements; overlays agent) ----------------
 #include "engine/platform/Platform.h"
-#include "modules/rts/view/RtsOverlayData.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/GameOverlayData.h"
+#include "engine/view/GameView.h"
 #include "../engine/roads/RoadView.h"
-#include "modules/rts/view/RtsShoreView.h"
+#include "engine/view/GameShoreView.h"
 
 static game::Rules skirmishRules() { return game::loadRules(Json::parseFile(kSkirmish + "/rules.json")); }
 static std::string overlayError(const game::Rules& R, const char* json) {
@@ -5559,7 +5559,7 @@ TEST(overlay_prepared_reload_matches_direct_init) {
         {"id":"health_bars","style":{"thickness":0.1}}])");
     const Json game=Json::parse(R"([{"id":"selection","enabled":true}])");
     const game::OverlaySet prepared=game::loadOverlaySet(R,rules,game);
-    game::RtsOverlays oldPath,stagedPath;
+    game::GameOverlays oldPath,stagedPath;
     oldPath.init(R,rules,game,"");
     stagedPath.initPrepared(R,prepared,"");
     CHECK(oldPath.set().defs.size()==stagedPath.set().defs.size());
@@ -5573,7 +5573,7 @@ TEST(overlay_prepared_reload_matches_direct_init) {
     // The new path must not depend on the original JSON objects after
     // preflight; it holds a complete CPU-side snapshot of overlay rules.
     auto moved=game::loadOverlaySet(R,rules,game);
-    game::RtsOverlays movedPath;
+    game::GameOverlays movedPath;
     movedPath.initPrepared(R,std::move(moved),"");
     CHECK(movedPath.set().defs.size()==oldPath.set().defs.size());
     CHECK(movedPath.outlineSelected()==oldPath.outlineSelected());
@@ -5673,7 +5673,7 @@ TEST(overlay_conditions_on_sim_state) {
     for (int i = 0; i < 20; ++i) sim->step();
     game::GameCore& m = mod(*sim);
     const game::Rules& R = m.rules();
-    game::RtsScene scene;   // like sceneFromSim (RtsView.cpp needs the renderer, not linked here)
+    game::GameScene scene;   // like sceneFromSim (GameView.cpp needs the renderer, not linked here)
     sim->world().each<game::Unit, Owner, Transform>([&](Entity e, game::Unit& u, Owner& ow, Transform& tr) {
         game::SceneObject so;
         so.entity = e; so.type = u.type; so.owner = ow.player;
@@ -5694,7 +5694,7 @@ TEST(overlay_conditions_on_sim_state) {
     if (own < 0 || enemy < 0) return;
     scene.objects[size_t(own)].selected = true;
     scene.objects[size_t(enemy)].visible = true;
-    game::RtsOverlays ov;
+    game::GameOverlays ov;
     Json extra = Json::parse(R"([{"id": "hits", "event": {"on": "hit", "owner": "own"}, "shape": {"type": "text", "text": "-{value}"}},
                                  {"id": "enemyHits", "event": {"on": "hit", "owner": "enemy"}, "shape": {"type": "text", "text": "x"}}])");
     ov.init(R, extra, Json(), "");
@@ -6584,8 +6584,8 @@ TEST(gen_planet_seams) {
     CHECK(gen::mapHash(map) == GEN_GOLD_PLANET);
 }
 
-// ---- planet view (agent-planet-render): float cube-sphere surface of RtsPlanet.h
-#include "modules/rts/view/RtsPlanet.h"
+// ---- planet view (agent-planet-render): float cube-sphere surface of GamePlanet.h
+#include "engine/view/GamePlanet.h"
 TEST(planet_view_surface_seams_and_picking) {
     using namespace aiverse::render;
     aiverse::game::PlanetBody b;
@@ -6959,7 +6959,7 @@ TEST(icons_generate_platform_sets) {
 }
 
 // ---- sprite shadows (RtsSpriteShadow): data keys, tiers, projected decal geometry
-#include "modules/rts/view/RtsSpriteShadow.h"
+#include "engine/view/GameSpriteShadow.h"
 
 TEST(sprite_shadow_data_keys) {
     using game::SpriteShadowMode;
@@ -8613,7 +8613,7 @@ TEST(models_dds_formats) {
 }
 
 // ---- sprite shadows (RtsSpriteShadow): data keys, tiers, projected decal geometry
-#include "modules/rts/view/RtsSpriteShadow.h"
+#include "engine/view/GameSpriteShadow.h"
 
 
 
@@ -9062,7 +9062,7 @@ TEST(orig_faction_only_types) {
 
 TEST(sprite_shadow_lighting_sun_dir_and_softness) {
     const game::Rules rules = game::loadRules(Json::parseFile(kSkirmish + "/rules.json"));
-    game::RtsLights L;
+    game::GameLights L;
     L.init(rules);
     L.configure(Json::parse(R"({"sunDir": [-1.0, 1.2, 0.45], "shadowSoftness": 0.07})"), Json{}, Json{});
     render::Lighting l;
@@ -10112,7 +10112,7 @@ TEST(script_embed_requires) {
     CHECK(game::scriptApiReference().has("actions"));
 }
 
-#include "modules/rts/view/RtsViewScript.h"
+#include "engine/view/GameViewScript.h"
 TEST(script_view_scripts) {
     Json rules = Json::parseFile(kSkirmish + "/rules.json");
     rules.set("viewScripts", Json::parse(R"(["scripts/view/v.lua"])"));
@@ -10159,7 +10159,7 @@ TEST(script_std_sell_refund) {   // lua/commands.lua: same formula as the former
 }
 
 // ---- terrain detail surface (agent-terrain): sub-cell visual heightmap
-#include "modules/rts/view/RtsTerrainDetail.h"
+#include "engine/view/GameTerrainDetail.h"
 
 TEST(terrain_detail_synthesis_is_deterministic_and_keeps_corners) {
     game::MapGrid g;
@@ -10559,7 +10559,7 @@ TEST(script_attack_event_is_visual_only) {
     CHECK(cues==1);
 }
 
-#include "modules/rts/view/RegionSwipe.h"
+#include "engine/view/RegionSwipe.h"
 TEST(region_swipe_commands_and_cancellation) {
     Json rules=Json::parse(R"({"victory":{"mode":"survive","seconds":600},"types":{"base":{"tags":["zone"],"structure":true,"abilities":[{"id":"send","target":"point","range":100,"effects":[]}]}}})");
     Json map=Json::parse(R"({"size":[6,4],"regions":{"rows":["AABBCC","AABBCC","AABBCC","AABBCC"],"names":{"A":"a","B":"b","C":"c"}},"players":[{},{}],"entities":[{"type":"base","owner":1,"pos":[1,1]},{"type":"base","owner":1,"pos":[3,1]},{"type":"base","owner":2,"pos":[5,1]}]})");
@@ -10627,7 +10627,7 @@ TEST(region_shared_anchor_selects_local_owner) {
 }
 
 
-#include "modules/rts/view/ScriptHud.h"
+#include "engine/view/ScriptHud.h"
 TEST(script_hud_player_binding_and_invalid_option) {
     auto sim=makeSimJson(R"({"playerAbilities":[{"id":"choose","target":"none","effects":[]}],"types":{"unit":{"hp":10}}})",
         R"({"size":[4,4],"players":[{},{}]})",3);
@@ -11262,7 +11262,7 @@ TEST(script_grid_sample_segment) {
 }
 
 
-#include "modules/rts/view/EntityActionControls.h"
+#include "engine/view/EntityActionControls.h"
 TEST(entity_action_controls_preserve_source_and_cancel_invalid_drags) {
     auto sim=makeSimJson(R"({"victory":{"mode":"survive","seconds":600},"types":{"base":{"structure":true,"tags":["launcher"],"abilities":[{"id":"launch","target":"point","range":100,"effects":[]}]}}})",
         R"({"size":[8,4],"players":[{},{}],"entities":[{"type":"base","owner":1,"pos":[1,1]},{"type":"base","owner":1,"pos":[3,1]},{"type":"base","owner":2,"pos":[6,1]}]})",3);
@@ -11376,7 +11376,7 @@ TEST(entity_action_fractional_progress_binding) {
     vars["charge_"+suffix]=Fixed::fromInt(-2);controls.refresh(*sim,mod(*sim),1,defs);CHECK(controls.items()[0].progress()==0.f);
 }
 
-#include "modules/rts/view/WorldCounters.h"
+#include "engine/view/WorldCounters.h"
 TEST(world_counter_script_bindings) {
     std::map<std::string,Fixed> vars{{"on",Fixed::fromInt(1)},{"count_7",Fixed::fromInt(12)},
         {"x_7",Fixed::fromRatio(3,2)},{"z_7",Fixed::fromInt(4)},{"visible_7",Fixed::fromInt(1)},
@@ -12056,14 +12056,14 @@ TEST(openwar_player_colors_flat_lighting_view_camera) {
     Json rules = Json::parseFile(kSkirmish + "/rules.json");
     const game::Rules r = game::loadRules(rules);
     {
-        game::RtsLights L; L.init(r);
+        game::GameLights L; L.init(r);
         L.configure(Json::parse(R"({"day": {"sun": [1, 1, 1], "sky": [1, 1, 1], "ground": [1, 1, 1], "sunK": 0}, "fogDensity": 0, "tonemap": false})"), Json{}, Json{});
         render::Lighting l; L.updateSky(l, 0);
         CHECK(l.sunIntensity == 0 && l.skyColor.x == 1 && l.groundColor.z == 1 && l.fogDensity == 0 && !l.tonemap);
         L.configure(Json::parse(R"({"tonemap": false})"), Json::parse(R"({"tonemap": true})"), Json{});
         render::Lighting l2; L.updateSky(l2, 0); CHECK(l2.tonemap);
     }
-    { game::RtsLights L; L.init(r); render::Lighting l; L.updateSky(l, 0); CHECK(l.tonemap && l.fogDensity == render::Lighting{}.fogDensity); }
+    { game::GameLights L; L.init(r); render::Lighting l; L.updateSky(l, 0); CHECK(l.tonemap && l.fogDensity == render::Lighting{}.fogDensity); }
     // view.camera() / view.set_camera{}: read the host camera, request a partial change, reject bad values
     rules.set("viewScripts", Json::parse(R"(["scripts/view/cam.lua"])"));
     Json sources = Json::object(); sources.set("scripts/view/cam.lua", Json::string(R"LUA(
@@ -12369,15 +12369,15 @@ end)
 
 TEST(view_ground_shadow_option) {
     // a type's "groundShadow" (OpenWar footprint sprites): image, size, offset, colour, lift, flips; invalid -> none
-    auto s = game::RtsView::parseGroundShadow(Json::parse(R"({"image": "ui/shadows/Tank.png", "size": [2, 3], "offset": [0, -0.5],
+    auto s = game::GameView::parseGroundShadow(Json::parse(R"({"image": "ui/shadows/Tank.png", "size": [2, 3], "offset": [0, -0.5],
         "color": [0, 0, 0, 0.55], "lift": 0.04, "flip": [true, false]})"));
     CHECK(s.image == "ui/shadows/Tank.png" && s.w == 2 && s.d == 3 && s.ox == 0 && s.oz == -.5f && std::fabs(s.lift - .04f) < 1e-6f);
     CHECK(s.rgba == 0x0000008cu && s.flipU && !s.flipV);
-    auto d = game::RtsView::parseGroundShadow(Json::parse(R"({"image": "a.png", "size": [1.5]})"));
+    auto d = game::GameView::parseGroundShadow(Json::parse(R"({"image": "a.png", "size": [1.5]})"));
     CHECK(d.image == "a.png" && d.w == 1.5f && d.d == 1.5f && d.rgba == 0x0000008cu && std::fabs(d.lift - .05f) < 1e-6f);
-    CHECK(game::RtsView::parseGroundShadow(Json::parse(R"({"image": "a.png", "size": [0, 1]})")).image.empty());
-    CHECK(game::RtsView::parseGroundShadow(Json::parse(R"({"size": [1, 1]})")).image.empty());
-    CHECK(game::RtsView::parseGroundShadow(Json()).image.empty());
+    CHECK(game::GameView::parseGroundShadow(Json::parse(R"({"image": "a.png", "size": [0, 1]})")).image.empty());
+    CHECK(game::GameView::parseGroundShadow(Json::parse(R"({"size": [1, 1]})")).image.empty());
+    CHECK(game::GameView::parseGroundShadow(Json()).image.empty());
 }
 
 
@@ -12594,14 +12594,14 @@ TEST(rts_view_commits_visual_epoch_only_after_primary_and_invalidates_on_map_edi
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsView view;
+    game::GameView view;
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;
     grid.init(4,4);
     for(auto& flags:grid.flags)flags=game::kCellGround;
-    game::RtsScene scene;
+    game::GameScene scene;
     render::Camera camera;
     camera.target={2,0,2};
     camera.distance=18;
@@ -12638,7 +12638,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
         }
     } dev;
     render::Renderer3D renderer;CHECK(renderer.init(dev));
-    game::RtsView view;game::Rules rules=skirmishRules();
+    game::GameView view;game::Rules rules=skirmishRules();
     CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
     view.overlays().init(rules,Json::parse(R"([{"id":"fault-ring","anchor":"selected","shape":{"type":"ring","radius":1},"style":{"onTop":true,"thickness":0.1}}])"),Json(),"");
     game::MapGrid grid;grid.init(4,4);
@@ -12649,7 +12649,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     render::Camera camera;camera.target={2,0,2};camera.distance=18;camera.pitch=1;
     render::CameraModelSnapshot snapshot;
     view.setCameraPreparedCapture(&snapshot);
-    game::RtsScene scene;
+    game::GameScene scene;
     renderer.beginScene(camera,320,240);
     view.draw(renderer,scene,1,&initialVisibility,grid);
     const auto first=view.publishedVisualFrame();CHECK(first.ready());
@@ -12877,15 +12877,15 @@ TEST(lens_stage47_groundfx_late_owner_rejection_preserves_published_frame) {
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
-    game::RtsGroundFx fx;
+    game::GameGroundFx fx;
     fx.init(dev,rules,missing,"");
     game::MapGrid grid;grid.init(65,4);
     for(auto& flag:grid.flags)flag=game::kCellGround;
     grid.flags[size_t(grid.index(1,1))]|=game::kCellRoad;
     grid.flags[size_t(grid.index(40,1))]|=game::kCellRoad;
-    game::RtsScene scene;
+    game::GameScene scene;
     render::Camera cam;cam.target={32,0,2};
     cam.distance=150;cam.pitch=1.1f;
     renderer.beginScene(cam,1280,720);
@@ -12898,15 +12898,15 @@ TEST(lens_stage47_groundfx_late_owner_rejection_preserves_published_frame) {
     const auto previousRetire=fx.pendingMeshGpuRetirements();
     renderer.beginScene(cam,1280,720);
     struct GroundParticipant final: render::OwnerPrepareCommit::Participant {
-        game::RtsGroundFx& owner;
+        game::GameGroundFx& owner;
         render::Renderer3D& renderer;
-        const game::RtsScene& scene;
+        const game::GameScene& scene;
         const game::MapGrid& grid;
-        const game::RtsView& view;
-        std::shared_ptr<game::RtsGroundFx::PreparedFrame> pending;
-        GroundParticipant(game::RtsGroundFx& f,render::Renderer3D& r,
-                          const game::RtsScene& s,const game::MapGrid& g,
-                          const game::RtsView& v)
+        const game::GameView& view;
+        std::shared_ptr<game::GameGroundFx::PreparedFrame> pending;
+        GroundParticipant(game::GameGroundFx& f,render::Renderer3D& r,
+                          const game::GameScene& s,const game::MapGrid& g,
+                          const game::GameView& v)
             :owner(f),renderer(r),scene(s),grid(g),view(v){}
         void prepare() override {
             pending=owner.prepareFrame(renderer,scene,1.0,nullptr,grid,view);
@@ -12959,12 +12959,12 @@ TEST(lens_stage47_groundfx_resize_candidate_discard_keeps_old_gpu_meshes) {
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsView view;CHECK(view.init(dev,rules,missing));
-    game::RtsGroundFx fx;fx.init(dev,rules,missing,"");
+    game::GameView view;CHECK(view.init(dev,rules,missing));
+    game::GameGroundFx fx;fx.init(dev,rules,missing,"");
     game::MapGrid old;old.init(65,4);
     for(auto& flag:old.flags)flag=game::kCellGround;
     old.flags[size_t(old.index(1,1))]|=game::kCellRoad;
-    game::RtsScene scene;
+    game::GameScene scene;
     render::Camera cam;cam.target={24,0,2};
     cam.distance=150;cam.pitch=1.1f;
     renderer.beginScene(cam,1280,720);
@@ -13003,12 +13003,12 @@ TEST(lens_stage47_groundfx_draw_prepared_never_allocates_material_textures) {
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsView view;CHECK(view.init(dev,rules,missing));
-    game::RtsGroundFx fx;fx.init(dev,rules,missing,"");
+    game::GameView view;CHECK(view.init(dev,rules,missing));
+    game::GameGroundFx fx;fx.init(dev,rules,missing,"");
     game::MapGrid grid;grid.init(6,5);
     for(auto& flag:grid.flags)flag=game::kCellGround;
     grid.flags[size_t(grid.index(2,2))]|=game::kCellRoad;
-    game::RtsScene scene;
+    game::GameScene scene;
     render::Camera cam;cam.target={3,0,2};
     cam.distance=50;cam.pitch=1.0f;
     renderer.beginScene(cam,800,600);
@@ -13034,16 +13034,16 @@ TEST(groundfx_visible_road_chunks_commit_together_or_rollback_on_late_upload_fai
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
-    game::RtsGroundFx fx;
+    game::GameGroundFx fx;
     fx.init(dev,rules,missing,"");
     game::MapGrid grid;
     grid.init(65,4);
     for(auto& flag:grid.flags)flag=game::kCellGround;
     grid.flags[size_t(grid.index(1,1))] |= game::kCellRoad;
     grid.flags[size_t(grid.index(40,1))] |= game::kCellRoad;
-    game::RtsScene scene;
+    game::GameScene scene;
     scene.viewer=0;
     render::Camera cam;
     cam.target={32,0,2};
@@ -13236,7 +13236,7 @@ TEST(road_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
 
 TEST(shore_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
     fogfaulttest::Device dev;
-    game::RtsShoreView shores;
+    game::GameShoreView shores;
     dev.failTexture=2;
     bool failed=false;
     try {shores.init(dev,Json(),{});}
@@ -13259,7 +13259,7 @@ TEST(shore_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
 
 TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
     roads::RoadView roads,stagedRoads;
-    game::RtsShoreView shores,stagedShores;
+    game::GameShoreView shores,stagedShores;
     roads.setWeather(0.7f,0.35f);
     const Json map=Json::parse(R"({"roadNetwork":{"replaces":["city_road"]},
         "waterNetwork":{}})");
@@ -13283,7 +13283,7 @@ TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
 TEST(overlays_gpu_init_is_atomic_and_retryable) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
-    game::RtsOverlays overlays;
+    game::GameOverlays overlays;
     overlays.init(rules,Json(),Json(),"");
     dev.failShader=1;
     bool failed=false;
@@ -13830,7 +13830,7 @@ TEST(terrain_gpu_kit_staging_recovers_from_allocation_and_idle_failure) {
 TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
-    game::RtsGroundFx fx;
+    game::GameGroundFx fx;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     dev.failPipeline=1;
     bool failed=false;
@@ -13944,7 +13944,7 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     CHECK(renderer.init(dev));
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads::RoadView roads;
-    game::RtsShoreView shores;
+    game::GameShoreView shores;
     view::VisibilityField fog;
     roads.init(dev,Json(),missing);
     shores.init(dev,Json(),missing);
@@ -14004,10 +14004,10 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
         void rollback() noexcept override {pending.reset();}
     } roadPart(roads,dev,height);
     struct ShorePart final: render::OwnerPrepareCommit::Participant {
-        game::RtsShoreView& shore;gfx::Device& dev;
+        game::GameShoreView& shore;gfx::Device& dev;
         const std::function<float(float,float)>& ground;
-        std::shared_ptr<game::RtsShoreView::PreparedRebuild> pending;
-        ShorePart(game::RtsShoreView& s,gfx::Device& d,
+        std::shared_ptr<game::GameShoreView::PreparedRebuild> pending;
+        ShorePart(game::GameShoreView& s,gfx::Device& d,
                   const std::function<float(float,float)>& h)
             :shore(s),dev(d),ground(h){}
         void prepare() override {
@@ -14141,12 +14141,12 @@ TEST(lens_stage48b3b2_resized_map_prewarms_all_five_owners) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid oldMap;oldMap.init(6,5);
     for(auto& flag:oldMap.flags)flag=game::kCellGround;
     view.buildTerrain(dev,oldMap);
-    game::RtsScene scene;
+    game::GameScene scene;
     render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     std::vector<uint8_t> oldVisibility(
@@ -14185,12 +14185,12 @@ TEST(lens_stage48b3b2_unpublished_map_lease_consumes_with_primary) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(8,6);
     for(auto& flag:grid.flags)flag=game::kCellGround|game::kCellRoad;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     const std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
@@ -14236,12 +14236,12 @@ TEST(lens_stage48b3b2_stale_map_lease_discards_and_rebuilds) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(8,6);
     for(auto& flag:grid.flags)flag=game::kCellGround;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
@@ -14278,7 +14278,7 @@ TEST(lens_stage48b3b2_failed_prewarm_preserves_live_map) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(8,6);
     for(auto& flag:grid.flags)flag=game::kCellGround;
@@ -14287,7 +14287,7 @@ TEST(lens_stage48b3b2_failed_prewarm_preserves_live_map) {
     const auto oldRoad=view.roads().surfaceGeneration();
     const auto oldRetirement=view.pendingModelRetirements();
     grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
-    game::RtsScene scene;
+    game::GameScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
@@ -14319,7 +14319,7 @@ TEST(lens_stage48b3b2_failed_prewarm_preserves_live_map) {
 TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
     struct InspectingDevice final : fogfaulttest::Device {
         bool inspecting=false,failGround=false,sawGround=false;
-        game::RtsScene* mutateScene=nullptr;
+        game::GameScene* mutateScene=nullptr;
         gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
             if(inspecting && desc.type==gfx::BufferType::Vertex &&
                desc.data && desc.size>=3*sizeof(render::MeshVertex) &&
@@ -14354,13 +14354,13 @@ TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(8,6);
     for(auto& flag:grid.flags)
         flag=game::kCellGround|game::kCellRoad;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
@@ -14443,7 +14443,7 @@ TEST(lens_stage48b3b0_topology_discards_mid_prepare_editor_mutation) {
     const render::FileReader missing=[](const std::string&,std::string&) {
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(8,6);
     for(auto& flag:grid.flags)flag=game::kCellGround;
@@ -14484,7 +14484,7 @@ TEST(lens_stage48b3a1_unbuilt_terrain_uses_rules_level_height) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(3,3);
     for(auto& flag:grid.flags)flag=game::kCellGround;
@@ -14534,12 +14534,12 @@ TEST(lens_stage48b3a_opt_in_atomic_sculpt_keeps_sync_editor_contract) {
     CHECK(renderer.init(dev));
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(12,9);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
@@ -14580,7 +14580,7 @@ TEST(lens_stage48b3a_atomic_same_size_map_before_first_camera_uses_r8_baseline) 
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(4,4);
     for(auto& f:grid.flags)f=game::kCellGround;
@@ -14601,13 +14601,13 @@ TEST(lens_stage48b2b_unpublished_scene_lease_is_consumed_once) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(12,9);
     for(auto& f:grid.flags)f=game::kCellGround;
     grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),0);
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
@@ -14640,12 +14640,12 @@ TEST(lens_immediate_surface_publication_avoids_retained_source_snapshots) {
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
     auto rules=skirmishRules();
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
     game::MapGrid grid;grid.init(12,9);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;std::vector<uint8_t> vision(size_t(grid.w)*grid.h,2);
+    game::GameScene scene;std::vector<uint8_t> vision(size_t(grid.w)*grid.h,2);
     render::Camera camera;camera.target={6,0,4};camera.distance=35;camera.pitch=1.f;
     for(int frame=1;frame<=3;++frame) {
         renderer.beginScene(camera,640,480);
@@ -14679,12 +14679,12 @@ TEST(lens_stage48b2b_stale_visibility_map_or_camera_discards_private_lease) {
     const render::FileReader missing=[](const std::string&,std::string&){
         return false;
     };
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(12,9);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),0);
     render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
@@ -14732,12 +14732,12 @@ TEST(lens_stage48b2a_scene_prewarm_invalidates_secondary_epoch_until_primary) {
     CHECK(renderer.init(dev));
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::Rules rules=skirmishRules();
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(12,9);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
@@ -14771,12 +14771,12 @@ TEST(lens_stage48b2a_late_fog_failure_rolls_back_scene_prewarm) {
     CHECK(renderer.init(dev));
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::Rules rules=skirmishRules();
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(12,9);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     std::vector<uint8_t> unseen(size_t(grid.w)*size_t(grid.h),0);
     std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
@@ -14820,8 +14820,8 @@ TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::TerrainRenderer terrain;
     roads::RoadView roads;
-    game::RtsShoreView shores;
-    game::RtsGroundFx groundFx;
+    game::GameShoreView shores;
+    game::GameGroundFx groundFx;
     view::VisibilityField fog;
     terrain.init(dev,rules,missing,"");
     roads.init(dev,Json(),missing);
@@ -14851,8 +14851,8 @@ TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     const std::vector<uint8_t> unexplored(size_t(next.w)*size_t(next.h),0);
     std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
     std::shared_ptr<roads::RoadView::PreparedRebuild> roadPending;
-    std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
-    std::shared_ptr<game::RtsGroundFx::PreparedFrame> groundPending;
+    std::shared_ptr<game::GameShoreView::PreparedRebuild> shorePending;
+    std::shared_ptr<game::GameGroundFx::PreparedFrame> groundPending;
     std::unique_ptr<view::VisibilityField::PreparedSheet> sheetPending;
     std::unique_ptr<view::VisibilityField::PreparedUpdate> fieldPending;
     const std::function<float(float,float)> nextHeight=
@@ -14963,7 +14963,7 @@ TEST(lens_stage48b1_editor_map_build_prepares_fog_and_groundfx_before_camera) {
     CHECK(renderer.init(dev));
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid oldMap;oldMap.init(6,4);
     for(auto& f:oldMap.flags)f=game::kCellGround;
@@ -14975,7 +14975,7 @@ TEST(lens_stage48b1_editor_map_build_prepares_fog_and_groundfx_before_camera) {
     CHECK(view.surfacePresentationMapReady(next));
     CHECK(!view.publishedVisualFrame().ready()); // old RT frames invalidated
     const std::vector<uint8_t> visible(size_t(next.w)*size_t(next.h),2);
-    game::RtsScene scene;
+    game::GameScene scene;
     render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
@@ -14995,7 +14995,7 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     game::Rules rules=skirmishRules();
     game::TerrainRenderer terrain;
     roads::RoadView roads;
-    game::RtsShoreView shores;
+    game::GameShoreView shores;
     terrain.init(dev,rules,missing,"");
     roads.init(dev,Json(),missing);
     shores.init(dev,Json(),missing);
@@ -15030,7 +15030,7 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
     std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
     std::shared_ptr<roads::RoadView::PreparedRebuild> roadPending;
-    std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
+    std::shared_ptr<game::GameShoreView::PreparedRebuild> shorePending;
     const std::function<float(float,float)> nextGround=
         [&](float x,float z){return terrain.preparedSurfaceAt(mapPending,next,x,z);};
     struct Part final:render::OwnerPrepareCommit::Participant {
@@ -15100,7 +15100,7 @@ TEST(lens_stage48a_rts_view_build_terrain_publishes_new_topology_cohort) {
     CHECK(renderer.init(dev));
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid previous;previous.init(8,6);
     for(auto& f:previous.flags)f=game::kCellGround;
@@ -15547,7 +15547,7 @@ TEST(shoreline_staged_rebuild_preserves_published_banks_on_gpu_failure) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsShoreView shore;
+    game::GameShoreView shore;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     shore.init(dev,Json(),missing);
     const Json map=Json::parse(R"JSON({
@@ -15720,7 +15720,7 @@ TEST(view_reload_checks_gpu_idle_before_mutating_overlay_and_fog_state) {
         }
     } dev,foreign;
     game::Rules rules=skirmishRules();
-    game::RtsView view;
+    game::GameView view;
     const render::FileReader noAssets=[](const std::string&,std::string&){return false;};
     CHECK(view.init(dev,rules,noAssets));
     const auto overlaysBefore=view.overlays().set().defs.size();
@@ -15764,7 +15764,7 @@ TEST(selection_outline_mask_pipeline_preserves_scene_depth) {
 }
 
 TEST(view_entity_fx_renders_scaled_translucent) {
-    // RtsView applies view.entity_fx: the model matrix is scaled about the object's ground point, opacity < 1 moves
+    // GameView applies view.entity_fx: the model matrix is scaled about the object's ground point, opacity < 1 moves
     // the object to the blended pass (back to front, still writing depth: kDrawFadeDepth) with tint.w = opacity, the team glow lands in
     // the instance block (draw.w), opacity 0 draws nothing; objects without values are drawn exactly as before
     using namespace entityfxtest;
@@ -15773,8 +15773,8 @@ TEST(view_entity_fx_renders_scaled_translucent) {
     const game::Rules& R = mod(sim).rules();
     RecordingDevice dev;
     render::Renderer3D r3d; CHECK(r3d.init(dev));
-    game::RtsView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
-    game::RtsScene scene; game::sceneFromSim(sim, scene, 1, 0);
+    game::GameView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
+    game::GameScene scene; game::sceneFromSim(sim, scene, 1, 0);
     // one unit alone in the scene, looked at from above
     game::SceneObject unit;
     for (auto& o : scene.objects) if (!o.isProjectile && !R.types[o.type].structure) { unit = o; break; }
@@ -15844,7 +15844,7 @@ TEST(view_transparent_model_option) {
     Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
     Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::SceneObject unit;
-    game::RtsScene scene; game::sceneFromSim(sim, scene, 1, 0);
+    game::GameScene scene; game::sceneFromSim(sim, scene, 1, 0);
     const game::Rules& R0 = mod(sim).rules();
     for (auto& o : scene.objects) if (!o.isProjectile && !R0.types[o.type].structure) { unit = o; break; }
     CHECK(unit.entity.valid());
@@ -15856,7 +15856,7 @@ TEST(view_transparent_model_option) {
         RecordingDevice dev;
         render::Renderer3D r3d; CHECK(r3d.init(dev));
         r3d.setShadowQuality(render::ShadowQuality::Low);
-        game::RtsView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
+        game::GameView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
         render::Camera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f; cam.ortho = true;
         r3d.beginScene(cam, 640, 480);
         view.draw(r3d, scene, 0, nullptr, mod(sim).state(sim).grid);
@@ -15895,14 +15895,14 @@ TEST(view_entity_fx_ground_shadow) {
     Simulation sim(SimConfig{}, std::make_unique<game::GameCore>()); sim.setup(rules, map);
     game::Rules R = mod(sim).rules();
     game::SceneObject unit;
-    game::RtsScene scene; game::sceneFromSim(sim, scene, 1, 0);
+    game::GameScene scene; game::sceneFromSim(sim, scene, 1, 0);
     for (auto& o : scene.objects) if (!o.isProjectile && !R.types[o.type].structure) { unit = o; break; }
     CHECK(unit.entity.valid());
     if (!unit.entity.valid()) return;
     R.types[unit.type].view.set("groundShadow", Json::parse(R"({"image": "ui/shadows/x.png", "size": [2, 4], "color": [0, 0, 0, 0.5]})"));
     RecordingDevice dev;
     render::Renderer3D r3d; CHECK(r3d.init(dev));
-    game::RtsView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
+    game::GameView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
     scene.objects = {unit};
     render::Camera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
     auto quad = [&](double t) {
@@ -15937,9 +15937,9 @@ TEST(view_entity_fx_ground_shadow) {
 TEST(view_corpse_fade_option) {
     // "corpseFade": seconds a corpse fades out at the end of "corpse" (default .6); 0 = drawn whole until removed
     // (OpenWar riflemen: ArmyInfantryVisual keeps the dying model opaque for DeathDuration)
-    using game::RtsView;
-    CHECK(RtsView::corpseAlpha(.7f, .6f, 0) == 1 && std::fabs(RtsView::corpseAlpha(.7f, .6f, .4f) - .5f) < 1e-5f && RtsView::corpseAlpha(.7f, .6f, .7f) == 0);
-    CHECK(RtsView::corpseAlpha(.7f, 0, 0) == 1 && RtsView::corpseAlpha(.7f, 0, .69f) == 1);
+    using game::GameView;
+    CHECK(GameView::corpseAlpha(.7f, .6f, 0) == 1 && std::fabs(GameView::corpseAlpha(.7f, .6f, .4f) - .5f) < 1e-5f && GameView::corpseAlpha(.7f, .6f, .7f) == 0);
+    CHECK(GameView::corpseAlpha(.7f, 0, 0) == 1 && GameView::corpseAlpha(.7f, 0, .69f) == 1);
 }
 TEST(view_paint_layer_ground_options) {
     // categorical ground surface (OpenWar ArmyMapWorld meadow / coast): options land in the layer, bad ones fail, view-only
@@ -16478,13 +16478,13 @@ TEST(lens_topology_frame_uploads_once_and_keeps_live_state_on_failure) {
     CHECK(renderer.init(dev));
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsView view;
+    game::GameView view;
     CHECK(view.init(dev,rules,missing));
     game::MapGrid grid;grid.init(8,6);
     for(auto& flag:grid.flags)flag=game::kCellGround;
     grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),0);
     view.buildTerrain(dev,grid);
-    game::RtsScene scene;
+    game::GameScene scene;
     std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),2);
     render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
@@ -17699,7 +17699,7 @@ TEST(mech_dungeon_fliers_follow_tunnels) {
 }
 
 TEST(view_entity_fx_pitch_roll) {
-    // view.entity_fx pitch / roll (degrees): the script API stores and returns them; RtsView tilts the model in its
+    // view.entity_fx pitch / roll (degrees): the script API stores and returns them; GameView tilts the model in its
     // faced frame (world rotation = rotateY(yaw) * rotateZ(-pitch) * rotateX(-roll) * rotateY(-yaw) on top of the
     // plain matrix): pitch 90 turns the facing straight down, the column lengths (scale) stay
     using namespace entityfxtest;
@@ -17733,8 +17733,8 @@ view.entity_fx(a, {pitch = 0, roll = 0, time = 1}); assert(view.entity_fx(a).pit
     const game::Rules& R = mod(sim).rules();
     RecordingDevice dev;
     render::Renderer3D r3d; CHECK(r3d.init(dev));
-    game::RtsView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
-    game::RtsScene scene; game::sceneFromSim(sim, scene, 1, 0);
+    game::GameView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
+    game::GameScene scene; game::sceneFromSim(sim, scene, 1, 0);
     game::SceneObject unit;
     for (auto& o : scene.objects) if (!o.isProjectile && !R.types[o.type].structure) { unit = o; break; }
     CHECK(unit.entity.valid());

@@ -119,7 +119,7 @@ and record actual build/CTest results in `docs/nereid/HANDOFF.md`.
 ## Stage 5 — legacy waterNetwork / tile-map importer (experimental)
 
 For **existing** RTS/editor water, read
-`modules/rts/view/NereidLegacyWaterAdapter.h` and
+`engine/view/NereidLegacyWaterAdapter.h` and
 `docs/nereid/ARCHITECTURE.md`.
 
 Do not import control points directly: old `waterNetwork` uses

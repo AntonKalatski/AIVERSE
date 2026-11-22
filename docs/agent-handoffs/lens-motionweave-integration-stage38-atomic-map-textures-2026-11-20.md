@@ -3,7 +3,7 @@
 ## Repository and exact commits
 - Repository: chromealex/AIVERSE, branch: feature/lens-motionweave-integration. main remains untouched.
 - b97e29ebe4af6d6c809060924859add370ab85fe — engine/render/NativePresentationRetirement.h: generic ordered retirement for gfx::TextureHandle.
-- ea61f79481f36f15079365723c4484b5887b92e1 — modules/rts/view/RtsTerrainRender.cpp: stage four map textures in full-map transaction, add rollback on partial GPU allocation and data upload failures.
+- ea61f79481f36f15079365723c4484b5887b92e1 — engine/view/GameTerrainRender.cpp: stage four map textures in full-map transaction, add rollback on partial GPU allocation and data upload failures.
 - fe50b057ee2d7c5cb665263d137c7c49de01e178 — tests/tests.cpp: inject texture allocation and upload failures.
 - Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage37-atomic-map-mesh-2026-11-20.md.
 
@@ -26,13 +26,13 @@
 - Existing tests using fogfaulttest::Device default to no injected upload failure.
 
 ## Validation actually performed
-- Inspected NativePresentationRetirement, Gfx Device::updateTexture signature, RtsTerrainRender.cpp, existing fake RHI and Stage 37.
+- Inspected NativePresentationRetirement, Gfx Device::updateTexture signature, GameTerrainRender.cpp, existing fake RHI and Stage 37.
 - Created source and test commits in GitHub branch.
 - NOT RUN: CMake configure, full native compile, aiverse_tests, CTest, real Metal/Vulkan/GLES builds, GPU execution, pixel parity and performance. Do not claim these passed.
 
 ## Risks / limitations
 1. The new full-map staging transaction applies to NON-DETAIL terrain. Detail terrain reconstruction still publishes CPU detail heights/LOD/normal/splat state incrementally.
-2. Initial/lazy material TextureCache::resolve and shader/pipeline creation are still outside the all-or-nothing full-map publication. Full RtsView reload across different owners also remains separate.
+2. Initial/lazy material TextureCache::resolve and shader/pipeline creation are still outside the all-or-nothing full-map publication. Full GameView reload across different owners also remains separate.
 3. Existing same-sized non-detail incremental edits may update cell/splat GPU textures after some chunk meshes have published; grouped incremental frame-atomicity is not achieved.
 4. updateCellTextures now stages GPU allocation before swapping on size changes, but in the non-staged detail path an exception from an actual updateTexture call after allocation can still leave partially published GPU contents.
 5. NativePresentationRetirement is now generalized to textures but the legacy TerrainRenderer public diagnostic is still named pendingMeshGpuRetirements, and now counts textures too. Preserve compatibility until coordinated API rename.

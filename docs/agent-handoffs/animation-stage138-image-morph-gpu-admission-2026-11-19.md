@@ -23,7 +23,7 @@ The user explicitly requested **complete all remaining features first, then run 
    - `uploadModel` now rejects a dimensioned image lacking a valid `gfx::TextureHandle` after either **shared texture cache** or **speculative dedicated texture** upload. Previously only speculative (`publishSharedTextures=false`) images were checked, so regular Model publication could succeed with a missing GPU image.
    - When morph deltas need an RGBA32F texture, a failed `dev.createTexture` now makes `uploadModel` return false. CPU `Primitive::morphDeltas` remain intact on failure; morph CPU deltas are cleared **only after** a valid `m.morphTex` exists.
    - `ModelTextureCache::upload` now preallocates the shared lease and GPU owner `std::map` node **before** calling `uploadImage`. This avoids CPU allocation failures *after* GPU texture creation that could have abandoned a live handle in a local Image. If the GPU upload creates no texture, the empty map node is removed and the original Image remains unpublished.
-2. `46a050552f0a49f604c6745976c0c09fcf5de4f4` — `modules/rts/view/RtsLook.cpp`:
+2. `46a050552f0a49f604c6745976c0c09fcf5de4f4` — `engine/view/GameLook.cpp`:
    - Synchronous RTS Model loading now checks `uploadModel` result and rejects a partial GPU upload.
    - Any exception after a Model has been constructed (including a partially created GPU geometry/image/morph allocation) transfers the scratch Model to `resources_.retireUnpublished(dev,m)` rather than calling `m.reset()` while the GPU may still reference its handles.
    - Retains the legacy null-Model failed-load tombstone path for safe RTS fallback, without publishing broken geometry.
@@ -56,6 +56,6 @@ No public MotionWeave graph signature, ECS authority, CPU worker policy, source 
 
 - **Direct native Model upload callers** outside generic `ModelResourceCache::publishPrepared` and RTS sync path: audit remaining `uploadModel` calls in road/shore/preview/editor/modelview/geometry/runtime modules for ignored boolean results and direct destruction of partially uploaded Models. Coordinate with the owning terrain/geometry/graphics agents before editing their overlapping paths, and use host-owned deferred retirement. Do not force this animation branch over peer work.
 - Preserve texture/RHI feature ownership: real image/morph partial-failure injection and visual parity only in the final user-approved test pass, after feature closure.
-- Complete outstanding generic View migration / legacy RtsView presentation adapters and native FPS/RTS/editor animation continuity, retargeting and lifetime contracts as documented in Stage 137's feature-closure gate.
+- Complete outstanding generic View migration / legacy GameView presentation adapters and native FPS/RTS/editor animation continuity, retargeting and lifetime contracts as documented in Stage 137's feature-closure gate.
 - Resolve current main and PR-base divergence only in a separate reviewed integration worktree, **not** by rebasing shared animation branch or unreviewed merge.
 - Next Stage 139: choose the next specific unimplemented host feature, make bounded source changes, document exact commits, API, risks and feature-freeze status in a new handoff. **Do not run tests until feature freeze.**

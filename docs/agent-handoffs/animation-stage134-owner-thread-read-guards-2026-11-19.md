@@ -29,16 +29,16 @@ Previous: [Stage 133](animation-stage133-model-cache-callback-reentrancy-2026-11
 
 ## Host-side audit actually done
 
-- Reviewed `modules/rts/view/RtsLook.cpp`, `RtsView.cpp`, `RtsViewDraw.cpp`, `apps/client/GameClient.cpp`, `apps/editor/ClientHost.cpp`, `engine/render/ModelResourceCache.h`, `ModelReadLease.h`, and the existing `tests/render/device_epoch.cpp` via the connected GitHub repository.
+- Reviewed `engine/view/GameLook.cpp`, `GameView.cpp`, `GameViewDraw.cpp`, `apps/client/GameClient.cpp`, `apps/editor/ClientHost.cpp`, `engine/render/ModelResourceCache.h`, `ModelReadLease.h`, and the existing `tests/render/device_epoch.cpp` via the connected GitHub repository.
 - RTS `trimUnused` release callback currently only clears `animationCache_.erase(model)`; no direct nested `ModelResourceCache` write was observed.
 - RTS `reloadModelSources` detach callback assembles affected type/source sets, forgets generic View sources, clears animation/streaming choices, and invalidates TypeLooks. It does NOT call `resources_.insertIfAbsent`, `publishStagedModels`, `replace`, `trimUnused` or `invalidateSources` within the callback. Rebuild `loadType` occurs after `resources_.invalidateSources` returns; no deferred mutation queue is required for these audited callbacks.
-- RTS `RtsView::draw` performs synchronous `loadType` before its `ModelCacheReadScope`, then holds the scope across animation graph evaluation and synchronous renderer submission; host-owned GPU retirement remains separate.
+- RTS `GameView::draw` performs synchronous `loadType` before its `ModelCacheReadScope`, then holds the scope across animation graph evaluation and synchronous renderer submission; host-owned GPU retirement remains separate.
 - In `reloadAppearanceTypes`, staged Model publication happens before the host swaps its authored TypeLooks; it is not nested inside a Model cache detach callback.
 - This is a **targeted source audit**, not a proof that every downstream callback or external module obeys the thread contract.
 
 ## Parallel-main integration audit
 
-Connected GitHub commit comparisons showed current `main` has 305 commits absent from this branch, with changed files including `engine/render/Model.cpp`, `Model.h`, `Renderer3D.cpp`, `Renderer3DModels.cpp`, `GlobalGeometryPool.*`, `engine/gfx/Gfx.h`, Metal/Vulkan backends, `modules/rts/view/RtsViewDraw.cpp`, editor Scene Window, and numerous batching policies/tests. No `ModelResourceCache.h` or `tests/render/device_epoch.cpp` change appeared in the current main-only compare.
+Connected GitHub commit comparisons showed current `main` has 305 commits absent from this branch, with changed files including `engine/render/Model.cpp`, `Model.h`, `Renderer3D.cpp`, `Renderer3DModels.cpp`, `GlobalGeometryPool.*`, `engine/gfx/Gfx.h`, Metal/Vulkan backends, `engine/view/GameViewDraw.cpp`, editor Scene Window, and numerous batching policies/tests. No `ModelResourceCache.h` or `tests/render/device_epoch.cpp` change appeared in the current main-only compare.
 The separately divergent PR base adds editor/VFX and gfx changes, also requiring coordinated integration. **No merge was attempted**: preserve other agents' concurrent work; audit both bases in an isolated worktree with actual compilation and visual parity before selecting a merge strategy.
 
 ## Tests performed vs not performed
@@ -73,5 +73,5 @@ Then inspect native fatal-subprocess behavior, C++ warnings and graphics snapsho
 1. Run native compilation/CTest on a real Mac checkout; fix any warning/error in Stage 132–134 code. Upload actual logs in its own handoff.
 2. Continue auditing less-common indirect Model cache access through callback visitors and async appearance reload paths. Any nested host mutation should execute only after the enclosing cache transaction has returned.
 3. Review divergence in a throwaway integration worktree (main-only Model/Renderer/Metal and PR-base editor/VFX changes); coordinate with other branch owners before merging into the shared feature.
-4. Complete remaining universal View/legacy RtsView migration, verify animation LOD/model publication continuity and GPU/CPU performance before changing PR state.
+4. Complete remaining universal View/legacy GameView migration, verify animation LOD/model publication continuity and GPU/CPU performance before changing PR state.
 5. Update `AGENTS.md`, `docs/animation-graphs.md`, and the append-only universal animation journal with actual state, exact commits and a separate Stage 135 handoff.

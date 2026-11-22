@@ -959,7 +959,7 @@ readiness is claimed. See `docs/handoffs/prisma-stage-30.md`.
 Stage 30 introduced the generic `Renderer3D::addMotionReactiveDraw()`
 producer interface. Stage 31 connects **existing runtime producers**:
 
-- **RTS terrain water and generic mesh translucency:** `RtsTerrainRender.cpp`
+- **RTS terrain water and generic mesh translucency:** `GameTerrainRender.cpp`
   queues water with `Renderer3D::drawMesh(water_, ..., waterColor)`.
   `Renderer3D::renderObjectMotionVectors` now picks up the real
   translucent `DrawItem` mesh buffers (including those water sheets).
@@ -2495,7 +2495,7 @@ handle is counted once through `GpuOwnedMemoryCounter`.
 `ModelTextureCache::appendOwnedGpuMemory(counter)` adds its cached
 PBR/material texture handles **as the actual owner**, never through
 a borrowed `Model::Image` reference.
-`RtsView::ownedModelGpuMemoryStats(device)` enumerates each unique
+`GameView::ownedModelGpuMemoryStats(device)` enumerates each unique
 cached `Model` plus the shared model texture cache, without
 multiplying allocations by the number of visible entities or
 material references. Shared `GlobalGeometryPool` pages remain
@@ -2515,7 +2515,7 @@ accepts a single lower-bound total for **unique** external
 presentation model/material/FX sprite owners. Editor Scene/Game
 combine `view_.ownedModelGpuMemoryStats` with the independent
 `fxTextures_.ownedGpuMemoryStats()` using saturated arithmetic.
-Native GameClient submits its RtsView model/material inventory.
+Native GameClient submits its GameView model/material inventory.
 `setExternalRendererGpuMemory` and
 `setExternalGeometryPoolGpuMemory` remain separate. The
 `temporalResolve.maxPrismaMemoryMiB` authored key is unchanged,
@@ -2605,7 +2605,7 @@ by terrain shaders are aliases of those cache-owned handles and
 are not counted separately. `PlanetRenderer::ownedGpuMemoryStats()`
 similarly counts the planet chunks, per-body visibility and detail
 atlases, globe/atmosphere meshes, placeholders and its distinct
-material texture cache. `RtsView::ownedPresentationGpuMemoryStats`
+material texture cache. `GameView::ownedPresentationGpuMemoryStats`
 combines the unique Model/ModelTextureCache inventory from Stage 49
 with terrain and planets, **including allocations that remain live
 while the presentation is temporarily hidden**. This is an owner
@@ -2694,21 +2694,21 @@ legacy temporal wrapper integration.
 `SpriteBatch::ownedGpuMemoryStats` reports owned VB/IB/caster buffers,
 *not* its caller-owned static SpriteMesh or borrowed texture handles.
 `FogOfWar` reports its private sheet geometry and texture.
-`RtsFieldView` counts field geometry and per-field texture outputs;
-`RtsOverlays` counts overlay buffer, owned white fallback and the
-overlay-private TextureCache; `RtsGroundFx` counts live ground
+`GameFieldView` counts field geometry and per-field texture outputs;
+`GameOverlays` counts overlay buffer, owned white fallback and the
+overlay-private TextureCache; `GameGroundFx` counts live ground
 layer meshes/lane mesh, white fallback and its private texture cache.
 `Rts2DView` counts its tile mesh, owned SpriteBatch buffers and
 sprite texture cache. Road and Shore owners enumerate unique model
 VBO/IBO and their kit-owned GPU images, never borrowed image
 references duplicated across models. Roads also count paint decals,
 wet film and puddle mesh buffers, their own SpriteBatch and paint
-textures. `RtsPlanetGroundFx` enumerates planet territory/diggable/
-road/lane tile geometry, `RtsGroundCanvas` owns ground sprite batch
-buffers and its texture cache, and `RtsPaintLayers` reports its
+textures. `GamePlanetGroundFx` enumerates planet territory/diggable/
+road/lane tile geometry, `GameGroundCanvas` owns ground sprite batch
+buffers and its texture cache, and `GamePaintLayers` reports its
 paint RenderTexture canvases, coastline textures and mesh buffers.
 
-`RtsView::ownedPresentationGpuMemoryStats(device)` now composes
+`GameView::ownedPresentationGpuMemoryStats(device)` now composes
 these owners with Stage 49–50 models, terrain, planets and
 ModelTextureCache. Assets that remain resident but are not drawn in
 this exact frame are still counted until their owning subsystem

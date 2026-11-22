@@ -119,7 +119,7 @@ strings when content hashes changed.
 
 ## End-to-end showcase
 
-The opt-in host uses actual `Simulation`, RTS bots issuing Commands, RtsView/Renderer3D, the C++
+The opt-in host uses actual `Simulation`, RTS bots issuing Commands, GameView/Renderer3D, the C++
 RmlUi screen adapter, Localization and the existing meta Economy. It shows live building/attack
 counts, tick, save verification, result and profile gold. Buttons start/pause/resume/save a match.
 

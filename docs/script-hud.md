@@ -38,7 +38,7 @@ projects without this block are unchanged. All strings are localization keys.
   duplicate buttons. Affordability and effect validation remain in the simulation.
 - The evaluator never mutates state, consumes randomness, or advances time.
 
-Implementation: `modules/rts/view/ScriptHud.h`, client command card and editor
+Implementation: `engine/view/ScriptHud.h`, client command card and editor
 `GameWindow`. Test: `script_hud_player_binding_and_invalid_option`.
 macOS editor/client compiled; Android, Windows and web execution remain unverified.
 

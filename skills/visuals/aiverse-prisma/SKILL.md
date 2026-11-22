@@ -437,7 +437,7 @@ without counting shared geometry pages or borrowed material images twice:
 - `ModelTextureCache::appendOwnedGpuMemory(counter)` enumerates cached
   model/material PBR textures once from the cache owner. Models borrowing
   this cache set `Image.borrowedTexture=true`; do not count them again.
-- `RtsView::ownedModelGpuMemoryStats(device)` aggregates those GPU-owned
+- `GameView::ownedModelGpuMemoryStats(device)` aggregates those GPU-owned
   models from its unique model cache and cached material textures, with
   shared handle de-duplication across models.
 - `TextureCache::ownedGpuMemoryStats()` independently enumerates
@@ -447,7 +447,7 @@ without counting shared geometry pages or borrowed material images twice:
 `Prisma::setExternalPresentationAssetsGpuMemory(knownBytes)` accepts
 the sum of *nonoverlapping* presentation asset owners. Editor Scene/Game
 add model resources and their independent FX sprite cache. GameClient
-currently adds its RtsView model/material owner (other FX render owners
+currently adds its GameView model/material owner (other FX render owners
 may publish additional disjoint inventories later). GeometryPool
 still uses `setExternalGeometryPoolGpuMemory` and each page counts once
 per device, NOT per model. No shader/driver/texture mip assumptions are
@@ -506,13 +506,13 @@ modules**, not to gameplay/ECS:
   planet body chunks, per-body vision/detail textures,
   sphere/atmosphere meshes, placeholders and its independent
   material texture cache
-- `RtsView::ownedPresentationGpuMemoryStats(device)` combines its
+- `GameView::ownedPresentationGpuMemoryStats(device)` combines its
   unique model/material resource report with terrain and planet
   owners even when one is not actively drawn this frame
 - `WorldScene::ownedGpuMemoryStats(device)` enumerates unique
   resident GPU models across shared world chunks. It intentionally
   **excludes ModelTextureCache** because that cache may be shared
-  with RtsView (GameClient `streamedWorld` uses
+  with GameView (GameClient `streamedWorld` uses
   `view_.textureCache()`); the borrowed cache images are already
   counted by their owner, while the WorldScene's unique VBO/IBOs
   and direct model images are counted only once
@@ -550,18 +550,18 @@ actual structural checks, caveats and feature Stage 51.
 
 ## Cross-module owner closure, runtime support report and temporal conflict policy (Stage 51)
 
-Stage 51 extends `RtsView::ownedPresentationGpuMemoryStats(device)`
+Stage 51 extends `GameView::ownedPresentationGpuMemoryStats(device)`
 with graphics-owner read-only GPU resource reporting by **real owners**:
 `FogOfWar` (private sheet VB/IB/texture),
-`RtsFieldView` (field sheet buffers and per-field textures),
-`RtsOverlays` (owned overlay buffers/white texture and its texture cache),
-`RtsGroundFx` (owned mesh buffers, white placeholder and texture cache),
+`GameFieldView` (field sheet buffers and per-field textures),
+`GameOverlays` (owned overlay buffers/white texture and its texture cache),
+`GameGroundFx` (owned mesh buffers, white placeholder and texture cache),
 `Rts2DView` (sprite-batch VB/IB/casters, tile mesh and image cache),
-`RtsRoadView` and `RtsShoreView` (resident kit images,
+`RtsRoadView` and `GameShoreView` (resident kit images,
 unique owned model VBO/IBOs, road decal meshes and road texture cache),
-`RtsPlanetGroundFx` (owned tile/lane meshes),
-`RtsGroundCanvas` (owned sprite batch and texture cache),
-`RtsPaintLayers` (paint canvas, coastline atlas and owned mesh buffers).
+`GamePlanetGroundFx` (owned tile/lane meshes),
+`GameGroundCanvas` (owned sprite batch and texture cache),
+`GamePaintLayers` (paint canvas, coastline atlas and owned mesh buffers).
 `SpriteBatch::ownedGpuMemoryStats()` explicitly excludes borrowed
 `TextureRef` images and static caller-owned `SpriteMesh` buffers,
 which those callers enumerate themselves. All these queries use only

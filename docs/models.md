@@ -28,7 +28,7 @@ with other node names in one type:
 
 A model that fails to load (missing file, unsupported feature) falls back to the shape with a warning
 `type 'footman': models/knight.glb: file not found (using the built-in shape)`. Warnings go to stderr,
-to the editor console and to `RtsView::warnings()`. Nothing in a view block can stop a game from
+to the editor console and to `GameView::warnings()`. Nothing in a view block can stop a game from
 starting.
 
 Check a model or a whole game with the viewer:
@@ -372,7 +372,7 @@ idle; no idle = bind pose); a misspelt clip is reported with the list of clips t
 scales the playback rate to the real speed.
 
 **Clip events**: `"events": {"0.35": "hit", "0.0": "step", "0.5": "step"}` — clip time → name. They
-are reported in `RtsView::events()` every time the clip passes that time (loops included).
+are reported in `GameView::events()` every time the clip passes that time (loops included).
 
 **Additive clips** on top of any action (breathing, wounded limp, recoil):
 `"additive": [{"clip": "Breathe", "when": "idle", "weight": 1}]` — adds `clip(t) - clip(0)`; the
@@ -404,11 +404,11 @@ deformed on the GPU from a float texture; weights come from the node / mesh defa
   team colour.
 - **muzzle**: projectiles of this type start at that point and converge onto their simulated path across the
   ground (within ~0.3 s) while keeping the muzzle's height; a `launch` view event is reported there. The game's
-  effects follow it too (RtsFx with `setAttackOriginFn` = `RtsView::muzzleOf`, set by the client and the editor):
+  effects follow it too (GameFx with `setAttackOriginFn` = `GameView::muzzleOf`, set by the client and the editor):
   the weapon's `attack` effect plays at the muzzle and its `trail` starts there.
-- **fx**: effect anchors listed in `RtsView::effects()` every frame while active (`when`, `hpBelow`;
+- **fx**: effect anchors listed in `GameView::effects()` every frame while active (`when`, `hpBelow`;
   the intensity grows as health drops). A particle system spawns `effect` at `pos`.
-- **View events** (`RtsView::events()`, this frame): clip events, `launch`, `spawn`, `death`, each
+- **View events** (`GameView::events()`, this frame): clip events, `launch`, `spawn`, `death`, each
   with entity, type, owner and world position — the hook for sounds and particles.
 
 ## Stages, construction and dissolve
@@ -432,9 +432,9 @@ deformed on the GPU from a float texture; weights come from the node / mesh defa
 - **dissolve**: `dissolveSpawn` burns new units in, `dissolveDeath` burns corpses away (instead of
   fading); `"dissolve": true` sets both.
 
-Selected and hovered objects get an outline (`RtsView::setSelectionOutline`). The client shows the
-building to place as a translucent model (`RtsView::drawGhost`), and `game::Portrait`
-(`modules/rts/view/RtsPortrait.h`) renders any type into a texture for HUD portraits and buttons.
+Selected and hovered objects get an outline (`GameView::setSelectionOutline`). The client shows the
+building to place as a translucent model (`GameView::drawGhost`), and `game::Portrait`
+(`engine/view/GamePortrait.h`) renders any type into a texture for HUD portraits and buttons.
 
 ## Procedural animation
 
@@ -956,7 +956,7 @@ invalidation on the renderer before destroying the old asset.
 The `aiverse_modelview` tool now accepts
 `--provider --no-merge` for an opt-in, non-gallery **raw static model**
 path. It uses a native `render::ModelAssetProvider` and the canonical
-`aiverse::View::submitModel` without constructing a `game::RtsView`
+`aiverse::View::submitModel` without constructing a `game::GameView`
 for that source. It preserves the model viewer's existing camera,
 materials, team colour, variants and scale, but does not merge rigid
 parts or run this provider path for requested animation clips/baked
@@ -1285,7 +1285,7 @@ bone matrices are applied to another Model. RTS-authored
 LOD models with no valid compiled map still default to
 their historical legacy nodeWorld presentation until
 visual parity is verified. Opt in to bind fallback using
-`RtsView::LegacyLodFallbackMode::BindPose`, exposed in
+`GameView::LegacyLodFallbackMode::BindPose`, exposed in
 Editor Stats for side-by-side comparison. Legacy/bind/
 rejected-plan counts are available on the adapter.
 
@@ -1520,7 +1520,7 @@ paths, plus standalone `aiverse_modelview` raw imports, now check
 `uploadModel` and use this helper for partial failures. They also reserve
 Model list/map capacity before allocation where applicable and avoid
 rendering incomplete uploaded Models. This **does not** yet fix routine
-`RtsRoadView::release` / `RtsShoreView::release` or preview teardown after
+`RtsRoadView::release` / `GameShoreView::release` or preview teardown after
 successful uploads; Stage 140 must handle those separately.
 
 [Stage 139 handoff](agent-handoffs/animation-stage139-direct-host-failed-model-uploads-2026-11-19.md).
@@ -1542,8 +1542,8 @@ owns a per-host, render-thread-only ordered completion-token queue for
 actual backend token or explicit `waitForResourceIdle`, never frame age.
 
 `RtsRoadView` queues old chunks, editor ghosts and decal/verge/wet/puddle
-sprite vertex buffers. `RtsShoreView` queues terrain chunks and foam
-Models. The scene entry in `RtsView::draw` polls queues *before*
+sprite vertex buffers. `GameShoreView` queues terrain chunks and foam
+Models. The scene entry in `GameView::draw` polls queues *before*
 the draw providers; this location must be verified against actual
 graphics frame boundaries (including editor multiple-draw/offscreen
 cases) before production. Backends lacking async tokens defer full
@@ -1565,8 +1565,8 @@ visual or GPU fence fault injection, sanitizers and benchmarks.
 ## Stage 141 — explicit native host frame-boundary GPU retirement
 
 Do NOT call `NativePresentationRetirement::collect` during an arbitrary
-`RtsView::draw`: one Editor frame can submit multiple scene/game and
-offscreen portrait draws. The generic `RtsView` now aggregates
+`GameView::draw`: one Editor frame can submit multiple scene/game and
+offscreen portrait draws. The generic `GameView` now aggregates
 `ModelResourceCache`, image rollback, road and shoreline retirement
 inside the existing explicit `collectRetiredModels()` owner hook. The
 associated `pendingModelRetirements()` now includes road/shore
@@ -1578,12 +1578,12 @@ Standalone modelview Gallery explicitly polls the same queues before
 gallery in the same frame. Its `ModelAssetProvider` rollback is also
 polled when nonempty. Raw modelview and Gallery portrait teardown require
 real full-Device GPU idle before native destruction; an unproven barrier
-stops release. `RtsView::shutdown` now also establishes GPU completion
+stops release. `GameView::shutdown` now also establishes GPU completion
 before releasing standalone GeometryScene Models.
 
 `ModelAssetProvider::find` and `publicationBackpressured` correctly
 propagate exceptions on cache-owner misuse; they are not `noexcept`.
-Third-party clients using `RtsView` must call its owner retirement hook
+Third-party clients using `GameView` must call its owner retirement hook
 at a genuine frame boundary. Resource retirement never trusts frame age
 or an incomplete GPU token.
 
@@ -1629,7 +1629,7 @@ not immediately call `releaseModel` during live reload.
 `GeometryScene::collectRetired` and `pendingGpuRetirements` expose
 explicit pre-render owner hooks. Final `shutdown` requires one
 verified GPU idle barrier before draining pending resources.
-The existing RtsView and FPS owner frame hooks poll this queue.
+The existing GameView and FPS owner frame hooks poll this queue.
 
 `world::WorldScene` owns streaming Model data via
 `shared_ptr<Model>`, potentially across multiple resident cells and

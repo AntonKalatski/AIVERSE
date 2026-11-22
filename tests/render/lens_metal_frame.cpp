@@ -2,7 +2,7 @@
 #include "engine/platform/Platform.h"
 #include "engine/render/CameraModelSnapshot.h"
 #include "engine/render/RenderTargetPool.h"
-#include "modules/rts/view/RtsView.h"
+#include "engine/view/GameView.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -15,9 +15,9 @@ int aiverseMain(int,char**) {
     if(!std::getenv("AIVERSE_LENS_METAL_VALIDATE"))return 77;
     constexpr int width=160,height=120;
     gfx::Device* device=nullptr;
-    render::Renderer3D renderer;game::RtsView view;
+    render::Renderer3D renderer;game::GameView view;
     render::CameraRenderTargetPool targets;render::CameraModelSnapshot snapshot;
-    game::Rules rules;game::MapGrid grid;game::RtsScene scene;
+    game::Rules rules;game::MapGrid grid;game::GameScene scene;
     grid.init(8,8);for(auto& f:grid.flags)f=game::kCellGround;
     grid.corner.assign(81,0);
     for(int y=1;y<5;++y)for(int x=1;x<4;++x)grid.corner[size_t(y*9+x)]=24;

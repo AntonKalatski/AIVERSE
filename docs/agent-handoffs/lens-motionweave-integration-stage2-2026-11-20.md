@@ -14,12 +14,12 @@
 - `engine/render/Math3D.h`: retained the existing `Camera3D` and `RTSCamera` type names as aliases to the fully genre-independent `render::Camera`, bringing direct ECS poses, roll, off-center asymmetric frustum and lens shift, oblique clipping, origin-aware world projection and ortho override. Added `mat4::frustum`. Existing orbit-style fields/methods retained.
 - `engine/gfx/Gfx.h`: opt-in virtual `Device::captureTexture(TextureHandle,CaptureFn)` and `waitIdle()`, both default unsupported. Backend implementations still need integration.
 - `CMakeLists.txt`: registered 14 LENS camera/ecs CPU test targets; tests NOT run. Target names from LENS branch preserved.
-- Animation team's `RtsView`, `RtsViewDraw`, `RtsAnimate`, `genericView_`, `submitOne`, appearance source lifecycle remain unchanged in this staged branch.
+- Animation team's `GameView`, `RtsViewDraw`, `RtsAnimate`, `genericView_`, `submitOne`, appearance source lifecycle remain unchanged in this staged branch.
 
 ## Not yet merged / crucial follow-ups
 - Backend-specific Metal/GL/Vulkan texture readback and GPU-idle implementation from LENS not yet reconciled with animation branch backend code.
 - `apps/editor/Editor.cpp`, `EditorWindow.h`, `GameClient.cpp/.h` and all related UI/editor/client files are still animation branch versions.
-- `RtsView::drawFrozenModels` from LENS NOT ported, intentionally: the animation team's universal View is source of truth. Implement immutable prepared render packets after the once-per-frame MotionWeave animation update, then N per-camera submissions without consuming events again.
+- `GameView::drawFrozenModels` from LENS NOT ported, intentionally: the animation team's universal View is source of truth. Implement immutable prepared render packets after the once-per-frame MotionWeave animation update, then N per-camera submissions without consuming events again.
 - Camera preview and standalone `CameraRuntimeHost` exist as staged headers but may not compile/integrate until above reconciliation.
 - Important: compare new `Camera3D` alias with any explicit forward declarations, aggregate initializations and ABI-sensitive native modules when compiling.
 - PR #50 may show conflicts if animation branch moves concurrently; rebase/reconcile cautiously.

@@ -693,7 +693,7 @@ put it a few hundredths above the ground). The triangles are drawn inside the 3D
 translucent meshes, depth tested without depth writes and with a small bias towards the camera, so units and buildings
 standing on a mark hide it (the screen canvas above draws over them). Batches are sorted by `layer`, then call order;
 same image and layer merge; one frame only; the texture alpha below .02 is cut (vertex alpha is free). Same limits and
-errors as `view.draw` (1048576 vertices a frame). Client only; presentation only (`modules/rts/view/RtsGroundCanvas.*`).
+errors as `view.draw` (1048576 vertices a frame). Client only; presentation only (`modules/rts/view/GameGroundCanvas.*`).
 OpenWar draws its ground ability areas, railways and nuclear target rings with it, as Unity's ground canvases under
 the units. Test: `view_draw_ground_world_triangles`.
 
@@ -703,7 +703,7 @@ view scripts' `draw_ground` batches of layer >= 0): `"groundShadow": {"image": "
 model's frame (the drawn model's rotation, without its scale), `color` multiplies the image (default black at alpha
 .55), the image's u runs along the model's +x and its top lies towards the model's -z unless flipped. It follows the
 interpolated position and facing and replaces the default blob of air units. OpenWar ports Unity's footprint
-sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `RtsView::drawGround`). Test:
+sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `GameView::drawGround`). Test:
 `view_ground_shadow_option`.
 
 ### Entity scale and opacity (view scripts)
@@ -712,7 +712,7 @@ sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `RtsV
  to another entity's final rendered frame. Offsets are in cells: +X forward, +Y up, +Z right;
  yaw is in degrees. Nested attachments inherit translation, rotation, tilt and scale. Cycles
  and non-finite offsets are rejected. `view.entity_parent(child, nil)` detaches. Native hosts
- may provide `RtsScene::entityFrames` for physics-driven chassis after their visual update.
+ may provide `GameScene::entityFrames` for physics-driven chassis after their visual update.
  Children use that same frame rather than independently interpolated simulation positions.
  This is a **presentation-only** hierarchy: collision, ownership and simulation positions do
  not change. Links are cleared with the view and when either entity dies; rebuild them from
@@ -744,8 +744,8 @@ for up to 10 s after it left the simulation; then they are dropped. They apply o
 share the model shaders: `ModelDraw::tint.w`, `teamGlow` = instance `draw.w`), on planets, and to 2D sprites (`scale`
 x = width, y = height, `opacity`). Scripts that run per frame can also set values every frame from their own clock
 (OpenWar computes Unity's per-tick curves from the match time it publishes in `state`). Presentation only: the
-simulation and its checksum never see them; the headless server has no view scripts. Store: `modules/rts/view/EntityFx.h`
-(`ViewScripts::entityFx()` -> `RtsScene::entityFx`, client and editor play-test). Tests: `view_entity_fx_script_api`,
+simulation and its checksum never see them; the headless server has no view scripts. Store: `engine/view/EntityFx.h`
+(`ViewScripts::entityFx()` -> `GameScene::entityFx`, client and editor play-test). Tests: `view_entity_fx_script_api`,
 `view_entity_fx_renders_scaled_translucent`, `view_entity_fx_ground_shadow`, `view_entity_fx_pitch_roll`.
 
 View script budget: every handler call (`view.on`, `view.on_frame`, `ui.on`) has its own budget of 5,000,000 VM

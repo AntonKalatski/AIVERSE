@@ -455,7 +455,7 @@ Un tipo se dibuja según su bloque `"view"`: una forma integrada (`"shape"`) o u
 - **Animación avanzada**: blend space caminar/correr, clips aditivos (respiración, retroceso), IK de pies sobre el terreno,
   giro de la cabeza hacia el objetivo, vehículos inclinados en las pendientes, morph targets (blend shapes) en la GPU.
 - **Sockets**: un arma en la mano, carga a la espalda (según el recurso que lleva), puntos de salida de proyectiles, puntos de
-  efectos (humo, fuego, escape); eventos de clips y `RtsView::events()/effects()` para el sonido y las partículas.
+  efectos (humo, fuego, escape); eventos de clips y `GameView::events()/effects()` para el sonido y las partículas.
 - **Etapas**: andamios y fases de construcción, variante dañada según la salud, disolución al aparecer y al morir, contorno de
   selección, fantasma translúcido al colocar un edificio, retratos.
 - **Formatos**: también **FBX** (ufbx) y texturas comprimidas **KTX2** (ETC2/BC/ASTC, siguen comprimidas en la GPU);
@@ -496,7 +496,7 @@ batalla intensa; elegir las sombras a mano en el menú lo desactiva (`AIVERSE_AD
 - **Editor** — la ventana «Lighting»: vista previa de la hora del día y la tormenta, nivel de calidad de la luz, lista de
   fuentes. Para agentes: `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-El formato de los campos está en la cabecera de `modules/rts/view/RtsLights.h`. Variables de prueba: `AIVERSE_TIME_OF_DAY`,
+El formato de los campos está en la cabecera de `engine/view/GameLights.h`. Variables de prueba: `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Comprobar mecánicas por MCP

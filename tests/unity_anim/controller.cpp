@@ -155,7 +155,7 @@ int main() {
     r.inst.parameters().set("home", 1.f); r.inst.parameters().set("go", 0.f); r.step(.01f);
     check(r.player().state(0) == "A", "exit transition returns to the default state");
 
-    // ---- derived inputs from RtsView built-ins
+    // ---- derived inputs from GameView built-ins
     r.build(m, graphWith(R"({"speed":0,"Speed":0})", R"({"inputs":{"Speed":{"from":"speed","scale":0.5,"max":1}},"layers":[{"name":"Base","states":[{"name":"Move","motion":{"tree":{"type":"1d","parameter":"Speed",
         "children":[{"motion":{"clip":"Idle"},"threshold":0},{"motion":{"clip":"Walk"},"threshold":1}]}}}]}]})"));
     r.inst.parameters().set("speed", 1.f); r.step(.5f);

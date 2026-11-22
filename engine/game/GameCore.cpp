@@ -73,7 +73,7 @@ void GameCore::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     arsenal_->setup(sim, *this, rulesJson);
     traffic_ = std::make_unique<Traffic>();   // city traffic (rules "traffic"); nothing without the block
     traffic_->setup(sim, *this, rulesJson, mapIn);
-    // Lua: the engine's standard library (rule-level mechanics, modules/rts/lua) + the game's scripts
+    // Lua: the engine's standard library (rule-level mechanics, engine/game/lua) + the game's scripts
     script_ = std::make_unique<ScriptEngine>(*this);
     script_->load(sim, rulesJson, mapIn);
 

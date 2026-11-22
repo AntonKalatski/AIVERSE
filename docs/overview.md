@@ -572,7 +572,7 @@ A type is drawn from its `"view"` block: a built-in shape (`"shape"`) or a model
 - **Advanced animation**: walk/run blend space, additive clips (breathing, recoil), foot IK on terrain, head turning
   towards the target, vehicles tilting on slopes, morph targets (blend shapes) on the GPU.
 - **Sockets**: a weapon in the hand, cargo on the back (by the carried resource), projectile launch points, effect
-  points (smoke, fire, exhaust); clip events and `RtsView::events()/effects()` for sound and particles.
+  points (smoke, fire, exhaust); clip events and `GameView::events()/effects()` for sound and particles.
 - **Stages**: scaffolding and construction stages, a damaged variant by health, dissolve on spawn and death, selection
   outline, a translucent ghost while placing a building, portraits.
 - **Formats**: also **FBX** (ufbx) and compressed **KTX2** textures (ETC2/BC/ASTC, staying compressed on the GPU);
@@ -613,7 +613,7 @@ after a heavy battle; choosing shadows manually in the menu turns this off (`AIV
 - **Editor** — the "Lighting" window: preview of the time of day and storms, light quality tier, list of lights.
   For agents: `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-The field format is in the header of `modules/rts/view/RtsLights.h`. Test variables: `AIVERSE_TIME_OF_DAY`,
+The field format is in the header of `engine/view/GameLights.h`. Test variables: `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Checking mechanics over MCP

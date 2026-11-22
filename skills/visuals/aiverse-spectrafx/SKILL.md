@@ -20,7 +20,7 @@ This skill is ONLY for world-space VFX emitters, particles, ribbon/mesh FX, effe
 2. In native C++ include `engine/fx/SpectraFX.h` and call `aiverse::spectra::GraphAssets(particles, reader).load(name, overrides)`. Play the returned effect ID with the existing CPU particle runtime; check the `errors` and `fallback` fields. Parameter overrides create independent variants.
 3. For continuous ECS-attached effects include `<aiverselib/mechanics/SpectraFX.h>`. Add `spectra::SourceComponent` to any Entity (unit, actor, spell, vehicle, world prop). The renderer-side `spectra::PresentationSystem::sync` reads it and invokes the native project's render-pose resolver.
 4. One-shot impact, fire, ability and death effects use `PresentationSystem::consumeTickEvents(tick, events, bindings)`, exactly once per committed tick. Call `reset()` when the client rolls back or starts a new session.
-5. Preserve `aiverse_fx`, `fx/<name>.json`, `fx/fx.json`, legacy `RtsFx` and older `Vfx*` aliases until production parity tests pass.
+5. Preserve `aiverse_fx`, `fx/<name>.json`, `fx/fx.json`, legacy `GameFx` and older `Vfx*` aliases until production parity tests pass.
 
 ## Graph editing through MCP (stage 7)
 

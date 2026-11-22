@@ -17,10 +17,10 @@ Source commits:
 1. `ef3d66868afcd58e7cf858cc6bd320895b3ab99c` — new `engine/render/NativePresentationRetirement.h`.
 2. `c99ea5208f8cecd244061c62a0553c5d445d620f` — explicitly typed empty BufferHandle exchange.
 3. `b04987c37804108829fd5db2c9d8a00f5fefd7cb` — `modules/rts/view/RtsRoadView.h` generic retirement member and API.
-4. `9e49319a15536b822f14600b7496c9df2c3e9447` — `modules/rts/view/RtsShoreView.h` counterpart.
+4. `9e49319a15536b822f14600b7496c9df2c3e9447` — `engine/view/GameShoreView.h` counterpart.
 5. `dbacf050376968493698aede6e088ea5f5b08f74` — `RtsRoadView.cpp` retired Models + standalone SpriteMesh buffers.
-6. `321696ddf5e12a094b71b024baffcfce372046eb` — `RtsShoreView.cpp` retired Models/foam and explicit shutdown barrier.
-7. `eb705ba8012e75213866614d9342b0f35ada7fd3` — `RtsView.cpp` integrates retirement collection at entry to the presentation draw boundary.
+6. `321696ddf5e12a094b71b024baffcfce372046eb` — `GameShoreView.cpp` retired Models/foam and explicit shutdown barrier.
+7. `eb705ba8012e75213866614d9342b0f35ada7fd3` — `GameView.cpp` integrates retirement collection at entry to the presentation draw boundary.
 8. `6dc5d3acad3553af99a3a60091d6fc44bd3d15f1` — road header diagnostic name updated to GPU resources, not just Models.
 9. `dcbcea24cc08c4fa9f10540ba0c0dcc6334116c6` — shore header same.
 10. `de2fecf8067e0b27f207e9a720a82356041ee0fb` — unsupported async-token backends defer full idle until a queue-count pressure threshold.
@@ -48,28 +48,28 @@ At code HEAD `de2fecf8067e0b27f207e9a720a82356041ee0fb`, GitHub comparison to cu
 - `shutdown` queues remaining props and active assets, then requires `completeForShutdown` before destroying kit images, SpriteBatch internals and Paint TextureCache. An unproven GPU barrier leaves ownership fail-closed, with an explicit warning; `init` refuses unsafe rebind. No per-draw blocking idle was introduced into supported async marker backends.
 
 **Shore:**
-- `RtsShoreView::release` queues all old opaque and transparent/foam models. `shutdown` queues remaining props, waits for proven full GPU idle, and only afterward destroys shared shoreline kit textures. `init` cannot rebind when prior owner shutdown failed.
+- `GameShoreView::release` queues all old opaque and transparent/foam models. `shutdown` queues remaining props, waits for proven full GPU idle, and only afterward destroys shared shoreline kit textures. `init` cannot rebind when prior owner shutdown failed.
 
 **Top-level:**
-- `RtsView::draw` calls both hosts' `collectRetired` at the earliest current presentation-entry point before source loading/layer draw callbacks. The host MUST ensure that entry is a valid submission/frame boundary. This is **an architectural assumption requiring actual renderer/Metal/Vulkan/GL inspection and validation in the final pass**, especially for multiple draw() calls per GPU frame and editor offscreen renders.
+- `GameView::draw` calls both hosts' `collectRetired` at the earliest current presentation-entry point before source loading/layer draw callbacks. The host MUST ensure that entry is a valid submission/frame boundary. This is **an architectural assumption requiring actual renderer/Metal/Vulkan/GL inspection and validation in the final pass**, especially for multiple draw() calls per GPU frame and editor offscreen renders.
 
 ## Safety limits / remaining work
 
 - **Not a universal memory reclamation guarantee.** A failed GPU retirement token or missing backend marker can defer release; shutdown needs one full idle proof. Orphaning resources protects safety but causes a leak during device failure.
 - This stage does NOT migrate or retire all other RHI owners (SpriteBatch's own shader/pipeline handles, `TextureCache`, road kit textures) during every frame. They remain active until a successful shutdown barrier; the new queue covers MODELS and standalone SpriteMesh buffers. Existing Tile/Sprite/Gfx resource owners must be reviewed separately.
 - A 128-object threshold is not a byte budget. A few large Models may temporarily exceed a project's VRAM target. If needed, add conservative backpressure by estimated bytes and actual GPU-memory accounting with renderer owners.
-- It has not been proven that `RtsView::draw` is always the earliest **real GPU frame boundary** in every editor/offscreen path; do not claim this without source tracing + hardware validation. The backend may not support async tokens and then retention/stalling policy differs.
+- It has not been proven that `GameView::draw` is always the earliest **real GPU frame boundary** in every editor/offscreen path; do not claim this without source tracing + hardware validation. The backend may not support async tokens and then retention/stalling policy differs.
 - No animation graph clocks, gameplay simulation ECS, save/net format, authored Model format, root motion or GPU Device fence protocol changed.
 
 ## Actually performed versus deferred tests
 
-**ACTUAL:** connected GitHub repository source reads for RtsRoadView/shore headers and cpp, RtsView scene composition, SpriteBatch mesh ownership, AsyncResourceRetirementQueue, Gfx Device marker contracts, Stage 139 handoff and branch ancestry; exact SHA-based commits and code readback checking direct release/destroy paths are absent. No native checkout was mounted.
+**ACTUAL:** connected GitHub repository source reads for RtsRoadView/shore headers and cpp, GameView scene composition, SpriteBatch mesh ownership, AsyncResourceRetirementQueue, Gfx Device marker contracts, Stage 139 handoff and branch ancestry; exact SHA-based commits and code readback checking direct release/destroy paths are absent. No native checkout was mounted.
 
 **NOT RUN:** local CMake/C++ compiler or linker, CTest, CI green for Stage 140, Metal/GL/Vulkan GPU, fake or genuine retirement-token failure fixtures, multi-view-per-frame tests, ASan/TSan/UBSan, FPS/RTS/editor visual parity or performance benchmarks. This is deliberate user-approved feature-first implementation, NOT proof of correctness.
 
 ## Next Stage 141 (feature-only)
 
-1. Finish *all* remaining cross-host GPU lifetime issues, especially failed shutdown/reinit source references, non-model image/paint atlas ownership, independent preview/editor offscreen model owners, and genuine frame-boundary scheduling for the retirement queue. Do not assume `RtsView::draw` is always a real GPU boundary.
+1. Finish *all* remaining cross-host GPU lifetime issues, especially failed shutdown/reinit source references, non-model image/paint atlas ownership, independent preview/editor offscreen model owners, and genuine frame-boundary scheduling for the retirement queue. Do not assume `GameView::draw` is always a real GPU boundary.
 2. Audit remaining direct `uploadModel` paths in `ModelAssetProvider`, gallery, model window/preview and scene generation, particularly ignored bool and thrown GPU upload destroying partially uploaded Model objects.
-3. Continue generic `aiverse::View` and legacy RtsView adapter migration, MotionWeave source continuity/retarget/LOD and presentation-only independence from gameplay, tracking the Stage 137 feature-freeze checklist honestly.
+3. Continue generic `aiverse::View` and legacy GameView adapter migration, MotionWeave source continuity/retarget/LOD and presentation-only independence from gameplay, tracking the Stage 137 feature-freeze checklist honestly.
 4. Keep separate handoff per feature stage. Only once **all functions** are closed/reviewed, run `bash tools/animation/validate-final.sh` in one full native pass on the Mac; also do genuine GPU/visual backend parity. Do not merge divergent main/PR base automatically.

@@ -16,7 +16,7 @@ Stage 145 preserves compatible playback across different Model publication epoch
 1. `619f32a12012666a4baaf0ca421d85e784ea3df3` — `libraries/include/aiverselib/animation/MotionWeaveSourceBridge.h`: initial bounded pre-retirement playback capture/rebind with protected 120-sync expiry and 8192-record cap.
 2. `8c0a4a0824d8b378bb338671f767e8bc36f682a4` — same header: correct capture to use `World::tryGetConst<T>()` for read-only ECS queries and add required standard headers.
 3. `2233ae00a85f5d10ec2a62f1873344902a32ce67` — `engine/view/View.h`: expose opt-in `View::forgetSourcesForReimport(ids)` while preserving original `forgetSources(ids)` semantics.
-4. `c614ee3fe7d7abffc204883b9597bb6d1b5b9583` — `modules/rts/view/RtsLook.cpp`: use opt-in pre-retirement detach at two existing graph/model source reload sites; unrelated generic source removals continue to discard playback.
+4. `c614ee3fe7d7abffc204883b9597bb6d1b5b9583` — `engine/view/GameLook.cpp`: use opt-in pre-retirement detach at two existing graph/model source reload sites; unrelated generic source removals continue to discard playback.
 
 ## Public API and exact lifecycle
 
@@ -47,7 +47,7 @@ The new API is fully genre-independent; the legacy RTS host is only an adapter. 
 
 ## What was actually checked
 
-**ACTUAL:** read Stage 145 handoff; read source from connected GitHub for `MotionWeaveSourceBridge.h`, `EcsAnimationSystems.h`, `AnimationGraph.h`, `engine/core/ECS.h`, `engine/view/View.h`, and the two affected `RtsLook.cpp` call sites. Reviewed the fact that `World::get` is not const and corrected the initial read-only capture implementation. GitHub returned the four exact code commit SHAs. New bridge source blob was read back after the first commit. No local Mac checkout was mounted into this environment.
+**ACTUAL:** read Stage 145 handoff; read source from connected GitHub for `MotionWeaveSourceBridge.h`, `EcsAnimationSystems.h`, `AnimationGraph.h`, `engine/core/ECS.h`, `engine/view/View.h`, and the two affected `GameLook.cpp` call sites. Reviewed the fact that `World::get` is not const and corrected the initial read-only capture implementation. GitHub returned the four exact code commit SHAs. New bridge source blob was read back after the first commit. No local Mac checkout was mounted into this environment.
 
 **NOT RUN:** CMake configure, native C++ compile/link, CTest, current-head CI pass, Metal/GL/Vulkan renderer validation, FPS/RTS/editor visual parity, source-reimport stress, fault injection, sanitizer, benchmark, final `bash tools/animation/validate-final.sh`.
 
