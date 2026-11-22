@@ -479,6 +479,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
     setScreen(Screen::Playing);
     audio_.stopAll(0.1f, combatBuses());
     sound_.attach(*sim_, spectator_ ? 0 : human_, maps_[idx].file);
+    fx_.configureEntityEffects(rulesJson_, map);   // data-declared entity effects (SpectraFX)
     fx_.startMatch(*sim_, spectator_ ? 0 : human_, view_, mod().state(*sim_).grid);
     heardSelection_.clear();
     beginMapLoading();

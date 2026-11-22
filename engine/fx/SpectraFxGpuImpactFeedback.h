@@ -32,6 +32,23 @@ public:
     // epoch prevent stale callbacks from publishing after reset/destruction.
     bool request(gfx::Device& device,const SpectraFxGpuParticleSlots& slots) {
         const auto& gpu=slots.evolution();
+        if(gpu.cpuTwin()) {
+            // CPU twin: the step already knows its ground hits; no readback.
+            if(!gpu.impactFeedbackAllocated()) {
+                ++state_->stats.unsupported;
+                return false;
+            }
+            for(const auto& hit:gpu.twinImpacts()) {
+                if(state_->pending.size()>=kMaxBufferedEvents) {
+                    ++state_->stats.discarded;
+                    continue;
+                }
+                const auto handle=slots.handleAt(hit.slot);
+                if(handle.valid()) state_->pending.push_back({handle,hit.position});
+            }
+            ++state_->stats.requested;
+            return true;
+        }
         if(!gpu.impactReadbackEligible() ||
            gpu.count()>kMaxReadbackParticles) {
             ++state_->stats.unsupported;
