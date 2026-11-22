@@ -5,7 +5,7 @@
 // function, which re-validates everything. Difficulty = search budget for hints/solvers + a mistake chance that
 // swaps the hinted move for a random legal one; randomness only from the passed-in Random (sim.rng() or an RNG
 // saved with the simulation). The bot is stateless: nothing to persist beyond the puzzle state and the RNG.
-#include "../genre/PuzzleSolvers.h"
+#include "../mechanics/PuzzleSolvers.h"
 #include "engine/core/Random.h"
 namespace aiverse::lib::bots {
 struct PuzzleBotSkill {

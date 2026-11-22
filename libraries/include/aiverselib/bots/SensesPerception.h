@@ -4,7 +4,7 @@
 // only what the observer can actually see of a visible target (team, velocity, facing, guard, telegraphed attack).
 // Pure function: no state, deterministic order (ascending target id), no RNG.
 #include "GenreCommon.h"
-#include "../genre/Senses.h"
+#include "../mechanics/Senses.h"
 #include <optional>
 #include <span>
 #include <vector>

@@ -4,7 +4,7 @@
 // overtakes slower cars ahead with a lane offset and scales its pace with a rubber-band difficulty knob.
 // It only returns a mechanics::VehicleInput (the same struct a player produces); the owner steps the vehicle.
 // Fixed math, integer ticks, no randomness.
-#include "../genre/VehicleControllers.h"
+#include "../mechanics/VehicleControllers.h"
 #include <algorithm>
 #include <cstdint>
 #include <optional>

@@ -5,7 +5,7 @@
 // assumed to pass until the stack is empty) and scored on health, board and hand; a bounded second ply tries
 // follow-up actions. Deterministic: no RNG is consumed (simulations use a private fixed-seed Random), ties keep the
 // earlier action in legal order (Pass first). Returns the same CardAction a player submits.
-#include "../genre/CardGameRunner.h"
+#include "../mechanics/CardGameRunner.h"
 #include "../gameplay/Configuration.h"
 #include <optional>
 namespace aiverse::lib::bots {

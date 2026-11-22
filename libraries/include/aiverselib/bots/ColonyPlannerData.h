@@ -5,7 +5,7 @@
 // actions: build | bill | gather | priority; metrics: stockPerColonist | stock | powerDeficit | coldColonists | needLow |
 // structures | openJobs | alerts | colonists | custom. Errors: JsonError("planner.<path>: ...").
 #include "ColonyPlanner.h"
-#include "../genre/SettlementJson.h"
+#include "../mechanics/SettlementJson.h"
 namespace aiverse::lib::bots {
 namespace detail_colony_planner_data {
 using namespace mechanics::detail_settlement_json;
