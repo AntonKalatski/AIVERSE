@@ -5,6 +5,7 @@
 #include "../core/ECS.h"
 #include "../core/Fixed.h"
 #include "PhysisParallel.h"
+#include "PhysisChunkMask.h"
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -189,8 +190,11 @@ inline void advanceSurface(World& world, SurfaceProvider&& getParameters) {
     const auto& cells = state->cells;
     // Parallel lanes write disjoint Surface components: resolve COW first.
     if (cellPassIsParallel(cells.size())) world.prepareExistingWrite<Surface>();
+    const auto* mask = world.resourceConst<ActiveChunks>();   // PhysisStreaming.h
+    const auto width = state->settings.width;
     forEachCellRange(cells.size(), [&](std::size_t begin, std::size_t end) {
     for (std::size_t index = begin; index < end; ++index) {
+        if (!cellSimulated(mask, width, index)) continue;   // dormant chunk
         const Entity entity = cells[index];
         if (!world.alive(entity)) continue;
         const auto* coord = world.tryGetConst<Cell>(entity);
@@ -232,8 +236,11 @@ inline void advanceWith(World& world, ForcingProvider&& getForcing,
     // Each cell reads only its own Atmosphere and read-only forcing data, so
     // lanes (PhysisParallel.h) give bit-identical results to serial order.
     if (cellPassIsParallel(cells.size())) world.prepareExistingWrite<Atmosphere>();
+    const auto* mask = world.resourceConst<ActiveChunks>();   // PhysisStreaming.h
+    const auto width = state->settings.width;
     forEachCellRange(cells.size(), [&](std::size_t begin, std::size_t end) {
     for (std::size_t index = begin; index < end; ++index) {
+        if (!cellSimulated(mask, width, index)) continue;   // dormant chunk
         const Entity entity = cells[index];
         if (!world.alive(entity)) continue;
         const auto* coord = world.tryGetConst<Cell>(entity);

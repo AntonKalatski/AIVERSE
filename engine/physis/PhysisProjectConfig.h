@@ -68,6 +68,29 @@ inline std::optional<InstallOptions> optionsFromMap(const Json& map) {
     options.enableWindZones = readFlag("enableWindZones");
     options.enableGravityFields = readFlag("enableGravityFields");
     options.enableForces = readFlag("enableForces");
+    if (const Json& st = config["streaming"]; !st.isNull()) {
+        if (!st.isObject()) throw std::invalid_argument("PHYSIS streaming must be an object");
+        options.streamingChunkCells = std::int32_t(integer(st, "chunkCells", 4, 1024));
+    }
+    if (const Json& anchors = config["anchors"]; !anchors.isNull()) {
+        if (!anchors.isArray() || anchors.size() > 256)
+            throw std::invalid_argument("PHYSIS anchors must be an array (<=256)");
+        if (options.streamingChunkCells == 0)
+            throw std::invalid_argument("PHYSIS anchors require streaming.chunkCells");
+        for (const auto& a : anchors.items()) {
+            if (!a.isObject() || !a["x"].isNumber() || !a["z"].isNumber() ||
+                !a["radiusMeters"].isNumber())
+                throw std::invalid_argument("PHYSIS anchor needs x, z, radiusMeters");
+            ActivityAnchor anchor;
+            anchor.position = {a["x"].fx(), Fixed{}, a["z"].fx()};
+            anchor.radiusMeters = a["radiusMeters"].fx();
+            if (anchor.radiusMeters <= Fixed{} || anchor.radiusMeters > Fixed::fromInt(1000000) ||
+                fxAbs(anchor.position.x) > Fixed::fromInt(100000000) ||
+                fxAbs(anchor.position.z) > Fixed::fromInt(100000000))
+                throw std::out_of_range("PHYSIS anchor bounds");
+            options.anchors.push_back(anchor);
+        }
+    }
     if (!config["workerThreads"].isNull())
         options.workerThreads = unsigned(integer(config, "workerThreads", 0, 16));
     const auto& floodMode = config["floodMode"];

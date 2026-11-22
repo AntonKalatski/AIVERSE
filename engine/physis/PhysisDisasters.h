@@ -123,8 +123,12 @@ inline void advanceDisasters(World& world,
     const std::array<std::int32_t, 4> dx{1, -1, 0, 0};
     const std::array<std::int32_t, 4> dz{0, 0, 1, -1};
     const auto cellCount = std::size_t(width) * std::size_t(height);
+    // Streaming (PhysisStreaming.h): dormant cells keep their hazard state and
+    // are walls for flood transfer; active cells still read their frozen fire.
+    const auto* mask = view.resourceConst<ActiveChunks>();
     forEachCellRange(std::min(count, cellCount), [&](std::size_t begin, std::size_t end) {
         for (std::size_t i = begin; i < end; ++i) {
+            if (!cellSimulated(mask, width, i)) continue;
             const auto x = std::int32_t(i % std::size_t(width));
             const auto z = std::int32_t(i / std::size_t(width));
             const auto& prior = old[i];
@@ -152,7 +156,7 @@ inline void advanceDisasters(World& world,
                 const auto windGain = fxClamp(along / 20, -Fixed::fromRatio(3, 4),
                                               Fixed::fromInt(1));
                 neighborFire += old[j].fire * (Fixed::fromInt(1) + windGain);
-                if (floodMode == FloodMode::LocalShallow) {
+                if (floodMode == FloodMode::LocalShallow && cellSimulated(mask, width, j)) {
                     const auto neighborHead = positions[j].elevation + old[j].waterDepth;
                     const auto gradient = (head - neighborHead).raw;
                     if (gradient > 0) {
@@ -215,6 +219,7 @@ inline void advanceDisasters(World& world,
     if (cellPassIsParallel(count)) world.prepareExistingWrite<HazardCell>();
     forEachCellRange(count, [&](std::size_t begin, std::size_t end) {
         for (std::size_t i = begin; i < end; ++i) {
+            if (i < cellCount && !cellSimulated(mask, width, i)) continue;   // dormant
             auto* hazard = world.tryGet<HazardCell>(climate->cells[i]);
             if (!hazard) continue;
             std::int64_t waterDelta = 0;
