@@ -18,7 +18,7 @@
 #include <vector>
 #include "../../../engine/gfx/Gfx.h"
 #include "../../../engine/render/Renderer3D.h"
-#include "../RtsGridFieldData.h"
+#include "../../../engine/game/GridFieldData.h"
 
 namespace aiverse::game {
 

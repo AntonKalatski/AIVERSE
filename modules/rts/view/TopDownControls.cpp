@@ -3,7 +3,7 @@
 #include "TopDownControls.h"
 #include <algorithm>
 #include <cmath>
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 #include "../../../engine/platform/Platform.h"
 #if defined(__GNUC__)
 #pragma GCC diagnostic push

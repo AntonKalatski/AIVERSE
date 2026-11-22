@@ -8,13 +8,13 @@
 // Company of Heroes, They Are Billions, Northgard or Mushroom Wars style games.
 #pragma once
 #include <array>
-#include "RtsProjectileData.h"
+#include "ProjectileFlightData.h"
 #include <cstdint>
 #include <string>
 #include <vector>
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
-#include "RtsModes.h"
+#include "ModesData.h"
 
 namespace aiverse::game {
 
@@ -110,11 +110,11 @@ struct WeaponDef {
 // ------------------------------------------------------------------ abilities and effects
 struct Amount { uint16_t res = 0; Fixed value{}; };
 } // namespace aiverse::game
-#include "RtsAbilityData.h"
-#include "RtsGridFieldData.h"
-#include "RtsRaidData.h"
+#include "AbilityData.h"
+#include "GridFieldData.h"
+#include "RaidData.h"
 #include <memory>
-#include "RtsRoutesData.h"
+#include "RoutesData.h"
 namespace aiverse::game {
 // ------------------------------------------------------------------ economy blocks
 struct GatherDef { uint16_t res = 0; Fixed carry = Fixed::fromInt(10); Fixed time = Fixed::fromInt(2); };
@@ -172,12 +172,12 @@ struct AttractDef {
 };
 
 }   // namespace aiverse::game
-#include "RtsMechData.h"   // agent-mech data (needs StatMod, Amount, layers)
+#include "MechData.h"   // agent-mech data (needs StatMod, Amount, layers)
 namespace aiverse::game {
 
 // ------------------------------------------------------------------ type
 struct UnitType {
-    MechType mech;                             // agent-mech blocks (RtsMechData.h)
+    MechType mech;                             // agent-mech blocks (MechData.h)
     std::string id, name;
     uint64_t tags = 0;
     bool structure = false;
@@ -340,7 +340,7 @@ struct UnitType {
     bool foundation = false;                   // concrete slab: once placed its cells become the owner's foundation, the slab goes away
     bool weathers = true;                      // "weathers": false - never damaged by a missing foundation (walls, turrets)
     int16_t trap = -1;                         // index into Rules::traps
-    std::vector<FieldEmitDef> fieldEmit;       // "field": grid field emitters (RtsGridFieldData.h)
+    std::vector<FieldEmitDef> fieldEmit;       // "field": grid field emitters (GridFieldData.h)
     Json view;
 };
 
@@ -569,11 +569,11 @@ struct TrapDef {
     bool removeWhenEmpty = true;               // destroyed when the last charge is used
 };
 
-struct ProgressionRules;   // RtsProgressionData.h
+struct ProgressionRules;   // ProgressionData.h
 struct Rules {
     bool scriptedAI = false;                  // external RtsAI must yield to the game's controller
-    std::string aiController = "builtin";     // rules ai.controller: builtin, scripted or a registered kind (RtsAIControllers.h)
-    MechRules mech;                           // agent-mech rules (RtsMechData.h)
+    std::string aiController = "builtin";     // rules ai.controller: builtin, scripted or a registered kind (AIControllers.h)
+    MechRules mech;                           // agent-mech rules (MechData.h)
     bool overkill = false;                    // targeting.overkill: auto-targeting skips enemies already doomed by shots in flight (StarCraft II)
     std::vector<ResourceDef> resources;
     std::vector<std::string> tagNames;
@@ -620,7 +620,7 @@ struct Rules {
     bool buildingStorage = false;              // "storage": "buildings": goods live in building inventories
     RoadNetworkRules roadNetwork;
     LaneRules lanes;
-    RouteRules routes;                         // lanes.routes / lanes.groups (RtsRoutesData.h)
+    RouteRules routes;                         // lanes.routes / lanes.groups (RoutesData.h)
     MovementRules movement;
     bool settlers = false;                     // any settlers-economy mechanic present
     bool advancedEffects = false;              // statuses / delivery / skills beyond the original instant effects
@@ -635,10 +635,10 @@ struct Rules {
     std::vector<TrapDef> traps;
     bool fidelity = false;                     // any of them present: their system runs, their state is hashed
     int16_t stTrapHidden = -1, stTrapSeen = -1; // built-in statuses of hidden / exposed traps
-    std::vector<GridFieldDef> gridFields;      // rules "fields" (RtsGridFieldData.h); maps add / override in setup
-    RaidRules raid;                            // rules "raid" (RtsRaidData.h): extraction raids
-    std::shared_ptr<const ProgressionRules> progression;   // rules "progression" (RtsProgressionData.h); null without the block
-    ModesRules modes;                          // match modes, timed rules, resource levels, match stats (RtsModes.h)
+    std::vector<GridFieldDef> gridFields;      // rules "fields" (GridFieldData.h); maps add / override in setup
+    RaidRules raid;                            // rules "raid" (RaidData.h): extraction raids
+    std::shared_ptr<const ProgressionRules> progression;   // rules "progression" (ProgressionData.h); null without the block
+    ModesRules modes;                          // match modes, timed rules, resource levels, match stats (ModesData.h)
 
     int findRoom(const std::string& id) const;
     int findDiggable(char c) const;
@@ -653,13 +653,13 @@ struct Rules {
 
 Rules loadRules(const Json& j);        // throws std::runtime_error with a readable message
 void loadFlowFieldRules(const Json& j, FlowFieldRules& out, const std::string& where);   // movement.flowField (rules or map)
-void loadMechRules(Rules& r, const Json& j);   // RtsMechData.cpp, called by loadRules after types are parsed
+void loadMechRules(Rules& r, const Json& j);   // MechData.cpp, called by loadRules after types are parsed
 // Unit designs (UD): rules "designs": {"chassis": {...}, "parts": {...}} and types with "design": {"chassis", "parts"}
 // expand into plain type blocks. Returns a copy without "designs"; loadRules calls it when the block is present.
 Json expandDesigns(const Json& j);
 void loadMechStage4(Rules& r, const Json& j);   // RtsMechData4.cpp: morale, fatigue, charge, supply, conveyors
 VictoryRules loadVictory(const Json& j, const VictoryRules& def);
-// match modes (RtsModesData.cpp): loadRules calls loadModes; setup merges rules / preset / map and parses the result
+// match modes (ModesData.cpp): loadRules calls loadModes; setup merges rules / preset / map and parses the result
 void loadModes(Rules& r, const Json& j);
 ModesRules parseModes(const Rules& r, const Json& modes);
 std::vector<TimedRule> parseTimedRules(const Rules& r, const std::string& where, const Json& list);

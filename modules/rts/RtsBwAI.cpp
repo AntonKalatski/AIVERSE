@@ -724,7 +724,8 @@ void BwImpl::resetBot(Ctx& c) {
     ai.ashleyTimer_ = Fixed{}; ai.activeTargets_.clear();
 }
 
-void BwAI::update(Simulation& sim, RtsModule& m) {
+void BwAI::update(Simulation& sim) {
+    RtsModule& m = static_cast<RtsModule&>(sim.module());
     cfg_ = std::dynamic_pointer_cast<const BwAIConfig>(m.aiConfig());
     if (!cfg_) return;
     const BwProfile& prof = cfg_->profileFor(player_);

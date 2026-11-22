@@ -13,8 +13,8 @@
 #include <vector>
 #include "../../engine/sim/CommonComponents.h"
 #include "../../engine/sim/Simulation.h"
-#include "RtsData.h"
-#include "RtsAIControllers.h"
+#include "../../engine/game/GameData.h"
+#include "../../engine/game/AIControllers.h"
 #include "RtsMap.h"
 #include "RtsColliders.h"
 #include "RtsTriggers.h"
@@ -706,7 +706,7 @@ public:
     Fixed stat(Simulation& sim, Entity e, Stat s) const;          // effective stat with techs/levels/buffs
     // stat of a type for a player without an entity (RtsModule::stat without per-entity parts), + moraleDelta perUnit levels
     Fixed typeStatWithMorale(Simulation& sim, uint8_t player, uint16_t type, Stat s, int moraleDelta) const;
-    // settings of the computer player controller of rules ai.controller (null for builtin / scripted), RtsAIControllers.h
+    // settings of the computer player controller of rules ai.controller (null for builtin / scripted), AIControllers.h
     const std::shared_ptr<const AIControllerConfig>& aiConfig() const { return aiConfig_; }
     const AIControllerKind* aiKind() const { return aiKind_; }
     // slots played by computer controllers in this process (not sim state: controllers may tell them from humans)
@@ -912,7 +912,7 @@ private:
     void sysMatchStats(Simulation& sim);
     void hashModes(Simulation& sim, Hasher& h);
     friend bool ioModesState(RtsModule& m, Simulation& sim, Archive& a);
-    std::shared_ptr<const AIControllerConfig> aiConfig_;   // rules ai.controller settings (RtsAIControllers.h)
+    std::shared_ptr<const AIControllerConfig> aiConfig_;   // rules ai.controller settings (AIControllers.h)
     const AIControllerKind* aiKind_ = nullptr;
     mutable std::vector<uint8_t> botSlots_;            // controller bot slots of this process (never read by the sim)
     void notePointProduced(Simulation& sim, Entity e, int n);   // RtsHypnosis.cpp: per point produced units (controllers with pointStats)

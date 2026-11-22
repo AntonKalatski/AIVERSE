@@ -9,7 +9,7 @@
 //   resource.<id> | type.<id> | tech.<id> | faction.<id> | ability.<id>
 // A data name written as "@some.key" is looked up under that key instead.
 #pragma once
-#include "RtsData.h"
+#include "../../engine/game/GameData.h"
 #include "engine/i18n/Localization.h"
 
 #include <utility>

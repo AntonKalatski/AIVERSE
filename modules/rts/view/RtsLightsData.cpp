@@ -1,7 +1,7 @@
 // Pure part of RtsLights (no GPU, no view): data parsing, day/night sky, weather, lightning.
 // Linked into aiverse_tests.
 #include "RtsLights.h"
-#include "../RtsAbilityData.h"
+#include "../../../engine/game/AbilityData.h"
 
 #include <algorithm>
 #include <cmath>

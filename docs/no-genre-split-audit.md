@@ -141,7 +141,7 @@ concrete games: Kingston (`KingstonPolicePolicy.h`, `KingstonAmbulance.inc`, `Ki
 `KingstonPedestrianVehicles.inc`, `KingstonPedestrianCrossingPolicy.h`, `KingstonRocketCollision.h` 816 lines,
 `kingston/{CityTrafficAreas,DeckBroadphase,FireResponseDetour,FireResponseRoute,TrafficPriorityPolicy}.h`; trigger vars
 `police_custody_*`, `drive_*_phase` in `RtsTopDown`) and Bunker Wars (`RtsBwAI*`: rules `ai.controller "bw"` parsed in
-`RtsData.cpp`, `BwAIHolder` in `RtsAI`, `RtsBwAISim.cpp` compiled into every game, `RtsModes` garrison hook).
+`GameData.cpp`, `BwAIHolder` in `RtsAI`, `RtsBwAISim.cpp` compiled into every game, `RtsModes` garrison hook).
 Moving the core into `engine/` with that code would put games into the engine. Order:
 
 - **C0a game hooks.** Generic extension points in the core (AI controller factory by name; traffic responder /

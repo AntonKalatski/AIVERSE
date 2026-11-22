@@ -15,7 +15,7 @@
 #include <vector>
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
-#include "RtsData.h"
+#include "../../engine/game/GameData.h"
 
 namespace aiverse::game {
 

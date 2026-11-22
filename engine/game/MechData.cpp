@@ -1,5 +1,5 @@
-// Parsing of the agent-mech blocks (see RtsMechData.h). Every key is optional; errors name the place.
-#include "RtsData.h"
+// Parsing of the agent-mech blocks (see MechData.h). Every key is optional; errors name the place.
+#include "GameData.h"
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
@@ -231,7 +231,7 @@ static void loadMechStage2(Rules& r, const Json& j) {
 }
 
 // stage 3: cover, suppression, arcs, turrets, ruins, crush, craters, staff, growth, autonomy, power fields,
-// infection, rounds (garrison-paid upgrades: RtsOriginalsData.cpp cost.garrison)
+// infection, rounds (garrison-paid upgrades: OriginalsData.cpp cost.garrison)
 static void loadMechStage3(Rules& r, const Json& j) {
     MechRules& m = r.mech;
     if (const Json& cv = j["cover"]; cv.isObject()) {

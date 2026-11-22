@@ -215,7 +215,7 @@ add_subdirectory(engine/meta)
 
 # Generic data-driven RTS gameplay (units, orders, economy, combat, garrisons, AI)
 add_library(aiverse_game STATIC
-    modules/rts/RtsData.cpp
+    engine/game/GameData.cpp
     modules/rts/RtsMap.cpp
     modules/rts/RtsHpa.cpp
     modules/rts/RtsMapSphere.cpp
@@ -236,16 +236,16 @@ add_library(aiverse_game STATIC
     modules/rts/RtsSettlers.cpp
     modules/rts/RtsLanes.cpp
     modules/rts/RtsAvoidance.cpp
-    modules/rts/RtsEffectsData.cpp
+    engine/game/EffectsData.cpp
     modules/rts/RtsEffects.cpp
     modules/rts/RtsSkillObjects.cpp
     modules/rts/RtsSkills.cpp
     modules/rts/RtsAI.cpp
-    modules/rts/RtsOriginalsData.cpp
+    engine/game/OriginalsData.cpp
     modules/rts/RtsOriginals.cpp
-    modules/rts/RtsFidelityData.cpp
+    engine/game/FidelityData.cpp
     modules/rts/RtsFidelity.cpp
-    modules/rts/RtsModesData.cpp
+    engine/game/ModesData.cpp
     modules/rts/RtsModes.cpp
     modules/rts/RtsAIOriginals.cpp
     modules/rts/RtsAIFidelity.cpp
@@ -310,7 +310,7 @@ endfunction()
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
 # Every game: hypnotised sends, per point counters, the controller registry and the registration point.
-target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp modules/rts/RtsAIControllers.cpp modules/rts/RtsGameExtensions.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp engine/game/AIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
@@ -2239,9 +2239,9 @@ if(NOT MSVC)
     set_source_files_properties(modules/rts/RtsScriptIeee.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 # grid fields (G5): data, kernels, Lua `field` table (docs/fields.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp engine/game/GridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
-target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp engine/game/RaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsDrivingApi.cpp modules/rts/RtsServicesApi.cpp modules/rts/RtsPrompt.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_COMMERCE "Include city commerce (rules \"commerce\")"
     modules/rts/disabled/Commerce.cpp modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp)
@@ -2251,7 +2251,7 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsSensors.cpp modules/rts/RtsFi
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsProgression.cpp modules/rts/RtsProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsProgression.cpp engine/game/ProgressionData.cpp modules/rts/RtsProgressionApi.cpp)
 # boss encounters (agent-df-encounters-glue): rules "encounters" over the boss-encounters library package (docs/encounters.md)
 aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules \"encounters\")"
     modules/rts/disabled/Encounters.cpp modules/rts/RtsEncounters.cpp modules/rts/RtsEncountersApi.cpp)
@@ -2263,7 +2263,7 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsEnv.cpp modules/rts/RtsEnvDat
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
-target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp engine/game/RoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_ARSENAL "Include hero weapons (rules \"arsenal\")"
     modules/rts/disabled/Arsenal.cpp modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)

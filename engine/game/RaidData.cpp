@@ -1,5 +1,5 @@
-// Parsing of rules / map "raid" blocks (RtsRaidData.h). Errors name the block and the key.
-#include "RtsData.h"
+// Parsing of rules / map "raid" blocks (RaidData.h). Errors name the block and the key.
+#include "GameData.h"
 #include <algorithm>
 #include <stdexcept>
 

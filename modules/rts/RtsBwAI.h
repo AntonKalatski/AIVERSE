@@ -188,7 +188,7 @@ class BwAI : public AIController {
 public:
     BwAI(uint8_t player, uint64_t seed) : player_(player), rng_(seed ^ 0xb3a1u, player) {}
     std::unique_ptr<AIController> clone() const override { return std::make_unique<BwAI>(*this); }
-    void update(Simulation& sim, RtsModule& m) override;
+    void update(Simulation& sim) override;
     void stateIo(Archive& a) override;
 
     struct Ctx;   // per-update context (RtsBwAIInternal.h)

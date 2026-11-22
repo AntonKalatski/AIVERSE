@@ -1,5 +1,5 @@
 // agent-mech stage 4 data: morale / rout / fatigue / charge (Total War), supply lines.
-#include "RtsData.h"
+#include "../../engine/game/GameData.h"
 #include <algorithm>
 #include <stdexcept>
 

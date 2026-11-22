@@ -1,4 +1,4 @@
-// In-match progression at run time (data: RtsProgressionData.h, reference: docs/progression.md).
+// In-match progression at run time (data: ProgressionData.h, reference: docs/progression.md).
 //
 // State: the ProgressionStore world resource (present only in games with a rules "progression" block, so other games
 // keep their checksums and saves; rollback snapshots copy it like any other resource). It holds the library states
@@ -14,8 +14,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "RtsProgressionData.h"
-#include "RtsData.h"
+#include "../../engine/game/ProgressionData.h"
+#include "../../engine/game/GameData.h"
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 

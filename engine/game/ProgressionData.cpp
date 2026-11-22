@@ -1,6 +1,6 @@
-// rules "progression": the match-progression library format plus engine keys (RtsProgressionData.h).
-#include "RtsProgressionData.h"
-#include "RtsEffectsData.h"
+// rules "progression": the match-progression library format plus engine keys (ProgressionData.h).
+#include "ProgressionData.h"
+#include "EffectsData.h"
 #include "libraries/include/aiverselib/mechanics/PerksData.h"
 #include "libraries/include/aiverselib/mechanics/PerksPersistence.h"
 #include <algorithm>

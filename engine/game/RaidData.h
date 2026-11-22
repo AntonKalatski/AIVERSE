@@ -1,6 +1,6 @@
 // Extraction raids (rules "raid", map "raid"): the match loop of extraction shooters (Drone Fall, Tarkov-likes).
 // Raiders enter the map, open containers and interactables (hold to use), carry loot in their item bags
-// (rules "items" + type "inventory", RtsMechData.h), complete objectives and leave through extraction points
+// (rules "items" + type "inventory", MechData.h), complete objectives and leave through extraction points
 // (zones with open / sleep cycles, called helicopters with an arrival phase, channel timers, contest and
 // interrupt rules). The match ends when every raider is resolved (extracted, dead, timed out, abandoned)
 // or the clock runs out; each player gets a receipt (a deterministic JSON payload with a stable operation id)

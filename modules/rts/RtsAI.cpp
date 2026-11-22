@@ -37,7 +37,7 @@ void RtsAI::update(Simulation& sim) {
     if (!m || m->rules().scriptedAI) return;
     if (const AIControllerKind* k = m->aiKind()) {   // a registered controller keeps its own clock (every tick)
         if (!ctl_.p) { ctl_.p = k->create(player_, rng_.state()); ctlKind_ = k->name; }
-        ctl_.p->update(sim, *m);
+        ctl_.p->update(sim);
         return;
     }
     auto* pi = sim.player(player_);

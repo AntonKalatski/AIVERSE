@@ -15,7 +15,6 @@ namespace aiverse { class Simulation; class Archive; }
 
 namespace aiverse::game {
 
-class RtsModule;
 struct Rules;
 
 struct AIControllerConfig { virtual ~AIControllerConfig() = default; };
@@ -24,7 +23,7 @@ class AIController {
 public:
     virtual ~AIController() = default;
     virtual std::unique_ptr<AIController> clone() const = 0;
-    virtual void update(Simulation& sim, RtsModule& m) = 0;   // every tick for its slot
+    virtual void update(Simulation& sim) = 0;                 // every tick for its slot (sim.module(): the game module)
     virtual void stateIo(Archive& a) = 0;                     // bot save state (RtsAI save state v4)
 };
 

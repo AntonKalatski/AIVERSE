@@ -1,8 +1,8 @@
 // Data of the foundation / trap / group-teleport / charge mechanics (RtsFidelity.cpp): concrete slabs and
 // weathering (Dune II), traps (Dungeon Keeper, Stronghold, They Are Billions). The two effect kinds
-// (addCharges, teleportGroup) are parsed with the other effects in RtsEffectsData.cpp.
+// (addCharges, teleportGroup) are parsed with the other effects in EffectsData.cpp.
 // Every block is optional; without them a game loads and plays exactly as before.
-#include "RtsEffectsData.h"
+#include "EffectsData.h"
 #include <stdexcept>
 
 namespace aiverse::game {

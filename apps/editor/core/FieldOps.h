@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include "Workspace.h"
-#include "modules/rts/RtsGridFieldData.h"
+#include "engine/game/GridFieldData.h"
 #include "modules/rts/view/RtsFieldView.h"
 
 namespace aiverse::game { struct RtsScene; }

@@ -1,6 +1,6 @@
 // Parsing of grid fields: rules "fields", type "field" emitter blocks, map "gridFields" (overrides + initial
 // values) and the RLE text format of field layers. Errors name the field and the key.
-#include "RtsData.h"
+#include "GameData.h"
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>

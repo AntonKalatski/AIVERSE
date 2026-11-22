@@ -37,7 +37,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "../../../engine/render/Animation.h"
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/sim/Simulation.h"
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 #include "../RtsMap.h"
 #include "Rts2DView.h"
 #include "RtsGroundFx.h"

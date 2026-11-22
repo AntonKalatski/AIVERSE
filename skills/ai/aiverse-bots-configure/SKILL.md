@@ -17,7 +17,7 @@ Player `waves: true` is a different thing (wave players have other defeat semant
 
 ## 1. Built-in knobs (`rules.ai`)
 
-All optional; `RtsData.cpp` range-checks them and fails loading with `ai.<key>`.
+All optional; `GameData.cpp` range-checks them and fails loading with `ai.<key>`.
 
 | key | default | range | meaning |
 |---|---|---|---|
@@ -36,7 +36,7 @@ Edit with `rules_merge {"ai": {...}}`, read the `rules_lint` part of the answer.
 
 ## 2. Per-slot styles and difficulty (map `players[i].ai`)
 
-Engine code: `parseAIPlayerRules` (`modules/rts/RtsData.cpp`), `applyAIPreset` and the slot step of `RtsAI::applyRulesConfig` (`modules/rts/RtsAITactics.cpp`); test `ai_map_player_presets` in `tests/tests.cpp`.
+Engine code: `parseAIPlayerRules` (`engine/game/GameData.cpp`), `applyAIPreset` and the slot step of `RtsAI::applyRulesConfig` (`modules/rts/RtsAITactics.cpp`); test `ai_map_player_presets` in `tests/tests.cpp`.
 - `player_set {player: 2, ai: {"preset": "rush", "firstAttackArmy": 3}}` (or edit the map JSON). `ai: {}` clears it.
 - Presets: `easy`, `normal`, `hard`, `rush`, `defender`, `economist` - the same table as the native `RtsBot` (`docs/bots.md`).
 - Keys after the preset: every rules `ai` knob above, `thinkTicks` (1..3600, reaction time), `aggression` (0.1..4).

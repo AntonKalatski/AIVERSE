@@ -21,7 +21,7 @@
 #include <vector>
 #include "../../../engine/audio/Audio.h"
 #include "../../../engine/sim/Simulation.h"
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 
 namespace aiverse::game {
 

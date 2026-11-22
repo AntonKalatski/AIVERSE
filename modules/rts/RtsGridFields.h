@@ -1,4 +1,4 @@
-// Grid fields at run time (data: RtsGridFieldData.h, reference: docs/fields.md).
+// Grid fields at run time (data: GridFieldData.h, reference: docs/fields.md).
 //
 // State: the GridFieldStore world resource (present only in games with fields, so other games keep their
 // checksums and saves): per field one int32 per cell and layer, a per-chunk count of cells that differ from the
@@ -17,7 +17,7 @@
 #include <functional>
 #include <string>
 #include <vector>
-#include "RtsGridFieldData.h"
+#include "../../engine/game/GridFieldData.h"
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 

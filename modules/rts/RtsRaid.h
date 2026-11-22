@@ -1,4 +1,4 @@
-// Extraction raids at run time (data: RtsRaidData.h, reference: docs/raid.md).
+// Extraction raids at run time (data: RaidData.h, reference: docs/raid.md).
 //
 // State: the RaidStore world resource (present only in games with a rules "raid" block, so other games keep
 // their checksums and saves; rollback snapshots copy it like any other resource). Carried items stay in the
@@ -14,7 +14,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "RtsRaidData.h"
+#include "../../engine/game/RaidData.h"
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 

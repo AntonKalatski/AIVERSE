@@ -12,7 +12,7 @@
 #include <vector>
 #include "MapDoc.h"
 #include "engine/data/Json.h"
-#include "modules/rts/RtsData.h"
+#include "engine/game/GameData.h"
 #include "engine/data/JsonCompose.h"
 
 namespace aiverse::editor {

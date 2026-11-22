@@ -1,4 +1,4 @@
-// Match modes: rule-level victory modes and match clocks as generic data (RtsModes.h, docs/game-format.md § Match modes):
+// Match modes: rule-level victory modes and match clocks as generic data (ModesData.h, docs/game-format.md § Match modes):
 //   modes.domination (hold timer per point; holdAny for free-for-all, holdAll for teams), modes.kingOfTheHill (a
 //   score per side counting down while it holds the hill), modes.timeLimit (speed steps, decision by points),
 //   modes.suddenDeath (counter, slowed preview, a status for everyone, optional end by points), modes.zones (a

@@ -25,7 +25,7 @@
 #include "../../../engine/render/TextureCache.h"
 #include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/RenderDeviceLifetime.h"
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 #include "../RtsMap.h"
 
 namespace aiverse::render { class NativeMeshBatch; }

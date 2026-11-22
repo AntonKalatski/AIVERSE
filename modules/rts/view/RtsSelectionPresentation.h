@@ -2,7 +2,7 @@
 // This adapter translates authored simulation type dimensions into a visual
 // picking radius. Do not move Rules or UnitType into engine/view.
 #pragma once
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>

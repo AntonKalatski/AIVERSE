@@ -54,7 +54,7 @@
 #include <vector>
 #include "../../../engine/data/Json.h"
 #include "../../../engine/render/Renderer3D.h"
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 #include "../RtsMap.h"
 
 namespace aiverse::game {

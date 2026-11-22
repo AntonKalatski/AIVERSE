@@ -11,7 +11,7 @@
 #include <vector>
 #include "engine/data/Json.h"
 #include "engine/i18n/Localization.h"
-#include "modules/rts/RtsData.h"
+#include "engine/game/GameData.h"
 
 namespace aiverse::editor {
 

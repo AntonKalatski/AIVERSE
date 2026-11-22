@@ -165,7 +165,7 @@ Account-level `engine/meta` shop, balances, offers, payments, social and LiveOps
 - `libraries/catalog.json` (120 packages and per-package sources)
 - `AGENTS.md`, `docs/ecs-mechanic-composition.md`, `docs/mechanics-packages.md`
 - `engine/core/ECS.h`, `engine/sim/Simulation.h`, `engine/sim/CommonComponents.h`
-- `modules/rts/RtsModule.cpp`, `RtsModule.h`, `RtsData.h`
+- `modules/rts/RtsModule.cpp`, `RtsModule.h`, `GameData.h`
 - `modules/fps/FpsModule.cpp`, `FpsModule.h`, `FpsSystems.h`
 - `engine/meta/Meta.h`, `docs/editor-unification-handoff.md`, `docs/ecs-agent-handoff.md`, `docs/overview.md`
 

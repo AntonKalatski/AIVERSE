@@ -1,7 +1,7 @@
-// Parser for abilities / effects / statuses (RtsEffectsData.cpp), used by loadRules.
+// Parser for abilities / effects / statuses (EffectsData.cpp), used by loadRules.
 #pragma once
 #include <functional>
-#include "RtsData.h"
+#include "GameData.h"
 
 namespace aiverse::game {
 
@@ -29,10 +29,10 @@ private:
     uint64_t statusTags(const Json& arr);
 };
 
-// Fidelity mechanics of the type / rules blocks (RtsOriginalsData.cpp), called by loadRules before the
+// Fidelity mechanics of the type / rules blocks (OriginalsData.cpp), called by loadRules before the
 // effect engine switch is decided.
 void loadOriginals(Rules& r, const Json& j, EffectParser& ep);
-// Foundations, traps (RtsFidelityData.cpp), called right after loadOriginals.
+// Foundations, traps (FidelityData.cpp), called right after loadOriginals.
 void loadFidelity(Rules& r, const Json& j, EffectParser& ep);
 
 } // namespace aiverse::game

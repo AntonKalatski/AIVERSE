@@ -1,8 +1,8 @@
-#include "RtsData.h"
+#include "GameData.h"
 #include "../../engine/data/JsonCompose.h"
-#include "RtsEffectsData.h"
-#include "RtsProgressionData.h"
-#include "RtsAIControllers.h"
+#include "EffectsData.h"
+#include "ProgressionData.h"
+#include "AIControllers.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -433,7 +433,7 @@ Rules loadRules(const Json& j) {
         t.tags = tagsOf(tj["tags"]);
         if (const Json& h = tj["health"]; h.isObject()) {
             t.maxHp = h.getFx("max", t.maxHp);
-            t.armor = h["armor"].isObject() ? Fixed{} : h.getFx("armor");   // object form: RtsOriginalsData.cpp
+            t.armor = h["armor"].isObject() ? Fixed{} : h.getFx("armor");   // object form: OriginalsData.cpp
             t.regen = h.getFx("regen");
             t.armorType = armorIdx(h.getStr("armorType", "none"));
         }
@@ -789,7 +789,7 @@ Rules loadRules(const Json& j) {
         r.lanes.left = std::clamp<int>(int(ln.getInt("left", 0)), 0, 8);
         r.lanes.right = std::clamp<int>(int(ln.getInt("right", 0)), 0, 8);
         r.lanes.spacing = ln.getFx("spacing", r.lanes.spacing);
-        loadRouteRules(ln, r.routes);   // RtsRoutesData.cpp
+        loadRouteRules(ln, r.routes);   // RoutesData.cpp
     }
     if (const Json& mv = j["movement"]; mv.isObject()) {
         std::string av = mv.getStr("avoidance", "rvo");
@@ -847,10 +847,10 @@ Rules loadRules(const Json& j) {
         // claimers / portals imply a territory layer
         for (auto& t : r.types) if (t.claimerTime.raw > 0 || t.claimRate.raw > 0 || t.claimedByTerritory) r.territory.enabled = true;
     }
-    loadOriginals(r, j, ep);   // fidelity mechanics (RtsOriginalsData.cpp)
-    loadFidelity(r, j, ep);    // foundations, traps (RtsFidelityData.cpp)
-    loadProgressionRules(r, j, ep);   // RtsProgressionData.cpp: rules "progression" (on-hit payloads count for the effect engine)
-    loadModes(r, j);           // match modes, timed rules, resource levels (RtsModesData.cpp)
+    loadOriginals(r, j, ep);   // fidelity mechanics (OriginalsData.cpp)
+    loadFidelity(r, j, ep);    // foundations, traps (FidelityData.cpp)
+    loadProgressionRules(r, j, ep);   // ProgressionData.cpp: rules "progression" (on-hit payloads count for the effect engine)
+    loadModes(r, j);           // match modes, timed rules, resource levels (ModesData.cpp)
     // built-in statuses (internal ids start with '_')
     r.userStatuses = r.statuses.size();
     auto builtin = [&](const char* id, uint32_t flags) {
@@ -884,8 +884,8 @@ Rules loadRules(const Json& j) {
                 r.possession.enabled || !r.playerAbilities.empty();
     loadMechRules(r, j);
     r.armor.plainFloor = !r.originals && !r.mech.any && !j.has("armor") && !j.has("armorModel");   // old games: damage - armor, at least raw / 5
-    loadGridFieldRules(r, j);   // RtsGridFieldData.cpp: rules "fields", type "field" emitters, "field" effects
-    loadRaidRules(r, j);        // RtsRaidData.cpp: rules "raid" (extraction raids)
+    loadGridFieldRules(r, j);   // GridFieldData.cpp: rules "fields", type "field" emitters, "field" effects
+    loadRaidRules(r, j);        // RaidData.cpp: rules "raid" (extraction raids)
     if (auto* k = findAIController(r.aiController); k && k->load) k->load(j["ai"], Json(), r);   // validate the controller settings now (map part at setup)
     return r;
 }

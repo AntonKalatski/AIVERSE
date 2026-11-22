@@ -1,6 +1,6 @@
-// Data of the match modes (RtsModes.h): rules "modes" / "matchModes" / "timedRules" / "matchStats",
+// Data of the match modes (ModesData.h): rules "modes" / "matchModes" / "timedRules" / "matchStats",
 // resource "levels". Every block is optional; games without them load and play exactly as before.
-#include "RtsData.h"
+#include "GameData.h"
 #include <stdexcept>
 
 namespace aiverse::game {

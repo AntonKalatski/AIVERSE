@@ -1,5 +1,5 @@
-// Parsing of abilities, effects, statuses and delivery blocks (see RtsAbilityData.h). Called from loadRules.
-#include "RtsEffectsData.h"
+// Parsing of abilities, effects, statuses and delivery blocks (see AbilityData.h). Called from loadRules.
+#include "EffectsData.h"
 #include <algorithm>
 #include <stdexcept>
 

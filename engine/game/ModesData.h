@@ -1,7 +1,7 @@
 // Match modes: rule-level victory modes and their clocks as generic data: rules "modes" (map "modes" overrides,
 // rules "matchModes" presets picked by map "matchMode"), rules "timedRules" / "ruleSets", resource "levels",
 // rules "matchStats". See docs/game-format.md § Match modes.
-// Data structs live in Rules (RtsData.h), the per-match state in GameState::modes (RtsModule.h).
+// Data structs live in Rules (GameData.h), the per-match state in GameState::modes (RtsModule.h).
 #pragma once
 #include <cstdint>
 #include <string>

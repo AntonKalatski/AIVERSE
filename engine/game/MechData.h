@@ -1,6 +1,6 @@
-// Included by RtsData.h after Stat / StatMod / layers.
+// Included by GameData.h after Stat / StatMod / layers.
 // Data of the mechanics added for the "top-100 strategy games" plan (agent-mech): stances, retreat,
-// transports and garrisoned infantry, ... Parsed in RtsMechData.cpp from optional JSON blocks; a game
+// transports and garrisoned infantry, ... Parsed in MechData.cpp from optional JSON blocks; a game
 // that uses none of them loads, plays and hashes exactly as before.
 #pragma once
 #include <cstdint>

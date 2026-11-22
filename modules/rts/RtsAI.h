@@ -3,7 +3,7 @@
 // It adapts to the data: economy-and-army play when the game has workers/producers,
 // garrison "send" play (Mushroom Wars) when the player owns growing garrisons.
 #pragma once
-#include "RtsAIControllers.h"
+#include "../../engine/game/AIControllers.h"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -30,7 +30,7 @@ struct AIConfig {
     int invasionSize = 6;         // planets: orbit units gathered before an invasion of another body
 };
 // Bot presets (map players[i].ai.preset, aiverselib bots-rts settings): changes only the fields the preset names.
-// False for an unknown name (isAIPreset in RtsData.h lists the same names).
+// False for an unknown name (isAIPreset in GameData.h lists the same names).
 bool applyAIPreset(AIConfig& c, const std::string& name);
 struct AITerrain;
 

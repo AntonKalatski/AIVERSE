@@ -1,5 +1,5 @@
 // Abilities, effects, statuses and their delivery: the data side of RtsEffects.cpp / RtsSkills.cpp.
-// Included from RtsData.h (needs Amount, StatMod, Stat, kNoType).
+// Included from GameData.h (needs Amount, StatMod, Stat, kNoType).
 //
 // Everything a skill does is a *payload*: a list of effects in Rules::payloads. Effects may carry
 // their own payload (a projectile delivers one on impact, an area applies one on its trigger, a

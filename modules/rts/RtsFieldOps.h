@@ -26,7 +26,7 @@
 #include <vector>
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
-#include "RtsData.h"
+#include "../../engine/game/GameData.h"
 
 namespace aiverse { class Simulation; class Hasher; class Archive; class Json; struct Command; }
 

@@ -2,7 +2,7 @@
 // (Warcraft III armor and heroes, StarCraft shields and pylon fields, Age of Empires armor classes and
 // bonuses, Z drivers, They Are Billions infection, Mushroom Wars 2 building levels, ...).
 // Every block is optional; without them a game loads and plays exactly as before.
-#include "RtsEffectsData.h"
+#include "EffectsData.h"
 #include <stdexcept>
 
 namespace aiverse::game {

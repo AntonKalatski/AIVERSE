@@ -16,7 +16,7 @@
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/SpriteBatch.h"
 #include "../../../engine/render/TextureCache.h"
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 #include "../RtsMap.h"
 #include "../RtsTiles.h"
 #include "RtsSpriteShadow.h"

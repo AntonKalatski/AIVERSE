@@ -1,10 +1,10 @@
-// Runtime state of authored routes, row groups and the multiscreen view (RtsRoutes.cpp; data in RtsRoutesData.h).
+// Runtime state of authored routes, row groups and the multiscreen view (RtsRoutes.cpp; data in RoutesData.h).
 #pragma once
 #include <cstdint>
 #include <map>
 #include <vector>
 #include "../../engine/core/ECS.h"
-#include "RtsRoutesData.h"
+#include "../../engine/game/RoutesData.h"
 
 namespace aiverse::game {
 

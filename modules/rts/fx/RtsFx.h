@@ -27,7 +27,7 @@
 #include <vector>
 #include "../../../engine/fx/ParticleSystem.h"
 #include "../../../engine/sim/Simulation.h"
-#include "../RtsData.h"
+#include "../../../engine/game/GameData.h"
 
 namespace aiverse::game {
 
