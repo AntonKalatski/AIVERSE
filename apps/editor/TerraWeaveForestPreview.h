@@ -125,19 +125,21 @@ public:
                 terraweave::biomeBit(terraweave::Biome::Wetland) |
                 terraweave::biomeBit(terraweave::Biome::Tundra) |
                 terraweave::biomeBit(terraweave::Biome::Alpine);
+            // Map-saved forest recipe (terraweave_forest_set); defaults otherwise.
+            const auto forestRecipe = terraweave_ops_detail::forestRecipe(doc.data.extra["terraweaveForest"]);
             std::vector<terraweave::FoliageSpecies> species;
             for (const auto& [id, weight] : speciesWeights_) {
                 terraweave::FoliageSpecies f;
                 f.id = id;
                 f.biomeMask = forestBiomes;
                 f.weight = weight;
-                f.maxSlopePermille = 1250;
+                f.maxSlopePermille = forestRecipe.maxSlopePermille;
                 species.push_back(f);
             }
             terraweave::ScatterSettings scatter;
-            scatter.seed = t.seed ^ 0x5457464f52455354ULL;
-            scatter.spacingCm = 1100;
-            scatter.densityPermille = 780;
+            scatter.seed = (t.seed ^ 0x5457464f52455354ULL) + uint64_t(forestRecipe.seedOffset);
+            scatter.spacingCm = forestRecipe.spacingCm;
+            scatter.densityPermille = forestRecipe.enabled ? uint32_t(forestRecipe.densityPermille) : 0u;
             // Deterministic world-lattice generation, independent of camera/tile order.
             for (int iz = -kRadiusInTiles; iz <= kRadiusInTiles; ++iz)
                 for (int ix = -kRadiusInTiles; ix <= kRadiusInTiles; ++ix) {

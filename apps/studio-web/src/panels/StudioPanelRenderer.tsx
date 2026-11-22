@@ -44,6 +44,8 @@ import HumanAppearancePanel from './generated/HumanAppearancePanel';
 
 import HumanCreatorPanel from './generated/HumanCreatorPanel';
 
+import TerraweaveGeneratorPanel from './generated/TerraweaveGeneratorPanel';
+
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
@@ -160,6 +162,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'wind': return <WindPanel snapshot={snapshot}/>;
       case 'human_appearance': return <HumanAppearancePanel snapshot={snapshot}/>;
       case 'human_creator': return <HumanCreatorPanel snapshot={snapshot}/>;
+      case 'terraweave_generator': return <TerraweaveGeneratorPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
       case 'animation':
