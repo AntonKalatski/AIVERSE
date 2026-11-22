@@ -81,7 +81,7 @@ struct App {
     }
     // Presents characters, vehicles and projectiles of the snapshot to the
     // shared SpectraFxEntityEffects; game code declares nothing here.
-    void presentEntityEffects(float dt,const fps::CharacterSnapshot& local,world::Cell origin) {
+    void presentEntityEffects(float dt,const actor::CharacterSnapshot& local,world::Cell origin) {
         auto& fxe=fxScene.entities();
         if(!fxe.enabled())return;
         const auto at=[&](Vec3 p){return visual(world::relativeTo(p,origin,32));};
