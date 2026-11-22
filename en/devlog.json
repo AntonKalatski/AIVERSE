@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T10:26:56+00:00",
+ "generated": "2026-11-22T10:33:55+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -260,6 +260,39 @@
     {
      "src": "../media/docs/devlog/media/2026-11-22-planets-terraweave/orbit.jpg",
      "caption": "Big Planet from orbit: relief and seas from TerraWeave fields"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/planets.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/planets.md"
+    }
+   ],
+   "author": "planets"
+  },
+  {
+   "id": "2026-11-22-planets-nereid-sea",
+   "date": "2026-11-22",
+   "system": "planets",
+   "title": "Planet seas on NEREID waves",
+   "summary": "Water on planets is now drawn with NEREID's wave model — the same as rivers and lakes on flat maps: turquoise shallows, deep blue and foam along the coast.",
+   "body": [
+    "NEREID's waves moved into a shared set of shader functions used by both flat water and planet seas. On a sphere the same waves are evaluated in three projections and blended by the surface direction, so cube faces show no seams.",
+    "The sea colour follows the depth under every point: light and clear near the shore, darker further out. Foam runs along the land's edge, and the edge itself follows the relief."
+   ],
+   "status": "done",
+   "verified": "Frames taken in the game client (OpenGL) on Big Planet; flat water on an ordinary map draws as before after the functions moved.",
+   "limits": "This is the look. NEREID water bodies on spheres do not exist yet: planet seas have no buoyancy, currents or water contact so far. The shader has not been run on Metal yet.",
+   "branch": "main",
+   "commit": "d04505b80",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-nereid-sea/coast.jpg",
+     "caption": "A planet coast: shallow water, foam along the edge and TerraWeave trees"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-nereid-sea/lakes.jpg",
+     "caption": "Lakes from orbit: colour by depth and a light rim"
     }
    ],
    "links": [
