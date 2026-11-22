@@ -166,7 +166,7 @@ after all input projection and optional view budget configuration.
 
 The original FPS event adapter has been moved out of the animation
 library to `engine/view/ActorAnimationEvents.h`.
-The shared `<aiverselib/animation/AnimationActionEdges.h>` now
+The shared `"engine/animation/AnimationActionEdges.h"` now
 processes only opaque named counters/boolean state transitions, with no
 FPS/RTS/action-type semantics. `playAnimationSlot` lives beside the
 generic ECS `AnimationMontageSlotsComponent` definition.

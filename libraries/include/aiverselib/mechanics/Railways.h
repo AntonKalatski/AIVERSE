@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // railways: trains on a track graph with block signalling (OpenTTD / Factorio style).
 // Track segments have a length, a block id and optional station; a block holds at most one train. Trains follow a
 // looping route of segments, accelerate and brake with fixed rates, reserve the next block before entering it (path

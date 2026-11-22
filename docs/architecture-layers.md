@@ -4,18 +4,21 @@
 engine/  <  libraries/  <  modules/<name>/  <  apps/, tools/, tests/
 ```
 
-A file includes only its own layer or a lower one. One module never includes another module.
-Check: `python3 tools/layers/check_layers.py` (CI job `layers`). It fails on a **new** edge and on an
+A file includes only its own layer or a lower one: `engine/` never includes `libraries/`. Code that the engine needs lives in `engine/` (move it down with its includes, as L1 and L3 did); `libraries/` may include `engine/`. One module never includes another module.
+Check: `python3 tools/layers/check_layers.py` (CI job `layers`). It also checks the build: an engine target never links a
+library package (`AIVERSE::lib_*`, `AIVERSE::libraries`, `AIVERSE::MotionWeave`, ...) and never adds `libraries/include`
+(engine targets use `aiverse_motionweave_core`; project native modules and their libraries go to `AIVERSE::native_modules`,
+see docs/native-modules.md). The build check has no allowlist. It fails on a **new** edge and on an
 allowlisted edge that is **gone**, so `tools/layers/allowlist.json` only shrinks.
 
 ## Debt in the allowlist
 
 | Id | What | Owner |
 |---|---|---|
-| G3 | closed 2026-11-22: no-genre moved these hosts out of `modules/` (their old edges are gone); what remains is L3 | — |
-| G4 | closed 2026-11-22: no-genre moved these hosts out of `modules/` (their old edges are gone); what remains is L3 | — |
-| L2 | closed 2026-11-22: no-genre moved these hosts out of `modules/` (their old edges are gone); what remains is L3 | — |
-| L3 | 55 edges after merging arch-layers with no-genre (2026-11-22): host code that no-genre moved from `modules/` into `engine/game`, `engine/actor`, `engine/vehicles`, `engine/view`, `engine/ui`, `engine/render/CameraBehavior.h`, `engine/net/authority/Session.cpp` includes `libraries/include/aiverselib/{mechanics,bots,systems,gameplay,animation}`. Either move the used packages down into `engine/` (as NEREID and MotionWeave did) or let those hosts live above `libraries/`; owner decision, recorded at the merge of arch-layers into agent-mechanics-audit and awaiting agreement | no-genre + arch-layers |
+| G3 | closed 2026-11-22: no-genre moved these hosts out of `modules/` (their old edges are gone); closed with L3 | — |
+| G4 | closed 2026-11-22: no-genre moved these hosts out of `modules/` (their old edges are gone); closed with L3 | — |
+| L2 | closed 2026-11-22: no-genre moved these hosts out of `modules/` (their old edges are gone); closed with L3 | — |
+| L3 | closed 2026-11-22: the 74 library headers that `engine/` used (and everything they include) moved into `engine/`: `aiverselib/mechanics/*` used by hosts -> `engine/mechanics/` (with `royale/`, `traffic/`), `aiverselib/bots/{Config,Fps,NavMesh,Navigation,Persistence,RaceBot}.h` -> `engine/bots/`, `aiverselib/gameplay/{Camera,Configuration,Diagnostics,Input,Inventory}.h` -> `engine/gameplay/`, `aiverselib/systems/{BuildingGen,Curves,Gear,Tags}.h` -> `engine/systems/`, `SweptShapes.h` and `runtime/NativeBytes.h` -> `engine/core/`, `animation/AnimationActionEdges.h` -> `engine/animation/`; the 155 `aiverselib/genre/` forwarders are deleted. Namespaces unchanged; all users updated, no compatibility headers | done |
 | L1 | closed 2026-11-21: InputFlow -> `engine/platform/input`, Graphs/Progression/Loot -> `engine/core`, SnapshotDelta -> `engine/net`, NEREID core -> `engine/world/nereid`, MotionWeave core -> `engine/animation`; old `aiverselib/...` paths removed, all users updated (no compatibility headers) | done |
 
 ## Rules

@@ -45,7 +45,7 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
 | Terrain, water, cities | `skills/world/aiverse-terrain`, `skills/world/aiverse-water`, `skills/world/aiverse-city-planner` | "terrain is fixed cells only" |
 | Visual extras | `skills/visuals/aiverse-cloth`, `skills/visuals/aiverse-cables`, `skills/visuals/aiverse-modeling`, `skills/visuals/aiverse-paint-layers` | "needs an external DCC or physics engine" |
 | Animation (MotionWeave) | `docs/motionweave.md`, `libraries/include/aiverselib/animation/`, `skills/gameplay/aiverse-motionweave` | "no montages / root motion / retargeting / ragdoll" - all exist (A3 partial) |
-| Melee and action combat | `libraries/include/aiverselib/mechanics/CombatActions.h`, `skills/gameplay/aiverse-combat-actions` | "no hitboxes, parry, stagger, lock-on" - they exist (A1 partial) |
+| Melee and action combat | `engine/mechanics/CombatActions.h`, `skills/gameplay/aiverse-combat-actions` | "no hitboxes, parry, stagger, lock-on" - they exist (A1 partial) |
 | Physical interactions | `mechanics/Carry.h`, `Push.h`, `Ropes.h`, `Doors.h`, `Platforms.h`, `Breakables.h`, `skills/gameplay/aiverse-physical-interactions` | "no carry/throw, ropes, moving platforms, breakables" (Q3, P1, F3 partial) |
 | Turn tactics, cards, puzzles | `mechanics/TacticsGrid.h`, `TacticsWeGo.h`, `CardGame*.h`, `Puzzle*.h`, `bots/CardBot.h` | "no hex grid, overwatch, sudoku/match-3, bot lookahead" (T2, T4, Q1, Q2 partial) |
 | Narrative and survival body | `mechanics/NarrativeScenes.h`, `mechanics/Survival.h`, `mechanics/ColonyPower.h`, `mechanics/Traffic.h` | "no relationships, body temperature, power grids, traffic lanes" (A4, S1, C2, C4 partial) |

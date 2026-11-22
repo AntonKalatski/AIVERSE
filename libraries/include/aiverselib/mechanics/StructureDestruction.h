@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // structure-destruction: destructible structures made of box pieces (walls, floors, pillars, bridges, voxel-free
 // buildings from BuildingGen). Area damage with falloff, per-piece health, fracture of a large piece into a grid of
 // smaller pieces on its first heavy hit, structural support from anchored pieces through face contacts (unsupported

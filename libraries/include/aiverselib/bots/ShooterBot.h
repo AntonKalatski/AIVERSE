@@ -5,8 +5,8 @@
 // The output is ShooterInput: view angles, a locomotion wish and the FeedInput a player's trigger/reload keys
 // produce. The owner applies them through stepFeed/stepRecoil and its own fire/command path.
 #include "GenreCommon.h"
-#include "../genre/Ballistics.h"
-#include "../genre/WeaponMods.h"
+#include <aiverselib/mechanics/Ballistics.h>
+#include <aiverselib/mechanics/WeaponMods.h>
 namespace aiverse::lib::bots {
 struct ShooterBotConfig {
     Fixed minRange=5_fx,preferredRange=15_fx,maxRange=40_fx; // retreat below min, strafe up to preferred, approach beyond; no fire past max

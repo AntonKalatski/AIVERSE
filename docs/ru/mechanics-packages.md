@@ -59,7 +59,7 @@
 
 ## Интеграция с native-кодом и хостом
 
-Подключите `<aiverselib/genre/Configured.h>`, нужный заголовок политики и `genre/Persistence.h`.
+Подключите `<aiverselib/mechanics/Configured.h>`, нужный заголовок политики и `genre/Persistence.h`.
 Исполняемые хосты линкуют `AIVERSE::genre`; зарегистрированные OBJECT-модули вызывают
 `aiverse_native_use_genre(aiverse_native_<id>)` после `aiverse_native_module(...)`. Эта функция вешает зависимости
 бэкенда коллизий на владеющую цель aiverse_game, избегая циклов линковки объектных библиотек.

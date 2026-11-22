@@ -32,8 +32,8 @@
 #include "engine/core/Archive.h"
 #include "engine/world/SpatialWorld.h"
 #include "ActorSystems.h"
-#include "libraries/include/aiverselib/mechanics/Melee.h"
-#include "libraries/include/aiverselib/mechanics/VehicleData.h"
+#include "engine/mechanics/Melee.h"
+#include "engine/mechanics/VehicleData.h"
 #include "engine/vehicles/Vehicles.h"
 #include <algorithm>
 #include <cstddef>

@@ -79,7 +79,7 @@ For new C++ games include `"engine/platform/input/InputFlowCore.h"` and use `aiv
 
 ## Pick the existing mechanism first
 
-- Legacy `libraries/include/aiverselib/gameplay/Input.h`: single-context `resolveInput`, integer `deadzone`, `ControlGroups`, `updateSelection`, `DragGesture`. Never remove or silently break it.
+- Legacy `engine/gameplay/Input.h`: single-context `resolveInput`, integer `deadzone`, `ControlGroups`, `updateSelection`, `DragGesture`. Never remove or silently break it.
 - Canonical `engine/platform/input/InputFlowCore.h`: `aiverse::lib::gameplay::inputflow::InputFlow`, typed Actions and Values, Mapping Contexts, Modifiers, Triggers, lifecycle events and rebind policies. `EnhancedInput.h` and `enhanced::InputSystem` are compatibility aliases.
 - `engine/platform/EnhancedInputAdapter.h`: bridge from `platform::Event` and `GamepadState` into generic Controls. Focus loss cancels pressed state. Host must not poll gamepads twice per frame.
 - `engine/platform/EnhancedInputConfig.h`: validated `Json` project mapping asset `readAsset/installAsset/writeAsset` and per-user `readProfile/applyProfile/writeProfile`. Includes engine `Json` (not standalone lib-only code).

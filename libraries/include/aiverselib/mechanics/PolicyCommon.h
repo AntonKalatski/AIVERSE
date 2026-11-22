@@ -1,11 +1,11 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // Shared helpers for deterministic policy packages (traversal-moves, nav-links, volume-nav, structure-destruction,
 // portals-rewind, item-affixes, quest-journal, wounds-disease, herds-taming, colonist-relations,
 // utility-networks, railways, city-policy, transit-schedules, tactics-levels, diplomacy, hero-match, watercraft,
 // secret-state): strictly increasing ticks, ascending unique ids, bounded values and state hashing over the
 // saved bytes. Policies never read engine state; the owner reports facts and applies the returned outputs.
-#include "Persistence.h"
+#include "engine/mechanics/Persistence.h"
 #include "engine/core/FixedMath.h"
 #include "engine/core/Hash.h"
 #include "engine/core/Random.h"

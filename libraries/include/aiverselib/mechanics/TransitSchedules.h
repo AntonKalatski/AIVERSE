@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // transit-schedules: public transport and goods flows over a stop graph (buses, trams, metro, ferries, freight).
 // - Lines: ordered stops with travel ticks between them, a fleet size and a headway; departures are generated from
 //   the timetable (first departure + k * headway), vehicles have capacity.

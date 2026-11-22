@@ -176,7 +176,7 @@
       "code": [
         "libraries/include/aiverselib/mechanics/WeaponMods.h",
         "libraries/include/aiverselib/mechanics/Ballistics.h",
-        "libraries/include/aiverselib/mechanics/Weapons.h"
+        "engine/mechanics/Weapons.h"
       ]
     },
     {
@@ -194,8 +194,8 @@
       ],
       "gameReady": "Есть кадровые hitbox/hurtbox, неуязвимость при уклонении, направленный блок с perfect parry, poise/stagger и выбор цели lock-on (CombatActions.h), удары по свипу кончика оружия в общем хосте персонажа (engine/actor/ActorMelee.cpp). Осталось: брать окна ударов из notifies клипов MotionWeave, тесты rollback и сети на быстрых взмахах по нескольким целям.",
       "code": [
-        "libraries/include/aiverselib/mechanics/CombatActions.h",
-        "libraries/include/aiverselib/mechanics/Melee.h",
+        "engine/mechanics/CombatActions.h",
+        "engine/mechanics/Melee.h",
         "engine/actor/ActorMelee.cpp"
       ]
     },
@@ -221,7 +221,7 @@
       ],
       "gameReady": "Есть генерация предметов по пулам аффиксов (префиксы/суффиксы, группы, тиры, уровень предмета), крафт, сокеты с цветами и камнями, элементальные ауры и реакции, миграция предметов (item-affixes), модификаторы и перки. Осталось: редактор связей и UI предметов.",
       "code": [
-        "libraries/include/aiverselib/mechanics/Perks.h",
+        "engine/mechanics/Perks.h",
         "libraries/include/aiverselib/mechanics/WeaponMods.h",
         "libraries/include/aiverselib/mechanics/ItemAffixes.h"
       ]
@@ -276,7 +276,7 @@
       "gameReady": "Есть квесты как данные: этапы, счётчики, ветки, требования, лимиты времени, провал и повтор, отслеживаемый квест, журнал и миграция версий (quest-journal); факты, отношения и сцены (narrative-graphs). Осталось: UI журнала и маркеры квестов на карте.",
       "code": [
         "libraries/include/aiverselib/mechanics/NarrativeScenes.h",
-        "libraries/include/aiverselib/mechanics/Narrative.h",
+        "engine/mechanics/Narrative.h",
         "libraries/include/aiverselib/mechanics/QuestJournal.h"
       ]
     },
@@ -312,8 +312,8 @@
       ],
       "gameReady": "Есть орбы опыта с задержкой приземления, радиусом подбора, магнитами, самонаведением и бюджетом с объединением значений (XpPickups.h), выбор наград из N вариантов при повышении уровня (Perks.h). Осталось: эволюции оружия, бюджеты столкновений и эффектов на тысячах снарядов, замеры производительности.",
       "code": [
-        "libraries/include/aiverselib/mechanics/XpPickups.h",
-        "libraries/include/aiverselib/mechanics/Perks.h"
+        "engine/mechanics/XpPickups.h",
+        "engine/mechanics/Perks.h"
       ]
     },
     {
@@ -357,7 +357,7 @@
       "code": [
         "libraries/include/aiverselib/mechanics/EcologyAnimals.h",
         "libraries/include/aiverselib/mechanics/Ecology.h",
-        "libraries/include/aiverselib/mechanics/MobBehaviour.h",
+        "engine/mechanics/MobBehaviour.h",
         "libraries/include/aiverselib/mechanics/HerdsTaming.h"
       ]
     },
@@ -413,7 +413,7 @@
       ],
       "gameReady": "Есть процедурные здания с этажами, лестницами, дверями и окнами (BuildingGen.h), 3D-пещеры и руды в воксельном генераторе (VoxelGen.h), копаемые подземелья с комнатами (engine/game/Dungeon.cpp). Осталось: интерьеры сложнее коробок, островные маршруты, ограничения связности прямо в генераторах.",
       "code": [
-        "libraries/include/aiverselib/systems/BuildingGen.h",
+        "engine/systems/BuildingGen.h",
         "libraries/include/aiverselib/systems/voxelgen/VoxelGen.h",
         "engine/game/Dungeon.cpp"
       ]
@@ -500,7 +500,7 @@
       ],
       "gameReady": "Есть полосы, перекрёстки, светофоры и пешеходы (city-traffic), линии с расписаниями, планирование маршрутов с пересадками, посадка по вместимости и диагностика перегруженных остановок (transit-schedules). Осталось: агрегирование населения города в спрос, связь транспорта расписаний с телами на дорогах, тарифы.",
       "code": [
-        "libraries/include/aiverselib/mechanics/Traffic.h",
+        "engine/mechanics/Traffic.h",
         "engine/game/Traffic.cpp",
         "libraries/include/aiverselib/mechanics/TransitSchedules.h"
       ]
@@ -604,7 +604,7 @@
       ],
       "gameReady": "Есть цели матча, респаун волнами, способности, драфт с пиками и банами, магазин с рецептами, продажа, курьер, recall, ластхиты, денаи, ассисты, награды за серии и таймеры возрождения (hero-match). Осталось: командные роли ИИ, линии и крипы как данные шаблона, честная видимость.",
       "code": [
-        "libraries/include/aiverselib/mechanics/MatchObjectives.h",
+        "engine/mechanics/MatchObjectives.h",
         "libraries/include/aiverselib/mechanics/HeroMatch.h"
       ]
     },
@@ -649,7 +649,7 @@
       ],
       "gameReady": "Есть камера третьего лица: орбита, плечо со сменой стороны, обход препятствий сферическим свипом владельца, возврат за спину, стек профилей с плавными переходами (follow-camera); хват за уступ и планирование (LocomotionModes, traversal-moves). Осталось: особые гравитации и привязка камеры к хосту engine/actor.",
       "code": [
-        "libraries/include/aiverselib/gameplay/Camera.h",
+        "engine/gameplay/Camera.h",
         "libraries/include/aiverselib/gameplay/ThirdPersonCamera.h"
       ]
     },
@@ -699,7 +699,7 @@
       ],
       "gameReady": "Есть аркадный самолёт и места в транспорте (vehicle-controllers), плавучесть NEREID, лодки и корабли из сборных блоков корпуса с плавучестью по точкам, сопротивлением, тягой, рулём, опрокидыванием и затоплением, самолёт с подъёмной силой, сопротивлением, сваливанием и рулями (watercraft). Осталось: проверка многоместности в сети, удары волн, связка с NEREID в хосте.",
       "code": [
-        "libraries/include/aiverselib/mechanics/VehicleSeats.h",
+        "engine/mechanics/VehicleSeats.h",
         "engine/vehicles/Vehicles.h",
         "engine/physis/PhysisForces.h",
         "libraries/include/aiverselib/mechanics/Watercraft.h"

@@ -1,9 +1,9 @@
 // boss-encounters: telegraph areas and lifecycle, statuses, boss phases / patterns / enrage / adds, schedule and
 // rotation, mob behaviour states, persistence, JSON data and the headless hero-vs-boss reference fight.
 #include <aiverselib/mechanics/EncounterData.h>
-#include <aiverselib/mechanics/EncounterPersistence.h>
+#include "engine/mechanics/EncounterPersistence.h"
 #include <aiverselib/mechanics/EncounterScenario.h>
-#include <aiverselib/mechanics/TelegraphDecals.h>
+#include "engine/mechanics/TelegraphDecals.h"
 #include <array>
 #include <iostream>
 #include <stdexcept>

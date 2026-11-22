@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // diplomacy: relations, treaties, trade deals and diplomatic AI for 4X / grand strategy / RTS campaigns.
 // - Relations between faction pairs (-1000..1000) as a sum of decaying modifiers (gifts, insults, border friction,
 //   broken treaties, shared enemies) - Civilization / Stellaris style.

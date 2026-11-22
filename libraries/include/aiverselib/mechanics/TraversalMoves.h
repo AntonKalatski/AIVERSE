@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // traversal-moves: wall-run, wall-slide, wall jump, dash (ground and air charges), grapple hook, glide and
 // one-way platforms, layered over LocomotionModes/stepMotion. The collision owner reports the environment of
 // this tick (ground, wall contact and normal, grapple ray hit) and the body's current velocity; the policy

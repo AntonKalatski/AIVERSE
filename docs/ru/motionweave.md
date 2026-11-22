@@ -166,7 +166,7 @@ Host rendering, audio/VFX and host-owned gameplay motor
 
 Исходный адаптер событий FPS вынесен из библиотеки анимации
 в `modules/fps/view/FpsAnimationEvents.h`.
-Общий `<aiverselib/animation/AnimationActionEdges.h>` теперь
+Общий `"engine/animation/AnimationActionEdges.h"` теперь
 обрабатывает только непрозрачные именованные счётчики и переходы булевых состояний, без
 семантики FPS/RTS или типов действий. `playAnimationSlot` находится рядом с
 определением универсального ECS-компонента `AnimationMontageSlotsComponent`.

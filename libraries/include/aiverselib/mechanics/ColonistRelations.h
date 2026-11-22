@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // colonist-relations: social layer for settlement-production colonists (RimWorld / Sims style).
 // - Family links (parent, child, sibling, partner) with symmetric storage and validation.
 // - Memories: data-defined events ("insulted me", "shared a meal", "used my bed") with value, duration and stack limit,

@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // item-affixes: Diablo/Path of Exile style item generation and modification as data.
 // - Affix pools: prefix/suffix, exclusive groups, tiers, weights, item-level gates, slot masks, value ranges (integers).
 // - rollItem: seeded generation of an item instance (rarity = number of prefixes/suffixes); the same seed and data always

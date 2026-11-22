@@ -272,7 +272,7 @@ target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # only implement its world queries.
 add_library(aiverse_vehicles STATIC engine/vehicles/Vehicles.cpp engine/vehicles/VehicleRace.cpp)
 add_library(AIVERSE::vehicles ALIAS aiverse_vehicles)
-target_include_directories(aiverse_vehicles PUBLIC "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
+target_include_directories(aiverse_vehicles PUBLIC "${PROJECT_SOURCE_DIR}")   # engine never includes libraries/ (docs/architecture-layers.md)
 target_link_libraries(aiverse_vehicles PUBLIC aiverse_engine)
 target_link_libraries(aiverse_game PUBLIC aiverse_vehicles)
 # Experimental RTS transform preprocessing remains OFF by default.
@@ -285,11 +285,8 @@ if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
 endif()
 
 add_subdirectory(libraries)
-# RTS projectile motion and impact use the public, genre-independent packages
-# rather than implementing their own physics or duplicating damage ordering.
-target_link_libraries(aiverse_game PRIVATE
-    AIVERSE::lib_ecs_kinematic_projectiles
-    AIVERSE::lib_ecs_ordered_impact)
+# Projectile motion and impact use the shared ECS mechanics in engine/mechanics (moved down from libraries, L3);
+# engine targets never link library packages.
 # Prove public shared mechanics can execute in unrelated native genre hosts.
 # The target uses AIVERSE::libraries, never aiverse_game or aiverse_fps.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
@@ -644,6 +641,17 @@ if(AIVERSE_BUILD_TESTS)
 endif()
 
 # Genre-independent ECS animation presentation host for native C++ projects.
+# MotionWeave core (engine/animation): the engine-side target, no libraries/ include path. Engine targets
+# (aiverse_view) link this one; the public package targets below add the library-level animation headers.
+add_library(aiverse_motionweave_core INTERFACE)
+target_compile_features(aiverse_motionweave_core INTERFACE cxx_std_20)
+target_include_directories(aiverse_motionweave_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_motionweave_core INTERFACE aiverse_models Threads::Threads)
+else()
+    target_link_libraries(aiverse_motionweave_core INTERFACE aiverse_models)
+endif()
 add_library(aiverse_animation_ecs INTERFACE)
 add_library(AIVERSE::animation_ecs ALIAS aiverse_animation_ecs)
 # MotionWeave is the canonical public API name; the existing animation_ecs
@@ -652,14 +660,8 @@ add_library(aiverse_motionweave INTERFACE)
 add_library(AIVERSE::MotionWeave ALIAS aiverse_motionweave)
 add_library(AIVERSE::motionweave ALIAS aiverse_motionweave)
 target_link_libraries(aiverse_motionweave INTERFACE AIVERSE::animation_ecs)
-target_compile_features(aiverse_animation_ecs INTERFACE cxx_std_20)
-target_include_directories(aiverse_animation_ecs INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/libraries/include")
-if(NOT EMSCRIPTEN)
-    find_package(Threads REQUIRED)
-    target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_models Threads::Threads)
-else()
-    target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_models)
-endif()
+target_include_directories(aiverse_animation_ecs INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/libraries/include")
+target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_motionweave_core)
 
 # VIVID digital humans (presentation-only facial/runtime and portable GPU morph compute).
 add_subdirectory(engine/character/vivid)
@@ -1112,8 +1114,8 @@ add_library(aiverse_view INTERFACE)
 add_library(AIVERSE::view ALIAS aiverse_view)
 add_library(AIVERSE::View ALIAS aiverse_view)
 target_compile_features(aiverse_view INTERFACE cxx_std_20)
-target_include_directories(aiverse_view INTERFACE "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
-target_link_libraries(aiverse_view INTERFACE AIVERSE::MotionWeave aiverse_shader_graph)
+target_include_directories(aiverse_view INTERFACE "${PROJECT_SOURCE_DIR}")
+target_link_libraries(aiverse_view INTERFACE aiverse_motionweave_core aiverse_shader_graph)
 
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_view_core_tests tests/view/view.cpp)
@@ -1401,11 +1403,8 @@ if(AIVERSE_TEXTURE_WITH_OPENEXR)
     target_link_libraries(aiverse_runtime PUBLIC OpenEXR::OpenEXR)
     target_compile_definitions(aiverse_runtime PUBLIC AIVERSE_TEXTURE_WITH_OPENEXR=1)
 endif()
-# WorldScene.cpp and the public WorldScene/NEREID presentation headers include
-# <aiverselib/water/...>. The header-only package owns its include dirs; an
-# OBJECT runtime must carry that usage requirement on its own target.
-# PUBLIC also propagates it to clients/editor targets using WorldScene.h.
-target_link_libraries(aiverse_runtime PUBLIC AIVERSE::lib_nereid_water)
+# NEREID world headers are engine code (engine/world/nereid): the runtime links no library package.
+
 if(APPLE)
     set_source_files_properties(engine/platform/macos/PlatformMac.mm engine/platform/ios/PlatformIOS.mm
         engine/gfx/metal/GfxMetal.mm engine/platform/apple/PluginsApple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
@@ -1845,7 +1844,7 @@ if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
         apps/modelview/main.cpp apps/modelview/Gallery.cpp
         apps/modelview/NativeScenePreview.cpp
         $<TARGET_OBJECTS:aiverse_runtime>)
-    target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
+    target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View AIVERSE::libraries)
 endif()
 
 if(AIVERSE_BUILD_TOOLS)
@@ -2305,8 +2304,7 @@ aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules
     engine/game/disabled/Encounters.cpp engine/game/Encounters.cpp engine/game/EncountersApi.cpp)
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
 target_sources(aiverse_game PRIVATE engine/game/MapRules.cpp)
-target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
-target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_nereid_buoyancy)   # planet seas (GamePlanets: world body "nereid")
+# boss encounters (engine/mechanics) and planet seas (engine/world/nereid) are engine headers: no library link.
 # map environment (weather, wind, zones, trample fields, auto skills on splines, fog options)
 target_sources(aiverse_game PRIVATE engine/game/Environment.cpp engine/game/EnvironmentData.cpp)
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)

@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // herds-taming: group behaviour and taming for animals driven by survival-ecology (EcologyAnimals.h decides the state
 // of single animals; this package adds the group and the bond with players).
 // - Herds: a leader that wanders between goals around a home, members that keep cohesion around the leader with spacing,

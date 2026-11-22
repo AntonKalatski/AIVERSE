@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // watercraft: boats, ships and aircraft flight models next to vehicle-controllers (ground vehicles) and NEREID water.
 // - Hulls are assembled from blocks (mass, displaced volume, position): assembleHull gives total mass, centre of mass,
 //   inertia estimate and buoyancy sample points, so built ships (Stormworks / From the Depths style) and authored boats

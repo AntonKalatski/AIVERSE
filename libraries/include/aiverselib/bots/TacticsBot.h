@@ -8,8 +8,8 @@
 // the earlier candidate, so the plan is deterministic and consumes no RNG. It returns one TacticsAction; call it
 // again after every accepted action. A move into a cell held by an unseen enemy is rejected by stepTactics: the
 // owner then submits EndTurn (never retries with hidden knowledge).
-#include "../genre/TacticsTurns.h"
-#include "../gameplay/Configuration.h"
+#include <aiverselib/mechanics/TacticsTurns.h>
+#include "engine/gameplay/Configuration.h"
 #include <optional>
 namespace aiverse::lib::bots {
 struct TacticsBotConfig{

@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // secret-state: hidden information for authoritative multiplayer (cards, fog-of-war objects, sealed bids, simultaneous
 // orders). The server keeps the true state; clients only receive projections.
 // - Secret zones: every object (card, tile, token) lives in a zone with a visibility rule (owner only, everyone,

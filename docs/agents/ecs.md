@@ -70,7 +70,7 @@ mechanic MUST follow the **Components + Systems** model:
 
 **Required shared shooting package:** use
 `AIVERSE::lib_ecs_weapon_launch` (public
-`<aiverselib/mechanics/EcsWeaponLaunchSystems.h>`), composed with the existing
+`"engine/mechanics/EcsWeaponLaunchSystems.h"`), composed with the existing
 `ecs-projectile-systems` and `ecs-impact-damage` packages, for new
 weapon/shot/impact gameplay. Do not implement separate projectile
 trajectory/collision/damage math in `modules/rts` and `modules/fps`.

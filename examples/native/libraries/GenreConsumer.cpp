@@ -1,5 +1,5 @@
 #include <aiverselib/mechanics/Configured.h>
-#include <aiverselib/mechanics/Persistence.h>
+#include "engine/mechanics/Persistence.h"
 #include <aiverselib/mechanics/Data.h>
 #include <aiverselib/mechanics/LocomotionModes.h>
 #include <aiverselib/mechanics/CombatConfigured.h>

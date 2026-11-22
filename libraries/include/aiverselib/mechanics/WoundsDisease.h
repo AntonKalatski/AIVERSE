@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // wounds-disease: injuries and illnesses for survival-ecology bodies. Wounds of data types (cut, burn, bite, fracture...)
 // on body parts with severity, bleeding, pain, natural healing, infection risk while untreated and treatments that stop
 // bleeding / allow healing / prevent infection (bandage, splint, disinfect as bits). Diseases with incubation, a sick

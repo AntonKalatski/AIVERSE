@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // city-policy: city-builder economy and politics (SimCity / Cities: Skylines / Tropico style).
 // - Zoning: lots with zone type (residential, commercial, industrial, office) and density; demand per zone from jobs,
 //   workers and goods; lots grow or shrink one level per review when demand and land value allow, empty lots get built.

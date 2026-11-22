@@ -277,7 +277,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/royale/BattleRoyale.h",
+      "source": "engine/mechanics/royale/BattleRoyale.h",
       "keywords": [
         "battle",
         "royale",
@@ -375,7 +375,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Telegraphs.h",
+      "source": "engine/mechanics/Telegraphs.h",
       "keywords": [
         "boss",
         "telegraph",
@@ -446,7 +446,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/bots/Fps.h",
+      "source": "engine/bots/Fps.h",
       "keywords": [
         "fps",
         "bot",
@@ -594,7 +594,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/systems/BuildingGen.h",
+      "source": "engine/systems/BuildingGen.h",
       "keywords": [
         "building",
         "house",
@@ -680,7 +680,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/Camera.h",
+      "source": "engine/gameplay/Camera.h",
       "keywords": [
         "camera",
         "камер"
@@ -898,7 +898,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Locomotion.h",
+      "source": "engine/mechanics/Locomotion.h",
       "keywords": []
     },
     {
@@ -1116,7 +1116,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Traffic.h",
+      "source": "engine/mechanics/Traffic.h",
       "keywords": [
         "traffic",
         "cars",
@@ -1240,7 +1240,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/CombatActions.h",
+      "source": "engine/mechanics/CombatActions.h",
       "keywords": [
         "hitbox",
         "hurtbox",
@@ -1268,7 +1268,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/Configuration.h",
+      "source": "engine/gameplay/Configuration.h",
       "keywords": []
     },
     {
@@ -1457,7 +1457,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/Diagnostics.h",
+      "source": "engine/gameplay/Diagnostics.h",
       "keywords": []
     },
     {
@@ -1570,7 +1570,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsHitscanSystems.h",
+      "source": "engine/mechanics/EcsHitscanSystems.h",
       "keywords": []
     },
     {
@@ -1587,7 +1587,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsHitscanResolutionSystems.h",
+      "source": "engine/mechanics/EcsHitscanResolutionSystems.h",
       "keywords": []
     },
     {
@@ -1604,7 +1604,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsDamageSystems.h",
+      "source": "engine/mechanics/EcsDamageSystems.h",
       "keywords": []
     },
     {
@@ -1655,7 +1655,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsKinematicProjectileSystems.h",
+      "source": "engine/mechanics/EcsKinematicProjectileSystems.h",
       "keywords": []
     },
     {
@@ -1689,7 +1689,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h",
+      "source": "engine/mechanics/EcsOrderedImpactSystems.h",
       "keywords": []
     },
     {
@@ -1708,7 +1708,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsProjectileSystems.h",
+      "source": "engine/mechanics/EcsProjectileSystems.h",
       "keywords": []
     },
     {
@@ -1769,7 +1769,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsTimedMechanics.h",
+      "source": "engine/mechanics/EcsTimedMechanics.h",
       "keywords": []
     },
     {
@@ -1786,7 +1786,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h",
+      "source": "engine/mechanics/EcsWeaponLaunchSystems.h",
       "keywords": []
     },
     {
@@ -2022,7 +2022,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/systems/Gear.h",
+      "source": "engine/systems/Gear.h",
       "keywords": [
         "gear",
         "armor",
@@ -2276,7 +2276,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/Inventory.h",
+      "source": "engine/gameplay/Inventory.h",
       "keywords": []
     },
     {
@@ -2666,7 +2666,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Perks.h",
+      "source": "engine/mechanics/Perks.h",
       "keywords": [
         "perk",
         "modifier",
@@ -2708,7 +2708,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Match.h",
+      "source": "engine/mechanics/Match.h",
       "keywords": []
     },
     {
@@ -2738,7 +2738,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Melee.h",
+      "source": "engine/mechanics/Melee.h",
       "keywords": []
     },
     {
@@ -2855,7 +2855,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Narrative.h",
+      "source": "engine/mechanics/Narrative.h",
       "keywords": [
         "story",
         "narrative",
@@ -2946,7 +2946,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/bots/NavMesh.h",
+      "source": "engine/bots/NavMesh.h",
       "keywords": []
     },
     {
@@ -3717,7 +3717,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/systems/Curves.h",
+      "source": "engine/systems/Curves.h",
       "keywords": []
     },
     {
@@ -4862,7 +4862,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/SweptShapes.h",
+      "source": "engine/core/SweptShapes.h",
       "keywords": [
         "swept",
         "sweep",
@@ -4975,7 +4975,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/systems/Tags.h",
+      "source": "engine/systems/Tags.h",
       "keywords": []
     },
     {
@@ -5538,7 +5538,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Vehicles.h",
+      "source": "engine/mechanics/Vehicles.h",
       "keywords": [
         "vehicle",
         "car",
@@ -6060,7 +6060,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/mechanics/Weapons.h",
+      "source": "engine/mechanics/Weapons.h",
       "keywords": []
     },
     {

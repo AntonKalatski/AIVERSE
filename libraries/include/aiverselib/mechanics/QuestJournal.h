@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // quest-journal: quests as data with stages, counted objectives (optional ones too), branches chosen by the player or
 // by world facts, prerequisites, time limits, failure, abandon/restart rules, a tracked quest and a bounded journal of
 // entries for the UI ("quest started", "stage reached", "objective 3/5", "completed", "failed"). The owner reports

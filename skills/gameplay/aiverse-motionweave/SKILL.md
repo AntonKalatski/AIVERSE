@@ -74,7 +74,7 @@ The engine core provides no named gameplay actions and does not
 contain conditional FPS/RTS paths. Reuse one animation system,
 one set of components and one set of algorithms for every genre.
 
-Core action edges use only `<aiverselib/animation/AnimationActionEdges.h>`:
+Core action edges use only `"engine/animation/AnimationActionEdges.h"`:
 a revision/generation and arbitrary named counters and flags. FPS-only
 `shots/reloadUntil/health` conversion lives under
 `engine/view/ActorAnimationEvents.h`, not in the MotionWeave library.

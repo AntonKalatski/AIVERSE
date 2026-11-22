@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // portals-rewind: linked portals and gameplay time rewind.
 // Portals: rectangular one-sided openings linked in pairs. crossPortals tests a body's movement segment against every
 // portal (ascending id) and, when it passes through the front of an open portal, maps position, velocity and facing

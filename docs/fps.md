@@ -209,7 +209,7 @@ backpack levels (`rules/gear.json`) spread near the spawns and in supply crates.
 `fps.melee.enabled: true` adds an authoritative melee strike, guard, parry and lock-on.
 It is independent of `fps.mechanics`; rules without the block behave as before.
 Swing timing, input buffering, chaining and one-hit-per-target-per-swing come from the
-shared `melee-combat` library (`libraries/include/aiverselib/mechanics/Melee.h`).
+shared `melee-combat` library (`engine/mechanics/Melee.h`).
 
 | Behavior | Implementation | Current limits |
 |---|---|---|

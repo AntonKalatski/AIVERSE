@@ -22,7 +22,7 @@ platform::Event / GamepadState
 Input processing is **not** ECS authoritative simulation. Never feed float device state directly to deterministic ECS. ECS systems consume semantic commands and own the rules; UI and remapping stay local. A single \`Fire\` action can be converted into FPS, RTS, vehicle, turret or UI commands without duplicating physical-key handling.
 
 Files:
-- \`libraries/include/aiverselib/gameplay/Input.h\`: legacy \`InputPhase\`, \`Binding\`, \`resolveInput\`, \`deadzone\` and selection helpers (unchanged).
+- \`engine/gameplay/Input.h\`: legacy \`InputPhase\`, \`Binding\`, \`resolveInput\`, \`deadzone\` and selection helpers (unchanged).
 - \`engine/platform/input/EnhancedInputCore.h\`: header-only pure C++20 core, target \`AIVERSE::lib_input\` / native \`aiverse_native_use_libraries(target input)\`.
 - \`engine/platform/EnhancedInputAdapter.h\`: OS event and gamepad conversion; requires platform hosting.
 - \`engine/platform/EnhancedInputConfig.h\`: strict JSON action assets and per-user rebinding profiles; requires the engine \`Json\` type, so native modules link engine interfaces if they need it.

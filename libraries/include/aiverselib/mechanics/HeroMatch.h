@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // hero-match: rules of team hero matches (MOBA / hero shooters): draft, shop, recall, courier, kill credit, respawn.
 // - Draft: a data sequence of (team, Pick|Ban) turns with a time limit per turn; a timeout picks or bans the lowest
 //   available hero; no duplicates; the result is the picks of each team.

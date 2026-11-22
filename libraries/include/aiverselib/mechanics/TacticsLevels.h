@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // tactics-levels: multi-storey boards for turn tactics (XCOM-style buildings, rooftops, cliffs) on top of tactics-grid.
 // A board is a stack of TacticsGrid levels of the same size plus connectors (stairs, ladders, ramps, drops, grapple
 // points) between cells of different levels with their own AP cost. Each level marks which cells have a floor slab that

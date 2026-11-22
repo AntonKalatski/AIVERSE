@@ -1,5 +1,5 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
+#include "engine/mechanics/Namespace.h"
 // utility-networks: pressure-driven fluid networks and heat exchange between rooms, next to ColonyPower.h (electric and
 // simple fluid balance) and production-networks (item transport).
 // - Fluid: nodes are sources (fixed pressure head, max output), sinks (demand per tick), tanks (capacity, level; pressure

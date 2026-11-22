@@ -1,6 +1,6 @@
 #pragma once
-#include <aiverselib/mechanics/Namespace.h>
-#include "Locomotion.h"
+#include "engine/mechanics/Namespace.h"
+#include "engine/mechanics/Locomotion.h"
 #include "Configured.h"
 #include "engine/core/Archive.h"
 #include "engine/core/Hash.h"

@@ -5,8 +5,8 @@
 // (validated there like any player command). Bounded (maxCommands per plan, one plan per intervalTicks) and
 // deterministic: rules are evaluated in (priority desc, id asc) order, ties pick the lowest id. No RNG.
 // State (ColonyPlannerState) is genre::save/load record kind 110.
-#include "../genre/ColonyRunner.h"
-#include "../genre/Persistence.h"
+#include <aiverselib/mechanics/ColonyRunner.h>
+#include "engine/mechanics/Persistence.h"
 #include "engine/core/Hash.h"
 #include <algorithm>
 #include <cstdint>

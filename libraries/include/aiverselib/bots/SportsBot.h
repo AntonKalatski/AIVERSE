@@ -6,7 +6,7 @@
 // inside shootRange with an open lane, passes to the teammate with the best progress-minus-pressure score along an
 // open lane, or dribbles toward goal away from pressure. Returns player-equivalent orders: a move target for the
 // owner's movement and an optional genre::SportsAction for stepSports. RNG only through the passed Random.
-#include "../genre/SportsFormation.h"
+#include <aiverselib/mechanics/SportsFormation.h>
 #include <algorithm>
 #include <cstdint>
 #include <map>
