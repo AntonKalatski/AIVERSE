@@ -13,9 +13,9 @@
 #include <map>
 #include <string>
 #include <vector>
-#include "../../engine/core/Fixed.h"
-#include "../../engine/data/Json.h"
-#include "../../engine/game/GameData.h"
+#include "../core/Fixed.h"
+#include "../data/Json.h"
+#include "GameData.h"
 
 namespace aiverse::game {
 

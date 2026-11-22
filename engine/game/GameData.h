@@ -182,7 +182,7 @@ struct UnitType {
     uint64_t tags = 0;
     bool structure = false;
     std::vector<std::array<Fixed, 4>> walls;   // "walls": [x, z, w, d] boxes (cells, centre offset and size) that stop hitsWalls shots
-    bool collider = false;          // "collider": map entities of this type are static circles, not units (RtsColliders.h)
+    bool collider = false;          // "collider": map entities of this type are static circles, not units (Colliders.h)
     // health
     Fixed maxHp = Fixed::fromInt(100);
     Fixed armor{};

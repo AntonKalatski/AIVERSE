@@ -1,4 +1,4 @@
-#include "RtsTriggers.h"
+#include "../../engine/game/Triggers.h"
 #include <algorithm>
 #include <stdexcept>
 #include "RtsInternal.h"

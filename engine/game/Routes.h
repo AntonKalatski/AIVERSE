@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <map>
 #include <vector>
-#include "../../engine/core/ECS.h"
-#include "../../engine/game/RoutesData.h"
+#include "../core/ECS.h"
+#include "RoutesData.h"
 
 namespace aiverse::game {
 

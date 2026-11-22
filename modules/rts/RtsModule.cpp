@@ -428,7 +428,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         int owner = int(ej.getInt("owner", 0));
         if (owner == -1) owner = kHostileNeutral;
         if ((owner < 0 || owner > int(np)) && owner != kHostileNeutral) throw std::runtime_error("map entity: owner out of range");
-        if (rules_.types[size_t(t)].collider) {   // a static circle, not a unit (RtsColliders.h)
+        if (rules_.types[size_t(t)].collider) {   // a static circle, not a unit (Colliders.h)
             const UnitType& ct = rules_.types[size_t(t)];
             gs.colliders.add(mapPos(sim, ej.has("at") ? ej["at"] : ej["pos"]).xz(), ct.radius, ct.layer);
             placed.push_back(kNullEntity);

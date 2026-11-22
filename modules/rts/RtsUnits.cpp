@@ -855,7 +855,7 @@ void RtsModule::sysMovement(Simulation& sim) {
                   ((cx == cx0 && cy == cy0) ? g.passable(cx, cy, t.pathLayer) || !g.passable(cx0, cy0, t.pathLayer) : g.canStep(cx0, cy0, cx, cy, t.pathLayer));
         if (ok) tr.pos = np;
     }
-    // static colliders (RtsColliders.h) never yield: whoever overlaps one is pushed out, capped like a push above
+    // static colliders (Colliders.h) never yield: whoever overlaps one is pushed out, capped like a push above
     if (!gs.colliders.empty())
         w.each<Mobile, Unit, Transform>([&](Entity e, Mobile&, Unit& u, Transform& tr) {
             if (u.flags & kUnitOffMap) return;

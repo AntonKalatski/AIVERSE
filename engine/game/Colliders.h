@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
-#include "../../engine/core/Fixed.h"
+#include "../core/Fixed.h"
 
 namespace aiverse::game {
 

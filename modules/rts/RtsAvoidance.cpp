@@ -271,7 +271,7 @@ void RtsModule::moveAgents(Simulation& sim) {
             Fixed resp = b.moving ? kHalf : kOne;   // standing units don't dodge: take the whole avoidance
             lines.push_back(orcaLine(a.p, a.v, a.r, b.p, b.v, b.r, invTH, invDt, resp));
         }
-        // static colliders (RtsColliders.h) on the swept path: obstacles that never move, so the walker takes the
+        // static colliders (Colliders.h) on the swept path: obstacles that never move, so the walker takes the
         // whole avoidance. The sweep (the "ray" along the wish over the time horizon, widened by both radii) skips
         // the circles beside or behind the path; with none on it there is nothing to add.
         if (!gs.colliders.empty() && !air) {

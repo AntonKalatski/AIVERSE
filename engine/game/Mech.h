@@ -3,8 +3,8 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "../../engine/core/ECS.h"
-#include "../../engine/core/Fixed.h"
+#include "../core/ECS.h"
+#include "../core/Fixed.h"
 
 namespace aiverse::game {
 

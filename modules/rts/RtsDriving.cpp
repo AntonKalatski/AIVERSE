@@ -654,7 +654,7 @@ bool Driving::collide(Simulation& sim, Entity car, Vec3& pos, vs::VehicleImpacts
             out.hit = true;
         }
     }
-    // static colliders (RtsColliders.h): solid like the bodies above that never move (bollards, benches, beds)
+    // static colliders (Colliders.h): solid like the bodies above that never move (bollards, benches, beds)
     if (!gs.colliders.empty() && c.deck < 0)
         gs.colliders.query(pos.xz(), half + r, kLayerGround, [&](size_t, const StaticColliders::Item& o) {
             Fixed deepest{};

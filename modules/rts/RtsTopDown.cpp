@@ -839,7 +839,7 @@ void TopDown::moveHero(Simulation& sim, TopDownPilot& p) {
             const Fixed into = -p.vel.dot(nrm);
             if (into.raw > 0) p.vel += nrm * into;   // no velocity left pushing into the body
         }
-        // static colliders (RtsColliders.h): bodies that never move, after the units in map order
+        // static colliders (Colliders.h): bodies that never move, after the units in map order
         auto& colliders = m_->state(sim).colliders;
         if (!colliders.empty())
             colliders.query(pos.xz(), t.radius, t.layer, [&](size_t, const StaticColliders::Item& c) {
