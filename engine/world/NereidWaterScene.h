@@ -58,6 +58,8 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        m.useGrade!=n.useGrade || (m.useGrade&&!lib::nereid::sameWaterRiverGrade(m.grade,n.grade)) ||
        m.lod!=n.lod || m.uvScale!=n.uvScale ||
        m.foamWidth!=n.foamWidth || m.oceanPatchRadius!=n.oceanPatchRadius ||
+       m.oceanRings!=n.oceanRings || m.oceanInnerCell!=n.oceanInnerCell ||
+       m.oceanInnerCells!=n.oceanInnerCells ||
        m.maxVertices!=n.maxVertices ||
        m.rippleTileGrid!=n.rippleTileGrid ||
        a.autoLod!=b.autoLod ||
@@ -125,6 +127,8 @@ inline bool sameNereidSceneMeshSource(const NereidSceneSurface& a,
        m.lod!=n.lod || m.uvScale!=n.uvScale ||
        m.foamWidth!=n.foamWidth ||
        m.oceanPatchRadius!=n.oceanPatchRadius ||
+       m.oceanRings!=n.oceanRings || m.oceanInnerCell!=n.oceanInnerCell ||
+       m.oceanInnerCells!=n.oceanInnerCells ||
        m.maxVertices!=n.maxVertices ||
        m.rippleTileGrid!=n.rippleTileGrid ||
        a.autoLod!=b.autoLod ||
@@ -152,6 +156,10 @@ struct NereidSceneStats {
     size_t preparedBytes=0, budgetDeferred=0;
     size_t asyncPreparing=0, asyncDiscarded=0, stagingReservedBytes=0;
     size_t flowBuilds=0,flowUploads=0,flowPending=0,flowKnownBytes=0;
+};
+// What the last draw() queued: water draw calls and triangles (camera pass).
+struct NereidSceneDrawStats {
+    size_t surfaces=0,draws=0,triangles=0;
 };
 
 class NereidWaterScene final {
@@ -307,6 +315,7 @@ public:
     }
     size_t maxEstimatedUploadBytes()const{return maxEstimatedUploadBytes_;}
     const NereidSceneStats& stats()const{return stats_;}
+    const NereidSceneDrawStats& drawStats()const{return drawStats_;}
 
     // Conservative upper bound based on maxVertices; the existing mesh
     // builder uses 32-bit indices and 3 vertices per triangle at most.
@@ -462,12 +471,10 @@ public:
             opts.originX=source.geometry.points.front().x.toDouble();
             opts.originZ=source.geometry.points.front().z.toDouble();
         }else if(source.body.footprint==lib::nereid::WaterFootprint::Infinite) {
-            opts.originX=render::nereidPatchAnchor64(
-                opts.preciseCamera?opts.cameraX64:double(opts.cameraX),
-                double(opts.oceanPatchRadius));
-            opts.originZ=render::nereidPatchAnchor64(
-                opts.preciseCamera?opts.cameraZ64:double(opts.cameraZ),
-                double(opts.oceanPatchRadius));
+            opts.originX=render::nereidOceanPatch64(
+                opts.preciseCamera?opts.cameraX64:double(opts.cameraX),opts);
+            opts.originZ=render::nereidOceanPatch64(
+                opts.preciseCamera?opts.cameraZ64:double(opts.cameraZ),opts);
         }else{
             opts.originX=source.body.center.x.toDouble();
             opts.originZ=source.body.center.z.toDouble();
@@ -614,8 +621,10 @@ public:
             ++stats_.flowBuilds;nextFlow_=(index+1)%count;
             NereidFlowMapOptions options;
             if(infinite) {
-                const double radius=source.mesh.oceanPatchRadius;
-                options.infinitePatch=NereidFlowBounds{anchorX-radius,anchorZ-radius,anchorX+radius,anchorZ+radius};
+                const double radius=render::nereidOceanHalfExtent(source.mesh);
+                const double centreX=render::nereidOceanMeshCentre64(anchorX,source.mesh);
+                const double centreZ=render::nereidOceanMeshCentre64(anchorZ,source.mesh);
+                options.infinitePatch=NereidFlowBounds{centreX-radius,centreZ-radius,centreX+radius,centreZ+radius};
             }
             NereidFlowMapSource flowSource{source.body,source.useGeometry?&source.geometry:nullptr,
                 source.mesh.useGrade?&source.mesh.grade:nullptr,
@@ -645,8 +654,10 @@ public:
         const double worldOriginX=double(origin.x)*double(cellSize);
         const double worldOriginZ=double(origin.z)*double(cellSize);
         const double worldOriginY=double(origin.y)*double(cellSize);
+        drawStats_={};
         for(const auto& slot:slots_) {
             if(!slot.visible || !slot.gpu->resident())continue;
+            ++drawStats_.surfaces;
             const auto& basis=slot.gpu->key();
             // Legacy external confluence callbacks remain on their established
             // path until supplied to field preparation; never drop that input.
@@ -692,6 +703,7 @@ public:
                 // One shared VB/IB, multiple disjoint index ranges; each tile
                 // can see up to 16 waves near its own portion of the ocean.
                 for(const auto& tile:slot.gpu->tiles()) {
+                    if(tile.indexCount){++drawStats_.draws;drawStats_.triangles+=tile.indexCount/3;}
                     NereidRippleShaderPacket packet{};
                     if(ripples)packet=ripples->shaderPacketForTile(
                         slot.source.id,worldOriginX,worldOriginZ,
@@ -727,6 +739,7 @@ public:
                     referenceX=p.x.toDouble();referenceZ=p.z.toDouble();
                 }
                 const auto whitewater=whitewaterAt(referenceX,referenceZ);
+                ++drawStats_.draws;drawStats_.triangles+=slot.gpu->indexCount()/3;
                 slot.gpu->draw(renderer,transform,
                                packet.rings,packet.shapes,wind,whitewater,flowBinding);
             }
@@ -763,6 +776,7 @@ private:
     float visibilityRange_=0;
     size_t nextUpload_=0;
     NereidSceneStats stats_{};
+    mutable NereidSceneDrawStats drawStats_{};
     bool asyncPrepare_=false;
     size_t maxStagingBytes_=16u*1024u*1024u;
     std::optional<PendingCpuJob> pendingJob_;

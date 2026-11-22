@@ -387,10 +387,12 @@ int main() {
     infiniteBody.footprint=lib::nereid::WaterFootprint::Infinite;
     const auto oceanPrepared=render::NereidSurfaceResident::prepare(
         infiniteBody,nullptr,55,seaOptions);
+    // The patch is centred on its 1 m cell (anchor + r/2), so the first
+    // corner sits at anchor - r/2 in the anchor-relative basis.
     check(oceanPrepared && oceanPrepared->key.patchZ==-100000001.0 &&
           oceanPrepared->cpu.vertices.size()==4 &&
-          oceanPrepared->cpu.vertices[0].x==-1.f &&
-          oceanPrepared->cpu.vertices[0].z==-1.f,
+          oceanPrepared->cpu.vertices[0].x==-0.5f &&
+          oceanPrepared->cpu.vertices[0].z==-0.5f,
           "large-world ocean patch vertices must be local and stable");
     // Medium LOD must retain the same local basis even though it creates
     // more vertices. Do not weaken the real generator's LOD policy.
@@ -400,8 +402,8 @@ int main() {
         infiniteBody,nullptr,55,mediumSeaOptions);
     check(mediumOceanPrepared &&
           mediumOceanPrepared->cpu.vertices.size()>4 &&
-          mediumOceanPrepared->cpu.vertices[0].x==-1.f &&
-          mediumOceanPrepared->cpu.vertices[0].z==-1.f &&
+          mediumOceanPrepared->cpu.vertices[0].x==-0.5f &&
+          mediumOceanPrepared->cpu.vertices[0].z==-0.5f &&
           mediumOceanPrepared->key.patchX==100000000.0 &&
           mediumOceanPrepared->key.patchZ==-100000001.0,
           "medium ocean LOD must preserve precise local patch coordinates");

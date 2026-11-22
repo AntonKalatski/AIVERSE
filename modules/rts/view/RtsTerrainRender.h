@@ -31,6 +31,7 @@
 #include "../RtsData.h"
 #include "../RtsMap.h"
 #include "RtsTerrainDetail.h"
+#include "RtsWaterNereid.h"
 
 namespace aiverse::game {
 
@@ -46,6 +47,10 @@ struct TerrainLook {
     enum class Water { Auto, Sheet, Bodies } water = Water::Auto;
     render::float4 waterColor{0.22f, 0.45f, 0.62f, 0.78f};
     float waterOffset = -0.12f;                 // below the surrounding ground (bodies) / ground level (sheet)
+    // Which renderer draws the water cells: the legacy mesh (default) or NEREID surfaces converted
+    // from the same layout (docs/nereid/legacy-water-migration.md). `nereid`: surface/style overrides.
+    enum class WaterRenderer { Legacy, Nereid } waterRenderer = WaterRenderer::Legacy;
+    Json nereid;
     int lod = -1;                               // -1 auto (heightfield maps above 256 cells per side), 0 off, 1 on
     float lodRange = 128;                       // world distance of the finest LOD
     // detail surface (RtsTerrainDetail.h): "classic" = the cell-aligned look (default), "smooth" =
@@ -161,6 +166,15 @@ public:
     void drawPrepared(render::Renderer3D& r,const MapGrid& g,
                       const std::vector<uint8_t>* vision);
     void drawWater(render::Renderer3D& r);
+    // Water layout shared by the legacy mesh and the NEREID conversion.
+    LegacyWaterLayout legacyWaterLayout(const MapGrid& g, bool flatDig) const;
+    // Effective water renderer: terrain.water.renderer, overridden by AIVERSE_WATER_RENDERER=legacy|nereid.
+    TerrainLook::WaterRenderer waterRenderer() const;
+    // NEREID manifest converted by the last water build; null = legacy mesh (or no water).
+    std::shared_ptr<const Json> nereidWaterManifest() const { return nereidWater_; }
+    // Why the last NEREID conversion was refused (legacy kept); empty when it was not.
+    const std::string& nereidWaterStatus() const { return nereidWaterStatus_; }
+    bool mapSurfaceEnabled() const { return mapSurfaceEnabled_; }
     void setMapSurfaceEnabled(bool enabled){mapSurfaceEnabled_=enabled;}
     bool built() const { return built_; }
     bool shaderFog() const { return heightfield_; }
@@ -245,6 +259,7 @@ private:
     size_t detailSampleCap() const;
     void buildApron(gfx::Device& dev, const MapGrid& g);
     void buildWater(gfx::Device& dev, const MapGrid& g, bool flatDig);
+    float waterGroundAt(const MapGrid& g, float x, float z) const;
     void freeChunk(gfx::Device& dev, Chunk& c);
     void upload(gfx::Device& dev, const std::vector<TV>& v, const std::vector<uint32_t>& idx, Lod& out);
     int kindOf(const MapGrid& g, size_t i, bool flatDig) const;
@@ -313,6 +328,8 @@ private:
     Lod apron_;
     render::Mesh water_;
     bool waterSheet_ = false, hasWater_ = false;
+    std::shared_ptr<const Json> nereidWater_;   // NEREID conversion of the water layout (renderer "nereid")
+    std::string nereidWaterStatus_;
     bool mapSurfaceEnabled_=true;
     uint64_t waterHash_ = 0;
     render::HeightField heightField_;

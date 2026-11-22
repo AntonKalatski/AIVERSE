@@ -1,5 +1,6 @@
 // Scripting sample: Iron and Gold (skirmish) + Lua mechanics in scripts/ (docs/scripting.md).
 {
+  "terrain": {"water": {"renderer": "nereid"}},
   "name": "Iron and Gold: Scripted",
   "id": "com.aiverse.scripted",
   "version": "0.1.0",

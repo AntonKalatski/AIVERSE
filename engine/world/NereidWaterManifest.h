@@ -170,6 +170,19 @@ inline NereidSceneSurface surface(const Json& j) {
         throw JsonError("nereidWater: invalid LOD distances/hysteresis");
     if(j.has("oceanPatchRadius"))
         s.mesh.oceanPatchRadius=scalar(j["oceanPatchRadius"],"oceanPatchRadius",1.f,100000.f);
+    if(j.has("oceanLod")) {
+        const auto mode=j.getStr("oceanLod");
+        if(mode=="rings")s.mesh.oceanRings=true;
+        else if(mode=="patch")s.mesh.oceanRings=false;
+        else throw JsonError("nereidWater.oceanLod: expected \"patch\" or \"rings\"");
+    }
+    if(j.has("oceanInnerCell"))
+        s.mesh.oceanInnerCell=scalar(j["oceanInnerCell"],"oceanInnerCell",0.25f,10000.f);
+    if(j.has("oceanInnerCells")) {
+        const auto cells=worldInteger(j,"oceanInnerCells",16,4,64);
+        if(cells%2)throw JsonError("nereidWater.oceanInnerCells: expected an even count");
+        s.mesh.oceanInnerCells=uint16_t(cells);
+    }
     if(j.has("uvScale"))s.mesh.uvScale=scalar(j["uvScale"],"uvScale",0.0001f,128.f);
     if(j.has("foamWidth"))s.mesh.foamWidth=scalar(j["foamWidth"],"foamWidth",0.f,1000.f);
     if(j.has("rippleTileGrid"))

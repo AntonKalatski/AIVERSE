@@ -528,6 +528,33 @@ size_t RtsView::genericRetargetScratchCapacityBytes() const noexcept {
     return genericView_?genericView_->retargetScratchCapacityBytes():0;
 }
 
+// Map water cells converted to NEREID (terrain.water.renderer "nereid",
+// RtsWaterNereid.h). The parsed scene is replaced only when the converted
+// manifest changes; uploads happen here, before Renderer3D encodes the frame.
+void RtsView::drawNereidLegacyWater(Renderer3D& r,bool terrainReady) {
+    auto manifest=terrainReady&&terrain_.look().render&&terrain_.mapSurfaceEnabled()
+        ?terrain_.nereidWaterManifest():nullptr;
+    const std::string signature=manifest?manifest->dump():std::string();
+    if(!dev_ || (signature.empty()&&nereidLegacySignature_.empty()))return;
+    try {
+        if(signature!=nereidLegacySignature_) {
+            auto parsed=manifest?world::parseNereidWaterManifest(*manifest):world::NereidManifest{};
+            nereidLegacy_.setMaxUploadsPerFrame(parsed.maxUploadsPerFrame);
+            nereidLegacy_.setMaxEstimatedUploadBytes(parsed.maxEstimatedUploadBytes);
+            nereidLegacy_.setSurfaces(std::move(parsed.surfaces));
+            nereidLegacySignature_=signature;
+        }
+        if(signature.empty())return;
+        const auto eye=r.camera().eye();
+        const auto fixed=[](float v){return Fixed::fromRaw(int64_t(std::llround(double(std::clamp(v,-1e6f,1e6f))*Fixed::kOne)));};
+        const Vec3 observer{fixed(eye.x),fixed(eye.y),fixed(eye.z)};
+        nereidLegacy_.update(*dev_,&observer);
+        nereidLegacy_.draw(r,{},1);
+    } catch(const std::exception& e) {
+        std::fprintf(stderr,"[water] NEREID map water: %s\n",e.what());
+    }
+}
+
 void RtsView::shutdown(gfx::Device& dev) {
     // Private unpublished GPU candidates must be released BEFORE the
     // full-device idle boundary or owner kit shutdown.
@@ -543,6 +570,8 @@ void RtsView::shutdown(gfx::Device& dev) {
     if(!dev.waitForResourceIdle())
         throw std::runtime_error("RtsView shutdown: GPU idle barrier failed");
     framePublication_.invalidate();
+    nereidLegacy_.shutdown(dev);
+    nereidLegacySignature_.clear();
     if(pendingSpriteRecovery_) {
         // The barrier above proves safe retirement of the failed staged view.
         pendingSpriteRecovery_->shutdown(dev);
@@ -1313,6 +1342,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             else terrain_.draw(r,grid,vision,groundFx_.drawsDig());
         }
         if(hasTerrain_ && tiles)terrain_.drawWater(r);
+        drawNereidLegacyWater(r,hasTerrain_);
         publication.mark(Epoch::Terrain);
     });
     layers.append("surface effects",LayerPhase::Effects,[&] {

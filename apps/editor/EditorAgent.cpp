@@ -295,6 +295,12 @@ void Editor::registerGuiOps() {
         r.set("opaqueSceneCapture",Json::fromBool(r3d_.ssrActive()));
         r.set("ssrRaymarch",Json::fromBool(r3d_.ssrActive() && r3d_.traceActive()));
         r.set("nereidConfiguredSurfaces",Json::number(int64_t(nereidPreview_.configuredSurfaces())));
+        r.set("nereidWaterDraws",Json::number(int64_t(nereidPreview_.scene().drawStats().draws)));
+        r.set("nereidWaterTriangles",Json::number(int64_t(nereidPreview_.scene().drawStats().triangles)));
+        r.set("nereidMapWaterDraws",Json::number(int64_t(view_.nereidMapWater().drawStats().draws)));
+        r.set("nereidMapWaterTriangles",Json::number(int64_t(view_.nereidMapWater().drawStats().triangles)));
+        r.set("waterRenderer",Json::string(view_.terrainRenderer().waterRenderer()==game::TerrainLook::WaterRenderer::Nereid?"nereid":"legacy"));
+        if(!view_.terrainRenderer().nereidWaterStatus().empty())r.set("nereidWaterRefused",Json::string(view_.terrainRenderer().nereidWaterStatus()));
         r.set("sunShadowModelTriangles",Json::number(int64_t(r3d_.profile().triangles[0])));
         {   // Static geometry scene: opt-in STRATA virtual geometry counters.
             const auto& g=view_.geometryScene().stats();auto st=Json::object();
