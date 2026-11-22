@@ -82,7 +82,7 @@ void io(Archive&,RoyaleView&);
 // One rewind frame: every character as it was at `tick` (lag-compensated hitscan).
 struct HistoryFrame { uint32_t tick=0; std::vector<CharacterSnapshot> characters; };
 // World resource with the match-level data. Characters, projectiles, loot and vehicles are entities
-// (ActorComponents.h); read them through the Module accessors.
+// (ActorComponents.h); read them through the ActorHost accessors.
 struct State {
     std::deque<HistoryFrame> history;
     uint32_t round=1; int32_t winner=0;
@@ -95,21 +95,22 @@ Command command(uint8_t slot,const Input& input);
 bool decodeInput(const Command& command,Input& input);
 Vec3 direction(Fixed yaw,Fixed pitch);
 struct BotHost;   // ActorBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
-class Module final : public GameModule {
+// Actor systems (characters, weapons, projectiles, vehicles, royale, race, bots) on world-space maps.
+// Not a GameModule: game::GameCore owns one and runs it when the map is world-space (colliders + spawns).
+class ActorHost final {
 public:
     // Limits of the dynamic object pools (spawns beyond them are dropped).
     static constexpr size_t kMaxProjectiles=256,kMaxLoot=256,kMaxVehicles=32;
-    std::string name() const override { return "fps"; }
-    void setup(Simulation&,const Json&,const Json&) override;
-    void applyCommand(Simulation&,const Command&) override;
-    void hashState(Simulation&,Hasher&) override;
-    bool serializeState(Simulation&,Archive&) override;
-    int result(Simulation& sim) override { return state(sim).winner; }
+    void setup(Simulation&,const Json&,const Json&);
+    void applyCommand(Simulation&,const Command&);
+    void hashState(Simulation&,Hasher&);
+    bool serializeState(Simulation&,Archive&);
+    int result(Simulation& sim) { return state(sim).winner; }
     const Config& config() const { return config_; }
 
     const world::SpatialWorld& collision() const { return collision_; }
     void setContentReader(world::AssetReader);
-    bool readyToStep(Simulation&) override;
+    bool readyToStep(Simulation&);
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     // Match-level data (round, winner, nextObject, match, royale, history).
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
@@ -209,4 +210,8 @@ private:
     Json streamManifest_;
     std::unique_ptr<world::CollisionStream> streamedCollision_;
 };
+// The actor systems of a simulation run by game::GameCore (engine/game/GameCore.cpp); throws when the map is not world-space.
+ActorHost& host(Simulation&);
+const ActorHost& host(const Simulation&);
+ActorHost* tryHost(Simulation&);
 }

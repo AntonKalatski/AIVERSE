@@ -14,7 +14,7 @@ bool guarded(const CharacterRef& target,const CharacterRef& attacker,Fixed guard
 
 // SimEvents: 3 = swing started (value = attack id), 4 = melee contact
 // (value = target slot | MeleeContact << 8, pos = contact point).
-void Module::tickMelee(Simulation& sim,CharacterRef actor,const Input& input) {
+void ActorHost::tickMelee(Simulation& sim,CharacterRef actor,const Input& input) {
     const size_t count=characterCount(sim);const auto now=sim.tick();const auto& m=config_.melee;
     const bool alive=actor.health>0&&!actor.downed;
     const bool block=alive&&!actor.vehicle&&(input.buttons&Block)!=0;

@@ -41,6 +41,7 @@
 #include "Traffic.h"
 #include <memory>
 
+namespace aiverse::actor { class ActorHost; }
 namespace aiverse::game {
 
 // ---------------------------------------------------------------- module
@@ -62,11 +63,16 @@ public:
     // tooling only (Studio "Keep play changes"); not part of the simulation state or its checksum.
     const std::vector<Entity>& mapPlaced() const { return mapPlaced_; }
     ~GameCore() override;
+    // World-space maps (map "colliders" + "spawns"): the actor systems run the match (engine/actor, ActorHost).
+    // nullptr on grid maps. Every GameModule entry point hands world-space matches to them (GameActorHost.cpp).
+    actor::ActorHost* actor() const { return actor_.get(); }
+    static bool worldSpaceMap(const Json& map) { return map["colliders"].isArray() && map["spawns"].isArray(); }
+    bool readyToStep(Simulation& sim) override;
     std::string name() const override { return "rts"; }
     void setup(Simulation& sim, const Json& rules, const Json& map) override;
     void applyCommand(Simulation& sim, const Command& cmd) override;
     void hashState(Simulation& sim, Hasher& h) override;
-    void prepareSnapshot(Simulation& sim) override { if (script_) script_->flush(sim); }
+    void prepareSnapshot(Simulation& sim) override { if (script_) script_->flush(sim); }   // world-space: script_ is null
     bool serializeState(Simulation& sim, Archive& a) override;   // Save.cpp
     int result(Simulation& sim) override;
     // Frozen outcome (null / empty until the match has a result). The blob is what hosted battle clients report
@@ -353,6 +359,13 @@ public:
     void mechWaveRoute(Simulation& sim, Entity e, const std::vector<Vec3>& route);
 
 private:
+    std::shared_ptr<actor::ActorHost> actor_;   // world-space match (GameActorHost.cpp)
+    void setupActor(Simulation& sim, const Json& rules, const Json& map);
+    void actorCommand(Simulation& sim, const Command& cmd);
+    void actorHash(Simulation& sim, Hasher& h);
+    bool actorSerialize(Simulation& sim, Archive& a);
+    int actorResult(Simulation& sim);
+    bool actorReady(Simulation& sim);
     ModesRules modes_;               // match modes of this match (read-only after setup, Modes.cpp)
     // gameplay time scale (trigger variable "gameplay_scale"): whether this tick runs the gameplay
     // systems; recomputed from the (hashed, saved) variables at the start of every tick

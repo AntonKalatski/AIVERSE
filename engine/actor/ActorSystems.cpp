@@ -26,7 +26,7 @@ bool bag(std::vector<Item>& bag,int32_t type,int32_t count,size_t slots=12) {
 bool has(const std::vector<Item>& bag,int32_t type){for(auto i:bag)if(i.type==type&&i.count>0)return true;return false;}
 uint32_t ticks(const Simulation& sim){return sim.tick();}
 }
-void Module::setupSystems(Simulation& sim,const Json& map) {
+void ActorHost::setupSystems(Simulation& sim,const Json& map) {
     ladders_.clear();sites_.clear();penetrable_.clear();initialLoot_.clear();initialVehicles_.clear();
     if(!config_.systems.enabled)return;
     auto& s=state(sim);
@@ -65,7 +65,7 @@ void Module::setupSystems(Simulation& sim,const Json& map) {
     }
     s.match.start=ticks(sim);initialLoot_=loot(sim);initialVehicles_=vehicles(sim);
 }
-void Module::damage(Simulation& sim,uint8_t source,CharacterRef target,int32_t amount,bool head) {
+void ActorHost::damage(Simulation& sim,uint8_t source,CharacterRef target,int32_t amount,bool head) {
     auto& s=state(sim);World& w=sim.world();
     std::optional<CharacterRef> attacker;
     if(source&&source<=characterCount(sim))attacker.emplace(character(sim,source));
@@ -105,12 +105,12 @@ void Module::damage(Simulation& sim,uint8_t source,CharacterRef target,int32_t a
     sim.emit({2,source,{}, {},target.slot,target.pos});
 }
 // Hit on a vehicle: a destroyed vehicle kills the driver of an untyped vehicle (typed ones eject via VehicleDrive seats).
-void Module::damageVehicle(Simulation& sim,uint8_t source,uint32_t vehicleId,int32_t amount) {
+void ActorHost::damageVehicle(Simulation& sim,uint8_t source,uint32_t vehicleId,int32_t amount) {
     auto* v=sim.world().tryGet<Vehicle>(vehicleEntity(sim,vehicleId));if(!v)return;
     v->health=std::max(0,v->health-amount);
     if(!v->health&&v->driver){auto driver=character(sim,v->driver);v->driver=0;driver.vehicle=0;damage(sim,source,driver,1000);}
 }
-bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_t amount,const WeaponConfig& weapon,const std::vector<HitPose>* rewind,Projectile* projectile) {
+bool ActorHost::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_t amount,const WeaponConfig& weapon,const std::vector<HitPose>* rewind,Projectile* projectile) {
     Fixed best=1_fx;uint8_t victim=0;std::optional<HitPose> pose;
     // Rewind pose selection comes from the tick history; the nearest-hit policy is the shared ECS one.
     // Resolved inline to keep the per-shooter damage / event order and the rewind.
@@ -183,7 +183,7 @@ bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_
         [](Entity) {});
     return true;
 }
-void Module::action(Simulation& sim,CharacterRef a,Action kind,uint32_t argument) {
+void ActorHost::action(Simulation& sim,CharacterRef a,Action kind,uint32_t argument) {
     auto& s=state(sim);World& w=sim.world();const auto& c=config_.systems;auto now=sim.tick();
     if(a.health<=0||a.downed||a.activeAction!=Action::None)return;
     if(kind==Action::Buy) {
@@ -273,7 +273,7 @@ void Module::action(Simulation& sim,CharacterRef a,Action kind,uint32_t argument
     }
     for(auto ladder:ladders_)if(inside(a.pos,ladder)){a.climbing=true;return;}
 }
-void Module::actorSystems(Simulation& sim,CharacterRef a,Input& input) {
+void ActorHost::actorSystems(Simulation& sim,CharacterRef a,Input& input) {
     auto& s=state(sim);World& w=sim.world();auto now=sim.tick();const auto& c=config_.systems;
     a.recoil=fxMax(Fixed{},a.recoil-Fixed::fromRatio(1,config_.tickRate*5));a.aiming=(input.buttons&Aim)!=0;
     if(a.downed&&now>=a.bleedUntil){damage(sim,0,a,1000);input={};return;}
@@ -303,14 +303,14 @@ void Module::actorSystems(Simulation& sim,CharacterRef a,Input& input) {
     }
     if(frozen||a.downed||a.vehicle){if(frozen||a.downed||!canFireFromVehicle(sim,a))input.buttons&=uint32_t(Prone);else input.buttons&=uint32_t(Fire|Aim|Reload|WeaponMask);if(frozen||a.vehicle)input.forward=input.right=0;}   // passengers / gunners may shoot
 }
-void Module::finishRound(Simulation& sim,int32_t team) {
+void ActorHost::finishRound(Simulation& sim,int32_t team) {
     auto& s=state(sim);if(s.match.end)return;s.match.winner=team;s.match.end=sim.tick()+config_.tickRate*3;
     if(team==1)++s.match.scoreA;else if(team==2)++s.match.scoreB;
     forEachCharacter(sim,[&](CharacterRef a){a.money=std::min(16000,a.money+(a.team==team?config_.systems.winReward:config_.systems.lossReward));a.activeAction=Action::None;a.actionUntil=0;});
     if(s.match.scoreA>=int(config_.systems.roundsToWin)||s.match.scoreB>=int(config_.systems.roundsToWin))s.winner=team;
 }
 // Non-programmed flight / impact of one projectile (bullet, grenade, smoke cloud). Returns true to remove it.
-bool Module::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
+bool ActorHost::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
     const auto now=sim.tick();
     const auto& c=config_.systems;
     bool remove=false;
@@ -363,7 +363,7 @@ bool Module::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
             fxAbs(p.pos.z)>config_.worldLimit;
     return remove;
 }
-void Module::tickOrdinaryProjectiles(Simulation& sim) {
+void ActorHost::tickOrdinaryProjectiles(Simulation& sim) {
     // Ascending id (creation order). Nothing in this stage reads other projectiles, so removals are applied
     // after the pass, in the same order.
     World& w=sim.world();std::vector<Entity> removed;
@@ -374,7 +374,7 @@ void Module::tickOrdinaryProjectiles(Simulation& sim) {
     }
     for(const Entity e:removed)w.destroy(e);
 }
-void Module::tickSystems(Simulation& sim) {
+void ActorHost::tickSystems(Simulation& sim) {
     auto& s=state(sim);auto now=sim.tick();const auto& c=config_.systems;
     if(config_.mode!="bomb")return;
     if(s.match.end) {

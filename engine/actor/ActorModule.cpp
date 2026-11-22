@@ -163,40 +163,40 @@ Config readConfig(const Json& root) {
     mel.lockRange=number(melee,"lockRange",8_fx,mel.range,100_fx);
     return c;
 }
-void Module::equipInitial(CharacterSnapshot& a) const {
+void ActorHost::equipInitial(CharacterSnapshot& a) const {
     a.weaponIndex=0;a.owned=config_.mode=="bomb"?1:uint8_t((1u<<config_.weapons.size())-1);
     for(size_t i=0;i<config_.weapons.size();++i){a.storedAmmo[i]=config_.weapons[i].magazine;a.storedReserve[i]=config_.weapons[i].reserve;}
     a.ammo=a.storedAmmo[0];a.reserve=a.storedReserve[0];
     if(config_.systems.enabled)a.bag={{1,2},{3,2},{4,2},{5,2}};
 }
 // ---------------------------------------------------------------- ECS accessors
-size_t Module::characterCount(const Simulation& sim) const {
+size_t ActorHost::characterCount(const Simulation& sim) const {
     const auto* index=sim.world().resourceConst<CharacterIndex>();
     return index?index->bySlot.size():0;
 }
-Entity Module::characterEntity(const Simulation& sim,uint8_t slot) const {
+Entity ActorHost::characterEntity(const Simulation& sim,uint8_t slot) const {
     const auto* index=sim.world().resourceConst<CharacterIndex>();
     if(!index||slot==0||size_t(slot)>index->bySlot.size())return kNullEntity;
     const Entity e=index->bySlot[size_t(slot-1)];
     return sim.world().alive(e)?e:kNullEntity;
 }
-CharacterRef Module::character(Simulation& sim,uint8_t slot) const {
+CharacterRef ActorHost::character(Simulation& sim,uint8_t slot) const {
     const Entity e=characterEntity(sim,slot);
     if(!e.valid())throw std::out_of_range("fps: no character in slot "+std::to_string(slot));
     return makeCharacterRef<false>(sim.world(),e);
 }
-ConstCharacterRef Module::character(const Simulation& sim,uint8_t slot) const {
+ConstCharacterRef ActorHost::character(const Simulation& sim,uint8_t slot) const {
     const Entity e=characterEntity(sim,slot);
     if(!e.valid())throw std::out_of_range("fps: no character in slot "+std::to_string(slot));
     return makeCharacterRef<true>(sim.world(),e);
 }
-CharacterSnapshot Module::snapshot(const Simulation& sim,uint8_t slot) const { return actor::snapshot(character(sim,slot)); }
-std::vector<CharacterSnapshot> Module::snapshots(const Simulation& sim) const {
+CharacterSnapshot ActorHost::snapshot(const Simulation& sim,uint8_t slot) const { return actor::snapshot(character(sim,slot)); }
+std::vector<CharacterSnapshot> ActorHost::snapshots(const Simulation& sim) const {
     std::vector<CharacterSnapshot> out;const size_t n=characterCount(sim);out.reserve(n);
     for(size_t slot=1;slot<=n;++slot)out.push_back(actor::snapshot(character(sim,uint8_t(slot))));
     return out;
 }
-std::vector<HitPose> Module::livePoses(Simulation& sim) const {
+std::vector<HitPose> ActorHost::livePoses(Simulation& sim) const {
     const World& w=sim.world();const auto* index=w.resourceConst<CharacterIndex>();
     std::vector<HitPose> out;if(!index)return out;out.reserve(index->bySlot.size());
     for(const Entity e:index->bySlot){
@@ -206,13 +206,13 @@ std::vector<HitPose> Module::livePoses(Simulation& sim) const {
     }
     return out;
 }
-lib::systems::GearLoadout* Module::gear(Simulation& sim,uint8_t slot) const {
+lib::systems::GearLoadout* ActorHost::gear(Simulation& sim,uint8_t slot) const {
     return sim.world().tryGet<lib::systems::GearLoadout>(characterEntity(sim,slot));
 }
-const lib::systems::GearLoadout* Module::gear(const Simulation& sim,uint8_t slot) const {
+const lib::systems::GearLoadout* ActorHost::gear(const Simulation& sim,uint8_t slot) const {
     return sim.world().tryGetConst<lib::systems::GearLoadout>(characterEntity(sim,slot));
 }
-template<class T> std::vector<Entity> Module::orderedById(const Simulation& sim) const {
+template<class T> std::vector<Entity> ActorHost::orderedById(const Simulation& sim) const {
     const World& w=sim.world();std::vector<std::pair<uint32_t,Entity>> items;
     w.eachExistingConst<T>([&](Entity e,const T& v){if(w.alive(e))items.push_back({v.id,e});});
     std::sort(items.begin(),items.end(),[](const auto& a,const auto& b){return a.first<b.first;});
@@ -220,9 +220,9 @@ template<class T> std::vector<Entity> Module::orderedById(const Simulation& sim)
     for(const auto& item:items)out.push_back(item.second);
     return out;
 }
-std::vector<Entity> Module::projectileEntities(const Simulation& sim) const { return orderedById<Projectile>(sim); }
-std::vector<Entity> Module::lootEntities(const Simulation& sim) const { return orderedById<Loot>(sim); }
-std::vector<Entity> Module::vehicleEntities(const Simulation& sim) const { return orderedById<Vehicle>(sim); }
+std::vector<Entity> ActorHost::projectileEntities(const Simulation& sim) const { return orderedById<Projectile>(sim); }
+std::vector<Entity> ActorHost::lootEntities(const Simulation& sim) const { return orderedById<Loot>(sim); }
+std::vector<Entity> ActorHost::vehicleEntities(const Simulation& sim) const { return orderedById<Vehicle>(sim); }
 namespace {
 template<class T> std::vector<T> values(const World& w,const std::vector<Entity>& entities) {
     std::vector<T> out;out.reserve(entities.size());
@@ -230,31 +230,31 @@ template<class T> std::vector<T> values(const World& w,const std::vector<Entity>
     return out;
 }
 }
-std::vector<Projectile> Module::projectiles(const Simulation& sim) const { return values<Projectile>(sim.world(),projectileEntities(sim)); }
-std::vector<Loot> Module::loot(const Simulation& sim) const { return values<Loot>(sim.world(),lootEntities(sim)); }
-std::vector<Vehicle> Module::vehicles(const Simulation& sim) const { return values<Vehicle>(sim.world(),vehicleEntities(sim)); }
-Entity Module::vehicleEntity(const Simulation& sim,uint32_t id) const {
+std::vector<Projectile> ActorHost::projectiles(const Simulation& sim) const { return values<Projectile>(sim.world(),projectileEntities(sim)); }
+std::vector<Loot> ActorHost::loot(const Simulation& sim) const { return values<Loot>(sim.world(),lootEntities(sim)); }
+std::vector<Vehicle> ActorHost::vehicles(const Simulation& sim) const { return values<Vehicle>(sim.world(),vehicleEntities(sim)); }
+Entity ActorHost::vehicleEntity(const Simulation& sim,uint32_t id) const {
     Entity found=kNullEntity;if(!id)return found;
     const World& w=sim.world();
     w.eachExistingConst<Vehicle>([&](Entity e,const Vehicle& v){if(v.id==id&&w.alive(e))found=e;});
     return found;
 }
-void Module::spawnProjectile(Simulation& sim,Projectile projectile) {
+void ActorHost::spawnProjectile(Simulation& sim,Projectile projectile) {
     World& w=sim.world();
     if(w.countExisting<Projectile>()>=kMaxProjectiles)throw std::logic_error("FPS projectile limit exceeded at spawn");
     const Entity e=w.create();w.add<Projectile>(e,std::move(projectile));
 }
-void Module::spawnLoot(Simulation& sim,Loot loot) {
+void ActorHost::spawnLoot(Simulation& sim,Loot loot) {
     World& w=sim.world();const Entity e=w.create();w.add<Loot>(e,std::move(loot));
 }
-Entity Module::spawnVehicle(Simulation& sim,Vehicle vehicle) {
+Entity ActorHost::spawnVehicle(Simulation& sim,Vehicle vehicle) {
     World& w=sim.world();const Entity e=w.create();w.add<Vehicle>(e,std::move(vehicle));return e;
 }
-void Module::clearProjectiles(Simulation& sim) {
+void ActorHost::clearProjectiles(Simulation& sim) {
     World& w=sim.world();
     for(const Entity e:projectileEntities(sim))w.destroy(e);
 }
-void Module::resetLootAndVehicles(Simulation& sim) {
+void ActorHost::resetLootAndVehicles(Simulation& sim) {
     World& w=sim.world();
     for(const Entity e:lootEntities(sim))w.destroy(e);
     for(const auto& l:initialLoot_)spawnLoot(sim,l);
@@ -266,7 +266,7 @@ void Module::resetLootAndVehicles(Simulation& sim) {
     }
 }
 // ---------------------------------------------------------------- setup
-void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
+void ActorHost::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
     if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
     if(sim.players().empty()||sim.players().size()>config_.maxPlayers)throw JsonError("fps: invalid player count");
@@ -335,7 +335,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     });
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
 }
-void Module::applyCommand(Simulation& sim,const Command& c) {
+void ActorHost::applyCommand(Simulation& sim,const Command& c) {
     Input input;
     if(c.player==0||c.player>characterCount(sim)||!decodeInput(c,input))return;
     auto p=character(sim,c.player);
@@ -343,7 +343,7 @@ void Module::applyCommand(Simulation& sim,const Command& c) {
        (p.lastSequence&&p.lastInputTick==sim.tick()))return;
     p.input=input;p.lastSequence=input.sequence;p.lastInputTick=sim.tick();
 }
-void Module::shoot(Simulation& sim,CharacterRef p) {
+void ActorHost::shoot(Simulation& sim,CharacterRef p) {
     auto& s=state(sim);
     uint32_t earliest=sim.tick()>config_.rewindTicks?sim.tick()-config_.rewindTicks:0;
     uint32_t requested=std::clamp(p.input.viewTick,earliest,sim.tick());
@@ -383,7 +383,7 @@ void Module::shoot(Simulation& sim,CharacterRef p) {
     if(config_.systems.enabled)p.recoil=fxMin(Fixed::fromRatio(1,20),p.recoil+weapon.recoil*((p.attachments[p.weaponIndex]&2)?Fixed::fromRatio(3,4):1_fx));
 }
 // ---------------------------------------------------------------- tick
-void Module::tick(Simulation& sim) {
+void ActorHost::tick(Simulation& sim) {
     auto& s=state(sim);if(s.winner)return;
     // Programmed and ordinary projectiles have already advanced in the preceding stages.
     if(config_.systems.enabled)tickSystems(sim);
@@ -481,7 +481,7 @@ void Module::tick(Simulation& sim) {
     }
 }
 // ---------------------------------------------------------------- checksum and save
-void Module::hashState(Simulation& sim,Hasher& hash) {
+void ActorHost::hashState(Simulation& sim,Hasher& hash) {
     // Read-only: const World access never detaches copy-on-write snapshot pools. The byte layout is the one of
     // the former FPS state stream (characters / projectiles / loot / vehicles in slot / id order), so match
     // checksums do not depend on the storage.
@@ -509,7 +509,7 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
 // FPS save version 10: written from the components (characters in slot order, dynamic objects in id order,
 // each with its entity handle); older versions are not readable. Typed vehicles write the shared VehicleDrive record
 // (engine/vehicles); maps with a race (map "race") append the shared RaceState; other maps write no race bytes.
-bool Module::serializeState(Simulation& sim,Archive& archive) {
+bool ActorHost::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=10;uint64_t content=contentHash_;archive(version,content);
     if(version!=10||content!=contentHash_)return false;
     struct Character { Entity entity;CharacterSnapshot value; };

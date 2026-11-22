@@ -226,8 +226,9 @@ if(AIVERSE_ENABLE_PHYSICS)
 endif()
 add_subdirectory(engine/meta)
 
-# Generic data-driven RTS gameplay (units, orders, economy, combat, garrisons, AI)
+# The one gameplay host: grid systems (units, orders, economy, combat, garrisons, AI) and, on world-space maps, actor systems
 add_library(aiverse_game STATIC
+    engine/game/GameActorHost.cpp   # world-space maps: actor systems (engine/actor)
     engine/game/GameData.cpp
     engine/game/MapGrid.cpp
     engine/game/MapHpa.cpp
@@ -264,6 +265,7 @@ add_library(aiverse_game STATIC
     engine/game/ComputerPlayerFidelity.cpp
     engine/game/ComputerPlayerTerrain.cpp
     engine/game/ComputerPlayerTactics.cpp)
+target_link_libraries(aiverse_game PUBLIC aiverse_fps)   # actor systems: defined in engine/actor/CMakeLists.txt
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
 # the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (engine/actor/ActorVehicles.cpp)
@@ -321,14 +323,14 @@ function(aiverse_game_module var description stub)
 endfunction()
 
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
-file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/GameBwAI*.cpp)
+file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
 # Every game: hypnotised sends, per point counters, the controller registry and the registration point.
-target_sources(aiverse_game PRIVATE engine/game/Hypnosis.cpp engine/game/AIControllers.cpp modules/rts/GameGameExtensions.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Hypnosis.cpp engine/game/AIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
 # Localization: string tables, plurals, language choice (presentation only, no sim dependency).
-# GameLocalize maps RTS data (types, resources, maps...) to string keys.
+# RtsLocalize maps RTS data (types, resources, maps...) to string keys.
 add_library(aiverse_i18n STATIC
     engine/i18n/Localization.cpp
     engine/i18n/GameLanguage.cpp
@@ -474,7 +476,7 @@ if(NOT EMSCRIPTEN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/battle/BattleLoad
     target_link_libraries(aiverse_battle_load PUBLIC aiverse_net_server)
     target_include_directories(aiverse_battle_load PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # RTS-module battles (top-down projects: topdown_arena, extraction, Drone Fall) on the same harness (agent-df-hero-net)
-    add_library(aiverse_battle_rts STATIC apps/battle/GameBattle.cpp)
+    add_library(aiverse_battle_rts STATIC apps/battle/RtsBattle.cpp)
     target_link_libraries(aiverse_battle_rts PUBLIC aiverse_battle_load aiverse_game)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/server/GameData.cpp")

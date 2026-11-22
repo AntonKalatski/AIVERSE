@@ -1,4 +1,5 @@
 #include "Session.h"
+#include "engine/game/GameCore.h"
 #include "libraries/include/aiverselib/mechanics/VehiclePersistence.h"
 #include <algorithm>
 #include <utility>
@@ -76,7 +77,7 @@ bool recordsSnapshot(const lib::delta::RecordSet& records,Snapshot& out) {
     return decodeSnapshot(encodeSnapshot(v),out);
 }
 Server::Server(const Json& rules,const Json& map,uint64_t seed,world::AssetReader reader):
-    simulation_({seed,actor::readConfig(rules).tickRate,0,false},std::make_unique<actor::Module>()),content_(contentId(rules,map)) {simulation_.setup(rules,map);if(map["world"].getBool("async")){if(!reader)throw JsonError("world: server content reader required");module().setContentReader(std::move(reader));}}
+    simulation_({seed,actor::readConfig(rules).tickRate,0,false},std::make_unique<game::GameCore>()),content_(contentId(rules,map)) {simulation_.setup(rules,map);if(map["world"].getBool("async")){if(!reader)throw JsonError("world: server content reader required");module().setContentReader(std::move(reader));}}
 bool Server::occupied(uint8_t slot) const {for(const auto& p:peers_)if(p.slot==slot&&p.conn->state()!=ConnState::Closed)return true;return false;}
 bool Server::attach(uint8_t slot,std::unique_ptr<Conn> conn) {
     if(!conn||slot==0||slot>module().characterCount(simulation_)||occupied(slot))return false;
@@ -151,8 +152,8 @@ void Server::broadcast() {
     }
 }
 Client::Client(const Json& rules,const Json& map,std::unique_ptr<Conn> conn,world::AssetReader reader):config_(actor::readConfig(rules)),conn_(std::move(conn)),content_(contentId(rules,map)) {
-    Simulation local({1,config_.tickRate,0},std::make_unique<actor::Module>());local.setup(rules,map);
-    collision_=static_cast<actor::Module&>(local.module()).collision();
+    Simulation local({1,config_.tickRate,0},std::make_unique<game::GameCore>());local.setup(rules,map);
+    collision_=actor::host(local).collision();
     if(map["world"].getBool("async")){if(!reader)throw JsonError("world: client content reader required");streamedCollision_=std::make_unique<world::CollisionStream>(map["world"],std::move(reader),collision_);predicted_.pos=world::worldVector(map["spawns"][0],100000_fx);}
 }
 void Client::updateStreaming() {

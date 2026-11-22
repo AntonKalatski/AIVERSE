@@ -1,4 +1,5 @@
 #include <aiverselib/bots/Persistence.h>
+#include "engine/game/GameCore.h"
 #include <aiverselib/bots/Waypoints.h>
 #include <iostream>
 #include <stdexcept>
@@ -7,9 +8,9 @@ using namespace aiverse;using namespace aiverse::lib::bots;
 Json rules(){return Json::parse(R"({"fps":{"mode":"deathmatch","roundTicks":10000,"weapon":{"magazine":3,"reserve":100,"reloadTicks":15}}})");}
 Json map(){return Json::parse(R"({"players":[{"name":"A","team":1},{"name":"B","team":2},{"name":"C","team":1}],"spawns":[[0,0.01,0],[0,0.01,10],[20,0.01,0]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]})");}
 std::unique_ptr<Simulation> make(Json r=rules(),Json m=map()){
-    auto sim=std::make_unique<Simulation>(SimConfig{1,60,0},std::make_unique<actor::Module>());sim->setup(r,m);return sim;
+    auto sim=std::make_unique<Simulation>(SimConfig{1,60,0},std::make_unique<game::GameCore>());sim->setup(r,m);return sim;
 }
-actor::Module& module(Simulation& s){return static_cast<actor::Module&>(s.module());}
+actor::ActorHost& module(Simulation& s){return actor::host(s);}
 actor::Input input(const Command& cmd){actor::Input in;CHECK(actor::decodeInput(cmd,in));return in;}
 void policies(){
     for(auto preset:{"easy","normal","hard","guard","rusher","survivor"})CHECK(valid(fpsConfig(Json::parse(std::string("{\"preset\":\"")+preset+"\"}"))));

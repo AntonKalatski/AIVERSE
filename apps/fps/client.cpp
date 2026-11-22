@@ -1,4 +1,5 @@
 #include <aiverselib/net/Admission.h>
+#include "engine/game/GameCore.h"
 #include "engine/net/authority/Session.h"
 #include "engine/actor/Project.h"
 #include "engine/render/CameraModes.h"
@@ -81,7 +82,7 @@ struct App {
     }
     // Presents characters, vehicles and projectiles of the snapshot to the
     // shared SpectraFxEntityEffects; game code declares nothing here.
-    void presentEntityEffects(float dt,const fps::CharacterSnapshot& local,world::Cell origin) {
+    void presentEntityEffects(float dt,const actor::CharacterSnapshot& local,world::Cell origin) {
         auto& fxe=fxScene.entities();
         if(!fxe.enabled())return;
         const auto at=[&](Vec3 p){return visual(world::relativeTo(p,origin,32));};
@@ -339,8 +340,8 @@ struct App {
         render::MeshBuilder builder;builder.color(render::rgba(255,255,255)).box({0,0.5f,0},{1,1,1});cube=builder.upload(device);
         loadAnimatedCharacter(device);
         lang.load([](const auto& path,auto& out){return platform::readContentFile(path,out);},"en",{"engine/assets/lang"});
-        Simulation sim({1,config.tickRate,0},std::make_unique<actor::Module>());sim.setup(rules,map);
-        geometry=static_cast<actor::Module&>(sim.module()).collision();
+        Simulation sim({1,config.tickRate,0},std::make_unique<game::GameCore>());sim.setup(rules,map);
+        geometry=actor::host(sim).collision();
         rotatedBoxes.clear();
         for(const auto& b:map["colliders"].items())if(b.has("yaw"))rotatedBoxes.push_back({world::worldVector(b["center"],100000_fx),world::worldVector(b["half"],100000_fx),b["yaw"].fx()});
         if(map["world"].getBool("async"))streamedScene=std::make_unique<world::WorldScene>(map["world"],contentReader);

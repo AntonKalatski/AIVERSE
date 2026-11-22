@@ -22,7 +22,7 @@ const VehicleSeatDef* driverSeat(const VehicleSeatsDef& d){for(const auto& seat:
 // ---------------------------------------------------------------- the vehicle system's world query on a metre map
 class VehicleWorld final : public vs::VehicleHost {
 public:
-    VehicleWorld(Module& m,Simulation& sim):m_(m),sim_(sim),w_(sim.world()),now_(sim.tick()){}
+    VehicleWorld(ActorHost& m,Simulation& sim):m_(m),sim_(sim),w_(sim.world()),now_(sim.tick()){}
     bool driverPedals(Entity e,const vs::VehicleDrive& d,VehicleInput& in) override {
         const Vehicle* v=w_.tryGet<Vehicle>(e);if(!d.player||!v||v->health<=0)return false;
         in=m_.driverInput(m_.character(static_cast<const Simulation&>(sim_),d.player),now_);return true;
@@ -60,13 +60,13 @@ public:
         if(Vehicle* v=w_.tryGet<Vehicle>(victim))v->health=std::max(0,v->health-int32_t(amount.toInt()));
     }
 private:
-    Module& m_;Simulation& sim_;World& w_;uint32_t now_;
+    ActorHost& m_;Simulation& sim_;World& w_;uint32_t now_;
 };
 
 // ---------------------------------------------------------------- the race's seats (engine/vehicles/VehicleRace.h)
 class RaceSeats final : public vs::RaceHost {
 public:
-    RaceSeats(Module& m,Simulation& sim):m_(m),sim_(sim),w_(sim.world()){}
+    RaceSeats(ActorHost& m,Simulation& sim):m_(m),sim_(sim),w_(sim.world()){}
     void placeOnGrid(size_t,Entity,vs::VehicleDrive& d,const RaceGridSlot& slot) override {
         d.controller=makeVehicleState(m_.drive_.type(d.type)->def,slot.position,slot.yaw);
     }
@@ -100,14 +100,14 @@ public:
         return racer>=1&&racer<=count?int32_t(m_.character(static_cast<const Simulation&>(sim_),uint8_t(racer)).team):-1;
     }
 private:
-    Module& m_;Simulation& sim_;World& w_;
+    ActorHost& m_;Simulation& sim_;World& w_;
 };
 
 // ---------------------------------------------------------------- typed vehicles
-vs::VehicleDrive* Module::vehicleDrive(Simulation& sim,uint32_t vehicle) const {
+vs::VehicleDrive* ActorHost::vehicleDrive(Simulation& sim,uint32_t vehicle) const {
     return vs::driveOf(sim.world(),vehicleEntity(sim,vehicle));
 }
-void Module::setupVehicles(Simulation& sim,const Json& map) {
+void ActorHost::setupVehicles(Simulation& sim,const Json& map) {
     // fps.vehicleTypes as the shared vehicle types (metres; seat lists); a hard crash costs (impact - 8 m/s) * 10 health
     drive_={};
     if(config_.vehicleTypes){
@@ -126,14 +126,14 @@ void Module::setupVehicles(Simulation& sim,const Json& map) {
         vs::addVehicle(w,entities[i],*t,v.pos,v.yaw);
     }
 }
-bool Module::canFireFromVehicle(Simulation& sim,const CharacterRef& a) const {
+bool ActorHost::canFireFromVehicle(Simulation& sim,const CharacterRef& a) const {
     auto* run=vehicleDrive(sim,a.vehicle);if(!run)return false;
     const auto* type=drive_.type(run->type);if(!type)return false;auto seat=vehicleSeatOf(run->seats,a.slot);
     for(const auto& d:type->seats.seats)if(d.id==seat)return d.role!=VehicleSeatRole::Driver;
     return false;
 }
 // Interact on or in a typed vehicle becomes a seat request handled by tickVehicles this tick. False: not typed.
-bool Module::vehicleInteract(Simulation& sim,CharacterRef a) {
+bool ActorHost::vehicleInteract(Simulation& sim,CharacterRef a) {
     World& w=sim.world();if(!w.countExisting<vs::VehicleDrive>())return false;
     if(race_&&a.vehicle&&race_->holds(w,vehicleEntity(sim,a.vehicle)))return true;   // racers stay at the wheel until the race is over
     VehicleSeatRequest r;r.actor=a.slot;r.team=a.team;r.actorPosition=a.pos;
@@ -155,13 +155,13 @@ bool Module::vehicleInteract(Simulation& sim,CharacterRef a) {
 }
 // The driver's held controls (released after the input timeout) through the shared axes mapping (mechanics/VehicleDrive.h):
 // forward / back -> throttle / brake, right steers, Jump is the handbrake, pitch drives flight.
-VehicleInput Module::driverInput(const ConstCharacterRef& a,uint32_t now) const {
+VehicleInput ActorHost::driverInput(const ConstCharacterRef& a,uint32_t now) const {
     if(now-a.lastInputTick>config_.inputTimeout)return {};
     return vehicleInputFromAxes({Fixed::fromRatio(a.input.forward,1000),Fixed::fromRatio(a.input.right,1000),a.input.pitch,(a.input.buttons&Jump)!=0});
 }
 // 1. Seats of every typed vehicle (ascending id): enter / exit requests of this tick, ejections of knocked / killed /
 //    thrown-out occupants; the driver seat's occupant becomes VehicleDrive::driver. 2. The vehicle system steps them all.
-void Module::tickVehicles(Simulation& sim,std::span<const vs::RacePedals> race) {
+void ActorHost::tickVehicles(Simulation& sim,std::span<const vs::RacePedals> race) {
     World& w=sim.world();if(!w.countExisting<vs::VehicleDrive>())return;auto now=sim.tick();
     const auto count=int64_t(characterCount(sim));
     for(const Entity entity:vehicleEntities(sim)){
@@ -189,7 +189,7 @@ void Module::tickVehicles(Simulation& sim,std::span<const vs::RacePedals> race) 
 }
 
 // ---------------------------------------------------------------- races
-void Module::setupRace(Simulation& sim,const Json& rules,const Json& map){
+void ActorHost::setupRace(Simulation& sim,const Json& rules,const Json& map){
     race_.reset();World& w=sim.world();w.eraseResource<vs::RaceState>();
     if(!map.has("race")){if(rules.has("race")&&!rules["race"].isObject())throw JsonError("race: expected an object");return;}
     if(!config_.vehicleTypes)throw JsonError("map race: the cars are typed vehicles (fps.vehicleTypes)");
@@ -204,7 +204,7 @@ void Module::setupRace(Simulation& sim,const Json& rules,const Json& map){
     RaceSeats seats(*this,sim);
     if(!race_->start(w,seats,drive_,cars,sim.tick()))throw JsonError(race_->line?"map race: invalid race":"map race: bots need a racing line (\"line\")");
 }
-void Module::tickRace(Simulation& sim){
+void ActorHost::tickRace(Simulation& sim){
     World& w=sim.world();auto now=sim.tick();RaceSeats seats(*this,sim);
     // 1. Pedals: countdown brakes, race bots, players' own input. 2. The vehicle system steps the cars (seats too).
     const auto pedals=race_->pedals(w,seats,now);
@@ -216,7 +216,7 @@ void Module::tickRace(Simulation& sim){
     const auto* rs=vs::VehicleRace::state(static_cast<const World&>(w));
     if(rs&&now+1>=config_.roundTicks)s.winner=rs->session.standings.empty()?-1:seats.teamOf(rs->session.standings.front().racer);
 }
-bool Module::validRace(const vs::RaceState& r,const std::vector<Entity>& typedVehicles) const {
+bool ActorHost::validRace(const vs::RaceState& r,const std::vector<Entity>& typedVehicles) const {
     const size_t n=spawns_.size();
     if(!r.started||!lib::mechanics::valid(r.session)||r.racers.size()!=n||r.session.race.racers.size()!=n)return false;
     for(size_t i=0;i<n;++i){
@@ -226,7 +226,7 @@ bool Module::validRace(const vs::RaceState& r,const std::vector<Entity>& typedVe
     for(const auto& [id,b]:r.session.bots){(void)b;if(id<1||id>int64_t(bots_.size())||!bots_[size_t(id-1)])return false;}
     return true;
 }
-RaceView Module::raceView(Simulation& sim,uint8_t slot) const {
+RaceView ActorHost::raceView(Simulation& sim,uint8_t slot) const {
     return race_?race_->view(sim.world(),slot,sim.tick()):RaceView{};
 }
 }

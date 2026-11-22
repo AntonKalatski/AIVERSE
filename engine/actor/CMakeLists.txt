@@ -18,7 +18,7 @@ target_link_libraries(aiverse_fps PUBLIC aiverse_world aiverse_engine AIVERSE::v
 add_library(AIVERSE::fps ALIAS aiverse_fps)
 
 add_library(aiverse_authority STATIC ../../engine/net/authority/Session.cpp)
-target_link_libraries(aiverse_authority PUBLIC aiverse_fps aiverse_net aiverse_content_reader)
+target_link_libraries(aiverse_authority PUBLIC aiverse_game aiverse_fps aiverse_net aiverse_content_reader)
 add_library(AIVERSE::authority ALIAS aiverse_authority)
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_fps_animation_actions_tests ../../tests/fps/animation_actions.cpp)

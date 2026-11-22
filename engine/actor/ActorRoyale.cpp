@@ -12,7 +12,7 @@ using namespace lib::genre;
 namespace {
 uint64_t seedFrom(Simulation& sim,uint32_t salt){Random g=sim.rng();uint64_t a=g.next(),b=g.next();return (a<<32|b)^(uint64_t(salt)*0x9e3779b97f4a7c15ull);}
 }
-void Module::setupRoyale(Simulation& sim,const Json& map) {
+void ActorHost::setupRoyale(Simulation& sim,const Json& map) {
     auto& s=state(sim);const size_t count=characterCount(sim);
     if(map.has("royale"))config_.royale=readRoyale(map["royale"],"map.royale");
     if(!config_.royale)return;
@@ -30,14 +30,14 @@ void Module::setupRoyale(Simulation& sim,const Json& map) {
     if(!startRoyaleStandings(run.standings,0))throw JsonError("fps.royale: invalid standings");
     run.lastAttacker.assign(count,0);run.lastWeapon.assign(count,0);
 }
-Fixed Module::groundBelow(Vec3 p) const {
+Fixed ActorHost::groundBelow(Vec3 p) const {
     // Short segments keep the hit fraction precise (Q16 fractions of a 100 km ray would be metres off).
     constexpr auto step=256_fx;auto top=p+Vec3{{},1_fx,{}};
     for(int i=0;i<1024&&top.y> -config_.worldLimit;++i,top.y-=step){auto hit=collision_.cast(top,{{},-step,{}});if(hit.hit)return top.y-step*hit.fraction;}
     return Fixed{};
 }
 // Moves an actor that has not landed yet. Returns true while it is still in the air (skip the ground motor).
-bool Module::skydive(Simulation& sim,CharacterRef a) {
+bool ActorHost::skydive(Simulation& sim,CharacterRef a) {
     auto& run=state(sim).royale;
     if(!run.enabled||run.divers.empty()||!config_.royale->flight)return false;
     auto& d=run.divers[a.slot-1];if(d.phase==SkydivePhase::Landed)return false;
@@ -63,14 +63,14 @@ bool Module::skydive(Simulation& sim,CharacterRef a) {
     a.input.buttons&=~uint32_t(Jump);
     return d.phase!=SkydivePhase::Landed;
 }
-void Module::steerRoyaleBot(Simulation& sim,CharacterRef a) {
+void ActorHost::steerRoyaleBot(Simulation& sim,CharacterRef a) {
     auto& run=state(sim).royale;if(!run.enabled||a.input.buttons||a.input.forward)return;
     auto target=safeZoneTarget(config_.royale->zone,run.zone);
     if(insideCircle(RoyaleCircle{target.center,target.radius*Fixed::fromRatio(9,10)},a.pos))return;
     auto delta=target.center-a.pos.xz();auto yaw=fxAtan2Turns(delta.x,delta.y);if(yaw<Fixed{})yaw+=1_fx;
     a.input.yaw=yaw;a.input.forward=1000;a.input.buttons|=Sprint;
 }
-void Module::tickRoyale(Simulation& sim) {
+void ActorHost::tickRoyale(Simulation& sim) {
     auto& s=state(sim);auto& run=s.royale;if(!run.enabled||run.standings.finished)return;
     const auto& r=*config_.royale;auto now=sim.tick();
     if(auto events=stepSafeZone(r.zone,run.zone,now))for(const auto& e:*events)sim.emit({6,0,{},{},int64_t(e.phase)|int64_t(uint8_t(e.kind))<<8,Vec3{e.circle.center.x,{},e.circle.center.y}});
@@ -97,7 +97,7 @@ void Module::tickRoyale(Simulation& sim) {
     }
 }
 // Mirrors downs / outs / revives into the standings and applies their verdicts (finished knocked mates, winner).
-void Module::settleRoyale(Simulation& sim) {
+void ActorHost::settleRoyale(Simulation& sim) {
     auto& s=state(sim);auto& run=s.royale;if(!run.enabled||run.standings.finished)return;
     const auto& cfg=config_.royale->standings;auto now=sim.tick();
     std::vector<std::pair<int64_t,int64_t>> outs;std::vector<KillFeedEvent> feed;
@@ -129,7 +129,7 @@ void io(Archive& a,RoyaleView& v){
       v.target.center.x,v.target.center.y,v.target.radius,v.carrier,v.bombardment,v.bombArea.center.x,v.bombArea.center.y,v.bombArea.radius,v.crates,
       v.feed,v.finished,v.doorOpen,v.outside,v.winner,v.teams);
 }
-RoyaleView Module::royaleView(Simulation& sim,uint8_t slot) const {
+RoyaleView ActorHost::royaleView(Simulation& sim,uint8_t slot) const {
     RoyaleView v;const auto& run=state(sim).royale;if(!run.enabled||!slot||slot>run.lastAttacker.size())return v;
     const auto& r=*config_.royale;auto now=sim.tick();v.enabled=true;
     v.stage=uint8_t(run.zone.stage);v.phase=uint8_t(run.zone.phase);v.ticksLeft=safeZoneTicksLeft(r.zone,run.zone,now);

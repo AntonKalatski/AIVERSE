@@ -39,7 +39,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "../../sim/Simulation.h"
 #include "../../game/GameData.h"
 #include "../../game/MapGrid.h"
-#include "Rts2DView.h"
+#include "Game2DView.h"
 #include "GameGroundFx.h"
 #include "GamePaintLayers.h"
 #include "GameGroundCanvas.h"

@@ -1,11 +1,11 @@
 #include "ActorModule.h"
 
 namespace aiverse::actor {
-void Module::setContentReader(world::AssetReader reader) {
+void ActorHost::setContentReader(world::AssetReader reader) {
     streamedCollision_.reset();
     if(streamManifest_.getBool("async"))streamedCollision_=std::make_unique<world::CollisionStream>(streamManifest_,std::move(reader),collision_);
 }
-bool Module::readyToStep(Simulation& sim) {
+bool ActorHost::readyToStep(Simulation& sim) {
     if(!streamManifest_.getBool("async"))return true;
     if(!streamedCollision_)return false;
     const Simulation& view=sim;const auto cars=vehicles(view);

@@ -264,7 +264,7 @@ inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
 }
 
 // Rotated FPS boxes have an explicit center, half-extents and yaw in turns.
-// These fields are already supported by actor::Module::setup and are persisted
+// These fields are already supported by actor::ActorHost::setup and are persisted
 // without converting the collider to a different map schema.
 inline bool setDocumentOrientedCollider(MapDoc& map, DocumentEntityRef ref,
                                        DocumentTransform centre,
