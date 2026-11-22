@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T10:01:57+00:00",
+ "generated": "2026-11-22T10:03:59+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -236,6 +236,43 @@
     }
    ],
    "author": "prisma"
+  },
+  {
+   "id": "2026-11-22-planets-generated-coasts",
+   "date": "2026-11-22",
+   "system": "planets",
+   "title": "Planets: coasts that follow the relief instead of square seas",
+   "summary": "The sea on a planet is now cut by the ground height at every pixel, and the Big Planet map is built by the engine's generator: noise relief, bays and islands.",
+   "body": [
+    "Big Planet used to have seas with straight edges. The cause was the map itself: its heights came from a hand-made formula with latitude bands, and lowlands on the cube faces came out rectangular. The map is now built by the engine's generator with the rocky preset — the same one as in the Generation window: noise relief, sea level by water share, flat base areas and fair starts.",
+    "The water itself is neater too: every sea pixel checks whether the ground under it is above sea level, and the water turns shallow towards the coast. The coastline follows the relief exactly at any level of detail and no longer depends on depth buffer precision."
+   ],
+   "status": "done",
+   "verified": "Frames taken in the game client (OpenGL); a bot match on the new map plays to a winner.",
+   "limits": "The Metal shader is updated but has not been run on a Mac yet. The small Two Worlds map keeps its old heights for now: tests depend on it.",
+   "branch": "main",
+   "commit": "6f6b23bab",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-generated-coasts/coasts.jpg",
+     "caption": "Big Planet from the generator: bays, islands and shallow water at the coast"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-generated-coasts/orbit.jpg",
+     "caption": "The same planet from orbit"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-planets-generated-coasts/before.jpg",
+     "caption": "Before: a square sea on the old map"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/planets.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/planets.md"
+    }
+   ],
+   "author": "planets"
   },
   {
    "id": "2026-11-22-motionweave-battle",
