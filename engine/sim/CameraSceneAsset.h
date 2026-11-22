@@ -7,6 +7,7 @@
 #include "CameraRigComponents.h"
 #include "CameraViewportComponents.h"
 #include "SceneHierarchy.h"
+#include "../render/CameraPresets.h"
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
@@ -15,6 +16,53 @@
 #include <vector>
 
 namespace aiverse {
+// "follow" block of a camera (CameraFollowComponent): the keys of the follow body in degrees / world units,
+// optionally starting from a preset ("preset": "follow-speed"); "bounds": [minX, minZ, maxX, maxZ] keeps the
+// focus inside that rectangle. Returns false on an unknown preset or invalid values.
+inline bool cameraFollowFromJson(const Json& block,CameraFollowComponent& f,std::string* error=nullptr) {
+    std::string presetError;
+    const Json j=render::resolveCameraPreset(block,&presetError);
+    if(!presetError.empty()){if(error)*error=presetError;return false;}
+    if(!j.isObject())return true;
+    f.pitch=j.getFx("pitch",f.pitch);f.yaw=j.getFx("yaw",f.yaw);
+    f.distance=j.getFx("distance",f.distance);
+    f.minDistance=j.getFx("minDistance",f.minDistance);f.maxDistance=j.getFx("maxDistance",f.maxDistance);
+    f.smoothing=j.getFx("smoothing",f.smoothing);f.lookAheadSmoothing=j.getFx("lookAheadSmoothing",f.lookAheadSmoothing);
+    f.velocityLookAhead=j.getFx("velocityLookAhead",f.velocityLookAhead);f.maxLookAhead=j.getFx("maxLookAhead",f.maxLookAhead);
+    f.fov=j.getFx("fov",f.fov);f.margin=j.getFx("margin",f.margin);
+    if(const Json& sz=j["speedZoom"];sz.isObject()){
+        f.speedFrom=sz.getFx("from");f.speedTo=sz.getFx("to");
+        f.speedDistance=sz.getFx("distance",f.distance);f.speedSmoothing=sz.getFx("smoothing",f.speedSmoothing);
+    }
+    if(const Json& b=j["bounds"];b.isArray()&&b.size()==4){
+        f.bounds=true;f.minX=b[0].fx();f.minZ=b[1].fx();f.maxX=b[2].fx();f.maxZ=b[3].fx();
+        if(f.maxX<f.minX||f.maxZ<f.minZ){if(error)*error="Invalid camera follow bounds";return false;}
+    } else f.bounds=false;   // "bounds": true needs a map size: only the game follow camera has one
+    if(f.distance<=0_fx||f.minDistance<0_fx||f.maxDistance<0_fx||f.smoothing<0_fx||f.lookAheadSmoothing<0_fx||
+       f.velocityLookAhead<0_fx||f.maxLookAhead<0_fx||f.fov<0_fx||f.speedSmoothing<0_fx){
+        if(error)*error="Invalid camera follow values";return false;
+    }
+    return true;
+}
+inline Json cameraFollowJson(const CameraFollowComponent& f) {
+    Json j=Json::object();
+    j.set("pitch",Json::number(f.pitch));j.set("yaw",Json::number(f.yaw));
+    j.set("distance",Json::number(f.distance));
+    j.set("minDistance",Json::number(f.minDistance));j.set("maxDistance",Json::number(f.maxDistance));
+    j.set("smoothing",Json::number(f.smoothing));j.set("lookAheadSmoothing",Json::number(f.lookAheadSmoothing));
+    j.set("velocityLookAhead",Json::number(f.velocityLookAhead));j.set("maxLookAhead",Json::number(f.maxLookAhead));
+    j.set("fov",Json::number(f.fov));j.set("margin",Json::number(f.margin));
+    if(f.speedTo>f.speedFrom){
+        Json sz=Json::object();sz.set("from",Json::number(f.speedFrom));sz.set("to",Json::number(f.speedTo));
+        sz.set("distance",Json::number(f.speedDistance));sz.set("smoothing",Json::number(f.speedSmoothing));
+        j.set("speedZoom",std::move(sz));
+    }
+    if(f.bounds){
+        Json b=Json::array();b.push(Json::number(f.minX));b.push(Json::number(f.minZ));
+        b.push(Json::number(f.maxX));b.push(Json::number(f.maxZ));j.set("bounds",std::move(b));
+    }
+    return j;
+}
 struct CameraNameComponent {
     uint64_t stableId=0;
     std::string name="Camera";
@@ -116,6 +164,8 @@ inline Json cameraSceneToJson(const World& world) {
             j.set("circleOfConfusionMm",Json::number(lens->circleOfConfusionMm));
             item.set("lens",std::move(j));
         }
+        if(const auto* follow=world.tryGetConst<CameraFollowComponent>(entity))
+            item.set("follow",cameraFollowJson(*follow));
         if(const auto* rail=world.tryGetConst<CameraRailComponent>(entity)){
             Json j=Json::object(),points=Json::array();
             const int count=std::min<int>(rail->count,int(rail->points.size()));
@@ -172,7 +222,8 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         CameraRigComponent rig{};
         CameraLensComponent lens{};
         CameraNameComponent name{};
-        bool hasRail=false, hasShake=false;
+        bool hasRail=false, hasShake=false, hasFollow=false;
+        CameraFollowComponent follow{};
         CameraRailComponent rail{};
         CameraShakeComponent shake{};
     };
@@ -265,6 +316,14 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
             it.lens.circleOfConfusionMm=lens.getFx("circleOfConfusionMm");
             if(it.lens.circleOfConfusionMm<0_fx)return fail("Invalid lens circle of confusion");
         }
+        if(const Json& follow=input["follow"];follow.isObject()) {
+            std::string followError;
+            if(!cameraFollowFromJson(follow,it.follow,&followError)){
+                if(error)*error=followError;
+                return false;
+            }
+            it.hasFollow=true;
+        }
         const Json& rail=input["rail"];
         if(rail.isObject()) {
             const Json& points=rail["points"];
@@ -335,6 +394,7 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         world.add<CameraStackComponent>(entity,c.stack);
         world.add<CameraRigComponent>(entity,c.rig);
         world.add<CameraLensComponent>(entity,c.lens);
+        if(c.hasFollow)world.add<CameraFollowComponent>(entity,c.follow);
         if(c.hasRail)world.add<CameraRailComponent>(entity,c.rail);
         if(c.hasShake)world.add<CameraShakeComponent>(entity,c.shake);
         if(created)created->push_back(entity);

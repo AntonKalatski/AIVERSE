@@ -90,6 +90,7 @@ The existing aiversemcp server and native editor share these Workspace operation
 | `lens_scene_set` | scene, expectedRevision or expectedScene | validated complete asset replacement |
 | `lens_camera_set` | camera, expectedRevision or expectedScene | create/replace one complete record by stable id |
 | `lens_camera_delete` | id, expectedRevision or expectedScene | remove one existing record |
+| `lens_camera_presets` | optional name | named camera presets: body and keys ([camera-behaviors.md](camera-behaviors.md)) |
 
 Call open_game first. Pass the last get response's **revision** (an opaque hash of
 the file bytes, `"missing"` without a file) as expectedRevision; successful writes

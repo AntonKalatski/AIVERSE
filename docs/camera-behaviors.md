@@ -1,6 +1,6 @@
 # LENS camera behaviours and presets
 
-Every view camera in AIVERSE comes from one set of camera bodies in `engine/render/CameraBehavior.h`, and the
+Every view camera in AIVERSE comes from one set of camera bodies (`CameraSphereOrbit.h` holds the sphere orbit) in `engine/render/CameraBehavior.h`, and the
 ECS camera rig (`CameraRigComponent`, `engine/render/CameraRig.h`) runs the same math. A project picks a body by the
 camera block it writes and starts from a named preset; there are no per-game camera classes.
 
@@ -10,6 +10,7 @@ camera block it writes and starts from a named preset; there are no per-game cam
 | follow | game.json `topDown.camera`, a map's `"camera"` | Keeps a focus point in frame: smoothing, look-ahead along the move and the aim, speed zoom, velocity lead, map bounds, lens and clip planes |
 | chase | rules / map `"camera": {"chase": {...}}` | Behind and above a heading (vehicles): distance, height, pitch, lead, lens |
 | first person | rules / map `"camera": {"firstPerson": {...}}` | Eyes with mouse look: sensitivity (and while aiming), pitch limit, lens |
+| sphere orbit | planet maps (`engine/render/CameraSphereOrbit.h`) | Orbit over a sphere's surface, zooming out to the whole sphere and the system; parallel-transported heading (no poles), smooth focus changes, a view frame with the focus at the origin |
 
 ## Presets
 
@@ -38,10 +39,18 @@ camera block it writes and starts from a named preset; there are no per-game cam
 Unknown preset names are reported by `resolveCameraPreset` and the block's own keys are used. Adding a preset is a
 data change in `CameraPresets.h`; the keys are those of the body's block.
 
+## Studio and MCP
+
+`lens_camera_presets` (MCP / Studio agent) lists every preset with its body and keys, or one by `name`. The Studio
+cameras window has a **Follow Body** section: it switches a camera to the follow body and applies any follow preset;
+the fields stay editable after that.
+
 ## ECS rig modes
 
 `CameraRigComponent::mode`: `Static`, `LookAt`, `Follow`, `Orbit`, `Rail`, `Chase`, `FirstPerson`.
 `Chase` uses `distance`, `pitch`, `offset.y` (height), `offset.z` (lead) and `yaw` (turn around the heading);
 `FirstPerson` puts the eye at the target plus `offset` (turning with the target) and looks along the target's +Z
-with `yaw` / `pitch` added. Shake (`CameraShakeComponent`) and the physical lens (`CameraLensComponent`) apply on top
+with `yaw` / `pitch` added. A `Follow` rig with a `CameraFollowComponent` (cameras.json `"follow"` block, presets
+allowed, `"bounds": [minX, minZ, maxX, maxZ]`) runs the follow body itself: angle, distance, smoothing, velocity lead,
+speed zoom, lens and bounds, the same code as the game follow camera. Shake (`CameraShakeComponent`) and the physical lens (`CameraLensComponent`) apply on top
 of every mode. Test: `camera_behavior` (presets, every body, ECS Chase / FirstPerson against the view chase camera).

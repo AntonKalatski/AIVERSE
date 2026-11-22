@@ -608,7 +608,7 @@ void PlanetRenderer::initSpace(gfx::Device& dev) {
     }
 }
 
-void PlanetRenderer::draw(Renderer3D& r, const PlanetViewFrame& fr, double seconds, int lightBody, float planetBlend) {
+void PlanetRenderer::draw(Renderer3D& r, const render::SphereViewFrame& fr, double seconds, int lightBody, float planetBlend) {
     if (!dev_ || world_.empty()) return;
     gfx::Device& dev = *dev_;
     const auto t0 = std::chrono::steady_clock::now();

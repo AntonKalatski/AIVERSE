@@ -165,8 +165,42 @@ public:
             if(ImGui::DragFloat("Rig Smoothing",&smoothing,.05f,0.f,100.f))
                 rig->smoothing=fixedFromUi(smoothing);
             ImGui::Checkbox("Track Target",&rig->trackTarget);
-            ImGui::TextDisabled("Follow/Orbit/LookAt require a runtime-bound target.");
+            ImGui::TextDisabled("Follow/Orbit/LookAt/Chase/First Person require a runtime-bound target.");
             ImGui::TextDisabled("Rail control points are supplied by the runtime.");
+        }
+        if(rig && ImGui::CollapsingHeader("Follow Body")) {
+            // Follow rig with the shared follow body (CameraFollowComponent): framing from a preset (data).
+            auto* follow=world_->tryGet<CameraFollowComponent>(selected_);
+            bool on=follow!=nullptr;
+            if(ImGui::Checkbox("Use Follow Body",&on)) {
+                if(on){world_->add<CameraFollowComponent>(selected_,CameraFollowComponent{});rig->mode=CameraRigMode::Follow;}
+                else world_->remove<CameraFollowComponent>(selected_);
+                follow=world_->tryGet<CameraFollowComponent>(selected_);
+            }
+            if(follow) {
+                if(ImGui::BeginCombo("Preset","Apply preset...")) {
+                    for(const auto& name:render::cameraPresetNames()) {
+                        if(render::cameraPresetBody(name)!="follow")continue;
+                        if(ImGui::Selectable(name.c_str())) {
+                            Json block=Json::object();block.set("preset",Json::string(name));
+                            CameraFollowComponent next=*follow;
+                            if(cameraFollowFromJson(block,next))*follow=next;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                const auto edit=[&](const char* label,Fixed& field,float speed,float lo,float hi){
+                    float value=float(field.toDouble());
+                    if(ImGui::DragFloat(label,&value,speed,lo,hi))field=fixedFromUi(std::clamp(value,lo,hi));
+                };
+                edit("Follow Pitch (deg)",follow->pitch,.25f,5.f,90.f);
+                edit("Follow Yaw (deg)",follow->yaw,.5f,-180.f,180.f);
+                edit("Follow Distance",follow->distance,.1f,1.f,10000.f);
+                edit("Follow Smoothing",follow->smoothing,.05f,0.f,100.f);
+                edit("Velocity Lead (s)",follow->velocityLookAhead,.01f,0.f,10.f);
+                edit("Max Lead",follow->maxLookAhead,.1f,0.f,1000.f);
+                edit("Lens FOV (deg, 0 = keep)",follow->fov,.25f,0.f,120.f);
+            }
         }
         if(lens && ImGui::CollapsingHeader("Physical Lens")) {
             ImGui::Checkbox("Use Physical FOV",&lens->physicalFov);

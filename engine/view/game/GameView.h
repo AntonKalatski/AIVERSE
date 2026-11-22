@@ -1067,7 +1067,7 @@ private:
     PlanetFlora planetFlora_;            // TerraWeave trees and rocks on planet bodies
     void rebuildPlanetFlora();
     PlanetCamera planetCam_;
-    PlanetViewFrame pframe_;
+    render::SphereViewFrame pframe_;
     double planetSeconds_ = 0;
     std::vector<uint8_t> barOk_;
     std::vector<std::vector<uint8_t>> planetVision_;   // per body

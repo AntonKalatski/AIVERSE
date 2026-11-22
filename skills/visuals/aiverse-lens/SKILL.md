@@ -23,6 +23,9 @@ The shared editor/MCP implementation is `apps/editor/core/LensOps.cpp`.
    keys, width xor height 0, texture outputs over 64 Mpix in total and over 256
    cameras fail.
    clientCompatible only means texture-only outputs; it is not a GPU test.
+   For a camera that frames a moving target like a game camera, set `rig.mode` 2 (Follow) and a `"follow"`
+   block starting from a preset (`lens_camera_presets` lists them): `{"preset": "follow-speed", "bounds": [x0, z0, x1, z1]}`.
+   Game cameras (game.json `camera`, `topDown.camera`, rules `camera.chase` / `camera.firstPerson`) take the same presets.
 4. Use `lens_scene_set` for a complete scene replacement, or `lens_camera_delete`
    with id. Every write requires expectedRevision (or expectedScene) from the last
    read; a successful write returns the new `revision`. On conflict,

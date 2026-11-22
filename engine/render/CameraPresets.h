@@ -3,6 +3,9 @@
 // block it belongs to (CameraBehavior.h): overhead = game.json "camera", follow = topDown.camera / a map's
 // "camera", chase / firstPerson = the actor client blocks. Names describe the framing, not a game.
 #pragma once
+#include <string>
+#include <vector>
+#include "../data/Json.h"
 
 namespace aiverse::render {
 
@@ -27,5 +30,34 @@ inline constexpr const char* kCameraPresetsJson = R"json({
 
   "first-person":       {"fov": 69.9, "sensitivity": 0.0004, "aimSensitivity": 0.00015, "pitchLimit": 89.3, "near": 0.03, "far": 1000}
 })json";
+
+inline const Json& cameraPresets() {
+    static const Json presets = Json::parse(kCameraPresetsJson);
+    return presets;
+}
+inline std::vector<std::string> cameraPresetNames() {
+    std::vector<std::string> out;
+    for (const auto& [name, value] : cameraPresets().members()) out.push_back(name);
+    return out;
+}
+// The block with its preset expanded: the preset's keys, then the block's own keys on top (nested objects such as
+// "speedZoom" are replaced whole). Unknown preset: the block alone, error set.
+inline Json resolveCameraPreset(const Json& block, std::string* error = nullptr) {
+    if (!block.isObject() || !block["preset"].isString()) return block;
+    const std::string name = block["preset"].str();
+    Json out = Json::object();
+    if (const Json& p = cameraPresets()[name]; p.isObject()) out = p;
+    else if (error) *error = "camera: unknown preset '" + name + "'";
+    for (const auto& [k, v] : block.members()) if (k != "preset") out.set(k, v);
+    return out;
+}
+// Which camera body a preset belongs to (the block it is written for): overhead / follow / chase / firstPerson.
+inline std::string cameraPresetBody(const std::string& name) {
+    if (name.rfind("overhead", 0) == 0) return "overhead";
+    if (name.rfind("follow", 0) == 0) return "follow";
+    if (name.rfind("chase", 0) == 0) return "chase";
+    if (name.rfind("first-person", 0) == 0) return "firstPerson";
+    return "";
+}
 
 } // namespace aiverse::render

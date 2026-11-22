@@ -207,6 +207,23 @@ void registerLensOps(Workspace& ws) {
             result.set("clientEnabled", Json::fromBool(ws.project.manifest["lens"].getBool("enabled")));
             return result;
         });
+    add("lens_camera_presets", "List the named camera presets (engine/render/CameraPresets.h): name, body (overhead = game.json camera, follow = topDown.camera / a map camera / a cameras.json camera \"follow\" block, chase / firstPerson = rules or map camera.chase / camera.firstPerson) and their keys. Pass a name to get one. Use a preset in any of those blocks as {\"preset\": name, ...overrides}. Read only.",
+        R"({"type":"object","properties":{"name":{"type":"string"}}})", [](const Json& p) {
+            Json list = Json::array();
+            const std::string only = p.getStr("name");
+            for (const auto& name : render::cameraPresetNames()) {
+                if (!only.empty() && name != only) continue;
+                Json item = Json::object();
+                item.set("name", Json::string(name));
+                item.set("body", Json::string(render::cameraPresetBody(name)));
+                item.set("keys", render::cameraPresets()[name]);
+                list.push(std::move(item));
+            }
+            if (!only.empty() && list.size() == 0) throw std::runtime_error("unknown camera preset '" + only + "'");
+            Json result = Json::object();
+            result.set("presets", std::move(list));
+            return result;
+        });
     add("lens_scene_validate", "Validate a v1 camera scene with the native loader, without changing files. normalizedScene exposes defaults/clamping; clientCompatible means texture-only outputs, not GPU acceptance.",
         R"({"type":"object","properties":{"scene":{"type":"object"}},"required":["scene"]})",
         [](const Json& p) { return validateScene(p["scene"]); });

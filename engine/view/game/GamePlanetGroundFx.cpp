@@ -387,7 +387,7 @@ void GamePlanetGroundFx::buildLanes(gfx::Device& dev, const PlanetRenderer& plan
 
 // ------------------------------------------------------------------ frame
 
-bool GamePlanetGroundFx::draw(gfx::Device& dev, Renderer3D& r, const PlanetRenderer& planets, const PlanetViewFrame& frame, const GameScene& s,
+bool GamePlanetGroundFx::draw(gfx::Device& dev, Renderer3D& r, const PlanetRenderer& planets, const render::SphereViewFrame& frame, const GameScene& s,
                              double time, const std::vector<uint8_t>* vision, const MapGrid& g, const GameGroundFx& looks, const Rules& rules) {
     const PlanetWorld& W = planets.world();
     const Surface* S = W.sim.get();

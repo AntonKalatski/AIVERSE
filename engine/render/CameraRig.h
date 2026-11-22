@@ -44,6 +44,20 @@ inline float3 cameraRailPosition(const CameraRailComponent& rail,double seconds)
 inline quat cameraEcsRotation(const Rotation& r) {
     return qnormalize(quat{float(r.x.toDouble()),float(r.y.toDouble()),float(r.z.toDouble()),float(r.w.toDouble())});
 }
+inline CameraFollowSettings cameraFollowSettings(const CameraFollowComponent& f) {
+    auto v=[](Fixed x){return float(x.toDouble());};
+    CameraFollowSettings c;
+    c.pitch=v(f.pitch);c.yaw=v(f.yaw);c.distance=v(f.distance);
+    c.minDistance=v(f.minDistance);c.maxDistance=v(f.maxDistance);
+    c.smoothing=v(f.smoothing);c.lookAheadSmoothing=v(f.lookAheadSmoothing);
+    c.lookAhead=0;c.aimLookAhead=0;                       // no stick on an ECS rig: the velocity lead only
+    c.velocityLookAhead=v(f.velocityLookAhead);c.maxLookAhead=v(f.maxLookAhead);
+    c.speedFrom=v(f.speedFrom);c.speedTo=v(f.speedTo);c.speedDistance=v(f.speedDistance);
+    c.speedSmoothing=v(f.speedSmoothing);c.fov=v(f.fov);
+    c.bounds=f.bounds;c.margin=v(f.margin);
+    finishCameraFollow(c);
+    return c;
+}
 inline bool validCameraLens(const CameraLensComponent& lens) {
     return lens.sensorHeightMm>0_fx && lens.focalLengthMm>0_fx &&
            lens.fNumber>0_fx && lens.focusDistance>0_fx &&
@@ -63,7 +77,7 @@ inline CameraPhysicalLens cameraPhysicalLens(const CameraLensComponent& l) {
         float(l.iso.toDouble())};
 }
 class CameraRigEvaluator {
-    struct State { float3 pos{}; quat rotation{}; bool initialized=false; };
+    struct State { float3 pos{}; quat rotation{}; bool initialized=false; CameraFollow follow; Camera followCam; };
     std::unordered_map<uint64_t,State> state_;
     const World* source_=nullptr;
 public:
@@ -84,6 +98,7 @@ public:
         float3 desired=view.camera.eye();
         quat orientation=view.camera.usePose?view.camera.rotation:
             cameraLookRotation(desired,view.camera.target);
+        bool followBody=false;   // the follow body smooths itself
         if (rig && rig->enabled && rig->mode!=CameraRigMode::Static) {
             float3 target{};
             const bool needsTarget=rig->mode==CameraRigMode::Follow ||
@@ -98,7 +113,27 @@ public:
                 target=cameraEcsPos(xf->position,renderOrigin);
                 targetRotation=cameraEcsRotation(xf->rotation);
             }
-            if (rig->mode==CameraRigMode::Follow) {
+            if (rig->mode==CameraRigMode::Follow &&
+                world.tryGetConst<CameraFollowComponent>(view.entity)) {
+                // The shared follow body (the game follow camera): its own smoothing, lead, speed zoom, bounds.
+                const auto& fc=*world.tryGetConst<CameraFollowComponent>(view.entity);
+                auto& st=state_[view.entity.packed()];
+                const CameraFollowSettings settings=cameraFollowSettings(fc);
+                CameraFollowInput in;
+                in.focus=target;in.moveLookAhead=false;in.focusHeight=true;
+                in.dt=st.initialized?dt:0.f;
+                if(fc.bounds) {
+                    const float3 o=cameraEcsPos(renderOrigin);
+                    in.mapX=float(fc.minX.toDouble())-o.x;in.mapZ=float(fc.minZ.toDouble())-o.z;
+                    in.mapW=float((fc.maxX-fc.minX).toDouble());in.mapH=float((fc.maxZ-fc.minZ).toDouble());
+                }
+                if(!st.initialized){st.follow.reset();st.followCam=Camera{};st.followCam.distance=settings.distance;}
+                st.follow.update(settings,in,st.followCam);
+                desired=st.followCam.eye();
+                orientation=cameraLookRotation(desired,st.followCam.target);
+                if(settings.fov>0)view.camera.fovY=st.followCam.fovY;
+                followBody=true;
+            } else if (rig->mode==CameraRigMode::Follow) {
                 desired=target+cameraEcsPos(rig->offset);
                 if(rig->trackTarget) orientation=cameraLookRotation(desired,target);
             } else if(rig->mode==CameraRigMode::Orbit) {
@@ -146,7 +181,7 @@ public:
             }
         }
         auto& s=state_[view.entity.packed()];
-        const float smooth=rig?float(std::max(0.,rig->smoothing.toDouble())):0.f;
+        const float smooth=rig&&!followBody?float(std::max(0.,rig->smoothing.toDouble())):0.f;
         const float k=(!s.initialized || smooth<=0)?1.f:
                         1.f-std::exp(-smooth*dt);
         if(!s.initialized){s.pos=desired;s.rotation=orientation;s.initialized=true;}

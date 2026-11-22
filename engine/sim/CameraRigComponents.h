@@ -22,6 +22,20 @@ struct CameraRigComponent {
     bool enabled=true;
     constexpr bool operator==(const CameraRigComponent&) const = default;
 };
+// Optional modifiers of the Follow rig mode (the shared follow body, render/CameraBehavior.h): when present, a
+// Follow rig frames its target like the game follow camera (angle, distance, smoothing, velocity lead, speed zoom,
+// bounds) instead of a fixed offset. Angles in degrees; distances in world units. Scene JSON: "follow": {"preset"...}.
+struct CameraFollowComponent {
+    Fixed pitch=58_fx, yaw=0_fx;
+    Fixed distance=20_fx, minDistance=10_fx, maxDistance=40_fx;
+    Fixed smoothing=6_fx, lookAheadSmoothing=3_fx;
+    Fixed velocityLookAhead=0_fx, maxLookAhead=0_fx;          // seconds of velocity ahead; cap (0: none)
+    Fixed speedFrom=0_fx, speedTo=0_fx, speedDistance=0_fx, speedSmoothing=Fixed::fromRatio(3,2);
+    Fixed fov=0_fx;                                           // degrees, 0 = keep the camera's
+    bool bounds=false;                                        // keep the focus inside [minX..maxX] x [minZ..maxZ]
+    Fixed minX=0_fx, minZ=0_fx, maxX=0_fx, maxZ=0_fx, margin=0_fx;
+    constexpr bool operator==(const CameraFollowComponent&) const = default;
+};
 enum class CameraRailInterpolation : uint8_t { Linear, CatmullRom };
 enum class CameraRailEase : uint8_t { None, InOut };
 struct CameraRailComponent {

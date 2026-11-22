@@ -27,28 +27,6 @@ namespace aiverse::render {
 
 constexpr float kCameraDeg = 3.14159265358979f / 180.0f;
 
-// ---- presets
-inline const Json& cameraPresets() {
-    static const Json presets = Json::parse(kCameraPresetsJson);
-    return presets;
-}
-inline std::vector<std::string> cameraPresetNames() {
-    std::vector<std::string> out;
-    for (const auto& [name, value] : cameraPresets().members()) out.push_back(name);
-    return out;
-}
-// The block with its preset expanded: the preset's keys, then the block's own keys on top (nested objects such as
-// "speedZoom" are replaced whole). Unknown preset: the block alone, error set.
-inline Json resolveCameraPreset(const Json& block, std::string* error = nullptr) {
-    if (!block.isObject() || !block["preset"].isString()) return block;
-    const std::string name = block["preset"].str();
-    Json out = Json::object();
-    if (const Json& p = cameraPresets()[name]; p.isObject()) out = p;
-    else if (error) *error = "camera: unknown preset '" + name + "'";
-    for (const auto& [k, v] : block.members()) if (k != "preset") out.set(k, v);
-    return out;
-}
-
 // ---- overhead (game.json "camera")
 struct CameraOverhead {
     bool present = false, ortho = false, rotate = true;
@@ -181,7 +159,9 @@ struct CameraFollowInput {
     bool aiming = false;
     float aimX = 0, aimZ = 0;
     bool moveLookAhead = true;   // false: the move input does not point where the focus goes (pedals), velocity only
-    float mapW = 0, mapH = 0;    // map bounds (0: none)
+    float mapW = 0, mapH = 0;    // map bounds (0: none) ...
+    float mapX = 0, mapZ = 0;    // ... starting at this corner
+    bool focusHeight = false;    // false: the camera aims at the ground plane (y 0); true: at the focus height
     float dt = 0;
 };
 
@@ -196,8 +176,8 @@ public:
         const float dt = std::max(0.0f, in.dt);
         gc::Limits lim;
         if (c.bounds && in.mapW > 0 && in.mapH > 0) {
-            lim.minX = std::min(c.margin, in.mapW * 0.5f); lim.maxX = std::max(in.mapW - c.margin, in.mapW * 0.5f);
-            lim.minZ = std::min(c.margin, in.mapH * 0.5f); lim.maxZ = std::max(in.mapH - c.margin, in.mapH * 0.5f);
+            lim.minX = in.mapX + std::min(c.margin, in.mapW * 0.5f); lim.maxX = in.mapX + std::max(in.mapW - c.margin, in.mapW * 0.5f);
+            lim.minZ = in.mapZ + std::min(c.margin, in.mapH * 0.5f); lim.maxZ = in.mapZ + std::max(in.mapH - c.margin, in.mapH * 0.5f);
         }
         const float3 f = in.focus;
         // speed: the focus velocity from its motion between frames (a jump = respawn / teleport: no speed)
@@ -248,7 +228,7 @@ public:
         target.zoom = baseZoom_ + zoomAdd_;
         if (!init_ || c.smoothing <= 0) { gc::constrain(target, lim); current = target; init_ = in.haveFocus; }
         else if (!gc::advance(current, target, lim, dt, c.smoothing)) { gc::constrain(target, lim); current = target; }
-        cam.target = {current.x, 0, current.z};
+        cam.target = {current.x, in.focusHeight && in.haveFocus ? f.y : (in.focusHeight ? cam.target.y : 0.0f), current.z};
         cam.distance = appliedZoom_ = current.zoom;
         cam.minDistance = c.minDistance + zoomAdd_; cam.maxDistance = c.maxDistance + zoomAdd_;
         cam.yaw = current.yaw * kPi / 180;

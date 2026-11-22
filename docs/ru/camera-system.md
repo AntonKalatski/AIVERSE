@@ -68,6 +68,7 @@ LENS P2 (2026-11-21, ветка `feature/aiv20261121_lens_p2`) добавляе�
 | `lens_scene_set` | scene, expectedRevision или expectedScene | проверенная полная замена ассета |
 | `lens_camera_set` | camera, expectedRevision или expectedScene | создание/замена одной полной записи по стабильному id |
 | `lens_camera_delete` | id, expectedRevision или expectedScene | удаление одной существующей записи |
+| `lens_camera_presets` | необязательное name | именованные пресеты камер: тело и ключи ([camera-behaviors.md](camera-behaviors.md)) |
 
 Сначала вызовите open_game. Передайте **revision** из последнего ответа get (непрозрачный хеш
 байтов файла, `"missing"` без файла) как expectedRevision; успешные записи

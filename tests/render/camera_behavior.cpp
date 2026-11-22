@@ -1,6 +1,7 @@
 // LENS camera behaviours: presets, the overhead / follow / chase / first-person bodies and the ECS rig modes that
 // run the same chase / look math. CPU only.
 #include "engine/render/CameraRig.h"
+#include "engine/sim/CameraSceneAsset.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -80,6 +81,41 @@ int main() {
     check(rigs.apply(world, snap, 0, 0.016f), "first-person rig");
     check(near(snap.camera.eye(), {10, 1.7f, 5}, 0.02f), "eye at the target");
     check(near(snap.camera.rotation.rotate({0, 0, -1}), {1, 0, 0}, 0.02f), "looks along the target's heading");
+    // ECS follow body: a Follow rig with CameraFollowComponent frames its target like the game follow camera
+    {
+        World w;
+        auto hero = w.create(), cam = w.create();
+        LocalTransform hp{}; hp.position = {50_fx, 0_fx, 40_fx};
+        w.add<WorldTransform>(hero, hierarchy_detail::root(hp));
+        w.add<WorldTransform>(cam, hierarchy_detail::root({}));
+        w.add<CameraComponent>(cam, CameraComponent{});
+        CameraRigComponent fr; fr.mode = CameraRigMode::Follow; fr.target = hero;
+        w.add<CameraRigComponent>(cam, fr);
+        CameraFollowComponent follow;
+        std::string ferr;
+        check(cameraFollowFromJson(Json::parse(R"({"preset": "follow-speed", "smoothing": 0, "bounds": [0, 0, 100, 80]})"), follow, &ferr), "follow preset block");
+        check(follow.pitch == 90_fx && follow.bounds && follow.velocityLookAhead > 0_fx, "follow preset values");
+        w.add<CameraFollowComponent>(cam, follow);
+        render::EcsCameraView fv;
+        check(render::resolveEcsCamera(w, cam, fv), "follow camera");
+        render::CameraRigEvaluator fe;
+        check(fe.apply(w, fv, 0, 0.016f), "follow rig");
+        check(near(fv.camera.eye().x, 50, 0.05f) && near(fv.camera.eye().z, 40, 0.05f) && fv.camera.eye().y > 10, "straight down over the hero");
+        // running east: the camera leads the motion
+        for (int i = 1; i <= 90; ++i) {
+            w.get<WorldTransform>(hero) = hierarchy_detail::root(LocalTransform{{Fixed::fromInt(50 + i / 3), 0_fx, 40_fx}, {}, {1_fx, 1_fx, 1_fx}});
+            check(fe.apply(w, fv, i / 60.0, 1.f / 60), "follow step");
+        }
+        check(fv.camera.eye().x > 80.5f, "velocity lead ahead of the hero");
+        // pushed past the bounds: the focus stays inside
+        w.get<WorldTransform>(hero) = hierarchy_detail::root(LocalTransform{{500_fx, 0_fx, 40_fx}, {}, {1_fx, 1_fx, 1_fx}});
+        fe.reset();
+        check(fe.apply(w, fv, 2, 0.016f) && fv.camera.eye().x <= 100.5f, "follow bounds");
+        // cameras.json round trip keeps the follow block
+        const Json saved = cameraSceneToJson(w);
+        check(saved["cameras"][size_t(0)]["follow"]["bounds"].size() == 4, "follow block saved");
+        check(!cameraFollowFromJson(Json::parse(R"({"preset": "nope"})"), follow, &ferr) && !ferr.empty(), "unknown follow preset");
+    }
     std::puts("camera_behavior: OK");
     return 0;
 }
