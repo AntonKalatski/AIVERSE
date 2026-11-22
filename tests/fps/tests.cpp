@@ -1,4 +1,5 @@
 #include "engine/net/authority/Session.h"
+#include "engine/game/GameCore.h"
 #include "engine/net/Rollback.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
@@ -18,10 +19,10 @@ using namespace aiverse;
 #define CHECK(x) do {if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);} while(0)
 namespace {
 std::unique_ptr<Simulation> simulation(Json rules,Json map) {
-    auto sim=std::make_unique<Simulation>(SimConfig{7,actor::readConfig(rules).tickRate,0},std::make_unique<actor::Module>());sim->setup(rules,map);return sim;
+    auto sim=std::make_unique<Simulation>(SimConfig{7,actor::readConfig(rules).tickRate,0},std::make_unique<game::GameCore>());sim->setup(rules,map);return sim;
 }
 actor::State& state(Simulation& sim){return *sim.world().resource<actor::State>();}
-actor::Module& fpsModule(Simulation& sim){return static_cast<actor::Module&>(sim.module());}
+actor::ActorHost& fpsModule(Simulation& sim){return actor::host(sim);}
 // Writable view of the character in `slot` (1..; the former State::actors[slot-1]).
 actor::CharacterRef character(Simulation& sim,uint8_t slot){return fpsModule(sim).character(sim,slot);}
 // Copies of the dynamic objects in id order (the former State vectors).

@@ -62,7 +62,7 @@ inline TerraWeaveRebaseReport rebaseTerraWeaveTerrain(
         const std::string& previousBaseFingerprint,
         const terraweave::TerrainSettings& nextTerrain,
         terraweave::LegacyHeightfieldOptions nextOrigin) {
-    if(doc.data.planet() || !doc.data.fps.isNull())
+    if(doc.data.planet() || doc.data.worldSpace)
         throw std::invalid_argument("TerraWeave rebase supports flat grid maps only (world-space maps: G2)");
     const int w=doc.data.w, h=doc.data.h;
     const auto previous=terraweave::generateLegacyCorners(

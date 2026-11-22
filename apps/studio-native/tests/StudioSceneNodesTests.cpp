@@ -12,17 +12,17 @@ int main() {
     placed.x = 4.25f;
     placed.z = -2.5f;
     map.data.entities.push_back(placed);
-    auto nodes = editor::enumerateDocumentSceneNodes(map, false);
+    auto nodes = editor::enumerateDocumentSceneNodes(map);
     AIVERSE_TEST_CHECK(nodes.size() == 1);
     AIVERSE_TEST_CHECK(nodes[0].ref.source == editor::DocumentEntityRef::Source::MapEntity);
     AIVERSE_TEST_CHECK(nodes[0].label == "tower #alpha");
     AIVERSE_TEST_CHECK(nodes[0].hasPosition && std::abs(nodes[0].position.x - 4.25) < .0001);
 
-    map.data.fps = Json::parse(R"({
+    map.data.extra = Json::parse(R"({
         "colliders":[{"min":[0,1,2],"max":[10,11,12]}],
         "spawns":[[2,3,4]]
-    })");
-    nodes = editor::enumerateDocumentSceneNodes(map, true);
+    })"); map.data.worldSpace = true;
+    nodes = editor::enumerateDocumentSceneNodes(map);
     AIVERSE_TEST_CHECK(nodes.size() == 2);
     AIVERSE_TEST_CHECK(nodes[0].ref.source == editor::DocumentEntityRef::Source::ActorCollider);
     AIVERSE_TEST_CHECK(nodes[0].group == "Colliders" && nodes[0].hasPosition);
@@ -41,8 +41,8 @@ int main() {
     AIVERSE_TEST_CHECK(editor::setDocumentPosition(map,collider,{8,7,6}));
     AIVERSE_TEST_CHECK(editor::readDocumentTransform(map,collider,read));
     AIVERSE_TEST_CHECK(read.x == 8 && read.y == 7 && read.z == 6);
-    AIVERSE_TEST_CHECK(map.data.fps["colliders"][0]["min"][0].toDouble() == 3);
-    AIVERSE_TEST_CHECK(map.data.fps["colliders"][0]["max"][0].toDouble() == 13);
+    AIVERSE_TEST_CHECK(map.data.extra["colliders"][0]["min"][0].toDouble() == 3);
+    AIVERSE_TEST_CHECK(map.data.extra["colliders"][0]["max"][0].toDouble() == 13);
     std::cout << "Studio scene node contract PASS\n";
     return 0;
 }

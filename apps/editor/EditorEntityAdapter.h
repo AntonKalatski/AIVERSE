@@ -76,12 +76,12 @@ inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
 // Legacy storage adapter: Transform and Light are views of one light payload.
 inline const Json* documentLight(const MapDoc& map,DocumentEntityRef ref) {
     if(!ref.isLight())return nullptr;
-    const auto& list=(ref.source==DocumentEntityRef::Source::ActorLight?map.data.fps:map.data.extra)["lights"];
+    const auto& list=map.data.extra["lights"];
     return list.isArray() && ref.index<list.size() && list[ref.index].isObject()?&list[ref.index]:nullptr;
 }
 inline Json* documentLight(MapDoc& map,DocumentEntityRef ref) {
     if(!documentLight(static_cast<const MapDoc&>(map),ref))return nullptr;
-    return &(ref.source==DocumentEntityRef::Source::ActorLight?map.data.fps:map.data.extra).member("lights").at(ref.index);
+    return &map.data.extra.member("lights").at(ref.index);
 }
 
 struct DocumentTransform {
@@ -107,7 +107,7 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
         try { out = {entity->x, authoredEntity(*entity)?authoredLocalTransform(*entity).position.y.toDouble():0.0, entity->z}; }
         catch(const std::exception&) { return false; }
     } else {
-        const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        const Json* object = fpsDocumentEntity(map.data.extra, ref);
         if (!object) return false;
         if (ref.source == DocumentEntityRef::Source::ActorSpawn) {
             if (!object->isArray() || object->size() < 3 ||
@@ -179,7 +179,7 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
             entity->at.set("y", Json::number(double(z), 3));
         }
     } else {
-        Json* entity = fpsDocumentEntity(map.data.fps, ref);
+        Json* entity = fpsDocumentEntity(map.data.extra, ref);
         if (!entity) return false;
         auto shifted = [&](const Json& xyz, Json& result) {
             if (!xyz.isArray() || xyz.size() < 3) return false;
@@ -245,7 +245,7 @@ inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
     for (size_t axis = 0; axis < 3; ++axis)
         if (!std::isfinite(lo[axis]) || !std::isfinite(hi[axis]) ||
             !(lo[axis] < hi[axis])) return false;
-    Json* collider = fpsDocumentEntity(map.data.fps, ref);
+    Json* collider = fpsDocumentEntity(map.data.extra, ref);
     if (!collider || !(*collider)["min"].isArray() ||
         !(*collider)["max"].isArray() ||
         (*collider)["min"].size() < 3 || (*collider)["max"].size() < 3)
@@ -264,7 +264,7 @@ inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
 }
 
 // Rotated FPS boxes have an explicit center, half-extents and yaw in turns.
-// These fields are already supported by actor::Module::setup and are persisted
+// These fields are already supported by actor::ActorHost::setup and are persisted
 // without converting the collider to a different map schema.
 inline bool setDocumentOrientedCollider(MapDoc& map, DocumentEntityRef ref,
                                        DocumentTransform centre,
@@ -277,7 +277,7 @@ inline bool setDocumentOrientedCollider(MapDoc& map, DocumentEntityRef ref,
         if (!std::isfinite(c[axis]) || !std::isfinite(h[axis]) ||
             h[axis] <= 0.0 || (axis != 1 && h[axis] > 2048.0))
             return false;
-    Json* object = fpsDocumentEntity(map.data.fps, ref);
+    Json* object = fpsDocumentEntity(map.data.extra, ref);
     if (!object || !(*object)["yaw"].isNumber()) return false;
     Json centerJson = Json::array(), halfJson = Json::array();
     for (size_t axis = 0; axis < 3; ++axis) {
@@ -323,7 +323,7 @@ inline bool translateDocumentEntities(MapDoc& map,
             if (delta.y != 0 || !std::isfinite(float(next.x)) ||
                 !std::isfinite(float(next.z))) return false;
         } else {
-            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            const Json* object = fpsDocumentEntity(map.data.extra, ref);
             if (!object) return false;
             auto validCoords = [&](const Json& coords) {
                 if (!coords.isArray() || coords.size() < 3) return false;
@@ -393,7 +393,7 @@ inline std::vector<DocumentComponentDescriptor> documentComponents(
         break;
     }
     case DocumentEntityRef::Source::ActorCollider: {
-        const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        const Json* object = fpsDocumentEntity(map.data.extra, ref);
         const bool rotated = object && (*object)["yaw"].isNumber();
         components.push_back({DocumentComponentKind::Collider,
                               rotated ? "OrientedBoxCollider" : "BoxCollider",
@@ -427,7 +427,7 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
                     Json::number(entity->extra["facing"].toDouble(), 3));
         }
         if (ref.source == DocumentEntityRef::Source::ActorCollider) {
-            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            const Json* object = fpsDocumentEntity(map.data.extra, ref);
             if (object && (*object)["yaw"].isNumber()) {
                 result.set("rotationY",
                     Json::number((*object)["yaw"].toDouble() * 360.0, 3));
@@ -461,7 +461,7 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         for(const char* key:{"entityId","name","x","z","height","pos"})result.erase(key);
         return true;
     }
-    const Json* object = fpsDocumentEntity(map.data.fps, ref);
+    const Json* object = fpsDocumentEntity(map.data.extra, ref);
     if (!object) return false;
     if (kind == DocumentComponentKind::Collider &&
         ref.source == DocumentEntityRef::Source::ActorCollider) {
@@ -561,7 +561,7 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
             return changed;
         }
         if (ref.source == DocumentEntityRef::Source::ActorCollider) {
-            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            const Json* object = fpsDocumentEntity(map.data.extra, ref);
             if (object && (*object)["yaw"].isNumber()) {
                 DocumentTransform position, half;
                 if (!readDocumentTransform(map, ref, position) ||

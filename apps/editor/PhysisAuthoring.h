@@ -19,8 +19,8 @@
 namespace aiverse::editor::physis_authoring {
 
 inline const Json& read(const MapDoc& doc) {
-    return doc.data.fps.isNull() ? doc.data.extra["physis"] :
-           doc.data.fps["physis"];
+    return !doc.data.worldSpace ? doc.data.extra["physis"] :
+           doc.data.extra["physis"];
 }
 
 inline Json defaultConfig() {
@@ -124,14 +124,14 @@ inline bool validate(const Json& v, std::string* error = nullptr) {
 // there is never an in-place mutation of a live Simulation.
 inline bool apply(MapDoc& doc, const Json& config, std::string* error = nullptr) {
     if (!config.isNull() && !validate(config,error)) return false;
-    if (!doc.data.fps.isNull() && !doc.data.fps.isObject()) {
+    if (doc.data.worldSpace && !doc.data.worldSpace) {
         if (error) *error = "PHYSIS FPS document is not an object";
         return false;
     }
     const Json old = read(doc);
     if (old == config) return true;
     doc.beginEdit();
-    Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
+    Json& container = doc.data.extra;
     if (config.isNull()) container.erase("physis");
     else container.set("physis",config);
     return true;
@@ -308,7 +308,7 @@ inline bool moveField(MapDoc& doc, const std::string& id,
     if (!validate(config,error)) return false;
     if (firstEdit) doc.beginEdit();
     else doc.touched();
-    Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
+    Json& container = doc.data.extra;
     container.set("physis", std::move(config));
     return true;
 }
@@ -346,7 +346,7 @@ inline bool resizeField(MapDoc& doc, const std::string& id, double radiusMeters,
     if (!validate(config, error)) return false;
     if (firstEdit) doc.beginEdit();
     else doc.touched();
-    Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
+    Json& container = doc.data.extra;
     container.set("physis", std::move(config));
     return true;
 }
@@ -406,7 +406,7 @@ inline bool moveFields(MapDoc& doc, const std::vector<FieldPosition>& positions,
     if (!validate(config,error)) return false;
     if (firstEdit) doc.beginEdit();
     else doc.touched();
-    Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
+    Json& container = doc.data.extra;
     container.set("physis", std::move(config));
     return true;
 }
@@ -588,11 +588,11 @@ inline bool transformFields(MapDoc& doc, const std::vector<std::string>& ids,
         return fail("PHYSIS group transform contains unknown field ID");
     if (!validate(config,error)) return false;
     if (config == read(doc)) return true;
-    if (!doc.data.fps.isNull() && !doc.data.fps.isObject())
+    if (doc.data.worldSpace && !doc.data.worldSpace)
         return fail("PHYSIS FPS document is not an object");
     if (firstEdit) doc.beginEdit();
     else doc.touched();
-    Json& container=doc.data.fps.isNull() ? doc.data.extra:doc.data.fps;
+    Json& container=doc.data.extra;
     container.set("physis",std::move(config));
     return true;
 }

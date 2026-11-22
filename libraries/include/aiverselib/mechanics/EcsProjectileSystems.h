@@ -69,7 +69,7 @@ struct BallisticFlightPolicy {
 };
 
 // Provider: const world::SpatialWorld&(Simulation&) to support arbitrary
-// world/map/collision owners without GameCore/actor::Module coupling.
+// world/map/collision owners without GameCore/actor::ActorHost coupling.
 // ImpactSink: void(Simulation&, const ProjectileImpactEvent&), called only
 // AFTER all projectile updates in canonical dense order.
 // FlightPolicy: ProjectileStep(ProjectileFlightComponent&,SpatialWorld&,Fixed)

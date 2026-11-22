@@ -228,7 +228,7 @@ bool nativeBuildUpToDate(const std::string& binary, const std::string& projectDi
 
 std::vector<std::string> nativeBuildModules(const std::string& buildDir) {
     std::vector<std::string> ids;
-    std::ifstream f(fs::path(buildDir) / "gen" / "RtsNativeRegistry.cpp");
+    std::ifstream f(fs::path(buildDir) / "gen" / "NativeRegistry.cpp");
     std::string line;
     const std::string key = "result.push_back({\"";
     while (std::getline(f, line)) {

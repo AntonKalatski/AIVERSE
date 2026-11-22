@@ -16128,7 +16128,7 @@ TEST(native_editor_build_helpers) {
     touch(engine, 200);
     touch(bin, 100);
     CHECK(nativeBuildUpToDate(bin.string(), proj, engine.string(), &why) && why.empty());
-    std::ofstream(fs::path(bd) / "gen" / "RtsNativeRegistry.cpp") << "#include \"x\"\n    result.push_back({\"income\", 1u, &::createIncomeModule});\n";
+    std::ofstream(fs::path(bd) / "gen" / "NativeRegistry.cpp") << "#include \"x\"\n    result.push_back({\"income\", 1u, &::createIncomeModule});\n";
     CHECK((nativeBuildModules(bd) == std::vector<std::string>{"income"}));
     CHECK(nativeBuildHasModules(bd, {"income"}) && !nativeBuildHasModules(bd, {"income", "openwar"}, &why) && why.find("openwar") != std::string::npos);
     touch(root / "proj" / "native" / "Income.cpp", 10);    // sources edited after the build

@@ -1048,7 +1048,7 @@ private:
     std::unique_ptr<roads::RoadView> pendingRoadRecovery_;
     std::unique_ptr<GameShoreView> pendingShoreRecovery_;
     GameGroundFx groundFx_;   // territory, diggable rock, lanes, roads (GameGroundFx.cpp)
-    FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
+    FogOfWar fog_;           // fog of war look + sheet (GameFog.cpp)
     GameOverlays overlays_;   // data-driven overlays (GameOverlays.cpp)
     GameFieldView fieldView_; // grid field overlays (GameFieldView.cpp)
     const std::vector<GridFieldDef>* fieldDefsSeen_ = nullptr;

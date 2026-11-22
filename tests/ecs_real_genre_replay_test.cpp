@@ -1,4 +1,4 @@
-// Real GameCore + actor::Module integration gate, not only mock genre hosts.
+// Real GameCore + actor::ActorHost integration gate, not only mock genre hosts.
 // The same deterministic engine snapshot/save/replay contract must survive
 // actual genre adapters and gameplay commands (FPS state lives on ECS only).
 #include "engine/data/JsonCompose.h"
@@ -37,7 +37,7 @@ std::unique_ptr<Simulation> make(Genre genre,bool cow) {
         map=Json::parseFile(base+"map.json");
         rules.member("fps").set("mode",Json::string("deathmatch"));
         tickRate=actor::readConfig(rules).tickRate;
-        module=std::make_unique<actor::Module>();
+        module=std::make_unique<game::GameCore>();
     }
     auto sim=std::make_unique<Simulation>(
         SimConfig{91,tickRate,0,true},std::move(module));

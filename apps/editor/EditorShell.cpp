@@ -388,7 +388,7 @@ void Editor::drawPlayControls() {
     auto at = [&] { ImGui::SetCursorScreenPos(ImVec2(origin.x + step * float(n++), origin.y)); };
     ui::beginSegment();
     const bool on = playing() || clientPlaying();
-    if(ws_.project.worldSpaceMaps()) {
+    if(ws_.map.data.worldSpace) {
         at();if(ui::toolButton(ICON_PLAY,engineText(ws_,"fps.editor.play").c_str(),false,!ws_.building()))startFpsPlay();
         at();if(ui::toolButton(ICON_GAME,engineText(ws_,"fps.editor.open").c_str()))focusWindow("fps");
         ui::endSegment();ImGui::PopStyleVar();return;

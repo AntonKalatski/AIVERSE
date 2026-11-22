@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "engine/game/GameCore.h"
 #include "EditorGenreUi.h"
 #include "SceneRenderable.h"
 #include "EditorEntityAdapter.h"
@@ -25,7 +26,7 @@ render::float3 point(const Json& j){return {float(j[0].toDouble()),float(j[1].to
 }
 // The FPS host stores characters, projectiles, loot and vehicles as ECS entities (ActorComponents.h).
 // Expose a typed, read-only snapshot without pretending they are DocEntity or
-// RTS World rows. This uses the same actor::Module::setup as the FPS client.
+// RTS World rows. This uses the same actor::ActorHost::setup as the FPS client.
 const Json& Editor::fpsRuntimeSnapshot() {
     const bool current = fpsRuntimeRevision_ == doc().revision &&
         fpsRuntimeRulesRevision_ == rulesRevision_ &&
@@ -50,10 +51,10 @@ const Json& Editor::fpsRuntimeSnapshot() {
     }
     try {
         const actor::Config config = actor::readConfig(ws_.project.rulesJson);
-        Simulation preview({1, config.tickRate, 0}, std::make_unique<actor::Module>());
+        Simulation preview({1, config.tickRate, 0}, std::make_unique<game::GameCore>());
         preview.setup(ws_.project.rulesJson, doc().toJson());
-        auto* module = dynamic_cast<actor::Module*>(&preview.module());
-        if (!module) throw std::runtime_error("FPS module missing");
+        auto* module = actor::tryHost(preview);
+        if (!module) throw std::runtime_error("the map is not world-space (no colliders / spawns)");
         // Characters and dynamic objects are ECS entities; the editor shows their real components
         // (CharacterId / CharacterBody / CharacterHealth / CharacterWeapons, Projectile / Loot / Vehicle).
         const World& world = preview.world();
@@ -183,7 +184,7 @@ const Json& Editor::fpsRuntimeSnapshot() {
 void Editor::startFpsPlay(bool listen,const std::string& address) {
     if(!ws_.project.actorSessionPlay()||ws_.building())return;
     try {
-        auto cfg=actor::readConfig(ws_.project.rulesJson);Simulation check({1,cfg.tickRate,0},std::make_unique<actor::Module>());check.setup(ws_.project.rulesJson,doc().toJson());
+        auto cfg=actor::readConfig(ws_.project.rulesJson);Simulation check({1,cfg.tickRate,0},std::make_unique<game::GameCore>());check.setup(ws_.project.rulesJson,doc().toJson());
         std::string error;
         if(doc().dirty&&!saveMap(doc().path))return;
         if(!ws_.project.saveRules(&error)||!ws_.project.saveManifest(&error))throw std::runtime_error(error);
@@ -219,8 +220,8 @@ void Editor::enqueueFpsSceneGeometry(const render::Camera& camera, bool editOver
     const uint64_t selectedKey = selection.kind == Selection::ActorObject ? selection.ref : 0;
     fpsSceneObjects_.clear();
     auto& instances = fpsSceneObjects_;
-    const auto& fps = doc().data.fps;
-    for (const auto& node : enumerateDocumentSceneNodes(doc(), true)) {
+    const auto& fps = doc().data.extra;
+    for (const auto& node : enumerateDocumentSceneNodes(doc())) {
         if (!node.hasPosition) continue;
         const Json* source = fpsDocumentEntity(fps, node.ref);
         if (!source) continue;
@@ -353,7 +354,7 @@ void Editor::enqueueFpsSceneGeometry(const render::Camera& camera, bool editOver
         const float3 centre{float(position.x), float(position.y),
                             float(position.z)};
         const float extent = std::max(0.35f, camera.distance * 0.075f);
-        const Json* source = fpsDocumentEntity(doc().data.fps, ref);
+        const Json* source = fpsDocumentEntity(doc().data.extra, ref);
         const bool oriented = source && (*source)["yaw"].isNumber();
         if (oriented && transformTool == TransformTool::Rotate) {
             constexpr int segments = 64;
