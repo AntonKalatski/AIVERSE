@@ -13,14 +13,20 @@ top-down, arsenal, projectile, view and render files.
 What was changed on the way in:
 - behaviour that broke engine tests is now a rule, off by default: `arsenal.aimWindup` (true: a quarter second with the weapon raised before the first shot), `traffic.services.<id>.custody` (police detain instead of fighting), `...carry` (the ambulance
   crew carries the patient and delivers him);
-- the project headers the patches included by absolute path are copied to `kingston/` under their own names
-  (`FireResponseRoute.h`, `FireResponseDetour.h`, `TrafficPriorityPolicy.h`, `CityTrafficAreas.h`,
-  `DeckBroadphase.h`) and included as `"kingston/<name>.h"`;
+- the project headers the patches included by absolute path are deleted; the engine calls the library versions
+  (`trafficWideExit` for types in `traffic.wideRoads`, `trafficLocalDetour`, `sweptBoxCircle`, `polylineBounds`);
+- what was hard-wired is data: map `traffic.noParking`, `traffic.services.<id>.officers`, `traffic.incidents.patient`
+  and `.unarmed`, type `walls` with weapon `hitsWalls` / `wrecks` (was the 816-line rocket wall table);
+- the custody / carry / pedestrian code is `RtsServiceCustody.h/.inc`, `RtsServiceCarry.inc`, `RtsPedestrianVehicles.inc`;
 - 108 repeated `#include "Kingston*.inc"` lines in `RtsTrafficCity.cpp` (the patcher appended a pair on every
   configure) were reduced to one pair.
 
-Still game-specific and hard-wired (type ids such as `cop`, `city_officer`, `city_rescue_patient`, trigger
-variable names): these adapters should become data or a project native module (docs/native-modules.md).
+Still game-specific: the trigger variable names the game scripts read and write (`police_*`, `resident_*`, `tow_*`,
+`ambulance_*`, `vehicle_beacon_*` ...): a protocol that should become components or a project native module
+(docs/native-modules.md). No Kingston type id is left in the engine code.
+
+The GTA2 patch scripts that add `Kingston*.inc` includes or swap the `kingston/` headers now fail: those files are
+gone (stage C0a). Retire the scripts; run `_tmp/gta2-c0a-data.py` once for the data.
 New engine changes for the game go into the engine sources directly, not into patch scripts.
 
 ## The project's patch scripts and this tree

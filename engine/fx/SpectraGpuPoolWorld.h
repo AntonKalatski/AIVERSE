@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <limits>
 #include <string>
@@ -338,6 +339,7 @@ private:
     PoolResetReport resetReport_{};
     std::vector<uint8_t> resetAccepted_; // per GPU group, retained across retries
     std::map<std::string,Binding> bindings_;
+    std::set<int> cpuDefinitionIds_; // CPU fallback ids bound at the last recount
     std::map<std::string,PoolRecoveryEffect> definitions_;
     std::vector<Source> sources_;
     std::vector<uint32_t> freeSourceSlots_;

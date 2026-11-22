@@ -44,13 +44,13 @@ public:
     }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            ImGui::TextWrapped("%s",genreText(ed.ws(),"fps.editor.hint").c_str());
+        if(ed.ws().project.actorSessionPlay()) {
+            ImGui::TextWrapped("%s",engineText(ed.ws(),"fps.editor.hint").c_str());
             ImGui::BeginDisabled(ed.ws().building());
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.play").c_str()))ed.startFpsPlay();
-            ImGui::SameLine();if(ImGui::Button(genreText(ed.ws(),"fps.editor.listen").c_str()))ed.startFpsPlay(true);
+            if(ImGui::Button(engineText(ed.ws(),"fps.editor.play").c_str()))ed.startFpsPlay();
+            ImGui::SameLine();if(ImGui::Button(engineText(ed.ws(),"fps.editor.listen").c_str()))ed.startFpsPlay(true);
             ImGui::EndDisabled();
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
+            if(ImGui::Button(engineText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
             ed.gameViewport=nullptr;return;
         }
         toolbar(ed);
@@ -499,7 +499,7 @@ private:
         if(region_.enabled){regionInput(ed);return;}
         if (gameHud_.blocked()) { boxing_ = false; return; }
         ImGuiIO& io = ImGui::GetIO();
-        RTSCamera& cam = ed.gameCam;
+        Camera& cam = ed.gameCam;
         const float wheel=cameraWheel();
         if (vp_.hovered && wheel != 0) cam.distance = std::clamp(cam.distance * std::pow(0.88f, wheel), cam.minDistance, cam.maxDistance);
         if (vp_.hovered &&

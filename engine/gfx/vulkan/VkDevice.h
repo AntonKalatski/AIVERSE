@@ -63,7 +63,16 @@ private:
 };
 
 struct VBuffer {
-    struct Version { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; uint64_t usedSerial = 0; };
+    // syncedEpoch: the last shadow write this version contains (kUnsynced:
+    // contents unknown, a full copy is needed before a partial write).
+    static constexpr uint64_t kUnsynced = ~uint64_t(0);
+    struct Version { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; uint64_t usedSerial = 0;
+                     uint64_t syncedEpoch = 0; };
+    // Shadow writes since the oldest version's sync point, so switching to a
+    // reused version copies only the ranges it missed instead of the whole
+    // shadow. Bounded: dropped entries raise logBaseEpoch, and a version
+    // synced before it falls back to a full copy.
+    struct DirtyRange { size_t offset = 0, size = 0; uint64_t epoch = 0; };
     BufferType type = BufferType::Vertex;
     Usage usage = Usage::Immutable;
     size_t size = 0;
@@ -73,6 +82,8 @@ struct VBuffer {
     std::vector<Version> versions;
     int current = 0;
     std::vector<uint8_t> shadow;       // host buffers: the contents, copied into a fresh version
+    uint64_t writeEpoch = 0, logBaseEpoch = 0;
+    std::vector<DirtyRange> dirtyLog;
 };
 
 struct VTexture {
@@ -105,6 +116,9 @@ struct VShader {
     VkShaderModule hdrVert = VK_NULL_HANDLE, hdrFrag = VK_NULL_HANDLE;
     bool linear = false, hdrFailed = false;
     uint32_t shadowSlots = 0;
+    // Vertex/fragment modules with UByte4 inputs rescaled (no USCALED fetch),
+    // per (location mask << 1 | hdr); a null pair records a failed compile.
+    std::vector<std::pair<uint64_t, std::pair<VkShaderModule, VkShaderModule>>> scaled;
 };
 
 struct VPipeline {
@@ -281,6 +295,8 @@ private:
     // Null on allocation failure. Never return an in-flight version as a
     // fallback: writing it corrupts commands already submitted to the GPU.
     VBuffer::Version* writableVersion(VBuffer& b, bool keepContents);
+    void recordShadowWrite(VBuffer& b, VBuffer::Version& written,
+                           size_t offset, size_t size, bool staleTail);
     bool updateBufferChecked(BufferHandle h, const void* data,
                              size_t size, size_t offset);
     VkBuffer resolveBuffer(uint32_t id, uint64_t serialUse);
@@ -304,6 +320,34 @@ private:
                            int samples = 1, uint32_t resolveMask = 0);
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
+
+public:   // native access for vendor libraries (Gfx.h NativeVulkanContext)
+    bool nativeVulkanContext(NativeVulkanContext& out) override {
+        if (!device_ || !recording_ || inPass_ || !healthy_) return false;
+        out.instance = instance_;
+        out.physicalDevice = gpu_;
+        out.device = device_;
+        out.commandBuffer = transferCmd();
+        out.getInstanceProcAddr = reinterpret_cast<void*>(vkGetInstanceProcAddr);
+        out.queueFamily = queueFamily_;
+        return true;
+    }
+    bool nativeVulkanImage(TextureHandle h, NativeVulkanImage& out) const override {
+        const VTexture* t = textures_.get(h.id);
+        if (!t || !t->image) return false;
+        out.image = t->image;
+        out.view = t->view;
+        out.format = uint32_t(t->vkFormat);
+        out.width = t->width; out.height = t->height;
+        out.depth = t->depth; out.storage = t->storage;
+        return true;
+    }
+    bool nativeVulkanImageBarrier(TextureHandle h, uint32_t fromLayout, uint32_t toLayout) override {
+        const VTexture* t = textures_.get(h.id);
+        if (!t || !t->image || !recording_ || inPass_) return false;
+        barrierImage(transferCmd(), t->image, t->depth, VkImageLayout(fromLayout), VkImageLayout(toLayout));
+        return true;
+    }
 
 public:   // helpers shared by the translation units
     VkCommandBuffer transferCmd();               // main command buffer outside passes, else the pre-frame one

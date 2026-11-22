@@ -513,6 +513,11 @@ public:
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
     void setShadowBounds(float3 lo, float3 hi) { shadowBoundsMin_=lo; shadowBoundsMax_=hi; hasShadowBounds_=true; }
     void clearShadowBounds() { hasShadowBounds_=false; }
+    // Scoped capture override: one shared light frustum for every face of a
+    // cubemap (or any view set) so shadows meet at the face seams.
+    struct ShadowBoundsState { bool set=false; float3 lo{}, hi{}; };
+    ShadowBoundsState shadowBoundsState() const { return {hasShadowBounds_, shadowBoundsMin_, shadowBoundsMax_}; }
+    void restoreShadowBounds(const ShadowBoundsState& s) { shadowBoundsMin_=s.lo; shadowBoundsMax_=s.hi; hasShadowBounds_=s.set; }
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }

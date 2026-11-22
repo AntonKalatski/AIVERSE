@@ -794,7 +794,7 @@ void PlanetRenderer::draw(Renderer3D& r, const PlanetViewFrame& fr, double secon
     if (options.sky && skyPipe_.valid()) {
         SU0 su{};
         const float aspect = r.sceneHeight() > 0 ? float(r.sceneWidth()) / float(r.sceneHeight()) : 1.0f;
-        RTSCamera rc = r.camera();
+        Camera rc = r.camera();
         mat4 vpRot = rc.proj(aspect, dev.info().clipDepthZeroToOne) * rc.view();
         const mat4 inv = vpRot.inverse();
         std::memcpy(su.inv, inv.m, sizeof su.inv);

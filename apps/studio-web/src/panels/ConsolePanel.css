@@ -14,3 +14,11 @@
 .console__list .log-row p{margin:0;display:inline}
 .console__link{border:0;background:none;padding:0;color:var(--au-accent);cursor:pointer;font:inherit;text-decoration:underline dotted}
 .console__empty{padding:10px;color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.console__list{-webkit-user-select:text;user-select:text;cursor:text;outline:none}
+.console__list .log-row{position:relative}
+.console__list .log-row ::selection{background:color-mix(in srgb,var(--au-accent) 35%,transparent)}
+.console__link{-webkit-user-select:text;user-select:text}
+.console__rowcopy{position:absolute;right:4px;top:1px;display:none;place-items:center;width:20px;height:18px;border:0;border-radius:var(--au-radius-sm);background:var(--au-field);color:var(--au-text-muted);cursor:pointer;-webkit-user-select:none;user-select:none}
+.console__list .log-row:hover .console__rowcopy{display:inline-grid}
+.console__rowcopy:hover{color:var(--au-text);background:var(--au-hover)}
+.console__copied{font-size:var(--au-font-xs);color:var(--au-text-muted);white-space:nowrap}

@@ -15,6 +15,12 @@ struct CameraCaptureView {
     uint64_t targetAssetKey=0;
     int width=0,height=0;
     bool hdr=false;
+    // Optional light-frustum box shared by a set of views (cube faces). When
+    // set, the host renders this view with Renderer3D::setShadowBounds so the
+    // sun shadow map is identical for every face; without it each face fits
+    // its own map and shadows break at the seams.
+    bool shadowBounds=false;
+    float3 shadowMin{},shadowMax{};
 };
 constexpr float cameraPi=3.14159265358979323846f;
 inline quat cameraPoseRotation(const Camera& camera) {
@@ -22,7 +28,7 @@ inline quat cameraPoseRotation(const Camera& camera) {
 }
 inline std::array<CameraCaptureView,6> makeCubemapCameraViews(
         const Camera& source,const std::array<uint64_t,6>& targetKeys,
-        int faceSize,bool hdr=false) {
+        int faceSize,bool hdr=false,float shadowRadius=40.f) {
     std::array<CameraCaptureView,6> result{};
     const auto pose=cameraPoseRotation(source);
     const float3 eye=source.eye();
@@ -42,6 +48,11 @@ inline std::array<CameraCaptureView,6> makeCubemapCameraViews(
         face.lensShift={};
         face.jitter={};
         result[i]={face,targetKeys[i],faceSize,faceSize,hdr};
+        if(shadowRadius>0.f && std::isfinite(shadowRadius)) {
+            result[i].shadowBounds=true;
+            result[i].shadowMin=eye-float3{shadowRadius,shadowRadius,shadowRadius};
+            result[i].shadowMax=eye+float3{shadowRadius,shadowRadius,shadowRadius};
+        }
     }
     return result;
 }

@@ -123,6 +123,7 @@ void openStdApi(Vm& vm);            // `rts` table for the standard library (Rts
 void openFieldApi(Vm& vm);          // `field` table: grid fields (RtsGridFieldsApi.cpp)
 void openPromptApi(Vm& vm);         // `prompt` table: choice menus shown to a player (RtsPrompt.cpp)
 void openCareerApi(Vm& vm);         // `career` table: ladders, ranks, perks (RtsCareerApi.cpp)
+void openServicesApi(Vm& vm);       // `services` table: custody, carry, people / vehicles scripts take over (RtsServicesApi.cpp)
 void openDrivingApi(Vm& vm);        // `driving` table: who drives what, how fast (RtsDrivingApi.cpp)
 void openCommerceApi(Vm& vm);       // `commerce` table: premises, businesses, the bank (RtsCommerceApi.cpp)
 void openRaidApi(Vm& vm);           // `raid` table: extraction raids (RtsRaidApi.cpp)

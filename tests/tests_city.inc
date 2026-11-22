@@ -140,7 +140,7 @@ TEST(city_tiles_follow_the_tileset_bases_and_the_simulation_starts) {
     map.erase("tiles");
     auto sim = makeSimJson(kCityRules, map.dump(0), 5);
     CHECK(mod(*sim).topDown()->heroOf(*sim, 1).valid());
-    CHECK(mod(*sim).driving()->store(*sim) && !mod(*sim).driving()->store(*sim)->cars.empty());
+    CHECK(mod(*sim).driving()->active() && !vehicles::vehicleEntities(sim->world()).empty());
     run(*sim, 2.0);   // the match runs on it
     CHECK(sim->world().alive(mod(*sim).topDown()->heroOf(*sim, 1)));
     // a rules set without buildings still gives streets, with a warning

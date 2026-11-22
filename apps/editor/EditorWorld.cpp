@@ -187,11 +187,11 @@ game::RtsModule* Editor::worldModule() {
     return s ? dynamic_cast<game::RtsModule*>(&s->module()) : nullptr;
 }
 
-Selection Editor::pickObject(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const {
+Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, float sx, float sy) const {
     // All Scene consumers (hover, click, Inspector, Hierarchy) use one
     // selection API. FPS previews map their renderable ID back to the
     // document source; the transient render-array index never escapes.
-    if (ws_.project.isFps()) {
+    if (ws_.project.worldSpaceMaps()) {
         const int index = pickFpsSceneObject(vp, cam, sx, sy);
         if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
         if (fpsSceneObjects_[size_t(index)].runtimeObject != 0) {
@@ -280,7 +280,7 @@ void Editor::ensureWorld() {
 }
 
 void Editor::updateWorld() {
-    if(ws_.project.isFps())return; // FPS has its own document hierarchy; never build an RTS preview.
+    if(ws_.project.worldSpaceMaps())return; // FPS has its own document hierarchy; never build an RTS preview.
     auto profScope = prof.scope(EditorProfile::WorldUpdate);
     Simulation* live = sim_ ? sim_.get() : clientHost_.active() ? clientHost_.simulation() : nullptr;
     if (live) {

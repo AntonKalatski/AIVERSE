@@ -99,7 +99,7 @@ int aiverseMain(int argc,char** argv){try{
     const auto centre=(source->boundsMin+source->boundsMax)*.5f,extent=source->boundsMax-source->boundsMin;const float span=std::max(extent.x,extent.z);
     report.set("boundsMin",vector(source->boundsMin));report.set("boundsMax",vector(source->boundsMax));
     std::cerr<<"Prepared "<<parts.size()<<" parts, "<<candidates<<" proxies, bounds "<<vector(source->boundsMin).dump()<<" .. "<<vector(source->boundsMax).dump()<<"\n";
-    GeometryScene scene;Renderer3D renderer;gfx::Device* device=nullptr;RTSCamera cam;cam.target=centre;cam.distance=span*(camera==2?1.8f:.85f);cam.yaw=camera==1?2.3f:.5f;cam.pitch=camera==2?.65f:.3f;cam.zFar=std::max(1000.f,span*5);cam.zNear=.1f;if(camera==1){cam.distance=span*1.3f;cam.pitch=.75f;}
+    GeometryScene scene;Renderer3D renderer;gfx::Device* device=nullptr;Camera cam;cam.target=centre;cam.distance=span*(camera==2?1.8f:.85f);cam.yaw=camera==1?2.3f:.5f;cam.pitch=camera==2?.65f:.3f;cam.zFar=std::max(1000.f,span*5);cam.zNear=.1f;if(camera==1){cam.distance=span*1.3f;cam.pitch=.75f;}
     report.set("eye",vector(cam.eye()));report.set("target",vector(cam.target));report.set("fovY",number(cam.fovY));
     const int warmup=argc>9?std::stoi(argv[9]):60,samples=argc>10?std::stoi(argv[10]):120;
     if(warmup<30||warmup>10000||samples<120||samples>10000)throw std::runtime_error("invalid sampling budget");int frame=0,phase=0;std::string reportPath=output;Json rows=Json::array();std::map<uint64_t,double> gpu;auto previous=Clock::now();bool captured=false;

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include "Workspace.h"
-#include "../../../modules/rts/RtsRoadNet.h"
+#include "../../../engine/roads/RoadNet.h"
 
 namespace aiverse::editor {
 
@@ -14,8 +14,8 @@ void registerRoadOps(Workspace& ws);
 
 namespace roads {
 
-using game::RoadNetwork;
-using game::RoadTypeDef;
+using aiverse::roads::RoadNetwork;
+using aiverse::roads::RoadTypeDef;
 
 std::vector<RoadTypeDef> types(const Workspace& ws);            // rules "roadTypes" over the built-in library
 RoadNetwork read(const MapDoc& doc, const std::vector<RoadTypeDef>& types);   // throws on bad data
@@ -30,10 +30,10 @@ struct Snap {
     Fixed lateral{};                  // signed offset from the centre line (lane picking)
     Vec2 p{};                         // the snapped point
 };
-Snap snap(const RoadNetwork& n, const game::RoadGeometry& g, Vec2 p, Fixed radius);
+Snap snap(const RoadNetwork& n, const aiverse::roads::RoadGeometry& g, Vec2 p, Fixed radius);
 // lane of an edge under a lateral offset: direction (+1 forward / -1 backward, in the edge's own a -> b sense) and
 // index (centre outwards); false when the offset is not on a lane
-bool laneAt(const RoadTypeDef& t, const game::RoadEdge& e, Fixed lateral, int& dir, int& lane);
+bool laneAt(const RoadTypeDef& t, const aiverse::roads::RoadEdge& e, Fixed lateral, int& dir, int& lane);
 
 // Splits edge `ei` at Bezier parameter t (de Casteljau: the shape is kept); returns the new node id. Branches attached
 // to the old edge are re-attached to the half that ends at their node.
@@ -48,7 +48,7 @@ struct AddSpec {
     Vec2 c1{}, c2{};
     Fixed y1{}, y2{};
     bool heights = false;             // y1 / y2 given (else the straight slope)
-    game::RoadAttach attachA, attachB;   // edge = index of the parent edge in `n` before the split (-1: none)
+    aiverse::roads::RoadAttach attachA, attachB;   // edge = index of the parent edge in `n` before the split (-1: none)
     bool reversed = false;
 };
 // Adds one edge (and its end nodes). Returns the new edge id; throws std::runtime_error with a readable message.

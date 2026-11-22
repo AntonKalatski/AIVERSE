@@ -9,7 +9,7 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
 `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md`, and
 `docs/editor-unification-handoff.md` before editing shared mechanics.
 
-1. **Components, not genre names.** Include `<aiverselib/genre/EcsDamageSystems.h>`.
+1. **Components, not genre names.** Include `<aiverselib/mechanics/EcsDamageSystems.h>`.
    Use `HitPointsComponent` for an entity's health,
    `ProjectileDamageComponent` for shot damage,
    `ColliderEntityIndex` to map collision IDs to generation-safe entities,
@@ -65,8 +65,8 @@ This helper applies positive already-mitigated damage, clamps at zero and
 returns the amount actually subtracted without overflowing on large values.
 **Do not** call it before applying the host's armor/gear/knockdown policies.
 
-In FPS, `ActorRuntime` is canonical when `fps.ecsAuthority` is enabled
-and the legacy actor tick workspace is still used for compatibility.
+In FPS, live health is the `CharacterHealth` component of the character
+entity (the FPS host is ECS-only; there is no Actor vector or mirror).
 The helper does **not** mean that separate `HitPointsComponent` owns
 live FPS health or that `DamageQueue` replaces synchronous FPS damage.
 Do not add a second writable health owner until an explicit save/version/
