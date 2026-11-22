@@ -553,6 +553,16 @@ def cmd_build(args):
             if not f.is_file():
                 sys.exit(f'site page missing: {f.relative_to(out)}')
             text = fill_tokens(f.read_text(encoding='utf-8'), ctx, name)
+            # One menu for every page: the static pages take the header of _layout.html, so a new
+            # menu item (gallery, blog, ...) cannot go missing from them.
+            head_re = re.compile(r'<header class="top">.*?</header>', re.S)
+            shared = head_re.search(fill_tokens(layout, ctx, name)).group(0)
+            nav_id = 'devlog' if name == 'devlog.html' else None
+            if nav_id:
+                shared = shared.replace(f'data-nav="{nav_id}"', f'data-nav="{nav_id}" aria-current="page"')
+            text, n = head_re.subn(lambda _m: shared, text, count=1)
+            if n != 1:
+                sys.exit(f'{lang}/{name} lost its <header class="top">')
             if name == 'index.html':
                 for mark in ('<!--SHOWCASE-->', '<!--SYSTEMS-->', '<!--CORE_SYSTEMS-->', '<!--ROADMAP_LINES-->'):
                     if mark not in text:
