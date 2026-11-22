@@ -127,7 +127,7 @@
     "Cut and regrow trees: clearings are visible both up close and on the horizon.",
     "Query nearby trees from gameplay and bake terrain into an editor map through MCP."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "physis",
@@ -247,7 +247,7 @@
     "Author wind zones, storms and gravity in map JSON and edit them right in the scene.",
     "Keep environment fields in sync on the server: reconciliation, command replay, recovery after a restart."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "nereid",
@@ -402,7 +402,7 @@
     "Show flow, foam and whitewater that follow the channel bends.",
     "Edit river grade and current in the editor and erode banks together with TerraWeave."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "strata",
@@ -572,7 +572,7 @@
     "Switch detail without cracks between clusters and without flicker.",
     "Check whether an asset fits before import — through MCP."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "lens",
@@ -742,7 +742,7 @@
     "Replay a prepared frame into secondary cameras without simulating again.",
     "Split the screen between players or cameras, each with its own post-processing and visible layers."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "vivid",
@@ -886,7 +886,7 @@
     "Build characters in the editor without a DCC: from a preset to a unit in the game in minutes.",
     "Take ready MetaHuman characters and adjust their look in Studio right away."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "lighting",
@@ -1148,7 +1148,7 @@
     "Change the look when the camera enters an area — through post-process volumes.",
     "Scale effects to the GPU, from weak phones to Apple Silicon."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "spectrafx",
@@ -1269,7 +1269,7 @@
     "Trigger effects from gameplay events without touching the deterministic simulation.",
     "Bring effects over from Unity projects."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "motionweave",
@@ -1387,7 +1387,7 @@
     "Reimport a model without breaking the animation that is playing.",
     "Animate large crowds with LOD."
    ],
-   "release": "3.1.0"
+   "release": "3.0.0"
   },
   {
    "id": "navigation",
@@ -1814,6 +1814,14 @@
    "taglineEn": "Spherical worlds and maps from a seed",
    "essence": "Планеты на кубе-сфере с орбитами и генератор рельефа: эрозия, реки, биомы и честные стартовые позиции.",
    "essenceEn": "Cube-sphere planets with orbits and a terrain generator: erosion, rivers, biomes and fair starting positions.",
+   "roadmap": [
+     {"status": "done", "date": "2026-11-22", "title": "Берега из генератора", "titleEn": "Coasts from the generator", "text": "Моря и озёра строит генератор карт, без квадратных водоёмов.", "textEn": "Seas and lakes come from the map generator, no square lakes."},
+     {"status": "done", "date": "2026-11-22", "title": "Рельеф и флора TerraWeave", "titleEn": "TerraWeave terrain and flora", "text": "Высоты, биомы и растения планеты считает TerraWeave.", "textEn": "TerraWeave computes the planet's heights, biomes and plants."},
+     {"status": "done", "date": "2026-11-22", "title": "Море NEREID", "titleEn": "NEREID sea", "text": "Волны, цвет по глубине и пена у берега.", "textEn": "Waves, colour by depth and coast foam."},
+     {"status": "done", "date": "2026-11-22", "title": "Водоёмы NEREID на сферах", "titleEn": "NEREID water bodies on spheres", "text": "Глубина, течение, волны, плавучесть и всплески по радиусу.", "textEn": "Radial depth, current, waves, buoyancy and splashes."},
+     {"status": "planned", "target": null, "title": "Дрейф по течению", "titleEn": "Drift with the current", "text": "Корабли и обломки сносит течением моря.", "textEn": "The sea's current carries ships and wrecks."},
+     {"status": "planned", "target": null, "title": "Одни волны в симуляции и на экране", "titleEn": "One wave model for simulation and screen", "text": "Корабль качается на тех же волнах, что видны.", "textEn": "A ship rides the same waves that are drawn."}
+   ],
    "includes": [
     {
      "name": "Куб-сфера",
@@ -2138,6 +2146,36 @@
     "Сделать и проверить игру, не выходя из редактора.",
     "Работать вместе с агентом в одном проекте.",
     "Проверить вёрстку на экранах разных телефонов."
+   ],
+   "roadmap": [
+    {
+     "status": "in-progress",
+     "target": null,
+     "title": "Studio на Windows",
+     "titleEn": "Studio on Windows",
+     "text": "Общее с Mac ядро редактора, интерфейс в WebView2, сцена и игра на Vulkan. Приложение собирается, первый запуск на Windows впереди.",
+     "textEn": "An editor core shared with the Mac, the interface in WebView2, Scene and Game on Vulkan. The application builds; the first run on Windows is ahead."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Плавающие окна панелей на Windows",
+     "titleEn": "Floating panel windows on Windows"
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Перетаскивание файлов и ассетов на Windows",
+     "titleEn": "Dragging files and assets on Windows",
+     "text": "Из Проводника в Assets и из Assets в сцену.",
+     "textEn": "From Explorer into Assets and from Assets into the Scene."
+    },
+    {
+     "status": "planned",
+     "target": null,
+     "title": "Режим без Vulkan на Windows",
+     "titleEn": "A mode without Vulkan on Windows"
+    }
    ],
    "enablesEn": [
     "Make and test a game without leaving the editor.",

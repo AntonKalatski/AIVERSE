@@ -430,6 +430,11 @@ a.chip-ink { color: var(--on-ink); }
 .rel-hl li { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
 .rel-hl h3 { font-size: 17px; font-weight: 600; }
 .rel-hl p { margin: 6px 0 0; font-size: 15px; line-height: 1.55; color: var(--text-2); }
+.rel-hl li.has-img { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.rel-hl li.has-img .rel-hl-body { padding: 14px 18px 16px; }
+.rel-hl-img { display: block; aspect-ratio: 16 / 9; background: var(--ink, #141210); overflow: hidden; }
+.rel-hl-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
+.rel-hl-img:hover img { transform: scale(1.03); }
 .rel-verified { margin: 18px 0 0; font-size: 15px; color: var(--text-2); }
 .rel-dl { margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .rel-dl-title { font: 500 14px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
@@ -640,3 +645,15 @@ a.badge-ink { color: var(--on-ink); }
 .core-card.has-thumb { padding-top: 0; overflow: hidden; }
 .core-thumb { display: block; margin: 0 -24px 6px; background: var(--ink); }
 .core-thumb img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+
+/* Gallery: every devlog frame */
+.gal-grid { margin: 22px 0 64px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 16px; }
+.gal-item { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+.gal-item[hidden] { display: none; }
+.gal-img { display: block; aspect-ratio: 16 / 10; background: #141210; overflow: hidden; }
+.gal-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
+.gal-img:hover img { transform: scale(1.03); }
+.gal-item figcaption { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.gal-cap { font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.gal-meta { font-size: 13px; color: var(--muted); text-decoration: none; }
+.gal-meta:hover { color: var(--link); }

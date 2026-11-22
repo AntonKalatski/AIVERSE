@@ -11,6 +11,135 @@
   },
   "releases": [
     {
+      "version": "3.0.0",
+      "tag": "v3.0.0",
+      "date": "2026-11-22",
+      "commit": "9e7e3b807",
+      "title": "Один движок для любой игры и десять флагманских систем",
+      "titleEn": "One engine for any game and ten flagship systems",
+      "summary": "Деление на жанры убрано, а для миров, света, воды, камер, людей и эффектов появились флагманские системы. Есть ломающие изменения: токен agent-link, новые пути пакетов, сохранения NEREID v2.",
+      "summaryEn": "The genre split is gone, and flagship systems arrive for worlds, light, water, cameras, people and effects. Breaking changes: an agent-link token, new package paths, NEREID saves v2.",
+      "highlights": [
+        {
+          "title": "Один движок для любой игры",
+          "text": "Игровые системы переехали из RTS-модуля в engine/game на один GameHost; в пакетах и форматах данных больше нет жанров. Гонки, битвы и город работают на одном хосте.",
+          "titleEn": "One engine for any game",
+          "textEn": "The game systems moved from the RTS module to engine/game on a single GameHost; packages and data formats no longer carry genre names. Races, battles and city games run on one host.",
+          "media": [
+            {
+              "src": "docs/images/readme/city-roads.jpg",
+              "caption": "Город на общем хосте: сплайновые дороги, переходы, квартал",
+              "captionEn": "A city on the shared host: spline roads, crossings, a block"
+            }
+          ]
+        },
+        {
+          "title": "LUMA",
+          "text": "Динамический GI с каскадами за камерой, запечённый свет, сферические и трубчатые источники, свет частиц и скорость объектов в истории — на Metal, Vulkan и Android.",
+          "titleEn": "LUMA",
+          "textEn": "Dynamic GI with cascades that follow the camera, baked lighting, sphere and tube area lights, particle lights and object motion in the temporal history — on Metal, Vulkan and Android.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-lighting-vulkan-android/01.jpg",
+              "caption": "128 точечных источников LUMA освещают пол, Vulkan на Android",
+              "captionEn": "128 LUMA point lights on a floor, Vulkan on Android"
+            }
+          ]
+        },
+        {
+          "title": "PRISMA",
+          "text": "Постобработка как обычные эффекты: глубина резкости, motion blur, AO, отражения, эффекты линзы, SMAA и FSR.",
+          "titleEn": "PRISMA",
+          "textEn": "Post-processing as ordinary effects: depth of field, motion blur, AO, reflections, lens effects, SMAA and FSR.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-prisma-dof-motion-blur/04.jpg",
+              "caption": "Поворот камеры с motion blur, Metal",
+              "captionEn": "A camera turn with motion blur, Metal"
+            }
+          ]
+        },
+        {
+          "title": "STRATA",
+          "text": "Виртуализированная геометрия: иерархия кластеров, готовая геометрия на диске, 60 fps на бюджетном Android-телефоне.",
+          "titleEn": "STRATA",
+          "textEn": "Virtualized geometry: a cluster hierarchy, pre-built geometry on disk, 60 fps on a budget Android phone.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-spheres-lod-inset.jpg",
+              "caption": "20 сфер по миллиону треугольников; справа — кластеры по уровню детализации",
+              "captionEn": "20 spheres of a million triangles each; on the right the clusters by detail level"
+            }
+          ]
+        },
+        {
+          "title": "TerraWeave, NEREID и планеты",
+          "text": "Процедурный рельеф, биомы, лес и камни — и на планетах; вода с паводками, эрозией, мутностью и волнами, моря планет стали водоёмами NEREID.",
+          "titleEn": "TerraWeave, NEREID and planets",
+          "textEn": "Procedural terrain, biomes, forests and rocks — also on planets; water with floods, erosion, turbidity and waves, and planet seas are NEREID water bodies.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-planets-nereid-sea/coast.jpg",
+              "caption": "Берег планеты: море NEREID, лес TerraWeave",
+              "captionEn": "A planet coast: NEREID sea, TerraWeave forest"
+            }
+          ]
+        },
+        {
+          "title": "PHYSIS",
+          "text": "Живая среда: ветер, огонь, земля и смерч.",
+          "titleEn": "PHYSIS",
+          "textEn": "A living environment: wind, fire, earth and tornadoes.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-physis-tornado/physis-tornado-wide.jpg",
+              "caption": "Смерч PHYSIS идёт по долине",
+              "captionEn": "A PHYSIS tornado crossing a valley"
+            }
+          ]
+        },
+        {
+          "title": "LENS",
+          "text": "Камеры как данные сцены: физический объектив, пресеты, панорамы, зеркала, порталы, стерео, сплит-скрин, режиссёр и слои видимости.",
+          "titleEn": "LENS",
+          "textEn": "Cameras as scene data: physical lenses, presets, panoramas, mirrors, portals, stereo, split screen, a director and visibility layers.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-lens-split-director-layers/split-masked.jpg",
+              "caption": "Сплит-скрин LENS: у каждой камеры своя обработка и слои",
+              "captionEn": "LENS split-screen: each camera with its own processing and layers"
+            }
+          ]
+        },
+        {
+          "title": "VIVID",
+          "text": "Цифровые люди: Character Creator в Studio, адаптер MetaHuman, мягкие тени на лице.",
+          "titleEn": "VIVID",
+          "textEn": "Digital humans: Character Creator in Studio, a MetaHuman adapter, soft facial shadows.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-vivid-creator-metahuman/expression.jpg",
+              "caption": "VIVID: мимика «Смех» на ARKit-каналах",
+              "captionEn": "VIVID: the Laugh expression on ARKit channels"
+            }
+          ]
+        },
+        {
+          "title": "SpectraFX и MotionWeave",
+          "text": "Эффекты частиц на GPU с редактором графа; анимация персонажей, где целая битва идёт на одном графе.",
+          "titleEn": "SpectraFX and MotionWeave",
+          "textEn": "GPU particle effects with a graph editor; character animation where a whole battle runs on one animation graph.",
+          "media": [
+            {
+              "src": "docs/devlog/media/2026-11-22-motionweave-battle/battle.jpg",
+              "caption": "MotionWeave: два строя на одном графе анимации",
+              "captionEn": "MotionWeave: two formations on one animation graph"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.1.0",
       "tag": "v2.1.0",
       "date": "2026-11-16",

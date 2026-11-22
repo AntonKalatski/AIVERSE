@@ -308,7 +308,7 @@ def feature_page(s, it, body_html, ctx):
 FEATURE_JS = """<script>
 (function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
 function close(){lb.classList.remove('open');im.removeAttribute('src');}
-document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+document.querySelectorAll('.fp-gallery a, .blog-media a, .gal-grid a.gal-img, .rel-hl a.rel-hl-img').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
 im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
 document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
@@ -370,7 +370,8 @@ LINE_COLORS = ('#2F6FB0', '#3F8A55', '#1F8A9E', '#7A4FB0', '#B0562F', '#B0407A',
 
 
 def line_color(s, flagships):
-    return s.get('color') or LINE_COLORS[[f['id'] for f in flagships].index(s['id']) % len(LINE_COLORS)]
+    ids = [f['id'] for f in flagships]
+    return s.get('color') or LINE_COLORS[(ids.index(s['id']) if s['id'] in ids else len(ids)) % len(LINE_COLORS)]
 
 
 def short(text, n):
@@ -621,7 +622,14 @@ def releases_page(data, entries, systems, ctx, repo):
                f'{body}{more}</section>')
     cards = []
     for i, r in enumerate(rels):
-        hl = ''.join(f'<li><h3>{esc(ctx.loc(h, "title"))}</h3><p>{esc(ctx.loc(h, "text"))}</p></li>'
+        def hl_img(h):
+            m = (h.get('media') or [None])[0]
+            if not m:
+                return ''
+            src, cap = esc(ctx.media(m['src'])), esc(ctx.loc(m, 'caption'))
+            return f'<a class="rel-hl-img" href="{src}" data-cap="{cap}"><img src="{src}" alt="{cap}" loading="lazy"></a>'
+        hl = ''.join(f'<li{" class=has-img" if h.get("media") else ""}>{hl_img(h)}<div class="rel-hl-body"><h3>{esc(ctx.loc(h, "title"))}</h3>'
+                     f'<p>{esc(ctx.loc(h, "text"))}</p></div></li>'
                      for h in r.get('highlights') or [])
         ver = ctx.loc(r, 'verified')
         notes = f'{repo}/releases/tag/{r["tag"]}'
@@ -640,6 +648,44 @@ def releases_page(data, entries, systems, ctx, repo):
     other = (f'<section class="rel-other" hidden><h2>{ctx.T["relOtherTitle"]}</h2><p>{ctx.T["relOtherLead"]}</p>'
              f'<div class="rel-other-list"></div></section>')
     return head + nxt + f'<div class="rel-list">{"".join(cards)}</div>' + other
+
+
+def gallery_page(entries, systems, ctx):
+    """Every engine frame from the development log, newest first, filterable by system."""
+    names = {s['id']: ctx.loc(s, 'name') for s in systems}
+    shots = []
+    for e in entries:   # already newest first
+        for m in e['media']:
+            if re.search(r'\.(mp4|webm)$', m['src'], re.I):
+                continue
+            shots.append((e, m))
+    used = [s for s in systems if any(e['system'] == s['id'] for e, _ in shots)]
+    chips = [f'<button class="filter" type="button" data-sys="" aria-pressed="true">{ctx.T["rmAll"]}</button>']
+    chips += [f'<button class="filter" type="button" data-sys="{esc(s["id"])}" aria-pressed="false">{esc(names[s["id"]])}</button>'
+              for s in used]
+    items = []
+    for e, m in shots:
+        cap = esc(m.get('caption') or e['title'])
+        src = esc(m['src'])
+        items.append(f'<figure class="gal-item" data-sys="{esc(e["system"])}">'
+                     f'<a class="gal-img" href="{src}" data-cap="{cap}"><img src="{src}" alt="{cap}" loading="lazy"></a>'
+                     f'<figcaption><span class="gal-cap">{cap}</span>'
+                     f'<a class="gal-meta mono" href="devblog-{esc(e["system"])}.html#{esc(e["id"])}">'
+                     f'{esc(names.get(e["system"], e["system"]))} · {ctx.fmt_date(e["date"])}</a></figcaption></figure>')
+    return (f'<section class="dl-hero"><div><p class="eyebrow">{ctx.T["navGallery"]}</p><h1>{ctx.T["galTitle"]}</h1>'
+            f'<p>{ctx.T["galLead"]}</p></div>'
+            f'<div class="dl-stats"><div><strong>{len(shots)}</strong><span>{ctx.T["galShots"]}</span></div>'
+            f'<div><strong>{len(used)}</strong><span>{ctx.T["rmSystems"]}</span></div></div></section>'
+            f'<div class="dl-filters gal-filters" role="group" aria-label="{ctx.T["rmFilter"]}">{"".join(chips)}</div>'
+            f'<div class="gal-grid">{"".join(items)}</div>{LIGHTBOX}')
+
+
+GALLERY_JS = """<script>
+(function(){var b=document.querySelectorAll('.gal-filters .filter');function set(id){b.forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.sys===id));});
+document.querySelectorAll('.gal-item').forEach(function(p){p.hidden=!!id&&p.dataset.sys!==id;});history.replaceState(null,'',id?'#system='+id:location.pathname);}
+b.forEach(function(x){x.addEventListener('click',function(){set(x.dataset.sys);});});
+var m=location.hash.match(/^#system=(.+)$/);if(m&&document.querySelector('.gal-filters [data-sys="'+m[1]+'"]'))set(m[1]);})();
+</script>"""
 
 
 RELEASES_JS = """<script>
