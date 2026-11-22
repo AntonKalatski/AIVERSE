@@ -43,6 +43,17 @@ a genre copy of the tornado. Light props: add `NatureCarriable` next to `Transfo
 roar, vegetation and water wind come from `PhysisNatureRuntime` automatically.
 Tests: `ctest -R '^physis_tornado'`.
 
+Fire whirls, water, ground (same day): every map tornado has `TornadoNature`
+(`engine/physis/PhysisTornadoNature.h`). Tune it in the tornado's `"fire"` (intake, decay, halfHeat,
+quench, ignite, embersPerSecond, heatDamagePerSecond; `"whirl": false` = old blow-out only),
+`"surface"` (`auto` / `land` / `water`, waterDecay, spoutStrength, spoutLandDecay) and `"erosion"`
+(rate, maxDepthMeters, deposit; `false` = off) objects — docs/physis.md "Fire whirls, water and
+ground"; sample `templates/skirmish/maps/firestorm_valley.json`. Fires for a scene: `physis.ignitions`
+(+ `enableDisasters`, optional `disasterConfig`, `noFuelOnWater`). Water under a vortex comes only from
+`GameModule::environmentWaterDepth` (or PHYSIS local flood) — a module with its own water overrides
+that hook; never special-case water in PHYSIS. Ground change: `groundScourAt` / `GroundScourField`
+(not applied to terrain meshes yet). Tests: `ctest -R '^physis_(firestorm|tornado)'`.
+
 ## Ownership
 
 - **PHYSIS:** atmospheric/weather climate, wind/gust/shelter, storms (hurricanes/tornadoes), snow/wetness/ice, fire/quakes, configurable gravity and environmental force **policy**.
@@ -63,7 +74,8 @@ Tests: `ctest -R '^physis_tornado'`.
 | Uniform/point gravity fields | `PhysisGravity.h` | `GravitySettings`, `GravityField`, `gravityAt` |
 | Hurricane/tornado vortex fields | `PhysisStorm.h` | `StormEvent`, `StormKind`, `windWithStormsAt`, `stormsAt` |
 | Moving tornadoes (path, life, fire, debris, carried objects, host damage) | `PhysisTornado.h`, `PhysisTornadoAssets.h` | `TornadoTrack`, `spawnTornado`, `advanceTornadoes`, `NatureCarriable`, `TornadoDebrisField`, `parseTornadoes`; map `physis.tornadoes` |
-| Tornado funnel/debris FX + roar (host) | `engine/world/PhysisTornadoCues.h` | `TornadoFxPlanner`, `TornadoAudioPlanner`, `addPhysisTornadoSounds` |
+| Tornado fire whirl / water / ground scour | `PhysisTornadoNature.h` | `TornadoNature`, `defaultTornadoNature`, `TornadoEmberField`, `GroundScourField`, `groundScourAt`, `GameModule::environmentWaterDepth`; map tornado `fire`/`surface`/`erosion`, `physis.ignitions` |
+| Tornado funnel/debris/fire/spray/ember/scar FX + roar + flame roar (host) | `engine/world/PhysisTornadoCues.h` | `TornadoFxPlanner`, `TornadoAudioPlanner`, `addPhysisTornadoSounds` |
 | Shared drag/gravity force policy | `PhysisForces.h` | `ForceReceiver`, `ForceOutput`, `evaluateForces`, `advanceForces` |
 | Combined read-only 3D climate + hazard + force fields | `PhysisPresentation.h` | `NatureFieldSample`, `sampleNatureField` |
 | Read-only raster for editor diagnostics | `PhysisDiagnostics.h` | `DiagnosticRequest`, `DiagnosticRaster`, `sampleDiagnosticRaster` |

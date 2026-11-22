@@ -4458,6 +4458,11 @@ if(AIVERSE_BUILD_TESTS)
         target_link_libraries(aiverse_physis_tornado_test PRIVATE aiverse_engine)
         add_test(NAME physis_tornado COMMAND aiverse_physis_tornado_test)
         set_tests_properties(physis_tornado PROPERTIES LABELS "PHYSIS;PERSISTENCE")
+        # Fire whirl, water / waterspouts, ground scour (PhysisTornadoNature.h).
+        add_executable(aiverse_physis_firestorm_test tests/physis_firestorm_test.cpp)
+        target_link_libraries(aiverse_physis_firestorm_test PRIVATE aiverse_engine)
+        add_test(NAME physis_firestorm COMMAND aiverse_physis_firestorm_test)
+        set_tests_properties(physis_firestorm PROPERTIES LABELS "PHYSIS;PERSISTENCE")
     endif()
     if(TARGET aiverse_fx AND TARGET aiverse_audio AND TARGET aiverse_models)
         # PHYSIS -> SpectraFX / audio planners and TerraWeave grass overlay
