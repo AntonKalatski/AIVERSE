@@ -148,6 +148,12 @@ aiverse::physis::forEachPresentationCell(sim.world(), [](const auto& cell) {
 `templates/skirmish/maps/firestorm_valley.json` («Огненная долина»). Тесты: `physis_firestorm`,
 `physis_tornado_cues`.
 
+Текстуры огня: встроенные `physis_flame`, `physis_smoke` и `physis_tornado_fire` используют
+флипбуки с лицензией CC0 из бесплатных VFX-последовательностей Unity (`engine/assets/fx/physis/`,
+источник, лицензия и обработка — в `LICENSE-fx.txt`). Языки пламени на земле — небольшие
+вертикальные аддитивные квады, стоящие основанием на земле; в вихре языки вытянуты вдоль спирали;
+дым — альфа-блендинг. Проект может заменить любой эффект своим `fx/<имя>.json`.
+
 Ограничения: размытие — данные PHYSIS и след на земле; сетка рельефа, высоты и навигация не
 опускаются (адаптера к TerraWeave Earthworks пока нет). Кольца на воде — частицы SpectraFX, не волны
 поверхности NEREID. Огонь горит по клеткам PHYSIS (крупная сетка).
