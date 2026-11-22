@@ -158,8 +158,10 @@ public:
         wc.hInstance = instance;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = CreateSolidBrush(RGB(14, 17, 23));
-        wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
-        wc.hIconSm = wc.hIcon;
+        // The resource holds 16–256 with alpha. LoadIcon keeps one 32px frame and drops that alpha.
+        wc.hIcon = reinterpret_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR));
+        wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
         wc.lpszClassName = kMainClass;
         RegisterClassExW(&wc);
         WNDCLASSEXW sc{sizeof(sc)};
