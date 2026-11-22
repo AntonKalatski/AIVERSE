@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T17:26:42+00:00",
+ "generated": "2026-11-22T17:31:04+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -121,6 +121,38 @@
   }
  ],
  "entries": [
+  {
+   "id": "2026-11-22-vulkan-spirv-optimizer",
+   "date": "2026-11-22",
+   "system": "render",
+   "title": "Vulkan catches up with GLES on a phone: shader optimizer and an on-disk cache",
+   "summary": "On a Galaxy A05s Vulkan was a third slower than GLES because shaders reached the driver unoptimized. The engine now optimizes SPIR-V itself and keeps the result on disk: the 20-sphere STRATA test runs at 60 fps on Vulkan too.",
+   "body": [
+    "Same scene: 20 spheres of a million triangles, STRATA budget 60 k triangles, rendering at 1200×540. To find the gap, the Vulkan backend got per-pass GPU timing (AIVERSE_VK_GPU_TIMING=1).",
+    "Pass synchronization, depth write-back and the frame rotation added up to less than a millisecond. Almost all the time was the main pass: 19.9 ms on Vulkan. At a quarter of the pixels Vulkan stayed slower than GLES by the same ratio, so the shader code itself was the cost.",
+    "The engine compiles GLSL to SPIR-V at run time and the optimizer was off. The Adreno driver hardly optimizes such code itself. The SPIRV-Tools optimizer is now part of the engine: every program goes through the performance passes. Main pass: 14.7 ms instead of 19.9.",
+    "Optimizing adds time to the first load, so the finished SPIR-V is stored in the app folder and read from disk on later launches.",
+    "Also fixed: interface text missing on Vulkan. Font glyphs rasterized during the frame are now uploaded before the frame."
+   ],
+   "status": "done",
+   "verified": "Samsung Galaxy A05s (Adreno 610, 1200×540), 60 k triangle budget: Vulkan 59.9 fps (61.7–62.8 uncapped, 15.9 ms GPU per frame) versus 47.4 fps without the optimizer; GLES 59.9 fps (66.7 uncapped). Load to first frame on Vulkan: 15.7 s on first launch, 9.4 s with the cache (10.6 s without the optimizer).",
+   "limits": "The first Vulkan launch takes 5 seconds longer: shaders are optimized once. Frame rotation costs 1.2 ms of GPU on this phone. Checked on one phone; Windows and Linux Vulkan were not run after this change.",
+   "branch": "main",
+   "commit": "",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-22-vulkan-spirv-optimizer/vulkan-60fps.jpg",
+     "caption": "Galaxy A05s, Vulkan: 20 spheres of a million triangles each at 60 fps, STRATA panel text visible again"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/vulkan.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/vulkan.md"
+    }
+   ],
+   "author": "render"
+  },
   {
    "id": "2026-11-22-vivid-creator-metahuman",
    "date": "2026-11-22",
