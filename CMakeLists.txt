@@ -226,8 +226,9 @@ if(AIVERSE_ENABLE_PHYSICS)
 endif()
 add_subdirectory(engine/meta)
 
-# Generic data-driven RTS gameplay (units, orders, economy, combat, garrisons, AI)
+# The one gameplay host: grid systems (units, orders, economy, combat, garrisons, AI) and, on world-space maps, actor systems
 add_library(aiverse_game STATIC
+    engine/game/GameActorHost.cpp   # world-space maps: actor systems (engine/actor)
     engine/game/GameData.cpp
     engine/game/MapGrid.cpp
     engine/game/MapHpa.cpp
@@ -264,6 +265,7 @@ add_library(aiverse_game STATIC
     engine/game/ComputerPlayerFidelity.cpp
     engine/game/ComputerPlayerTerrain.cpp
     engine/game/ComputerPlayerTactics.cpp)
+target_link_libraries(aiverse_game PUBLIC aiverse_fps)   # actor systems: defined in engine/actor/CMakeLists.txt
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
 # the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (engine/actor/ActorVehicles.cpp)
@@ -302,7 +304,7 @@ include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
 file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/Mech*.cpp)
 target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} engine/game/Save.cpp engine/game/Campaign.cpp   # + save states, campaigns
-    modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on RtsModule
+    modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on GameCore
 # Optional simulation systems of packaged clients (packaging.engineModules, tools/aiversebuild).
 # A system that runs only when its rules block is present can be left out: OFF compiles the adapter
 # `stub` (modules/rts/disabled/) instead of its sources; the adapter keeps the system inactive and
@@ -1199,14 +1201,14 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_geometry_bounds COMMAND aiverse_view_geometry_bounds_tests)
 endif()
 
-# RTS presentation adapter uses Rules but never constructs the legacy RtsView.
+# RTS presentation adapter uses Rules but never constructs the legacy GameView.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_rts_selection_presentation_tests tests/view/rts_selection_presentation.cpp)
     target_link_libraries(aiverse_rts_selection_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
     add_test(NAME view_rts_selection_presentation COMMAND aiverse_rts_selection_presentation_tests)
 endif()
 
-# RTS preview authoring is independent of the legacy RtsView renderer.
+# RTS preview authoring is independent of the legacy GameView renderer.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_rts_preview_presentation_tests tests/view/rts_preview_presentation.cpp)
     target_link_libraries(aiverse_rts_preview_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
@@ -1459,7 +1461,7 @@ add_library(aiverse_game_view STATIC engine/view/game/GameView.cpp engine/view/g
     engine/view/game/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
     engine/view/game/GamePlanetRender.cpp engine/view/game/GamePlanetView.cpp engine/view/game/GamePlanetGroundFx.cpp engine/view/game/GamePlanetFlora.cpp)
 # visual terrain detail surface (agent-terrain): shared by the view and the editor core (sculpt, validate)
-# + the planet surface maths (RtsPlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
+# + the planet surface maths (GamePlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
 add_library(aiverse_terrain_detail STATIC engine/view/game/GameTerrainDetail.cpp engine/view/game/GamePlanet.cpp engine/view/game/GamePlanetDetail.cpp)
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui aiverse_roads_view)
@@ -1950,6 +1952,10 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_camera_rig_tests tests/render/camera_rig.cpp)
     target_include_directories(aiverse_camera_rig_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rig COMMAND aiverse_camera_rig_tests)
+    add_executable(aiverse_camera_behavior_tests tests/render/camera_behavior.cpp)
+    target_include_directories(aiverse_camera_behavior_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_camera_behavior_tests PRIVATE aiverse_engine)
+    add_test(NAME camera_behavior COMMAND aiverse_camera_behavior_tests)
     add_executable(aiverse_camera_rail_path_tests tests/render/camera_rail_path.cpp)
     target_include_directories(aiverse_camera_rail_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME camera_rail_path COMMAND aiverse_camera_rail_path_tests)
@@ -2300,7 +2306,7 @@ aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
 target_sources(aiverse_game PRIVATE engine/game/MapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
-target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_nereid_buoyancy)   # planet seas (RtsPlanets: world body "nereid")
+target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_nereid_buoyancy)   # planet seas (GamePlanets: world body "nereid")
 # map environment (weather, wind, zones, trample fields, auto skills on splines, fog options)
 target_sources(aiverse_game PRIVATE engine/game/Environment.cpp engine/game/EnvironmentData.cpp)
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)
@@ -2719,11 +2725,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
-    # Legacy RTS cell water -> NEREID conversion (CPU-only).
-    add_executable(aiverse_rts_water_nereid_test tests/rts_water_nereid_test.cpp)
-    target_link_libraries(aiverse_rts_water_nereid_test PRIVATE
+    # Legacy cell water -> NEREID conversion (CPU-only).
+    add_executable(aiverse_game_water_nereid_test tests/game_water_nereid_test.cpp)
+    target_link_libraries(aiverse_game_water_nereid_test PRIVATE
         aiverse_engine aiverse_world aiverse_models AIVERSE::lib_nereid_water)
-    add_test(NAME rts_water_nereid_test COMMAND aiverse_rts_water_nereid_test)
+    add_test(NAME game_water_nereid_test COMMAND aiverse_game_water_nereid_test)
     # NEREID large-world ocean LOD: legacy coverage, stitched rings (CPU-only).
     add_executable(aiverse_ecs_nereid_ocean_lod_test
         tests/ecs_nereid_ocean_lod_test.cpp)
@@ -2752,7 +2758,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_review_fixes_test PRIVATE
         aiverse_world aiverse_models aiverse_zstd_dec AIVERSE::lib_nereid_water)
     add_test(NAME terraweave_review_fixes COMMAND aiverse_terraweave_review_fixes_test)
-    # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
+    # Real NativeModule instantiated by GameCore, exercising GameSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
     target_compile_definitions(aiverse_ecs_native_rts_integration_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

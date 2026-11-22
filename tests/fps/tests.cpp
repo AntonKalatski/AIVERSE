@@ -1,4 +1,5 @@
 #include "engine/net/authority/Session.h"
+#include "engine/game/GameCore.h"
 #include "engine/net/Rollback.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
@@ -9,7 +10,7 @@
 #include "engine/net/LatestChannel.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/net/Udp.h"
-#include "engine/render/CameraModes.h"
+#include "engine/render/CameraBehavior.h"
 #include <stdexcept>
 #include <optional>
 #include <fstream>
@@ -18,10 +19,10 @@ using namespace aiverse;
 #define CHECK(x) do {if(!(x))throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": " #x);} while(0)
 namespace {
 std::unique_ptr<Simulation> simulation(Json rules,Json map) {
-    auto sim=std::make_unique<Simulation>(SimConfig{7,actor::readConfig(rules).tickRate,0},std::make_unique<actor::Module>());sim->setup(rules,map);return sim;
+    auto sim=std::make_unique<Simulation>(SimConfig{7,actor::readConfig(rules).tickRate,0},std::make_unique<game::GameCore>());sim->setup(rules,map);return sim;
 }
 actor::State& state(Simulation& sim){return *sim.world().resource<actor::State>();}
-actor::Module& fpsModule(Simulation& sim){return static_cast<actor::Module&>(sim.module());}
+actor::ActorHost& fpsModule(Simulation& sim){return actor::host(sim);}
 // Writable view of the character in `slot` (1..; the former State::actors[slot-1]).
 actor::CharacterRef character(Simulation& sim,uint8_t slot){return fpsModule(sim).character(sim,slot);}
 // Copies of the dynamic objects in id order (the former State vectors).
@@ -58,7 +59,7 @@ void audioBank(const std::string& path) {
 void cameraControls() {
     using namespace render;
     for(float yaw:{0.f,0.25f,0.5f,0.75f}) {
-        render::Look look{yaw,0};auto before=look.camera({});auto forward=normalize(before.target-before.eye());auto right=normalize(cross(forward,{0,1,0}));
+        render::CameraLook look{yaw,0};auto before=look.camera({});auto forward=normalize(before.target-before.eye());auto right=normalize(cross(forward,{0,1,0}));
         look.motion(10,0);auto camera=look.camera({});auto changed=normalize(camera.target-camera.eye());CHECK(dot(changed,right)>0);
         look={yaw,0};look.motion(0,-10);camera=look.camera({});CHECK((camera.target-camera.eye()).y>0);
         actor::CharacterSnapshot actor;actor::Input input;input.yaw=Fixed::fromRaw(int64_t(yaw*65536));input.right=1000;

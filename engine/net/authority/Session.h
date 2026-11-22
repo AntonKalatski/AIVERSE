@@ -32,7 +32,7 @@ public:
     bool step();
     void broadcast();
     Simulation& simulation(){return simulation_;}
-    actor::Module& module(){return static_cast<actor::Module&>(simulation_.module());}
+    actor::ActorHost& module(){return actor::host(simulation_);}
     bool occupied(uint8_t slot) const;
     uint64_t rejected()const{return rejected_;}
     const SnapshotStats& snapshotStats()const{return stats_;}

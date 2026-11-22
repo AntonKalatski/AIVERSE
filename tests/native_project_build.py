@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix="rts-native-projects-") as tmp:
         if r.returncode != 0:
             sys.exit(r.stdout)
         log["out"] = r.stdout
-        return (build / "gen/RtsNativeRegistry.cpp").read_text()
+        return (build / "gen/NativeRegistry.cpp").read_text()
 
     a = configure("a")
     assert "create_a" in a and "create_b" not in a

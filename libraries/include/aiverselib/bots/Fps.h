@@ -56,15 +56,15 @@ inline Fixed wrapTurn(Fixed angle){angle.raw%=Fixed::kOne;if(angle<Fixed{})angle
 inline Fixed turnDelta(Fixed to,Fixed from){auto d=wrapTurn(to-from);return d>Fixed::fromRatio(1,2)?d-1_fx:d;}
 template<class C> Vec3 eye(const C& a,const actor::MotorConfig& c){return a.pos+Vec3{{},actor::stanceHeight(a,c)-Fixed::fromRatio(1,10),{}};}
 template<class C> Vec3 center(const C& a,const actor::MotorConfig& c){return a.pos+Vec3{{},actor::stanceHeight(a,c)/2,{}};}
-template<class A,class B> bool visible(const A& self,const B& other,const actor::Module& module,const ActorConfig& c){
+template<class A,class B> bool visible(const A& self,const B& other,const actor::ActorHost& module,const ActorConfig& c){
     if(other.slot==self.slot||other.team==self.team||other.health<=0)return false;
     auto delta=center(other,module.config().motor)-eye(self,module.config().motor);auto distance=delta.length();
     if(distance>c.sightRange)return false;
     if(distance>Fixed{}&&actor::direction(self.yaw,self.pitch).dot(delta)/distance<fxCosTurns(c.halfFov))return false;
     return !module.collision().cast(eye(self,module.config().motor),delta).hit;
 }
-// `characters`: every character in slot order (views from actor::Module::character or snapshots).
-template<class A,class Characters> bool friendlyInLine(const A& self,const Characters& characters,const actor::Module& module,Fixed yaw,Fixed pitch,Fixed distance){
+// `characters`: every character in slot order (views from actor::ActorHost::character or snapshots).
+template<class A,class Characters> bool friendlyInLine(const A& self,const Characters& characters,const actor::ActorHost& module,Fixed yaw,Fixed pitch,Fixed distance){
     auto start=eye(self,module.config().motor),delta=actor::direction(yaw,pitch)*distance;
     for(const auto& a:characters)if(a.slot!=self.slot&&a.team==self.team&&a.health>0){
         Fixed fraction;Vec3 normal;if(world::intersect(start,delta,actor::actorBounds(a,module.config().motor),fraction,normal))return true;
@@ -73,7 +73,7 @@ template<class A,class Characters> bool friendlyInLine(const A& self,const Chara
 }
 // Run once before the authoritative simulation step; return one ordinary input Command.
 // State is explicit: save it alongside Simulation, or through a game-owned NativeState record.
-inline std::optional<Command> fpsCommand(Simulation& sim,const actor::Module& module,uint8_t slot,const ActorConfig& c,const Waypoints& nodes,ActorState& state,std::optional<Vec3> objective={},const NavMesh* navigation=nullptr) {
+inline std::optional<Command> fpsCommand(Simulation& sim,const actor::ActorHost& module,uint8_t slot,const ActorConfig& c,const Waypoints& nodes,ActorState& state,std::optional<Vec3> objective={},const NavMesh* navigation=nullptr) {
     const Simulation& view=sim;if(!slot||slot>module.characterCount(view)||!valid(c)||!valid(state)||!valid(nodes)||sim.result()!=0)return {};
     if(objective&&(objective->x< -100000_fx||objective->x>100000_fx||objective->y< -100000_fx||objective->y>100000_fx||objective->z< -100000_fx||objective->z>100000_fx))return {};
     // Read-only views of every character in slot order (the same order and fields as the former State::actors).

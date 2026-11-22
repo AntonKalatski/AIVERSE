@@ -9,7 +9,7 @@
 namespace aiverse::editor {
 inline DocumentEntityRef resolveSceneEntity(const Workspace& ws,const Json& params) {
     if(!params["entityId"].isString())throw std::runtime_error("entityId is required");
-    for(const auto& node:enumerateDocumentSceneNodes(ws.map,ws.project.worldSpaceMaps()))
+    for(const auto& node:enumerateDocumentSceneNodes(ws.map))
         if(documentEntityId(ws.map,node.ref)==params.getStr("entityId"))return node.ref;
     throw std::runtime_error("Unknown scene entity ID");
 }
@@ -27,7 +27,7 @@ inline Json sceneEntityView(const MapDoc& map,const EditorSceneNode& node) {
     result.set("components",components);return result;
 }
 inline void commitSceneDocument(Workspace& ws,MapDoc& draft) {
-    if(ws.project.worldSpaceMaps()) {
+    if(ws.map.data.worldSpace) {
         Json args=Json::object();args.set("map",draft.toJson());
         const auto result=ws.call("fps_set",args,"scene-entity");
         if(result.has("error"))throw std::runtime_error(result.getStr("error"));
@@ -65,12 +65,12 @@ inline void registerSceneEntityOps(Workspace& ws) {
     };
     add("scene_entity_list","List document entities with identity and real component data. Light IDs persist; other legacy IDs are provisional.","{}",[&ws](const Json&){
         Json result=Json::object(),entities=Json::array();
-        for(const auto& node:enumerateDocumentSceneNodes(ws.map,ws.project.worldSpaceMaps()))entities.push(sceneEntityView(ws.map,node));
+        for(const auto& node:enumerateDocumentSceneNodes(ws.map))entities.push(sceneEntityView(ws.map,node));
         result.set("entities",entities);return result;
     });
     add("scene_entity_get","Read one scene entity and its components by entityId.",R"({"properties":{"entityId":{"type":"string"}},"required":["entityId"]})",[&ws](const Json& p){
         const auto ref=resolveSceneEntity(ws,p);
-        for(const auto& node:enumerateDocumentSceneNodes(ws.map,ws.project.worldSpaceMaps()))
+        for(const auto& node:enumerateDocumentSceneNodes(ws.map))
             if(node.ref.source==ref.source && node.ref.index==ref.index)return sceneEntityView(ws.map,node);
         throw std::runtime_error("Scene entity disappeared");
     });
@@ -88,13 +88,13 @@ inline void registerSceneEntityOps(Workspace& ws) {
     add("scene_light_create","Create a Light entity with Transform and Light components in grid or world-space maps. Position is [x,height,z]; on grid maps height is relative to terrain.",R"({"properties":{"name":{"type":"string"},"position":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"number"}},"light":{"type":"object"}}})",[&ws](const Json& p){
         if(p.has("name") && (!p["name"].isString() || p.getStr("name").size()>128))throw std::runtime_error("Invalid entity name");
         MapDoc draft;draft.data=ws.map.data;
-        auto& document=ws.project.worldSpaceMaps()?draft.data.fps:draft.data.extra;
+        auto& document=draft.data.extra;
         if(!document["lights"].isArray())document.set("lights",Json::array());
         auto& lights=document.member("lights");const size_t index=lights.size();
         Json light=Json::parse(R"({"x":0,"z":0,"height":1,"type":"point","radius":4,"intensity":1.5,"color":[1,0.8,0.6]})");
         if(p.has("name"))light.set("name",p["name"]);
         lights.push(light);ensureDocumentLightIds(document);
-        const auto ref=DocumentEntityRef::light(index,ws.project.worldSpaceMaps());
+        const auto ref=DocumentEntityRef::light(index,ws.map.data.worldSpace);
         if(p.has("position")){Json patch=Json::object();patch.set("position",p["position"]);componentPatch(draft,ref,DocumentComponentKind::Transform,patch);}
         if(p.has("light"))componentPatch(draft,ref,DocumentComponentKind::Light,p["light"]);
         const auto id=documentEntityId(draft,ref);commitSceneDocument(ws,draft);
@@ -103,16 +103,16 @@ inline void registerSceneEntityOps(Workspace& ws) {
     add("scene_light_delete","Delete a Light entity by persistent ID; rejects other entity kinds. Undoable until explicit map_save.",R"({"properties":{"entityId":{"type":"string"}},"required":["entityId"]})",[&ws](const Json& p){
         const auto ref=resolveSceneEntity(ws,p);if(!ref.isLight())throw std::runtime_error("Expected a Light entity");
         MapDoc draft;draft.data=ws.map.data;
-        auto& document=ws.project.worldSpaceMaps()?draft.data.fps:draft.data.extra;
+        auto& document=draft.data.extra;
         document.member("lights").eraseAt(ref.index);commitSceneDocument(ws,draft);
         Json result=Json::object();result.set("deleted",Json::fromBool(true));return result;
     });
     add("scene_render_lighting_get","Read validated map GI and direct lighting settings (renderLighting v1).","{}",[&ws](const Json&){
-        return render::renderLightingSettings((ws.project.worldSpaceMaps()?ws.map.data.fps:ws.map.data.extra)["renderLighting"]);
+        return render::renderLightingSettings(ws.map.data.extra["renderLighting"]);
     });
     add("scene_render_lighting_set","Patch map renderLighting v1 settings; native validation, Undo history, explicit map_save. Does not imply hardware support.",R"({"properties":{"patch":{"type":"object"}},"required":["patch"]})",[&ws](const Json& p){
         if(!p["patch"].isObject() || p["patch"].size()==0)throw std::runtime_error("Nonempty settings patch required");
-        MapDoc draft;draft.data=ws.map.data;auto& document=ws.project.worldSpaceMaps()?draft.data.fps:draft.data.extra;
+        MapDoc draft;draft.data=ws.map.data;auto& document=draft.data.extra;
         auto settings=render::renderLightingSettings(document["renderLighting"]);
         for(const auto& [key,value]:p["patch"].members())settings.set(key,value);
         settings=render::renderLightingSettings(settings);

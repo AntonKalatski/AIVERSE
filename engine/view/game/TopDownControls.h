@@ -14,7 +14,7 @@
 #include <vector>
 #include "ViewCanvas.h"
 #include "../../game/TopDown.h"
-#include "../../render/Math3D.h"
+#include "../../render/CameraBehavior.h"
 
 namespace aiverse::game {
 
@@ -44,36 +44,8 @@ struct TopDownButtonConfig {
     float radius = 34;
 };
 
-struct TopDownCameraConfig {
-    float pitch = 58, yaw = 0;       // degrees (yaw 0: north up)
-    float distance = 20, minDistance = 10, maxDistance = 40;
-    float smoothing = 6;             // 1/s: exponential follow response (0: locked to the hero)
-    float lookAhead = 2.5f;          // world units ahead along the stick
-    float aimLookAhead = 1.5f;       // world units ahead along the aim
-    float lookAheadSmoothing = 3;    // 1/s
-    bool lockOffsetIfNoInput = true; // keep the look-ahead offset while the stick is released (Drone Fall)
-    // speed camera (GTA): the hero's speed (world units / s, from its on-screen motion: on foot or at the wheel)
-    // pulls the camera back from `distance` (at speedFrom and slower) to speedDistance (at speedTo and faster) ...
-    float speedFrom = 0, speedTo = 0;   // "speedZoom": {"from", "to", "distance", "smoothing"}; to <= from: off
-    float speedDistance = 0;
-    float speedSmoothing = 1.5f;     // 1/s
-    // ... and shifts the focus ahead of the motion: velocity * velocityLookAhead seconds, at most maxLookAhead
-    float velocityLookAhead = 0;     // seconds (0: off)
-    float maxLookAhead = 0;          // world units for the whole look-ahead offset (0: no limit)
-    bool bounds = true;              // keep the focus inside the map
-    float margin = 0;                // world units kept from the map edge by the focus
-    // lens: vertical field of view in degrees (0: keep the client camera's, 43 by default). Narrow lenses far away
-    // (20 at 300+ units) frame like a telephoto; near / far clip planes follow the distance either way.
-    float fov = 0;
-    enum class Projection { Keep, Perspective, Ortho } projection = Projection::Keep;   // "projection": "ortho"
-    bool fogFollow = true;           // with a fov: distance fog as a 43-degree camera framing the same view sees it
-};
-// Reads the keys of one "camera" block onto c (absent keys keep their value): game.json topDown.camera, then the
-// map's "camera" block on top. finishTopDownCamera clamps the result.
-void readTopDownCamera(const Json& cj, TopDownCameraConfig& c);
-void finishTopDownCamera(TopDownCameraConfig& c);
-// Clip planes for a camera at this distance: near grows with it (depth precision far away), far stays past the view.
-void topDownClipPlanes(render::Camera& cam);
+// The follow camera is the shared LENS follow body (render::CameraFollowSettings / CameraFollow, CameraBehavior.h):
+// game.json topDown.camera, then the map's "camera" block on top; both may name a preset.
 
 // game.json topDown "aimAssist": the stick's aim bends toward the target nearest to it (client side: the sim gets an
 // ordinary aim angle), per input source. Absent: off.
@@ -94,7 +66,7 @@ struct TopDownControlConfig {
     enum class MouseAim { Hold, Always, Off } mouseAim = MouseAim::Hold;   // aim at the cursor while LMB is held
     TopDownStickConfig move, aim;
     std::vector<TopDownButtonConfig> buttons;
-    TopDownCameraConfig camera;
+    render::CameraFollowSettings camera;
     TopDownAimAssistConfig assist;
     float padDeadzone = 0.15f;
 };
@@ -206,7 +178,7 @@ public:
     // false: the stick does not point where the hero goes (pedals of a vehicle), so the stick look-ahead is off and
     // only the velocity look-ahead moves the focus. The host sets it every frame before updateCamera.
     void setStickLookAhead(bool on) { stickLook_ = on; }
-    float heroSpeed() const { return speed_; }   // smoothed, world units / s (speed camera)
+    float heroSpeed() const { return follow_.speed(); }   // smoothed, world units / s (speed camera)
     // Multiplier for the distance fog density (Renderer3D::setFogScale): 1 without a configured fov.
     float fogScale() const;
 
@@ -229,12 +201,8 @@ private:
     bool haveSent_ = false;
     float moveDirX_ = 0, moveDirZ_ = 0, aimDirX_ = 0, aimDirZ_ = 0;   // last composed world directions (camera look-ahead)
     bool aiming_ = false;
-    float offX_ = 0, offZ_ = 0;      // current look-ahead offset
-    bool camInit_ = false;
+    render::CameraFollow follow_;
     bool stickLook_ = true;
-    float lastX_ = 0, lastZ_ = 0, velX_ = 0, velZ_ = 0, speed_ = 0;   // speed camera: hero motion between frames
-    float vOffX_ = 0, vOffZ_ = 0, zoomAdd_ = 0, baseZoom_ = 0, appliedZoom_ = 0;
-    bool haveLast_ = false;
     // aim assist
     float clock_ = 0, aimDownAt_ = 0, aimMaxDefl_ = 0, tapUntil_ = 0;
     bool tapPending_ = false;

@@ -13,7 +13,7 @@ void royale() {
     try{actor::readConfig(bad);CHECK(false);}catch(const JsonError& e){CHECK(std::string(e.what()).find("fps.royale: requires")!=std::string::npos);}
     auto sim=simulation(rules,map),twin=simulation(rules,map);
     auto& s=state(*sim);CHECK(s.royale.enabled&&s.royale.divers.size()==4&&character(*sim,1).pos.y==100_fx);
-    auto& module=static_cast<actor::Module&>(sim->module());
+    auto& module=actor::host(*sim);
     auto view=module.royaleView(*sim,1);CHECK(view.enabled&&view.divePhase==0&&view.alive==4&&view.teamsIn==2&&view.target.radius==300_fx);
     // snapshot round trip carries the royale view
     net::authority::Snapshot snap;snap.tick=1;snap.localSlot=1;snap.characters={fpsModule(*sim).snapshot(*sim,1)};snap.royale=view;

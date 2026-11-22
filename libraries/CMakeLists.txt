@@ -22,7 +22,7 @@ add_library(AIVERSE::aiverse_bots ALIAS aiverse_aiverse_bots)
 target_link_libraries(aiverse_aiverse_bots INTERFACE AIVERSE::gameplay_native aiverse_game)
 add_library(aiverse_fps_bots INTERFACE)
 add_library(AIVERSE::fps_bots ALIAS aiverse_fps_bots)
-target_link_libraries(aiverse_fps_bots INTERFACE AIVERSE::gameplay_native aiverse_fps)
+target_link_libraries(aiverse_fps_bots INTERFACE AIVERSE::gameplay_native aiverse_game aiverse_fps)
 
 add_library(aiverse_navmesh_library INTERFACE)
 add_library(AIVERSE::navmesh ALIAS aiverse_navmesh_library)

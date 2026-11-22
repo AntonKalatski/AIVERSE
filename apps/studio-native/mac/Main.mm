@@ -956,7 +956,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             run.scene->setShotCamera(map.data.w*.5f,320.f,map.data.h*.5f,6.f,st.azimuth*0.0174533f+3.14159f,st.pitch);
         }
         ((CAMetalLayer*)run.view.layer).drawableSize=CGSizeMake(1600,900);
-        run.scene->frame(1600,900,map,session.workspace().project.worldSpaceMaps(),"","",Json{},0,
+        run.scene->frame(1600,900,map,session.workspace().map.data.worldSpace,"","",Json{},0,
             float(session.workspace().project.rules.levelHeight.toDouble()),session.workspace().project.dir,session.workspace().project.rulesJson);
     } catch(const std::exception& e){NSLog(@"[sky-shots] failed: %s",e.what());run.done=true;return;}
     }
@@ -992,7 +992,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         const int w=int(run.view.bounds.size.width*scale), h=int(run.view.bounds.size.height*scale);
         ((CAMetalLayer*)run.view.layer).drawableSize=CGSizeMake(w,h);
         run.scene->setWindPreview(session.windPreview());
-        run.scene->frame(w,h,session.workspace().map,session.workspace().project.worldSpaceMaps(),"",
+        run.scene->frame(w,h,session.workspace().map,session.workspace().map.data.worldSpace,"",
             "",Json{},0,float(session.workspace().project.rules.levelHeight.toDouble()),
             session.workspace().project.dir,session.workspace().project.rulesJson);
     } catch(const std::exception& e) {

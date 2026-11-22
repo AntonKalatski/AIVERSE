@@ -31,7 +31,7 @@ struct StudioDocumentProxy {
 inline std::vector<StudioDocumentProxy> studioDocumentProxies(
     const editor::MapDoc& map, bool fpsProject, float levelHeight=1.5f) {
     std::vector<StudioDocumentProxy> proxies;
-    const auto nodes=editor::enumerateDocumentSceneNodes(map,fpsProject);
+    const auto nodes=editor::enumerateDocumentSceneNodes(map);
     proxies.reserve(std::min(size_t(2000),nodes.size()));
     for(const auto& node:nodes) {
         if(proxies.size()>=2000)break;
@@ -65,7 +65,7 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
             break;
           }
           case editor::DocumentEntityRef::Source::ActorCollider: {
-            const Json* object=editor::fpsDocumentEntity(map.data.fps,node.ref);
+            const Json* object=editor::fpsDocumentEntity(map.data.extra,node.ref);
             if(!object)continue;
             if((*object)["yaw"].isNumber()) {
                 const Json& half=(*object)["half"];

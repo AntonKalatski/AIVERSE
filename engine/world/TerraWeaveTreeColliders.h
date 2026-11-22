@@ -9,7 +9,7 @@
 // collider is scaled the same way.
 //
 // Two shapes are produced from one TreeTrunkCollider:
-//   * world::SpatialWorld AABB (Fixed metres): FpsMotor / MotionModule /
+//   * world::SpatialWorld AABB (Fixed metres): ActorMotor / MotionModule /
 //     sweep, hitscan and projectile systems already query SpatialWorld;
 //   * physics::BodyDesc static capsule (see TerraWeaveTreeCollidersBox3D.h).
 // Footprints (RectCm) can be fed to navigation / placement blockers.

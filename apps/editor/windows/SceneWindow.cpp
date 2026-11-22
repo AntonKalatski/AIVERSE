@@ -275,7 +275,7 @@ public:
             }
         }
         const bool physisMarkerInput = natureIgnite || processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
-        if(ed.ws().project.worldSpaceMaps()) {
+        if(ed.ws().map.data.worldSpace) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
             if (vp_.hovered && io.MouseWheel != 0)
@@ -323,7 +323,7 @@ public:
                             const float3 pivot{float(position.x), float(position.y),
                                                float(position.z)};
                             const float extent = std::max(0.35f, ed.sceneCam.distance * 0.075f);
-                            const Json* source = fpsDocumentEntity(ed.doc().data.fps, selectedRef);
+                            const Json* source = fpsDocumentEntity(ed.doc().data.extra, selectedRef);
                             const bool oriented = selectedRef.source ==
                                 DocumentEntityRef::Source::ActorCollider && source &&
                                 (*source)["yaw"].isNumber();
@@ -375,7 +375,7 @@ public:
                     const bool validRef = documentEntityFromSelection(ed.selection, ref) &&
                         ref.source == DocumentEntityRef::Source::ActorCollider;
                     const Json* source = validRef
-                        ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+                        ? fpsDocumentEntity(ed.doc().data.extra, ref) : nullptr;
                     if (source && (*source)["yaw"].isNumber()) {
                         Json transform;
                         if (readDocumentComponent(ed.doc(), ref,
@@ -725,7 +725,7 @@ private:
                 ImGui::TextDisabled("Different GLBs and their material slots may require separate draws.");
                 ImGui::TreePop();
             }
-            if (!ed.ws().project.worldSpaceMaps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
+            if (!ed.ws().map.data.worldSpace && ImGui::TreeNode("Road surfaces: materials / chunks")) {
                 const auto& road = ed.view().roads().batchStats();
                 ImGui::Text("Road source chunks: %zu -> %zu uploaded (merge group %d)",
                             road.sourceChunks, road.uploadedChunks, road.mergeGroup);
@@ -1258,7 +1258,7 @@ private:
             const bool hasDocRef = documentEntityFromSelection(ed.selection, ref);
             const Json* fpsSource = hasDocRef && ref.source ==
                 DocumentEntityRef::Source::ActorCollider
-                ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+                ? fpsDocumentEntity(ed.doc().data.extra, ref) : nullptr;
             const bool fpsOriented = fpsSource && (*fpsSource)["yaw"].isNumber();
             const DocEntity* rtsSource = hasDocRef && ref.source ==
                 DocumentEntityRef::Source::MapEntity

@@ -1,4 +1,5 @@
 #include "engine/world/CollisionStream.h"
+#include "engine/game/GameCore.h"
 #include "engine/pack/Sha256.h"
 #include "engine/actor/ActorModule.h"
 #include "engine/net/authority/Session.h"
@@ -106,17 +107,17 @@ void simulationGate() {
     std::map<std::string,std::string> files={{"a.json",R"({"terrain":{"resolution":2,"heights":[0,0,0,0]}})"}};
     auto rules=Json::parse(R"({"fps":{"tickRate":60,"maxPlayers":2,"mode":"deathmatch"}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[4,2,4],[12,2,12]],"colliders":[]})");map.set("world",manifest(files));
-    auto create=[&]{auto sim=std::make_unique<Simulation>(SimConfig{3,60,0},std::make_unique<actor::Module>());sim->setup(rules,map);return sim;};
+    auto create=[&]{auto sim=std::make_unique<Simulation>(SimConfig{3,60,0},std::make_unique<game::GameCore>());sim->setup(rules,map);return sim;};
     auto a=create(),b=create();auto initial=a->checksum();a->step();CHECK(a->tick()==0&&a->checksum()==initial);
     std::atomic<bool> allow=false;
     auto read=[&](const std::string& f,std::string& s){if(!allow)return false;s=files.at(f);return true;};
-    static_cast<actor::Module&>(a->module()).setContentReader(read);static_cast<actor::Module&>(b->module()).setContentReader(read);
+    actor::host(*a).setContentReader(read);actor::host(*b).setContentReader(read);
     actor::Input input;input.sequence=1;input.forward=1000;input.yaw=Fixed::fromRatio(1,4);
     auto command=actor::command(1,input);command.tick=0;a->inject(command);b->inject(command);
     a->step();CHECK(a->tick()==0&&a->executedCommands().empty());allow=true;
     auto step=[](Simulation& sim){auto before=sim.tick();spin([&]{sim.step();return sim.tick()!=before;});};
     for(int i=0;i<60;++i){step(*a);step(*b);CHECK(a->checksum()==b->checksum());}
-    auto save=a->serialize();auto restored=create();static_cast<actor::Module&>(restored->module()).setContentReader(read);CHECK(restored->deserialize(save));
+    auto save=a->serialize();auto restored=create();actor::host(*restored).setContentReader(read);CHECK(restored->deserialize(save));
     for(int i=0;i<30;++i){step(*a);step(*restored);CHECK(a->checksum()==restored->checksum());}
 }
 }

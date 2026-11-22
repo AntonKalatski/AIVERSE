@@ -3,7 +3,7 @@
 // {"buildings":[{"pos":[x,y,z],"yaw":0,"seed":1,"building":{...BuildingDef JSON...},"loot":[1,2,101]}]}
 #include "ActorModule.h"
 namespace aiverse::actor {
-std::vector<Loot> Module::buildMapBuildings(const Json& map) {
+std::vector<Loot> ActorHost::buildMapBuildings(const Json& map) {
     std::vector<Loot> loot;const auto& list=map["buildings"];
     if(list.isNull())return loot;
     if(!list.isArray()||list.size()>512)throw JsonError("fps.buildings: expected at most 512 buildings");

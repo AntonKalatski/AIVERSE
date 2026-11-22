@@ -9,7 +9,7 @@ void buildings() {
     Json map=Json::parse(R"({"players":[{"team":1},{"team":2}],"colliders":[{"id":1,"min":[-200,-2,-200],"max":[200,0,200]}],
       "buildings":[{"pos":[20,0,20],"seed":5,"building":{"floors":3},"loot":[1,2,9]}]})");
     Json spawns=Json::array();spawns.push(at(layout.doorOutside));spawns.push(at(bottom));map.set("spawns",spawns);
-    auto sim=simulation(rules,map);auto& module=static_cast<actor::Module&>(sim->module());
+    auto sim=simulation(rules,map);auto& module=actor::host(*sim);
     CHECK(module.collision().colliders().size()==1+layout.boxes.size()&&lootOf(*sim).size()==3);
     for(const auto& l:lootOf(*sim))CHECK(l.pos.x>origin.x&&l.pos.z>origin.z&&l.pos.x<origin.x+def.width&&l.pos.z<origin.z+def.depth);
     auto yawTo=[](Vec3 from,Vec3 to){auto d=to-from;auto y=fxAtan2Turns(d.x,d.z);return y<Fixed{}?y+1_fx:y;};
@@ -29,7 +29,7 @@ void rotatedColliders() {
     auto rules=Json::parse(R"({"fps":{"tickRate":30,"mode":"deathmatch"}})");
     auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[-6,0.01,0],[30,0.01,30]],
       "colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]},{"id":2,"center":[0,1.5,0],"half":[20,1.5,0.25],"yaw":0.125}]})");
-    auto sim=simulation(rules,map);auto& module=static_cast<actor::Module&>(sim->module());const auto& w=module.collision();
+    auto sim=simulation(rules,map);auto& module=actor::host(*sim);const auto& w=module.collision();
     CHECK(w.cast({-1_fx,1_fx,-6_fx},{2_fx,{},12_fx}).hit);                       // through the middle of the turned wall
     // The wall runs from (-14, 14) to (14, -14); (2, 2.5) is inside its axis-aligned bounds but 3 m away.
     CHECK(!w.cast({2_fx,1_fx,Fixed::fromRatio(3,2)},{{},{},2_fx}).hit);
@@ -65,7 +65,7 @@ void houseNavigation() {
         Json b=Json::object();b.set("floors",Json::number(int64_t(floors)));Json house=Json::object();house.set("pos",Json::parse("[0,0,0]"));house.set("seed",Json::number(int64_t(seed)));house.set("building",b);
         Json list=Json::array();list.push(house);
         auto map=Json::parse(R"({"players":[{"team":1},{"team":2}],"spawns":[[-30,0.01,-30],[-35,0.01,-30]],"colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]})");map.set("buildings",list);
-        auto sim=simulation(rules,map);const auto& w=static_cast<actor::Module&>(sim->module()).collision();
+        auto sim=simulation(rules,map);const auto& w=actor::host(*sim).collision();
         auto layout=*lib::systems::generateBuilding(def,seed,{{},-def.slab,{}},0);layout.doorOutside.y={};
         lib::bots::NavBuildConfig c;c.bounds={{-4_fx,-1_fx,-4_fx},{16_fx,def.floorHeight*Fixed::fromInt(floors)+2_fx,16_fx}};c.cellSize=Fixed::fromRatio(1,2);
         c.radius=cfg.motor.radius;c.height=cfg.motor.height;c.stepHeight=cfg.motor.stepHeight;auto mesh=lib::bots::buildNavMesh(w,c);CHECK(mesh.mesh);
