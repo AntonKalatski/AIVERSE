@@ -236,7 +236,8 @@
      "textEn": "Wind and wildfire drive SpectraFX, audio and TerraWeave grass; “Live nature” shows in the editor Scene view.",
      "date": "2026-11-21"
     },
-    {"status": "done", "date": "2026-11-22", "title": "Смерчи", "text": "Смерч из данных карты: маршрут или блуждание, вихрь в ветре PHYSIS, огонь, обломки, урон; воронка, звук, ветер в траве и волнение воды.", "titleEn": "Tornadoes", "textEn": "Tornadoes from map data: a path or a wander, a vortex in PHYSIS wind, fire, debris, damage; a funnel, sound, wind in the grass and choppy water."}
+    {"status": "done", "date": "2026-11-22", "title": "Смерчи", "text": "Смерч из данных карты: маршрут или блуждание, вихрь в ветре PHYSIS, огонь, обломки, урон; воронка, звук, ветер в траве и волнение воды.", "titleEn": "Tornadoes", "textEn": "Tornadoes from map data: a path or a wander, a vortex in PHYSIS wind, fire, debris, damage; a funnel, sound, wind in the grass and choppy water."},
+    {"status": "in-progress", "title": "Огненные и водяные смерчи, размытие земли", "text": "Смерч затягивает пожар и становится огненным вихрем (поджог, угли, жар), слабеет и гаснет над водой, водяной смерч на озере, размытый след на суше. В ветке, ждёт слияния; рельеф пока не опускается.", "titleEn": "Fire whirls, waterspouts, scoured ground", "textEn": "A tornado draws a wildfire in and becomes a fire whirl (ignition, embers, heat), weakens and is quenched over water, waterspouts on lakes, a scoured track on land. On a branch, awaiting merge; terrain is not lowered yet."}
    ],
    "taglineEn": "A living environment: wind, fire, earth",
    "essenceEn": "Nature fields in ECS: wind, fire, earthquakes and structural stress that react to each other.",
