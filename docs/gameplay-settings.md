@@ -122,6 +122,10 @@ Generated from `libraries/spec/gameplay.json`. Integer values are literal intege
 | locomotion | grappleReelSpeedMilli | integer | 4000 | 0..100000 |
 | locomotion | grappleTicks | integer | 300 | 1..36000 |
 | locomotion | oneWayDropTicks | integer | 12 | 0..3600 |
+| locomotion | wallReattachTicks | integer | 12 | 0..3600 |
+| locomotion | glideEnabled | boolean | true |  |
+| locomotion | glideFallSpeedMilli | integer | 1500 | 0..100000 |
+| locomotion | glideForwardSpeedMilli | integer | 8000 | 0..100000 |
 | melee | windup | integer | 6 | 0..3600 |
 | melee | active | integer | 4 | 1..3600 |
 | melee | recovery | integer | 12 | 0..3600 |

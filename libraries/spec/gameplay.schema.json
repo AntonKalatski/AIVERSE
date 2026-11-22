@@ -775,6 +775,28 @@
           "default": 12,
           "minimum": 0,
           "maximum": 3600
+        },
+        "wallReattachTicks": {
+          "type": "integer",
+          "default": 12,
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "glideEnabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "glideFallSpeedMilli": {
+          "type": "integer",
+          "default": 1500,
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "glideForwardSpeedMilli": {
+          "type": "integer",
+          "default": 8000,
+          "minimum": 0,
+          "maximum": 100000
         }
       }
     },

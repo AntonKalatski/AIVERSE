@@ -1,9 +1,9 @@
 #include "ActorModule.h"
-#include "libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h"
+#include "engine/mechanics/EcsWeaponLaunchSystems.h"
 #include <algorithm>
 #include <set>
 #include "engine/core/FixedMath.h"
-#include "libraries/include/aiverselib/mechanics/EcsTimedMechanics.h"
+#include "engine/mechanics/EcsTimedMechanics.h"
 #include "engine/world/OrientedBox.h"
 #include <stdexcept>
 

@@ -59,7 +59,7 @@
 
 ## Интеграция с native-кодом и хостом
 
-Подключите `<aiverselib/genre/Configured.h>`, нужный заголовок политики и `genre/Persistence.h`.
+Подключите `<aiverselib/mechanics/Configured.h>`, нужный заголовок политики и `genre/Persistence.h`.
 Исполняемые хосты линкуют `AIVERSE::genre`; зарегистрированные OBJECT-модули вызывают
 `aiverse_native_use_genre(aiverse_native_<id>)` после `aiverse_native_module(...)`. Эта функция вешает зависимости
 бэкенда коллизий на владеющую цель aiverse_game, избегая циклов линковки объектных библиотек.
@@ -1519,7 +1519,7 @@ stacking Independent|Refresh|Reject, maxStacks, anchor Ground|ModelTop}`. Зна
 Горение бьёт `ceil(duration/interval)` раз, первый раз через интервал после наложения, последний — при истечении. Сводка
 за тик: наименьшее замедление, 0 при оглушении или обездвиживании, `stunned` блокирует атаки. `setStatusImmunity` по маске видов или по id
 (боссы: иммунитет к оглушению/толчку, горение разрешено). `applyStatus` возвращает Applied / Refreshed / Rejected / Immune / Invalid
-и событие отображения; `clearStatuses` завершает все (смерть). `rtsStatusRules` записывает то же определение как статус `rules.json`
+и событие отображения; `clearStatuses` завершает все (смерть). `gameStatusRules` записывает то же определение как статус `rules.json`
 (+ длительность эффекта) для игр на RTS-симуляции, где авторитетными остаются движковые статусы.
 
 **Мозг босса.** `BossDef{phases, enrage, archetype}`. Фаза 0 начинает бой; фаза i>0 начинается, когда

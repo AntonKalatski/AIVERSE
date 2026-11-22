@@ -124,6 +124,7 @@ void moveBodyModes(MotorBody& a,LocomotionBody& l,const Input& in,const MotorCon
     LocomotionInput li;li.wish={wish.x,wish.z};li.facing={forward.x,forward.z};
     li.jumpPressed=(buttons&Jump)&&!crouch&&!a.prone;
     li.dashPressed=(buttons&Dash)&&!(previous&Dash);
+    li.jumpHeld=(buttons&Glide)!=0;
     auto& e=li.env;e.grounded=a.grounded;e.groundNormal=a.grounded?l.groundNormal:Vec3{Fixed{},1_fx,Fixed{}};e.ceiling=l.ceiling;
     // Side walls: short probes along the wish and both sides of the horizontal velocity (wall slide / wall run).
     if(!a.grounded){
@@ -133,7 +134,7 @@ void moveBodyModes(MotorBody& a,LocomotionBody& l,const Input& in,const MotorCon
         for(const auto& d:probes){
             if(d.lengthSq()<Fixed::fromRatio(1,100))continue;
             auto hit=w.cast(center,fxNormalize(d)*(c.radius/2),half);
-            if(hit.hit&&fxAbs(hit.normal.y)<Fixed::fromRatio(1,2)){e.wallContact=true;e.contactNormal=fxNormalize(Vec3{hit.normal.x,{},hit.normal.z});break;}
+            if(hit.hit&&fxAbs(hit.normal.y)<Fixed::fromRatio(1,2)){e.wallContact=true;e.wallId=int64_t(hit.id);e.contactNormal=fxNormalize(Vec3{hit.normal.x,{},hit.normal.z});break;}
         }
     }
     // Grapple: a press casts the view ray; while attached the stored point is reported every tick.

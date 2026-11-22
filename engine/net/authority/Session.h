@@ -1,7 +1,7 @@
 #pragma once
 #include "engine/net/Conn.h"
 #include "engine/actor/ActorModule.h"
-#include "libraries/include/aiverselib/net/SnapshotDelta.h"
+#include "engine/net/SnapshotDelta.h"
 #include <deque>
 
 namespace aiverse::net::authority {

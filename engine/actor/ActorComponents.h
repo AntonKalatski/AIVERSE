@@ -32,9 +32,9 @@
 #include "engine/core/Archive.h"
 #include "engine/world/SpatialWorld.h"
 #include "ActorSystems.h"
-#include "libraries/include/aiverselib/mechanics/Melee.h"
-#include "libraries/include/aiverselib/mechanics/LocomotionModes.h"
-#include "libraries/include/aiverselib/mechanics/VehicleData.h"
+#include "engine/mechanics/Melee.h"
+#include "engine/mechanics/LocomotionModes.h"
+#include "engine/mechanics/VehicleData.h"
 #include "engine/vehicles/Vehicles.h"
 #include <algorithm>
 #include <cstddef>
@@ -45,9 +45,9 @@
 
 namespace aiverse::actor {
 constexpr uint16_t kInputCommand=1;
-// Dash / Grapple are read only with the opt-in locomotion modes (rules `locomotion`); other projects ignore them.
-enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096, Dash=8192, Grapple=16384 };
-constexpr uint32_t kButtonBits=32767;
+// Dash / Grapple / Glide (held) are read only with the opt-in locomotion modes (rules `locomotion`); other projects ignore them.
+enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096, Dash=8192, Grapple=16384, Glide=32768 };
+constexpr uint32_t kButtonBits=65535;
 constexpr uint32_t selectWeapon(uint32_t index) { return (index+1)<<5; }
 // Weapon selection occupies bits 5..7; zero means keep the equipped weapon.
 struct Input {

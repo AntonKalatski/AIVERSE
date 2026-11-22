@@ -2,7 +2,7 @@
 
 Необязательные скелетные анимации FPS работают на **AIVERSE MotionWeave**.
 Новые нативные модули линкуют `AIVERSE::MotionWeave` и подключают
-`<aiverselib/motionweave/MotionWeave.h>`.
+`"engine/animation/MotionWeave.h"`.
 См. [MotionWeave](motionweave.md). Старый ECS-таргет анимации остаётся рабочим.
 
 Проекты FPS используют `game.json` с `module: "fps"` и `genre: "fps"`. Выберите FPS в
@@ -194,7 +194,7 @@ Interact в зоне досягаемости, Heal при ранении вне
 `fps.melee.enabled: true` добавляет авторитетные удар в ближнем бою, блок, парирование и захват цели.
 Это не зависит от `fps.mechanics`; правила без этого блока ведут себя как раньше.
 Тайминги замаха, буферизация ввода, связки и одно попадание по цели за замах берутся из
-общей библиотеки `melee-combat` (`libraries/include/aiverselib/genre/Melee.h`).
+общей библиотеки `melee-combat` (`engine/mechanics/Melee.h`).
 
 | Поведение | Реализация | Текущие ограничения |
 |---|---|---|

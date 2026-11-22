@@ -16,9 +16,9 @@
 #include "engine/platform/ContentReader.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/fx/SpectraFxSceneHost.h"
-#include "libraries/include/aiverselib/motionweave/MotionWeave.h"
+#include "engine/animation/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
-#include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
+#include "engine/animation/AnimationBudgetPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationBackendPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
 #include "libraries/include/aiverselib/animation/AnimationAssetLoader.h"
@@ -911,6 +911,7 @@ struct App {
             if(config.locomotion){
                 if(held("Dash"))input.buttons|=actor::Dash;
                 if(held("Grapple"))input.buttons|=actor::Grapple;
+                if(held("Glide"))input.buttons|=actor::Glide;
             }
             // Testing (screenshots): AIVERSE_FPS_WATCH=1 turns the view to the nearest living remote character.
             static const bool watchRemote=std::getenv("AIVERSE_FPS_WATCH")!=nullptr;
