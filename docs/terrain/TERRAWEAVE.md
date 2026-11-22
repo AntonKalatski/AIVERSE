@@ -3236,3 +3236,19 @@ shared-height export audit, actual per-frame submitted triangles and near/far
 pixel comparisons. Metal fixture verification does not establish mobile/Vulkan
 parity or an FPS gain. CPU visual picking/deformed object parity remains a
 separate editor acceptance task.
+
+## Automatic observer streaming and tree trunk colliders (2026-11-22)
+
+QA and numbers: [qa-2026-11-22-terra-next.md](qa-2026-11-22-terra-next.md).
+
+* `engine/world/TerraWeaveStreaming.h` — `TerraWeaveStreamingPlanner::update(observers)` returns the
+  pinned terrain/collision tiles (nearest/most important first, hysteresis, `maxPinnedTiles` ≤ 512) and
+  a dead-zone grass rectangle. `publishNativeTerraWeaveFrameAuto(...)` (TerraWeaveNativeDriver.h) feeds
+  it to the existing barrier; `settings.tileSizeCm` must equal the coordinator cell size × 100.
+* `engine/world/TerraWeaveTreeColliders.h` — trunk colliders from resident ForestScene trees and the
+  species Arbor skeleton: SpatialWorld AABBs per tile (`TreeTrunkCollisionPublisher`), Box3D static
+  capsules (`TerraWeaveTreeCollidersBox3D.h`), footprints for navigation/placement. Host-side and
+  presentation-derived; a deterministic simulation that depends on trunks pins its tiles and republishes
+  after harvest/regrowth.
+* Map forest recipe `extra.terraweaveForest` (`terraweave_forest_get/set`) drives the editor overlay;
+  the Studio "TerraWeave Generator" panel edits it and runs `terraweave_preview/generate`.

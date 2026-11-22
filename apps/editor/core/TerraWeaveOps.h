@@ -31,6 +31,36 @@ inline terraweave::TerrainSettings terrain(const Json& p) {
     t.octaves = static_cast<uint32_t>(readCm(p, "octaves", 5, 1, 12));
     return t;
 }
+// Map-saved forest recipe (extra.terraweaveForest), read by the editor forest
+// overlay and native hosts. Presentation recipe only: no entities, no ECS.
+struct ForestRecipe {
+    bool enabled=true;
+    int32_t spacingCm=1100;
+    int32_t densityPermille=780;
+    int32_t maxSlopePermille=1250;
+    int64_t seedOffset=0;
+};
+inline ForestRecipe forestRecipe(const Json& p) {
+    ForestRecipe f;
+    if(!p.isObject())return f;
+    f.enabled=p.getBool("enabled",true);
+    f.spacingCm=readCm(p,"spacingCm",1100,300,5000);
+    f.densityPermille=readCm(p,"densityPermille",780,0,1000);
+    f.maxSlopePermille=readCm(p,"maxSlopePermille",1250,0,5000);
+    f.seedOffset=p.getInt("seedOffset",0);
+    if(f.seedOffset<0)throw std::invalid_argument("TerraWeave forest seedOffset must be non-negative");
+    return f;
+}
+inline Json forestRecipeJson(const ForestRecipe& f) {
+    Json j=Json::object();
+    j.set("version",Json::number(int64_t(1)));
+    j.set("enabled",Json::fromBool(f.enabled));
+    j.set("spacingCm",Json::number(int64_t(f.spacingCm)));
+    j.set("densityPermille",Json::number(int64_t(f.densityPermille)));
+    j.set("maxSlopePermille",Json::number(int64_t(f.maxSlopePermille)));
+    j.set("seedOffset",Json::number(f.seedOffset));
+    return j;
+}
 inline terraweave::LegacyHeightfieldOptions origin(const Json& p) {
     terraweave::LegacyHeightfieldOptions out;
     out.worldOriginXcm = p.getInt("originXcm", 0);
@@ -221,6 +251,44 @@ inline void registerTerraWeaveOps(Workspace& ws) {
                 std::to_string(mapHeight) +
                 " terrain; undo available"));
             return result;
+        }});
+    ws.registerOp({"terraweave_forest_get",
+        "Read the map's TerraWeave forest recipe (extra.terraweaveForest, defaults when absent) "
+        "and the saved terrain recipe (extra.terraweave). Read-only.",
+        Json::parse(R"({"properties":{}})"), [w](const Json&) -> Json {
+            if (w->project.dir.empty()) throw std::runtime_error("open a game first");
+            Json r=terraweave_ops_detail::forestRecipeJson(
+                terraweave_ops_detail::forestRecipe(w->map.data.extra["terraweaveForest"]));
+            r.set("saved",Json::fromBool(w->map.data.extra["terraweaveForest"].isObject()));
+            if(w->map.data.extra["terraweave"].isObject())r.set("terrain",w->map.data.extra["terraweave"]);
+            r.set("ok",Json::fromBool(true));
+            return r;
+        }});
+    ws.registerOp({"terraweave_forest_set",
+        "Save the TerraWeave forest recipe into the map (extra.terraweaveForest): enabled, spacingCm 300..5000, "
+        "densityPermille 0..1000, maxSlopePermille 0..5000, seedOffset >= 0. Drives the deterministic "
+        "TerraWeave Arbor forest overlay (no entity per tree). One undo step.",
+        Json::parse(R"({"properties":{"enabled":{"type":"boolean"},"spacingCm":{"type":"integer","minimum":300,"maximum":5000},
+          "densityPermille":{"type":"integer","minimum":0,"maximum":1000},"maxSlopePermille":{"type":"integer","minimum":0,"maximum":5000},
+          "seedOffset":{"type":"integer","minimum":0}}})"),
+        [w](const Json& p) -> Json {
+            if (w->project.dir.empty()) throw std::runtime_error("open a game first");
+            if (w->project.worldSpaceMaps() || w->map.data.planet()) throw std::runtime_error(
+                "TerraWeave forest recipe is for flat heightfield maps");
+            // Merge over the current recipe: unspecified fields keep their value.
+            Json merged=terraweave_ops_detail::forestRecipeJson(
+                terraweave_ops_detail::forestRecipe(w->map.data.extra["terraweaveForest"]));
+            for(const char* key:{"enabled","spacingCm","densityPermille","maxSlopePermille","seedOffset"})
+                if(p.has(key))merged.set(key,p[key]);
+            const auto recipe=terraweave_ops_detail::forestRecipe(merged); // validates
+            w->map.beginEdit();
+            w->map.data.extra.set("terraweaveForest",terraweave_ops_detail::forestRecipeJson(recipe));
+            w->note({Change::Map,0,0,-1,-1,-1,"TerraWeave forest recipe"});
+            Json r=terraweave_ops_detail::forestRecipeJson(recipe);
+            r.set("ok",Json::fromBool(true));
+            r.set("summary",Json::string("TerraWeave forest: "+std::string(recipe.enabled?"on":"off")+
+                ", spacing "+std::to_string(recipe.spacingCm)+" cm, density "+std::to_string(recipe.densityPermille)+" permille"));
+            return r;
         }});
 }
 
