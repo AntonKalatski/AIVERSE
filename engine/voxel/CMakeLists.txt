@@ -4,6 +4,8 @@ set(AIVERSE_VOXEL_LIBS AIVERSE::lib_voxel_world AIVERSE::lib_voxel_light AIVERSE
     AIVERSE::lib_voxel_ticks AIVERSE::lib_voxel_nav AIVERSE::lib_voxel_replication)
 add_library(aiverse_voxelgame STATIC VoxelGame.cpp VoxelSession.cpp)
 target_link_libraries(aiverse_voxelgame PUBLIC aiverse_engine aiverse_net ${AIVERSE_VOXEL_LIBS})
+# Sessions build their Simulation on game::GameCore (the one host); aiverse_game links this library back.
+target_link_libraries(aiverse_voxelgame PUBLIC aiverse_game)
 target_include_directories(aiverse_voxelgame PUBLIC ${PROJECT_SOURCE_DIR})
 add_library(AIVERSE::voxelgame ALIAS aiverse_voxelgame)
 if(AIVERSE_BUILD_TESTS)

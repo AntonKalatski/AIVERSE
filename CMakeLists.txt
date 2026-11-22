@@ -228,7 +228,7 @@ add_subdirectory(engine/meta)
 
 # The one gameplay host: grid systems (units, orders, economy, combat, garrisons, AI) and, on world-space maps, actor systems
 add_library(aiverse_game STATIC
-    engine/game/GameActorHost.cpp   # world-space maps: actor systems (engine/actor)
+    engine/game/HostSystems.cpp   # whole-match systems chosen by data: actor (engine/actor), voxel (engine/voxel)
     engine/game/GameData.cpp
     engine/game/MapGrid.cpp
     engine/game/MapHpa.cpp
@@ -265,7 +265,7 @@ add_library(aiverse_game STATIC
     engine/game/ComputerPlayerFidelity.cpp
     engine/game/ComputerPlayerTerrain.cpp
     engine/game/ComputerPlayerTactics.cpp)
-target_link_libraries(aiverse_game PUBLIC aiverse_fps)   # actor systems: defined in engine/actor/CMakeLists.txt
+target_link_libraries(aiverse_game PUBLIC aiverse_fps aiverse_voxelgame)   # actor / voxel systems: engine/actor, engine/voxel CMakeLists
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 # The one vehicle system of every host (docs/driving.md, AGENTS.md "no genre split"): components, the per-tick step,
 # the race adapter. The grid-map host (engine/game/Driving.cpp) and the metre-map host (engine/actor/ActorVehicles.cpp)
@@ -1637,7 +1637,7 @@ if(AIVERSE_BUILD_CLIENT)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
         target_compile_definitions(aiverse_client PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")   # actor / voxel hosts: engine dir in a dev build
         # actor (first / third person) and voxel projects run in the same client (apps/client/main.cpp dispatches
-        # on game.json "module"); their hosts are added in engine/actor and modules/voxel (aiverse_client_hosts)
+        # on game.json "module"); their hosts are added in engine/actor and engine/voxel (aiverse_client_hosts)
     endif()
     # Mach-O keeps otherwise unused functions from directly linked client
     # objects unless dead stripping is requested explicitly. Static archives
@@ -2795,7 +2795,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_test(NAME ecs_fixed_regeneration_policy_test
         COMMAND aiverse_ecs_fixed_regeneration_policy_test)
 endif()
-add_subdirectory(modules/voxel)
+add_subdirectory(engine/voxel)
 
 # Opt-in end-to-end reusable library host, excluded from normal builds.
 option(AIVERSE_BUILD_LIBRARY_SHOWCASE "Build native library integration showcase" OFF)

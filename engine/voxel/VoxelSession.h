@@ -23,7 +23,7 @@ public:
     void poll(uint64_t now);
     bool step();
     Simulation& simulation(){return sim_;}
-    Module& module(){return static_cast<Module&>(sim_.module());}
+    VoxelHost& module(){return host(sim_);}
     size_t peers()const{return peers_.size();}
     uint64_t sentBytes()const{return sent_;}
 private:

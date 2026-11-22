@@ -1,3 +1,4 @@
+#include "../game/GameCore.h"
 #include "VoxelSession.h"
 #include "engine/core/Hash.h"
 #include "engine/core/FixedMath.h"
@@ -23,7 +24,7 @@ bool decodeSnapshot(const net::Bytes& bytes,Snapshot& out){
     n=a.count(0,10);if(n>1024)return false;s.mobs.resize(n);for(auto& m:s.mobs)ioRemote(a,m);
     if(!a.ok()||a.remaining())return false;out=std::move(s);return true;
 }
-Server::Server(const Json& rules,const Json& map,uint64_t seed):sim_({seed,0,0},std::make_unique<Module>()){
+Server::Server(const Json& rules,const Json& map,uint64_t seed):sim_({seed,0,0},std::make_unique<game::GameCore>()){
     sim_.setup(rules,map);content_=contentId(rules,map);
 }
 bool Server::occupied(uint8_t slot)const{for(const auto& p:peers_)if(p.slot==slot&&p.conn->state()!=net::ConnState::Closed)return true;return false;}

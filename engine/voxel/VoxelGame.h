@@ -3,6 +3,7 @@
 // block world, hotbar inventory, fluids and falling blocks, day and night, hostile mobs at night, saves.
 // The world, light, generation, ticks and navigation come from the voxel library packages (docs/voxel.md);
 // this module is the authoritative game on top of them. Integers and Fixed only; all state lives in State.
+#include "../game/HostSystems.h"
 #include "engine/sim/Simulation.h"
 #include "engine/data/Json.h"
 #include "engine/core/Archive.h"
@@ -80,9 +81,10 @@ Target target(const Player& p,const State& s,const Config& c,const BlockRegistry
 // Archive layout (saves, network snapshots).
 void io(Archive&,ItemStack&);void io(Archive&,Input&);void io(Archive&,Player&);void io(Archive&,Mob&);
 
-class Module final:public GameModule{
+// Voxel world systems (blocks, players, mobs, streaming). game::GameCore owns one and runs it when the
+// rules have a "voxelGame" block (engine/game/HostSystems.cpp).
+class VoxelHost final:public game::HostSystems{
 public:
-    std::string name()const override{return "voxel";}
     void setup(Simulation&,const Json& rules,const Json& map)override;
     void applyCommand(Simulation&,const Command&)override;
     void hashState(Simulation&,Hasher&)override;
@@ -102,4 +104,7 @@ private:
     Content content_;
     std::unique_ptr<lib::systems::VoxelGenerator> generator_;
 };
+// The voxel systems of a simulation run by game::GameCore; host() throws when the rules have no voxel world.
+VoxelHost& host(Simulation&);
+VoxelHost* tryHost(Simulation&);
 }

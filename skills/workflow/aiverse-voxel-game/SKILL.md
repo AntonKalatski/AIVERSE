@@ -21,8 +21,8 @@ Use when the request is a block-building / mining / survival game. Packages and 
 | Client meshes | `skills/visuals/aiverse-voxel-mesh` |
 | Saves | voxel-world record 120, voxel-ticks record 121, plus the libraries' own records |
 
-A working reference game exists: module `modules/voxel` (simulation `modules/voxel/VoxelGame.h`, session
-`modules/voxel/VoxelSession.h`), client `apps/voxel/client.cpp`, server `apps/voxel/server.cpp`, template
+A working reference game exists: module `engine/voxel` (simulation `engine/voxel/VoxelGame.h`, session
+`engine/voxel/VoxelSession.h`), client `apps/voxel/client.cpp`, server `apps/voxel/server.cpp`, template
 `templates/voxel_sandbox`. Start a new game by copying the template and changing `rules.json`; change the module
 only for new rules. Reference: `docs/voxel.md` ("The game").
 

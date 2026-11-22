@@ -99,7 +99,7 @@ Target target(const Player& p,const State& s,const Config& c,const BlockRegistry
     for(const auto& m:s.mobs){Fixed t;if(rayBox(eye,ray,mobBox(m.pos),t)&&t<best){best=t;out.mob=m.id;out.block=false;}}
     out.distance=best*c.reach;return out;
 }
-void Module::setup(Simulation& sim,const Json& rules,const Json& map){
+void VoxelHost::setup(Simulation& sim,const Json& rules,const Json& map){
     content_=readContent(rules);generator_=std::make_unique<VoxelGenerator>(content_.gen);
     State s{VoxelWorld(content_.bounds),{},{},{},1,0,{}};
     const auto& ps=map["players"];size_t n=std::clamp<size_t>(ps.size(),1,content_.config.maxPlayers);
@@ -115,7 +115,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map){
     sim.world().setResource<State>(std::move(s));
     sim.addSystem("voxel",[this](Simulation& sm){tick(sm);});
 }
-void Module::ensureColumn(State& s,int cx,int cz){
+void VoxelHost::ensureColumn(State& s,int cx,int cz){
     auto& w=s.world;std::vector<ChunkPos> added;
     for(int cy=content_.bounds.maxChunkY;cy>=content_.bounds.minChunkY;--cy){ChunkPos c{cx,cy,cz};if(w.loaded(c))continue;
         auto chunk=w.parked(c)?w.unpark(c,content_.blocks):std::optional<VoxelChunk>(generator_->generate(c));
@@ -123,7 +123,7 @@ void Module::ensureColumn(State& s,int cx,int cz){
         w.insert(c,std::move(*chunk));added.push_back(c);}
     for(auto c:added)lightChunk(w,content_.blocks,c); // top-down: sky enters from above
 }
-void Module::stream(State& s){
+void VoxelHost::stream(State& s){
     auto& w=s.world;const auto& cfg=content_.config;
     std::vector<Vec3> centers{s.spawn};for(const auto& p:s.players)if(p.active)centers.push_back(p.pos);
     std::vector<std::tuple<int64_t,int,int>> wanted;std::set<std::pair<int,int>> seen;
@@ -141,20 +141,20 @@ void Module::stream(State& s){
     for(auto [cx,cz]:far)for(int cy=content_.bounds.minChunkY;cy<=content_.bounds.maxChunkY;++cy)w.unload({cx,cy,cz});
     if(!far.empty())s.mobs.erase(std::remove_if(s.mobs.begin(),s.mobs.end(),[&](const Mob& m){return !w.loaded(chunkOf(cellOf(m.pos)));}),s.mobs.end());
 }
-void Module::changed(State& s,BlockPos p,BlockId oldBlock){relightBlock(s.world,content_.blocks,p,oldBlock);notifyVoxelChange(s.ticks,s.world,content_.blocks,content_.ticks,p,s.time);}
-bool Module::give(Player& p,BlockId block,uint32_t count)const{
+void VoxelHost::changed(State& s,BlockPos p,BlockId oldBlock){relightBlock(s.world,content_.blocks,p,oldBlock);notifyVoxelChange(s.ticks,s.world,content_.blocks,content_.ticks,p,s.time);}
+bool VoxelHost::give(Player& p,BlockId block,uint32_t count)const{
     if(block==kAir||!count)return false;
     for(auto& st:p.hotbar)if(st.block==block&&st.count<kStack){auto add=std::min(count,kStack-st.count);st.count+=add;count-=add;if(!count)return true;}
     for(auto& st:p.hotbar)if(!st.count){st.block=block;st.count=std::min(count,kStack);count-=st.count;if(!count)return true;}
     return false; // hotbar full: the rest is lost (no dropped items yet)
 }
-void Module::applyCommand(Simulation& sim,const Command& c){
+void VoxelHost::applyCommand(Simulation& sim,const Command& c){
     Input in;if(!decodeInput(c,in))return;auto& s=state(sim);
     if(c.player<1||c.player>s.players.size())return;auto& p=s.players[c.player-1];
     if(in.sequence<=p.lastSequence&&p.active)return;
     p.input=in;p.lastSequence=in.sequence;p.active=true;
 }
-void Module::tickPlayer(Simulation& sim,State& s,Player& p){
+void VoxelHost::tickPlayer(Simulation& sim,State& s,Player& p){
     const auto& cfg=content_.config;const auto& r=content_.blocks;
     if(p.health<=0){if(s.time>=p.respawnAt){p.health=int32_t(cfg.playerHealth);p.pos=s.spawn;p.vel={};p.hasBreaking=false;}return;}
     auto& in=p.input;if(in.slot>=1&&in.slot<=kHotbar)p.selected=uint8_t(in.slot-1);
@@ -190,7 +190,7 @@ void Module::tickPlayer(Simulation& sim,State& s,Player& p){
     }
     (void)sim;
 }
-void Module::tickMobs(Simulation& sim,State& s){
+void VoxelHost::tickMobs(Simulation& sim,State& s){
     const auto& cfg=content_.config;const auto& r=content_.blocks;auto dark=skyDarkening(s.time,cfg.dayTicks);
     lib::bots::VoxelAgent agent;agent.maxNodes=cfg.mobPathNodes;agent.height=2;
     std::vector<const Player*> alive;for(const auto& p:s.players)if(p.active&&p.health>0)alive.push_back(&p);
@@ -234,7 +234,7 @@ void Module::tickMobs(Simulation& sim,State& s){
     s.mobs.erase(std::remove_if(s.mobs.begin(),s.mobs.end(),[&](const Mob& m){
         if(m.health<=0)return true;bool near=false;for(auto* p:alive)if((p->pos-m.pos).lengthSq()<96_fx*96_fx)near=true;return !near;}),s.mobs.end());
 }
-void Module::tick(Simulation& sim){
+void VoxelHost::tick(Simulation& sim){
     auto& s=state(sim);++s.time;
     stream(s);
     for(auto& p:s.players)if(p.active)tickPlayer(sim,s,p);
@@ -255,11 +255,11 @@ void io(Archive& a,Mob& m){
     uint32_t n=a.count(m.path.size(),12);if(!a.writing())m.path.assign(n,{});for(uint32_t i=0;i<n&&a.ok();++i)ioPos(a,m.path[i]);
     a(m.pathIndex,m.repathAt,m.attackAt,m.hurtAt);
 }
-void Module::hashState(Simulation& sim,Hasher& h){
+void VoxelHost::hashState(Simulation& sim,Hasher& h){
     auto& s=state(sim);h.u64(s.world.hash());h.u64(voxelTicksHash(s.ticks));h.u64(s.time);h.u32(s.nextMob);h.v3(s.spawn);
     std::string bytes;Archive a(&bytes);for(auto& p:s.players)io(a,p);for(auto& m:s.mobs)io(a,m);h.bytes(bytes.data(),bytes.size());
 }
-bool Module::serializeState(Simulation& sim,Archive& a){
+bool VoxelHost::serializeState(Simulation& sim,Archive& a){
     uint32_t version=1;uint64_t blocks=content_.blocks.defs.size(),seed=content_.gen.seed;a(version,blocks,seed);
     if(version!=1||blocks!=content_.blocks.defs.size()||seed!=content_.gen.seed)return false;
     auto& s=state(sim);
