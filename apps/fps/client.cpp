@@ -1176,11 +1176,12 @@ struct App {
     }
 };
 }
-int aiverseMain(int argc,char** argv) {
+// Actor projects (game.json "module": "fps") in the one game client (apps/client/main.cpp dispatches here).
+int actorClientMain(int argc,char** argv) {
     try {
         App app;auto engineRoot=platform::resolveEngineDir(AIVERSE_SOURCE_DIR,argv[0]);
         std::string sessionTokenFile;std::string project=engineRoot+"/templates/fps_training",connect;
-        for(int i=1;i<argc;++i){std::string arg=argv[i];if(arg=="--project"&&i+1<argc)project=argv[++i];else if(arg=="--connect"&&i+1<argc)connect=argv[++i];else if(arg=="--session-token-file"&&i+1<argc)sessionTokenFile=argv[++i];else if(arg=="--listen")app.listen=true;else throw std::runtime_error("usage: aiverse_fps_client --project DIR [--connect udp://host:27100 | --listen] [--session-token-file FILE]");}
+        for(int i=1;i<argc;++i){std::string arg=argv[i];if(arg=="--project"&&i+1<argc)project=argv[++i];else if(arg=="--connect"&&i+1<argc)connect=argv[++i];else if(arg=="--session-token-file"&&i+1<argc)sessionTokenFile=argv[++i];else if(arg=="--listen")app.listen=true;else throw std::runtime_error("usage: AiverseGame --project DIR [--connect udp://host:27100 | --listen] [--session-token-file FILE]");}
         project=std::filesystem::absolute(project).string();
         std::filesystem::current_path(engineRoot);
         if(!sessionTokenFile.empty()&&(app.listen||connect.empty()))throw std::runtime_error("session token requires --connect");

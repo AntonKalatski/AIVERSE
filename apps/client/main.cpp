@@ -1,6 +1,8 @@
 // Entry point of the game client (AiverseGame): command line, window settings, splash -> GameClient.
 // The client itself (GameClient*.cpp, Client*.cpp) is also hosted by the editor's Game window.
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <cstdlib>
 #include <string>
 
@@ -16,8 +18,37 @@ namespace aiverse::client {
 GameClient* g_client = nullptr;
 }
 
+#if defined(AIVERSE_CLIENT_ACTOR)
+int actorClientMain(int argc, char** argv);   // apps/fps/client.cpp
+#endif
+#if defined(AIVERSE_CLIENT_VOXEL)
+int voxelClientMain(int argc, char** argv);   // apps/voxel/client.cpp
+#endif
+
+namespace {
+// The project's game.json "module": --project DIR, else the content root.
+std::string projectModule(int argc, char** argv) {
+    std::string text;
+    for (int i = 1; i + 1 < argc; ++i)
+        if (std::string(argv[i]) == "--project") {
+            std::ifstream f(std::string(argv[i + 1]) + "/game.json");
+            std::stringstream ss; ss << f.rdbuf(); text = ss.str();
+        }
+    if (text.empty() && !platform::readContentFile("game.json", text)) return "";
+    try { return Json::parse(text).getStr("module", ""); } catch (const std::exception&) { return ""; }
+}
+}
+
 int aiverseMain(int argc, char** argv) {
     using namespace aiverse::client;
+    // One client for every project: the project's data picks the host, not the executable.
+    const std::string module = projectModule(argc, argv);
+#if defined(AIVERSE_CLIENT_ACTOR)
+    if (module == "fps") return actorClientMain(argc, argv);
+#endif
+#if defined(AIVERSE_CLIENT_VOXEL)
+    if (module == "voxel") return voxelClientMain(argc, argv);
+#endif
     static GameClient client;
     static ClientBoot boot;   // splash / loading screen (ClientSplash.h)
     static size_t autostartMap = size_t(-1);

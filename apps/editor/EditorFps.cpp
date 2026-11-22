@@ -188,14 +188,15 @@ void Editor::startFpsPlay(bool listen,const std::string& address) {
         if(doc().dirty&&!saveMap(doc().path))return;
         if(!ws_.project.saveRules(&error)||!ws_.project.saveManifest(&error))throw std::runtime_error(error);
         namespace fs=std::filesystem;
-        std::string name="aiverse_fps_client";
+        // the one game client (apps/client): it runs the project's host from game.json "module"
+        std::string name="AiverseGame";
 #ifdef _WIN32
         name+=".exe";
 #endif
         std::vector<fs::path> roots{fs::path(opt_.editorExe).parent_path(),fs::path(ws_.buildTool).parent_path(),fs::path(ws_.engineDir)/"bin"};
         auto parent=fs::path(opt_.editorExe).parent_path();for(int i=0;i<4;++i){roots.push_back(parent);parent=parent.parent_path();}
         fs::path exe;std::error_code ec;
-        for(const auto& root:roots)for(const auto& rel:{fs::path(name),fs::path("engine/actor")/name,fs::path("engine/actor/Release")/name})if(exe.empty()&&fs::is_regular_file(root/rel,ec))exe=root/rel;
+        for(const auto& root:roots)for(const auto& rel:{fs::path(name),fs::path("Release")/name,fs::path("AiverseGame.app/Contents/MacOS")/name})if(exe.empty()&&fs::is_regular_file(root/rel,ec))exe=root/rel;
         if(exe.empty()){status=engineText(ws_,"fps.editor.missing");ws_.log("fps",status,true);return;}
         std::string cmd="cd "+quote(ws_.engineDir)+" && "+quote(exe.string())+" --project "+quote(ws_.project.dir);
 #ifdef _WIN32

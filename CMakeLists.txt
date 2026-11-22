@@ -1600,6 +1600,9 @@ if(AIVERSE_BUILD_CLIENT)
         target_link_libraries(aiverse_client PRIVATE aiverse_game_audio)
         aiverse_package_app(aiverse_client)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
+        target_compile_definitions(aiverse_client PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")   # actor / voxel hosts: engine dir in a dev build
+        # actor (first / third person) and voxel projects run in the same client (apps/client/main.cpp dispatches
+        # on game.json "module"); their hosts are added in engine/actor and modules/voxel (aiverse_client_hosts)
     endif()
     # Mach-O keeps otherwise unused functions from directly linked client
     # objects unless dead stripping is requested explicitly. Static archives
