@@ -861,6 +861,28 @@ int ParticleSystem::define(const std::string& name, const EffectDef& def) {
     return e.valid ? id : -1;
 }
 
+bool ParticleSystem::undefine(int id) {
+    auto& I = *impl_;
+    if (id < 0 || size_t(id) >= I.effects.size() || !I.effects[size_t(id)].valid) return false;
+    for (size_t i = I.particles.size(); i-- > 0;) if (I.particles[i].effect == uint16_t(id)) I.die(i, false);
+    I.orphans.erase(std::remove_if(I.orphans.begin(), I.orphans.end(), [&](const Impl::Orphan& o) {
+        if (o.effect != uint16_t(id)) return false;
+        I.freeTrails.push_back(o.trail);
+        return true;
+    }), I.orphans.end());
+    for (size_t i = 0; i < I.instances.size(); ++i)
+        if (I.instances[i].used && I.instances[i].effect == id) I.freeInstance(i);
+    auto& e = I.effects[size_t(id)];
+    auto it = I.byName.find(e.name);
+    if (it != I.byName.end() && it->second == id) I.byName.erase(it);
+    e.name.clear();
+    e.valid = false;
+    e.def = EffectDef{};
+    e.em.clear();
+    e.em.shrink_to_fit();
+    return true;
+}
+
 int ParticleSystem::effect(const std::string& name) {
     auto& I = *impl_;
     auto it = I.byName.find(name);

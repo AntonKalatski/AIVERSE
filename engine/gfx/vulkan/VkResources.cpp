@@ -292,6 +292,35 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
     return {buffers_.add(std::move(b))};
 }
 
+// Logs one shadow write and marks the written version as containing it: a
+// write covering the whole buffer syncs it, a discard-prefix write leaves its
+// tail stale (unsynced), any other write keeps the sync it had.
+void VulkanDevice::recordShadowWrite(VBuffer& b, VBuffer::Version& written,
+                                     size_t offset, size_t size, bool staleTail) {
+    const bool coversAll = offset == 0 && size >= b.size;
+    const bool wasSynced = written.syncedEpoch == b.writeEpoch;
+    ++b.writeEpoch;
+    written.syncedEpoch = coversAll || (wasSynced && !staleTail) ? b.writeEpoch
+                                                                  : VBuffer::kUnsynced;
+    if (b.versions.size() < 2) { b.dirtyLog.clear(); b.logBaseEpoch = b.writeEpoch; return; }
+    // Drop entries every version that can use the log already contains
+    // (unsynced versions and ones older than the log take a full copy).
+    uint64_t oldest = b.writeEpoch;
+    for (const auto& v : b.versions)
+        if (v.syncedEpoch != VBuffer::kUnsynced && v.syncedEpoch >= b.logBaseEpoch)
+            oldest = std::min(oldest, v.syncedEpoch);
+    size_t keep = 0;
+    for (const auto& r : b.dirtyLog)
+        if (r.epoch > oldest) b.dirtyLog[keep++] = r;
+    b.dirtyLog.resize(keep);
+    constexpr size_t kMaxDirtyRanges = 256;
+    if (b.dirtyLog.size() >= kMaxDirtyRanges) {
+        b.logBaseEpoch = b.dirtyLog.front().epoch;
+        b.dirtyLog.erase(b.dirtyLog.begin());
+    }
+    b.dirtyLog.push_back({offset, size, b.writeEpoch});
+}
+
 VBuffer::Version* VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
     VBuffer::Version& cur = b.versions[size_t(b.current)];
     if (cur.usedSerial < serial_ && cur.usedSerial <= completed_) return &cur; // completed version
@@ -310,15 +339,39 @@ VBuffer::Version* VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
         // current version. Keep the previous serial/handle untouched.
         if (!createBufferObject(b.size, bufferUsage(b.type), true, v.buffer, v.alloc))
             return nullptr;
+        v.syncedEpoch = VBuffer::kUnsynced;
         b.versions.push_back(v);
         b.current = int(b.versions.size() - 1);
     }
     VBuffer::Version& next = b.versions[size_t(b.current)];
-    if (keepContents) {
-        std::memcpy(next.alloc.mapped, b.shadow.data(), b.size);
+    if (keepContents && next.syncedEpoch != b.writeEpoch) {
+        // Bring the reused version up to date: copy only the ranges written
+        // since it was last current, or the whole shadow when that history
+        // was dropped (or would cost as much).
+        size_t copied = 0;
+        bool full = next.syncedEpoch == VBuffer::kUnsynced ||
+                    next.syncedEpoch < b.logBaseEpoch;
+        if (!full) {
+            size_t missed = 0;
+            for (const auto& r : b.dirtyLog)
+                if (r.epoch > next.syncedEpoch) missed += r.size;
+            full = missed >= b.size;
+        }
+        auto* dst = static_cast<uint8_t*>(next.alloc.mapped);
+        if (full) {
+            std::memcpy(dst, b.shadow.data(), b.size);
+            copied = b.size;
+        } else {
+            for (const auto& r : b.dirtyLog)
+                if (r.epoch > next.syncedEpoch) {
+                    std::memcpy(dst + r.offset, b.shadow.data() + r.offset, r.size);
+                    copied += r.size;
+                }
+        }
+        next.syncedEpoch = b.writeEpoch;
         if (b.transferStats.available) {
-            b.transferStats.mappedWriteBytes += b.size;
-            b.transferStats.preservedBytes += b.size;
+            b.transferStats.mappedWriteBytes += copied;
+            b.transferStats.preservedBytes += copied;
         }
     }
     return &next;
@@ -394,9 +447,13 @@ bool VulkanDevice::updateBufferChecked(BufferHandle h, const void* data,
             });
         }
         b->versions.clear();
+        // discardPrefix leaves the new version's tail unspecified.
+        v.syncedEpoch = discardPrefix && size < capacity ? VBuffer::kUnsynced : b->writeEpoch;
         b->versions.push_back(v);
         b->current = 0;
         b->size = capacity;
+        b->dirtyLog.clear();
+        b->logBaseEpoch = b->writeEpoch;
         if (b->transferStats.available) {
             ++b->transferStats.updateCalls;
             b->transferStats.requestedBytes += size;
@@ -417,6 +474,7 @@ bool VulkanDevice::updateBufferChecked(BufferHandle h, const void* data,
     std::memcpy(b->shadow.data() + offset, data, size);
     if (b->transferStats.available) b->transferStats.cpuShadowWriteBytes += size;
     std::memcpy(static_cast<uint8_t*>(v->alloc.mapped) + offset, data, size);
+    recordShadowWrite(*b, *v, offset, size, whole && size < b->size);
     if (b->transferStats.available) {
         ++b->transferStats.updateCalls;
         b->transferStats.requestedBytes += size;

@@ -260,6 +260,50 @@ static void duplicateSedimentLinksDoNotThrow(){
     AIVERSE_TEST_CHECK(result.visitedBanks==0 && result.transferCount==0);
 }
 
+// The routing system steps the resource in place (no extra copy): a COW
+// rollback snapshot taken before the tick must keep the old volumes, and the
+// configured ports (including a dead inflow skipped this tick) must persist.
+struct FloodHost final:GameModule {
+    std::string name() const override {return "flood-host";}
+    void setup(Simulation& sim,const Json&,const Json&) override {
+        auto& w=sim.world();
+        auto r=twoCells(40,w.create());
+        nw::WaterFloodPort dead;dead.x=0;dead.z=0;
+        dead.kind=nw::WaterFloodPortKind::Inflow;
+        dead.waterBody=Entity{77,3};dead.maxCmPerTick=5;
+        nw::WaterFloodPort drain;drain.x=1;drain.z=0;
+        drain.kind=nw::WaterFloodPortKind::Outflow;drain.maxCmPerTick=1;
+        r.ports={dead,drain};
+        w.setResource<nw::WaterFloodResource>(std::move(r));
+        nw::addNereidFloodRoutingSystem(sim,"water.flood");
+    }
+    void applyCommand(Simulation&,const Command&) override {}
+    void hashState(Simulation&,Hasher&) override {}
+    int result(Simulation&) override {return 0;}
+    bool serializeState(Simulation&,Archive& a) override {return a.ok();}
+};
+
+static void floodSystemStepsInPlace(){
+    Simulation sim(SimConfig{5,20,0,true},std::make_unique<FloodHost>());
+    sim.setup(Json::object(),Json::object());
+    sim.world().enableCowSnapshots(true);
+    SimSnapshot before;sim.saveState(before);
+    const auto volumes=[&]{
+        const auto* r=sim.world().resourceConst<nw::WaterFloodResource>();
+        return std::pair{r->cells[0].volumeCm,r->cells[1].volumeCm};
+    };
+    const auto start=volumes();
+    for(int i=0;i<6;++i)sim.step();
+    const auto* r=sim.world().resourceConst<nw::WaterFloodResource>();
+    AIVERSE_TEST_CHECK(r->ports.size()==2);
+    AIVERSE_TEST_CHECK(volumes()!=start);
+    const auto after=volumes();
+    sim.loadState(before);
+    AIVERSE_TEST_CHECK(volumes()==start);
+    for(int i=0;i<6;++i)sim.step();
+    AIVERSE_TEST_CHECK(volumes()==after);
+}
+
 int main(){
     rockIsNotErodible();
     partialObstructionPassesWater();
@@ -270,5 +314,6 @@ int main(){
     cascadeMeshAddressSurvivesSetCascades();
     reAddedSurfaceGetsFreshRevision();
     duplicateSedimentLinksDoNotThrow();
+    floodSystemStepsInPlace();
     std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull, cascade mesh, surface revision, sediment links)\n";
 }

@@ -525,10 +525,18 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         // Publish a single immutable snapshot for both terrain heights and
         // obstacle footprints. Async foliage jobs keep old snapshots alive
         // until canceled; revision checks discard their stale results.
-        auto mutableHeights=std::make_shared<terraweave::AuthoredWorldHeightSnapshot>(
-            assets_.cellSize);
-        auto mutableMask=std::make_shared<terraweave::FoliageExclusionMask>();
+        // A phenology-only change (season / growth) keeps the resident tiles,
+        // clearings and soil: reuse the last height/obstacle snapshot instead
+        // of resampling every resident tile.
+        const bool phenologyOnly=vegetationPhenologyDirty_ && !landscapeChanged &&
+            !vegetationClearingsDirty_ && !vegetationTerrainDirty_ &&
+            lastVegetationHeights_;
+        auto mutableHeights=phenologyOnly ? nullptr :
+            std::make_shared<terraweave::AuthoredWorldHeightSnapshot>(assets_.cellSize);
+        auto mutableMask=phenologyOnly ? nullptr :
+            std::make_shared<terraweave::FoliageExclusionMask>();
         size_t boxes=0;
+        if(!phenologyOnly) {
         // The same immutable exclusion mask is captured by near forest
         // workers and Horizon's CPU-only canopy baker. No live callbacks
         // inspect mutable gameplay state from a worker thread.
@@ -598,10 +606,13 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 }
             }
         }
-        const std::shared_ptr<const terraweave::AuthoredWorldHeightSnapshot> heights =
+        }
+        std::shared_ptr<const terraweave::AuthoredWorldHeightSnapshot> heights =
             std::move(mutableHeights);
         std::shared_ptr<const terraweave::FoliageExclusionMask> mask;
         if(boxes)mask=std::move(mutableMask);
+        if(phenologyOnly) {heights=lastVegetationHeights_;mask=lastVegetationMask_;}
+        lastVegetationHeights_=heights;lastVegetationMask_=mask;
         if(terraForest_ &&
            (landscapeChanged || vegetationClearingsDirty_ ||
             vegetationTerrainDirty_)){
@@ -819,6 +830,7 @@ void WorldScene::shutdown(gfx::Device& device) {
     deferredModels_.clear();
     {std::lock_guard lock(cache_->mutex);cache_->models.clear();}
     nereidFlowObstructions_.clear();
+    lastVegetationHeights_.reset();lastVegetationMask_.reset();
     floodVisual_.shutdown(device);
     nereidWater_.shutdown(device);
     cascades_.shutdown(device);

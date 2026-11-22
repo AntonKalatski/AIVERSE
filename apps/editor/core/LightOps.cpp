@@ -12,7 +12,8 @@ Json okJson() { Json r = Json::object(); r.set("ok", Json::fromBool(true)); retu
 const char* kLightProps = R"J("x": {"type": "number"}, "z": {"type": "number"}, "height": {"type": "number", "description": "above the ground"},
     "color": {"type": "array", "items": {"type": "number"}, "description": "[r, g, b] 0..1"}, "radius": {"type": "number", "description": "cells"},
     "intensity": {"type": "number"}, "flicker": {"type": "number", "description": "0..1, fire"}, "halo": {"type": "number", "description": "glow sprite size, 0 = none"},
-    "name": {"type": "string"}, "type": {"type": "string", "enum": ["point", "spot"], "description": "spot = searchlight / lamp cone"},
+    "name": {"type": "string"}, "type": {"type": "string", "enum": ["point", "spot", "sphere", "tube"], "description": "spot = searchlight / lamp cone; sphere / tube = area sources shaded as such by Luma direct lighting (a point elsewhere)"},
+    "sourceRadius": {"type": "number", "description": "sphere / tube: emitter radius (default 0.25)"}, "length": {"type": "number", "description": "tube: length along yaw (default 2)"},
     "angle": {"type": "number", "description": "spot cone, degrees (default 40)"}, "softness": {"type": "number", "description": "spot edge 0..1"},
     "pitch": {"type": "number", "description": "spot: degrees below the horizon (default 35)"}, "yaw": {"type": "number", "description": "spot: direction, degrees (0 = +x, 90 = +z)"},
     "sweep": {"type": "number", "description": "spot: swing amplitude, degrees (searchlight)"}, "sweepSpeed": {"type": "number", "description": "degrees per second"},
@@ -28,7 +29,7 @@ Json& mapLightsMut(MapDoc& doc) {
 }
 
 void applyLightParams(Json& l, const Json& p) {
-    for (const char* k : {"x", "z", "height", "radius", "intensity", "flicker", "angle", "softness", "pitch", "yaw", "sweep", "sweepSpeed", "beam"})
+    for (const char* k : {"x", "z", "height", "radius", "intensity", "flicker", "angle", "softness", "pitch", "yaw", "sweep", "sweepSpeed", "beam", "sourceRadius", "length"})
         if (p[k].isNumber()) l.set(k, n3(p[k].toDouble()));
     if (p["halo"].isNumber()) l.set("halo", n3(p["halo"].toDouble()));
     else if (p.has("halo")) l.set("halo", Json::fromBool(p["halo"].boolean(true)));
@@ -46,8 +47,13 @@ void applyLightParams(Json& l, const Json& p) {
     if (p["rate"].isNumber()) l.set("rate", n3(p["rate"].toDouble()));
     for (const char* k : {"electric", "nightOnly"}) if (p.has(k)) l.set(k, Json::fromBool(p[k].boolean(false)));
     if (p.has("type")) {
-        if (p.getStr("type") == "spot") l.set("type", Json::string("spot"));
-        else { l.erase("type"); for (const char* k : {"angle", "softness", "pitch", "yaw", "sweep", "sweepSpeed"}) l.erase(k); }
+        const std::string type = p.getStr("type");
+        if (type == "spot" || type == "sphere" || type == "tube") l.set("type", Json::string(type));
+        else l.erase("type");
+        if (type != "spot") for (const char* k : {"angle", "softness", "pitch", "sweep", "sweepSpeed"}) l.erase(k);
+        if (type != "spot" && type != "tube") l.erase("yaw");
+        if (type != "sphere" && type != "tube") l.erase("sourceRadius");
+        if (type != "tube") l.erase("length");
     }
     if (p.has("x") || p.has("z")) l.erase("pos");
 }

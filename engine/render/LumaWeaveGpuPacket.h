@@ -16,8 +16,8 @@ namespace aiverse::render {
 struct LumaGpuLight {
     float4 positionRadius{}; // xyz world, w = finite radius
     float4 colorIntensity{}; // linear rgb, w = intensity; NOT pre-exposed or baked
-    float4 directionCone{};  // xyz, w = spot cosOuter, -2 means omni point
-    float4 settings{};       // x = cosInner, y = importanceBias, z = shadowEnabled, w reserved
+    float4 directionCone{};  // xyz direction / tube axis, w = spot cosOuter, tube half length, -2 omni
+    float4 settings{};       // x = cosInner, y = importanceBias, z = shadowEnabled, w = area source radius
     std::array<uint32_t,4> identity{}; // key low/high, source kind, contributesToGi flag
 };
 static_assert(sizeof(LumaGpuLight)==80, "LumaWeave GPU light buffer ABI changed");
@@ -68,8 +68,10 @@ inline LumaGpuInputPacket packLumaSources(const LumaWeaveRegistry& registry,
             {light.position.x,light.position.y,light.position.z,light.radius},
             {light.color.x,light.color.y,light.color.z,light.intensity},
             {light.direction.x,light.direction.y,light.direction.z,
-             light.kind==LumaLightKind::Spot ? light.cosOuter : -2.0f},
-            {light.cosInner,light.importanceBias,light.castsShadows?1.0f:0.0f,0.0f},
+             light.kind==LumaLightKind::Spot ? light.cosOuter :
+             light.kind==LumaLightKind::Tube ? light.halfLength : -2.0f},
+            {light.cosInner,light.importanceBias,light.castsShadows?1.0f:0.0f,
+             light.kind>=LumaLightKind::Sphere ? light.sourceRadius : 0.0f},
             {uint32_t(light.key),uint32_t(light.key>>32),
              uint32_t(light.kind),light.contributesToGi?1u:0u}
         });

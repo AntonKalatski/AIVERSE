@@ -15,7 +15,7 @@
     "    LumaScreenParams current;\n" \
     "    float4x4 prevVP;\n" \
     "    float4 history;   // x=previousValid, y=historyBlend[0..0.95], z=normalDot threshold, w=depth delta threshold\n" \
-    "    float4 spatial;   // x=neighbor device depth delta, y=temporal RGB clamp delta, z=far-camera cut, w=reserved\n" \
+    "    float4 spatial;   // x=neighbor device depth delta, y=temporal RGB clamp delta, z=far-camera cut, w=object velocity bound\n" \
     "};\n" \
     "kernel void cs_main(\n" \
     "    uint i [[thread_position_in_grid]],\n" \
@@ -25,7 +25,8 @@
     "    texture2d<float,access::read> direct [[texture(2)]],\n" \
     "    texture2d<float,access::read> oldFiltered [[texture(3)]],\n" \
     "    texture2d<float,access::read> oldNormals [[texture(4)]],\n" \
-    "    depth2d<float> sceneDepth [[texture(5)]]\n" \
+    "    depth2d<float> sceneDepth [[texture(5)]],\n" \
+    "    texture2d<float> objectVelocity [[texture(7)]]\n" \
     "#if defined(LUMAWEAVE_PBR_NORMALS)\n" \
     "    , texture2d<float,access::read> surfaceNormal [[texture(6)]]\n" \
     "#endif\n" \
@@ -76,20 +77,30 @@
     "    // Reprojection into PREVIOUS displayed frame's low-res texture.\n" \
     "    if(p.history.x>.5f) {\n" \
     "        float4 clip=p.prevVP*float4(world,1.0f);\n" \
-    "        if(clip.w>1e-5f) {\n" \
-    "            float3 ndc=clip.xyz/clip.w;\n" \
-    "            float2 oldUv=ndc.xy*.5f+.5f;\n" \
+    "        // Moving objects: PRISMA's object velocity (current - previous\n" \
+    "        // projected UV, B = object mask) replaces camera reprojection; their\n" \
+    "        // previous depth is unknown, so only the normal test applies.\n" \
+    "        bool moved=false;\n" \
+    "        float2 movedUv=float2(0);\n" \
+    "        if(p.spatial.w>.5f) {\n" \
+    "            float2 velocityUv=p.current.eye.w>.5f?float2(uv.x,1.0f-uv.y):uv;\n" \
+    "            float4 v=objectVelocity.sample(lumaDepthSampler,velocityUv);\n" \
+    "            if(v.b>.5f){moved=true;movedUv=uv-v.rg;}\n" \
+    "        }\n" \
+    "        if(clip.w>1e-5f || moved) {\n" \
+    "            float3 ndc=clip.w>1e-5f?clip.xyz/clip.w:float3(0);\n" \
+    "            float2 oldUv=moved?movedUv:ndc.xy*.5f+.5f;\n" \
     "            float2 readUv=p.current.eye.w>.5f ?\n" \
     "                         float2(oldUv.x,1.0f-oldUv.y):oldUv;\n" \
     "            if(all(readUv>=float2(0)) && all(readUv<float2(1)) &&\n" \
-    "               ndc.z>=0.0f && ndc.z<=1.0f) {\n" \
+    "               (moved || (ndc.z>=0.0f && ndc.z<=1.0f))) {\n" \
     "                uint2 oldPixel=uint2(readUv*p.current.resolution.xy);\n" \
     "                float4 old=oldFiltered.read(oldPixel);\n" \
     "                float4 oldNormal=oldNormals.read(oldPixel);\n" \
     "                float delta=abs(oldNormal.w-ndc.z);\n" \
     "                float nd=dot(normal,oldNormal.xyz);\n" \
     "                if(old.w>0.0f && old.w<.99999f &&\n" \
-    "                   delta<=p.history.w && nd>=p.history.z) {\n" \
+    "                   (moved || delta<=p.history.w) && nd>=p.history.z) {\n" \
     "                    float3 clampWidth=float3(p.spatial.y)*(1.0f+color);\n" \
     "                    float3 historic=clamp(old.rgb,max(color-clampWidth,0.0f),\n" \
     "                                          color+clampWidth);\n" \
