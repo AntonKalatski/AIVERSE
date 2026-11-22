@@ -26,7 +26,7 @@
     ],
     "cells": {"grass": "snow", "sand": "path", "ramp": "path", "rock": "rock", "blocked": "rock", "lakebed": "earth", "shallows": "earth", "dug": "earth"},
     "cliff": {"texture": "textures/terrain/rock_repeat.png", "normal": "textures/terrain/rock_n_repeat.png", "scale": 3, "slope": [0.3, 0.55]},
-    "water": {"mode": "bodies", "color": [0.55, 0.70, 0.82, 0.85]}
+    "water": {"mode": "bodies", "color": [0.55, 0.70, 0.82, 0.85], "renderer": "nereid"}
   },
   "orientation": "landscape",
   "icon": "icon.png"

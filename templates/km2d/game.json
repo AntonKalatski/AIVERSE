@@ -2,6 +2,7 @@
 // levels, ramps, fine heights) seen through a fixed-angle orthographic camera, with buildings,
 // units and trees drawn as 2D sprites standing on it. Art: tools/art2d/make_samples.py (CC0).
 {
+  "terrain": {"water": {"renderer": "nereid"}},
   "description": "2D-спрайты на 3D-рельефе (K&M).",
   "name": "Green Hills",
   "id": "com.aiverse.greenhills",
