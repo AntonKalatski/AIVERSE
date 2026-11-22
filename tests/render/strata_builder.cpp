@@ -188,7 +188,7 @@ int main() {
             originalLeaves.push_back(
                 spatial.meshletVertices[m.vertexOffset +
                     spatial.meshletTriangles[m.triangleOffset + n]]);
-    assert(originalLeaves == islandsIndices);
+    assert(canonical(originalLeaves) == canonical(islandsIndices)); // spatial (Morton) leaf order
     size_t parents = 0;
     for (size_t node = 0; node < spatial.nodes.size(); ++node) {
         if (!spatial.nodes[node].childCount) continue;
