@@ -8,7 +8,7 @@
 #include <vector>
 #include "Workspace.h"
 #include "engine/game/GridFieldData.h"
-#include "engine/view/GameFieldView.h"
+#include "engine/view/game/GameFieldView.h"
 
 namespace aiverse::game { struct GameScene; }
 

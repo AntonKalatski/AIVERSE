@@ -496,7 +496,7 @@ batalla intensa; elegir las sombras a mano en el menú lo desactiva (`AIVERSE_AD
 - **Editor** — la ventana «Lighting»: vista previa de la hora del día y la tormenta, nivel de calidad de la luz, lista de
   fuentes. Para agentes: `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-El formato de los campos está en la cabecera de `engine/view/GameLights.h`. Variables de prueba: `AIVERSE_TIME_OF_DAY`,
+El formato de los campos está en la cabecera de `engine/view/game/GameLights.h`. Variables de prueba: `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Comprobar mecánicas por MCP

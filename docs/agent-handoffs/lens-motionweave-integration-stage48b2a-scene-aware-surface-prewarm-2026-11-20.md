@@ -16,8 +16,8 @@ Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage48b1-fog
 
 ## Modified paths
 
-- `engine/view/GameView.h`: one public prewarm API and private shared owner transaction helper.
-- `engine/view/GameView.cpp`: relocate the existing full five-owner transaction to the shared helper, call it from normal `draw`, implement optional map-frame prewarm with explicit frame-epoch invalidation.
+- `engine/view/game/GameView.h`: one public prewarm API and private shared owner transaction helper.
+- `engine/view/game/GameView.cpp`: relocate the existing full five-owner transaction to the shared helper, call it from normal `draw`, implement optional map-frame prewarm with explicit frame-epoch invalidation.
 - `tests/tests.cpp`: new tests `lens_stage48b2a_scene_prewarm_invalidates_secondary_epoch_until_primary` and `lens_stage48b2a_late_fog_failure_rolls_back_scene_prewarm`.
 - This handoff document.
 

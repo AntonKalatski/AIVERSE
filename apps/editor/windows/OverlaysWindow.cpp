@@ -6,7 +6,7 @@
 #include <algorithm>
 #include "../Editor.h"
 #include "../EditorUtil.h"
-#include "engine/view/GameOverlayData.h"
+#include "engine/view/game/GameOverlayData.h"
 
 namespace aiverse::editor {
 

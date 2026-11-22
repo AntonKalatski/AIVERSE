@@ -5,7 +5,7 @@
 AIVERSE already has two different transform usages:
 
 - `engine/sim/CommonComponents.h::Transform`: RTS **world-space** `pos`, `prevPos`, yaw. RTS movement, spatial hashing and legacy saves depend on this meaning.
-- `engine/view/EntityHierarchy.h`: presentation-only `EntityParent` links evaluated into `render::mat4` using floats. This is appropriate for effect attachments and rendering but not authoritative physics / lockstep.
+- `engine/view/game/EntityHierarchy.h`: presentation-only `EntityParent` links evaluated into `render::mat4` using floats. This is appropriate for effect attachments and rendering but not authoritative physics / lockstep.
 
 Do **not** silently redefine the existing RTS `Transform` or use view-only float matrices for simulation.
 

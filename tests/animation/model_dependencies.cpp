@@ -1,5 +1,5 @@
 // Stage 97 source-level regression fixture (native execution deferred).
-#include "engine/view/GameModelSourceDependencies.h"
+#include "engine/view/game/GameModelSourceDependencies.h"
 #include "../AlwaysCheck.h"
 #include <set>
 #include <string>

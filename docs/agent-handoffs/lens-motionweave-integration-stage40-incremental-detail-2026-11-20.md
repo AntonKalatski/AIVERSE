@@ -4,12 +4,12 @@
 - Repository: chromealex/AIVERSE
 - Feature branch: feature/lens-motionweave-integration. Nothing merged into main.
 - Stage 39 base: 878987bc89a7fbc5a5667ea35e6f85faec0252ea
-- e87dc97478be292586b3c7a6f0c3e0f12f1f7897 — engine/view/GameTerrainRender.h: private tryBuildDetailIncremental entry point.
-- b788fdfcb7d7ebd5166bf0a56b0f0b2b2bc7fa2f — engine/view/GameTerrainDetailMesh.cpp: copy-on-write normal/splat CPU texel cache, update only dirty region where sizes match.
-- a0580bbd5a1144013388e58103ae8cdf7554531b — engine/view/GameTerrainDetailMesh.cpp: transactional same-map detail updates.
-- 2337bc9f292538a6f9e6464176c399c1b9c1f4d1 — engine/view/GameTerrainRender.cpp: incremental path before Stage 39 full transaction, rollback of changed preflight metadata on exception.
+- e87dc97478be292586b3c7a6f0c3e0f12f1f7897 — engine/view/game/GameTerrainRender.h: private tryBuildDetailIncremental entry point.
+- b788fdfcb7d7ebd5166bf0a56b0f0b2b2bc7fa2f — engine/view/game/GameTerrainDetailMesh.cpp: copy-on-write normal/splat CPU texel cache, update only dirty region where sizes match.
+- a0580bbd5a1144013388e58103ae8cdf7554531b — engine/view/game/GameTerrainDetailMesh.cpp: transactional same-map detail updates.
+- 2337bc9f292538a6f9e6464176c399c1b9c1f4d1 — engine/view/game/GameTerrainRender.cpp: incremental path before Stage 39 full transaction, rollback of changed preflight metadata on exception.
 - 400f6bc9e2f276ee9eb08f53b6c5bc6f266db074 — tests/tests.cpp: two new fault-injection/perf-shape regression tests.
-- f9c9076a8b2c395ab30815663e926128b30b8086 — engine/view/GameTerrainDetailMesh.cpp: explicit utility header for handle exchange.
+- f9c9076a8b2c395ab30815663e926128b30b8086 — engine/view/game/GameTerrainDetailMesh.cpp: explicit utility header for handle exchange.
 
 ## Actual functionality
 1. Same-size Detail Terrain edits are classified using existing published per-chunk hash, the pending explicit detail dirty-sample rectangle, active texture dimensions and current quality-dependent detail resolution. Global remap, changed scale, changed material-layer assignments or invalid cache use the existing Stage 39 complete staged rebuild.

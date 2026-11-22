@@ -20,10 +20,10 @@ Previous: docs/agent-handoffs/lens-motionweave-integration-stage48b2a-scene-awar
 
 ## Modified files
 
-- `engine/view/GameView.h`, `engine/view/GameView.cpp`: opaque persistent private candidate owner, primary draw reuse, conservative lease validation, cancellation, lifecycle reset, per-prewarm diagnostics.
-- `engine/view/GameTerrain.cpp`: discard lease before map size/detail changes, without exposing incomplete candidate implementation to the translation unit.
-- `modules/rts/view/RtsRoadView.h/.cpp`, `engine/view/GameShoreView.h/.cpp`: source revision invalidation for road/shore mutations and publications.
-- `engine/view/GameGroundFx.h`, `engine/view/VisibilityField.h`, `engine/view/GameTerrainRender.h`: expose read-only existing publication revisions.
+- `engine/view/game/GameView.h`, `engine/view/game/GameView.cpp`: opaque persistent private candidate owner, primary draw reuse, conservative lease validation, cancellation, lifecycle reset, per-prewarm diagnostics.
+- `engine/view/game/GameTerrain.cpp`: discard lease before map size/detail changes, without exposing incomplete candidate implementation to the translation unit.
+- `modules/rts/view/RtsRoadView.h/.cpp`, `engine/view/game/GameShoreView.h/.cpp`: source revision invalidation for road/shore mutations and publications.
+- `engine/view/game/GameGroundFx.h`, `engine/view/VisibilityField.h`, `engine/view/game/GameTerrainRender.h`: expose read-only existing publication revisions.
 - `tests/tests.cpp`: two fake-RHI regressions for unpublished one-shot reuse and stale visibility/map/camera mutations (plus previous Stage 48B.2A tests now exercise the lease path).
 - This handoff.
 

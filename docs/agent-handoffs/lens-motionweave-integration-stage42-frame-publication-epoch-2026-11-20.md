@@ -5,9 +5,9 @@
 - Branch: feature/lens-motionweave-integration (NOT merged into main).
 - Starting parent: e1bd08b5e75faea836b4dfbd56010731c9c86932 (Stage 41).
 - a86154d684a04bb913651ecf9f71d1e224004b92 — create engine/render/FramePublicationEpoch.h.
-- 2567376268e7aaeff9fc542cc00ea1cffa4dec67 — engine/view/GameView.h: generic epoch owner, published snapshot and readiness contract.
-- 0f62c4b70ad33107427e2c88638176a4c86eef83 — engine/view/GameView.cpp: primary frame epoch RAII, synchronous owner acknowledgments and prepared-camera readiness.
-- ec49f2632fb5f2949636c05d923dbab8feb14769 — engine/view/GameTerrain.cpp: invalidate previous visual epoch before terrain rebuild.
+- 2567376268e7aaeff9fc542cc00ea1cffa4dec67 — engine/view/game/GameView.h: generic epoch owner, published snapshot and readiness contract.
+- 0f62c4b70ad33107427e2c88638176a4c86eef83 — engine/view/game/GameView.cpp: primary frame epoch RAII, synchronous owner acknowledgments and prepared-camera readiness.
+- ec49f2632fb5f2949636c05d923dbab8feb14769 — engine/view/game/GameTerrain.cpp: invalidate previous visual epoch before terrain rebuild.
 - 38acc01df6598449d21ac59ce4ff788dd61231d7 — apps/client/GameClient.cpp: use committed view epoch as CameraVisualFrameId and gate secondary RT render.
 - 60a2ef9a0a3bc58d01196d0a115bc33c59273390 — apps/client/GameClient.h: remove old uncorrelated presentation counter.
 - c8921b9e010725c17a362aaf79a59d77c9a0a611 — tests/tests.cpp: three epoch unit tests for owner completeness, abort and stale retry.

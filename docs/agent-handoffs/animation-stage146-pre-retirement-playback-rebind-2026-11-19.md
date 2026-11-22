@@ -16,7 +16,7 @@ Stage 145 preserves compatible playback across different Model publication epoch
 1. `619f32a12012666a4baaf0ca421d85e784ea3df3` — `libraries/include/aiverselib/animation/MotionWeaveSourceBridge.h`: initial bounded pre-retirement playback capture/rebind with protected 120-sync expiry and 8192-record cap.
 2. `8c0a4a0824d8b378bb338671f767e8bc36f682a4` — same header: correct capture to use `World::tryGetConst<T>()` for read-only ECS queries and add required standard headers.
 3. `2233ae00a85f5d10ec2a62f1873344902a32ce67` — `engine/view/View.h`: expose opt-in `View::forgetSourcesForReimport(ids)` while preserving original `forgetSources(ids)` semantics.
-4. `c614ee3fe7d7abffc204883b9597bb6d1b5b9583` — `engine/view/GameLook.cpp`: use opt-in pre-retirement detach at two existing graph/model source reload sites; unrelated generic source removals continue to discard playback.
+4. `c614ee3fe7d7abffc204883b9597bb6d1b5b9583` — `engine/view/game/GameLook.cpp`: use opt-in pre-retirement detach at two existing graph/model source reload sites; unrelated generic source removals continue to discard playback.
 
 ## Public API and exact lifecycle
 

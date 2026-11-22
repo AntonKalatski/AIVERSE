@@ -22,6 +22,9 @@ def check(root: pathlib.Path) -> list[str]:
     for path in sorted((root / "engine/view").rglob("*")):
         if path.suffix not in {".h", ".cpp"}:
             continue
+        # engine/view/game: the game simulation's presentation, built on top of the canonical View
+        if path.relative_to(root / "engine/view").parts[0] == "game":
+            continue
         content = path.read_text("utf-8")
         relative = path.relative_to(root)
         for match in INCLUDE.finditer(content):

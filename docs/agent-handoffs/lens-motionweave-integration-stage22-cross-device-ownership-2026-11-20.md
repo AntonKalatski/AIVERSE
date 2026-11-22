@@ -2,8 +2,8 @@
 
 ## Branch and implementation commits
 - Repo: `chromealex/AIVERSE`. Branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- `1a18eeef624ccdc7c2e70021089cced4b061098e`: `engine/view/Game2DView.h`, borrowed `resourceDevice_` field.
-- `a95a8507a970076be3a32792db3d4b78ab5efe0b`: `engine/view/GameSprites.cpp`, reject shutdown/guarded recovery with wrong gfx::Device, remember owner even when early initialization throws, clear only after successful teardown.
+- `1a18eeef624ccdc7c2e70021089cced4b061098e`: `engine/view/game/Game2DView.h`, borrowed `resourceDevice_` field.
+- `a95a8507a970076be3a32792db3d4b78ab5efe0b`: `engine/view/game/GameSprites.cpp`, reject shutdown/guarded recovery with wrong gfx::Device, remember owner even when early initialization throws, clear only after successful teardown.
 - `fa4bc6da81f3e3b78ac9f25bd721d849473ed76b`: `tests/render/lens_sprite_gpu_fault_injection.cpp`, extend existing fault test with a failed initial shader allocation + refused idle, cross-device cleanup refusal and correct-device retry.
 - Previous: `docs/agent-handoffs/lens-motionweave-integration-stage21-reload-preflight-2026-11-20.md`.
 

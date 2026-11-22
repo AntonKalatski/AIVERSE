@@ -4,7 +4,7 @@
 - Repository `chromealex/AIVERSE`, branch `feature/lens-motionweave-integration`. No merge to `main`.
 - `2e65bca207f1372af874b0eb3a80f6cc4d40ae85`: `engine/render/GeometryScene.h`, new public `loadTransactional(gfx::Device&,const Json&,const FileReader&)`.
 - `452740139063e79586534a5eda3d38659579ceb7`: `engine/render/GeometryScene.cpp`, build and upload into an independent staging scene before replacing resident model/proxy/instance/group containers.
-- `845038857ff45bf67ee0e2615a790b092f5be686`: `engine/view/GameView.cpp`, opt into transactional geometry loading, retain old geometry on staging failure, clear only on intentionally absent descriptor.
+- `845038857ff45bf67ee0e2615a790b092f5be686`: `engine/view/game/GameView.cpp`, opt into transactional geometry loading, retain old geometry on staging failure, clear only on intentionally absent descriptor.
 
 ## Architecture and behavior
 - A local `GeometryScene staged` receives `loadImpl` and performs all file/CPU model/HLOD/upload work separately from the current live scene.

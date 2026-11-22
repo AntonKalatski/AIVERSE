@@ -24,7 +24,7 @@ Previous: [Stage 129](animation-stage129-model-cache-read-leases-2026-11-19.md)
 4. `212f51f16aee589eb10b533ff6ffdd0e3f16a66c` —
    `ModelResourceCache.h`: `modelReadSafetyStats()` returns `ModelReadSafetyStats { activeReaders, peakReaders, blockedMutations }`. Every failed `requireNoModelReaders` increments `blockedMutations` BEFORE throwing `logic_error`. Counts all mutation attempts that are prohibited while leases are active: `invalidateSources`, `replace`, `trimUnused`, `shutdown`; do not interpret the count as successfully completed evictions or unique Model objects.
 5. `125ff30330c6a4d020394bab3298bed5b9e57ac6` —
-   `engine/view/GameView.h`: forwards Model cache reader diagnostics to RTS/editor via `modelReadSafetyStats()`, without affecting the engine-level View or simulation ECS.
+   `engine/view/game/GameView.h`: forwards Model cache reader diagnostics to RTS/editor via `modelReadSafetyStats()`, without affecting the engine-level View or simulation ECS.
 6. `ab343fa48d639ddfafef6aaca84af3451c980ea3` and
    `ccb8f54ee3a9d1f312606a806855f9b273f7488c` —
    `apps/editor/windows/StatsWindow.cpp`: the Editor reports active/peak Model read guards and cumulative denied cache mutations, with terminology that covers replacement, invalidation, trim and shutdown, not just eviction.

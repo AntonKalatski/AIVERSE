@@ -34,9 +34,9 @@ The synchronous editor can edit a MapGrid in-place, and the old terrain must rem
 ## Modified code
 
 - engine/view/VisibilityField.h, engine/view/VisibilityField.cpp
-- engine/view/GameGroundFx.h, engine/view/GameGroundFx.cpp
-- engine/view/GameView.h, engine/view/GameTerrain.cpp
-- engine/view/GameTerrainRender.h, engine/view/GameTerrainRender.cpp, engine/view/GameTerrainDetailMesh.cpp
+- engine/view/game/GameGroundFx.h, engine/view/game/GameGroundFx.cpp
+- engine/view/game/GameView.h, engine/view/game/GameTerrain.cpp
+- engine/view/game/GameTerrainRender.h, engine/view/game/GameTerrainRender.cpp, engine/view/game/GameTerrainDetailMesh.cpp
 - tests/tests.cpp
 - This handoff
 

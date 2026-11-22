@@ -11,9 +11,9 @@ read its document fully, start from its sample template, change data only. Curre
 
 | mode | document | sample | code |
 |---|---|---|---|
-| Top-down heroes: one directly controlled hero per player, sticks, aim, abilities, respawn | `docs/topdown.md` | `templates/topdown_arena` | `modules/rts/RtsTopDown.*` |
-| Extraction raids: containers, loot, objectives, extraction points, receipts for meta | `docs/raid.md` | `templates/extraction` | `modules/rts/RtsRaid*.cpp` |
-| Road traffic: lane cars, signalised junctions, pedestrians | `docs/traffic.md` (+ `docs/driving.md`) | `tools/citygen` projects | `modules/rts/RtsTraffic.*` |
+| Top-down heroes: one directly controlled hero per player, sticks, aim, abilities, respawn | `docs/topdown.md` | `templates/topdown_arena` | `engine/game/TopDown.*` |
+| Extraction raids: containers, loot, objectives, extraction points, receipts for meta | `docs/raid.md` | `templates/extraction` | `engine/game/Raid*.cpp` |
+| Road traffic: lane cars, signalised junctions, pedestrians | `docs/traffic.md` (+ `docs/driving.md`) | `tools/citygen` projects | `engine/game/Traffic.*` |
 
 Steps:
 1. `create_project {template}` from the sample or `rules_merge` the block (`topDown`, `raid`, `traffic`) into the game; `rules_lint` clean.

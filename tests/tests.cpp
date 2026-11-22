@@ -4374,7 +4374,7 @@ TEST(terrain_corners_file_roundtrip) {
 }
 
 // ---- terrain rendering (agent-terrain): the view's surface math (GameTerrainSurface.h)
-#include "engine/view/GameTerrainSurface.h"
+#include "engine/view/game/GameTerrainSurface.h"
 
 TEST(terrain_view_surface_levels_matches_classic) {
     game::MapGrid g;
@@ -4884,7 +4884,7 @@ TEST(models_baked_clips_match_the_pose) {
 }
 
 // ---------------- fog of war modes (rules / map "fogOfWar") and the view look ----------------
-#include "engine/view/GameFog.h"
+#include "engine/view/game/GameFog.h"
 TEST(fog_of_war_modes_and_look) {
     auto withFog = [](const char* mode, bool inMap) {
         Json rules = Json::parseFile(kSkirmish + "/rules.json"), map = Json::parseFile(kSkirmish + "/maps/valley.json");
@@ -5161,7 +5161,7 @@ TEST(vision_fast_equals_reference_planet) {
 }
 
 // ---------------- Lighting (lighting agent): GPU-free logic ----------------
-#include "engine/view/GameLights.h"
+#include "engine/view/game/GameLights.h"
 #include "engine/render/QualityGovernor.h"
 
 TEST(lighting_day_night_cycle) {
@@ -5541,10 +5541,10 @@ TEST(store_and_ads_through_mock_plugins) {
 
 // ---------------- overlays (data-driven helper elements; overlays agent) ----------------
 #include "engine/platform/Platform.h"
-#include "engine/view/GameOverlayData.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameOverlayData.h"
+#include "engine/view/game/GameView.h"
 #include "../engine/roads/RoadView.h"
-#include "engine/view/GameShoreView.h"
+#include "engine/view/game/GameShoreView.h"
 
 static game::Rules skirmishRules() { return game::loadRules(Json::parseFile(kSkirmish + "/rules.json")); }
 static std::string overlayError(const game::Rules& R, const char* json) {
@@ -6585,7 +6585,7 @@ TEST(gen_planet_seams) {
 }
 
 // ---- planet view (agent-planet-render): float cube-sphere surface of GamePlanet.h
-#include "engine/view/GamePlanet.h"
+#include "engine/view/game/GamePlanet.h"
 TEST(planet_view_surface_seams_and_picking) {
     using namespace aiverse::render;
     aiverse::game::PlanetBody b;
@@ -6959,7 +6959,7 @@ TEST(icons_generate_platform_sets) {
 }
 
 // ---- sprite shadows (RtsSpriteShadow): data keys, tiers, projected decal geometry
-#include "engine/view/GameSpriteShadow.h"
+#include "engine/view/game/GameSpriteShadow.h"
 
 TEST(sprite_shadow_data_keys) {
     using game::SpriteShadowMode;
@@ -8613,7 +8613,7 @@ TEST(models_dds_formats) {
 }
 
 // ---- sprite shadows (RtsSpriteShadow): data keys, tiers, projected decal geometry
-#include "engine/view/GameSpriteShadow.h"
+#include "engine/view/game/GameSpriteShadow.h"
 
 
 
@@ -10112,7 +10112,7 @@ TEST(script_embed_requires) {
     CHECK(game::scriptApiReference().has("actions"));
 }
 
-#include "engine/view/GameViewScript.h"
+#include "engine/view/game/GameViewScript.h"
 TEST(script_view_scripts) {
     Json rules = Json::parseFile(kSkirmish + "/rules.json");
     rules.set("viewScripts", Json::parse(R"(["scripts/view/v.lua"])"));
@@ -10159,7 +10159,7 @@ TEST(script_std_sell_refund) {   // lua/commands.lua: same formula as the former
 }
 
 // ---- terrain detail surface (agent-terrain): sub-cell visual heightmap
-#include "engine/view/GameTerrainDetail.h"
+#include "engine/view/game/GameTerrainDetail.h"
 
 TEST(terrain_detail_synthesis_is_deterministic_and_keeps_corners) {
     game::MapGrid g;
@@ -10559,7 +10559,7 @@ TEST(script_attack_event_is_visual_only) {
     CHECK(cues==1);
 }
 
-#include "engine/view/RegionSwipe.h"
+#include "engine/view/game/RegionSwipe.h"
 TEST(region_swipe_commands_and_cancellation) {
     Json rules=Json::parse(R"({"victory":{"mode":"survive","seconds":600},"types":{"base":{"tags":["zone"],"structure":true,"abilities":[{"id":"send","target":"point","range":100,"effects":[]}]}}})");
     Json map=Json::parse(R"({"size":[6,4],"regions":{"rows":["AABBCC","AABBCC","AABBCC","AABBCC"],"names":{"A":"a","B":"b","C":"c"}},"players":[{},{}],"entities":[{"type":"base","owner":1,"pos":[1,1]},{"type":"base","owner":1,"pos":[3,1]},{"type":"base","owner":2,"pos":[5,1]}]})");
@@ -10627,7 +10627,7 @@ TEST(region_shared_anchor_selects_local_owner) {
 }
 
 
-#include "engine/view/ScriptHud.h"
+#include "engine/view/game/ScriptHud.h"
 TEST(script_hud_player_binding_and_invalid_option) {
     auto sim=makeSimJson(R"({"playerAbilities":[{"id":"choose","target":"none","effects":[]}],"types":{"unit":{"hp":10}}})",
         R"({"size":[4,4],"players":[{},{}]})",3);
@@ -11262,7 +11262,7 @@ TEST(script_grid_sample_segment) {
 }
 
 
-#include "engine/view/EntityActionControls.h"
+#include "engine/view/game/EntityActionControls.h"
 TEST(entity_action_controls_preserve_source_and_cancel_invalid_drags) {
     auto sim=makeSimJson(R"({"victory":{"mode":"survive","seconds":600},"types":{"base":{"structure":true,"tags":["launcher"],"abilities":[{"id":"launch","target":"point","range":100,"effects":[]}]}}})",
         R"({"size":[8,4],"players":[{},{}],"entities":[{"type":"base","owner":1,"pos":[1,1]},{"type":"base","owner":1,"pos":[3,1]},{"type":"base","owner":2,"pos":[6,1]}]})",3);
@@ -11376,7 +11376,7 @@ TEST(entity_action_fractional_progress_binding) {
     vars["charge_"+suffix]=Fixed::fromInt(-2);controls.refresh(*sim,mod(*sim),1,defs);CHECK(controls.items()[0].progress()==0.f);
 }
 
-#include "engine/view/WorldCounters.h"
+#include "engine/view/game/WorldCounters.h"
 TEST(world_counter_script_bindings) {
     std::map<std::string,Fixed> vars{{"on",Fixed::fromInt(1)},{"count_7",Fixed::fromInt(12)},
         {"x_7",Fixed::fromRatio(3,2)},{"z_7",Fixed::fromInt(4)},{"visible_7",Fixed::fromInt(1)},

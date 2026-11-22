@@ -1,6 +1,6 @@
 // Lighting: time-of-day / weather preview, the map's "lighting" block, decorative map lights, and the
 // light quality tier (to see what weak Android GPUs get). Also registers the light_* MCP operations.
-// Data format: engine/view/GameLights.h.
+// Data format: engine/view/game/GameLights.h.
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

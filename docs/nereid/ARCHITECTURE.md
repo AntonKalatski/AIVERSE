@@ -178,7 +178,7 @@ Coordinates are X/Z world metres, `cellMeters` is explicitly Fixed,
 and body heights are provided by the caller. There is no change to
 existing NEREID schemas.
 
-`engine/view/NereidLegacyWaterAdapter.h` is the only
+`engine/view/game/NereidLegacyWaterAdapter.h` is the only
 legacy-dependent header:
 - `importWaterNetworkToNereid` uses the untouched legacy
   `buildGeometry` + `waterCells` rasterizer, and is appropriate for

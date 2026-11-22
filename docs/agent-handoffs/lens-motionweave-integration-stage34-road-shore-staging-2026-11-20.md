@@ -3,14 +3,14 @@
 ## Repository, branch and exact commits
 - Repo `chromealex/AIVERSE`; branch `feature/lens-motionweave-integration`; `main` unchanged.
 - `ade3d4a9d8878bbe399e0c47aec2f02d5eb2c189`: `modules/rts/view/RtsRoadView.h`, runtime-state handoff API and `buildingKit_` partial GPU texture owner.
-- `e3c9ef452d0b7b5ef6573c3b2c3bd79631daf1cd`: `engine/view/GameShoreView.h`, corresponding water-network handoff and `buildingKit_`.
+- `e3c9ef452d0b7b5ef6573c3b2c3bd79631daf1cd`: `engine/view/game/GameShoreView.h`, corresponding water-network handoff and `buildingKit_`.
 - `bc62aa10704f997902130faf74bb8046a52187de`: `modules/rts/view/RtsRoadView.cpp`, retain partial GPU kit textures through failed init, fail on essential road kit or paint atlas allocation, carry map/weather/ghost runtime configuration, idle-gated cleanup of incomplete kit.
-- `d33afd339ef772688674474c9d2c7f32705d7e0d`: `engine/view/GameShoreView.cpp`, retain partial GPU kit textures until safe shutdown and carry serialized water-network configuration into staged replacement.
-- `118a2131dc013abe54c3df5b7f92010e787652d3`: `engine/view/GameView.h`, store `pendingRoadRecovery_` and `pendingShoreRecovery_` if staged cleanup is denied GPU idle.
-- `adaffeb87db6d2af3f5ed0b24677e95b01ef8a68`: `engine/view/GameView.cpp`, stage both Road and Shore GPU owners before replacing either live owner, clean up failed new owners or retain them for retry, drain pending recovery at subsequent init/final shutdown.
+- `d33afd339ef772688674474c9d2c7f32705d7e0d`: `engine/view/game/GameShoreView.cpp`, retain partial GPU kit textures until safe shutdown and carry serialized water-network configuration into staged replacement.
+- `118a2131dc013abe54c3df5b7f92010e787652d3`: `engine/view/game/GameView.h`, store `pendingRoadRecovery_` and `pendingShoreRecovery_` if staged cleanup is denied GPU idle.
+- `adaffeb87db6d2af3f5ed0b24677e95b01ef8a68`: `engine/view/game/GameView.cpp`, stage both Road and Shore GPU owners before replacing either live owner, clean up failed new owners or retain them for retry, drain pending recovery at subsequent init/final shutdown.
 - `66cf1ff05a4f4c75276f61c06c2e07317802e41a`: `tests/tests.cpp`, road/shore partial kit texture allocation and refused idle test scenarios plus CPU runtime configuration handoff.
 - `e27eecbbf1a9d03bea7f1eec8824399d0f4e6648`: `modules/rts/view/RtsRoadView.cpp`, preserve manually supplied networks when no JSON map exists, clear stale map metadata when the map removes roads.
-- `790f155b786f4b0a3a485c4bd27bf2dd292d742d`: `engine/view/GameView.cpp`, include failed staging owners in retirement totals and pre-render retirement polling.
+- `790f155b786f4b0a3a485c4bd27bf2dd292d742d`: `engine/view/game/GameView.cpp`, include failed staging owners in retirement totals and pre-render retirement polling.
 - `c252774847d60142caf6bc0749f82c12b65a27c1`: `tests/tests.cpp`, extend CPU handoff regression to a directly supplied `RoadNetwork` topology.
 - Previous: `docs/agent-handoffs/lens-motionweave-integration-stage33-overlays-gpu-transaction-2026-11-20.md`.
 

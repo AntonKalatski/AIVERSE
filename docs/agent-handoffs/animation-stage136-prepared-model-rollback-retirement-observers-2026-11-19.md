@@ -40,7 +40,7 @@ Previously `ModelResourceCache::publishPrepared` called `render::uploadModel(dev
 
 ## Host integration
 
-- `engine/view/GameLook.cpp` `GameView::prepareType` now handles `publishPrepared=false` for a missing cache key by logging a warning (without warning on expected duplicate arrivals). Caught upload/publish `std::exception` is logged and the worker-preparation cursor still advances rather than repeatedly blocking on the same failed source.
+- `engine/view/game/GameLook.cpp` `GameView::prepareType` now handles `publishPrepared=false` for a missing cache key by logging a warning (without warning on expected duplicate arrivals). Caught upload/publish `std::exception` is logged and the worker-preparation cursor still advances rather than repeatedly blocking on the same failed source.
 - The host may subsequently use its existing synchronous fallback, but this stage does **not** claim a full retry policy, automatic backoff, or ready native rendering.
 
 ## Test source added (authored, NOT yet run)

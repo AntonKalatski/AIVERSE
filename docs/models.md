@@ -434,7 +434,7 @@ deformed on the GPU from a float texture; weights come from the node / mesh defa
 
 Selected and hovered objects get an outline (`GameView::setSelectionOutline`). The client shows the
 building to place as a translucent model (`GameView::drawGhost`), and `game::Portrait`
-(`engine/view/GamePortrait.h`) renders any type into a texture for HUD portraits and buttons.
+(`engine/view/game/GamePortrait.h`) renders any type into a texture for HUD portraits and buttons.
 
 ## Procedural animation
 

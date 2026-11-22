@@ -2,7 +2,7 @@
 #include "MapDoc.h"
 #include "TerrainOps.h"
 #include <cstring>
-#include "engine/view/GameTerrainDetail.h"
+#include "engine/view/game/GameTerrainDetail.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

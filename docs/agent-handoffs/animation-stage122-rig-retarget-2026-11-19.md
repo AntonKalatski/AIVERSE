@@ -52,15 +52,15 @@ Previous: [Stage 121](animation-stage121-universal-lod-attachments-2026-11-19.md
    matrices remain unchanged. All retarget scratch is consumed
    synchronously by `Renderer3D::drawModel`.
 5. `6138c0bd4728d56f643a1e9ed0b6c9e8803565e2` —
-   `engine/view/GameView.h`: optional validated
+   `engine/view/game/GameView.h`: optional validated
    `ModelChoice::poseRetarget` cache.
 6. `b8e623ebc481d901502e1efe06a5ae2112c6b9e1` —
-   `engine/view/GameLook.cpp`: compile name-derived
+   `engine/view/game/GameLook.cpp`: compile name-derived
    source-to-visual mapping **once on LOD import**, accepting it
    only if the generic validator approves. This avoids per-actor
    remap construction; visual pose evaluation still happens per draw.
 7. `a90b462e9627d8494624e644a2d335768eac3a9f` —
-   `engine/view/GameViewDraw.cpp`: reuse the same explicit
+   `engine/view/game/GameViewDraw.cpp`: reuse the same explicit
    retarget algorithm for validated LODs, feeding its resulting
    Pose and matrices to `View::submitModel`. Keep the historical
    legacy world-matrix fallback for older LODs whose maps were not

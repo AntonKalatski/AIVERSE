@@ -3,7 +3,7 @@
 ## Repository and exact commits
 - Repository: chromealex/AIVERSE, branch: feature/lens-motionweave-integration. main remains untouched.
 - b97e29ebe4af6d6c809060924859add370ab85fe — engine/render/NativePresentationRetirement.h: generic ordered retirement for gfx::TextureHandle.
-- ea61f79481f36f15079365723c4484b5887b92e1 — engine/view/GameTerrainRender.cpp: stage four map textures in full-map transaction, add rollback on partial GPU allocation and data upload failures.
+- ea61f79481f36f15079365723c4484b5887b92e1 — engine/view/game/GameTerrainRender.cpp: stage four map textures in full-map transaction, add rollback on partial GPU allocation and data upload failures.
 - fe50b057ee2d7c5cb665263d137c7c49de01e178 — tests/tests.cpp: inject texture allocation and upload failures.
 - Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage37-atomic-map-mesh-2026-11-20.md.
 

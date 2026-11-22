@@ -1,5 +1,5 @@
 #include "FieldOps.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

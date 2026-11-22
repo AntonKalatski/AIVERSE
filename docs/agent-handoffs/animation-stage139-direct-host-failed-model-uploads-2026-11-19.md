@@ -39,7 +39,7 @@ This is a **rare failure-path-only synchronous fallback**, intended for native d
 - Road chunk generation pre-reserves `chunks_` and checks `uploadModel` for each chunk, skipping incomplete chunks. On failure or exception, it safely aborts the partial GPU Model and writes an explanatory warning.
 - Editor road-ghost upload now checks the result and uses the same fail-closed cleanup path, without publishing a broken preview Model.
 
-### RTS shores: `engine/view/GameShoreView.cpp`
+### RTS shores: `engine/view/game/GameShoreView.cpp`
 - Direct prop imports now check `uploadModel` and safely abort partial GPU uploads; the prop vector is reserved before GPU allocation.
 - Generated shoreline chunks and transparent foam meshes check upload success. Vector capacity is reserved in advance, and failed partially uploaded models are aborted rather than inserted into the draw lists.
 - The old `-1` failed-prop result is retained, and generated-geometry failures are reported through `warnings_`.

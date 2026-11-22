@@ -553,7 +553,7 @@ Known remaining scope: page COW covers ordinary ECS components, but snapshot all
 
 ## 2026-11-18 — Generic ECS Parent hierarchy and transform graph (NEW)
 
-User requested efficient nested objects with `Parent` component and derived world transforms. Added an **opt-in generic engine API**, separate from the legacy RTS world-space `Transform` and the existing presentation-only `engine/view/EntityHierarchy.h`.
+User requested efficient nested objects with `Parent` component and derived world transforms. Added an **opt-in generic engine API**, separate from the legacy RTS world-space `Transform` and the existing presentation-only `engine/view/game/EntityHierarchy.h`.
 
 ### Commits and files
 

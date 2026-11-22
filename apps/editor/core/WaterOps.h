@@ -5,7 +5,7 @@
 #pragma once
 #include <string>
 #include "Workspace.h"
-#include "../../../engine/view/GameWater.h"
+#include "../../../engine/view/game/GameWater.h"
 
 namespace aiverse::editor {
 

@@ -464,7 +464,7 @@ docker build -f apps/server/Dockerfile -t aiverse-server .             # server 
 - **エディター** — 「Lighting」ウィンドウ：時刻と雷雨のプレビュー、ライトの品質レベル、光源一覧。エージェント向け：`light_add`、
   `light_update`、`light_delete`、`light_list`、`lighting_set`、`view_lighting`。
 
-フィールドの形式は `engine/view/GameLights.h` のヘッダーにあります。テスト用変数：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、
+フィールドの形式は `engine/view/game/GameLights.h` のヘッダーにあります。テスト用変数：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、
 `AIVERSE_CLOUDS`、`AIVERSE_STORM`。
 
 ## MCP によるメカニクスの検証

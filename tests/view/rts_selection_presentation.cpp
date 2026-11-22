@@ -1,6 +1,6 @@
 // Pure host-adapter regression: RTS selection must not depend on GameView
 // residency, renderer initialization or an editor window.
-#include "engine/view/GameSelectionPresentation.h"
+#include "engine/view/game/GameSelectionPresentation.h"
 #include "../AlwaysCheck.h"
 #include <cmath>
 #include <stdexcept>

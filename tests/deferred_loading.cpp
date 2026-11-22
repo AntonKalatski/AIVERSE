@@ -1,4 +1,4 @@
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 #include <iostream>
 #include <map>
 #include <thread>

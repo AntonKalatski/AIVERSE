@@ -1,5 +1,5 @@
 // Lighting operations of the editor core (MCP agents and the Lighting window): the map's decorative
-// "lights" array and its "lighting" block (time of day, clouds, storm). Format: engine/view/GameLights.h.
+// "lights" array and its "lighting" block (time of day, clouds, storm). Format: engine/view/game/GameLights.h.
 #pragma once
 #include "Workspace.h"
 

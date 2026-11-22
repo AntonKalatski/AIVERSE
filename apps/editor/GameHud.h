@@ -2,8 +2,8 @@
 #include "apps/client/UiModel.h"
 #include "engine/ui/UiLayer.h"
 #include "engine/i18n/Localization.h"
-#include "engine/view/RegionSwipe.h"
-#include "engine/view/EntityActionControls.h"
+#include "engine/view/game/RegionSwipe.h"
+#include "engine/view/game/EntityActionControls.h"
 
 namespace aiverse::editor {
 class Editor;

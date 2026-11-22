@@ -2,7 +2,7 @@
 #include "engine/platform/Platform.h"
 #include "engine/render/CameraModelSnapshot.h"
 #include "engine/render/RenderTargetPool.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>

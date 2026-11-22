@@ -2085,7 +2085,7 @@ kind. Painted with the editor's **Рельеф** window or `terrain_material`.
 **Quality tiers** (pause menu *Ground textures*, `Renderer3D::materialQuality()`, capped by the device default;
 `AIVERSE_TERRAIN=low|medium|high` overrides for testing): Low = vertex colours (weak Mali / Adreno / PowerVR, also every
 game without `layers`), Medium = splat textures + cliff texture, High = + normal maps and triplanar cliffs. Shaders:
-`engine/view/GameTerrainShaders.h` (GLSL + MSL, sun + soft shadows + point lights + clouds as the lit shader).
+`engine/view/game/GameTerrainShaders.h` (GLSL + MSL, sun + soft shadows + point lights + clouds as the lit shader).
 
 **Performance**: the terrain is cut into 32x32-cell chunks, frustum-culled; the editor rebuilds only chunks whose cells
 changed; during a match nothing is rebuilt: resource fields, creep and (heightfield maps) fog of war are read by the

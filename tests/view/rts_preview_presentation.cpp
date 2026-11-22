@@ -1,4 +1,4 @@
-#include "engine/view/GamePreviewRenderProvider.h"
+#include "engine/view/game/GamePreviewRenderProvider.h"
 #include "../AlwaysCheck.h"
 #include <cmath>
 

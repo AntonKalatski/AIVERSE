@@ -45,7 +45,7 @@ Call `init(gfx::Device&)`, `setLook(VisibilityLook)`,
 `draw(renderer,time,lowTier)` on the renderer thread.
 Call `shutdown()` before destroying the graphics device.
 Game compatibility aliases remain in
-`engine/view/GameFog.h` and should not be imported
+`engine/view/game/GameFog.h` and should not be imported
 by new general-purpose code.
 
 Use `SceneLayerProviders.h` to collect host-owned

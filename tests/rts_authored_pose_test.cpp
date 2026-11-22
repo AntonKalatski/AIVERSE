@@ -3,7 +3,7 @@
 // persisted and checksummed; GameView turns it into the same world frame Studio shows.
 #include "engine/data/JsonCompose.h"
 #include "engine/game/GameCore.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 #include <cmath>
 #include <iostream>
 #include <memory>

@@ -2,15 +2,15 @@
 
 ## Branch / commits / changed files
 - Repository: `chromealex/AIVERSE`; feature branch: `feature/lens-motionweave-integration`. `main` unchanged.
-- `e16237962884e267e14fca529eabead85e2e647b` — `engine/view/GameOverlays.h`: additive GPU-ready status and guarded `shutdownAfterGpuIdle`.
-- `3dfb2ede289edc1044835c9bb2b76d73709489d2` — `engine/view/GameOverlaysDraw.cpp`: staging of shader, four pipelines, white fallback texture and per-definition icon texture cache before publishing; rollback on create failures, refused GPU idle and foreign-device invocation. Preserves previous GPU handles until a successful idle barrier.
+- `e16237962884e267e14fca529eabead85e2e647b` — `engine/view/game/GameOverlays.h`: additive GPU-ready status and guarded `shutdownAfterGpuIdle`.
+- `3dfb2ede289edc1044835c9bb2b76d73709489d2` — `engine/view/game/GameOverlaysDraw.cpp`: staging of shader, four pipelines, white fallback texture and per-definition icon texture cache before publishing; rollback on create failures, refused GPU idle and foreign-device invocation. Preserves previous GPU handles until a successful idle barrier.
 - `c08b1ae92d23dc2b07d8eb53448bd3084f63ec50` — `tests/tests.cpp`: fault injection for shader, third pipeline, white texture and idle refusal; explicit cross-device and retry assertions.
-- `99eccb3dc9cd1f84bec00c96fe68bd6d0c244aa4` — `engine/view/GameOverlays.h`: add `NativePresentationRetirement retiredBuffers_`, `pendingGpuRetirements()` and frame-boundary `collectRetiredGpuResources`.
-- `4e70975fee2d59361f9ab7fef79a49fb532bd98e` — `engine/view/GameOverlaysDraw.cpp`: allocate replacement dynamic overlay VB BEFORE retiring the old via ordered GPU token, and set `snapshotUpdates=true`. On failure, old VB is preserved; owner shutdown requires successful deferred-retirement drain.
-- `a2d4f7238f5703966a505c2ec954820645cb3663` — `engine/view/GameView.cpp`: aggregate and poll overlay VB retirement at the existing pre-render model/resource frame boundary.
+- `99eccb3dc9cd1f84bec00c96fe68bd6d0c244aa4` — `engine/view/game/GameOverlays.h`: add `NativePresentationRetirement retiredBuffers_`, `pendingGpuRetirements()` and frame-boundary `collectRetiredGpuResources`.
+- `4e70975fee2d59361f9ab7fef79a49fb532bd98e` — `engine/view/game/GameOverlaysDraw.cpp`: allocate replacement dynamic overlay VB BEFORE retiring the old via ordered GPU token, and set `snapshotUpdates=true`. On failure, old VB is preserved; owner shutdown requires successful deferred-retirement drain.
+- `a2d4f7238f5703966a505c2ec954820645cb3663` — `engine/view/game/GameView.cpp`: aggregate and poll overlay VB retirement at the existing pre-render model/resource frame boundary.
 - `3cbb03b25df1628d09a9aeaa5ff4d76e0e175a11` and `33ce9c797db0a3ee8a70e149fcfa83f13c746b21` — `engine/render/TextureCache.h`: explicit noexcept owner/content swap with bundled atlas/page/sprite caches and raw RHI device pointer, plus utility include.
-- `f6cf89c6237a0cf845220f7f68845c942fb0b84b` — `engine/view/GameOverlaysDraw.cpp`: publish staging icon cache with explicit no-throw swap.
-- `6ae7316193f887d7ac1971384d1c92b56f171d1c` — `engine/view/GameOverlaysDraw.cpp`: each drawCustom callback captures an owned per-camera snapshot of vertex data, resolved GPU pipeline/texture handles, draw ranges and vertex buffer instead of reading subsequently mutated `this->upload_`, `buckets_`, `pipes_`, or `vb_`.
+- `f6cf89c6237a0cf845220f7f68845c942fb0b84b` — `engine/view/game/GameOverlaysDraw.cpp`: publish staging icon cache with explicit no-throw swap.
+- `6ae7316193f887d7ac1971384d1c92b56f171d1c` — `engine/view/game/GameOverlaysDraw.cpp`: each drawCustom callback captures an owned per-camera snapshot of vertex data, resolved GPU pipeline/texture handles, draw ranges and vertex buffer instead of reading subsequently mutated `this->upload_`, `buckets_`, `pipes_`, or `vb_`.
 - `90ea86f789b9cc0357d89f0d9fa5db0370693760` — `tests/tests.cpp`: test `TextureCache::swap` ownership and exactly-once mock texture destruction.
 - Previous handoff: `docs/agent-handoffs/lens-motionweave-integration-stage32-visibility-gpu-transaction-2026-11-20.md`.
 

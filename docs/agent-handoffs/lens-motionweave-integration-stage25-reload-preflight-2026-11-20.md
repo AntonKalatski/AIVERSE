@@ -2,7 +2,7 @@
 
 ## Branch, exact commits and changed paths
 - Repository: `chromealex/AIVERSE`; feature branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- Implementation `e14c1a19308a8be44575623dea721b5e17834a40`: `engine/view/GameView.cpp` reuses already parsed `incomingGame` to select optional geometry scene rather than re-reading `game.json` mid-reload.
+- Implementation `e14c1a19308a8be44575623dea721b5e17834a40`: `engine/view/game/GameView.cpp` reuses already parsed `incomingGame` to select optional geometry scene rather than re-reading `game.json` mid-reload.
 - Implementation `3e5ca05308add098570b830650c3e9e0ac2ee298`: same file, parse `materials.json` before staging sprites and publish `incomingMaterials` / recorded parse warnings during the existing reload.
 - Implementation `338a8a222da08ae4b06e08bd44004062f4a9fec4`: same file, parse geometry descriptor via `incomingRead` before staging sprites, retain parse error as warning, load already parsed geometry only at the normal GPU publication point.
 - Prior handoff: `docs/agent-handoffs/lens-motionweave-integration-stage24-config-recovery-2026-11-20.md`.

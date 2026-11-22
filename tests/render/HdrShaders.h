@@ -2,10 +2,10 @@
 #include "engine/gfx/Gfx.h"
 #include "engine/render/SpriteShaders.h"
 #include "engine/fx/ParticleShaders.h"
-#include "engine/view/GameTerrainShaders.h"
-#include "engine/view/GamePlanetShaders.h"
-#include "engine/view/GameGroundFxShaders.h"
-#include "engine/view/GameOverlayShaders.h"
+#include "engine/view/game/GameTerrainShaders.h"
+#include "engine/view/game/GamePlanetShaders.h"
+#include "engine/view/game/GameGroundFxShaders.h"
+#include "engine/view/game/GameOverlayShaders.h"
 #include <cstdio>
 namespace aiverse::test {
 inline bool checkHdrShaders(gfx::Device& device) {

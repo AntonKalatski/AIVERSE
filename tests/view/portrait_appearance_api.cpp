@@ -1,7 +1,7 @@
 // Stage 105 deferred compile-time contract: generic authored ModelDraw
 // portrait consumer never requires the calling native project to own
 // GameView or create an additional animation evaluation World.
-#include "engine/view/GamePortrait.h"
+#include "engine/view/game/GamePortrait.h"
 #include <type_traits>
 #include <utility>
 

@@ -20,7 +20,7 @@
 #include "EditorProfile.h"
 #include "EditorTheme.h"
 #include "EditorNativeBuild.h"
-#include "engine/view/GameViewScript.h"
+#include "engine/view/game/GameViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
 #include "PhysisNaturePreview.h"
@@ -48,8 +48,8 @@
 #include "engine/game/MapGrid.h"
 #include "engine/game/GameCore.h"
 #include "engine/fx/GameFx.h"
-#include "engine/view/GameView.h"
-#include "engine/view/GameModelDemandScheduler.h"
+#include "engine/view/game/GameView.h"
+#include "engine/view/game/GameModelDemandScheduler.h"
 
 namespace aiverse::spectra {
 class GpuPoolWorld;

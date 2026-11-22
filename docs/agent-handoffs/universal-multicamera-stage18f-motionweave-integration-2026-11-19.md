@@ -15,7 +15,7 @@
 - The existing `GameView::drawFrozenModels` in LENS predates MotionWeave's generic View adapter and must be rebased/reimplemented without overwriting the animation branch.
 
 ## Integration decisions
-- Animation branch is source of truth for `engine/view/GameView.h`, `GameView.cpp`, `GameViewDraw.cpp`, `GameAnimate.cpp`, including generic `aiverse::View`, `View::submitModel`, attachment composition, appearance registry, animation graph lifecycle and source reload behavior.
+- Animation branch is source of truth for `engine/view/game/GameView.h`, `GameView.cpp`, `GameViewDraw.cpp`, `GameAnimate.cpp`, including generic `aiverse::View`, `View::submitModel`, attachment composition, appearance registry, animation graph lifecycle and source reload behavior.
 - Preserve LENS-owned scheduler, ECS camera components, capture graph, RenderTargetPool, CameraRuntimeHost, CameraClientAdapter, Vulkan/Metal/GLES fixes, Studio camera window, tests/handoffs, and GameClient opt-in RT path.
 - Integrate a new immutable render-packet snapshot from MotionWeave output after the single animation update. Per-camera culling and LOD should be view-specific, but animation pose updates and gameplay/presentation events must not run again for every camera.
 - Pay special attention to model/material/pose pointer lifetime in proposed packet snapshots. Stable immutable source identity and GPU in-flight retirement are required.

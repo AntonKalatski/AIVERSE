@@ -94,7 +94,7 @@ Sample: `templates/topdown_arena` ("Scrapyard Arena").
   `hosted_rts_topdown_battle_agrees_on_the_outcome`).
 - **Rollback corrections** of heroes and squad members are blended: the client installs
   `RollbackSession::setRollbackHook`, reads positions before and after the re-simulation and feeds the difference
-  to the correction smoother (`engine/view/TopDownPrediction.h`, `net::CorrectionSmoother`); large jumps
+  to the correction smoother (`engine/view/game/TopDownPrediction.h`, `net::CorrectionSmoother`); large jumps
   (respawn, escape) snap.
 - **Local visual prediction** (render only). Input reaches the sim after the input delay plus the interpolation lag;
   the client draws the local hero where the input already in flight takes it (sim position + integral of the

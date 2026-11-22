@@ -19,8 +19,8 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3b1-scene-ma
 
 ## Changed source
 
-- `engine/view/GameView.h`: public topology prewarm API, private draw-time lease publication declaration.
-- `engine/view/GameView.cpp`: extends existing one-shot lease and shared source validation, prepares unpublished full map/scene, consumes before draw with stale fallback, reuses normal `prepareMapFrame` protocol.
+- `engine/view/game/GameView.h`: public topology prewarm API, private draw-time lease publication declaration.
+- `engine/view/game/GameView.cpp`: extends existing one-shot lease and shared source validation, prepares unpublished full map/scene, consumes before draw with stale fallback, reuses normal `prepareMapFrame` protocol.
 - `tests/tests.cpp`: `lens_stage48b3b2_unpublished_map_lease_consumes_with_primary`, `lens_stage48b3b2_stale_map_lease_discards_and_rebuilds`, `lens_stage48b3b2_failed_prewarm_preserves_live_map`, `lens_stage48b3b2_resized_map_prewarms_all_five_owners`.
 - This handoff.
 

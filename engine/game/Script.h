@@ -17,7 +17,7 @@
 //    An instruction budget per tick (count hook) aborts runaway code; any error is logged with
 //    file:line and disables that handler (deterministically: the flag is simulation state).
 //  * View scripts (rules "viewScripts") are presentation only: normal Lua numbers, read-only queries,
-//    notices / effects / sounds as requests drained by the host (engine/view/GameViewScript.h).
+//    notices / effects / sounds as requests drained by the host (engine/view/game/GameViewScript.h).
 //
 // Persistent script state: the global table `state` (and the trigger variables). It is serialized
 // canonically (sorted keys; integers, fx, strings, booleans, nested tables) into the ScriptStore world

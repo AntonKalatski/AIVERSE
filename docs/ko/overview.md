@@ -450,7 +450,7 @@ audio.json 절에 있습니다. 개요:
 - **에디터** — "Lighting" 창: 시각과 뇌우 미리 보기, 조명 품질 단계, 광원 목록. 에이전트용: `light_add`, `light_update`, `light_delete`,
   `light_list`, `lighting_set`, `view_lighting`.
 
-필드 형식은 `engine/view/GameLights.h` 헤더에 있습니다. 테스트 변수: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`,
+필드 형식은 `engine/view/game/GameLights.h` 헤더에 있습니다. 테스트 변수: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`,
 `AIVERSE_STORM`.
 
 ## MCP를 통한 메커니즘 검증

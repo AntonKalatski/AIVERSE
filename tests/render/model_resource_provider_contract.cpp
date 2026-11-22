@@ -1,7 +1,7 @@
 // Stage 99: generic model source contract (native run deferred).
 #include "engine/render/ModelResourceCache.h"
-#include "engine/view/GameModelResourceCache.h"
-#include "engine/view/GameModelPreparationService.h"
+#include "engine/view/game/GameModelResourceCache.h"
+#include "engine/view/game/GameModelPreparationService.h"
 #include "../AlwaysCheck.h"
 #include <memory>
 #include <type_traits>

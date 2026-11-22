@@ -2,11 +2,11 @@
 
 ## Branch and exact commits
 - Repository: `chromealex/AIVERSE`; branch: `feature/lens-motionweave-integration`. `main` untouched.
-- `2c39eaf93065dda7a3946dc00d6daee88c5f34a9`: `engine/view/GameOverlays.h`, new additive `initPrepared(const Rules&, OverlaySet, const std::string&)` CPU-publication API.
-- `c1bf1a3579c3ee7af52d459f659951dfef46a38c`: `engine/view/GameOverlays.cpp`, existing `init` delegates to `initPrepared`; common setup consumes the prepared set with move semantics.
-- `1ae99c830e7036a2629262789e66a10cbd0f32ef`: `engine/view/GameView.cpp`, parse `FogLook` and `OverlaySet` from the one immutable incoming rules/game snapshot BEFORE staging and publishing GPU sprite resources. The existing overlay GPU initialization remains in its original later position.
+- `2c39eaf93065dda7a3946dc00d6daee88c5f34a9`: `engine/view/game/GameOverlays.h`, new additive `initPrepared(const Rules&, OverlaySet, const std::string&)` CPU-publication API.
+- `c1bf1a3579c3ee7af52d459f659951dfef46a38c`: `engine/view/game/GameOverlays.cpp`, existing `init` delegates to `initPrepared`; common setup consumes the prepared set with move semantics.
+- `1ae99c830e7036a2629262789e66a10cbd0f32ef`: `engine/view/game/GameView.cpp`, parse `FogLook` and `OverlaySet` from the one immutable incoming rules/game snapshot BEFORE staging and publishing GPU sprite resources. The existing overlay GPU initialization remains in its original later position.
 - `bfd63c3a00aa1f9bdc8608cf873b0d663b0467af`: `tests/tests.cpp`, CPU parity test for direct versus prepared overlay publication, including warning/selection/hover state, identifiers and enabled flags.
-- `76ac7420c2bd9113631483cd2e038f2726241891`: `engine/view/GameView.cpp`, strengthen GPU device identity and idle preflight for *all* existing view owners, not only `twoD_`.
+- `76ac7420c2bd9113631483cd2e038f2726241891`: `engine/view/game/GameView.cpp`, strengthen GPU device identity and idle preflight for *all* existing view owners, not only `twoD_`.
 - `412c29e4c85eeaac3c078ba90c8bda36825d1fe5` and `b6068c1a099133131cf768fa74640c866b1d2261`: `tests/tests.cpp`, regression for refused reload GPU idle and foreign RHI device preserving current fog/overlay state (and fixture adjusted to use `VisibilityLook::style`).
 - Previous: `docs/agent-handoffs/lens-motionweave-integration-stage30-geometry-partial-retirement-backpressure-2026-11-20.md`.
 

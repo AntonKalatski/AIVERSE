@@ -3,10 +3,10 @@
 ## Branch and code commits
 Repository: `chromealex/AIVERSE`. Branch: `feature/lens-motionweave-integration`; `main` unchanged.
 
-- `5de218b376b066e5f88b50fdc2c9a00d6ff48dee` — `engine/view/GameView.cpp`, resolve `incomingGame` / `incomingRules` **once** via one `incomingRead` and share the parsed values with staging and fog/overlays/road/shores configuration.
-- `31cd4089003858a40d551b640c101b426e3f4595` — `engine/view/Game2DView.h`, expose additive `ownsGpuResources() const noexcept` as a host recovery signal.
-- `cb54378ae6816ecd77c896840a11f892e21ca41c` — `engine/view/GameView.h`, add `std::unique_ptr<Rts2DView> pendingSpriteRecovery_`.
-- `9074e8345ecefea103bd14fb6ea5282407564b03` — `engine/view/GameView.cpp`, preserve failed staged sprite owner when cleanup cannot establish GPU idle; retry recovery at next init before state changes; release pending owner during final `shutdown` after proven GPU idle.
+- `5de218b376b066e5f88b50fdc2c9a00d6ff48dee` — `engine/view/game/GameView.cpp`, resolve `incomingGame` / `incomingRules` **once** via one `incomingRead` and share the parsed values with staging and fog/overlays/road/shores configuration.
+- `31cd4089003858a40d551b640c101b426e3f4595` — `engine/view/game/Game2DView.h`, expose additive `ownsGpuResources() const noexcept` as a host recovery signal.
+- `cb54378ae6816ecd77c896840a11f892e21ca41c` — `engine/view/game/GameView.h`, add `std::unique_ptr<Rts2DView> pendingSpriteRecovery_`.
+- `9074e8345ecefea103bd14fb6ea5282407564b03` — `engine/view/game/GameView.cpp`, preserve failed staged sprite owner when cleanup cannot establish GPU idle; retry recovery at next init before state changes; release pending owner during final `shutdown` after proven GPU idle.
 
 Previous: `docs/agent-handoffs/lens-motionweave-integration-stage23-staged-sprite-reload-2026-11-20.md`.
 

@@ -90,7 +90,7 @@ Previous: [Stage 128](animation-stage128-native-model-lifetime-pins-2026-11-19.m
    deliberately conservative; it does not attempt a brittle
    per-object count in old genre adapters.
 6. `5866d5bfa7ec05ebd9f3cbfe564937ad6d9117d7` —
-   `engine/view/GameView.cpp`:
+   `engine/view/game/GameView.cpp`:
    - `GameView::draw` now acquires an RAII cache-wide read
      scope AFTER its initial synchronous `loadType` loop
      and holds the scope while resolving scene objects,

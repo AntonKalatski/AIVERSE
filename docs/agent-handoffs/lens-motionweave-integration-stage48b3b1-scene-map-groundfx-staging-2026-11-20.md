@@ -17,9 +17,9 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3b0-topology
 
 ## Source files
 
-- `engine/view/GameGroundFx.h/.cpp`: explicit map-scene candidate API and shared builder.
-- `engine/view/GameView.h/.cpp`: explicit scene map entry point, transient height staging fields and shared scene/camera/visibility fingerprint wrappers.
-- `engine/view/GameTerrain.cpp`: local height override, six-input overload and GroundFX participant integration.
+- `engine/view/game/GameGroundFx.h/.cpp`: explicit map-scene candidate API and shared builder.
+- `engine/view/game/GameView.h/.cpp`: explicit scene map entry point, transient height staging fields and shared scene/camera/visibility fingerprint wrappers.
+- `engine/view/game/GameTerrain.cpp`: local height override, six-input overload and GroundFX participant integration.
 - `tests/tests.cpp`: `lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back`.
 
 ## Regression test authored (NOT RUN)

@@ -505,7 +505,7 @@ dans le menu désactive ce mécanisme (`AIVERSE_ADAPTIVE=off`).
 - **Éditeur** — la fenêtre « Lighting » : aperçu de l’heure et de l’orage, niveau de qualité de la lumière, liste des
   sources. Pour les agents : `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-Le format des champs est dans l’en-tête de `engine/view/GameLights.h`. Variables de test : `AIVERSE_TIME_OF_DAY`,
+Le format des champs est dans l’en-tête de `engine/view/game/GameLights.h`. Variables de test : `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Vérifier les mécaniques via MCP

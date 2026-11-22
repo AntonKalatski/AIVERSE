@@ -61,7 +61,7 @@ Previous: [Stage 123](animation-stage123-compiled-retarget-cache-2026-11-19.md)
    failing target node and mapped/unbound counts. Do not call
    these diagnostics during every actor draw.
 4. `273438b2c4ce506fd000cd965397dbbad5da29d8` —
-   `engine/view/GameLook.cpp`:
+   `engine/view/game/GameLook.cpp`:
    only on `compileModelPoseRetarget` failure, prints a single
    per-type/per-LOD warning using the existing deduplicating
    `warn(t,...)` reporter. The warning includes offending visual

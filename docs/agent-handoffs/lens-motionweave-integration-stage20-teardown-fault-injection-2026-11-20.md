@@ -2,7 +2,7 @@
 
 ## Branch and exact commits
 - Branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- Implementation `6475c13af0adbb5955ca52755592619a0e2aea04`: `engine/view/GameView.cpp` — on project/rules reload, replace unguarded `twoD_->shutdown(dev)` with `shutdownAfterGpuIdle(dev)` and abort reload on failed barrier without resetting/destroying the owned sprite view.
+- Implementation `6475c13af0adbb5955ca52755592619a0e2aea04`: `engine/view/game/GameView.cpp` — on project/rules reload, replace unguarded `twoD_->shutdown(dev)` with `shutdownAfterGpuIdle(dev)` and abort reload on failed barrier without resetting/destroying the owned sprite view.
 - Test source `78672431780d0f642d0d055fa968c89f4803e17a`: `tests/render/lens_sprite_gpu_fault_injection.cpp` — fake RHI/device allocation faults, GPU idle refusal and subsequent retry, idempotent guarded cleanup and clean reinitialization.
 - Test registration `ad963c377fed380183c53e93ce28bb1471de49a2`: `CMakeLists.txt`, `lens_sprite_gpu_faults` tagged LENS/RHI.
 - Previous: `docs/agent-handoffs/lens-motionweave-integration-stage19-early-init-recovery-2026-11-20.md`.

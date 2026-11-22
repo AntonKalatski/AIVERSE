@@ -16,9 +16,9 @@ This reuses `mapLeaseFingerprint` from `GameView.cpp` through a private `GameVie
 
 ## Files
 
-- `engine/view/GameView.h`: private common map fingerprint declaration.
-- `engine/view/GameView.cpp`: common fingerprint implementation.
-- `engine/view/GameTerrain.cpp`: pre/post prepare fingerprint and owner-revision validation, rollback before publication.
+- `engine/view/game/GameView.h`: private common map fingerprint declaration.
+- `engine/view/game/GameView.cpp`: common fingerprint implementation.
+- `engine/view/game/GameTerrain.cpp`: pre/post prepare fingerprint and owner-revision validation, rollback before publication.
 - `tests/tests.cpp`: `lens_stage48b3b0_topology_discards_mid_prepare_editor_mutation`; fake RHI device mutates an in-place height corner in `createBuffer`, asserts rejection, intact previously published height/road generation/retirement queue, then stable retry.
 
 ## Verification (actual)

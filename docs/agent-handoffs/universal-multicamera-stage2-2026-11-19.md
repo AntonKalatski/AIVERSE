@@ -3,7 +3,7 @@
 ## Commit and ownership
 - Branch `feature/universal-multicamera-render-targets`, forked from main `58e29ab052458fffcdebebffe27022b53adb9367`.
 - Stage 2 implementation commit `b385ca427cf8db1175ae4438ce1767af42220d38`.
-- Files: new `engine/render/PortraitRenderer.h`; changed `engine/view/GamePortrait.h` and `engine/view/GamePortrait.cpp`.
+- Files: new `engine/render/PortraitRenderer.h`; changed `engine/view/game/GamePortrait.h` and `engine/view/game/GamePortrait.cpp`.
 - Existing native and Studio consumers of `game::Portrait` need not change their method signatures.
 
 ## Architecture / API

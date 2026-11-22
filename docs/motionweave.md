@@ -187,7 +187,7 @@ with no animation graph. View does not depend on RTS, FPS, camera
 controller, game rules, network, combat, map or terrain modules.
 
 A transition adapter still exists in
-`engine/view/GameView.cpp` and `GameViewDraw.cpp`: it projects
+`engine/view/game/GameView.cpp` and `GameViewDraw.cpp`: it projects
 only simple, eligible compiled animation graphs into the generic
 View and delegates their **final ModelDraw submission** to
 `View::submitOne`. Complex RTS procedural animation, contact IK,

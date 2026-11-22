@@ -1,5 +1,5 @@
 #include "OverlayOps.h"
-#include "engine/view/GameOverlayData.h"
+#include "engine/view/game/GameOverlayData.h"
 
 #include <stdexcept>
 #include <string>

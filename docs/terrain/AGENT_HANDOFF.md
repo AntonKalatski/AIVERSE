@@ -47,7 +47,7 @@ without logs. No screenshots or performance measurements yet.
 - No ECS update system wired yet; `TerrainChunkComponent` and
   `VegetationPatchComponent` are descriptors, not simulated systems.
 - Existing `modules/rts/view/RtsTerrainRender.*`,
-  `engine/view/GameTerrainSurface.h`, `apps/editor/core/TerrainOps.*`,
+  `engine/view/game/GameTerrainSurface.h`, `apps/editor/core/TerrainOps.*`,
   `modules/rts/gen/GenNoise.*`, `MapGrid` retain ownership of existing RTS
   terrain. A future adapter converts integer cm to map units (1/16 units)
   and pushes generation results through existing dirty-chunk pipeline.

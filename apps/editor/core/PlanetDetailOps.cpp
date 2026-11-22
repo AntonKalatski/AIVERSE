@@ -10,7 +10,7 @@
 #include "PlanetOps.h"
 #include "engine/game/MapGrid.h"
 #include "engine/game/Sphere.h"
-#include "engine/view/GamePlanet.h"
+#include "engine/view/game/GamePlanet.h"
 
 namespace aiverse::editor {
 

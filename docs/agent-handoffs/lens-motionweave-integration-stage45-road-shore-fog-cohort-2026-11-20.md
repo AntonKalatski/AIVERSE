@@ -35,7 +35,7 @@ Road API in modules/rts/view/RtsRoadView.h:
 
 Road prepare copies GPU kit references as borrowed, builds unpublished Models, decals, wheel-surface samples, new painted variants and weather meshes; candidate destructor releases only new GPU allocations. Full-road commit transfers all prepared data and defers old resource retirement. Weather/ghost-only edits prepare replacement film/puddles/preview, do not alter geometry, do not invalidate cached road wheel heights and do not advance surfaceGeneration. A committed shared candidate is guarded against repeat commit. Standalone Road::draw/rebuild remain available to editor consumers.
 
-Shore API in engine/view/GameShoreView.h:
+Shore API in engine/view/game/GameShoreView.h:
 - needsVisualPreparation(waterY,width,height) const noexcept
 - shared_ptr<PreparedRebuild> prepareRebuild(gfx::Device&, heightAt, waterY,width,height)
 - commitRebuild(shared_ptr<PreparedRebuild>) noexcept

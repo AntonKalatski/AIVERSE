@@ -23,7 +23,7 @@ The user explicitly requested **complete all remaining features first, then run 
    - `uploadModel` now rejects a dimensioned image lacking a valid `gfx::TextureHandle` after either **shared texture cache** or **speculative dedicated texture** upload. Previously only speculative (`publishSharedTextures=false`) images were checked, so regular Model publication could succeed with a missing GPU image.
    - When morph deltas need an RGBA32F texture, a failed `dev.createTexture` now makes `uploadModel` return false. CPU `Primitive::morphDeltas` remain intact on failure; morph CPU deltas are cleared **only after** a valid `m.morphTex` exists.
    - `ModelTextureCache::upload` now preallocates the shared lease and GPU owner `std::map` node **before** calling `uploadImage`. This avoids CPU allocation failures *after* GPU texture creation that could have abandoned a live handle in a local Image. If the GPU upload creates no texture, the empty map node is removed and the original Image remains unpublished.
-2. `46a050552f0a49f604c6745976c0c09fcf5de4f4` — `engine/view/GameLook.cpp`:
+2. `46a050552f0a49f604c6745976c0c09fcf5de4f4` — `engine/view/game/GameLook.cpp`:
    - Synchronous RTS Model loading now checks `uploadModel` result and rejects a partial GPU upload.
    - Any exception after a Model has been constructed (including a partially created GPU geometry/image/morph allocation) transfers the scratch Model to `resources_.retireUnpublished(dev,m)` rather than calling `m.reset()` while the GPU may still reference its handles.
    - Retains the legacy null-Model failed-load tombstone path for safe RTS fallback, without publishing broken geometry.

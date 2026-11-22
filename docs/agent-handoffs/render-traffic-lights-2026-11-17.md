@@ -47,7 +47,7 @@ Branch: `fix/indirect-vulkan-base-vertex-safety` (PR #4, based on `feature/unive
 - Validation pending: compile editor, check Stats tab has 5 cards and camera moves update triangle count.
 
 ## Step 7 — why even a small scene consumes 340 MiB geometry (DIAGNOSIS)
-- `GameView::init` in `engine/view/GameView.cpp`: when `deferredLoading_` is false, loops over **every** `rules.types` entry calling `loadType` on startup. The `GameView.h` comment explicitly says **editor/model viewer eager, clients deferred**.
+- `GameView::init` in `engine/view/game/GameView.cpp`: when `deferredLoading_` is false, loops over **every** `rules.types` entry calling `loadType` on startup. The `GameView.h` comment explicitly says **editor/model viewer eager, clients deferred**.
 - Editor initialization `apps/editor/Editor.cpp::reloadRules` calls `view_.init` without `setDeferredLoading(true)` and thus loads the whole project asset catalog, not just map entities or camera-visible objects.
 - `GlobalGeometryPool.cpp`: 2 MiB minimum pages, power-of-two growth for bigger models; 16 MiB max per model. GPU pages persist while any owning model is resident; no per-model suballocation reuse/compaction. A pool page tracks actual occupancy and owns a GPU storage buffer.
 - User's older Scene Batching screenshot: 95 active pages, 884 loaded models, occupied 336.9 MiB, allocated 340.0 MiB (99.1% used). This reflects models in the **project**, not a viewport triangle count. Textures, other GPU buffers, render targets, decoded image cache (CPU budget up to 64 MiB) and editor resources are excluded. macOS Apple Silicon shares physical memory between CPU/GPU.
@@ -282,7 +282,7 @@ AIVERSE_AUTOLOD_TRACE=1 ./build/.temp/runtime-autolod/AiverseEditor.app/Contents
 - Merge-base `9799544162b9b6e58f2ec9277fcc1b13c38df39c`. Original FPS head at the start of integration: `e0b584d5592f8dae17d02d5487200c9a89875de6`. The branches had 478 source-only and 516 FPS-only commits; a raw PR #16 failed automatic merge.
 - Created safe staging branch `integrate/perf-stack-into-universal-inspector-20261118` from the FPS head. Relative to common merge-base there were **57** changed source files, **99** changed target files, and **10 overlapping file paths**. Git-tree overlay copied all 47 source-only files by blob SHA without touching any target-only files. Conflicted paths were merged three-way from merge-base (not overwritten with source):
   - `AGENTS.md`: retained ECS migration instructions and added batching handoff link.
-  - `CMakeLists.txt`, `apps/editor/Editor.h`, `engine/render/Renderer3D.h`, `engine/render/ModelShaders.h`, `engine/view/GameViewDraw.cpp`: line-level three-way hunk merges with no overlapping edits.
+  - `CMakeLists.txt`, `apps/editor/Editor.h`, `engine/render/Renderer3D.h`, `engine/render/ModelShaders.h`, `engine/view/game/GameViewDraw.cpp`: line-level three-way hunk merges with no overlapping edits.
   - `apps/editor/Editor.cpp`: retained FPS unified `enqueueFpsSceneGeometry`, selection post-outline and FPS no-RTS-view mode; brought in lazy asset residency and scene-stage profiling in the RTS branch only.
   - `apps/editor/windows/SceneWindow.cpp`: retained unified FPS/RTS toolbar, FPS object picker, rotate/scale/move gizmos and selection; added road batching/LOD controls and profiling. FPS-only toolbar was *not* restored, preventing duplicate controls.
   - `engine/render/Renderer3D.cpp`: retained FPS mask/outline instead of old hull, added camera triangle profile without duplicate outline rendering.

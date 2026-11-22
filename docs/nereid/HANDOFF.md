@@ -304,7 +304,7 @@ water geometry changes. This test has **not run**.
 Changed files:
 - Added `libraries/include/aiverselib/water/NereidRasterImport.h`: pure
   generic row-run rectangularisation, water-body conversion.
-- Added `engine/view/NereidLegacyWaterAdapter.h`: optional read-only
+- Added `engine/view/game/NereidLegacyWaterAdapter.h`: optional read-only
   legacy map bridge, under the *legacy* module (core remains genre-free).
 - Added `tests/ecs_nereid_legacy_raster_test.cpp`: cell-centre parity
   against the existing waterCells raster, baked-tile parity,
@@ -329,7 +329,7 @@ Changed files:
   Each wet grid cell centre is covered, each dry centre is excluded.
   Input cap 4,194,304 cells (4 MiB mask); rectangle cap defaults 262,144.
 
-`engine/view/NereidLegacyWaterAdapter.h`:
+`engine/view/game/NereidLegacyWaterAdapter.h`:
 - `game::water::importBakedWaterCellsToNereid(cells,w,h,cfg,'~')`
   reads **canonical simulation map tiles**, exact matching `~`.
   Prefer this path for games which edit baked maps after `waterNetwork`.
@@ -347,7 +347,7 @@ legacy body type from the merged mask.
 
 Example:
 ```cpp
-#include "engine/view/NereidLegacyWaterAdapter.h"
+#include "engine/view/game/NereidLegacyWaterAdapter.h"
 namespace nw=aiverse::lib::nereid;
 nw::registerNereidWaterPersistence(sim);
 nw::WaterRasterImportConfig cfg;

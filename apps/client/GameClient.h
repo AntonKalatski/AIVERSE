@@ -5,9 +5,9 @@
 //   Lobby.cpp     online play: NetClient, lobby / room screens, network matches
 #pragma once
 #include "UiModel.h"
-#include "engine/view/EntityActionControls.h"
-#include "engine/view/TopDownControls.h"
-#include "engine/view/TopDownPrediction.h"
+#include "engine/view/game/EntityActionControls.h"
+#include "engine/view/game/TopDownControls.h"
+#include "engine/view/game/TopDownPrediction.h"
 #include <chrono>
 #include "engine/splash/SplashScreen.h"
 #include <array>
@@ -43,14 +43,14 @@
 #include "engine/game/GameCore.h"
 #include "engine/audio/GameAudio.h"
 #include "engine/audio/AudioScriptSound.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 #include "ClientFx.h"
 #include "ClientSpine.h"
 #include "ClientServices.h"
 #include "ClientGamepad.h"
 #include "ClientInputRouting.h"
-#include "engine/view/GameViewScript.h"
-#include "engine/view/RegionSwipe.h"
+#include "engine/view/game/GameViewScript.h"
+#include "engine/view/game/RegionSwipe.h"
 
 namespace Rml { class ElementDocument; class Element; }
 typedef struct lua_State lua_State;

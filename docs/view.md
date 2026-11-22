@@ -207,7 +207,7 @@ time and a height sampler for the GPU sheet. Grid blur/fade,
 visibility texture upload and draw are reusable in strategy,
 stealth, exploration, spectator views and editors alike.
 
-`engine/view/GameFog.h` remains a compatibility-only
+`engine/view/game/GameFog.h` remains a compatibility-only
 header: `game::FogOfWar` and `game::FogLook` are aliases to the
 engine types and `game::parseFogLook` forwards to
 `view::parseVisibilityLook`. Existing RTS project settings and
@@ -515,7 +515,7 @@ have not been performed on this stage.
 ## Decoupling editor selection from legacy GameView (Stage 83)
 
 The native/editor RTS host now uses
-`engine/view/GameSelectionPresentation.h` for visual picking
+`engine/view/game/GameSelectionPresentation.h` for visual picking
 radii. This is **RTS-specific authoring**, not a generic engine
 algorithm: `view_adapter::selectionRadius(const UnitType&)` takes
 authored footprint/radius and implements the existing building
@@ -548,7 +548,7 @@ to be executed.
 
 ## Standalone RTS ghost and model preview authoring (Stage 84)
 
-`engine/view/GamePreviewPresentation.h` owns pure host-side
+`engine/view/game/GamePreviewPresentation.h` owns pure host-side
 presentation descriptions, independent of the `game::GameView` class:
 
 - `makeGhostPresentation(type,position,allowed,time)` chooses placement
@@ -575,7 +575,7 @@ compile/CTest/visual comparison are **NOT RUN** at this stage.
 
 ## RTS preview rendering provider boundary (Stage 85)
 
-The new `engine/view/GamePreviewRenderProvider.h` is a standalone,
+The new `engine/view/game/GamePreviewRenderProvider.h` is a standalone,
 renderer-agnostic host adapter. `GamePreviewRenderProvider::submitGhost`
 requests resource availability, constructs the already-defined
 `GhostPresentation` and submits it via the host-supplied drawing callback.
@@ -601,7 +601,7 @@ CMake setup have not been compiled or executed on this stage.
 
 ## Static previews without legacy animation ownership (Stage 86)
 
-A new standalone header `engine/view/GameStaticPreviewModel.h`
+A new standalone header `engine/view/game/GameStaticPreviewModel.h`
 accepts a `view_adapter::StaticPreviewModel` description of an
 already-resolved model, geometry/material overrides, type presentation
 style and model-space correction. Its
@@ -658,7 +658,7 @@ parity checks were intentionally deferred by the user.
 
 ## Shared RTS preview resource resolution (Stage 88)
 
-`engine/view/GamePreviewResourceProvider.h` supplies
+`engine/view/game/GamePreviewResourceProvider.h` supplies
 `view_adapter::resolveStaticPreviewModel(look,type,playerColor,out)`.
 The host passes already-loaded appearance and type descriptions; the
 provider applies the **same** eligibility test for ghost and portrait
@@ -684,7 +684,7 @@ sanitizer checks remain deferred.
 
 ## External preview model-resource ownership (Stage 89)
 
-`engine/view/GameModelResourceProvider.h` introduces a host-facing
+`engine/view/game/GameModelResourceProvider.h` introduces a host-facing
 `view_adapter::ModelResourceProvider` contract and the
 `submitResolvedPreview(resources,renderer,type,owner,yaw)` helper.
 The provider resolves model residency and appearance into the existing
@@ -712,7 +712,7 @@ parity and CI until feature work is complete.
 
 ## Per-host RTS model/texture ownership (Stage 90)
 
-`engine/view/GameModelResourceCache.h` is the new per-host
+`engine/view/game/GameModelResourceCache.h` is the new per-host
 `view_adapter::GameModelResourceCache`. It owns the canonical
 `std::map<std::string,std::unique_ptr<render::Model>>` model assets
 (including procedural `shape:` models) and the shared
@@ -750,7 +750,7 @@ scene switching.
 
 ## Independent model preparation lifecycle (Stage 91)
 
-`engine/view/GameModelPreparationService.h` provides a
+`engine/view/game/GameModelPreparationService.h` provides a
 per-resource-owner asynchronous CPU preparation queue. It owns the
 current source type/variant request, ordered source/key list, cursor,
 displayed in-progress resource name, and at most one `std::future`
@@ -783,7 +783,7 @@ visuals or CI on this feature stage, by user request.
 
 ## Reusable model streaming operations (Stage 92)
 
-`engine/view/GameModelStreaming.h` provides two host-agnostic
+`engine/view/game/GameModelStreaming.h` provides two host-agnostic
 model-loading building blocks: `discoverModelPaths(authored,geometry,
 alreadyCached,append)` traverses an authored JSON subtree in existing
 order (including model variants, LOD and attachments), and
@@ -819,7 +819,7 @@ and cross-platform verification remain deferred per user instruction.
 
 ## Native editor model demand scheduler (Stage 93)
 
-`engine/view/GameModelDemandScheduler.h` adds a small host-owned
+`engine/view/game/GameModelDemandScheduler.h` adds a small host-owned
 policy service for model demand. It tracks per-type last-use times,
 batches and de-duplicates demand requests, upgrades each request to
 the highest priority (`Background`, `Visible`, `Interactive`),
@@ -967,7 +967,7 @@ the GitHub API; source review is not a substitute for compilation.
 ## Source dependency index and revisioned external visuals (Stage 97)
 
 `game::view_adapter::ModelSourceDependencyIndex` (new
-`engine/view/GameModelSourceDependencies.h`) provides a reusable,
+`engine/view/game/GameModelSourceDependencies.h`) provides a reusable,
 host-owned index of source path -> dependency categories and type IDs.
 `rebuild(types,materialLibrary)` uses authored view descriptions, not
 loaded models: nested variants, LOD, stages, attachments, streaming
@@ -1941,7 +1941,7 @@ when it has no graph; graph-backed instances must instead use
 one owning `View::update` followed by `submitOne`, so no graph is
 evaluated twice.
 
-`engine/view/GameStaticPreviewModel.h` now maps the existing
+`engine/view/game/GameStaticPreviewModel.h` now maps the existing
 authored RTS static model/placement fields into the genre-independent
 `AppearanceSpec`, then asks the generic builder to compose the
 materials/variant/geometry/tint/flags packet. RTS still owns the

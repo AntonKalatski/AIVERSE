@@ -1,7 +1,7 @@
-// ScriptSound (the Lua `sound` table, engine/view/ScriptSound.h) over the AudioEngine.
+// ScriptSound (the Lua `sound` table, engine/view/game/ScriptSound.h) over the AudioEngine.
 #pragma once
 #include "Audio.h"
-#include "../view/ScriptSound.h"
+#include "../view/game/ScriptSound.h"
 
 namespace aiverse::game {
 

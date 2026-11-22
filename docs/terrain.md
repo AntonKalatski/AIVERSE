@@ -72,7 +72,7 @@ Without a `terrain` block and without `corners` everything behaves and looks exa
 | `agent-terrain-sim` | `terrain.model`, heightfield in the simulation, `cornersFile`, hierarchical pathfinding, sample heightfield game map |
 
 ## View implementation (agent-terrain)
-- `engine/view/GameTerrainSurface.h`: the surface math (levels mode as before; heightfield = two triangles per
+- `engine/view/game/GameTerrainSurface.h`: the surface math (levels mode as before; heightfield = two triangles per
   cell, diagonal (0,0)-(1,1)). `GameView::heightAt` and the editor's sculpt ops use it; the mesh is built from it.
 - `RtsTerrainRender.*`: 32x32 chunks with a per-chunk input hash (only dirty chunks rebuild), frustum culling, CDLOD
   (5 levels, geomorph + skirts) on heightfield maps above 256 cells, per-cell textures for fields / creep / fog of war,
@@ -152,7 +152,7 @@ direction (bit-identical on every face), one averaged height, one normal. Synthe
 except the Catmull-Rom basis (rows continue across the seam through the coarse surface), and the seam average removes
 that. Normals / cavity of edge samples read their neighbours across the seam (no one-sided bias, no seam lines).
 
-**Synthesis** (`engine/view/GamePlanetDetail.cpp`, `PlanetSurface::initDetail`): Catmull-Rom through the corners
+**Synthesis** (`engine/view/game/GamePlanetDetail.cpp`, `PlanetSurface::initDetail`): Catmull-Rom through the corners
 + 3D value noise on the direction (2 octaves, scaled per cell kind like the flat roughness) + on moons a crater field
 (3D cell lattice, 2 octaves: 3-cell spacing with 0.5-1.4-cell craters and 1.1-cell spacing with small ones; bowl +
 raised rim). Explicit detail at another k is resampled bilinearly. `heightAt`, `normalAt`, `raycast` follow the grid

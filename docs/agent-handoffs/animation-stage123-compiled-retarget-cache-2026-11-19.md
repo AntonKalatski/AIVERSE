@@ -54,13 +54,13 @@ Previous: [Stage 122](animation-stage122-rig-retarget-2026-11-19.md)
    Older hosts with ONLY `ModelLod::retarget` keep the Stage 122
    compatibility path, including its per-draw validation.
 4. `25d30da91d63b5ea8f99ecdbaea327c05780e607` —
-   `engine/view/GameView.h`: appends
+   `engine/view/game/GameView.h`: appends
    `ModelChoice::modelGeneration` and
    `compiledPoseRetarget`. This source-only publication
    generation is separate from gameplay entity life and motion
    source generation.
 5. `9ac6b4f1e708fe8b2509d3dde3e35f8b77898d09` —
-   `engine/view/GameLook.cpp`: a monotonic atomic ID stamps
+   `engine/view/game/GameLook.cpp`: a monotonic atomic ID stamps
    each loaded `ModelChoice`. `buildLook` compiles and stores
    one immutable plan per imported LOD, shared across all instances
    that use that choice. The existing source-name/node map is
@@ -69,7 +69,7 @@ Previous: [Stage 122](animation-stage122-rig-retarget-2026-11-19.md)
    build new TypeLooks and go through `loadChoice`, so a
    rebuilt asset/choice receives a new generation.
 6. `1d73a8a5c92a74517a4d0027c13cca9bf422562d` —
-   `engine/view/GameViewDraw.cpp`: uses the precompiled
+   `engine/view/game/GameViewDraw.cpp`: uses the precompiled
    plan during an RTS LOD draw. A generation mismatch or invalid
    live Pose yields target bind pose; the historical nodeWorld
    fallback remains ONLY for older LOD choices that never

@@ -11,7 +11,7 @@ Make the Stage 146 opt-in pre-retirement named playback handoff functional for t
 
 ## Exact code SHAs and source paths
 
-1. `69b5d2e1f783caa7d1408b6881e8eafa7ff81d4f` — `engine/view/GameView.cpp`:
+1. `69b5d2e1f783caa7d1408b6881e8eafa7ff81d4f` — `engine/view/game/GameView.cpp`:
    - Set `packet.animationModelGeneration=ch.modelGeneration` when submitting eligible compiled graph sources to the genre-neutral View.
    - Reject any model choice with `modelGeneration==0` from this accelerated generic path (keep legacy animation instead).
    - Reject presentation inputs lacking a stable `SceneObject::entity` ID, because an index-derived fallback ID can be reused by a different logical object after a model reimport; keep these on legacy presentation. Existing packed valid ECS entity ID remains the stable source key and embeds entity generation.

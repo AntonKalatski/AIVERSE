@@ -1,8 +1,8 @@
 // Top-down heroes (rules "topDown", TopDown.h; client model TopDownControls.h): input packing, movement, walls,
 // unit bodies, auto-fire / aim policy, abilities, bots, determinism, saves and rollback snapshots.
 #include "engine/game/TopDown.h"
-#include "engine/view/TopDownControls.h"
-#include "engine/view/TopDownPrediction.h"
+#include "engine/view/game/TopDownControls.h"
+#include "engine/view/game/TopDownPrediction.h"
 
 namespace {
 const char* kTopDownRules = R"J({

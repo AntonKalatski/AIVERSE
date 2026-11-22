@@ -8,7 +8,7 @@
 #include "../EditorUtil.h"
 #include "../core/MaterialOps.h"
 #include "engine/render/TextureGen.h"
-#include "engine/view/GamePortrait.h"
+#include "engine/view/game/GamePortrait.h"
 
 namespace aiverse::editor {
 

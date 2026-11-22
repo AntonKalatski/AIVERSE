@@ -3,7 +3,7 @@
 ## Provenance, branch and source commits
 
 - Repo: `chromealex/AIVERSE`; working branch `integration/lighting-main-stage1-20261120`, draft PR #91 against `main`. Original baseline: `main` `f9aed9a705982e2c6b77b29869e309995ce8b163`. Main and the independent GI/Luma/TerraWeave feature branches are not modified by this stage.
-- Implementation commit: `18f25c93703ed2a82a3e8288f9c4192ed345ae94`, paths `engine/view/GameTerrainShaders.h`, `GameTerrainRender.cpp`, `GameTerrainRender.h`.
+- Implementation commit: `18f25c93703ed2a82a3e8288f9c4192ed345ae94`, paths `engine/view/game/GameTerrainShaders.h`, `GameTerrainRender.cpp`, `GameTerrainRender.h`.
 - Fixture and registration commit: `39630ae5571eae4a06630343bc553438f4e8ae26`, paths `tests/render/lighting_terrain_gi_shader_contract.cpp`, `CMakeLists.txt`.
 - New CTest `lighting_lighting_terrain_gi_shader_contract` is added to the existing `Lighting` label group (now fourteen source fixtures). **Registered is not passed**.
 

@@ -1,5 +1,5 @@
 // Water from splines (docs/water.md): shore types, bodies, banks, auto shores, baking into the map's cells.
-#include "engine/view/GameWater.h"
+#include "engine/view/game/GameWater.h"
 #ifdef AIVERSE_TESTS_EDITOR_CORE
 #include "apps/editor/core/WaterOps.h"
 #endif

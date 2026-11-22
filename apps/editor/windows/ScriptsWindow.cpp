@@ -9,7 +9,7 @@
 #include "../EditorIcons.h"
 #include "../EditorUtil.h"
 #include "engine/game/Script.h"
-#include "engine/view/GameViewScript.h"
+#include "engine/view/game/GameViewScript.h"
 
 namespace fs = std::filesystem;
 

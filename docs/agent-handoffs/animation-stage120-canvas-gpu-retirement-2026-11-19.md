@@ -56,18 +56,18 @@ Previous: [Stage 119](animation-stage119-playback-continuity-2026-11-19.md)
    likewise retires through the shared fence queue; no direct
    post-blit `destroyTexture`.
 6. `a1708bb9e0f75c67902322b3a85b8789b181b7d5`:
-   `engine/view/GamePaintLayers.h` owns one shared
+   `engine/view/game/GamePaintLayers.h` owns one shared
    `CanvasGpuRetirement` per GPU epoch (no new frame or device
    clock); exposes frame-boundary pending/collect and diagnostics.
 7. `cfd1a864c41fd506dacff87187d58df8ac1c5cf7`:
-   `engine/view/GamePaintLayers.cpp` changes layer source/size/
+   `engine/view/game/GamePaintLayers.cpp` changes layer source/size/
    viewer/clock resets to `resetLayers` that queues old canvas
    images, coast textures, meshes, shaders and pipelines but DOES
    NOT destroy the shared queue. Deleting a layer is asynchronous.
    Final `shutdown` drains once, with a proven GPU idle barrier.
    All generated canvas instances borrow that single lifetime owner.
 8. `bec759b6017f522d7aa325767c02213be0fc2988`:
-   `engine/view/GameView.h` forwards the existing host
+   `engine/view/game/GameView.h` forwards the existing host
    RenderDeviceLifetime lease to paint layers and exposes generic
    pending/collect/orphan metrics.
 9. `044ffe2179240d3407dd95d14d76bf17ba4e5f1b` and

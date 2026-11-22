@@ -11,9 +11,9 @@
 - b63e950dd60d91c731f76e4bd1255dea628c25a1 — engine/render/OwnerPrepareCommit.h generic two-phase coordinator
 - 7d08f291dd9bccf644c5e5f6cbb20967f7032bf2 — engine/view/VisibilityField.h prepared CPU/GPU visibility update API
 - 6bbce40e3df6e0e5078594d975270d5b4fd9db9c — engine/view/VisibilityField.cpp: private R8 update, commit/retirement and rollback
-- c8113bd32ef1c225344c9ad9004951722f9024a9 — engine/view/GameView.cpp: Fog GPU retirement included in owner pre-render collection
-- 7f29f7bf1af4a884eb80aa26889f4aa75ac13309 — engine/view/GameShoreView.h: separate unpublished Shore geometry builder
-- a48c8eb175c46dfbd628021112da5f1844e6828f — engine/view/GameShoreView.cpp: stage shore/foam/prop models then publish them together
+- c8113bd32ef1c225344c9ad9004951722f9024a9 — engine/view/game/GameView.cpp: Fog GPU retirement included in owner pre-render collection
+- 7f29f7bf1af4a884eb80aa26889f4aa75ac13309 — engine/view/game/GameShoreView.h: separate unpublished Shore geometry builder
+- a48c8eb175c46dfbd628021112da5f1844e6828f — engine/view/game/GameShoreView.cpp: stage shore/foam/prop models then publish them together
 - 39ce10edbd9849626335201fc5f25a2790f19d00 — tests/tests.cpp existing fog build test adjusted to new texture generation
 - d271065b29e6091da7a47b66ea6a65d66e76bb85 — tests/tests.cpp generic coordinator and Fog staging fault tests
 - 0d64864f9f8f176d0b7c68ed3d305dd239a3922a — VisibilityField.h: no-op candidate marker

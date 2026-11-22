@@ -8,7 +8,7 @@
 #include "engine/game/GameCore.h"
 #include "engine/game/ComputerPlayer.h"
 #include "engine/game/Script.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 #include "libraries/adapters/rmlui/ScreenBinding.h"
 #include <aiverselib/app/Lifecycle.h>
 #include <aiverselib/app/MatchBridge.h>

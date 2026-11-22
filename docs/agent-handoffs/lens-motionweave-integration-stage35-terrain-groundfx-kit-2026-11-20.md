@@ -2,10 +2,10 @@
 
 ## Repository, branch and actual commits
 - Repository `chromealex/AIVERSE`; branch `feature/lens-motionweave-integration`; `main` unchanged.
-- `c63ee235f3b10a85bbc5fe44c07de289f1f5715f` — `engine/view/GameTerrainRender.cpp`: parse terrain look into a CPU-only temporary, stage three required fallback textures before old live resources are destroyed, require device idle on reload, and roll back unpublished allocations on failure.
-- `3863fb7f04a812e84db922db45e995613594065c` — `engine/view/GameTerrainRender.cpp`: prevent cross-device release, make shutdown idempotent, and release all SIX potential terrain shader/pipeline variants (prior implementation only looped over three).
-- `e16ad8c9eebbe1232a9fef05c3d4d9cababbd54c` — `engine/view/GameGroundFx.h`: private unpublished-GPU-kit initialization API.
-- `1a9ae5574beca7aa07768aaad9d9e847f029897a` — `engine/view/GameGroundFx.cpp`: build a separate never-submitted GroundFX instance with parsed CPU looks, TextureCache/icon handles, shader/pipeline and white texture; publish only after all succeed and the previous device is idle, with cleanup of failed staging resources.
+- `c63ee235f3b10a85bbc5fe44c07de289f1f5715f` — `engine/view/game/GameTerrainRender.cpp`: parse terrain look into a CPU-only temporary, stage three required fallback textures before old live resources are destroyed, require device idle on reload, and roll back unpublished allocations on failure.
+- `3863fb7f04a812e84db922db45e995613594065c` — `engine/view/game/GameTerrainRender.cpp`: prevent cross-device release, make shutdown idempotent, and release all SIX potential terrain shader/pipeline variants (prior implementation only looped over three).
+- `e16ad8c9eebbe1232a9fef05c3d4d9cababbd54c` — `engine/view/game/GameGroundFx.h`: private unpublished-GPU-kit initialization API.
+- `1a9ae5574beca7aa07768aaad9d9e847f029897a` — `engine/view/game/GameGroundFx.cpp`: build a separate never-submitted GroundFX instance with parsed CPU looks, TextureCache/icon handles, shader/pipeline and white texture; publish only after all succeed and the previous device is idle, with cleanup of failed staging resources.
 - `d2d47958f6eb6b1993ea71b2e6e23db56f93be5c`, `dcc69a454c1f133dd55348e32abb07d696d4e9a8` — `GameTerrainRender.h` and `GameGroundFx.h`: explicit guarded `shutdownAfterGpuIdle(gfx::Device&)` and `ownsGpuResources()` diagnostics.
 - `e4ae27954755887ea69b00e6c070bdc3f2f29e4d`, `2eb54009c3672af0990852c6daf229a3205edb7e` — `GameTerrainRender.cpp` and `GameGroundFx.cpp`: idle-gated shutdown entry points and stronger GPU owner identity checks, including GroundFX no-op when not initialized.
 - `81805fe014e3357f5a83a23c7915da0b0c27fa13` and `82540ebf76e9cd3f2f9f7876868bdb9fa5d1e18c` — `tests/tests.cpp`: Terrain/GroundFX fault-injection tests for texture, pipeline and idle refusal, retry, teardown, wrong-device and preservation of published GroundFX look.

@@ -744,7 +744,7 @@ for up to 10 s after it left the simulation; then they are dropped. They apply o
 share the model shaders: `ModelDraw::tint.w`, `teamGlow` = instance `draw.w`), on planets, and to 2D sprites (`scale`
 x = width, y = height, `opacity`). Scripts that run per frame can also set values every frame from their own clock
 (OpenWar computes Unity's per-tick curves from the match time it publishes in `state`). Presentation only: the
-simulation and its checksum never see them; the headless server has no view scripts. Store: `engine/view/EntityFx.h`
+simulation and its checksum never see them; the headless server has no view scripts. Store: `engine/view/game/EntityFx.h`
 (`ViewScripts::entityFx()` -> `GameScene::entityFx`, client and editor play-test). Tests: `view_entity_fx_script_api`,
 `view_entity_fx_renders_scaled_translucent`, `view_entity_fx_ground_shadow`, `view_entity_fx_pitch_roll`.
 

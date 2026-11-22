@@ -2,7 +2,7 @@
 
 ## Branch, commits, files
 - Repository `chromealex/AIVERSE`, branch `feature/lens-motionweave-integration`; `main` unchanged.
-- Implementation commit `59ee989097dc9fb2284ca3461b4647126226316c`: `engine/view/GameView.cpp`, `GameView::init` preloads the prospective `Rts2DView` before destroying the existing instance, and removes the late unguarded sprite allocation.
+- Implementation commit `59ee989097dc9fb2284ca3461b4647126226316c`: `engine/view/game/GameView.cpp`, `GameView::init` preloads the prospective `Rts2DView` before destroying the existing instance, and removes the late unguarded sprite allocation.
 - Prior handoff `docs/agent-handoffs/lens-motionweave-integration-stage22-cross-device-ownership-2026-11-20.md`.
 
 ## Architecture and semantics

@@ -2,9 +2,9 @@
 
 ## Branch and commits
 - Branch: `feature/lens-motionweave-integration`; `main` unchanged.
-- Implementation `1224a4a267f113652797249db9922094a95c0892`: `engine/view/GameSprites.cpp` — local noexcept RAII guard in secondary-camera sprite preparation, restoring emission target, replay mode, camera, basis and shadow quality on normal or exceptional exits.
+- Implementation `1224a4a267f113652797249db9922094a95c0892`: `engine/view/game/GameSprites.cpp` — local noexcept RAII guard in secondary-camera sprite preparation, restoring emission target, replay mode, camera, basis and shadow quality on normal or exceptional exits.
 - Implementation `4e2062a0e22be7ee51524a84a61f794287e4099f`: `engine/render/SpriteBatch.cpp` — prevent reinitialization, transactional GPU init rollback only after confirmed `waitForResourceIdle()`.
-- Implementation `888c13f25f45f03ef68ee28e29a4a55edb812ff5`: `engine/view/GameSprites.cpp` — clean texture cache for batch init failures; on exceptions during sprite/texture/type initialization, wait for GPU idle and clean all partially created resources, including when `ready_` was never set.
+- Implementation `888c13f25f45f03ef68ee28e29a4a55edb812ff5`: `engine/view/game/GameSprites.cpp` — clean texture cache for batch init failures; on exceptions during sprite/texture/type initialization, wait for GPU idle and clean all partially created resources, including when `ready_` was never set.
 - Previous stage: `docs/agent-handoffs/lens-motionweave-integration-stage17-dynamic-sprite-buffers-2026-11-20.md`.
 
 ## Architecture, contracts and compatibility

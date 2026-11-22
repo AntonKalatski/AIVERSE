@@ -9,7 +9,7 @@ cmake = sys.argv[1] if len(sys.argv) > 1 else "cmake"
 with tempfile.TemporaryDirectory(prefix="rts-native-projects-") as tmp:
     root = pathlib.Path(tmp)
     src, build = root / "engine", root / "build"
-    (src / "modules/rts").mkdir(parents=True)
+    (src / "engine/game").mkdir(parents=True)
     # The real selection/registration code is exercised; no renderer/toolchain is needed.
     (src / "engine/game/Native.cpp").write_text("")
     (src / "stub.cpp").write_text("")

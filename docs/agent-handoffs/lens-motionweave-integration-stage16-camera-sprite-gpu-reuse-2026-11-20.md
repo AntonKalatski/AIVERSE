@@ -5,8 +5,8 @@ Branch: `feature/lens-motionweave-integration`; `main` untouched.
 
 - `79bad3d519dd861bf886aa2283a7e5d08fbf7035`: `engine/render/SpriteBatch.h` — dirty/upload-valid state.
 - `7526a8c0a834443ea2c00d05d6fce953660f1bbf`: `engine/render/SpriteBatch.cpp` — sort, CPU vertex packing, and GPU upload only when the geometry is dirty.
-- `8bea4e0631653a1c2fe74de1b3919ff3ec0ee047`: `engine/view/Game2DView.h` — previous secondary camera basis/quality cache.
-- `3137f8ce1a93db9580a1f157b40f414dcc53d78b`, `9d34cbdc3f5cedad63d71bf77953cc446acb594c`: `engine/view/GameSprites.cpp` — camera-basis lookup and same-frame geometry reuse.
+- `8bea4e0631653a1c2fe74de1b3919ff3ec0ee047`: `engine/view/game/Game2DView.h` — previous secondary camera basis/quality cache.
+- `3137f8ce1a93db9580a1f157b40f414dcc53d78b`, `9d34cbdc3f5cedad63d71bf77953cc446acb594c`: `engine/view/game/GameSprites.cpp` — camera-basis lookup and same-frame geometry reuse.
 
 ## How it works
 1. `SpriteBatch::begin` invalidates vertex and caster GPU uploads. `quad` and `quadEx` invalidate draw upload; `caster` invalidates caster upload. `shutdown` invalidates both.

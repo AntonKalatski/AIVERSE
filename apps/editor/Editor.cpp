@@ -31,8 +31,8 @@
 #include <unordered_map>
 #include "engine/game/Tiles.h"
 #include "engine/render/CameraModes.h"
-#include "engine/view/GameOverlayData.h"
-#include "engine/view/GameSelectionPresentation.h"
+#include "engine/view/game/GameOverlayData.h"
+#include "engine/view/game/GameSelectionPresentation.h"
 #include <sstream>
 
 namespace fs = std::filesystem;

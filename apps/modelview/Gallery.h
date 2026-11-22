@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "../../engine/view/GamePortrait.h"
+#include "../../engine/view/game/GamePortrait.h"
 
 namespace aiverse::modelview {
 

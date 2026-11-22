@@ -17,7 +17,7 @@ Commits, in order:
 
 1. `a18d4d49cb866f7fd1ff6cedb83e0979e64f6f17` — `engine/render/GeometryScene.h`, adds generic native Model/HLOD retirement queue and owner API.
 2. `acd626b41a6117a0cbf6204e90d7814e5e43976e` — `engine/render/GeometryScene.cpp`, moves resident/HLOD Models into GPU retirement on reload and exception rollback.
-3. `0de4b4b09656e4ffedf1024693d316b4a6509807` — `engine/view/GameView.cpp`, polls static GeometryScene at the existing owner frame boundary.
+3. `0de4b4b09656e4ffedf1024693d316b4a6509807` — `engine/view/game/GameView.cpp`, polls static GeometryScene at the existing owner frame boundary.
 4. `da01812f51fee3e0bea838a18dfb058293f9a870` — `engine/world/WorldScene.h`, adds managed shared-owner candidates and dedicated ordered retirement queue API.
 5. `9bd40a83391b549cc2ed452a2937181b743ea171` — `engine/world/WorldScene.cpp`, defers GPU release until no other resident chunk or background CPU worker borrows shared Model data.
 6. `84374b13308ad892fbcc91136ef06d4578450e65` — `apps/client/GameClient.cpp`, polls WorldScene GPU retirements from its pre-render Device-owner frame hook.

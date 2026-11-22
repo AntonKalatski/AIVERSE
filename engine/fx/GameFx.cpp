@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include "../game/GameCore.h"
-#include "../view/GameView.h"   // SceneObject (plain struct, no link dependency)
+#include "../view/game/GameView.h"   // SceneObject (plain struct, no link dependency)
 
 namespace aiverse::game {
 

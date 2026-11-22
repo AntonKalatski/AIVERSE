@@ -17,7 +17,7 @@ Source commits:
 1. `ef3d66868afcd58e7cf858cc6bd320895b3ab99c` — new `engine/render/NativePresentationRetirement.h`.
 2. `c99ea5208f8cecd244061c62a0553c5d445d620f` — explicitly typed empty BufferHandle exchange.
 3. `b04987c37804108829fd5db2c9d8a00f5fefd7cb` — `modules/rts/view/RtsRoadView.h` generic retirement member and API.
-4. `9e49319a15536b822f14600b7496c9df2c3e9447` — `engine/view/GameShoreView.h` counterpart.
+4. `9e49319a15536b822f14600b7496c9df2c3e9447` — `engine/view/game/GameShoreView.h` counterpart.
 5. `dbacf050376968493698aede6e088ea5f5b08f74` — `RtsRoadView.cpp` retired Models + standalone SpriteMesh buffers.
 6. `321696ddf5e12a094b71b024baffcfce372046eb` — `GameShoreView.cpp` retired Models/foam and explicit shutdown barrier.
 7. `eb705ba8012e75213866614d9342b0f35ada7fd3` — `GameView.cpp` integrates retirement collection at entry to the presentation draw boundary.

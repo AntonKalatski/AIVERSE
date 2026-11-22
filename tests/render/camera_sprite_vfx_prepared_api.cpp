@@ -1,7 +1,7 @@
 // LENS prepared sprite and VFX draw-only API surface.
 // No device, resource allocation, animation ticking or rendering required.
-#include "engine/view/Game2DView.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/Game2DView.h"
+#include "engine/view/game/GameView.h"
 #include "apps/client/ClientFx.h"
 #include "engine/render/CameraClientAdapter.h"
 #include <type_traits>

@@ -8,11 +8,11 @@ Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage46-fog-s
 
 ## Implemented in source
 
-- engine/view/GameGroundFx.h/.cpp: public opaque `PreparedFrame` via shared_ptr, `prepareFrame`, `commitFrame` noexcept, `drawPrepared`; `draw` retains compatibility as prepare+commit+draw.
+- engine/view/game/GameGroundFx.h/.cpp: public opaque `PreparedFrame` via shared_ptr, `prepareFrame`, `commitFrame` noexcept, `drawPrepared`; `draw` retains compatibility as prepare+commit+draw.
 - GroundFX prepare copies mutable CPU visibility memory, chunk metadata, look parameters, lane/territory cache, and borrows existing GPU Mesh handles. It prepares up to 16 chunks / 128 MiB meshes using NativeMeshBatch **into an isolated temporary clone**, never mutating published mesh targets.
 - Explicit changed-mesh journal differentiates untouched borrowed buffers from replacements, including empty mesh deletions. The never-submitted replacement buffers are destroyed on abandoned PreparedFrame. After cohort prepare succeeds, commit retires exactly changed old meshes and publishes CPU maps and new GPU handles by no-allocation swaps. A full map/viewer reset retires the old map mesh owners instead of leaking them.
 - Uses a publication revision check and one-shot committed guard. Invalidate/re-init/shutdown advance revision; stale commit is fail-closed.
-- engine/view/GameView.cpp: adds GroundFX participant first in the existing shared owner transaction, then Roads, Shores, Fog Sheet and Fog Field; the Effects layer now emits only previously committed GroundFX GPU meshes.
+- engine/view/game/GameView.cpp: adds GroundFX participant first in the existing shared owner transaction, then Roads, Shores, Fog Sheet and Fog Field; the Effects layer now emits only previously committed GroundFX GPU meshes.
 - tests/tests.cpp: added late-owner rollback/retry and map-resize private candidate discard/retry fixtures, using existing fake RHI.
 
 ## Actual verification

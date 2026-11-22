@@ -2,8 +2,8 @@
 // Runs only on the editor/presentation thread; no renderer or ECS state.
 // Changing projects resets the watch baseline and every pending request.
 #pragma once
-#include "engine/view/GameModelSourceDependencies.h"
-#include "engine/view/GameModelResourceCache.h"
+#include "engine/view/game/GameModelSourceDependencies.h"
+#include "engine/view/game/GameModelResourceCache.h"
 #include "engine/render/Model.h"
 #include <filesystem>
 #include <map>

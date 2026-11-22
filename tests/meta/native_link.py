@@ -9,7 +9,7 @@ cmake = sys.argv[1] if len(sys.argv) > 1 else 'cmake'
 with tempfile.TemporaryDirectory(prefix='rts-meta-native-') as tmp:
     root = pathlib.Path(tmp)
     src, native, build = root / 'host', root / 'project' / 'native', root / 'build'
-    (src / 'modules/rts').mkdir(parents=True)
+    (src / 'engine/game').mkdir(parents=True)
     native.mkdir(parents=True)
     # Isolate the link contract: real Build.cmake and meta, minimal sim host types.
     (src / 'engine/game/Native.cpp').write_text('')

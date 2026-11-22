@@ -9,8 +9,8 @@
 
 #include "GameClient.h"
 #include "RegionSettings.h"
-#include "engine/view/ScriptHud.h"
-#include "engine/view/WorldCounters.h"
+#include "engine/view/game/ScriptHud.h"
+#include "engine/view/game/WorldCounters.h"
 #include "engine/net/NetLocalize.h"
 #include "engine/game/Localize.h"
 #include "engine/atlas/AtlasFormat.h"

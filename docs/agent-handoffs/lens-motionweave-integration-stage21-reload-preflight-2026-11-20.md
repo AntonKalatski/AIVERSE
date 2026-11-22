@@ -2,8 +2,8 @@
 
 ## Repository, commits, changed files
 - Repository `chromealex/AIVERSE`, branch `feature/lens-motionweave-integration`; `main` unchanged.
-- Code commit `d811574ebae5862c54453711499779213b3ec227`: `engine/view/GameView.cpp`. Moved the existing `twoD_->shutdownAfterGpuIdle(dev)` guard from the middle of `GameView::init` to its beginning (after lease-generation validation and before resource bindings, field/fog resets, overlay init, roads/shores initialization and other mutations).
-- Code commit `34c8c831ea1c82a408e28d563e6449f81e9acb39`: `engine/view/GameView.cpp`. Reject reinitialization when an existing sprite view is owned by a different GPU device, before invoking an idle barrier on the wrong device.
+- Code commit `d811574ebae5862c54453711499779213b3ec227`: `engine/view/game/GameView.cpp`. Moved the existing `twoD_->shutdownAfterGpuIdle(dev)` guard from the middle of `GameView::init` to its beginning (after lease-generation validation and before resource bindings, field/fog resets, overlay init, roads/shores initialization and other mutations).
+- Code commit `34c8c831ea1c82a408e28d563e6449f81e9acb39`: `engine/view/game/GameView.cpp`. Reject reinitialization when an existing sprite view is owned by a different GPU device, before invoking an idle barrier on the wrong device.
 
 ## Why
 Stage 20 guarded sprite teardown on live reload, but the guard ran **after** mutation of renderer/visual state. If the GPU idle barrier failed, earlier reload operations already changed fog, fields, overlays and other presentation owners, leaving the live view partially altered. The guard now runs before those mutations. A stale GPU device cannot be used to release sprite resources allocated by another device.

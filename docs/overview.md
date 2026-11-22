@@ -613,7 +613,7 @@ after a heavy battle; choosing shadows manually in the menu turns this off (`AIV
 - **Editor** — the "Lighting" window: preview of the time of day and storms, light quality tier, list of lights.
   For agents: `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-The field format is in the header of `engine/view/GameLights.h`. Test variables: `AIVERSE_TIME_OF_DAY`,
+The field format is in the header of `engine/view/game/GameLights.h`. Test variables: `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Checking mechanics over MCP

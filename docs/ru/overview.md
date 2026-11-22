@@ -524,7 +524,7 @@ docker build -f apps/server/Dockerfile -t aiverse-server .             # сер�
   список источников. Для агентов: `light_add`, `light_update`, `light_delete`, `light_list`,
   `lighting_set`, `view_lighting`.
 
-Формат полей — в шапке `engine/view/GameLights.h`. Тестовые переменные: `AIVERSE_TIME_OF_DAY`,
+Формат полей — в шапке `engine/view/game/GameLights.h`. Тестовые переменные: `AIVERSE_TIME_OF_DAY`,
 `AIVERSE_NIGHT`, `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Проверка механик через MCP

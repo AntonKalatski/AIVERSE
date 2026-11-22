@@ -9,7 +9,7 @@ animation note appended to `docs/agent-handoffs/animation-universal.md`.
 
 | # | Sev | Status | Commit | Files |
 |---|---|---|---|---|
-| 1 | HIGH | FIXED | 52c7e66 | engine/view/GameLook.cpp |
+| 1 | HIGH | FIXED | 52c7e66 | engine/view/game/GameLook.cpp |
 | 2 | MED | FIXED | 02802c6 | engine/render/Prisma.{h,cpp} |
 | 3 | MED/PERF | FIXED (immediate-publish path); capture-mode repeats DEFERRED | bcde4bf | modules/rts/view/GameView.{h,cpp} |
 | 4 | MED/PERF | FIXED | c0c1331 | engine/view/View.h, tests/view/packets.cpp |

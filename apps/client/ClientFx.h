@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <string>
 #include "engine/render/Renderer3D.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 namespace aiverse::client {
 class ClientFx {
 public:
@@ -42,7 +42,7 @@ public:
 #include "engine/render/Renderer3D.h"
 #include "engine/render/TextureCache.h"
 #include "engine/fx/GameFx.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameView.h"
 
 namespace aiverse::client {
 

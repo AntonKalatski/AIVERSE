@@ -6,7 +6,7 @@
 #include <cstdio>
 
 #include "GameClient.h"
-#include "engine/view/ScriptHud.h"
+#include "engine/view/game/ScriptHud.h"
 
 namespace aiverse::client {
 

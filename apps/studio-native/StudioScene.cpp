@@ -11,7 +11,7 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
-#include "engine/view/GameShapeModels.h"
+#include "engine/view/game/GameShapeModels.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>

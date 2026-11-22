@@ -3,7 +3,7 @@
 ## Repository, branch and commits
 - Repository: chromealex/AIVERSE
 - Branch: feature/lens-motionweave-integration. Not merged into main.
-- Source commit: c4ab82c134505b59853eeb7c4ce537ff2f55cc47 — engine/view/GameTerrainRender.cpp
+- Source commit: c4ab82c134505b59853eeb7c4ce537ff2f55cc47 — engine/view/game/GameTerrainRender.cpp
 - Test commit: d19b7fbffcc82e041741e14284d7d5126caa2d6b — tests/tests.cpp
 - Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage36-mesh-retirement-2026-11-20.md.
 

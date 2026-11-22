@@ -9,7 +9,7 @@
 #include <limits>
 #include "../Editor.h"
 #include "../EditorUtil.h"
-#include "engine/view/GamePortrait.h"
+#include "engine/view/game/GamePortrait.h"
 #include "engine/render/RenderResourceOwnerGroup.h"
 
 namespace aiverse::editor {

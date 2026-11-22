@@ -5,7 +5,7 @@
 - Latest animation sync merge: `d81881693db6f13357a6085bfde590dfa29c8937` (animation parent `ff2d5e7d137343fe633398e628732a0a91154216`), zero overlapping paths.
 - Fixed MotionWeave source identity at submission: `35e8c4a0848b934b6297a14ffeae0210a6cf14b2`.
 - Pre-LOD snapshot source: `5e89f97ca66d05e6e042a77743ee0176c8ec6b69`, `1eebaa761bfed296431928f77277895cbfb2dc0b` in `engine/render/CameraModelSnapshot.h`.
-- Optional GameView export hook: `e3fe2aef6357ca752d9948aa5f7804a38be12ca5` in `engine/view/GameView.h`; capture before primary submission: `22c1f9250a2f767ff34de4d216b79298a32f866f` in `GameViewDraw.cpp`.
+- Optional GameView export hook: `e3fe2aef6357ca752d9948aa5f7804a38be12ca5` in `engine/view/game/GameView.h`; capture before primary submission: `22c1f9250a2f767ff34de4d216b79298a32f866f` in `GameViewDraw.cpp`.
 - GameClient scoped borrow + camera-specific replay: `1ac91fd41008998bcfc814bfed436fc7be21189c`.
 - Test additions: `dc81afb50251a0e52d2393a8f9b2b96dc35c194e` in `tests/render/camera_model_snapshot.cpp`; CMake dependency `4b9548efd9d12750f19a8d626238ba351d5872fe`.
 - Prior handoff: `docs/agent-handoffs/lens-motionweave-integration-stage6b-capture-raii-2026-11-20.md`.

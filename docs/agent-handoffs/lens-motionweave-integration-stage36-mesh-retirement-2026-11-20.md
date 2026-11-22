@@ -2,15 +2,15 @@
 
 ## Repository, branch and exact code commits
 - Repository: `chromealex/AIVERSE`, branch: `feature/lens-motionweave-integration`. No changes merged to `main`.
-- `ef7e74ca0db1d42ebaea9fba2e097b59c1c8665d`: `engine/view/GameTerrainRender.h` — `NativePresentationRetirement retiredMeshes_`, public pre-render `collectRetiredMeshBuffers(dev)` and `pendingMeshGpuRetirements()`.
-- `88e3b7e6b361f849f3576089a114b5dc8178c50c`: `engine/view/GameGroundFx.h` — the same per-owner retirement queue and pre-render API.
-- `1200e0dddf87257533db0fcff3b0bcb347687ed1`: `engine/view/GameTerrainRender.cpp` — stage replacement terrain vertex/index buffer handles before retiring published handles, route replaced chunk/LOD/apron/evicted buffers through the retirement queue, drain at final shutdown only after proven GPU completion.
-- `fdb432e2765ae2cf20234804f8e31085c1452e48`: `engine/view/GameTerrainRender.cpp` — build replacement water mesh first and publish/retire old VB/IB only after upload succeeds. Preserves existing water mesh on upload exception.
-- `9f43c8165d791126610bf5cd4efea8828c9a1fc2`: `engine/view/GameTerrainDetailMesh.cpp` — use GPU retirement instead of immediate buffer destruction on detail LOD invalidation.
+- `ef7e74ca0db1d42ebaea9fba2e097b59c1c8665d`: `engine/view/game/GameTerrainRender.h` — `NativePresentationRetirement retiredMeshes_`, public pre-render `collectRetiredMeshBuffers(dev)` and `pendingMeshGpuRetirements()`.
+- `88e3b7e6b361f849f3576089a114b5dc8178c50c`: `engine/view/game/GameGroundFx.h` — the same per-owner retirement queue and pre-render API.
+- `1200e0dddf87257533db0fcff3b0bcb347687ed1`: `engine/view/game/GameTerrainRender.cpp` — stage replacement terrain vertex/index buffer handles before retiring published handles, route replaced chunk/LOD/apron/evicted buffers through the retirement queue, drain at final shutdown only after proven GPU completion.
+- `fdb432e2765ae2cf20234804f8e31085c1452e48`: `engine/view/game/GameTerrainRender.cpp` — build replacement water mesh first and publish/retire old VB/IB only after upload succeeds. Preserves existing water mesh on upload exception.
+- `9f43c8165d791126610bf5cd4efea8828c9a1fc2`: `engine/view/game/GameTerrainDetailMesh.cpp` — use GPU retirement instead of immediate buffer destruction on detail LOD invalidation.
 - `85dfc46d6338c70262b8ced7c1ef727fc86f3e9a`: `engine/render/MeshBuilder.cpp` — shared MeshBuilder GPU upload cleans unpublished vertex/index handles if either allocation fails or throws, instead of returning a partially valid mesh.
-- `d5eae65ba370e8e6df4cc1d4f26532dc87a05dc3`: `engine/view/GameGroundFx.cpp` — stage new GroundFX mesh before retiring old VB/IB; process GPU retirement queue at shutdown, abort before releasing shader/texture if idle cannot be proven.
-- `54745a64980c5172e994b03ab3f63ecad9f03dc1`: `engine/view/GameView.cpp` — include Terrain/GroundFX queues in `pendingModelRetirements()` and collect both at the explicit pre-render resource-retirement boundary.
-- `0d5d4bd16a8c7a4ea797c64a94c8cbfd15bdfbe6`: `engine/view/GameTerrainRender.cpp` — build all LODs of each changed non-detail chunk in a private `Chunk` and commit bounds/hash/handles only after success. On failure destroy only new unpublished handles; the old chunk remains published.
+- `d5eae65ba370e8e6df4cc1d4f26532dc87a05dc3`: `engine/view/game/GameGroundFx.cpp` — stage new GroundFX mesh before retiring old VB/IB; process GPU retirement queue at shutdown, abort before releasing shader/texture if idle cannot be proven.
+- `54745a64980c5172e994b03ab3f63ecad9f03dc1`: `engine/view/game/GameView.cpp` — include Terrain/GroundFX queues in `pendingModelRetirements()` and collect both at the explicit pre-render resource-retirement boundary.
+- `0d5d4bd16a8c7a4ea797c64a94c8cbfd15bdfbe6`: `engine/view/game/GameTerrainRender.cpp` — build all LODs of each changed non-detail chunk in a private `Chunk` and commit bounds/hash/handles only after success. On failure destroy only new unpublished handles; the old chunk remains published.
 - `8737ad7d52c3321a87f947c81954fed07adaca59`: `tests/tests.cpp` — add `mesh_builder_upload_releases_unpublished_vertex_buffer_on_index_failure` and `terrain_chunk_rebuild_preserves_old_gpu_mesh_on_index_failure`.
 - Previous stage handoff: `docs/agent-handoffs/lens-motionweave-integration-stage35-terrain-groundfx-kit-2026-11-20.md`.
 

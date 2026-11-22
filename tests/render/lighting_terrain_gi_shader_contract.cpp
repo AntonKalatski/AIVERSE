@@ -1,4 +1,4 @@
-#include "engine/view/GameTerrainShaders.h"
+#include "engine/view/game/GameTerrainShaders.h"
 #include "tests/AlwaysCheck.h"
 #include <string>
 

@@ -31,4 +31,4 @@ A mechanic is done only when the AI can use it at least basically.
 
 Report: cause with evidence, change, seeds before/after, unverified parts.
 
-Runtime library: none. Workflow over the engine MCP and `modules/rts/ComputerPlayer*`.
+Runtime library: none. Workflow over the engine MCP and `engine/game/ComputerPlayer*`.

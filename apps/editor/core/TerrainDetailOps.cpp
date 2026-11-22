@@ -10,8 +10,8 @@
 #include <cstring>
 #include <stdexcept>
 #include "TerrainOps.h"
-#include "engine/view/GameTerrainDetail.h"
-#include "engine/view/GameTerrainSurface.h"
+#include "engine/view/game/GameTerrainDetail.h"
+#include "engine/view/game/GameTerrainSurface.h"
 
 namespace aiverse::editor {
 

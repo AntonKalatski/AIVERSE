@@ -16,10 +16,10 @@ Previous handoff: docs/agent-handoffs/lens-motionweave-integration-stage47b3c-no
 
 ## Files
 
-- engine/view/GameTerrainRender.h + .cpp
+- engine/view/game/GameTerrainRender.h + .cpp
 - modules/rts/view/RtsRoadView.h + .cpp
-- engine/view/GameShoreView.h + .cpp
-- engine/view/GameTerrain.cpp
+- engine/view/game/GameShoreView.h + .cpp
+- engine/view/game/GameTerrain.cpp
 - tests/tests.cpp
 - This handoff.
 

@@ -496,7 +496,7 @@ schweren Schlacht eine Stufe wieder an; manuelle Schattenwahl im Menü schaltet 
 - **Editor** — das Fenster „Lighting“: Vorschau von Tageszeit und Gewitter, Lichtqualitätsstufe, Liste der Lichter. Für
   Agenten: `light_add`, `light_update`, `light_delete`, `light_list`, `lighting_set`, `view_lighting`.
 
-Das Feldformat steht im Kopf von `engine/view/GameLights.h`. Testvariablen: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`,
+Das Feldformat steht im Kopf von `engine/view/game/GameLights.h`. Testvariablen: `AIVERSE_TIME_OF_DAY`, `AIVERSE_NIGHT`,
 `AIVERSE_CLOUDS`, `AIVERSE_STORM`.
 
 ## Mechaniken über MCP prüfen

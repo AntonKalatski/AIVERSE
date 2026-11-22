@@ -1,7 +1,7 @@
 // LENS camera-independent terrain/fog replay API contract.
 // Compile-only type checks; no graphics device, animations or game world.
-#include "engine/view/GameTerrainRender.h"
-#include "engine/view/GameView.h"
+#include "engine/view/game/GameTerrainRender.h"
+#include "engine/view/game/GameView.h"
 #include <type_traits>
 using namespace aiverse;
 using namespace aiverse::game;

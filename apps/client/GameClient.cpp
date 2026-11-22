@@ -35,14 +35,14 @@
 #include "ClientSplash.h"
 #include "GameClient.h"
 #include "StartPlayers.h"
-#include "engine/view/EncounterDecals.h"   // boss encounters: ground marks
+#include "engine/view/game/EncounterDecals.h"   // boss encounters: ground marks
 #include "engine/platform/ContentReader.h"
 #include "engine/platform/EnhancedInputConfig.h"
 #include "RegionSettings.h"
 #include "engine/game/Localize.h"
 #include "engine/game/Tiles.h"
 #include "engine/render/CameraModes.h"
-#include "engine/view/GameOverlayData.h"
+#include "engine/view/game/GameOverlayData.h"
 
 using namespace aiverse;
 using platform::Event;

@@ -1417,18 +1417,18 @@ add_library(aiverse_roads_view STATIC engine/roads/RoadView.cpp engine/roads/Roa
 add_library(AIVERSE::roads_view ALIAS aiverse_roads_view)
 target_link_libraries(aiverse_roads_view PUBLIC aiverse_roads aiverse_models aiverse_render2d)
 
-add_library(aiverse_game_view STATIC engine/view/GameView.cpp engine/view/GameTerrain.cpp
-    engine/view/GameShoreView.cpp
-    engine/view/GameShapes.cpp engine/view/GameLook.cpp engine/view/GameAnimate.cpp
-    engine/view/GameViewDraw.cpp engine/view/GamePortrait.cpp
-    engine/view/GameLights.cpp engine/view/GameLightsData.cpp engine/view/GameGroundFx.cpp engine/view/GameTerrainRender.cpp engine/view/GameTerrainDetailMesh.cpp
-    engine/view/GameFieldView.cpp
-    engine/view/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
-    engine/view/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
-    engine/view/GamePlanetRender.cpp engine/view/GamePlanetView.cpp engine/view/GamePlanetGroundFx.cpp)
+add_library(aiverse_game_view STATIC engine/view/game/GameView.cpp engine/view/game/GameTerrain.cpp
+    engine/view/game/GameShoreView.cpp
+    engine/view/game/GameShapes.cpp engine/view/game/GameLook.cpp engine/view/game/GameAnimate.cpp
+    engine/view/game/GameViewDraw.cpp engine/view/game/GamePortrait.cpp
+    engine/view/game/GameLights.cpp engine/view/game/GameLightsData.cpp engine/view/game/GameGroundFx.cpp engine/view/game/GameTerrainRender.cpp engine/view/game/GameTerrainDetailMesh.cpp
+    engine/view/game/GameFieldView.cpp
+    engine/view/game/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
+    engine/view/game/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
+    engine/view/game/GamePlanetRender.cpp engine/view/game/GamePlanetView.cpp engine/view/game/GamePlanetGroundFx.cpp)
 # visual terrain detail surface (agent-terrain): shared by the view and the editor core (sculpt, validate)
 # + the planet surface maths (RtsPlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
-add_library(aiverse_terrain_detail STATIC engine/view/GameTerrainDetail.cpp engine/view/GamePlanet.cpp engine/view/GamePlanetDetail.cpp)
+add_library(aiverse_terrain_detail STATIC engine/view/game/GameTerrainDetail.cpp engine/view/game/GamePlanet.cpp engine/view/game/GamePlanetDetail.cpp)
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui aiverse_roads_view)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
@@ -2048,7 +2048,7 @@ aiverse_game_module(AIVERSE_GAME_WITH_MAPGEN "Include the map generator (map \"g
     engine/game/gen/GenContent.cpp engine/game/gen/GenCity.cpp engine/game/gen/GenPlanet.cpp engine/game/gen/GenWorld.cpp engine/game/gen/MapGen.cpp)
 add_library(aiverse_render2d STATIC engine/render/SpriteBatch.cpp engine/render/TextureCache.cpp)
 target_include_directories(aiverse_render2d PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
-target_sources(aiverse_game_view PRIVATE engine/view/GameSprites.cpp engine/view/GameTileView.cpp engine/view/GameSpriteShadow.cpp)
+target_sources(aiverse_game_view PRIVATE engine/view/game/GameSprites.cpp engine/view/game/GameTileView.cpp engine/view/game/GameSpriteShadow.cpp)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_render2d)
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/TileOps.cpp)
@@ -2087,7 +2087,7 @@ if(TARGET aiverse_editor_core) # lighting agent: light_* / lighting_set operatio
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PlanetOps.cpp apps/editor/core/PlanetDetailOps.cpp)   # planet-render agent: planet sculpt / paint
 endif()
 if(TARGET aiverse_tests) # lighting agent: GPU-free lighting logic under test
-    target_sources(aiverse_tests PRIVATE engine/view/GameLightsData.cpp engine/render/QualityGovernor.cpp)
+    target_sources(aiverse_tests PRIVATE engine/view/game/GameLightsData.cpp engine/render/QualityGovernor.cpp)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -2095,10 +2095,10 @@ endif()
 # numbers, bars). aiverse_overlay_data: GPU-free schema / validation / templates, shared by the view and
 # the editor core (MCP overlay_* operations); the evaluator + renderer live in aiverse_game_view.
 # ---------------------------------------------------------------------------
-add_library(aiverse_overlay_data STATIC engine/view/GameOverlayData.cpp)
+add_library(aiverse_overlay_data STATIC engine/view/game/GameOverlayData.cpp)
 target_link_libraries(aiverse_overlay_data PUBLIC aiverse_game)
 target_include_directories(aiverse_overlay_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_sources(aiverse_game_view PRIVATE engine/view/GameOverlays.cpp engine/view/GameOverlaysDraw.cpp)
+target_sources(aiverse_game_view PRIVATE engine/view/game/GameOverlays.cpp engine/view/game/GameOverlaysDraw.cpp)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_overlay_data)
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/OverlayOps.cpp)
@@ -2277,7 +2277,7 @@ aiverse_game_module(AIVERSE_GAME_WITH_TRAFFIC "Include city traffic (rules \"tra
 target_sources(aiverse_game PRIVATE engine/game/TrafficRoads.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_roads)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
-target_sources(aiverse_game PRIVATE engine/view/GameWater.cpp)
+target_sources(aiverse_game PRIVATE engine/view/game/GameWater.cpp)
 # the engine's standard Lua library (rule-level mechanics) is compiled in: engine/game/lua/*.lua
 file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/lua/*.lua)
 set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/StdLua.h)
@@ -2290,10 +2290,10 @@ target_link_libraries(aiverse_game PUBLIC aiverse_lua)
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/ScriptOps.cpp)
 endif()
-target_sources(aiverse_game_view PRIVATE engine/view/GameViewScript.cpp engine/view/ScriptSound.cpp)
+target_sources(aiverse_game_view PRIVATE engine/view/game/GameViewScript.cpp engine/view/game/ScriptSound.cpp)
 
 # Generic GPU canvases and Lua world-space paint layers.
-target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp engine/view/GamePaintLayers.cpp engine/view/GameGroundCanvas.cpp)
+target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp engine/view/game/GamePaintLayers.cpp engine/view/game/GameGroundCanvas.cpp)
 
 # Shared region gesture input; gameplay remains in project Lua ability effects.
 option(AIVERSE_CLIENT_WITH_CITY "Include persistent city server client in packaged clients" ON)
@@ -2644,7 +2644,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     # Link only legacy water's data source rather than all RTS/editor/renderer.
     add_executable(aiverse_ecs_nereid_legacy_raster_test
         tests/ecs_nereid_legacy_raster_test.cpp
-        engine/view/GameWater.cpp)
+        engine/view/game/GameWater.cpp)
     target_link_libraries(aiverse_ecs_nereid_legacy_raster_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_legacy_raster_test

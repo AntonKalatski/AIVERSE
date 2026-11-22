@@ -102,7 +102,7 @@ Previous warm sample agrees: objects=8.824, state=1.432, animate=2.113, drawObje
 
 ## Latest animation CPU optimization (commit `3a03f93`)
 
-In `engine/view/GameAnimate.cpp`, computing procedural ground normal used four `heightAt` calls and a rotation even when the model had no procedural modifiers. The calculation now runs only when `!ch.procs.empty() && !st.graph.hasContacts()`, the same condition that consumes `ProcInputs` in `applyProcedural`. The previously resolved `kingstonStride` is also reused during pose correction instead of a repeated FX map lookup. **No animation states or idle clips are skipped.**
+In `engine/view/game/GameAnimate.cpp`, computing procedural ground normal used four `heightAt` calls and a rotation even when the model had no procedural modifiers. The calculation now runs only when `!ch.procs.empty() && !st.graph.hasContacts()`, the same condition that consumes `ProcInputs` in `applyProcedural`. The previously resolved `kingstonStride` is also reused during pose correction instead of a repeated FX map lookup. **No animation states or idle clips are skipped.**
 
 Benchmark warm `[view-objects]` `animate` and `[view-stages]` `objects` against the previous ~2.1 ms and ~8.6 ms, with 14,772 objects. This change has not yet been compiled or measured on the owner's Mac; do not assert a performance win before checking. Keep testing programmable graphs, procedural models, contacts, foot IK and weapon poses.
 
@@ -114,13 +114,13 @@ The next most promising targets are `drawObject` (~2.2 ms), remaining ~3 ms of t
 
 ## Latest drawObject fast path (commit `5c8d3bc`)
 
-In `engine/view/GameViewDraw.cpp`, the attachments/effect-anchor block previously calculated `stateBits()` even when a model had neither attachments nor effects. The block now executes only when `!ch.attach.empty()` or a relevant `show->fx` list is nonempty. This preserves state calculation and effect submission for models that actually consume it, including stage choices and tint overrides. It does **not** skip `animate`, `stateFor`, `r.drawModel`, or any geometry.
+In `engine/view/game/GameViewDraw.cpp`, the attachments/effect-anchor block previously calculated `stateBits()` even when a model had neither attachments nor effects. The block now executes only when `!ch.attach.empty()` or a relevant `show->fx` list is nonempty. This preserves state calculation and effect submission for models that actually consume it, including stage choices and tint overrides. It does **not** skip `animate`, `stateFor`, `r.drawModel`, or any geometry.
 
 This is a targeted low-risk optimization, **not yet benchmarked or compiled on the owner's Mac**. Compare warm `[view-objects]` drawObject (~2.1–2.2 ms baseline), `[view-stages]` objects (~7.6–7.8 ms), and full `[scene-stages]` view (~9.6–10.0 ms). Test attachments, weapons, FX anchors and staged model choices visually. If no gain, focus on the remaining uninstrumented ~3 ms object-loop cost; avoid broad static caching until invalidation rules are defined.
 
 ## Latest procedural-input fast path (2026-11-17)
 
-Commits `d10016f` and `f39b62a` change `engine/view/GameAnimate.cpp`: `ProcInputs` initialization, target-angle calculations and terrain-normal samples are now inside the `!ch.procs.empty() && !st.graph.hasContacts()` branch, the only branch that invokes `applyProcedural`. `st.objXf` is reset on every call, and regular pose updates, IK, animation graphs and events remain outside this branch. The second commit fixes the block scope of the first; **use the final branch head**.
+Commits `d10016f` and `f39b62a` change `engine/view/game/GameAnimate.cpp`: `ProcInputs` initialization, target-angle calculations and terrain-normal samples are now inside the `!ch.procs.empty() && !st.graph.hasContacts()` branch, the only branch that invokes `applyProcedural`. `st.objXf` is reset on every call, and regular pose updates, IK, animation graphs and events remain outside this branch. The second commit fixes the block scope of the first; **use the final branch head**.
 
 This optimization has not been built or benchmarked by the owner yet. Compare warm `[view-objects]` animate (~1.30–1.35 ms) and `[view-stages]` objects (~7.6–7.8 ms), as well as model/animation correctness. If CPU improvement is negligible, investigate remaining uninstrumented object-loop cost rather than repeating speculative micro-optimizations.
 

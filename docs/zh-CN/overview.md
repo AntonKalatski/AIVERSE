@@ -426,7 +426,7 @@ audio.json 一节；简要示例：
 - **编辑器** —— “Lighting”窗口：预览一天中的时间和雷暴、光照质量档位、光源列表。智能体可使用：`light_add`、`light_update`、
   `light_delete`、`light_list`、`lighting_set`、`view_lighting`。
 
-字段格式见 `engine/view/GameLights.h` 的文件头。测试变量：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、`AIVERSE_CLOUDS`、`AIVERSE_STORM`。
+字段格式见 `engine/view/game/GameLights.h` 的文件头。测试变量：`AIVERSE_TIME_OF_DAY`、`AIVERSE_NIGHT`、`AIVERSE_CLOUDS`、`AIVERSE_STORM`。
 
 ## 通过 MCP 检查机制
 

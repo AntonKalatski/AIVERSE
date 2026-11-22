@@ -21,7 +21,7 @@
 #include "engine/bake/SceneBuilder.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/BakedLighting.h"
-#include "engine/view/GameLights.h"
+#include "engine/view/game/GameLights.h"
 
 namespace aiverse::editor {
 
