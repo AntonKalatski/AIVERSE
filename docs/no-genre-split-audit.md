@@ -95,14 +95,14 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 
 | Stage | State |
 |---|---|
-| 1 Naming (G7) | built + tested (stage 02): `aiverselib/mechanics`, namespace `aiverse::lib::mechanics` (alias `genre`), forwarders, CMake aliases, docs renamed. Package ids `bots-rts`/`bots-fps`/`genre-bots`/`genre-kits` and test names still old |
-| 2a Capability queries (G2) | built + tested (stage 02): `Project::isFps()` removed, `worldSpaceMaps()` / `actorSessionPlay()` / `actorSessionRules()` / `hostId()` |
-| E One scene document (G2) | not started |
+| 1 Naming (G7) | done (stage 10): `aiverselib/mechanics` only (forwarders and the `lib::genre` alias deleted); packages `bots-commander`, `bots-combatant`, `action-bots`, `template-kits`; game.json `module` `game` / `actor`, rules block `actor`, Lua `core`, i18n `actor.*` |
+| 2a Capability queries (G2) | done (stages 02, 09, 10): `isFps()`, `worldSpaceMaps()`, `gridMaps()` removed; `Project::actorSession()` (game.json `module` `actor`) is the one query left |
+| E One scene document (G2) | built + tested (stage 09): `MapData::fps` replaced by `worldSpace`; a world-space map is one document kept whole |
 | A FPS host on ECS only | built + tested (stage 03): `modules/fps` ECS only, races ported |
 | B One vehicle system (G5) | built + tested (stage 04; CTest 365/367, checksums 95/96, road_race identical): `engine/vehicles` (`AIVERSE::vehicles`: `VehicleDrive` / `VehicleOccupant` components, `stepVehicles` over a `VehicleHost` world query, autopilot / lock API, one race adapter `VehicleRace` + `RaceState`); `RtsDriving` = grid-map world query + enter key + race seats, `FpsVehicles` = metre-map world query + seat-list glue + race seats; `DrivingStore`, `RtsRace.h`, `FpsRace.cpp`, `fps::VehicleDrive`, `CharacterRacer`, `State::race` and the road forwarders deleted. Left: rules `driving` and `vehicleTypes` are still two blocks (one parser each, one `DriveRules` result); getting in on foot keeps two seat models (driver's door vs seat list) inside the shared components |
-| C Shared systems out of `modules/rts` (G3) | C0a engine side done (stages 06-07, built + tested: CTest 409/410 then skill_audit fixed, checksums equal but boss_arena 2): no game ids or trigger-variable protocol in the core; GTA2 migration pending; C0b data model, components, map grid in `engine/game` (stage 08, CTest 415/415) |
+| C Shared systems out of `modules/rts` (G3) | done (stages 06-09): every system in `engine/game`, view in `engine/view/game`, audio / fx in `engine/audio` / `engine/fx`; `modules/rts` keeps only BwAI (Bunker Wars bot) and game extensions. GTA2 migration is separate work |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
-| D One simulation (G1) | not started |
+| D One simulation (G1) | done in code (stage 10): one `GameModule`, `game::GameCore`; actor systems (`actor::ActorHost`) run on world-space maps; `actor::host(sim)`. Board / Motion / Voxel / Strategic modules are still separate hosts |
 | 7 Template kits (G8) | nothing to do |
 
 Every stage above is unverified until the Mac build and tests in the latest `docs/handoffs/no-genre-split-stage-NN.md` pass.
