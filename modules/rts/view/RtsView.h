@@ -185,7 +185,6 @@ struct ViewEffect {
 }  // namespace aiverse::game
 namespace aiverse::roads { class RoadView; }
 namespace aiverse::game {
-using RtsRoadView = aiverse::roads::RoadView;   // shared engine road view (engine/roads/RoadView.h)
 class RtsShoreView;
 
 class RtsView : public view_adapter::ModelResourceProvider {
@@ -524,12 +523,12 @@ public:
     }
     // spline roads (map "roadNetwork", docs/roads.md): set with the map (setTerrainDetail(map) does it too)
     void setRoadMap(const Json& map);
-    RtsRoadView& roads() { return *roads_; }
-    const RtsRoadView& roads() const { return *roads_; }
+    roads::RoadView& roads() { return *roads_; }
+    const roads::RoadView& roads() const { return *roads_; }
     RtsShoreView& shores() { return *shores_; }
     const RtsShoreView& shores() const { return *shores_; }
     // ImGui: bars, counts. ox/oy: top-left of the view on screen; drawList: ImDrawList* (default: background list)
-    void drawOverlays(const render::RTSCamera& cam, const RtsScene& s, float viewW, float viewH, float ox = 0, float oy = 0, void* drawList = nullptr);
+    void drawOverlays(const render::Camera& cam, const RtsScene& s, float viewW, float viewH, float ox = 0, float oy = 0, void* drawList = nullptr);
     // view.draw triangles of the view scripts (ViewCanvas.h), after drawOverlays
     void drawCanvas(const std::vector<ViewDrawBatch>& batches, float ox = 0, float oy = 0, void* drawList = nullptr) { overlays_.drawCanvas(batches, ox, oy, drawList); }
     // view.draw_ground triangles of the view scripts (RtsGroundCanvas.h): call between draw() and Renderer3D::render
@@ -589,7 +588,7 @@ public:
     // Screen-space hit test for sprite objects (they are drawn above their ground point).
     // drawn as a 2D sprite (grounded by Rts2DView's own projected blobs / sun-shadow casters)
     bool isSprite(uint16_t type) const { return twoD_ && twoD_->hasSprite(type); }
-    bool spriteHit(const render::RTSCamera& cam, const SceneObject& o, const MapGrid& grid, float sx, float sy, float w, float h) const;
+    bool spriteHit(const render::Camera& cam, const SceneObject& o, const MapGrid& grid, float sx, float sy, float w, float h) const;
     RtsLights& lights() { return lights_; }
     const FogLook& fogLook() const { return fog_.look(); }
 
@@ -604,10 +603,10 @@ public:
     const PlanetCamera& planetCamera() const { return planetCam_; }
     PlanetRenderer& planets() { return planets_; }
     const PlanetRenderer& planets() const { return planets_; }
-    // Per frame before beginScene: orbit camera smoothing; returns the RTSCamera to render with (view world).
-    const render::RTSCamera& updatePlanetCamera(double seconds, float dt, int viewH);
+    // Per frame before beginScene: orbit camera smoothing; returns the Camera to render with (view world).
+    const render::Camera& updatePlanetCamera(double seconds, float dt, int viewH);
     // Screen point -> body + body-local surface point (terrain / ocean picking).
-    bool pickPlanet(const render::RTSCamera& cam, float sx, float sy, float w, float h, int& body, render::float3& local) const;
+    bool pickPlanet(const render::Camera& cam, float sx, float sy, float w, float h, int& body, render::float3& local) const;
     // Match maps: the simulation's Surface is the source of bodies, orbits, corner heights and cell flags
     // (map JSON only for visual keys). Call after the sim is set up, before buildTerrain().
     void setSimWorld(std::shared_ptr<const Surface> surf, const MapGrid& grid, const Json& map);
@@ -649,7 +648,7 @@ public:
     RtsFieldView& fieldView() { return fieldView_; }   // grid field overlays; takeEffects() = particles for the host
     const RtsOverlays& overlays() const { return overlays_; }
     // Screen point above an object where its bars / labels go (false: behind the camera).
-    bool overlayTop(const render::RTSCamera& cam, const SceneObject& o, size_t index, float w, float h, render::float2& out) const;
+    bool overlayTop(const render::Camera& cam, const SceneObject& o, size_t index, float w, float h, render::float2& out) const;
 
 private:
     render::AnimationOperations animationOperations_;
@@ -1016,11 +1015,11 @@ private:
     void discardPendingSurfaceLease() noexcept;
     std::unique_ptr<PreparedSurfaceLease> pendingSurfaceLease_;
     SurfacePrewarmStats surfacePrewarmStats_;
-    std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
+    std::unique_ptr<roads::RoadView> roads_;   // spline roads: map roadNetwork (engine/roads/RoadView.cpp)
     std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
     // Staged GPU kits may still own RHI handles after a refused full-idle
     // rollback. Do not drop their owner until a later host recovery/shutdown.
-    std::unique_ptr<RtsRoadView> pendingRoadRecovery_;
+    std::unique_ptr<roads::RoadView> pendingRoadRecovery_;
     std::unique_ptr<RtsShoreView> pendingShoreRecovery_;
     RtsGroundFx groundFx_;   // territory, diggable rock, lanes, roads (RtsGroundFx.cpp)
     FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)

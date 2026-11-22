@@ -234,7 +234,7 @@ int aiverseMain(int,char**) {
         }
         const bool gpu=frame>=6;
         renderer.setGpuAuthoredDrawEnabled(gpu);
-        render::RTSCamera camera;
+        render::Camera camera;
         camera.target={0,0,0};
         camera.distance=4.0f;
         camera.pitch=0.10f;

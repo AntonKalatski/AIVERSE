@@ -168,7 +168,7 @@ int main() {
     config.burst=3;
     check(emitter.init(&mock,config),"recording Metal device GPU init failed");
     check(emitter.gpuActive(),"supported Metal mock did not select GPU");
-    render::RTSCamera cam{{0,1,0},10.f,0.4f,0.6f};
+    render::Camera cam{{0,1,0},10.f,0.4f,0.6f};
     mock.beginFrame(800,600);
     emitter.setView(cam,cam.proj(800.f/600.f,false)*cam.view(),800,600);
     check(emitter.burstAt({0,2,0},{0,1,0}),"GPU queue rejected burst");

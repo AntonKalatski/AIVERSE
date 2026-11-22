@@ -616,7 +616,7 @@ int aiverseMain(int argc, char** argv) {
                 model->meshes[i].materialBatches=(batch && scenario != "indirect" &&
                                                    scenario != "indirect_palette")
                     ? batches[i] : std::vector<render::MaterialBatch>{};
-        render::RTSCamera cam; cam.target={0,2,0};cam.distance=std::getenv("AIVERSE_SHADOW_TEST_DISTANCE")?float(std::atof(std::getenv("AIVERSE_SHADOW_TEST_DISTANCE"))):14;cam.pitch=.85f;cam.yaw=.45f;
+        render::Camera cam; cam.target={0,2,0};cam.distance=std::getenv("AIVERSE_SHADOW_TEST_DISTANCE")?float(std::atof(std::getenv("AIVERSE_SHADOW_TEST_DISTANCE"))):14;cam.pitch=.85f;cam.yaw=.45f;
         renderer.beginScene(cam,960,640);
         renderer.drawMesh(floor,{}, {.6f,.6f,.6f,1});
         if(reflection) renderer.drawMesh(floor,render::mat4::translate({0,.2f,0}),{.1f,.2f,.3f,.6f},render::kDrawNoCastShadow,.9f);

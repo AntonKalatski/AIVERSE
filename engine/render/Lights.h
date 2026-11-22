@@ -52,6 +52,10 @@ struct PointLight {
     float beam = 0;              // spot: strength of the visible light shaft (display space, additive)
     uint32_t key = 0;            // stable id across frames (0 = none): keeps a per-pixel slot (hysteresis)
     float rank = -1;             // importance for the per-pixel slots (>= 0: instead of intensity, e.g. without flicker)
+    // Area source for LumaWeave direct lighting (the legacy light map shades it
+    // as a point at `pos`): sourceRadius > 0 = sphere, halfLength > 0 = tube
+    // along `dir` (a tube is never a spot).
+    float sourceRadius = 0, halfLength = 0;
 
     void makeSpot(float3 direction, float coneAngleDeg, float softness = 0.6f) {
         dir = normalize(direction);
@@ -144,7 +148,7 @@ public:
     void swapPrepared(PreparedFrame& frame) noexcept;
     void replayPrepared(const PreparedFrame& frame);
 
-    void begin(const RTSCamera& cam, float aspect);  // Renderer3D::beginScene
+    void begin(const Camera& cam, float aspect);  // Renderer3D::beginScene
     void add(const PointLight& l);
     void add(float3 pos, float radius, float3 color, float intensity = 1) { add(PointLight{pos, radius, color, intensity}); }
     size_t count() const { return lights_.size(); }

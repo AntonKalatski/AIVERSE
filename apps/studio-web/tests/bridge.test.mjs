@@ -31,14 +31,16 @@ for (const method of ['studio.openProject','studio.openMap','studio.newMap','stu
   });
 }
 
-test('ordinary native calls still time out and ignore late replies', async () => {
+test('slow native calls are logged, never failed, and late replies still resolve', async () => {
   const b = bridge();
   const result = b.invoke('studio.snapshot', {});
   assert.equal(b.timers.size, 1);
-  const rejected = assert.rejects(result, /Native bridge timeout: studio.snapshot/);
   [...b.timers.values()][0]();
-  await rejected;
-  b.window.__aiverseReceive({ id: b.sent[0].id, result: {} });
+  assert.equal(b.sent.length, 2);
+  assert.equal(b.sent[1].method, 'studio.webDiagnostic');
+  assert.match(b.sent[1].params.message, /studio.snapshot/);
+  b.window.__aiverseReceive({ id: b.sent[0].id, result: { mode: 'edit' } });
+  assert.equal((await result).mode, 'edit');
 });
 
 test('native replies clear ordinary call timers', async () => {

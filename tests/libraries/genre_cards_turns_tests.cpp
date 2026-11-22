@@ -1,10 +1,10 @@
 // Tests for card-games, tactics-grid and their bots (CardBot, TacticsBot). Usage: <test> <repository root>
-#include <aiverselib/genre/CardGameData.h>
-#include <aiverselib/genre/CardGamePersistence.h>
-#include <aiverselib/genre/CardGameConfigured.h>
-#include <aiverselib/genre/TacticsData.h>
-#include <aiverselib/genre/TacticsPersistence.h>
-#include <aiverselib/genre/TacticsConfigured.h>
+#include <aiverselib/mechanics/CardGameData.h>
+#include <aiverselib/mechanics/CardGamePersistence.h>
+#include <aiverselib/mechanics/CardGameConfigured.h>
+#include <aiverselib/mechanics/TacticsData.h>
+#include <aiverselib/mechanics/TacticsPersistence.h>
+#include <aiverselib/mechanics/TacticsConfigured.h>
 #include <aiverselib/bots/CardBot.h>
 #include <aiverselib/bots/TacticsBot.h>
 #include <iostream>
@@ -56,7 +56,7 @@ static CardGame cardGame(CardLibrary lib,std::vector<std::vector<int64_t>> decks
     CardGame g{lib,{},Random(seed),0,{}};auto setup=cardGameSetup(lib,decks,first,g.rng);CHECK(setup);g.s=setup->state;g.last=setup->events;return g;
 }
 void cardData(const std::string& root){
-    auto duel=Json::parseFile(root+"/examples/libraries/genre/cards-turns/duel.json");auto lib=readCardLibrary(duel);auto decks=readCardDecks(duel,lib);
+    auto duel=Json::parseFile(root+"/examples/libraries/mechanics/cards-turns/duel.json");auto lib=readCardLibrary(duel);auto decks=readCardDecks(duel,lib);
     CHECK(lib.cards.size()==10&&decks.size()==2&&decks[0].size()==20&&lib.rules.energyMax==8&&lib.rules.mulligan==CardMulligan::Partial);
     CHECK(cardLibraryHash(lib)==cardLibraryHash(readCardLibrary(duel)));
     auto bad=[&](const char* text){return jsonError([&]{readCardLibrary(Json::parse(text));});};
@@ -160,7 +160,7 @@ void cardHiddenInformation(){
     roundtrip(g.s);
 }
 void cardBotGames(const std::string& root){
-    auto duel=Json::parseFile(root+"/examples/libraries/genre/cards-turns/duel.json");auto lib=readCardLibrary(duel);auto decks=readCardDecks(duel,lib);
+    auto duel=Json::parseFile(root+"/examples/libraries/mechanics/cards-turns/duel.json");auto lib=readCardLibrary(duel);auto decks=readCardDecks(duel,lib);
     auto play=[&](uint64_t seed){
         Random rng(seed);auto st=cardGameSetup(lib,decks,int32_t(seed%2),rng)->state;uint64_t seq=0,h=0;
         for(uint32_t step=0;st.phase!=CardPhase::GameOver;++step){
@@ -307,7 +307,7 @@ void tacticsWeGo(){
     r=tacticsResolveWeGo(sc,o,ow,1,rng);CHECK(r&&hasEvent(r->events,TacticsEventKind::ReactionShot)&&!o.units.at(2).alive);
 }
 void tacticsBotGames(const std::string& root){
-    auto data=readTacticsScenario(Json::parseFile(root+"/examples/libraries/genre/cards-turns/skirmish.json"));const auto& sc=data.scenario;
+    auto data=readTacticsScenario(Json::parseFile(root+"/examples/libraries/mechanics/cards-turns/skirmish.json"));const auto& sc=data.scenario;
     auto play=[&](uint64_t seed){
         Random rng(seed);auto s=*tacticsBegin(sc,data.units);uint64_t seq=0,h=0;
         for(uint32_t step=0;s.winner==kTacticsNoWinner;++step){

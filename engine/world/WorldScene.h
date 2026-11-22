@@ -25,7 +25,8 @@
 #include "engine/world/TerraWeaveHorizonPresentationQuality.h"
 #include "engine/world/TerraWeaveHorizonAdaptiveQuality.h"
 
-namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
+namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene;
+    class AuthoredWorldHeightSnapshot; class FoliageExclusionMask; }
 namespace aiverse::world {
 // Opt-in read-only visual copy of an authoritative ECS water obstruction.
 // sceneWaterId is the water-manifest stable ID (NOT an ECS Entity.index).
@@ -288,6 +289,9 @@ private:
     std::set<Cell> replacedTerrainTiles_;
     terraweave::CanopyPhenology vegetationPhenology_{};
     bool vegetationPhenologyDirty_=false;
+    // Last published landscape snapshot, reused when only phenology changes.
+    std::shared_ptr<const terraweave::AuthoredWorldHeightSnapshot> lastVegetationHeights_;
+    std::shared_ptr<const terraweave::FoliageExclusionMask> lastVegetationMask_;
     terraweave::ForestWindState vegetationWind_{};
     std::shared_ptr<const terraweave::ForestWindField> vegetationWindField_;
     uint64_t vegetationPresentationTick_=0;

@@ -701,6 +701,30 @@ struct DeviceInfo {
 
 struct Rect { int x = 0, y = 0, w = 0, h = 0; };
 
+// Native access for vendor libraries that record into the engine's own command stream
+// (NVIDIA NGX / DLSS through the PRISMA external upscaler). Opaque pointers keep the API
+// headers out of this file: VkInstance, VkPhysicalDevice, VkDevice, VkCommandBuffer,
+// PFN_vkGetInstanceProcAddr, VkImage, VkImageView, VkFormat. Vulkan backend only.
+struct NativeVulkanContext {
+    void* instance = nullptr;
+    void* physicalDevice = nullptr;
+    void* device = nullptr;
+    void* commandBuffer = nullptr;      // current frame command buffer, outside any render pass
+    void* getInstanceProcAddr = nullptr;
+    uint32_t queueFamily = 0;
+};
+struct NativeVulkanImage {
+    void* image = nullptr;
+    void* view = nullptr;
+    uint32_t format = 0;                // VkFormat
+    int width = 0, height = 0;
+    bool depth = false, storage = false;
+};
+// Extensions a vendor library needs; the Vulkan backend enables the available ones when it
+// creates its instance / device. Register before the device is created (e.g. at startup).
+struct VulkanExtensionRequests { std::vector<std::string> instance, device; };
+inline VulkanExtensionRequests& vulkanExtensionRequests() { static VulkanExtensionRequests r; return r; }
+
 class Device {
 public:
     virtual ~Device() = default;
@@ -766,6 +790,14 @@ public:
     // sampling. Unsupported providers return false and leave out unchanged.
     virtual bool textureInfo(TextureHandle h, TextureInfo& out) const {
         (void)h; (void)out; return false;
+    }
+    // Vulkan only (others return false). Context: only while a frame records and no render
+    // pass is open. Sampled images rest in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; a library
+    // that needs another layout transitions with nativeVulkanImageBarrier and restores it.
+    virtual bool nativeVulkanContext(NativeVulkanContext& out) { (void)out; return false; }
+    virtual bool nativeVulkanImage(TextureHandle h, NativeVulkanImage& out) const { (void)h; (void)out; return false; }
+    virtual bool nativeVulkanImageBarrier(TextureHandle h, uint32_t fromLayout, uint32_t toLayout) {
+        (void)h; (void)fromLayout; (void)toLayout; return false;
     }
     // GLSL defines put after #version / precision of every GL shader compiled from now on (GL backend only;
     // others ignore it). Set before the renderers create their pipelines.

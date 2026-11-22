@@ -1,12 +1,12 @@
 // vehicle-controllers + sports-rules: controllers, damage zones, seats, race checkpoints/positions, race bot,
 // ball sports rules, formations, sports bot, persistence, JSON data and settings. Argument: repository root.
-#include <aiverselib/genre/VehicleConfigured.h>
-#include <aiverselib/genre/VehicleData.h>
-#include <aiverselib/genre/VehiclePersistence.h>
-#include <aiverselib/genre/RaceSessionData.h>
-#include <aiverselib/genre/SportsConfigured.h>
-#include <aiverselib/genre/SportsData.h>
-#include <aiverselib/genre/SportsPersistence.h>
+#include <aiverselib/mechanics/VehicleConfigured.h>
+#include <aiverselib/mechanics/VehicleData.h>
+#include <aiverselib/mechanics/VehiclePersistence.h>
+#include <aiverselib/mechanics/RaceSessionData.h>
+#include <aiverselib/mechanics/SportsConfigured.h>
+#include <aiverselib/mechanics/SportsData.h>
+#include <aiverselib/mechanics/SportsPersistence.h>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -156,7 +156,7 @@ void raceCourse(){
 }
 
 void raceBot(const std::string& root){
-    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/vehicles.json"));
+    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/vehicles.json"));
     const auto& def=defs.vehicles.at(1);const auto& track=defs.tracks.at(1);auto line=bots::makeRaceLine(track.line);CHECK(line&&line->length>Fixed::fromInt(400));
     std::vector<Vec3> dupe{{},{},{1_fx,Fixed{},Fixed{}}};CHECK(!bots::makeRaceLine(dupe));
     // One bot completes a lap of the example track through every checkpoint without leaving the course.
@@ -183,7 +183,7 @@ void raceBot(const std::string& root){
 
 // Race session: countdown holds the grid, bots and a player race two laps, results and restore are deterministic.
 uint64_t raceSessionRun(const std::string& root,uint32_t restoreAt,RaceSessionState* out=nullptr){
-    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/vehicles.json"));
+    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/vehicles.json"));
     const auto& def=defs.vehicles.at(1);auto course=defs.tracks.at(1).course;course.laps=2;auto line=bots::makeRaceLine(defs.tracks.at(1).line);CHECK(line);
     RaceSessionConfig cfg;cfg.countdownTicks=60;cfg.finishGraceTicks=900;cfg.bot.cornerAccel=Fixed::fromRatio(84,10);cfg.race.stuckTicks=300;
     std::vector<RaceSessionRacer> racers{{1,false},{2,true},{3,true},{4,true}};
@@ -220,7 +220,7 @@ void raceSession(const std::string& root){
     CHECK(raceFinished(done.race)||done.endTick>=done.firstFinishTick+900);
     CHECK(stateKind(RaceSessionState{})==128);
     // Invalid setups: unsorted ids, bots without a racing line, an invalid config.
-    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/vehicles.json"));const auto& course=defs.tracks.at(1).course;
+    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/vehicles.json"));const auto& course=defs.tracks.at(1).course;
     std::vector<RaceSessionRacer> unsorted{{2,false},{1,false}},bot{{1,true}},one{{1,false}};RaceSessionConfig cfg;
     CHECK(!makeRaceSession(course,cfg,unsorted,nullptr,0)&&!makeRaceSession(course,cfg,bot,nullptr,0)&&makeRaceSession(course,cfg,one,nullptr,0));
     auto bad=cfg;bad.bot.skillMilli=0;CHECK(!makeRaceSession(course,bad,one,nullptr,0));
@@ -327,7 +327,7 @@ void sportsClock(){
     CHECK(d->phase==SportsPhase::Finished&&d->winner==-1);
 }
 void formations(const std::string& root){
-    auto defs=readSportsDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/sports.json"));const auto& form=defs.formations.at(1);const auto& field=defs.field;
+    auto defs=readSportsDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/sports.json"));const auto& form=defs.formations.at(1);const auto& field=defs.field;
     CHECK(valid(form)&&form.slots.size()==3);
     auto keeper=sportsSlotTarget(field,form.slots[0],1,SportsTeamPhase::Neutral,{});auto mirrored=sportsSlotTarget(field,form.slots[0],-1,SportsTeamPhase::Neutral,{});
     CHECK(keeper.x<Fixed::fromInt(-15)&&mirrored.x==-keeper.x);
@@ -337,7 +337,7 @@ void formations(const std::string& root){
     std::vector<SportsSlotPlayer> two{{5,SportsRole::Forward,{}},{7,SportsRole::Defender,{}}};auto kept=sportsAssignSlots(field,form,1,two,slots);CHECK(kept.size()==2&&kept.at(2)==7&&kept.at(3)==5&&!kept.contains(1));
 }
 void sportsBot(const std::string& root){
-    auto defs=readSportsDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/sports.json"));const auto& form=defs.formations.at(1);const auto& field=defs.field;
+    auto defs=readSportsDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/sports.json"));const auto& form=defs.formations.at(1);const auto& field=defs.field;
     SportsRulesConfig rules;rules.restartDelayTicks=1;rules.possessionLockTicks=0;bots::SportsBotConfig cfg;cfg.reactionTicks=0;cfg.tackleMilli=1000;Random rng(11);
     std::vector<SportsPlayer> players;std::vector<SportsSlotPlayer> a,b;const SportsRole roles[3]={SportsRole::Keeper,SportsRole::Defender,SportsRole::Forward};
     for(int t=0;t<2;++t)for(int i=0;i<3;++i){SportsPlayer p;p.id=t*10+i+1;p.team=t+1;p.position={Fixed::fromInt((t?1:-1)*(3+i*5)),Fixed::fromInt(i*2-2)};players.push_back(p);(t?b:a).push_back({p.id,roles[i],p.position});}
@@ -356,7 +356,7 @@ void sportsBot(const std::string& root){
 }
 // Full bot-vs-bot simulation used for determinism: reruns and a mid-match restore give identical hashes.
 uint64_t footballHash(const std::string& root,uint32_t ticks,uint32_t restoreAt){
-    auto defs=readSportsDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/sports.json"));SportsRulesConfig rules;rules.periodTicks=600;
+    auto defs=readSportsDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/sports.json"));SportsRulesConfig rules;rules.periodTicks=600;
     bots::SportsBotConfig cfg;auto s=*makeSportsMatch(1,2);Random rng(42);std::vector<SportsPlayer> players;std::vector<SportsSlotPlayer> a,b;const SportsRole roles[3]={SportsRole::Keeper,SportsRole::Defender,SportsRole::Forward};
     for(int t=0;t<2;++t)for(int i=0;i<3;++i){SportsPlayer p;p.id=t*10+i+1;p.team=t+1;p.position={Fixed::fromInt((t?1:-1)*(4+i*5)),Fixed::fromInt(i*3-3)};players.push_back(p);(t?b:a).push_back({p.id,roles[i],p.position});}
     bots::SportsBotState sa,sb;Hasher h;
@@ -375,13 +375,13 @@ void persistenceAndKinds(const std::string& root){
     CHECK(bots::stateKind(bots::RaceBotState{})==94&&bots::stateKind(bots::SportsBotState{})==95);
     VehicleState bad;bad.gear=-2;CHECK(save(bad).empty());SportsState badMatch;badMatch.teams={1,1};CHECK(save(badMatch).empty());
     auto a=footballHash(root,1500,0),b=footballHash(root,1500,700),c=footballHash(root,1500,9999);CHECK(a==b&&b==c);
-    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/genre/vehicles-sports/vehicles.json"));
+    auto defs=readVehicleDefinitions(Json::parseFile(root+"/examples/libraries/mechanics/vehicles-sports/vehicles.json"));
     CHECK(vehicleDefinitionHash(defs.vehicles.at(1))==vehicleDefinitionHash(defs.vehicles.at(1)));auto changed=defs.vehicles.at(1);changed.controller.wheeled.friction=1_fx;
     CHECK(vehicleDefinitionHash(changed)!=vehicleDefinitionHash(defs.vehicles.at(1)));
     auto line=bots::makeRaceLine(defs.tracks.at(1).line);CHECK(line&&bots::raceLineHash(*line)!=0&&raceCourseHash(defs.tracks.at(1).course)!=0);
 }
 void dataAndSettings(const std::string& root){
-    auto dir=root+"/examples/libraries/genre/vehicles-sports/";
+    auto dir=root+"/examples/libraries/mechanics/vehicles-sports/";
     auto settings=gameplay::readGameplaySettings(Json::parseFile(dir+"settings.json"));CHECK(settings.value&&vehicleSettingsErrors(*settings.value).empty()&&sportsSettingsErrors(*settings.value).empty());
     CHECK(vehicleRaceLaps(*settings.value)==3&&vehicleRaceConfig(*settings.value).stuckTicks==300&&bots::raceBotConfig(*settings.value).rubberBandMilli==40);
     CHECK(sportsRulesConfig(*settings.value).clock==SportsClockMode::Added&&valid(sportsRulesConfig(*settings.value))&&valid(bots::raceBotConfig(*settings.value))&&valid(bots::sportsBotConfig(*settings.value)));

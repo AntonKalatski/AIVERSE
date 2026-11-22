@@ -45,7 +45,13 @@ int main(){try {
     layered.set("sampleBudget",Json::number(int64_t(16)));
     require(compile(layered).samples==9,"explicit material sample budget ignored");
     for(auto invalidBudget:{0.0,16.5,17.0}) {auto invalid=layered;invalid.set("sampleBudget",Json::number(invalidBudget));rejects(invalid);}
-    layered.set("domain",Json::string("postfx"));rejects(layered);
+    // postfx may raise the budget too (neighbourhood filters); particle graphs may not.
+    layered.set("domain",Json::string("postfx"));
+    require(compile(layered).samples==9,"explicit postfx sample budget ignored");
+    layered.set("domain",Json::string("particle"));rejects(layered);
+    {auto scene=Json::parse(R"({"version":1,"domain":"postfx","nodes":[{"id":"u","op":"screenPosition"},{"id":"c","op":"sceneColor","inputs":["u"]}],"outputs":{"color":"c"}})");
+     require(compile(scene).samples==1,"sceneColor counts as a sample");
+     scene.set("domain",Json::string("material"));rejects(scene);}
     bad=g;bad.find("nodes")->at(0).set("position",Json::parse("[1]"));rejects(bad);
     auto stage=makeDefault("material");
     auto displacement=Json::parse(R"({"id":"offset","op":"constant","value":[0,0.2,0,0]})");

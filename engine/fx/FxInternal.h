@@ -14,7 +14,7 @@
 namespace aiverse::fx {
 
 using render::mat4;
-using render::RTSCamera;
+using render::Camera;
 
 namespace detail {
 

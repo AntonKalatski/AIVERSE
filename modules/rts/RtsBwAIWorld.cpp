@@ -11,42 +11,6 @@ namespace {
 Fixed len2(Vec3 a, Vec3 b) { return (a - b).xz().length(); }
 }
 
-// Player-wide stat of a type (no entity): RtsModule::stat without the per-entity parts. moraleDelta adds that many
-// levels of the perUnit resources (morale), clamped to their storage (BW GetFullDefenseCoefficientForMorale).
-Fixed RtsModule::bwTypeStat(Simulation& sim, uint8_t owner, uint16_t type, Stat s, int moraleDelta) const {
-    const UnitType& t = rules_.types[type];
-    const Fixed kOne = Fixed::fromInt(1);
-    Fixed base = s == Stat::Speed ? t.speed : s == Stat::GarrisonCap ? Fixed::fromInt(t.garrisonMax) : s == Stat::Range ? Fixed{} : kOne;
-    auto* gs = sim.world().resource<GameState>();
-    Fixed add{}, mul = kOne;
-    if (owner < gs->players.size() && !gs->players[owner].mods.empty()) {
-        const TypeMods& m = gs->players[owner].mods[type];
-        add += m.add[size_t(s)]; mul *= m.mul[size_t(s)];
-    }
-    if (rules_.advancedEffects && owner < gs->players.size())
-        for (auto& in : gs->players[owner].statuses)
-            for (auto& m : rules_.statuses[in.def].mods)
-                if (m.stat == s) { add += m.add * in.stacks; for (int k = 0; k < in.stacks; ++k) mul *= m.mul; }
-    if (rules_.originals) {
-        add += playerModsStat(sim, owner, type, s, mul);
-        if (moraleDelta != 0 && owner != 0 && owner < gs->players.size())
-            for (uint16_t r : rules_.perUnitResources) {
-                const auto& eco = gs->players[owner];
-                const int n = int(fxMax(Fixed{}, eco.stock[r]).floorInt());
-                Fixed cap = eco.cap[r].raw > 0 ? eco.cap[r] : rules_.resources[r].storage;
-                int to = std::max(0, n + moraleDelta);
-                if (cap.raw > 0) to = std::min(to, int(cap.floorInt()));
-                const int extra = to - n;
-                if (extra <= 0) continue;
-                for (auto& [tags, mod] : rules_.resources[r].perUnitMods) {
-                    if (mod.stat != s || (tags && !(t.tags & tags))) continue;
-                    add += mod.add * extra;
-                    for (int k = 0; k < extra; ++k) mul *= mod.mul;
-                }
-            }
-    }
-    return (base + add) * mul;
-}
 
 int BwWorld::pointOf(Entity e) const {
     for (size_t i = 0; i < pts.size(); ++i) if (pts[i].e == e) return int(i);
@@ -175,8 +139,8 @@ void BwImpl::buildWorld(Ctx& c, BwWorld& W) {
         p.def = t.garrisonDefense * (statDef ? c.m.stat(c.sim, e, Stat::Defense) : Fixed::fromInt(1));
         p.defNext = p.def;
         if (R.originals && p.owner != 0) {
-            const Fixed now = c.m.bwTypeStat(c.sim, p.owner, u.type, Stat::Defense, 0);
-            if (now.raw > 0) p.defNext = p.def * c.m.bwTypeStat(c.sim, p.owner, u.type, Stat::Defense, 1) / now;
+            const Fixed now = c.m.typeStatWithMorale(c.sim, p.owner, u.type, Stat::Defense, 0);
+            if (now.raw > 0) p.defNext = p.def * c.m.typeStatWithMorale(c.sim, p.owner, u.type, Stat::Defense, 1) / now;
         }
         if (t.spawnInterval.raw > 0 && p.owner != 0)
             p.prod = (adv ? c.m.stat(c.sim, e, Stat::ProductionSpeed) : Fixed::fromInt(1)) / t.spawnInterval;
@@ -224,8 +188,8 @@ void BwImpl::buildWorld(Ctx& c, BwWorld& W) {
     for (size_t s = 1; s < W.players.size(); ++s) {
         BwPlayer& bp = W.players[s];
         if (bp.neutral || bp.unitType == kNoType) continue;
-        bp.damage = R.originals ? c.m.bwTypeStat(c.sim, uint8_t(s), bp.unitType, Stat::Damage, 0) : Fixed::fromInt(1);
-        bp.speed = c.m.bwTypeStat(c.sim, uint8_t(s), bp.unitType, Stat::Speed, 0);
+        bp.damage = R.originals ? c.m.typeStatWithMorale(c.sim, uint8_t(s), bp.unitType, Stat::Damage, 0) : Fixed::fromInt(1);
+        bp.speed = c.m.typeStatWithMorale(c.sim, uint8_t(s), bp.unitType, Stat::Speed, 0);
         if (bp.speed.raw <= 0) bp.speed = Fixed::fromInt(1);
         for (uint16_t src : R.playerModTypes) {
             int n = src < gs.players[s].typeCount.size() && s < gs.players.size() ? gs.players[s].typeCount[src] : 0;

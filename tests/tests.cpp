@@ -34,7 +34,7 @@ extern "C" {
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsCampaign.h"   // agent-mech
 #include "modules/rts/RtsModule.h"
-#include "modules/rts/RtsRoadNet.h"   // agent-roads
+#include "../engine/roads/RoadNet.h"   // agent-roads
 #include "modules/rts/RtsScriptIeee.h"
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/RtsSphere.h"
@@ -3441,7 +3441,7 @@ TEST(fx_offscreen_one_shots_are_not_spawned) {
     ps.setQuality(fx::FxQuality::High);
     ps.init(nullptr);
     int id = ps.define("puff", fxParse(R"({"emitters": [{ "burst": 5, "life": 1, "speed": 1 }]})"));
-    render::RTSCamera cam;
+    render::Camera cam;
     cam.target = {50, 0, 50};
     ps.setView(cam, cam.proj(16.0f / 9.0f, false) * cam.view(), 1600, 900);
     CHECK(ps.play(id, {50, 0, 50}).valid());
@@ -5543,7 +5543,7 @@ TEST(store_and_ads_through_mock_plugins) {
 #include "engine/platform/Platform.h"
 #include "modules/rts/view/RtsOverlayData.h"
 #include "modules/rts/view/RtsView.h"
-#include "modules/rts/view/RtsRoadView.h"
+#include "../engine/roads/RoadView.h"
 #include "modules/rts/view/RtsShoreView.h"
 
 static game::Rules skirmishRules() { return game::loadRules(Json::parseFile(kSkirmish + "/rules.json")); }
@@ -11270,7 +11270,7 @@ TEST(entity_action_controls_preserve_source_and_cancel_invalid_drags) {
     game::EntityActionControls controls;controls.refresh(*sim,mod(*sim),1,defs);
     CHECK(controls.items().size()==2);
     auto a=controls.items()[0].entity,b=controls.items()[1].entity;
-    render::RTSCamera camera;camera.target={4,0,2};camera.distance=15;
+    render::Camera camera;camera.target={4,0,2};camera.distance=15;
     auto boxes=controls.screen(camera,640,480);CHECK(boxes.size()==2);
     CHECK(controls.press(camera,640,480,boxes[0].x+10,boxes[0].y+10));CHECK(!controls.active());
     CHECK(!controls.press(camera,640,480,-10,-10));
@@ -11347,7 +11347,7 @@ TEST(fx_orthographic_culling_uses_projection_scale) {
     ps.setQuality(fx::FxQuality::High);
     CHECK(ps.init(nullptr));
     const int id = ps.define("ortho", fxParse(R"({"emitters":[{"burst":1,"life":1,"speed":0,"size":8}]})"));
-    render::RTSCamera cam;
+    render::Camera cam;
     cam.ortho = true;
     cam.target = {0, 0, 0};
     cam.distance = 30;
@@ -12602,7 +12602,7 @@ TEST(rts_view_commits_visual_epoch_only_after_primary_and_invalidates_on_map_edi
     grid.init(4,4);
     for(auto& flags:grid.flags)flags=game::kCellGround;
     game::RtsScene scene;
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={2,0,2};
     camera.distance=18;
     camera.pitch=1.0f;
@@ -12646,7 +12646,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     std::vector<uint8_t> initialVisibility(16,2);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
-    render::RTSCamera camera;camera.target={2,0,2};camera.distance=18;camera.pitch=1;
+    render::Camera camera;camera.target={2,0,2};camera.distance=18;camera.pitch=1;
     render::CameraModelSnapshot snapshot;
     view.setCameraPreparedCapture(&snapshot);
     game::RtsScene scene;
@@ -12886,7 +12886,7 @@ TEST(lens_stage47_groundfx_late_owner_rejection_preserves_published_frame) {
     grid.flags[size_t(grid.index(1,1))]|=game::kCellRoad;
     grid.flags[size_t(grid.index(40,1))]|=game::kCellRoad;
     game::RtsScene scene;
-    render::RTSCamera cam;cam.target={32,0,2};
+    render::Camera cam;cam.target={32,0,2};
     cam.distance=150;cam.pitch=1.1f;
     renderer.beginScene(cam,1280,720);
     fx.draw(renderer,scene,0.0,nullptr,grid,view);
@@ -12965,7 +12965,7 @@ TEST(lens_stage47_groundfx_resize_candidate_discard_keeps_old_gpu_meshes) {
     for(auto& flag:old.flags)flag=game::kCellGround;
     old.flags[size_t(old.index(1,1))]|=game::kCellRoad;
     game::RtsScene scene;
-    render::RTSCamera cam;cam.target={24,0,2};
+    render::Camera cam;cam.target={24,0,2};
     cam.distance=150;cam.pitch=1.1f;
     renderer.beginScene(cam,1280,720);
     fx.draw(renderer,scene,0.0,nullptr,old,view);
@@ -13009,7 +13009,7 @@ TEST(lens_stage47_groundfx_draw_prepared_never_allocates_material_textures) {
     for(auto& flag:grid.flags)flag=game::kCellGround;
     grid.flags[size_t(grid.index(2,2))]|=game::kCellRoad;
     game::RtsScene scene;
-    render::RTSCamera cam;cam.target={3,0,2};
+    render::Camera cam;cam.target={3,0,2};
     cam.distance=50;cam.pitch=1.0f;
     renderer.beginScene(cam,800,600);
     const auto afterKit=dev.textureAttempts;
@@ -13045,7 +13045,7 @@ TEST(groundfx_visible_road_chunks_commit_together_or_rollback_on_late_upload_fai
     grid.flags[size_t(grid.index(40,1))] |= game::kCellRoad;
     game::RtsScene scene;
     scene.viewer=0;
-    render::RTSCamera cam;
+    render::Camera cam;
     cam.target={32,0,2};
     cam.distance=150;
     cam.pitch=1.1f;
@@ -13097,27 +13097,27 @@ TEST(road_view_staged_rebuild_preserves_old_gpu_and_wheel_surface_on_failure) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
     CHECK(!roads.types().empty());
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(92),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     edge.typeIndex=asphalt;
     edge.type=roads.types()[size_t(asphalt)].id;
     network.edges.push_back(edge);
     roads.setNetwork(network);
-    render::RTSCamera cam;
+    render::Camera cam;
     cam.target={48,0,6};
     cam.distance=160;
     cam.pitch=1.0f;
@@ -13164,26 +13164,26 @@ TEST(road_view_weather_upload_failure_keeps_previous_generation) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
     CHECK(!roads.types().empty());
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(55),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     network.edges.push_back(edge);
     roads.setNetwork(network);
-    render::RTSCamera cam;
+    render::Camera cam;
     cam.target={30,0,6};cam.distance=100;cam.pitch=1.0f;
     const auto height=[](float,float){return 0.0f;};
     renderer.beginScene(cam,800,600);
@@ -13211,7 +13211,7 @@ TEST(road_view_weather_upload_failure_keeps_previous_generation) {
 
 TEST(road_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
     fogfaulttest::Device dev;
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     // The first successful generated kit texture must remain owned when
     // the following GPU texture allocation fails.
     dev.failTexture=2;
@@ -13258,7 +13258,7 @@ TEST(shore_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
 }
 
 TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
-    game::RtsRoadView roads,stagedRoads;
+    roads::RoadView roads,stagedRoads;
     game::RtsShoreView shores,stagedShores;
     roads.setWeather(0.7f,0.35f);
     const Json map=Json::parse(R"({"roadNetwork":{"replaces":["city_road"]},
@@ -13267,7 +13267,7 @@ TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
     shores.setMap(map);
     // Manually supplied networks are not backed by a serialized netJson_.
     // Their topology must survive a staged view copy as well.
-    game::RoadNetwork manual;
+    roads::RoadNetwork manual;
     manual.nodes.emplace_back();
     manual.edges.emplace_back();
     roads.setNetwork(manual);
@@ -13885,25 +13885,25 @@ TEST(lens_road_prepared_weather_only_preserves_wheel_surface_generation) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(55),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
     edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     network.edges={edge};
     roads.setNetwork(network);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={30,0,6};camera.distance=110;camera.pitch=1.0f;
     const std::function<float(float,float)> height=[](float,float){return 0.0f;};
     renderer.beginScene(camera,800,600);
@@ -13943,7 +13943,7 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     render::Renderer3D renderer;
     CHECK(renderer.init(dev));
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     game::RtsShoreView shores;
     view::VisibilityField fog;
     roads.init(dev,Json(),missing);
@@ -13952,17 +13952,17 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     const std::function<float(float,float)> height=[](float,float){return 0.0f;};
     fog.build(dev,100,48,height);
 
-    game::RoadNetwork network;
-    game::RoadNode a,b;
+    roads::RoadNetwork network;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(92),Fixed::fromInt(6)};
     network.nodes={a,b};
-    game::RoadEdge e;
+    roads::RoadEdge e;
     e.id=1;e.a=1;e.b=2;
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()) {asphalt=int(i);break;}
     e.typeIndex=asphalt;e.type=roads.types()[size_t(asphalt)].id;
     network.edges={e};
@@ -13973,7 +13973,7 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
         "shores":[{"side":1,"from":0,"to":1000,"type":"embankment"}]}]}
     })JSON");
     shores.setMap(shoreMap);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={48,0,8};camera.distance=150;camera.pitch=1.0f;
     renderer.beginScene(camera,1200,800);
     roads.draw(renderer,height);
@@ -13993,10 +13993,10 @@ TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners)
     shores.invalidateGround();
     const std::vector<uint8_t> changedVision(size_t(100*48),0);
     struct RoadPart final: render::OwnerPrepareCommit::Participant {
-        game::RtsRoadView& road;gfx::Device& dev;
+        roads::RoadView& road;gfx::Device& dev;
         const std::function<float(float,float)>& ground;
-        std::shared_ptr<game::RtsRoadView::PreparedRebuild> pending;
-        RoadPart(game::RtsRoadView& r,gfx::Device& d,
+        std::shared_ptr<roads::RoadView::PreparedRebuild> pending;
+        RoadPart(roads::RoadView& r,gfx::Device& d,
                  const std::function<float(float,float)>& h)
             :road(r),dev(d),ground(h){}
         void prepare() override {pending=road.prepareRebuild(dev,ground);}
@@ -14147,7 +14147,7 @@ TEST(lens_stage48b3b2_resized_map_prewarms_all_five_owners) {
     for(auto& flag:oldMap.flags)flag=game::kCellGround;
     view.buildTerrain(dev,oldMap);
     game::RtsScene scene;
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     std::vector<uint8_t> oldVisibility(
         size_t(oldMap.w)*size_t(oldMap.h),2);
@@ -14192,7 +14192,7 @@ TEST(lens_stage48b3b2_unpublished_map_lease_consumes_with_primary) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     const std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&vision,grid);
@@ -14243,7 +14243,7 @@ TEST(lens_stage48b3b2_stale_map_lease_discards_and_rebuilds) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&visible,grid);
@@ -14289,7 +14289,7 @@ TEST(lens_stage48b3b2_failed_prewarm_preserves_live_map) {
     grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
     game::RtsScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     dev.failBuffer=dev.bufferAttempts+1;
@@ -14362,7 +14362,7 @@ TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&visible,grid);
@@ -14541,7 +14541,7 @@ TEST(lens_stage48b3a_opt_in_atomic_sculpt_keeps_sync_editor_contract) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&visible,grid);
@@ -14609,7 +14609,7 @@ TEST(lens_stage48b2b_unpublished_scene_lease_is_consumed_once) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     const auto previous=view.surfacePrewarmStats();
@@ -14646,7 +14646,7 @@ TEST(lens_immediate_surface_publication_avoids_retained_source_snapshots) {
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
     game::RtsScene scene;std::vector<uint8_t> vision(size_t(grid.w)*grid.h,2);
-    render::RTSCamera camera;camera.target={6,0,4};camera.distance=35;camera.pitch=1.f;
+    render::Camera camera;camera.target={6,0,4};camera.distance=35;camera.pitch=1.f;
     for(int frame=1;frame<=3;++frame) {
         renderer.beginScene(camera,640,480);
         view.draw(renderer,scene,double(frame),&vision,grid);
@@ -14686,7 +14686,7 @@ TEST(lens_stage48b2b_stale_visibility_map_or_camera_discards_private_lease) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),0);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     CHECK(view.prepareMapFrame(renderer,scene,1.0,&vision,grid));
@@ -14739,7 +14739,7 @@ TEST(lens_stage48b2a_scene_prewarm_invalidates_secondary_epoch_until_primary) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&visible,grid);
@@ -14779,7 +14779,7 @@ TEST(lens_stage48b2a_late_fog_failure_rolls_back_scene_prewarm) {
     game::RtsScene scene;
     std::vector<uint8_t> unseen(size_t(grid.w)*size_t(grid.h),0);
     std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&unseen,grid);
@@ -14819,7 +14819,7 @@ TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     game::Rules rules=skirmishRules();
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::TerrainRenderer terrain;
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     game::RtsShoreView shores;
     game::RtsGroundFx groundFx;
     view::VisibilityField fog;
@@ -14850,7 +14850,7 @@ TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
     const std::vector<uint8_t> unexplored(size_t(next.w)*size_t(next.h),0);
     std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
-    std::shared_ptr<game::RtsRoadView::PreparedRebuild> roadPending;
+    std::shared_ptr<roads::RoadView::PreparedRebuild> roadPending;
     std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
     std::shared_ptr<game::RtsGroundFx::PreparedFrame> groundPending;
     std::unique_ptr<view::VisibilityField::PreparedSheet> sheetPending;
@@ -14976,7 +14976,7 @@ TEST(lens_stage48b1_editor_map_build_prepares_fog_and_groundfx_before_camera) {
     CHECK(!view.publishedVisualFrame().ready()); // old RT frames invalidated
     const std::vector<uint8_t> visible(size_t(next.w)*size_t(next.h),2);
     game::RtsScene scene;
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,2.0,&visible,next);
@@ -14994,7 +14994,7 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     game::Rules rules=skirmishRules();
     game::TerrainRenderer terrain;
-    game::RtsRoadView roads;
+    roads::RoadView roads;
     game::RtsShoreView shores;
     terrain.init(dev,rules,missing,"");
     roads.init(dev,Json(),missing);
@@ -15002,17 +15002,17 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     game::MapGrid oldMap;oldMap.init(48,16);
     for(auto& f:oldMap.flags)f=game::kCellGround;
     CHECK(terrain.build(dev,oldMap,false));
-    game::RoadNetwork net;
-    game::RoadNode a,b;
+    roads::RoadNetwork net;
+    roads::RoadNode a,b;
     a.id=1;b.id=2;
     a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
     b.p={Fixed::fromInt(42),Fixed::fromInt(6)};
     net.nodes={a,b};
-    game::RoadEdge edge;
+    roads::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
     int asphalt=0;
     for(size_t i=0;i<roads.types().size();++i)
-        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+        if(roads.types()[i].surface==roads::RoadSurface::Asphalt &&
            roads.types()[i].drivable()){asphalt=int(i);break;}
     edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     net.edges={edge};
@@ -15029,7 +15029,7 @@ TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure
     for(auto& f:next.flags)f=game::kCellGround;
     next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
     std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
-    std::shared_ptr<game::RtsRoadView::PreparedRebuild> roadPending;
+    std::shared_ptr<roads::RoadView::PreparedRebuild> roadPending;
     std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
     const std::function<float(float,float)> nextGround=
         [&](float x,float z){return terrain.preparedSurfaceAt(mapPending,next,x,z);};
@@ -15131,7 +15131,7 @@ TEST(lens_stage47b3c_trace_height_failure_does_not_publish_or_retire) {
     for(auto& f:grid.flags)f=game::kCellGround;
     grid.corner.resize(size_t(grid.w+1)*size_t(grid.h+1),0);
     CHECK(terrain.build(dev,grid,false));
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={2,0,2};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     // The AIVERSE_TRACE=off override is supported; the test exercises
@@ -15184,7 +15184,7 @@ TEST(lens_stage47b3b_primary_pipeline_is_staged_before_draw) {
     for(auto& f:grid.flags)f=game::kCellGround;
     CHECK(terrain.build(dev,grid,false));
     render::Renderer3D renderer;CHECK(renderer.init(dev));
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={2,0,2};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     const auto oldShaders=dev.shaderAttempts;
@@ -15223,7 +15223,7 @@ TEST(lens_stage47b3a_detail_lod_candidate_rollback_and_submission_only_draw) {
     CHECK(terrain.build(dev,grid,false));
     CHECK(terrain.detailActive());
     render::Renderer3D renderer;CHECK(renderer.init(dev));
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,4};camera.distance=14;camera.pitch=1.05f;
     renderer.beginScene(camera,1024,720);
     const auto before=dev.bufferAttempts;
@@ -15559,7 +15559,7 @@ TEST(shoreline_staged_rebuild_preserves_published_banks_on_gpu_failure) {
     })JSON");
     shore.setMap(map);
     CHECK(shore.active());
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={48,0,12};camera.distance=150;camera.pitch=1.0f;
     auto ground=[](float,float){return 0.0f;};
     renderer.beginScene(camera,1024,720);
@@ -15780,7 +15780,7 @@ TEST(view_entity_fx_renders_scaled_translucent) {
     for (auto& o : scene.objects) if (!o.isProjectile && !R.types[o.type].structure) { unit = o; break; }
     CHECK(unit.entity.valid());
     scene.objects = {unit};
-    render::RTSCamera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
+    render::Camera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
     auto frame = [&](double t) {
         dev.draws.clear();
         r3d.beginScene(cam, 640, 480);
@@ -15857,7 +15857,7 @@ TEST(view_transparent_model_option) {
         render::Renderer3D r3d; CHECK(r3d.init(dev));
         r3d.setShadowQuality(render::ShadowQuality::Low);
         game::RtsView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
-        render::RTSCamera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f; cam.ortho = true;
+        render::Camera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f; cam.ortho = true;
         r3d.beginScene(cam, 640, 480);
         view.draw(r3d, scene, 0, nullptr, mod(sim).state(sim).grid);
         r3d.render(aiverse::gfx::PassDesc{});
@@ -15904,7 +15904,7 @@ TEST(view_entity_fx_ground_shadow) {
     render::Renderer3D r3d; CHECK(r3d.init(dev));
     game::RtsView view; CHECK(view.init(dev, R, [](const std::string&, std::string&) { return false; }));
     scene.objects = {unit};
-    render::RTSCamera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
+    render::Camera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
     auto quad = [&](double t) {
         r3d.beginScene(cam, 640, 480);
         view.draw(r3d, scene, t, nullptr, mod(sim).state(sim).grid);
@@ -16253,7 +16253,7 @@ TEST(world_tree_describes_every_component_pool) {
     CHECK(described.poolCount() == n);
     // Three general-purpose hierarchy pools (Parent, LocalTransform,
     // WorldTransform) are exposed by the editor but remain opt-in: ordinary
-    // RTS v9 saves intentionally touch only the 65 legacy kPools.
+    // RTS v9 saves intentionally touch only the 67 kPools (65 legacy + the two vehicle-system pools).
     constexpr size_t kOptInHierarchyComponents = 3;
     CHECK(pv.sim()->world().poolCount() + kOptInHierarchyComponents == n);
     CHECK(editor::worldComponents().size() == n && editor::findWorldComponent("unit") >= 0 && editor::findWorldComponent("Гарнизон") >= 0);
@@ -16486,7 +16486,7 @@ TEST(lens_topology_frame_uploads_once_and_keeps_live_state_on_failure) {
     view.buildTerrain(dev,grid);
     game::RtsScene scene;
     std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),2);
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     view.draw(renderer,scene,1.0,&vision,grid);
@@ -16529,7 +16529,7 @@ TEST(lens_topology_prepared_trace_transfers_without_reupload) {
     for(auto& flag:grid.flags)flag=game::kCellGround;
     grid.corner.assign(25,0);
     CHECK(terrain.build(dev,grid,false));
-    render::RTSCamera camera;
+    render::Camera camera;
     camera.target={2,0,2};camera.distance=25;camera.pitch=1.0f;
     renderer.beginScene(camera,640,480);
     grid.corner.assign(25,48);
@@ -16606,7 +16606,7 @@ TEST(lens_topology_preparation_budget_rejects_before_gpu_and_recovers) {
         try {(void)terrain.prepareMap(dev,grid,false);}
         catch(const std::length_error&){rejected=true;}
         CHECK(rejected && terrain.topologyPreparationBytes()==bytes);
-        render::RTSCamera camera;camera.target={2,0,2};camera.distance=20;
+        render::Camera camera;camera.target={2,0,2};camera.distance=20;
         renderer.beginScene(camera,320,240);
         std::vector<uint8_t> vision(16,255);
         rejected=false;
@@ -17739,7 +17739,7 @@ view.entity_fx(a, {pitch = 0, roll = 0, time = 1}); assert(view.entity_fx(a).pit
     for (auto& o : scene.objects) if (!o.isProjectile && !R.types[o.type].structure) { unit = o; break; }
     CHECK(unit.entity.valid());
     scene.objects = {unit};
-    render::RTSCamera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
+    render::Camera cam; cam.target = unit.pos; cam.distance = 12; cam.pitch = 1.0f;
     auto frame = [&](double t) {
         dev.draws.clear();
         r3d.beginScene(cam, 640, 480);
