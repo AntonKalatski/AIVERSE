@@ -4619,7 +4619,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                 ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
     target_link_libraries(aiverse_terraweave_native_micro_compile_test PRIVATE
-        aiverse_runtime aiverse_models aiverse_world aiverse_zstd_dec)   # WorldScene (Earthworks binding) lives in aiverse_runtime
+        aiverse_models aiverse_world aiverse_zstd_dec)
+    # WorldScene (Earthworks binding) is compiled into the runtime only; this test takes the one source.
+    target_sources(aiverse_terraweave_native_micro_compile_test PRIVATE engine/world/WorldScene.cpp)
     target_compile_options(aiverse_terraweave_native_micro_compile_test PRIVATE
         $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave_native_micro_compile
