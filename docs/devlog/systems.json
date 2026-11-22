@@ -163,9 +163,9 @@
     },
     {
      "name": "Бедствия",
-     "text": "Огонь и топливо, мелкие наводнения, землетрясения.",
+     "text": "Огонь и топливо, мелкие наводнения, землетрясения, смерчи.",
      "nameEn": "Disasters",
-     "textEn": "Fire and fuel, shallow floods, earthquakes."
+     "textEn": "Fire and fuel, shallow floods, earthquakes, tornadoes."
     },
     {
      "name": "Ветер, гравитация, штормы",
@@ -227,12 +227,7 @@
      "titleEn": "Build and tests in CI",
      "textEn": "Per the docs, compilation and CTest are not yet confirmed on this line."
     },
-    {
-     "status": "planned",
-     "target": null,
-     "title": "Параллельное обновление сетки и стриминг больших миров",
-     "titleEn": "Parallel grid updates and streaming for large worlds"
-    },
+    {"status": "done", "date": "2026-11-22", "title": "Параллельное обновление сетки и стриминг больших миров", "text": "Шаг сетки делится между потоками с тем же результатом бит в бит (около ×6,6 на 8 потоках); вдали от якорей чанки замирают, и на больших картах считается только нужное.", "titleEn": "Parallel grid updates and streaming for large worlds", "textEn": "The grid step is split across threads with a bit-identical result (about ×6.6 on 8 threads); chunks far from anchors freeze, so large maps only simulate what matters."},
     {
      "status": "done",
      "title": "Подключение к TerraWeave, NEREID, растительности, VFX и звуку",
@@ -240,7 +235,8 @@
      "titleEn": "Hooking into TerraWeave, NEREID, vegetation, VFX and audio",
      "textEn": "Wind and wildfire drive SpectraFX, audio and TerraWeave grass; “Live nature” shows in the editor Scene view.",
      "date": "2026-11-21"
-    }
+    },
+    {"status": "done", "date": "2026-11-22", "title": "Смерчи", "text": "Смерч из данных карты: маршрут или блуждание, вихрь в ветре PHYSIS, огонь, обломки, урон; воронка, звук, ветер в траве и волнение воды.", "titleEn": "Tornadoes", "textEn": "Tornadoes from map data: a path or a wander, a vortex in PHYSIS wind, fire, debris, damage; a funnel, sound, wind in the grass and choppy water."}
    ],
    "taglineEn": "A living environment: wind, fire, earth",
    "essenceEn": "Nature fields in ECS: wind, fire, earthquakes and structural stress that react to each other.",
