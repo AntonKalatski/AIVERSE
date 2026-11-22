@@ -330,6 +330,11 @@ void Editor::registerGuiOps() {
                     if(w.find("Strata")!=std::string::npos||w.find("STRATA")!=std::string::npos)warn.push(Json::string(w.substr(0,400)));
                 st.set("warnings",warn);
                 st.set("stageMs",Json::number(double(g.strataStageMs)));
+                st.set("cookedSources",Json::number(double(g.strataCookedSources)));
+                st.set("cookStaleSources",Json::number(double(g.strataCookStaleSources)));
+                st.set("cookWrittenSources",Json::number(double(g.strataCookWrittenSources)));
+                st.set("cookReadMs",Json::number(double(g.strataCookedLoadMs)));
+                st.set("buildMs",Json::number(double(g.strataBuildMs)));
                 st.set("compactUploads",Json::number(int64_t(g.strataCompactUploads)));
                 st.set("compactReuses",Json::number(int64_t(g.strataCompactReuses)));
             }

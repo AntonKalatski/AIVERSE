@@ -557,6 +557,25 @@ public:
     const std::vector<std::string>& warnings() const { return warnings_; }
     // Read-only static geometry scene (HLOD / opt-in STRATA counters).
     const render::GeometryScene& geometryScene() const { return geometryScene_; }
+    // Geometry-only test view (AIVERSE_GEOMETRY_ONLY): draw the static
+    // geometry scene and nothing of the map surface (terrain, water, roads,
+    // ground effects). Used for clean STRATA/LOD geometry benchmarks.
+    void setGeometryOnly(bool on) { geometryOnly_ = on; }
+    // Corner panel for STRATA benchmarks/screenshots: route (STRATA/LOD),
+    // cooked or built, debug view mode, this frame's triangles, draw calls
+    // and frame time. Drawn when AIVERSE_GEOMETRY_ONLY or AIVERSE_STRATA_DEBUG is set.
+    void drawStrataHud(float viewW, float viewH);
+    // AIVERSE_STRATA_DEBUG default presentation: picture-in-picture. The host
+    // renders drawGeometryInset() into its own target and passes the texture.
+    bool strataDebugInset() const { return strataDebugInset_; }
+    void drawGeometryInset(render::Renderer3D& r);
+    void setStrataInsetTexture(uint32_t textureId, bool flipY) { insetTexture_ = textureId; insetFlipY_ = flipY; }
+    // Host reports the renderer's numbers AFTER Renderer3D::render (the
+    // profile is filled during render, not during GameView::draw).
+    void noteRenderedFrame(uint64_t cameraTriangles, uint64_t shadowTriangles, uint64_t drawCalls) {
+        renderedTris_ = double(cameraTriangles); renderedShadowTris_ = double(shadowTriangles); renderedDraws_ = double(drawCalls);
+    }
+    bool geometryOnly() const { return geometryOnly_; }
     const render::Model* modelOf(uint16_t type, size_t choice = 0) const;
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }
@@ -892,6 +911,11 @@ private:
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
 
     render::GeometryScene geometryScene_;
+    bool geometryOnly_ = false, strataDebugInset_ = false, insetFlipY_ = false;
+    uint32_t insetTexture_ = 0;
+    struct StrataHudFrame { double tris = 0, legacyTris = 0, draws = 0, ms = 0; } strataHud_;
+    uint64_t strataHudLastTris_ = 0;
+    double renderedTris_ = 0, renderedShadowTris_ = 0, renderedDraws_ = 0;
     std::vector<TypeLook> looks_;
     // Immutable per-type reveal policy; avoid string prefix checks on every draw.
     std::vector<uint8_t> actorRevealTypes_;

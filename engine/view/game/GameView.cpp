@@ -14,6 +14,11 @@
 #include "../../game/Arsenal.h"
 #include "../../game/TopDown.h"
 #include "imgui.h"
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#elif defined(__linux__) || defined(__ANDROID__)
+#include <unistd.h>
+#endif
 #include "../../platform/Platform.h"
 
 #include <algorithm>
@@ -28,6 +33,28 @@
 #include <exception>
 
 namespace aiverse::game {
+namespace {
+// Resident memory of this process (MB), for the benchmark panel.
+double processResidentMB() {
+#if defined(__APPLE__)
+    mach_task_basic_info info{};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS)
+        return double(info.resident_size) / 1048576.0;
+    return 0;
+#elif defined(__linux__) || defined(__ANDROID__)
+    long pages = 0, resident = 0;
+    if (FILE* f = std::fopen("/proc/self/statm", "r")) {
+        if (std::fscanf(f, "%ld %ld", &pages, &resident) != 2) resident = 0;
+        std::fclose(f);
+    }
+    return double(resident) * double(sysconf(_SC_PAGESIZE)) / 1048576.0;
+#else
+    return 0;
+#endif
+}
+}
+
 
 using namespace render;
 
@@ -480,6 +507,32 @@ bool GameView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     // Final teardown continues to call the blocking shutdown barrier.
     if(!incomingGeometryWarning.empty())warnings_.push_back(incomingGeometryWarning);
     if(incomingGeometryPresent) {
+        // AIVERSE_STRATA_DEBUG: STRATA debug view for acceptance screenshots.
+        // "bounds" (cluster boxes), "wire" (cluster triangle edges), "fill"
+        // (flat cluster colours); add ",lod" to colour by hierarchy depth.
+        if (const char* e = std::getenv("AIVERSE_STRATA_DEBUG"); e && *e && *e != '0') {
+            const std::string mode = e;
+            render::strata::DebugViewOptions o;
+            o.enabled = true;
+            o.clusterBounds = mode.find("bounds") != std::string::npos;
+            o.clusterWireframe = mode.find("wire") != std::string::npos;
+            o.clusterFill = mode.find("fill") != std::string::npos;
+            o.instanceBounds = false;
+            o.includeLegacy = false;
+            o.fillAlpha = 1.0f;
+            o.maxTriangles = 2u * 1024u * 1024u; // whole frontier of all instances, not the first sphere only
+            o.maxLines = 4u * 1024u * 1024u;
+            if (mode.find("lod") != std::string::npos) o.color = render::strata::DebugColorMode::LodDepth;
+            geometryScene_.setStrataDebugGeometryCaptureEnabled(o.clusterWireframe || o.clusterFill);
+            geometryScene_.setStrataDebugView(o);
+            // Presentation: picture-in-picture inset in the right corner by
+            // default; "half" = debug on the right half of the screen; "full" =
+            // debug over the whole frame.
+            const bool full = mode.find("full") != std::string::npos, half = mode.find("half") != std::string::npos;
+            geometryScene_.setStrataDebugRightHalf(half);
+            strataDebugInset_ = !full && !half;
+            geometryScene_.setStrataDebugSuppressed(strataDebugInset_);
+        }
         try { geometryScene_.loadTransactional(dev,incomingGeometry,read_); }
         catch(const std::exception& e) {
             // A rejected replacement never empties the current geometry scene.
@@ -1330,6 +1383,7 @@ void GameView::draw(Renderer3D& r, const GameScene& input, double time, const st
         geometryScene_.draw(r);
         publication.mark(Epoch::Geometry);
     });
+    if(!geometryOnly_) {
     layers.append("2D scene begin",LayerPhase::Background,[&] {
         if(twoD_)twoD_->beginFrame(r.camera(),time,r,&grid,
             rules_?float(rules_->levelHeight.toDouble()):1.5f);
@@ -1386,6 +1440,13 @@ void GameView::draw(Renderer3D& r, const GameScene& input, double time, const st
                 ::aiverse::View::submitQuadXZ(r,{
                     a,b,.5f,rgba(196,164,112,235),.04f});
     });
+    } else {
+        // Geometry-only: the surface owners publish an empty frame.
+        publication.mark(Epoch::Terrain);
+        publication.mark(Epoch::Ground);
+        publication.mark(Epoch::Roads);
+        publication.mark(Epoch::Shores);
+    } // !geometryOnly_
     // Synchronous flush is the GPU pass boundary: callback captures cannot
     // escape this GameView::draw frame; there is no parallel render submission.
     ::aiverse::View::submitLayers(layers);
@@ -1754,28 +1815,51 @@ void GameView::draw(Renderer3D& r, const GameScene& input, double time, const st
     // routing plus this frame's renderer counters. Diagnostic only.
     if (geometryScene_.instanceCount()>0) {
         static const bool strataLog=[]{const char* e=std::getenv("AIVERSE_STRATA_LOG");return e&&*e&&*e!='0';}();
-        static unsigned strataFrames=0;static uint64_t lastDraws=0,lastClusters=0,lastFallbacks=0;
-        static double tris=0,calls=0;
+        static unsigned strataFrames=0;static uint64_t lastDraws=0,lastClusters=0,lastFallbacks=0,lastTris=0;
+        static double tris=0,calls=0,shadowTris=0;
+        {   // per-frame numbers for the corner panel (drawStrataHud)
+            static auto prev=std::chrono::steady_clock::now();
+            const auto now=std::chrono::steady_clock::now();
+            const double ms=std::chrono::duration<double,std::milli>(now-prev).count();prev=now;
+            const auto& g=geometryScene_.stats();
+            strataHud_.tris=double(g.strataPortableTriangles-strataHudLastTris_);
+            strataHudLastTris_=g.strataPortableTriangles;
+            strataHud_.legacyTris=double(r.profile().cameraModelTriangles);
+            strataHud_.draws=double(r.drawCalls());
+            strataHud_.ms=strataHud_.ms>0?strataHud_.ms*0.9+ms*0.1:ms;
+        }
         if(strataLog){
-            tris+=double(r.profile().cameraModelTriangles);calls+=double(r.drawCalls());
+            r.setProfiling(true); // triangle counters below need the renderer profile (from the next frame on)
+            tris+=renderedTris_;calls+=renderedDraws_;
+            shadowTris+=renderedShadowTris_;
             if(++strataFrames==300){
+                // wall-clock average over the 300 frames (includes vsync waits)
+                static auto lastWall=std::chrono::steady_clock::now();
+                const auto nowWall=std::chrono::steady_clock::now();
+                const double frameMs=std::chrono::duration<double,std::milli>(nowWall-lastWall).count()/300.0;
+                lastWall=nowWall;
                 const auto& g=geometryScene_.stats();
-                char line[512];
+                char line[768];
                 std::snprintf(line,sizeof line,
                     "[strata] enabled=%d instances=%zu staged=%u portableSources=%u autoStrata=%u autoLod=%u failures=%u "
-                    "draws/frame=%.2f clusters/frame=%.1f fallbacks/frame=%.2f cameraModelTris/frame=%.0f drawCalls/frame=%.1f",
+                    "draws/frame=%.2f clusters/frame=%.1f fallbacks/frame=%.2f cameraModelTris/frame=%.0f shadowModelTris/frame=%.0f drawCalls/frame=%.1f "
+                    "cooked=%u cookStale=%u cookWritten=%u stageMs=%.0f cookReadMs=%.0f buildMs=%.0f strataTris/frame=%.0f frameMs=%.2f fps=%.1f errorScale=%.2f rssMB=%.0f strataCpuMB=%.0f selectionGpuMB=%.1f",
                     int(geometryScene_.strataPortableRenderingEnabled()),geometryScene_.instanceCount(),
                     unsigned(g.strataSources),unsigned(g.strataPortableSources),unsigned(g.strataAutoStrataSources),
                     unsigned(g.strataAutoLodSources),unsigned(g.strataFailures),
                     double(g.strataPortableDraws-lastDraws)/300.0,double(g.strataPortableClusters-lastClusters)/300.0,
-                    double(g.strataPortableFallbacks-lastFallbacks)/300.0,tris/300.0,calls/300.0);
+                    double(g.strataPortableFallbacks-lastFallbacks)/300.0,tris/300.0,shadowTris/300.0,calls/300.0,
+                    unsigned(g.strataCookedSources),unsigned(g.strataCookStaleSources),unsigned(g.strataCookWrittenSources),
+                    double(g.strataStageMs),double(g.strataCookedLoadMs),double(g.strataBuildMs),
+                    double(g.strataPortableTriangles-lastTris)/300.0,frameMs,frameMs>0?1000.0/frameMs:0.0,double(g.strataErrorScale),processResidentMB(),
+                    double(g.strataIndexBytes+g.strataNodes*28ull+g.strataMeshlets*20ull)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0);
 #if defined(__ANDROID__)
                 __android_log_print(ANDROID_LOG_INFO,"AIVERSE","%s",line);
 #else
                 std::fprintf(stderr,"%s\n",line);
 #endif
-                lastDraws=g.strataPortableDraws;lastClusters=g.strataPortableClusters;lastFallbacks=g.strataPortableFallbacks;
-                strataFrames=0;tris=calls=0;
+                lastDraws=g.strataPortableDraws;lastClusters=g.strataPortableClusters;lastTris=g.strataPortableTriangles;lastFallbacks=g.strataPortableFallbacks;
+                strataFrames=0;tris=calls=shadowTris=0;
             }
         }
     }
@@ -1843,6 +1927,69 @@ void GameView::draw(Renderer3D& r, const GameScene& input, double time, const st
             objectCount = 0;
         }
     }
+}
+
+void GameView::drawGeometryInset(Renderer3D& r) {
+    geometryScene_.setStrataDebugSuppressed(false);
+    geometryScene_.setStrataInsetPass(true);
+    geometryScene_.draw(r);
+    geometryScene_.setStrataInsetPass(false);
+    geometryScene_.setStrataDebugSuppressed(true);
+}
+
+
+void GameView::drawStrataHud(float w, float h) {
+    static const char* debugEnv=std::getenv("AIVERSE_STRATA_DEBUG");
+    const auto& g=geometryScene_.stats();
+    const bool on=geometryScene_.strataPortableRenderingEnabled()&&g.strataPortableSources>0;
+    std::string mode="off";
+    if(debugEnv&&*debugEnv&&*debugEnv!='0'){
+        const std::string d=debugEnv;mode.clear();
+        if(d.find("fill")!=std::string::npos)mode+="clusters (fill) ";
+        if(d.find("wire")!=std::string::npos)mode+="clusters (wire) ";
+        if(d.find("bounds")!=std::string::npos)mode+="cluster bounds ";
+        mode+=d.find("lod")!=std::string::npos?"| colour = LOD level":"| colour = cluster";
+    }
+    char text[768];
+    std::snprintf(text,sizeof text,
+        "STRATA: %s%s\n"
+        "debug view: %s\n"
+        "instances: %zu   sources: %u\n"
+        "triangles drawn: %.2f M   (STRATA %.2f M)\n"
+        "error threshold: x%.2f%s\n"
+        "draw calls: %.0f\n"
+        "memory: process %.0f MB | STRATA CPU %.0f MB, GPU indices %.0f MB + selection %.1f MB\n"
+        "frame: %.1f ms (%.0f fps)",
+        on?"ON":"OFF (LOD path)",
+        on?(g.strataCookedSources?"  [cooked on disk]":"  [built at load]"):"",
+        mode.c_str(),geometryScene_.instanceCount(),unsigned(g.strataPortableSources),
+        renderedTris_/1e6,strataHud_.tris/1e6,double(g.strataErrorScale),g.strataErrorScale>1.001f?"  (triangle budget)":"",renderedDraws_,processResidentMB(),double(g.strataIndexBytes+g.strataNodes*28ull+g.strataMeshlets*20ull)/1048576.0,
+        double(g.strataIndexBytes)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0,strataHud_.ms,strataHud_.ms>0?1000.0/strataHud_.ms:0.0);
+    ImDrawList* dl=ImGui::GetForegroundDrawList();
+    if(strataDebugInset_ && insetTexture_){
+        const float s2=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);
+        const float iw=std::floor(w*.40f), ih=std::floor(iw*h/std::max(1.f,w)), m=s2*.6f;
+        const ImVec2 p0{w-iw-m,m}, p1{w-m,m+ih};
+        dl->AddRectFilled({p0.x-3,p0.y-3},{p1.x+3,p1.y+3+s2*1.4f},IM_COL32(0,0,0,200),4.f);
+        dl->AddImage(ImTextureRef(ImTextureID(insetTexture_)),p0,p1,ImVec2(0,insetFlipY_?0.f:1.f),ImVec2(1,insetFlipY_?1.f:0.f));
+        dl->AddRect({p0.x-1,p0.y-1},{p1.x+1,p1.y+1},IM_COL32(255,255,255,220),0,0,2.f);
+        const char* label=geometryScene_.strataDebugView().color==render::strata::DebugColorMode::LodDepth
+            ? "STRATA clusters - colour: LOD level (red coarse, blue fine)" : "STRATA clusters - colour: cluster";
+        dl->AddText(ImGui::GetFont(),s2,{p0.x+s2*.3f,p1.y+s2*.2f},IM_COL32(255,255,255,235),label);
+    }
+    if(geometryScene_.strataDebugView().enabled && geometryScene_.strataDebugRightHalf()){
+        const float x=std::floor(w*.5f);
+        dl->AddLine({x,0},{x,h},IM_COL32(255,255,255,200),2.f);
+        const float s2=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);
+        dl->AddText(ImGui::GetFont(),s2,{x+s2*.6f,h-s2*1.6f},IM_COL32(255,255,255,230),"STRATA debug: clusters");
+        dl->AddText(ImGui::GetFont(),s2,{s2*.6f,h-s2*1.6f},IM_COL32(255,255,255,230),"final image");
+    }
+    const float size=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);
+    ImFont* font=ImGui::GetFont();
+    const ImVec2 extent=font->CalcTextSizeA(size,1e9f,0,text);
+    const ImVec2 at{size*0.6f,size*0.6f};
+    dl->AddRectFilled({at.x-size*.4f,at.y-size*.3f},{at.x+extent.x+size*.4f,at.y+extent.y+size*.3f},IM_COL32(0,0,0,170),size*.25f);
+    dl->AddText(font,size,at,IM_COL32(255,255,255,255),text);
 }
 
 void GameView::drawOverlays(const Camera& cam, const GameScene& s, float w, float h, float ox, float oy, void* drawList) {

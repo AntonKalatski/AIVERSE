@@ -165,6 +165,79 @@ on Linux x64, Linux arm64, macOS and Windows MSVC, and builds the core tests wit
 runs them in Node. Before this, the hand-written target list missed `physis_nature_presentation`
 / `physis_nature_cues`, and the workflow failed on main with ctest exit 8 (run 44956413363).
 
+## Tornadoes (2026-11-22) — `engine/physis/PhysisTornado.h`
+
+A tornado is simulation, not a visual: a `StormEvent` (kind `Tornado`) plus a `TornadoTrack` on
+the same entity. Every PHYSIS wind reader already sees the vortex through `windWithStormsAt`
+(tangential swirl, radial inflow, updraft): forces, nature contacts / stress (trees fracture),
+`sampleNatureField`, the presentation frame. The system `physis.tornadoes` runs once per tick right
+after the climate/storm/disaster pass and before forces:
+
+| Part | Rule |
+|---|---|
+| Path | `drift` (StormEvent `driftPerTick`), `wander` (heading + random turn from the track's own RNG state, reflected inside `bounds` or the PHYSIS grid), `waypoints` (constant speed, optional `loop`) |
+| Life | `startTick/durationTicks` of the storm + `rampTicks` spin-up/decay; `TornadoTrack::intensity` 0..1 scales tangential wind, updraft and inflow |
+| Fire (`enableDisasters`) | cells under the core lose `fire.suppression` of their fire per second (blown out); burning cells with fuel in the ring grow by `fire.fanning` per second (fanned) |
+| Debris | `debris.perSecond` pieces torn up in the core (up to `debris.max` per tornado), carried by the same wind with quadratic drag + PHYSIS gravity, land on the cell elevation, expire after `lifeSeconds` or 3 s on the ground. Stored in the `TornadoDebrisField` resource — no entities, so other modules' entity allocation is unchanged |
+| Carried objects | host entities with `Transform` + `NatureCarriable` (mass, area, drag, `liftWindSpeed`) are lifted when the horizontal wind exceeds the lift speed and carried until they land. Not for Box3D bodies (use `applyPhysisToBody`) |
+| Damage | entities with a `Transform` within `damageRadiusMeters` (full in the core, linear to 0 at the radius) get `damagePerSecond × intensity` through `GameModule::environmentDamage(sim, target, amount, tornado)`; the module applies its own health/armour rules. RTS: pure damage via `dealDamage` (invulnerable types such as trees and units off the map are skipped). Default implementation: no damage |
+| Vegetation | trees/structures with `NatureStressReceiverComponent` (forces + nature contacts + stress enabled) load from the vortex wind and fracture through the existing outbox → TerraWeave fall bridge. RTS tree units are invulnerable in the sample rules |
+
+Determinism: Fixed-point only, tornadoes and carried objects in entity-index order, debris in
+creation order, explicit RNG in the track. Persistent + hashed: `physis.tornado_track`,
+`physis.nature_carriable`, `physis.tornado_debris` (registered only when tornadoes are enabled, so
+maps without them keep the old save manifest and checksums).
+
+### Map data
+
+A non-empty `"tornadoes"` array turns the feature on (and storms with it). Per-second values are
+converted with the simulation tick rate; `startSeconds`/`durationSeconds`/`rampSeconds` may replace
+the `...Ticks` keys. The same parser (`PhysisTornadoAssets.h`) backs MCP `physis_validate` /
+`physis_set`, so authoring and runtime accept the same documents.
+
+```json
+"physis": {
+  "grid": { "originX": 0, "originZ": 0, "width": 16, "height": 12, "cellSizeMeters": 4, "seed": 11 },
+  "climate": { "baseTemperature": 21, "baseHumidity": 0.55 },
+  "tornadoes": [{
+    "id": "valley_twister", "center": [16, 9],
+    "coreRadiusMeters": 2.5, "outerRadiusMeters": 12, "heightMeters": 45,
+    "tangentialWind": 42, "updraft": 16, "radialInflow": 6, "clockwise": false,
+    "startSeconds": 2, "durationSeconds": 150, "rampSeconds": 4,
+    "path": { "mode": "waypoints", "speed": 1.4, "loop": true, "points": [[24, 16], [32, 22], [40, 30]] },
+    "damagePerSecond": 6, "damageRadiusMeters": 5,
+    "fire": { "suppression": 0.8, "fanning": 0.5 },
+    "debris": { "max": 40, "perSecond": 8, "massKg": 0.4, "areaSqMeters": 0.06, "lifeSeconds": 14 }
+  }]
+}
+```
+Wander instead: `"path": {"mode": "wander", "speed": 2, "turnDegreesPerSecond": 30, "seed": 3,
+"heading": 0, "bounds": [minX, minZ, maxX, maxZ]}`. Sample map:
+`templates/skirmish/maps/tornado_valley.json` ("Tornado Valley", map index 2).
+
+C++ hosts: `InstallOptions::enableTornadoes = true` (persistence), then
+`spawnTornado(world, storm, track)` at runtime; `advanceTornadoes(world, hooks)` is the pure pass
+for custom schedulers. No Lua API yet.
+
+### Presentation
+
+`buildNaturePresentation` now samples `windWithStormsAt` (vegetation wind lattice and particle wind
+include storms) and fills `frame.tornadoes` / `frame.debris`. `PhysisNatureRuntime` drives:
+
+* SpectraFX funnel (`physis_tornado`: rising, widening dust spiral, ground skirt, dark specks;
+  local space, moved every frame with extrapolation between ticks; scale = core radius) and one
+  `physis_tornado_debris` chunk per airborne piece. Projects may override both in `fx/`.
+* Sound: positional `physis_tornado_loop` roar (synth fallback added by `addPhysisTornadoSounds`).
+* TerraWeave: the vortex shows in the spatial vegetation wind lattice (`windFieldNodes`).
+* NEREID: within 3 outer radii of a tornado the water wind takes the swirl speed at the camera focus.
+* Switch: `"presentation": {"tornado": false}` (funnel/debris effects off; simulation unchanged).
+
+Tests: `physis_tornado` (paths, envelope, wind, fire, debris, carried objects, host damage, map
+install, save/load/continue checksums, parser errors), `physis_tornado_cues` (frame, FX/audio
+planners, built-in effects and sound parse). Limits: no Lua API; debris is a point cloud (no
+collisions with units/buildings); damage reaches only entities with `Transform`; vortex is an
+authored analytic field, not CFD; the editor nature preview does not draw funnels yet.
+
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 
 PHYSIS owns **climate/weather, natural event fields and environmental force/gravity policies**, but never Box3D rigid-body integration itself. NEREID (Water agent,

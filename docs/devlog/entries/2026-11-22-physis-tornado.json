@@ -1,0 +1,45 @@
+{
+  "id": "2026-11-22-physis-tornado",
+  "date": "2026-11-22",
+  "system": "physis",
+  "title": "PHYSIS: смерч",
+  "summary": "В PHYSIS появился смерч: он задаётся в данных карты, ходит по маршруту или блуждает, закручивает ветер, раздувает и гасит огонь, вырывает обломки и наносит урон.",
+  "body": [
+    "Смерч описывается массивом tornadoes в блоке physis карты: центр, радиусы ядра и внешнего кольца, высота, скорость вращения, подъём и затягивание воздуха, время старта и жизни, раскрутка и затухание. Маршрут — прямой снос, блуждание в заданных границах или точки, по кругу или до конца.",
+    "Вихрь меняет общий ветер PHYSIS, поэтому его чувствуют все, кто читает ветер: силы, нагрузка на растительность и постройки, трава, частицы. В центре он гасит огонь, в кольце вокруг раздувает. Обломки вырываются у основания, летят с ветром и падают. Лёгкие объекты игры с NatureCarriable он поднимает и уносит. Юниты и здания получают урон через общий хук окружения, в RTS он уже подключён.",
+    "В кадре смерч — пылевая воронка с кольцом пыли у земли и летящими обломками, с гулом в пространстве, сильным ветром в траве и волнением на воде рядом. Пример — карта «Tornado Valley» в шаблоне skirmish."
+  ],
+  "status": "done",
+  "verified": "Клиент игры на Mac (Metal), карта «Tornado Valley»: смерч ходит по маршруту, в кадре от 9 до 24 обломков. Партия с одним сидом повторяется с той же контрольной суммой, повтор записи и восстановление из сохранения сходятся.",
+  "limits": "Урон от смерча пока получают только RTS-игры. Обломки ни с чем не сталкиваются. Изгиб травы, волнение воды и звук отдельно не проверялись. Воронка простая — проект может заменить эффект своим fx/physis_tornado.json.",
+  "branch": "main",
+  "commit": "",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-physis-tornado/physis-tornado-close.jpg",
+      "caption": "Смерч на карте «Tornado Valley»",
+      "captionEn": "A tornado on the Tornado Valley map"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-physis-tornado/physis-tornado-wide.jpg",
+      "caption": "Общий план: смерч идёт по долине",
+      "captionEn": "Wide view: the tornado crossing the valley"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/physis.md",
+      "href": "docs/physis.md"
+    }
+  ],
+  "author": "physis",
+  "titleEn": "PHYSIS: tornadoes",
+  "summaryEn": "PHYSIS now has tornadoes: defined in map data, they follow a path or wander, twist the wind, fan and snuff fire, tear up debris and deal damage.",
+  "bodyEn": [
+    "A tornado is an entry of the tornadoes array in the map's physis block: centre, core and outer radius, height, spin, updraft and inflow, start and lifetime, spin-up and decay. The path is a straight drift, a wander inside bounds, or waypoints, looping or once.",
+    "The vortex changes PHYSIS wind, so everything that reads the wind feels it: forces, load on vegetation and buildings, grass, particles. It snuffs fire at the centre and fans it in the ring around. Debris is torn up at the base, carried by the wind and falls. Light game objects with NatureCarriable are lifted and carried away. Units and buildings take damage through a common environment hook, already connected in RTS.",
+    "On screen a tornado is a dust funnel with a dust ring at the ground and flying debris, with a positional roar, strong wind in the grass and choppy water nearby. The example is the Tornado Valley map of the skirmish template."
+  ],
+  "verifiedEn": "Game client on a Mac (Metal), Tornado Valley map: the tornado follows its path with 9 to 24 pieces of debris in the frame. A match with one seed repeats with the same checksum; replay and restore from a save match.",
+  "limitsEn": "Only RTS games take tornado damage so far. Debris does not collide with anything. Grass bending, water and sound were not checked separately. The funnel is simple — a project can replace the effect with its own fx/physis_tornado.json."
+}

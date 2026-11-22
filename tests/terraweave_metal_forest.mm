@@ -205,7 +205,7 @@ int aiverseMain(int,char**) {
             std::fputs("FAIL [terraweave-metal-forest] render target allocation\n",stderr);
             return 1;
         }
-        render::RTSCamera cameraA;
+        render::Camera cameraA;
         cameraA.target={0,5,0};
         cameraA.distance=27;
         cameraA.yaw=0.12f;
@@ -216,7 +216,7 @@ int aiverseMain(int,char**) {
         cameraB.yaw=1.65f;
 
         std::vector<float> azimuths;
-        const auto draw=[&](const render::RTSCamera& camera,Target target,
+        const auto draw=[&](const render::Camera& camera,Target target,
                              const std::vector<terra::FloraBatch>* batches) {
             renderer.beginScene(camera,target.width,target.height);
             if(batches==&farBatches) {

@@ -17,6 +17,7 @@
 #pragma once
 #include "engine/physis/PhysisDisasters.h"
 #include "engine/physis/PhysisWind.h"
+#include "engine/physis/PhysisTornado.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -70,6 +71,27 @@ struct NatureFireCluster {
     std::uint32_t flames = 0;
 };
 
+// A tornado in or near the region (PhysisTornado.h), for funnel FX / sound /
+// water wind. Positions in scene metres; move = last tick's displacement.
+struct NatureTornado {
+    std::uint64_t key = 0;           // tornado entity (stable while it exists)
+    float x = 0, y = 0, z = 0;       // ground centre
+    float coreRadius = 1, outerRadius = 5, height = 50;
+    float intensity = 0;             // 0..1 life envelope
+    float tangentialWind = 0, updraft = 0; // current m/s (already * intensity)
+    float moveX = 0, moveZ = 0;      // metres per tick
+    bool clockwise = false;
+};
+
+// One airborne / resting debris piece (TornadoDebrisField).
+struct NatureDebrisPoint {
+    std::uint64_t key = 0;
+    float x = 0, y = 0, z = 0;
+    float vx = 0, vy = 0, vz = 0;    // m/s (extrapolation between ticks)
+    float size = 0.3f;               // metres, from the piece's area
+    bool airborne = true;
+};
+
 struct NaturePresentationFrame {
     bool valid = false;
     std::uint64_t tick = 0;
@@ -85,6 +107,8 @@ struct NaturePresentationFrame {
     float burningArea = 0;
     float flameSpacing = 0;
     bool hasDisasters = false;
+    std::vector<NatureTornado> tornadoes;     // sorted by key
+    std::vector<NatureDebrisPoint> debris;    // field order (stable ids)
 
     NatureGroundSample sample(float x, float z) const {
         NatureGroundSample out;
@@ -222,14 +246,15 @@ inline NaturePresentationFrame buildNaturePresentation(
                 f.fire[i] = clamp01(toF(hz->fire));
                 f.charred[i] = clamp01(1.f - toF(hz->fuel));
             }
-            // windAt = cell atmosphere wind + WindZones - WindShelters, at
-            // cell centre, 2 m above the PHYSIS elevation (grass height).
+            // windWithStormsAt = cell atmosphere wind + WindZones - WindShelters
+            // + storm / tornado vortices, at cell centre, 2 m above the PHYSIS
+            // elevation (grass height).
             const Vec3 p{Fixed::fromInt(std::int64_t(gx) * s.cellSizeMeters) +
                              Fixed::fromRatio(s.cellSizeMeters, 2),
                          cell->elevation + Fixed::fromInt(2),
                          Fixed::fromInt(std::int64_t(gz) * s.cellSizeMeters) +
                              Fixed::fromRatio(s.cellSizeMeters, 2)};
-            const Vec3 w = physis::windAt(world, p);
+            const Vec3 w = physis::windWithStormsAt(world, p);
             f.windX[i] = toF(w.x);
             f.windZ[i] = toF(w.z);
             sumWx += f.windX[i]; sumWz += f.windZ[i]; ++windCount;
@@ -241,6 +266,49 @@ inline NaturePresentationFrame buildNaturePresentation(
         f.meanWindZ = float(sumWz / double(windCount));
     }
     f.valid = true;
+
+    // Tornadoes touching the region (their outer ring may reach in from outside).
+    {
+        const float minX = float(f.originX) * cs, minZ = float(f.originZ) * cs;
+        const float maxX = minX + float(f.width) * cs, maxZ = minZ + float(f.height) * cs;
+        world.eachExistingConst<physis::TornadoTrack>([&](Entity e, const physis::TornadoTrack& t) {
+            const auto* st = world.tryGetConst<physis::StormEvent>(e);
+            if (!st || !physis::isTornado(*st) || t.intensity <= Fixed{}) return;
+            NatureTornado n;
+            n.key = e.packed();
+            n.x = toF(st->center.x); n.y = toF(st->center.y); n.z = toF(st->center.z);
+            n.coreRadius = toF(st->eyeRadiusMeters);
+            n.outerRadius = toF(st->outerRadiusMeters);
+            n.height = toF(st->heightMeters);
+            n.intensity = clamp01(toF(t.intensity));
+            n.tangentialWind = toF(st->tangentialWind);
+            n.updraft = toF(st->updraft);
+            n.moveX = toF(t.lastMove.x); n.moveZ = toF(t.lastMove.z);
+            n.clockwise = st->clockwise;
+            const float reach = n.outerRadius + policy.radiusMeters;
+            if (n.x < minX - reach || n.x > maxX + reach || n.z < minZ - reach || n.z > maxZ + reach) return;
+            if (!std::isfinite(n.x) || !std::isfinite(n.z)) return;
+            if (policy.groundHeight) {
+                const float g = policy.groundHeight(n.x, n.z);
+                if (std::isfinite(g)) n.y = g;
+            }
+            f.tornadoes.push_back(n);
+        });
+        std::sort(f.tornadoes.begin(), f.tornadoes.end(),
+                  [](const auto& a, const auto& b) { return a.key < b.key; });
+        if (const auto* field = world.resourceConst<physis::TornadoDebrisField>())
+            for (const auto& p : field->pieces) {
+                NatureDebrisPoint d;
+                d.key = p.id;
+                d.x = toF(p.position.x); d.y = toF(p.position.y); d.z = toF(p.position.z);
+                if (d.x < minX || d.x > maxX || d.z < minZ || d.z > maxZ) continue;
+                d.vx = toF(p.velocity.x); d.vy = toF(p.velocity.y); d.vz = toF(p.velocity.z);
+                d.size = std::clamp(std::sqrt(std::max(0.f, toF(p.areaSqMeters))) * 1.4f, 0.08f, 2.f);
+                d.airborne = p.airborne;
+                f.debris.push_back(d);
+                if (f.debris.size() >= 256) break;
+            }
+    }
     if (!f.hasDisasters) return f;
 
     // Flame lattice. Only cells where fire (or a burning neighbour) can make

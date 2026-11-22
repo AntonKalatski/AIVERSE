@@ -4,6 +4,7 @@
 #pragma once
 #include "core/MapDoc.h"
 #include "engine/physis/PhysisFieldAssets.h"
+#include "engine/physis/PhysisTornadoAssets.h"
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -99,7 +100,7 @@ inline bool validate(const Json& v, std::string* error = nullptr) {
     const auto mode = v.getStr("floodMode", "LocalShallow");
     if (mode != "LocalShallow" && mode != "ExternalAuthority")
         return fail("PHYSIS floodMode must be LocalShallow or ExternalAuthority");
-    for (auto key : {"storms","windZones","gravityFields"})
+    for (auto key : {"storms","windZones","gravityFields","tornadoes"})
         if (!v[key].isNull() && !v[key].isArray())
             return fail("PHYSIS authored field collections must be arrays");
     // Share the exact native parser: editor and runtime agree on IDs, types,
@@ -110,6 +111,8 @@ inline bool validate(const Json& v, std::string* error = nullptr) {
         options.enableWindZones = v.getBool("enableWindZones", false);
         options.enableGravityFields = v.getBool("enableGravityFields", false);
         (void)aiverse::physis::parseFieldAssets(v, options);
+        // Tornadoes: same parser as the runtime (tick rate only scales rates).
+        (void)aiverse::physis::parseTornadoes(v, 20);
     } catch (const std::exception& e) {
         if (error) *error = e.what();
         return false;

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -59,6 +60,17 @@ struct StagingStats {
     uint64_t seamCertifiedPrimitives = 0, seamRejectedParents = 0;
     uint64_t crossMaterialMatchedSeams = 0;
     uint32_t crossMaterialCertifiedSources = 0;
+    // Cooked assets (StrataCooked.h): loaded instead of built, written by a
+    // cook pass, or rejected as stale (then built as before).
+    uint32_t cookedLoadedSources = 0, cookedWrittenSources = 0, cookedStaleSources = 0;
+    float cookedLoadMs = 0, buildMs = 0;
+};
+
+// Where cooked assets come from and go to. `read` receives the hashed file
+// name (cookedFilename) and may read from a folder, an APK or a pack.
+struct CookIo {
+    std::function<bool(const std::string& name, std::string& bytes)> read;
+    std::string writeDirectory; // non-empty: write a cooked file for every built source
 };
 
 class SceneStaging {
@@ -95,7 +107,12 @@ public:
     void setAllowPreparedRootLods(bool value) { allowPreparedRootLods_ = value; }
     // Production scenes: see auditModelSourceSeams(tolerant).
     void setTolerateSourceSeamDefects(bool value) { tolerateSourceSeamDefects_ = value; }
+    void setCookIo(CookIo io) { cook_ = std::move(io); }
+    // Keep meshlet vertex/triangle tables after staging (GPU cluster paths).
+    void setRetainMeshlets(bool value) { retainMeshlets_ = value; }
 private:
+    CookIo cook_;
+    bool retainMeshlets_ = false;
     BuildOptions options_{};
     Limits limits_{};
     StagingStats stats_{};
