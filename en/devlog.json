@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T07:53:53+00:00",
+ "generated": "2026-11-22T07:57:45+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -196,6 +196,31 @@
     }
    ],
    "author": "prisma"
+  },
+  {
+   "id": "2026-11-22-motionweave-battle",
+   "date": "2026-11-22",
+   "system": "motionweave",
+   "title": "A battle on one animation graph",
+   "summary": "Ninety characters, each with its own instance of one MotionWeave graph: ranks march and run, the front line fights, some have already fallen.",
+   "body": [
+    "One graph for everyone: a state machine (march → fight → dead), a walk/run blend, breathing on top of the motion and the attack applied to the upper body only, so the legs stand or walk meanwhile. Each character gets its own parameters and clock offset, so the ranks never move in step.",
+    "The sword is not baked into the model: every frame it takes the hand position from the evaluated pose. The team colour goes onto the cloth through the material, with no separate model per army."
+   ],
+   "status": "done",
+   "verified": "Captured on Linux through OpenGL: a 1920×1080 frame and a 1280×720 two-second clip. 90 characters: 63 marching, 21 fighting, 6 fallen.",
+   "limits": "Not captured on Metal. The model is the simple one from the engine template; retargeting to other rigs and skeleton LODs are not shown in this frame.",
+   "branch": "main",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-motionweave-battle/battle.jpg",
+     "caption": "Two ranks meet: every character runs its own graph instance"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-motionweave-battle/battle.mp4",
+     "caption": "Two seconds of the battle: every character moves by its own graph instance"
+    }
+   ]
   },
   {
    "id": "2026-11-22-lighting-vulkan-android",

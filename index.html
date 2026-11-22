@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2817312ec9">
+<link rel="stylesheet" href="style.css?v=a9f74b29ef">
 </head>
 <body>
 <header class="top">
@@ -95,7 +95,7 @@
 <article class="sys-card" id="sys-lighting"><figure><img src="media/docs/images/readme/sponza.jpg" alt="Sponza: PBR, тени и ambient occlusion" loading="lazy"><figcaption>Sponza: PBR, тени и ambient occlusion</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-lighting.html">LUMA</a></h3><a class="badge badge-ink" href="releases.html#v2.0.0" title="Появилась в релизе 2.0.0">с версии 2.0.0</a></div><p class="sys-tag">Свет и глобальное освещение</p><p>Свет как компонент сущности, пробы GI, запекание лайтмапов своим path tracer и динамическое непрямое освещение.</p><a class="sys-link" href="system-lighting.html">О системе и роадмап →</a></div></article>
 <article class="sys-card" id="sys-prisma"><figure><img src="media/docs/images/readme/sponza-light-shafts.png" alt="Лучи света сквозь дымку: выключено / включено" loading="lazy"><figcaption>Лучи света сквозь дымку: выключено / включено</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-prisma.html">PRISMA</a></h3><a class="badge badge-accent" href="releases.html#next" title="Уже в main, войдёт в релиз 2.2.0">появится в 2.2.0</a></div><p class="sys-tag">Постобработка и атмосфера</p><p>HDR, экспозиция и тонмаппинг, bloom, DoF, motion blur, TAA, AO и отражения, эффекты линзы, сглаживание и апскейл, цветокоррекция и экранные атмосферные эффекты с профилями качества.</p><a class="sys-link" href="system-prisma.html">О системе и роадмап →</a></div></article>
 <article class="sys-card" id="sys-spectrafx"><figure><img src="media/docs/devlog/media/2026-11-21-spectrafx-scenes/sponza-night.jpg" alt="SpectraFX: костры, портал, светлячки и туман в Sponza ночью" loading="lazy"><figcaption>SpectraFX: костры, портал, светлячки и туман в Sponza ночью</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-spectrafx.html">SpectraFX</a></h3><a class="badge badge-accent" href="releases.html#next" title="Уже в main, войдёт в релиз 2.2.0">появится в 2.2.0</a></div><p class="sys-tag">Эффекты частиц</p><p>Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.</p><a class="sys-link" href="system-spectrafx.html">О системе и роадмап →</a></div></article>
-<article class="sys-card sys-pending" id="sys-motionweave"><div class="sys-placeholder" aria-hidden="true"><svg width="72" height="68" viewBox="-280 -280 560 530"><g fill="#F3EFE8"><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58"/><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58" transform="rotate(120)"/><polygon points="-72,-220 0,-262 71,-220 71,-58 0,-100 -72,-58" transform="rotate(240)"/></g><polygon points="0,-78 78,0 0,78 -78,0" fill="#E9C3A4"/></svg><span>MotionWeave</span></div><div class="sys-body"><div class="sys-head"><h3><a href="system-motionweave.html">MotionWeave</a></h3><a class="badge badge-accent" href="releases.html#next" title="Уже в main, войдёт в релиз 2.2.0">появится в 2.2.0</a></div><p class="sys-tag">Анимация персонажей</p><p>Графы анимации, ретаргет между ригами, LOD скелетов и вложения.</p><p class="sys-wait">Кадр системы готовится</p><a class="sys-link" href="system-motionweave.html">О системе и роадмап →</a></div></article>
+<article class="sys-card" id="sys-motionweave"><figure><video src="media/docs/devlog/media/2026-11-22-motionweave-battle/battle.mp4" poster="media/docs/devlog/media/2026-11-22-motionweave-battle/battle.jpg" autoplay muted loop playsinline preload="none" aria-label="MotionWeave: два строя на одном графе анимации"></video><figcaption>MotionWeave: два строя на одном графе анимации</figcaption></figure><div class="sys-body"><div class="sys-head"><h3><a href="system-motionweave.html">MotionWeave</a></h3><a class="badge badge-accent" href="releases.html#next" title="Уже в main, войдёт в релиз 2.2.0">появится в 2.2.0</a></div><p class="sys-tag">Анимация персонажей</p><p>Графы анимации, ретаргет между ригами, LOD скелетов и вложения.</p><a class="sys-link" href="system-motionweave.html">О системе и роадмап →</a></div></article>
 </div>
 </section>
 
@@ -176,6 +176,14 @@
 <article class="card genre"><div class="genre-top"><h3>Забеги и лут</h3></div><p>Сидированные забеги, бюджеты встреч, таблицы лута с гарантированной редкостью.</p><code>run-graph · loot-tables</code></article>
 <article class="card genre"><div class="genre-top"><h3>Большие числа и производство</h3></div><p>Точный офлайн-прогресс, многослойный престиж, производственные сети и логистика.</p><code>big-numbers · offline-production</code></article>
 <article class="card genre"><div class="genre-top"><h3>Мета мобильной игры</h3></div><p>Магазин, валюты, квесты, пассы, энергия, кланы, турниры, сундуки — в JSON.</p><code>aiverse::meta · LiveOps</code></article>
+</div>
+<div class="card card-ink plugins" style="margin-top:20px">
+<span class="tag">своя механика</span>
+<h3 class="h3">Нет готовой механики — ИИ напишет плагин для вашей игры</h3>
+<div class="plugins-cols">
+<div><h4>Lua</h4><p>Скрипты лежат в папке игры и подключаются в rules.json. Работают внутри детерминированной симуляции — в сетевой игре и в реплеях — или только на экране игрока. Правятся в редакторе с горячей перезагрузкой, движок пересобирать не нужно.</p></div>
+<div><h4>C++</h4><p>Модули игры в папке native/ со своими компонентами, системами и хуками движка. Собираются вместе с игрой, редактором и сервером — на всех платформах, включая iOS, Android и веб. Исходники движка при этом не меняются.</p></div>
+</div>
 </div>
 </section>
 
