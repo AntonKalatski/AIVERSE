@@ -17,5 +17,7 @@ Attach WaterBuoyancyComponent, WaterVelocityInputComponent and WaterForceCompone
 
 All simulation inputs and outputs are deterministic Fixed/ECS state. These systems are genre-independent: do not add FPS, RTS, PHYSIS, Box3D or visual renderer dependencies. Do not change the authoritative `WaterBodyComponent.flow` to implement presentation effects. Use `docs/nereid/HANDOFF.md` for current limitations, implemented APIs, exact commits, known tests and next agent steps.
 
-Source: `libraries/include/aiverselib/water/NereidBuoyancySystems.h`.
+Source: `libraries/include/aiverselib/water/NereidBuoyancySystems.h`. Sphere seas (planets) use the same
+components with `<aiverselib/water/NereidSphereWater.h>`: `addSphereWaterBuoyancySystem` after the plane one gives
+radial buoyancy to entities with a `WaterSphereContactComponent`.
 Status: experimental; native performance, platform tests and renderer parity must be verified before production use.

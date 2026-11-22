@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-21-nereid-turbidity",
+  "date": "2026-11-21",
+  "system": "nereid",
+  "title": "NEREID: мутность воды снаружи и под водой",
+  "titleEn": "NEREID: water turbidity above and below the surface",
+  "summary": "У воды появился параметр turbidity (и цвет ила): одно значение одинаково меняет вид сверху и видимость при погружении.",
+  "summaryEn": "Water gains a turbidity parameter (with a silt colour): one value changes both the look from above and the visibility when diving.",
+  "body": [
+    "resolvedWaterOptics() превращает мутность в общую экстинкцию, молочный цвет взвеси и долю рассеяния; их читают и шейдер поверхности, и подводный вид PRISMA. Сверху вода считает реальный оптический путь — спуск света к дну плюс наклонный луч взгляда, поэтому мутная вода и снаружи выглядит мутной, а не прозрачной.",
+    "При 0 вода как раньше. Параметр задаётся в стиле поверхности, в компоненте NereidWater и в каскадах, проверяется и входит в ключи кэша."
+  ],
+  "bodyEn": [
+    "resolvedWaterOptics() turns turbidity into shared extinction, a milky silt colour and a scattering share; both the surface shader and PRISMA's underwater view read them. From above the water uses the real optical path — light down to the bed plus the slanted view ray — so turbid water also looks turbid from outside.",
+    "At 0 the water looks as before. The parameter lives in the surface style, the NereidWater component and cascades, is validated and is part of cache keys."
+  ],
+  "status": "done",
+  "verified": "Mac (Metal), ревью‑копия AlpineValley: одинаковые кадры сверху и под водой при 0 / 0.25 / 0.6; тест ecs_nereid_renderer_contract.",
+  "verifiedEn": "Mac (Metal), AlpineValley review copy: identical frames above and under water at 0 / 0.25 / 0.6; ecs_nereid_renderer_contract test.",
+  "limits": null,
+  "limitsEn": null,
+  "branch": "agent-wind-masks",
+  "commit": "4a59b9212",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-nereid-turbidity/01.jpg",
+      "caption": "Мутность 0 / 0.25 / 0.6: сверху (вверху) и под водой (внизу)",
+      "captionEn": "Turbidity 0 / 0.25 / 0.6: from above (top) and under water (bottom)"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-21-nereid-turbidity/02.jpg",
+      "caption": "Мутность 0.25: дно уходит в бирюзовую толщу",
+      "captionEn": "Turbidity 0.25: the bed fades into teal depth"
+    }
+  ],
+  "links": [
+    {
+      "title": "NEREID handoff",
+      "href": "docs/nereid/HANDOFF.md"
+    }
+  ],
+  "author": "agent-wind-masks"
+}

@@ -1,6 +1,7 @@
 // Model showcase: the "Iron and Gold" rules with imported models, materials and animations
 // (glTF skinned / rigid, OBJ, variants, team masks, procedural animation). See docs/models.md.
 {
+  "terrain": {"water": {"renderer": "nereid"}},
   "description": "Iron and Gold с 3D-моделями и анимацией.",
   "name": "Model Showcase",
   "id": "com.aiverse.showcase",

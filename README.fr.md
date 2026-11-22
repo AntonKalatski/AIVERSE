@@ -14,6 +14,7 @@
   <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
+  <a href="https://chromealex.github.io/AIVERSE/en/"><img alt="Website" src="https://img.shields.io/badge/website-chromealex.github.io%2FAIVERSE-111?logo=googlechrome&logoColor=white"></a>
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
 </p>
 
@@ -250,10 +251,16 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 **1. Compiler le moteur** (macOS ; nécessite Xcode et CMake) :
 
 ```bash
-cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
-cmake --build build/mac -j 8
-open build/mac/AiverseEditor.app        # éditeur : hub de projets et modèles
+./studio_mac.command                    # AIVERSE Studio, l'éditeur (requiert Xcode, CMake, Node.js)
+./studio_mac.command templates/mushrooms   # ...sur un autre projet
 ```
+
+Windows : `studio_windows.cmd [project]` compile et ouvre `AiverseStudio.exe` (requiert Visual Studio 2022,
+CMake, Node.js ; fonctionne avec WebView2 Runtime et Vulkan).
+
+`studio_mac.command` compile l'interface web et le Studio natif puis l'ouvre. Le moteur seul :
+`cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`. L'ancien
+éditeur ImGui (`build/mac/AiverseEditor.app`) est toujours compilé et fonctionne sous Linux et Windows.
 
 Linux : `cmake --preset linux-release && cmake --build build/linux-release`. Si vous préférez ne pas
 compiler, la branche `builds` contient l’éditeur et les outils précompilés

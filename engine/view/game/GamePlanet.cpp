@@ -74,6 +74,13 @@ PlanetWorld loadPlanetWorld(const Json& map, std::vector<std::string>* warnings)
             b.atmoColor = color255(a["color"], b.atmoColor);
             b.atmoHeight = std::clamp(num(a["height"], b.atmoHeight), 0.005f, 0.5f);
         } else if (!vis.has("atmosphere") && b.kind == PlanetBody::Kind::Planet) b.atmosphere = true;
+        // TerraWeave flora (GamePlanetFlora): planets get trees and rocks unless "flora": false
+        b.floraDensity = b.kind == PlanetBody::Kind::Planet ? 0.22f : 0.0f;
+        if (const Json& fl = vis["flora"]; fl.type() == Json::Type::Bool) b.floraDensity = fl.boolean() ? 0.22f : 0.0f;
+        else if (fl.isObject()) {
+            b.floraDensity = std::clamp(num(fl["density"], 0.22f), 0.0f, 1.0f);
+            b.floraScale = std::clamp(num(fl["scale"], b.floraScale), 0.001f, 10.0f);
+        }
         if (b.surface()) {
             const int N = b.faceSize, S = (N + 1) * (N + 1);
             const Json& t = bj["terrain"];

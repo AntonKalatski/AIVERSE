@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "note": "Engine releases for the website page releases.html, newest first. One entry per git tag published as a GitHub release. Download links are not stored here: the page reads the builds branch index.json (tools/release/publish_builds.py) in the browser and attaches packages by version. Text fields have English twins with the En suffix.",
+  "builds": {
+    "index": "https://raw.githubusercontent.com/chromealex/aiverse/builds/index.json",
+    "branch": "https://github.com/chromealex/AIVERSE/tree/builds"
+  },
+  "next": {
+    "version": "2.2.0",
+    "note": "Planned number of the next tag: system cards say a feature in main 'will appear' in it. The integrator updates this when the release is tagged (then the entry moves into releases)."
+  },
+  "releases": [
+    {
+      "version": "2.1.0",
+      "tag": "v2.1.0",
+      "date": "2026-11-16",
+      "commit": "082f4d631",
+      "title": "Королевская битва, воксели, авторитетный сервер и Vulkan",
+      "titleEn": "Battle royale, voxels, an authoritative server and Vulkan",
+      "summary": "Первый релиз после 2.0.0: новые жанровые пакеты, серверная модель сети, физические персонажи и бэкенд Vulkan.",
+      "summaryEn": "The first feature release after 2.0.0: new genre packages, a server-authoritative network model, physics characters and a Vulkan backend.",
+      "highlights": [
+        {
+          "title": "Королевская битва",
+          "text": "Пакет battle-royale: фазы безопасной зоны, обстрел, сброс припасов, высадка с воздуха, таблица мест и лобби. Подключён к FPS-модулю вместе с ярусной экипировкой, типовой техникой, генерацией зданий, повёрнутыми коллайдерами, ботами внутри зданий и HUD.",
+          "titleEn": "Battle royale",
+          "textEn": "The battle-royale package: safe zone phases, bombardment, supply drops, air insertion, standings and a lobby. Wired into the FPS module together with tiered gear, typed vehicles, generated buildings, rotated colliders, bots that navigate inside buildings and a HUD."
+        },
+        {
+          "title": "Воксельные миры",
+          "text": "Изменяемые блочные миры для игр в духе Minecraft: 7 библиотек, 8 навыков и играбельная песочница — сессия, клиент, сервер и шаблон.",
+          "titleEn": "Voxel worlds",
+          "textEn": "Mutable block worlds for Minecraft-like games: 7 libraries, 8 skills and a playable sandbox with session, client, server and template."
+        },
+        {
+          "title": "Сервер-авторитетная сеть",
+          "text": "engine/net/replica: версии изменений, инкрементальная релевантность, 3D-интерес, дельта-снимки, часы рендера с оценкой джиттера и потерь. Песочница aiverse_place показывает это с физикой, допуском по билетам, переподключением и предсказанием на клиенте. Снимки FPS теперь дельты (протокол 5).",
+          "titleEn": "Server-authoritative networking",
+          "textEn": "engine/net/replica: change versions, incremental relevance, 3D interest, delta-coded snapshots, a render clock with jitter and loss estimates. The aiverse_place sandbox shows it with physics, ticket admission, reconnect and client prediction. FPS authority snapshots are now deltas (protocol 5)."
+        },
+        {
+          "title": "Физика",
+          "text": "Сцена Box3D в рантайме (хэндлы, запросы, события, JSON) и кинематический контроллер персонажа: подъём на ступени, движущаяся и вращающаяся опора, толчки, предсказание на клиенте.",
+          "titleEn": "Physics",
+          "textEn": "A Box3D runtime Scene (handles, queries, events, JSON) and a kinematic character controller: step-up, moving and rotating ground, pushes, client prediction against bodies."
+        },
+        {
+          "title": "Навигация",
+          "text": "Навигационная сетка и гибридный поиск пути: один граф порталов и свой решатель на каждую область.",
+          "titleEn": "Navigation",
+          "textEn": "A navigation mesh and hybrid pathfinding: one portal graph with a solver per area."
+        },
+        {
+          "title": "Рендер",
+          "text": "Опциональный бэкенд Vulkan для Windows, Linux и Android с откатом на GL. Атласы: выпуклые меши спрайтов, плотная упаковка, листы кадров.",
+          "titleEn": "Rendering",
+          "textEn": "An opt-in Vulkan backend for Windows, Linux and Android with a GL fallback. Atlases: convex sprite meshes, tighter packing, framed sprite sheets."
+        },
+        {
+          "title": "RTS и город",
+          "text": "Радар, сонар, глушилки и полевые операции для войн с потоковой экономикой; импорт Total Annihilation и распаковщик HPI; механики StarCraft II. Городские библиотеки: календарь, погода, эффекты техники, трафик.",
+          "titleEn": "RTS and city",
+          "textEn": "Radar, sonar, jammers and field operations for flow-economy wars; a Total Annihilation importer and HPI unpacker; StarCraft II mechanics. City libraries: calendar, weather, vehicle effects, traffic."
+        },
+        {
+          "title": "Инструменты агентов",
+          "text": "Новые и расширенные навыки (репликация, сервер песочницы, физика, flow war, аудит возможностей) — 195 в каталоге.",
+          "titleEn": "Agent tooling",
+          "textEn": "New and extended skills (replica, place server, physics, flow war, capability audit and more): 195 in the catalog."
+        }
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "tag": "v2.0.0",
+      "date": "2026-11-16",
+      "commit": "ad6025b50",
+      "title": "RTSEngine становится AIVERSE",
+      "titleEn": "RTSEngine becomes AIVERSE",
+      "summary": "Движок, который назывался RTSEngine, теперь AIVERSE: C++20-движок для игр любого жанра, где ИИ-агент собирает игру из данных, а не из кода. Около 990 коммитов с версии 1.0.",
+      "summaryEn": "The engine formerly known as RTSEngine is now AIVERSE: a C++20 engine for games of any genre, where an AI agent builds the game from data, not code. Around 990 commits since 1.0.",
+      "highlights": [
+        {
+          "title": "Новое имя везде",
+          "text": "Бинарники, цели CMake, идентификаторы приложений, MCP-сервер, переменные окружения и документация. Старые проекты .rtsproj по-прежнему открываются.",
+          "titleEn": "New name everywhere",
+          "textEn": "Binaries, CMake targets, bundle ids, the MCP server, environment variables and docs. Old .rtsproj projects still open."
+        },
+        {
+          "title": "Не только RTS",
+          "text": "FPS-модуль (клиент и сервер), герой с видом сверху, вождение и техника, городской трафик с пешеходами и автобусами, жанровые пакеты, столкновения с боссами и прогрессия.",
+          "titleEn": "Beyond RTS",
+          "textEn": "An FPS module (client and server), top-down hero, driving and vehicles, city traffic with pedestrians and buses, genre packages, encounters and progression."
+        },
+        {
+          "title": "Города",
+          "text": "Сплайновые дороги с перекрёстками, переходами, парковками и мостами; сплайновая вода — проливы, реки, море, набережные, скалы и пляжи; генерация кварталов.",
+          "titleEn": "Cities",
+          "textEn": "Spline roads with junctions, crossings, parking and bridges; spline water with straits, rivers, sea, embankments, cliffs and beaches; city block generation."
+        },
+        {
+          "title": "Рендер",
+          "text": "HDR-конвейер, запекание света, GI по пробам, TAA, ткань, Shader Graph, текстуры рельефа, рендер в текстуру, LOD.",
+          "titleEn": "Rendering",
+          "textEn": "An HDR pipeline, light baking, probe GI, TAA, cloth, shader graph, terrain textures, render-to-texture, LOD."
+        },
+        {
+          "title": "Импорт из Unity",
+          "text": "Материалы и ShaderGraph, анимации, UI и локализация, VFX Graph — поверх импорта частиц.",
+          "titleEn": "Import from Unity",
+          "textEn": "Materials and ShaderGraph, animations, UI and localisation, VFX Graph, on top of the particle importer."
+        },
+        {
+          "title": "Онлайн и мета",
+          "text": "Боевая сеть с откатом и предсказанием, клиент gRPC и protobuf, мета-сервис, лайв-опс и коммерция.",
+          "titleEn": "Online and meta",
+          "textEn": "Battle networking with rollback and prediction, a gRPC and protobuf client, meta service, live-ops and commerce."
+        },
+        {
+          "title": "Инструменты агентов",
+          "text": "Около 190 MCP-инструментов, навыки по областям геймплея и мастер, который превращает идею и арт в стартовый проект.",
+          "titleEn": "Agent tooling",
+          "textEn": "About 190 MCP tools, skills for gameplay areas and a game wizard that turns an idea and your art into a starting project."
+        }
+      ],
+      "verified": "Linux x86-64 (GCC): aiverse_tests — 272 105 проверок, 0 ошибок; шаблоны skirmish и mushrooms (seed 3) доигрываются до победителя. Windows: кросс-компиляция MinGW-w64.",
+      "verifiedEn": "Linux x86-64 (GCC): aiverse_tests 272,105 checks, 0 failed; templates skirmish and mushrooms (seed 3) play to a winner. Windows: cross-compiled with MinGW-w64."
+    },
+    {
+      "version": "1.0",
+      "tag": "1.0",
+      "date": "2026-11-03",
+      "commit": "58abbded8",
+      "title": "Первый релиз",
+      "titleEn": "First release",
+      "summary": "Первый опубликованный релиз движка — тогда он назывался RTSEngine.",
+      "summaryEn": "The first published release of the engine, then called RTSEngine.",
+      "highlights": []
+    }
+  ]
+}

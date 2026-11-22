@@ -1,0 +1,43 @@
+{
+  "id": "2026-11-12-lighting-probe-moments",
+  "date": "2026-11-12",
+  "system": "lighting",
+  "title": "Пробы GI: видимость по моментам вместо плоскости",
+  "summary": "Видимость световых проб хранится как моменты Чебышёва — пропала тёмная полоса на арках Sponza.",
+  "body": [
+    "Перезапекание заменяет только 96 тексел видимости на пробу, перенос солнца, неба и точечных источников остаётся прежним. Sponza — 10 710 проб и 10,8 млн треугольников — перезапекается примерно за 18 секунд на двух ядрах.",
+    "Старый кэш с плоской видимостью рендерится бит в бит как до изменения (максимальная разница канала — 0)."
+  ],
+  "status": "done",
+  "verified": "Облачный Linux, llvmpipe GLES 3.2: снимки High до/после, HDR GPU-проверки 1–53 проходят на Linux GL.",
+  "limits": "Моменты всё ещё слегка протекают через тонкую геометрию; пробы внутри геометрии не переносятся. MSL, захват на Metal и Android не проверены.",
+  "branch": "main",
+  "commit": "da9cfbbac",
+  "media": [
+    {
+      "src": "docs/benchmarks/sponza-2026-11-12/moments-high-before-after.png",
+      "caption": "Кадр целиком: плоскость сверху, моменты снизу",
+      "captionEn": "Full frame: plane above, moments below"
+    },
+    {
+      "src": "docs/benchmarks/sponza-2026-11-12/moments-arch-before-after.png",
+      "caption": "Правая арка крупно",
+      "captionEn": "Right arch close-up"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/probe-gi.md",
+      "href": "docs/probe-gi.md"
+    }
+  ],
+  "author": "probe-gi",
+  "titleEn": "GI probes: moment-based visibility instead of a plane",
+  "summaryEn": "Probe visibility is stored as Chebyshev moments — the dark band on the Sponza arches is gone.",
+  "verifiedEn": "Cloud Linux, llvmpipe GLES 3.2: High before/after captures, HDR GPU checks 1–53 pass on Linux GL.",
+  "bodyEn": [
+    "A rebake replaces only the 96 visibility texels per probe; sun, sky and point-light transport stay the same. Sponza — 10,710 probes and 10.8 M triangles — rebakes in about 18 seconds on two cores.",
+    "An old plane-visibility cache renders bit-identically to before the change (maximum channel difference 0)."
+  ],
+  "limitsEn": "Moments still leak slightly through thin geometry; probes inside geometry are not relocated. MSL, Metal captures and Android are unverified."
+}

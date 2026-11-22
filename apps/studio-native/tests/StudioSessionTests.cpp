@@ -240,6 +240,14 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(!merged.has("error") && merged["result"].getBool("changed"));
        const auto fog=call("studio.op",R"({"op":"rules_get","params":{"path":"fogOfWar"}})");
        AIVERSE_TEST_CHECK(fog["result"]["result"]["value"].getStr("mode")=="explored");
+       // TerraWeave Generator panel: its five ops, forest recipe write is a History step.
+       const auto terra=call("studio.ops",R"({"panel":"terraweave_generator"})");
+       AIVERSE_TEST_CHECK(!terra.has("error") && terra["result"]["ops"].size()==5);
+       const auto forestGet=call("studio.op",R"({"op":"terraweave_forest_get","params":{}})");
+       AIVERSE_TEST_CHECK(!forestGet.has("error") && !forestGet["result"].getBool("changed"));
+       const auto forestSet=call("studio.op",R"({"op":"terraweave_forest_set","params":{"densityPermille":500}})");
+       AIVERSE_TEST_CHECK(!forestSet.has("error") && forestSet["result"].getBool("changed"));
+       AIVERSE_TEST_CHECK(call("studio.op",R"({"op":"terraweave_forest_set","params":{"spacingCm":5}})").has("error"));
        const auto input=call("studio.inputGet");
        AIVERSE_TEST_CHECK(!input.has("error") && input["result"]["keys"].size()>20 && !input["result"].getBool("exists"));
        const auto bad=call("studio.inputSet",R"({"asset":{"version":1,"actions":[{"name":"Jump","type":"nope"}],"contexts":[]}})");

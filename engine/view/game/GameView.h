@@ -39,7 +39,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "../../sim/Simulation.h"
 #include "../../game/GameData.h"
 #include "../../game/MapGrid.h"
-#include "Game2DView.h"
+#include "Rts2DView.h"
 #include "GameGroundFx.h"
 #include "GamePaintLayers.h"
 #include "GameGroundCanvas.h"
@@ -48,6 +48,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "GameFieldView.h"
 #include "GamePlanetGroundFx.h"
 #include "GamePlanetRender.h"
+#include "GamePlanetFlora.h"
 #include "GameOverlays.h"
 #include "GameModelResourceProvider.h"
 #include "GameModelResourceCache.h"
@@ -467,6 +468,8 @@ public:
         terrain_.setDetail(d, splat);
     }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
+    // Water drawn by NEREID from the map cells this frame (0 = legacy or none).
+    const world::NereidWaterScene& nereidMapWater() const { return nereidLegacy_; }
     // After a synchronous map-size transition, all resource owners already
     // agree on dimensions. GroundFX mesh fills still await primary draw.
     bool surfacePresentationMapReady(const MapGrid& grid) const noexcept {
@@ -554,6 +557,25 @@ public:
     const std::vector<std::string>& warnings() const { return warnings_; }
     // Read-only static geometry scene (HLOD / opt-in STRATA counters).
     const render::GeometryScene& geometryScene() const { return geometryScene_; }
+    // Geometry-only test view (AIVERSE_GEOMETRY_ONLY): draw the static
+    // geometry scene and nothing of the map surface (terrain, water, roads,
+    // ground effects). Used for clean STRATA/LOD geometry benchmarks.
+    void setGeometryOnly(bool on) { geometryOnly_ = on; }
+    // Corner panel for STRATA benchmarks/screenshots: route (STRATA/LOD),
+    // cooked or built, debug view mode, this frame's triangles, draw calls
+    // and frame time. Drawn when AIVERSE_GEOMETRY_ONLY or AIVERSE_STRATA_DEBUG is set.
+    void drawStrataHud(float viewW, float viewH);
+    // AIVERSE_STRATA_DEBUG default presentation: picture-in-picture. The host
+    // renders drawGeometryInset() into its own target and passes the texture.
+    bool strataDebugInset() const { return strataDebugInset_; }
+    void drawGeometryInset(render::Renderer3D& r);
+    void setStrataInsetTexture(uint32_t textureId, bool flipY) { insetTexture_ = textureId; insetFlipY_ = flipY; }
+    // Host reports the renderer's numbers AFTER Renderer3D::render (the
+    // profile is filled during render, not during GameView::draw).
+    void noteRenderedFrame(uint64_t cameraTriangles, uint64_t shadowTriangles, uint64_t drawCalls) {
+        renderedTris_ = double(cameraTriangles); renderedShadowTris_ = double(shadowTriangles); renderedDraws_ = double(drawCalls);
+    }
+    bool geometryOnly() const { return geometryOnly_; }
     const render::Model* modelOf(uint16_t type, size_t choice = 0) const;
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }
@@ -889,6 +911,11 @@ private:
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
 
     render::GeometryScene geometryScene_;
+    bool geometryOnly_ = false, strataDebugInset_ = false, insetFlipY_ = false;
+    uint32_t insetTexture_ = 0;
+    struct StrataHudFrame { double tris = 0, legacyTris = 0, draws = 0, ms = 0; } strataHud_;
+    uint64_t strataHudLastTris_ = 0;
+    double renderedTris_ = 0, renderedShadowTris_ = 0, renderedDraws_ = 0;
     std::vector<TypeLook> looks_;
     // Immutable per-type reveal policy; avoid string prefix checks on every draw.
     std::vector<uint8_t> actorRevealTypes_;
@@ -932,6 +959,9 @@ private:
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
     TerrainRenderer terrain_;    // chunked terrain + water (GameTerrainRender.cpp)
+    world::NereidWaterScene nereidLegacy_;   // map water cells drawn by NEREID (GameWaterNereid.h)
+    std::string nereidLegacySignature_;
+    void drawNereidLegacyWater(render::Renderer3D& r,bool terrainReady);
     bool hasTerrain_ = false;
     std::vector<ViewEvent> events_;
     std::vector<ViewEffect> effects_;
@@ -942,6 +972,7 @@ private:
     // unique_ptr silently drop the recovery path.
     std::unique_ptr<Rts2DView> pendingSpriteRecovery_;
     SpriteDefaults spriteDefaults_;
+    float modelLodScale_=1.f, shadowLodScale_=1.f, reflectionCullPixels_=0.f, lodFadeWidth_=-1.f; // game.json "lod"
     std::string contentBase_;
     std::vector<render::float3> bars_;   // per scene object: health bar anchor of sprite objects
     double lastTime_ = -1;
@@ -1017,7 +1048,7 @@ private:
     std::unique_ptr<roads::RoadView> pendingRoadRecovery_;
     std::unique_ptr<GameShoreView> pendingShoreRecovery_;
     GameGroundFx groundFx_;   // territory, diggable rock, lanes, roads (GameGroundFx.cpp)
-    FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
+    FogOfWar fog_;           // fog of war look + sheet (GameFog.cpp)
     GameOverlays overlays_;   // data-driven overlays (GameOverlays.cpp)
     GameFieldView fieldView_; // grid field overlays (GameFieldView.cpp)
     const std::vector<GridFieldDef>* fieldDefsSeen_ = nullptr;
@@ -1032,7 +1063,9 @@ private:
     render::float3 camPos_;
     // planets
     PlanetRenderer planets_;
-    GamePlanetGroundFx planetGroundFx_;   // territory, rock, roads, lanes on sphere faces
+    GamePlanetGroundFx planetGroundFx_;
+    PlanetFlora planetFlora_;            // TerraWeave trees and rocks on planet bodies
+    void rebuildPlanetFlora();   // territory, rock, roads, lanes on sphere faces
     PlanetCamera planetCam_;
     PlanetViewFrame pframe_;
     double planetSeconds_ = 0;

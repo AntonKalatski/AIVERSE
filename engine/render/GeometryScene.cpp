@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include "GeometryScene.h"
+#include "StrataAutoSelect.h"
 #include "Renderer3D.h"
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
 #include "StrataModelAdapter.h"
@@ -12,9 +13,11 @@
 #include "StrataStreamingCoordinator.h"
 #endif
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <numeric>
 #include <set>
+#include <chrono>
 #include <tuple>
 #include <utility>
 
@@ -228,7 +231,11 @@ void GeometryScene::retireResident(gfx::Device& dev) {
     // Renderer3D has consumed the previous draw epoch before scene unload.
     // Release alias borrowers BEFORE their index sidecars / source Models.
     strataPortableDrawModels_.clear();
+    strataSharedAliases_.clear();
     strataPortableLodHistories_.clear();
+    for (auto& [instance, compact] : strataCompactBuffers_)
+        if (compact) compact->release(dev);
+    strataCompactBuffers_.clear();
     for (auto& [source, staged] : strataPortableSources_)
         if (staged) staged->shutdown(dev);
     strataPortableSources_.clear();
@@ -305,7 +312,10 @@ void GeometryScene::shutdown(gfx::Device& dev) {
     if(!retirement_.completeForShutdown(dev))
         throw std::runtime_error("geometry scene: GPU shutdown barrier failed");
 }
-void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
+// Source vertex budget of a file-loaded scene: room for multi-million
+// triangle scans/buildings, which STRATA exists for (loadPrepared caps 16M).
+static constexpr size_t kSceneSourceVertexBudget=12000000;
+void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},kSceneSourceVertexBudget);}
 void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const FileReader& read) {
     // The host may call recoverFailedStagesAfterGpuIdle() explicitly when
     // the device becomes responsive. Do not block here or create more GPU
@@ -323,7 +333,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     // transactional reload would otherwise silently turn STRATA off.
     staged->copyStrataConfigFrom(*this);
     try {
-        staged->loadImpl(dev,json,read,{},2000000);
+        staged->loadImpl(dev,json,read,{},kSceneSourceVertexBudget);
     } catch (...) {
         // loadImpl enqueues partial GPU uploads in this staging owner.
         // Never drop its retirement queue on a refused device-idle barrier.
@@ -346,6 +356,7 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     cacheEnabled_=staged->cacheEnabled_;
     errorPixels_=staged->errorPixels_;
     maxPixels_=staged->maxPixels_;
+    strataTriangleBudget_=staged->strataTriangleBudget_;strataBudgetScale_=1.f;strataBudgetLastTotal_=0;
     proxyVertices_=staged->proxyVertices_;
     // STRATA sidecars are keyed by Model*/Instance* addresses that stay
     // stable across the container moves above (unique_ptr / vector moves).
@@ -356,6 +367,8 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     strataPortableSources_=std::move(staged->strataPortableSources_);
     strataGlobalIndexLeases_=std::move(staged->strataGlobalIndexLeases_);
     strataPortableDrawModels_=std::move(staged->strataPortableDrawModels_);
+    strataCompactBuffers_=std::move(staged->strataCompactBuffers_);
+    strataSharedAliases_=std::move(staged->strataSharedAliases_);
     strataPortableLodHistories_=std::move(staged->strataPortableLodHistories_);
     strataDebugGeometry_=std::move(staged->strataDebugGeometry_);
     strataGpuDevice_=staged->strataGpuDevice_;
@@ -367,12 +380,20 @@ void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const Fi
     // "strata" block may have switched portable rendering / hysteresis.
     strataPortableRenderingEnabled_=staged->strataPortableRenderingEnabled_;
     strataLodHysteresisFraction_=staged->strataLodHysteresisFraction_;
+    strataReflectionFinest_=staged->strataReflectionFinest_;
+    strataMergeClusters_=staged->strataMergeClusters_;
+    strataShadowErrorScale_=staged->strataShadowErrorScale_;
+    strataAutoSelect_=staged->strataAutoSelect_;
+    strataAutoMinTriangles_=staged->strataAutoMinTriangles_;
+    strataSelectDecisions_=std::move(staged->strataSelectDecisions_);
     staged->strataStaging_.reset();
     staged->strataGpuMetadata_.reset();
     staged->strataGpuCulling_.reset();
     staged->strataPortableSources_.clear();
     staged->strataGlobalIndexLeases_.clear();
     staged->strataPortableDrawModels_.clear();
+    staged->strataCompactBuffers_.clear();
+    staged->strataSharedAliases_.clear();
     staged->strataPortableLodHistories_.clear();
     staged->strataDebugGeometry_.clear();
     staged->strataGpuDevice_=nullptr;
@@ -387,8 +408,14 @@ void GeometryScene::copyStrataConfigFrom(const GeometryScene& o) {
     strataRenderPreviewEnabled_=o.strataRenderPreviewEnabled_;
     strataPortableRenderingEnabled_=o.strataPortableRenderingEnabled_;
     strataLodHysteresisFraction_=o.strataLodHysteresisFraction_;
+    strataReflectionFinest_=o.strataReflectionFinest_;
+    strataMergeClusters_=o.strataMergeClusters_;
+    strataShadowErrorScale_=o.strataShadowErrorScale_;
+    strataAutoSelect_=o.strataAutoSelect_;
+    strataAutoMinTriangles_=o.strataAutoMinTriangles_;
     // Debug view options decide per-source capture during load.
     strataDebugView_=o.strataDebugView_;
+    strataDebugRightHalf_=o.strataDebugRightHalf_;
     strataDebugGeometryCapture_=o.strataDebugGeometryCapture_;
     strataGpuLodPolicyEpoch_=o.strataGpuLodPolicyEpoch_;
     strataVulkanGpuIndirectEnabled_=o.strataVulkanGpuIndirectEnabled_;
@@ -423,6 +450,16 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         const char* env=std::getenv("AIVERSE_STRATA");
         const bool off=env&&(std::string(env)=="off"||std::string(env)=="0");
         strataPortableRenderingEnabled_=!off&&json["strata"].getBool("enabled");
+        strataMergeClusters_=json["strata"].getBool("mergeClusters",true);
+        strataShadowErrorScale_=float(json["strata"]["shadowErrorScale"].toDouble(1.0));
+        strataAutoSelect_=json["strata"].getStr("select","auto")!="all";
+        strataAutoMinTriangles_=uint64_t(std::max(0.0,json["strata"]["minTriangles"].toDouble(0.0)));
+        strataCookedDir_=json["strata"].getStr("cooked");
+        strataTriangleBudget_=uint64_t(std::max(0.0,json["strata"]["triangleBudget"].toDouble(0.0)));
+        if(const char* b=std::getenv("AIVERSE_STRATA_TRI_BUDGET"); b&&*b)strataTriangleBudget_=uint64_t(std::max(0.0,std::atof(b)));
+        strataBudgetScale_=1.f;strataBudgetLastTotal_=0;
+        if(json["strata"].has("reflections"))
+            strataReflectionFinest_=json["strata"].getStr("reflections")!="main";
         if(json["strata"].has("hysteresis"))
             (void)setStrataLodHysteresisFraction(float(json["strata"]["hysteresis"].toDouble()));
     }
@@ -451,6 +488,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             auto rot=vector(i["rotation"],{});constexpr float deg=.0174532925199433f;
             in.world=mat4::translate(vector(i["position"],{}))*mat4::rotateY(rot.y*deg)*mat4::rotateX(rot.x*deg)*mat4::rotateZ(rot.z*deg)*mat4::scale(vector(i["scale"],{1,1,1}));
             if(i.has("layers"))in.layers=uint32_t(i["layers"].toDouble());
+            if(i.has("strata")&&i["strata"].type()==Json::Type::Bool)in.strataForce=i["strata"].boolean()?1:-1;
             if(i.has("proxy")){
                 const auto proxyFile=i["proxy"].getStr("model");
                 if(!models_.count(proxyFile)){
@@ -465,6 +503,43 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 ++stats_.proxies;
             }
             instances_.push_back(in);
+        }
+        // strata.select auto: decide per source BEFORE upload preparation may
+        // generate LOD meshes, so "authored LODs" means the asset's own chain.
+        std::set<const Model*> strataLodSources;
+        strataSelectDecisions_.clear();
+        if (strataPortableRenderingEnabled_) {
+            // Per instance: "strata": true forces STRATA, false forces the LOD
+            // path, absent = auto (the model's decision below; with
+            // strata.select "all" every model is STRATA). A model is staged
+            // when at least one of its instances draws through STRATA.
+            std::map<const Model*,size_t> count;
+            for (const auto& in : instances_) ++count[in.model];
+            StrataAutoSelectConfig cfg;
+            if (strataAutoMinTriangles_) cfg.minTriangles=strataAutoMinTriangles_;
+            std::map<const Model*,bool> autoStrata;
+            for (const auto& [file, m] : models_) {
+                if (!m || !count.count(m.get())) continue;
+                std::string why="strata.select all";
+                const bool a=!strataAutoSelect_ || strataPreferred(strataSourceFacts(*m,count[m.get()]),cfg,&why);
+                autoStrata[m.get()]=a;
+                size_t on=0,off=0,forcedOn=0,forcedOff=0;
+                for (auto& in : instances_) {
+                    if (in.model!=m.get()) continue;
+                    in.strataRoute=in.strataForce>0 || (in.strataForce==0 && a);
+                    in.strataRoute ? ++on : ++off;
+                    if (in.strataForce>0) ++forcedOn;
+                    if (in.strataForce<0) ++forcedOff;
+                }
+                const bool staged=on>0;
+                if (!staged) strataLodSources.insert(m.get());
+                staged ? ++stats_.strataAutoStrataSources : ++stats_.strataAutoLodSources;
+                std::string line=file+": "+(staged?"strata":"lod")+" (auto: "+(a?"strata":"lod")+", "+why+")";
+                if (forcedOn||forcedOff)
+                    line+=" instances strata="+std::to_string(on)+" lod="+std::to_string(off)+
+                          " (forced on "+std::to_string(forcedOn)+", forced off "+std::to_string(forcedOff)+")";
+                strataSelectDecisions_.push_back(line);
+            }
         }
         for(auto& [file,m]:models_)if(hlod_||std::any_of(instances_.begin(),instances_.end(),[&](const Instance& i){return i.model==m.get()&&(i.policy.clusters||i.policy.shadowClusters||i.policy.occluder);}))prepareGeometry(*m);
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
@@ -487,12 +562,32 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             // Build once for each *source* model before uploadModel may release
             // CPU vertex streams. Surface/HLOD proxies retain legacy ownership
             // and are never duplicated here. This path does NOT draw Strata.
+            const auto stageStart=std::chrono::steady_clock::now();
             strataStaging_ = std::make_shared<strata::SceneStaging>();
-            if (strataPortableRenderingEnabled_)
+            if (strataPortableRenderingEnabled_) {
                 strataStaging_->setAllowPreparedRootLods(true);
+                strataStaging_->setTolerateSourceSeamDefects(true);
+            }
+            // Cooked STRATA (StrataCooked.h): load the hierarchy built at
+            // cook time instead of building it now. AIVERSE_STRATA_COOK_OUT
+            // (a folder) makes this load the cook pass: every source built
+            // here is written there, to be shipped as strata.cooked.
+            {
+                strata::CookIo io;
+                if (!strataCookedDir_.empty() && read) {
+                    const std::string dir = strataCookedDir_;
+                    io.read = [read, dir](const std::string& name, std::string& bytes) {
+                        return read(dir + "/" + name, bytes);
+                    };
+                }
+                if (const char* out = std::getenv("AIVERSE_STRATA_COOK_OUT"); out && *out)
+                    io.writeDirectory = out;
+                strataStaging_->setCookIo(std::move(io));
+            }
             std::set<const Model*> usedSources;
             for (const auto& instance : instances_)
-                usedSources.insert(instance.model);
+                if (!strataLodSources.count(instance.model))
+                    usedSources.insert(instance.model);
             for (const auto& [file, model] : models_)
                 if (model && usedSources.count(model.get())) {
                     strataStaging_->stage(file, *model);
@@ -506,6 +601,12 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                                 std::move(geometry);
                     }
                 }
+            stats_.strataCookedSources=strataStaging_->stats().cookedLoadedSources;
+            stats_.strataCookWrittenSources=strataStaging_->stats().cookedWrittenSources;
+            stats_.strataCookStaleSources=strataStaging_->stats().cookedStaleSources;
+            stats_.strataCookedLoadMs=strataStaging_->stats().cookedLoadMs;
+            stats_.strataBuildMs=strataStaging_->stats().buildMs;
+            stats_.strataStageMs=float(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-stageStart).count());
             const auto& st = strataStaging_->stats();
             stats_.strataSources = st.stagedSources;
             stats_.strataPrimitives = st.stagedPrimitives;
@@ -661,6 +762,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     }
                 }
                 auto source=std::make_shared<strata::PortableSource>();
+                // Scene-authored STRATA draws adjacent clusters as one primitive.
+                source->setMergeAdjacentClusters(strataMergeClusters_);
+                // One draw per material instead of one per cluster.
+                source->setCompactSelection(strataMergeClusters_);
                 if (!source->stage(dev, *model, *asset, &error,
                                    sourceBudget,
                                    strataIncrementalIndexStreamingEnabled_,
@@ -1007,8 +1112,38 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
 #endif
 }
 void GeometryScene::draw(Renderer3D& r){
+    // STRATA triangle budget: steer the pixel-error threshold so the STRATA
+    // triangles of a frame stay near the budget. Triangle count falls roughly
+    // with the square of the threshold, so step by the square root of the
+    // overshoot, damped and clamped (1x..32x the authored threshold).
+    if(strataTriangleBudget_ && !strataInsetPass_){
+        const uint64_t frameTris=stats_.strataPortableTriangles-strataBudgetLastTotal_;
+        strataBudgetLastTotal_=stats_.strataPortableTriangles;
+        if(frameTris){
+            const double ratio=double(frameTris)/double(strataTriangleBudget_);
+            double step=1.0;
+            if(ratio>1.03)step=std::min(1.25,std::sqrt(ratio));
+            else if(ratio<0.85)step=std::max(0.9,std::sqrt(ratio));
+            strataBudgetScale_=float(std::clamp(double(strataBudgetScale_)*step,1.0,32.0));
+        }
+    }
+    stats_.strataErrorScale=strataBudgetScale_;
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    {
+        uint64_t bytes=0;
+        for(const auto& [instance,buffer]:strataCompactBuffers_) if(buffer) bytes+=buffer->capacityBytes;
+        stats_.strataSelectionGpuBytes=bytes;
+    }
+#endif
     stats_.submitted=0;stats_.surfaceProxiesSubmitted=0;
     strataDebugStats_.reset();
+    ++strataDrawFrame_;
+    // Shared STRATA aliases only borrow source buffers; drop selections no
+    // copy has used for a few seconds (bounded CPU memory, no GPU release).
+    if((strataDrawFrame_&63)==0)
+        for(auto it=strataSharedAliases_.begin();it!=strataSharedAliases_.end();)
+            it=it->second.lastFrame+240<strataDrawFrame_?strataSharedAliases_.erase(it):std::next(it);
+    stats_.strataPortableSharedModels=uint32_t(strataSharedAliases_.size());
     updateStrataStreamingBeforeDraw(r);
     if(hlod_&&!groups_.empty())drawGroup(r,0);
     else for(auto& i:instances_)drawInstance(r,i);
@@ -1266,6 +1401,20 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     return false;
 }
 
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+// Identity of a portable alias: which index ranges of which meshes it draws.
+// Same source + same signature => identical draw, safe to share.
+static uint64_t strataAliasSignature(const Model& alias){
+    uint64_t h=1469598103934665603ull;
+    const auto mix=[&](uint64_t v){h^=v;h*=1099511628211ull;};
+    mix(alias.ib.valid()?uint64_t(alias.ib.id):0);mix(alias.gpuFirstIndex);
+    for(size_t m=0;m<alias.meshes.size();++m){
+        mix(m);mix(alias.meshes[m].primitives.size());
+        for(const auto& p:alias.meshes[m].primitives){mix(p.firstIndex);mix(p.indexCount);mix(uint64_t(uint32_t(p.material)));}
+    }
+    return h;
+}
+#endif
 void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     ModelDraw d;d.model=i.model;d.world=i.world;d.geometry=geometryEnabled_?i.policy:GeometryPolicy{};d.staticCache=cacheEnabled_?&i.cache:nullptr;d.layers=i.layers;
     if(i.surfaceProxy&&surfacesEnabled_){
@@ -1278,7 +1427,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     // The Vulkan GPU route does NOT create a second ModelDraw. It only
     // annotates this single source draw for Renderer3D's own main pass.
     // An unsupported view/source retains the normal Legacy/portable path.
-    const bool gpuStrataPrepared=tryStrataVulkanGpuDraw(r,i,d);
+    const bool gpuStrataPrepared=i.strataRoute && tryStrataVulkanGpuDraw(r,i,d);
     // No duplicate geometry: preview only; always execute the exact legacy
     // draw below. Source proxies and HLOD substitutes are intentionally
     // excluded from this diagnostic path. Source key is borrowed only for
@@ -1296,7 +1445,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     }
 #endif
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
-    if (!gpuStrataPrepared && strataPortableRenderingEnabled_ &&
+    if (!gpuStrataPrepared && strataPortableRenderingEnabled_ && i.strataRoute &&
         d.model == i.model &&
         !strataPortableSources_.empty()) {
         const auto staged=strataPortableSources_.find(d.model);
@@ -1304,17 +1453,17 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             r.sceneWidth() > 0 && r.sceneHeight() > 0) {
             std::vector<strata::PortablePassView> views;
             views.push_back({r.viewProj(), r.sceneWidth(), r.sceneHeight(),
-                             r.clipDepthZeroToOne(), errorPixels_});
+                             r.clipDepthZeroToOne(), errorPixels_*strataBudgetScale_});
             if (r.shadowQuality() != ShadowQuality::Off &&
                 r.shadowMapSize() > 0)
                 views.push_back({r.lightViewProj(), r.shadowMapSize(),
                                  r.shadowMapSize(), r.clipDepthZeroToOne(),
-                                 errorPixels_});
+                                 errorPixels_*strataBudgetScale_*strataShadowErrorScale_});
             // A planar reflection camera is chosen after drawModel(), by
             // renderReflection(). To guarantee no missing reflected detail,
             // use the finest resident frontier whenever water reflections
             // might consume this ModelDraw in the current frame.
-            const bool forceFinest = r.lights.reflectionsWanted();
+            const bool forceFinest = r.lights.reflectionsWanted() && strataReflectionFinest_;
             auto& slot=strataPortableDrawModels_[&i];
             if (!slot) slot=std::make_unique<Model>();
             std::string error;
@@ -1327,22 +1476,55 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             }
             const uint64_t oldTransitions=
                 staged->second->stats().hysteresisTransitions;
+            const ModelDraw legacyPart=d; // original source, for unstaged parts
+            auto& compactSlot=strataCompactBuffers_[&i];
+            if (!compactSlot) compactSlot=std::make_shared<strata::PortableCompactBuffer>();
+            const uint64_t uploadsBefore=compactSlot->uploads, reusesBefore=compactSlot->reuses;
             if (staged->second->prepareModel(i.world, views, forceFinest,
-                    *slot, &error,history,strataLodHysteresisFraction_)) {
+                    *slot, &error,history,strataLodHysteresisFraction_,
+                    compactSlot.get())) {
+                stats_.strataCompactUploads+=compactSlot->uploads-uploadsBefore;
+                stats_.strataCompactReuses+=compactSlot->reuses-reusesBefore;
+                // Partial source (e.g. blended glass not staged): draw only
+                // those materials from the original model, then the alias.
+                if (staged->second->partial()) {
+                    ModelDraw rest=legacyPart;
+                    rest.materialMask=&staged->second->legacyMaterialMask();
+                    rest.staticCache=nullptr;
+                    rest.persistentId=0;
+                    r.drawModel(rest);++stats_.submitted;
+                }
                 stats_.strataLodHysteresisTransitions+=
                     staged->second->stats().hysteresisTransitions-
                     oldTransitions;
-                d.model=slot.get();
+                // Copies that selected the same clusters draw ONE shared
+                // alias, so Renderer3D instances them (same Primitive*).
+                const uint64_t signature=strataAliasSignature(*slot);
+                auto& shared=strataSharedAliases_[{i.model,signature}];
+                if(!shared.model)
+                    shared.model=std::make_unique<Model>(std::move(*slot));
+                else {
+                    ++stats_.strataPortableSharedReuses;
+                    // Same clusters => identical index content; take THIS
+                    // instance's live buffer (the first owner's buffer may
+                    // already be retired after its own selection changed).
+                    if(slot->ib.valid()) shared.model->ib=slot->ib;
+                }
+                shared.lastFrame=strataDrawFrame_;
+                d.model=shared.model.get();
                 d.flags |= kDrawStatic; // eligible rigid Strata, Vulkan MDI may batch it
                 d.staticCache=nullptr;
                 d.persistentId=0; // no stale original static-render packets
                 // The actual draw is STILL authored only by Renderer3D.
                 // Do not draw the original source after a successful switch.
-                ++stats_.strataPortableDraws;
+                if(!strataInsetPass_)++stats_.strataPortableDraws;
+                if(!strataInsetPass_)for(const auto& mesh:d.model->meshes)
+                    for(const auto& p:mesh.primitives)
+                        stats_.strataPortableTriangles+=p.indexCount/3;
                 stats_.strataPortableClusters+=
-                    slot->meshes.empty() ? 0u :
+                    d.model->meshes.empty() ? 0u :
                     uint64_t(std::accumulate(
-                        slot->meshes.begin(),slot->meshes.end(),size_t(0),
+                        d.model->meshes.begin(),d.model->meshes.end(),size_t(0),
                         [](size_t n,const MeshDef& mesh) {
                             return n+mesh.primitives.size();
                         }));
@@ -1365,7 +1547,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
         uint32_t(strataPortableLodHistories_.size());
 #endif
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
-    if(strataDebugView_.enabled)drawStrataDebug(r,i,d,gpuStrataPrepared);
+    if(strataDebugView_.enabled && !strataDebugSuppressed_)drawStrataDebug(r,i,d,gpuStrataPrepared);
 #endif
     r.drawModel(d);++stats_.submitted;
 }
@@ -1375,13 +1557,22 @@ namespace {
 // Immediate overlay sink: Renderer3D owns the actual line/triangle passes.
 class RendererDebugSink final : public strata::DebugSink {
 public:
-    explicit RendererDebugSink(Renderer3D& r) : r_(r) {}
-    void line(float3 a,float3 b,uint32_t c) override { r_.line(a,b,c); }
+    // rightHalf: keep only primitives entirely in the right half of the
+    // screen (side-by-side shots: plain image left, debug view right).
+    RendererDebugSink(Renderer3D& r,bool rightHalf) : r_(r),rightHalf_(rightHalf),clip_(r.viewProj()) {}
+    void line(float3 a,float3 b,uint32_t c) override { if(keep(a)&&keep(b)) r_.line(a,b,c); }
     void triangle(float3 a,float3 b,float3 c,uint32_t col) override {
-        r_.triangle(a,b,c,col);
+        if(keep(a)&&keep(b)&&keep(c)) r_.triangle(a,b,c,col);
     }
 private:
+    bool keep(float3 p) const {
+        if(!rightHalf_)return true;
+        const float4 q=clip_*float4{p.x,p.y,p.z,1};
+        return q.w>0 && q.x>=0;
+    }
     Renderer3D& r_;
+    bool rightHalf_=false;
+    mat4 clip_;
 };
 } // namespace
 #endif
@@ -1412,13 +1603,13 @@ void GeometryScene::drawStrataDebug(Renderer3D& r,const Instance& i,
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
     const auto& o=strataDebugView_;
     auto& st=strataDebugStats_;
-    RendererDebugSink sink(r);
+    RendererDebugSink sink(r,strataDebugRightHalf_);
     const auto source=strataPortableSources_.find(i.model);
     const bool staged=source!=strataPortableSources_.end() && source->second;
     const auto slot=strataPortableDrawModels_.find(&i);
     const bool portable=!gpuRoute && staged &&
         slot!=strataPortableDrawModels_.end() && slot->second &&
-        d.model==slot->second.get();
+        d.model!=i.model;
     strata::DebugRoute route=strata::DebugRoute::Legacy;
     if(gpuRoute)route=strata::DebugRoute::StrataVulkanGpu;
     else if(portable)route=strata::DebugRoute::StrataPortable;

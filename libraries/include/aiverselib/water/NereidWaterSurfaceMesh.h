@@ -36,6 +36,16 @@ struct WaterSurfaceMeshOptions {
     uint8_t rippleTileGrid=1; // N x N tiles, N<=8 (max 64 indexed draws)
     WaterRiverGradeComponent grade{};
     bool useGrade=false;
+    // Opt-in nested LOD rings for Infinite oceans over large worlds; false
+    // keeps the single camera-cell patch. An inner square of
+    // 2*oceanInnerCells cells (oceanInnerCell metres) is surrounded by rings
+    // whose cell size doubles until the half extent reaches oceanPatchRadius.
+    // Ring seams are stitched (no T-junctions). The centre snaps to
+    // oceanInnerCell*oceanInnerCells/2 metres, so the camera always stays
+    // within a quarter of the inner square from its centre.
+    bool oceanRings=false;
+    float oceanInnerCell=0;       // metres; 0 = by lod: Near 2, Medium 4, Far 8
+    uint16_t oceanInnerCells=16;  // half width of the inner square in cells; even, 4..64
 };
 struct WaterSurfaceVertex {
     float x=0,y=0,z=0,u=0,v=0,shore=0;
@@ -97,6 +107,39 @@ inline WaterSurfaceStyle resolvedWaterOptics(WaterSurfaceStyle s) {
     s.refractionStrength*=1.f-0.5f*t;                   // silt blurs the bed
     s.turbidity=0.f;
     return s;
+}
+
+// Ocean ring policy shared by the mesh builder, residency keys and the
+// renderer's flow-field bounds. Presentation only.
+inline double oceanRingInnerCell(const WaterSurfaceMeshOptions& o) {
+    if(o.oceanInnerCell>0)return double(o.oceanInnerCell);
+    return o.lod==WaterSurfaceLod::Near?2.0:o.lod==WaterSurfaceLod::Medium?4.0:8.0;
+}
+inline constexpr int kMaxOceanRingLevels=16;
+inline bool validOceanRings(const WaterSurfaceMeshOptions& o) {
+    return std::isfinite(o.oceanInnerCell) && o.oceanInnerCell>=0 &&
+        o.oceanInnerCell<=10000 && o.oceanInnerCells>=4 &&
+        o.oceanInnerCells<=64 && o.oceanInnerCells%2==0;
+}
+// Levels including the inner square: the smallest count whose half extent
+// covers oceanPatchRadius (capped at kMaxOceanRingLevels).
+inline int oceanRingLevels(const WaterSurfaceMeshOptions& o) {
+    double extent=oceanRingInnerCell(o)*double(o.oceanInnerCells);
+    int levels=1;
+    while(extent<double(o.oceanPatchRadius) && levels<kMaxOceanRingLevels){extent*=2;++levels;}
+    return levels;
+}
+inline double oceanRingExtent(const WaterSurfaceMeshOptions& o) {
+    return oceanRingInnerCell(o)*double(o.oceanInnerCells)*
+        double(uint64_t(1)<<unsigned(oceanRingLevels(o)-1));
+}
+inline double oceanRingSnapStep(const WaterSurfaceMeshOptions& o) {
+    return oceanRingInnerCell(o)*double(o.oceanInnerCells)*0.5;
+}
+// Nearest multiple of step: |camera-centre| <= step/2. Idempotent for an
+// already snapped value, so a key centre can be fed back as the camera.
+inline double oceanRingCentre(double camera,double step) {
+    return std::floor(camera/step+0.5)*step;
 }
 
 namespace water_mesh_detail {
@@ -242,6 +285,77 @@ inline void foam(WaterSurfaceMesh& mesh,
         vertex.shore=float(std::clamp(1.0-std::sqrt(closest/ww),0.0,1.0));
     }
 }
+// Nested ocean rings around a snapped centre. Every vertex lies on the
+// inner-cell lattice (integer units of h0 from the centre) and is shared via
+// a deterministic map, so coarse ring edges meet the finer level exactly:
+// a coarse cell touching the finer level gets the finer midpoint and is
+// fanned into three triangles. Returns false over maxVertices.
+inline bool oceanRingMesh(WaterSurfaceMesh& mesh,const WaterSurfaceMeshOptions& o,
+                          double cameraX,double cameraZ,float y) {
+    const double h0=oceanRingInnerCell(o);
+    const int64_t k=o.oceanInnerCells;
+    const int levels=oceanRingLevels(o);
+    const double step=oceanRingSnapStep(o);
+    const double cx=oceanRingCentre(cameraX,step),cz=oceanRingCentre(cameraZ,step);
+    if(!std::isfinite(cx)||!std::isfinite(cz))return false;
+    std::map<std::pair<int64_t,int64_t>,uint32_t> ids;
+    bool overflow=false;
+    auto at=[&](int64_t nx,int64_t nz) {
+        const auto key=std::make_pair(nx,nz);
+        const auto found=ids.find(key);
+        if(found!=ids.end())return found->second;
+        if(mesh.vertices.size()>=o.maxVertices){overflow=true;return uint32_t(0);}
+        const uint32_t id=vertex(mesh,{cx+double(nx)*h0,cz+double(nz)*h0},y,
+                                 o.uvScale,o.originX,o.originZ);
+        ids.emplace(key,id);
+        return id;
+    };
+    // Corner order matches addQuad: (x0,z0),(x0,z1),(x1,z1),(x1,z0).
+    // edge: -1 none, else the corner index j whose edge j->j+1 has a midpoint.
+    auto cell=[&](int64_t x0,int64_t z0,int64_t s,int edge) {
+        const int64_t x1=x0+s,z1=z0+s;
+        const uint32_t c[4]={at(x0,z0),at(x0,z1),at(x1,z1),at(x1,z0)};
+        if(edge<0){tri(mesh,c[0],c[1],c[2]);tri(mesh,c[0],c[2],c[3]);return;}
+        const int64_t h=s/2;
+        const int64_t mx[4]={x0,x0+h,x1,x0+h},mz[4]={z0+h,z1,z0+h,z0};
+        const uint32_t m=at(mx[edge],mz[edge]);
+        const uint32_t a=c[(edge+1)%4],b=c[(edge+2)%4],d=c[(edge+3)%4],e=c[edge];
+        tri(mesh,m,a,b);tri(mesh,m,b,d);tri(mesh,m,d,e);
+    };
+    const int grid=std::clamp(int(o.rippleTileGrid),1,8);
+    auto beginTile=[&]{return uint32_t(mesh.indices.size());};
+    auto endTile=[&](uint32_t first,double x0,double x1,double z0,double z1) {
+        if(grid>1)mesh.tiles.push_back({first,uint32_t(mesh.indices.size())-first,
+            (x0+x1)*0.5,(z0+z1)*0.5,x0,x1,z0,z1});
+    };
+    // Level 0: 2k x 2k cells of h0, optionally split into grid x grid tiles.
+    for(int tz=0;tz<grid;++tz)for(int tx=0;tx<grid;++tx) {
+        const int64_t ax=-k+(2*k*tx)/grid,bx=-k+(2*k*(tx+1))/grid;
+        const int64_t az=-k+(2*k*tz)/grid,bz=-k+(2*k*(tz+1))/grid;
+        const uint32_t first=beginTile();
+        for(int64_t z=az;z<bz;++z)for(int64_t x=ax;x<bx;++x)cell(x,z,1,-1);
+        endTile(first,cx+double(ax)*h0,cx+double(bx)*h0,cz+double(az)*h0,cz+double(bz)*h0);
+    }
+    for(int level=1;level<levels;++level) {
+        const int64_t s=int64_t(1)<<level;          // cell size, units of h0
+        const int64_t inner=k*(s/2),outer=2*inner;  // half extents, units of h0
+        const uint32_t first=beginTile();
+        for(int64_t z0=-outer;z0<outer;z0+=s)for(int64_t x0=-outer;x0<outer;x0+=s) {
+            const int64_t x1=x0+s,z1=z0+s;
+            if(x0>=-inner && x1<=inner && z0>=-inner && z1<=inner)continue;
+            const bool spanZ=z0>=-inner && z1<=inner,spanX=x0>=-inner && x1<=inner;
+            int edge=-1;
+            if(spanZ && x1==-inner)edge=2;      // right edge x1 faces the finer level
+            else if(spanZ && x0==inner)edge=0;  // left edge x0
+            else if(spanX && z1==-inner)edge=1; // top edge z1
+            else if(spanX && z0==inner)edge=3;  // bottom edge z0
+            cell(x0,z0,s,edge);
+        }
+        endTile(first,cx-double(outer)*h0,cx+double(outer)*h0,
+                cz-double(outer)*h0,cz+double(outer)*h0);
+    }
+    return !overflow;
+}
 } // namespace water_mesh_detail
 
 // Stateless visual mesh from one ECS WaterBody and optional footprint.
@@ -376,7 +490,10 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
             const double r=options.oceanPatchRadius;
             const double x=options.preciseCamera?options.cameraX64:double(options.cameraX);
             const double z=options.preciseCamera?options.cameraZ64:double(options.cameraZ);
-            if(options.rippleTileGrid>1)addTiledQuad(x-r,x+r,z-r,z+r);
+            if(options.oceanRings) {
+                if(!validOceanRings(options) ||
+                   !water_mesh_detail::oceanRingMesh(mesh,options,x,z,y))return {};
+            }else if(options.rippleTileGrid>1)addTiledQuad(x-r,x+r,z-r,z+r);
             else addQuad({x-r,z-r},{x-r,z+r},{x+r,z+r},{x+r,z-r});
             boundary.clear();mesh.infinite=true;
         }else if(body.footprint==WaterFootprint::Box) {
@@ -410,7 +527,8 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
                      options.lod==WaterSurfaceLod::Medium?1:0;
     // A tiled quad has already been subdivided at the selected LOD;
     // splitting again would invalidate stored index ranges.
-    if(mesh.tiles.empty())splitMesh(mesh,levels,options.maxVertices);
+    const bool rings=mesh.infinite && options.oceanRings; // already graded by distance
+    if(mesh.tiles.empty() && !rings)splitMesh(mesh,levels,options.maxVertices);
     // Far LOD has perimeter-only vertices for boxes/polygons/rivers.
     // No interior gradients exist there: suppress vertex foam rather than
     // tinting an entire far-away water surface white.

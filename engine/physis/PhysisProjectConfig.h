@@ -5,6 +5,7 @@
 #include "PhysisRuntimeFields.h"
 #include "PhysisFieldInstallMode.h"
 #include "PhysisFieldRuntimeState.h"
+#include "PhysisTornadoAssets.h"
 #include "engine/data/Json.h"
 #include <optional>
 #include <stdexcept>
@@ -68,6 +69,38 @@ inline std::optional<InstallOptions> optionsFromMap(const Json& map) {
     options.enableWindZones = readFlag("enableWindZones");
     options.enableGravityFields = readFlag("enableGravityFields");
     options.enableForces = readFlag("enableForces");
+    // A non-empty "tornadoes" array turns on the tornado systems and their
+    // persistence (and storms, which they are). Maps without it are unchanged.
+    if (const Json& tornadoes = config["tornadoes"]; !tornadoes.isNull()) {
+        if (!tornadoes.isArray())
+            throw std::invalid_argument("PHYSIS tornadoes must be an array");
+        if (tornadoes.size() > 0) options.enableTornadoes = options.enableStorms = true;
+    }
+    if (const Json& st = config["streaming"]; !st.isNull()) {
+        if (!st.isObject()) throw std::invalid_argument("PHYSIS streaming must be an object");
+        options.streamingChunkCells = std::int32_t(integer(st, "chunkCells", 4, 1024));
+    }
+    if (const Json& anchors = config["anchors"]; !anchors.isNull()) {
+        if (!anchors.isArray() || anchors.size() > 256)
+            throw std::invalid_argument("PHYSIS anchors must be an array (<=256)");
+        if (options.streamingChunkCells == 0)
+            throw std::invalid_argument("PHYSIS anchors require streaming.chunkCells");
+        for (const auto& a : anchors.items()) {
+            if (!a.isObject() || !a["x"].isNumber() || !a["z"].isNumber() ||
+                !a["radiusMeters"].isNumber())
+                throw std::invalid_argument("PHYSIS anchor needs x, z, radiusMeters");
+            ActivityAnchor anchor;
+            anchor.position = {a["x"].fx(), Fixed{}, a["z"].fx()};
+            anchor.radiusMeters = a["radiusMeters"].fx();
+            if (anchor.radiusMeters <= Fixed{} || anchor.radiusMeters > Fixed::fromInt(1000000) ||
+                fxAbs(anchor.position.x) > Fixed::fromInt(100000000) ||
+                fxAbs(anchor.position.z) > Fixed::fromInt(100000000))
+                throw std::out_of_range("PHYSIS anchor bounds");
+            options.anchors.push_back(anchor);
+        }
+    }
+    if (!config["workerThreads"].isNull())
+        options.workerThreads = unsigned(integer(config, "workerThreads", 0, 16));
     const auto& floodMode = config["floodMode"];
     if (!floodMode.isNull() && !floodMode.isString())
         throw std::invalid_argument("PHYSIS floodMode must be a string");
@@ -95,8 +128,10 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
         sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
+    const auto tornadoes = parseTornadoes(map["physis"], sim.tickRate());
     install(sim, *options);
     spawnFieldAssets(sim.world(), fields);
+    spawnTornadoes(sim.world(), tornadoes);   // after fields: stable entity order
     sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Static});
     return true;
 }
@@ -113,10 +148,12 @@ inline bool installTrackedFromMap(Simulation& sim, const Json& map) {
         sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
+    const auto tornadoes = parseTornadoes(map["physis"], sim.tickRate());
     install(sim, *options);
     sim.registerPersistentResource<RuntimeFieldRegistry>(
         "physis.authored_field_registry", 1);
     reconcileTrackedRuntimeFields(sim.world(), fields);
+    spawnTornadoes(sim.world(), tornadoes);
     sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Tracked});
     return true;
 }

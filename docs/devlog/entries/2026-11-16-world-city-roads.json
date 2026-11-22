@@ -1,0 +1,35 @@
+{
+  "id": "2026-11-16-world-city-roads",
+  "date": "2026-11-16",
+  "system": "world",
+  "title": "Город, собранный агентом: дороги и кварталы",
+  "summary": "Сплайновые дороги, перекрёстки и застроенные кварталы — агент собрал их навыками aiverse-roads и aiverse-city-blocks.",
+  "body": [
+    "Дороги задаются сплайнами в roadNetwork карты, кварталы нарезаются по полигонам сети дорог генератором площадок и застраиваются по стилям и назначениям."
+  ],
+  "status": "done",
+  "verified": "Снимок сделан движком.",
+  "limits": null,
+  "branch": "main",
+  "commit": "ad6025b50",
+  "media": [
+    {
+      "src": "docs/images/readme/city-roads.jpg",
+      "caption": "Кварталы, перекрёстки и парковки",
+      "captionEn": "Blocks, crossings and parking"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/city-planner.md",
+      "href": "docs/city-planner.md"
+    }
+  ],
+  "author": "city",
+  "titleEn": "A city built by an agent: roads and blocks",
+  "summaryEn": "Spline roads, crossings and built-up blocks — an agent assembled them with the aiverse-roads and aiverse-city-blocks skills.",
+  "verifiedEn": "Frame captured by the engine.",
+  "bodyEn": [
+    "Roads are splines in the map's roadNetwork; blocks are cut from the road network polygons by a lot generator and built up by style and purpose."
+  ]
+}

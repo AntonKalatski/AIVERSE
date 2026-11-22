@@ -63,8 +63,8 @@ bool build(const BuildInput& input, const BuildOptions& options,
            Asset& out, std::string* error) {
     if (error) error->clear();
     if (!input.indices || !input.positions || input.indexCount == 0 ||
-        input.indexCount % 3 || input.indexCount > 3000000 ||
-        input.vertexCount == 0 || input.vertexCount > 1000000 ||
+        input.indexCount % 3 || input.indexCount > 30000000 ||
+        input.vertexCount == 0 || input.vertexCount > 16000000 ||
         input.positionStride < 12 || input.positionStride % 4 ||
         input.positionStride > 4096 ||
         options.maxVertices < 3 || options.maxVertices > 255 ||
@@ -155,7 +155,52 @@ bool build(const BuildInput& input, const BuildOptions& options,
         localTriangles.clear();
     };
 
-    for (size_t i = 0; i < input.indexCount; i += 3) {
+    // Leaf clusters must be compact patches, not strips. Exporters (and
+    // grid-like generated meshes) emit triangles row by row; filling
+    // meshlets greedily in that order produces long thin strips whose
+    // vertices are almost all on the cluster border. Borders are locked
+    // while simplifying, so such clusters can never be reduced and the
+    // hierarchy stops after a level or two (a 1M-triangle sphere kept
+    // ~74% of its triangles at the "coarsest" level). Visit triangles in
+    // Morton order of their centroids: consecutive triangles are spatial
+    // neighbours, so each meshlet is a compact patch. Deterministic.
+    std::vector<uint32_t> triangleOrder(input.indexCount / 3);
+    {
+        std::array<float, 3> lo{std::numeric_limits<float>::infinity(),
+                                std::numeric_limits<float>::infinity(),
+                                std::numeric_limits<float>::infinity()};
+        std::array<float, 3> hi{-lo[0], -lo[1], -lo[2]};
+        for (size_t i = 0; i < input.indexCount; ++i) {
+            const auto p = position(input, input.indices[i]);
+            for (unsigned k = 0; k < 3; ++k) { lo[k] = std::min(lo[k], p[k]); hi[k] = std::max(hi[k], p[k]); }
+        }
+        auto spread = [](uint32_t v) {
+            uint64_t x = v & 0x1fffff;
+            x = (x | x << 32) & 0x1f00000000ffffull;
+            x = (x | x << 16) & 0x1f0000ff0000ffull;
+            x = (x | x << 8) & 0x100f00f00f00f00full;
+            x = (x | x << 4) & 0x10c30c30c30c30c3ull;
+            x = (x | x << 2) & 0x1249249249249249ull;
+            return x;
+        };
+        std::vector<std::pair<uint64_t, uint32_t>> keyed(triangleOrder.size());
+        for (size_t t = 0; t < keyed.size(); ++t) {
+            uint64_t key = 0;
+            for (unsigned k = 0; k < 3; ++k) {
+                float c = 0;
+                for (unsigned v = 0; v < 3; ++v) c += position(input, input.indices[t * 3 + v])[k];
+                c /= 3.f;
+                const float extent = hi[k] - lo[k];
+                const float n = extent > 0 ? std::clamp((c - lo[k]) / extent, 0.f, 1.f) : 0.f;
+                key |= spread(uint32_t(n * 2097151.f)) << k;
+            }
+            keyed[t] = {key, uint32_t(t)};
+        }
+        std::sort(keyed.begin(), keyed.end());
+        for (size_t t = 0; t < keyed.size(); ++t) triangleOrder[t] = keyed[t].second;
+    }
+    for (uint32_t triangle : triangleOrder) {
+        const size_t i = size_t(triangle) * 3;
         const std::array<uint32_t, 3> tri = {
             input.indices[i], input.indices[i + 1], input.indices[i + 2]
         };
@@ -240,10 +285,11 @@ bool build(const BuildInput& input, const BuildOptions& options,
             }
             ClusterBounds bounds = emptyBounds();
             std::vector<uint32_t> source;
-            float inheritedError = 0;
+            float inheritedError = 0, childSize = 0;
             for (size_t j = begin; j < end; ++j) {
                 const BuildNode& child = created[frontier[j]];
                 merge(bounds, child.bounds);
+                childSize = std::max(childSize, diagonal(child.bounds));
                 inheritedError = std::max(inheritedError, child.node.geometricError);
                 const size_t b = child.node.firstIndex, count = child.node.indexCount;
                 source.insert(source.end(), asset.indices.begin() + b,
@@ -252,7 +298,12 @@ bool build(const BuildInput& input, const BuildOptions& options,
             const float size = diagonal(bounds);
             if (!std::isfinite(size))
                 return fail(error, "geometry bounds overflow");
-            const double tolerated = double(size) * options.relativeError;
+            // Tolerance from the children's size, not the union's: a group of
+            // clusters that are not neighbours (a jump of the spatial order)
+            // has a huge union box, and a tolerance from it would simplify
+            // that group far too coarsely; its error then propagates (max)
+            // to every ancestor and keeps distant objects needlessly fine.
+            const double tolerated = double(std::min(size, 2.f * childSize)) * options.relativeError;
             const float targetError = float(tolerated);
             if (!std::isfinite(targetError))
                 return fail(error, "simplification error overflow");

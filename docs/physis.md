@@ -60,7 +60,7 @@ All values used by gameplay use `Fixed`; never feed presentation floats back int
 - The implemented weather evolution is a deterministic simplified local model, not a physically accurate global circulation model; seasons are triangle waves, fronts have Manhattan falloff.
 - Fire, flood and quakes are base ECS mechanics; hurricane/tornado are simplified deterministic vortex/forcing fields, **not** complete atmospheric CFD, volcano, avalanche, fluid, terrain deformation or destruction solvers.
 - Responses like traction multiplier and runoff potential are coefficients/hints. An **optional, explicit** `engine/physics/PhysisBox3D.h` adapter now applies PHYSIS wind/ gravity corrections to `physics::Scene` dynamic bodies, but no automatic Scene/WorldScene hookup is wired. Since 2026-11-21 an opt-in **nature presentation host** drives TerraWeave grass (burn/wind), SpectraFX fire/smoke, fire light and audio, and the editor shows it live without a play-test (see «Nature presentation host» below); the native game client is not hooked up yet.
-- Grid updates are currently serial and eager; do not advertise parallel job execution, streaming, distributed weather or efficient millions-of-cells throughput.
+- Grid updates can run on several threads (bit-identical) and only in active chunks (see "Automatic integration, parallel update and streaming" below). Still no distributed weather, disk paging of cells or grids above 1,048,576 cells.
 - No compile/CTest/CI verification has been completed in this connector session; **code present does not mean tests passed**.
 
 ## Tests
@@ -98,6 +98,145 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Main merge: [merged InputFlow/main verification](agent-handoffs/physis-main-merge-2026-11-18.md)
 - Stage 18: [Scene overlay + Inspector authoring/Undo](agent-handoffs/physis-editor-scene-inspector-2026-11-18.md)
 - Stage 19: [Field assets, Gizmos and single-Undo editing](agent-handoffs/physis-field-assets-gizmos-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+
+## Automatic integration, parallel update and streaming (2026-11-22)
+
+### PHYSIS from map data in every game
+
+`Simulation::setup` calls `physis::autoInstallFromMap` (`engine/physis/PhysisAutoInstall.cpp`)
+after `GameModule::setup`, for **every** module. A map with an enabled `"physis"` block now runs
+the nature simulation in the client, headless, server and editor play-test alike (lockstep peers
+and replays agree). Opt-outs: `"physis.enabled": false`, `"physis.autoInstall": false` (the module
+installs it itself later), or a module that already called `installFromMap` in its own setup.
+`"physis.trackedFields": true` selects `installTrackedFromMap`. CMake `AIVERSE_SIM_PHYSIS=OFF`
+removes it from the link. Maps without the block are unchanged (no state, no system, same hash).
+
+### Presentation without hand wiring — `engine/world/PhysisNatureRuntime.h`
+
+One object per view, called once per rendered frame with optional targets. The native game client
+(`apps/client/GameClient.cpp`, `natureStart/natureUpdate/natureStop`) does this for every map with
+a `physis` block. What each part does:
+
+| Part | Consumer | What it does | Data switch |
+|---|---|---|---|
+| Fire / smoke / fire light | SpectraFX `fx::ParticleSystem` via `PhysisNatureFxHost` | stable flame points + smoke from burning PHYSIS cells, particle drift from wind; project may override `fx/physis_flame.json`, `fx/physis_smoke.json` | `presentation.fx` |
+| Sound | `audio::AudioEngine` via `PhysisNatureAudioHost` | positional looping fire per fire cluster, wind bed by wind speed; synth fallbacks `physis_fire_loop` / `physis_wind_loop` are added to the bank unless `audio.json` defines them | `presentation.audio` |
+| Vegetation wind | TerraWeave through `WorldScene::setVegetationWind` + `setVegetationWindField` | region-mean PHYSIS wind (cm/s, gust by speed) and a bounded spatial lattice (`windFieldNodes`, ≤64², equal spacing) incl. WindZone/WindShelter/storms; only republished when it changes; authored wind restored on stop | `presentation.vegetationWind`, `windFieldNodes` |
+| Water wind | NEREID through `WorldScene::setNereidVisualWind` (`NereidPhysisWindBridge.h`) | PHYSIS wind at the camera focus drives NEREID's visual waves/ripples; authored NEREID wind zones are not touched | `presentation.waterWind` |
+| Sky | PRISMA physical sky via `PhysisSkyBridge.h` | humidity/precipitation → cloud coverage, haze, extinction; cloud drift by wind. Only when the map already enabled the physical sky; authored sky restored on stop | `presentation.sky` |
+
+```json
+"physis": { "...": "...", "presentation": { "fx": true, "audio": true, "vegetationWind": true,
+  "waterWind": true, "sky": true, "radiusMeters": 160, "maxRegionCells": 96,
+  "fxWindScale": 0.35, "windFieldNodes": 16 } }
+```
+`"presentation": false` keeps the simulation and switches all presentation off. Grass burn
+overlay (`PhysisNatureGrass.h`) is still editor-only: `WorldScene` does not expose a
+`GrassPatchRenderer` to hosts yet.
+
+### Parallel grid update — `engine/physis/PhysisParallel.h`
+
+`InstallOptions::workerThreads` / map `"physis.workerThreads"` (1 = serial default, 0 = hardware,
+N lanes). Atmosphere, surface and the disaster read/compute/commit passes split their cell ranges
+over a persistent thread pool; flood transfer is gathered per receiving cell, so results are
+**bit-identical** to serial for every lane count (test `physis_parallel`; serial checksum A/B
+against the previous sources is equal). Custom providers passed to `advanceWith` while lanes are
+active must only read the World. Measured on the user's Mac (Release, 28 logical cores, other
+builds running, load ≈24), 1024×768 grid with storms + disasters, 10 ticks, 3 runs:
+1 lane 161.6–162.5 ms/tick; 2 lanes ×1.92–1.95; 4 lanes ×3.69–3.73; 6 lanes ×5.33–5.40;
+8 lanes ×6.62–7.00. Linux VM (Debug, 4 cores): ×3.54 on 4 lanes.
+
+### Chunk streaming — `engine/physis/PhysisStreaming.h`
+
+`"physis.streaming": {"chunkCells": 32}` splits the grid into chunks. Any entity with an
+`ActivityAnchor` (position + radius; players, cameras, vehicles, scripted regions) keeps chunks
+within its radius simulated; other chunks are dormant (weather, surface, fire, flood frozen;
+dormant cells are walls for flood transfer and never ignite). The mask (`ActiveChunks`) and
+anchors are persistent, hashed ECS data recomputed by the `physis.streaming` system at the start
+of every tick. No anchors = whole grid. Static anchors can be listed in `"physis.anchors"`.
+This is simulation streaming (what is updated); cell data stays resident — no disk paging.
+Test `physis_streaming`; bench `aiverse_physis_streaming_test bench 1024 10`.
+
+### CI
+
+`.github/workflows/physis.yml` builds the aggregate CMake target `aiverse_physis_tests` (every
+`aiverse_physis_*_test(s)` target, plus `aiversemcp` when present) and runs `ctest -R ^physis_`
+on Linux x64, Linux arm64, macOS and Windows MSVC, and builds the core tests with Emscripten and
+runs them in Node. Before this, the hand-written target list missed `physis_nature_presentation`
+/ `physis_nature_cues`, and the workflow failed on main with ctest exit 8 (run 44956413363).
+
+## Tornadoes (2026-11-22) — `engine/physis/PhysisTornado.h`
+
+A tornado is simulation, not a visual: a `StormEvent` (kind `Tornado`) plus a `TornadoTrack` on
+the same entity. Every PHYSIS wind reader already sees the vortex through `windWithStormsAt`
+(tangential swirl, radial inflow, updraft): forces, nature contacts / stress (trees fracture),
+`sampleNatureField`, the presentation frame. The system `physis.tornadoes` runs once per tick right
+after the climate/storm/disaster pass and before forces:
+
+| Part | Rule |
+|---|---|
+| Path | `drift` (StormEvent `driftPerTick`), `wander` (heading + random turn from the track's own RNG state, reflected inside `bounds` or the PHYSIS grid), `waypoints` (constant speed, optional `loop`) |
+| Life | `startTick/durationTicks` of the storm + `rampTicks` spin-up/decay; `TornadoTrack::intensity` 0..1 scales tangential wind, updraft and inflow |
+| Fire (`enableDisasters`) | cells under the core lose `fire.suppression` of their fire per second (blown out); burning cells with fuel in the ring grow by `fire.fanning` per second (fanned) |
+| Debris | `debris.perSecond` pieces torn up in the core (up to `debris.max` per tornado), carried by the same wind with quadratic drag + PHYSIS gravity, land on the cell elevation, expire after `lifeSeconds` or 3 s on the ground. Stored in the `TornadoDebrisField` resource — no entities, so other modules' entity allocation is unchanged |
+| Carried objects | host entities with `Transform` + `NatureCarriable` (mass, area, drag, `liftWindSpeed`) are lifted when the horizontal wind exceeds the lift speed and carried until they land. Not for Box3D bodies (use `applyPhysisToBody`) |
+| Damage | entities with a `Transform` within `damageRadiusMeters` (full in the core, linear to 0 at the radius) get `damagePerSecond × intensity` through `GameModule::environmentDamage(sim, target, amount, tornado)`; the module applies its own health/armour rules. RTS: pure damage via `dealDamage` (invulnerable types such as trees and units off the map are skipped). Default implementation: no damage |
+| Vegetation | trees/structures with `NatureStressReceiverComponent` (forces + nature contacts + stress enabled) load from the vortex wind and fracture through the existing outbox → TerraWeave fall bridge. RTS tree units are invulnerable in the sample rules |
+
+Determinism: Fixed-point only, tornadoes and carried objects in entity-index order, debris in
+creation order, explicit RNG in the track. Persistent + hashed: `physis.tornado_track`,
+`physis.nature_carriable`, `physis.tornado_debris` (registered only when tornadoes are enabled, so
+maps without them keep the old save manifest and checksums).
+
+### Map data
+
+A non-empty `"tornadoes"` array turns the feature on (and storms with it). Per-second values are
+converted with the simulation tick rate; `startSeconds`/`durationSeconds`/`rampSeconds` may replace
+the `...Ticks` keys. The same parser (`PhysisTornadoAssets.h`) backs MCP `physis_validate` /
+`physis_set`, so authoring and runtime accept the same documents.
+
+```json
+"physis": {
+  "grid": { "originX": 0, "originZ": 0, "width": 16, "height": 12, "cellSizeMeters": 4, "seed": 11 },
+  "climate": { "baseTemperature": 21, "baseHumidity": 0.55 },
+  "tornadoes": [{
+    "id": "valley_twister", "center": [16, 9],
+    "coreRadiusMeters": 2.5, "outerRadiusMeters": 12, "heightMeters": 45,
+    "tangentialWind": 42, "updraft": 16, "radialInflow": 6, "clockwise": false,
+    "startSeconds": 2, "durationSeconds": 150, "rampSeconds": 4,
+    "path": { "mode": "waypoints", "speed": 1.4, "loop": true, "points": [[24, 16], [32, 22], [40, 30]] },
+    "damagePerSecond": 6, "damageRadiusMeters": 5,
+    "fire": { "suppression": 0.8, "fanning": 0.5 },
+    "debris": { "max": 40, "perSecond": 8, "massKg": 0.4, "areaSqMeters": 0.06, "lifeSeconds": 14 }
+  }]
+}
+```
+Wander instead: `"path": {"mode": "wander", "speed": 2, "turnDegreesPerSecond": 30, "seed": 3,
+"heading": 0, "bounds": [minX, minZ, maxX, maxZ]}`. Sample map:
+`templates/skirmish/maps/tornado_valley.json` ("Tornado Valley", map index 2).
+
+C++ hosts: `InstallOptions::enableTornadoes = true` (persistence), then
+`spawnTornado(world, storm, track)` at runtime; `advanceTornadoes(world, hooks)` is the pure pass
+for custom schedulers. No Lua API yet.
+
+### Presentation
+
+`buildNaturePresentation` now samples `windWithStormsAt` (vegetation wind lattice and particle wind
+include storms) and fills `frame.tornadoes` / `frame.debris`. `PhysisNatureRuntime` drives:
+
+* SpectraFX funnel (`physis_tornado`: rising, widening dust spiral, ground skirt, dark specks;
+  local space, moved every frame with extrapolation between ticks; scale = core radius) and one
+  `physis_tornado_debris` chunk per airborne piece. Projects may override both in `fx/`.
+* Sound: positional `physis_tornado_loop` roar (synth fallback added by `addPhysisTornadoSounds`).
+* TerraWeave: the vortex shows in the spatial vegetation wind lattice (`windFieldNodes`).
+* NEREID: within 3 outer radii of a tornado the water wind takes the swirl speed at the camera focus.
+* Switch: `"presentation": {"tornado": false}` (funnel/debris effects off; simulation unchanged).
+
+Tests: `physis_tornado` (paths, envelope, wind, fire, debris, carried objects, host damage, map
+install, save/load/continue checksums, parser errors), `physis_tornado_cues` (frame, FX/audio
+planners, built-in effects and sound parse). Limits: no Lua API; debris is a point cloud (no
+collisions with units/buildings); damage reaches only entities with `Transform`; vortex is an
+authored analytic field, not CFD; the editor nature preview does not draw funnels yet.
 
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 

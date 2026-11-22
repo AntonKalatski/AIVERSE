@@ -120,5 +120,40 @@ void registerGeometryOps(Workspace& ws){
         if(!ws.map.data.worldSpace){Json q=Json::object();q.set("path",Json::string("geometryScene"));q.set("value",Json::string("geometry.json"));auto result=ws.call("set_manifest",q);if(result.has("error"))return result;}
         ws.note({Change::Rules,0,0,-1,-1,-1,"Geometry scene updated"});return ok();
     }});
+    // Per-object STRATA choice in the game's static geometry scene (the file
+    // named by game.json "geometryScene", geometry.json by default):
+    // "auto" (the model's automatic choice), "strata" (force STRATA) or "lod"
+    // (force the ordinary LOD path). Writes the scene atomically and reloads.
+    Json strataSchema=Json::parse(R"({"type":"object","properties":{"id":{"type":"string","description":"instance id"},"mode":{"type":"string","enum":["auto","strata","lod"]}},"required":["id","mode"]})");
+    ws.registerOp({"geometry_strata_set","Force STRATA, force the LOD path or return to auto for one object (instance id) of the static geometry scene.",strataSchema,[&ws](const Json& p){
+        const std::string rel=ws.project.manifest.getStr("geometryScene","geometry.json");
+        const auto file=projectPath(ws,rel);
+        Json scene=Json::parseFile(file.string());
+        const std::string id=p.getStr("id"),mode=p.getStr("mode");
+        if(mode!="auto"&&mode!="strata"&&mode!="lod")throw std::runtime_error("geometry_strata_set: mode must be auto, strata or lod");
+        bool found=false;
+        Json instances=Json::array();
+        for(auto& i:scene["instances"].items()){
+            Json copy=i;
+            if(i.getStr("id")==id){
+                found=true;
+                Json next=Json::object();
+                for(auto& [k,v]:i.members())if(k!="strata")next.set(k,v);
+                if(mode=="strata")next.set("strata",Json::fromBool(true));
+                else if(mode=="lod")next.set("strata",Json::fromBool(false));
+                copy=next;
+            }
+            instances.push(copy);
+        }
+        if(!found)throw std::runtime_error("geometry_strata_set: no instance '"+id+"' in "+rel);
+        scene.set("instances",instances);
+        render::GeometryScene::validate(scene);
+        const auto tmp=projectPath(ws,rel+".tmp");
+        if(fs::is_symlink(tmp))throw std::runtime_error("geometry scene: temporary path is symlink");
+        {std::ofstream f(tmp,std::ios::binary|std::ios::trunc);f<<scene.dump(1)<<"\n";f.close();if(!f)throw std::runtime_error("geometry scene: write failed");}
+        fs::rename(tmp,file);
+        ws.note({Change::Rules,0,0,-1,-1,-1,"STRATA choice of "+id+": "+mode});
+        auto r=ok();r.set("file",Json::string(rel));return r;
+    }});
 }
 }

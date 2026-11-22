@@ -27,8 +27,16 @@ void GameView::setWorld(const Json& map) {
     loadPlanetDetailFiles(w, map, read_, &warnings_);
     planets_.setWorld(w);
     planetVision_.clear();
+    rebuildPlanetFlora();
     if (!planets_.active()) return;
     planetCam_.reset(planets_.world(), w.start, planets_.surface(w.start), 0);
+}
+
+void GameView::rebuildPlanetFlora() {
+    if (!dev_) return;
+    std::vector<const PlanetSurface*> surfaces;
+    for (size_t i = 0; i < planets_.world().bodies.size(); ++i) surfaces.push_back(planets_.surface(int(i)));
+    planetFlora_.setWorld(*dev_, planets_.world(), surfaces);
 }
 
 void GameView::updateWorld(const Json& map) {
@@ -71,6 +79,7 @@ void GameView::updateWorld(const Json& map) {
             return;
         }
     }
+    rebuildPlanetFlora();   // the ground moved: sites follow the new heights
 }
 
 void GameView::setSimWorld(std::shared_ptr<const Surface> surf, const MapGrid& grid, const Json& map) {
@@ -83,6 +92,7 @@ void GameView::setSimWorld(std::shared_ptr<const Surface> surf, const MapGrid& g
     PlanetWorld w = planetWorldFromSim(std::move(surf), grid.flags, visual);
     planets_.setWorld(w);
     planetVision_.clear();
+    rebuildPlanetFlora();
     if (!planets_.active()) return;
     planetCam_.reset(planets_.world(), w.start, planets_.surface(w.start), 0);
 }
@@ -301,6 +311,33 @@ void GameView::drawPlanets(Renderer3D& r, const GameScene& s, double time, const
         east = normalize(da - up * dot(da, up));
         south = cross(east, up);
     };
+    // TerraWeave trees and rocks: on the visible side of their body, near enough to read
+    if (blend < 0.5f) {
+        const float floraFar = 260.0f;
+        for (const PlanetFlora::Instance& in : planetFlora_.instances()) {
+            const render::Model* m = planetFlora_.proto(in.proto);
+            if (!m) continue;
+            const float3 pv = bodyToView(in.body, in.local);
+            const float3 d = pv - eye;
+            if (dot(d, d) > floraFar * floraFar || occluded(in.body, pv + pframe_.dirToView(in.up) * 0.05f)) continue;
+            const float3 U = pframe_.dirToView(in.up);
+            float3 E = cross(U, std::fabs(U.y) < 0.9f ? float3{0, 1, 0} : float3{1, 0, 0});
+            E = normalize(E);
+            const float3 S0 = cross(E, U);
+            const float c = std::cos(in.yaw), sn = std::sin(in.yaw);
+            const float3 X = E * c + S0 * sn, Z = S0 * c - E * sn;
+            ModelDraw md;
+            md.model = m;
+            mat4 w;
+            w.at(0, 0) = X.x * in.scale; w.at(1, 0) = X.y * in.scale; w.at(2, 0) = X.z * in.scale;
+            w.at(0, 1) = U.x * in.scale; w.at(1, 1) = U.y * in.scale; w.at(2, 1) = U.z * in.scale;
+            w.at(0, 2) = Z.x * in.scale; w.at(1, 2) = Z.y * in.scale; w.at(2, 2) = Z.z * in.scale;
+            w.at(0, 3) = pv.x; w.at(1, 3) = pv.y; w.at(2, 3) = pv.z;
+            md.world = w;
+            if (planetNoShadow_) md.flags |= kDrawNoCastShadow;
+            r.drawModel(md);
+        }
+    }
     for (size_t i = 0; i < s.objects.size(); ++i) {
         const SceneObject& o = s.objects[i];
         const uint64_t key = o.entity.valid() ? o.entity.packed() : (1ull << 63) | uint64_t(i);

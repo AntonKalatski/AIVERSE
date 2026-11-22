@@ -1,0 +1,56 @@
+{
+  "id": "2026-11-22-strata-cooked-mobile",
+  "date": "2026-11-22",
+  "system": "strata",
+  "title": "STRATA: готовая геометрия на диске, рабочая иерархия и первый замер на телефоне",
+  "summary": "Иерархию кластеров STRATA теперь строят заранее и кладут рядом с контентом: игра загружает её за доли секунды вместо минут. Заодно найдены и исправлены ошибки, из-за которых STRATA почти не упрощала геометрию, и добавлен автоматический бюджет треугольников.",
+  "body": [
+    "Сцена для проверки — 20 рельефных сфер по 1 002 252 треугольника (4 разных модели), всего около 20 млн треугольников, без рельефа, неба и интерфейса: только геометрия. Камера стоит рядом с ближней сферой, ряд уходит вдаль.",
+    "Готовка заранее. Утилита aiverse_strata_cook строит иерархию кластеров для всех моделей сцены и записывает её в папку из strata.cooked сцены геометрии. Файл привязан к исходной геометрии и версии построителя: если модель изменилась, файл не используется, и иерархия строится как раньше. Загрузка 4 сфер — 0,4 с на Mac и около 1,2 с на телефоне вместо примерно 6 минут построения на каждую сферу.",
+    "Иерархия. Листовые кластеры нарезались в порядке треугольников в файле и получались полосами, у которых почти все вершины на границе; границы при упрощении закреплены, и дерево обрывалось: у сферы самый грубый уровень весил 743 тыс. треугольников. Теперь кластеры собираются компактными пятнами, а допустимая ошибка группы считается от размера детей. Самый грубый уровень сферы — 13 тыс. треугольников, и вместо 19,4 млн треугольников в кадре STRATA рисует 1,1 млн при 20 вызовах отрисовки.",
+    "Выбор кластеров стал дешевле: ошибка считается только для узлов, до которых доходит обход, кластеры вне поля зрения не уточняются, а набор индексов перезаливается, только когда выбор изменился.",
+    "Бюджет треугольников (strata.triangleBudget или AIVERSE_STRATA_TRI_BUDGET) сам поднимает порог ошибки, пока треугольников больше бюджета. В углу кадра — панель: путь STRATA, загружено ли с диска, треугольники, порог, вызовы отрисовки, память и время кадра; справа — окно с кластерами, раскрашенными по уровню детализации.",
+    "Для каждого объекта сцены в редакторе можно выбрать путь отрисовки: «Авто» (STRATA или обычные LOD по модели), «STRATA» или «LOD» — окно «Статическая геометрия» или поле strata у объекта."
+  ],
+  "status": "in-progress",
+  "verified": "Mac Studio (M3 Ultra, Metal): 1,1 млн треугольников и 20 вызовов отрисовки против 20 млн без STRATA. Samsung Galaxy A05s (Adreno 610, рендер 1200×540): без бюджета 16 fps на Vulkan и 20 fps на GLES; с бюджетом 250 тыс. треугольников — 35 и 45 fps; без STRATA — 4 fps.",
+  "limits": "60 кадров на этом телефоне пока нет: время кадра растёт почти линейно с числом треугольников, а при замере построитель останавливался на 8 уровнях, и STRATA не опускалась ниже ~270 тыс. треугольников на 20 сфер; предел поднят до 16 уровней, новый замер ещё не сделан. Vulkan на этом телефоне медленнее GLES, причина ещё не найдена. Процесс занимает около 750 МБ: индексы хранятся целиком, вершины — по 60 байт. Стриминг страниц индексов с диска есть, но в этой сцене не включался.",
+  "branch": "main",
+  "commit": "",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-spheres-lod-inset.jpg",
+      "caption": "20 сфер по миллиону треугольников; справа — кластеры, цвет показывает уровень детализации",
+      "captionEn": "20 spheres of a million triangles each; on the right the clusters, coloured by detail level"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-spheres-clusters-inset.jpg",
+      "caption": "Тот же кадр: каждый кластер своим цветом",
+      "captionEn": "The same frame: every cluster in its own colour"
+    },
+    {
+      "src": "docs/devlog/media/2026-11-22-strata-cooked-mobile/strata-phone-budget.jpg",
+      "caption": "Galaxy A05s, Vulkan: бюджет 250 тыс. треугольников, 35 fps",
+      "captionEn": "Galaxy A05s, Vulkan: 250 k triangle budget, 35 fps"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/strata.md",
+      "href": "docs/strata.md"
+    }
+  ],
+  "author": "strata",
+  "titleEn": "STRATA: cooked geometry on disk, a working hierarchy and a first phone measurement",
+  "summaryEn": "STRATA cluster hierarchies are now built ahead of time and stored next to the content: the game loads them in a fraction of a second instead of minutes. Bugs that kept STRATA from simplifying geometry were found and fixed, and an automatic triangle budget was added.",
+  "bodyEn": [
+    "The test scene is 20 bumpy spheres of 1,002,252 triangles each (4 different models), about 20 M triangles in total, with no terrain, sky or interface: geometry only. The camera stands next to the nearest sphere and the row recedes into the distance.",
+    "Cooking. The aiverse_strata_cook tool builds the cluster hierarchy of every model in a scene and writes it to the geometry scene's strata.cooked folder. A file is tied to its source geometry and the builder version: if the model changes the file is ignored and the hierarchy is built as before. Loading 4 spheres takes 0.4 s on a Mac and about 1.2 s on a phone instead of roughly 6 minutes of building per sphere.",
+    "The hierarchy. Leaf clusters were cut in file order and came out as strips with almost every vertex on a border; borders stay locked while simplifying, so the tree stalled: a sphere's coarsest level still had 743 k triangles. Clusters are now compact patches and a group's error tolerance follows its children's size. A sphere's coarsest level is 13 k triangles, and STRATA draws 1.1 M triangles in 20 draw calls instead of 19.4 M.",
+    "Cluster selection is cheaper: errors are computed only for nodes the traversal reaches, clusters outside the view are not refined, and the index set is uploaded again only when the selection changes.",
+    "The triangle budget (strata.triangleBudget or AIVERSE_STRATA_TRI_BUDGET) raises the error threshold while there are more triangles than the budget. A corner panel shows the STRATA route, whether data came from disk, triangles, threshold, draw calls, memory and frame time; a window on the right shows the clusters coloured by detail level.",
+    "Every object of the scene can choose its drawing path in the editor: Auto (STRATA or ordinary LODs per model), STRATA or LOD — in the Static geometry window or the object's strata field."
+  ],
+  "verifiedEn": "Mac Studio (M3 Ultra, Metal): 1.1 M triangles and 20 draw calls versus 20 M without STRATA. Samsung Galaxy A05s (Adreno 610, rendering at 1200×540): no budget 16 fps on Vulkan and 20 fps on GLES; with a 250 k triangle budget 35 and 45 fps; without STRATA 4 fps.",
+  "limitsEn": "No 60 fps on this phone yet: frame time grows almost linearly with triangles, and in the measurement the builder stopped at 8 levels so STRATA could not go below about 270 k triangles for 20 spheres; the limit is now 16 levels, not yet re-measured. Vulkan is slower than GLES on this phone; the cause is not found yet. The process takes about 750 MB: indices are kept whole and vertices are 60 bytes. Disk streaming of index pages exists but was not enabled in this scene."
+}

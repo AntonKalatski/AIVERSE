@@ -1,95 +1,89 @@
-name: PHYSIS nature + Box3D integration checks
+name: PHYSIS nature simulation (all platforms)
+
+# Builds EVERY PHYSIS test executable through the aggregate CMake target
+# `aiverse_physis_tests` (CMakeLists.txt collects all aiverse_physis_*_test(s)
+# targets automatically) and runs every CTest whose name starts with physis_.
+# A hand-written target list used to miss new tests, which then failed as
+# "Not Run" (ctest exit 8) on main.
 
 on:
   push:
-    branches:
-      - feature/physis-nature-simulation
+    branches: [main, 'agent-*', 'feature/**']
     paths:
       - 'engine/physis/**'
-      # Handoff-only changes must not cancel queued native builds.
       - '!engine/physis/AGENTS.md'
       - 'engine/physics/PhysisBox3D.h'
-      - 'tests/physis_*.cpp'
+      - 'engine/world/*Physis*'
+      - 'engine/sim/**'
+      - 'engine/core/**'
+      - 'apps/editor/Physis*'
+      - 'apps/client/GameClient.*'
+      - 'tests/physis_*'
       - 'CMakeLists.txt'
       - '.github/workflows/physis.yml'
   pull_request:
     paths:
       - 'engine/physis/**'
-      # Handoff-only changes must not cancel queued native builds.
       - '!engine/physis/AGENTS.md'
       - 'engine/physics/PhysisBox3D.h'
-      - 'tests/physis_*.cpp'
+      - 'engine/world/*Physis*'
+      - 'engine/sim/**'
+      - 'engine/core/**'
+      - 'apps/editor/Physis*'
+      - 'apps/client/GameClient.*'
+      - 'tests/physis_*'
       - 'CMakeLists.txt'
       - '.github/workflows/physis.yml'
   workflow_dispatch:
 
-# Many source/doc pushes during PHYSIS development used to create hundreds
-# of queued jobs. Only the newest run for a given workflow/ref is actionable.
+# Only the newest run for a given workflow/ref is actionable.
 concurrency:
   group: physis-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   physis-native:
-    name: PHYSIS CPU and optional Box3D (${{ matrix.os }})
+    name: PHYSIS ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - { name: Linux x64 gcc,  os: ubuntu-24.04,     config: Debug,   physics: 'ON' }
+          - { name: Linux arm64,    os: ubuntu-24.04-arm, config: Release, physics: 'ON' }
+          - { name: macOS arm64,    os: macos-15,         config: Release, physics: 'ON' }
+          - { name: Windows MSVC,   os: windows-2022,     config: Release, physics: 'ON' }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Configure focused native tests
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure (tests only, no client/editor/tools)
         shell: bash
         run: |
-          cmake -S . -B build/physis-ci -DCMAKE_BUILD_TYPE=Debug \
+          GEN=""
+          if [ "$RUNNER_OS" = "Linux" ]; then GEN="-G Ninja"; fi
+          cmake -S . -B build/physis-ci $GEN -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
             -DAIVERSE_BUILD_TESTS=ON \
-            -DAIVERSE_ENABLE_PHYSICS=ON \
+            -DAIVERSE_ENABLE_PHYSICS=${{ matrix.physics }} \
             -DAIVERSE_BUILD_EDITOR=OFF \
             -DAIVERSE_BUILD_TOOLS=OFF \
             -DAIVERSE_BUILD_CLIENT=OFF \
             -DAIVERSE_BUILD_HEADLESS=OFF \
             -DAIVERSE_BUILD_SERVER=OFF \
             -DAIVERSE_BUILD_PHYSICS_DEMO=OFF
-      - name: Build every PHYSIS test target
+      - name: Build every PHYSIS test (aggregate target)
         shell: bash
         run: |
           set -o pipefail
-          cmake --build build/physis-ci --parallel 4 --target \
-            aiverse_physis_core_test \
-            aiverse_physis_nereid_contacts_test \
-            aiverse_physis_nature_stress_test \
-            aiverse_physis_fracture_outbox_test \
-            aiverse_physis_nature_fall_host_test \
-            aiverse_physis_sky_tests \
-            aiverse_physis_terraweave_fall_bridge_test \
-            aiverse_physis_climate_test \
-            aiverse_physis_environment_test \
-            aiverse_physis_disasters_test \
-            aiverse_physis_integration_test \
-            aiverse_physis_wind_test \
-            aiverse_physis_gravity_test \
-            aiverse_physis_storm_test \
-            aiverse_physis_forces_test \
-            aiverse_physis_presentation_test \
-            aiverse_physis_diagnostics_test \
-            aiverse_physis_spatial_index_test \
-            aiverse_physis_editor_view_test \
-            aiverse_physis_scene_geometry_test \
-            aiverse_physis_project_config_test \
-            aiverse_physis_field_assets_test \
-            aiverse_physis_field_runtime_test \
-            aiverse_physis_live_edit_test \
-            aiverse_physis_remote_edit_test \
-            aiverse_physis_admin_journal_test \
-            aiverse_physis_journal_posix_io_test \
-            aiverse_physis_journal_locked_io_test \
-            aiverse_physis_journal_crash_recovery_test \
-            aiverse_physis_box3d_test 2>&1 | tee build/physis-ci/physis-build.log
-      - name: CTest PHYSIS (includes real Box3D Scene)
+          cmake --build build/physis-ci --config ${{ matrix.config }} --parallel 4 \
+            --target aiverse_physis_tests 2>&1 | tee build/physis-ci/physis-build.log
+      - name: CTest PHYSIS
         shell: bash
-        run: ctest --test-dir build/physis-ci --output-on-failure -R '^physis_'
+        run: |
+          ctest --test-dir build/physis-ci -C ${{ matrix.config }} --output-on-failure \
+            --no-tests=error -j4 -R '^physis_'
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,3 +94,40 @@ jobs:
             build/physis-ci/Testing/
             build/physis-ci/CMakeFiles/CMakeConfigureLog.yaml
           if-no-files-found: ignore
+
+  # Web: the deterministic PHYSIS core compiled to WebAssembly and run in Node
+  # (Emscripten's CMake toolchain sets node as CMAKE_CROSSCOMPILING_EMULATOR).
+  # Same sources and Fixed arithmetic as the desktop jobs.
+  physis-web:
+    name: PHYSIS Web (Emscripten + Node)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with: { version: 3.1.74 }
+      - name: Build PHYSIS core tests (wasm)
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          emcmake cmake -S . -B build/physis-web -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_BUILD_SERVER=OFF
+          cmake --build build/physis-web --parallel 4 --target \
+            aiverse_physis_core_test aiverse_physis_climate_test aiverse_physis_environment_test \
+            aiverse_physis_disasters_test aiverse_physis_integration_test aiverse_physis_wind_test \
+            aiverse_physis_gravity_test aiverse_physis_storm_test aiverse_physis_forces_test \
+            aiverse_physis_presentation_test aiverse_physis_parallel_test aiverse_physis_streaming_test \
+            aiverse_physis_nature_presentation_test aiverse_physis_nature_runtime_test
+      - name: Run in Node
+        shell: bash
+        run: |
+          # CMake registers tests only for desktop builds (enable_testing is
+          # skipped for Emscripten), so run the generated .js programs directly.
+          set -e
+          n=0
+          for t in build/physis-web/aiverse_physis_*_test.js; do
+            echo "== $t"; node "$t"; n=$((n+1))
+          done
+          echo "$n PHYSIS wasm tests passed"
+          test "$n" -ge 14

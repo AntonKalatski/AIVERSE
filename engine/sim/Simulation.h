@@ -67,6 +67,12 @@ public:
     // Game speed derived from the simulation state (match modes speed the game up or slow it down). advance()
     // runs that many ticks per real tick; the simulation itself is unchanged (presentation pacing only).
     virtual double speedScale(Simulation&) { return 1.0; }
+    // Damage from shared engine systems that know no genre (PHYSIS tornadoes, engine/physis/PhysisTornado.h):
+    // `target` is any entity with a Transform near the hazard, `amount` is in the module's health units,
+    // `source` the hazard entity. The module applies its own health / armour / invulnerability rules and
+    // ignores entities it does not damage. Called inside a simulation system, in stable entity order; it
+    // must be deterministic. Default: the game takes no environmental damage.
+    virtual void environmentDamage(Simulation&, Entity /*target*/, Fixed /*amount*/, Entity /*source*/) {}
 };
 
 // Everything that changes while the simulation runs (rollback netcode saves one per tick).

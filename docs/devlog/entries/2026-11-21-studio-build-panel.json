@@ -1,0 +1,27 @@
+{
+  "id": "2026-11-21-studio-build-panel",
+  "date": "2026-11-21",
+  "system": "studio",
+  "title": "Панель «Сборка» в Studio",
+  "titleEn": "The Build panel in Studio",
+  "summary": "Собрать игру под нужную платформу и оценить размер её контента теперь можно прямо из Studio, во вкладке Publish.",
+  "summaryEn": "Building a game for a platform and estimating the size of its content now happens right in Studio, on the Publish tab.",
+  "body": [
+    "Панель показывает название, версию и ориентацию игры, список платформ (macOS, iOS, Android, Web, Windows, Linux) с отметкой уже собранных и выбор Release или Debug.",
+    "Для выбранной платформы видно, какие инструменты есть, каких не хватает и какие Studio поставит сама. Кнопка «Оценить размер» собирает только пакет контента и показывает его размер и самые тяжёлые файлы. Лог сборки идёт вживую, готовую сборку и лог можно открыть в Finder.",
+    "Несохранённый проект Studio не соберёт молча: сначала предложит сохранить."
+  ],
+  "bodyEn": [
+    "The panel shows the game name, version and orientation, the platform list (macOS, iOS, Android, Web, Windows, Linux) with already built ones marked, and Release or Debug.",
+    "For the selected platform it shows which tools are present, which are missing and which Studio can install itself. \"Estimate size\" builds only the content pack and lists its size and heaviest files. The build log streams live; the finished build and the log open in Finder.",
+    "Studio never builds an unsaved project silently: it offers to save first."
+  ],
+  "status": "done",
+  "verified": "На Mac проверены таблица инструментов и оценка размера на копии шаблона Lua Lab.",
+  "verifiedEn": "On a Mac the tool table and size estimate were checked on a copy of the Lua Lab sample.",
+  "limits": "Полная сборка под платформу из панели ещё не прогонялась. Брендинг и аудит ассетов пока только в старом редакторе.",
+  "limitsEn": "A full platform build from the panel has not been run yet. Branding and the asset audit are still in the old editor only.",
+  "branch": "main",
+  "commit": "ef80a6525",
+  "media": []
+}

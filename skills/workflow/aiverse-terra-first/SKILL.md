@@ -41,6 +41,8 @@ source present, native compiled, host connected and visually verified are distin
   Import ordinary assets and keep the real NEREID manifest alongside them.
   An exported asset is not live terrain, ecology, streaming or physics integration.
 - For vegetation and rocks read `skills/world/aiverse-terra-vegetation/SKILL.md`.
+- Planets (cube-sphere bodies): TerraWeave fields on a sphere, `engine/world/TerraWeaveSphere.h`, drive the
+  planet generator's relief and biomes and the planet view's trees and rocks; recipe `skills/world/aiverse-planets/SKILL.md`.
 - Water belongs to NEREID; sky/postprocessing to PRISMA; climate/wind to PHYSIS.
   Compose those owners through existing bridges instead of implementing copies in Terra.
 

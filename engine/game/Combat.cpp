@@ -95,6 +95,14 @@ void GameCore::sysTargeting(Simulation& sim) {
 
 // ================================================================= damage
 
+// Damage from genre-neutral engine hazards (PHYSIS tornadoes call it through GameModule::environmentDamage).
+// Units off the map (carried, in cargo) are not reached; invulnerable types (trees) are skipped by dealDamage.
+void GameCore::environmentDamage(Simulation& sim, Entity target, Fixed amount, Entity /*source*/) {
+    const auto* u = sim.world().tryGetConst<Unit>(target);
+    if (!u || u->hp.raw <= 0 || (u->flags & kUnitOffMap) || amount.raw <= 0) return;
+    dealDamage(sim, target, amount, kDamagePure, kNullEntity, 0);
+}
+
 void GameCore::dealDamage(Simulation& sim, Entity target, Fixed dmg, uint16_t dmgType, Entity source, uint8_t sourceOwner, const WeaponDef* wd) {
     struct Hooks {
         GameCore& m; Simulation& sim;

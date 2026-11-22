@@ -1,0 +1,10 @@
+{
+  "nereidWater": {
+    "surfaces": [
+      {"id": 1, "kind": "ocean", "shape": "infinite", "surfaceY": 0, "bottomY": -200,
+       "oceanLod": "rings", "oceanPatchRadius": 6000, "oceanInnerCell": 4, "oceanInnerCells": 16,
+       "lod": "medium", "rippleTileGrid": 4,
+       "style": {"deepColor": [0.02, 0.16, 0.24], "absorption": 0.35, "depthTint": 0.8, "opacity": 0.9}}
+    ]
+  }
+}

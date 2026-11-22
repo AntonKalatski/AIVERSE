@@ -1,5 +1,8 @@
 #include "Simulation.h"
 #include <algorithm>
+#if AIVERSE_SIM_PHYSIS
+#include "engine/physis/PhysisAutoInstall.h"
+#endif
 
 namespace aiverse {
 
@@ -50,6 +53,10 @@ void Simulation::setup(const Json& rules, const Json& map) {
         players_.push_back(p);
     }
     module_->setup(*this, rules, map);
+#if AIVERSE_SIM_PHYSIS
+    // Shared nature simulation from data (map "physis" block), for any module.
+    physis::autoInstallFromMap(*this, map);
+#endif
     persistentEcs_.seal();
 }
 

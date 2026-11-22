@@ -1,5 +1,8 @@
 #include "StrataModelAdapter.h"
 #include "StrataSourceSeams.h"
+#include "StrataCooked.h"
+#include <chrono>
+#include <filesystem>
 
 #include <array>
 #include <cstddef>
@@ -40,7 +43,8 @@ std::vector<std::array<float, 15>> attributesFor(const Model& model) {
 
 bool buildModelAsset(const Model& model, const BuildOptions& options,
                      ModelAsset& out, std::string* error,
-                     bool allowPreparedRootLods) {
+                     bool allowPreparedRootLods,
+                     bool tolerateSourceSeamDefects) {
     if (error) error->clear();
     ModelAsset next;
     // Presentation-only integration: GeometryScene's immutable rigid CPU
@@ -55,6 +59,9 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
     }();
     std::vector<std::array<float, 15>> attributes;
     bool builtAttributes = false;
+    std::vector<uint32_t> globalToLocal, localToGlobal, localIndices;
+    std::vector<float> localPositions;
+    std::vector<std::array<float, 15>> localAttributes;
     std::set<size_t> rootMeshes;
     if (allowPreparedRootLods)
         for (const auto& node : model.nodes)
@@ -99,14 +106,41 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
                 attributes = attributesFor(model);
                 builtAttributes = true;
             }
+            // Compact this primitive's vertices: the builder and
+            // meshoptimizer work in O(vertex count) per call, and a
+            // multi-million vertex model would make every cluster group
+            // touch the whole shared buffer. Output ids are mapped back to
+            // the model's global vertex ids below.
+            if (globalToLocal.size() != model.vertices.size())
+                globalToLocal.assign(model.vertices.size(), UINT32_MAX);
+            localToGlobal.clear(); localIndices.clear(); localPositions.clear(); localAttributes.clear();
+            localIndices.reserve(p.indexCount);
+            for (uint32_t k = 0; k < p.indexCount; ++k) {
+                const uint32_t g = model.indices[size_t(p.firstIndex) + k];
+                if (g >= model.vertices.size()) { localIndices.push_back(UINT32_MAX); continue; }
+                uint32_t& l = globalToLocal[g];
+                if (l == UINT32_MAX) {
+                    l = uint32_t(localToGlobal.size());
+                    localToGlobal.push_back(g);
+                    const auto& v = model.vertices[g].pos;
+                    localPositions.insert(localPositions.end(), {v.x, v.y, v.z});
+                    localAttributes.push_back(attributes[g]);
+                }
+                localIndices.push_back(l);
+            }
+            for (uint32_t g : localToGlobal) globalToLocal[g] = UINT32_MAX;
+            if (localToGlobal.empty()) {
+                if (error) *error = "mesh=" + std::to_string(mi) + ", primitive=" + std::to_string(pi) + ": no valid vertices";
+                return false;
+            }
             BuildInput input;
-            input.indices = model.indices.data() + p.firstIndex;
-            input.indexCount = p.indexCount;
-            input.positions = &model.vertices.front().pos.x;
-            input.vertexCount = model.vertices.size();
-            input.positionStride = sizeof(ModelVertex);
-            input.attributes = attributes.front().data();
-            input.attributeStride = sizeof(attributes.front());
+            input.indices = localIndices.data();
+            input.indexCount = localIndices.size();
+            input.positions = localPositions.data();
+            input.vertexCount = localToGlobal.size();
+            input.positionStride = 3 * sizeof(float);
+            input.attributes = localAttributes.front().data();
+            input.attributeStride = sizeof(localAttributes.front());
             input.attributeWeights = kWeights;
             input.attributeComponents = 15;
             input.materialGroup = uint32_t(p.material);
@@ -120,13 +154,15 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
                     ", primitive=" + std::to_string(pi) + ": " + why;
                 return false; // Preserve old output on failure
             }
+            for (auto& i : prepared.geometry.indices) i = localToGlobal[i];
+            for (auto& i : prepared.geometry.meshletVertices) i = localToGlobal[i];
             next.primitives.push_back(std::move(prepared));
         }
     }
     if(!next.primitives.empty()){
         SourceSeamAudit seamReport{};
         std::string seamError;
-        if(!auditModelSourceSeams(model,next,seamReport,&seamError)){
+        if(!auditModelSourceSeams(model,next,seamReport,&seamError,tolerateSourceSeamDefects)){
             if(error)*error="source-wide seam validation: "+seamError;
             return false; // preserve the caller's previous asset on failure
         }
@@ -155,11 +191,35 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
     }
     ModelAsset built;
     std::string error;
-    if (!buildModelAsset(model, options_, built, &error,
-                         allowPreparedRootLods_)) {
-        ++stats_.failedSources;
-        warnings_.push_back("Strata staging failed '" + key + "': " + error);
-        return false;
+    const bool cooking = bool(cook_.read) || !cook_.writeDirectory.empty();
+    const uint64_t signature = cooking ? cookSignature(model, options_,
+        allowPreparedRootLods_, tolerateSourceSeamDefects_) : 0;
+    bool cooked = false;
+    if (cook_.read) {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::string bytes, why;
+        if (cook_.read(cookedFilename(key), bytes)) {
+            if (decodeCookedAsset(bytes, signature, built, &why)) {
+                cooked = true;
+                ++stats_.cookedLoadedSources;
+            } else {
+                ++stats_.cookedStaleSources;
+                warnings_.push_back("STRATA cooked '" + key + "': " + why + "; building at load");
+            }
+        }
+        stats_.cookedLoadMs += float(std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count());
+    }
+    if (!cooked) {
+        const auto t0 = std::chrono::steady_clock::now();
+        if (!buildModelAsset(model, options_, built, &error,
+                             allowPreparedRootLods_, tolerateSourceSeamDefects_)) {
+            ++stats_.failedSources;
+            warnings_.push_back("Strata staging failed '" + key + "': " + error);
+            return false;
+        }
+        stats_.buildMs += float(std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count());
     }
     stats_.skippedPrimitives += uint32_t(built.skipped.size());
     if (built.primitives.empty()) {
@@ -194,6 +254,20 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
     stats_.crossMaterialMatchedSeams+=
         built.sharedGeometricBoundarySegments;
     ++stats_.crossMaterialCertifiedSources;
+    if (!cooked && !cook_.writeDirectory.empty()) {
+        std::string why;
+        const auto path = (std::filesystem::path(cook_.writeDirectory) / cookedFilename(key)).string();
+        if (writeCookedAsset(path, built, signature, &why)) ++stats_.cookedWrittenSources;
+        else warnings_.push_back("STRATA cook '" + key + "': " + why);
+    }
+    // Leaf meshlet tables (local vertex lists, packed triangles) serve
+    // mesh-shader/GPU-cluster paths and the cook file; the CPU-selected and
+    // indexed STRATA routes never read them at run time.
+    if (!retainMeshlets_)
+        for (auto& primitive : built.primitives) {
+            std::vector<uint32_t>().swap(primitive.geometry.meshletVertices);
+            std::vector<uint8_t>().swap(primitive.geometry.meshletTriangles);
+        }
     assets_.emplace(key, std::move(built));
     ++stats_.stagedSources;
     return true;

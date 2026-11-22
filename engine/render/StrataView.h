@@ -18,6 +18,13 @@ struct ViewConfig {
     int height = 0;
     bool clipDepthZeroToOne = true;
     bool frustumCull = true;
+    // Clusters entirely outside this view's frustum get zero projected error,
+    // so they are never refined for this view (the coarsest resident level
+    // still covers them). Independent of frustumCull, which drops ranges.
+    bool coarsenOutsideFrustum = false;
+    // The caller already validated this exact asset (staging): skip the
+    // per-call O(all nodes) topology/range validation.
+    bool trustedSource = false;
     float errorThresholdPixels = 1.0f;
     uint32_t maxSelectedNodes = 65536;
     // Optional temporal refinement history for this ONE original

@@ -19,6 +19,30 @@ Historical NOT RUN notes below are stage-local. Latest scoped evidence is in
 and `docs/qa/physis-gui-resume-2026-11-20.md` (demo ticks 25→26→86→25).
 Neither certifies full live-host or reference-image visual acceptance.
 
+## Using PHYSIS in a game (2026-11-22) — data, not wiring
+
+1. Put a `"physis"` block in the map (grid, climate; optional `enableDisasters`, fields).
+   `Simulation::setup` installs it for any module; do NOT call `installFromMap` again.
+2. Presentation is automatic in the game client (`engine/world/PhysisNatureRuntime.h`):
+   SpectraFX fire/smoke, fire/wind sound, TerraWeave vegetation wind, NEREID visual wind,
+   PRISMA sky. Tune or disable with `"physis.presentation"`. Other hosts: create one
+   `PhysisNatureRuntime`, call `start(map, targets)`, `update(world, view, targets)` per frame,
+   `stop(targets)` on unload.
+3. Large grids: `"workerThreads": 0` (auto lanes, bit-identical) and
+   `"streaming": {"chunkCells": 32}` + `ActivityAnchor` entities (or `"anchors"` in the map).
+4. Tests: build `aiverse_physis_tests`, run `ctest -R '^physis_'`. Details: docs/physis.md
+   "Automatic integration, parallel update and streaming".
+
+## Tornadoes (2026-11-22) — data, not code
+
+Add `"tornadoes": [...]` to the map `physis` block (schema and example: docs/physis.md
+"Tornadoes"; sample `templates/skirmish/maps/tornado_valley.json`). It enables storms, the
+`physis.tornadoes` system and its persistence. Damage reaches game units only through
+`GameModule::environmentDamage` — override it in a module (RTS does: pure `dealDamage`); never add
+a genre copy of the tornado. Light props: add `NatureCarriable` next to `Transform`. Funnel, debris,
+roar, vegetation and water wind come from `PhysisNatureRuntime` automatically.
+Tests: `ctest -R '^physis_tornado'`.
+
 ## Ownership
 
 - **PHYSIS:** atmospheric/weather climate, wind/gust/shelter, storms (hurricanes/tornadoes), snow/wetness/ice, fire/quakes, configurable gravity and environmental force **policy**.
@@ -38,6 +62,8 @@ Neither certifies full live-host or reference-image visual acceptance.
 | Spatial 3D wind and gusts | `PhysisWind.h` | `WindZone`, `WindShelter`, `windAt` |
 | Uniform/point gravity fields | `PhysisGravity.h` | `GravitySettings`, `GravityField`, `gravityAt` |
 | Hurricane/tornado vortex fields | `PhysisStorm.h` | `StormEvent`, `StormKind`, `windWithStormsAt`, `stormsAt` |
+| Moving tornadoes (path, life, fire, debris, carried objects, host damage) | `PhysisTornado.h`, `PhysisTornadoAssets.h` | `TornadoTrack`, `spawnTornado`, `advanceTornadoes`, `NatureCarriable`, `TornadoDebrisField`, `parseTornadoes`; map `physis.tornadoes` |
+| Tornado funnel/debris FX + roar (host) | `engine/world/PhysisTornadoCues.h` | `TornadoFxPlanner`, `TornadoAudioPlanner`, `addPhysisTornadoSounds` |
 | Shared drag/gravity force policy | `PhysisForces.h` | `ForceReceiver`, `ForceOutput`, `evaluateForces`, `advanceForces` |
 | Combined read-only 3D climate + hazard + force fields | `PhysisPresentation.h` | `NatureFieldSample`, `sampleNatureField` |
 | Read-only raster for editor diagnostics | `PhysisDiagnostics.h` | `DiagnosticRequest`, `DiagnosticRaster`, `sampleDiagnosticRaster` |

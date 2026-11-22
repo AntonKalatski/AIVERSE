@@ -25,6 +25,7 @@
 #include "TerraWeaveForestPreview.h"
 #include "PhysisNaturePreview.h"
 #include "engine/world/NereidManifestHost.h"
+#include "TerraWeaveSparsePreview.h"
 #include "core/FileAssoc.h"
 #include "core/Net.h"
 #include "core/Workspace.h"
@@ -544,6 +545,7 @@ private:
     mutable std::vector<float> surfaceGrid_;
     mutable int surfaceGridW_=0, surfaceGridH_=0;
     mutable uint64_t surfaceHeightCacheKey_=0;
+    TerraWeaveSparsePreview terraWeaveSparsePreview_;
 
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;

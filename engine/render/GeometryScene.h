@@ -10,7 +10,7 @@
 #include <string>
 
 namespace aiverse::render {
-namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
+namespace strata { struct ModelAsset; struct PortableCompactBuffer; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
     struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
     struct GpuSelectionReadback; class GpuClusterCulling;
     class PortableSource;
@@ -38,8 +38,23 @@ public:
         uint64_t strataGpuIndexBytes=0;
         // Cross-backend CPU-selected Strata indexed rendering (opt-in).
         uint32_t strataPortableSources=0, strataPortableDeclined=0;
+        // Copies with the same selected cluster set share one alias Model,
+        // so Renderer3D instances them (key: primitive pointer).
+        uint32_t strataPortableSharedModels=0;
+        // strata.select auto: sources kept on the ordinary LOD path / sent to STRATA.
+        uint32_t strataAutoLodSources=0, strataAutoStrataSources=0;
+        float strataStageMs=0; // CPU time of building STRATA clusters at load
+        // Cooked STRATA: sources loaded from strata.cooked / written by a cook
+        // pass / rejected as stale; time spent reading vs building.
+        uint32_t strataCookedSources=0, strataCookWrittenSources=0, strataCookStaleSources=0;
+        float strataCookedLoadMs=0, strataBuildMs=0;
+        uint64_t strataCompactUploads=0, strataCompactReuses=0;
+        uint64_t strataPortableSharedReuses=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
+        uint64_t strataPortableTriangles=0; // triangles of the drawn STRATA aliases (all instances, main view)
+        float strataErrorScale=1.f; // triangle budget: current multiplier of the pixel-error threshold
+        uint64_t strataSelectionGpuBytes=0; // live compacted selection index buffers (all instances)
         uint64_t strataLodHysteresisTransitions=0;
         uint32_t strataLodHysteresisHistories=0;
         uint32_t strataStreamedSources=0;
@@ -141,6 +156,8 @@ public:
     // is pooled when supported, dedicated on GLES3. Default OFF.
     // Scene must be reloaded after changing this option.
     void setStrataPortableRenderingEnabled(bool on) { strataPortableRenderingEnabled_=on; }
+    // strata.select auto: "<model>: strata|lod (<reason>)" per source of the last load.
+    const std::vector<std::string>& strataSelectDecisions() const { return strataSelectDecisions_; }
     bool strataPortableRenderingEnabled() const { return strataPortableRenderingEnabled_; }
     // Stage17.3/17.4: one opt-in hysteresis fraction drives BOTH portable
     // CPU and Metal/Vulkan GPU LOD selectors. GPU history is independent,
@@ -325,6 +342,13 @@ public:
     // already chose; never changes LOD selection, routing or GPU data.
     // Returns false (and keeps the old options) for invalid options.
     bool setStrataDebugView(const strata::DebugViewOptions& options);
+    // Debug primitives only in the right half of the screen (side-by-side).
+    void setStrataDebugRightHalf(bool on) { strataDebugRightHalf_=on; }
+    // Inset (picture-in-picture) debug: the main pass draws no debug
+    // primitives; a second, inset pass draws them and is not counted in stats.
+    void setStrataDebugSuppressed(bool on) { strataDebugSuppressed_=on; }
+    void setStrataInsetPass(bool on) { strataInsetPass_=on; }
+    bool strataDebugRightHalf() const { return strataDebugRightHalf_; }
     const strata::DebugViewOptions& strataDebugView() const {
         return strataDebugView_;
     }
@@ -348,7 +372,10 @@ public:
 private:
     void retireResident(gfx::Device& dev);
     void loadImpl(gfx::Device& dev,const Json& json,const FileReader& reader,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget);
-    struct Instance { Model* model=nullptr; mat4 world; GeometryPolicy policy; Model* surfaceProxy=nullptr; float proxyPixels=96; StaticModelCache cache,proxyCache; float3 min,max; uint32_t layers=1; };
+    struct Instance { Model* model=nullptr; mat4 world; GeometryPolicy policy; Model* surfaceProxy=nullptr; float proxyPixels=96; StaticModelCache cache,proxyCache; float3 min,max; uint32_t layers=1;
+        // Instance "strata": 1 force STRATA, -1 force the LOD path, 0 auto (the
+        // per-model decision). strataRoute: this instance draws through STRATA.
+        int8_t strataForce=0; bool strataRoute=true; };
     struct Group {
         std::vector<size_t> instances;
         int left=-1,right=-1;
@@ -384,12 +411,19 @@ private:
     // Reservation tokens are released AFTER GPU sidecars are destroyed.
     std::map<const Model*,uint64_t> strataGlobalIndexLeases_;
     std::map<const Instance*, std::unique_ptr<Model>> strataPortableDrawModels_;
+    // Compacted submission: one dynamic index stream per drawn instance.
+    std::map<const Instance*, std::shared_ptr<strata::PortableCompactBuffer>> strataCompactBuffers_;
+    struct StrataSharedAlias { std::unique_ptr<Model> model; uint64_t lastFrame=0; };
+    // (source model, selected-cluster signature) -> shared drawn alias.
+    std::map<std::pair<const Model*,uint64_t>,StrataSharedAlias> strataSharedAliases_;
+    uint64_t strataDrawFrame_=0;
     std::map<const Instance*,std::shared_ptr<strata::PortableLodHistory>>
         strataPortableLodHistories_;
     gfx::Device* strataGpuDevice_ = nullptr; // borrowed owner-thread validation
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
     std::vector<std::string> warnings_;
+    std::vector<std::string> strataSelectDecisions_;
     Stats stats_;
     bool hlod_=false,geometryEnabled_=true,surfacesEnabled_=true,cacheEnabled_=true;
     bool strataStagingEnabled_=false;
@@ -397,6 +431,17 @@ private:
     bool strataGpuCullingEnabled_=false;
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
+    // Planar water reflections: true = finest frontier (safe default);
+    // false = reuse the main-camera frontier (mirror sees similar distances).
+    bool strataReflectionFinest_=true;
+    bool strataMergeClusters_=false; // scene "strata" block turns it on
+    // Sun shadow pass error tolerance multiplier (the shadow map covers the
+    // whole map; per-branch detail there forces the finest frontier).
+    float strataShadowErrorScale_=1.f;
+    // "strata.select": auto = per-source choice (StrataAutoSelect.h), all =
+    // every source. minTriangles overrides the auto threshold (0 = default).
+    bool strataAutoSelect_=true;
+    uint64_t strataAutoMinTriangles_=0;
     float strataLodHysteresisFraction_=0.f;
     uint64_t strataGpuLodPolicyEpoch_=1;
     bool strataVulkanGpuIndirectEnabled_=false;
@@ -419,8 +464,13 @@ private:
     size_t strataStreamingFrameBudgetLeft_=0;
     uint64_t strataStreamingSourceCursor_=0;
     std::string strataDiskPageDirectory_;
+    std::string strataCookedDir_; // geometry scene strata.cooked (content-relative)
+    // strata.triangleBudget / AIVERSE_STRATA_TRI_BUDGET: automatic quality.
+    uint64_t strataTriangleBudget_=0, strataBudgetLastTotal_=0;
+    float strataBudgetScale_=1.f;
     bool strataDropArchivedCpuIndicesEnabled_=false;
     strata::DebugViewOptions strataDebugView_{};
+    bool strataDebugRightHalf_=false, strataDebugSuppressed_=false, strataInsetPass_=false;
     strata::DebugDrawStats strataDebugStats_{};
     bool strataDebugGeometryCapture_=false;
     std::map<const Model*,std::shared_ptr<strata::DebugGeometry>>

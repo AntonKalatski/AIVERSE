@@ -4444,3 +4444,15 @@ GPUacceptance: nativeflowdebugcolouratSAMEworldpoints projectedintotwocamerasand
 ## 2026-11-21 river bends — GPU/current integration verified
 
 Code ff84b6648bd3825eea62471614611fced9f196fc + GPU-test6402e0bbd28ceffa575a86ee283d4c1841322920. NEREID local world-space field now drives actual wave/foam advection, independent of camera and finite mesh LOD; fixed origin-dependent foam chevrons. Full API/lifetime/budget/failure/verification record: latest docs/nereid/HANDOFF.md. KINGSTON nativeEditor/Studio/Metal+GL hosts buildPASS,4CTestPASS,440LENSchecksPASS,22actual enabled-foam GPU capturesPASS including bent/manual/far/foam-off. Native review-project-v24 clean scene-only forest-local-current-final/close.png visually inspected; water fix only, not final art hero. No live rock support/fall implemented; this is the next user requirement, through existing Terra+NEREID+PHYSIS/Box3D owners and actual collider updates. Preserve original project/user app; no main readiness/GPU FPS/CI claim.
+
+## 2026-11-22 agent-terra-next — Metal QA, automatic streaming, trunk colliders, Studio generator
+
+Branch `agent-terra-next` (base main d677f8a2f). Read `qa-2026-11-22-terra-next.md` for the measured
+tables and exact verified/unverified list. Mac Release + Box3D: 19/19 TerraWeave CTests on base;
+after changes `terraweave_streaming`, `terraweave_streaming_physics` (new), `terraweave_preview`,
+`terraweave_forest_scene`, `terraweave_horizon`, native micro compile smokes PASS.
+Fixed: editor Horizon preview exceeded the Horizon atlas budget and disabled the forest overlay.
+Slow: exported tree entities (no LOD chain/impostor in that path) — 15.5M tris / 50 ms at far in
+AlpineValley. Next: LOD/impostor tier for exported trees; multi-observer ForestScene residency; grass
+registry spatial index; wire trunk colliders + planner into a live host (WorldScene / native example);
+Studio viewport rendering of the TerraWeave forest overlay.

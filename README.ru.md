@@ -14,6 +14,7 @@
   <img alt="Rendering" src="https://img.shields.io/badge/рендер-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI--агенты-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/лицензия-MIT-2ea44f">
+  <a href="https://chromealex.github.io/AIVERSE/"><img alt="Website" src="https://img.shields.io/badge/website-chromealex.github.io%2FAIVERSE-111?logo=googlechrome&logoColor=white"></a>
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
 </p>
 
@@ -247,10 +248,16 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 **1. Собрать движок** (macOS; нужны Xcode и CMake):
 
 ```bash
-cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
-cmake --build build/mac -j 8
-open build/mac/AiverseEditor.app        # редактор: хаб проектов и шаблоны
+./studio_mac.command                    # AIVERSE Studio, редактор (нужны Xcode, CMake, Node.js)
+./studio_mac.command templates/mushrooms   # ...для другого проекта
 ```
+
+Windows: `studio_windows.cmd [project]` собирает и открывает `AiverseStudio.exe` (нужны Visual Studio 2022,
+CMake, Node.js; работает на WebView2 Runtime и Vulkan).
+
+`studio_mac.command` собирает веб-интерфейс и нативную Studio и открывает её. Только движок:
+`cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`. Прежний
+редактор на ImGui (`build/mac/AiverseEditor.app`) по-прежнему собирается и работает на Linux и Windows.
 
 Linux: `cmake --preset linux-release && cmake --build build/linux-release`. Если компилировать не хочется,
 в ветке `builds` есть готовые сборки редактора и инструментов

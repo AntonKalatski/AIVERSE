@@ -1,3 +1,4 @@
+#include <cstdint>
 #include "StrataPortableRender.h"
 
 #include <algorithm>
@@ -14,7 +15,9 @@ bool fail(std::string* error,const char* reason) {
     if(error)*error=reason;
     return false;
 }
-constexpr size_t kMaxIndexBytes=16u*1024u*1024u;
+// Whole cluster hierarchy of one source (leaves + simplified parents).
+// Multi-million triangle sources need ~100 MB; streaming budgets stay separate.
+constexpr size_t kMaxIndexBytes=256u*1024u*1024u;
 constexpr size_t kMaxSelectedPrimitives=65536;
 
 bool safePrimitive(const Model& source,uint32_t mesh,uint32_t primitive,
@@ -84,8 +87,29 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
         dev.info().backend!=gfx::Backend::GL33) ||
        !dev.gpuHealthy() || !safeSource(source))
         return fail(error,"backend or source is not compatible with portable rigid Strata");
-    if(asset.primitives.empty() || !asset.skipped.empty())
-        return fail(error,"partial Strata staged model must use legacy renderer");
+    if(asset.primitives.empty())
+        return fail(error,"no staged Strata primitives");
+    // Partial models: unstaged primitives keep the Legacy path, selected by
+    // material. A material shared by staged and unstaged primitives cannot
+    // be split that way, so such a model stays entirely Legacy.
+    std::set<std::pair<uint32_t,uint32_t>> skippedPrims;
+    std::vector<uint8_t> legacyMask;
+    if(!asset.skipped.empty()){
+        legacyMask.assign(source.materials.size(),0);
+        for(const auto& skip:asset.skipped){
+            if(skip.mesh>=source.meshes.size() ||
+               skip.primitive>=source.meshes[skip.mesh].primitives.size())
+                return fail(error,"invalid skipped Strata primitive");
+            const int material=source.meshes[skip.mesh].primitives[skip.primitive].material;
+            if(material<0 || size_t(material)>=legacyMask.size())
+                return fail(error,"skipped Strata primitive has no material");
+            legacyMask[size_t(material)]=1;
+            skippedPrims.insert({skip.mesh,skip.primitive});
+        }
+        for(const auto& entry:asset.primitives)
+            if(entry.material<legacyMask.size() && legacyMask[entry.material])
+                return fail(error,"partial Strata model shares a material between staged and legacy primitives");
+    }
 
     // Whole-source opt-in only: no silent loss of primitives or materials.
     // RHI source CPU streams may have been cleared by uploadModel().
@@ -170,7 +194,8 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
         for(uint32_t primitive=0;
             primitive<source.meshes[size_t(node.mesh)].primitives.size();
             ++primitive)
-            if(!covered.count({uint32_t(node.mesh),primitive}))
+            if(!covered.count({uint32_t(node.mesh),primitive}) &&
+               !skippedPrims.count({uint32_t(node.mesh),primitive}))
                 return fail(error,"Strata stage misses a live source primitive");
     }
     if(combined.empty())return fail(error,"no portable Strata indices");
@@ -223,9 +248,13 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     sourceGeometryRevision_=source.geometryRevision;
     sourceMaterialRevision_=source.materialRevision;
     primitiveOffsets_=std::move(offsets);
+    legacyMaterialMask_=std::move(legacyMask);
     pooledIndices_=std::move(pooled);
     dedicated_=dedicated;
     streaming_=std::move(streaming);
+    // Compacted submission gathers straight from the staged asset's indices
+    // (no second CPU copy: that copy was as large as the whole index set).
+    cpuGather_=compactSelection_ && !streaming_;
     stats_={};
     stats_.pooledIndices=pooledIndices_.valid();
     stats_.dedicatedIndices=dedicated || bool(streaming_);
@@ -280,6 +309,8 @@ bool PortableSource::collectResidencyDemands(
                         g.nodes.size());
                 }
                 view.frustumCull=false; // shadow/reflection keep coverage
+                view.coarsenOutsideFrustum=true;
+                view.trustedSource=true; // validated by stage()
                 view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
                 ViewPlan plan;
                 if(!planView(g,view,plan,nullptr) || plan.budgetExceeded)
@@ -313,7 +344,8 @@ bool PortableSource::prepareModel(
         const std::vector<PortablePassView>& passes,
         bool forceFinestForUnspecifiedPass,
         Model& output,std::string* error,
-        PortableLodHistory* temporalHistory,float hysteresisFraction){
+        PortableLodHistory* temporalHistory,float hysteresisFraction,
+        PortableCompactBuffer* compact){
     if(error)error->clear();
     const auto reject=[&](const char* reason){
         ++stats_.fallbackPreparations;
@@ -374,7 +406,17 @@ bool PortableSource::prepareModel(
     using HistoryKey=PortableLodHistory::Key;
     std::vector<std::pair<HistoryKey,std::vector<uint8_t>>> historyUpdates;
     uint64_t selected=0;
+    size_t mergeEntry=SIZE_MAX;
     std::vector<SelectedCluster> debugPicks; // published only on success
+    const bool compacting=compact && compactSelection() && !streaming_;
+    struct CompactRange { uint32_t first=0, count=0; };
+    std::vector<std::vector<CompactRange>> compactRanges;
+    std::vector<std::pair<float3,float3>> compactBounds;
+    uint64_t compactSignature=1469598103934665603ull;
+    if(compacting){
+        compactRanges.resize(asset_->primitives.size());
+        compactBounds.assign(asset_->primitives.size(),{float3{1e30f,1e30f,1e30f},float3{-1e30f,-1e30f,-1e30f}});
+    }
     for(size_t i=0;i<asset_->primitives.size();++i){
         const auto& entry=asset_->primitives[i];
         if(!safePrimitive(*source_,entry.mesh,entry.primitive,entry.material))
@@ -432,6 +474,8 @@ bool PortableSource::prepareModel(
                     // The existing renderer independently culls the per-pass
                     // model primitives. Never select only main-camera geometry.
                     view.frustumCull=false;
+                    view.coarsenOutsideFrustum=true; // off-view clusters stay coarse
+                    view.trustedSource=true; // validated by stage()
                     view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
                     ViewPlan plan;
                     if(!planView(g,view,plan,nullptr,
@@ -454,6 +498,7 @@ bool PortableSource::prepareModel(
             }
             if(!wasUsed)return reject("staged material mesh is unused by model nodes");
         }
+        mergeEntry=SIZE_MAX; // never merge across source primitives
         std::vector<uint32_t> pending(g.roots.rbegin(),g.roots.rend());
         while(!pending.empty()){
             const uint32_t n=pending.back();pending.pop_back();
@@ -474,6 +519,21 @@ bool PortableSource::prepareModel(
                uint64_t(primitiveOffsets_[i])+node.firstIndex+node.indexCount>
                    uint64_t(indexCount_))
                 return reject("invalid portable Strata selected index frontier");
+            if(compacting){
+                const uint32_t first=primitiveOffsets_[i]+node.firstIndex;
+                auto& list=compactRanges[i];
+                if(!list.empty() && list.back().first+list.back().count==first)
+                    list.back().count+=node.indexCount;
+                else list.push_back({first,node.indexCount});
+                const auto& b=g.bounds[n];
+                auto& [lo,hi]=compactBounds[i];
+                lo={std::min(lo.x,b.min[0]),std::min(lo.y,b.min[1]),std::min(lo.z,b.min[2])};
+                hi={std::max(hi.x,b.max[0]),std::max(hi.y,b.max[1]),std::max(hi.z,b.max[2])};
+                compactSignature=(compactSignature^(uint64_t(i)<<32^n))*1099511628211ull;
+                if(debugCapture_)debugPicks.push_back({uint32_t(i),n});
+                ++selected;
+                continue;
+            }
             Primitive prim=source_->meshes[entry.mesh].primitives[entry.primitive];
             if(streaming_){
                 const auto gpu=streaming_->span(uint32_t(i),n);
@@ -488,12 +548,83 @@ bool PortableSource::prepareModel(
             const auto& bounds=g.bounds[n];
             prim.boundsMin={bounds.min[0],bounds.min[1],bounds.min[2]};
             prim.boundsMax={bounds.max[0],bounds.max[1],bounds.max[2]};
-            alias.meshes[entry.mesh].primitives.push_back(std::move(prim));
+            auto& out=alias.meshes[entry.mesh].primitives;
+            // Clusters of the same source primitive whose index ranges are
+            // adjacent draw as ONE primitive (one draw instead of many).
+            if(mergeAdjacent_ && mergeEntry==i && !out.empty() &&
+               out.back().firstIndex+out.back().indexCount==prim.firstIndex){
+                auto& last=out.back();
+                last.indexCount+=prim.indexCount;
+                last.boundsMin={std::min(last.boundsMin.x,prim.boundsMin.x),std::min(last.boundsMin.y,prim.boundsMin.y),std::min(last.boundsMin.z,prim.boundsMin.z)};
+                last.boundsMax={std::max(last.boundsMax.x,prim.boundsMax.x),std::max(last.boundsMax.y,prim.boundsMax.y),std::max(last.boundsMax.z,prim.boundsMax.z)};
+            }else{
+                out.push_back(std::move(prim));
+                mergeEntry=i;
+            }
             if(debugCapture_)debugPicks.push_back({uint32_t(i),n});
             ++selected;
         }
     }
     if(!selected)return reject("no resident selected Strata clusters");
+    if(compacting){
+        // One primitive per source primitive, indices gathered into the
+        // instance's dynamic stream (rewritten only on a new selection).
+        auto& out=compact->scratch;
+        // The gathered indices live in an IMMUTABLE buffer per selection. An
+        // unchanged selection (static camera, distant objects, hysteresis)
+        // reuses it: no gather, no upload. A new selection gets a new buffer;
+        // the old one is retired and destroyed some frames later. (Dynamic
+        // buffers are versioned per frame and would need a rewrite every
+        // frame: ~10 MB/frame for 20 dense objects, the main cost on phones.)
+        ++compact->prepares;
+        compact->collect(*device_);
+        const bool sameSelection=compact->signature==compactSignature && compact->buffer.valid();
+        const bool reuse=sameSelection;
+        if(reuse)++compact->reuses;
+        if(!sameSelection)out.clear();
+        uint32_t cursor=0;
+        for(size_t i=0;i<compactRanges.size();++i){
+            if(compactRanges[i].empty())continue;
+            const auto& entry=asset_->primitives[i];
+            Primitive prim=source_->meshes[entry.mesh].primitives[entry.primitive];
+            uint32_t count=0;
+            for(const auto& r:compactRanges[i]){
+                if(!sameSelection){
+                    const auto& src=entry.geometry.indices;
+                    const size_t at=size_t(r.first-primitiveOffsets_[i]);
+                    out.insert(out.end(),src.begin()+at,src.begin()+at+r.count);
+                }
+                count+=r.count;
+            }
+            prim.firstIndex=cursor;
+            prim.indexCount=count;
+            prim.shadowBatched=false;
+            prim.boundsMin=compactBounds[i].first;
+            prim.boundsMax=compactBounds[i].second;
+            cursor+=count;
+            alias.meshes[entry.mesh].primitives.push_back(std::move(prim));
+        }
+        if(!reuse){
+            const size_t bytes=out.size()*sizeof(uint32_t);
+            if(compact->buffer.valid())compact->retired.push_back({compact->buffer,compact->prepares});
+            compact->buffer={};
+            gfx::BufferDesc desc{};
+            desc.type=gfx::BufferType::Index;
+            desc.usage=gfx::Usage::Immutable;
+            desc.size=bytes;
+            desc.data=out.data();
+            desc.label="Strata compacted selection";
+            compact->buffer=device_->createBuffer(desc);
+            compact->capacityBytes=bytes;
+            if(!compact->buffer.valid()){compact->capacityBytes=0;compact->signature=0;return reject("compacted Strata index buffer allocation failed");}
+            compact->signature=compactSignature;
+            ++compact->uploads;
+            std::vector<uint32_t>().swap(out); // the GPU buffer is the only copy kept
+        }
+        alias.ib=compact->buffer;
+        alias.gpuFirstIndex=0;
+        alias.geometryPoolPage=nullptr;
+    }
     // Publication boundary: all primitive ranges are drawable, so it is
     // finally safe to swap temporal states. A change in source/pass layout
     // discards every older per-camera record instead of reusing stale LODs.
@@ -543,7 +674,8 @@ void PortableSource::shutdown(gfx::Device& dev){
     pooledIndices_={};dedicated_=false;
     firstIndex_=indexCount_=baseVertex_=0;
     sourceGeometryRevision_=sourceMaterialRevision_=0;
-    primitiveOffsets_.clear();
+    primitiveOffsets_.clear(); legacyMaterialMask_.clear();
+    cpuGather_=false;
     stats_={};
     std::vector<SelectedCluster>().swap(debugSelection_);
 }

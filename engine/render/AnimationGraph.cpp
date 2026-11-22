@@ -50,13 +50,19 @@ float value(const AnimationParameters& p, const std::string& name, float fallbac
     auto i = p.values.find(name);
     return i == p.values.end() || !std::isfinite(i->second) ? fallback : i->second;
 }
-void blend(Pose& a, const Pose& b, float w, const std::vector<uint8_t>& mask = {}) {
+void blend(Pose& a, const Pose& b, float w, const std::vector<uint8_t>& mask = {}, bool morph = true) {
     for (size_t i=0; i<a.size(); ++i) {
         if (!mask.empty() && !mask[i]) continue;
         auto& x=a[i]; const auto& y=b[i];
         x.t=x.t+(y.t-x.t)*w; x.s=x.s+(y.s-x.s)*w; x.r=nlerp(x.r,y.r,w);
-        for(int k=0;k<kMaxMorphTargets;++k) x.w[k]+=(y.w[k]-x.w[k])*w;
+        if(morph) for(int k=0;k<kMaxMorphTargets;++k) x.w[k]+=(y.w[k]-x.w[k])*w;
     }
+}
+// Copy a pose; in a morph-free graph every internal pose already holds the
+// bind morph weights, so only translation/rotation/scale need copying.
+void assignPose(Pose& to, const Pose& from, bool morph) {
+    if (morph || to.size()!=from.size()) { to=from; return; }
+    for (size_t i=0; i<to.size(); ++i) { to[i].t=from[i].t; to[i].r=from[i].r; to[i].s=from[i].s; }
 }
 bool validPose(const Pose& p,size_t size){
     if(p.size()!=size)return false;
@@ -137,6 +143,18 @@ std::shared_ptr<const AnimationGraph> AnimationGraph::compileImpl(const Model& m
         } else if(kind=="blend"||kind=="additive") {
             n.kind=kind=="blend"?Kind::Blend:Kind::Additive;
             n.a=ref(ids,v.getStr("a"),"earlier input node"); n.b=ref(ids,v.getStr("b"),"earlier input node");
+            n.sync=v.getBool("sync",false);
+            if(n.sync) {
+                if(n.kind!=Kind::Blend||n.a==n.b) bad("node '"+n.id+"': sync requires a blend of two different clips");
+                for(int input:{n.a,n.b}) {
+                    const auto& clip=g->nodes_[size_t(input)];
+                    if(clip.kind!=Kind::Clip||!clip.loop||!(m.clips[size_t(clip.clip)].duration>0.f))
+                        bad("node '"+n.id+"': sync inputs must be looping clips with a positive duration");
+                    for(const auto& other:g->nodes_)
+                        if(other.sync&&(other.a==input||other.b==input))
+                            bad("node '"+n.id+"': clip '"+clip.id+"' already belongs to another sync blend");
+                }
+            }
         } else if(kind=="twoBoneIK") {
             n.kind=Kind::TwoBoneIK; n.a=ref(ids,v.getStr("input"),"earlier input node");
             n.hip=m.findNode(v.getStr("hip")); n.knee=m.findNode(v.getStr("knee")); n.foot=m.findNode(v.getStr("foot"));
@@ -226,6 +244,12 @@ std::shared_ptr<const AnimationGraph> AnimationGraph::compileImpl(const Model& m
             }
         }
     }
+    g->morphFree_=true;
+    for(const auto& clip:m.clips) for(const auto& ch:clip.channels) if(ch.path==AnimChannel::Weights) g->morphFree_=false;
+    for(const auto& n:g->nodes_) {
+        if(n.operation || n.controller || (n.subgraph && !n.subgraph->morphFree())) g->morphFree_=false;
+        for(const auto& t:n.traits) if(t.implementation) g->morphFree_=false;
+    }
     // Compile one linear evaluation program per state, sharing each DAG node once.
     for(auto& state:g->states_) {
         std::vector<uint8_t> needed(g->nodes_.size()); needed[size_t(state.output)]=1;
@@ -245,6 +269,7 @@ void AnimationGraphInstance::reset(std::shared_ptr<const AnimationGraph> g) {
     if(!graph_) return;
     parameters_=graph_->defaults(); state_=graph_->initial(); bindPose(*graph_->model(),bind_);
     poses_.resize(graph_->nodes().size(),bind_); nativeState_.resize(poses_.size()); clocks_.resize(poses_.size()); unwrappedClocks_.resize(poses_.size()); clipStarted_.assign(poses_.size(),1); last_=bind_;
+    syncRate_.assign(poses_.size(),-1.); syncLeader_.assign(poses_.size(),-1);
     for(size_t i=0;i<poses_.size();++i) if(graph_->nodes()[i].operation)
         nativeState_[i].resize(graph_->nodes()[i].operation->stateFloats);
     resetNodes();
@@ -470,6 +495,22 @@ void AnimationGraphInstance::update(float dt) {
     if(!graph_||!std::isfinite(dt)||dt<0) return;
     dt=std::min(dt,1.f); // bound work and clocks after a suspended host resumes
     time_=std::min(time_+dt,1000000.f); fadeTime_+=dt;
+    // Sync groups: a synced blend drives both clips at the weight-blended
+    // cycle rate; the later clip follows the earlier clip's normalized phase.
+    std::fill(syncRate_.begin(),syncRate_.end(),-1.);
+    std::fill(syncLeader_.begin(),syncLeader_.end(),-1);
+    for(int instruction:graph_->states()[size_t(state_)].program) {
+        const auto& n=graph_->nodes()[size_t(instruction)];
+        if(!n.sync) continue;
+        const auto& a=graph_->nodes()[size_t(n.a)];const auto& b=graph_->nodes()[size_t(n.b)];
+        const double da=graph_->model()->clips[size_t(a.clip)].duration,db=graph_->model()->clips[size_t(b.clip)].duration;
+        const double ra=std::clamp(value(parameters_,a.parameter,a.speed),0.f,1000000.f)/da;
+        const double rb=std::clamp(value(parameters_,b.parameter,b.speed),0.f,1000000.f)/db;
+        const double w=std::clamp(value(parameters_,n.parameter,n.weight),0.f,1.f);
+        const double cycles=ra>0&&rb>0?1./((1.-w)/ra+w/rb):(1.-w)*ra+w*rb; // blended cycle duration
+        syncRate_[size_t(n.a)]=cycles*da; syncRate_[size_t(n.b)]=cycles*db;
+        syncLeader_[size_t(std::max(n.a,n.b))]=std::min(n.a,n.b);
+    }
     for(int instruction:graph_->states()[size_t(state_)].program) {
         const size_t i=size_t(instruction);
         const auto& n=graph_->nodes()[i];
@@ -494,7 +535,12 @@ void AnimationGraphInstance::update(float dt) {
         if(n.kind!=AnimationGraph::Kind::Clip) continue;
         const float duration=graph_->model()->clips[size_t(n.clip)].duration;
         const double prev=unwrappedClocks_[i];
-        const double advance=double(dt)*std::clamp(value(parameters_,n.parameter,n.speed),0.f,1000000.f);
+        double advance=syncRate_[i]>=0.?double(dt)*syncRate_[i]:
+            double(dt)*std::clamp(value(parameters_,n.parameter,n.speed),0.f,1000000.f);
+        if(const int leader=syncLeader_[i];leader>=0) {
+            const double leaderDuration=graph_->model()->clips[size_t(graph_->nodes()[size_t(leader)].clip)].duration;
+            advance=unwrappedClocks_[size_t(leader)]/leaderDuration*double(duration)-prev;
+        }
         const double next=prev+advance;
         if(duration>0.f && !n.notifies.empty()) {
             constexpr size_t kNotifyLimit=1024;
@@ -551,6 +597,7 @@ void AnimationGraphInstance::evaluateCurrent(Pose& result) {
     const auto& nodes=graph_->nodes(); const auto& model=*graph_->model();
     const auto& state=graph_->states()[size_t(state_)];
     const int output=state.output;
+    const bool morph=!graph_->morphFree();
     for(int instruction:state.program) {
         const size_t i=size_t(instruction);
         const auto& n=nodes[i]; auto& p=poses_[i];
@@ -558,13 +605,13 @@ void AnimationGraphInstance::evaluateCurrent(Pose& result) {
         if(n.kind==AnimationGraph::Kind::Subgraph){bindChild(i);children_[i]->evaluate(p);if(!children_[i]->healthy()){healthy_=false;error_=children_[i]->error();}}
         else if(n.kind==AnimationGraph::Kind::MotionMatching)motions_[i]->evaluate(p);
         else if(n.kind==AnimationGraph::Kind::Controller)controllers_[i]->evaluate(p,parameters_);
-        else if(n.kind==AnimationGraph::Kind::Bind) p=bind_;
+        else if(n.kind==AnimationGraph::Kind::Bind) assignPose(p,bind_,morph);
         else if(n.kind==AnimationGraph::Kind::Clip) {
-            p=bind_; const auto& clip=model.clips[size_t(n.clip)];
+            assignPose(p,bind_,morph); const auto& clip=model.clips[size_t(n.clip)];
             double t=clocks_[i];
             sampleClip(clip,float(t),p);
         } else {
-            p=poses_[size_t(n.a)];
+            assignPose(p,poses_[size_t(n.a)],morph);
             if(n.kind==AnimationGraph::Kind::Stack){
                 for(size_t t=n.traits.size();t-->0;){auto& st=traitState_[i][t];const auto& op=n.traits[t].implementation;
                     if(st.enabled&&op&&op->preEvaluate){Pose candidate=p;if(!op->preEvaluate(n.traits[t].config,parameters_,st.data,candidate)||!validPose(candidate,p.size()))traitFailure(i,t);else p=std::move(candidate);}
@@ -574,7 +621,7 @@ void AnimationGraphInstance::evaluateCurrent(Pose& result) {
                     if(st.enabled&&trait.implementation&&trait.implementation->postEvaluate){Pose candidate=p;if(!trait.implementation->postEvaluate(trait.config,parameters_,st.data,candidate)||!validPose(candidate,p.size()))traitFailure(i,t);else p=std::move(candidate);}
                 }
             } else if(n.kind==AnimationGraph::Kind::Rig)n.rig->execute(model,parameters_,p,world_,rigs_[i].get());
-            else if(n.kind==AnimationGraph::Kind::Blend) blend(p,poses_[size_t(n.b)],w,n.mask);
+            else if(n.kind==AnimationGraph::Kind::Blend) blend(p,poses_[size_t(n.b)],w,n.mask,morph);
             else if(n.kind==AnimationGraph::Kind::Additive) {
                 const auto& delta=poses_[size_t(n.b)];
                 for(size_t k=0;k<p.size();++k) {
@@ -583,7 +630,7 @@ void AnimationGraphInstance::evaluateCurrent(Pose& result) {
                     x.t+=(d.t-r.t)*w;
                     const quat inv{-r.r.x,-r.r.y,-r.r.z,r.r.w}; x.r=qnormalize(x.r*nlerp(quat{},inv*d.r,w));
                     x.s+= (d.s-r.s)*w;
-                    for(int c=0;c<kMaxMorphTargets;++c) x.w[c]+=(d.w[c]-r.w[c])*w;
+                    if(morph) for(int c=0;c<kMaxMorphTargets;++c) x.w[c]+=(d.w[c]-r.w[c])*w;
                 }
             } else if(n.kind==AnimationGraph::Kind::Native) {
                 n.operation->evaluate(model,n.config,parameters_,nativeState_[i],p);
@@ -606,8 +653,8 @@ void AnimationGraphInstance::evaluate(Pose& result) {
     evaluateCurrent(result);
     if(fadeDuration_>0&&fadeTime_<fadeDuration_&&!source_.empty()) {
         float w=std::clamp(fadeTime_/fadeDuration_,0.f,1.f);
-        blend(result,source_,1-w);
+        blend(result,source_,1-w,{},!graph_->morphFree());
     }
-    last_=result;
+    assignPose(last_,result,!graph_->morphFree());
 }
 } // namespace aiverse::render

@@ -1,0 +1,40 @@
+{
+  "id": "2026-11-12-prisma-light-shafts",
+  "date": "2026-11-12",
+  "system": "prisma",
+  "title": "Лучи света сквозь дымку",
+  "summary": "Объёмные лучи солнца в дымке на сцене Sponza: сравнение выключено / включено.",
+  "body": [
+    "Снимки из бенчмарка Sponza 2026-11-12. Настройки сцены лежат рядом со снимками в docs/benchmarks/sponza-2026-11-12."
+  ],
+  "status": "done",
+  "verified": "Снимки сняты движком на сцене Sponza.",
+  "limits": null,
+  "branch": "main",
+  "commit": "b9c9be65d",
+  "media": [
+    {
+      "src": "docs/images/readme/sponza-light-shafts.png",
+      "caption": "Выключено / включено",
+      "captionEn": "Off / on"
+    },
+    {
+      "src": "docs/benchmarks/sponza-2026-11-12/haze-shafts-crop.png",
+      "caption": "Лучи крупно",
+      "captionEn": "Shafts close-up"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/prisma.md",
+      "href": "docs/prisma.md"
+    }
+  ],
+  "author": "prisma",
+  "titleEn": "Light shafts through haze",
+  "summaryEn": "Volumetric sun shafts in haze in the Sponza scene: off / on comparison.",
+  "verifiedEn": "Frames captured by the engine in the Sponza scene.",
+  "bodyEn": [
+    "Frames from the Sponza benchmark of 2026-11-12. Scene settings are next to the frames in docs/benchmarks/sponza-2026-11-12."
+  ]
+}

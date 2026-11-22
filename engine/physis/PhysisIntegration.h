@@ -1,10 +1,13 @@
 // PHYSIS Stage 5: generic Simulation integration, persistent ECS and render-neutral snapshots.
 // No dependency on any genre module or rendering backend.
 #pragma once
+#include <memory>
 #include "PhysisDisasters.h"
+#include "PhysisStreaming.h"
 #include "PhysisWind.h"
 #include "PhysisGravity.h"
 #include "PhysisStorm.h"
+#include "PhysisTornado.h"
 #include "PhysisForces.h"
 #include "PhysisNatureSampling.h"
 #include "PhysisNatureStress.h"
@@ -94,7 +97,8 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false,
                                 bool storms = false, bool forces = false,
                                 bool natureContacts = false,
                                 bool natureStress = false,
-                                bool fractureOutbox = false) {
+                                bool fractureOutbox = false,
+                                bool tornadoes = false) {
     // Must be called during GameModule::setup before the registry is sealed.
     simulation.registerPersistentComponent<Cell>("physis.cell", 1);
     simulation.registerPersistentComponent<Atmosphere>("physis.atmosphere", 1);
@@ -113,8 +117,14 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false,
         simulation.registerPersistentComponent<GravityField>("physis.gravity_field", 1);
         simulation.registerPersistentResource<GravitySettings>("physis.gravity_settings", 1);
     }
-    if (storms)
+    if (storms || tornadoes)
         simulation.registerPersistentComponent<StormEvent>("physis.storm_event", 1);
+    // Tornado tracks, their debris and wind-carried host objects (PhysisTornado.h).
+    if (tornadoes) {
+        simulation.registerPersistentComponent<TornadoTrack>("physis.tornado_track", 1);
+        simulation.registerPersistentComponent<NatureCarriable>("physis.nature_carriable", 1);
+        simulation.registerPersistentResource<TornadoDebrisField>("physis.tornado_debris", 1);
+    }
     if (forces) {
         simulation.registerPersistentComponent<ForceReceiver>("physis.force_receiver", 1);
         simulation.registerPersistentComponent<ForceOutput>("physis.force_output", 1);
@@ -150,6 +160,10 @@ struct InstallOptions {
     DisasterConfig disasters{};
     bool enableDisasters = false;
     bool enableStorms = false;
+    // Moving tornadoes (PhysisTornado.h): TornadoTrack paths, life ramp, fire,
+    // debris, NatureCarriable objects and host damage through
+    // GameModule::environmentDamage. Implies enableStorms. Map: "tornadoes".
+    bool enableTornadoes = false;
     bool enableForces = false;
     // Publish read-only per-entity weather/gravity/storm snapshots after
     // each climate tick. Defaults off for strict older-save compatibility.
@@ -167,6 +181,15 @@ struct InstallOptions {
     // Use ExternalAuthority when NEREID or another water simulation owns
     // water volumes; fire and quakes keep running without duplicate flooding.
     FloodMode floodMode = FloodMode::LocalShallow;
+    // Grid passes on several threads (PhysisParallel.h), bit-identical to
+    // serial. 1 = serial (default), 0 = hardware concurrency, N = N lanes.
+    // Not saved and not part of the state hash: hosts may pick any value.
+    unsigned workerThreads = 1;
+    // Chunk streaming (PhysisStreaming.h): 0 = off (whole grid every tick,
+    // save manifest unchanged); N = chunk edge in cells. Anchors listed here
+    // are spawned as ActivityAnchor entities; hosts may add/move their own.
+    std::int32_t streamingChunkCells = 0;
+    std::vector<ActivityAnchor> anchors;
 };
 
 inline void install(Simulation& simulation, const InstallOptions& options = {}) {
@@ -178,6 +201,11 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
         (!options.enableForces || !options.enableNatureContacts))
         throw std::invalid_argument(
             "PHYSIS nature stress requires forces and nature contacts");
+    if (options.streamingChunkCells != 0 &&
+        (options.streamingChunkCells < 4 || options.streamingChunkCells > 1024))
+        throw std::invalid_argument("PHYSIS streaming chunkCells must be 4..1024");
+    if (!options.anchors.empty() && options.streamingChunkCells == 0)
+        throw std::invalid_argument("PHYSIS anchors require streaming");
     if (options.enableFractureOutbox && !options.enableNatureStress)
         throw std::invalid_argument(
             "PHYSIS fracture outbox requires nature stress");
@@ -191,14 +219,45 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
                         options.enableWindZones, options.enableGravityFields,
                         options.enableStorms, options.enableForces,
                         options.enableNatureContacts, options.enableNatureStress,
-                        options.enableFractureOutbox);
+                        options.enableFractureOutbox, options.enableTornadoes);
+    if (options.enableTornadoes)
+        simulation.world().setResource<TornadoDebrisField>(TornadoDebrisField{});
+    if (options.streamingChunkCells != 0) {
+        enableStreaming(simulation.world(), options.streamingChunkCells);
+        for (const auto& anchor : options.anchors)
+            (void)addActivityAnchor(simulation.world(), anchor.position, anchor.radiusMeters);
+        simulation.registerPersistentResource<ActiveChunks>("physis.active_chunks", 1);
+        simulation.registerPersistentComponent<ActivityAnchor>("physis.activity_anchor", 1);
+        // Before the climate pass, so the whole tick sees one mask.
+        simulation.addSystem("physis.streaming", [](Simulation& sim) {
+            updateActiveChunks(sim.world());
+        });
+    }
+    std::shared_ptr<const CellExecutor> lanes;
+    if (options.workerThreads != 1)
+        lanes = std::make_shared<ThreadPoolCellExecutor>(options.workerThreads);
     simulation.addSystem("physis.environment",
-        [hazards=options.enableDisasters, storms=options.enableStorms,
-         flood=options.floodMode](Simulation& sim) {
+        [hazards=options.enableDisasters,
+         storms=options.enableStorms || options.enableTornadoes,
+         flood=options.floodMode, lanes](Simulation& sim) {
+            ScopedCellExecutor parallel(lanes.get());
             if (storms && hazards) advanceEnvironmentWithStormsAndDisasters(sim.world(), flood);
             else if (storms) advanceEnvironmentWithStorms(sim.world());
             else if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);
             else advanceEnvironment(sim.world());
+        });
+    // Tornado life/path/effects after the climate tick moved storm tracks and
+    // before forces sample the wind, so every later pass sees one vortex.
+    if (options.enableTornadoes)
+        simulation.addSystem("physis.tornadoes", [](Simulation& sim) {
+            TornadoHooks hooks;
+            hooks.secondsPerTick = Fixed::fromRatio(1, std::max<std::int64_t>(1, sim.tickRate()));
+            hooks.user = &sim;
+            hooks.damage = [](void* user, Entity target, Fixed amount, Entity source) {
+                auto& s = *static_cast<Simulation*>(user);
+                s.module().environmentDamage(s, target, amount, source);
+            };
+            (void)advanceTornadoes(sim.world(), hooks);
         });
     // Optional published ECS force output; this does NOT integrate motion.
     if (options.enableForces)

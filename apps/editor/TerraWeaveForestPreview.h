@@ -125,19 +125,21 @@ public:
                 terraweave::biomeBit(terraweave::Biome::Wetland) |
                 terraweave::biomeBit(terraweave::Biome::Tundra) |
                 terraweave::biomeBit(terraweave::Biome::Alpine);
+            // Map-saved forest recipe (terraweave_forest_set); defaults otherwise.
+            const auto forestRecipe = terraweave_ops_detail::forestRecipe(doc.data.extra["terraweaveForest"]);
             std::vector<terraweave::FoliageSpecies> species;
             for (const auto& [id, weight] : speciesWeights_) {
                 terraweave::FoliageSpecies f;
                 f.id = id;
                 f.biomeMask = forestBiomes;
                 f.weight = weight;
-                f.maxSlopePermille = 1250;
+                f.maxSlopePermille = forestRecipe.maxSlopePermille;
                 species.push_back(f);
             }
             terraweave::ScatterSettings scatter;
-            scatter.seed = t.seed ^ 0x5457464f52455354ULL;
-            scatter.spacingCm = 1100;
-            scatter.densityPermille = 780;
+            scatter.seed = (t.seed ^ 0x5457464f52455354ULL) + uint64_t(forestRecipe.seedOffset);
+            scatter.spacingCm = forestRecipe.spacingCm;
+            scatter.densityPermille = forestRecipe.enabled ? uint32_t(forestRecipe.densityPermille) : 0u;
             // Deterministic world-lattice generation, independent of camera/tile order.
             for (int iz = -kRadiusInTiles; iz <= kRadiusInTiles; ++iz)
                 for (int ix = -kRadiusInTiles; ix <= kRadiusInTiles; ++ix) {
@@ -189,15 +191,8 @@ public:
             // same TerraWeave seeds, so the forest continues to the horizon.
             if (!horizon_ || horizonRecipe_ != recipeKey) {
                 if (horizon_) horizon_->shutdown(device);
-                terraweave::HorizonSettings hs;
-                hs.closeForestEndCm = kHorizonCloseCm;
-                // Map ground covers the camera neighbourhood; far proxy ground
-                // starts where the authored map usually ends.
-                hs.terrainBeginCm = std::clamp<int32_t>(int32_t(std::min(doc.data.w, doc.data.h)) * origin.cellSizeCm / 2,
-                                                       kHorizonCloseCm, 110000);
-                hs.crownDetail = 3;
-                hs.orientationViews = 2;
-                hs.atlasTilePixels = 64;
+                const terraweave::HorizonSettings hs = editorHorizonSettings(
+                    doc.data.w, doc.data.h, origin.cellSizeCm);
                 horizon_ = std::make_unique<terraweave::TerraWeaveHorizonScene>(
                     terraweave_ops_detail::terrain(recipe), terraweave::BiomeSettings{}, hs);
                 horizonRecipe_ = recipeKey;
@@ -208,6 +203,21 @@ public:
         }
     }
     bool horizon() const { return horizonEnabled_; }
+    // Horizon HLOD settings of the editor preview: the High quality preset
+    // (two canopy views, crown detail 3, 48 px atlas tiles - 64 px tiles with
+    // two views exceed the 2048 px / 16 MiB atlas budget and made the whole
+    // forest overlay switch itself off) with the near/far ownership of the map.
+    static terraweave::HorizonSettings editorHorizonSettings(int mapW, int mapH, int32_t cellSizeCm) {
+        terraweave::HorizonSettings hs =
+            terraweave::horizonSettingsForQuality(terraweave::HorizonQualityPreset::High);
+        hs.closeForestEndCm = kHorizonCloseCm;
+        // Map ground covers the camera neighbourhood; far proxy ground
+        // starts where the authored map usually ends.
+        hs.terrainBeginCm = std::clamp<int32_t>(int32_t(std::min(mapW, mapH)) * cellSizeCm / 2,
+                                               kHorizonCloseCm, 110000);
+        terraweave::validateHorizonSettings(hs);
+        return hs;
+    }
     void setHorizon(bool on) { horizonEnabled_ = on; }
 
 private:

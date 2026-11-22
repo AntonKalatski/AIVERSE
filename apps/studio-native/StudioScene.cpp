@@ -1654,7 +1654,8 @@ void StudioScene::frame(int framebufferWidth, int framebufferHeight, const edito
         // Realtime off), plus settle frames for temporal effects and a 1 s heartbeat.
         constexpr int kSettleFrames=30;
         const uint64_t signature=frameSignature(framebufferWidth,framebufferHeight,doc,fpsProject,selectedId);
-        const bool animated=continuousRedraw_ || tween_.active || modelsPending_ ||
+        // Pending Assets thumbnails render inside a drawn frame (one per frame).
+        const bool animated=continuousRedraw_ || tween_.active || modelsPending_ || !thumbJobs_.empty() ||
             lightingRevision_!=doc.revision || nereid_.configuredSurfaces()>0 ||
             (wind_.enabled && riggedInstances_>0) || day.clouds>0 || lodDiagnostics_ ||
             (lightingRuntime_.indirect && !lightingRuntime_.indirect->converged) ||

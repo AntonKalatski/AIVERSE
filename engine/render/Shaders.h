@@ -5,7 +5,8 @@
 //   sun (Lambert + Blinn specular) x contact-hardening shadow map
 //   + hemisphere ambient (sky/ground) + rim + distance fog + ACES tonemap, lighting in linear space.
 #pragma once
-#include "LightShaders.h"   // AIVERSE_GLSL_LIGHTS / AIVERSE_MSL_LIGHTS: dynamic point lights (U2, tex1)
+#include "LightShaders.h"
+#include "NereidWaveShaders.h"   // NEREID wave model (planes and spheres)   // AIVERSE_GLSL_LIGHTS / AIVERSE_MSL_LIGHTS: dynamic point lights (U2, tex1)
 
 namespace aiverse::render::shaders {
 
@@ -537,34 +538,9 @@ uniform sampler2D tex6;
 
 float shadowFactor(vec3 n) { return u_params.z < 0.5 ? 1.0 : min(shadowAt(v_wpos, n), terrainShadow(v_wpos)); }
 
-float nereidNoise(vec2 p) {
-    vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-    float a=fract(sin(dot(i,vec2(127.1,311.7)))*43758.5453);
-    float b=fract(sin(dot(i+vec2(1,0),vec2(127.1,311.7)))*43758.5453);
-    float c=fract(sin(dot(i+vec2(0,1),vec2(127.1,311.7)))*43758.5453);
-    float d=fract(sin(dot(i+vec2(1,1),vec2(127.1,311.7)))*43758.5453);
-    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
-}
-vec2 nereidWaveGradient(vec2 p,float intrinsicTime,bool tagged) {
-    float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
-    const vec4 wv[6] = vec4[6](vec4(0.951,0.309,0.61,0.060),vec4(-0.454,0.891,0.97,0.045),vec4(0.588,-0.809,1.63,0.036),vec4(-0.978,-0.208,2.71,0.026),vec4(0.139,0.990,4.37,0.018),vec4(0.743,0.669,6.91,0.012));
-    vec2 g=vec2(0.0);
-    for(int i=0;i<6;++i) {
-        float ph=dot(p,wv[i].xy)*wv[i].z+intrinsicTime*sqrt(wv[i].z)*1.3+(tagged?phaseWarp:0.0);
-        g+=wv[i].xy*(wv[i].z*wv[i].w*cos(ph));
-    }
-    vec2 q=p*.9+vec2(intrinsicTime*.11,-intrinsicTime*.07);
-    if(tagged)q+=vec2(sin(p.y*.37+p.x*.17),cos(p.x*.43-p.y*.23))*1.7;
-    vec2 qi=floor(q),qf=fract(q),qu=qf*qf*(3.0-2.0*qf);
-    float h00=fract(sin(dot(qi,vec2(127.1,311.7)))*43758.5),h10=fract(sin(dot(qi+vec2(1,0),vec2(127.1,311.7)))*43758.5);
-    float h01=fract(sin(dot(qi+vec2(0,1),vec2(127.1,311.7)))*43758.5),h11=fract(sin(dot(qi+vec2(1,1),vec2(127.1,311.7)))*43758.5);
-    vec2 dn=vec2(mix(h10-h00,h11-h01,qu.y),mix(h01-h00,h11-h10,qu.x))*6.0*qf*(1.0-qf);
-    return g+dn*.09;
-}
-float nereidMacroPatch(vec2 p,float intrinsicTime) {
-    vec2 m=p*.021+vec2(intrinsicTime*.004,0.0);
-    return .5+.5*sin(m.x*2.3+sin(m.y*1.7)*2.1)*sin(m.y*1.9+sin(m.x*1.3)*1.7);
-}
+)"
+    AIVERSE_GLSL_NEREID_WAVES
+    R"(
 float nereidRapidField(vec2 transported,vec2 flow,float scale,float detail) {
     vec2 dir=flow/max(length(flow),.001);
     // Rotating absolute world position by a varying tangent makes phase grow
@@ -883,34 +859,9 @@ static float shadowFactor(constant U0& u, constant U1& f, float3 wpos, float3 n,
                           texture2d<float> hf, sampler hs) {
     return u.params.z < 0.5 ? 1.0 : min(shadowAt(f, wpos, n, fragCoord, sm, ss), terrainShadow(f, hf, hs, wpos));
 }
-static float nereidNoise(float2 p) {
-    float2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-    float a=fract(sin(dot(i,float2(127.1,311.7)))*43758.5453);
-    float b=fract(sin(dot(i+float2(1,0),float2(127.1,311.7)))*43758.5453);
-    float c=fract(sin(dot(i+float2(0,1),float2(127.1,311.7)))*43758.5453);
-    float d=fract(sin(dot(i+float2(1,1),float2(127.1,311.7)))*43758.5453);
-    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
-}
-float2 nereidWaveGradient(float2 p,float intrinsicTime,bool tagged) {
-    float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
-    const float4 wv[6] = {float4(0.951,0.309,0.61,0.060),float4(-0.454,0.891,0.97,0.045),float4(0.588,-0.809,1.63,0.036),float4(-0.978,-0.208,2.71,0.026),float4(0.139,0.990,4.37,0.018),float4(0.743,0.669,6.91,0.012)};
-    float2 g=float2(0.0);
-    for(int i=0;i<6;++i) {
-        float ph=dot(p,wv[i].xy)*wv[i].z+intrinsicTime*sqrt(wv[i].z)*1.3+(tagged?phaseWarp:0.0);
-        g+=wv[i].xy*(wv[i].z*wv[i].w*cos(ph));
-    }
-    float2 q=p*.9+float2(intrinsicTime*.11,-intrinsicTime*.07);
-    if(tagged)q+=float2(sin(p.y*.37+p.x*.17),cos(p.x*.43-p.y*.23))*1.7;
-    float2 qi=floor(q),qf=fract(q),qu=qf*qf*(3.0-2.0*qf);
-    float h00=fract(sin(dot(qi,float2(127.1,311.7)))*43758.5),h10=fract(sin(dot(qi+float2(1,0),float2(127.1,311.7)))*43758.5);
-    float h01=fract(sin(dot(qi+float2(0,1),float2(127.1,311.7)))*43758.5),h11=fract(sin(dot(qi+float2(1,1),float2(127.1,311.7)))*43758.5);
-    float2 dn=float2(mix(h10-h00,h11-h01,qu.y),mix(h01-h00,h11-h10,qu.x))*6.0*qf*(1.0-qf);
-    return g+dn*.09;
-}
-float nereidMacroPatch(float2 p,float intrinsicTime) {
-    float2 m=p*.021+float2(intrinsicTime*.004,0.0);
-    return .5+.5*sin(m.x*2.3+sin(m.y*1.7)*2.1)*sin(m.y*1.9+sin(m.x*1.3)*1.7);
-}
+)"
+    AIVERSE_MSL_NEREID_WAVES
+    R"(
 float nereidRapidField(float2 transported,float2 flow,float scale,float detail) {
     float2 dir=flow/max(length(flow),.001);
     // Rotating absolute world position by a varying tangent makes phase grow

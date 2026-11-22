@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!--TITLE--></title>
+<meta name="description" content="<!--DESC-->">
+<link rel="icon" href="{{B}}favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="{{otherLang}}" href="{{OTHER_HREF}}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{B}}style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="{{mainMenu}}">
+<a class="brand" href="./"><img src="{{B}}favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">{{navSystems}}</a>
+<a href="./#genres">{{navGenres}}</a>
+<a href="roadmap.html" data-nav="roadmap">{{navRoadmap}}</a>
+<a href="releases.html" data-nav="releases">{{navReleases}}</a>
+<a href="devlog.html" data-nav="devlog">{{navDevlog}}</a>
+<a href="blog.html" data-nav="blog">{{navBlog}}</a>
+<a href="docs.html" data-nav="docs">{{navDocs}}</a>
+</div>
+<a class="lang-switch" href="{{OTHER_HREF}}" hreflang="{{otherLang}}" lang="{{otherLang}}">{{otherLabel}}</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap<!--MAINCLASS-->">
+<!--CONTENT-->
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>{{footSite}}</span><a href="./">{{footHome}}</a><a href="roadmap.html">{{navRoadmap}}</a><a href="releases.html">{{navReleases}}</a><a href="devlog.html">{{navDevlog}}</a><a href="blog.html">{{navBlog}}</a><a href="docs.html">{{navDocs}}</a></div>
+<div><span>{{footCommunity}}</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>{{footNote}}</small>
+</div>
+</footer>
+<!--SCRIPT-->
+</body>
+</html>

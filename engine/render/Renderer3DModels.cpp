@@ -1211,7 +1211,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
     }
     if (!customVertexStream) recordPersistentModel(d);
-    if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0) {   // light baker: the static scene, every node in world space
+    // Partial primitive draws and per-instance vertex parameters cannot
+    // replay an immutable whole-model static packet/cache.
+    const bool specialDraw = d.primitiveMaterialFilter >= 0 || d.useVertexParameters;
+    if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0 && !d.materialMask) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
         for (size_t i = 0; i < pose.size(); ++i) nodeWorld[i] = d.world * pose[i];
@@ -1239,9 +1242,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         eligibility = cachedStaticModelEligibility(*m);
     const StaticModelCache* cache = d.staticCache;
     if (customVertexStream) cache = nullptr;
-    if (cache && !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement))
+    if (cache && (specialDraw || !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement)))
         cache = nullptr;
-    if (!customVertexStream && !cache && staticModelCacheEnabled_) {
+    if (!customVertexStream && !cache && !specialDraw && staticModelCacheEnabled_) {
         if (staticModelCacheDrawCandidate(d, activeDisplacement, eligibility)) {
             auto& entry = staticModelCaches_[d.persistentId];
             const bool unchanged =
@@ -1299,7 +1302,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     }();
     // Tracked draws need current-frame provenance, never cached invocation IDs.
     const bool packetEligible = !customVertexStream && trackedModelCount_ == 0 &&
-        staticRenderPacketsEnabled_ && !m->batching.independentShadowLod && !gpuPacketLod &&
+        staticRenderPacketsEnabled_ && !m->batching.independentShadowLod && !gpuPacketLod && !specialDraw &&
         staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
                                         lodDiagnosticsEnabled_, eligibility);
     const size_t packetStart = modelItems_.size();
@@ -1536,13 +1539,34 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             const bool zeroToOne = dev_->info().clipDepthZeroToOne;
             const float cameraPixels = nodeView
                 ? geometryErrorPixels(viewProj_ * lodWorld, lodMin, lodMax, error,
-                                       sceneW_, sceneH_, zeroToOne) : 0.0f;
+                                       sceneW_, sceneH_, zeroToOne) * modelLodScale_ : 0.0f;
             float pixels = cameraPixels;
-            const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne):0.f;
+            const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne)*modelLodScale_*shadowLodScale_:0.f;
+            // Opt-in size cull (".batching.json" cullPixels), measured in
+            // real projected pixels, independent of the LOD scale.
+            // Nodes outside both frusta keep the old path (later mirror passes).
+            if(m->batching.cullPixels>0.f && d.lodLevel<0 && rigid && (nodeView || nodeShadow)) {
+                const float cull=m->batching.cullPixels*modelLodScale_;
+                if(nodeView && cameraPixels<cull) nodeView=false;
+                if(nodeShadow && shadowPixels<cull*shadowLodScale_) nodeShadow=false;
+                if(!nodeView && !nodeShadow) { ++modelStats_.culledNodes; continue; }
+            }
             if(d.lodLevel>=0)shadowLodMesh=forcedModelLod(node.mesh,baseMesh.lods,d.lodLevel).mesh;
             else if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
             else if(nodeShadow)pixels=std::max(pixels,shadowPixels);
-            if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
+            if (!nodeView && !nodeShadow) {
+                // Later mirror/spot frusta: no frustum here, so estimate the
+                // size from the distance to the camera instead of forcing
+                // LOD0 (a planar reflection sees the same distances).
+                const mat4 clip = viewProj_ * lodWorld;
+                const float3 centre = (lodMin + lodMax) * .5f;
+                const float4 cc = clip * float4{centre.x, centre.y, centre.z, 1};
+                const float focal = length(float3{clip.at(1,0), clip.at(1,1), clip.at(1,2)});
+                const float dist = std::max(std::fabs(cc.w), error);
+                pixels = std::isfinite(cc.w) && std::isfinite(focal)
+                    ? .5f * float(sceneH_) * error * focal / dist * modelLodScale_
+                    : std::numeric_limits<float>::infinity();
+            }
             const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
                 std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
             const float fadeWidth = opaque && !m->geometry && matQuality_!=MaterialQuality::Low ? modelLodFadeWidth_ : 0;
@@ -1607,12 +1631,12 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool gpuPacketSource = d.gpuIndexed.valid() ||
                                      !d.gpuIndexedPrimitives.empty() ||
                                      !d.gpuShadowPrimitives.empty();
-        const bool shadowBatch = !customVertexStream && d.primitiveMaterialFilter < 0 &&
+        const bool shadowBatch = !customVertexStream && d.primitiveMaterialFilter < 0 && !d.materialMask &&
                                  !gpuPacketSource && !m->geometry &&
                                  !d.nodeMaterial && d.variant < 0 &&
                                  shadowBatchCompatible(drawMesh,mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (!customVertexStream && !shadowOnly && d.primitiveMaterialFilter < 0 && !gpuPacketSource &&
+        if (!customVertexStream && !shadowOnly && d.primitiveMaterialFilter < 0 && !d.materialMask && !gpuPacketSource &&
             !m->geometry && !d.nodeMaterial &&
             d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
@@ -1626,6 +1650,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (p.indexCount == 0 ||
                 (d.primitiveMaterialFilter >= 0 &&
                  p.material != d.primitiveMaterialFilter)) return;
+            if (d.materialMask && (p.material < 0 || size_t(p.material) >= d.materialMask->size() ||
+                                   !(*d.materialMask)[size_t(p.material)])) return;
             int mi = p.material;
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
@@ -3431,6 +3457,15 @@ void Renderer3D::renderModels(int phase) {
             take=geometryBoxVisible(lightViewProj_*it.world,it.prim->boundsMin,it.prim->boundsMax);
         // Reflection has its own view, never consume main-view occlusion there.
         if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.vertexOverride.valid() || it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
+        // Reflection size cull (game.json "lod.reflectionCullPixels"): the
+        // mirror is low-res and rippled, small rigid parts are not visible.
+        if (take && phase == 1 && !geometryMainView_ && reflectionCullPixels_ > 0.f && it.rigid &&
+            it.joints < 0 && !it.vertexOverride.valid()) {
+            const float diag = length(it.prim->boundsMax - it.prim->boundsMin);
+            const float px = geometryErrorPixels(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax, diag,
+                                                 sceneW_, sceneH_, dev_->info().clipDepthZeroToOne);
+            if (px < reflectionCullPixels_) take = false;
+        }
         // Kingston water: ground models must not cover the mirrored city.
         // This flat city puts the rainwater at y=.045. Fully submerged primitives
         // are omitted only from the reflection, retaining normal and shadow draws.
@@ -3820,6 +3855,17 @@ void Renderer3D::renderModels(int phase) {
             if (paletteSort && materialGroup[a] != materialGroup[b])
                 return materialGroup[a] < materialGroup[b];
             if (x.prim != y.prim) return x.prim < y.prim;
+            // sameBatch splits on these: group them, or LOD-fading and
+            // settled copies of one primitive alternate and every switch
+            // costs a draw call.
+            {
+                const bool fx = x.lodThreshold < 1 || x.lodInvert, fy = y.lodThreshold < 1 || y.lodInvert;
+                if (fx != fy) return fx < fy;
+                const bool bx = x.tint.w < 0.99f, by = y.tint.w < 0.99f;
+                if (bx != by) return bx < by;
+                constexpr uint32_t kSplit = kDrawFadeDepth | kDrawTransparent | kDrawActorReveal;
+                if ((x.flags & kSplit) != (y.flags & kSplit)) return (x.flags & kSplit) < (y.flags & kSplit);
+            }
             if (x.gi != y.gi) return x.gi < y.gi;
             if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
             return a < b;
