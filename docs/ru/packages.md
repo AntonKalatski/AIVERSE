@@ -46,6 +46,11 @@ python3 tools/pkg/aiverse_pkg.py create <id-шаблона> ~/Games/New   # но
 - Без сети: `AIVERSE_PACKAGES_OFFLINE=1` берёт только кэш и последний скачанный индекс.
 - C++-инструменты и редактор находят пакеты в кэше через `engine/pack/Packages.h`
   (`aiverse::pack::cachedPackageDir("vegetation-pbr")`). Игра кэш не читает.
+- Редактор: окно Studio **Catalog** (рабочие пространства Look и Publish или «Catalog» в поиске
+  команд) ищет в каталоге, показывает пакет и ставит или удаляет его одной кнопкой; предупреждает, если
+  у пакетов проекта пропали или изменились файлы, и восстанавливает их из `aiverse.lock`. Агенты делают то
+  же через MCP: `package_search`, `package_info`, `package_status`, `package_add`, `package_remove`,
+  `package_install`, `package_skill` (они запускают `aiverse_pkg.py` на открытом проекте).
 
 ## Web-просмотрщик
 

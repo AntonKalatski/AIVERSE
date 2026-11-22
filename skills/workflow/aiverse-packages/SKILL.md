@@ -18,6 +18,8 @@ python3 tools/pkg/aiverse_pkg.py --json add terrain-pbr --project <project>
 python3 tools/pkg/aiverse_pkg.py --json skill <skill-id> --project <project>   # everything a skill needs
 ```
 
+- In the editor / MCP the same is `package_search`, `package_info`, `package_status`, `package_add`,
+  `package_remove`, `package_install`, `package_skill {skill, install: true}` on the open project.
 - A skill's frontmatter `packages:` lists what it needs; `python3 tools/skills/catalog.py plan`
   prints the install commands. Install them before following the skill in a project.
 - Look for a material / asset id in `provides` of `search`/`info` before authoring a new one.

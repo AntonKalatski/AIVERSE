@@ -96,7 +96,7 @@
   function texLines(list) {
     if (!list || !list.length) return '<div class="muted">' + L.noTex + '</div>';
     return list.map(function (m) {
-      var name = L.maps[m.map] || m.map, file = (m.file || '').split('/').pop();
+      var name = L.maps[m.map] || m.map, file = (m.file || '').split('/').pop().replace(/#t\d+$/, '');
       return '<div><b>' + esc(name) + '</b> ' + m.width + '×' + m.height + (m.bytes ? ' · ' + size(m.bytes) : '') +
         (m.map === 'image' && file ? ' <span class="muted">' + esc(file) + '</span>' : '') + '</div>';
     }).join('');

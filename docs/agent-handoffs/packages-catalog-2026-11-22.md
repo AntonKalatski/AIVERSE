@@ -143,3 +143,17 @@ for large models (staging is synchronous).
   files become the release archive and the package is committed to main without them, manifest gets
   `archive`. The `merge-guard` check job fails on PRs with `files/` so nobody presses Merge. The PR head
   ref on GitHub still holds the files (GitHub keeps `refs/pull/N/head`); clones of main never fetch it.
+
+## Stage 5 — Studio Catalog window and package_* MCP ops (2026-11-22, branch feature/aiv20261122_catalog_studio)
+
+- `apps/editor/core/PackageOps.{h,cpp}`: `package_search/info/status/add/remove/install/skill` over
+  `aiverse_pkg.py --json` (shared by MCP and Studio). Checked through the built `aiversemcp` on Linux
+  against the live catalog: search, info, and `package_add terraweave-rocks` into a temp project, which
+  installed `terrain-pbr` first (130 + 26 files, game.json and aiverse.lock written).
+- Studio panel `catalog` (handoff `docs/handoff/studio-html5/stage-101-catalog-window.md`), native allowlist
+  group `catalog` in `apps/studio-native/StudioTools.h`.
+- Viewer shell: texture names without the loader's `#tN` suffix.
+- Live check after publishing: site Catalog lists 6 packages; tree pack 3D preview on Pages shows LOD
+  levels and STRATA (oak: 109 clusters, 68 ms) with textures taken from vegetation-pbr.
+- Not checked: native macOS Studio panel; STRATA wireframe overlay looked empty on the oak in the web build
+  (cluster colours not tried there).
