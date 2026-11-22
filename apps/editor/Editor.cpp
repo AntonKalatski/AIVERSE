@@ -30,7 +30,7 @@
 #include <iterator>
 #include <unordered_map>
 #include "engine/game/Tiles.h"
-#include "engine/view/GameCamera.h"
+#include "engine/render/CameraModes.h"
 #include "engine/view/GameOverlayData.h"
 #include "engine/view/GameSelectionPresentation.h"
 #include <sstream>
@@ -700,7 +700,7 @@ void Editor::fitScene() {
         return;
     }
     // 2D games: projection and angle of game.json "camera" (zoom stays the editor's)
-    game::CameraSetup cs = game::cameraSetupFrom(ws_.project.manifest);
+    render::CameraSetup cs = render::cameraSetupFrom(ws_.project.manifest);
     sceneCam.ortho = cs.ortho;
     if (cs.present) { sceneCam.pitch = std::min(cs.pitch, 1.5707f); sceneCam.yaw = cs.yaw; sceneCam.fovY = cs.fovY; }
 }
@@ -2160,7 +2160,7 @@ void Editor::startPlay(int humanSlot) {
         if (size_t(human_ - 1) < d.players.size() && d.players[size_t(human_ - 1)].hasStart) gameCam.target = {d.players[size_t(human_ - 1)].startX, 0, d.players[size_t(human_ - 1)].startZ};
         gameCam.distance = 24;
     }
-    game::applyCameraSetup(game::cameraSetupFrom(ws_.project.manifest), gameCam, 720.0f);
+    render::applyCameraSetup(render::cameraSetupFrom(ws_.project.manifest), gameCam, 720.0f);
     focusWindow("game");
     status = human_ ? "Тест: вы играете за игрока " + std::to_string(human_) : "Тест: боты играют на карте";
 }

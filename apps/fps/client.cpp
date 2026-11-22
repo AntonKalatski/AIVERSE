@@ -1,9 +1,8 @@
 #include <aiverselib/net/Admission.h>
 #include "engine/net/authority/Session.h"
 #include "engine/actor/Project.h"
-#include "engine/view/FirstPersonCamera.h"
+#include "engine/render/CameraModes.h"
 #include "RoyaleHud.h"
-#include "engine/render/ChaseCamera.h"
 #include "engine/ui/RaceHud.h"
 #include "engine/roads/RoadView.h"
 #include "engine/net/Udp.h"
@@ -121,7 +120,7 @@ struct App {
     uint32_t shownShots=0,shownHits=0,shownLife=0;
     double flash=0,hitFlash=0;
     double accumulated=0;bool listen=false;
-    actor::view::Look look;
+    render::Look look;
     net::authority::Snapshot previousSnapshot,received;uint32_t lastSnapshotTick=0;double snapshotAge=0;
 
     // Data-driven semantic mapping: games may replace this context with their own JSON assets.

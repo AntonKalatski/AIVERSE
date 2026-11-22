@@ -9,7 +9,7 @@
 #include "engine/net/LatestChannel.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/net/Udp.h"
-#include "engine/view/FirstPersonCamera.h"
+#include "engine/render/CameraModes.h"
 #include <stdexcept>
 #include <optional>
 #include <fstream>
@@ -58,7 +58,7 @@ void audioBank(const std::string& path) {
 void cameraControls() {
     using namespace render;
     for(float yaw:{0.f,0.25f,0.5f,0.75f}) {
-        actor::view::Look look{yaw,0};auto before=look.camera({});auto forward=normalize(before.target-before.eye());auto right=normalize(cross(forward,{0,1,0}));
+        render::Look look{yaw,0};auto before=look.camera({});auto forward=normalize(before.target-before.eye());auto right=normalize(cross(forward,{0,1,0}));
         look.motion(10,0);auto camera=look.camera({});auto changed=normalize(camera.target-camera.eye());CHECK(dot(changed,right)>0);
         look={yaw,0};look.motion(0,-10);camera=look.camera({});CHECK((camera.target-camera.eye()).y>0);
         actor::CharacterSnapshot actor;actor::Input input;input.yaw=Fixed::fromRaw(int64_t(yaw*65536));input.right=1000;
