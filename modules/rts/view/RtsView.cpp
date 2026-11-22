@@ -1851,7 +1851,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                     unsigned(g.strataCookedSources),unsigned(g.strataCookStaleSources),unsigned(g.strataCookWrittenSources),
                     double(g.strataStageMs),double(g.strataCookedLoadMs),double(g.strataBuildMs),
                     double(g.strataPortableTriangles-lastTris)/300.0,frameMs,frameMs>0?1000.0/frameMs:0.0,double(g.strataErrorScale),processResidentMB(),
-                    double(g.strataIndexBytes+g.strataNodes*28ull+g.strataMeshlets*20ull)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0);
+                    double(g.strataIndexBytes-std::min(g.strataIndexBytes,g.strataArchivedCpuIndexBytesFreed)+g.strataCompressedCpuIndexBytes+g.strataNodes*52ull+g.strataMeshlets*20ull)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0);
 #if defined(__ANDROID__)
                 __android_log_print(ANDROID_LOG_INFO,"AIVERSE","%s",line);
 #else
@@ -1962,8 +1962,8 @@ void RtsView::drawStrataHud(float w, float h) {
         on?"ON":"OFF (LOD path)",
         on?(g.strataCookedSources?"  [cooked on disk]":"  [built at load]"):"",
         mode.c_str(),geometryScene_.instanceCount(),unsigned(g.strataPortableSources),
-        renderedTris_/1e6,strataHud_.tris/1e6,double(g.strataErrorScale),g.strataErrorScale>1.001f?"  (triangle budget)":"",renderedDraws_,processResidentMB(),double(g.strataIndexBytes+g.strataNodes*28ull+g.strataMeshlets*20ull)/1048576.0,
-        double(g.strataIndexBytes)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0,strataHud_.ms,strataHud_.ms>0?1000.0/strataHud_.ms:0.0);
+        renderedTris_/1e6,strataHud_.tris/1e6,double(g.strataErrorScale),g.strataErrorScale>1.001f?"  (triangle budget)":"",renderedDraws_,processResidentMB(),double(g.strataIndexBytes-std::min(g.strataIndexBytes,g.strataArchivedCpuIndexBytesFreed)+g.strataCompressedCpuIndexBytes+g.strataNodes*52ull+g.strataMeshlets*20ull)/1048576.0,
+        double(g.strataPortableGpuIndexBytes)/1048576.0,double(g.strataSelectionGpuBytes)/1048576.0,strataHud_.ms,strataHud_.ms>0?1000.0/strataHud_.ms:0.0);
     ImDrawList* dl=ImGui::GetForegroundDrawList();
     if(strataDebugInset_ && insetTexture_){
         const float s2=std::clamp(h/52.f,11.f,ImGui::GetFontSize()*1.5f);

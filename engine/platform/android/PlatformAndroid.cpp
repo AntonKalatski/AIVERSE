@@ -13,6 +13,8 @@
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <android/asset_manager.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <android/input.h>
 #include <android/keycodes.h>
 #include <android/log.h>
@@ -565,7 +567,18 @@ public:
     uint64_t size() const override { return size_; }
     bool read(uint64_t off, void* dst, size_t n) override {
         if (off > size_ || n > size_ - off) return false;
-        if (map_) { std::memcpy(dst, map_ + off, n); return true; }
+        if (map_) {
+            std::memcpy(dst, map_ + off, n);
+            // The mapping is read-only and file-backed: once copied, release
+            // the pages from this process (they stay in the page cache and
+            // fault back in on the next access). Otherwise every byte ever
+            // loaded from the pack stays counted in the app's memory (PSS).
+            const uintptr_t page = uintptr_t(sysconf(_SC_PAGESIZE));
+            const uintptr_t lo = (uintptr_t(map_ + off) + page - 1) & ~(page - 1);
+            const uintptr_t hi = uintptr_t(map_ + off + n) & ~(page - 1);
+            if (n >= 4 * page && hi > lo) madvise(reinterpret_cast<void*>(lo), hi - lo, MADV_DONTNEED);
+            return true;
+        }
         if (AAsset_seek64(a_, off64_t(off), SEEK_SET) < 0) return false;
         return AAsset_read(a_, dst, n) == int(n);
     }
@@ -599,7 +612,17 @@ bool readContentFile(const std::string& rel, std::string& out) {
     }
     AAsset* a = AAssetManager_open(g_app->activity->assetManager, ("content/" + rel).c_str(), AASSET_MODE_BUFFER);
     if (!a) return false;
-    out.assign(static_cast<const char*>(AAsset_getBuffer(a)), size_t(AAsset_getLength(a)));
+    const char* data = static_cast<const char*>(AAsset_getBuffer(a));
+    const size_t n = size_t(AAsset_getLength(a));
+    if (!data) { AAsset_close(a); return false; }
+    out.assign(data, n);
+    // Stored (uncompressed) assets are views into the APK mapping, which the
+    // asset manager keeps for the whole process: drop the copied pages from
+    // this process so loaded content does not stay counted in its memory.
+    const uintptr_t page = uintptr_t(sysconf(_SC_PAGESIZE));
+    const uintptr_t lo = (uintptr_t(data) + page - 1) & ~(page - 1);
+    const uintptr_t hi = uintptr_t(data + n) & ~(page - 1);
+    if (!AAsset_isAllocated(a) && n >= 4 * page && hi > lo) madvise(reinterpret_cast<void*>(lo), hi - lo, MADV_DONTNEED);
     AAsset_close(a);
     return true;
 }

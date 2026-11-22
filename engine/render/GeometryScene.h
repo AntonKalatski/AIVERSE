@@ -55,6 +55,8 @@ public:
         uint64_t strataPortableTriangles=0; // triangles of the drawn STRATA aliases (all instances, main view)
         float strataErrorScale=1.f; // triangle budget: current multiplier of the pixel-error threshold
         uint64_t strataSelectionGpuBytes=0; // live compacted selection index buffers (all instances)
+        uint64_t strataCompressedCpuIndexBytes=0; // compressed CPU index copies kept for compacted submission
+        uint64_t strataPortableGpuIndexBytes=0; // full STRATA index streams uploaded to the GPU (portable route)
         uint64_t strataLodHysteresisTransitions=0;
         uint32_t strataLodHysteresisHistories=0;
         uint32_t strataStreamedSources=0;

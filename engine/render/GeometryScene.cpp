@@ -553,6 +553,15 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             // This leaves legacy material/shadow/LOD metadata intact.
             for (auto& [key, model] : models_)
                 if (model && !model->uploadPrepared) {
+                    // A model that every instance draws through STRATA needs
+                    // no generated LOD chain: it would cost load time (mesh
+                    // simplification) and GPU index memory for a path that
+                    // never draws. Authored LODs are kept.
+                    const Model* m=model.get();
+                    const bool strataOnly=!strataLodSources.count(m) &&
+                        std::none_of(instances_.begin(),instances_.end(),[m](const Instance& in){return in.model==m && !in.strataRoute;}) &&
+                        std::any_of(instances_.begin(),instances_.end(),[m](const Instance& in){return in.model==m;});
+                    if (strataOnly) model->batching.autoLod=false;
                     prepareModelUpload(*model);
                     using Policy=Model::Batching::GeometryPoolPolicy;
                     if (model->batching.geometryPoolPolicy==Policy::Inherit)
@@ -814,6 +823,21 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     stats_.strataArchivedCpuIndexSources+=freed!=0;
                 }else if(diskApplicable && strataDropArchivedCpuIndicesEnabled_){
                     warnings_.push_back("STRATA kept CPU index payload for diagnostic source "+key);
+                }
+                // Compacted submission keeps its own compressed index copy,
+                // so the asset's full 32-bit CPU indices are redundant once
+                // the GPU index stream is uploaded (debug views and the GPU
+                // metadata/culling/preview paths still read them).
+                const auto* portable=strataPortableSources_.at(model.get()).get();
+                stats_.strataPortableGpuIndexBytes+=portable->gpuIndexBytes();
+                if(!canReleaseCpu && portable->compactSelection() && !portable->streamingEnabled() &&
+                   !strataDebugView_.enabled && !strataDebugGeometryCapture_ &&
+                   !strataStagingEnabled_ && !strataGpuMetadataEnabled_ &&
+                   !strataGpuCullingEnabled_ && !strataRenderPreviewEnabled_ &&
+                   !strataVulkanGpuIndirectEnabled_){
+                    const size_t freed=strataStaging_->discardArchivedCpuIndices(key);
+                    stats_.strataArchivedCpuIndexBytesFreed+=freed;
+                    stats_.strataCompressedCpuIndexBytes+=portable->cpuIndexBytes();
                 }
             }
         }
