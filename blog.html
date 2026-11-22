@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7413c28eeb">
+<link rel="stylesheet" href="style.css?v=7d1fbd2ff3">
 </head>
 <body>
 <header class="top">
@@ -21,6 +21,7 @@
 <a href="./#genres">Жанры</a>
 <a href="roadmap.html" data-nav="roadmap">Роадмап</a>
 <a href="releases.html" data-nav="releases">Релизы</a>
+<a href="gallery.html" data-nav="gallery">Галерея</a>
 <a href="devlog.html" data-nav="devlog">Ход разработки</a>
 <a href="blog.html" data-nav="blog" aria-current="page">Блог</a>
 <a href="docs.html" data-nav="docs">Документация</a>
@@ -47,7 +48,7 @@
 <script>
 (function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
 function close(){lb.classList.remove('open');im.removeAttribute('src');}
-document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+document.querySelectorAll('.fp-gallery a, .blog-media a, .gal-grid a.gal-img, .rel-hl a.rel-hl-img').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
 im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
 document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
