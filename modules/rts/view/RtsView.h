@@ -48,6 +48,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsFieldView.h"
 #include "RtsPlanetGroundFx.h"
 #include "RtsPlanetRender.h"
+#include "RtsPlanetFlora.h"
 #include "RtsOverlays.h"
 #include "RtsModelResourceProvider.h"
 #include "RtsModelResourceCache.h"
@@ -1062,7 +1063,9 @@ private:
     render::float3 camPos_;
     // planets
     PlanetRenderer planets_;
-    RtsPlanetGroundFx planetGroundFx_;   // territory, rock, roads, lanes on sphere faces
+    RtsPlanetGroundFx planetGroundFx_;
+    PlanetFlora planetFlora_;            // TerraWeave trees and rocks on planet bodies
+    void rebuildPlanetFlora();   // territory, rock, roads, lanes on sphere faces
     PlanetCamera planetCam_;
     PlanetViewFrame pframe_;
     double planetSeconds_ = 0;

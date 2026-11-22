@@ -16,6 +16,14 @@ add the adapter to the shared subsystem; record a real capability gap before any
 custom fallback. Do not fake waves, flow, foam or buoyancy in project scripts.
 Sky stays with PRISMA, climate with PHYSIS, VFX with SpectraFX; compose owners.
 
+Planets: the sea of cube-sphere bodies draws with NEREID's wave model from `engine/render/NereidWaveShaders.h`
+(shared with plane water; `nereidSphereNormal` / `nereidSpherePatch` / `nereidSphereFoam` sample it triplanar),
+colour by depth and coast foam (`modules/rts/view/RtsPlanetShaders.h` only calls them). Water bodies on spheres:
+`<aiverselib/water/NereidSphereWater.h>` (`WaterSphereComponent` shells, `sampleSphereWater`,
+`addSphereWaterSamplingSystem` / `addSphereWaterBuoyancySystem`, `registerNereidSphereWaterPersistence`; radial depth
+and up, a current about an axis). The RTS planet host creates them for bodies with `"nereid"` (docs/planets.md §1);
+extend sphere water there, not in the planet code. Test: `ecs_nereid_sphere_water_test`.
+
 
 # NEREID: universal water system
 

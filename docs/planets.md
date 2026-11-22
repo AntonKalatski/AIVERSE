@@ -29,6 +29,12 @@ A map either describes today's flat battlefield (implicitly one body of kind `pl
   in the parent's orbital plane (XZ plane of the parent). A body without `orbit` is fixed at the world origin
   (or at `"pos": [x, y, z]`).
 - All gameplay quantities are Fixed; sizes in world units (the flat-map cell is 1 unit).
+- `"nereid": true | {"depth": d, "current": v, "axis": [x, y, z], "priority": p}` on a planet or moon makes its sea a
+  NEREID water body on the sphere (`libraries/include/aiverselib/water/NereidSphereWater.h`): one entity with
+  `WaterSphereComponent` (centre = the body anchor, surface = `radius + seaLevel`, floor = surface - `depth`,
+  default radius / 4; `current` m/s eastward about `axis`, default still water). Entities with a `WaterProbeComponent`
+  and `WaterSphereContactComponent` get radial depth, the current and (with `WaterBuoyancyComponent`) buoyancy along
+  the radial up; native modules add the probes. Maps without the key register nothing (saves and checksums unchanged).
 
 ## 2. Cube-sphere surface
 
@@ -144,7 +150,7 @@ Face order and basis (cubemap convention). A face point is `n + u * s' + v * t'`
   (MW2), classic Warcraft/Red Alert land maps, TA metal maps, planets (rocky, ocean, moon).
 
 Implemented (agent-terrain-gen, `modules/rts/gen/`, format and params: docs/game-format.md § Map generation):
-- `body.generate` with presets `rocky`, `ocean`, `moon`: heights from 3D fBm sampled at `CubeSphere::cornerDir` (RtsSphere.h),
+- `body.generate` with presets `rocky`, `ocean`, `moon`: heights and land biomes from TerraWeave fields on the sphere (`engine/world/TerraWeaveSphere.h`: the TerraWeave octave sum and climate model sampled in 3D, so faces join without seams; `params.heights: "fbm"` keeps the older 3D fBm) at `CubeSphere::cornerDir` (RtsSphere.h),
   so duplicated seam corners are bit-identical (and averaged defensively); craters for moons; sea level by quantile (written
   relative to `seaLevel` 0); faces get `rows` (`~` water, `#` peaks, `.` ice over polar seas), `terrain.material` per face
   (layer digits like `terrainMaterial`), `corners`; `generated.starts` = maximally separated land sites
@@ -168,7 +174,8 @@ Implementation (all presentation, float; nothing here touches the simulation):
 | file | what |
 |---|---|
 | `modules/rts/view/RtsPlanet.{h,cpp}` | `PlanetWorld` / `PlanetBody` from the map `world` block (`loadPlanetWorld`: the one place to switch to sim bodies), circular orbits `center(body, seconds)`, `PlanetSurface` (corner directions from `RtsSphere` converted to float once per body, duplicates averaged, heights, normals, `heightAt` on the same triangles as the mesh, `raycast`) |
-| `RtsPlanetRender.{h,cpp}`, `RtsPlanetShaders.h` | `PlanetRenderer`: per face a quadtree (leaf 16 x 16 cells, one quad per cell; level k = 2^k cells per quad), CDLOD selection (`lodRange` 48, doubling per level), geomorph to the coarser grid in the vertex shader, skirts on every chunk edge (LOD cracks and face seams), lazy chunk builds (max 24 per frame, the parent stands in), culling per chunk: bounding sphere vs frustum + horizon (angular cap beyond the body's limb). Chunk vertices are chunk-relative (float precision on big bodies). Ocean = the same chunks projected onto the sea sphere (alpha blended, only chunks with corners near sea level; each pixel is cut where the ground under it is above the sea, with shallow water fading in at the coast). Sky: fullscreen starfield + star glow; stars = emissive spheres; far bodies (< 3 px) = plain spheres; atmosphere shell (analytic rim scattering, additive, Medium+ material tier); orbit lines at planet / system zoom; aerial haze and a night side ambient |
+| `RtsPlanetFlora.{h,cpp}` | TerraWeave trees and rocks: Arbor / rock prototypes, one site per land cell chosen by `terraweave::placeOnSphere` (sphere climate, slope, height), drawn on the visible side of the body within 260 units; body `visual.flora` |
+| `RtsPlanetRender.{h,cpp}`, `RtsPlanetShaders.h` | `PlanetRenderer`: per face a quadtree (leaf 16 x 16 cells, one quad per cell; level k = 2^k cells per quad), CDLOD selection (`lodRange` 48, doubling per level), geomorph to the coarser grid in the vertex shader, skirts on every chunk edge (LOD cracks and face seams), lazy chunk builds (max 24 per frame, the parent stands in), culling per chunk: bounding sphere vs frustum + horizon (angular cap beyond the body's limb). Chunk vertices are chunk-relative (float precision on big bodies). Ocean = the same chunks projected onto the sea sphere (alpha blended, only chunks with corners near sea level; each pixel is cut where the ground under it is above the sea), shaded with NEREID's wave model (`engine/render/NereidWaveShaders.h`, sampled triplanar on the sphere): colour by depth, shallow water and foam along the coast. Sky: fullscreen starfield + star glow; stars = emissive spheres; far bodies (< 3 px) = plain spheres; atmosphere shell (analytic rim scattering, additive, Medium+ material tier); orbit lines at planet / system zoom; aerial haze and a night side ambient |
 | `RtsPlanetCamera.h` | `PlanetCamera`: focus direction on a body + parallel-transported forward vector (no poles, no seams), pitch, distance. Zoom regimes blend the target from the surface point to the body centre (`planetBlend`) to the system centre (`systemBlend`); the frame turns into the orbital plane at system zoom. `focus(body)` = smooth transition. `PlanetViewFrame`: the renderer draws in a "view world" (focus point at the origin, local up = +Y), so `Camera`, shadows, the light map and overlays work unchanged near the focus |
 | `RtsPlanetGroundFx.{h,cpp}` | territory / road overlays on sphere faces |
 | `RtsPlanetView.cpp` | `RtsView` on planet maps: `setSimWorld` (match) / `setWorld` / `updateWorld` (editor: only chunks over changed corners rebuild), `sceneFromSphere`, `drawPlanets` (objects placed in their body's tangent frame: local up = normal of the sphere, flat-map style east (+a) / south (+b) axes so flat facings keep working; orbit units on their shell with a ground mark; transit units between bodies; selection rings, move markers; health bar anchors hidden behind the body), `pickPlanet`, fog of war per body (vision atlas 3 x 2 faces of N x N) |

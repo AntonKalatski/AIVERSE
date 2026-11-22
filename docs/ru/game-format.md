@@ -2165,7 +2165,8 @@ MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_
 ## Планеты: визуальные ключи (блок `world` карты)
 
 Сами тела описаны в `docs/planets.md` §1-2 (`world.bodies`, `kind`, `radius`, `faceSize`,
-`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`). Что читает только представление:
+`seaLevel`, `orbit`, `terrain.faces` / `terrain.corners`, `nereid` — море как водоём NEREID для плавучести и
+течений, §1). Что читает только представление:
 
 ```jsonc
 {"id": "terra", "kind": "planet", ...,
@@ -2173,6 +2174,7 @@ MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_
             "atmosphere": {"color": [110, 170, 255], "height": 0.08}}}   // or false; default: on for planets, off for moons
 ```
 
+- `visual.flora`: деревья и камни TerraWeave на теле (одно место на клетку суши, вид по климату сферы): `{"density": 0..1, "scale": мировых единиц на метр}` или `false`; по умолчанию плотность 0.22 на планетах, на лунах нет, масштаб 0.06.
 - `visual.atmosphere.height`: толщина оболочки как доля радиуса (0.005..0.5). Оболочка и дымка используют этот
   цвет; оболочка рисуется начиная с уровня материалов Medium.
 - `terrain.faces[f].material`: строки цифр `0`..`3` на каждую грань (`.` = по виду клетки), как
@@ -2277,7 +2279,7 @@ MCP: `map_info.heightfield` (`corners`, `min`, `max`, `storage`, `model`), `map_
 | `caves` | caves | Dungeon Keeper (`diggable`) | `size` [48,32], `gold` 0.03 / `gems` 0.004 (доля породы, которая является жилой / бесконечным пластом), `bedrock` 0.06, `caverns` 0.06 |
 | `lanes` | lanes | lane battlers / MOBA | `size` [32,64], `lanes` 3, `laneWidth` 4, `bend` 0.35 (везде остальное — порода) |
 | `field` | lanes, `open` | Mushroom Wars 2 (гарнизоны + дороги) | `size` [44,28], `obstacles` 0.12, `roads` из шаблона |
-| `rocky` / `ocean` / `moon` | planet | целые карты планет или рельеф одного тела | `faceSize`, `water` 0.25 / 0.7 / 0, `relief`, `ice` (полярные шапки), `craters` (луна), `layout`, `moonResources`, `baseRadius` (луна 11) |
+| `rocky` / `ocean` / `moon` | planet | целые карты планет или рельеф одного тела | `faceSize`, `water` 0.25 / 0.7 / 0, `relief`, `ice` (полярные шапки), `craters` (луна), `layout`, `moonResources`, `baseRadius` (луна 11), `heights` (`terraweave` по умолчанию: рельеф и климатические биомы TerraWeave; `fbm`: прежний шум) |
 
 **Карты планет.** Планетный пресет в `generate` карты строит весь блок `world`: тела (и их орбиты,
 визуальные параметры) берутся из `world` карты-шаблона (например, `templates/planets`), иначе — солнце + планета + луна. Каждое тело с поверхностью

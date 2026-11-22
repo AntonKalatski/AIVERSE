@@ -6415,8 +6415,8 @@ TEST(sphere_great_circle_steps) {
 #define GEN_GOLD_LANES 0x6010e5d33a6a8fdbull
 #define GEN_GOLD_CAVES 0xd348fb3d9f4d2f55ull
 #define GEN_GOLD_METAL 0x5e11afce218433b2ull
-#define GEN_GOLD_PLANET_WORLD 0x8101a56ab8e6f0c6ull
-#define GEN_GOLD_PLANET 0x0c2a152a97d7e02bull
+#define GEN_GOLD_PLANET_WORLD 0x5a4bc2a514b61323ull
+#define GEN_GOLD_PLANET 0x88818babb637e26full
 
 // ---------------- terrain / map generator (agent-terrain-gen) ----------------
 #include "modules/rts/gen/MapGen.h"

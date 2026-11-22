@@ -1457,7 +1457,7 @@ add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/vi
     modules/rts/view/RtsFieldView.cpp
     modules/rts/view/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
     modules/rts/view/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
-    modules/rts/view/RtsPlanetRender.cpp modules/rts/view/RtsPlanetView.cpp modules/rts/view/RtsPlanetGroundFx.cpp)
+    modules/rts/view/RtsPlanetRender.cpp modules/rts/view/RtsPlanetView.cpp modules/rts/view/RtsPlanetGroundFx.cpp modules/rts/view/RtsPlanetFlora.cpp)
 # visual terrain detail surface (agent-terrain): shared by the view and the editor core (sculpt, validate)
 # + the planet surface maths (RtsPlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
 add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp modules/rts/view/RtsPlanet.cpp modules/rts/view/RtsPlanetDetail.cpp)
@@ -2296,6 +2296,7 @@ aiverse_game_module(AIVERSE_GAME_WITH_ENCOUNTERS "Include boss encounters (rules
 # per-map overrides of rules blocks (map "rules": topDown tuning, raid, progression, encounters; docs/game-format.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsMapRules.cpp)
 target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_boss_encounters)
+target_link_libraries(aiverse_game PUBLIC AIVERSE::lib_nereid_buoyancy)   # planet seas (RtsPlanets: world body "nereid")
 # map environment (weather, wind, zones, trample fields, auto skills on splines, fog options)
 target_sources(aiverse_game PRIVATE modules/rts/RtsEnv.cpp modules/rts/RtsEnvData.cpp)
 # driving (agent-gta2): the top-down hero drives vehicles of the vehicle-controllers library (docs/driving.md)
@@ -2662,6 +2663,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_ecs_nereid_buoyancy_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_buoyancy)
     add_test(NAME ecs_nereid_buoyancy_test COMMAND aiverse_ecs_nereid_buoyancy_test)
+    # NEREID on spheres: radial sampling, currents and buoyancy for planet seas.
+    add_executable(aiverse_ecs_nereid_sphere_water_test tests/ecs_nereid_sphere_water_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_sphere_water_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_buoyancy)
+    add_test(NAME ecs_nereid_sphere_water_test COMMAND aiverse_ecs_nereid_sphere_water_test)
     # NEREID stage 3: deterministic polygon/spline shapes and native persistence.
     add_executable(aiverse_ecs_nereid_geometry_test tests/ecs_nereid_geometry_test.cpp)
     target_link_libraries(aiverse_ecs_nereid_geometry_test PRIVATE
