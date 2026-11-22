@@ -4129,7 +4129,8 @@
         "дорожная",
         "карта",
         "скрины"
-      ]
+      ],
+      "contentPackages": []
     },
     {
       "id": "aiverse-skill-authoring",
