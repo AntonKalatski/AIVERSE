@@ -1,6 +1,6 @@
 // Bunker Wars computer player: data (rules ai.bw, map "ai" block, map players' "bot"), built-in difficulty
 // profiles (BW AI6ComplexityInfo_* / AI6SharedComplexityInfo_* / AIBishopComplexityInfo assets).
-#include "RtsBwAIInternal.h"
+#include "BwAIInternal.h"
 #include "../../engine/data/Json.h"
 #include <stdexcept>
 

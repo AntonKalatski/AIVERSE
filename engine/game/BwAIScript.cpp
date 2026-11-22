@@ -1,7 +1,7 @@
 // Bunker Wars computer player: debuts (DebutPlayer: a recorded opening replayed while the bot's points look like
 // the recording) and map bot triggers (Database/AI TriggerInfo / TriggerItem: timers, values, conditions on
 // captures and groups, actions that steer the bot).
-#include "RtsBwAIInternal.h"
+#include "BwAIInternal.h"
 
 namespace aiverse::game {
 

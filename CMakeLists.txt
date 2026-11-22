@@ -300,14 +300,14 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_test(NAME ecs_cross_genre_mechanics_test
         COMMAND aiverse_ecs_cross_genre_mechanics_test)
 endif()
-include(modules/rts/native/Build.cmake)
+include(engine/game/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
 file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/Mech*.cpp)
 target_sources(aiverse_game PRIVATE ${AIVERSE_MECH_SOURCES} engine/game/Save.cpp engine/game/Campaign.cpp   # + save states, campaigns
-    modules/strategic/Strategic.cpp)   # strategic map: provinces, armies, battles on GameCore
+    engine/game/Strategic.cpp)   # strategic map: provinces, armies, battles on GameCore
 # Optional simulation systems of packaged clients (packaging.engineModules, tools/aiversebuild).
 # A system that runs only when its rules block is present can be left out: OFF compiles the adapter
-# `stub` (modules/rts/disabled/) instead of its sources; the adapter keeps the system inactive and
+# `stub` (engine/game/disabled/) instead of its sources; the adapter keeps the system inactive and
 # makes rules that need it fail with a readable error. Packaged clients only - the editor, tests,
 # headless runner, servers and HTML5 Studio always build every system.
 function(aiverse_game_module var description stub)
@@ -323,11 +323,11 @@ function(aiverse_game_module var description stub)
 endfunction()
 
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
-file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
+file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/game/BwAI*.cpp)
 # Every game: hypnotised sends, per point counters, the controller registry and the registration point.
-target_sources(aiverse_game PRIVATE engine/game/Hypnosis.cpp engine/game/AIControllers.cpp modules/rts/RtsGameExtensions.cpp)
+target_sources(aiverse_game PRIVATE engine/game/Hypnosis.cpp engine/game/AIControllers.cpp engine/game/GameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
-    modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
+    engine/game/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
 # Localization: string tables, plurals, language choice (presentation only, no sim dependency).
 # RtsLocalize maps RTS data (types, resources, maps...) to string keys.
@@ -3588,7 +3588,7 @@ endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)   # UI.Windows audio bank importer (synthetic data, no game files)
     add_test(NAME uiwindows_audio_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/fmod/test_import_audio.py)
 endif()
-# The project's native modules (<content>/native, modules/rts/native/Build.cmake) after every engine target, so a
+# The project's native modules (<content>/native, engine/game/native/Build.cmake) after every engine target, so a
 # module's CMake may link aiverse_net / aiverse_grpc / aiverse_plugins / server libraries and call
 # aiverse_protobuf_generate (docs/native-modules.md § Engine libraries); before the Windows manifest pass below.
 aiverse_native_configure()

@@ -2,7 +2,7 @@
 // AI6Worker, the Domination / King of the Hill modes, the per-map custom factories (AI6Map17005, AI6Map11001),
 // AI6ActionDetector, defeat conditions and the bot save state. Port of MW2Data/Gameplay/Battle/Modules/AIModule;
 // float maths became Fixed, "#AI6FIX" notes mark where a BW crash path (division by zero, -1 routes) is guarded.
-#include "RtsBwAIInternal.h"
+#include "BwAIInternal.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/game/ComputerPlayer.h"
 

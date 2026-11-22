@@ -1,7 +1,7 @@
-// Internals of the Bunker Wars computer player (RtsBwAI*.cpp): the per-update context and the functions each file
+// Internals of the Bunker Wars computer player (BwAI*.cpp): the per-update context and the functions each file
 // implements. Not included outside these files.
 #pragma once
-#include "RtsBwAI.h"
+#include "BwAI.h"
 #include <algorithm>
 
 namespace aiverse::game {
@@ -59,25 +59,25 @@ bool bwCompare(BwCmp c, Fixed a, Fixed b);
 
 struct BwImpl {
     using Ctx = BwAI::Ctx;
-    // RtsBwAIWorld.cpp
+    // BwAIWorld.cpp
     static void buildWorld(Ctx& c, BwWorld& w);
     static void refreshRoutes(Ctx& c);
-    // RtsBwAI.cpp (AIBase, AI6MapState, AI6 ranker / worker / modes / custom)
+    // BwAI.cpp (AIBase, AI6MapState, AI6 ranker / worker / modes / custom)
     static void updateMapState(Ctx& c);
     static void ai6(Ctx& c);
     static void ai6Worker(Ctx& c);                                 // deferred sends (every tick)
     static void checkDefeat(Ctx& c);
     static void actionDetector(Ctx& c);
     static Fixed calcTimeout(Ctx& c);
-    // RtsBwAIBots.cpp
+    // BwAIBots.cpp
     static void ashley(Ctx& c);
     static void bishop(Ctx& c);
     static int needCount(Ctx& c, int source, int target);          // AIBase.GetNeedCount
-    // RtsBwAISkills.cpp
+    // BwAISkills.cpp
     static void initCasters(Ctx& c);
     static void skills(Ctx& c);
     static void prepareToSend(Ctx& c, int from, int to, int count);
-    // RtsBwAIScript.cpp
+    // BwAIScript.cpp
     static void initDebut(Ctx& c);
     static bool debut(Ctx& c);                                     // true: the debut played this tick
     static void triggers(Ctx& c);

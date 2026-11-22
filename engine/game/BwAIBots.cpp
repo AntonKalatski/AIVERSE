@@ -1,6 +1,6 @@
 // Bunker Wars computer player: the older algorithms (Impl/AIAshley.cs, Impl/AIBishop.cs + Tasks/*) and the AIBase
 // unit estimates they share (GetNeedCount, CalculateNeedCount, GetTargetCount).
-#include "RtsBwAIInternal.h"
+#include "BwAIInternal.h"
 
 namespace aiverse::game {
 

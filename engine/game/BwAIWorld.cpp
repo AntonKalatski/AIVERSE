@@ -1,6 +1,6 @@
 // Bunker Wars computer player: the battle as BW sees it (points, players, groups in transit), route lengths and
 // tower coverage along the routes, commands. Everything here only reads the simulation.
-#include "RtsBwAIInternal.h"
+#include "BwAIInternal.h"
 
 #include <algorithm>
 #include <map>

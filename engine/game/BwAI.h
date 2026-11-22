@@ -191,8 +191,8 @@ public:
     void update(Simulation& sim) override;
     void stateIo(Archive& a) override;
 
-    struct Ctx;   // per-update context (RtsBwAIInternal.h)
-    // The bot's state below is plain data shared by the RtsBwAI*.cpp files (saved by stateIo).
+    struct Ctx;   // per-update context (BwAIInternal.h)
+    // The bot's state below is plain data shared by the BwAI*.cpp files (saved by stateIo).
     uint8_t player_;
     Random rng_;
     bool init_ = false;

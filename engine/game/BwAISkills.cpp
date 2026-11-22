@@ -2,7 +2,7 @@
 // waits for its slot's delay (profile skillSlotAwait), then aims the player ability with its BW heuristic and
 // casts it through kCmdPlayerAbility, like a player clicking. Abilities without a BW caster fall back to the
 // engine's smart targeting. Which caster an ability gets: rules ai.bw.skills, else inferred from its effects.
-#include "RtsBwAIInternal.h"
+#include "BwAIInternal.h"
 
 namespace aiverse::game {
 
