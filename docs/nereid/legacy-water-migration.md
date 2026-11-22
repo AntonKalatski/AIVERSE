@@ -73,6 +73,13 @@ NEREID material (depth absorption over the dug cells, thin contact foam at the b
 animated waves, reflections where the quality tier enables them) instead of a flat tint;
 footprint and level are the legacy ones.
 
+## After merging origin/main (75b3e290d)
+
+Rebuilt editor, client, renderbench and tests; CTest ocean_lod, rts_water_nereid,
+renderer_contract, surface_mesh, flow_map, river_grade 6/6 PASS; Metal ocean acceptance
+PASS again; config captures of skirmish, frostcrown (nereid, 1 draw) and tiles2d (legacy)
+repeated (`migration-postmerge/`).
+
 ## Not done / not verified
 
 - Web (WASM) client and Studio HTML5 builds were not rebuilt; GL/Vulkan/mobile pixels not

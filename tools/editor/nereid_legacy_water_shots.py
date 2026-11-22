@@ -59,7 +59,9 @@ def shot(name, **cam):
         time.sleep(1)
 
 rel = os.path.relpath(map_file, os.path.dirname(os.path.dirname(map_file)))
-call("map_open", path=rel)
+for attempt in range(5):  # a large project may still be loading
+    if "error" not in call("map_open", path=rel): break
+    time.sleep(3)
 time.sleep(3)
 shot("near", x=wx+.5, z=wz+.5, distance=22, pitch=42, yaw=30)
 shot("wide", x=cx, z=cz, distance=60, pitch=55, yaw=20)
