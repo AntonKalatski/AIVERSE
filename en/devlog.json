@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22T07:15:51+00:00",
+ "generated": "2026-11-22T07:53:53+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -145,6 +145,48 @@
     {
      "src": "../media/docs/devlog/media/2026-11-22-prisma-dof-motion-blur/04.jpg",
      "caption": "The same turn with motion blur, Metal"
+    }
+   ],
+   "links": [
+    {
+     "title": "PRISMA documentation",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/prisma.md"
+    }
+   ],
+   "author": "prisma"
+  },
+  {
+   "id": "2026-11-22-prisma-ao-ssr-lens-upscale",
+   "date": "2026-11-22",
+   "system": "prisma",
+   "title": "AO, reflections, lens effects, SMAA and FSR",
+   "summary": "PRISMA gains ambient occlusion, screen-space reflections, lens flare and dirt, distortion, anamorphic streaks, halation, heat haze with shockwaves, SMAA, FSR 1 upscaling and histogram exposure.",
+   "body": [
+    "The new effects go into a project's, map's or camera profile's `postfx`, like bloom: `ambientOcclusion`, `screenSpaceReflections`, `lensFlare` (with a dirt texture or procedural smudges), `lensDistortion` (barrel, pincushion, Panini), `anamorphicStreaks`, `halation`, `heatHaze`, `smaa`, `fsr`. Auto exposure can meter from a luminance histogram (`histogram`, low and high percentiles), so a bright sky or a dark corner no longer throws exposure off.",
+    "AO and reflections work from the depth buffer: normals are reconstructed from depth, reflections are found by marching a ray through the scene. FSR 1 (EASU + RCAS) renders the 3D scene at a lower resolution and scales it to the screen; a DLSS route exists, but its NGX adapter has not been built yet. A `sceneColor` node in Shader Graph lets post effects read the frame; the stylization presets use it: toon, sketch, CRT, scanlines, dithering, Kuwahara.",
+    "Every effect has quality tiers and a cost estimate, and PRISMA's report shows whether it was drawn."
+   ],
+   "status": "done",
+   "verified": "Mac Studio (M3 Ultra), commit b7bf96e9: 18 tests on Metal (each of the 12 effects is drawn and changes the frame the expected way, plus the PRISMA data and Shader Graph tests) and 12 on OpenGL — all passed. On Linux the same 12 scenes passed on Vulkan (software lavapipe). The first Mac run found banding in AO, broken-up reflections, an upside-down FSR frame on Metal and smeared streaks — fixed before this run.",
+   "limits": "DLSS was not built or tested (needs Windows, RTX and the NGX SDK). Vulkan was checked only on a software renderer, not on real GPUs or Android. AO and SSR work from depth without a G-buffer: surfaces reflect by normal slope, not by material; thin objects may be noisy. GPU cost was not measured.",
+   "branch": "feature/aiv20261122_prisma_effects",
+   "commit": "b7bf96e9",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-ao-ssr-lens-upscale/01.jpg",
+     "caption": "AO: without (left) and with ambient occlusion — contact shadows under the spheres and cubes, Metal"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-ao-ssr-lens-upscale/02.jpg",
+     "caption": "Screen-space reflections on the floor: without and with SSR, Metal"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-ao-ssr-lens-upscale/03.jpg",
+     "caption": "Lens flare ghosts from a bright lamp and an anamorphic streak, Metal"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-ao-ssr-lens-upscale/04.jpg",
+     "caption": "Film halation and lens distortion with Panini, Metal"
     }
    ],
    "links": [
