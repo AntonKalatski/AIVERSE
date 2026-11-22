@@ -45,6 +45,17 @@ python3 tools/pkg/aiverse_pkg.py create <template-id> ~/Games/New    # new proje
 - C++ host tools and the editor find cached packages with `engine/pack/Packages.h`
   (`aiverse::pack::cachedPackageDir("vegetation-pbr")`). A game never reads the cache.
 
+## Web viewer
+
+`apps/catalogview` (CMake `-DAIVERSE_BUILD_CATALOGVIEW=ON`, target `aiverse_catalogview`) shows a
+package's materials on a sphere and a tiled slab, or its glTF / GLB models, through Renderer3D with an
+orbit camera. A package opts in with a `viewer` block in its manifest; the catalog's `pages` workflow
+builds `view/<id>/<version>/` (view.json + textures downscaled to 512 px) and the WebAssembly viewer
+from this repository, and deploys both to the catalog's GitHub Pages. The website's Catalog card gets
+a **3D preview** button that opens `viewer/?src=../view/<id>/<version>` in the card. Desktop check:
+`aiverse_catalogview --src <view folder> [--item N] [--yaw deg] [--pitch deg]` (`AIVERSE_SCREENSHOT`
+works as in the client).
+
 ## Packages that left the engine repository (2026-11-22)
 
 | Package | Was | Now in the engine |

@@ -1848,6 +1848,24 @@ if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
     target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
 endif()
 
+# Catalog preview (docs/packages.md § Web viewer): materials / models of catalog packages through
+# Renderer3D. Web: the website's catalog/viewer page (own shell, files fetched by the page into /view);
+# desktop: the same viewer for checks and screenshots (--src <view folder>).
+option(AIVERSE_BUILD_CATALOGVIEW "Build the package catalog preview (web page / desktop)" OFF)
+if(AIVERSE_BUILD_CATALOGVIEW AND (AIVERSE_DESKTOP OR EMSCRIPTEN))
+    add_executable(aiverse_catalogview apps/catalogview/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_catalogview PRIVATE aiverse_runtime AIVERSE::View)
+    if(EMSCRIPTEN)
+        set_target_properties(aiverse_catalogview PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
+        target_link_options(aiverse_catalogview PRIVATE
+            "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/apps/catalogview/shell.html"
+            "-sFORCE_FILESYSTEM=1"
+            "-sEXPORTED_FUNCTIONS=['_main','_cv_select']"
+            "-sEXPORTED_RUNTIME_METHODS=['FS','ccall']")
+        set_property(TARGET aiverse_catalogview APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/apps/catalogview/shell.html")
+    endif()
+endif()
+
 if(AIVERSE_BUILD_TOOLS)
     add_executable(aiverse_i18n_tool tools/i18n/main.cpp)
     set_target_properties(aiverse_i18n_tool PROPERTIES OUTPUT_NAME aiverse_i18n)

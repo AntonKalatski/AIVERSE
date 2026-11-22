@@ -45,6 +45,17 @@ python3 tools/pkg/aiverse_pkg.py create <id-шаблона> ~/Games/New   # но
 - C++-инструменты и редактор находят пакеты в кэше через `engine/pack/Packages.h`
   (`aiverse::pack::cachedPackageDir("vegetation-pbr")`). Игра кэш не читает.
 
+## Web-просмотрщик
+
+`apps/catalogview` (CMake `-DAIVERSE_BUILD_CATALOGVIEW=ON`, цель `aiverse_catalogview`) показывает
+материалы пакета на шаре и плитке пола или его glTF / GLB-модели через Renderer3D с орбитальной
+камерой. Пакет включает просмотр блоком `viewer` в манифесте; workflow `pages` каталога собирает
+`view/<id>/<версия>/` (view.json и текстуры, уменьшенные до 512 px) и WebAssembly-просмотрщик из этого
+репозитория и выкладывает их на GitHub Pages каталога. В карточке каталога на сайте появляется кнопка
+**3D-просмотр**: она открывает `viewer/?src=../view/<id>/<версия>` прямо в карточке. Проверка на
+компьютере: `aiverse_catalogview --src <папка view> [--item N] [--yaw град] [--pitch град]`
+(`AIVERSE_SCREENSHOT` работает как в клиенте).
+
 ## Что вынесено из репозитория движка (2026-11-22)
 
 | Пакет | Было | Осталось в движке |

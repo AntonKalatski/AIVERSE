@@ -158,7 +158,9 @@
   "download": "Download",
   "readme": "README",
   "none": "Nothing found",
-  "error": "Could not load the catalog. The package list is in index.json of the catalog repository."
+  "error": "Could not load the catalog. The package list is in index.json of the catalog repository.",
+  "view3d": "3D preview",
+  "view3dClose": "Close 3D"
  },
  "catNames": {
   "templates": "Templates",
