@@ -87,30 +87,13 @@ void sampleClip(const AnimClip& clip, float t, Pose& pose, float w, const std::v
     }
 }
 
-namespace {
-// a * b for affine matrices (bottom row 0,0,0,1): same sums and order as
-// mat4::operator* minus the terms that multiply the zero bottom row.
-inline void mulAffine(const mat4& a, const mat4& b, mat4& r) {
-    for (int c = 0; c < 4; ++c) {
-        const float b0 = b.m[c * 4], b1 = b.m[c * 4 + 1], b2 = b.m[c * 4 + 2];
-        for (int row = 0; row < 3; ++row) {
-            float s = a.m[row] * b0 + a.m[4 + row] * b1 + a.m[8 + row] * b2;
-            if (c == 3) s += a.m[12 + row];
-            r.m[c * 4 + row] = s;
-        }
-        r.m[c * 4 + 3] = c == 3 ? 1.f : 0.f;
-    }
-}
-} // namespace
-
 void worldMatrices(const Model& m, const Pose& pose, std::vector<mat4>& world) {
     world.resize(m.nodes.size());
     for (int n : m.order) {
         const NodePose& p = pose[size_t(n)];
-        const mat4 l = mat4::trs(p.t, p.r, p.s);
+        mat4 l = mat4::trs(p.t, p.r, p.s);
         const int parent = m.nodes[size_t(n)].parent;
-        if (parent >= 0) mulAffine(world[size_t(parent)], l, world[size_t(n)]);
-        else world[size_t(n)] = l;
+        world[size_t(n)] = parent >= 0 ? world[size_t(parent)] * l : l;
     }
 }
 
